@@ -107,7 +107,31 @@ enum GitUtils {
             }
         }
 
-        return branches.sorted()
+        // Sort with main/master first, then alphabetical
+        let mainBranches: Set<String> = ["main", "master"]
+        let pinned = branches.filter { mainBranches.contains($0) }.sorted()
+        let rest = branches.filter { !mainBranches.contains($0) }.sorted()
+        return pinned + rest
+    }
+
+    // MARK: - Branch Switching
+
+    /// Switches to the specified branch using `git switch`.
+    /// Returns `true` if the switch was successful.
+    @discardableResult
+    static func switchBranch(at directory: String, branch: String) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", directory, "switch", branch]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        } catch {
+            return false
+        }
     }
 
     // MARK: - Worktree Management

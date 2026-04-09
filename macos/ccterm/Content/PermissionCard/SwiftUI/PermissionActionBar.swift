@@ -39,6 +39,11 @@ struct PermissionActionBar: View {
     @State private var feedbackText = ""
     @State private var isFocused = false
     @State private var cursorPosition: Int? = nil
+    @AppStorage("sendKeyBehavior") private var sendKeyBehaviorRaw: String = SendKeyBehavior.commandEnter.rawValue
+
+    private var sendKeyBehavior: SendKeyBehavior {
+        SendKeyBehavior(rawValue: sendKeyBehaviorRaw) ?? .commandEnter
+    }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -119,14 +124,15 @@ struct PermissionActionBar: View {
         if isDenyExpanded {
             SwiftUITextInputView(
                 text: $feedbackText,
-                placeholder: String(localized: "⌘Enter to deny with feedback"),
+                placeholder: sendKeyBehavior.denyFeedbackPlaceholder,
                 font: .systemFont(ofSize: 12),
                 minLines: 1,
                 maxLines: 3,
                 onCommandReturn: { submitDeny() },
                 onEscape: { collapseDeny() },
                 isFocused: $isFocused,
-                desiredCursorPosition: $cursorPosition
+                desiredCursorPosition: $cursorPosition,
+                sendKeyBehavior: sendKeyBehavior
             )
             .padding(.horizontal, cardPadding)
             .transition(.opacity.combined(with: .move(edge: .top)))

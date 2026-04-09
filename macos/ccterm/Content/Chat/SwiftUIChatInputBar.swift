@@ -14,6 +14,11 @@ struct SwiftUIChatInputBar: View {
     @State private var showBranchPicker = false
     @State private var copiedFeedback: CopiedTarget?
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage("sendKeyBehavior") private var sendKeyBehaviorRaw: String = SendKeyBehavior.commandEnter.rawValue
+
+    private var sendKeyBehavior: SendKeyBehavior {
+        SendKeyBehavior(rawValue: sendKeyBehaviorRaw) ?? .commandEnter
+    }
 
     private enum CopiedTarget {
         case path, branch
@@ -147,7 +152,7 @@ struct SwiftUIChatInputBar: View {
                 .opacity(state.canSendComment ? 1.0 : 0.4)
                 .disabled(!state.canSendComment)
                 .transition(.scale.combined(with: .opacity))
-                .hoverTooltip("Command Enter (⌘↩)")
+                .hoverTooltip(sendKeyBehavior.shortcutHint)
             } else if state.isInPermissionMode {
                 // Action buttons are inside each permission card (PermissionActionBar).
                 EmptyView()
@@ -162,7 +167,7 @@ struct SwiftUIChatInputBar: View {
                     .opacity(state.canSend ? 1.0 : 0.4)
                     .disabled(!state.canSend)
                     .transition(.scale.combined(with: .opacity))
-                    .hoverTooltip("Command Enter (⌘↩)")
+                    .hoverTooltip(sendKeyBehavior.shortcutHint)
 
                 case .responding:
                     circleButton(
@@ -181,7 +186,7 @@ struct SwiftUIChatInputBar: View {
                     .opacity(state.canSend ? 1.0 : 0.4)
                     .disabled(!state.canSend)
                     .transition(.scale.combined(with: .opacity))
-                    .hoverTooltip("Command Enter (⌘↩)")
+                    .hoverTooltip(sendKeyBehavior.shortcutHint)
 
                 case .starting, .interrupting:
                     ProgressView()

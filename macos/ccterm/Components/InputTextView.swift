@@ -17,6 +17,7 @@ struct SwiftUITextInputView: NSViewRepresentable {
     @Binding var isFocused: Bool
     /// Set to reposition cursor after programmatic text replacement. Consumed once applied.
     @Binding var desiredCursorPosition: Int?
+    var sendKeyBehavior: SendKeyBehavior = .commandEnter
 
     func makeNSView(context: Context) -> InputTextScrollView {
         let scrollView = InputTextScrollView()
@@ -57,6 +58,7 @@ struct SwiftUITextInputView: NSViewRepresentable {
         scrollView.updateIntrinsicHeight()
 
         let coordinator = context.coordinator
+        textView.sendKeyBehavior = sendKeyBehavior
         textView.onCommandReturn = { [weak coordinator] in
             coordinator?.onCommandReturn?()
         }
@@ -103,6 +105,7 @@ struct SwiftUITextInputView: NSViewRepresentable {
 
         textView.isEditable = isEnabled
         textView.isSelectable = true
+        textView.sendKeyBehavior = sendKeyBehavior
 
         coordinator.onTextChanged = onTextChanged
         coordinator.onCommandReturn = onCommandReturn
@@ -209,6 +212,7 @@ final class InputNSTextView: NSTextView {
     var onCommandReturn: (() -> Void)?
     var onMarkedTextChanged: (() -> Void)?
     var onFocusChanged: ((Bool) -> Void)?
+    var sendKeyBehavior: SendKeyBehavior = .commandEnter
     var placeholderString: String = ""
     var placeholderFont: NSFont?
     override func draw(_ dirtyRect: NSRect) {
@@ -242,10 +246,33 @@ final class InputNSTextView: NSTextView {
     }
 
     override func keyDown(with event: NSEvent) {
-        // Cmd+Return
-        if event.modifierFlags.contains(.command), event.keyCode == 36 {
-            onCommandReturn?()
+        let isReturn = event.keyCode == 36
+
+        // IME guard: during composition, let the input method handle Enter
+        if isReturn, hasMarkedText() {
+            super.keyDown(with: event)
             return
+        }
+
+        switch sendKeyBehavior {
+        case .commandEnter:
+            // Cmd+Return → send. Plain Return falls through to insertNewline (newline).
+            if event.modifierFlags.contains(.command), isReturn {
+                onCommandReturn?()
+                return
+            }
+
+        case .enter:
+            if isReturn {
+                if event.modifierFlags.contains(.shift) {
+                    // Shift+Enter → insert newline
+                    insertText("\n", replacementRange: selectedRange())
+                    return
+                }
+                // Plain Enter or Cmd+Enter → send
+                onCommandReturn?()
+                return
+            }
         }
 
         // Custom key interceptor (skip during IME composition)
@@ -277,7 +304,14 @@ final class InputNSTextView: NSTextView {
     }
 
     override func insertNewline(_ sender: Any?) {
-        insertText("\n", replacementRange: selectedRange())
+        switch sendKeyBehavior {
+        case .commandEnter:
+            insertText("\n", replacementRange: selectedRange())
+        case .enter:
+            // In "Enter to send" mode, insertNewline may be called by the system
+            // (e.g. accessibility, input methods). Treat as send action.
+            onCommandReturn?()
+        }
     }
 
     override func viewDidEndLiveResize() {

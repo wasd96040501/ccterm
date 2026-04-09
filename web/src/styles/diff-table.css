@@ -1,0 +1,181 @@
+/* ===== Diff Table (shared between chat and diff preview) ===== */
+
+.diff-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+  table-layout: fixed;
+  border: none;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #818b981f;
+}
+
+/* Gutter (line number column) */
+
+.diff-gutter {
+  text-align: right;
+  padding: 0 1ch;
+  line-height: 1.45;
+  background: rgba(0, 0, 0, 0.04);
+  user-select: none;
+  vertical-align: top;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.diff-gutter::before {
+  content: attr(data-line-no);
+  color: rgba(31, 35, 40, 0.5);
+}
+
+.diff-gutter--add {
+  background: #d6ecde;
+}
+
+.diff-gutter--del {
+  background: #ecd6d8;
+}
+
+/* Sign column (+/-) */
+
+.diff-sign {
+  padding: 0 4px 0 8px;
+  line-height: 1.45;
+  user-select: none;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.diff-sign::before {
+  content: attr(data-sign);
+}
+
+.diff-sign--add::before {
+  color: #1a7f37;
+}
+
+.diff-sign--del::before {
+  color: #cf222e;
+}
+
+/* Content column */
+
+.diff-content {
+  padding: 0;
+  vertical-align: top;
+}
+
+.diff-content pre {
+  margin: 0;
+  padding: 0 10px 0 6px;
+  background: transparent;
+  line-height: 1.45;
+  font-family: inherit;
+  font-size: inherit;
+  white-space: pre-wrap;
+  word-break: break-all;
+  overflow-wrap: break-word;
+}
+
+/* Line type backgrounds */
+
+.diff-line--add .diff-content,
+.diff-line--add .diff-sign {
+  background: #e6f3eb;
+}
+
+.diff-line--del .diff-content,
+.diff-line--del .diff-sign {
+  background: #f3e6e7;
+}
+
+.diff-line--ctx .diff-content {
+  background: transparent;
+}
+
+/* First/last row breathing room */
+
+.diff-table tbody tr:first-child td {
+  padding-top: 4px;
+}
+
+.diff-table tbody tr:last-child td {
+  padding-bottom: 4px;
+}
+
+/* Hunk separator */
+
+.diff-hunk-sep td {
+  height: auto;
+  background: #d1d9e0;
+  padding: 8px 0;
+  position: relative;
+}
+
+.diff-hunk-sep td::before {
+  content: '···';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  background: #d1d9e0;
+  color: rgba(31, 35, 40, 0.4);
+  font-size: 12px;
+  letter-spacing: 1px;
+  padding: 1px 6px;
+  line-height: 1;
+  border-radius: 8px;
+}
+
+/* Dark mode */
+
+@media (prefers-color-scheme: dark) {
+  .diff-table {
+    background: #1b1f26;
+  }
+
+  .diff-gutter {
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .diff-gutter::before {
+    color: rgba(230, 237, 243, 0.4);
+  }
+
+  .diff-gutter--add {
+    background: rgba(63, 185, 80, 0.25);
+  }
+
+  .diff-gutter--del {
+    background: rgba(248, 81, 73, 0.25);
+  }
+
+  .diff-sign--add::before {
+    color: #3fb950;
+  }
+
+  .diff-sign--del::before {
+    color: #f85149;
+  }
+
+  .diff-line--add .diff-content,
+  .diff-line--add .diff-sign {
+    background: rgba(63, 185, 80, 0.15);
+  }
+
+  .diff-line--del .diff-content,
+  .diff-line--del .diff-sign {
+    background: rgba(248, 81, 73, 0.15);
+  }
+
+  .diff-hunk-sep td {
+    background: #30363d;
+  }
+
+  .diff-hunk-sep td::before {
+    background: #3a4149;
+    color: rgba(230, 237, 243, 0.3);
+  }
+}

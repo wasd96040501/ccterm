@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<model type="com.apple.IDECoreDataModeler.DataModel" documentVersion="1.0" lastSavedToolsVersion="1" systemVersion="11A491" minimumToolsVersion="Automatic" sourceLanguage="Swift" userDefinedModelVersionIdentifier="">
+    <entity name="CDConversation" representedClassName="CDConversation" syncable="YES" codeGenerationType="class">
+        <attribute name="archivedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="gitBranch" optional="YES" attributeType="String"/>
+        <attribute name="isArchived" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="isWorktree" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="lastActiveAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="originPath" optional="YES" attributeType="String"/>
+        <attribute name="path" optional="YES" attributeType="String"/>
+        <attribute name="sessionId" optional="YES" attributeType="String"/>
+        <attribute name="slug" optional="YES" attributeType="String"/>
+        <attribute name="title" optional="YES" attributeType="String"/>
+        <attribute name="extraJSON" optional="YES" attributeType="String"/>
+        <attribute name="uuid" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <fetchIndex name="byIsArchived">
+            <fetchIndexElement property="isArchived" type="Binary" order="ascending"/>
+        </fetchIndex>
+        <fetchIndex name="bySessionId">
+            <fetchIndexElement property="sessionId" type="Binary" order="ascending"/>
+        </fetchIndex>
+    </entity>
+    <entity name="CDSession" representedClassName="CDSession" syncable="YES" codeGenerationType="class">
+        <attribute name="archivedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="cwd" optional="YES" attributeType="String"/>
+        <attribute name="extraJSON" optional="YES" attributeType="String"/>
+        <attribute name="isArchived" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="isTodoSession" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="isWorktree" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="lastActiveAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="linkedTodoId" optional="YES" attributeType="String"/>
+        <attribute name="originPath" optional="YES" attributeType="String"/>
+        <attribute name="sessionId" optional="YES" attributeType="String"/>
+        <attribute name="slug" optional="YES" attributeType="String"/>
+        <attribute name="title" optional="YES" attributeType="String"/>
+        <attribute name="uuid" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <fetchIndex name="byIsArchived">
+            <fetchIndexElement property="isArchived" type="Binary" order="ascending"/>
+        </fetchIndex>
+        <fetchIndex name="bySessionId">
+            <fetchIndexElement property="sessionId" type="Binary" order="ascending"/>
+        </fetchIndex>
+    </entity>
+    <entity name="CDSessionRecord" representedClassName="CDSessionRecord" syncable="YES" codeGenerationType="class">
+        <attribute name="archivedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="cwd" optional="YES" attributeType="String"/>
+        <attribute name="error" optional="YES" attributeType="String"/>
+        <attribute name="extraJSON" optional="YES" attributeType="String"/>
+        <attribute name="isWorktree" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="lastActiveAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="linkedTodoId" optional="YES" attributeType="String"/>
+        <attribute name="originPath" optional="YES" attributeType="String"/>
+        <attribute name="sessionId" optional="YES" attributeType="String"/>
+        <attribute name="status" optional="YES" attributeType="String" defaultValueString="pending"/>
+        <attribute name="title" optional="YES" attributeType="String"/>
+        <attribute name="uuid" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="sessionType" optional="YES" attributeType="String" defaultValueString="normal"/>
+        <attribute name="isPinned" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="isTempDir" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="pinnedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <fetchIndex name="bySessionId">
+            <fetchIndexElement property="sessionId" type="Binary" order="ascending"/>
+        </fetchIndex>
+        <fetchIndex name="byStatus">
+            <fetchIndexElement property="status" type="Binary" order="ascending"/>
+        </fetchIndex>
+    </entity>
+    <entity name="CDTodoItem" representedClassName="CDTodoItem" syncable="YES" codeGenerationType="class">
+        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="deletedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="isSoftDeleted" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="mergedItemIdsJSON" optional="YES" attributeType="String"/>
+        <attribute name="metadataJSON" optional="YES" attributeType="String"/>
+        <attribute name="previousStatus" optional="YES" attributeType="String"/>
+        <attribute name="sessionId" optional="YES" attributeType="String"/>
+        <attribute name="status" optional="YES" attributeType="String"/>
+        <attribute name="title" optional="YES" attributeType="String"/>
+        <attribute name="type" optional="YES" attributeType="String"/>
+        <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="uuid" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
+        <attribute name="worktreeBranch" optional="YES" attributeType="String"/>
+        <fetchIndex name="byStatus">
+            <fetchIndexElement property="status" type="Binary" order="ascending"/>
+        </fetchIndex>
+        <fetchIndex name="byIsSoftDeleted">
+            <fetchIndexElement property="isSoftDeleted" type="Binary" order="ascending"/>
+        </fetchIndex>
+        <fetchIndex name="byCreatedAt">
+            <fetchIndexElement property="createdAt" type="Binary" order="ascending"/>
+        </fetchIndex>
+    </entity>
+</model>

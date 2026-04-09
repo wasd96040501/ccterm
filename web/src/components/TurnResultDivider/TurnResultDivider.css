@@ -1,0 +1,39 @@
+.turn-result-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+  user-select: none;
+}
+
+.turn-result-divider__line {
+  flex: 1;
+  height: 1px;
+  background-color: var(--turn-result-line, rgba(128, 128, 128, 0.2));
+}
+
+.turn-result-divider__label {
+  font-size: 11px;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  font-variant-numeric: tabular-nums;
+  color: var(--turn-result-text, rgba(128, 128, 128, 0.6));
+  white-space: nowrap;
+}
+
+.turn-result-divider__sep {
+  margin: 0 3px;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --turn-result-line: rgba(0, 0, 0, 0.1);
+    --turn-result-text: rgba(0, 0, 0, 0.35);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --turn-result-line: rgba(255, 255, 255, 0.1);
+    --turn-result-text: rgba(255, 255, 255, 0.35);
+  }
+}

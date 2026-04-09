@@ -1,0 +1,47 @@
+# macOS
+.DS_Store
+
+# Xcode
+build/
+DerivedData/
+xcuserdata/
+*.dSYM.zip
+*.dSYM
+*.profraw
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Node / Bun
+node_modules/
+dist/
+test-results/
+
+# Local config
+macos/Local.xcconfig
+
+# Claude Code
+.claude/
+
+# Private development notes
+docs/
+prds/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Generated web bundles (built from web/)
+macos/ccterm/Resources/*.js
+macos/ccterm/Resources/*.css
+macos/ccterm/Resources/*-react.html

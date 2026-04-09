@@ -156,7 +156,7 @@ struct FolderPickerPopover: View {
                             .font(.system(size: 10))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
-                            .truncationMode(.head)
+                            .truncationMode(.middle)
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)

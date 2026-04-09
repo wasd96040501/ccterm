@@ -5,7 +5,6 @@ import {
   isMessage2AssistantMessageContentToolUse,
   isToolUseRead, isToolUseGlob, isToolUseGrep,
 } from '../../generated/parsers.generated.ts'
-import { HIDDEN_TOOLS } from '../../utils/messageUtils.ts'
 import { MarkdownRenderer } from '../MarkdownRenderer/MarkdownRenderer.tsx'
 import { ToolUseRenderer } from '../ToolUseRenderer/ToolUseRenderer.tsx'
 import { ToolGroupBlock } from '../ToolGroupBlock/ToolGroupBlock.tsx'
@@ -29,10 +28,6 @@ type RenderItem =
 
 function isGroupable(toolUse: ToolUse): boolean {
   return isToolUseRead(toolUse) || isToolUseGlob(toolUse) || isToolUseGrep(toolUse)
-}
-
-function isHidden(toolUse: ToolUse): boolean {
-  return HIDDEN_TOOLS.has(toolUse.name)
 }
 
 function buildRenderItems(blocks: Message2AssistantMessageContent[]): RenderItem[] {
@@ -62,7 +57,6 @@ function buildRenderItems(blocks: Message2AssistantMessageContent[]): RenderItem
     }
     if (isMessage2AssistantMessageContentToolUse(block)) {
       const toolUse = block as unknown as ToolUse
-      if (isHidden(toolUse)) continue
       flushText()
 
       if (isGroupable(toolUse)) {

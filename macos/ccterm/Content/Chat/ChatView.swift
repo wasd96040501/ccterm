@@ -75,7 +75,7 @@ struct ChatView: View {
                     actions: ChatInputBarActions(onSend: { chatRouter.submitMessage($0) })
                 )
                 .id(session.sessionId)
-                .frame(width: 860)
+                .frame(minWidth: 860)
                 .padding(.top, 32)
                 .padding(.horizontal, 20)
                 .padding(.bottom, 16)

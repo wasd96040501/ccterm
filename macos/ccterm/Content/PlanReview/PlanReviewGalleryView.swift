@@ -68,7 +68,7 @@ private struct PlanReviewPreview: View {
                 state: session,
                 actions: ChatInputBarActions()
             )
-            .frame(width: 860)
+            .frame(minWidth: 860)
             .padding(.top, 32)
             .padding(.horizontal, 20)
             .padding(.bottom, 16)

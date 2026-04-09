@@ -1,0 +1,67 @@
+/* Shared bash command/output styles used by both chat BashBlock and permission card BashApp */
+
+.bash-output {
+  padding: 0;
+  border-radius: 8px;
+}
+
+.bash-stdout {
+  margin: 0;
+  padding: 8px 12px;
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre;
+  overflow-x: auto;
+  background: #818b981f;
+  border-radius: 8px;
+}
+
+.bash-stdout::-webkit-scrollbar {
+  height: 6px;
+}
+
+.bash-stdout::-webkit-scrollbar-track {
+  background: none;
+  margin-inline: 8px;
+}
+
+.bash-stdout::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.25);
+  border-radius: 3px;
+}
+
+.bash-stdout::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.4);
+}
+
+.bash-command-line {
+  font-weight: bold;
+}
+
+.bash-command-line code {
+  font-weight: inherit;
+  font-family: inherit;
+}
+
+.bash-command-line code.hljs {
+  padding: 0;
+  background: transparent;
+}
+
+.bash-prompt {
+  user-select: none;
+  opacity: 0.5;
+}
+
+.bash-exit-code {
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+@media (prefers-color-scheme: dark) {
+  .bash-stdout {
+    background: #1b1f26;
+  }
+}

@@ -1,0 +1,167 @@
+/* ===== Markdown Body Overrides ===== */
+
+.markdown-body {
+  background-color: transparent !important;
+  font-size: 14px;
+}
+
+/* Safari draws full-width selection rectangles (including margins) on
+   position:static elements. position:relative switches to inline selection
+   that only covers content — matching GitHub.com / Blink behavior.
+   See: WordPress/gutenberg#44148, WordPress/gutenberg#57300 */
+.markdown-body > *,
+.markdown-body li {
+  position: relative;
+}
+
+/* Hide the stacked container-level ::selection Safari paints behind child
+   selections, preventing the thin full-width "bleed" line between blocks.
+   Each nesting level that contains block children needs its own rule. */
+.markdown-body::selection,
+.markdown-body ul::selection,
+.markdown-body ol::selection,
+.markdown-body blockquote::selection {
+  background-color: transparent;
+}
+
+
+/* Thinner horizontal rule */
+.markdown-body hr {
+  height: 1px;
+  background: #d1d9e0b3;
+  border: none;
+}
+
+/* Code block wrapper: background container only, no clipping */
+.markdown-body .pre-scroll-wrapper {
+  border-radius: 8px;
+}
+
+/* Code block: own border-radius + scroll */
+.markdown-body .highlight pre,
+.markdown-body pre {
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+/* Remove highlight.js inner padding, let pre control it */
+.markdown-body pre code.hljs {
+  padding: 0;
+}
+
+/* Table scroll wrapper */
+.markdown-body .table-wrapper {
+  overflow-x: auto;
+}
+
+.markdown-body .table-wrapper::-webkit-scrollbar {
+  height: 6px;
+}
+
+.markdown-body .table-wrapper::-webkit-scrollbar-track {
+  background: none;
+  margin-inline: 8px;
+}
+
+.markdown-body .table-wrapper::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.25);
+  border-radius: 3px;
+}
+
+.markdown-body .table-wrapper::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.4);
+}
+
+/* Rounded table */
+.markdown-body table {
+  display: table;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid #d1d9e0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.markdown-body table th,
+.markdown-body table td {
+  border: none;
+  border-bottom: 1px solid #d1d9e0;
+  border-right: 1px solid #d1d9e0;
+}
+
+.markdown-body table th:last-child,
+.markdown-body table td:last-child {
+  border-right: none;
+}
+
+.markdown-body table tr:last-child td {
+  border-bottom: none;
+}
+
+.markdown-body table tr {
+  border-top: none;
+}
+
+.markdown-body h1,
+.markdown-body h2 {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.markdown-body pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.markdown-body pre::-webkit-scrollbar {
+  height: 6px;
+}
+
+.markdown-body pre::-webkit-scrollbar-track {
+  background: none;
+  margin-inline: 8px;
+}
+
+.markdown-body pre::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.25);
+  border-radius: 3px;
+}
+
+.markdown-body pre::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.4);
+}
+
+/* Dark mode: use macOS system colors */
+@media (prefers-color-scheme: dark) {
+  .markdown-body .highlight pre,
+  .markdown-body pre {
+    background-color: -apple-system-secondary-background !important;
+  }
+
+  .markdown-body pre code.hljs {
+    background: transparent;
+  }
+
+  .markdown-body table {
+    border-color: -apple-system-separator;
+  }
+
+  .markdown-body table th,
+  .markdown-body table td {
+    border-bottom-color: -apple-system-separator;
+    border-right-color: -apple-system-separator;
+  }
+
+  .markdown-body hr {
+    background: -apple-system-separator;
+  }
+
+  .markdown-body table tr {
+    background-color: transparent;
+  }
+
+  .markdown-body table tr:nth-child(2n) {
+    background-color: -apple-system-secondary-background;
+  }
+}

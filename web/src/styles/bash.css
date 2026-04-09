@@ -1,0 +1,32 @@
+@import './hljs-auto.css';
+@import './bash-shared.css';
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow-y: overlay;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.35);
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.55);
+}
+
+.bash-preview-container .bash-stdout {
+  -webkit-overflow-scrolling: touch;
+}

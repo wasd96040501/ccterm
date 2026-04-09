@@ -1,0 +1,6 @@
+[submodule "fzf"]
+	path = thirdparty/fzf
+	url = https://github.com/junegunn/fzf.git
+[submodule "thirdparty/fzf"]
+	path = thirdparty/fzf
+	url = https://github.com/junegunn/fzf.git

@@ -1,0 +1,28 @@
+import Foundation
+
+public enum ToolUseResultObject: JSONParseable, UnknownStrippable {
+    case AskUserQuestion(ObjectAskUserQuestion, origin: ToolUseAskUserQuestion?)
+    case Bash(ObjectBash, origin: ToolUseBash?)
+    case CronCreate(ObjectCronCreate, origin: ToolUseCronCreate?)
+    case Edit(ObjectEdit, origin: ToolUseEdit?)
+    case EnterPlanMode(ObjectEnterPlanMode, origin: ToolUseEnterPlanMode?)
+    case EnterWorktree(ObjectEnterWorktree, origin: ToolUseEnterWorktree?)
+    case ExitPlanMode(ObjectExitPlanMode, origin: ToolUseExitPlanMode?)
+    case ExitWorktree(ObjectExitWorktree, origin: ToolUseExitWorktree?)
+    case Glob(ObjectGlob, origin: ToolUseGlob?)
+    case Grep(ObjectGrep, origin: ToolUseGrep?)
+    case SendMessage(ObjectSendMessage, origin: ToolUseSendMessage?)
+    case Skill(ObjectSkill, origin: ToolUseSkill?)
+    case Task(ObjectTask, origin: ToolUseTask?)
+    case TaskCreate(ObjectTaskCreate, origin: ToolUseTaskCreate?)
+    case TaskOutput(ObjectTaskOutput, origin: ToolUseTaskOutput?)
+    case TaskStop(ObjectTaskStop, origin: ToolUseTaskStop?)
+    case TaskUpdate(ObjectTaskUpdate, origin: ToolUseTaskUpdate?)
+    case TeamCreate(ObjectTeamCreate, origin: ToolUseTeamCreate?)
+    case TodoWrite(ObjectTodoWrite, origin: ToolUseTodoWrite?)
+    case ToolSearch(ObjectToolSearch, origin: ToolUseToolSearch?)
+    case WebFetch(ObjectWebFetch, origin: ToolUseWebFetch?)
+    case WebSearch(ObjectWebSearch, origin: ToolUseWebSearch?)
+    case Write(ObjectWrite, origin: ToolUseWrite?)
+    case unknown(name: String, raw: [String: Any], origin: ToolUse?)
+}

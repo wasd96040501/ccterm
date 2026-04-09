@@ -1,0 +1,286 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CCTerm Bridge Protocol",
+  "description": "Type definitions for Native ↔ Web bridge communication",
+
+  "$defs": {
+    "NativeEvent": {
+      "description": "Events sent from native app to web UI",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "switchConversation" },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "conversationId": { "type": "string" }
+              },
+              "required": ["conversationId"]
+            }
+          },
+          "required": ["type", "payload"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "setTurnActive" },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "conversationId": { "type": "string" },
+                "isTurnActive": { "type": "boolean" },
+                "interrupted": { "type": "boolean" }
+              },
+              "required": ["conversationId", "isTurnActive"]
+            }
+          },
+          "required": ["type", "payload"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "search" },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "query": { "type": "string" },
+                "direction": { "enum": ["reset", "next", "prev"] }
+              },
+              "required": ["query", "direction"]
+            }
+          },
+          "required": ["type", "payload"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "setPlan" },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "key": { "type": "string" },
+                "markdown": { "type": "string" }
+              },
+              "required": ["key", "markdown"]
+            }
+          },
+          "required": ["type", "payload"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "setComments" },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "key": { "type": "string" },
+                "comments": {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/PlanComment" }
+                }
+              },
+              "required": ["key", "comments"]
+            }
+          },
+          "required": ["type", "payload"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "switchPlan" },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "key": { "type": "string" }
+              },
+              "required": ["key"]
+            }
+          },
+          "required": ["type", "payload"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "clearPlan" },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "key": { "type": "string" }
+              },
+              "required": ["key"]
+            }
+          },
+          "required": ["type", "payload"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "clearSelection" },
+            "payload": { "type": "object" }
+          },
+          "required": ["type", "payload"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "setDiff" },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "filePath": { "type": "string" },
+                "oldString": { "type": "string" },
+                "newString": { "type": "string" }
+              },
+              "required": ["filePath", "oldString", "newString"]
+            }
+          },
+          "required": ["type", "payload"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "setBottomPadding" },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "height": { "type": "number" }
+              },
+              "required": ["height"]
+            }
+          },
+          "required": ["type", "payload"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "setCommand" },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "command": { "type": "string" }
+              },
+              "required": ["command"]
+            }
+          },
+          "required": ["type", "payload"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "forwardRawMessage" },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "conversationId": { "type": "string" },
+                "message": {}
+              },
+              "required": ["conversationId", "message"]
+            }
+          },
+          "required": ["type", "payload"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "setRawMessages" },
+            "payload": {
+              "type": "object",
+              "properties": {
+                "conversationId": { "type": "string" },
+                "messages": { "type": "array" }
+              },
+              "required": ["conversationId", "messages"]
+            }
+          },
+          "required": ["type", "payload"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "scrollToBottom" }
+          },
+          "required": ["type"]
+        }
+      ]
+    },
+
+    "WebEvent": {
+      "description": "Events sent from web UI to native app",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "ready" },
+            "conversationId": { "type": "string" }
+          },
+          "required": ["type"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "searchResult" },
+            "total": { "type": "integer" },
+            "current": { "type": "integer" }
+          },
+          "required": ["type", "total", "current"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "contentHeight" },
+            "height": { "type": "number" }
+          },
+          "required": ["type", "height"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "scrollStateChanged" },
+            "conversationId": { "type": "string" },
+            "isAtBottom": { "type": "boolean" }
+          },
+          "required": ["type", "conversationId", "isAtBottom"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "textSelected" },
+            "startOffset": { "type": "integer" },
+            "endOffset": { "type": "integer" },
+            "selectedText": { "type": "string" }
+          },
+          "required": ["type", "startOffset", "endOffset", "selectedText"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "selectionCleared" }
+          },
+          "required": ["type"]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": { "const": "commentAction" },
+            "action": { "enum": ["edit", "delete"] },
+            "commentId": { "type": "string" },
+            "text": { "type": "string" }
+          },
+          "required": ["type", "action", "commentId"]
+        }
+      ]
+    },
+
+    "PlanComment": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "blockIndex": { "type": "integer" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "blockIndex", "text", "createdAt"]
+    }
+  }
+}

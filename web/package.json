@@ -1,0 +1,35 @@
+{
+  "name": "ccterm-webview",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun build src/index.tsx src/plan-fullscreen.tsx src/diff.tsx src/bash.tsx --outdir dist --watch & bun run dev-server.ts",
+    "build": "bun build src/index.tsx src/plan-fullscreen.tsx src/diff.tsx src/bash.tsx --outdir dist --minify && bun run generate-html.ts",
+    "typecheck": "tsc --noEmit",
+    "bench": "bun run build && bunx playwright test --project=chromium --config=playwright.bench.config.ts --reporter=list"
+  },
+  "dependencies": {
+    "diff": "^8.0.3",
+    "framer-motion": "^12.36.0",
+    "github-markdown-css": "^5.9.0",
+    "immer": "^11.1.4",
+    "katex": "^0.16.43",
+    "lucide-react": "^0.577.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
+    "zustand": "^5.0.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "@types/diff": "^8.0.0",
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "typescript": "^5.8.3"
+  }
+}

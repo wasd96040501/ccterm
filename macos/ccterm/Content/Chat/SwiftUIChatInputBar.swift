@@ -497,7 +497,7 @@ private struct InputBarPreviewWrapper: View {
                 Spacer(minLength: 0)
 
                 SwiftUIChatInputBar(state: state, actions: ChatInputBarActions())
-                    .frame(minWidth: 860)
+                    .frame(width: 860)
                     .padding(.horizontal, 20)
                     .padding(.bottom, 16)
             }

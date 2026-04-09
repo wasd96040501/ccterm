@@ -27,7 +27,7 @@ struct PermissionCardLiveGalleryView: View {
 
                 LiveInputBarPreview(plan: scenarios[selectedScenario].1)
                     .id(selectedScenario)
-                    .frame(minWidth: 860)
+                    .frame(width: 860)
                     .padding(.top, 32)
                     .padding(.horizontal, 20)
                     .padding(.bottom, 16)

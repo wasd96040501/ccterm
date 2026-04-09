@@ -1,4 +1,7 @@
-.PHONY: build release test web dmg clean
+.PHONY: build release test web dmg clean fmt fmt-check
+
+XCSTRINGS := macos/ccterm/Localizable.xcstrings
+FMT_XCSTRINGS := python3 macos/scripts/fmt-xcstrings.py
 
 build:
 	./macos/scripts/build.sh
@@ -22,6 +25,16 @@ dmg:
 		--app-drop-link 450 190 \
 		ccterm.dmg \
 		"$(APP)"
+
+fmt:
+	$(FMT_XCSTRINGS) $(XCSTRINGS)
+
+fmt-check:
+	$(FMT_XCSTRINGS) --check $(XCSTRINGS)
+	@if grep -nE '^\s*DEVELOPMENT_TEAM\s*=' macos/ccterm.xcodeproj/project.pbxproj; then \
+		echo "error: DEVELOPMENT_TEAM must live in macos/Local.xcconfig, not project.pbxproj"; \
+		exit 1; \
+	fi
 
 clean:
 	rm -rf ~/Library/Developer/Xcode/DerivedData/ccterm-*

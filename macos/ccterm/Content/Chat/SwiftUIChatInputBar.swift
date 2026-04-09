@@ -326,42 +326,32 @@ struct SwiftUIChatInputBar: View {
     // MARK: - Worktree Button
 
     private var worktreeButton: some View {
-        HStack(spacing: 0) {
-            worktreeOption(
-                title: String(localized: "Local Project"),
-                icon: "folder",
-                isSelected: !state.isWorktree
-            ) {
-                guard isWorktreeEditable else { return }
+        Menu {
+            Button {
                 state.isWorktree = false
+            } label: {
+                Label(String(localized: "Local Project"), systemImage: "folder")
+                if !state.isWorktree { Image(systemName: "checkmark") }
             }
-            worktreeOption(
-                title: String(localized: "New Worktree"),
-                icon: "point.3.filled.connected.trianglepath.dotted",
-                isSelected: state.isWorktree
-            ) {
-                guard isWorktreeEditable else { return }
+            Button {
                 state.isWorktree = true
+            } label: {
+                Label(String(localized: "New Worktree"), systemImage: "point.3.filled.connected.trianglepath.dotted")
+                if state.isWorktree { Image(systemName: "checkmark") }
             }
-        }
-        .background(Capsule().fill(Color.primary.opacity(0.06)))
-        .disabled(!isWorktreeEditable)
-    }
-
-    private func worktreeOption(title: String, icon: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        } label: {
             HStack(spacing: 4) {
-                Image(systemName: icon)
-                    .font(.system(size: 10, weight: .medium))
-                Text(title)
+                Image(systemName: state.isWorktree ? "point.3.filled.connected.trianglepath.dotted" : "folder")
+                    .font(.system(size: 11, weight: .medium))
+                Text(state.isWorktree ? String(localized: "New Worktree") : String(localized: "Local Project"))
                     .font(.system(size: 11))
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 8, weight: .medium))
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .foregroundStyle(isSelected ? .primary : .secondary)
-            .background(isSelected ? Capsule().fill(Color.accentColor.opacity(0.15)) : nil)
+            .foregroundStyle(state.isWorktree ? Color.accentColor : .secondary)
         }
         .buttonStyle(.plain)
+        .disabled(!isWorktreeEditable)
     }
 
     // MARK: - Context Ring

@@ -9,6 +9,7 @@ import { HIDDEN_TOOLS } from '../../utils/messageUtils.ts'
 import { MarkdownRenderer } from '../MarkdownRenderer/MarkdownRenderer.tsx'
 import { ToolUseRenderer } from '../ToolUseRenderer/ToolUseRenderer.tsx'
 import { ToolGroupBlock } from '../ToolGroupBlock/ToolGroupBlock.tsx'
+import { MessageActions } from '../MessageActions/MessageActions.tsx'
 
 function toolUseId(toolUse: ToolUse): string {
   return (toolUse as { id?: string }).id ?? ''
@@ -18,6 +19,7 @@ interface AssistantRowProps {
   message: Message2Assistant
   conversationId: string
   isIncremental: boolean
+  isMostRecent?: boolean
 }
 
 type RenderItem =
@@ -80,7 +82,7 @@ function buildRenderItems(blocks: Message2AssistantMessageContent[]): RenderItem
 }
 
 export const AssistantRow = memo(function AssistantRow({
-  message, conversationId, isIncremental,
+  message, conversationId, isIncremental, isMostRecent,
 }: AssistantRowProps) {
   const blocks = message.message?.content ?? []
   const items = useMemo(() => buildRenderItems(blocks), [blocks])
@@ -89,8 +91,18 @@ export const AssistantRow = memo(function AssistantRow({
 
   const fadeClass = isIncremental ? ' message-fade-in' : ''
 
+  // Extract all text content for copy button
+  const fullText = useMemo(() => {
+    return items
+      .filter((item): item is { kind: 'text'; content: string } => item.kind === 'text')
+      .map(item => item.content)
+      .join('\n\n')
+  }, [items])
+
+  const alwaysShowClass = isMostRecent ? ' message-actions--always-show' : ''
+
   return (
-    <>
+    <div className={`message-actions-wrapper${alwaysShowClass}`}>
       {items.map((item, idx) => {
         switch (item.kind) {
           case 'text':
@@ -121,6 +133,11 @@ export const AssistantRow = memo(function AssistantRow({
             )
         }
       })}
-    </>
+      <MessageActions
+        timestamp={message.timestamp ?? (message.message as any)?.timestamp}
+        align="assistant"
+        copyText={fullText || undefined}
+      />
+    </div>
   )
 })

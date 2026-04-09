@@ -130,7 +130,8 @@ html, body, #root {
 
 .chat-message--user {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  align-items: flex-end;
 }
 
 .chat-bubble--user {
@@ -142,6 +143,71 @@ html, body, #root {
   white-space: pre-wrap;
   word-break: break-word;
   line-height: 1.5;
+}
+
+/* User message inline edit */
+.user-edit-container {
+  max-width: 80%;
+  width: 100%;
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.user-edit-textarea {
+  width: 100%;
+  min-height: 40px;
+  padding: 10px 14px;
+  border: 1.5px solid #2563eb;
+  border-radius: 12px;
+  background: var(--color-bg-secondary, rgba(128, 128, 128, 0.06));
+  color: var(--color-text-primary, #000);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: none;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.user-edit-textarea:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+}
+
+.user-edit-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.user-edit-btn {
+  padding: 4px 14px;
+  border-radius: 8px;
+  border: none;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.user-edit-btn--cancel {
+  background: var(--color-hover-bg, rgba(128, 128, 128, 0.12));
+  color: var(--color-text-secondary, #666);
+}
+
+.user-edit-btn--cancel:hover {
+  background: var(--color-hover-bg-strong, rgba(128, 128, 128, 0.2));
+}
+
+.user-edit-btn--send {
+  background: #2563eb;
+  color: #fff;
+}
+
+.user-edit-btn--send:hover {
+  background: #1d4ed8;
 }
 
 .chat-message--assistant {

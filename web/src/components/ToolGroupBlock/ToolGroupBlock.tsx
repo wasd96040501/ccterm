@@ -36,7 +36,7 @@ function buildGroupLabel(toolUses: ToolUse[], allDone: boolean): string {
   }
 
   if (searchCount > 0) {
-    const noun = searchCount === 1 ? '1 file' : `${searchCount} files`
+    const noun = searchCount === 1 ? '1 pattern' : `${searchCount} patterns`
     parts.push(allDone ? `Searched ${noun}` : `Searching ${noun}`)
   }
 

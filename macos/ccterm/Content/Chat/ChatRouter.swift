@@ -200,6 +200,26 @@ final class ChatRouter {
 
     // MARK: - Private: Session Lifecycle
 
+    /// Handle edit message: stop current CLI session and start a new one with the edited text.
+    /// This ensures the model sees no prior history — like Codex's rollback-and-resend.
+    private func handleEditMessage(_ newText: String) async {
+        let sessionVM = currentSession
+        guard let handle = sessionVM.handle else {
+            // No running session — just start a new one
+            submitMessage(newText)
+            return
+        }
+
+        // Stop the current CLI session
+        await sessionService.stop(handle.sessionId)
+
+        // Detach the old handle from VM so submitMessage will go through startNewSession path
+        sessionVM.handle = nil
+
+        // Submit the edited text — will create a brand new session
+        submitMessage(newText)
+    }
+
     /// 启动新 session。分为同步 + 异步两个阶段。
     /// 新对话 VM 就地变身：赋上 handle 后从"新对话"变为"具体 session"，
     /// 缓存进 sessions[id]。用户切走时 sessionVM 仍在后台完成。
@@ -357,6 +377,12 @@ extension ChatRouter: WebViewBridgeDelegate {
             onSearchResult?(total, current)
         case .scrollStateChanged(let conversationId, let isAtBottom):
             updateScrollState(conversationId: conversationId, isAtBottom: isAtBottom)
+        case .editMessage(_, let newText):
+            // Edit = resend in current session. React already truncated the UI.
+            submitMessage(newText)
+        case .forkMessage:
+            // TODO: implement fork (create new session from this message)
+            break
         }
     }
 }

@@ -9,6 +9,8 @@ enum WebEvent {
     case ready(conversationId: String)
     case searchResult(total: Int, current: Int)
     case scrollStateChanged(conversationId: String, isAtBottom: Bool)
+    case editMessage(messageUuid: String, newText: String)
+    case forkMessage(messageUuid: String)
 }
 
 final class WebViewBridge: NSObject {
@@ -170,6 +172,15 @@ extension WebViewBridge: WKScriptMessageHandler {
             if let conversationId = body["conversationId"] as? String,
                let isAtBottom = body["isAtBottom"] as? Bool {
                 delegate?.bridge(self, didReceive: .scrollStateChanged(conversationId: conversationId, isAtBottom: isAtBottom))
+            }
+        case "editMessage":
+            if let messageUuid = body["messageUuid"] as? String,
+               let newText = body["newText"] as? String {
+                delegate?.bridge(self, didReceive: .editMessage(messageUuid: messageUuid, newText: newText))
+            }
+        case "forkMessage":
+            if let messageUuid = body["messageUuid"] as? String {
+                delegate?.bridge(self, didReceive: .forkMessage(messageUuid: messageUuid))
             }
         default:
             break

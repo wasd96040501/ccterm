@@ -24,3 +24,5 @@ export type WebEvent =
   | { type: 'textSelected'; startOffset: number; endOffset: number; selectedText: string }
   | { type: 'selectionCleared' }
   | { type: 'commentAction'; action: 'edit' | 'delete'; commentId: string; text?: string }
+  | { type: 'editMessage'; messageUuid: string; newText: string }
+  | { type: 'forkMessage'; messageUuid: string }

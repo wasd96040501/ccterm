@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useLayoutEffect } from 'react'
+import React, { useCallback, useRef, useLayoutEffect, useMemo } from 'react'
 import type { Message2 } from '../../generated/types.generated.ts'
 import { Message2Row } from '../Message2Row/Message2Row.tsx'
 import { ProcessingIndicator } from '../ProcessingIndicator/ProcessingIndicator.tsx'
@@ -95,12 +95,16 @@ export function MessageList({ conversationId, messages, incrementalUUIDs, increm
           const isIncremental = idx >= incrementalStartIndex || (
             'uuid' in msg && typeof msg.uuid === 'string' && incrementalUUIDs.has(msg.uuid)
           )
+          // Last message in the list is "most recent"
+          const isMostRecent = idx === messages.length - 1
           return (
             <Message2Row
               key={key}
               message={msg}
               conversationId={conversationId}
               isIncremental={isIncremental}
+              isMostRecent={isMostRecent}
+              messageIndex={idx}
             />
           )
         })}

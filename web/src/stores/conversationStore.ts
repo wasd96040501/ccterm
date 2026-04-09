@@ -236,6 +236,27 @@ export function setTurnActive(conversationId: string, isTurnActive: boolean, int
   }))
 }
 
+/** Truncate messages: remove the message at the given index and all messages after it. */
+export function truncateFromIndex(conversationId: string, fromIndex: number): void {
+  useStore.setState(produce((state: Store) => {
+    const conv = state.conversations.get(conversationId)
+    if (!conv || fromIndex < 0 || fromIndex >= conv.messages.length) return
+
+    // Remove from fromIndex onward
+    const removed = conv.messages.splice(fromIndex)
+
+    // Clean up uuidIndex for removed messages
+    for (const msg of removed) {
+      const uuid = (msg as any).uuid
+      if (uuid && conv.uuidIndex.has(uuid)) {
+        conv.uuidIndex.delete(uuid)
+      }
+    }
+
+    conv.incrementalStartIndex = Math.min(conv.incrementalStartIndex, conv.messages.length)
+  }))
+}
+
 export function saveScrollTop(conversationId: string, scrollTop: number): void {
   const state = useStore.getState().conversations.get(conversationId)
   if (state) {

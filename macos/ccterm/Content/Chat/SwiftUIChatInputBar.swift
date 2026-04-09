@@ -268,24 +268,6 @@ struct SwiftUIChatInputBar: View {
                 }
             }
             .buttonStyle(.plain)
-
-            // X clear button
-            if state.isPrimaryPathEditable && !state.isDirectoryUnset {
-                Button {
-                    state.selectedDirectory = nil
-                    state.additionalDirectories = []
-                    state.isWorktree = false
-                    state.isTempDir = false
-                    state.branchMonitor.stop()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 8, weight: .bold))
-                        .frame(width: 8, height: 14)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .transition(.opacity)
-            }
         }
         .hoverCapsule(staticFill: state.isDirectoryUnset ? Color.orange.opacity(0.12) : nil)
         .foregroundStyle(state.isDirectoryUnset ? .orange : .secondary)

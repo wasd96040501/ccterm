@@ -166,6 +166,11 @@ nonisolated enum MessageFilter {
             }
         }
 
+        // thinking-only → 不转发（无可见内容）
+        guard hasVisibleContent(assistantMsg) else {
+            return Result(shouldForward: false, effects: effects)
+        }
+
         return Result(shouldForward: true, effects: effects)
     }
 
@@ -249,6 +254,17 @@ nonisolated enum MessageFilter {
             return false
         }
         return s.count > planContentPrefix.count
+    }
+
+    private static func hasVisibleContent(_ assistantMsg: Message2Assistant) -> Bool {
+        guard let content = assistantMsg.message?.content else { return false }
+        return content.contains { block in
+            switch block {
+            case .text(let t): return t.text != nil && !t.text!.isEmpty
+            case .toolUse: return true
+            default: return false
+            }
+        }
     }
 
     private static let interruptedMessages: Set<String> = [

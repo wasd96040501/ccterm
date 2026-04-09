@@ -58,6 +58,17 @@ export function extractUserText(msg: Message2User): string | null {
   return null
 }
 
+const PLAN_PREFIX = 'Implement the following plan:\n\n'
+const PLAN_SUFFIX_RE = /\n\nIf you need specific details from before exiting plan mode, read the full transcript at: .+$/
+
+export function extractPlanContent(msg: Message2User): string | null {
+  if (msg.planContent) return msg.planContent
+  const text = extractUserText(msg)
+  if (!text?.startsWith(PLAN_PREFIX)) return null
+  const body = text.slice(PLAN_PREFIX.length).replace(PLAN_SUFFIX_RE, '')
+  return body || null
+}
+
 export function extractPlanTitle(content: string): string {
   for (const line of content.split('\n')) {
     const trimmed = line.trim()

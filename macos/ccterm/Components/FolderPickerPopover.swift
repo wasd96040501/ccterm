@@ -80,6 +80,19 @@ struct FolderPickerPopover: View {
         }
     }
 
+    /// Detects if `searchText` is an absolute path pointing to an existing directory not yet in the list.
+    private var detectedDirectoryURL: URL? {
+        let trimmed = searchText.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("/") || trimmed.hasPrefix("~") else { return nil }
+        let expanded = NSString(string: trimmed).expandingTildeInPath
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: expanded, isDirectory: &isDir),
+              isDir.boolValue else { return nil }
+        let url = URL(fileURLWithPath: expanded)
+        guard !folders.contains(url) else { return nil }
+        return url
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -118,9 +131,40 @@ struct FolderPickerPopover: View {
     // MARK: - Search
 
     private var searchSection: some View {
-        SearchField(text: $searchText, placeholder: String(localized: "Search folders…"))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+        VStack(spacing: 0) {
+            SearchField(text: $searchText, placeholder: String(localized: "Search folders…"))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .onSubmit {
+                    if detectedDirectoryURL != nil {
+                        addDetectedDirectory()
+                    }
+                }
+            if let url = detectedDirectoryURL {
+                Button(action: addDetectedDirectory) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.accentColor)
+                        Text("Add \"\(url.lastPathComponent)\"")
+                            .font(.system(size: 12))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        Text(url.path)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 
     // MARK: - Primary
@@ -280,6 +324,19 @@ struct FolderPickerPopover: View {
             let additional = Array(selectedAdditional.filter { $0 != primary })
             onConfirm(primary, additional)
         }
+    }
+
+    private func addDetectedDirectory() {
+        guard let url = detectedDirectoryURL else { return }
+        folders.insert(url, at: 0)
+        if mode == .multiSelect || mode == .singleAndMultiSelect {
+            selectedAdditional.insert(url)
+        }
+        if mode == .singleSelect || (mode == .singleAndMultiSelect && selectedPrimary == nil) {
+            selectedPrimary = url
+        }
+        saveFolders()
+        searchText = ""
     }
 
     private func addFolders() {

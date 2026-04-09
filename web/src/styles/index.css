@@ -70,6 +70,7 @@ html, body, #root {
 .message-list {
   --scrollbar-width: 6px;
   height: 100%;
+  overflow-x: hidden;
   overflow-y: scroll;
   overflow-anchor: auto;
   padding-top: 50px;
@@ -102,7 +103,6 @@ html, body, #root {
 .message-list-inner {
   max-width: 820px;
   margin: 0 auto;
-  overflow-x: clip;
   display: flex;
   flex-direction: column;
   gap: 16pt;

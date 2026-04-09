@@ -35,6 +35,7 @@ struct ContentView: View {
                 }
             }
         }
+        .frame(minWidth: 880)
         .toolbar(showToolbar ? .automatic : .hidden, for: .windowToolbar)
         .searchable(text: $searchText, placement: .toolbar)
         .modifier(SearchFocusedModifier(isSearchFocused: $isSearchFocused))

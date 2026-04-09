@@ -107,7 +107,11 @@ enum GitUtils {
             }
         }
 
-        return branches.sorted()
+        // Sort with main/master first, then alphabetical
+        let mainBranches: Set<String> = ["main", "master"]
+        let pinned = branches.filter { mainBranches.contains($0) }.sorted()
+        let rest = branches.filter { !mainBranches.contains($0) }.sorted()
+        return pinned + rest
     }
 
     // MARK: - Branch Switching

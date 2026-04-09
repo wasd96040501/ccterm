@@ -51,7 +51,7 @@ export const ToolUseRenderer = memo(function ToolUseRenderer({
 
   if (isToolUseBash(toolUse)) {
     const result = entry?.result as ToolUseResultObjectBash | undefined
-    return <BashBlock toolUse={toolUse} result={result} isRunning={isRunning} isError={isError} errorMessage={errorMessage} isIncremental={isIncremental} />
+    return <BashBlock toolUse={toolUse} result={result} isRunning={isRunning} isError={isError} isIncremental={isIncremental} />
   }
   if (isToolUseEdit(toolUse)) {
     const result = entry?.result as ToolUseResultObjectEdit | undefined

@@ -19,11 +19,12 @@ interface BashBlockProps {
   result: ToolUseResultObjectBash | undefined
   isRunning: boolean
   isError: boolean
+  errorMessage: string | null
   isIncremental: boolean
 }
 
 export const BashBlock = memo(function BashBlock({
-  toolUse, result, isRunning, isError, isIncremental,
+  toolUse, result, isRunning, isError, errorMessage, isIncremental,
 }: BashBlockProps) {
   const command = toolUse.input?.command ?? ''
 
@@ -41,8 +42,8 @@ export const BashBlock = memo(function BashBlock({
   const stderr = result?.stderr ?? null
 
   const mergedOutput = useMemo(() => {
-    return [stdout, stderr].filter(Boolean).join('\n')
-  }, [stdout, stderr])
+    return [stdout, stderr, errorMessage].filter(Boolean).join('\n')
+  }, [stdout, stderr, errorMessage])
 
   const commandHtml = useMemo(() => {
     try {

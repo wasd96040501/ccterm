@@ -3,17 +3,6 @@
   "strings": {
     "": {},
     " ": {},
-    "(%lld)": {},
-    "@ Select directory · ⌘Enter temporary session": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "@ 选择目录 · ⌘Enter 临时对话"
-          }
-        }
-      }
-    },
     "%@:": {},
     "%lld": {},
     "%lld min ago": {
@@ -46,54 +35,34 @@
         }
       }
     },
+    "(%lld)": {},
     "+%lld": {},
-    "⌘Enter to comment": {
+    "@ Select directory · ⌘Enter temporary session": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "⌘Enter 发送评论"
+            "value": "@ 选择目录 · ⌘Enter 临时对话"
           }
         }
       }
     },
-    "⌘Enter to deny with feedback": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "⌘Enter 拒绝并提供反馈"
-          }
-        }
-      }
-    },
-    "⌘Enter to queue": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "⌘Enter 排队发送"
-          }
-        }
-      }
-    },
-    "⌘Enter to send": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "⌘Enter 发送"
-          }
-        }
-      }
-    },
-    "⌘N": {},
     "Accept Edits": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "接受编辑"
+          }
+        }
+      }
+    },
+    "Add \"%@\"": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加 \"%@\""
           }
         }
       }
@@ -190,22 +159,22 @@
         }
       }
     },
-    "Ask before every tool use": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每次使用工具前询问"
-          }
-        }
-      }
-    },
     "Ask Permission": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "询问权限"
+          }
+        }
+      }
+    },
+    "Ask before every tool use": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每次使用工具前询问"
           }
         }
       }
@@ -302,6 +271,16 @@
         }
       }
     },
+    "CLI Starting": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CLI 启动中"
+          }
+        }
+      }
+    },
     "Cancel": {
       "localizations": {
         "zh-Hans": {
@@ -312,8 +291,6 @@
         }
       }
     },
-    "ccterm": {},
-    "claude": {},
     "Claude asked a question, but no options were provided.": {
       "localizations": {
         "zh-Hans": {
@@ -373,16 +350,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "清空上下文，自动接受所有变更"
-          }
-        }
-      }
-    },
-    "CLI Starting": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "CLI 启动中"
           }
         }
       }
@@ -453,16 +420,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "在修改前先创建计划"
-          }
-        }
-      }
-    },
-    "current": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "当前"
           }
         }
       }
@@ -647,12 +604,23 @@
         }
       }
     },
+    "Loading plan WebView...": {},
     "Loading…": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "加载中…"
+          }
+        }
+      }
+    },
+    "Local Project": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地项目"
           }
         }
       }
@@ -758,12 +726,32 @@
         }
       }
     },
+    "New Worktree": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新工作树"
+          }
+        }
+      }
+    },
     "No Archived Sessions": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "没有归档的会话"
+          }
+        }
+      }
+    },
+    "No Matching Branches": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无匹配分支"
           }
         }
       }
@@ -804,16 +792,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "无匹配"
-          }
-        }
-      }
-    },
-    "No Matching Branches": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "无匹配分支"
           }
         }
       }
@@ -900,6 +878,7 @@
         }
       }
     },
+    "Permission Card Gallery": {},
     "Pin": {
       "localizations": {
         "zh-Hans": {
@@ -956,16 +935,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "主目录"
-          }
-        }
-      }
-    },
-    "recent": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "最近"
           }
         }
       }
@@ -1040,6 +1009,7 @@
         }
       }
     },
+    "Scenario": {},
     "Search branches…": {
       "localizations": {
         "zh-Hans": {
@@ -1060,16 +1030,6 @@
         }
       }
     },
-    "Select a plugin directory": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "选择插件目录"
-          }
-        }
-      }
-    },
     "Select Directory": {
       "localizations": {
         "zh-Hans": {
@@ -1080,22 +1040,42 @@
         }
       }
     },
-    "Select folders to add": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "选择要添加的文件夹"
-          }
-        }
-      }
-    },
     "Select Path": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "选择路径"
+          }
+        }
+      }
+    },
+    "Select Working Directory": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择工作目录"
+          }
+        }
+      }
+    },
+    "Select a plugin directory": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择插件目录"
+          }
+        }
+      }
+    },
+    "Select folders to add": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择要添加的文件夹"
           }
         }
       }
@@ -1136,16 +1116,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "选择要切换到的目标分支"
-          }
-        }
-      }
-    },
-    "Select Working Directory": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "选择工作目录"
           }
         }
       }
@@ -1282,7 +1252,6 @@
         }
       }
     },
-    "worktree": {},
     "You have unsent comments": {
       "localizations": {
         "zh-Hans": {
@@ -1303,36 +1272,69 @@
         }
       }
     },
-    "Add \"%@\"": {
+    "ccterm": {},
+    "claude": {},
+    "current": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "添加 \"%@\""
+            "value": "当前"
           }
         }
       }
     },
-    "Local Project": {
+    "recent": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本地项目"
+            "value": "最近"
           }
         }
       }
     },
-    "New Worktree": {
+    "⌘Enter to comment": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "新工作树"
+            "value": "⌘Enter 发送评论"
           }
         }
       }
-    }
+    },
+    "⌘Enter to deny with feedback": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘Enter 拒绝并提供反馈"
+          }
+        }
+      }
+    },
+    "⌘Enter to queue": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘Enter 排队发送"
+          }
+        }
+      }
+    },
+    "⌘Enter to send": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘Enter 发送"
+          }
+        }
+      }
+    },
+    "⌘N": {}
   },
   "version": "1.0"
 }

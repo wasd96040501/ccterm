@@ -1,0 +1,14 @@
+name: fmt
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  fmt-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check formatting and repo hygiene
+        run: make fmt-check

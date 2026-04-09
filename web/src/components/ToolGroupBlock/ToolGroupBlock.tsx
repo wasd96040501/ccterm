@@ -50,9 +50,10 @@ export const ToolGroupBlock = memo(function ToolGroupBlock({
   const convState = conversations.get(conversationId)
 
   // Check running/error status by looking up store indexes
+  const isTurnActive = convState?.isTurnActive ?? false
   const isRunning = toolUses.some((t) => {
     return !convState?.toolResults.has(toolUseId(t))
-  })
+  }) && isTurnActive
   const isError = toolUses.some((t) => {
     return convState?.toolResults.get(toolUseId(t))?.isError ?? false
   })

@@ -1,9 +1,5 @@
 import type { Message2User } from '../generated/types.generated.ts'
 
-export const HIDDEN_TOOLS = new Set([
-  'ToolSearch', 'TodoWrite', 'ExitPlanMode', 'EnterWorktree', 'ExitWorktree',
-])
-
 const INTERRUPTED_MESSAGES = new Set([
   '[Request interrupted by user]',
   '[Request interrupted by user for tool use]',

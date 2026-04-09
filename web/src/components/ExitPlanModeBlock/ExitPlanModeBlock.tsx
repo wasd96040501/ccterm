@@ -1,29 +1,30 @@
 import React, { memo, useState } from 'react'
-import { Wrench } from 'lucide-react'
+import { FileText } from 'lucide-react'
 import { ToolBlockHeader } from '../ToolBlockHeader/ToolBlockHeader.tsx'
 import { CollapsibleMotion } from '../CollapsibleMotion/CollapsibleMotion.tsx'
 
-interface GenericToolBlockProps {
-  toolName: string
-  description: string
+interface ExitPlanModeBlockProps {
   isRunning: boolean
   isError: boolean
   errorMessage: string | null
 }
 
-export const GenericToolBlock = memo(function GenericToolBlock({
-  toolName, description, isRunning, isError, errorMessage,
-}: GenericToolBlockProps) {
-  const label = description || toolName
-  const canExpand = isError && !!errorMessage
+export const ExitPlanModeBlock = memo(function ExitPlanModeBlock({
+  isRunning, isError, errorMessage,
+}: ExitPlanModeBlockProps) {
   const [expanded, setExpanded] = useState(false)
+
+  // Accept (non-error) → don't render
+  if (!isError && !isRunning) return null
+
+  const canExpand = isError && !!errorMessage
   const handleToggle = () => { if (canExpand) setExpanded((prev) => !prev) }
 
   return (
     <div className="file-edit-block">
       <ToolBlockHeader
-        icon={<Wrench size={12} strokeWidth={1.75} />}
-        label={label}
+        icon={<FileText size={12} strokeWidth={1.75} />}
+        label="Plan"
         isRunning={isRunning}
         isError={isError}
         canExpand={canExpand}

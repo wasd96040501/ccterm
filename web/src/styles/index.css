@@ -110,6 +110,10 @@ html, body, #root {
 
 /* ===== Chat Messages ===== */
 
+.message-item:empty {
+  display: none;
+}
+
 .chat-message {
 }
 
@@ -611,6 +615,41 @@ html, body, #root {
   45%  { top: 20%;  left: 20%; }
   70%  { top: -5%;  left: 25%; }
   100% { top: 0%;   left: 10%; }
+}
+
+/* ===== AskUserQuestionBlock ===== */
+
+.ask-qa-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #818b981f;
+  border-radius: 8px;
+}
+
+.ask-qa-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ask-qa-question {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.ask-qa-answer {
+  font-size: 13px;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+}
+
+@media (prefers-color-scheme: dark) {
+  .ask-qa-list {
+    background: #1b1f26;
+  }
 }
 
 /* ===== PlanBlock ===== */

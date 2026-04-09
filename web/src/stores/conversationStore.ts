@@ -10,7 +10,7 @@ import {
   isSystemTaskProgress, isSystemTaskNotification, isSystemTurnDuration,
 } from '../generated/parsers.generated.ts'
 import type { ToolResultEntry, AgentProgressEntry } from '../types/toolIndex.ts'
-import { checkIsError, extractErrorText, extractToolUseId, HIDDEN_TOOLS } from '../utils/messageUtils.ts'
+import { checkIsError, extractErrorText, extractToolUseId } from '../utils/messageUtils.ts'
 
 const MAX_CACHED_CONVERSATIONS = 20
 
@@ -119,14 +119,15 @@ function updateIndexes(
 ): void {
   if (isMessage2User(msg)) {
     const sourceId = msg.sourceToolUseId ?? extractToolUseId(msg)
-    if (sourceId && msg.toolUseResult && typeof msg.toolUseResult === 'object') {
-      const result = msg.toolUseResult as ToolUseResultObject
-      // Skip hidden tools
-      if (HIDDEN_TOOLS.has(result._resolved_tool)) return
+    if (sourceId) {
+      const isError = checkIsError(msg)
+      const result = (msg.toolUseResult && typeof msg.toolUseResult === 'object')
+        ? msg.toolUseResult as ToolUseResultObject
+        : undefined
       toolResults.set(sourceId, {
         result,
-        isError: checkIsError(msg),
-        errorMessage: checkIsError(msg) ? extractErrorText(msg) : null,
+        isError,
+        errorMessage: isError ? extractErrorText(msg) : null,
       })
     }
     return

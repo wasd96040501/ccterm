@@ -1,9 +1,12 @@
 import React, { memo } from 'react'
-import type { ToolUse, ToolUseResultObjectBash, ToolUseResultObjectEdit, ToolUseResultObjectWrite, ToolUseResultObjectGlob, ToolUseResultObjectGrep, ToolUseResultObjectWebFetch, ToolUseResultObjectWebSearch, ToolUseResultObjectTask, ToolUseResultObjectSkill } from '../../generated/types.generated.ts'
+import type { ToolUse, ToolUseResultObjectBash, ToolUseResultObjectEdit, ToolUseResultObjectWrite, ToolUseResultObjectGlob, ToolUseResultObjectGrep, ToolUseResultObjectWebFetch, ToolUseResultObjectWebSearch, ToolUseResultObjectTask, ToolUseResultObjectSkill, ToolUseResultObjectAskUserQuestion } from '../../generated/types.generated.ts'
 import {
   isToolUseBash, isToolUseEdit, isToolUseWrite, isToolUseRead,
   isToolUseGlob, isToolUseGrep, isToolUseAgent, isToolUseTask,
   isToolUseWebFetch, isToolUseWebSearch, isToolUseSkill,
+  isToolUseAskUserQuestion, isToolUseExitPlanMode,
+  isToolUseToolSearch, isToolUseTodoWrite,
+  isToolUseEnterWorktree, isToolUseExitWorktree,
 } from '../../generated/parsers.generated.ts'
 import { useStore } from '../../stores/conversationStore.ts'
 import { BashBlock } from '../BashBlock/BashBlock.tsx'
@@ -16,6 +19,8 @@ import { AgentBlock } from '../AgentBlock/AgentBlock.tsx'
 import { WebFetchBlock } from '../WebFetchBlock/WebFetchBlock.tsx'
 import { WebSearchBlock } from '../WebSearchBlock/WebSearchBlock.tsx'
 import { GenericToolBlock } from '../GenericToolBlock/GenericToolBlock.tsx'
+import { AskUserQuestionBlock } from '../AskUserQuestionBlock/AskUserQuestionBlock.tsx'
+import { ExitPlanModeBlock } from '../ExitPlanModeBlock/ExitPlanModeBlock.tsx'
 
 function toolUseId(toolUse: ToolUse): string {
   return (toolUse as { id?: string }).id ?? ''
@@ -37,7 +42,10 @@ export const ToolUseRenderer = memo(function ToolUseRenderer({
   const agentEntry = useStore((s) =>
     s.conversations.get(conversationId)?.agentProgress.get(id)
   )
-  const isRunning = entry === undefined
+  const isTurnActive = useStore((s) =>
+    s.conversations.get(conversationId)?.isTurnActive ?? false
+  )
+  const isRunning = entry === undefined && isTurnActive
   const isError = entry?.isError ?? false
   const errorMessage = entry?.errorMessage ?? null
 
@@ -80,6 +88,19 @@ export const ToolUseRenderer = memo(function ToolUseRenderer({
     const result = entry?.result as ToolUseResultObjectSkill | undefined
     const name = toolUse.input?.skill ?? 'unknown'
     return <GenericToolBlock toolName="Skill" description={`Skill(${name})`} isRunning={isRunning} isError={isError} errorMessage={errorMessage} />
+  }
+  if (isToolUseAskUserQuestion(toolUse)) {
+    const result = entry?.result as ToolUseResultObjectAskUserQuestion | undefined
+    return <AskUserQuestionBlock toolUse={toolUse} result={result} isRunning={isRunning} isError={isError} errorMessage={errorMessage} />
+  }
+  if (isToolUseExitPlanMode(toolUse)) {
+    return <ExitPlanModeBlock isRunning={isRunning} isError={isError} errorMessage={errorMessage} />
+  }
+
+  // Tools that should not render
+  if (isToolUseToolSearch(toolUse) || isToolUseTodoWrite(toolUse) ||
+      isToolUseEnterWorktree(toolUse) || isToolUseExitWorktree(toolUse)) {
+    return null
   }
 
   // Default: generic

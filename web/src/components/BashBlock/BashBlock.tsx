@@ -42,8 +42,8 @@ export const BashBlock = memo(function BashBlock({
   const stderr = result?.stderr ?? null
 
   const mergedOutput = useMemo(() => {
-    return [stdout, stderr].filter(Boolean).join('\n')
-  }, [stdout, stderr])
+    return [stdout, stderr, errorMessage].filter(Boolean).join('\n')
+  }, [stdout, stderr, errorMessage])
 
   const commandHtml = useMemo(() => {
     try {
@@ -68,13 +68,9 @@ export const BashBlock = memo(function BashBlock({
       <CollapsibleMotion open={expanded}>
         <div className="file-edit-clip">
           <div className="file-edit-body">
-            {isError && errorMessage ? (
-              <div className="file-edit-error-content"><pre className="bash-stdout">{renderAnsi(errorMessage)}</pre></div>
-            ) : (
-              <div className="bash-output">
-                <pre className="bash-stdout"><span className="bash-command-line"><span className="bash-prompt">$ </span><code dangerouslySetInnerHTML={{ __html: commandHtml }} /></span>{mergedOutput && '\n'}{mergedOutput && renderAnsi(mergedOutput)}</pre>
-              </div>
-            )}
+            <div className="bash-output">
+              <pre className="bash-stdout"><span className="bash-command-line"><span className="bash-prompt">$ </span><code dangerouslySetInnerHTML={{ __html: commandHtml }} /></span>{mergedOutput && '\n'}{mergedOutput && renderAnsi(mergedOutput)}</pre>
+            </div>
           </div>
         </div>
       </CollapsibleMotion>

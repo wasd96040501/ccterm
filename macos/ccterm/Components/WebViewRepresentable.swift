@@ -48,14 +48,14 @@ final class WebViewContainerView: NSView {
         self.filterToolbarHits = filterToolbarHits
         super.init(frame: .zero)
 
-        webView.translatesAutoresizingMaskIntoConstraints = false
+        // Use autoresizing mask instead of Auto Layout constraints to keep
+        // WKWebView out of the constraint update pass. This prevents a constraint
+        // recursion crash when .ignoresSafeArea is used inside NavigationSplitView:
+        // _NSSplitViewItemViewWrapper updateConstraints → NSHostingView KVO
+        // invalidateSafeAreaInsets → setNeedsUpdateConstraints → infinite loop.
+        webView.autoresizingMask = [.width, .height]
+        webView.frame = bounds
         addSubview(webView)
-        NSLayoutConstraint.activate([
-            webView.topAnchor.constraint(equalTo: topAnchor),
-            webView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            webView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            webView.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
     }
 
     @available(*, unavailable)

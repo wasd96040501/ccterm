@@ -6,7 +6,7 @@ import {
   isResultSuccess, isResultErrorDuringExecution,
   isSystemTurnDuration,
 } from '../../generated/parsers.generated.ts'
-import { extractUserText, extractPlanTitle, timestampMs } from '../../utils/messageUtils.ts'
+import { extractUserText, extractPlanContent, extractPlanTitle, timestampMs } from '../../utils/messageUtils.ts'
 import { AssistantRow } from '../AssistantRow/AssistantRow.tsx'
 import { PlanBlock } from '../PlanBlock/PlanBlock.tsx'
 import { TurnResultDivider } from '../TurnResultDivider/TurnResultDivider.tsx'
@@ -47,12 +47,13 @@ export const Message2Row = memo(function Message2Row({
     const fadeClass = isIncremental ? ' message-fade-in' : ''
 
     // plan
-    if (message.planContent) {
+    const planContent = extractPlanContent(message)
+    if (planContent) {
       return (
         <div className={`chat-message chat-message--assistant message-item${fadeClass}`}>
           <PlanBlock
-            title={extractPlanTitle(message.planContent)}
-            content={message.planContent}
+            title={extractPlanTitle(planContent)}
+            content={planContent}
           />
         </div>
       )

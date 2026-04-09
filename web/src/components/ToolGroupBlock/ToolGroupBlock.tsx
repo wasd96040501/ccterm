@@ -16,7 +16,7 @@ interface ToolGroupBlockProps {
   conversationId: string
 }
 
-function buildGroupLabel(toolUses: ToolUse[], conversationId: string, conversations: any): string {
+function buildGroupLabel(toolUses: ToolUse[], allDone: boolean): string {
   let readCount = 0
   let searchCount = 0
 
@@ -32,12 +32,12 @@ function buildGroupLabel(toolUses: ToolUse[], conversationId: string, conversati
 
   if (readCount > 0) {
     const noun = readCount === 1 ? '1 file' : `${readCount} files`
-    parts.push(`Read ${noun}`)
+    parts.push(allDone ? `Read ${noun}` : `Reading ${noun}`)
   }
 
   if (searchCount > 0) {
     const noun = searchCount === 1 ? '1 file' : `${searchCount} files`
-    parts.push(`Search ${noun}`)
+    parts.push(allDone ? `Searched ${noun}` : `Searching ${noun}`)
   }
 
   return parts.join(', ')
@@ -51,9 +51,8 @@ export const ToolGroupBlock = memo(function ToolGroupBlock({
 
   // Check running/error status by looking up store indexes
   const isTurnActive = convState?.isTurnActive ?? false
-  const isRunning = toolUses.some((t) => {
-    return !convState?.toolResults.has(toolUseId(t))
-  }) && isTurnActive
+  const allDone = toolUses.every((t) => convState?.toolResults.has(toolUseId(t)))
+  const isRunning = !allDone && isTurnActive
   const isError = toolUses.some((t) => {
     return convState?.toolResults.get(toolUseId(t))?.isError ?? false
   })
@@ -65,7 +64,7 @@ export const ToolGroupBlock = memo(function ToolGroupBlock({
     <div className="file-edit-block">
       <ToolBlockHeader
         icon={<FileSearch size={12} strokeWidth={1.75} />}
-        label={buildGroupLabel(toolUses, conversationId, conversations)}
+        label={buildGroupLabel(toolUses, allDone)}
         isRunning={isRunning}
         isError={isError}
         canExpand={true}

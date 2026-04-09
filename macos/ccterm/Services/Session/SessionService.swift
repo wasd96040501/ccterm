@@ -95,6 +95,31 @@ class SessionService {
         return url
     }()
 
+    /// Generates a worktree name: `<4-hex>+<project-name>`.
+    private static func generateWorktreeName(for path: String) -> String {
+        let projectName = URL(fileURLWithPath: path).lastPathComponent
+        let hex = String(format: "%04x", UInt16.random(in: 0...0xFFFF))
+        return "\(hex)/\(projectName)"
+    }
+
+    /// Creates a worktree directory at `.claude/worktrees/<hash>/<project>` under the given repo path.
+    /// The worktree is created in detached HEAD state (no new branch).
+    /// Returns the worktree directory path on success, or `nil` on failure.
+    private static func createWorktreeDirectory(repoPath: String) -> String? {
+        let name = generateWorktreeName(for: repoPath)
+        let worktreesBase = (repoPath as NSString).appendingPathComponent(".claude/worktrees")
+        let worktreePath = (worktreesBase as NSString).appendingPathComponent(name)
+        let parentDir = (worktreePath as NSString).deletingLastPathComponent
+
+        // Ensure parent directory exists (e.g. .claude/worktrees/ab12/)
+        try? FileManager.default.createDirectory(atPath: parentDir, withIntermediateDirectories: true)
+
+        guard GitUtils.createDetachedWorktree(repoPath: repoPath, worktreePath: worktreePath) else {
+            return nil
+        }
+        return worktreePath
+    }
+
     /// SessionHandle 缓存。key = sessionId，identity stable。
     private var handles: [String: SessionHandle] = [:]
 
@@ -223,13 +248,23 @@ class SessionService {
         // 创建 AgentSDK.Session
         // 读取用户自定义 CLI 命令前缀
         let customCLICommand = UserDefaults.standard.string(forKey: "customCLICommand")
+
+        // Worktree: create directory ourselves for <hash>/<project> naming, then pass as workingDirectory
+        var effectivePath = config.path
+        if !isResume && config.isWorktree {
+            if let wtPath = Self.createWorktreeDirectory(repoPath: config.path) {
+                effectivePath = wtPath
+            }
+            // If creation fails, fall back to original path (session will run without worktree)
+        }
+
         let agentConfig = SessionConfiguration(
-            workingDirectory: URL(fileURLWithPath: config.path),
+            workingDirectory: URL(fileURLWithPath: effectivePath),
             model: config.model,
             permissionMode: config.permissionMode.toSDK(),
             sessionId: isResume ? nil : resolvedId,
             resume: isResume ? resolvedId : nil,
-            worktree: (!isResume && config.isWorktree) ? "" : nil,
+            worktree: nil,
             effort: config.effort,
             addDirs: config.additionalDirs ?? [],
             plugins: config.pluginDirs ?? [],

@@ -326,20 +326,42 @@ struct SwiftUIChatInputBar: View {
     // MARK: - Worktree Button
 
     private var worktreeButton: some View {
-        Button {
-            guard isWorktreeEditable else { return }
-            state.isWorktree.toggle()
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "point.3.filled.connected.trianglepath.dotted")
-                    .font(.system(size: 12, weight: .medium))
-                Text("worktree")
-                    .font(.system(size: 12))
+        HStack(spacing: 0) {
+            worktreeOption(
+                title: String(localized: "Local Project"),
+                icon: "folder",
+                isSelected: !state.isWorktree
+            ) {
+                guard isWorktreeEditable else { return }
+                state.isWorktree = false
             }
-            .foregroundStyle(state.isWorktree ? Color.accentColor : .secondary)
+            worktreeOption(
+                title: String(localized: "New Worktree"),
+                icon: "point.3.filled.connected.trianglepath.dotted",
+                isSelected: state.isWorktree
+            ) {
+                guard isWorktreeEditable else { return }
+                state.isWorktree = true
+            }
         }
-        .buttonStyle(HoverCapsuleStyle())
+        .background(Capsule().fill(Color.primary.opacity(0.06)))
         .disabled(!isWorktreeEditable)
+    }
+
+    private func worktreeOption(title: String, icon: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .medium))
+                Text(title)
+                    .font(.system(size: 11))
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .foregroundStyle(isSelected ? .primary : .secondary)
+            .background(isSelected ? Capsule().fill(Color.accentColor.opacity(0.15)) : nil)
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Context Ring

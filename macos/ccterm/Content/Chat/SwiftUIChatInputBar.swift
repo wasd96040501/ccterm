@@ -326,19 +326,31 @@ struct SwiftUIChatInputBar: View {
     // MARK: - Worktree Button
 
     private var worktreeButton: some View {
-        Button {
-            guard isWorktreeEditable else { return }
-            state.isWorktree.toggle()
+        Menu {
+            Button {
+                state.isWorktree = false
+            } label: {
+                Label(String(localized: "Local Project"), systemImage: "folder")
+                if !state.isWorktree { Image(systemName: "checkmark") }
+            }
+            Button {
+                state.isWorktree = true
+            } label: {
+                Label(String(localized: "New Worktree"), systemImage: "point.3.filled.connected.trianglepath.dotted")
+                if state.isWorktree { Image(systemName: "checkmark") }
+            }
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: "point.3.filled.connected.trianglepath.dotted")
-                    .font(.system(size: 12, weight: .medium))
-                Text("worktree")
-                    .font(.system(size: 12))
+                Image(systemName: state.isWorktree ? "point.3.filled.connected.trianglepath.dotted" : "folder")
+                    .font(.system(size: 11, weight: .medium))
+                Text(state.isWorktree ? String(localized: "New Worktree") : String(localized: "Local Project"))
+                    .font(.system(size: 11))
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 8, weight: .medium))
             }
             .foregroundStyle(state.isWorktree ? Color.accentColor : .secondary)
         }
-        .buttonStyle(HoverCapsuleStyle())
+        .buttonStyle(.plain)
         .disabled(!isWorktreeEditable)
     }
 

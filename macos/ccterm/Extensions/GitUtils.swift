@@ -136,6 +136,24 @@ enum GitUtils {
 
     // MARK: - Worktree Management
 
+    /// Creates a git worktree at the specified path in detached HEAD state (no new branch).
+    /// Returns `true` if the worktree was created successfully.
+    @discardableResult
+    static func createDetachedWorktree(repoPath: String, worktreePath: String) -> Bool {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", repoPath, "worktree", "add", "--detach", worktreePath]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus == 0
+        } catch {
+            return false
+        }
+    }
+
     /// Creates a git worktree at the specified path with a new branch based on the given base branch.
     /// Returns `true` if the worktree was created successfully.
     @discardableResult

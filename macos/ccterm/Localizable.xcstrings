@@ -1312,6 +1312,26 @@
           }
         }
       }
+    },
+    "Local Project": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地项目"
+          }
+        }
+      }
+    },
+    "New Worktree": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新工作树"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

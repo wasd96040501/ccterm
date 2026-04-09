@@ -33,7 +33,7 @@
 }
 
 /* Code block wrapper: background container only, no clipping */
-.markdown-body .pre-scroll-wrapper {
+.markdown-body .code-block-wrapper {
   border-radius: 8px;
 }
 

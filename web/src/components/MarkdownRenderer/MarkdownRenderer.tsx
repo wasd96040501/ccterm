@@ -5,6 +5,7 @@ import remarkMath from 'remark-math'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeKatex from 'rehype-katex'
 import 'katex/dist/katex.min.css'
+import { CodeBlock } from '../CodeBlock/CodeBlock'
 
 interface MarkdownRendererProps {
   content: string
@@ -20,9 +21,7 @@ const markdownComponents = {
     </div>
   ),
   pre: ({ children, ...props }: React.ComponentPropsWithoutRef<'pre'>) => (
-    <div className="pre-scroll-wrapper">
-      <pre {...props}>{children}</pre>
-    </div>
+    <CodeBlock {...props}>{children}</CodeBlock>
   ),
 }
 

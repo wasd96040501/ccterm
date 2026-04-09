@@ -1,0 +1,69 @@
+/* ===== Code Block with Copy Button ===== */
+
+.code-block-wrapper {
+  position: relative;
+  border-radius: 8px;
+}
+
+.code-block-header {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 1;
+}
+
+.code-block-wrapper:hover .code-block-header {
+  opacity: 1;
+}
+
+/* Keep header visible while in "copied" state */
+.code-block-header:has(.code-block-copy-btn:disabled) {
+  opacity: 1;
+}
+
+.code-block-lang {
+  font-size: 11px;
+  line-height: 1;
+  color: var(--color-text-tertiary, rgba(128, 128, 128, 0.6));
+  user-select: none;
+}
+
+.code-block-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background: var(--color-hover-bg, rgba(128, 128, 128, 0.12));
+  color: var(--color-text-tertiary, rgba(128, 128, 128, 0.6));
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.code-block-copy-btn:hover {
+  background: var(--color-hover-bg-strong, rgba(128, 128, 128, 0.2));
+  color: var(--color-text-secondary, rgba(128, 128, 128, 0.9));
+}
+
+.code-block-copy-btn:disabled {
+  cursor: default;
+  color: var(--color-text-secondary, rgba(128, 128, 128, 0.9));
+}
+
+.code-block-copy-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Ensure pre inside wrapper inherits existing styles properly */
+.code-block-wrapper > pre {
+  margin: 0;
+}

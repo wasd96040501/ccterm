@@ -293,10 +293,12 @@ struct SwiftUIChatInputBar: View {
 
     private func branchButton(branch: String) -> some View {
         Button {
-            copyToClipboard(branch, target: .branch)
+            if !state.isWorktree {
+                showBranchPicker = true
+            }
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: copiedFeedback == .branch ? "checkmark" : "arrow.triangle.branch")
+                Image(systemName: "arrow.triangle.branch")
                     .font(.system(size: 12, weight: .medium))
                     .frame(width: 14, height: 14)
                 Text(branch)
@@ -306,6 +308,19 @@ struct SwiftUIChatInputBar: View {
             .foregroundStyle(.secondary)
         }
         .buttonStyle(HoverCapsuleStyle())
+        .popover(isPresented: $showBranchPicker) {
+            BranchPickerView(
+                branches: GitUtils.listBranches(at: state.selectedDirectory ?? ""),
+                currentBranch: displayBranch,
+                onSelect: { selectedBranch in
+                    guard let dir = state.selectedDirectory else { return }
+                    if GitUtils.switchBranch(at: dir, branch: selectedBranch) {
+                        state.branchMonitor.monitor(directory: dir)
+                    }
+                    showBranchPicker = false
+                }
+            )
+        }
     }
 
     // MARK: - Worktree Button

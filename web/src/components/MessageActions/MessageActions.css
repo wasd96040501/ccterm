@@ -12,10 +12,11 @@
 }
 
 .message-actions {
+  position: absolute;
+  top: 0;
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 2px 4px;
+  flex-direction: row;
+  align-items: flex-start;
   font-size: 11px;
   color: var(--color-text-tertiary, rgba(128, 128, 128, 0.6));
   user-select: none;
@@ -23,18 +24,30 @@
   transition: opacity 0.2s ease;
 }
 
+/* ZWS matching message first-line line-height for vertical alignment */
+.message-actions::before {
+  content: '\200B';
+  font-size: 14px;
+  line-height: 1.5;
+  width: 0;
+  overflow: hidden;
+}
+
 .message-actions--user {
-  justify-content: flex-end;
+  right: 0;
+  transform: translateX(100%);
+  padding-top: 10px;
+  padding-left: 8px;
 }
 
 .message-actions--assistant {
-  justify-content: flex-start;
+  left: 0;
+  transform: translateX(-100%);
+  padding-right: 8px;
 }
 
 .message-actions__time {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  font-size: 11px;
+  display: none;
 }
 
 .message-actions__buttons {

@@ -34,6 +34,9 @@ final class ChatRouter {
 
     private var sessions: [String: ChatSessionViewModel] = [:]
 
+    /// 尚未启动的新对话 VM 缓存。启动后清空，不持久化。
+    private var pendingNewConversation: ChatSessionViewModel?
+
     // MARK: - Bridge Access
 
     private var bridge: WebViewBridge { chatContentView.bridge }
@@ -119,11 +122,17 @@ final class ChatRouter {
         }
     }
 
-    /// 激活新对话。已经是新对话时 no-op。
+    /// 激活新对话。已经是新对话时 no-op。缓存 VM 以便切走再切回时保留目录等状态。
     func activateNewConversation() {
         guard currentSession.handle != nil else { return }
         currentSession.animationsDisabled = true
-        currentSession = makeNewConversation()
+        if let pending = pendingNewConversation, pending.handle == nil {
+            currentSession = pending
+        } else {
+            let vm = makeNewConversation()
+            pendingNewConversation = vm
+            currentSession = vm
+        }
         currentSession.animationsDisabled = true
         bridge.switchConversation(currentSession.sessionId)
         DispatchQueue.main.async { [currentSession] in
@@ -249,6 +258,9 @@ final class ChatRouter {
         sessionVM.isTempDir = isTempDir
         sessionVM.handle = handle  // barState → .starting（handle.status == .starting）
         sessions[handle.sessionId] = sessionVM  // SidebarVM 立即感知
+        if pendingNewConversation === sessionVM {
+            pendingNewConversation = nil
+        }
 
         // ── 异步阶段 ──
         do {

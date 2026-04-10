@@ -111,6 +111,7 @@
 				2B3DA4E02F5701A1000987D3 /* Sources */,
 				2B3DA4E12F5701A1000987D3 /* Frameworks */,
 				2B3DA4E22F5701A1000987D3 /* Resources */,
+				EA5A16F22F5A000000DD3C68 /* Copy Web to Bundle */,
 			);
 			buildRules = (
 			);
@@ -259,7 +260,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "export PATH=\"$HOME/.bun/bin:$PATH\"\ncd \"$SRCROOT/../web\"\nbun install --frozen-lockfile\nbun run build\ncp dist/*.js dist/*.css dist/*.html \"$SRCROOT/ccterm/Resources/\"\nmkdir -p \"$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\"\ncp dist/*.js dist/*.css dist/*.html \"$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/\"\n";
+			shellScript = "export PATH=\"$HOME/.bun/bin:$PATH\"\ncd \"$SRCROOT/../web\"\nbun install --frozen-lockfile\nbun run build\ncp dist/*.js dist/*.css dist/*.html \"$SRCROOT/ccterm/Resources/\"\n";
 		};
 		EA5A16F12F5A000000BB2B57 /* Build fzf */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -274,6 +275,20 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
 			shellScript = "export PATH=\"/usr/local/go/bin:/opt/homebrew/bin:$HOME/go/bin:$PATH\"\nif ! command -v go &>/dev/null; then\n  echo \"error: Go is required. Install from https://go.dev/dl/\"\n  exit 1\nfi\nFZF_DIR=\"$SRCROOT/../thirdparty/fzf\"\nFZF_BIN=\"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Resources/fzf\"\nif [ ! -f \"$FZF_BIN\" ]; then\n  if [ ! -f \"$FZF_DIR/go.mod\" ]; then\n    git -C \"$SRCROOT/..\" submodule update --init thirdparty/fzf\n  fi\n  cd \"$FZF_DIR\"\n  CGO_ENABLED=0 go build -trimpath -o \"$FZF_BIN\" .\nfi\nif [ -n \"$EXPANDED_CODE_SIGN_IDENTITY\" ]; then\n  codesign --force --options runtime --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" \"$FZF_BIN\"\nfi\n";
+		};
+		EA5A16F22F5A000000DD3C68 /* Copy Web to Bundle */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Copy Web to Bundle";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "cp \"$SRCROOT/ccterm/Resources/\"*.js \"$SRCROOT/ccterm/Resources/\"*.css \"$SRCROOT/ccterm/Resources/\"*-react.html \"$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

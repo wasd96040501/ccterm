@@ -60,10 +60,12 @@ BUILD_SETTINGS=$(xcodebuild \
   -showBuildSettings 2>/dev/null || true)
 
 if [ -n "$BUILD_SETTINGS" ]; then
-  _DIR=$(echo "$BUILD_SETTINGS" | grep -m1 '^\s*BUILT_PRODUCTS_DIR' | sed 's/.*= //')
-  _NAME=$(echo "$BUILD_SETTINGS" | grep -m1 '^\s*FULL_PRODUCT_NAME' | sed 's/.*= //')
+  _DIR=$(echo "$BUILD_SETTINGS" | grep -m1 '^\s*BUILT_PRODUCTS_DIR' | sed 's/.*= //' || true)
+  _NAME=$(echo "$BUILD_SETTINGS" | grep -m1 '^\s*FULL_PRODUCT_NAME' | sed 's/.*= //' || true)
   if [ -n "$_DIR" ] && [ -n "$_NAME" ]; then
     PRODUCT_APP="$_DIR/$_NAME"
+  else
+    echo "Warning: could not determine product path (showBuildSettings incomplete)"
   fi
 fi
 

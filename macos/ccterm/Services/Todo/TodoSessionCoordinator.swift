@@ -77,7 +77,7 @@ final class TodoSessionCoordinator {
 
                 let addDirs = Array(worktreePaths.dropFirst())
                 let config = SessionConfig(
-                    path: primaryPath,
+                    originPath: primaryPath,
                     isWorktree: false, // worktree already created manually
                     pluginDirs: metadata.pluginDirs,
                     additionalDirs: addDirs.isEmpty ? nil : addDirs,
@@ -178,7 +178,7 @@ final class TodoSessionCoordinator {
 
         let cwd = items.first?.metadata?.paths.first ?? FileManager.default.currentDirectoryPath
         let config = SessionConfig(
-            path: cwd,
+            originPath: cwd,
             isWorktree: false,
             pluginDirs: nil,
             additionalDirs: nil,

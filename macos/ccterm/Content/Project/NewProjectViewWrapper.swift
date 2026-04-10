@@ -107,7 +107,7 @@ struct NewProjectViewWrapper: View {
 
         let addDirs = folders.dropFirst().map(\.path)
         let session = chatRouter.currentSession
-        session.selectedDirectory = primary.path
+        session.originPath = primary.path
         session.isWorktree = primary.isWorktree
         session.additionalDirectories = addDirs
         chatRouter.submitMessage(text)

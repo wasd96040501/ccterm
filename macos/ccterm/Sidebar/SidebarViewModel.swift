@@ -173,7 +173,7 @@ final class SidebarViewModel {
         let sessions: [SidebarSession] = records.map { record in
             let handle = sessionService.handle(for: record.sessionId)
             let isRunning = handle?.status.isActive ?? false
-            let branch = handle?.branch ?? gitBranchService.branch(for: record.cwd ?? "")
+            let branch = gitBranchService.branch(for: record.cwd ?? "")
             let isWorktree = handle?.isWorktree ?? record.isWorktree
             return SidebarSession(
                 id: record.sessionId,
@@ -228,10 +228,9 @@ final class SidebarViewModel {
 
                 await withCheckedContinuation { continuation in
                     withObservationTracking {
-                        // 触摸所有活跃 handle 的 status + branch（unread 通过事件流驱动）
+                        // 触摸所有活跃 handle 的 status（unread 通过事件流驱动）
                         for (_, handle) in self.sessionService.allHandles {
                             _ = handle.status
-                            _ = handle.branch
                             _ = handle.isWorktree
                         }
                         // 触摸 GitBranchService

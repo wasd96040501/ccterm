@@ -5,10 +5,12 @@ import AgentSDK
 
 /// 启动会话所需的配置。从调用侧传入，不持久化。
 struct SessionConfig {
-    /// 传给 CLI 的路径。普通会话为工作目录，worktree 会话为原始仓库路径。
-    let path: String
-    /// 是否创建 worktree。true 时 CLI 基于 path 创建 worktree，实际 cwd 从 sessionInit 返回。
+    /// 用户选的原始目录。展示用，worktree 会话也保留原始仓库路径。
+    let originPath: String
+    /// 是否创建 worktree。true 时基于 originPath 创建 worktree，实际 cwd 从 sessionInit 返回。
     let isWorktree: Bool
+    /// worktree 创建时基于的分支。nil 表示使用当前分支。
+    let worktreeBaseBranch: String?
     /// MCP 插件目录。
     let pluginDirs: [String]?
     /// 额外挂载的目录（多目录模式）。
@@ -21,9 +23,10 @@ struct SessionConfig {
     let effort: AgentSDK.Effort?
     let isTempDir: Bool
 
-    init(path: String, isWorktree: Bool, pluginDirs: [String]?, additionalDirs: [String]?, permissionMode: PermissionMode, model: String? = nil, effort: AgentSDK.Effort? = nil, isTempDir: Bool = false) {
-        self.path = path
+    init(originPath: String, isWorktree: Bool, worktreeBaseBranch: String? = nil, pluginDirs: [String]?, additionalDirs: [String]?, permissionMode: PermissionMode, model: String? = nil, effort: AgentSDK.Effort? = nil, isTempDir: Bool = false) {
+        self.originPath = originPath
         self.isWorktree = isWorktree
+        self.worktreeBaseBranch = worktreeBaseBranch
         self.pluginDirs = pluginDirs
         self.additionalDirs = additionalDirs
         self.permissionMode = permissionMode
@@ -103,9 +106,9 @@ class SessionService {
     }
 
     /// Creates a worktree directory at `.claude/worktrees/<hash>/<project>` under the given repo path.
-    /// The worktree is created in detached HEAD state (no new branch).
+    /// Creates a new branch `wt-<hex>` based on `baseBranch` (defaults to current branch or HEAD).
     /// Returns the worktree directory path on success, or `nil` on failure.
-    private static func createWorktreeDirectory(repoPath: String) -> String? {
+    private static func createWorktreeDirectory(repoPath: String, baseBranch: String?) -> String? {
         let name = generateWorktreeName(for: repoPath)
         let worktreesBase = (repoPath as NSString).appendingPathComponent(".claude/worktrees")
         let worktreePath = (worktreesBase as NSString).appendingPathComponent(name)
@@ -114,7 +117,10 @@ class SessionService {
         // Ensure parent directory exists (e.g. .claude/worktrees/ab12/)
         try? FileManager.default.createDirectory(atPath: parentDir, withIntermediateDirectories: true)
 
-        guard GitUtils.createDetachedWorktree(repoPath: repoPath, worktreePath: worktreePath) else {
+        let branchName = "wt-\(String(format: "%04x", UInt16.random(in: 0...0xFFFF)))"
+        let resolvedBase = baseBranch ?? GitUtils.currentBranch(at: repoPath) ?? "HEAD"
+
+        guard GitUtils.createWorktree(repoPath: repoPath, worktreePath: worktreePath, branch: branchName, baseBranch: resolvedBase) else {
             return nil
         }
         return worktreePath
@@ -162,7 +168,7 @@ class SessionService {
             sessionId: sessionId,
             title: title,
             isWorktree: config.isWorktree,
-            originPath: config.path,
+            originPath: config.originPath,
             createdAt: now,
             lastActiveAt: now,
             status: .pending,
@@ -225,7 +231,7 @@ class SessionService {
                 id: UUID(),
                 sessionId: resolvedId,
                 isWorktree: config.isWorktree,
-                originPath: config.path,
+                originPath: config.originPath,
                 createdAt: now,
                 lastActiveAt: now,
                 status: .pending,
@@ -249,17 +255,20 @@ class SessionService {
         // 读取用户自定义 CLI 命令前缀
         let customCLICommand = UserDefaults.standard.string(forKey: "customCLICommand")
 
-        // Worktree: create directory ourselves for <hash>/<project> naming, then pass as workingDirectory
-        var effectivePath = config.path
-        if !isResume && config.isWorktree {
-            if let wtPath = Self.createWorktreeDirectory(repoPath: config.path) {
-                effectivePath = wtPath
-            }
-            // If creation fails, fall back to original path (session will run without worktree)
+        // cwd = 传给 CLI 的 workingDirectory
+        // resume → record.cwd（上次实际工作目录）
+        // 新建 + worktree → 创建 worktree 目录
+        // 新建 → originPath
+        var cwd = config.originPath
+        if isResume, let recordCwd = repository.find(resolvedId)?.cwd {
+            cwd = recordCwd
+        } else if config.isWorktree, let wtPath = Self.createWorktreeDirectory(repoPath: config.originPath, baseBranch: config.worktreeBaseBranch) {
+            cwd = wtPath
         }
+        NSLog("[SessionService] start() sessionId=%@ cwd=%@", resolvedId, cwd)
 
         let agentConfig = SessionConfiguration(
-            workingDirectory: URL(fileURLWithPath: effectivePath),
+            workingDirectory: URL(fileURLWithPath: cwd),
             model: config.model,
             permissionMode: config.permissionMode.toSDK(),
             sessionId: isResume ? nil : resolvedId,

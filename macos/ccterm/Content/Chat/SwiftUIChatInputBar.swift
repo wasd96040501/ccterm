@@ -223,7 +223,7 @@ struct SwiftUIChatInputBar: View {
         .animation(.smooth(duration: 0.25), value: displayBranch)
         .animation(.smooth(duration: 0.25), value: showWorktreeButton)
         .animation(.smooth(duration: 0.25), value: state.contextUsedPercent != nil)
-        .onChange(of: state.selectedDirectory) { _, newDir in
+        .onChange(of: state.cwd) { _, newDir in
             if let dir = newDir {
                 state.branchMonitor.monitor(directory: dir)
             } else {
@@ -232,9 +232,12 @@ struct SwiftUIChatInputBar: View {
         }
     }
 
-    /// Branch to display: prefer monitor's branch (live), fall back to state.branch (from SessionHandle).
+    /// Branch to display: worktree 未启动时展示用户选的 baseBranch，否则展示 monitor 实时值。
     private var displayBranch: String? {
-        state.branchMonitor.branch ?? state.branch
+        if state.isWorktree && state.barState == .notStarted, let base = state.worktreeBaseBranch {
+            return base
+        }
+        return state.branchMonitor.branch
     }
 
     // MARK: - Directory Button
@@ -248,7 +251,7 @@ struct SwiftUIChatInputBar: View {
                     showFolderPicker = true
                 } else if state.isAdditionalPathEditable {
                     showFolderPicker = true
-                } else if let dir = state.selectedDirectory {
+                } else if let dir = state.originPath {
                     copyToClipboard(dir, target: .path)
                 }
             } label: {
@@ -259,7 +262,7 @@ struct SwiftUIChatInputBar: View {
                     if state.isDirectoryUnset {
                         Text("Select Working Directory")
                             .font(.system(size: 12, weight: .medium))
-                    } else if let dir = state.selectedDirectory {
+                    } else if let dir = state.originPath {
                         Text(state.isTempDir ? String(localized: "Temporary Session") : truncatedPath(dir))
                             .font(.system(size: 12))
                             .lineLimit(1)
@@ -282,12 +285,12 @@ struct SwiftUIChatInputBar: View {
                 description: String(localized: "Select primary directory and additional directories"),
                 userDefaultsKey: "folderPickerRecent",
                 primaryReadOnly: !state.isPrimaryPathEditable,
-                initialPrimary: state.selectedDirectory.map { URL(fileURLWithPath: $0) },
+                initialPrimary: state.originPath.map { URL(fileURLWithPath: $0) },
                 initialAdditional: Set(state.additionalDirectories.map { URL(fileURLWithPath: $0) })
             ) { primary, additional in
                 showFolderPicker = false
                 guard let primary else { return }
-                state.selectedDirectory = primary.path
+                state.originPath = primary.path
                 state.additionalDirectories = additional.map(\.path)
                 state.branchMonitor.monitor(directory: primary.path)
             }
@@ -298,9 +301,7 @@ struct SwiftUIChatInputBar: View {
 
     private func branchButton(branch: String) -> some View {
         Button {
-            if !state.isWorktree {
-                showBranchPicker = true
-            }
+            showBranchPicker = true
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "arrow.triangle.branch")
@@ -315,12 +316,16 @@ struct SwiftUIChatInputBar: View {
         .buttonStyle(HoverCapsuleStyle())
         .popover(isPresented: $showBranchPicker) {
             BranchPickerView(
-                branches: GitUtils.listBranches(at: state.selectedDirectory ?? ""),
+                branches: GitUtils.listBranches(at: state.cwd ?? ""),
                 currentBranch: displayBranch,
                 onSelect: { selectedBranch in
-                    guard let dir = state.selectedDirectory else { return }
-                    if GitUtils.switchBranch(at: dir, branch: selectedBranch) {
-                        state.branchMonitor.monitor(directory: dir)
+                    if state.isWorktree && state.barState == .notStarted {
+                        state.worktreeBaseBranch = selectedBranch
+                    } else {
+                        guard let dir = state.cwd else { return }
+                        if GitUtils.switchBranch(at: dir, branch: selectedBranch) {
+                            state.branchMonitor.monitor(directory: dir)
+                        }
                     }
                     showBranchPicker = false
                 }
@@ -414,7 +419,7 @@ struct SwiftUIChatInputBar: View {
 
     private var showWorktreeButton: Bool {
         if state.isAdditionalPathEditable {
-            return state.selectedDirectory.map { GitUtils.isGitRepository(at: $0) } ?? false
+            return state.originPath.map { GitUtils.isGitRepository(at: $0) } ?? false
         }
         return state.isWorktree
     }
@@ -511,6 +516,6 @@ private struct InputBarPreviewWrapper: View {
     }
 
     private func setupMockState() {
-        state.selectedDirectory = "/Volumes/largedisk/code/ccterm"
+        state.originPath = "/Volumes/largedisk/code/ccterm"
     }
 }

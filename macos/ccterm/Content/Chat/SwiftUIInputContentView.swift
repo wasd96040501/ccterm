@@ -61,12 +61,12 @@ struct SwiftUIInputContentView: View {
                         cursorLocation: cursor,
                         hasMarkedText: false,
                         context: CompletionTriggerContext(
-                            directory: state.selectedDirectory,
+                            directory: state.cwd,
                             additionalDirs: state.additionalDirectories,
                             pluginDirs: state.pluginDirectories,
                             slashCommandProvider: state.slashCommandProvider,
                             onDirectoryPicked: { [state] path in
-                                state.selectedDirectory = path
+                                state.originPath = path
                                 state.branchMonitor.monitor(directory: path)
                             }
                         )
@@ -334,7 +334,7 @@ struct SwiftUIInputContentView: View {
             ) { _, additional in
                 showPluginPicker = false
                 state.pluginDirectories = additional.map(\.path)
-                if let dir = state.selectedDirectory {
+                if let dir = state.originPath {
                     PluginDirStore.saveEnabledDirectories(state.pluginDirectories, forPath: dir)
                 }
             }

@@ -61,8 +61,7 @@ final class GitBranchService {
     // MARK: - Private
 
     private func startMonitor(for path: String) {
-        let headPath = resolveHeadPath(at: path)
-        guard let headPath else { return }
+        guard let headPath = GitUtils.resolveHeadPath(at: path) else { return }
 
         let fd = open(headPath, O_EVTONLY)
         guard fd >= 0 else { return }
@@ -83,25 +82,5 @@ final class GitBranchService {
         }
         source.resume()
         sources[path] = source
-    }
-
-    /// 解析 .git/HEAD 的实际路径（处理 worktree 场景）。
-    private func resolveHeadPath(at directory: String) -> String? {
-        let gitPath = (directory as NSString).appendingPathComponent(".git")
-        let fm = FileManager.default
-        var isDir: ObjCBool = false
-        guard fm.fileExists(atPath: gitPath, isDirectory: &isDir) else { return nil }
-
-        if isDir.boolValue {
-            return (gitPath as NSString).appendingPathComponent("HEAD")
-        }
-
-        // Worktree: .git 是文件，内容为 "gitdir: /path/to/.git/worktrees/xxx"
-        guard let content = try? String(contentsOfFile: gitPath, encoding: .utf8)
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-              content.hasPrefix("gitdir: ") else { return nil }
-        let gitdir = String(content.dropFirst("gitdir: ".count))
-        let resolved = gitdir.hasPrefix("/") ? gitdir : (directory as NSString).appendingPathComponent(gitdir)
-        return (resolved as NSString).appendingPathComponent("HEAD")
     }
 }

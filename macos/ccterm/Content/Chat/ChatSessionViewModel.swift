@@ -92,7 +92,6 @@ final class ChatSessionViewModel {
         }
     }
 
-    var branch: String? { handle?.branch }
     var queuedMessages: [String] { handle?.queuedMessages ?? [] }
 
     var contextUsedPercent: Double? {
@@ -105,25 +104,25 @@ final class ChatSessionViewModel {
 
     // MARK: - Dual-Source Properties
 
-    private var _selectedDirectory: String?
     private var _isWorktree: Bool = false
     private var _permissionMode: PermissionMode = .default
 
-    /// 有 handle 读 handle.cwd，无 handle 读 stored fallback。
-    /// setter：handle == nil → 写 _selectedDirectory；handle != nil → noop。
-    /// 共同规则：isProcessIdle == false 时 noop（防御性保护）。
-    var selectedDirectory: String? {
-        get { handle?.cwd ?? _selectedDirectory }
-        set {
-            guard isProcessIdle, handle == nil else { return }
-            _selectedDirectory = newValue
-            if let dir = newValue {
+    /// 用户选的原始目录。展示用，不随 worktree 变化。
+    var originPath: String? {
+        didSet {
+            if let dir = originPath {
                 pluginDirectories = PluginDirStore.enabledDirectories(forPath: dir)
             } else {
                 pluginDirectories = []
             }
         }
     }
+
+    /// 实际工作目录。session 运行中读 handle.cwd，否则读 originPath。
+    var cwd: String? { handle?.cwd ?? originPath }
+
+    /// worktree 创建前用户选择的基础分支。
+    var worktreeBaseBranch: String?
 
     /// 有 handle 读 handle.isWorktree，无 handle 读 stored fallback。
     /// setter：handle == nil → 写 _isWorktree；handle != nil → noop。
@@ -261,7 +260,7 @@ final class ChatSessionViewModel {
     var isAdditionalPathEditable: Bool { barState == .notStarted }
 
     var isDirectoryUnset: Bool {
-        isPrimaryPathEditable && selectedDirectory == nil
+        isPrimaryPathEditable && originPath == nil
     }
 
     var canSend: Bool {
@@ -273,7 +272,7 @@ final class ChatSessionViewModel {
     }
 
     var showPathBar: Bool {
-        isPrimaryPathEditable || selectedDirectory != nil
+        isPrimaryPathEditable || originPath != nil
     }
 
     // MARK: - Draft Persistence
@@ -371,8 +370,9 @@ final class ChatSessionViewModel {
         self.onRouterAction = onRouterAction
 
         if let record {
-            self._selectedDirectory = record.cwd
+            self.originPath = record.originPath ?? record.cwd
             self._isWorktree = record.isWorktree
+            handle.isWorktree = record.isWorktree
             self.additionalDirectories = record.extra.addDirs ?? []
             self.pluginDirectories = record.extra.pluginDirs ?? []
             self.isTempDir = record.isTempDir

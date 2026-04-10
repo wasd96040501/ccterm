@@ -114,6 +114,29 @@ enum GitUtils {
         return pinned + rest
     }
 
+    // MARK: - Head Path Resolution
+
+    /// Resolves the actual `.git/HEAD` file path, handling worktree `.git` files.
+    /// Returns `nil` if the directory is not a git repository.
+    static func resolveHeadPath(at directory: String) -> String? {
+        let gitPath = (directory as NSString).appendingPathComponent(".git")
+        let fm = FileManager.default
+        var isDir: ObjCBool = false
+        guard fm.fileExists(atPath: gitPath, isDirectory: &isDir) else { return nil }
+
+        if isDir.boolValue {
+            return (gitPath as NSString).appendingPathComponent("HEAD")
+        }
+
+        // Worktree: .git is a file containing "gitdir: /path/to/.git/worktrees/xxx"
+        guard let content = try? String(contentsOfFile: gitPath, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              content.hasPrefix("gitdir: ") else { return nil }
+        let gitdir = String(content.dropFirst("gitdir: ".count))
+        let resolved = gitdir.hasPrefix("/") ? gitdir : (directory as NSString).appendingPathComponent(gitdir)
+        return (resolved as NSString).appendingPathComponent("HEAD")
+    }
+
     // MARK: - Branch Switching
 
     /// Switches to the specified branch using `git switch`.

@@ -43,7 +43,7 @@ final class GitBranchMonitor {
     // MARK: - Private
 
     private func startWatching(_ directory: String) {
-        guard let headPath = resolveHeadPath(directory) else { return }
+        guard let headPath = GitUtils.resolveHeadPath(at: directory) else { return }
 
         fileDescriptor = Darwin.open(headPath, O_EVTONLY)
         guard fileDescriptor >= 0 else { return }
@@ -93,33 +93,4 @@ final class GitBranchMonitor {
         }
     }
 
-    /// Resolve the actual HEAD file path, handling worktree `.git` files.
-    private func resolveHeadPath(_ directory: String) -> String? {
-        let gitPath = (directory as NSString).appendingPathComponent(".git")
-        var isDir: ObjCBool = false
-
-        guard FileManager.default.fileExists(atPath: gitPath, isDirectory: &isDir) else {
-            return nil
-        }
-
-        if isDir.boolValue {
-            // Regular repo
-            return (gitPath as NSString).appendingPathComponent("HEAD")
-        } else {
-            // Worktree: .git is a file containing "gitdir: <path>"
-            guard let content = try? String(contentsOfFile: gitPath, encoding: .utf8),
-                  content.hasPrefix("gitdir: ") else {
-                return nil
-            }
-            let gitdir = content.trimmingCharacters(in: .whitespacesAndNewlines)
-                .replacingOccurrences(of: "gitdir: ", with: "")
-            let resolvedGitdir: String
-            if gitdir.hasPrefix("/") {
-                resolvedGitdir = gitdir
-            } else {
-                resolvedGitdir = (directory as NSString).appendingPathComponent(gitdir)
-            }
-            return (resolvedGitdir as NSString).appendingPathComponent("HEAD")
-        }
-    }
 }

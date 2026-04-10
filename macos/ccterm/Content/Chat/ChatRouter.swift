@@ -236,13 +236,14 @@ final class ChatRouter {
         // 捕获当前 session VM，防止 await 期间用户切走导致 currentSession 变化
         let sessionVM = currentSession
 
-        let isTempDir = sessionVM.selectedDirectory == nil
-        let directory = sessionVM.selectedDirectory ?? Self.createTempChatDirectory()
+        let isTempDir = sessionVM.originPath == nil
+        let directory = sessionVM.originPath ?? Self.createTempChatDirectory()
 
         let pluginDirs = sessionVM.pluginDirectories
         let config = SessionConfig(
-            path: directory,
+            originPath: directory,
             isWorktree: sessionVM.isWorktree,
+            worktreeBaseBranch: sessionVM.worktreeBaseBranch,
             pluginDirs: pluginDirs.isEmpty ? nil : pluginDirs,
             additionalDirs: sessionVM.additionalDirectories.isEmpty ? nil : sessionVM.additionalDirectories,
             permissionMode: sessionVM.permissionMode,
@@ -254,7 +255,7 @@ final class ChatRouter {
         // ── 同步阶段（立即完成，UI 即时响应）──
         let handle = sessionService.createNewSession(sessionId: sessionVM.sessionId, config: config, title: String(text.prefix(100)))
 
-        sessionVM.selectedDirectory = directory
+        sessionVM.originPath = directory
         sessionVM.isTempDir = isTempDir
         sessionVM.handle = handle  // barState → .starting（handle.status == .starting）
         sessions[handle.sessionId] = sessionVM  // SidebarVM 立即感知
@@ -291,7 +292,7 @@ final class ChatRouter {
         handle.status = .starting
 
         let config = SessionConfig(
-            path: currentSession.selectedDirectory ?? "",
+            originPath: currentSession.originPath ?? "",
             isWorktree: currentSession.isWorktree,
             pluginDirs: currentSession.pluginDirectories.isEmpty ? nil : currentSession.pluginDirectories,
             additionalDirs: currentSession.additionalDirectories.isEmpty ? nil : currentSession.additionalDirectories,
@@ -328,7 +329,7 @@ final class ChatRouter {
             """
 
         let config = SessionConfig(
-            path: directory,
+            originPath: directory,
             isWorktree: false,
             pluginDirs: record?.extra.pluginDirs,
             additionalDirs: record?.extra.addDirs,

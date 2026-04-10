@@ -114,17 +114,10 @@ class SessionHandle {
     internal(set) var slashCommands: [SlashCommand] = []
 
     /// sessionInit 返回的实际工作目录。enterWorktree/exitWorktree 时更新。
-    private(set) var cwd: String? {
-        didSet {
-            if cwd != oldValue { startBranchMonitor() }
-        }
-    }
+    private(set) var cwd: String?
 
     /// 是否处于 worktree 模式。初始值从 SessionConfig 传入，运行中由 enterWorktree/exitWorktree 更新。
     internal(set) var isWorktree: Bool = false
-
-    /// 当前 git 分支名。通过监听 .git/HEAD 文件实时更新。
-    private(set) var branch: String?
 
     /// 当前权限模式。初始值从 SessionConfig 传入，运行中由 CLI 推送更新。
     internal(set) var permissionMode: PermissionMode = .default
@@ -369,8 +362,6 @@ class SessionHandle {
         status = .inactive
         notifyTurnActive()
         stderrBuffer = ""
-        gitHeadSource?.cancel()
-        gitHeadSource = nil
     }
 
     // MARK: - Internal Handlers
@@ -517,75 +508,6 @@ class SessionHandle {
     /// 事件流 continuations。多订阅者广播。
     @ObservationIgnored
     private var eventContinuations: [UUID: AsyncStream<SessionEvent>.Continuation] = [:]
-
-    /// .git/HEAD 文件监听源。cwd 变化时重建。
-    @ObservationIgnored private var gitHeadSource: DispatchSourceFileSystemObject?
-
-    /// 启动对当前 cwd 下 .git/HEAD 的文件监听。cwd 为 nil 时停止监听。
-    private func startBranchMonitor() {
-        // 停止旧监听
-        gitHeadSource?.cancel()
-        gitHeadSource = nil
-
-        guard let cwd else {
-            branch = nil
-            return
-        }
-
-        // 先读一次当前值
-        let headPath = (cwd as NSString).appendingPathComponent(".git/HEAD")
-        branch = Self.readBranch(from: headPath)
-
-        // 监听文件变化
-        let fd = open(headPath, O_EVTONLY)
-        guard fd >= 0 else { return }
-
-        let source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: fd,
-            eventMask: [.write, .rename, .delete],
-            queue: .global(qos: .utility)
-        )
-        source.setEventHandler { [weak self] in
-            let newBranch = Self.readBranch(from: headPath)
-            Task { @MainActor [weak self] in
-                self?.branch = newBranch
-            }
-
-            // rename/delete 后 fd 失效，需要重建监听
-            let flags = source.data
-            if flags.contains(.delete) || flags.contains(.rename) {
-                Task { @MainActor [weak self] in
-                    self?.restartBranchMonitor()
-                }
-            }
-        }
-        source.setCancelHandler {
-            close(fd)
-        }
-        source.resume()
-        gitHeadSource = source
-    }
-
-    /// rename/delete 后重建 .git/HEAD 监听。延迟 0.5s 等待文件重建。
-    private func restartBranchMonitor() {
-        gitHeadSource?.cancel()
-        gitHeadSource = nil
-
-        guard let cwd else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            guard let self, self.cwd == cwd else { return }
-            self.startBranchMonitor()
-        }
-    }
-
-    /// 从 .git/HEAD 文件读取分支名。返回 nil 表示 detached HEAD 或读取失败。
-    private nonisolated static func readBranch(from headPath: String) -> String? {
-        guard let content = try? String(contentsOfFile: headPath, encoding: .utf8)
-            .trimmingCharacters(in: .whitespacesAndNewlines) else { return nil }
-        let prefix = "ref: refs/heads/"
-        guard content.hasPrefix(prefix) else { return nil }
-        return String(content.dropFirst(prefix.count))
-    }
 
     /// 立即渲染用户消息到 React。构造合成 Message2 user JSON 格式。
     private func renderUserMessage(_ text: String) {

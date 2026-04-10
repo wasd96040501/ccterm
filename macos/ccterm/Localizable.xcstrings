@@ -37,22 +37,22 @@
     },
     "(%lld)": {},
     "+%lld": {},
-    "@ Select directory · ⌘Enter temporary session": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "@ 选择目录 · ⌘Enter 临时对话"
-          }
-        }
-      }
-    },
     "@ Select directory · Enter temporary session": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "@ 选择目录 · Enter 临时对话"
+          }
+        }
+      }
+    },
+    "@ Select directory · ⌘Enter temporary session": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "@ 选择目录 · ⌘Enter 临时对话"
           }
         }
       }

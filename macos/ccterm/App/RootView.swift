@@ -30,7 +30,7 @@ struct RootView: View {
         Binding(
             get: {
                 if let action = appState.activeAction { return .action(action) }
-                let session = appState.chatRouter.currentSession
+                let session = appState.chatRouter.currentViewModel
                 if session.handle == nil { return .action(.newConversation) }
                 return .session(session.sessionId)
             },

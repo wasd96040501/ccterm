@@ -11,7 +11,7 @@ final class ChatRouter {
     // MARK: - Output (View 读取)
 
     /// 当前活跃的 per-session ViewModel。InputBar 和 ChatView 读这个。
-    private(set) var currentSession: ChatSessionViewModel
+    private(set) var currentViewModel: InputBarViewModel
 
     /// WebView 容器，ChatView 用于嵌入 NSViewRepresentable。
     let chatContentView = ChatContentView()
@@ -28,14 +28,13 @@ final class ChatRouter {
     // MARK: - Dependencies
 
     private let sessionService: SessionService
-    // private let todoSessionCoordinator: TodoSessionCoordinator
 
     // MARK: - Per-session Cache
 
-    private var sessions: [String: ChatSessionViewModel] = [:]
+    private var viewModels: [String: InputBarViewModel] = [:]
 
     /// 尚未启动的新对话 VM 缓存。启动后清空，不持久化。
-    private var pendingNewConversation: ChatSessionViewModel?
+    private var pendingNewViewModel: InputBarViewModel?
 
     // MARK: - Bridge Access
 
@@ -45,49 +44,51 @@ final class ChatRouter {
 
     init(sessionService: SessionService, todoSessionCoordinator: TodoSessionCoordinator? = nil) {
         self.sessionService = sessionService
-        // self.todoSessionCoordinator = todoSessionCoordinator
         // Phase 1: satisfy stored property requirement
-        self.currentSession = .newConversation(onRouterAction: { _ in })
+        self.currentViewModel = .newConversation(onRouterAction: { _ in })
         // Phase 2: replace with properly wired instance (self is now available)
-        self.currentSession = makeNewConversation()
+        self.currentViewModel = makeNewViewModel()
         // Bridge delegate → self
         chatContentView.bridge.delegate = self
         // Inject bridge into SessionService
         sessionService.setBridge(chatContentView.bridge)
         // Inject plan WebView callbacks
         planWebViewLoader.onTextSelected = { [weak self] range in
-            self?.currentSession.pendingCommentSelections.append(range)
-            self?.currentSession.focusTextView()
+            self?.currentViewModel.planReviewVM.pendingCommentSelections.append(range)
+            self?.currentViewModel.inputVM.focusTextView()
         }
         planWebViewLoader.onSelectionCleared = {
             // Don't clear accumulated quotes when DOM selection is cleared
         }
         planWebViewLoader.onCommentEdit = { [weak self] id, text in
-            self?.currentSession.viewingPlanCardVM?.commentStore?.updateComment(id: id, text: text)
+            self?.currentViewModel.planReviewVM.viewingCardVM?.commentStore?.updateComment(id: id, text: text)
         }
         planWebViewLoader.onCommentDelete = { [weak self] id in
-            self?.currentSession.viewingPlanCardVM?.commentStore?.removeComment(id: id)
+            self?.currentViewModel.planReviewVM.viewingCardVM?.commentStore?.removeComment(id: id)
         }
         planWebViewLoader.onSearchResult = { [weak self] total, current in
-            self?.currentSession.planSearchTotal = total
-            self?.currentSession.planSearchCurrent = current
+            self?.currentViewModel.planReviewVM.searchTotal = total
+            self?.currentViewModel.planReviewVM.searchCurrent = current
         }
     }
 
-    private func makeNewConversation() -> ChatSessionViewModel {
-        let vm = ChatSessionViewModel.newConversation(onRouterAction: { [weak self] in self?.handleRouterAction($0) })
-        vm.planWebViewLoader = planWebViewLoader
+    private func makeNewViewModel() -> InputBarViewModel {
+        let vm = InputBarViewModel.newConversation(
+            onRouterAction: { [weak self] in self?.handleRouterAction($0) },
+            onSend: { [weak self] in self?.submitMessage($0) },
+            planWebViewLoader: planWebViewLoader
+        )
         return vm
     }
 
-    private func makeSessionVM(handle: SessionHandle, record: SessionRecord?) -> ChatSessionViewModel {
-        let vm = ChatSessionViewModel(
+    private func makeViewModel(handle: SessionHandle, record: SessionRecord?) -> InputBarViewModel {
+        let vm = InputBarViewModel(
             handle: handle,
             record: record,
-            onRouterAction: { [weak self] in self?.handleRouterAction($0) }
+            onRouterAction: { [weak self] in self?.handleRouterAction($0) },
+            onSend: { [weak self] in self?.submitMessage($0) },
+            planWebViewLoader: planWebViewLoader
         )
-        vm.planWebViewLoader = planWebViewLoader
-        // vm.todoSessionCoordinator = todoSessionCoordinator
         return vm
     }
 
@@ -95,48 +96,48 @@ final class ChatRouter {
 
     /// 激活指定 session。Binding setter 和外部跳转调用。
     func activateSession(_ sessionId: String) {
-        guard sessionId != currentSession.sessionId else { return }
-        currentSession.animationsDisabled = true
-        if let cached = sessions[sessionId] {
-            currentSession = cached
+        guard sessionId != currentViewModel.sessionId else { return }
+        currentViewModel.animationsDisabled = true
+        if let cached = viewModels[sessionId] {
+            currentViewModel = cached
         } else {
             guard let handle = sessionService.session(sessionId) else { return }
             let record = sessionService.find(sessionId)
-            let sessionVM = makeSessionVM(handle: handle, record: record)
-            sessions[sessionId] = sessionVM
-            currentSession = sessionVM
+            let vm = makeViewModel(handle: handle, record: record)
+            viewModels[sessionId] = vm
+            currentViewModel = vm
         }
-        currentSession.animationsDisabled = true
+        currentViewModel.animationsDisabled = true
 
-        let sid = currentSession.sessionId
-        if let handle = currentSession.handle, handle.status == .inactive {
+        let sid = currentViewModel.sessionId
+        if let handle = currentViewModel.handle, handle.status == .inactive {
             handle.loadHistoryIfNeeded { [weak self] in
-                guard let self, self.currentSession.sessionId == sid else { return }
+                guard let self, self.currentViewModel.sessionId == sid else { return }
                 self.bridge.switchConversation(sid)
             }
         } else {
             bridge.switchConversation(sid)
         }
-        DispatchQueue.main.async { [currentSession] in
-            currentSession.animationsDisabled = false
+        DispatchQueue.main.async { [currentViewModel] in
+            currentViewModel.animationsDisabled = false
         }
     }
 
-    /// 激活新对话。已经是新对话时 no-op。缓存 VM 以便切走再切回时保留目录等状态。
+    /// 激活新对话。已经是新对话时 no-op。
     func activateNewConversation() {
-        guard currentSession.handle != nil else { return }
-        currentSession.animationsDisabled = true
-        if let pending = pendingNewConversation, pending.handle == nil {
-            currentSession = pending
+        guard currentViewModel.handle != nil else { return }
+        currentViewModel.animationsDisabled = true
+        if let pending = pendingNewViewModel, pending.handle == nil {
+            currentViewModel = pending
         } else {
-            let vm = makeNewConversation()
-            pendingNewConversation = vm
-            currentSession = vm
+            let vm = makeNewViewModel()
+            pendingNewViewModel = vm
+            currentViewModel = vm
         }
-        currentSession.animationsDisabled = true
-        bridge.switchConversation(currentSession.sessionId)
-        DispatchQueue.main.async { [currentSession] in
-            currentSession.animationsDisabled = false
+        currentViewModel.animationsDisabled = true
+        bridge.switchConversation(currentViewModel.sessionId)
+        DispatchQueue.main.async { [currentViewModel] in
+            currentViewModel.animationsDisabled = false
         }
     }
 
@@ -144,23 +145,21 @@ final class ChatRouter {
 
     /// 提交用户消息。根据当前 session 状态路由。
     func submitMessage(_ text: String) {
-        guard currentSession.barState != .starting else { return }
+        guard currentViewModel.barState != .starting else { return }
 
         // /complete 拦截
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         if trimmed == "/complete",
-           let handle = currentSession.handle,
+           let handle = currentViewModel.handle,
            let record = sessionService.find(handle.sessionId),
            record.sessionType == .todo {
-            // todoSessionCoordinator.markComplete(sessionId: handle.sessionId)
             return
         }
 
-        if let handle = currentSession.handle, handle.status == .inactive {
+        if let handle = currentViewModel.handle, handle.status == .inactive {
             Task { await resumeSession(handle, text) }
-        } else if let handle = currentSession.handle {
+        } else if let handle = currentViewModel.handle {
             handle.send(.text(text))
-            // todoSessionCoordinator.handleUserMessage(for: handle.sessionId)
         } else {
             Task { await startNewSession(text) }
         }
@@ -177,12 +176,12 @@ final class ChatRouter {
 
     // MARK: - Cache Management
 
-    /// 清理指定 session 的相关资源。session 归档/删除时调用。
+    /// 清理指定 session 的相关资源。
     func cleanupSession(_ sessionId: String) {
-        sessions[sessionId] = nil
+        viewModels[sessionId] = nil
         UserDefaults.standard.removeObject(forKey: "chatInputBarDraft_\(sessionId)")
         sessionService.removeHandle(sessionId)
-        if currentSession.sessionId == sessionId {
+        if currentViewModel.sessionId == sessionId {
             activateNewConversation()
         }
     }
@@ -196,45 +195,32 @@ final class ChatRouter {
     // MARK: - Content Ready
 
     func markContentReady(conversationId: String) {
-        if conversationId == currentSession.sessionId {
+        if conversationId == currentViewModel.sessionId {
             isContentReady = true
         }
     }
 
     func updateScrollState(conversationId: String, isAtBottom: Bool) {
-        if conversationId == currentSession.sessionId {
-            currentSession.isAtBottom = isAtBottom
+        if conversationId == currentViewModel.sessionId {
+            currentViewModel.isAtBottom = isAtBottom
         }
     }
 
     // MARK: - Private: Session Lifecycle
 
-    /// Handle edit message: stop current CLI session and start a new one with the edited text.
-    /// This ensures the model sees no prior history — like Codex's rollback-and-resend.
     private func handleEditMessage(_ newText: String) async {
-        let sessionVM = currentSession
+        let sessionVM = currentViewModel
         guard let handle = sessionVM.handle else {
-            // No running session — just start a new one
             submitMessage(newText)
             return
         }
-
-        // Stop the current CLI session
         await sessionService.stop(handle.sessionId)
-
-        // Detach the old handle from VM so submitMessage will go through startNewSession path
         sessionVM.handle = nil
-
-        // Submit the edited text — will create a brand new session
         submitMessage(newText)
     }
 
-    /// 启动新 session。分为同步 + 异步两个阶段。
-    /// 新对话 VM 就地变身：赋上 handle 后从"新对话"变为"具体 session"，
-    /// 缓存进 sessions[id]。用户切走时 sessionVM 仍在后台完成。
     private func startNewSession(_ text: String) async {
-        // 捕获当前 session VM，防止 await 期间用户切走导致 currentSession 变化
-        let sessionVM = currentSession
+        let sessionVM = currentViewModel
 
         let isTempDir = sessionVM.originPath == nil
         let directory = sessionVM.originPath ?? Self.createTempChatDirectory()
@@ -252,29 +238,22 @@ final class ChatRouter {
             isTempDir: isTempDir
         )
 
-        // ── 同步阶段（立即完成，UI 即时响应）──
         let handle = sessionService.createNewSession(sessionId: sessionVM.sessionId, config: config, title: String(text.prefix(100)))
 
         sessionVM.originPath = directory
         sessionVM.isTempDir = isTempDir
-        sessionVM.handle = handle  // barState → .starting（handle.status == .starting）
-        sessions[handle.sessionId] = sessionVM  // SidebarVM 立即感知
-        if pendingNewConversation === sessionVM {
-            pendingNewConversation = nil
+        sessionVM.handle = handle
+        viewModels[handle.sessionId] = sessionVM
+        if pendingNewViewModel === sessionVM {
+            pendingNewViewModel = nil
         }
 
-        // ── 异步阶段 ──
         do {
             try await sessionService.start(sessionId: handle.sessionId, config: config)
-
-            // 仅当此 session 仍是当前活跃 session 时切换 WebView
-            if currentSession === sessionVM {
+            if currentViewModel === sessionVM {
                 bridge.switchConversation(handle.sessionId)
             }
-
             handle.send(.text(text))
-
-            // 保存最近目录
             if !isTempDir {
                 saveRecentDirectory(directory)
                 DirectoryCompletionProvider.saveToRecent(directory)
@@ -286,19 +265,17 @@ final class ChatRouter {
         }
     }
 
-    /// 恢复已有 session。
     private func resumeSession(_ handle: SessionHandle, _ text: String) async {
-        // 同步阶段：UI 置灰
         handle.status = .starting
 
         let config = SessionConfig(
-            originPath: currentSession.originPath ?? "",
-            isWorktree: currentSession.isWorktree,
-            pluginDirs: currentSession.pluginDirectories.isEmpty ? nil : currentSession.pluginDirectories,
-            additionalDirs: currentSession.additionalDirectories.isEmpty ? nil : currentSession.additionalDirectories,
-            permissionMode: currentSession.permissionMode,
-            model: currentSession.selectedModel,
-            effort: currentSession.selectedEffort
+            originPath: currentViewModel.originPath ?? "",
+            isWorktree: currentViewModel.isWorktree,
+            pluginDirs: currentViewModel.pluginDirectories.isEmpty ? nil : currentViewModel.pluginDirectories,
+            additionalDirs: currentViewModel.additionalDirectories.isEmpty ? nil : currentViewModel.additionalDirectories,
+            permissionMode: currentViewModel.permissionMode,
+            model: currentViewModel.selectedModel,
+            effort: currentViewModel.selectedEffort
         )
         do {
             try await sessionService.start(sessionId: handle.sessionId, config: config)
@@ -309,7 +286,6 @@ final class ChatRouter {
         }
     }
 
-    /// ExitPlanMode: 停止旧 session，启动新 session 执行 plan。
     private func startPlanSession(from sourceHandle: SessionHandle, plan: String, planFilePath: String?) async {
         let record = sessionService.find(sourceHandle.sessionId)
         let directory = record?.cwd ?? ""
@@ -339,8 +315,8 @@ final class ChatRouter {
         do {
             let newHandle = try await sessionService.start(config: config)
 
-            let sessionVM = makeSessionVM(handle: newHandle, record: nil)
-            sessions[newHandle.sessionId] = sessionVM
+            let sessionVM = makeViewModel(handle: newHandle, record: nil)
+            viewModels[newHandle.sessionId] = sessionVM
             activateSession(newHandle.sessionId)
             newHandle.send(.text(prompt))
         } catch {
@@ -391,10 +367,8 @@ extension ChatRouter: WebViewBridgeDelegate {
         case .scrollStateChanged(let conversationId, let isAtBottom):
             updateScrollState(conversationId: conversationId, isAtBottom: isAtBottom)
         case .editMessage(_, let newText):
-            // Edit = resend in current session. React already truncated the UI.
             submitMessage(newText)
         case .forkMessage:
-            // TODO: implement fork (create new session from this message)
             break
         }
     }

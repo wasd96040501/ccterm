@@ -86,7 +86,7 @@ enum SessionRowStyle {
 /// Sidebar 的 @Observable ViewModel。纯响应式，不持有会话数据副本。
 ///
 /// 职责：管理 sidebar 的 session 列表数据。自驱动：观察 SessionService 的 handles 状态变化自动 rebuild。
-/// **不持有选中状态**——"当前活跃 session"的 source of truth 是 chatRouter.currentSession。
+/// **不持有选中状态**——"当前活跃 session"的 source of truth 是 chatRouter.currentViewModel。
 @Observable
 @MainActor
 final class SidebarViewModel {
@@ -283,6 +283,8 @@ final class SidebarViewModel {
                         self.unreadSessionIds.insert(sessionId)
                     }
                 case .processExited:
+                    break
+                case .cwdChanged:
                     break
                 }
             }

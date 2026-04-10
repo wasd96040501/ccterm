@@ -16,7 +16,7 @@ struct ChatView: View {
 
     @State private var inputBarHeight: CGFloat = 0
 
-    private var session: ChatSessionViewModel { chatRouter.currentSession }
+    private var viewModel: InputBarViewModel { chatRouter.currentViewModel }
 
     var body: some View {
         GeometryReader { geo in
@@ -29,10 +29,10 @@ struct ChatView: View {
                 )
                 .ignoresSafeArea(.container, edges: .top)
                 .padding(.bottom, 47)
-                .opacity(session.handle != nil && chatRouter.isContentReady && !session.isViewingPlan ? 1 : 0)
+                .opacity(viewModel.handle != nil && chatRouter.isContentReady && !viewModel.planReviewVM.isActive ? 1 : 0)
 
                 // 空状态占位（无 session 时显示）
-                if session.handle == nil && !session.isViewingPlan {
+                if viewModel.handle == nil && !viewModel.planReviewVM.isActive {
                     VStack(spacing: 12) {
                         Image(systemName: "bubble.left.and.text.bubble.right")
                             .font(.system(size: 40))
@@ -49,53 +49,50 @@ struct ChatView: View {
                 WebViewRepresentable(webView: chatRouter.planWebViewLoader.webView)
                     .ignoresSafeArea(.container, edges: .top)
                     .padding(.bottom, 47)
-                    .opacity(session.isViewingPlan ? 1 : 0)
-                    .allowsHitTesting(session.isViewingPlan)
+                    .opacity(viewModel.planReviewVM.isActive ? 1 : 0)
+                    .allowsHitTesting(viewModel.planReviewVM.isActive)
                     .confirmationDialog(
                         "You have unsent comments",
                         isPresented: Binding(
-                            get: { session.pendingExecuteMode != nil },
-                            set: { if !$0 { session.pendingExecuteMode = nil } }
+                            get: { viewModel.planReviewVM.pendingExecuteMode != nil },
+                            set: { if !$0 { viewModel.planReviewVM.pendingExecuteMode = nil } }
                         )
                     ) {
                         Button("Execute and Discard Comments", role: .destructive) {
-                            if let mode = session.pendingExecuteMode {
-                                session.executePlan(mode: mode)
+                            if let mode = viewModel.planReviewVM.pendingExecuteMode {
+                                viewModel.planReviewVM.executePlan(mode: mode)
                             }
                         }
                         Button("Cancel", role: .cancel) {
-                            session.pendingExecuteMode = nil
+                            viewModel.planReviewVM.pendingExecuteMode = nil
                         }
                     } message: {
                         Text("Your comments will be discarded after execution. Continue?")
                     }
 
-                SwiftUIChatInputBar(
-                    state: session,
-                    actions: ChatInputBarActions(onSend: { chatRouter.submitMessage($0) })
-                )
-                .id(session.sessionId)
-                .frame(minWidth: 400, idealWidth: 860, maxWidth: 860)
-                .padding(.top, 32)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 16)
-                .background(
-                    GeometryReader { geo in
-                        Color.clear.preference(key: InputBarHeightKey.self, value: geo.size.height)
-                    }
-                )
+                InputBarView(viewModel: viewModel)
+                    .id(viewModel.sessionId)
+                    .frame(minWidth: 400, idealWidth: 860, maxWidth: 860)
+                    .padding(.top, 32)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 16)
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear.preference(key: InputBarHeightKey.self, value: geo.size.height)
+                        }
+                    )
             }
         }
         .onPreferenceChange(InputBarHeightKey.self) { height in
             guard height != inputBarHeight else { return }
             inputBarHeight = height
-            if session.isViewingPlan {
+            if viewModel.planReviewVM.isActive {
                 chatRouter.planWebViewLoader.setBottomPadding(height)
             } else {
                 chatRouter.chatContentView.bridge.setBottomPadding(height)
             }
         }
-        .onChange(of: session.isViewingPlan) { _, viewing in
+        .onChange(of: viewModel.planReviewVM.isActive) { _, viewing in
             guard inputBarHeight > 0 else { return }
             if viewing {
                 chatRouter.planWebViewLoader.setBottomPadding(inputBarHeight)
@@ -104,8 +101,8 @@ struct ChatView: View {
             }
         }
         .alert(item: Binding(
-            get: { session.processExitError },
-            set: { session.processExitError = $0 }
+            get: { viewModel.processExitError },
+            set: { viewModel.processExitError = $0 }
         )) { error in
             Alert(
                 title: Text("Session exited with code \(error.exitCode)"),
@@ -118,11 +115,10 @@ struct ChatView: View {
     // MARK: - Cursor Guard
 
     private func cursorGuardRects(containerHeight: CGFloat) -> [CGRect] {
-        if session.isViewingPlan {
+        if viewModel.planReviewVM.isActive {
             return [.infinite]
         }
         var rects: [CGRect] = []
-        // Input bar 区域
         if inputBarHeight > 0 {
             rects.append(CGRect(x: 0, y: containerHeight - inputBarHeight, width: .infinity, height: inputBarHeight))
         }

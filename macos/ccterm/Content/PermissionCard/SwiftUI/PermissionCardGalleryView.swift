@@ -242,20 +242,20 @@ struct PermissionCardGalleryView: View {
 
 // MARK: - InputBar Preview Wrapper
 
-/// Wraps the real SwiftUIChatInputBar with a mock ChatSessionViewModel pre-loaded with permission cards.
+/// Wraps the real InputBarView with a mock InputBarViewModel pre-loaded with permission cards.
 private struct InputBarPreview: View {
-    @State private var state: ChatSessionViewModel
+    @State private var viewModel: InputBarViewModel
     private let initialCards: [PermissionCardItem]
 
     init(cards: [PermissionCardItem]) {
         self.initialCards = cards
-        _state = State(initialValue: ChatSessionViewModel.newConversation(onRouterAction: { _ in }))
+        _viewModel = State(initialValue: InputBarViewModel.newConversation(onRouterAction: { _ in }))
     }
 
     var body: some View {
-        SwiftUIChatInputBar(state: state, actions: ChatInputBarActions())
+        InputBarView(viewModel: viewModel)
             .onAppear {
-                state.permissionCards = initialCards
+                viewModel.permissionVM.cards = initialCards
             }
     }
 }

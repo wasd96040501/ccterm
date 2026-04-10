@@ -1,10 +1,9 @@
 import SwiftUI
 import AgentSDK
 
-/// SwiftUI implementation of the Chat InputBar.
-struct SwiftUIChatInputBar: View {
-    @Bindable var state: ChatSessionViewModel
-    let actions: ChatInputBarActions
+/// InputBar 主容器。
+struct InputBarView: View {
+    @Bindable var viewModel: InputBarViewModel
 
     private let cornerRadius: CGFloat = 20
     private let buttonSize: CGFloat = 28
@@ -28,15 +27,15 @@ struct SwiftUIChatInputBar: View {
         VStack(spacing: 0) {
             mainContainer
 
-            if state.showPathBar {
+            if viewModel.showPathBar {
                 pathBar
                     .padding(.top, 8)
                     .transition(.opacity)
             }
         }
-        .animation(.smooth(duration: 0.25), value: state.showPathBar)
+        .animation(.smooth(duration: 0.25), value: viewModel.showPathBar)
         .transaction { t in
-            if state.animationsDisabled { t.disablesAnimations = true }
+            if viewModel.animationsDisabled { t.disablesAnimations = true }
         }
     }
 
@@ -62,53 +61,53 @@ struct SwiftUIChatInputBar: View {
                 .padding(.bottom, 6)
         }
         .overlay(alignment: .top) {
-            if !state.isAtBottom {
+            if !viewModel.isAtBottom {
                 scrollToBottomButton
                     .offset(y: -(buttonSize + 8))
                     .transition(.opacity)
             }
         }
-        .animation(.smooth(duration: 0.25), value: state.isAtBottom)
-        .animation(.smooth(duration: animationDuration), value: state.completion.isActive)
-        .animation(.smooth(duration: animationDuration), value: state.isViewingPlan)
-        .animation(.smooth(duration: animationDuration), value: state.isInPermissionMode)
-        .animation(.smooth(duration: animationDuration), value: state.barState)
-        .animation(.smooth(duration: animationDuration), value: state.queuedMessages.count)
-        .animation(.smooth(duration: animationDuration), value: state.pendingCommentSelections.count)
+        .animation(.smooth(duration: 0.25), value: viewModel.isAtBottom)
+        .animation(.smooth(duration: animationDuration), value: viewModel.inputVM.completionVM.isActive)
+        .animation(.smooth(duration: animationDuration), value: viewModel.planReviewVM.isActive)
+        .animation(.smooth(duration: animationDuration), value: viewModel.permissionVM.isActive)
+        .animation(.smooth(duration: animationDuration), value: viewModel.barState)
+        .animation(.smooth(duration: animationDuration), value: viewModel.queuedMessages.count)
+        .animation(.smooth(duration: animationDuration), value: viewModel.planReviewVM.pendingCommentSelections.count)
     }
 
     // MARK: - Overlay Content (Completion / Queued Messages)
 
     @ViewBuilder
     private var overlayContent: some View {
-        if state.completion.isActive {
-            SwiftUICompletionListView(
-                engine: state.completion,
+        if viewModel.inputVM.completionVM.isActive {
+            CompletionListView(
+                viewModel: viewModel.inputVM.completionVM,
                 onConfirm: { _ in
-                    state.applyCompletionResult(keepSession: false)
+                    viewModel.inputVM.applyCompletionResult(keepSession: false)
                 },
                 onDrillDown: { _ in
-                    state.applyCompletionResult(keepSession: true)
+                    viewModel.inputVM.applyCompletionResult(keepSession: true)
                 },
                 onDeleteRecent: { item in
                     guard let dirItem = item as? DirectoryCompletionItem else { return }
                     DirectoryCompletionProvider.removeFromRecent(dirItem.path)
-                    state.completion.removeItem(where: { ($0 as? DirectoryCompletionItem)?.path == dirItem.path })
+                    viewModel.inputVM.completionVM.removeItem(where: { ($0 as? DirectoryCompletionItem)?.path == dirItem.path })
                 }
             )
             .transition(.identity)
 
             Divider()
-        } else if showStartingOverlay {
-            SwiftUICLIStartingView()
+        } else if viewModel.showStartingOverlay {
+            CLIStartingView()
                 .transition(.opacity)
 
             Divider()
-        } else if showQueue {
-            SwiftUIQueuedMessagesView(
-                messages: state.queuedMessages,
+        } else if viewModel.showQueuedMessages {
+            QueuedMessagesView(
+                messages: viewModel.queuedMessages,
                 onDelete: { index in
-                    state.deleteQueuedMessage(at: index)
+                    viewModel.deleteQueuedMessage(at: index)
                 }
             )
             .transition(.identity)
@@ -117,23 +116,20 @@ struct SwiftUIChatInputBar: View {
         }
     }
 
-    // MARK: - Primary Content (Input / Permission)
+    // MARK: - Primary Content (Input / Permission / Plan Comment)
 
     @ViewBuilder
     private var primaryContent: some View {
-        if state.isViewingPlan {
-            SwiftUIInputContentView(state: state, actions: actions, isCommentMode: true)
+        if viewModel.planReviewVM.isActive {
+            PlanCommentInputView(viewModel: viewModel.planReviewVM)
                 .transition(.opacity)
-        } else if state.isInPermissionMode {
-            SwiftUIPermissionOverlayView(
-                cards: state.permissionCards,
-                currentIndex: $state.currentPermissionCardIndex
-            )
-            .transition(.opacity)
+        } else if viewModel.permissionVM.isActive {
+            PermissionOverlayView(viewModel: viewModel.permissionVM)
+                .transition(.opacity)
         } else {
-            SwiftUIInputContentView(state: state, actions: actions)
-                .opacity(isInputDisabled ? 0.4 : 1.0)
-                .allowsHitTesting(!isInputDisabled)
+            InputContentView(viewModel: viewModel)
+                .opacity(viewModel.isInputDisabled ? 0.4 : 1.0)
+                .allowsHitTesting(!viewModel.isInputDisabled)
                 .transition(.opacity)
         }
     }
@@ -143,29 +139,28 @@ struct SwiftUIChatInputBar: View {
     @ViewBuilder
     private var actionButtons: some View {
         HStack(spacing: 6) {
-            if state.isViewingPlan {
+            if viewModel.planReviewVM.isActive {
                 circleButton(
                     icon: "arrow.up",
                     color: .accentColor,
-                    action: { state.sendComment() }
+                    action: { viewModel.handleCommandReturn() }
                 )
-                .opacity(state.canSendComment ? 1.0 : 0.4)
-                .disabled(!state.canSendComment)
+                .opacity(viewModel.planReviewVM.canSendComment ? 1.0 : 0.4)
+                .disabled(!viewModel.planReviewVM.canSendComment)
                 .transition(.scale.combined(with: .opacity))
                 .hoverTooltip(sendKeyBehavior.shortcutHint)
-            } else if state.isInPermissionMode {
-                // Action buttons are inside each permission card (PermissionActionBar).
+            } else if viewModel.permissionVM.isActive {
                 EmptyView()
             } else {
-                switch state.barState {
+                switch viewModel.barState {
                 case .notStarted, .inactive, .idle:
                     circleButton(
                         icon: "arrow.up",
                         color: .accentColor,
-                        action: sendAction
+                        action: { viewModel.handleCommandReturn() }
                     )
-                    .opacity(state.canSend ? 1.0 : 0.4)
-                    .disabled(!state.canSend)
+                    .opacity(viewModel.inputVM.canSend ? 1.0 : 0.4)
+                    .disabled(!viewModel.inputVM.canSend)
                     .transition(.scale.combined(with: .opacity))
                     .hoverTooltip(sendKeyBehavior.shortcutHint)
 
@@ -173,7 +168,7 @@ struct SwiftUIChatInputBar: View {
                     circleButton(
                         icon: "stop.fill",
                         color: Color(nsColor: .systemGray),
-                        action: { state.interrupt() }
+                        action: { viewModel.handleEscape() }
                     )
                     .transition(.scale.combined(with: .opacity))
                     .hoverTooltip("Escape (⎋)")
@@ -181,10 +176,10 @@ struct SwiftUIChatInputBar: View {
                     circleButton(
                         icon: "arrow.up",
                         color: .accentColor,
-                        action: queueSendAction
+                        action: { viewModel.handleCommandReturn() }
                     )
-                    .opacity(state.canSend ? 1.0 : 0.4)
-                    .disabled(!state.canSend)
+                    .opacity(viewModel.inputVM.canSend ? 1.0 : 0.4)
+                    .disabled(!viewModel.inputVM.canSend)
                     .transition(.scale.combined(with: .opacity))
                     .hoverTooltip(sendKeyBehavior.shortcutHint)
 
@@ -204,40 +199,25 @@ struct SwiftUIChatInputBar: View {
     private var pathBar: some View {
         HStack(spacing: 4) {
             directoryButton
-            if !state.isDirectoryUnset, let branch = displayBranch, !branch.isEmpty {
+            if !viewModel.isDirectoryUnset, let branch = viewModel.displayBranch, !branch.isEmpty {
                 branchButton(branch: branch)
                     .transition(.opacity)
             }
-            if showWorktreeButton {
+            if viewModel.showWorktreeButton {
                 worktreeButton
                     .transition(.opacity)
             }
             Spacer()
-            if let percent = state.contextUsedPercent {
+            if let percent = viewModel.contextUsedPercent {
                 contextRingButton(percent: percent)
                     .transition(.opacity)
             }
         }
         .padding(.leading, 8)
         .padding(.trailing, 14)
-        .animation(.smooth(duration: 0.25), value: displayBranch)
-        .animation(.smooth(duration: 0.25), value: showWorktreeButton)
-        .animation(.smooth(duration: 0.25), value: state.contextUsedPercent != nil)
-        .onChange(of: state.cwd) { _, newDir in
-            if let dir = newDir {
-                state.branchMonitor.monitor(directory: dir)
-            } else {
-                state.branchMonitor.stop()
-            }
-        }
-    }
-
-    /// Branch to display: worktree 未启动时展示用户选的 baseBranch，否则展示 monitor 实时值。
-    private var displayBranch: String? {
-        if state.isWorktree && state.barState == .notStarted, let base = state.worktreeBaseBranch {
-            return base
-        }
-        return state.branchMonitor.branch
+        .animation(.smooth(duration: 0.25), value: viewModel.displayBranch)
+        .animation(.smooth(duration: 0.25), value: viewModel.showWorktreeButton)
+        .animation(.smooth(duration: 0.25), value: viewModel.contextUsedPercent != nil)
     }
 
     // MARK: - Directory Button
@@ -245,30 +225,29 @@ struct SwiftUIChatInputBar: View {
     @ViewBuilder
     private var directoryButton: some View {
         HStack(spacing: 4) {
-            // Main button area
             Button {
-                if state.isDirectoryUnset {
+                if viewModel.isDirectoryUnset {
                     showFolderPicker = true
-                } else if state.isAdditionalPathEditable {
+                } else if viewModel.isAdditionalPathEditable {
                     showFolderPicker = true
-                } else if let dir = state.originPath {
+                } else if let dir = viewModel.originPath {
                     copyToClipboard(dir, target: .path)
                 }
             } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: state.isDirectoryUnset ? "folder.badge.plus" : (copiedFeedback == .path ? "checkmark" : "folder"))
+                    Image(systemName: viewModel.isDirectoryUnset ? "folder.badge.plus" : (copiedFeedback == .path ? "checkmark" : "folder"))
                         .font(.system(size: 12, weight: .medium))
                         .frame(width: 14, height: 14)
-                    if state.isDirectoryUnset {
+                    if viewModel.isDirectoryUnset {
                         Text("Select Working Directory")
                             .font(.system(size: 12, weight: .medium))
-                    } else if let dir = state.originPath {
-                        Text(state.isTempDir ? String(localized: "Temporary Session") : truncatedPath(dir))
+                    } else if let dir = viewModel.originPath {
+                        Text(viewModel.isTempDir ? String(localized: "Temporary Session") : truncatedPath(dir))
                             .font(.system(size: 12))
                             .lineLimit(1)
                             .truncationMode(.middle)
-                        if !state.additionalDirectories.isEmpty {
-                            Text("+\(state.additionalDirectories.count)")
+                        if !viewModel.additionalDirectories.isEmpty {
+                            Text("+\(viewModel.additionalDirectories.count)")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.tertiary)
                         }
@@ -277,22 +256,21 @@ struct SwiftUIChatInputBar: View {
             }
             .buttonStyle(.plain)
         }
-        .hoverCapsule(staticFill: state.isDirectoryUnset ? Color.orange.opacity(0.12) : nil)
-        .foregroundStyle(state.isDirectoryUnset ? .orange : .secondary)
+        .hoverCapsule(staticFill: viewModel.isDirectoryUnset ? Color.orange.opacity(0.12) : nil)
+        .foregroundStyle(viewModel.isDirectoryUnset ? .orange : .secondary)
         .popover(isPresented: $showFolderPicker) {
             FolderPickerPopover(
                 title: String(localized: "Working Directory"),
                 description: String(localized: "Select primary directory and additional directories"),
                 userDefaultsKey: "folderPickerRecent",
-                primaryReadOnly: !state.isPrimaryPathEditable,
-                initialPrimary: state.originPath.map { URL(fileURLWithPath: $0) },
-                initialAdditional: Set(state.additionalDirectories.map { URL(fileURLWithPath: $0) })
+                primaryReadOnly: !viewModel.isPrimaryPathEditable,
+                initialPrimary: viewModel.originPath.map { URL(fileURLWithPath: $0) },
+                initialAdditional: Set(viewModel.additionalDirectories.map { URL(fileURLWithPath: $0) })
             ) { primary, additional in
                 showFolderPicker = false
                 guard let primary else { return }
-                state.originPath = primary.path
-                state.additionalDirectories = additional.map(\.path)
-                state.branchMonitor.monitor(directory: primary.path)
+                viewModel.originPath = primary.path
+                viewModel.additionalDirectories = additional.map(\.path)
             }
         }
     }
@@ -316,15 +294,15 @@ struct SwiftUIChatInputBar: View {
         .buttonStyle(HoverCapsuleStyle())
         .popover(isPresented: $showBranchPicker) {
             BranchPickerView(
-                branches: GitUtils.listBranches(at: state.cwd ?? ""),
-                currentBranch: displayBranch,
+                branches: GitUtils.listBranches(at: viewModel.cwd ?? ""),
+                currentBranch: viewModel.displayBranch,
                 onSelect: { selectedBranch in
-                    if state.isWorktree && state.barState == .notStarted {
-                        state.worktreeBaseBranch = selectedBranch
+                    if viewModel.isWorktree && viewModel.barState == .notStarted {
+                        viewModel.worktreeBaseBranch = selectedBranch
                     } else {
-                        guard let dir = state.cwd else { return }
+                        guard let dir = viewModel.cwd else { return }
                         if GitUtils.switchBranch(at: dir, branch: selectedBranch) {
-                            state.branchMonitor.monitor(directory: dir)
+                            viewModel.updateBranchMonitor(directory: dir)
                         }
                     }
                     showBranchPicker = false
@@ -338,30 +316,30 @@ struct SwiftUIChatInputBar: View {
     private var worktreeButton: some View {
         Menu {
             Button {
-                state.isWorktree = false
+                viewModel.isWorktree = false
             } label: {
                 Label(String(localized: "Local Project"), systemImage: "folder")
-                if !state.isWorktree { Image(systemName: "checkmark") }
+                if !viewModel.isWorktree { Image(systemName: "checkmark") }
             }
             Button {
-                state.isWorktree = true
+                viewModel.isWorktree = true
             } label: {
                 Label(String(localized: "New Worktree"), systemImage: "point.3.filled.connected.trianglepath.dotted")
-                if state.isWorktree { Image(systemName: "checkmark") }
+                if viewModel.isWorktree { Image(systemName: "checkmark") }
             }
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: state.isWorktree ? "point.3.filled.connected.trianglepath.dotted" : "folder")
+                Image(systemName: viewModel.isWorktree ? "point.3.filled.connected.trianglepath.dotted" : "folder")
                     .font(.system(size: 11, weight: .medium))
-                Text(state.isWorktree ? String(localized: "New Worktree") : String(localized: "Local Project"))
+                Text(viewModel.isWorktree ? String(localized: "New Worktree") : String(localized: "Local Project"))
                     .font(.system(size: 11))
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 8, weight: .medium))
             }
-            .foregroundStyle(state.isWorktree ? Color.accentColor : .secondary)
+            .foregroundStyle(viewModel.isWorktree ? Color.accentColor : .secondary)
         }
         .buttonStyle(.plain)
-        .disabled(!isWorktreeEditable)
+        .disabled(!viewModel.isWorktreeEditable)
     }
 
     // MARK: - Context Ring
@@ -371,14 +349,14 @@ struct SwiftUIChatInputBar: View {
             percent: percent,
             colorThresholds: [(70, .accentColor), (90, .orange), (100, .red)]
         )
-        .hoverTooltip(contextRingText)
+        .hoverTooltip(viewModel.contextRingText)
     }
 
     // MARK: - Scroll to Bottom
 
     private var scrollToBottomButton: some View {
         Button {
-            state.scrollToBottom()
+            viewModel.scrollToBottom()
         } label: {
             Image(systemName: "chevron.down")
                 .font(.system(size: 14, weight: .bold))
@@ -401,36 +379,6 @@ struct SwiftUIChatInputBar: View {
 
     // MARK: - Helpers
 
-    private var showStartingOverlay: Bool {
-        state.barState == .starting
-    }
-
-    private var showQueue: Bool {
-        !state.queuedMessages.isEmpty && !state.completion.isActive && !state.isInPermissionMode
-    }
-
-    private var isInputDisabled: Bool {
-        state.barState == .starting || state.barState == .interrupting
-    }
-
-    private var isWorktreeEditable: Bool {
-        state.barState == .notStarted
-    }
-
-    private var showWorktreeButton: Bool {
-        if state.isAdditionalPathEditable {
-            return state.originPath.map { GitUtils.isGitRepository(at: $0) } ?? false
-        }
-        return state.isWorktree
-    }
-
-    private var contextRingText: String {
-        let used = formatTokenCount(state.contextUsedTokens)
-        let total = formatTokenCount(state.contextWindowTokens)
-        let pct = Int(state.contextUsedPercent ?? 0)
-        return "\(used) / \(total)  (\(pct)%)"
-    }
-
     private func circleButton(icon: String, color: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
@@ -440,20 +388,6 @@ struct SwiftUIChatInputBar: View {
                 .background(Circle().fill(color))
         }
         .buttonStyle(.plain)
-    }
-
-    private func sendAction() {
-        guard state.canSend else { return }
-        let text = state.trimmedText
-        state.deleteDraft()
-        actions.onSend(text)
-    }
-
-    private func queueSendAction() {
-        let text = state.trimmedText
-        guard !text.isEmpty else { return }
-        state.queueMessage(text)
-        state.clearInput()
     }
 
     private func truncatedPath(_ path: String) -> String {
@@ -479,11 +413,6 @@ struct SwiftUIChatInputBar: View {
             }
         }
     }
-
-    private func formatTokenCount(_ count: Int) -> String {
-        let k = Double(count) / 1000.0
-        return String(format: "%.1fk", k)
-    }
 }
 
 // MARK: - Preview
@@ -495,8 +424,7 @@ struct SwiftUIChatInputBar: View {
 }
 
 private struct InputBarPreviewWrapper: View {
-    @State private var state = ChatSessionViewModel.newConversation(onRouterAction: { _ in })
-    @State private var selectedBarState: InputBarState = .notStarted
+    @State private var viewModel = InputBarViewModel.newConversation(onRouterAction: { _ in })
 
     var body: some View {
         ZStack {
@@ -506,16 +434,12 @@ private struct InputBarPreviewWrapper: View {
             VStack(spacing: 0) {
                 Spacer(minLength: 0)
 
-                SwiftUIChatInputBar(state: state, actions: ChatInputBarActions())
+                InputBarView(viewModel: viewModel)
                     .frame(width: 860)
                     .padding(.horizontal, 20)
                     .padding(.bottom, 16)
             }
         }
-        .onAppear { setupMockState() }
-    }
-
-    private func setupMockState() {
-        state.originPath = "/Volumes/largedisk/code/ccterm"
+        .onAppear { viewModel.originPath = "/Volumes/largedisk/code/ccterm" }
     }
 }

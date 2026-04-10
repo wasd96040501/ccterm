@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// SwiftUI completion list for file/slash command completions.
-struct SwiftUICompletionListView: View {
-    @Bindable var engine: CompletionEngine
+/// Completion list for file/slash command completions.
+struct CompletionListView: View {
+    @Bindable var viewModel: CompletionViewModel
     var onConfirm: (any CompletionItem) -> Void
     var onDrillDown: ((any CompletionItem) -> Void)?
     var onDeleteRecent: ((any CompletionItem) -> Void)?
@@ -14,7 +14,7 @@ struct SwiftUICompletionListView: View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: 0) {
-                    if let header = engine.headerText {
+                    if let header = viewModel.headerText {
                         HStack(spacing: 8) {
                             Image(systemName: "folder.badge.questionmark")
                                 .font(.system(size: 12, weight: .medium))
@@ -28,12 +28,12 @@ struct SwiftUICompletionListView: View {
                         .frame(height: rowHeight)
                     }
 
-                    if engine.items.isEmpty {
-                        if engine.headerText == nil {
+                    if viewModel.items.isEmpty {
+                        if viewModel.headerText == nil {
                             emptyRow
                         }
                     } else {
-                        ForEach(Array(engine.items.enumerated()), id: \.offset) { index, item in
+                        ForEach(Array(viewModel.items.enumerated()), id: \.offset) { index, item in
                             completionRow(item: item, index: index)
                                 .id(index)
                         }
@@ -41,8 +41,8 @@ struct SwiftUICompletionListView: View {
                 }
             }
             .frame(height: listHeight)
-            .animation(nil, value: engine.items.count)
-            .onChange(of: engine.selectedIndex) { _, newIndex in
+            .animation(nil, value: viewModel.items.count)
+            .onChange(of: viewModel.selectedIndex) { _, newIndex in
                 withAnimation(.easeInOut(duration: 0.1)) {
                     proxy.scrollTo(newIndex, anchor: .center)
                 }
@@ -55,7 +55,7 @@ struct SwiftUICompletionListView: View {
     @ViewBuilder
     private var emptyRow: some View {
         HStack(spacing: 8) {
-            switch engine.emptyReason {
+            switch viewModel.emptyReason {
             case .loading:
                 ProgressView()
                     .controlSize(.small)
@@ -64,7 +64,7 @@ struct SwiftUICompletionListView: View {
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             case .noMatches:
-                if engine.isLoading {
+                if viewModel.isLoading {
                     ProgressView()
                         .controlSize(.small)
                         .padding(.leading, 13)
@@ -94,7 +94,6 @@ struct SwiftUICompletionListView: View {
     @ViewBuilder
     private func completionRow(item: any CompletionItem, index: Int) -> some View {
         HStack(spacing: 0) {
-            // Icon
             if let icon = item.displayIcon {
                 Image(nsImage: icon)
                     .resizable()
@@ -102,7 +101,6 @@ struct SwiftUICompletionListView: View {
                     .padding(.leading, 13)
             }
 
-            // Badge
             if let badge = item.displayBadge, !badge.isEmpty {
                 Text(badge)
                     .font(.system(size: 10, weight: .medium))
@@ -116,7 +114,6 @@ struct SwiftUICompletionListView: View {
                     .padding(.leading, 6)
             }
 
-            // Path text
             Text(item.displayText)
                 .font(.system(size: 13))
                 .lineLimit(1)
@@ -125,7 +122,6 @@ struct SwiftUICompletionListView: View {
 
             Spacer(minLength: 8)
 
-            // Detail
             if let detail = item.displayDetail?.trimmingCharacters(in: .whitespacesAndNewlines)
                 .components(separatedBy: .newlines).first, !detail.isEmpty {
                 Text(detail)
@@ -136,7 +132,6 @@ struct SwiftUICompletionListView: View {
                     .padding(.trailing, 8)
             }
 
-            // Recent capsule + delete button
             if let dirItem = item as? DirectoryCompletionItem, dirItem.isRecent {
                 Text("recent")
                     .font(.system(size: 10, weight: .medium))
@@ -156,17 +151,17 @@ struct SwiftUICompletionListView: View {
             }
         }
         .frame(height: rowHeight)
-        .background(index == engine.selectedIndex ? Color.accentColor.opacity(0.2) : Color.clear)
+        .background(index == viewModel.selectedIndex ? Color.accentColor.opacity(0.2) : Color.clear)
         .contentShape(Rectangle())
         .onTapGesture {
-            engine.selectedIndex = index
+            viewModel.selectedIndex = index
             onConfirm(item)
         }
         .gesture(
             TapGesture()
                 .modifiers(.control)
                 .onEnded { _ in
-                    engine.selectedIndex = index
+                    viewModel.selectedIndex = index
                     onDrillDown?(item)
                 }
         )
@@ -175,15 +170,15 @@ struct SwiftUICompletionListView: View {
     // MARK: - Layout
 
     private var displayCount: Int {
-        if engine.headerText != nil && engine.items.isEmpty { return 0 }
-        if engine.isLoading && engine.items.isEmpty { return 1 }
-        return engine.items.isEmpty ? 1 : min(engine.items.count, maxVisibleItems)
+        if viewModel.headerText != nil && viewModel.items.isEmpty { return 0 }
+        if viewModel.isLoading && viewModel.items.isEmpty { return 1 }
+        return viewModel.items.isEmpty ? 1 : min(viewModel.items.count, maxVisibleItems)
     }
 
     private var listHeight: CGFloat {
-        let headerH: CGFloat = engine.headerText != nil ? rowHeight : 0
+        let headerH: CGFloat = viewModel.headerText != nil ? rowHeight : 0
         let contentH = CGFloat(displayCount) * rowHeight
-        if engine.headerText != nil && engine.items.isEmpty {
+        if viewModel.headerText != nil && viewModel.items.isEmpty {
             return headerH
         }
         return headerH + contentH

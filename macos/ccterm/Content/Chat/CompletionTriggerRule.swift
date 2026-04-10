@@ -10,7 +10,7 @@ protocol CompletionTriggerRule {
         text: String,
         cursorLocation: Int,
         context: CompletionTriggerContext
-    ) -> CompletionEngine.CompletionSession?
+    ) -> CompletionViewModel.CompletionSession?
 }
 
 /// Data and action closures passed to trigger rules each time `checkTrigger` runs.
@@ -41,7 +41,7 @@ extension CompletionTriggerRule {
 // MARK: - Slash Command
 
 struct SlashCommandTriggerRule: CompletionTriggerRule {
-    func match(text: String, cursorLocation: Int, context: CompletionTriggerContext) -> CompletionEngine.CompletionSession? {
+    func match(text: String, cursorLocation: Int, context: CompletionTriggerContext) -> CompletionViewModel.CompletionSession? {
         guard cursorLocation == 1,
               cursorLocation <= text.count,
               text[text.startIndex] == "/" else { return nil }
@@ -74,7 +74,7 @@ struct SlashCommandTriggerRule: CompletionTriggerRule {
 // MARK: - Directory Pick (@ when no directory)
 
 struct DirectoryPickTriggerRule: CompletionTriggerRule {
-    func match(text: String, cursorLocation: Int, context: CompletionTriggerContext) -> CompletionEngine.CompletionSession? {
+    func match(text: String, cursorLocation: Int, context: CompletionTriggerContext) -> CompletionViewModel.CompletionSession? {
         guard context.directory == nil,
               isTriggerPosition(text: text, cursorLocation: cursorLocation, for: "@") else { return nil }
 
@@ -109,7 +109,7 @@ struct DirectoryPickTriggerRule: CompletionTriggerRule {
 // MARK: - File Mention (@ when directory exists)
 
 struct FileMentionTriggerRule: CompletionTriggerRule {
-    func match(text: String, cursorLocation: Int, context: CompletionTriggerContext) -> CompletionEngine.CompletionSession? {
+    func match(text: String, cursorLocation: Int, context: CompletionTriggerContext) -> CompletionViewModel.CompletionSession? {
         guard let dir = context.directory,
               isTriggerPosition(text: text, cursorLocation: cursorLocation, for: "@") else { return nil }
 

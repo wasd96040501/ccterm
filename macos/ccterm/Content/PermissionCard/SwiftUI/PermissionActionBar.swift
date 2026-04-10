@@ -122,7 +122,7 @@ struct PermissionActionBar: View {
     @ViewBuilder
     private var feedbackInput: some View {
         if isDenyExpanded {
-            SwiftUITextInputView(
+            TextInputView(
                 text: $feedbackText,
                 placeholder: sendKeyBehavior.denyFeedbackPlaceholder,
                 font: .systemFont(ofSize: 12),

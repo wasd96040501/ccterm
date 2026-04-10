@@ -25,9 +25,9 @@ struct ContentView: View {
             }
         }
         .toolbar {
-            if isChatVisible && chatRouter.currentSession.handle != nil {
-                if chatRouter.currentSession.isViewingPlan {
-                    PlanToolbarContent(session: chatRouter.currentSession)
+            if isChatVisible && chatRouter.currentViewModel.handle != nil {
+                if chatRouter.currentViewModel.planReviewVM.isActive {
+                    PlanToolbarContent(viewModel: chatRouter.currentViewModel.planReviewVM)
                 } else {
                     ToolbarItem(placement: .automatic) {
                         Spacer()
@@ -40,9 +40,9 @@ struct ContentView: View {
         .searchable(text: $searchText, placement: .toolbar)
         .modifier(SearchFocusedModifier(isSearchFocused: $isSearchFocused))
         .onChange(of: searchText) { _, newValue in
-            let session = chatRouter.currentSession
-            if session.isViewingPlan {
-                session.planSearchQuery = newValue
+            let vm = chatRouter.currentViewModel
+            if vm.planReviewVM.isActive {
+                vm.planReviewVM.searchQuery = newValue
                 chatRouter.planWebViewLoader.search(query: newValue, direction: "reset")
             } else {
                 appState.searchQuery = newValue
@@ -50,16 +50,16 @@ struct ContentView: View {
             }
         }
         .onSubmit(of: .search) {
-            let session = chatRouter.currentSession
-            if session.isViewingPlan {
+            let vm = chatRouter.currentViewModel
+            if vm.planReviewVM.isActive {
                 chatRouter.planWebViewLoader.search(
-                    query: session.planSearchQuery, direction: "next"
+                    query: vm.planReviewVM.searchQuery, direction: "next"
                 )
             } else {
                 appState.findNext()
             }
         }
-        .onChange(of: chatRouter.currentSession.isViewingPlan) { _, _ in
+        .onChange(of: chatRouter.currentViewModel.planReviewVM.isActive) { _, _ in
             searchText = ""
         }
         .onChange(of: appState.searchFocusTrigger) { _, newValue in
@@ -102,7 +102,7 @@ struct ContentView: View {
     }
 
     private var showToolbar: Bool {
-        !(isChatVisible && chatRouter.currentSession.handle == nil)
+        !(isChatVisible && chatRouter.currentViewModel.handle == nil)
     }
 }
 

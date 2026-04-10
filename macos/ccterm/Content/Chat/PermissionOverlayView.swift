@@ -1,28 +1,27 @@
 import SwiftUI
 
 /// Permission card container with page dots for multiple cards.
-struct SwiftUIPermissionOverlayView: View {
-    let cards: [PermissionCardItem]
-    @Binding var currentIndex: Int
+struct PermissionOverlayView: View {
+    @Bindable var viewModel: PermissionViewModel
 
     var body: some View {
         VStack(spacing: 0) {
             // Fixed-height top row: page dots when multiple cards, empty spacer otherwise.
             ZStack {
-                if cards.count > 1 {
-                    PageDotIndicatorSwiftUIView(count: cards.count, currentIndex: $currentIndex)
+                if viewModel.cards.count > 1 {
+                    PageDotIndicatorSwiftUIView(count: viewModel.cards.count, currentIndex: $viewModel.currentIndex)
                 }
             }
             .frame(height: 16)
             .padding(.top, 2)
 
-            if let card = cards[safe: currentIndex] {
+            if let card = viewModel.currentCard {
                 cardView(for: card)
                     .id(card.id)
                     .transition(.blurReplace)
             }
         }
-        .animation(.smooth(duration: 0.35), value: currentIndex)
+        .animation(.smooth(duration: 0.35), value: viewModel.currentIndex)
     }
 
     @ViewBuilder

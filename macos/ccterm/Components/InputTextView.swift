@@ -3,7 +3,7 @@ import AppKit
 
 /// NSViewRepresentable wrapping NSTextView for SwiftUI.
 /// Supports cursor tracking, key interception, IME, and auto-sizing height.
-struct SwiftUITextInputView: NSViewRepresentable {
+struct TextInputView: NSViewRepresentable {
     @Binding var text: String
     var isEnabled: Bool = true
     var placeholder: String = ""
@@ -137,7 +137,7 @@ struct SwiftUITextInputView: NSViewRepresentable {
     // MARK: - Coordinator
 
     final class Coordinator: NSObject, NSTextViewDelegate {
-        var parent: SwiftUITextInputView
+        var parent: TextInputView
         weak var textView: InputNSTextView?
         weak var scrollView: InputTextScrollView?
         var isUpdatingText = false
@@ -148,7 +148,7 @@ struct SwiftUITextInputView: NSViewRepresentable {
         var onEscape: (() -> Void)?
         var keyInterceptor: ((NSEvent) -> Bool)?
 
-        init(parent: SwiftUITextInputView) {
+        init(parent: TextInputView) {
             self.parent = parent
             super.init()
         }

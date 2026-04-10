@@ -255,17 +255,20 @@ class SessionService {
         // 读取用户自定义 CLI 命令前缀
         let customCLICommand = UserDefaults.standard.string(forKey: "customCLICommand")
 
-        // Worktree: create directory ourselves for <hash>/<project> naming, then pass as workingDirectory
-        var effectivePath = config.originPath
-        if !isResume && config.isWorktree {
-            if let wtPath = Self.createWorktreeDirectory(repoPath: config.originPath, baseBranch: config.worktreeBaseBranch) {
-                effectivePath = wtPath
-            }
-            // If creation fails, fall back to original path (session will run without worktree)
+        // cwd = 传给 CLI 的 workingDirectory
+        // resume → record.cwd（上次实际工作目录）
+        // 新建 + worktree → 创建 worktree 目录
+        // 新建 → originPath
+        var cwd = config.originPath
+        if isResume, let recordCwd = repository.find(resolvedId)?.cwd {
+            cwd = recordCwd
+        } else if config.isWorktree, let wtPath = Self.createWorktreeDirectory(repoPath: config.originPath, baseBranch: config.worktreeBaseBranch) {
+            cwd = wtPath
         }
+        NSLog("[SessionService] start() sessionId=%@ cwd=%@", resolvedId, cwd)
 
         let agentConfig = SessionConfiguration(
-            workingDirectory: URL(fileURLWithPath: effectivePath),
+            workingDirectory: URL(fileURLWithPath: cwd),
             model: config.model,
             permissionMode: config.permissionMode.toSDK(),
             sessionId: isResume ? nil : resolvedId,

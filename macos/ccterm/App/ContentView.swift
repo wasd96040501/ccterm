@@ -36,9 +36,11 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 400)
-        .toolbar(showToolbar ? .automatic : .hidden, for: .windowToolbar)
-        .searchable(text: $searchText, placement: .toolbar)
-        .modifier(SearchFocusedModifier(isSearchFocused: $isSearchFocused))
+        .modifier(ConditionalSearchModifier(
+            text: $searchText,
+            isSearchFocused: $isSearchFocused,
+            isEnabled: showToolbar
+        ))
         .onChange(of: searchText) { _, newValue in
             let vm = chatRouter.currentViewModel
             if vm.planReviewVM.isActive {
@@ -103,6 +105,24 @@ struct ContentView: View {
 
     private var showToolbar: Bool {
         !(isChatVisible && chatRouter.currentViewModel.handle == nil)
+    }
+}
+
+/// 条件性搜索修饰符：启用时显示搜索框，禁用时不添加 .searchable，
+/// 避免 .toolbar(.hidden) 导致窗口控制按钮消失。
+private struct ConditionalSearchModifier: ViewModifier {
+    @Binding var text: String
+    var isSearchFocused: FocusState<Bool>.Binding
+    var isEnabled: Bool
+
+    func body(content: Content) -> some View {
+        if isEnabled {
+            content
+                .searchable(text: $text, placement: .toolbar)
+                .modifier(SearchFocusedModifier(isSearchFocused: isSearchFocused))
+        } else {
+            content
+        }
     }
 }
 

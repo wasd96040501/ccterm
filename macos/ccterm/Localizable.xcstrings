@@ -37,6 +37,16 @@
     },
     "(%lld)": {},
     "+%lld": {},
+    "@ Select directory · Enter temporary session": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "@ 选择目录 · Enter 临时对话"
+          }
+        }
+      }
+    },
     "@ Select directory · ⌘Enter temporary session": {
       "localizations": {
         "zh-Hans": {
@@ -364,6 +374,16 @@
         }
       }
     },
+    "Command Enter (⌘↩)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Command Enter (⌘↩)"
+          }
+        }
+      }
+    },
     "Completed": {
       "localizations": {
         "zh-Hans": {
@@ -480,6 +500,56 @@
           "stringUnit": {
             "state": "translated",
             "value": "完成"
+          }
+        }
+      }
+    },
+    "Enter (↩)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter (↩)"
+          }
+        }
+      }
+    },
+    "Enter to comment": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter 发送评论"
+          }
+        }
+      }
+    },
+    "Enter to deny with feedback": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter 拒绝并提供反馈"
+          }
+        }
+      }
+    },
+    "Enter to queue": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter 排队发送"
+          }
+        }
+      }
+    },
+    "Enter to send": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter 发送"
           }
         }
       }
@@ -1116,6 +1186,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "选择要切换到的目标分支"
+          }
+        }
+      }
+    },
+    "Send message with": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送消息快捷键"
           }
         }
       }

@@ -38,6 +38,7 @@ private enum SettingsSection: CaseIterable {
 
 private struct GeneralSettingsView: View {
     @AppStorage("customCLICommand") private var customCLICommand: String = ""
+    @AppStorage("sendKeyBehavior") private var sendKeyBehaviorRaw: String = SendKeyBehavior.commandEnter.rawValue
 
     var body: some View {
         Form {
@@ -53,6 +54,15 @@ private struct GeneralSettingsView: View {
             } footer: {
                 Text("Specify the command to launch Claude. Leave empty to auto-detect `claude` in your system.")
                     .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Picker("Send message with", selection: $sendKeyBehaviorRaw) {
+                    ForEach(SendKeyBehavior.allCases) { behavior in
+                        Text(behavior.title).tag(behavior.rawValue)
+                    }
+                }
+                .pickerStyle(.radioGroup)
             }
         }
         .formStyle(.grouped)

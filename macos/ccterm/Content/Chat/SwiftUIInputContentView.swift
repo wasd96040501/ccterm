@@ -16,6 +16,11 @@ struct SwiftUIInputContentView: View {
     @State private var quoteContentHeight: CGFloat = 0
     @State private var showPluginPicker = false
     @Environment(\.self) private var environment
+    @AppStorage("sendKeyBehavior") private var sendKeyBehaviorRaw: String = SendKeyBehavior.commandEnter.rawValue
+
+    private var sendKeyBehavior: SendKeyBehavior {
+        SendKeyBehavior(rawValue: sendKeyBehaviorRaw) ?? .commandEnter
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -43,8 +48,8 @@ struct SwiftUIInputContentView: View {
                 text: $state.inputText,
                 isEnabled: !isDisabled,
                 placeholder: isCommentMode
-                    ? String(localized: "⌘Enter to comment")
-                    : (state.isDirectoryUnset ? String(localized: "@ Select directory · ⌘Enter temporary session") : (state.barState == .responding ? String(localized: "⌘Enter to queue") : String(localized: "⌘Enter to send"))),
+                    ? sendKeyBehavior.commentPlaceholder
+                    : (state.isDirectoryUnset ? sendKeyBehavior.temporarySessionPlaceholder : (state.barState == .responding ? sendKeyBehavior.queuePlaceholder : sendKeyBehavior.sendPlaceholder)),
 
                 font: .systemFont(ofSize: 14),
                 minLines: 2,
@@ -77,7 +82,8 @@ struct SwiftUIInputContentView: View {
                     handleKeyEvent(event)
                 },
                 isFocused: $state.isFocused,
-                desiredCursorPosition: $state.desiredCursorPosition
+                desiredCursorPosition: $state.desiredCursorPosition,
+                sendKeyBehavior: sendKeyBehavior
             )
             .padding(.top, topPadding)
             .padding(.horizontal, contentPadding - 7)

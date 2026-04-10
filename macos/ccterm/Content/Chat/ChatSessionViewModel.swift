@@ -256,8 +256,9 @@ final class ChatSessionViewModel {
     /// Primary 目录可编辑（仅新会话）
     var isPrimaryPathEditable: Bool { barState == .notStarted }
 
-    /// Additional 目录可编辑（新会话 + 历史 session）
-    var isAdditionalPathEditable: Bool { barState == .notStarted || barState == .inactive }
+    /// Additional 目录可编辑（仅新会话，即从未启动过 session）。
+    /// inactive 的历史 session 已进入开发，不允许切换目录（点击复制路径）。
+    var isAdditionalPathEditable: Bool { barState == .notStarted }
 
     var isDirectoryUnset: Bool {
         isPrimaryPathEditable && selectedDirectory == nil

@@ -225,6 +225,15 @@ final class ChatRouter {
         let isTempDir = sessionVM.originPath == nil
         let directory = sessionVM.originPath ?? Self.createTempChatDirectory()
 
+        // Worktree mode: generate semantic branch name from user's task description
+        var worktreeBranchName: String?
+        if sessionVM.isWorktree {
+            worktreeBranchName = await SessionService.generateBranchName(
+                description: text,
+                workingDirectory: URL(fileURLWithPath: directory)
+            )
+        }
+
         let pluginDirs = sessionVM.pluginDirectories
         let config = SessionConfig(
             originPath: directory,
@@ -235,7 +244,8 @@ final class ChatRouter {
             permissionMode: sessionVM.permissionMode,
             model: sessionVM.selectedModel,
             effort: sessionVM.selectedEffort,
-            isTempDir: isTempDir
+            isTempDir: isTempDir,
+            worktreeBranchName: worktreeBranchName
         )
 
         let handle = sessionService.createNewSession(sessionId: sessionVM.sessionId, config: config, title: String(text.prefix(100)))

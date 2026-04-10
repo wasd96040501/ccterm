@@ -22,8 +22,10 @@ struct SessionConfig {
     /// 初始 effort。nil 表示使用默认 effort。
     let effort: AgentSDK.Effort?
     let isTempDir: Bool
+    /// LLM 生成的 worktree 分支名（如 "feat/user-auth-login"）。nil 时 fallback 随机。
+    let worktreeBranchName: String?
 
-    init(originPath: String, isWorktree: Bool, worktreeBaseBranch: String? = nil, pluginDirs: [String]?, additionalDirs: [String]?, permissionMode: PermissionMode, model: String? = nil, effort: AgentSDK.Effort? = nil, isTempDir: Bool = false) {
+    init(originPath: String, isWorktree: Bool, worktreeBaseBranch: String? = nil, pluginDirs: [String]?, additionalDirs: [String]?, permissionMode: PermissionMode, model: String? = nil, effort: AgentSDK.Effort? = nil, isTempDir: Bool = false, worktreeBranchName: String? = nil) {
         self.originPath = originPath
         self.isWorktree = isWorktree
         self.worktreeBaseBranch = worktreeBaseBranch
@@ -33,6 +35,7 @@ struct SessionConfig {
         self.model = model
         self.effort = effort
         self.isTempDir = isTempDir
+        self.worktreeBranchName = worktreeBranchName
     }
 }
 
@@ -98,32 +101,130 @@ class SessionService {
         return url
     }()
 
-    /// Generates a worktree name: `<4-hex>+<project-name>`.
-    private static func generateWorktreeName(for path: String) -> String {
+    /// Generates a worktree folder name: `<name>/<project-name>`.
+    /// If `semanticName` is provided (e.g. "user-auth-login"), uses it as folder name with collision fallback.
+    /// Otherwise falls back to random `<4-hex>`.
+    private static func generateWorktreeName(for path: String, semanticName: String?) -> String {
         let projectName = URL(fileURLWithPath: path).lastPathComponent
-        let hex = String(format: "%04x", UInt16.random(in: 0...0xFFFF))
-        return "\(hex)/\(projectName)"
+        let baseName = semanticName ?? String(format: "%04x", UInt16.random(in: 0...0xFFFF))
+        let worktreesBase = (path as NSString).appendingPathComponent(".claude/worktrees")
+
+        // Check collision and append short hex suffix if needed
+        let candidate = (worktreesBase as NSString).appendingPathComponent("\(baseName)/\(projectName)")
+        if semanticName != nil, FileManager.default.fileExists(atPath: candidate) {
+            let suffix = String(format: "%02x", UInt8.random(in: 0...0xFF))
+            return "\(baseName)-\(suffix)/\(projectName)"
+        }
+        return "\(baseName)/\(projectName)"
     }
 
-    /// Creates a worktree directory at `.claude/worktrees/<hash>/<project>` under the given repo path.
-    /// Creates a new branch `wt-<hex>` based on `baseBranch` (defaults to current branch or HEAD).
+    /// Uses LLM (via AgentSDK Prompt API) to generate a semantic branch name from a task description.
+    /// Returns a branch name like "feat/user-auth-login", or nil on failure.
+    static func generateBranchName(description: String, workingDirectory: URL) async -> String? {
+        let systemPrompt = """
+            You are a git branch name generator. Given a task description, output a single branch name.
+
+            Rules:
+            - Choose the most appropriate prefix: feat/, fix/, refactor/, or chore/
+            - Follow the prefix with 2-4 kebab-case words summarizing the core intent
+            - Be specific: prefer "add-oauth-login" over "update-auth"
+            - Output ONLY the branch name in the JSON field, nothing else
+            """
+
+        let config = PromptConfiguration(
+            workingDirectory: workingDirectory,
+            model: "haiku",
+            systemPrompt: systemPrompt,
+            tools: [],
+            jsonSchema: #"{"type":"object","properties":{"branch":{"type":"string","pattern":"^(feat|fix|refactor|chore)/[a-z0-9]+(-[a-z0-9]+){1,3}$"}},"required":["branch"]}"#,
+            customCommand: UserDefaults.standard.string(forKey: "customCLICommand")
+        )
+
+        let userMessage = "Generate a branch name for the following task:\n\n\(description)"
+        let truncatedDesc = String(description.prefix(80))
+        NSLog("[SessionService] generateBranchName start — input: \"%@\"", truncatedDesc)
+        let startTime = CFAbsoluteTimeGetCurrent()
+
+        do {
+            let result = try await Prompt.run(message: userMessage, configuration: config)
+            let elapsed = Int((CFAbsoluteTimeGetCurrent() - startTime) * 1000)
+            let usage = result.raw["usage"] as? [String: Any]
+            let inputTokens = usage?["input_tokens"] as? Int ?? 0
+            let outputTokens = usage?["output_tokens"] as? Int ?? 0
+            let costUsd = result.totalCostUsd ?? 0
+
+            if let branch = result.structuredOutput?["branch"] as? String, !branch.isEmpty {
+                NSLog("[SessionService] generateBranchName done — branch: \"%@\", elapsed: %dms, tokens: %d in / %d out, cost: $%.6f",
+                      branch, elapsed, inputTokens, outputTokens, costUsd)
+                return branch
+            }
+            NSLog("[SessionService] generateBranchName failed — no branch in structured output, elapsed: %dms, result: \"%@\"",
+                  elapsed, String(result.result.prefix(200)))
+        } catch {
+            let elapsed = Int((CFAbsoluteTimeGetCurrent() - startTime) * 1000)
+            NSLog("[SessionService] generateBranchName failed — elapsed: %dms, error: %@", elapsed, "\(error)")
+        }
+        return nil
+    }
+
+    /// Creates a worktree directory at `.claude/worktrees/<name>/<project>` under the given repo path.
+    /// If `branchName` is provided (e.g. "feat/user-auth-login"), uses it as branch and derives folder name.
+    /// Falls back to random `wt-<hex>` branch on collision or when `branchName` is nil.
     /// Returns the worktree directory path on success, or `nil` on failure.
-    private static func createWorktreeDirectory(repoPath: String, baseBranch: String?) -> String? {
-        let name = generateWorktreeName(for: repoPath)
+    private static func createWorktreeDirectory(repoPath: String, baseBranch: String?, branchName: String?) -> String? {
+        // Derive folder name from branch: "feat/user-auth-login" → "user-auth-login"
+        // Sanitize: replace filesystem-unsafe characters (/, \, :, spaces, etc.) with "-"
+        let folderName = branchName.flatMap { branch -> String? in
+            guard let body = branch.split(separator: "/", maxSplits: 1).last.map(String.init) else { return nil }
+            let sanitized = body.replacingOccurrences(
+                of: #"[/\\:\s\x00-\x1f*?"<>|.]+"#,
+                with: "-",
+                options: .regularExpression
+            ).trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+            return sanitized.isEmpty ? nil : sanitized
+        }
+        let name = generateWorktreeName(for: repoPath, semanticName: folderName)
         let worktreesBase = (repoPath as NSString).appendingPathComponent(".claude/worktrees")
         let worktreePath = (worktreesBase as NSString).appendingPathComponent(name)
         let parentDir = (worktreePath as NSString).deletingLastPathComponent
 
-        // Ensure parent directory exists (e.g. .claude/worktrees/ab12/)
         try? FileManager.default.createDirectory(atPath: parentDir, withIntermediateDirectories: true)
 
-        let branchName = "wt-\(String(format: "%04x", UInt16.random(in: 0...0xFFFF)))"
         let resolvedBase = baseBranch ?? GitUtils.currentBranch(at: repoPath) ?? "HEAD"
+        let resolvedBranch = branchName ?? "wt-\(String(format: "%04x", UInt16.random(in: 0...0xFFFF)))"
 
-        guard GitUtils.createWorktree(repoPath: repoPath, worktreePath: worktreePath, branch: branchName, baseBranch: resolvedBase) else {
-            return nil
+        // Try with the resolved branch name; on collision (branch already exists), retry with hex suffix
+        if GitUtils.createWorktree(repoPath: repoPath, worktreePath: worktreePath, branch: resolvedBranch, baseBranch: resolvedBase) {
+            copyLocalSettings(from: repoPath, to: worktreePath)
+            return worktreePath
         }
-        return worktreePath
+
+        // Branch name collision: retry with suffix
+        if branchName != nil {
+            let suffix = String(format: "%02x", UInt8.random(in: 0...0xFF))
+            let fallbackBranch = "\(resolvedBranch)-\(suffix)"
+            let fallbackName = generateWorktreeName(for: repoPath, semanticName: folderName.map { "\($0)-\(suffix)" })
+            let fallbackPath = (worktreesBase as NSString).appendingPathComponent(fallbackName)
+            let fallbackParent = (fallbackPath as NSString).deletingLastPathComponent
+            try? FileManager.default.createDirectory(atPath: fallbackParent, withIntermediateDirectories: true)
+
+            if GitUtils.createWorktree(repoPath: repoPath, worktreePath: fallbackPath, branch: fallbackBranch, baseBranch: resolvedBase) {
+                copyLocalSettings(from: repoPath, to: fallbackPath)
+                return fallbackPath
+            }
+        }
+
+        return nil
+    }
+
+    /// Copies `.claude/settings.local.json` from source repo to worktree if it exists.
+    private static func copyLocalSettings(from repoPath: String, to worktreePath: String) {
+        let source = (repoPath as NSString).appendingPathComponent(".claude/settings.local.json")
+        guard FileManager.default.fileExists(atPath: source) else { return }
+        let destDir = (worktreePath as NSString).appendingPathComponent(".claude")
+        try? FileManager.default.createDirectory(atPath: destDir, withIntermediateDirectories: true)
+        let dest = (destDir as NSString).appendingPathComponent("settings.local.json")
+        try? FileManager.default.copyItem(atPath: source, toPath: dest)
     }
 
     /// SessionHandle 缓存。key = sessionId，identity stable。
@@ -262,7 +363,7 @@ class SessionService {
         var cwd = config.originPath
         if isResume, let recordCwd = repository.find(resolvedId)?.cwd {
             cwd = recordCwd
-        } else if config.isWorktree, let wtPath = Self.createWorktreeDirectory(repoPath: config.originPath, baseBranch: config.worktreeBaseBranch) {
+        } else if config.isWorktree, let wtPath = Self.createWorktreeDirectory(repoPath: config.originPath, baseBranch: config.worktreeBaseBranch, branchName: config.worktreeBranchName) {
             cwd = wtPath
         }
         NSLog("[SessionService] start() sessionId=%@ cwd=%@", resolvedId, cwd)

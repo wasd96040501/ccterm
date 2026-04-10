@@ -35,7 +35,15 @@ public enum Prompt {
                 args.append("--json-schema")
                 args.append(jsonSchema)
             }
+            if config.disableSlashCommands {
+                args.append("--disable-slash-commands")
+            }
+            if let effort = config.effort {
+                args.append("--effort")
+                args.append(effort)
+            }
 
+            args.append("--")
             args.append(message)
 
             let proc = Process()

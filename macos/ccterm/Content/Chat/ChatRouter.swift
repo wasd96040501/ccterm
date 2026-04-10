@@ -226,7 +226,7 @@ final class ChatRouter {
         let directory = sessionVM.originPath ?? Self.createTempChatDirectory()
 
         let pluginDirs = sessionVM.pluginDirectories
-        let config = SessionConfig(
+        var config = SessionConfig(
             originPath: directory,
             isWorktree: sessionVM.isWorktree,
             worktreeBaseBranch: sessionVM.worktreeBaseBranch,
@@ -238,6 +238,7 @@ final class ChatRouter {
             isTempDir: isTempDir
         )
 
+        // Create handle first so UI enters .starting immediately
         let handle = sessionService.createNewSession(sessionId: sessionVM.sessionId, config: config, title: String(text.prefix(100)))
 
         sessionVM.originPath = directory
@@ -246,6 +247,13 @@ final class ChatRouter {
         viewModels[handle.sessionId] = sessionVM
         if pendingNewViewModel === sessionVM {
             pendingNewViewModel = nil
+        }
+
+        // Worktree mode: generate semantic branch name (UI already shows .starting)
+        if sessionVM.isWorktree {
+            config.worktreeBranchName = await SessionService.generateBranchName(
+                description: text
+            )
         }
 
         do {

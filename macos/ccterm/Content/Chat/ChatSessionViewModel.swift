@@ -372,6 +372,7 @@ final class ChatSessionViewModel {
         if let record {
             self.originPath = record.originPath ?? record.cwd
             self._isWorktree = record.isWorktree
+            handle.isWorktree = record.isWorktree
             self.additionalDirectories = record.extra.addDirs ?? []
             self.pluginDirectories = record.extra.pluginDirs ?? []
             self.isTempDir = record.isTempDir

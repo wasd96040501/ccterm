@@ -119,51 +119,71 @@ class SessionService {
 
     /// Uses LLM (via AgentSDK Prompt API) to generate a semantic branch name from a task description.
     /// Returns a branch name like "feat/user-auth-login", or nil on failure.
-    static func generateBranchName(description: String, workingDirectory: URL) async -> String? {
-        let systemPrompt = """
-            You are a git branch name generator. Given a task description, output a single branch name.
-
-            Rules:
-            - Choose the most appropriate prefix: feat/, fix/, refactor/, or chore/
-            - Follow the prefix with 2-4 kebab-case words summarizing the core intent
-            - Be specific: prefer "add-oauth-login" over "update-auth"
-            - Output ONLY the branch name in the JSON field, nothing else
-            """
+    static func generateBranchName(description: String) async -> String? {
+        // Use a temp directory to avoid loading project CLAUDE.md (saves tokens)
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ccterm-prompt-\(UUID().uuidString.prefix(8))")
+        try? FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
 
         let config = PromptConfiguration(
-            workingDirectory: workingDirectory,
+            workingDirectory: tmpDir,
             model: "haiku",
-            systemPrompt: systemPrompt,
+            systemPrompt: "Git branch name generator. Rules: prefix with feat/, fix/, refactor/, or chore/. Then 2-4 kebab-case words. Reply with ONLY the branch name. No explanation, no quotes, no markdown.",
             tools: [],
-            jsonSchema: #"{"type":"object","properties":{"branch":{"type":"string","pattern":"^(feat|fix|refactor|chore)/[a-z0-9]+(-[a-z0-9]+){1,3}$"}},"required":["branch"]}"#,
-            customCommand: UserDefaults.standard.string(forKey: "customCLICommand")
+            customCommand: UserDefaults.standard.string(forKey: "customCLICommand"),
+            disableSlashCommands: true,
+            effort: "low"
         )
 
-        let userMessage = "Generate a branch name for the following task:\n\n\(description)"
         let truncatedDesc = String(description.prefix(80))
         NSLog("[SessionService] generateBranchName start — input: \"%@\"", truncatedDesc)
         let startTime = CFAbsoluteTimeGetCurrent()
 
         do {
-            let result = try await Prompt.run(message: userMessage, configuration: config)
+            let result = try await Prompt.run(
+                message: "Generate a branch name for: \(description)",
+                configuration: config
+            )
             let elapsed = Int((CFAbsoluteTimeGetCurrent() - startTime) * 1000)
             let usage = result.raw["usage"] as? [String: Any]
             let inputTokens = usage?["input_tokens"] as? Int ?? 0
             let outputTokens = usage?["output_tokens"] as? Int ?? 0
             let costUsd = result.totalCostUsd ?? 0
 
-            if let branch = result.structuredOutput?["branch"] as? String, !branch.isEmpty {
+            let branch = sanitizeBranchName(result.result)
+            if let branch {
                 NSLog("[SessionService] generateBranchName done — branch: \"%@\", elapsed: %dms, tokens: %d in / %d out, cost: $%.6f",
                       branch, elapsed, inputTokens, outputTokens, costUsd)
-                return branch
+            } else {
+                NSLog("[SessionService] generateBranchName failed — invalid after sanitize, elapsed: %dms, raw: \"%@\"",
+                      elapsed, String(result.result.prefix(200)))
             }
-            NSLog("[SessionService] generateBranchName failed — no branch in structured output, elapsed: %dms, result: \"%@\"",
-                  elapsed, String(result.result.prefix(200)))
+            return branch
         } catch {
             let elapsed = Int((CFAbsoluteTimeGetCurrent() - startTime) * 1000)
             NSLog("[SessionService] generateBranchName failed — elapsed: %dms, error: %@", elapsed, "\(error)")
         }
         return nil
+    }
+
+    /// Sanitizes LLM output into a valid git branch name, or returns nil if unusable.
+    private static func sanitizeBranchName(_ raw: String) -> String? {
+        var name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Strip markdown wrapping: backticks, bold markers
+        name = name.replacingOccurrences(of: #"^[`*]+|[`*]+$"#, with: "", options: .regularExpression)
+        name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Replace git-illegal characters: space ~ ^ : ? * [ \ control chars
+        name = name.replacingOccurrences(of: #"[\s~^:?*\[\]\\{}\x00-\x1f\x7f]+"#, with: "-", options: .regularExpression)
+        // Replace .. (git disallows consecutive dots)
+        name = name.replacingOccurrences(of: "..", with: "-")
+        // Collapse consecutive dashes
+        name = name.replacingOccurrences(of: #"-{2,}"#, with: "-", options: .regularExpression)
+        // Trim leading/trailing - and /
+        name = name.trimmingCharacters(in: CharacterSet(charactersIn: "-/"))
+        // Must contain a prefix like feat/
+        guard name.contains("/"), !name.isEmpty else { return nil }
+        return name
     }
 
     /// Creates a worktree directory at `.claude/worktrees/<name>/<project>` under the given repo path.

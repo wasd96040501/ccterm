@@ -252,8 +252,7 @@ final class ChatRouter {
         // Worktree mode: generate semantic branch name (UI already shows .starting)
         if sessionVM.isWorktree {
             config.worktreeBranchName = await SessionService.generateBranchName(
-                description: text,
-                workingDirectory: URL(fileURLWithPath: directory)
+                description: text
             )
         }
 

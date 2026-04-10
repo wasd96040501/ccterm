@@ -26,6 +26,12 @@ public struct PromptConfiguration {
     /// 用户自定义命令前缀，如 "trae-proxy claude --"。非空时替代默认 claude 二进制。
     public var customCommand: String?
 
+    /// 禁用斜杠命令解析。对应 `--disable-slash-commands`。
+    public var disableSlashCommands: Bool
+
+    /// 推理投入等级。对应 `--effort`。
+    public var effort: String?
+
     public init(
         workingDirectory: URL,
         model: String? = nil,
@@ -34,7 +40,9 @@ public struct PromptConfiguration {
         jsonSchema: String? = nil,
         binaryPath: String? = nil,
         env: [String: String] = [:],
-        customCommand: String? = nil
+        customCommand: String? = nil,
+        disableSlashCommands: Bool = false,
+        effort: String? = nil
     ) {
         self.workingDirectory = workingDirectory
         self.model = model
@@ -44,5 +52,7 @@ public struct PromptConfiguration {
         self.binaryPath = binaryPath
         self.env = env
         self.customCommand = customCommand
+        self.disableSlashCommands = disableSlashCommands
+        self.effort = effort
     }
 }

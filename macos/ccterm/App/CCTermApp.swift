@@ -19,7 +19,7 @@ struct CCTermApp: App {
         Window("Settings", id: "settings") {
             SettingsView()
         }
-        .defaultSize(width: 700, height: 460)
+        .defaultSize(width: 830, height: 534)
         .windowResizability(.contentSize)
     }
 

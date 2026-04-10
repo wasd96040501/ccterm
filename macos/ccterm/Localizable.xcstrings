@@ -674,7 +674,6 @@
         }
       }
     },
-    "Loading plan WebView...": {},
     "Loading…": {
       "localizations": {
         "zh-Hans": {
@@ -948,7 +947,6 @@
         }
       }
     },
-    "Permission Card Gallery": {},
     "Pin": {
       "localizations": {
         "zh-Hans": {
@@ -1079,7 +1077,6 @@
         }
       }
     },
-    "Scenario": {},
     "Search branches…": {
       "localizations": {
         "zh-Hans": {

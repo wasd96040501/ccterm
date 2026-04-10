@@ -106,10 +106,10 @@ struct NewProjectViewWrapper: View {
         guard !text.isEmpty, let primary = folders.first else { return }
 
         let addDirs = folders.dropFirst().map(\.path)
-        let session = chatRouter.currentSession
-        session.originPath = primary.path
-        session.isWorktree = primary.isWorktree
-        session.additionalDirectories = addDirs
+        let vm = chatRouter.currentViewModel
+        vm.originPath = primary.path
+        vm.isWorktree = primary.isWorktree
+        vm.additionalDirectories = addDirs
         chatRouter.submitMessage(text)
         inputText = ""
     }

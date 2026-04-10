@@ -59,7 +59,7 @@ final class AppState {
         // 活跃 session 判断：当前已在该 tab 时丢弃未读通知
         sidebarVM.isSessionActive = { [weak router, weak self] sessionId in
             guard let self, self.activeAction == nil else { return false }
-            return router?.currentSession.sessionId == sessionId
+            return router?.currentViewModel.sessionId == sessionId
         }
 
         // App 退出时清理子进程
@@ -85,10 +85,10 @@ final class AppState {
     }
 
     func findNext() {
-        let session = chatRouter.currentSession
-        if session.isViewingPlan {
+        let vm = chatRouter.currentViewModel
+        if vm.planReviewVM.isActive {
             chatRouter.planWebViewLoader.search(
-                query: session.planSearchQuery, direction: "next"
+                query: vm.planReviewVM.searchQuery, direction: "next"
             )
         } else {
             guard !searchQuery.isEmpty else { return }
@@ -97,10 +97,10 @@ final class AppState {
     }
 
     func findPrevious() {
-        let session = chatRouter.currentSession
-        if session.isViewingPlan {
+        let vm = chatRouter.currentViewModel
+        if vm.planReviewVM.isActive {
             chatRouter.planWebViewLoader.search(
-                query: session.planSearchQuery, direction: "prev"
+                query: vm.planReviewVM.searchQuery, direction: "prev"
             )
         } else {
             guard !searchQuery.isEmpty else { return }
@@ -111,13 +111,13 @@ final class AppState {
     func startNewConversation() {
         activeAction = nil
         chatRouter.activateNewConversation()
-        chatRouter.currentSession.focusTextView()
+        chatRouter.currentViewModel.inputVM.focusTextView()
     }
 
     func dismissSearch() {
-        let session = chatRouter.currentSession
-        if session.isViewingPlan {
-            session.planSearchQuery = ""
+        let vm = chatRouter.currentViewModel
+        if vm.planReviewVM.isActive {
+            vm.planReviewVM.searchQuery = ""
             chatRouter.planWebViewLoader.search(query: "", direction: "reset")
         } else {
             chatRouter.search(query: "", direction: "reset")
@@ -139,7 +139,7 @@ final class AppState {
         }
 
         // Inject mock ExitPlanMode permission card
-        let session = chatRouter.currentSession
+        let currentVM = chatRouter.currentViewModel
         let cardId = "gallery-plan-mock"
         let plan = Self.galleryPlan
         let request = PermissionRequest.makePreview(
@@ -157,20 +157,20 @@ final class AppState {
             }
         )
 
-        vm.onViewPlan = { [weak session] in
-            session?.enterPlanView(permissionId: cardId)
+        vm.onViewPlan = { [weak currentVM] in
+            currentVM?.planReviewVM.enter(permissionId: cardId)
         }
-        vm.onExecute = { [weak session] mode in
-            session?.executePlan(mode: mode)
+        vm.onExecute = { [weak currentVM] mode in
+            currentVM?.planReviewVM.executePlan(mode: mode)
         }
 
         // Push plan to singleton loader
         if let md = vm.planMarkdown, !md.isEmpty {
-            session.planWebViewLoader?.setPlan(key: cardId, markdown: md)
+            currentVM.planWebViewLoader?.setPlan(key: cardId, markdown: md)
         }
 
         let card = PermissionCardItem(id: cardId, cardType: .exitPlanMode(vm))
-        session.permissionCards = [card]
+        currentVM.permissionVM.cards = [card]
     }
 
     private static let galleryPlan = """

@@ -8,4 +8,6 @@ enum SessionEvent {
     case permissionsChanged([PendingPermission])
     /// 子进程退出。emit 时 status 仍是退出前的值。
     case processExited(ProcessExit)
+    /// 工作目录变化（sessionInit 或 pathChange）。
+    case cwdChanged(String)
 }

@@ -37,16 +37,16 @@ struct PermissionCardLiveGalleryView: View {
 }
 
 private struct LiveInputBarPreview: View {
-    @State private var state: ChatSessionViewModel
+    @State private var viewModel: InputBarViewModel
     private let plan: String
 
     init(plan: String) {
         self.plan = plan
-        _state = State(initialValue: ChatSessionViewModel.newConversation(onRouterAction: { _ in }))
+        _viewModel = State(initialValue: InputBarViewModel.newConversation(onRouterAction: { _ in }))
     }
 
     var body: some View {
-        SwiftUIChatInputBar(state: state, actions: ChatInputBarActions())
+        InputBarView(viewModel: viewModel)
             .onAppear {
                 let id = "live-plan-\(plan.hashValue)"
                 let request = PermissionRequest.makePreview(
@@ -55,13 +55,13 @@ private struct LiveInputBarPreview: View {
                     input: ["plan": plan]
                 )
                 let vm = ExitPlanModeCardViewModel(request: request, onDecision: { _ in }, onNewSession: nil)
-                vm.onViewPlan = { [weak state] in
-                    state?.enterPlanView(permissionId: id)
+                vm.onViewPlan = { [weak viewModel] in
+                    viewModel?.planReviewVM.enter(permissionId: id)
                 }
-                vm.onExecute = { [weak state] mode in
-                    state?.executePlan(mode: mode)
+                vm.onExecute = { [weak viewModel] mode in
+                    viewModel?.planReviewVM.executePlan(mode: mode)
                 }
-                state.permissionCards = [PermissionCardItem(id: id, cardType: .exitPlanMode(vm))]
+                viewModel.permissionVM.cards = [PermissionCardItem(id: id, cardType: .exitPlanMode(vm))]
             }
     }
 }

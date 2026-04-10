@@ -106,7 +106,7 @@ final class TodoSessionCoordinator {
 
     // MARK: - State Writeback
 
-    /// Called from ChatSessionViewModel event handler to sync session state to TodoItem.
+    /// Called from InputBarViewModel event handler to sync session state to TodoItem.
     func handleStateChange(needsAttention: Bool, for sessionId: String) {
         guard let todo = todoService.todo(forSessionId: sessionId) else { return }
         if todo.status == .pending && needsAttention {

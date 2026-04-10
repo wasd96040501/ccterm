@@ -1,13 +1,13 @@
 import SwiftUI
 
 struct PlanToolbarContent: ToolbarContent {
-    @Bindable var session: ChatSessionViewModel
+    @Bindable var viewModel: PlanReviewViewModel
 
     var body: some ToolbarContent {
         // LEFT: Back button
         ToolbarItem(placement: .navigation) {
             Button {
-                session.exitPlanView()
+                viewModel.exit()
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "chevron.left")
@@ -33,12 +33,12 @@ struct PlanToolbarContent: ToolbarContent {
     // MARK: - Reject / Revise
 
     private var rejectReviseButton: some View {
-        let hasComments = session.viewingPlanCardVM?.commentStore?.hasComments ?? false
+        let hasComments = viewModel.viewingCardVM?.commentStore?.hasComments ?? false
         return Button {
             if hasComments {
-                session.revisePlan()
+                viewModel.revisePlan()
             } else {
-                session.rejectPlan()
+                viewModel.rejectPlan()
             }
         } label: {
             Text(hasComments ? "Revise" : "Reject")
@@ -90,10 +90,10 @@ struct PlanToolbarContent: ToolbarContent {
     }
 
     private func executeWithConfirmation(_ mode: PlanExecutionMode) {
-        if session.viewingPlanCardVM?.commentStore?.hasComments == true {
-            session.pendingExecuteMode = mode
+        if viewModel.viewingCardVM?.commentStore?.hasComments == true {
+            viewModel.pendingExecuteMode = mode
         } else {
-            session.executePlan(mode: mode)
+            viewModel.executePlan(mode: mode)
         }
     }
 }

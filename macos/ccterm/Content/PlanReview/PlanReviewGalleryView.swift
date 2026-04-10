@@ -3,7 +3,7 @@ import SwiftUI
 import AgentSDK
 
 /// Debug gallery that renders the full plan review experience:
-/// real SwiftUIChatInputBar in comment mode + plan WebView + toolbar.
+/// real InputBarView in comment mode + plan WebView + toolbar.
 struct PlanReviewGalleryView: View {
 
     @State private var selectedScenario = 0
@@ -32,24 +32,22 @@ struct PlanReviewGalleryView: View {
 
 // MARK: - Preview Wrapper
 
-/// Wraps real SwiftUIChatInputBar + PlanWebViewRepresentable to simulate
-/// the full-screen plan review experience with mock data.
 private struct PlanReviewPreview: View {
     let plan: String
 
-    @State private var session: ChatSessionViewModel
+    @State private var viewModel: InputBarViewModel
     @State private var loader = PlanWebViewLoader()
     @State private var inputBarHeight: CGFloat = 0
 
     init(plan: String) {
         self.plan = plan
-        _session = State(initialValue: ChatSessionViewModel.newConversation(onRouterAction: { _ in }))
+        _viewModel = State(initialValue: InputBarViewModel.newConversation(onRouterAction: { _ in }))
     }
 
     var body: some View {
         ZStack(alignment: .bottom) {
             // Plan WebView (fullscreen)
-            if session.isViewingPlan {
+            if viewModel.planReviewVM.isActive {
                 WebViewRepresentable(webView: loader.webView)
                     .ignoresSafeArea(edges: .top)
                     .padding(.bottom, inputBarHeight)
@@ -64,25 +62,22 @@ private struct PlanReviewPreview: View {
             }
 
             // Real InputBar in comment mode
-            SwiftUIChatInputBar(
-                state: session,
-                actions: ChatInputBarActions()
-            )
-            .frame(minWidth: 400, idealWidth: 860, maxWidth: 860)
-            .padding(.top, 32)
-            .padding(.horizontal, 20)
-            .padding(.bottom, 16)
-            .background(
-                GeometryReader { geo in
-                    Color.clear.preference(key: GalleryInputBarHeightKey.self, value: geo.size.height)
-                }
-            )
+            InputBarView(viewModel: viewModel)
+                .frame(minWidth: 400, idealWidth: 860, maxWidth: 860)
+                .padding(.top, 32)
+                .padding(.horizontal, 20)
+                .padding(.bottom, 16)
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.preference(key: GalleryInputBarHeightKey.self, value: geo.size.height)
+                    }
+                )
         }
         .onPreferenceChange(GalleryInputBarHeightKey.self) { height in
             inputBarHeight = height
         }
         .toolbar {
-            PlanToolbarContent(session: session)
+            PlanToolbarContent(viewModel: viewModel.planReviewVM)
         }
         .onAppear {
             setupMockPlanState()
@@ -90,17 +85,19 @@ private struct PlanReviewPreview: View {
     }
 
     private func setupMockPlanState() {
-        // Inject singleton loader into session so enterPlanView/search work
-        session.planWebViewLoader = loader
-        loader.onTextSelected = { [weak session = session] range in
-            session?.pendingCommentSelections.append(range)
+        // Inject singleton loader into viewModel so enterPlanView/search work
+        viewModel.planWebViewLoader = loader
+        viewModel.planReviewVM.planWebViewLoader = loader
+        viewModel.permissionVM.planWebViewLoader = loader
+        loader.onTextSelected = { [weak viewModel = viewModel] range in
+            viewModel?.planReviewVM.pendingCommentSelections.append(range)
         }
-        loader.onSelectionCleared = { [weak session = session] in
-            session?.pendingCommentSelections.removeAll()
+        loader.onSelectionCleared = { [weak viewModel = viewModel] in
+            viewModel?.planReviewVM.pendingCommentSelections.removeAll()
         }
-        loader.onSearchResult = { [weak session = session] total, current in
-            session?.planSearchTotal = total
-            session?.planSearchCurrent = current
+        loader.onSearchResult = { [weak viewModel = viewModel] total, current in
+            viewModel?.planReviewVM.searchTotal = total
+            viewModel?.planReviewVM.searchCurrent = current
         }
 
         let cardId = "gallery-plan-\(plan.hashValue)"
@@ -120,11 +117,11 @@ private struct PlanReviewPreview: View {
         )
 
         // Bind onViewPlan to enter plan fullscreen
-        vm.onViewPlan = { [weak session = session] in
-            session?.enterPlanView(permissionId: cardId)
+        vm.onViewPlan = { [weak viewModel = viewModel] in
+            viewModel?.planReviewVM.enter(permissionId: cardId)
         }
-        vm.onExecute = { [weak session = session] mode in
-            session?.executePlan(mode: mode)
+        vm.onExecute = { [weak viewModel = viewModel] mode in
+            viewModel?.planReviewVM.executePlan(mode: mode)
         }
 
         // Push plan to loader
@@ -133,10 +130,10 @@ private struct PlanReviewPreview: View {
         }
 
         let card = PermissionCardItem(id: cardId, cardType: .exitPlanMode(vm))
-        session.permissionCards = [card]
+        viewModel.permissionVM.cards = [card]
 
         // Immediately enter plan viewing mode
-        session.enterPlanView(permissionId: cardId)
+        viewModel.planReviewVM.enter(permissionId: cardId)
     }
 }
 
@@ -196,39 +193,6 @@ private let longGalleryPlan = """
 3. Validate parity for 2 weeks
 4. Switch reads to new system
 5. Remove old code paths
-
-### Code Changes
-
-```swift
-protocol PermissionRule {
-    var priority: Int { get }
-    func evaluate(_ request: PermissionRequest) -> PermissionDecision?
-}
-
-class PermissionRuleEngine {
-    private var rules: [PermissionRule] = []
-
-    func addRule(_ rule: PermissionRule) {
-        rules.append(rule)
-        rules.sort { $0.priority > $1.priority }
-    }
-
-    func evaluate(_ request: PermissionRequest) -> PermissionDecision {
-        for rule in rules {
-            if let decision = rule.evaluate(request) {
-                return decision
-            }
-        }
-        return .askUser
-    }
-}
-```
-
-### Timeline
-- Phase 1: Week 1-2
-- Phase 2: Week 3-4
-- Phase 3: Week 5-6
-- Phase 4: Week 7-8
 """
 
 #endif

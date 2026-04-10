@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Displays queued messages above the input area.
-struct SwiftUIQueuedMessagesView: View {
+struct QueuedMessagesView: View {
     let messages: [String]
     var onDelete: ((Int) -> Void)?
 
@@ -42,7 +42,7 @@ struct SwiftUIQueuedMessagesView: View {
 }
 
 #Preview {
-    SwiftUIQueuedMessagesView(
+    QueuedMessagesView(
         messages: ["First queued message", "Second longer queued message that should wrap to multiple lines if needed", "Third message"],
         onDelete: { _ in }
     )

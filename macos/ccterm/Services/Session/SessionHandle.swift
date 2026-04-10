@@ -401,6 +401,9 @@ class SessionHandle {
         if let init_ = effects.sessionInit {
             NSLog("[SessionHandle:%@] sessionInit arrived — cwd=%@ status=%@", sessionId, init_.cwd ?? "nil", "\(status)")
             cwd = init_.cwd
+            if let newCwd = init_.cwd {
+                emit(.cwdChanged(newCwd))
+            }
             if status == .starting {
                 status = .idle
             }
@@ -424,6 +427,7 @@ class SessionHandle {
         if let change = effects.pathChange {
             cwd = change.cwd
             isWorktree = change.isWorktree
+            emit(.cwdChanged(change.cwd))
         }
 
         if effects.turnEnded {

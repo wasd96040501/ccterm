@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Elegant loading bar shown above input when CLI is starting up.
 /// A subtle highlight band sweeps across periodically — skeleton-shimmer style.
-struct SwiftUICLIStartingView: View {
+struct CLIStartingView: View {
     private let barHeight: CGFloat = 24
     @Environment(\.colorScheme) private var colorScheme
 
@@ -49,7 +49,7 @@ private struct PulsingDot: View {
 
 #Preview("CLI Starting — in InputBar") {
     VStack(spacing: 0) {
-        SwiftUICLIStartingView()
+        CLIStartingView()
         Divider()
         Text("Input area")
             .frame(maxWidth: .infinity, minHeight: 60)

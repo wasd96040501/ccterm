@@ -55,15 +55,18 @@
 
 ## Chat 架构
 
-Chat 模块采用 ChatRouter + per-session ChatSessionViewModel 架构。
+Chat 模块采用 ChatRouter + per-session InputBarViewModel 架构。InputBarViewModel 持有 3 个子 ViewModel（InputViewModel / PermissionViewModel / PlanReviewViewModel），对应 InputBar 的 3 个互斥 UI 模式。
 
 ### 核心实体
 
 | 实体 | 类型 | 数量 | 职责 |
 |------|------|------|------|
 | ChatRouter | @Observable | 1 | session 生命周期路由和协调：切换 session、消息提交路由（新建/恢复/直发）、per-session ViewModel 缓存管理。不持有 UI 状态 |
-| ChatSessionViewModel | @Observable | N（per-session） | 单个 session 的完整 UI 状态：computed 直读 SessionHandle 运行时状态，stored 管理本地 UI 状态，action 直调 handle 方法。InputBar 的唯一数据源 |
-| ChatInputBarActions | struct | 1 个闭包 | 仅 `onSend`（需要 ChatRouter 路由），其余操作 InputBar 直调 `sessionVM.method()` |
+| InputBarViewModel | @Observable | N（per-session） | InputBar 路由层：桥接 handle 运行时状态，持有子 VM，处理模式路由和事件分发。`onSend` 闭包由 ChatRouter 创建时注入 |
+| InputViewModel | @Observable | N（per-session） | 文本输入/补全/draft 管理 |
+| PermissionViewModel | @Observable | N（per-session） | 权限卡片列表管理 |
+| PlanReviewViewModel | @Observable | N（per-session） | Plan 评论/搜索/执行 |
+| CompletionViewModel | @Observable | N（per-session） | 补全列表状态管理（InputViewModel 持有） |
 
 ### 持有关系
 
@@ -77,20 +80,26 @@ AppState
 │   └── 依赖: sessionService（观察 allHandles，自驱动 rebuild）
 │   └── ❌ 不认识 ChatRouter，不持有选中状态
 ├── chatRouter: ChatRouter
-│   ├── currentSession: ChatSessionViewModel（当前活跃实例）
-│   ├── sessions: [String: ChatSessionViewModel]（per-session 缓存）
+│   ├── currentViewModel: InputBarViewModel（当前活跃实例）
+│   ├── viewModels: [String: InputBarViewModel]（per-session 缓存）
 │   ├── chatContentView: ChatContentView
 │   │   └── bridge: WebViewBridge
 │   └── 依赖: sessionService
 └── todoSessionCoordinator: TodoSessionCoordinator
+
+InputBarViewModel
+├── inputVM: InputViewModel
+│   └── completionVM: CompletionViewModel
+├── permissionVM: PermissionViewModel
+└── planReviewVM: PlanReviewViewModel
 ```
 
 ### 数据流
 
-- **状态渲染**：SessionHandle.status 变化 → ChatSessionViewModel.barState（computed 直读）→ SwiftUI 自动追踪 → InputBar 重渲染。无手动 observation，无逐字段拷贝
+- **状态渲染**：SessionHandle.status 变化 → InputBarViewModel.barState（computed 直读）→ SwiftUI 自动追踪 → InputBar 重渲染。无手动 observation，无逐字段拷贝
 - **消息推送**：所有 handle（包括后台）实时推送消息到 bridge → React 按 conversationId 分存
-- **Session 切换**：SidebarView onSelect → chatRouter.switchSession(id) → 整体替换 currentSession 实例 → bridge.switchConversation(id)。选中状态 source of truth 是 `chatRouter.currentSession.sessionId`
-- **消息提交**：InputBar → actions.onSend → ChatRouter.submitMessage 路由：handle == nil → startNewSession / handle.status == .inactive → resumeSession / 其他 → handle.send
+- **Session 切换**：SidebarView onSelect → chatRouter.activateSession(id) → 整体替换 currentViewModel 实例 → bridge.switchConversation(id)。选中状态 source of truth 是 `chatRouter.currentViewModel.sessionId`
+- **消息提交**：InputBarView → viewModel.handleCommandReturn() → InputBarViewModel 内部按模式路由 → onSend 闭包（ChatRouter 注入）→ ChatRouter.submitMessage 路由
 
 ### UI 层胶水
 
@@ -100,9 +109,11 @@ RootView 是唯一同时知道 SidebarViewModel 和 ChatRouter 的地方。Sideb
 
 - 禁止在 View/ViewModel 中直接修改 session 的 processing/interrupting 状态，必须通过 SessionHandle 方法触发
 - UI 层只读取和映射状态，不维护独立的 session 状态
-- InputBar 的操作（interrupt、selectModel、queueMessage 等）直调 `sessionVM.method()`，仅 `onSend` 经过 ChatRouter 路由
+- InputBar 的操作（interrupt、selectModel、queueMessage 等）直调 `viewModel.method()`，`onSend` 在 InputBarViewModel 内部闭环（由 ChatRouter 注入）
 - 需要 ChatRouter 协调的操作通过 `onRouterAction` 回调传递 `ChatRouterAction` enum，不用瞬态属性 + `.onChange` 中转
-- 新增 session 运行时状态：在 SessionHandle 加字段 → ChatSessionViewModel 加 computed 直读（SwiftUI 自动追踪）
+- 新增 session 运行时状态：在 SessionHandle 加字段 → InputBarViewModel 加 computed 直读（SwiftUI 自动追踪）
+- 子 ViewModel 之间零交互，跨模式协调通过 InputBarViewModel 的 init 注入闭包完成
+- View 接收 ViewModel 参数一律命名为 `viewModel`，子 VM 数据通过属性路径访问（如 `viewModel.inputVM.text`）
 
 ## Session 运行时状态
 
@@ -124,7 +135,7 @@ SessionHandle 的对外接口严格区分两种机制：
 **规范：**
 - 禁止在 View/ViewModel 中缓存 SessionHandle 属性副本作为状态来源，通过 computed 直读 handle 属性
 - 本地操作（send/interrupt/setPermissionMode）只写 stdin 请求 CLI 变更，不直接改 observable 值
-- 新增运行时状态字段：在 SessionHandle 加 `@Observable` 属性 → ChatSessionViewModel 加 computed 直读
+- 新增运行时状态字段：在 SessionHandle 加 `@Observable` 属性 → InputBarViewModel 加 computed 直读
 - 禁止用 View `.onChange` 监听 handle 属性变化来触发副作用，改用 ViewModel 订阅 `handle.eventStream()`
 - 新增事件类型：在 `SessionEvent` 加 case → SessionHandle 相应位置 `emit()` → 消费者 `handleEvent()` 加分支
 

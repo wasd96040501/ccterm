@@ -86,7 +86,7 @@ final class ExitPlanModeCardViewModel {
         }
     }
 
-    // MARK: - Decision Methods (called from ChatSessionViewModel)
+    // MARK: - Decision Methods (called from PlanReviewViewModel)
 
     func executeNewSession() { onNewSession?() }
     func executeAllow() { onDecision(request.allowOnce()) }

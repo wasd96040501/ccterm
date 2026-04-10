@@ -23,9 +23,9 @@ struct SessionConfig {
     let effort: AgentSDK.Effort?
     let isTempDir: Bool
     /// LLM 生成的 worktree 分支名（如 "feat/user-auth-login"）。nil 时 fallback 随机。
-    let worktreeBranchName: String?
+    var worktreeBranchName: String?
 
-    init(originPath: String, isWorktree: Bool, worktreeBaseBranch: String? = nil, pluginDirs: [String]?, additionalDirs: [String]?, permissionMode: PermissionMode, model: String? = nil, effort: AgentSDK.Effort? = nil, isTempDir: Bool = false, worktreeBranchName: String? = nil) {
+    init(originPath: String, isWorktree: Bool, worktreeBaseBranch: String? = nil, pluginDirs: [String]?, additionalDirs: [String]?, permissionMode: PermissionMode, model: String? = nil, effort: AgentSDK.Effort? = nil, isTempDir: Bool = false) {
         self.originPath = originPath
         self.isWorktree = isWorktree
         self.worktreeBaseBranch = worktreeBaseBranch
@@ -35,7 +35,6 @@ struct SessionConfig {
         self.model = model
         self.effort = effort
         self.isTempDir = isTempDir
-        self.worktreeBranchName = worktreeBranchName
     }
 }
 

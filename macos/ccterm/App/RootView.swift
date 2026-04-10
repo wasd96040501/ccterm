@@ -22,7 +22,7 @@ struct RootView: View {
                 }
             )
         }
-        .frame(minWidth: 960, minHeight: 640)
+        .frame(minWidth: 800, minHeight: 480)
     }
 
     /// 从 ChatRouter + AppState 派生的 sidebar selection。

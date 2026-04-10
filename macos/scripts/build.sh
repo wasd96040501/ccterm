@@ -45,27 +45,29 @@ fi
 
 # --- Build ---
 
-TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-BUILD_LOG="/tmp/ccterm-build-${TIMESTAMP}-$$.log"
-BUILD_SUMMARY="/tmp/ccterm-build-${TIMESTAMP}-$$-summary.log"
+BUILD_LOG="/tmp/ccterm-build-$$.log"
+BUILD_SUMMARY="/tmp/ccterm-build-$$-summary.log"
 
-echo "Building scheme: $SCHEME ($CONFIGURATION)"
+echo "Building $SCHEME ($CONFIGURATION)..."
 
-# Query product path before building
-PRODUCT_PATH=$(xcodebuild \
+# Query product path (single call, best-effort — don't fail if unavailable)
+PRODUCT_APP=""
+BUILD_SETTINGS=$(xcodebuild \
   -project ccterm.xcodeproj \
   -scheme "$SCHEME" \
   -configuration "$CONFIGURATION" \
   -destination 'platform=macOS' \
-  -showBuildSettings 2>/dev/null \
-  | grep -m1 '^\s*BUILT_PRODUCTS_DIR' | sed 's/.*= //')
-PRODUCT_NAME=$(xcodebuild \
-  -project ccterm.xcodeproj \
-  -scheme "$SCHEME" \
-  -configuration "$CONFIGURATION" \
-  -destination 'platform=macOS' \
-  -showBuildSettings 2>/dev/null \
-  | grep -m1 '^\s*FULL_PRODUCT_NAME' | sed 's/.*= //')
+  -showBuildSettings 2>/dev/null || true)
+
+if [ -n "$BUILD_SETTINGS" ]; then
+  _DIR=$(echo "$BUILD_SETTINGS" | grep -m1 '^\s*BUILT_PRODUCTS_DIR' | sed 's/.*= //')
+  _NAME=$(echo "$BUILD_SETTINGS" | grep -m1 '^\s*FULL_PRODUCT_NAME' | sed 's/.*= //')
+  if [ -n "$_DIR" ] && [ -n "$_NAME" ]; then
+    PRODUCT_APP="$_DIR/$_NAME"
+  fi
+fi
+
+START_TIME=$(date +%s)
 
 BUILD_EXIT=0
 xcodebuild \
@@ -77,20 +79,21 @@ xcodebuild \
   build \
   > "$BUILD_LOG" 2>&1 || BUILD_EXIT=$?
 
+ELAPSED=$(( $(date +%s) - START_TIME ))
+
 # Extract summary: errors and warnings with 1 line of context before
 grep -B 1 -E '(error:|warning:|BUILD FAILED|BUILD SUCCEEDED|linker command failed)' "$BUILD_LOG" > "$BUILD_SUMMARY" 2>/dev/null || true
 
 if [ "$BUILD_EXIT" -ne 0 ]; then
   echo ""
-  echo "BUILD FAILED (exit code: $BUILD_EXIT)"
-  echo "Full log:    $BUILD_LOG"
-  echo "Summary:     $BUILD_SUMMARY"
+  echo "BUILD FAILED (${ELAPSED}s)"
+  echo ""
+  echo "Summary:  $BUILD_SUMMARY"
+  echo "Full log: $BUILD_LOG"
   exit "$BUILD_EXIT"
 fi
 
-echo "Build succeeded: $SCHEME ($CONFIGURATION)"
-if [ -n "$PRODUCT_PATH" ] && [ -n "$PRODUCT_NAME" ]; then
-  echo "Product:     $PRODUCT_PATH/$PRODUCT_NAME"
+echo "Build succeeded (${ELAPSED}s)"
+if [ -n "$PRODUCT_APP" ]; then
+  echo "Product: $PRODUCT_APP"
 fi
-echo "Full log:    $BUILD_LOG"
-echo "Summary:     $BUILD_SUMMARY"

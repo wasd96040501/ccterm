@@ -259,7 +259,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "export PATH=\"$HOME/.bun/bin:$PATH\"\ncd \"$SRCROOT/../web\"\nbun install --frozen-lockfile\nbun run build\ncp dist/*.js dist/*.css dist/*.html \"$SRCROOT/ccterm/Resources/\"\n";
+			shellScript = "export PATH=\"$HOME/.bun/bin:$PATH\"\ncd \"$SRCROOT/../web\"\nbun install --frozen-lockfile\nbun run build\ncp dist/*.js dist/*.css dist/*.html \"$SRCROOT/ccterm/Resources/\"\nmkdir -p \"$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH\"\ncp dist/*.js dist/*.css dist/*.html \"$BUILT_PRODUCTS_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/\"\n";
 		};
 		EA5A16F12F5A000000BB2B57 /* Build fzf */ = {
 			isa = PBXShellScriptBuildPhase;

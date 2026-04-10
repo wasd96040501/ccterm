@@ -13,11 +13,12 @@ cd "$(dirname "$0")/.."
 
 TARGET="${1:-cctermTests}"
 
-TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-TEST_LOG="/tmp/ccterm-test-${TIMESTAMP}-$$.log"
-TEST_SUMMARY="/tmp/ccterm-test-${TIMESTAMP}-$$-summary.log"
+TEST_LOG="/tmp/ccterm-test-$$.log"
+TEST_SUMMARY="/tmp/ccterm-test-$$-summary.log"
 
-echo "Testing: ${TARGET}"
+echo "Testing: ${TARGET}..."
+
+START_TIME=$(date +%s)
 
 TEST_EXIT=0
 xcodebuild test \
@@ -28,6 +29,8 @@ xcodebuild test \
   -parallel-testing-enabled NO \
   > "$TEST_LOG" 2>&1 || TEST_EXIT=$?
 
+ELAPSED=$(( $(date +%s) - START_TIME ))
+
 # Extract summary: test results, errors, failures, and NSLog output
 grep -E '(^Test |^	 Executed|\*\* TEST|error:.*\.swift|Testing failed|failed -|XCTAssert|ccterm\[.*\] ===)' "$TEST_LOG" > "$TEST_SUMMARY" 2>/dev/null || true
 
@@ -35,14 +38,13 @@ if [ "$TEST_EXIT" -ne 0 ]; then
   echo ""
   cat "$TEST_SUMMARY"
   echo ""
-  echo "TEST FAILED (exit code: $TEST_EXIT)"
-  echo "Full log:    $TEST_LOG"
-  echo "Summary:     $TEST_SUMMARY"
+  echo "TEST FAILED (${ELAPSED}s)"
+  echo ""
+  echo "Summary:  $TEST_SUMMARY"
+  echo "Full log: $TEST_LOG"
   exit "$TEST_EXIT"
 fi
 
 cat "$TEST_SUMMARY"
 echo ""
-echo "Test succeeded: ${TARGET}"
-echo "Full log:    $TEST_LOG"
-echo "Summary:     $TEST_SUMMARY"
+echo "Test succeeded (${ELAPSED}s)"

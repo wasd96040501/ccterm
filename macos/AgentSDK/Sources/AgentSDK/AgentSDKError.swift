@@ -5,6 +5,7 @@ public enum AgentSDKError: Error, LocalizedError {
     case launchFailed(underlying: Error)
     case sessionNotStarted
     case alreadyRunning
+    case promptFailed(exitCode: Int32, stderr: String)
 
     public var errorDescription: String? {
         switch self {
@@ -16,6 +17,8 @@ public enum AgentSDKError: Error, LocalizedError {
             return "Session has not been started. Call start() first."
         case .alreadyRunning:
             return "Session is already running."
+        case .promptFailed(let exitCode, let stderr):
+            return "Prompt failed (exit \(exitCode)): \(stderr)"
         }
     }
 }

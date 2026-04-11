@@ -9,6 +9,7 @@ struct PlanCommentInputView: View {
     private let quoteMaxHeight: CGFloat = 130
 
     @State private var quoteContentHeight: CGFloat = 0
+    @State private var isInputFocused: Bool = false
     @AppStorage("sendKeyBehavior") private var sendKeyBehaviorRaw: String = SendKeyBehavior.commandEnter.rawValue
 
     private var sendKeyBehavior: SendKeyBehavior {
@@ -48,7 +49,7 @@ struct PlanCommentInputView: View {
                 onCommandReturn: nil,
                 onEscape: nil,
                 keyInterceptor: nil,
-                isFocused: .constant(false),
+                isFocused: $isInputFocused,
                 desiredCursorPosition: .constant(nil),
                 sendKeyBehavior: sendKeyBehavior
             )

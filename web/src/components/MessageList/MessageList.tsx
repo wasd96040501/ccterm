@@ -5,6 +5,8 @@ import {
   isMessage2AssistantMessageContentToolUse,
   isMessage2AssistantMessageContentText,
   isToolUseRead, isToolUseGlob, isToolUseGrep,
+  isToolUseToolSearch, isToolUseTodoWrite,
+  isToolUseEnterWorktree, isToolUseExitWorktree,
 } from '../../generated/parsers.generated.ts'
 import { extractToolUseId } from '../../utils/messageUtils.ts'
 import { Message2Row } from '../Message2Row/Message2Row.tsx'
@@ -33,6 +35,11 @@ function isGroupableToolUse(toolUse: ToolUse): boolean {
   return isToolUseRead(toolUse) || isToolUseGlob(toolUse) || isToolUseGrep(toolUse)
 }
 
+function isNonRenderingToolUse(toolUse: ToolUse): boolean {
+  return isToolUseToolSearch(toolUse) || isToolUseTodoWrite(toolUse) ||
+    isToolUseEnterWorktree(toolUse) || isToolUseExitWorktree(toolUse)
+}
+
 /** Extract groupable ToolUse blocks from an assistant message that has ONLY groupable tools (no text). */
 function extractPureGroupableTools(msg: Message2Assistant): ToolUse[] | null {
   const blocks = msg.message?.content
@@ -42,6 +49,7 @@ function extractPureGroupableTools(msg: Message2Assistant): ToolUse[] | null {
     if (isMessage2AssistantMessageContentText(block) && block.text) return null
     if (isMessage2AssistantMessageContentToolUse(block)) {
       const toolUse = block as unknown as ToolUse
+      if (isNonRenderingToolUse(toolUse)) continue
       if (!isGroupableToolUse(toolUse)) return null
       tools.push(toolUse)
     }

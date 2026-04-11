@@ -46,7 +46,7 @@ class SessionRepository {
             let results = try coreDataStack.viewContext.fetch(request)
             return results.compactMap { Self.session(from: $0) }
         } catch {
-            NSLog("[SessionRepository] findAll failed: %@", error.localizedDescription)
+            appLog(.error, "SessionRepository", "findAll failed: \(error.localizedDescription)")
             return []
         }
     }
@@ -60,7 +60,7 @@ class SessionRepository {
             let results = try coreDataStack.viewContext.fetch(request)
             return results.compactMap { Self.session(from: $0) }
         } catch {
-            NSLog("[SessionRepository] findArchived failed: %@", error.localizedDescription)
+            appLog(.error, "SessionRepository", "findArchived failed: \(error.localizedDescription)")
             return []
         }
     }

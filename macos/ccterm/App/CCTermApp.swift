@@ -22,6 +22,11 @@ struct CCTermApp: App {
         }
         .defaultSize(width: 830, height: 534)
         .windowResizability(.contentSize)
+
+        Window("Logs", id: "logs") {
+            LogWindowView()
+        }
+        .defaultSize(width: 900, height: 500)
     }
 
     init() {
@@ -48,6 +53,12 @@ struct AppCommands: Commands {
         CommandGroup(replacing: .newItem) {
             Button("New Conversation") { appState.startNewConversation() }
                 .keyboardShortcut("n", modifiers: .command)
+        }
+        CommandMenu("Debug") {
+            Button("Logs") {
+                openWindow(id: "logs")
+            }
+            .keyboardShortcut("L", modifiers: [.command, .shift])
         }
         CommandGroup(after: .textEditing) {
             Divider()

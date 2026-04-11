@@ -109,10 +109,10 @@ private struct PlanReviewPreview: View {
         let vm = ExitPlanModeCardViewModel(
             request: request,
             onDecision: { decision in
-                NSLog("[PlanGallery] Decision: \(decision)")
+                appLog(.debug, "PlanGallery", "Decision: \(decision)")
             },
             onNewSession: {
-                NSLog("[PlanGallery] New session requested")
+                appLog(.debug, "PlanGallery", "New session requested")
             }
         )
 

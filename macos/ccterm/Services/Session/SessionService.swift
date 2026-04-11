@@ -107,14 +107,6 @@ class SessionService {
     private static func generateWorktreeName(for path: String, semanticName: String?) -> String {
         let projectName = URL(fileURLWithPath: path).lastPathComponent
         let baseName = semanticName ?? String(format: "%04x", UInt16.random(in: 0...0xFFFF))
-        let worktreesBase = (path as NSString).appendingPathComponent(".claude/worktrees")
-
-        // Check collision and append short hex suffix if needed
-        let candidate = (worktreesBase as NSString).appendingPathComponent("\(baseName)/\(projectName)")
-        if semanticName != nil, FileManager.default.fileExists(atPath: candidate) {
-            let suffix = String(format: "%02x", UInt8.random(in: 0...0xFF))
-            return "\(baseName)-\(suffix)/\(projectName)"
-        }
         return "\(baseName)/\(projectName)"
     }
 
@@ -138,7 +130,7 @@ class SessionService {
         )
 
         let truncatedDesc = String(description.prefix(80))
-        NSLog("[SessionService] generateBranchName start — input: \"%@\"", truncatedDesc)
+        appLog(.info, "SessionService", "generateBranchName start — input: \"\(truncatedDesc)\"")
         let startTime = CFAbsoluteTimeGetCurrent()
 
         do {
@@ -154,16 +146,14 @@ class SessionService {
 
             let branch = sanitizeBranchName(result.result)
             if let branch {
-                NSLog("[SessionService] generateBranchName done — branch: \"%@\", elapsed: %dms, tokens: %d in / %d out, cost: $%.6f",
-                      branch, elapsed, inputTokens, outputTokens, costUsd)
+                appLog(.info, "SessionService", "generateBranchName done — branch: \"\(branch)\", elapsed: \(elapsed)ms, tokens: \(inputTokens) in / \(outputTokens) out, cost: $\(String(format: "%.6f", costUsd))")
             } else {
-                NSLog("[SessionService] generateBranchName failed — invalid after sanitize, elapsed: %dms, raw: \"%@\"",
-                      elapsed, String(result.result.prefix(200)))
+                appLog(.warning, "SessionService", "generateBranchName failed — invalid after sanitize, elapsed: \(elapsed)ms, raw: \"\(String(result.result.prefix(200)))\"")
             }
             return branch
         } catch {
             let elapsed = Int((CFAbsoluteTimeGetCurrent() - startTime) * 1000)
-            NSLog("[SessionService] generateBranchName failed — elapsed: %dms, error: %@", elapsed, "\(error)")
+            appLog(.error, "SessionService", "generateBranchName failed — elapsed: \(elapsed)ms, error: \(error)")
         }
         return nil
     }
@@ -189,11 +179,26 @@ class SessionService {
 
     /// Creates a worktree directory at `.claude/worktrees/<name>/<project>` under the given repo path.
     /// If `branchName` is provided (e.g. "feat/user-auth-login"), uses it as branch and derives folder name.
-    /// Falls back to random `wt-<hex>` branch on collision or when `branchName` is nil.
-    /// Returns the worktree directory path on success, or `nil` on failure.
-    static func createWorktreeDirectory(repoPath: String, baseBranch: String?, branchName: String?) -> String? {
+    /// Uses random `wt-<hex>` branch when `branchName` is nil.
+    /// On branch name collision, retries with incrementing suffix (`-2`, `-3`, ...) up to 10 attempts.
+    /// Throws on failure instead of silently falling back.
+    static func createWorktreeDirectory(repoPath: String, baseBranch: String?, branchName: String?) throws -> String {
+        // Validate: must be a git repository
+        guard GitUtils.isGitRepository(at: repoPath) else {
+            throw WorktreeCreationError.notGitRepository(path: repoPath)
+        }
+
+        // Resolve base branch: explicit > current branch > error (no silent HEAD fallback)
+        let resolvedBase: String
+        if let base = baseBranch {
+            resolvedBase = base
+        } else if let current = GitUtils.currentBranch(at: repoPath) {
+            resolvedBase = current
+        } else {
+            throw WorktreeCreationError.detachedHead
+        }
+
         // Derive folder name from branch: "feat/user-auth-login" → "user-auth-login"
-        // Sanitize: replace filesystem-unsafe characters (/, \, :, spaces, etc.) with "-"
         let folderName = branchName.flatMap { branch -> String? in
             guard let body = branch.split(separator: "/", maxSplits: 1).last.map(String.init) else { return nil }
             let sanitized = body.replacingOccurrences(
@@ -203,38 +208,73 @@ class SessionService {
             ).trimmingCharacters(in: CharacterSet(charactersIn: "-"))
             return sanitized.isEmpty ? nil : sanitized
         }
-        let name = generateWorktreeName(for: repoPath, semanticName: folderName)
+
         let worktreesBase = (repoPath as NSString).appendingPathComponent(".claude/worktrees")
-        let worktreePath = (worktreesBase as NSString).appendingPathComponent(name)
-        let parentDir = (worktreePath as NSString).deletingLastPathComponent
-
-        try? FileManager.default.createDirectory(atPath: parentDir, withIntermediateDirectories: true)
-
-        let resolvedBase = baseBranch ?? GitUtils.currentBranch(at: repoPath) ?? "HEAD"
         let resolvedBranch = branchName ?? "wt-\(String(format: "%04x", UInt16.random(in: 0...0xFFFF)))"
 
-        // Try with the resolved branch name; on collision (branch already exists), retry with hex suffix
-        if GitUtils.createWorktree(repoPath: repoPath, worktreePath: worktreePath, branch: resolvedBranch, baseBranch: resolvedBase) {
-            copyLocalSettings(from: repoPath, to: worktreePath)
-            return worktreePath
-        }
+        // Try with incrementing suffix on branch collision: base, base-2, base-3, ...
+        let maxAttempts = 10
+        var lastError: GitUtils.WorktreeError?
 
-        // Branch name collision: retry with suffix
-        if branchName != nil {
-            let suffix = String(format: "%02x", UInt8.random(in: 0...0xFF))
-            let fallbackBranch = "\(resolvedBranch)-\(suffix)"
-            let fallbackName = generateWorktreeName(for: repoPath, semanticName: folderName.map { "\($0)-\(suffix)" })
-            let fallbackPath = (worktreesBase as NSString).appendingPathComponent(fallbackName)
-            let fallbackParent = (fallbackPath as NSString).deletingLastPathComponent
-            try? FileManager.default.createDirectory(atPath: fallbackParent, withIntermediateDirectories: true)
+        for attempt in 1...maxAttempts {
+            let suffix = attempt == 1 ? "" : "-\(attempt)"
+            let candidateBranch = resolvedBranch + suffix
+            let candidateFolder = folderName.map { $0 + suffix }
+            let name = generateWorktreeName(for: repoPath, semanticName: candidateFolder)
+            let worktreePath = (worktreesBase as NSString).appendingPathComponent(name)
+            let parentDir = (worktreePath as NSString).deletingLastPathComponent
 
-            if GitUtils.createWorktree(repoPath: repoPath, worktreePath: fallbackPath, branch: fallbackBranch, baseBranch: resolvedBase) {
-                copyLocalSettings(from: repoPath, to: fallbackPath)
-                return fallbackPath
+            do {
+                try FileManager.default.createDirectory(atPath: parentDir, withIntermediateDirectories: true)
+            } catch {
+                throw WorktreeCreationError.directoryCreationFailed(path: parentDir, underlying: error.localizedDescription)
+            }
+
+            switch GitUtils.createWorktree(repoPath: repoPath, worktreePath: worktreePath, branch: candidateBranch, baseBranch: resolvedBase) {
+            case .success:
+                copyLocalSettings(from: repoPath, to: worktreePath)
+                return worktreePath
+            case .failure(let wtError):
+                lastError = wtError
+                if wtError.isBranchConflict {
+                    // Clean up the failed worktree path if it was partially created
+                    try? FileManager.default.removeItem(atPath: worktreePath)
+                    continue
+                }
+                // Non-collision error: no point retrying
+                throw WorktreeCreationError.gitError(stderr: wtError.stderr)
             }
         }
 
-        return nil
+        // Exhausted all attempts — all were branch collisions
+        throw WorktreeCreationError.branchCollisionExhausted(
+            branch: resolvedBranch,
+            attempts: maxAttempts,
+            lastStderr: lastError?.stderr ?? ""
+        )
+    }
+
+    enum WorktreeCreationError: Error, LocalizedError {
+        case notGitRepository(path: String)
+        case detachedHead
+        case directoryCreationFailed(path: String, underlying: String)
+        case gitError(stderr: String)
+        case branchCollisionExhausted(branch: String, attempts: Int, lastStderr: String)
+
+        var errorDescription: String? {
+            switch self {
+            case .notGitRepository(let path):
+                return "Not a git repository: \(path)"
+            case .detachedHead:
+                return "Repository is in detached HEAD state. Please checkout a branch before creating a worktree."
+            case .directoryCreationFailed(let path, let underlying):
+                return "Failed to create worktree directory at \(path): \(underlying)"
+            case .gitError(let stderr):
+                return "Git worktree creation failed: \(stderr)"
+            case .branchCollisionExhausted(let branch, let attempts, _):
+                return "Branch \"\(branch)\" and \(attempts - 1) suffixed variants already exist. Please delete stale branches or use a different name."
+            }
+        }
     }
 
     /// Copies `.claude/settings.local.json` from source repo to worktree if it exists.
@@ -314,7 +354,7 @@ class SessionService {
     /// 重活（worktree 创建、config 构造）在后台线程执行，不阻塞主线程。
     func launch(sessionId: String, config: SessionConfig, taskDescription: String? = nil) async throws {
         let handle = getOrCreateHandle(sessionId)
-        NSLog("[SessionService] launch() sessionId=%@", sessionId)
+        appLog(.info, "SessionService", "launch() sessionId=\(sessionId)")
 
         // 主线程：解构 config 为值类型
         let originPath = config.originPath
@@ -332,11 +372,9 @@ class SessionService {
             var cwd = originPath
             if isWorktree {
                 let branchName = await SessionService.generateBranchName(description: taskDescription ?? "")
-                if let wtPath = SessionService.createWorktreeDirectory(
+                cwd = try SessionService.createWorktreeDirectory(
                     repoPath: originPath, baseBranch: baseBranch, branchName: branchName
-                ) {
-                    cwd = wtPath
-                }
+                )
             }
             let customCLI = UserDefaults.standard.string(forKey: "customCLICommand")
             let agentConfig = SessionConfiguration(
@@ -366,7 +404,7 @@ class SessionService {
     /// 恢复已停止会话。调用方须先设 handle.status = .starting。
     func relaunch(sessionId: String, config: SessionConfig) async throws {
         let handle = getOrCreateHandle(sessionId)
-        NSLog("[SessionService] relaunch() sessionId=%@", sessionId)
+        appLog(.info, "SessionService", "relaunch() sessionId=\(sessionId)")
 
         // 主线程：读历史 cwd（轻量 CoreData 查询）
         let historyCwd = repository.find(sessionId)?.cwd ?? config.originPath
@@ -411,13 +449,13 @@ class SessionService {
         do {
             try await agentSession.start()
         } catch {
-            NSLog("[SessionService] bootstrap() FAILED sessionId=%@ error=%@", sessionId, "\(error)")
+            appLog(.error, "SessionService", "bootstrap() FAILED sessionId=\(sessionId) error=\(error)")
             handle.detach()
             repository.updateError(sessionId, error: handle.lastExit?.stderr)
             throw error
         }
         let startElapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-        NSLog("[SessionService] agentSession.start() done sessionId=%@ elapsed=%.0fms", sessionId, startElapsed)
+        appLog(.info, "SessionService", "agentSession.start() done sessionId=\(sessionId) elapsed=\(String(format: "%.0f", startElapsed))ms")
 
         let initTime = CFAbsoluteTimeGetCurrent()
         let response: InitializeResponse? = await withCheckedContinuation { continuation in
@@ -426,7 +464,7 @@ class SessionService {
             }
         }
         let initElapsed = (CFAbsoluteTimeGetCurrent() - initTime) * 1000
-        NSLog("[SessionService] initialize() done sessionId=%@ elapsed=%.0fms", sessionId, initElapsed)
+        appLog(.info, "SessionService", "initialize() done sessionId=\(sessionId) elapsed=\(String(format: "%.0f", initElapsed))ms")
 
         if let response {
             let commands = SlashCommand.from(response)
@@ -445,14 +483,14 @@ class SessionService {
         }
 
         let totalElapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-        NSLog("[SessionService] bootstrap completed sessionId=%@ totalElapsed=%.0fms", sessionId, totalElapsed)
+        appLog(.info, "SessionService", "bootstrap completed sessionId=\(sessionId) totalElapsed=\(String(format: "%.0f", totalElapsed))ms")
     }
 
     /// 停止会话的子进程。调用 handle.detach()。
     /// 无运行中子进程时调用无效果。
     func stop(_ sessionId: String) async {
         guard let handle = handles[sessionId], handle.status != .inactive else { return }
-        NSLog("[SessionService] stop() sessionId=%@", sessionId)
+        appLog(.info, "SessionService", "stop() sessionId=\(sessionId)")
         handle.detach()
     }
 
@@ -531,8 +569,7 @@ class SessionService {
             if let contents = try? FileManager.default.contentsOfDirectory(atPath: parentDir), contents.isEmpty {
                 try? FileManager.default.removeItem(atPath: parentDir)
             }
-            NSLog("[SessionService] archive() worktree removed sessionId=%@ branch=%@ cwd=%@",
-                  sessionId, branch ?? "(nil)", cwd)
+            appLog(.info, "SessionService", "archive() worktree removed sessionId=\(sessionId) branch=\(branch ?? "(nil)") cwd=\(cwd)")
         }
         repository.archive(sessionId)
     }
@@ -555,8 +592,7 @@ class SessionService {
             if success {
                 Self.copyLocalSettings(from: originPath, to: cwd)
             }
-            NSLog("[SessionService] unarchive() worktree restore sessionId=%@ branch=%@ success=%@",
-                  sessionId, branch, success ? "true" : "false")
+            appLog(.info, "SessionService", "unarchive() worktree restore sessionId=\(sessionId) branch=\(branch) success=\(success ? "true" : "false")")
         }
         repository.unarchive(sessionId)
     }

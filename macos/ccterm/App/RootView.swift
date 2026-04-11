@@ -14,8 +14,6 @@ struct RootView: View {
                 chatRouter: appState.chatRouter,
                 sidebarViewModel: appState.sidebarViewModel,
                 sessionService: appState.sessionService,
-                todoService: TodoService.shared,
-                todoSessionCoordinator: appState.todoSessionCoordinator,
                 onJumpToSession: { sessionId in
                     appState.activeAction = nil
                     appState.chatRouter.activateSession(sessionId)

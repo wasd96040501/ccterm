@@ -512,15 +512,6 @@ class SessionService {
         repository.find(sessionId)
     }
 
-    /// 更新 session 的 sessionType 和 linkedTodoId。
-    func updateSessionType(_ sessionId: String, type: SessionType, linkedTodoId: String?) {
-        guard let record = repository.find(sessionId) else { return }
-        var updated = record
-        updated.sessionType = type
-        updated.linkedTodoId = linkedTodoId
-        repository.save(updated)
-    }
-
     /// 查找所有未归档的会话，按 lastActiveAt 降序。
     func findAll() -> [SessionRecord] {
         repository.findAll()

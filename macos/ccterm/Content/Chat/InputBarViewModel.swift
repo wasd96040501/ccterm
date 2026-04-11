@@ -169,9 +169,6 @@ final class InputBarViewModel {
     /// Plan WebView 单例引用，由 ChatRouter 在创建实例时注入。
     weak var planWebViewLoader: PlanWebViewLoader?
 
-    /// TodoSessionCoordinator 引用，用于同步 todo 状态。由 ChatRouter 注入。
-    weak var todoSessionCoordinator: TodoSessionCoordinator?
-
     // MARK: - Process Exit (per-session 隔离)
 
     var processExitError: ProcessExitError?
@@ -273,12 +270,6 @@ final class InputBarViewModel {
             if let handle {
                 permissionVM.rebuild(from: handle.pendingPermissions, handle: handle)
                 planReviewVM.handlePermissionCardsUpdated()
-                if let coordinator = todoSessionCoordinator {
-                    coordinator.handleStateChange(
-                        needsAttention: !handle.pendingPermissions.isEmpty,
-                        for: handle.sessionId
-                    )
-                }
             }
         case .processExited(let exit):
             guard exit.exitCode != 0, !hasShownExitAlert else { return }

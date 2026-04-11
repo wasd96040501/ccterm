@@ -107,14 +107,6 @@ class SessionService {
     private static func generateWorktreeName(for path: String, semanticName: String?) -> String {
         let projectName = URL(fileURLWithPath: path).lastPathComponent
         let baseName = semanticName ?? String(format: "%04x", UInt16.random(in: 0...0xFFFF))
-        let worktreesBase = (path as NSString).appendingPathComponent(".claude/worktrees")
-
-        // Check collision and append short hex suffix if needed
-        let candidate = (worktreesBase as NSString).appendingPathComponent("\(baseName)/\(projectName)")
-        if semanticName != nil, FileManager.default.fileExists(atPath: candidate) {
-            let suffix = String(format: "%02x", UInt8.random(in: 0...0xFF))
-            return "\(baseName)-\(suffix)/\(projectName)"
-        }
         return "\(baseName)/\(projectName)"
     }
 
@@ -189,11 +181,26 @@ class SessionService {
 
     /// Creates a worktree directory at `.claude/worktrees/<name>/<project>` under the given repo path.
     /// If `branchName` is provided (e.g. "feat/user-auth-login"), uses it as branch and derives folder name.
-    /// Falls back to random `wt-<hex>` branch on collision or when `branchName` is nil.
-    /// Returns the worktree directory path on success, or `nil` on failure.
-    static func createWorktreeDirectory(repoPath: String, baseBranch: String?, branchName: String?) -> String? {
+    /// Uses random `wt-<hex>` branch when `branchName` is nil.
+    /// On branch name collision, retries with incrementing suffix (`-2`, `-3`, ...) up to 10 attempts.
+    /// Throws on failure instead of silently falling back.
+    static func createWorktreeDirectory(repoPath: String, baseBranch: String?, branchName: String?) throws -> String {
+        // Validate: must be a git repository
+        guard GitUtils.isGitRepository(at: repoPath) else {
+            throw WorktreeCreationError.notGitRepository(path: repoPath)
+        }
+
+        // Resolve base branch: explicit > current branch > error (no silent HEAD fallback)
+        let resolvedBase: String
+        if let base = baseBranch {
+            resolvedBase = base
+        } else if let current = GitUtils.currentBranch(at: repoPath) {
+            resolvedBase = current
+        } else {
+            throw WorktreeCreationError.detachedHead
+        }
+
         // Derive folder name from branch: "feat/user-auth-login" → "user-auth-login"
-        // Sanitize: replace filesystem-unsafe characters (/, \, :, spaces, etc.) with "-"
         let folderName = branchName.flatMap { branch -> String? in
             guard let body = branch.split(separator: "/", maxSplits: 1).last.map(String.init) else { return nil }
             let sanitized = body.replacingOccurrences(
@@ -203,38 +210,73 @@ class SessionService {
             ).trimmingCharacters(in: CharacterSet(charactersIn: "-"))
             return sanitized.isEmpty ? nil : sanitized
         }
-        let name = generateWorktreeName(for: repoPath, semanticName: folderName)
+
         let worktreesBase = (repoPath as NSString).appendingPathComponent(".claude/worktrees")
-        let worktreePath = (worktreesBase as NSString).appendingPathComponent(name)
-        let parentDir = (worktreePath as NSString).deletingLastPathComponent
-
-        try? FileManager.default.createDirectory(atPath: parentDir, withIntermediateDirectories: true)
-
-        let resolvedBase = baseBranch ?? GitUtils.currentBranch(at: repoPath) ?? "HEAD"
         let resolvedBranch = branchName ?? "wt-\(String(format: "%04x", UInt16.random(in: 0...0xFFFF)))"
 
-        // Try with the resolved branch name; on collision (branch already exists), retry with hex suffix
-        if GitUtils.createWorktree(repoPath: repoPath, worktreePath: worktreePath, branch: resolvedBranch, baseBranch: resolvedBase) {
-            copyLocalSettings(from: repoPath, to: worktreePath)
-            return worktreePath
-        }
+        // Try with incrementing suffix on branch collision: base, base-2, base-3, ...
+        let maxAttempts = 10
+        var lastError: GitUtils.WorktreeError?
 
-        // Branch name collision: retry with suffix
-        if branchName != nil {
-            let suffix = String(format: "%02x", UInt8.random(in: 0...0xFF))
-            let fallbackBranch = "\(resolvedBranch)-\(suffix)"
-            let fallbackName = generateWorktreeName(for: repoPath, semanticName: folderName.map { "\($0)-\(suffix)" })
-            let fallbackPath = (worktreesBase as NSString).appendingPathComponent(fallbackName)
-            let fallbackParent = (fallbackPath as NSString).deletingLastPathComponent
-            try? FileManager.default.createDirectory(atPath: fallbackParent, withIntermediateDirectories: true)
+        for attempt in 1...maxAttempts {
+            let suffix = attempt == 1 ? "" : "-\(attempt)"
+            let candidateBranch = resolvedBranch + suffix
+            let candidateFolder = folderName.map { $0 + suffix }
+            let name = generateWorktreeName(for: repoPath, semanticName: candidateFolder)
+            let worktreePath = (worktreesBase as NSString).appendingPathComponent(name)
+            let parentDir = (worktreePath as NSString).deletingLastPathComponent
 
-            if GitUtils.createWorktree(repoPath: repoPath, worktreePath: fallbackPath, branch: fallbackBranch, baseBranch: resolvedBase) {
-                copyLocalSettings(from: repoPath, to: fallbackPath)
-                return fallbackPath
+            do {
+                try FileManager.default.createDirectory(atPath: parentDir, withIntermediateDirectories: true)
+            } catch {
+                throw WorktreeCreationError.directoryCreationFailed(path: parentDir, underlying: error.localizedDescription)
+            }
+
+            switch GitUtils.createWorktree(repoPath: repoPath, worktreePath: worktreePath, branch: candidateBranch, baseBranch: resolvedBase) {
+            case .success:
+                copyLocalSettings(from: repoPath, to: worktreePath)
+                return worktreePath
+            case .failure(let wtError):
+                lastError = wtError
+                if wtError.isBranchConflict {
+                    // Clean up the failed worktree path if it was partially created
+                    try? FileManager.default.removeItem(atPath: worktreePath)
+                    continue
+                }
+                // Non-collision error: no point retrying
+                throw WorktreeCreationError.gitError(stderr: wtError.stderr)
             }
         }
 
-        return nil
+        // Exhausted all attempts — all were branch collisions
+        throw WorktreeCreationError.branchCollisionExhausted(
+            branch: resolvedBranch,
+            attempts: maxAttempts,
+            lastStderr: lastError?.stderr ?? ""
+        )
+    }
+
+    enum WorktreeCreationError: Error, LocalizedError {
+        case notGitRepository(path: String)
+        case detachedHead
+        case directoryCreationFailed(path: String, underlying: String)
+        case gitError(stderr: String)
+        case branchCollisionExhausted(branch: String, attempts: Int, lastStderr: String)
+
+        var errorDescription: String? {
+            switch self {
+            case .notGitRepository(let path):
+                return "Not a git repository: \(path)"
+            case .detachedHead:
+                return "Repository is in detached HEAD state. Please checkout a branch before creating a worktree."
+            case .directoryCreationFailed(let path, let underlying):
+                return "Failed to create worktree directory at \(path): \(underlying)"
+            case .gitError(let stderr):
+                return "Git worktree creation failed: \(stderr)"
+            case .branchCollisionExhausted(let branch, let attempts, _):
+                return "Branch \"\(branch)\" and \(attempts - 1) suffixed variants already exist. Please delete stale branches or use a different name."
+            }
+        }
     }
 
     /// Copies `.claude/settings.local.json` from source repo to worktree if it exists.
@@ -332,11 +374,9 @@ class SessionService {
             var cwd = originPath
             if isWorktree {
                 let branchName = await SessionService.generateBranchName(description: taskDescription ?? "")
-                if let wtPath = SessionService.createWorktreeDirectory(
+                cwd = try SessionService.createWorktreeDirectory(
                     repoPath: originPath, baseBranch: baseBranch, branchName: branchName
-                ) {
-                    cwd = wtPath
-                }
+                )
             }
             let customCLI = UserDefaults.standard.string(forKey: "customCLICommand")
             let agentConfig = SessionConfiguration(

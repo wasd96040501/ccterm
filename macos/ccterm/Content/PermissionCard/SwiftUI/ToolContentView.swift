@@ -1,13 +1,10 @@
 import SwiftUI
-import WebKit
 
 // MARK: - ToolContentView
 
 /// Renders the content area for each tool type in a permission card.
 struct ToolContentView: View {
     let descriptor: ToolContentDescriptor
-    /// Pre-loaded WebView loader from ViewModel (avoids flicker on appear).
-    var preloadedLoader: WebViewHeightLoader?
 
     var body: some View {
         switch descriptor {
@@ -16,11 +13,8 @@ struct ToolContentView: View {
                 DescriptionLabel(text: desc, maxLines: 4)
             }
             if let cmd = command, !cmd.isEmpty {
-                let loader = preloadedLoader ?? WebViewHeightLoader(
-                    htmlResource: "bash-react",
-                    bridgeType: "setCommand",
-                    bridgeJSON: jsonEncode(["command": cmd]))
-                WebContentView(loader: loader, maxHeight: 300)
+                NativeBashView(command: cmd)
+                    .frame(maxHeight: 300)
             }
 
         case .read(let filePath):
@@ -33,11 +27,8 @@ struct ToolContentView: View {
                 MonoLabel(text: fp, maxLines: 2)
             }
             if let content, !content.isEmpty {
-                let loader = preloadedLoader ?? WebViewHeightLoader(
-                    htmlResource: "diff-react",
-                    bridgeType: "setDiff",
-                    bridgeJSON: jsonEncode(["filePath": filePath ?? "", "oldString": "", "newString": content]))
-                WebContentView(loader: loader, maxHeight: 300)
+                NativeDiffView(filePath: filePath ?? "", oldString: "", newString: content)
+                    .frame(maxHeight: 300)
             }
 
         case .edit(let filePath, let oldString, let newString):
@@ -45,11 +36,8 @@ struct ToolContentView: View {
                 MonoLabel(text: fp, maxLines: 2)
             }
             if !oldString.isEmpty || !newString.isEmpty {
-                let loader = preloadedLoader ?? WebViewHeightLoader(
-                    htmlResource: "diff-react",
-                    bridgeType: "setDiff",
-                    bridgeJSON: jsonEncode(["filePath": filePath ?? "", "oldString": oldString, "newString": newString]))
-                WebContentView(loader: loader, maxHeight: 300)
+                NativeDiffView(filePath: filePath ?? "", oldString: oldString, newString: newString)
+                    .frame(maxHeight: 300)
             }
 
         case .glob(let pattern, let path):

@@ -242,10 +242,8 @@ final class ChatRouter {
         // 先赋 handle，让 View 树安定（空状态消失、computed 属性更新）
         sessionVM.handle = handle
 
-        // 等一个 runloop cycle，确保 View 树重排完成
-        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-            DispatchQueue.main.async { c.resume() }
-        }
+        // 让出执行权，确保 View 树重排完成
+        await Task.yield()
 
         // 在干净的 View 状态上动画 .starting
         withAnimation(.smooth(duration: 0.35)) {

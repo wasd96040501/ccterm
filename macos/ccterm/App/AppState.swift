@@ -8,6 +8,7 @@ final class AppState {
     // MARK: - Services
     let sessionService = SessionService()
     let gitBranchService = GitBranchService()
+    let syntaxEngine = SyntaxHighlightEngine()
     // MARK: - ViewModels
     let sidebarViewModel: SidebarViewModel
     let chatRouter: ChatRouter
@@ -62,6 +63,10 @@ final class AppState {
             guard let self else { return }
             Task { await self.sessionService.stopAll() }
         }
+
+        // Load syntax highlight engine asynchronously
+        let engine = syntaxEngine
+        Task { await engine.load() }
     }
 
     // MARK: - Search Actions

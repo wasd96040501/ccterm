@@ -8,12 +8,12 @@ struct ToolContentView: View {
 
     var body: some View {
         switch descriptor {
-        case .bash(let description, let tokens):
+        case .bash(let description, let command):
             if let desc = description, !desc.isEmpty {
                 DescriptionLabel(text: desc, maxLines: 4)
             }
-            if !tokens.isEmpty {
-                NativeBashView(tokens: tokens)
+            if !command.isEmpty {
+                NativeBashView(command: command)
                     .frame(maxHeight: 300)
             }
 
@@ -22,21 +22,21 @@ struct ToolContentView: View {
                 MonoLabel(text: fp, maxLines: 2)
             }
 
-        case .write(let filePath, let hunks):
+        case .write(let filePath, let oldString, let newString):
             if let fp = filePath, !fp.isEmpty {
                 MonoLabel(text: fp, maxLines: 2)
             }
-            if !hunks.isEmpty {
-                NativeDiffView(hunks: hunks)
+            if !oldString.isEmpty || !newString.isEmpty {
+                NativeDiffView(filePath: filePath ?? "", oldString: oldString, newString: newString)
                     .frame(maxHeight: 300)
             }
 
-        case .edit(let filePath, let hunks):
+        case .edit(let filePath, let oldString, let newString):
             if let fp = filePath, !fp.isEmpty {
                 MonoLabel(text: fp, maxLines: 2)
             }
-            if !hunks.isEmpty {
-                NativeDiffView(hunks: hunks)
+            if !oldString.isEmpty || !newString.isEmpty {
+                NativeDiffView(filePath: filePath ?? "", oldString: oldString, newString: newString)
                     .frame(maxHeight: 300)
             }
 

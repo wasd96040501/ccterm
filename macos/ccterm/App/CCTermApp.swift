@@ -8,6 +8,7 @@ struct CCTermApp: App {
         Window("ccterm", id: "main") {
             RootView()
                 .environment(appState)
+                .environment(\.syntaxEngine, appState.syntaxEngine)
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1200, height: 860)

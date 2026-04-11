@@ -1,20 +1,16 @@
 import SwiftUI
 
-/// Native SwiftUI unified diff view. Replaces WebView-based DiffApp for permission cards.
+/// Native SwiftUI unified diff view with syntax highlighting via highlight.js (JSCore).
 struct NativeDiffView: View {
-    let hunks: [DiffEngine.Hunk]
+    let filePath: String
+    let oldString: String
+    let newString: String
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.syntaxEngine) private var syntaxEngine
 
-    /// Convenience initializer that computes hunks from raw strings.
-    /// Use `init(hunks:)` with precomputed hunks for cached paths.
-    init(filePath: String, oldString: String, newString: String) {
-        self.hunks = DiffEngine.computeHunks(old: oldString, new: newString)
-    }
-
-    init(hunks: [DiffEngine.Hunk]) {
-        self.hunks = hunks
-    }
+    @State private var hunks: [DiffEngine.Hunk] = []
+    @State private var lineHighlights: [String: [SyntaxToken]] = [:]
 
     var body: some View {
         let flatItems = buildFlatItems()
@@ -24,24 +20,52 @@ struct NativeDiffView: View {
         let gutterWidth = CGFloat(gutterChars + 2) * 7.2
 
         ScrollView(.vertical) {
-            LazyVStack(spacing: 0) {
+            VStack(spacing: 0) {
                 ForEach(flatItems) { item in
                     switch item.kind {
-                    case .line(let line):
-                        DiffLineRow(line: line, gutterWidth: gutterWidth, colorScheme: colorScheme)
+                    case .line(let line, let isFirst, let isLast):
+                        DiffLineRow(
+                            line: line,
+                            gutterWidth: gutterWidth,
+                            colorScheme: colorScheme,
+                            highlightedContent: highlightedAttributedString(for: line.content),
+                            isFirst: isFirst,
+                            isLast: isLast
+                        )
                     case .separator:
                         hunkSeparator
                     }
                 }
             }
-            .padding(.vertical, 4)
         }
         .textSelection(.enabled)
         .background(DiffTheme.tableBg(colorScheme))
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .task(id: "\(oldString.hashValue)_\(newString.hashValue)") {
+            hunks = DiffEngine.computeHunks(old: oldString, new: newString)
+
+            guard let engine = syntaxEngine else { return }
+            let lang = LanguageDetection.language(for: filePath)
+
+            // Collect unique line contents to highlight
+            let uniqueContents = Set(hunks.flatMap(\.lines).map(\.content)).filter { !$0.isEmpty }
+            for content in uniqueContents {
+                let tokens = await engine.highlight(code: content, language: lang)
+                lineHighlights[content] = tokens
+            }
+        }
     }
 
-    /// Flatten hunks into a single array with stable IDs for LazyVStack.
+    private func highlightedAttributedString(for content: String) -> AttributedString? {
+        guard let tokens = lineHighlights[content] else { return nil }
+        return SyntaxAttributedString.build(
+            tokens: tokens,
+            colorScheme: colorScheme,
+            font: .system(size: 12, design: .monospaced)
+        )
+    }
+
+    /// Flatten hunks into a single array with stable IDs, tracking first/last positions.
     private func buildFlatItems() -> [DiffDisplayItem] {
         var items: [DiffDisplayItem] = []
         var index = 0
@@ -50,8 +74,10 @@ struct NativeDiffView: View {
                 items.append(DiffDisplayItem(id: index, kind: .separator))
                 index += 1
             }
-            for line in hunk.lines {
-                items.append(DiffDisplayItem(id: index, kind: .line(line)))
+            for (li, line) in hunk.lines.enumerated() {
+                let isFirst = (hi == 0 && li == 0)
+                let isLast = (hi == hunks.count - 1 && li == hunk.lines.count - 1)
+                items.append(DiffDisplayItem(id: index, kind: .line(line, isFirst: isFirst, isLast: isLast)))
                 index += 1
             }
         }
@@ -83,7 +109,7 @@ private struct DiffDisplayItem: Identifiable {
     let kind: Kind
 
     enum Kind {
-        case line(DiffEngine.Line)
+        case line(DiffEngine.Line, isFirst: Bool, isLast: Bool)
         case separator
     }
 }
@@ -94,6 +120,9 @@ private struct DiffLineRow: View {
     let line: DiffEngine.Line
     let gutterWidth: CGFloat
     let colorScheme: ColorScheme
+    let highlightedContent: AttributedString?
+    let isFirst: Bool
+    let isLast: Bool
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -106,22 +135,33 @@ private struct DiffLineRow: View {
             // Sign (+/-)
             Text(signText)
                 .foregroundStyle(signColor)
-                .frame(width: 26, alignment: .leading)
-                .padding(.leading, 8)
+                .frame(width: 18, alignment: .center)
+                .padding(.leading, 2)
 
             // Content
-            Text(line.content.isEmpty ? " " : line.content)
+            contentView
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, 6)
+                .padding(.leading, 4)
                 .padding(.trailing, 10)
         }
         .font(.system(size: 12, design: .monospaced))
         .lineSpacing(3)
+        .padding(.top, isFirst ? 4 : 0)
+        .padding(.bottom, isLast ? 4 : 0)
         .background(alignment: .leading) {
             HStack(spacing: 0) {
                 Rectangle().fill(gutterBg).frame(width: gutterWidth)
                 Rectangle().fill(contentBg)
             }
+        }
+    }
+
+    @ViewBuilder
+    private var contentView: some View {
+        if let highlighted = highlightedContent {
+            Text(highlighted)
+        } else {
+            Text(line.content.isEmpty ? " " : line.content)
         }
     }
 

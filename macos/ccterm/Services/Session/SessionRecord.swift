@@ -42,6 +42,7 @@ struct SessionRecord: Identifiable {
     var isPinned: Bool
     var pinnedAt: Date?
     var isTempDir: Bool
+    var worktreeBranch: String?
 
     /// slug 从 cwd 确定性推导，不持久化。需与 Claude CLI 的 slug 生成逻辑一致。
     var slug: String? {
@@ -81,7 +82,8 @@ struct SessionRecord: Identifiable {
         linkedTodoId: String? = nil,
         isPinned: Bool = false,
         pinnedAt: Date? = nil,
-        isTempDir: Bool = false
+        isTempDir: Bool = false,
+        worktreeBranch: String? = nil
     ) {
         self.id = id
         self.sessionId = sessionId
@@ -100,5 +102,6 @@ struct SessionRecord: Identifiable {
         self.isPinned = isPinned
         self.pinnedAt = pinnedAt
         self.isTempDir = isTempDir
+        self.worktreeBranch = worktreeBranch
     }
 }

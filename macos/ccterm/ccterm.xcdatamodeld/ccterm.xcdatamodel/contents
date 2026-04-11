@@ -61,6 +61,7 @@
         <attribute name="isPinned" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
         <attribute name="isTempDir" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
         <attribute name="pinnedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+        <attribute name="worktreeBranch" optional="YES" attributeType="String"/>
         <fetchIndex name="bySessionId">
             <fetchIndexElement property="sessionId" type="Binary" order="ascending"/>
         </fetchIndex>

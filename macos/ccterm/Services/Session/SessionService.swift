@@ -532,12 +532,51 @@ class SessionService {
     }
 
     /// 归档会话（软删除）。status → .archived。
+    /// worktree 会话：保存分支名 → git worktree remove → 清理空父目录。
     func archive(_ sessionId: String) {
+        if let record = repository.find(sessionId),
+           record.isWorktree,
+           let cwd = record.cwd,
+           let originPath = record.originPath {
+            // 保存分支名，用于 unarchive 时重建
+            let branch = GitUtils.currentBranch(at: cwd)
+            if let branch {
+                repository.updateWorktreeBranch(sessionId, branch: branch)
+            }
+            // 移除 worktree（不删除分支）
+            GitUtils.removeWorktree(repoPath: originPath, worktreePath: cwd)
+            // 清理空父目录（worktree 目录结构：.claude/worktrees/<name>/<project>）
+            let parentDir = (cwd as NSString).deletingLastPathComponent
+            if let contents = try? FileManager.default.contentsOfDirectory(atPath: parentDir), contents.isEmpty {
+                try? FileManager.default.removeItem(atPath: parentDir)
+            }
+            NSLog("[SessionService] archive() worktree removed sessionId=%@ branch=%@ cwd=%@",
+                  sessionId, branch ?? "(nil)", cwd)
+        }
         repository.archive(sessionId)
     }
 
     /// 取消归档。status → .created。
+    /// worktree 会话：尝试用保存的分支名重建 worktree 目录。失败时保持 cwd 不变（resume 时会因目录不存在而报错）。
     func unarchive(_ sessionId: String) {
+        if let record = repository.find(sessionId),
+           record.isWorktree,
+           let cwd = record.cwd,
+           let originPath = record.originPath,
+           let branch = record.worktreeBranch {
+            let parentDir = (cwd as NSString).deletingLastPathComponent
+            try? FileManager.default.createDirectory(atPath: parentDir, withIntermediateDirectories: true)
+            let success = GitUtils.addWorktreeForExistingBranch(
+                repoPath: originPath,
+                worktreePath: cwd,
+                branch: branch
+            )
+            if success {
+                Self.copyLocalSettings(from: originPath, to: cwd)
+            }
+            NSLog("[SessionService] unarchive() worktree restore sessionId=%@ branch=%@ success=%@",
+                  sessionId, branch, success ? "true" : "false")
+        }
         repository.unarchive(sessionId)
     }
 

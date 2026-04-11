@@ -98,6 +98,7 @@ class SessionRepository {
         entity.isPinned = session.isPinned
         entity.pinnedAt = session.pinnedAt
         entity.isTempDir = session.isTempDir
+        entity.worktreeBranch = session.worktreeBranch
 
         coreDataStack.saveContext()
     }
@@ -182,6 +183,13 @@ class SessionRepository {
         coreDataStack.saveContext()
     }
 
+    /// 更新 worktree 分支名。归档时保存，用于取消归档时重建 worktree。
+    func updateWorktreeBranch(_ sessionId: String, branch: String?) {
+        guard let entity = fetchEntity(sessionId) else { return }
+        entity.worktreeBranch = branch
+        coreDataStack.saveContext()
+    }
+
     /// 置顶会话。
     func pinSession(sessionId: String) {
         guard let entity = fetchEntity(sessionId) else { return }
@@ -244,7 +252,8 @@ class SessionRepository {
             linkedTodoId: entity.linkedTodoId,
             isPinned: entity.isPinned,
             pinnedAt: entity.pinnedAt,
-            isTempDir: entity.isTempDir
+            isTempDir: entity.isTempDir,
+            worktreeBranch: entity.worktreeBranch
         )
     }
 

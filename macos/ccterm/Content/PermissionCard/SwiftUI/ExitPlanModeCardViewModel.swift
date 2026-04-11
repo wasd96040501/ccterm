@@ -53,13 +53,13 @@ final class ExitPlanModeCardViewModel {
         self.onNewSession = onNewSession
         if case .ExitPlanMode(let v) = request.toolInput {
             self.planMarkdown = v.input?.plan
-            NSLog("[PlanDebug] ExitPlanModeCardVM init: toolInput matched, plan length=%d, input=%@", v.input?.plan?.count ?? -1, String(describing: v.input))
+            appLog(.debug, "PlanDebug", "ExitPlanModeCardVM init: toolInput matched, plan length=\(v.input?.plan?.count ?? -1), input=\(String(describing: v.input))")
         } else {
             self.planMarkdown = nil
-            NSLog("[PlanDebug] ExitPlanModeCardVM init: toolInput NOT ExitPlanMode, got %@", String(describing: request.toolInput))
+            appLog(.debug, "PlanDebug", "ExitPlanModeCardVM init: toolInput NOT ExitPlanMode, got \(String(describing: request.toolInput))")
         }
 
-        NSLog("[PlanDebug] ExitPlanModeCardVM init: hasPlan=%@ requestId=%@", String(describing: hasPlan), request.requestId)
+        appLog(.debug, "PlanDebug", "ExitPlanModeCardVM init: hasPlan=\(hasPlan) requestId=\(request.requestId)")
 
         if hasPlan {
             self.commentStore = PlanCommentStore(permissionRequestId: request.requestId)

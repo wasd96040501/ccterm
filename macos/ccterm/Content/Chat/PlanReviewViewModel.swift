@@ -71,9 +71,9 @@ final class PlanReviewViewModel {
     // MARK: - Actions
 
     func enter(permissionId: String) {
-        NSLog("[PlanDebug] enterPlanView id=%@", permissionId)
+        appLog(.debug, "PlanDebug", "enterPlanView id=\(permissionId)")
         let cards = getPermissionCards()
-        NSLog("[PlanDebug]   permissionCards.count=%d ids=%@", cards.count, cards.map(\.id).description)
+        appLog(.debug, "PlanDebug", "  permissionCards.count=\(cards.count) ids=\(cards.map(\.id).description)")
         planWebViewLoader?.switchPlan(key: permissionId)
         viewingPermissionId = permissionId
     }

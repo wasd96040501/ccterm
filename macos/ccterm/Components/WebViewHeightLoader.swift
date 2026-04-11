@@ -59,7 +59,7 @@ final class WebViewHeightLoader: NSObject {
             in: nil, in: .page
         ) { result in
             if case .failure(let error) = result {
-                NSLog("[WebViewHeightLoader] callAsyncJavaScript failed: %@", error.localizedDescription)
+                appLog(.error, "WebViewHeightLoader", "callAsyncJavaScript failed: \(error.localizedDescription)")
             }
         }
     }

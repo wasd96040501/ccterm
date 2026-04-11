@@ -346,7 +346,7 @@ final class FileCompletionStore {
             pipeFallback = nil
         } else {
             if inputFile != nil {
-                NSLog("[FileCompletionStore] fzf input file unavailable, falling back to pipe")
+                appLog(.warning, "FileCompletionStore", "fzf input file unavailable, falling back to pipe")
             }
             let pipe = Pipe()
             process.standardInput = pipe

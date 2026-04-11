@@ -472,8 +472,8 @@ private struct AdditionalFolderRow: View {
                     description: "Choose a primary directory and optional additional dirs",
                     userDefaultsKey: previewKey,
                     onConfirm: { primary, additional in
-                        print("Primary: \(primary?.path ?? "nil")")
-                        print("Additional: \(additional.map(\.path))")
+                        appLog(.debug, "FolderPickerPopover", "Primary: \(primary?.path ?? "nil")")
+                        appLog(.debug, "FolderPickerPopover", "Additional: \(additional.map(\.path))")
                         showPopover = false
                     }
                 )

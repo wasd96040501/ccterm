@@ -162,14 +162,14 @@ class SessionHandle {
     /// 首次发送文本消息时自动将消息内容设为会话标题。
     func send(_ message: SessionMessage) {
         guard let agentSession else {
-            NSLog("[SessionHandle:%@] send() ignored — no agentSession", sessionId)
+            appLog(.warning, "SessionHandle", "send() ignored — no agentSession \(sessionId)")
             return
         }
 
         // 非 idle 时文本消息入队
         if status != .idle {
             if case .text(let text, _) = message {
-                NSLog("[SessionHandle:%@] send() queued — status=%@ text=%@", sessionId, "\(status)", String(text.prefix(50)))
+                appLog(.info, "SessionHandle", "send() queued — status=\(status) text=\(String(text.prefix(50))) \(sessionId)")
                 enqueue(text)
             }
             return
@@ -177,7 +177,7 @@ class SessionHandle {
 
         switch message {
         case .text(let text, let extra):
-            NSLog("[SessionHandle:%@] send() text=%@ bridge=%@", sessionId, String(text.prefix(50)), bridge == nil ? "nil" : "ok")
+            appLog(.info, "SessionHandle", "send() text=\(String(text.prefix(50))) bridge=\(bridge == nil ? "nil" : "ok") \(sessionId)")
 
             // 首次发送：用消息内容作为 title
             updateTitleIfNeeded(text)
@@ -197,7 +197,7 @@ class SessionHandle {
         status = .responding
         repository.touch(sessionId)
         notifyTurnActive()
-        NSLog("[SessionHandle:%@] send() → status=responding, turnActive=true", sessionId)
+        appLog(.info, "SessionHandle", "send() → status=responding, turnActive=true \(sessionId)")
     }
 
     /// 是否已设置过 title。避免每次 send 都查 DB。恢复已有会话时由 SessionService 设为 true。
@@ -215,7 +215,7 @@ class SessionHandle {
     /// 仅在 .responding 时有效，其他状态调用无效果。
     func interrupt() {
         guard status == .responding, let agentSession else { return }
-        NSLog("[SessionHandle:%@] interrupt() → status=interrupting", sessionId)
+        appLog(.info, "SessionHandle", "interrupt() → status=interrupting \(sessionId)")
         status = .interrupting
         agentSession.interrupt { [weak self] _ in
             Task { @MainActor [weak self] in
@@ -280,7 +280,7 @@ class SessionHandle {
     /// - onStderr        → accumulateStderr(_:)
     /// - onHookRequest / onMCPRequest / onElicitationRequest → 直接处理（未来改异步）
     func attach(_ session: AgentSDK.Session) {
-        NSLog("[SessionHandle:%@] attach()", sessionId)
+        appLog(.info, "SessionHandle", "attach() \(sessionId)")
         self.agentSession = session
         historyLoadState = .loaded
 
@@ -348,7 +348,7 @@ class SessionHandle {
 
     /// 停止子进程并清除引用。status → .inactive。由 SessionService.stop() 调用。
     func detach() {
-        NSLog("[SessionHandle:%@] detach() → status=inactive", sessionId)
+        appLog(.info, "SessionHandle", "detach() → status=inactive \(sessionId)")
         // 拒绝所有待决策权限
         for pending in pendingPermissions {
             pending.respond(.deny(reason: "Session stopped"))
@@ -382,9 +382,9 @@ class SessionHandle {
         if result.shouldForward, let bridge {
             let json = message.toJSON() as? [String: Any] ?? [:]
             bridge.forwardRawMessage(conversationId: sessionId, messageJSON: json)
-            NSLog("[SessionHandle:%@] forwardRawMessage type=%@ forward=true", sessionId, msgType)
+            appLog(.debug, "SessionHandle", "forwardRawMessage type=\(msgType) forward=true \(sessionId)")
         } else {
-            NSLog("[SessionHandle:%@] handleLiveMessage type=%@ forward=%@ bridge=%@", sessionId, msgType, result.shouldForward ? "true" : "false", bridge == nil ? "nil" : "ok")
+            appLog(.debug, "SessionHandle", "handleLiveMessage type=\(msgType) forward=\(result.shouldForward ? "true" : "false") bridge=\(bridge == nil ? "nil" : "ok") \(sessionId)")
         }
     }
 
@@ -398,7 +398,7 @@ class SessionHandle {
         }
 
         if let init_ = effects.sessionInit {
-            NSLog("[SessionHandle:%@] sessionInit arrived — cwd=%@ status=%@", sessionId, init_.cwd ?? "nil", "\(status)")
+            appLog(.info, "SessionHandle", "sessionInit arrived — cwd=\(init_.cwd ?? "nil") status=\(status) \(sessionId)")
             cwd = init_.cwd
             if let newCwd = init_.cwd {
                 emit(.cwdChanged(newCwd))
@@ -430,7 +430,7 @@ class SessionHandle {
         }
 
         if effects.turnEnded {
-            NSLog("[SessionHandle:%@] turnEnded → status=idle", sessionId)
+            appLog(.info, "SessionHandle", "turnEnded → status=idle \(sessionId)")
             status = .idle
             repository.touch(sessionId)
             notifyTurnActive()
@@ -440,7 +440,7 @@ class SessionHandle {
 
     /// 处理子进程退出。设置 lastExit，status → .inactive。
     internal func handleProcessExit(_ exitCode: Int32) {
-        NSLog("[SessionHandle:%@] processExit code=%d stderr=%@", sessionId, exitCode, stderrBuffer.isEmpty ? "(empty)" : String(stderrBuffer.prefix(200)))
+        appLog(.warning, "SessionHandle", "processExit code=\(exitCode) stderr=\(stderrBuffer.isEmpty ? "(empty)" : String(stderrBuffer.prefix(200))) \(sessionId)")
         lastExit = ProcessExit(
             exitCode: exitCode,
             stderr: stderrBuffer.isEmpty ? nil : stderrBuffer

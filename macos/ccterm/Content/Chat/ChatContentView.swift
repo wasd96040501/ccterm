@@ -25,7 +25,7 @@ final class ChatContentView: NSObject, WKNavigationDelegate {
 
     private func warmUp() {
         guard let htmlURL = Bundle.main.url(forResource: "chat-react", withExtension: "html") else {
-            NSLog("[ChatContentView] chat-react.html not found in bundle")
+            appLog(.error, "ChatContentView", "chat-react.html not found in bundle")
             return
         }
         webView.loadFileURL(htmlURL, allowingReadAccessTo: htmlURL.deletingLastPathComponent())
@@ -38,12 +38,12 @@ final class ChatContentView: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        NSLog("[ChatContentView] Navigation failed: \(error.localizedDescription)")
+        appLog(.error, "ChatContentView", "Navigation failed: \(error.localizedDescription)")
         bridge.markReady()
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        NSLog("[ChatContentView] Provisional navigation failed: \(error.localizedDescription)")
+        appLog(.error, "ChatContentView", "Provisional navigation failed: \(error.localizedDescription)")
         bridge.markReady()
     }
 

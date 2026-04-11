@@ -50,7 +50,7 @@ final class WebViewBridge: NSObject {
     }
 
     func setBottomPadding(_ height: CGFloat) {
-        NSLog("[Bridge] setBottomPadding: height=%.1f isReady=%@", height, isReady ? "true" : "false")
+        appLog(.debug, "Bridge", "setBottomPadding: height=\(String(format: "%.1f", height)) isReady=\(isReady)")
         send(type: "setBottomPadding", payload: SetBottomPaddingPayload(height: height))
     }
 

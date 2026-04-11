@@ -130,7 +130,7 @@ class SessionService {
         )
 
         let truncatedDesc = String(description.prefix(80))
-        NSLog("[SessionService] generateBranchName start — input: \"%@\"", truncatedDesc)
+        appLog(.info, "SessionService", "generateBranchName start — input: \"\(truncatedDesc)\"")
         let startTime = CFAbsoluteTimeGetCurrent()
 
         do {
@@ -146,16 +146,14 @@ class SessionService {
 
             let branch = sanitizeBranchName(result.result)
             if let branch {
-                NSLog("[SessionService] generateBranchName done — branch: \"%@\", elapsed: %dms, tokens: %d in / %d out, cost: $%.6f",
-                      branch, elapsed, inputTokens, outputTokens, costUsd)
+                appLog(.info, "SessionService", "generateBranchName done — branch: \"\(branch)\", elapsed: \(elapsed)ms, tokens: \(inputTokens) in / \(outputTokens) out, cost: $\(String(format: "%.6f", costUsd))")
             } else {
-                NSLog("[SessionService] generateBranchName failed — invalid after sanitize, elapsed: %dms, raw: \"%@\"",
-                      elapsed, String(result.result.prefix(200)))
+                appLog(.warning, "SessionService", "generateBranchName failed — invalid after sanitize, elapsed: \(elapsed)ms, raw: \"\(String(result.result.prefix(200)))\"")
             }
             return branch
         } catch {
             let elapsed = Int((CFAbsoluteTimeGetCurrent() - startTime) * 1000)
-            NSLog("[SessionService] generateBranchName failed — elapsed: %dms, error: %@", elapsed, "\(error)")
+            appLog(.error, "SessionService", "generateBranchName failed — elapsed: \(elapsed)ms, error: \(error)")
         }
         return nil
     }
@@ -356,7 +354,7 @@ class SessionService {
     /// 重活（worktree 创建、config 构造）在后台线程执行，不阻塞主线程。
     func launch(sessionId: String, config: SessionConfig, taskDescription: String? = nil) async throws {
         let handle = getOrCreateHandle(sessionId)
-        NSLog("[SessionService] launch() sessionId=%@", sessionId)
+        appLog(.info, "SessionService", "launch() sessionId=\(sessionId)")
 
         // 主线程：解构 config 为值类型
         let originPath = config.originPath
@@ -406,7 +404,7 @@ class SessionService {
     /// 恢复已停止会话。调用方须先设 handle.status = .starting。
     func relaunch(sessionId: String, config: SessionConfig) async throws {
         let handle = getOrCreateHandle(sessionId)
-        NSLog("[SessionService] relaunch() sessionId=%@", sessionId)
+        appLog(.info, "SessionService", "relaunch() sessionId=\(sessionId)")
 
         // 主线程：读历史 cwd（轻量 CoreData 查询）
         let historyCwd = repository.find(sessionId)?.cwd ?? config.originPath
@@ -451,13 +449,13 @@ class SessionService {
         do {
             try await agentSession.start()
         } catch {
-            NSLog("[SessionService] bootstrap() FAILED sessionId=%@ error=%@", sessionId, "\(error)")
+            appLog(.error, "SessionService", "bootstrap() FAILED sessionId=\(sessionId) error=\(error)")
             handle.detach()
             repository.updateError(sessionId, error: handle.lastExit?.stderr)
             throw error
         }
         let startElapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-        NSLog("[SessionService] agentSession.start() done sessionId=%@ elapsed=%.0fms", sessionId, startElapsed)
+        appLog(.info, "SessionService", "agentSession.start() done sessionId=\(sessionId) elapsed=\(String(format: "%.0f", startElapsed))ms")
 
         let initTime = CFAbsoluteTimeGetCurrent()
         let response: InitializeResponse? = await withCheckedContinuation { continuation in
@@ -466,7 +464,7 @@ class SessionService {
             }
         }
         let initElapsed = (CFAbsoluteTimeGetCurrent() - initTime) * 1000
-        NSLog("[SessionService] initialize() done sessionId=%@ elapsed=%.0fms", sessionId, initElapsed)
+        appLog(.info, "SessionService", "initialize() done sessionId=\(sessionId) elapsed=\(String(format: "%.0f", initElapsed))ms")
 
         if let response {
             let commands = SlashCommand.from(response)
@@ -485,14 +483,14 @@ class SessionService {
         }
 
         let totalElapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-        NSLog("[SessionService] bootstrap completed sessionId=%@ totalElapsed=%.0fms", sessionId, totalElapsed)
+        appLog(.info, "SessionService", "bootstrap completed sessionId=\(sessionId) totalElapsed=\(String(format: "%.0f", totalElapsed))ms")
     }
 
     /// 停止会话的子进程。调用 handle.detach()。
     /// 无运行中子进程时调用无效果。
     func stop(_ sessionId: String) async {
         guard let handle = handles[sessionId], handle.status != .inactive else { return }
-        NSLog("[SessionService] stop() sessionId=%@", sessionId)
+        appLog(.info, "SessionService", "stop() sessionId=\(sessionId)")
         handle.detach()
     }
 
@@ -571,8 +569,7 @@ class SessionService {
             if let contents = try? FileManager.default.contentsOfDirectory(atPath: parentDir), contents.isEmpty {
                 try? FileManager.default.removeItem(atPath: parentDir)
             }
-            NSLog("[SessionService] archive() worktree removed sessionId=%@ branch=%@ cwd=%@",
-                  sessionId, branch ?? "(nil)", cwd)
+            appLog(.info, "SessionService", "archive() worktree removed sessionId=\(sessionId) branch=\(branch ?? "(nil)") cwd=\(cwd)")
         }
         repository.archive(sessionId)
     }
@@ -595,8 +592,7 @@ class SessionService {
             if success {
                 Self.copyLocalSettings(from: originPath, to: cwd)
             }
-            NSLog("[SessionService] unarchive() worktree restore sessionId=%@ branch=%@ success=%@",
-                  sessionId, branch, success ? "true" : "false")
+            appLog(.info, "SessionService", "unarchive() worktree restore sessionId=\(sessionId) branch=\(branch) success=\(success ? "true" : "false")")
         }
         repository.unarchive(sessionId)
     }

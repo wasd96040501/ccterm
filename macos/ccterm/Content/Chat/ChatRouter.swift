@@ -261,7 +261,7 @@ final class ChatRouter {
                 DirectoryCompletionProvider.saveToRecent(directory)
             }
         } catch {
-            NSLog("[ChatRouter] Failed to start session: %@", "\(error)")
+            appLog(.error, "ChatRouter", "Failed to start session: \(error)")
             handle.status = .inactive
             sessionVM.processExitError = ProcessExitError(exitCode: 1, stderr: error.localizedDescription)
         }
@@ -285,7 +285,7 @@ final class ChatRouter {
             try await sessionService.relaunch(sessionId: handle.sessionId, config: config)
             handle.send(.text(text))
         } catch {
-            NSLog("[ChatRouter] Resume failed: %@", "\(error)")
+            appLog(.error, "ChatRouter", "Resume failed: \(error)")
             handle.status = .inactive
         }
     }
@@ -328,7 +328,7 @@ final class ChatRouter {
             activateSession(newHandle.sessionId)
             newHandle.send(.text(prompt))
         } catch {
-            NSLog("[ChatRouter] startPlanSession failed: %@", "\(error)")
+            appLog(.error, "ChatRouter", "startPlanSession failed: \(error)")
         }
     }
 

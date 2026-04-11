@@ -18,7 +18,7 @@ final class CoreDataStack {
         persistentContainer = NSPersistentContainer(name: "ccterm")
         persistentContainer.loadPersistentStores { _, error in
             if let error {
-                NSLog("[CoreDataStack] Failed to load store: \(error)")
+                appLog(.error, "CoreDataStack", "Failed to load store: \(error)")
             }
         }
         persistentContainer.viewContext.automaticallyMergesChangesFromParent = true
@@ -34,7 +34,7 @@ final class CoreDataStack {
         }
         persistentContainer.loadPersistentStores { _, error in
             if let error {
-                NSLog("[CoreDataStack] Failed to load store: \(error)")
+                appLog(.error, "CoreDataStack", "Failed to load store: \(error)")
             }
         }
         persistentContainer.viewContext.automaticallyMergesChangesFromParent = true
@@ -48,7 +48,7 @@ final class CoreDataStack {
         do {
             try context.save()
         } catch {
-            NSLog("[CoreDataStack] Save failed: \(error)")
+            appLog(.error, "CoreDataStack", "Save failed: \(error)")
         }
     }
 }

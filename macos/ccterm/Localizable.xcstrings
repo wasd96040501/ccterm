@@ -130,6 +130,8 @@
         }
       }
     },
+    "All": {},
+    "All Categories": {},
     "Allow": {
       "extractionState": "stale",
       "localizations": {
@@ -358,6 +360,7 @@
         }
       }
     },
+    "Clear Logs": {},
     "Clear context and auto-accept all changes": {
       "localizations": {
         "zh-Hans": {
@@ -420,6 +423,7 @@
         }
       }
     },
+    "Copy All": {},
     "Copy Branch": {
       "localizations": {
         "zh-Hans": {
@@ -450,6 +454,7 @@
         }
       }
     },
+    "Debug": {},
     "Delete": {
       "extractionState": "stale",
       "localizations": {
@@ -562,6 +567,7 @@
         }
       }
     },
+    "Filter": {},
     "Find": {
       "localizations": {
         "zh-Hans": {
@@ -686,6 +692,7 @@
         }
       }
     },
+    "Logs": {},
     "Low": {
       "localizations": {
         "zh-Hans": {

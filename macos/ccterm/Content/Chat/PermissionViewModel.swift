@@ -49,7 +49,7 @@ final class PermissionViewModel {
         let newIds = Set(pending.map(\.id))
         guard currentIds != newIds else { return }
 
-        NSLog("[PlanDebug] rebuildPermissionCards: old=%@ new=%@", currentIds.sorted().description, newIds.sorted().description)
+        appLog(.debug, "PlanDebug", "rebuildPermissionCards: old=\(currentIds.sorted().description) new=\(newIds.sorted().description)")
 
         let existingByID = Dictionary(uniqueKeysWithValues: cards.map { ($0.id, $0) })
 
@@ -75,10 +75,10 @@ final class PermissionViewModel {
                 }
             )
 
-            NSLog("[PlanDebug] rebuildPermissionCards: NEW card id=%@ toolName=%@ cardType=%@", permission.id, permission.request.toolName, String(describing: cardType))
+            appLog(.debug, "PlanDebug", "rebuildPermissionCards: NEW card id=\(permission.id) toolName=\(permission.request.toolName) cardType=\(String(describing: cardType))")
 
             if case .exitPlanMode(let vm) = cardType {
-                NSLog("[PlanDebug]   exitPlanMode hasPlan=%@", String(describing: vm.hasPlan))
+                appLog(.debug, "PlanDebug", "  exitPlanMode hasPlan=\(vm.hasPlan)")
                 vm.onViewPlan = { [weak self] in
                     self?.onViewPlan(permission.id)
                 }

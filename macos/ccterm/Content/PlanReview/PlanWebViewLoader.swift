@@ -26,10 +26,10 @@ final class PlanWebViewLoader: NSObject, WKNavigationDelegate, WKScriptMessageHa
         webView.navigationDelegate = self
 
         if let url = Bundle.main.url(forResource: "plan-fullscreen-react", withExtension: "html") {
-            NSLog("[PlanDebug] PlanWebViewLoader: loading HTML from %@", url.absoluteString)
+            appLog(.debug, "PlanDebug", "PlanWebViewLoader: loading HTML from \(url.absoluteString)")
             webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         } else {
-            NSLog("[PlanDebug] PlanWebViewLoader: ERROR plan-fullscreen-react.html NOT FOUND in bundle")
+            appLog(.error, "PlanDebug", "PlanWebViewLoader: plan-fullscreen-react.html NOT FOUND in bundle")
         }
     }
 
@@ -69,7 +69,7 @@ final class PlanWebViewLoader: NSObject, WKNavigationDelegate, WKScriptMessageHa
     private func handleBridgeEvent(type: String, body: [String: Any]) {
         switch type {
         case "ready":
-            NSLog("[PlanDebug] PlanWebViewLoader: received 'ready', flushing %d pending calls", pendingCalls.count)
+            appLog(.debug, "PlanDebug", "PlanWebViewLoader: received 'ready', flushing \(pendingCalls.count) pending calls")
             isReady = true
             flushPendingCalls()
         case "textSelected":
@@ -101,7 +101,7 @@ final class PlanWebViewLoader: NSObject, WKNavigationDelegate, WKScriptMessageHa
     // MARK: - Outbound Bridge (Swift → React)
 
     func setPlan(key: String, markdown: String) {
-        NSLog("[PlanDebug] PlanWebViewLoader: setPlan key=%@ markdown length=%d", key, markdown.count)
+        appLog(.debug, "PlanDebug", "PlanWebViewLoader: setPlan key=\(key) markdown length=\(markdown.count)")
         queueSend(type: "setPlan", payload: ["key": key, "markdown": markdown])
     }
 
@@ -124,12 +124,12 @@ final class PlanWebViewLoader: NSObject, WKNavigationDelegate, WKScriptMessageHa
     }
 
     func switchPlan(key: String) {
-        NSLog("[PlanDebug] PlanWebViewLoader: switchPlan key=%@", key)
+        appLog(.debug, "PlanDebug", "PlanWebViewLoader: switchPlan key=\(key)")
         queueSend(type: "switchPlan", payload: ["key": key])
     }
 
     func clearPlan(key: String) {
-        NSLog("[PlanDebug] PlanWebViewLoader: clearPlan key=%@", key)
+        appLog(.debug, "PlanDebug", "PlanWebViewLoader: clearPlan key=\(key)")
         queueSend(type: "clearPlan", payload: ["key": key])
     }
 

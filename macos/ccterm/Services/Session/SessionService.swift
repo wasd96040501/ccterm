@@ -75,13 +75,14 @@ enum SessionStatus: String {
 /// let handle = service.session(sessionId)   // status == .inactive，消息懒加载
 ///
 /// // 2. 新建会话
-/// let handle = try await service.start(config: config)  // 生成 UUID + 启动子进程
+/// let handle = service.provisionSession(sessionId: id, config: config, title: "...")
+/// handle.status = .starting
+/// try await service.launch(sessionId: id, config: config, taskDescription: text)
 /// handle.send(.text("hello"))
 ///
 /// // 3. 从历史恢复（启动子进程）
-/// // start() 返回的 handle 与 session() 返回的是同一个实例（identity stable）
-/// // 已持有 handle 时可以不接返回值，handle 的 status 会自动从 .inactive → .idle
-/// try await service.start(sessionId: id, config: config)
+/// handle.status = .starting
+/// try await service.relaunch(sessionId: id, config: config)
 /// handle.send(.text("继续"))
 /// ```
 ///
@@ -190,7 +191,7 @@ class SessionService {
     /// If `branchName` is provided (e.g. "feat/user-auth-login"), uses it as branch and derives folder name.
     /// Falls back to random `wt-<hex>` branch on collision or when `branchName` is nil.
     /// Returns the worktree directory path on success, or `nil` on failure.
-    private static func createWorktreeDirectory(repoPath: String, baseBranch: String?, branchName: String?) -> String? {
+    static func createWorktreeDirectory(repoPath: String, baseBranch: String?, branchName: String?) -> String? {
         // Derive folder name from branch: "feat/user-auth-login" → "user-auth-login"
         // Sanitize: replace filesystem-unsafe characters (/, \, :, spaces, etc.) with "-"
         let folderName = branchName.flatMap { branch -> String? in
@@ -279,9 +280,9 @@ class SessionService {
     // MARK: - Lifecycle
 
     /// 同步创建新 session 的 record 和 handle（不启动子进程）。
-    /// handle.status 设置为 .starting，SidebarVM 立即感知。
-    /// 后续调用 start(sessionId:config:) 启动子进程。
-    func createNewSession(sessionId: String, config: SessionConfig, title: String) -> SessionHandle {
+    /// 调用方负责设置 handle.status = .starting。
+    /// 后续调用 launch(sessionId:config:taskDescription:) 启动子进程。
+    func provisionSession(sessionId: String, config: SessionConfig, title: String) -> SessionHandle {
         let now = Date()
         let newSession = SessionRecord(
             id: UUID(),
@@ -305,127 +306,119 @@ class SessionService {
         let handle = getOrCreateHandle(sessionId)
         handle.isWorktree = config.isWorktree
         handle.permissionMode = config.permissionMode
-        handle.status = .starting
         handle.titleSet = true
         return handle
     }
 
-    /// 启动会话的 AgentSDK 子进程并返回 SessionHandle。
-    ///
-    /// - sessionId == nil：新建会话。生成 UUID，创建最小 Session 实体（status = .pending），写入 DB。
-    /// - sessionId != nil：恢复已有会话（或启动 createNewSession 预创建的 handle）。
-    ///
-    /// 内部流程：
-    ///   1. sessionId == nil → 生成 UUID，创建最小 Session（status=.pending），repository.save()
-    ///   2. 创建 AgentSDK.Session（配置来自 SessionConfig）
-    ///   3. handle.attach(agentSession) — 绑定回调，handle.status → .starting
-    ///   4. try agentSession.start() — 失败则写 error，status 不变，throw
-    ///   5. await sessionInit 到达 — 写回 cwd，status → .created，handle.status → .idle
-    ///   6. return handle
-    ///
-    /// async：等待 sessionInit 到达后返回。
-    /// throws：子进程启动失败或 sessionInit 超时。
-    @discardableResult
-    func start(sessionId: String? = nil, config: SessionConfig) async throws -> SessionHandle {
-        let resolvedId: String
-        let isResume: Bool
+    /// 新会话启动。调用方须先 provisionSession 并设 handle.status = .starting。
+    /// 重活（worktree 创建、config 构造）在后台线程执行，不阻塞主线程。
+    func launch(sessionId: String, config: SessionConfig, taskDescription: String? = nil) async throws {
+        let handle = getOrCreateHandle(sessionId)
+        NSLog("[SessionService] launch() sessionId=%@", sessionId)
 
-        if let existingId = sessionId {
-            resolvedId = existingId
-            // 已有运行中子进程，直接返回
-            if let handle = handles[resolvedId], handle.agentSession != nil {
-                return handle
+        // 主线程：解构 config 为值类型
+        let originPath = config.originPath
+        let isWorktree = config.isWorktree
+        let baseBranch = config.worktreeBaseBranch
+        let model = config.model
+        let permissionMode = config.permissionMode.toSDK()
+        let effort = config.effort
+        let addDirs = config.additionalDirs ?? []
+        let plugins = config.pluginDirs ?? []
+        let exportDir = Self.exportDirectory
+
+        // 后台线程：重活
+        nonisolated(unsafe) let agentSession = try await Task.detached {
+            var cwd = originPath
+            if isWorktree {
+                let branchName = await SessionService.generateBranchName(description: taskDescription ?? "")
+                if let wtPath = SessionService.createWorktreeDirectory(
+                    repoPath: originPath, baseBranch: baseBranch, branchName: branchName
+                ) {
+                    cwd = wtPath
+                }
             }
-            // 区分预创建新 session（record.status == .pending）和恢复已停止 session
-            if let record = repository.find(resolvedId), record.status == .pending {
-                isResume = false
-            } else {
-                isResume = true
-            }
-        } else {
-            resolvedId = UUID().uuidString
-            isResume = false
-            // 新建最小 SessionRecord（status = .pending，cwd/title 待 sessionInit 后填充）
-            let now = Date()
-            let newSession = SessionRecord(
-                id: UUID(),
-                sessionId: resolvedId,
-                isWorktree: config.isWorktree,
-                originPath: config.originPath,
-                createdAt: now,
-                lastActiveAt: now,
-                status: .pending,
-                extra: SessionExtra(
-                    pluginDirs: config.pluginDirs,
-                    permissionMode: config.permissionMode.rawValue,
-                    addDirs: config.additionalDirs,
-                    model: config.model,
-                    effort: config.effort?.rawValue
-                ),
-                isTempDir: config.isTempDir
+            let customCLI = UserDefaults.standard.string(forKey: "customCLICommand")
+            let agentConfig = SessionConfiguration(
+                workingDirectory: URL(fileURLWithPath: cwd),
+                model: model,
+                permissionMode: permissionMode,
+                sessionId: sessionId,
+                resume: nil,
+                worktree: nil,
+                effort: effort,
+                addDirs: addDirs,
+                plugins: plugins,
+                customCommand: customCLI,
+                allowDangerouslySkipPermissions: true,
+                messageExportDirectory: exportDir
             )
-            repository.save(newSession)
-        }
+            let session = AgentSDK.Session(configuration: agentConfig)
+            session.lastKnownSessionId = sessionId
+            return session
+        }.value
 
-        // 获取或创建 handle
-        let handle = getOrCreateHandle(resolvedId)
-        NSLog("[SessionService] start() sessionId=%@ isResume=%@", resolvedId, isResume ? "true" : "false")
-
-        // 创建 AgentSDK.Session
-        // 读取用户自定义 CLI 命令前缀
-        let customCLICommand = UserDefaults.standard.string(forKey: "customCLICommand")
-
-        // cwd = 传给 CLI 的 workingDirectory
-        // resume → record.cwd（上次实际工作目录）
-        // 新建 + worktree → 创建 worktree 目录
-        // 新建 → originPath
-        var cwd = config.originPath
-        if isResume, let recordCwd = repository.find(resolvedId)?.cwd {
-            cwd = recordCwd
-        } else if config.isWorktree, let wtPath = Self.createWorktreeDirectory(repoPath: config.originPath, baseBranch: config.worktreeBaseBranch, branchName: config.worktreeBranchName) {
-            cwd = wtPath
-        }
-        NSLog("[SessionService] start() sessionId=%@ cwd=%@", resolvedId, cwd)
-
-        let agentConfig = SessionConfiguration(
-            workingDirectory: URL(fileURLWithPath: cwd),
-            model: config.model,
-            permissionMode: config.permissionMode.toSDK(),
-            sessionId: isResume ? nil : resolvedId,
-            resume: isResume ? resolvedId : nil,
-            worktree: nil,
-            effort: config.effort,
-            addDirs: config.additionalDirs ?? [],
-            plugins: config.pluginDirs ?? [],
-            customCommand: customCLICommand,
-            allowDangerouslySkipPermissions: true,
-            messageExportDirectory: Self.exportDirectory
-        )
-        let agentSession = AgentSDK.Session(configuration: agentConfig)
-        agentSession.lastKnownSessionId = resolvedId
-
-        // 设置初始状态
         handle.isWorktree = config.isWorktree
         handle.permissionMode = config.permissionMode
+        try await bootstrap(handle: handle, agentSession: agentSession, sessionId: sessionId)
+    }
 
-        // 绑定回调（在 start 之前设置，确保不丢消息），handle.status → .starting
+    /// 恢复已停止会话。调用方须先设 handle.status = .starting。
+    func relaunch(sessionId: String, config: SessionConfig) async throws {
+        let handle = getOrCreateHandle(sessionId)
+        NSLog("[SessionService] relaunch() sessionId=%@", sessionId)
+
+        // 主线程：读历史 cwd（轻量 CoreData 查询）
+        let historyCwd = repository.find(sessionId)?.cwd ?? config.originPath
+        let model = config.model
+        let permissionMode = config.permissionMode.toSDK()
+        let effort = config.effort
+        let addDirs = config.additionalDirs ?? []
+        let plugins = config.pluginDirs ?? []
+        let exportDir = Self.exportDirectory
+
+        nonisolated(unsafe) let agentSession = try await Task.detached {
+            let customCLI = UserDefaults.standard.string(forKey: "customCLICommand")
+            let agentConfig = SessionConfiguration(
+                workingDirectory: URL(fileURLWithPath: historyCwd),
+                model: model,
+                permissionMode: permissionMode,
+                sessionId: nil,
+                resume: sessionId,
+                worktree: nil,
+                effort: effort,
+                addDirs: addDirs,
+                plugins: plugins,
+                customCommand: customCLI,
+                allowDangerouslySkipPermissions: true,
+                messageExportDirectory: exportDir
+            )
+            let session = AgentSDK.Session(configuration: agentConfig)
+            session.lastKnownSessionId = sessionId
+            return session
+        }.value
+
+        handle.isWorktree = config.isWorktree
+        handle.permissionMode = config.permissionMode
+        try await bootstrap(handle: handle, agentSession: agentSession, sessionId: sessionId)
+    }
+
+    /// 共享后半段：attach → start → initialize → idle。
+    private func bootstrap(handle: SessionHandle, agentSession: AgentSDK.Session, sessionId: String) async throws {
         handle.attach(agentSession)
 
-        // 启动子进程
         let startTime = CFAbsoluteTimeGetCurrent()
         do {
             try await agentSession.start()
         } catch {
-            NSLog("[SessionService] start() FAILED sessionId=%@ error=%@", resolvedId, "\(error)")
+            NSLog("[SessionService] bootstrap() FAILED sessionId=%@ error=%@", sessionId, "\(error)")
             handle.detach()
-            repository.updateError(resolvedId, error: handle.lastExit?.stderr)
+            repository.updateError(sessionId, error: handle.lastExit?.stderr)
             throw error
         }
         let startElapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-        NSLog("[SessionService] agentSession.start() done sessionId=%@ elapsed=%.0fms", resolvedId, startElapsed)
+        NSLog("[SessionService] agentSession.start() done sessionId=%@ elapsed=%.0fms", sessionId, startElapsed)
 
-        // initialize 获取 slash commands + 确认 CLI 就绪。
-        // initialize 的 control_response 是 CLI 准备好的信号（system.init 要等第一条 user message 才发）。
         let initTime = CFAbsoluteTimeGetCurrent()
         let response: InitializeResponse? = await withCheckedContinuation { continuation in
             agentSession.initialize(promptSuggestions: true) { response in
@@ -433,7 +426,7 @@ class SessionService {
             }
         }
         let initElapsed = (CFAbsoluteTimeGetCurrent() - initTime) * 1000
-        NSLog("[SessionService] initialize() done sessionId=%@ elapsed=%.0fms commands=%d", resolvedId, initElapsed, response.flatMap { SlashCommand.from($0).count } ?? 0)
+        NSLog("[SessionService] initialize() done sessionId=%@ elapsed=%.0fms", sessionId, initElapsed)
 
         if let response {
             let commands = SlashCommand.from(response)
@@ -447,15 +440,12 @@ class SessionService {
 
         handle.status = .idle
 
-        // title 已设置过则标记跳过
-        if let record = repository.find(resolvedId), record.title != "[unknown session]" {
+        if let record = repository.find(sessionId), record.title != "[unknown session]" {
             handle.titleSet = true
         }
 
         let totalElapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000
-        NSLog("[SessionService] start() completed sessionId=%@ totalElapsed=%.0fms → status=idle", resolvedId, totalElapsed)
-
-        return handle
+        NSLog("[SessionService] bootstrap completed sessionId=%@ totalElapsed=%.0fms", sessionId, totalElapsed)
     }
 
     /// 停止会话的子进程。调用 handle.detach()。
@@ -488,7 +478,7 @@ class SessionService {
     /// sessionId 在 DB 中不存在时返回 nil。
     /// 首次调用时创建 SessionHandle 并缓存，后续返回同一实例（identity stable）。
     /// 返回的 handle 的 status == .inactive，消息在首次访问时从 JSONL 懒加载。
-    /// 要启动子进程请用 start(sessionId:config:)。
+    /// 要启动子进程请用 launch(sessionId:config:) 或 relaunch(sessionId:config:)。
     func session(_ sessionId: String) -> SessionHandle? {
         // 已缓存则直接返回
         if let handle = handles[sessionId] {

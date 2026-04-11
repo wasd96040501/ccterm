@@ -261,6 +261,7 @@ struct InputBarView: View {
                 }
             }
             .buttonStyle(.plain)
+            .disabled(!isPathInteractive)
         }
         .hoverCapsule(
             staticFill: viewModel.isDirectoryUnset ? Color.orange.opacity(0.12) : nil,
@@ -293,7 +294,7 @@ struct InputBarView: View {
 
     private func branchButton(branch: String) -> some View {
         Button {
-            if isBranchInteractive { showBranchPicker = true }
+            showBranchPicker = true
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "arrow.triangle.branch")
@@ -306,6 +307,7 @@ struct InputBarView: View {
             .foregroundStyle(.secondary)
         }
         .buttonStyle(isBranchInteractive ? HoverCapsuleStyle() : HoverCapsuleStyle(hoverOpacity: 0, pressOpacity: 0))
+        .disabled(!isBranchInteractive)
         .popover(isPresented: $showBranchPicker) {
             BranchPickerView(
                 branches: GitUtils.listBranches(at: viewModel.cwd ?? ""),

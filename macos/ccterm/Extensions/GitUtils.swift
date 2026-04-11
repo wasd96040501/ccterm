@@ -178,21 +178,33 @@ enum GitUtils {
     }
 
     /// Creates a git worktree at the specified path with a new branch based on the given base branch.
-    /// Returns `true` if the worktree was created successfully.
-    @discardableResult
-    static func createWorktree(repoPath: String, worktreePath: String, branch: String, baseBranch: String) -> Bool {
+    /// Returns `.success` or `.failure` with the git stderr message.
+    static func createWorktree(repoPath: String, worktreePath: String, branch: String, baseBranch: String) -> Result<Void, WorktreeError> {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.arguments = ["-C", repoPath, "worktree", "add", worktreePath, "-b", branch, baseBranch]
         process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
+        let stderrPipe = Pipe()
+        process.standardError = stderrPipe
         do {
             try process.run()
             process.waitUntilExit()
-            return process.terminationStatus == 0
+            if process.terminationStatus == 0 {
+                return .success(())
+            }
+            let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+            let stderr = String(data: stderrData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let isBranchConflict = stderr.contains("already exists")
+            return .failure(WorktreeError(stderr: stderr, isBranchConflict: isBranchConflict))
         } catch {
-            return false
+            return .failure(WorktreeError(stderr: error.localizedDescription, isBranchConflict: false))
         }
+    }
+
+    struct WorktreeError: Error, LocalizedError {
+        let stderr: String
+        let isBranchConflict: Bool
+        var errorDescription: String? { stderr }
     }
 
     /// Creates a git worktree at the specified path for an existing branch (no `-b`).

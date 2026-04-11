@@ -3,6 +3,7 @@ import SwiftUI
 struct LogWindowView: View {
     @State private var viewModel = LogWindowViewModel()
     @State private var autoScroll = true
+    @State private var exportCopied = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,6 +26,31 @@ struct LogWindowView: View {
             levelFilterButtons
 
             categoryPicker
+
+            Button {
+                let text = viewModel.filteredEntries.map { entry in
+                    let time = Self.exportTimeFormatter.string(from: entry.timestamp)
+                    return "\(time) [\(entry.level.label)] [\(entry.category)] \(entry.message)"
+                }.joined(separator: "\n")
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                exportCopied = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    exportCopied = false
+                }
+            } label: {
+                ZStack {
+                    Image(systemName: "doc.on.doc")
+                        .opacity(exportCopied ? 0 : 1)
+                    Image(systemName: "checkmark")
+                        .opacity(exportCopied ? 1 : 0)
+                        .foregroundStyle(.green)
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            }
+            .buttonStyle(HoverCapsuleStyle())
+            .help(String(localized: "Copy All"))
 
             Button {
                 viewModel.clear()
@@ -87,6 +113,12 @@ struct LogWindowView: View {
         .menuStyle(.borderlessButton)
         .fixedSize()
     }
+
+    private static let exportTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss.SSS"
+        return f
+    }()
 
     // MARK: - Log List
 

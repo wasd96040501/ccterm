@@ -30,7 +30,7 @@ struct LogRowView: View {
                 .fontWeight(.medium)
                 .foregroundStyle(.primary)
                 .lineLimit(1)
-                .frame(width: 130, alignment: .leading)
+                .frame(width: 160, alignment: .leading)
 
             Text(entry.message)
                 .foregroundStyle(.primary)
@@ -49,9 +49,15 @@ struct LogRowView: View {
                     copied = false
                 }
             } label: {
-                Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                    .font(.system(size: 10))
-                    .foregroundStyle(copied ? .green : .secondary)
+                ZStack {
+                    Image(systemName: "doc.on.doc")
+                        .opacity(copied ? 0 : 1)
+                    Image(systemName: "checkmark")
+                        .opacity(copied ? 1 : 0)
+                        .foregroundStyle(.green)
+                }
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
             .opacity(isHovered || copied ? 1 : 0)

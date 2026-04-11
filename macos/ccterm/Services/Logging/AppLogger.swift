@@ -84,7 +84,7 @@ final class AppLogger {
 /// Writes to both the in-app log viewer and macOS unified logging.
 func appLog(_ level: LogLevel, _ category: String, _ message: String) {
     let osLogger = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "com.ccterm",
+        subsystem: Bundle.main.bundleIdentifier ?? "com.ccterm.app",
         category: category
     )
     osLogger.log(level: level.osLogType, "\(message, privacy: .public)")

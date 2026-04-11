@@ -551,27 +551,35 @@ class SessionService {
     }
 
     /// 归档会话（软删除）。status → .archived。
-    /// worktree 会话：保存分支名 → git worktree remove → 清理空父目录。
+    /// worktree 会话：同步写 DB（分支名 + archived 状态），git worktree remove 异步执行不阻塞 UI。
     func archive(_ sessionId: String) {
+        var worktreeInfo: (cwd: String, originPath: String, branch: String?)? = nil
         if let record = repository.find(sessionId),
            record.isWorktree,
            let cwd = record.cwd,
            let originPath = record.originPath {
-            // 保存分支名，用于 unarchive 时重建
+            // 同步保存分支名，用于 unarchive 时重建
             let branch = GitUtils.currentBranch(at: cwd)
             if let branch {
                 repository.updateWorktreeBranch(sessionId, branch: branch)
             }
-            // 移除 worktree（不删除分支）
-            GitUtils.removeWorktree(repoPath: originPath, worktreePath: cwd)
-            // 清理空父目录（worktree 目录结构：.claude/worktrees/<name>/<project>）
-            let parentDir = (cwd as NSString).deletingLastPathComponent
-            if let contents = try? FileManager.default.contentsOfDirectory(atPath: parentDir), contents.isEmpty {
-                try? FileManager.default.removeItem(atPath: parentDir)
-            }
-            appLog(.info, "SessionService", "archive() worktree removed sessionId=\(sessionId) branch=\(branch ?? "(nil)") cwd=\(cwd)")
+            worktreeInfo = (cwd, originPath, branch)
         }
+        // 同步写 DB，UI 立即刷新
         repository.archive(sessionId)
+
+        // 异步执行 git worktree remove + 目录清理
+        if let info = worktreeInfo {
+            Task.detached(priority: .utility) {
+                GitUtils.removeWorktree(repoPath: info.originPath, worktreePath: info.cwd)
+                // 清理空父目录（worktree 目录结构：.claude/worktrees/<name>/<project>）
+                let parentDir = (info.cwd as NSString).deletingLastPathComponent
+                if let contents = try? FileManager.default.contentsOfDirectory(atPath: parentDir), contents.isEmpty {
+                    try? FileManager.default.removeItem(atPath: parentDir)
+                }
+                appLog(.info, "SessionService", "archive() worktree removed sessionId=\(sessionId) branch=\(info.branch ?? "(nil)") cwd=\(info.cwd)")
+            }
+        }
     }
 
     /// 取消归档。status → .created。

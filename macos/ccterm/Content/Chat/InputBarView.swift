@@ -223,6 +223,11 @@ struct InputBarView: View {
 
     // MARK: - Directory Button
 
+    /// session 启动后，path 按钮不可交互（无 copy、无 hover）。
+    private var isPathInteractive: Bool {
+        viewModel.isDirectoryUnset || viewModel.isAdditionalPathEditable
+    }
+
     @ViewBuilder
     private var directoryButton: some View {
         HStack(spacing: 4) {
@@ -231,7 +236,7 @@ struct InputBarView: View {
                     showFolderPicker = true
                 } else if viewModel.isAdditionalPathEditable {
                     showFolderPicker = true
-                } else if let dir = viewModel.originPath {
+                } else if isPathInteractive, let dir = viewModel.originPath {
                     copyToClipboard(dir, target: .path)
                 }
             } label: {
@@ -257,7 +262,10 @@ struct InputBarView: View {
             }
             .buttonStyle(.plain)
         }
-        .hoverCapsule(staticFill: viewModel.isDirectoryUnset ? Color.orange.opacity(0.12) : nil)
+        .hoverCapsule(
+            staticFill: viewModel.isDirectoryUnset ? Color.orange.opacity(0.12) : nil,
+            hoverOpacity: isPathInteractive ? 0.08 : 0
+        )
         .foregroundStyle(viewModel.isDirectoryUnset ? .orange : .secondary)
         .popover(isPresented: $showFolderPicker) {
             FolderPickerPopover(
@@ -278,9 +286,14 @@ struct InputBarView: View {
 
     // MARK: - Branch Button
 
+    /// worktree 已启动后，branch 不可切换（点击/hover 均无反应）。
+    private var isBranchInteractive: Bool {
+        !(viewModel.isWorktree && !viewModel.isWorktreeEditable)
+    }
+
     private func branchButton(branch: String) -> some View {
         Button {
-            showBranchPicker = true
+            if isBranchInteractive { showBranchPicker = true }
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "arrow.triangle.branch")
@@ -292,7 +305,7 @@ struct InputBarView: View {
             }
             .foregroundStyle(.secondary)
         }
-        .buttonStyle(HoverCapsuleStyle())
+        .buttonStyle(isBranchInteractive ? HoverCapsuleStyle() : HoverCapsuleStyle(hoverOpacity: 0, pressOpacity: 0))
         .popover(isPresented: $showBranchPicker) {
             BranchPickerView(
                 branches: GitUtils.listBranches(at: viewModel.cwd ?? ""),
@@ -314,34 +327,45 @@ struct InputBarView: View {
 
     // MARK: - Worktree Button
 
+    @ViewBuilder
     private var worktreeButton: some View {
-        Menu {
-            Button {
-                viewModel.isWorktree = false
+        if viewModel.isWorktreeEditable {
+            Menu {
+                Button {
+                    viewModel.isWorktree = false
+                } label: {
+                    Label(String(localized: "Local Project"), systemImage: "folder")
+                    if !viewModel.isWorktree { Image(systemName: "checkmark") }
+                }
+                Button {
+                    viewModel.isWorktree = true
+                } label: {
+                    Label(String(localized: "New Worktree"), systemImage: "arrow.turn.up.right")
+                    if viewModel.isWorktree { Image(systemName: "checkmark") }
+                }
             } label: {
-                Label(String(localized: "Local Project"), systemImage: "folder")
-                if !viewModel.isWorktree { Image(systemName: "checkmark") }
+                worktreeLabel(showChevron: true)
             }
-            Button {
-                viewModel.isWorktree = true
-            } label: {
-                Label(String(localized: "New Worktree"), systemImage: "arrow.turn.up.right")
-                if viewModel.isWorktree { Image(systemName: "checkmark") }
-            }
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: viewModel.isWorktree ? "arrow.turn.up.right" : "folder")
-                    .font(.system(size: 11, weight: .medium))
-                Text(viewModel.isWorktree ? String(localized: "Worktree") : String(localized: "Local Project"))
-                    .font(.system(size: 11))
+            .buttonStyle(.plain)
+        } else {
+            worktreeLabel(showChevron: false)
+        }
+    }
+
+    private func worktreeLabel(showChevron: Bool) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: viewModel.isWorktree ? "arrow.turn.up.right" : "folder")
+                .font(.system(size: 11, weight: .medium))
+            Text(viewModel.isWorktree ? String(localized: "Worktree") : String(localized: "Local Project"))
+                .font(.system(size: 11))
+            if showChevron {
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 8, weight: .medium))
-                    .opacity(viewModel.isWorktreeEditable ? 1 : 0)
             }
-            .foregroundStyle(.secondary)
         }
-        .buttonStyle(.plain)
-        .disabled(!viewModel.isWorktreeEditable)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
     }
 
     // MARK: - Context Ring

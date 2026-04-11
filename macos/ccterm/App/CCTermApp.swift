@@ -35,6 +35,16 @@ struct CCTermApp: App {
         CLICapabilityStore.shared.loadFromCache()
         ModelStore.prefetchIfNeeded()
         DispatchQueue.main.async { _ = NSOpenPanel() }
+
+        #if DEBUG
+        appLog(.info, "App", "ccterm launched — debug build")
+        appLog(.debug, "App", "Tooltip delay reset, CursorGuard installed")
+        appLog(.info, "CLICapabilityStore", "CLI version detected, cache loaded")
+        appLog(.info, "ModelStore", "Prefetching model list")
+        appLog(.warning, "SessionService", "No previous session found, starting fresh")
+        appLog(.error, "WebViewBridge", "Failed to load bridge.js — file not found (sample)")
+        appLog(.debug, "App", "NSOpenPanel warm-up scheduled")
+        #endif
     }
 }
 

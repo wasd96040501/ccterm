@@ -5,6 +5,8 @@ struct LogRowView: View {
     let isEvenRow: Bool
 
     @Environment(\.colorScheme) private var colorScheme
+    @State private var isHovered = false
+    @State private var copied = false
 
     private static let timeFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -13,7 +15,7 @@ struct LogRowView: View {
     }()
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
             Text(Self.timeFormatter.string(from: entry.timestamp))
                 .foregroundStyle(.secondary)
                 .frame(width: 90, alignment: .leading)
@@ -32,14 +34,33 @@ struct LogRowView: View {
 
             Text(entry.message)
                 .foregroundStyle(.primary)
-                .lineLimit(1)
-                .truncationMode(.tail)
+                .lineLimit(5)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.trailing, 8)
+                .textSelection(.enabled)
+
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(
+                    "[\(entry.level.label)] [\(entry.category)] \(entry.message)",
+                    forType: .string
+                )
+                copied = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    copied = false
+                }
+            } label: {
+                Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                    .font(.system(size: 10))
+                    .foregroundStyle(copied ? .green : .secondary)
+            }
+            .buttonStyle(.plain)
+            .opacity(isHovered || copied ? 1 : 0)
+            .padding(.trailing, 8)
         }
         .font(.system(size: 12, design: .monospaced))
         .padding(.vertical, 3)
         .background(rowBackground)
+        .onHover { isHovered = $0 }
     }
 
     private var rowBackground: Color {

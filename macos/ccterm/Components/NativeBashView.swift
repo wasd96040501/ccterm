@@ -17,10 +17,10 @@ struct NativeBashView: View {
                 .lineSpacing(3)
                 .fixedSize()
                 .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 8)
                 .padding(.horizontal, 12)
         }
+        .defaultScrollAnchor(.topLeading)
         .scrollIndicators(.automatic)
         .background(backgroundColor)
         .clipShape(RoundedRectangle(cornerRadius: 8))

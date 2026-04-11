@@ -12,21 +12,23 @@ struct NativeDiffView: View {
 
     @State private var hunks: [DiffEngine.Hunk] = []
     @State private var lineHighlights: [String: [SyntaxToken]] = [:]
+    @State private var cachedContent: AttributedString = AttributedString(" ")
 
     var body: some View {
         ScrollView([.horizontal, .vertical]) {
-            Text(attributedContent)
+            Text(cachedContent)
                 .font(.system(size: 12, design: .monospaced))
                 .lineSpacing(3)
                 .fixedSize()
                 .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .defaultScrollAnchor(.topLeading)
         .scrollIndicators(.automatic)
         .background(DiffColors.tableBg(colorScheme))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .task(id: "\(oldString.hashValue)_\(newString.hashValue)") {
             hunks = DiffEngine.computeHunks(old: oldString, new: newString)
+            rebuildAttributedContent()
 
             guard let engine = syntaxEngine else { return }
             let lang = LanguageDetection.language(for: filePath)
@@ -36,13 +38,20 @@ struct NativeDiffView: View {
                 let tokens = await engine.highlight(code: content, language: lang)
                 lineHighlights[content] = tokens
             }
+            rebuildAttributedContent()
+        }
+        .onChange(of: colorScheme) {
+            rebuildAttributedContent()
         }
     }
 
     // MARK: - AttributedString Builder
 
-    private var attributedContent: AttributedString {
-        guard !hunks.isEmpty else { return AttributedString(" ") }
+    private func rebuildAttributedContent() {
+        guard !hunks.isEmpty else {
+            cachedContent = AttributedString(" ")
+            return
+        }
 
         let maxLineNo = hunks.flatMap(\.lines).compactMap(\.lineNo).max() ?? 0
         let gutterDigits = max(2, String(maxLineNo).count)
@@ -68,7 +77,7 @@ struct NativeDiffView: View {
             result.characters.removeLast()
         }
 
-        return result
+        cachedContent = result
     }
 
     private func buildLine(

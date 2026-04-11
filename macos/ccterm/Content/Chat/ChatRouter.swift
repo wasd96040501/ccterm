@@ -295,8 +295,6 @@ final class ChatRouter {
         let directory = record?.cwd ?? ""
         let slug = record?.slug ?? ""
 
-        await sessionService.stop(sourceHandle.sessionId)
-
         let transcriptPath = NSString(string: "~/.claude/projects/\(slug)/\(sourceHandle.sessionId).jsonl")
             .expandingTildeInPath
         let prompt = """
@@ -308,6 +306,8 @@ final class ChatRouter {
             read the full transcript at: \(transcriptPath)
             """
 
+        let title = Self.extractPlanTitle(from: plan) ?? String(plan.prefix(100))
+
         let sessionId = UUID().uuidString
         let config = SessionConfig(
             originPath: directory,
@@ -317,19 +317,50 @@ final class ChatRouter {
             permissionMode: .acceptEdits
         )
 
-        do {
-            let newHandle = sessionService.provisionSession(sessionId: sessionId, config: config, title: "Plan execution")
+        // 1. 创建新 session（DB + handle），提取 plan 标题
+        let newHandle = sessionService.provisionSession(sessionId: sessionId, config: config, title: title)
+
+        // 2. 创建 VM（从 DB 读 record，originPath 等字段自动恢复）
+        let newRecord = sessionService.find(sessionId)
+        let sessionVM = makeViewModel(handle: newHandle, record: newRecord)
+        viewModels[newHandle.sessionId] = sessionVM
+
+        // 3. 立即切换到新 session（sidebar 已可见），focus input
+        currentViewModel.animationsDisabled = true
+        currentViewModel = sessionVM
+        bridge.switchConversation(sessionId)
+        currentViewModel.inputVM.focusTextView()
+
+        await Task.yield()
+
+        withAnimation(.smooth(duration: 0.35)) {
             newHandle.status = .starting
+        }
 
+        // 4. 停掉旧 session（新 session 已激活，用户无感知）
+        await sessionService.stop(sourceHandle.sessionId)
+
+        // 5. 后台启动 CLI 并发送 prompt
+        do {
             try await sessionService.launch(sessionId: sessionId, config: config)
-
-            let sessionVM = makeViewModel(handle: newHandle, record: nil)
-            viewModels[newHandle.sessionId] = sessionVM
-            activateSession(newHandle.sessionId)
             newHandle.send(.text(prompt))
         } catch {
             appLog(.error, "ChatRouter", "startPlanSession failed: \(error)")
+            newHandle.status = .inactive
+            sessionVM.processExitError = ProcessExitError(exitCode: 1, stderr: error.localizedDescription)
         }
+    }
+
+    /// 从 plan markdown 中提取第一个 heading 作为标题。
+    private static func extractPlanTitle(from markdown: String) -> String? {
+        for line in markdown.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("#") {
+                let title = trimmed.drop(while: { $0 == "#" }).trimmingCharacters(in: .whitespaces)
+                if !title.isEmpty { return title }
+            }
+        }
+        return nil
     }
 
     // MARK: - Directory Management

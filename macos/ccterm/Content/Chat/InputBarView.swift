@@ -261,7 +261,7 @@ struct InputBarView: View {
                 }
             }
             .buttonStyle(.plain)
-            .disabled(!isPathInteractive)
+            .allowsHitTesting(isPathInteractive)
         }
         .hoverCapsule(
             staticFill: viewModel.isDirectoryUnset ? Color.orange.opacity(0.12) : nil,
@@ -307,7 +307,7 @@ struct InputBarView: View {
             .foregroundStyle(.secondary)
         }
         .buttonStyle(isBranchInteractive ? HoverCapsuleStyle() : HoverCapsuleStyle(hoverOpacity: 0, pressOpacity: 0))
-        .disabled(!isBranchInteractive)
+        .allowsHitTesting(isBranchInteractive)
         .popover(isPresented: $showBranchPicker) {
             BranchPickerView(
                 branches: GitUtils.listBranches(at: viewModel.cwd ?? ""),

@@ -217,6 +217,7 @@ struct InputBarView: View {
         .padding(.trailing, 14)
         .animation(.smooth(duration: 0.25), value: viewModel.displayBranch)
         .animation(.smooth(duration: 0.25), value: viewModel.showWorktreeButton)
+        .animation(.smooth(duration: 0.25), value: viewModel.isWorktreeEditable)
         .animation(.smooth(duration: 0.25), value: viewModel.contextUsedPercent != nil)
     }
 
@@ -313,33 +314,43 @@ struct InputBarView: View {
 
     // MARK: - Worktree Button
 
+    @ViewBuilder
     private var worktreeButton: some View {
-        Menu {
-            Button {
-                viewModel.isWorktree = false
+        if viewModel.isWorktreeEditable {
+            Menu {
+                Button {
+                    viewModel.isWorktree = false
+                } label: {
+                    Label(String(localized: "Local Project"), systemImage: "folder")
+                    if !viewModel.isWorktree { Image(systemName: "checkmark") }
+                }
+                Button {
+                    viewModel.isWorktree = true
+                } label: {
+                    Label(String(localized: "New Worktree"), systemImage: "arrow.turn.up.right")
+                    if viewModel.isWorktree { Image(systemName: "checkmark") }
+                }
             } label: {
-                Label(String(localized: "Local Project"), systemImage: "folder")
-                if !viewModel.isWorktree { Image(systemName: "checkmark") }
+                worktreeLabel(showChevron: true)
             }
-            Button {
-                viewModel.isWorktree = true
-            } label: {
-                Label(String(localized: "New Worktree"), systemImage: "point.3.filled.connected.trianglepath.dotted")
-                if viewModel.isWorktree { Image(systemName: "checkmark") }
-            }
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: viewModel.isWorktree ? "point.3.filled.connected.trianglepath.dotted" : "folder")
-                    .font(.system(size: 11, weight: .medium))
-                Text(viewModel.isWorktree ? String(localized: "New Worktree") : String(localized: "Local Project"))
-                    .font(.system(size: 11))
+            .buttonStyle(.plain)
+        } else {
+            worktreeLabel(showChevron: false)
+        }
+    }
+
+    private func worktreeLabel(showChevron: Bool) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: viewModel.isWorktree ? "arrow.turn.up.right" : "folder")
+                .font(.system(size: 11, weight: .medium))
+            Text(viewModel.isWorktree ? String(localized: "Worktree") : String(localized: "Local Project"))
+                .font(.system(size: 11))
+            if showChevron {
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 8, weight: .medium))
             }
-            .foregroundStyle(viewModel.isWorktree ? Color.accentColor : .secondary)
         }
-        .buttonStyle(.plain)
-        .disabled(!viewModel.isWorktreeEditable)
+        .foregroundStyle(.secondary)
     }
 
     // MARK: - Context Ring

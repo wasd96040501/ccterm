@@ -806,6 +806,16 @@
         }
       }
     },
+    "Worktree": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作树"
+          }
+        }
+      }
+    },
     "No Archived Sessions": {
       "localizations": {
         "zh-Hans": {

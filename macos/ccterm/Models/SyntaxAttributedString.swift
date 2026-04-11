@@ -17,4 +17,21 @@ enum SyntaxAttributedString {
         }
         return result
     }
+
+    /// Build an NSAttributedString from syntax tokens for use with NSTextView.
+    static func buildNS(
+        tokens: [SyntaxToken],
+        colorScheme: ColorScheme,
+        font: NSFont
+    ) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        for token in tokens {
+            let color = NSColor(SyntaxTheme.color(for: token.scope, scheme: colorScheme))
+            result.append(NSAttributedString(string: token.text, attributes: [
+                .font: font,
+                .foregroundColor: color,
+            ]))
+        }
+        return result
+    }
 }

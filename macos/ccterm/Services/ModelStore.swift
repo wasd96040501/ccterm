@@ -78,7 +78,7 @@ enum ModelStore {
                     completion(models)
                 }
             } catch {
-                NSLog("[ModelStore] fetchModels failed: %@", "\(error)")
+                appLog(.error, "ModelStore", "fetchModels failed: \(error)")
                 session.stop()
                 DispatchQueue.main.async {
                     completion([])

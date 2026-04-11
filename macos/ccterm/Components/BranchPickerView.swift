@@ -176,7 +176,7 @@ private struct BranchRow: View {
 
         var body: some View {
             Button("Select Branch") {
-                print("[debug] button tapped, showPopover=\(showPopover)")
+                appLog(.debug, "BranchPickerView", "button tapped, showPopover=\(showPopover)")
                 showPopover = true
             }
             .popover(isPresented: $showPopover) {
@@ -191,13 +191,13 @@ private struct BranchRow: View {
                     ],
                     currentBranch: "main",
                     onSelect: { branch in
-                        print("[debug] onSelect: \(branch)")
+                        appLog(.debug, "BranchPickerView", "onSelect: \(branch)")
                         showPopover = false
                     }
                 )
             }
             .onChange(of: showPopover) { _, newValue in
-                print("[debug] showPopover changed to \(newValue)")
+                appLog(.debug, "BranchPickerView", "showPopover changed to \(newValue)")
             }
             .frame(width: 300, height: 200)
         }

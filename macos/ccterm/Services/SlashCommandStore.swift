@@ -69,7 +69,7 @@ final class SlashCommandStore {
         knownCommands: [SlashCommand]?,
         completion: @escaping ([Match]) -> Void
     ) {
-        NSLog("[SlashCmd] complete query='%@' path='%@' knownCommands=%@", query, path, knownCommands == nil ? "nil" : "\(knownCommands!.count) items")
+        appLog(.debug, "SlashCmd", "complete query='\(query)' path='\(path)' knownCommands=\(knownCommands == nil ? "nil" : "\(knownCommands!.count) items")")
         let builtIn = Self.builtInCommands()
         queue.async { [weak self] in
             guard let self else { return }
@@ -77,17 +77,17 @@ final class SlashCommandStore {
             if let known = knownCommands {
                 let merged = builtIn + known
                 let matches = self.matchCommands(query: query, commands: merged)
-                NSLog("[SlashCmd] knownCommands fast path → %d matches", matches.count)
+                appLog(.debug, "SlashCmd", "knownCommands fast path → \(matches.count) matches")
                 DispatchQueue.main.async { completion(matches) }
                 return
             }
 
             let key = CacheKey(path: path, pluginDirs: Set(pluginDirs))
-            NSLog("[SlashCmd] resolveCommands for key cached=%d", self.cache[key] != nil ? 1 : 0)
+            appLog(.debug, "SlashCmd", "resolveCommands for key cached=\(self.cache[key] != nil ? 1 : 0)")
             self.resolveCommands(for: key, pluginDirs: pluginDirs) { commands in
                 let merged = builtIn + commands
                 let matches = self.matchCommands(query: query, commands: merged)
-                NSLog("[SlashCmd] resolved → %d commands, %d matches", commands.count, matches.count)
+                appLog(.debug, "SlashCmd", "resolved → \(commands.count) commands, \(matches.count) matches")
                 DispatchQueue.main.async { completion(matches) }
             }
         }
@@ -130,7 +130,7 @@ final class SlashCommandStore {
             guard let self else { return }
             self.queue.async {
                 if self.pendingCallbacks[key] != nil {
-                    NSLog("[SlashCommandStore] Temp CLI exited (%d) before initialize response for %@", exitCode, key.path)
+                    appLog(.error, "SlashCommandStore", "Temp CLI exited (\(exitCode)) before initialize response for \(key.path)")
                     self.didFinishLoad(key: key, commands: [], pluginDirs: pluginDirs)
                 }
             }
@@ -148,7 +148,7 @@ final class SlashCommandStore {
                     }
                 }
             } catch {
-                NSLog("[SlashCommandStore] Failed to start temp CLI: %@", "\(error)")
+                appLog(.error, "SlashCommandStore", "Failed to start temp CLI: \(error)")
                 self.queue.async { [weak self] in
                     self?.didFinishLoad(key: key, commands: [], pluginDirs: pluginDirs)
                 }

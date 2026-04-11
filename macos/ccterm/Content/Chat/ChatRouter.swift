@@ -42,7 +42,7 @@ final class ChatRouter {
 
     // MARK: - Lifecycle
 
-    init(sessionService: SessionService, todoSessionCoordinator: TodoSessionCoordinator? = nil) {
+    init(sessionService: SessionService) {
         self.sessionService = sessionService
         // Phase 1: satisfy stored property requirement
         self.currentViewModel = .newConversation(onRouterAction: { _ in })
@@ -146,15 +146,6 @@ final class ChatRouter {
     /// 提交用户消息。根据当前 session 状态路由。
     func submitMessage(_ text: String) {
         guard currentViewModel.barState != .starting else { return }
-
-        // /complete 拦截
-        let trimmed = text.trimmingCharacters(in: .whitespaces)
-        if trimmed == "/complete",
-           let handle = currentViewModel.handle,
-           let record = sessionService.find(handle.sessionId),
-           record.sessionType == .todo {
-            return
-        }
 
         if let handle = currentViewModel.handle, handle.status == .inactive {
             Task { await resumeSession(handle, text) }

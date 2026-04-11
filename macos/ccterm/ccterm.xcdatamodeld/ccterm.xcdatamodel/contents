@@ -68,28 +68,4 @@
             <fetchIndexElement property="status" type="Binary" order="ascending"/>
         </fetchIndex>
     </entity>
-    <entity name="CDTodoItem" representedClassName="CDTodoItem" syncable="YES" codeGenerationType="class">
-        <attribute name="createdAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
-        <attribute name="deletedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
-        <attribute name="isSoftDeleted" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
-        <attribute name="mergedItemIdsJSON" optional="YES" attributeType="String"/>
-        <attribute name="metadataJSON" optional="YES" attributeType="String"/>
-        <attribute name="previousStatus" optional="YES" attributeType="String"/>
-        <attribute name="sessionId" optional="YES" attributeType="String"/>
-        <attribute name="status" optional="YES" attributeType="String"/>
-        <attribute name="title" optional="YES" attributeType="String"/>
-        <attribute name="type" optional="YES" attributeType="String"/>
-        <attribute name="updatedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
-        <attribute name="uuid" optional="YES" attributeType="UUID" usesScalarValueType="NO"/>
-        <attribute name="worktreeBranch" optional="YES" attributeType="String"/>
-        <fetchIndex name="byStatus">
-            <fetchIndexElement property="status" type="Binary" order="ascending"/>
-        </fetchIndex>
-        <fetchIndex name="byIsSoftDeleted">
-            <fetchIndexElement property="isSoftDeleted" type="Binary" order="ascending"/>
-        </fetchIndex>
-        <fetchIndex name="byCreatedAt">
-            <fetchIndexElement property="createdAt" type="Binary" order="ascending"/>
-        </fetchIndex>
-    </entity>
 </model>

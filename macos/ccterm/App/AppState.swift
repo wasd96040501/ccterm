@@ -8,8 +8,6 @@ final class AppState {
     // MARK: - Services
     let sessionService = SessionService()
     let gitBranchService = GitBranchService()
-    let todoSessionCoordinator: TodoSessionCoordinator
-
     // MARK: - ViewModels
     let sidebarViewModel: SidebarViewModel
     let chatRouter: ChatRouter
@@ -27,12 +25,6 @@ final class AppState {
     init() {
         let sessionService = self.sessionService
         let gitBranchService = self.gitBranchService
-
-        let todoCoord = TodoSessionCoordinator(
-            todoService: TodoService.shared,
-            sessionService: sessionService
-        )
-        self.todoSessionCoordinator = todoCoord
 
         let sidebarVM = SidebarViewModel(
             sessionService: sessionService,

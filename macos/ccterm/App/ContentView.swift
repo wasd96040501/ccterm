@@ -6,8 +6,6 @@ struct ContentView: View {
     @Bindable var chatRouter: ChatRouter
     let sidebarViewModel: SidebarViewModel
     let sessionService: SessionService
-    let todoService: TodoService
-    let todoSessionCoordinator: TodoSessionCoordinator
     let onJumpToSession: (String) -> Void
 
     @Environment(AppState.self) private var appState
@@ -75,17 +73,8 @@ struct ContentView: View {
     @ViewBuilder
     private var nonChatContent: some View {
         switch activeAction {
-        case .todo:
-            TodoView(
-                todoService: todoService,
-                todoSessionCoordinator: todoSessionCoordinator,
-                sessionService: sessionService,
-                onJumpToSession: onJumpToSession
-            )
         case .archive:
             ArchiveView(sessionService: sessionService, sidebarViewModel: sidebarViewModel)
-        case .newProject:
-            NewProjectViewWrapper(chatRouter: chatRouter)
         #if DEBUG
         case .cardGallery:
             PermissionCardGalleryView()

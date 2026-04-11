@@ -31,8 +31,6 @@ enum SidebarSelection: Hashable {
 /// 操作区入口。
 enum SidebarActionKind: String, Identifiable, CaseIterable, Hashable {
     case newConversation
-    case newProject
-    case todo
     case archive
     #if DEBUG
     case cardGallery
@@ -45,8 +43,6 @@ enum SidebarActionKind: String, Identifiable, CaseIterable, Hashable {
     var title: String {
         switch self {
         case .newConversation: String(localized: "New Conversation")
-        case .newProject: String(localized: "New Project")
-        case .todo: String(localized: "Tasks")
         case .archive: String(localized: "Archive")
         #if DEBUG
         case .cardGallery: "Card Gallery"
@@ -59,8 +55,6 @@ enum SidebarActionKind: String, Identifiable, CaseIterable, Hashable {
     var symbolName: String {
         switch self {
         case .newConversation: "square.and.pencil"
-        case .newProject: "folder.badge.plus"
-        case .todo: "checklist"
         case .archive: "archivebox"
         #if DEBUG
         case .cardGallery: "rectangle.on.rectangle.angled"

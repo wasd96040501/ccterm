@@ -16,12 +16,6 @@ struct SessionExtra: Codable {
     }
 }
 
-enum SessionType: String {
-    case normal
-    case todo
-    case project
-}
-
 /// 新 session 系统的数据模型。与 legacy Session struct 独立，由 SessionService/SessionRepository 使用。
 struct SessionRecord: Identifiable {
 
@@ -37,8 +31,6 @@ struct SessionRecord: Identifiable {
     var archivedAt: Date?
     var extra: SessionExtra
     var error: String?
-    var sessionType: SessionType
-    var linkedTodoId: String?
     var isPinned: Bool
     var pinnedAt: Date?
     var isTempDir: Bool
@@ -77,8 +69,6 @@ struct SessionRecord: Identifiable {
         archivedAt: Date? = nil,
         extra: SessionExtra = SessionExtra(),
         error: String? = nil,
-        sessionType: SessionType = .normal,
-        linkedTodoId: String? = nil,
         isPinned: Bool = false,
         pinnedAt: Date? = nil,
         isTempDir: Bool = false
@@ -95,8 +85,6 @@ struct SessionRecord: Identifiable {
         self.archivedAt = archivedAt
         self.extra = extra
         self.error = error
-        self.sessionType = sessionType
-        self.linkedTodoId = linkedTodoId
         self.isPinned = isPinned
         self.pinnedAt = pinnedAt
         self.isTempDir = isTempDir

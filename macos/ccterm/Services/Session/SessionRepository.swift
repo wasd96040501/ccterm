@@ -65,15 +65,6 @@ class SessionRepository {
         }
     }
 
-    /// 按关联的 todoId 查找会话。一个 TodoItem 最多关联一个 SessionRecord。
-    func findByTodoId(_ todoId: UUID) -> SessionRecord? {
-        let request = NSFetchRequest<CDSessionRecord>(entityName: "CDSessionRecord")
-        request.predicate = NSPredicate(format: "linkedTodoId == %@", todoId.uuidString)
-        request.fetchLimit = 1
-        guard let entity = (try? coreDataStack.viewContext.fetch(request))?.first else { return nil }
-        return Self.session(from: entity)
-    }
-
     // MARK: - Create / Delete
 
     /// 持久化一个新的 SessionRecord。id 冲突时覆盖。
@@ -93,8 +84,6 @@ class SessionRepository {
         entity.originPath = session.originPath
         entity.extraJSON = Self.encodeExtra(session.extra)
         entity.error = session.error
-        entity.sessionType = session.sessionType.rawValue
-        entity.linkedTodoId = session.linkedTodoId
         entity.isPinned = session.isPinned
         entity.pinnedAt = session.pinnedAt
         entity.isTempDir = session.isTempDir
@@ -240,8 +229,6 @@ class SessionRepository {
             archivedAt: entity.archivedAt,
             extra: decodeExtra(entity.extraJSON),
             error: entity.error,
-            sessionType: SessionType(rawValue: entity.sessionType ?? "normal") ?? .normal,
-            linkedTodoId: entity.linkedTodoId,
             isPinned: entity.isPinned,
             pinnedAt: entity.pinnedAt,
             isTempDir: entity.isTempDir

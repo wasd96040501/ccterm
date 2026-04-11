@@ -474,26 +474,6 @@
         }
       }
     },
-    "Describe your project task…": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "描述你的项目任务…"
-          }
-        }
-      }
-    },
-    "Describe your task...": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "描述你的任务..."
-          }
-        }
-      }
-    },
     "Done": {
       "localizations": {
         "zh-Hans": {
@@ -705,16 +685,6 @@
         }
       }
     },
-    "Manage your development tasks": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "管理你的开发任务"
-          }
-        }
-      }
-    },
     "Manual": {
       "extractionState": "stale",
       "localizations": {
@@ -722,16 +692,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "手动"
-          }
-        }
-      }
-    },
-    "Mark Complete": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "标记完成"
           }
         }
       }
@@ -756,42 +716,12 @@
         }
       }
     },
-    "Merge Selected": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "合并选中"
-          }
-        }
-      }
-    },
-    "Needs Confirmation": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "待确认"
-          }
-        }
-      }
-    },
     "New Conversation": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "新对话"
-          }
-        }
-      }
-    },
-    "New Project": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "新项目"
           }
         }
       }
@@ -826,36 +756,6 @@
         }
       }
     },
-    "No archived tasks": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "暂无已归档的任务"
-          }
-        }
-      }
-    },
-    "No completed tasks": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "暂无已完成的任务"
-          }
-        }
-      }
-    },
-    "No deleted tasks": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "暂无已删除的任务"
-          }
-        }
-      }
-    },
     "No matches": {
       "localizations": {
         "zh-Hans": {
@@ -866,42 +766,12 @@
         }
       }
     },
-    "No pending tasks": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "暂无待处理的任务"
-          }
-        }
-      }
-    },
     "No plugin directories": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "没有插件目录"
-          }
-        }
-      }
-    },
-    "No tasks in progress": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "暂无进行中的任务"
-          }
-        }
-      }
-    },
-    "No tasks need confirmation": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "暂无待确认的任务"
           }
         }
       }
@@ -924,26 +794,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "其他"
-          }
-        }
-      }
-    },
-    "Pending": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "待处理"
-          }
-        }
-      }
-    },
-    "Permanently Delete": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "永久删除"
           }
         }
       }
@@ -1170,16 +1020,6 @@
         }
       }
     },
-    "Select task working directory": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "选择任务的工作目录"
-          }
-        }
-      }
-    },
     "Select the target branch to switch to": {
       "localizations": {
         "zh-Hans": {
@@ -1258,16 +1098,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "切换分支"
-          }
-        }
-      }
-    },
-    "Tasks": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "任务"
           }
         }
       }

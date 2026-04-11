@@ -40,16 +40,8 @@ final class SlashCommandStore {
     }
 
     /// 内置指令（不发送给 CLI）
-    static func builtInCommands(isTodoSession: Bool) -> [SlashCommand] {
-        var commands: [SlashCommand] = []
-        if isTodoSession {
-            commands.append(SlashCommand(
-                name: "complete",
-                description: "将当前任务标记为已完成",
-                isBuiltIn: true
-            ))
-        }
-        return commands
+    static func builtInCommands() -> [SlashCommand] {
+        []
     }
 
     static let shared = SlashCommandStore()
@@ -75,11 +67,10 @@ final class SlashCommandStore {
         path: String,
         pluginDirs: [String],
         knownCommands: [SlashCommand]?,
-        isTodoSession: Bool = false,
         completion: @escaping ([Match]) -> Void
     ) {
         NSLog("[SlashCmd] complete query='%@' path='%@' knownCommands=%@", query, path, knownCommands == nil ? "nil" : "\(knownCommands!.count) items")
-        let builtIn = Self.builtInCommands(isTodoSession: isTodoSession)
+        let builtIn = Self.builtInCommands()
         queue.async { [weak self] in
             guard let self else { return }
 

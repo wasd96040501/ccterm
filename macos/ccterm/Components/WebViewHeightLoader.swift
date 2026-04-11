@@ -4,6 +4,11 @@ import Observation
 /// Observable state machine that integrates loading HTML, sending business data,
 /// and receiving content height from the web page into a single coherent unit.
 ///
+/// Data sending is state-driven: the caller provides bridge data at init time,
+/// and the loader sends it only after JS confirms readiness via a `"ready"` message.
+/// If the web content process is terminated by the system, the page is reloaded
+/// and data is resent automatically.
+///
 /// The page must post a `contentHeight` message via `window.webkit.messageHandlers.bridge`
 /// in the format `{ type: "contentHeight", height: <number> }` when its layout is ready.
 /// Both `bash-react` and `diff-react` already do this.
@@ -18,11 +23,20 @@ final class WebViewHeightLoader: NSObject {
     let webView: WKWebView
 
     private static let handlerName = "bridge"
-    private let onReady: ((WKWebView) -> Void)?
-    private var hasSent = false
 
-    init(htmlResource: String, onReady: ((WKWebView) -> Void)? = nil) {
-        self.onReady = onReady
+    /// Bridge data to send when JS is ready.
+    private let bridgeType: String?
+    private let bridgeJSON: String?
+
+    /// Whether JS has posted the "ready" message.
+    private var isPageReady = false
+
+    /// The file URL loaded into the WebView (kept for reload after process termination).
+    private var loadedURL: URL?
+
+    init(htmlResource: String, bridgeType: String? = nil, bridgeJSON: String? = nil) {
+        self.bridgeType = bridgeType
+        self.bridgeJSON = bridgeJSON
         let config = WKWebViewConfiguration()
         let handler = LeakFreeHandler()
         config.userContentController.add(handler, name: Self.handlerName)
@@ -31,14 +45,23 @@ final class WebViewHeightLoader: NSObject {
         handler.delegate = self
         webView.navigationDelegate = self
         if let url = Bundle.main.url(forResource: htmlResource, withExtension: "html") {
+            loadedURL = url
             webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         }
     }
 
-    private func triggerOnReadyIfNeeded() {
-        guard !hasSent else { return }
-        hasSent = true
-        onReady?(webView)
+    /// Send bridge data if JS is ready and data is available.
+    private func sendIfReady() {
+        guard isPageReady, let type = bridgeType, let json = bridgeJSON else { return }
+        webView.callAsyncJavaScript(
+            "window.__bridge(type, json)",
+            arguments: ["type": type, "json": json],
+            in: nil, in: .page
+        ) { result in
+            if case .failure(let error) = result {
+                NSLog("[WebViewHeightLoader] callAsyncJavaScript failed: %@", error.localizedDescription)
+            }
+        }
     }
 }
 
@@ -47,7 +70,8 @@ final class WebViewHeightLoader: NSObject {
 extension WebViewHeightLoader: WKNavigationDelegate {
 
     func webView(_ wv: WKWebView, didFinish navigation: WKNavigation!) {
-        triggerOnReadyIfNeeded()
+        // didFinish 只表示 HTML 文档加载完成，不保证 JS 已初始化。
+        // 数据发送由 JS "ready" 消息驱动，不在这里触发。
     }
 
     func webView(
@@ -79,7 +103,8 @@ extension WebViewHeightLoader: WKScriptMessageHandler {
 
         switch type {
         case "ready":
-            triggerOnReadyIfNeeded()
+            isPageReady = true
+            sendIfReady()
         case "contentHeight":
             if let height = body["height"] as? CGFloat, height > 0 {
                 state = .ready(height: height)

@@ -16,13 +16,10 @@ struct ToolContentView: View {
                 DescriptionLabel(text: desc, maxLines: 4)
             }
             if let cmd = command, !cmd.isEmpty {
-                let loader = preloadedLoader ?? WebViewHeightLoader(htmlResource: "bash-react") { webView in
-                    webView.callAsyncJavaScript(
-                        "window.__bridge(type, json)",
-                        arguments: ["type": "setCommand", "json": jsonEncode(["command": cmd])],
-                        in: nil, in: .page
-                    ) { _ in }
-                }
+                let loader = preloadedLoader ?? WebViewHeightLoader(
+                    htmlResource: "bash-react",
+                    bridgeType: "setCommand",
+                    bridgeJSON: jsonEncode(["command": cmd]))
                 WebContentView(loader: loader, maxHeight: 300)
             }
 
@@ -36,13 +33,10 @@ struct ToolContentView: View {
                 MonoLabel(text: fp, maxLines: 2)
             }
             if let content, !content.isEmpty {
-                let loader = preloadedLoader ?? WebViewHeightLoader(htmlResource: "diff-react") { webView in
-                    webView.callAsyncJavaScript(
-                        "window.__bridge(type, json)",
-                        arguments: ["type": "setDiff", "json": jsonEncode(["filePath": filePath ?? "", "oldString": "", "newString": content])],
-                        in: nil, in: .page
-                    ) { _ in }
-                }
+                let loader = preloadedLoader ?? WebViewHeightLoader(
+                    htmlResource: "diff-react",
+                    bridgeType: "setDiff",
+                    bridgeJSON: jsonEncode(["filePath": filePath ?? "", "oldString": "", "newString": content]))
                 WebContentView(loader: loader, maxHeight: 300)
             }
 
@@ -51,13 +45,10 @@ struct ToolContentView: View {
                 MonoLabel(text: fp, maxLines: 2)
             }
             if !oldString.isEmpty || !newString.isEmpty {
-                let loader = preloadedLoader ?? WebViewHeightLoader(htmlResource: "diff-react") { webView in
-                    webView.callAsyncJavaScript(
-                        "window.__bridge(type, json)",
-                        arguments: ["type": "setDiff", "json": jsonEncode(["filePath": filePath ?? "", "oldString": oldString, "newString": newString])],
-                        in: nil, in: .page
-                    ) { _ in }
-                }
+                let loader = preloadedLoader ?? WebViewHeightLoader(
+                    htmlResource: "diff-react",
+                    bridgeType: "setDiff",
+                    bridgeJSON: jsonEncode(["filePath": filePath ?? "", "oldString": oldString, "newString": newString]))
                 WebContentView(loader: loader, maxHeight: 300)
             }
 

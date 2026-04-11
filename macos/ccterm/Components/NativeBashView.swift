@@ -21,7 +21,7 @@ struct NativeBashView: View {
                 .padding(.horizontal, 12)
         }
         .defaultScrollAnchor(.topLeading)
-        .scrollIndicators(.automatic)
+        .scrollIndicators(.never)
         .background(backgroundColor)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .task(id: command) {

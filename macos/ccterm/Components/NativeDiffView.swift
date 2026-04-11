@@ -13,17 +13,27 @@ struct NativeDiffView: View {
     @State private var hunks: [DiffEngine.Hunk] = []
     @State private var lineHighlights: [String: [SyntaxToken]] = [:]
     @State private var cachedContent: AttributedString = AttributedString(" ")
+    @State private var containerWidth: CGFloat = 0
+
+    /// Approximate character width for 12pt system monospace font.
+    private static let charWidth: CGFloat = 7.22
 
     var body: some View {
         ScrollView([.horizontal, .vertical]) {
             Text(cachedContent)
                 .font(.system(size: 12, design: .monospaced))
-                .lineSpacing(3)
+                .lineSpacing(0)
                 .fixedSize()
                 .textSelection(.enabled)
         }
         .defaultScrollAnchor(.topLeading)
-        .scrollIndicators(.automatic)
+        .scrollIndicators(.never)
+        .background {
+            GeometryReader { geo in
+                Color.clear.onAppear { containerWidth = geo.size.width }
+                    .onChange(of: geo.size.width) { _, new in containerWidth = new }
+            }
+        }
         .background(DiffColors.tableBg(colorScheme))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .task(id: "\(oldString.hashValue)_\(newString.hashValue)") {
@@ -43,6 +53,9 @@ struct NativeDiffView: View {
         .onChange(of: colorScheme) {
             rebuildAttributedContent()
         }
+        .onChange(of: containerWidth) {
+            rebuildAttributedContent()
+        }
     }
 
     // MARK: - AttributedString Builder
@@ -57,9 +70,15 @@ struct NativeDiffView: View {
         let gutterDigits = max(2, String(maxLineNo).count)
         let font = Font.system(size: 12, design: .monospaced)
 
-        // Compute max content width for uniform background padding
+        // Compute content padding target: max of longest line vs container width
         let maxContentLen = hunks.flatMap(\.lines).map(\.content.count).max() ?? 0
-        let padToContent = max(maxContentLen, 1)
+        // Line format: " {lineNo} " + " {sign} " + {content} + " " + "\n"
+        // Prefix chars = gutterDigits + 2 + 3 = gutterDigits + 5, trailing = 1
+        let prefixChars = gutterDigits + 5 + 1
+        let containerChars = containerWidth > 0
+            ? Int(ceil(containerWidth / Self.charWidth)) - prefixChars
+            : 0
+        let padToContent = max(maxContentLen, containerChars, 1)
 
         var result = AttributedString()
 
@@ -109,8 +128,8 @@ struct NativeDiffView: View {
         gutter.foregroundColor = DiffColors.gutterText(colorScheme)
         gutter.backgroundColor = gutterBg
 
-        // Sign: "{sign} "
-        var signPart = AttributedString("\(sign) ")
+        // Sign: " {sign} "
+        var signPart = AttributedString(" \(sign) ")
         signPart.font = font
         signPart.foregroundColor = signColor
         signPart.backgroundColor = contentBg
@@ -152,7 +171,7 @@ struct NativeDiffView: View {
         let sepFg = DiffColors.separatorFg(colorScheme)
 
         let gutterWidth = gutterDigits + 2 // " {lineNo} "
-        let contentWidth = 2 + padTo + 1   // "{sign} {content} "
+        let contentWidth = 3 + padTo + 1   // " {sign} {content} "
         let totalWidth = gutterWidth + contentWidth
 
         let dots = " ··· "

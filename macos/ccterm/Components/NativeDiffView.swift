@@ -2,38 +2,60 @@ import SwiftUI
 
 /// Native SwiftUI unified diff view. Replaces WebView-based DiffApp for permission cards.
 struct NativeDiffView: View {
-    let filePath: String
-    let oldString: String
-    let newString: String
+    let hunks: [DiffEngine.Hunk]
 
     @Environment(\.colorScheme) private var colorScheme
 
+    /// Convenience initializer that computes hunks from raw strings.
+    /// Use `init(hunks:)` with precomputed hunks for cached paths.
+    init(filePath: String, oldString: String, newString: String) {
+        self.hunks = DiffEngine.computeHunks(old: oldString, new: newString)
+    }
+
+    init(hunks: [DiffEngine.Hunk]) {
+        self.hunks = hunks
+    }
+
     var body: some View {
-        let hunks = DiffEngine.computeHunks(old: oldString, new: newString)
+        let flatItems = buildFlatItems()
         let maxLineNo = hunks.flatMap(\.lines).compactMap(\.lineNo).max() ?? 0
         let gutterChars = max(2, String(maxLineNo).count)
         // 1ch ≈ 7.2pt at 12pt monospace; gutter = (digits + 2) × ch
         let gutterWidth = CGFloat(gutterChars + 2) * 7.2
 
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(hunks.enumerated()), id: \.offset) { hi, hunk in
-                if hi > 0 {
-                    hunkSeparator
-                }
-                ForEach(Array(hunk.lines.enumerated()), id: \.offset) { li, line in
-                    DiffLineRow(
-                        line: line,
-                        gutterWidth: gutterWidth,
-                        isFirst: hi == 0 && li == 0,
-                        isLast: hi == hunks.count - 1 && li == hunk.lines.count - 1,
-                        colorScheme: colorScheme
-                    )
+        ScrollView(.vertical) {
+            LazyVStack(spacing: 0) {
+                ForEach(flatItems) { item in
+                    switch item.kind {
+                    case .line(let line):
+                        DiffLineRow(line: line, gutterWidth: gutterWidth, colorScheme: colorScheme)
+                    case .separator:
+                        hunkSeparator
+                    }
                 }
             }
+            .padding(.vertical, 4)
         }
         .textSelection(.enabled)
         .background(DiffTheme.tableBg(colorScheme))
         .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    /// Flatten hunks into a single array with stable IDs for LazyVStack.
+    private func buildFlatItems() -> [DiffDisplayItem] {
+        var items: [DiffDisplayItem] = []
+        var index = 0
+        for (hi, hunk) in hunks.enumerated() {
+            if hi > 0 {
+                items.append(DiffDisplayItem(id: index, kind: .separator))
+                index += 1
+            }
+            for line in hunk.lines {
+                items.append(DiffDisplayItem(id: index, kind: .line(line)))
+                index += 1
+            }
+        }
+        return items
     }
 
     private var hunkSeparator: some View {
@@ -54,13 +76,23 @@ struct NativeDiffView: View {
     }
 }
 
+// MARK: - Display Item
+
+private struct DiffDisplayItem: Identifiable {
+    let id: Int
+    let kind: Kind
+
+    enum Kind {
+        case line(DiffEngine.Line)
+        case separator
+    }
+}
+
 // MARK: - Line Row
 
 private struct DiffLineRow: View {
     let line: DiffEngine.Line
     let gutterWidth: CGFloat
-    let isFirst: Bool
-    let isLast: Bool
     let colorScheme: ColorScheme
 
     var body: some View {
@@ -85,8 +117,6 @@ private struct DiffLineRow: View {
         }
         .font(.system(size: 12, design: .monospaced))
         .lineSpacing(3)
-        .padding(.top, isFirst ? 4 : 0)
-        .padding(.bottom, isLast ? 4 : 0)
         .background(alignment: .leading) {
             HStack(spacing: 0) {
                 Rectangle().fill(gutterBg).frame(width: gutterWidth)

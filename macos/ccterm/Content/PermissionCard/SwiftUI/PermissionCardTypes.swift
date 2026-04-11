@@ -51,10 +51,10 @@ struct PermissionOption: Identifiable {
 // MARK: - ToolContentDescriptor
 
 enum ToolContentDescriptor {
-    case bash(description: String?, command: String?)
+    case bash(description: String?, tokens: [BashToken])
     case read(filePath: String?)
-    case write(filePath: String?, content: String?)
-    case edit(filePath: String?, oldString: String, newString: String)
+    case write(filePath: String?, hunks: [DiffEngine.Hunk])
+    case edit(filePath: String?, hunks: [DiffEngine.Hunk])
     case glob(pattern: String?, path: String?)
     case grep(pattern: String?, path: String?, glob: String?)
     case webFetch(url: String?)
@@ -64,17 +64,31 @@ enum ToolContentDescriptor {
     static func from(_ request: PermissionRequest) -> Self {
         switch request.toolInput {
         case .Bash(let v):
-            return .bash(description: v.input?.description, command: v.input?.command)
+            let command = v.input?.command
+            let tokens: [BashToken] = {
+                guard let cmd = command, !cmd.isEmpty else { return [] }
+                let clean = cmd.replacingOccurrences(
+                    of: "\\x1b\\[[0-9;]*[a-zA-Z]", with: "", options: .regularExpression)
+                return BashHighlighter.tokenize(clean)
+            }()
+            return .bash(description: v.input?.description, tokens: tokens)
         case .Read(let v):
             return .read(filePath: v.input?.filePath)
         case .Write(let v):
-            return .write(filePath: v.input?.filePath, content: v.input?.content)
+            let content = v.input?.content
+            let hunks: [DiffEngine.Hunk] = {
+                guard let c = content, !c.isEmpty else { return [] }
+                return DiffEngine.computeHunks(old: "", new: c)
+            }()
+            return .write(filePath: v.input?.filePath, hunks: hunks)
         case .Edit(let v):
-            return .edit(
-                filePath: v.input?.filePath,
-                oldString: v.input?.oldString ?? "",
-                newString: v.input?.newString ?? ""
-            )
+            let oldStr = v.input?.oldString ?? ""
+            let newStr = v.input?.newString ?? ""
+            let hunks: [DiffEngine.Hunk] = {
+                guard !oldStr.isEmpty || !newStr.isEmpty else { return [] }
+                return DiffEngine.computeHunks(old: oldStr, new: newStr)
+            }()
+            return .edit(filePath: v.input?.filePath, hunks: hunks)
         case .Glob(let v):
             return .glob(pattern: v.input?.pattern, path: v.input?.path)
         case .Grep(let v):

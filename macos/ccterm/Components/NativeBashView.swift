@@ -1,27 +1,41 @@
 import SwiftUI
 
+// MARK: - BashToken
+
+struct BashToken {
+    enum TokenType { case plain, string, variable, comment }
+    let text: String
+    let type: TokenType
+}
+
 /// Native SwiftUI bash command view with syntax highlighting.
 /// Replaces WebView-based BashApp for permission cards — no async loading, no race conditions.
 struct NativeBashView: View {
-    let command: String
+    let tokens: [BashToken]
 
     @Environment(\.colorScheme) private var colorScheme
 
-    /// Command with ANSI escape sequences stripped.
-    private var cleanCommand: String {
-        command.replacingOccurrences(
+    /// Convenience initializer that tokenizes a raw command string.
+    /// Use `init(tokens:)` with precomputed tokens for cached paths.
+    init(command: String) {
+        let clean = command.replacingOccurrences(
             of: "\\x1b\\[[0-9;]*[a-zA-Z]",
             with: "",
             options: .regularExpression)
+        self.tokens = BashHighlighter.tokenize(clean)
+    }
+
+    init(tokens: [BashToken]) {
+        self.tokens = tokens
     }
 
     var body: some View {
-        ScrollView(.horizontal) {
-            (promptText + BashHighlighter.highlight(cleanCommand, scheme: colorScheme))
+        ScrollView([.horizontal, .vertical]) {
+            (promptText + highlightedText)
                 .font(.system(size: 12, design: .monospaced))
                 .fontWeight(.bold)
                 .lineSpacing(3)
-                .fixedSize(horizontal: true, vertical: false)
+                .fixedSize()
                 .textSelection(.enabled)
                 .padding(.vertical, 8)
                 .padding(.horizontal, 12)
@@ -29,6 +43,12 @@ struct NativeBashView: View {
         .scrollIndicators(.automatic)
         .background(backgroundColor)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private var highlightedText: Text {
+        tokens.reduce(Text("")) { result, token in
+            result + Text(token.text).foregroundStyle(BashHighlighter.color(token.type, colorScheme))
+        }
     }
 
     private var promptText: Text {
@@ -44,30 +64,20 @@ struct NativeBashView: View {
 
 // MARK: - Syntax Highlighting
 
-private enum BashHighlighter {
+enum BashHighlighter {
 
-    enum TokenType { case plain, string, variable, comment }
-
-    static func highlight(_ command: String, scheme: ColorScheme) -> Text {
-        tokenize(command).reduce(Text("")) { result, token in
-            result + Text(token.0).foregroundStyle(color(token.1, scheme))
-        }
-    }
-
-    // MARK: Tokenizer
-
-    static func tokenize(_ input: String) -> [(String, TokenType)] {
+    static func tokenize(_ input: String) -> [BashToken] {
         guard !input.isEmpty else { return [] }
 
-        var tokens: [(String, TokenType)] = []
+        var tokens: [BashToken] = []
         let chars = Array(input)
         let n = chars.count
         var i = 0
         var buf = ""
 
-        func flush(_ type: TokenType) {
+        func flush(_ type: BashToken.TokenType) {
             guard !buf.isEmpty else { return }
-            tokens.append((buf, type))
+            tokens.append(BashToken(text: buf, type: type))
             buf = ""
         }
 
@@ -182,7 +192,7 @@ private enum BashHighlighter {
 
     // MARK: Theme Colors (github / github-dark-dimmed)
 
-    private static func color(_ type: TokenType, _ scheme: ColorScheme) -> Color {
+    static func color(_ type: BashToken.TokenType, _ scheme: ColorScheme) -> Color {
         switch type {
         case .plain:
             scheme == .dark

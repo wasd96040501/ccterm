@@ -242,6 +242,10 @@ make clean                      # 清理所有构建产物
 - `build.sh` 的终端输出仅包含成功/失败和两个日志路径（full log + summary）。构建失败时先读 summary 文件诊断，不要 `tail` / `cat` full log。summary 不够时再读 full log
 - 单元测试使用 XCTest 框架（不用 Swift Testing），测试中使用 `NSLog` 输出调试信息（`print` 会被 xcodebuild 吞掉）
 
+## Worktree 规范
+
+在 worktree 中工作时，默认读取和操作 worktree 路径下的文件。不要读取主仓库目录的文件，除非用户主动要求。
+
 ## 脚本执行
 
 临时 Bash/Python/JavaScript 脚本超过 **5 行**时，**必须**先写入文件再执行（写入项目根目录或 `/tmp`，命名如 `tmp_analyze.py`），执行后删除。禁止在命令行中内联长脚本。

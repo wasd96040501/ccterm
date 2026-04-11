@@ -27,7 +27,6 @@ struct ChatView: View {
                     filterToolbarHits: true,
                     cursorGuardRects: cursorGuardRects(containerHeight: geo.size.height)
                 )
-                .ignoresSafeArea(.container, edges: .top)
                 .padding(.bottom, 47)
                 .opacity(viewModel.handle != nil && chatRouter.isContentReady && !viewModel.planReviewVM.isActive ? 1 : 0)
 
@@ -47,7 +46,6 @@ struct ChatView: View {
 
                 // Plan 全屏阅读（覆盖在 chat 上方，始终在 view tree 中，用 opacity 控制）
                 WebViewRepresentable(webView: chatRouter.planWebViewLoader.webView)
-                    .ignoresSafeArea(.container, edges: .top)
                     .padding(.bottom, 47)
                     .opacity(viewModel.planReviewVM.isActive ? 1 : 0)
                     .allowsHitTesting(viewModel.planReviewVM.isActive)
@@ -82,6 +80,7 @@ struct ChatView: View {
                         }
                     )
             }
+            .ignoresSafeArea(.container, edges: .top)
         }
         .onPreferenceChange(InputBarHeightKey.self) { height in
             guard height != inputBarHeight else { return }

@@ -217,7 +217,7 @@ final class ChatRouter {
         let directory = sessionVM.originPath ?? Self.createTempChatDirectory()
 
         let pluginDirs = sessionVM.pluginDirectories
-        var config = SessionConfig(
+        let config = SessionConfig(
             originPath: directory,
             isWorktree: sessionVM.isWorktree,
             worktreeBaseBranch: sessionVM.worktreeBaseBranch,
@@ -230,25 +230,28 @@ final class ChatRouter {
         )
 
         // Create handle first so UI enters .starting immediately
-        let handle = sessionService.createNewSession(sessionId: sessionVM.sessionId, config: config, title: String(text.prefix(100)))
+        let handle = sessionService.provisionSession(sessionId: sessionVM.sessionId, config: config, title: String(text.prefix(100)))
 
         sessionVM.originPath = directory
         sessionVM.isTempDir = isTempDir
-        sessionVM.handle = handle
-        viewModels[handle.sessionId] = sessionVM
+        viewModels[sessionVM.sessionId] = sessionVM
         if pendingNewViewModel === sessionVM {
             pendingNewViewModel = nil
         }
 
-        // Worktree mode: generate semantic branch name (UI already shows .starting)
-        if sessionVM.isWorktree {
-            config.worktreeBranchName = await SessionService.generateBranchName(
-                description: text
-            )
+        // 先赋 handle，让 View 树安定（空状态消失、computed 属性更新）
+        sessionVM.handle = handle
+
+        // 让出执行权，确保 View 树重排完成
+        await Task.yield()
+
+        // 在干净的 View 状态上动画 .starting
+        withAnimation(.smooth(duration: 0.35)) {
+            handle.status = .starting
         }
 
         do {
-            try await sessionService.start(sessionId: handle.sessionId, config: config)
+            try await sessionService.launch(sessionId: handle.sessionId, config: config, taskDescription: text)
             if currentViewModel === sessionVM {
                 bridge.switchConversation(handle.sessionId)
             }
@@ -265,7 +268,9 @@ final class ChatRouter {
     }
 
     private func resumeSession(_ handle: SessionHandle, _ text: String) async {
-        handle.status = .starting
+        withAnimation(.smooth(duration: 0.35)) {
+            handle.status = .starting
+        }
 
         let config = SessionConfig(
             originPath: currentViewModel.originPath ?? "",
@@ -277,7 +282,7 @@ final class ChatRouter {
             effort: currentViewModel.selectedEffort
         )
         do {
-            try await sessionService.start(sessionId: handle.sessionId, config: config)
+            try await sessionService.relaunch(sessionId: handle.sessionId, config: config)
             handle.send(.text(text))
         } catch {
             NSLog("[ChatRouter] Resume failed: %@", "\(error)")
@@ -303,6 +308,7 @@ final class ChatRouter {
             read the full transcript at: \(transcriptPath)
             """
 
+        let sessionId = UUID().uuidString
         let config = SessionConfig(
             originPath: directory,
             isWorktree: false,
@@ -312,7 +318,10 @@ final class ChatRouter {
         )
 
         do {
-            let newHandle = try await sessionService.start(config: config)
+            let newHandle = sessionService.provisionSession(sessionId: sessionId, config: config, title: "Plan execution")
+            newHandle.status = .starting
+
+            try await sessionService.launch(sessionId: sessionId, config: config)
 
             let sessionVM = makeViewModel(handle: newHandle, record: nil)
             viewModels[newHandle.sessionId] = sessionVM

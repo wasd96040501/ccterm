@@ -2,10 +2,10 @@
   "sourceLanguage": "en",
   "strings": {
     "": {},
-    " ": {},
     "%@:": {},
     "%lld": {},
     "%lld min ago": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -16,6 +16,7 @@
       }
     },
     "%lldd ago": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -26,6 +27,7 @@
       }
     },
     "%lldh ago": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -35,7 +37,6 @@
         }
       }
     },
-    "(%lld)": {},
     "+%lld": {},
     "@ Select directory · Enter temporary session": {
       "localizations": {
@@ -78,6 +79,7 @@
       }
     },
     "Add Directory": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -108,6 +110,7 @@
       }
     },
     "Add working directories to start multi-directory collaboration": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -160,6 +163,7 @@
       }
     },
     "Archived": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -385,6 +389,7 @@
       }
     },
     "Completed": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -405,6 +410,7 @@
       }
     },
     "Contains: %@": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -445,6 +451,7 @@
       }
     },
     "Delete": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -455,6 +462,7 @@
       }
     },
     "Deleted": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -595,6 +603,7 @@
       }
     },
     "Go to Session": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -615,6 +624,7 @@
       }
     },
     "In Progress": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -625,6 +635,7 @@
       }
     },
     "Just now": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -880,6 +891,7 @@
       }
     },
     "Restore": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -951,6 +963,7 @@
       }
     },
     "Select Directory": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -961,6 +974,7 @@
       }
     },
     "Select Path": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {

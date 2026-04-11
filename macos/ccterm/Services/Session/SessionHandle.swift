@@ -280,9 +280,8 @@ class SessionHandle {
     /// - onStderr        → accumulateStderr(_:)
     /// - onHookRequest / onMCPRequest / onElicitationRequest → 直接处理（未来改异步）
     func attach(_ session: AgentSDK.Session) {
-        NSLog("[SessionHandle:%@] attach() → status=starting", sessionId)
+        NSLog("[SessionHandle:%@] attach()", sessionId)
         self.agentSession = session
-        status = .starting
         historyLoadState = .loaded
 
         session.onMessage = { [weak self] message in

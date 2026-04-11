@@ -253,7 +253,10 @@ make release                    # 构建 ccterm（Release）
 make test                       # 全部单元测试
 make web                        # 仅构建 web 前端
 make clean                      # 清理所有构建产物
+make fmt                        # 格式化代码（xcstrings 等）
 ```
+
+- 提交 PR 之前必须执行 `make fmt`，确保格式一致
 
 - 脚本已封装 xcodebuild 参数和输出过滤，不要手动拼 xcodebuild test 命令
 - 脚本已通过 `excludedCommands` 排除沙箱，无需 `dangerouslyDisableSandbox`

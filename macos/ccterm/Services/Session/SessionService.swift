@@ -112,6 +112,10 @@ class SessionService {
 
     /// Uses LLM (via AgentSDK Prompt API) to generate a semantic branch name from a task description.
     /// Returns a branch name like "feat/user-auth-login", or nil on failure.
+    private static let branchNameSchema = """
+    {"type":"object","properties":{"branch":{"type":"string","description":"Git branch name with prefix, e.g. feat/user-auth-login"}},"required":["branch"]}
+    """
+
     static func generateBranchName(description: String) async -> String? {
         // Use a temp directory to avoid loading project CLAUDE.md (saves tokens)
         let tmpDir = FileManager.default.temporaryDirectory
@@ -119,23 +123,24 @@ class SessionService {
         try? FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
+        let truncatedDesc = String(description.prefix(200))
         let config = PromptConfiguration(
             workingDirectory: tmpDir,
             model: "haiku",
-            systemPrompt: "Git branch name generator. Rules: prefix with feat/, fix/, refactor/, or chore/. Then 2-4 kebab-case words. Reply with ONLY the branch name. No explanation, no quotes, no markdown.",
+            systemPrompt: "Git branch name generator. Rules: prefix with feat/, fix/, refactor/, or chore/. Then 2-4 kebab-case words. No explanation, no quotes, no markdown.",
             tools: [],
+            jsonSchema: branchNameSchema,
             customCommand: UserDefaults.standard.string(forKey: "customCLICommand"),
             disableSlashCommands: true,
             effort: "low"
         )
 
-        let truncatedDesc = String(description.prefix(80))
         appLog(.info, "SessionService", "generateBranchName start — input: \"\(truncatedDesc)\"")
         let startTime = CFAbsoluteTimeGetCurrent()
 
         do {
             let result = try await Prompt.run(
-                message: "Generate a branch name for: \(description)",
+                message: "The following is a user's task description (it may be a feature request, bug report, question, or any freeform text). Generate a branch name that best captures the intent:\n\n\(truncatedDesc)",
                 configuration: config
             )
             let elapsed = Int((CFAbsoluteTimeGetCurrent() - startTime) * 1000)
@@ -144,11 +149,12 @@ class SessionService {
             let outputTokens = usage?["output_tokens"] as? Int ?? 0
             let costUsd = result.totalCostUsd ?? 0
 
-            let branch = sanitizeBranchName(result.result)
+            let rawBranch = (result.structuredOutput?["branch"] as? String) ?? result.result
+            let branch = sanitizeBranchName(rawBranch)
             if let branch {
                 appLog(.info, "SessionService", "generateBranchName done — branch: \"\(branch)\", elapsed: \(elapsed)ms, tokens: \(inputTokens) in / \(outputTokens) out, cost: $\(String(format: "%.6f", costUsd))")
             } else {
-                appLog(.warning, "SessionService", "generateBranchName failed — invalid after sanitize, elapsed: \(elapsed)ms, raw: \"\(String(result.result.prefix(200)))\"")
+                appLog(.warning, "SessionService", "generateBranchName failed — invalid after sanitize, elapsed: \(elapsed)ms, raw: \"\(String(rawBranch.prefix(200)))\"")
             }
             return branch
         } catch {
@@ -164,8 +170,8 @@ class SessionService {
         // Strip markdown wrapping: backticks, bold markers
         name = name.replacingOccurrences(of: #"^[`*]+|[`*]+$"#, with: "", options: .regularExpression)
         name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Replace git-illegal characters: space ~ ^ : ? * [ \ control chars
-        name = name.replacingOccurrences(of: #"[\s~^:?*\[\]\\{}\x00-\x1f\x7f]+"#, with: "-", options: .regularExpression)
+        // Whitelist: only keep ASCII alphanumeric, dash, slash, dot, underscore
+        name = name.replacingOccurrences(of: #"[^a-zA-Z0-9/._-]+"#, with: "-", options: .regularExpression)
         // Replace .. (git disallows consecutive dots)
         name = name.replacingOccurrences(of: "..", with: "-")
         // Collapse consecutive dashes
@@ -173,6 +179,12 @@ class SessionService {
         // Trim leading/trailing - and /
         name = name.trimmingCharacters(in: CharacterSet(charactersIn: "-/"))
         // Must contain a prefix like feat/
+        guard name.contains("/"), !name.isEmpty else { return nil }
+        // Enforce max length to avoid filesystem limits
+        if name.count > 60 {
+            name = String(name.prefix(60))
+                .trimmingCharacters(in: CharacterSet(charactersIn: "-/"))
+        }
         guard name.contains("/"), !name.isEmpty else { return nil }
         return name
     }

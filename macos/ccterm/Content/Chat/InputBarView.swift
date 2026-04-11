@@ -217,6 +217,7 @@ struct InputBarView: View {
         .padding(.trailing, 14)
         .animation(.smooth(duration: 0.25), value: viewModel.displayBranch)
         .animation(.smooth(duration: 0.25), value: viewModel.showWorktreeButton)
+        .animation(.smooth(duration: 0.25), value: viewModel.isWorktreeEditable)
         .animation(.smooth(duration: 0.25), value: viewModel.contextUsedPercent != nil)
     }
 
@@ -324,19 +325,20 @@ struct InputBarView: View {
             Button {
                 viewModel.isWorktree = true
             } label: {
-                Label(String(localized: "New Worktree"), systemImage: "point.3.filled.connected.trianglepath.dotted")
+                Label(String(localized: "New Worktree"), systemImage: "arrow.turn.up.right")
                 if viewModel.isWorktree { Image(systemName: "checkmark") }
             }
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: viewModel.isWorktree ? "point.3.filled.connected.trianglepath.dotted" : "folder")
+                Image(systemName: viewModel.isWorktree ? "arrow.turn.up.right" : "folder")
                     .font(.system(size: 11, weight: .medium))
-                Text(viewModel.isWorktree ? String(localized: "New Worktree") : String(localized: "Local Project"))
+                Text(viewModel.isWorktree ? String(localized: "Worktree") : String(localized: "Local Project"))
                     .font(.system(size: 11))
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 8, weight: .medium))
+                    .opacity(viewModel.isWorktreeEditable ? 1 : 0)
             }
-            .foregroundStyle(viewModel.isWorktree ? Color.accentColor : .secondary)
+            .foregroundStyle(.secondary)
         }
         .buttonStyle(.plain)
         .disabled(!viewModel.isWorktreeEditable)

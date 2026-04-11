@@ -1162,6 +1162,16 @@
         }
       }
     },
+    "Worktree": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作树"
+          }
+        }
+      }
+    },
     "You have unsent comments": {
       "localizations": {
         "zh-Hans": {

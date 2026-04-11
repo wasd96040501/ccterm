@@ -64,7 +64,7 @@ struct SidebarSessionRow: View {
                     }
 
                     if session.isWorktree {
-                        Image(systemName: "point.3.filled.connected.trianglepath.dotted")
+                        Image(systemName: "arrow.turn.up.right")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }

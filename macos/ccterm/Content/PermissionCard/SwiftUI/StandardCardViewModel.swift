@@ -25,34 +25,22 @@ final class StandardCardViewModel {
         switch content {
         case .bash(_, let command):
             guard let cmd = command, !cmd.isEmpty else { return nil }
-            let json = jsonEncode(["command": cmd])
-            return WebViewHeightLoader(htmlResource: "bash-react") { webView in
-                webView.callAsyncJavaScript(
-                    "window.__bridge(type, json)",
-                    arguments: ["type": "setCommand", "json": json],
-                    in: nil, in: .page
-                ) { _ in }
-            }
+            return WebViewHeightLoader(
+                htmlResource: "bash-react",
+                bridgeType: "setCommand",
+                bridgeJSON: jsonEncode(["command": cmd]))
         case .write(let filePath, let newContent):
             guard let newContent, !newContent.isEmpty else { return nil }
-            let json = jsonEncode(["filePath": filePath ?? "", "oldString": "", "newString": newContent])
-            return WebViewHeightLoader(htmlResource: "diff-react") { webView in
-                webView.callAsyncJavaScript(
-                    "window.__bridge(type, json)",
-                    arguments: ["type": "setDiff", "json": json],
-                    in: nil, in: .page
-                ) { _ in }
-            }
+            return WebViewHeightLoader(
+                htmlResource: "diff-react",
+                bridgeType: "setDiff",
+                bridgeJSON: jsonEncode(["filePath": filePath ?? "", "oldString": "", "newString": newContent]))
         case .edit(let filePath, let oldString, let newString):
             guard !oldString.isEmpty || !newString.isEmpty else { return nil }
-            let json = jsonEncode(["filePath": filePath ?? "", "oldString": oldString, "newString": newString])
-            return WebViewHeightLoader(htmlResource: "diff-react") { webView in
-                webView.callAsyncJavaScript(
-                    "window.__bridge(type, json)",
-                    arguments: ["type": "setDiff", "json": json],
-                    in: nil, in: .page
-                ) { _ in }
-            }
+            return WebViewHeightLoader(
+                htmlResource: "diff-react",
+                bridgeType: "setDiff",
+                bridgeJSON: jsonEncode(["filePath": filePath ?? "", "oldString": oldString, "newString": newString]))
         default:
             return nil
         }

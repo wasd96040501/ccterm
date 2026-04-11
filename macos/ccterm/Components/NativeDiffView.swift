@@ -13,15 +13,22 @@ struct NativeDiffView: View {
     @State private var hunks: [DiffEngine.Hunk] = []
     @State private var lineHighlights: [String: [SyntaxToken]] = [:]
     @State private var cachedContent = NSAttributedString(string: " ")
+    @State private var containerWidth: CGFloat = 0
 
     private static let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
 
     var body: some View {
         ScrollView([.horizontal, .vertical]) {
-            DiffTextRepresentable(attributedString: cachedContent)
+            DiffTextRepresentable(attributedString: cachedContent, minWidth: containerWidth)
         }
         .defaultScrollAnchor(.topLeading)
         .scrollIndicators(.never)
+        .background {
+            GeometryReader { geo in
+                Color.clear.onAppear { containerWidth = geo.size.width }
+                    .onChange(of: geo.size.width) { _, new in containerWidth = new }
+            }
+        }
         .background(DiffColors.tableBg(colorScheme))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .task(id: "\(oldString.hashValue)_\(newString.hashValue)") {
@@ -145,53 +152,67 @@ struct NativeDiffView: View {
 // MARK: - NSTextView Bridge
 
 private extension NSAttributedString.Key {
-    /// Full-width line background color (drawn edge-to-edge by DiffLayoutManager).
+    /// Full-width line background color (drawn edge-to-edge by DiffNSTextView).
     static let diffLineBackground = NSAttributedString.Key("diffLineBackground")
     /// Per-character gutter background (drawn over the line background).
     static let diffGutterBackground = NSAttributedString.Key("diffGutterBackground")
 }
 
-/// TextKit 1 layout manager that draws full-width line backgrounds
-/// using custom attributes, eliminating the need for padding-space hacks.
-private final class DiffLayoutManager: NSLayoutManager {
-    override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
-        guard let ts = textStorage, let tc = textContainers.first else { return }
-        let charRange = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
-        let fullWidth = usedRect(for: tc).width
+/// NSTextView subclass that draws full-width line backgrounds
+/// using custom attributes, before the standard text drawing pass.
+private final class DiffNSTextView: NSTextView {
+    override func draw(_ dirtyRect: NSRect) {
+        drawLineBackgrounds(in: dirtyRect)
+        super.draw(dirtyRect)
+    }
+
+    private func drawLineBackgrounds(in dirtyRect: NSRect) {
+        guard let lm = layoutManager, let tc = textContainer, let ts = textStorage,
+              ts.length > 0 else { return }
+
+        lm.ensureLayout(for: tc)
+        let origin = textContainerOrigin
+        let fullWidth = max(ceil(lm.usedRect(for: tc).width), bounds.width)
+        guard fullWidth > 0 else { return }
+
+        let fullRange = NSRange(location: 0, length: ts.length)
 
         // 1. Full-width line backgrounds
-        ts.enumerateAttribute(.diffLineBackground, in: charRange) { value, range, _ in
+        ts.enumerateAttribute(.diffLineBackground, in: fullRange) { value, range, _ in
             guard let color = value as? NSColor, color.alphaComponent > 0 else { return }
-            let gr = self.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-            self.enumerateLineFragments(forGlyphRange: gr) { lineRect, _, _, _, _ in
+            let gr = lm.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            lm.enumerateLineFragments(forGlyphRange: gr) { lineRect, _, _, _, _ in
                 let rect = CGRect(
                     x: origin.x, y: lineRect.origin.y + origin.y,
                     width: fullWidth, height: lineRect.size.height
                 )
+                guard rect.intersects(dirtyRect) else { return }
                 color.setFill()
                 rect.fill()
             }
         }
 
         // 2. Gutter backgrounds (per-character width, layered on top)
-        ts.enumerateAttribute(.diffGutterBackground, in: charRange) { value, range, _ in
+        ts.enumerateAttribute(.diffGutterBackground, in: fullRange) { value, range, _ in
             guard let color = value as? NSColor, color.alphaComponent > 0 else { return }
-            let gr = self.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-            let rect = self.boundingRect(forGlyphRange: gr, in: tc)
+            let gr = lm.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            let rect = lm.boundingRect(forGlyphRange: gr, in: tc)
                 .offsetBy(dx: origin.x, dy: origin.y)
+            guard rect.intersects(dirtyRect) else { return }
             color.setFill()
             rect.fill()
         }
     }
 }
 
-/// Bridges NSTextView into SwiftUI, sized to its text content.
+/// Bridges DiffNSTextView into SwiftUI, sized to its text content.
 private struct DiffTextRepresentable: NSViewRepresentable {
     let attributedString: NSAttributedString
+    let minWidth: CGFloat
 
-    func makeNSView(context: Context) -> NSTextView {
+    func makeNSView(context: Context) -> DiffNSTextView {
         let storage = NSTextStorage()
-        let lm = DiffLayoutManager()
+        let lm = NSLayoutManager()
         storage.addLayoutManager(lm)
 
         let tc = NSTextContainer(size: NSSize(
@@ -201,7 +222,7 @@ private struct DiffTextRepresentable: NSViewRepresentable {
         tc.lineFragmentPadding = 0
         lm.addTextContainer(tc)
 
-        let tv = NSTextView(frame: .zero, textContainer: tc)
+        let tv = DiffNSTextView(frame: .zero, textContainer: tc)
         tv.isEditable = false
         tv.isSelectable = true
         tv.drawsBackground = false
@@ -210,15 +231,16 @@ private struct DiffTextRepresentable: NSViewRepresentable {
         return tv
     }
 
-    func updateNSView(_ tv: NSTextView, context: Context) {
+    func updateNSView(_ tv: DiffNSTextView, context: Context) {
         tv.textStorage?.setAttributedString(attributedString)
+        tv.needsDisplay = true
     }
 
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSTextView, context: Context) -> CGSize? {
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: DiffNSTextView, context: Context) -> CGSize? {
         guard let lm = nsView.layoutManager, let tc = nsView.textContainer else { return nil }
         lm.ensureLayout(for: tc)
         let rect = lm.usedRect(for: tc)
-        return CGSize(width: ceil(rect.width), height: ceil(rect.height))
+        return CGSize(width: max(ceil(rect.width), minWidth), height: ceil(rect.height))
     }
 }
 

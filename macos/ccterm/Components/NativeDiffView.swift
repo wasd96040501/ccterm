@@ -1,6 +1,7 @@
 import SwiftUI
 
 /// Native SwiftUI unified diff view with syntax highlighting via highlight.js (JSCore).
+/// Entire diff is a single Text(AttributedString) — gutter, sign, content all inline.
 struct NativeDiffView: View {
     let filePath: String
     let oldString: String
@@ -13,33 +14,16 @@ struct NativeDiffView: View {
     @State private var lineHighlights: [String: [SyntaxToken]] = [:]
 
     var body: some View {
-        let flatItems = buildFlatItems()
-        let maxLineNo = hunks.flatMap(\.lines).compactMap(\.lineNo).max() ?? 0
-        let gutterChars = max(2, String(maxLineNo).count)
-        // 1ch ≈ 7.2pt at 12pt monospace; gutter = (digits + 2) × ch
-        let gutterWidth = CGFloat(gutterChars + 2) * 7.2
-
-        ScrollView(.vertical) {
-            VStack(spacing: 0) {
-                ForEach(flatItems) { item in
-                    switch item.kind {
-                    case .line(let line, let isFirst, let isLast):
-                        DiffLineRow(
-                            line: line,
-                            gutterWidth: gutterWidth,
-                            colorScheme: colorScheme,
-                            highlightedContent: highlightedAttributedString(for: line.content),
-                            isFirst: isFirst,
-                            isLast: isLast
-                        )
-                    case .separator:
-                        hunkSeparator
-                    }
-                }
-            }
+        ScrollView([.horizontal, .vertical]) {
+            Text(attributedContent)
+                .font(.system(size: 12, design: .monospaced))
+                .lineSpacing(3)
+                .fixedSize()
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .textSelection(.enabled)
-        .background(DiffTheme.tableBg(colorScheme))
+        .scrollIndicators(.automatic)
+        .background(DiffColors.tableBg(colorScheme))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .task(id: "\(oldString.hashValue)_\(newString.hashValue)") {
             hunks = DiffEngine.computeHunks(old: oldString, new: newString)
@@ -47,7 +31,6 @@ struct NativeDiffView: View {
             guard let engine = syntaxEngine else { return }
             let lang = LanguageDetection.language(for: filePath)
 
-            // Collect unique line contents to highlight
             let uniqueContents = Set(hunks.flatMap(\.lines).map(\.content)).filter { !$0.isEmpty }
             for content in uniqueContents {
                 let tokens = await engine.highlight(code: content, language: lang)
@@ -56,157 +39,131 @@ struct NativeDiffView: View {
         }
     }
 
-    private func highlightedAttributedString(for content: String) -> AttributedString? {
-        guard let tokens = lineHighlights[content] else { return nil }
-        return SyntaxAttributedString.build(
-            tokens: tokens,
-            colorScheme: colorScheme,
-            font: .system(size: 12, design: .monospaced)
-        )
-    }
+    // MARK: - AttributedString Builder
 
-    /// Flatten hunks into a single array with stable IDs, tracking first/last positions.
-    private func buildFlatItems() -> [DiffDisplayItem] {
-        var items: [DiffDisplayItem] = []
-        var index = 0
+    private var attributedContent: AttributedString {
+        guard !hunks.isEmpty else { return AttributedString(" ") }
+
+        let maxLineNo = hunks.flatMap(\.lines).compactMap(\.lineNo).max() ?? 0
+        let gutterDigits = max(2, String(maxLineNo).count)
+        let font = Font.system(size: 12, design: .monospaced)
+
+        // Compute max content width for uniform background padding
+        let maxContentLen = hunks.flatMap(\.lines).map(\.content.count).max() ?? 0
+        let padToContent = max(maxContentLen, 1)
+
+        var result = AttributedString()
+
         for (hi, hunk) in hunks.enumerated() {
             if hi > 0 {
-                items.append(DiffDisplayItem(id: index, kind: .separator))
-                index += 1
+                result.append(buildSeparator(gutterDigits: gutterDigits, padTo: padToContent, font: font))
             }
-            for (li, line) in hunk.lines.enumerated() {
-                let isFirst = (hi == 0 && li == 0)
-                let isLast = (hi == hunks.count - 1 && li == hunk.lines.count - 1)
-                items.append(DiffDisplayItem(id: index, kind: .line(line, isFirst: isFirst, isLast: isLast)))
-                index += 1
+            for line in hunk.lines {
+                result.append(buildLine(line, gutterDigits: gutterDigits, padTo: padToContent, font: font))
             }
         }
-        return items
-    }
 
-    private var hunkSeparator: some View {
-        let bg = colorScheme == .dark
-            ? Color(.sRGB, red: 48/255, green: 54/255, blue: 61/255)   // #30363d
-            : Color(.sRGB, red: 209/255, green: 217/255, blue: 224/255) // #d1d9e0
-        let fg = colorScheme == .dark
-            ? Color(.sRGB, red: 230/255, green: 237/255, blue: 243/255).opacity(0.3)
-            : Color(.sRGB, red: 31/255, green: 35/255, blue: 40/255).opacity(0.4)
-
-        return Text("···")
-            .font(.system(size: 12, design: .monospaced))
-            .foregroundStyle(fg)
-            .tracking(1)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 4)
-            .background(bg)
-    }
-}
-
-// MARK: - Display Item
-
-private struct DiffDisplayItem: Identifiable {
-    let id: Int
-    let kind: Kind
-
-    enum Kind {
-        case line(DiffEngine.Line, isFirst: Bool, isLast: Bool)
-        case separator
-    }
-}
-
-// MARK: - Line Row
-
-private struct DiffLineRow: View {
-    let line: DiffEngine.Line
-    let gutterWidth: CGFloat
-    let colorScheme: ColorScheme
-    let highlightedContent: AttributedString?
-    let isFirst: Bool
-    let isLast: Bool
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 0) {
-            // Gutter (line number)
-            Text(line.lineNo.map(String.init) ?? "")
-                .foregroundStyle(DiffTheme.gutterText(colorScheme))
-                .monospacedDigit()
-                .frame(width: gutterWidth, alignment: .trailing)
-
-            // Sign (+/-)
-            Text(signText)
-                .foregroundStyle(signColor)
-                .frame(width: 18, alignment: .center)
-                .padding(.leading, 2)
-
-            // Content
-            contentView
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, 4)
-                .padding(.trailing, 10)
+        // Remove trailing newline
+        if !result.characters.isEmpty, result.characters.last == "\n" {
+            result.characters.removeLast()
         }
-        .font(.system(size: 12, design: .monospaced))
-        .lineSpacing(3)
-        .padding(.top, isFirst ? 4 : 0)
-        .padding(.bottom, isLast ? 4 : 0)
-        .background(alignment: .leading) {
-            HStack(spacing: 0) {
-                Rectangle().fill(gutterBg).frame(width: gutterWidth)
-                Rectangle().fill(contentBg)
-            }
-        }
+
+        return result
     }
 
-    @ViewBuilder
-    private var contentView: some View {
-        if let highlighted = highlightedContent {
-            Text(highlighted)
-        } else {
-            Text(line.content.isEmpty ? " " : line.content)
-        }
-    }
+    private func buildLine(
+        _ line: DiffEngine.Line,
+        gutterDigits: Int,
+        padTo: Int,
+        font: Font
+    ) -> AttributedString {
+        let lineNoStr = line.lineNo.map(String.init) ?? ""
+        let paddedLineNo = String(repeating: " ", count: max(0, gutterDigits - lineNoStr.count)) + lineNoStr
 
-    private var signText: String {
+        let sign: String
+        let signColor: Color
         switch line.type {
-        case .add: "+"; case .del: "-"; case .context: ""
+        case .add:
+            sign = "+"; signColor = DiffColors.signAdd(colorScheme)
+        case .del:
+            sign = "-"; signColor = DiffColors.signDel(colorScheme)
+        case .context:
+            sign = " "; signColor = .clear
         }
+
+        let gutterBg = DiffColors.gutterBg(line.type, colorScheme)
+        let contentBg = DiffColors.contentBg(line.type, colorScheme)
+
+        // Gutter: " {lineNo} "
+        var gutter = AttributedString(" \(paddedLineNo) ")
+        gutter.font = font
+        gutter.foregroundColor = DiffColors.gutterText(colorScheme)
+        gutter.backgroundColor = gutterBg
+
+        // Sign: "{sign} "
+        var signPart = AttributedString("\(sign) ")
+        signPart.font = font
+        signPart.foregroundColor = signColor
+        signPart.backgroundColor = contentBg
+
+        // Content (highlighted or plain), padded to uniform width
+        let rawContent = line.content.isEmpty ? " " : line.content
+        let padCount = max(0, padTo - rawContent.count)
+        let paddedContent = rawContent + String(repeating: " ", count: padCount)
+
+        var contentPart: AttributedString
+        if let tokens = lineHighlights[line.content], !line.content.isEmpty {
+            contentPart = SyntaxAttributedString.build(tokens: tokens, colorScheme: colorScheme, font: font)
+            // Append padding spaces
+            if padCount > 0 {
+                var pad = AttributedString(String(repeating: " ", count: padCount))
+                pad.font = font
+                contentPart.append(pad)
+            }
+        } else {
+            contentPart = AttributedString(paddedContent)
+            contentPart.font = font
+            contentPart.foregroundColor = SyntaxTheme.plainColor(colorScheme)
+        }
+        contentPart.backgroundColor = contentBg
+
+        // Trailing space for right padding
+        var trailing = AttributedString(" ")
+        trailing.font = font
+        trailing.backgroundColor = contentBg
+
+        var newline = AttributedString("\n")
+        newline.font = font
+
+        return gutter + signPart + contentPart + trailing + newline
     }
 
-    private var signColor: Color {
-        switch (line.type, colorScheme) {
-        case (.add, .dark):  Color(.sRGB, red: 63/255, green: 185/255, blue: 80/255)  // #3fb950
-        case (.add, .light): Color(.sRGB, red: 26/255, green: 127/255, blue: 55/255)  // #1a7f37
-        case (.del, .dark):  Color(.sRGB, red: 248/255, green: 81/255, blue: 73/255)  // #f85149
-        case (.del, .light): Color(.sRGB, red: 207/255, green: 34/255, blue: 46/255)  // #cf222e
-        default: .clear
-        }
-    }
+    private func buildSeparator(gutterDigits: Int, padTo: Int, font: Font) -> AttributedString {
+        let sepBg = DiffColors.separatorBg(colorScheme)
+        let sepFg = DiffColors.separatorFg(colorScheme)
 
-    private var gutterBg: Color {
-        switch (line.type, colorScheme) {
-        case (.add, .dark):  Color(.sRGB, red: 63/255, green: 185/255, blue: 80/255, opacity: 0.25)
-        case (.add, .light): Color(.sRGB, red: 214/255, green: 236/255, blue: 222/255) // #d6ecde
-        case (.del, .dark):  Color(.sRGB, red: 248/255, green: 81/255, blue: 73/255, opacity: 0.25)
-        case (.del, .light): Color(.sRGB, red: 236/255, green: 214/255, blue: 216/255) // #ecd6d8
-        case (.context, .dark):  Color.white.opacity(0.04)
-        case (.context, .light): Color.black.opacity(0.04)
-        default: .clear
-        }
-    }
+        let gutterWidth = gutterDigits + 2 // " {lineNo} "
+        let contentWidth = 2 + padTo + 1   // "{sign} {content} "
+        let totalWidth = gutterWidth + contentWidth
 
-    private var contentBg: Color {
-        switch (line.type, colorScheme) {
-        case (.add, .dark):  Color(.sRGB, red: 63/255, green: 185/255, blue: 80/255, opacity: 0.15)
-        case (.add, .light): Color(.sRGB, red: 230/255, green: 243/255, blue: 235/255) // #e6f3eb
-        case (.del, .dark):  Color(.sRGB, red: 248/255, green: 81/255, blue: 73/255, opacity: 0.15)
-        case (.del, .light): Color(.sRGB, red: 243/255, green: 230/255, blue: 231/255) // #f3e6e7
-        default: .clear
-        }
+        let dots = " ··· "
+        let remaining = max(0, totalWidth - dots.count)
+        let leftPad = remaining / 2
+        let rightPad = remaining - leftPad
+        let line = String(repeating: " ", count: leftPad) + dots + String(repeating: " ", count: rightPad)
+
+        var sep = AttributedString(line + "\n")
+        sep.font = font
+        sep.foregroundColor = sepFg
+        sep.backgroundColor = sepBg
+
+        return sep
     }
 }
 
-// MARK: - Theme
+// MARK: - Colors
 
-private enum DiffTheme {
+private enum DiffColors {
     static func tableBg(_ scheme: ColorScheme) -> Color {
         scheme == .dark
             ? Color(.sRGB, red: 27/255, green: 31/255, blue: 38/255)
@@ -217,6 +174,52 @@ private enum DiffTheme {
         scheme == .dark
             ? Color(.sRGB, red: 230/255, green: 237/255, blue: 243/255, opacity: 0.4)
             : Color(.sRGB, red: 31/255, green: 35/255, blue: 40/255, opacity: 0.5)
+    }
+
+    static func signAdd(_ scheme: ColorScheme) -> Color {
+        scheme == .dark
+            ? Color(.sRGB, red: 63/255, green: 185/255, blue: 80/255)
+            : Color(.sRGB, red: 26/255, green: 127/255, blue: 55/255)
+    }
+
+    static func signDel(_ scheme: ColorScheme) -> Color {
+        scheme == .dark
+            ? Color(.sRGB, red: 248/255, green: 81/255, blue: 73/255)
+            : Color(.sRGB, red: 207/255, green: 34/255, blue: 46/255)
+    }
+
+    static func gutterBg(_ type: DiffEngine.Line.LineType, _ scheme: ColorScheme) -> Color {
+        switch (type, scheme) {
+        case (.add, .dark):     Color(.sRGB, red: 63/255, green: 185/255, blue: 80/255, opacity: 0.25)
+        case (.add, .light):    Color(.sRGB, red: 214/255, green: 236/255, blue: 222/255)
+        case (.del, .dark):     Color(.sRGB, red: 248/255, green: 81/255, blue: 73/255, opacity: 0.25)
+        case (.del, .light):    Color(.sRGB, red: 236/255, green: 214/255, blue: 216/255)
+        case (.context, .dark): Color.white.opacity(0.04)
+        case (.context, .light): Color.black.opacity(0.04)
+        default: .clear
+        }
+    }
+
+    static func contentBg(_ type: DiffEngine.Line.LineType, _ scheme: ColorScheme) -> Color {
+        switch (type, scheme) {
+        case (.add, .dark):     Color(.sRGB, red: 63/255, green: 185/255, blue: 80/255, opacity: 0.15)
+        case (.add, .light):    Color(.sRGB, red: 230/255, green: 243/255, blue: 235/255)
+        case (.del, .dark):     Color(.sRGB, red: 248/255, green: 81/255, blue: 73/255, opacity: 0.15)
+        case (.del, .light):    Color(.sRGB, red: 243/255, green: 230/255, blue: 231/255)
+        default: .clear
+        }
+    }
+
+    static func separatorBg(_ scheme: ColorScheme) -> Color {
+        scheme == .dark
+            ? Color(.sRGB, red: 48/255, green: 54/255, blue: 61/255)
+            : Color(.sRGB, red: 209/255, green: 217/255, blue: 224/255)
+    }
+
+    static func separatorFg(_ scheme: ColorScheme) -> Color {
+        scheme == .dark
+            ? Color(.sRGB, red: 230/255, green: 237/255, blue: 243/255, opacity: 0.3)
+            : Color(.sRGB, red: 31/255, green: 35/255, blue: 40/255, opacity: 0.4)
     }
 }
 

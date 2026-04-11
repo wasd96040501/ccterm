@@ -11,7 +11,7 @@ struct StandardCardView: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.secondary)
 
-                ToolContentView(descriptor: viewModel.content)
+                ToolContentView(request: viewModel.request)
             }
             .padding(.horizontal, 14)
             .padding(.bottom, 12)

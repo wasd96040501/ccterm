@@ -15,9 +15,9 @@ struct NativeBashView: View {
                 .font(.system(size: 12, design: .monospaced))
                 .fontWeight(.bold)
                 .lineSpacing(3)
-                .multilineTextAlignment(.leading)
                 .fixedSize()
                 .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 8)
                 .padding(.horizontal, 12)
         }

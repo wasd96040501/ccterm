@@ -1,78 +1,86 @@
 import SwiftUI
+import AgentSDK
 
 // MARK: - ToolContentView
 
 /// Renders the content area for each tool type in a permission card.
+/// Switches directly on PermissionRequest.toolInput — no intermediate descriptor.
 struct ToolContentView: View {
-    let descriptor: ToolContentDescriptor
+    let request: PermissionRequest
 
     var body: some View {
-        switch descriptor {
-        case .bash(let description, let command):
-            if let desc = description, !desc.isEmpty {
+        switch request.toolInput {
+        case .Bash(let v):
+            if let desc = v.input?.description, !desc.isEmpty {
                 DescriptionLabel(text: desc, maxLines: 4)
             }
-            if !command.isEmpty {
-                NativeBashView(command: command)
+            if let cmd = v.input?.command, !cmd.isEmpty {
+                NativeBashView(command: cmd)
                     .frame(maxHeight: 300)
             }
 
-        case .read(let filePath):
-            if let fp = filePath, !fp.isEmpty {
+        case .Read(let v):
+            if let fp = v.input?.filePath, !fp.isEmpty {
                 MonoLabel(text: fp, maxLines: 2)
             }
 
-        case .write(let filePath, let oldString, let newString):
-            if let fp = filePath, !fp.isEmpty {
+        case .Write(let v):
+            if let fp = v.input?.filePath, !fp.isEmpty {
                 MonoLabel(text: fp, maxLines: 2)
             }
-            if !oldString.isEmpty || !newString.isEmpty {
-                NativeDiffView(filePath: filePath ?? "", oldString: oldString, newString: newString)
+            let content = v.input?.content ?? ""
+            if !content.isEmpty {
+                NativeDiffView(filePath: v.input?.filePath ?? "", oldString: "", newString: content)
                     .frame(maxHeight: 300)
             }
 
-        case .edit(let filePath, let oldString, let newString):
-            if let fp = filePath, !fp.isEmpty {
+        case .Edit(let v):
+            if let fp = v.input?.filePath, !fp.isEmpty {
                 MonoLabel(text: fp, maxLines: 2)
             }
-            if !oldString.isEmpty || !newString.isEmpty {
-                NativeDiffView(filePath: filePath ?? "", oldString: oldString, newString: newString)
+            let oldStr = v.input?.oldString ?? ""
+            let newStr = v.input?.newString ?? ""
+            if !oldStr.isEmpty || !newStr.isEmpty {
+                NativeDiffView(filePath: v.input?.filePath ?? "", oldString: oldStr, newString: newStr)
                     .frame(maxHeight: 300)
             }
 
-        case .glob(let pattern, let path):
-            if let pattern, !pattern.isEmpty {
+        case .Glob(let v):
+            if let pattern = v.input?.pattern, !pattern.isEmpty {
                 KeyValueRow(key: "pattern", value: pattern)
             }
-            if let path, !path.isEmpty {
+            if let path = v.input?.path, !path.isEmpty {
                 KeyValueRow(key: "path", value: path)
             }
 
-        case .grep(let pattern, let path, let glob):
-            if let pattern, !pattern.isEmpty {
+        case .Grep(let v):
+            if let pattern = v.input?.pattern, !pattern.isEmpty {
                 KeyValueRow(key: "pattern", value: pattern)
             }
-            if let path, !path.isEmpty {
+            if let path = v.input?.path, !path.isEmpty {
                 KeyValueRow(key: "path", value: path)
             }
-            if let glob, !glob.isEmpty {
+            if let glob = v.input?.glob, !glob.isEmpty {
                 KeyValueRow(key: "glob", value: glob)
             }
 
-        case .webFetch(let url):
-            if let url, !url.isEmpty {
+        case .WebFetch(let v):
+            if let url = v.input?.url, !url.isEmpty {
                 MonoLabel(text: url, maxLines: 2)
             }
 
-        case .webSearch(let query, let prompt):
-            if let query, !query.isEmpty {
+        case .WebSearch(let v):
+            if let query = v.input?.query, !query.isEmpty {
                 MonoLabel(text: query, maxLines: 4)
             }
+            let prompt = request.rawInput["prompt"] as? String
             if let prompt, !prompt.isEmpty {
                 DescriptionLabel(text: prompt, maxLines: 4)
             }
 
-        case .generic(let reason, let fields):
+        default:
+            let reason = request.decisionReason?.reason
+            let fields = buildGenericFields()
             if let reason, !reason.isEmpty {
                 DescriptionLabel(text: reason, maxLines: 6)
             }
@@ -83,6 +91,16 @@ struct ToolContentView: View {
                 DescriptionLabel(text: "Claude wants to use this tool", maxLines: 2)
             }
         }
+    }
+
+    private func buildGenericFields() -> [(key: String, value: String)] {
+        var fields: [(key: String, value: String)] = []
+        for key in request.rawInput.keys.sorted() {
+            if let value = request.rawInput[key] as? String, !value.isEmpty {
+                fields.append((key: key, value: value))
+            }
+        }
+        return fields
     }
 }
 
@@ -111,12 +129,6 @@ struct DescriptionLabel: View {
             .lineLimit(maxLines)
             .textSelection(.enabled)
     }
-}
-
-func jsonEncode(_ dict: [String: String]) -> String {
-    guard let data = try? JSONSerialization.data(withJSONObject: dict),
-          let str = String(data: data, encoding: .utf8) else { return "{}" }
-    return str
 }
 
 struct KeyValueRow: View {

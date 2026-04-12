@@ -82,6 +82,8 @@ struct ContentView: View {
             ChatGalleryView()
         case .planGallery:
             EmptyView() // handled by AppState.activatePlanGallery()
+        case .scrollHugTest:
+            ScrollHugTestView()
         #endif
         case .newConversation, nil:
             EmptyView()

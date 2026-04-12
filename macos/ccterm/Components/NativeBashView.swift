@@ -3,11 +3,13 @@ import SwiftUI
 /// Native SwiftUI bash command view with syntax highlighting via highlight.js (JSCore).
 struct NativeBashView: View {
     let command: String
+    var maxHeight: CGFloat? = nil
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.syntaxEngine) private var syntaxEngine
 
     @State private var tokens: [SyntaxToken]?
+    @State private var contentHeight: CGFloat?
 
     var body: some View {
         ScrollView([.horizontal, .vertical]) {
@@ -19,9 +21,14 @@ struct NativeBashView: View {
                 .textSelection(.enabled)
                 .padding(.vertical, 8)
                 .padding(.horizontal, 12)
+                .background(GeometryReader { geo in
+                    Color.clear.preference(key: ContentHeightKey.self, value: geo.size.height)
+                })
         }
         .defaultScrollAnchor(.topLeading)
         .scrollIndicators(.never)
+        .onPreferenceChange(ContentHeightKey.self) { contentHeight = $0 }
+        .frame(height: resolvedHeight)
         .background(backgroundColor)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .task(id: command) {
@@ -60,10 +67,23 @@ struct NativeBashView: View {
         }
     }
 
+    private var resolvedHeight: CGFloat? {
+        guard let maxHeight else { return nil }
+        guard let contentHeight else { return maxHeight }
+        return min(contentHeight, maxHeight)
+    }
+
     private var backgroundColor: Color {
         colorScheme == .dark
             ? Color(.sRGB, red: 27/255, green: 31/255, blue: 38/255)
             : Color(.sRGB, red: 129/255, green: 139/255, blue: 152/255, opacity: 31/255)
+    }
+}
+
+private struct ContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 

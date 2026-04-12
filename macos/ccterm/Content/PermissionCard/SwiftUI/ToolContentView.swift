@@ -15,8 +15,7 @@ struct ToolContentView: View {
                 DescriptionLabel(text: desc, maxLines: 4)
             }
             if let cmd = v.input?.command, !cmd.isEmpty {
-                NativeBashView(command: cmd)
-                    .frame(maxHeight: 300)
+                NativeBashView(command: cmd, maxHeight: 300)
             }
 
         case .Read(let v):
@@ -30,8 +29,7 @@ struct ToolContentView: View {
             }
             let content = v.input?.content ?? ""
             if !content.isEmpty {
-                NativeDiffView(filePath: v.input?.filePath ?? "", oldString: "", newString: content)
-                    .frame(maxHeight: 300)
+                NativeDiffView(filePath: v.input?.filePath ?? "", oldString: "", newString: content, maxHeight: 300)
             }
 
         case .Edit(let v):
@@ -41,8 +39,7 @@ struct ToolContentView: View {
             let oldStr = v.input?.oldString ?? ""
             let newStr = v.input?.newString ?? ""
             if !oldStr.isEmpty || !newStr.isEmpty {
-                NativeDiffView(filePath: v.input?.filePath ?? "", oldString: oldStr, newString: newStr)
-                    .frame(maxHeight: 300)
+                NativeDiffView(filePath: v.input?.filePath ?? "", oldString: oldStr, newString: newStr, maxHeight: 300)
             }
 
         case .Glob(let v):

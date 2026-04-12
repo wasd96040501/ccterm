@@ -6,6 +6,7 @@ struct NativeDiffView: View {
     let filePath: String
     let oldString: String
     let newString: String
+    var maxHeight: CGFloat? = nil
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.syntaxEngine) private var syntaxEngine
@@ -14,15 +15,21 @@ struct NativeDiffView: View {
     @State private var lineHighlights: [String: [SyntaxToken]] = [:]
     @State private var cachedContent = NSAttributedString(string: " ")
     @State private var containerWidth: CGFloat = 0
+    @State private var contentHeight: CGFloat?
 
     private static let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
 
     var body: some View {
         ScrollView([.horizontal, .vertical]) {
             DiffTextRepresentable(attributedString: cachedContent, minWidth: containerWidth)
+                .background(GeometryReader { geo in
+                    Color.clear.preference(key: DiffContentHeightKey.self, value: geo.size.height)
+                })
         }
         .defaultScrollAnchor(.topLeading)
         .scrollIndicators(.never)
+        .onPreferenceChange(DiffContentHeightKey.self) { contentHeight = $0 }
+        .frame(height: resolvedHeight)
         .background {
             GeometryReader { geo in
                 Color.clear.onAppear { containerWidth = geo.size.width }
@@ -48,6 +55,12 @@ struct NativeDiffView: View {
         .onChange(of: colorScheme) {
             rebuildAttributedContent()
         }
+    }
+
+    private var resolvedHeight: CGFloat? {
+        guard let maxHeight else { return nil }
+        guard let contentHeight else { return maxHeight }
+        return min(contentHeight, maxHeight)
     }
 
     // MARK: - NSAttributedString Builder
@@ -146,6 +159,13 @@ struct NativeDiffView: View {
             .foregroundColor: NSColor(DiffColors.separatorFg(colorScheme)),
             .diffLineBackground: NSColor(DiffColors.separatorBg(colorScheme)),
         ])
+    }
+}
+
+private struct DiffContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 

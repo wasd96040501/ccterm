@@ -2,8 +2,7 @@
 import SwiftUI
 import AgentSDK
 
-/// Debug view using the real InputBarView (no outer ScrollView) to verify
-/// that NativeBashView / NativeDiffView correctly hug their content.
+/// Debug view to verify that NativeBashView / NativeDiffView correctly hug their content.
 struct ScrollHugTestView: View {
     @State private var selected = 0
 
@@ -38,7 +37,7 @@ struct ScrollHugTestView: View {
             .pickerStyle(.segmented)
             .padding(.horizontal, 24)
 
-            ScrollHugInputBarPreview(cards: cases[selected].1)
+            ScrollHugCardPreview(cards: cases[selected].1)
                 .id(cases[selected].0)
                 .frame(maxWidth: 600)
                 .padding(.horizontal, 24)
@@ -49,22 +48,32 @@ struct ScrollHugTestView: View {
     }
 }
 
-// MARK: - Real InputBar wrapper
+// MARK: - Card Preview (standalone, no InputBarView dependency)
 
-private struct ScrollHugInputBarPreview: View {
-    @State private var viewModel: InputBarViewModel
-    private let initialCards: [PermissionCardItem]
-
-    init(cards: [PermissionCardItem]) {
-        self.initialCards = cards
-        _viewModel = State(initialValue: InputBarViewModel.newConversation(onRouterAction: { _ in }))
-    }
+private struct ScrollHugCardPreview: View {
+    let cards: [PermissionCardItem]
 
     var body: some View {
-        InputBarView(viewModel: viewModel)
-            .onAppear {
-                viewModel.permissionVM.cards = initialCards
+        VStack(spacing: 0) {
+            ForEach(cards) { card in
+                cardView(for: card)
             }
+        }
+        .background(.thickMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+        }
+    }
+
+    @ViewBuilder
+    private func cardView(for card: PermissionCardItem) -> some View {
+        switch card.cardType {
+        case .standard(let vm): StandardCardView(viewModel: vm)
+        case .exitPlanMode(let vm): ExitPlanModeCardView(viewModel: vm)
+        case .askUserQuestion(let vm): SwiftUIAskUserQuestionCardView(viewModel: vm)
+        }
     }
 }
 

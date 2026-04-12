@@ -4,7 +4,7 @@ import SwiftUI
 /// Debug-only gallery for visually testing all chat message components in the WebView.
 struct ChatGalleryView: View {
 
-    @State private var contentView = ChatContentView()
+    @State private var contentView = ChatRendererService()
 
     var body: some View {
         WebViewRepresentable(webView: contentView.webView, filterToolbarHits: true)

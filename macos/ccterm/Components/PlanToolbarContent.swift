@@ -1,13 +1,15 @@
 import SwiftUI
+import AgentSDK
 
 struct PlanToolbarContent: ToolbarContent {
-    @Bindable var viewModel: PlanReviewViewModel
+    @Bindable var handle: SessionHandle
+    @Environment(AppViewModel.self) private var appVM
 
     var body: some ToolbarContent {
         // LEFT: Back button
         ToolbarItem(placement: .navigation) {
             Button {
-                viewModel.exit()
+                exitPlanReview()
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "chevron.left")
@@ -30,20 +32,55 @@ struct PlanToolbarContent: ToolbarContent {
         }
     }
 
+    // MARK: - Plan Card Access
+
+    private var viewingCardVM: ExitPlanModeCardViewModel? {
+        guard let reviewId = handle.activePlanReviewId,
+              let cardType = appVM.permissionCardTypes[reviewId],
+              case .exitPlanMode(let vm) = cardType else { return nil }
+        return vm
+    }
+
+    // MARK: - Actions
+
+    private func exitPlanReview() {
+        handle.activePlanReviewId = nil
+        handle.pendingCommentSelections.removeAll()
+        handle.planCommentText = ""
+        handle.planSearchQuery = ""
+    }
+
     // MARK: - Reject / Revise
 
     private var rejectReviseButton: some View {
-        let hasComments = viewModel.viewingCardVM?.commentStore?.hasComments ?? false
+        let hasComments = viewingCardVM?.commentStore?.hasComments ?? false
         return Button {
             if hasComments {
-                viewModel.revisePlan()
+                revisePlan()
             } else {
-                viewModel.rejectPlan()
+                rejectPlan()
             }
         } label: {
             Text(hasComments ? "Revise" : "Reject")
                 .font(.system(size: 13))
         }
+    }
+
+    private func rejectPlan() {
+        guard let vm = viewingCardVM else { return }
+        let requestId = vm.request.requestId
+        exitPlanReview()
+        PlanCommentStore.cleanup(permissionRequestId: requestId)
+        vm.executeDeny()
+    }
+
+    private func revisePlan() {
+        guard let vm = viewingCardVM, let store = vm.commentStore else { return }
+        let feedback = store.assembleFeedback()
+        let requestId = vm.request.requestId
+        exitPlanReview()
+        PlanCommentStore.cleanup(permissionRequestId: requestId)
+        vm.executeDenyWithFeedback(feedback)
     }
 
     // MARK: - Execute Menu
@@ -90,17 +127,17 @@ struct PlanToolbarContent: ToolbarContent {
     }
 
     private func executeWithConfirmation(_ mode: PlanExecutionMode) {
-        if viewModel.viewingCardVM?.commentStore?.hasComments == true {
-            viewModel.pendingExecuteMode = mode
+        if viewingCardVM?.commentStore?.hasComments == true {
+            handle.pendingExecuteMode = mode
         } else {
-            viewModel.executePlan(mode: mode)
+            appVM.executePlanFromReview(handle: handle, mode: mode)
         }
     }
 }
 
 // MARK: - PlanExecutionMode Menu ID
 
-private extension PlanExecutionMode {
+extension PlanExecutionMode {
     var menuId: String {
         switch self {
         case .clearContextAutoAccept: "clearContextAutoAccept"

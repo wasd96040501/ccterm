@@ -2,19 +2,15 @@ import SwiftUI
 
 /// SwiftUI 内容区容器。根据 activeAction 切换 Chat / Todo / Archive / NewProject。
 struct ContentView: View {
-    let activeAction: SidebarActionKind?
-    @Bindable var chatRouter: ChatRouter
-    let sidebarViewModel: SidebarViewModel
-    let sessionService: SessionService
-    let onJumpToSession: (String) -> Void
-
-    @Environment(AppState.self) private var appState
+    @Environment(AppViewModel.self) private var appVM
     @State private var searchText = ""
     @FocusState private var isSearchFocused: Bool
 
+    private var handle: SessionHandle? { appVM.sessionService.activeHandle }
+
     var body: some View {
         ZStack {
-            ChatView(chatRouter: chatRouter)
+            ChatView()
                 .opacity(isChatVisible ? 1 : 0)
                 .allowsHitTesting(isChatVisible)
 
@@ -23,9 +19,9 @@ struct ContentView: View {
             }
         }
         .toolbar {
-            if isChatVisible && chatRouter.currentViewModel.handle != nil {
-                if chatRouter.currentViewModel.planReviewVM.isActive {
-                    PlanToolbarContent(viewModel: chatRouter.currentViewModel.planReviewVM)
+            if isChatVisible && handle?.status != .notStarted && handle != nil {
+                if handle?.activePlanReviewId != nil {
+                    PlanToolbarContent(handle: handle!)
                 } else {
                     ToolbarItem(placement: .automatic) {
                         Spacer()
@@ -40,48 +36,46 @@ struct ContentView: View {
             isEnabled: showToolbar
         ))
         .onChange(of: searchText) { _, newValue in
-            let vm = chatRouter.currentViewModel
-            if vm.planReviewVM.isActive {
-                vm.planReviewVM.searchQuery = newValue
-                chatRouter.planWebViewLoader.search(query: newValue, direction: "reset")
+            if let handle, handle.activePlanReviewId != nil {
+                handle.planSearchQuery = newValue
+                appVM.planRendererService.search(query: newValue, direction: "reset")
             } else {
-                appState.searchQuery = newValue
-                appState.searchTextChanged(newValue)
+                appVM.searchQuery = newValue
+                appVM.searchTextChanged(newValue)
             }
         }
         .onSubmit(of: .search) {
-            let vm = chatRouter.currentViewModel
-            if vm.planReviewVM.isActive {
-                chatRouter.planWebViewLoader.search(
-                    query: vm.planReviewVM.searchQuery, direction: "next"
+            if let handle, handle.activePlanReviewId != nil {
+                appVM.planRendererService.search(
+                    query: handle.planSearchQuery, direction: "next"
                 )
             } else {
-                appState.findNext()
+                appVM.findNext()
             }
         }
-        .onChange(of: chatRouter.currentViewModel.planReviewVM.isActive) { _, _ in
+        .onChange(of: handle?.activePlanReviewId) { _, _ in
             searchText = ""
         }
-        .onChange(of: appState.searchFocusTrigger) { _, newValue in
+        .onChange(of: appVM.searchFocusTrigger) { _, newValue in
             if newValue {
                 isSearchFocused = true
-                appState.searchFocusTrigger = false
+                appVM.searchFocusTrigger = false
             }
         }
     }
 
     @ViewBuilder
     private var nonChatContent: some View {
-        switch activeAction {
+        switch appVM.activeAction {
         case .archive:
-            ArchiveView(sessionService: sessionService, sidebarViewModel: sidebarViewModel)
+            ArchiveView(sessionService: appVM.sessionService, sidebarViewModel: appVM.sidebarViewModel)
         #if DEBUG
         case .cardGallery:
             PermissionCardGalleryView()
         case .chatGallery:
             ChatGalleryView()
         case .planGallery:
-            EmptyView() // handled by AppState.activatePlanGallery()
+            EmptyView() // handled by AppViewModel.activatePlanGallery()
         case .scrollHugTest:
             ScrollHugTestView()
         #endif
@@ -91,11 +85,11 @@ struct ContentView: View {
     }
 
     private var isChatVisible: Bool {
-        activeAction == nil
+        appVM.activeAction == nil
     }
 
     private var showToolbar: Bool {
-        !(isChatVisible && chatRouter.currentViewModel.handle == nil)
+        !(isChatVisible && handle?.status == .notStarted)
     }
 }
 

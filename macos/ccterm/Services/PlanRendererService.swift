@@ -1,7 +1,7 @@
 import WebKit
 
 @MainActor
-final class PlanWebViewLoader: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+final class PlanRendererService: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
     let webView: WKWebView
     private(set) var isReady = false
     private var pendingCalls: [(String, String)] = []
@@ -26,10 +26,10 @@ final class PlanWebViewLoader: NSObject, WKNavigationDelegate, WKScriptMessageHa
         webView.navigationDelegate = self
 
         if let url = Bundle.main.url(forResource: "plan-fullscreen-react", withExtension: "html") {
-            appLog(.debug, "PlanDebug", "PlanWebViewLoader: loading HTML from \(url.absoluteString)")
+            appLog(.debug, "PlanDebug", "PlanRendererService: loading HTML from \(url.absoluteString)")
             webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         } else {
-            appLog(.error, "PlanDebug", "PlanWebViewLoader: plan-fullscreen-react.html NOT FOUND in bundle")
+            appLog(.error, "PlanDebug", "PlanRendererService: plan-fullscreen-react.html NOT FOUND in bundle")
         }
     }
 
@@ -69,7 +69,7 @@ final class PlanWebViewLoader: NSObject, WKNavigationDelegate, WKScriptMessageHa
     private func handleBridgeEvent(type: String, body: [String: Any]) {
         switch type {
         case "ready":
-            appLog(.debug, "PlanDebug", "PlanWebViewLoader: received 'ready', flushing \(pendingCalls.count) pending calls")
+            appLog(.debug, "PlanDebug", "PlanRendererService: received 'ready', flushing \(pendingCalls.count) pending calls")
             isReady = true
             flushPendingCalls()
         case "textSelected":
@@ -101,7 +101,7 @@ final class PlanWebViewLoader: NSObject, WKNavigationDelegate, WKScriptMessageHa
     // MARK: - Outbound Bridge (Swift → React)
 
     func setPlan(key: String, markdown: String) {
-        appLog(.debug, "PlanDebug", "PlanWebViewLoader: setPlan key=\(key) markdown length=\(markdown.count)")
+        appLog(.debug, "PlanDebug", "PlanRendererService: setPlan key=\(key) markdown length=\(markdown.count)")
         queueSend(type: "setPlan", payload: ["key": key, "markdown": markdown])
     }
 
@@ -124,12 +124,12 @@ final class PlanWebViewLoader: NSObject, WKNavigationDelegate, WKScriptMessageHa
     }
 
     func switchPlan(key: String) {
-        appLog(.debug, "PlanDebug", "PlanWebViewLoader: switchPlan key=\(key)")
+        appLog(.debug, "PlanDebug", "PlanRendererService: switchPlan key=\(key)")
         queueSend(type: "switchPlan", payload: ["key": key])
     }
 
     func clearPlan(key: String) {
-        appLog(.debug, "PlanDebug", "PlanWebViewLoader: clearPlan key=\(key)")
+        appLog(.debug, "PlanDebug", "PlanRendererService: clearPlan key=\(key)")
         queueSend(type: "clearPlan", payload: ["key": key])
     }
 

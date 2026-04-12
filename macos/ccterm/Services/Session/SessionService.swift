@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import AgentSDK
 
 // MARK: - SessionConfig
@@ -333,10 +334,26 @@ class SessionService {
     }
 
     /// SessionHandle 缓存。key = sessionId，identity stable。
-    private var handles: [String: SessionHandle] = [:]
+    private(set) var handles: [String: SessionHandle] = [:]
 
     /// 注入的 bridge 引用。创建 handle 时自动绑定。
     @ObservationIgnored private var bridge: WebViewBridge?
+
+    // MARK: - Active Session
+
+    /// 当前活跃 session ID。didSet 自动切 bridge conversation。
+    /// 所有 session 切换收口在此——View 层只读不写。
+    var activeSessionId: String = "" {
+        didSet {
+            guard activeSessionId != oldValue else { return }
+            bridge?.switchConversation(activeSessionId)
+        }
+    }
+
+    /// 当前活跃的 handle。computed，从 handles 字典读取。
+    var activeHandle: SessionHandle? {
+        handles[activeSessionId]
+    }
 
     init() {
         self.repository = SessionRepository()
@@ -344,7 +361,7 @@ class SessionService {
 
     // MARK: - Bridge Management
 
-    /// 注入 bridge 引用。AppState 初始化时调用一次。
+    /// 注入 bridge 引用。AppViewModel 初始化时调用一次。
     /// 之后所有创建的 handle 自动持有此 bridge。
     func setBridge(_ bridge: WebViewBridge) {
         self.bridge = bridge
@@ -585,6 +602,9 @@ class SessionService {
     /// 所有已缓存的 SessionHandle（包含 inactive 和 active）。
     var allHandles: [String: SessionHandle] { handles }
 
+    /// 对外暴露 bridge，供 AppViewModel 获取。
+    var currentBridge: WebViewBridge? { bridge }
+
     /// 获取已有会话的 SessionHandle（只读访问，不启动子进程）。
     ///
     /// sessionId 在 DB 中不存在时返回 nil。
@@ -704,8 +724,295 @@ class SessionService {
         }
         let handle = SessionHandle(sessionId: sessionId, repository: repository)
         handle.bridge = bridge  // 创建时绑定 bridge
+
+        // 从 DB 恢复 config
+        if let record = repository.find(sessionId) {
+            handle.originPath = record.originPath ?? record.cwd
+            handle.isWorktree = record.isWorktree
+            handle.additionalDirectories = record.extra.addDirs ?? []
+            handle.pluginDirectories = record.extra.pluginDirs ?? []
+            handle.isTempDir = record.isTempDir
+            if let mode = record.extra.permissionMode.flatMap({ PermissionMode(rawValue: $0) }) {
+                handle.permissionMode = mode
+            }
+            handle.selectedModel = record.extra.model
+            if let e = record.extra.effort, let effort = Effort(rawValue: e) {
+                handle.selectedEffort = effort
+            }
+            handle.loadDraft()
+            if let dir = record.cwd ?? record.originPath {
+                handle.branchMonitor.monitor(directory: dir)
+            }
+        }
+
         handles[sessionId] = handle
         return handle
     }
 
+    // MARK: - Session Activation
+
+    /// 激活指定 session。
+    func activateSession(_ sessionId: String) {
+        guard sessionId != activeSessionId else { return }
+        activeHandle?.animationsDisabled = true
+        if let handle = session(sessionId), handle.status == .inactive {
+            handle.loadHistoryIfNeeded { [weak self] in
+                guard self?.activeSessionId == sessionId else { return }
+                self?.bridge?.switchConversation(sessionId)
+            }
+            activeSessionId = sessionId
+        } else {
+            activeSessionId = sessionId
+        }
+        if let handle = activeHandle {
+            handle.animationsDisabled = true
+            DispatchQueue.main.async {
+                handle.animationsDisabled = false
+            }
+        }
+    }
+
+    /// 激活新对话。复用现有 .notStarted handle 或 provision 新的。
+    func activateNewConversation() {
+        // 复用现有 .notStarted handle
+        if let existing = handles.values.first(where: { $0.status == .notStarted }) {
+            activeSessionId = existing.sessionId
+        } else {
+            let handle = provisionHandle()
+            activeSessionId = handle.sessionId
+        }
+    }
+
+    /// 创建空 handle（.notStarted），不写 DB（DB record 在 startNewSession 时创建）。
+    func provisionHandle(id: String = UUID().uuidString) -> SessionHandle {
+        let handle = getOrCreateHandle(id)
+        handle.status = .notStarted
+        return handle
+    }
+
+    /// 清理指定 session 的相关资源。
+    func cleanupSession(_ sessionId: String) {
+        removeHandle(sessionId)
+        UserDefaults.standard.removeObject(forKey: "chatInputBarDraft_\(sessionId)")
+        if activeSessionId == sessionId {
+            activateNewConversation()
+        }
+    }
+
+    // MARK: - Message Submission (路由)
+
+    /// 提交用户消息。根据 handle 状态路由。
+    func submitMessage(handle: SessionHandle, text: String) {
+        switch handle.status {
+        case .notStarted:
+            Task { await startNewSession(handle: handle, text: text) }
+        case .inactive:
+            Task { await resumeSession(handle: handle, text: text) }
+        case .idle:
+            handle.send(.text(text))
+        case .responding:
+            handle.enqueue(text)
+        case .starting, .interrupting:
+            break
+        }
+    }
+
+    // MARK: - Private Session Lifecycle
+
+    private func startNewSession(handle: SessionHandle, text: String) async {
+        let isTempDir = handle.originPath == nil
+        let directory = handle.originPath ?? Self.createTempChatDirectory()
+
+        handle.originPath = directory
+        handle.isTempDir = isTempDir
+
+        let config = SessionConfig(
+            originPath: directory,
+            isWorktree: handle.isWorktree,
+            worktreeBaseBranch: handle.worktreeBaseBranch,
+            pluginDirs: handle.pluginDirectories.isEmpty ? nil : handle.pluginDirectories,
+            additionalDirs: handle.additionalDirectories.isEmpty ? nil : handle.additionalDirectories,
+            permissionMode: handle.permissionMode,
+            model: handle.selectedModel,
+            effort: handle.selectedEffort,
+            isTempDir: isTempDir
+        )
+
+        // DB record 在此创建
+        let now = Date()
+        let newSession = SessionRecord(
+            id: UUID(),
+            sessionId: handle.sessionId,
+            title: String(text.prefix(100)),
+            isWorktree: config.isWorktree,
+            originPath: config.originPath,
+            createdAt: now,
+            lastActiveAt: now,
+            status: .pending,
+            extra: SessionExtra(
+                pluginDirs: config.pluginDirs,
+                permissionMode: config.permissionMode.rawValue,
+                addDirs: config.additionalDirs,
+                model: config.model,
+                effort: config.effort?.rawValue
+            ),
+            isTempDir: isTempDir
+        )
+        repository.save(newSession)
+        handle.titleSet = true
+
+        // 让出执行权，确保 View 树重排完成
+        await Task.yield()
+
+        withAnimation(.smooth(duration: 0.35)) {
+            handle.status = .starting
+        }
+
+        do {
+            try await launch(sessionId: handle.sessionId, config: config, taskDescription: text)
+            if activeSessionId == handle.sessionId {
+                bridge?.switchConversation(handle.sessionId)
+            }
+            handle.send(.text(text))
+            if !isTempDir {
+                Self.saveRecentDirectory(directory)
+                DirectoryCompletionProvider.saveToRecent(directory)
+            }
+        } catch {
+            appLog(.error, "SessionService", "startNewSession failed: \(error)")
+            handle.status = .inactive
+            handle.processExitError = ProcessExitError(exitCode: 1, stderr: error.localizedDescription)
+        }
+    }
+
+    private func resumeSession(handle: SessionHandle, text: String) async {
+        withAnimation(.smooth(duration: 0.35)) {
+            handle.status = .starting
+        }
+
+        let config = SessionConfig(
+            originPath: handle.originPath ?? "",
+            isWorktree: handle.isWorktree,
+            pluginDirs: handle.pluginDirectories.isEmpty ? nil : handle.pluginDirectories,
+            additionalDirs: handle.additionalDirectories.isEmpty ? nil : handle.additionalDirectories,
+            permissionMode: handle.permissionMode,
+            model: handle.selectedModel,
+            effort: handle.selectedEffort
+        )
+
+        do {
+            try await relaunch(sessionId: handle.sessionId, config: config)
+            handle.send(.text(text))
+        } catch {
+            appLog(.error, "SessionService", "resumeSession failed: \(error)")
+            handle.status = .inactive
+        }
+    }
+
+    func startPlanSession(from sourceHandle: SessionHandle, plan: String, planFilePath: String?) async {
+        let record = find(sourceHandle.sessionId)
+        let directory = record?.cwd ?? ""
+        let slug = record?.slug ?? ""
+
+        let transcriptPath = NSString(string: "~/.claude/projects/\(slug)/\(sourceHandle.sessionId).jsonl")
+            .expandingTildeInPath
+        let prompt = """
+            Implement the following plan:
+
+            \(plan)
+
+            If you need specific details from before exiting plan mode, \
+            read the full transcript at: \(transcriptPath)
+            """
+
+        let title = Self.extractPlanTitle(from: plan) ?? String(plan.prefix(100))
+
+        let newHandle = provisionHandle()
+        newHandle.originPath = directory
+
+        let config = SessionConfig(
+            originPath: directory,
+            isWorktree: false,
+            pluginDirs: record?.extra.pluginDirs,
+            additionalDirs: record?.extra.addDirs,
+            permissionMode: .acceptEdits
+        )
+
+        // DB record
+        let now = Date()
+        let newSession = SessionRecord(
+            id: UUID(),
+            sessionId: newHandle.sessionId,
+            title: title,
+            isWorktree: false,
+            originPath: directory,
+            createdAt: now,
+            lastActiveAt: now,
+            status: .pending,
+            extra: SessionExtra(
+                pluginDirs: config.pluginDirs,
+                permissionMode: config.permissionMode.rawValue,
+                addDirs: config.additionalDirs
+            )
+        )
+        repository.save(newSession)
+        newHandle.titleSet = true
+
+        // 原子切换：创建 + 激活
+        activeSessionId = newHandle.sessionId
+
+        withAnimation(.smooth(duration: 0.35)) {
+            newHandle.status = .starting
+        }
+
+        await stop(sourceHandle.sessionId)
+
+        do {
+            try await launch(sessionId: newHandle.sessionId, config: config)
+            newHandle.send(.text(prompt))
+        } catch {
+            appLog(.error, "SessionService", "startPlanSession failed: \(error)")
+            newHandle.status = .inactive
+            newHandle.processExitError = ProcessExitError(exitCode: 1, stderr: error.localizedDescription)
+        }
+    }
+
+    // MARK: - Helpers
+
+    /// 从 plan markdown 中提取第一个 heading 作为标题。
+    static func extractPlanTitle(from markdown: String) -> String? {
+        for line in markdown.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("#") {
+                let title = trimmed.drop(while: { $0 == "#" }).trimmingCharacters(in: .whitespaces)
+                if !title.isEmpty { return title }
+            }
+        }
+        return nil
+    }
+
+    private static let recentDirectoriesKey = "recentWorkingDirectories"
+    private static let maxRecentDirectories = 20
+
+    static func saveRecentDirectory(_ path: String) {
+        var recents = UserDefaults.standard.stringArray(forKey: recentDirectoriesKey) ?? []
+        recents.removeAll { $0 == path }
+        recents.insert(path, at: 0)
+        if recents.count > maxRecentDirectories {
+            recents = Array(recents.prefix(maxRecentDirectories))
+        }
+        UserDefaults.standard.set(recents, forKey: recentDirectoriesKey)
+    }
+
+    static func createTempChatDirectory() -> String {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let base = appSupport.appendingPathComponent("ccterm/temp-chats")
+        var dir: String
+        repeat {
+            let shortId = String(UUID().uuidString.filter { $0 != "-" }.lowercased().prefix(8))
+            dir = base.appendingPathComponent(shortId).path
+        } while FileManager.default.fileExists(atPath: dir)
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        return dir
+    }
 }

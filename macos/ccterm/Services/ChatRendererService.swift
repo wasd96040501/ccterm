@@ -4,7 +4,7 @@ import WebKit
 /// Chat 业务容器：创建和配置 WKWebView，管理 Bridge 和导航。
 /// 不再是 NSView 子类，视图封装由通用 WebViewRepresentable 负责。
 @MainActor
-final class ChatContentView: NSObject, WKNavigationDelegate {
+final class ChatRendererService: NSObject, WKNavigationDelegate {
 
     // MARK: - Properties
 
@@ -25,7 +25,7 @@ final class ChatContentView: NSObject, WKNavigationDelegate {
 
     private func warmUp() {
         guard let htmlURL = Bundle.main.url(forResource: "chat-react", withExtension: "html") else {
-            appLog(.error, "ChatContentView", "chat-react.html not found in bundle")
+            appLog(.error, "ChatRendererService", "chat-react.html not found in bundle")
             return
         }
         webView.loadFileURL(htmlURL, allowingReadAccessTo: htmlURL.deletingLastPathComponent())
@@ -38,12 +38,12 @@ final class ChatContentView: NSObject, WKNavigationDelegate {
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-        appLog(.error, "ChatContentView", "Navigation failed: \(error.localizedDescription)")
+        appLog(.error, "ChatRendererService", "Navigation failed: \(error.localizedDescription)")
         bridge.markReady()
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        appLog(.error, "ChatContentView", "Provisional navigation failed: \(error.localizedDescription)")
+        appLog(.error, "ChatRendererService", "Provisional navigation failed: \(error.localizedDescription)")
         bridge.markReady()
     }
 

@@ -107,10 +107,10 @@ final class SidebarViewModel {
 
     // MARK: - Callbacks
 
-    /// 归档 session 时的额外清理回调（由 AppState 注入，用于清理 ChatRouter 缓存）。
+    /// 归档 session 时的额外清理回调（由 AppViewModel 注入，用于清理 SessionService 缓存）。
     var onArchive: ((String) -> Void)?
 
-    /// 判断某个 session 是否当前活跃（由 AppState 注入）。用于过滤：当前已在该 tab 时丢弃未读通知。
+    /// 判断某个 session 是否当前活跃（由 AppViewModel 注入）。用于过滤：当前已在该 tab 时丢弃未读通知。
     var isSessionActive: ((String) -> Bool)?
 
     // MARK: - Dependencies
@@ -317,7 +317,7 @@ final class SidebarViewModel {
 
     // MARK: - Session Actions
 
-    /// 归档 session。调 onArchive（清理 ChatRouter 缓存）+ sessionService.archive + rebuild。
+    /// 归档 session。调 onArchive（清理 SessionService 缓存）+ sessionService.archive + rebuild。
     func archiveSession(_ sessionId: String) {
         onArchive?(sessionId)
         sessionService.archive(sessionId)

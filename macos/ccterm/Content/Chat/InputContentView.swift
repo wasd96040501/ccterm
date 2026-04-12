@@ -2,8 +2,12 @@ import SwiftUI
 import AgentSDK
 
 /// Text editing area with left-side buttons (attachment, permission, plugins).
+/// Reads handle directly — no intermediate ViewModel.
 struct InputContentView: View {
-    @Bindable var viewModel: InputBarViewModel
+    @Bindable var handle: SessionHandle
+    var completionVM: CompletionViewModel
+
+    @Environment(AppViewModel.self) private var appVM
 
     private let topPadding: CGFloat = 12
     private let contentPadding: CGFloat = 20
@@ -11,6 +15,9 @@ struct InputContentView: View {
     private let buttonSpacing: CGFloat = 4
 
     @State private var showPluginPicker = false
+    @State private var cursorLocation: Int = 0
+    @State private var desiredCursorPosition: Int?
+    @State private var isFocused: Bool = false
     @Environment(\.self) private var environment
     @AppStorage("sendKeyBehavior") private var sendKeyBehaviorRaw: String = SendKeyBehavior.commandEnter.rawValue
 
@@ -22,47 +29,43 @@ struct InputContentView: View {
         VStack(spacing: 0) {
             // Text area
             TextInputView(
-                text: $viewModel.inputVM.text,
-                isEnabled: !viewModel.isInputDisabled,
-                placeholder: viewModel.isDirectoryUnset
+                text: $handle.draftText,
+                isEnabled: !handle.isInputDisabled,
+                placeholder: handle.isDirectoryUnset
                     ? sendKeyBehavior.temporarySessionPlaceholder
-                    : (viewModel.barState == .responding ? sendKeyBehavior.queuePlaceholder : sendKeyBehavior.sendPlaceholder),
+                    : (handle.status == .responding ? sendKeyBehavior.queuePlaceholder : sendKeyBehavior.sendPlaceholder),
                 font: .systemFont(ofSize: 14),
                 minLines: 2,
                 maxLines: 10,
                 onTextChanged: { text, cursor in
-                    viewModel.inputVM.cursorLocation = cursor
-                    viewModel.inputVM.checkCompletion(
+                    cursorLocation = cursor
+                    completionVM.checkTrigger(
                         text: text,
-                        cursor: cursor,
+                        cursorLocation: cursor,
                         hasMarkedText: false,
                         context: CompletionTriggerContext(
-                            directory: viewModel.cwd,
-                            additionalDirs: viewModel.additionalDirectories,
-                            pluginDirs: viewModel.pluginDirectories,
-                            slashCommandProvider: viewModel.inputVM.slashCommandProvider,
-                            onDirectoryPicked: { [weak viewModel] path in
-                                viewModel?.originPath = path
+                            directory: handle.cwd ?? handle.originPath,
+                            additionalDirs: handle.additionalDirectories,
+                            pluginDirs: handle.pluginDirectories,
+                            slashCommandProvider: handle.slashCommandProvider,
+                            onDirectoryPicked: { [weak handle] path in
+                                handle?.originPath = path
                             }
                         )
                     )
                 },
-                onCommandReturn: {
-                    viewModel.handleCommandReturn()
-                },
-                onEscape: {
-                    viewModel.handleEscape()
-                },
+                onCommandReturn: nil,
+                onEscape: nil,
                 keyInterceptor: { event in
                     // Shift+Tab → cycle permission mode
                     if event.keyCode == 48, event.modifierFlags.contains(.shift) {
-                        viewModel.cyclePermissionMode()
+                        handle.cyclePermissionMode()
                         return true
                     }
-                    return viewModel.inputVM.handleKeyEvent(event)
+                    return handleCompletionKeyEvent(event)
                 },
-                isFocused: $viewModel.inputVM.isFocused,
-                desiredCursorPosition: $viewModel.inputVM.desiredCursorPosition,
+                isFocused: $isFocused,
+                desiredCursorPosition: $desiredCursorPosition,
                 sendKeyBehavior: sendKeyBehavior
             )
             .padding(.top, topPadding)
@@ -75,7 +78,7 @@ struct InputContentView: View {
                 if !CLICapabilityStore.shared.availableModels.isEmpty {
                     modelButton
                 }
-                if viewModel.isEffortSupported {
+                if handle.isEffortSupported {
                     effortButton
                         .transition(.opacity)
                 }
@@ -85,9 +88,61 @@ struct InputContentView: View {
             .padding(.horizontal, contentPadding - buttonSize / 2)
             .padding(.bottom, 6)
             .padding(.top, 8)
-            .animation(.smooth(duration: 0.25), value: viewModel.pluginDirCount)
-            .animation(.smooth(duration: 0.25), value: viewModel.isEffortSupported)
+            .animation(.smooth(duration: 0.25), value: handle.pluginDirCount)
+            .animation(.smooth(duration: 0.25), value: handle.isEffortSupported)
         }
+    }
+
+    // MARK: - Completion Key Handling
+
+    private func handleCompletionKeyEvent(_ event: NSEvent) -> Bool {
+        guard completionVM.isActive else { return false }
+
+        let keyCode = event.keyCode
+        if keyCode == 126 { completionVM.moveSelectionUp(); return true }
+        if keyCode == 125 { completionVM.moveSelectionDown(); return true }
+        if keyCode == 36 || keyCode == 76 {
+            applyCompletionResult(keepSession: false)
+            return true
+        }
+        if keyCode == 49, completionVM.hasInputValidation {
+            if tryConfirmCompletionFromInput() { return true }
+            return false
+        }
+        if keyCode == 124, event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
+            applyCompletionResult(keepSession: true)
+            return true
+        }
+        if keyCode == 48 {
+            applyCompletionResult(keepSession: false)
+            return true
+        }
+        return false
+    }
+
+    private func applyCompletionResult(keepSession: Bool) {
+        guard var result = completionVM.confirmSelection(keepSession: keepSession) else { return }
+        if keepSession, result.replacement.hasSuffix(" ") {
+            result.replacement = String(result.replacement.dropLast())
+        }
+        let nsText = handle.draftText as NSString
+        if result.range.location + result.range.length <= nsText.length {
+            let newCursor = result.range.location + result.replacement.count
+            handle.draftText = nsText.replacingCharacters(in: result.range, with: result.replacement)
+            cursorLocation = newCursor
+            desiredCursorPosition = newCursor
+        }
+    }
+
+    private func tryConfirmCompletionFromInput() -> Bool {
+        guard let range = completionVM.tryConfirmFromInput() else { return false }
+        let nsText = handle.draftText as NSString
+        if range.location + range.length <= nsText.length {
+            handle.draftText = nsText.replacingCharacters(in: range, with: "")
+            cursorLocation = range.location
+            desiredCursorPosition = range.location
+        }
+        return true
     }
 
     // MARK: - Buttons
@@ -109,7 +164,7 @@ struct InputContentView: View {
     private var permissionButton: some View {
         TintedMenuButton(
             items: PermissionMode.allCases
-                .filter { $0 != .auto || CLICapabilityStore.shared.supportsAutoMode(for: viewModel.selectedModel) }
+                .filter { $0 != .auto || CLICapabilityStore.shared.supportsAutoMode(for: handle.selectedModel) }
                 .map { mode in
                     TintedMenuItem(
                         id: mode.rawValue,
@@ -117,21 +172,21 @@ struct InputContentView: View {
                         title: mode.title,
                         subtitle: mode.subtitle,
                         tintColor: mode.tintColor,
-                        isSelected: viewModel.permissionMode == mode
+                        isSelected: handle.permissionMode == mode
                     )
                 },
             onSelect: { id in
                 if let mode = PermissionMode(rawValue: id) {
-                    viewModel.selectPermissionMode(mode)
+                    handle.selectPermissionMode(mode)
                 }
             }
         ) {
             SlotText(
-                text: viewModel.permissionMode.title,
+                text: handle.permissionMode.title,
                 ordinal: permissionOrdinal,
-                color: viewModel.permissionMode == .default ? resolvedPrimaryColor : viewModel.permissionMode.tintColor,
-                icon: viewModel.permissionMode.iconName,
-                animated: !viewModel.animationsDisabled
+                color: handle.permissionMode == .default ? resolvedPrimaryColor : handle.permissionMode.tintColor,
+                icon: handle.permissionMode.iconName,
+                animated: !handle.animationsDisabled
             )
             .fixedSize()
         }
@@ -141,8 +196,8 @@ struct InputContentView: View {
 
     private var permissionOrdinal: Int {
         let filtered = PermissionMode.allCases
-            .filter { $0 != .auto || CLICapabilityStore.shared.supportsAutoMode(for: viewModel.selectedModel) }
-        return filtered.firstIndex(of: viewModel.permissionMode) ?? 0
+            .filter { $0 != .auto || CLICapabilityStore.shared.supportsAutoMode(for: handle.selectedModel) }
+        return filtered.firstIndex(of: handle.permissionMode) ?? 0
     }
 
     private var modelButton: some View {
@@ -171,7 +226,7 @@ struct InputContentView: View {
                 }
             }(),
             onSelect: { id in
-                viewModel.selectModel(id)
+                handle.selectModel(id)
             }
         ) {
             HStack(spacing: 4) {
@@ -181,7 +236,7 @@ struct InputContentView: View {
                     text: modelDisplayName,
                     ordinal: modelOrdinal,
                     color: resolvedPrimaryColor,
-                    animated: !viewModel.animationsDisabled
+                    animated: !handle.animationsDisabled
                 )
                 .fixedSize()
             }
@@ -192,7 +247,7 @@ struct InputContentView: View {
     }
 
     private var effectiveSelectedModel: String {
-        viewModel.selectedModel ?? "default"
+        handle.selectedModel ?? "default"
     }
 
     private var modelOrdinal: Int {
@@ -208,7 +263,7 @@ struct InputContentView: View {
     }
 
     private var effortButton: some View {
-        let supportedLevels = CLICapabilityStore.shared.supportedEffortLevels(for: viewModel.selectedModel)
+        let supportedLevels = CLICapabilityStore.shared.supportedEffortLevels(for: handle.selectedModel)
         return TintedMenuButton(
             items: supportedLevels.map { effort in
                 TintedMenuItem(
@@ -217,23 +272,23 @@ struct InputContentView: View {
                     title: effort.title,
                     subtitle: nil,
                     tintColor: .labelColor,
-                    isSelected: viewModel.selectedEffort == effort
+                    isSelected: handle.selectedEffort == effort
                 )
             },
             onSelect: { id in
                 if let effort = Effort(rawValue: id) {
-                    viewModel.selectEffort(effort)
+                    handle.selectEffort(effort)
                 }
             }
         ) {
             HStack(spacing: 5) {
-                EffortGaugeView(value: viewModel.selectedEffort.gaugeValue, size: 14)
+                EffortGaugeView(value: handle.selectedEffort.gaugeValue, size: 14)
                 SlotText(
-                    text: viewModel.selectedEffort.title,
+                    text: handle.selectedEffort.title,
                     ordinal: effortOrdinal,
                     font: .monospacedSystemFont(ofSize: 12, weight: .medium),
                     color: resolvedPrimaryColor,
-                    animated: !viewModel.animationsDisabled
+                    animated: !handle.animationsDisabled
                 )
                 .fixedSize()
             }
@@ -248,12 +303,12 @@ struct InputContentView: View {
             HStack(spacing: 4) {
                 Image(systemName: "puzzlepiece.extension")
                     .font(.system(size: 12, weight: .medium))
-                if viewModel.pluginDirCount > 0 {
-                    Text("\(viewModel.pluginDirCount)")
+                if handle.pluginDirCount > 0 {
+                    Text("\(handle.pluginDirCount)")
                         .font(.system(size: 12, weight: .medium))
                 }
             }
-            .foregroundStyle(viewModel.pluginDirCount > 0 ? .primary : .secondary)
+            .foregroundStyle(handle.pluginDirCount > 0 ? .primary : .secondary)
         }
         .buttonStyle(HoverCapsuleStyle())
         .disabled(isTransitioning)
@@ -262,8 +317,8 @@ struct InputContentView: View {
                 title: String(localized: "Plugins"),
                 description: String(localized: "Select plugin directories"),
                 mode: .multiSelect,
-                readOnly: !viewModel.isProcessIdle,
-                initialAdditional: Set(viewModel.pluginDirectories.map { URL(fileURLWithPath: $0) }),
+                readOnly: !handle.isProcessIdle,
+                initialAdditional: Set(handle.pluginDirectories.map { URL(fileURLWithPath: $0) }),
                 loadFolders: { PluginDirStore.directories.map { URL(fileURLWithPath: $0) } },
                 saveFolders: { urls in
                     let paths = Set(urls.map(\.path))
@@ -273,9 +328,9 @@ struct InputContentView: View {
                 }
             ) { _, additional in
                 showPluginPicker = false
-                viewModel.pluginDirectories = additional.map(\.path)
-                if let dir = viewModel.originPath {
-                    PluginDirStore.saveEnabledDirectories(viewModel.pluginDirectories, forPath: dir)
+                handle.pluginDirectories = additional.map(\.path)
+                if let dir = handle.originPath {
+                    PluginDirStore.saveEnabledDirectories(handle.pluginDirectories, forPath: dir)
                 }
             }
         }
@@ -290,11 +345,10 @@ struct InputContentView: View {
     }
 
     private var effortOrdinal: Int {
-        Effort.allCases.firstIndex(of: viewModel.selectedEffort) ?? 0
+        Effort.allCases.firstIndex(of: handle.selectedEffort) ?? 0
     }
 
-    /// 过渡态（starting/interrupting），所有按钮禁用
     private var isTransitioning: Bool {
-        viewModel.barState == .starting || viewModel.barState == .interrupting
+        handle.status == .starting || handle.status == .interrupting
     }
 }

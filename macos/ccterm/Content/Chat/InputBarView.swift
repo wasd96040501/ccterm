@@ -1,9 +1,10 @@
 import SwiftUI
 import AgentSDK
 
-/// InputBar 主容器。
+/// InputBar 主容器。直接读 SessionHandle，不经过中间 ViewModel。
 struct InputBarView: View {
-    @Bindable var viewModel: InputBarViewModel
+    @Bindable var handle: SessionHandle
+    @Environment(AppViewModel.self) private var appVM
 
     private let cornerRadius: CGFloat = 20
     private let buttonSize: CGFloat = 28
@@ -13,6 +14,7 @@ struct InputBarView: View {
     @State private var showBranchPicker = false
     @State private var copiedFeedback: CopiedTarget?
     @State private var shimmerPhase: CGFloat = 0
+    @State private var completionVM = CompletionViewModel()
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("sendKeyBehavior") private var sendKeyBehaviorRaw: String = SendKeyBehavior.commandEnter.rawValue
 
@@ -28,15 +30,15 @@ struct InputBarView: View {
         VStack(spacing: 0) {
             mainContainer
 
-            if viewModel.showPathBar {
+            if handle.showPathBar {
                 pathBar
                     .padding(.top, 8)
                     .transition(.opacity)
             }
         }
-        .animation(.smooth(duration: 0.25), value: viewModel.showPathBar)
+        .animation(.smooth(duration: 0.25), value: handle.showPathBar)
         .transaction { t in
-            if viewModel.animationsDisabled { t.disablesAnimations = true }
+            if handle.animationsDisabled { t.disablesAnimations = true }
         }
     }
 
@@ -62,54 +64,48 @@ struct InputBarView: View {
                 .padding(.bottom, 6)
         }
         .overlay(alignment: .top) {
-            if !viewModel.isAtBottom {
+            if !handle.isAtBottom {
                 scrollToBottomButton
                     .offset(y: -(buttonSize + 8))
                     .transition(.opacity)
             }
         }
-        .animation(.smooth(duration: 0.25), value: viewModel.isAtBottom)
-        .animation(.smooth(duration: animationDuration), value: viewModel.inputVM.completionVM.isActive)
-        .animation(.smooth(duration: animationDuration), value: viewModel.planReviewVM.isActive)
-        .animation(.smooth(duration: animationDuration), value: viewModel.permissionVM.isActive)
-        .animation(.smooth(duration: animationDuration), value: viewModel.barState)
-        .animation(.smooth(duration: animationDuration), value: viewModel.queuedMessages.count)
-        .animation(.smooth(duration: animationDuration), value: viewModel.planReviewVM.pendingCommentSelections.count)
+        .animation(.smooth(duration: 0.25), value: handle.isAtBottom)
+        .animation(.smooth(duration: animationDuration), value: completionVM.isActive)
+        .animation(.smooth(duration: animationDuration), value: handle.activePlanReviewId != nil)
+        .animation(.smooth(duration: animationDuration), value: !handle.pendingPermissions.isEmpty)
+        .animation(.smooth(duration: animationDuration), value: handle.status)
+        .animation(.smooth(duration: animationDuration), value: handle.queuedMessages.count)
+        .animation(.smooth(duration: animationDuration), value: handle.pendingCommentSelections.count)
     }
 
-    // MARK: - Overlay Content (Completion / Queued Messages)
+    // MARK: - Overlay Content (Completion / Starting / Queued Messages)
 
     @ViewBuilder
     private var overlayContent: some View {
-        if viewModel.inputVM.completionVM.isActive {
+        if completionVM.isActive {
             CompletionListView(
-                viewModel: viewModel.inputVM.completionVM,
-                onConfirm: { _ in
-                    viewModel.inputVM.applyCompletionResult(keepSession: false)
-                },
-                onDrillDown: { _ in
-                    viewModel.inputVM.applyCompletionResult(keepSession: true)
-                },
+                viewModel: completionVM,
+                onConfirm: { _ in applyCompletionResult(keepSession: false) },
+                onDrillDown: { _ in applyCompletionResult(keepSession: true) },
                 onDeleteRecent: { item in
                     guard let dirItem = item as? DirectoryCompletionItem else { return }
                     DirectoryCompletionProvider.removeFromRecent(dirItem.path)
-                    viewModel.inputVM.completionVM.removeItem(where: { ($0 as? DirectoryCompletionItem)?.path == dirItem.path })
+                    completionVM.removeItem(where: { ($0 as? DirectoryCompletionItem)?.path == dirItem.path })
                 }
             )
             .transition(.identity)
 
             Divider()
-        } else if viewModel.showStartingOverlay {
+        } else if handle.showStartingOverlay {
             CLIStartingView()
                 .transition(.opacity)
 
             Divider()
-        } else if viewModel.showQueuedMessages {
+        } else if handle.showQueuedMessages && !completionVM.isActive && handle.pendingPermissions.isEmpty {
             QueuedMessagesView(
-                messages: viewModel.queuedMessages,
-                onDelete: { index in
-                    viewModel.deleteQueuedMessage(at: index)
-                }
+                messages: handle.queuedMessages,
+                onDelete: { index in handle.dequeue(at: index) }
             )
             .transition(.identity)
 
@@ -121,16 +117,16 @@ struct InputBarView: View {
 
     @ViewBuilder
     private var primaryContent: some View {
-        if viewModel.planReviewVM.isActive {
-            PlanCommentInputView(viewModel: viewModel.planReviewVM)
+        if handle.activePlanReviewId != nil {
+            PlanCommentInputView(handle: handle)
                 .transition(.opacity)
-        } else if viewModel.permissionVM.isActive {
-            PermissionOverlayView(viewModel: viewModel.permissionVM)
+        } else if !handle.pendingPermissions.isEmpty {
+            PermissionOverlayView(handle: handle)
                 .transition(.opacity)
         } else {
-            InputContentView(viewModel: viewModel)
-                .opacity(viewModel.isInputDisabled ? 0.4 : 1.0)
-                .allowsHitTesting(!viewModel.isInputDisabled)
+            InputContentView(handle: handle, completionVM: completionVM)
+                .opacity(handle.isInputDisabled ? 0.4 : 1.0)
+                .allowsHitTesting(!handle.isInputDisabled)
                 .transition(.opacity)
         }
     }
@@ -140,28 +136,29 @@ struct InputBarView: View {
     @ViewBuilder
     private var actionButtons: some View {
         HStack(spacing: 6) {
-            if viewModel.planReviewVM.isActive {
+            if handle.activePlanReviewId != nil {
+                let canSend = !handle.planCommentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                 circleButton(
                     icon: "arrow.up",
                     color: .accentColor,
-                    action: { viewModel.handleCommandReturn() }
+                    action: { handleCommandReturn() }
                 )
-                .opacity(viewModel.planReviewVM.canSendComment ? 1.0 : 0.4)
-                .disabled(!viewModel.planReviewVM.canSendComment)
+                .opacity(canSend ? 1.0 : 0.4)
+                .disabled(!canSend)
                 .transition(.scale.combined(with: .opacity))
                 .hoverTooltip(sendKeyBehavior.shortcutHint)
-            } else if viewModel.permissionVM.isActive {
+            } else if !handle.pendingPermissions.isEmpty {
                 EmptyView()
             } else {
-                switch viewModel.barState {
+                switch handle.status {
                 case .notStarted, .inactive, .idle:
                     circleButton(
                         icon: "arrow.up",
                         color: .accentColor,
-                        action: { viewModel.handleCommandReturn() }
+                        action: { handleCommandReturn() }
                     )
-                    .opacity(viewModel.inputVM.canSend ? 1.0 : 0.4)
-                    .disabled(!viewModel.inputVM.canSend)
+                    .opacity(handle.canSend ? 1.0 : 0.4)
+                    .disabled(!handle.canSend)
                     .transition(.scale.combined(with: .opacity))
                     .hoverTooltip(sendKeyBehavior.shortcutHint)
 
@@ -169,7 +166,7 @@ struct InputBarView: View {
                     circleButton(
                         icon: "stop.fill",
                         color: Color(nsColor: .systemGray),
-                        action: { viewModel.handleEscape() }
+                        action: { handle.interrupt() }
                     )
                     .transition(.scale.combined(with: .opacity))
                     .hoverTooltip("Escape (⎋)")
@@ -177,10 +174,10 @@ struct InputBarView: View {
                     circleButton(
                         icon: "arrow.up",
                         color: .accentColor,
-                        action: { viewModel.handleCommandReturn() }
+                        action: { handleCommandReturn() }
                     )
-                    .opacity(viewModel.inputVM.canSend ? 1.0 : 0.4)
-                    .disabled(!viewModel.inputVM.canSend)
+                    .opacity(handle.canSend ? 1.0 : 0.4)
+                    .disabled(!handle.canSend)
                     .transition(.scale.combined(with: .opacity))
                     .hoverTooltip(sendKeyBehavior.shortcutHint)
 
@@ -194,67 +191,126 @@ struct InputBarView: View {
         }
     }
 
+    // MARK: - Command Routing
+
+    private func handleCommandReturn() {
+        if handle.activePlanReviewId != nil {
+            sendPlanComment()
+        } else if !handle.pendingPermissions.isEmpty {
+            // Permission card confirm handled by card itself
+        } else if handle.status == .responding {
+            let trimmed = handle.trimmedDraftText
+            guard !trimmed.isEmpty else { return }
+            handle.enqueue(trimmed)
+            handle.clearDraft()
+        } else {
+            let trimmed = handle.trimmedDraftText
+            guard !trimmed.isEmpty else { return }
+            handle.clearDraft()
+            appVM.sessionService.submitMessage(handle: handle, text: trimmed)
+        }
+    }
+
+    private func handleEscape() {
+        if completionVM.isActive {
+            completionVM.dismiss()
+        } else if handle.status == .responding {
+            handle.interrupt()
+        }
+    }
+
+    // MARK: - Plan Comment
+
+    private func sendPlanComment() {
+        let text = handle.planCommentText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        guard let reviewId = handle.activePlanReviewId,
+              let cardType = appVM.permissionCardTypes[reviewId],
+              case .exitPlanMode(let cardVM) = cardType else { return }
+
+        if !handle.pendingCommentSelections.isEmpty {
+            for selection in handle.pendingCommentSelections {
+                cardVM.commentStore?.addInlineComment(text: text, range: selection)
+            }
+            handle.pendingCommentSelections.removeAll()
+            appVM.planRendererService.clearSelection()
+        } else {
+            cardVM.commentStore?.addGlobalComment(text: text)
+        }
+        handle.planCommentText = ""
+    }
+
+    // MARK: - Completion
+
+    private func applyCompletionResult(keepSession: Bool) {
+        guard var result = completionVM.confirmSelection(keepSession: keepSession) else { return }
+        if keepSession, result.replacement.hasSuffix(" ") {
+            result.replacement = String(result.replacement.dropLast())
+        }
+        let nsText = handle.draftText as NSString
+        if result.range.location + result.range.length <= nsText.length {
+            handle.draftText = nsText.replacingCharacters(in: result.range, with: result.replacement)
+        }
+    }
+
     // MARK: - Path Bar
 
     @ViewBuilder
     private var pathBar: some View {
         HStack(spacing: 4) {
             directoryButton
-            if !viewModel.isDirectoryUnset, let branch = viewModel.displayBranch, !branch.isEmpty {
+            if !handle.isDirectoryUnset, let branch = handle.displayBranch, !branch.isEmpty {
                 branchButton(branch: branch)
                     .transition(.opacity)
             }
-            if viewModel.showWorktreeButton {
+            if handle.showWorktreeButton {
                 worktreeButton
                     .transition(.opacity)
             }
             Spacer()
-            if let percent = viewModel.contextUsedPercent {
+            if let percent = handle.contextUsedPercent {
                 contextRingButton(percent: percent)
                     .transition(.opacity)
             }
         }
         .padding(.leading, 8)
         .padding(.trailing, 14)
-        .animation(.smooth(duration: 0.25), value: viewModel.displayBranch)
-        .animation(.smooth(duration: 0.25), value: viewModel.showWorktreeButton)
-        .animation(.smooth(duration: 0.25), value: viewModel.isWorktreeEditable)
-        .animation(.smooth(duration: 0.25), value: viewModel.contextUsedPercent != nil)
+        .animation(.smooth(duration: 0.25), value: handle.displayBranch)
+        .animation(.smooth(duration: 0.25), value: handle.showWorktreeButton)
+        .animation(.smooth(duration: 0.25), value: handle.isWorktreeEditable)
+        .animation(.smooth(duration: 0.25), value: handle.contextUsedPercent != nil)
     }
 
     // MARK: - Directory Button
 
-    /// session 启动后，path 按钮不可交互（无 copy、无 hover）。
     private var isPathInteractive: Bool {
-        viewModel.isDirectoryUnset || viewModel.isAdditionalPathEditable
+        handle.isDirectoryUnset || handle.isAdditionalPathEditable
     }
 
     @ViewBuilder
     private var directoryButton: some View {
         HStack(spacing: 4) {
             Button {
-                if viewModel.isDirectoryUnset {
+                if handle.isDirectoryUnset || handle.isAdditionalPathEditable {
                     showFolderPicker = true
-                } else if viewModel.isAdditionalPathEditable {
-                    showFolderPicker = true
-                } else if isPathInteractive, let dir = viewModel.originPath {
+                } else if isPathInteractive, let dir = handle.originPath {
                     copyToClipboard(dir, target: .path)
                 }
             } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: viewModel.isDirectoryUnset ? "folder.badge.plus" : (copiedFeedback == .path ? "checkmark" : "folder"))
+                    Image(systemName: handle.isDirectoryUnset ? "folder.badge.plus" : (copiedFeedback == .path ? "checkmark" : "folder"))
                         .font(.system(size: 12, weight: .medium))
                         .frame(width: 14, height: 14)
-                    if viewModel.isDirectoryUnset {
+                    if handle.isDirectoryUnset {
                         Text("Select Working Directory")
                             .font(.system(size: 12, weight: .medium))
-                    } else if let dir = viewModel.originPath {
-                        Text(viewModel.isTempDir ? String(localized: "Temporary Session") : truncatedPath(dir))
+                    } else if let dir = handle.originPath {
+                        Text(handle.isTempDir ? String(localized: "Temporary Session") : truncatedPath(dir))
                             .font(.system(size: 12))
                             .lineLimit(1)
                             .truncationMode(.middle)
-                        if !viewModel.additionalDirectories.isEmpty {
-                            Text("+\(viewModel.additionalDirectories.count)")
+                        if !handle.additionalDirectories.isEmpty {
+                            Text("+\(handle.additionalDirectories.count)")
                                 .font(.system(size: 11))
                                 .foregroundStyle(.tertiary)
                         }
@@ -265,36 +321,35 @@ struct InputBarView: View {
             .allowsHitTesting(isPathInteractive)
         }
         .hoverCapsule(
-            staticFill: viewModel.isDirectoryUnset ? Color.orange.opacity(0.12) : nil,
+            staticFill: handle.isDirectoryUnset ? Color.orange.opacity(0.12) : nil,
             hoverOpacity: isPathInteractive ? 0.08 : 0
         )
-        .foregroundStyle(viewModel.isDirectoryUnset ? .orange : .secondary)
+        .foregroundStyle(handle.isDirectoryUnset ? .orange : .secondary)
         .popover(isPresented: $showFolderPicker) {
             FolderPickerPopover(
                 title: String(localized: "Working Directory"),
                 description: String(localized: "Select primary directory and additional directories"),
                 userDefaultsKey: "folderPickerRecent",
-                primaryReadOnly: !viewModel.isPrimaryPathEditable,
-                initialPrimary: viewModel.originPath.map { URL(fileURLWithPath: $0) },
-                initialAdditional: Set(viewModel.additionalDirectories.map { URL(fileURLWithPath: $0) })
+                primaryReadOnly: !handle.isPrimaryPathEditable,
+                initialPrimary: handle.originPath.map { URL(fileURLWithPath: $0) },
+                initialAdditional: Set(handle.additionalDirectories.map { URL(fileURLWithPath: $0) })
             ) { primary, additional in
                 showFolderPicker = false
                 guard let primary else { return }
-                viewModel.originPath = primary.path
-                viewModel.additionalDirectories = additional.map(\.path)
+                handle.originPath = primary.path
+                handle.additionalDirectories = additional.map(\.path)
             }
         }
     }
 
     // MARK: - Branch Button
 
-    /// worktree 已启动后，branch 不可切换（点击/hover 均无反应）。
     private var isBranchInteractive: Bool {
-        !(viewModel.isWorktree && !viewModel.isWorktreeEditable)
+        !(handle.isWorktree && !handle.isWorktreeEditable)
     }
 
     private func branchButton(branch: String) -> some View {
-        let isGenerating = viewModel.isBranchGenerating
+        let isGenerating = handle.isBranchGenerating
         return Button {
             showBranchPicker = true
         } label: {
@@ -328,15 +383,15 @@ struct InputBarView: View {
         }
         .popover(isPresented: $showBranchPicker) {
             BranchPickerView(
-                branches: GitUtils.listBranches(at: viewModel.cwd ?? ""),
-                currentBranch: viewModel.displayBranch,
+                branches: GitUtils.listBranches(at: handle.cwd ?? ""),
+                currentBranch: handle.displayBranch,
                 onSelect: { selectedBranch in
-                    if viewModel.isWorktree && viewModel.barState == .notStarted {
-                        viewModel.worktreeBaseBranch = selectedBranch
+                    if handle.isWorktree && handle.status == .notStarted {
+                        handle.worktreeBaseBranch = selectedBranch
                     } else {
-                        guard let dir = viewModel.cwd else { return }
+                        guard let dir = handle.cwd else { return }
                         if GitUtils.switchBranch(at: dir, branch: selectedBranch) {
-                            viewModel.updateBranchMonitor(directory: dir)
+                            handle.updateBranchMonitor(directory: dir)
                         }
                     }
                     showBranchPicker = false
@@ -367,19 +422,19 @@ struct InputBarView: View {
 
     @ViewBuilder
     private var worktreeButton: some View {
-        if viewModel.isWorktreeEditable {
+        if handle.isWorktreeEditable {
             Menu {
                 Button {
-                    viewModel.isWorktree = false
+                    handle.setWorktree(false)
                 } label: {
                     Label(String(localized: "Local Project"), systemImage: "folder")
-                    if !viewModel.isWorktree { Image(systemName: "checkmark") }
+                    if !handle.isWorktree { Image(systemName: "checkmark") }
                 }
                 Button {
-                    viewModel.isWorktree = true
+                    handle.setWorktree(true)
                 } label: {
                     Label(String(localized: "New Worktree"), systemImage: "arrow.turn.up.right")
-                    if viewModel.isWorktree { Image(systemName: "checkmark") }
+                    if handle.isWorktree { Image(systemName: "checkmark") }
                 }
             } label: {
                 worktreeLabel(showChevron: true)
@@ -392,9 +447,9 @@ struct InputBarView: View {
 
     private func worktreeLabel(showChevron: Bool) -> some View {
         HStack(spacing: 4) {
-            Image(systemName: viewModel.isWorktree ? "arrow.turn.up.right" : "folder")
+            Image(systemName: handle.isWorktree ? "arrow.turn.up.right" : "folder")
                 .font(.system(size: 11, weight: .medium))
-            Text(viewModel.isWorktree ? String(localized: "Worktree") : String(localized: "Local Project"))
+            Text(handle.isWorktree ? String(localized: "Worktree") : String(localized: "Local Project"))
                 .font(.system(size: 11))
             if showChevron {
                 Image(systemName: "chevron.up.chevron.down")
@@ -413,14 +468,14 @@ struct InputBarView: View {
             percent: percent,
             colorThresholds: [(70, .accentColor), (90, .orange), (100, .red)]
         )
-        .hoverTooltip(viewModel.contextRingText)
+        .hoverTooltip(handle.contextRingText)
     }
 
     // MARK: - Scroll to Bottom
 
     private var scrollToBottomButton: some View {
         Button {
-            viewModel.scrollToBottom()
+            handle.scrollToBottom()
         } label: {
             Image(systemName: "chevron.down")
                 .font(.system(size: 14, weight: .bold))
@@ -488,22 +543,25 @@ struct InputBarView: View {
 }
 
 private struct InputBarPreviewWrapper: View {
-    @State private var viewModel = InputBarViewModel.newConversation(onRouterAction: { _ in })
+    @State private var appVM = AppViewModel()
 
     var body: some View {
         ZStack {
             Color(nsColor: .windowBackgroundColor)
                 .ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                Spacer(minLength: 0)
+            if let handle = appVM.sessionService.activeHandle {
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
 
-                InputBarView(viewModel: viewModel)
-                    .frame(width: 860)
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 16)
+                    InputBarView(handle: handle)
+                        .frame(width: 860)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 16)
+                }
             }
         }
-        .onAppear { viewModel.originPath = "/Volumes/largedisk/code/ccterm" }
+        .environment(appVM)
+        .onAppear { appVM.sessionService.activeHandle?.originPath = "/Volumes/largedisk/code/ccterm" }
     }
 }

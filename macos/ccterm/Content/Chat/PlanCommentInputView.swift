@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// Plan 评论模式的输入区域：引用选区列表 + 评论输入框。
+/// 直接读 handle 的 plan comment 状态。
 struct PlanCommentInputView: View {
-    @Bindable var viewModel: PlanReviewViewModel
+    @Bindable var handle: SessionHandle
 
     private let topPadding: CGFloat = 12
     private let contentPadding: CGFloat = 20
@@ -19,7 +20,7 @@ struct PlanCommentInputView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Selection quote bars (supports multiple quotes)
-            if !viewModel.pendingCommentSelections.isEmpty {
+            if !handle.pendingCommentSelections.isEmpty {
                 ScrollView(.vertical, showsIndicators: false) {
                     quoteList
                         .onGeometryChange(for: CGFloat.self) { proxy in
@@ -39,7 +40,7 @@ struct PlanCommentInputView: View {
 
             // Comment text area
             TextInputView(
-                text: $viewModel.commentText,
+                text: $handle.planCommentText,
                 isEnabled: true,
                 placeholder: sendKeyBehavior.commentPlaceholder,
                 font: .systemFont(ofSize: 14),
@@ -64,7 +65,7 @@ struct PlanCommentInputView: View {
 
     private var quoteList: some View {
         VStack(spacing: 0) {
-            ForEach(Array(viewModel.pendingCommentSelections.enumerated()), id: \.element.id) { index, selection in
+            ForEach(Array(handle.pendingCommentSelections.enumerated()), id: \.element.id) { index, selection in
                 HStack(spacing: 0) {
                     Image(systemName: "quote.opening")
                         .font(.system(size: 12))
@@ -79,7 +80,7 @@ struct PlanCommentInputView: View {
                         .padding(.vertical, 4)
                     Spacer(minLength: 8)
                     Button {
-                        viewModel.pendingCommentSelections.removeAll { $0.id == selection.id }
+                        handle.pendingCommentSelections.removeAll { $0.id == selection.id }
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 12))

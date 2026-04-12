@@ -2,7 +2,7 @@ import SwiftUI
 
 @main
 struct CCTermApp: App {
-    @State private var appState = AppState()
+    @State private var appState = AppViewModel()
 
     var body: some Scene {
         Window("ccterm", id: "main") {
@@ -40,7 +40,7 @@ struct CCTermApp: App {
 }
 
 struct AppCommands: Commands {
-    let appState: AppState
+    let appState: AppViewModel
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {

@@ -1,54 +1,46 @@
 import SwiftUI
 
 struct RootView: View {
-    @Environment(AppState.self) private var appState
+    @Environment(AppViewModel.self) private var appVM
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            SidebarView(viewModel: appState.sidebarViewModel, selection: selectionBinding)
+            SidebarView(viewModel: appVM.sidebarViewModel, selection: selectionBinding)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 350)
         } detail: {
-            ContentView(
-                activeAction: appState.activeAction,
-                chatRouter: appState.chatRouter,
-                sidebarViewModel: appState.sidebarViewModel,
-                sessionService: appState.sessionService,
-                onJumpToSession: { sessionId in
-                    appState.activeAction = nil
-                    appState.chatRouter.activateSession(sessionId)
-                }
-            )
+            ContentView()
         }
         .frame(minWidth: 800, minHeight: 480)
     }
 
-    /// 从 ChatRouter + AppState 派生的 sidebar selection。
+    /// 从 SessionService + AppViewModel 派生的 sidebar selection。
     private var selectionBinding: Binding<SidebarSelection?> {
         Binding(
             get: {
-                if let action = appState.activeAction { return .action(action) }
-                let session = appState.chatRouter.currentViewModel
-                if session.handle == nil { return .action(.newConversation) }
-                return .session(session.sessionId)
+                if let action = appVM.activeAction { return .action(action) }
+                if appVM.sessionService.activeHandle?.status == .notStarted {
+                    return .action(.newConversation)
+                }
+                return .session(appVM.sessionService.activeSessionId)
             },
             set: { newValue in
                 switch newValue {
                 case .session(let id):
-                    appState.activeAction = nil
-                    appState.chatRouter.activateSession(id)
-                    appState.sidebarViewModel.markSessionRead(sessionId: id)
+                    appVM.activeAction = nil
+                    appVM.sessionService.activateSession(id)
+                    appVM.sidebarViewModel.markSessionRead(sessionId: id)
                 case .action(.newConversation):
-                    appState.activeAction = nil
-                    appState.chatRouter.activateNewConversation()
+                    appVM.activeAction = nil
+                    appVM.sessionService.activateNewConversation()
                 case .action(let action):
                     #if DEBUG
                     if action == .planGallery {
-                        appState.activatePlanGallery()
+                        appVM.activatePlanGallery()
                         return
                     }
                     #endif
-                    appState.activeAction = action
+                    appVM.activeAction = action
                 case nil:
                     break
                 }

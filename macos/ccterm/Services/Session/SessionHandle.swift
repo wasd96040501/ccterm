@@ -36,6 +36,34 @@ struct ProcessExit {
     let stderr: String?
 }
 
+// MARK: - ProcessExitError
+
+/// 进程退出错误，用于 SwiftUI .alert(item:) 展示。
+struct ProcessExitError: Identifiable {
+    let id = UUID()
+    let exitCode: Int32
+    let stderr: String?
+}
+
+// MARK: - ChatRouterAction
+
+/// 需要 SessionService 协调的操作意图。
+enum ChatRouterAction {
+    case executePlan(PlanRequest)
+}
+
+enum PlanExecutionMode {
+    case clearContextAutoAccept
+    case autoAcceptEdits
+    case manualApprove
+}
+
+struct PlanRequest {
+    let sourceHandle: SessionHandle
+    let plan: String
+    let planFilePath: String?
+}
+
 // MARK: - SessionHandle
 
 /// 单个会话的运行时句柄：可观察状态 + 交互命令。
@@ -89,6 +117,7 @@ class SessionHandle {
         didSet {
             guard status != oldValue else { return }
             emit(.statusChanged(old: oldValue, new: status))
+            handleStatusSideEffect(old: oldValue, new: status)
         }
     }
 
@@ -405,6 +434,7 @@ class SessionHandle {
             cwd = init_.cwd
             if let newCwd = init_.cwd {
                 emit(.cwdChanged(newCwd))
+                handleCwdSideEffect(newCwd)
             }
             if status == .starting {
                 status = .idle
@@ -430,6 +460,7 @@ class SessionHandle {
             cwd = change.cwd
             isWorktree = change.isWorktree
             emit(.cwdChanged(change.cwd))
+            handleCwdSideEffect(change.cwd)
         }
 
         if effects.turnEnded {
@@ -449,6 +480,7 @@ class SessionHandle {
             stderr: stderrBuffer.isEmpty ? nil : stderrBuffer
         )
         emit(.processExited(lastExit!))   // status 仍是退出前的值
+        handleProcessExitSideEffect(lastExit!)
         stderrBuffer = ""
         agentSession = nil
         status = .inactive                 // didSet 自动 emit statusChanged
@@ -539,6 +571,254 @@ class SessionHandle {
             flushQueue()
         }
     }
+
+    // MARK: - Pre-launch Config（.notStarted 时可写，launch 后由 CLI 推送更新）
+
+    /// 用户选的原始目录。展示用，不随 worktree 变化。
+    var originPath: String? {
+        didSet {
+            if let dir = originPath {
+                pluginDirectories = PluginDirStore.enabledDirectories(forPath: dir)
+                branchMonitor.monitor(directory: dir)
+            } else {
+                pluginDirectories = []
+                branchMonitor.stop()
+            }
+        }
+    }
+
+    var selectedModel: String?
+    var selectedEffort: Effort = .medium
+    var additionalDirectories: [String] = []
+    var pluginDirectories: [String] = []
+    var isTempDir: Bool = false
+    /// worktree 创建前用户选择的基础分支。
+    var worktreeBaseBranch: String?
+
+    // MARK: - Draft Text
+
+    var draftText: String = "" {
+        didSet { scheduleDraftSave() }
+    }
+
+    @ObservationIgnored private var draftSaveTask: Task<Void, Never>?
+
+    private func scheduleDraftSave() {
+        draftSaveTask?.cancel()
+        let sid = sessionId
+        let text = draftText
+        let key = "chatInputBarDraft_\(sid)"
+        draftSaveTask = Task.detached(priority: .utility) {
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            if text.isEmpty {
+                UserDefaults.standard.removeObject(forKey: key)
+            } else {
+                UserDefaults.standard.set(text, forKey: key)
+            }
+        }
+    }
+
+    func loadDraft() {
+        draftText = UserDefaults.standard.string(forKey: "chatInputBarDraft_\(sessionId)") ?? ""
+    }
+
+    func clearDraft() {
+        draftSaveTask?.cancel()
+        draftText = ""
+        UserDefaults.standard.removeObject(forKey: "chatInputBarDraft_\(sessionId)")
+    }
+
+    // MARK: - UI Hints（session 级 UI 状态，跨 view rebuild 保留）
+
+    /// 正在全屏阅读的 plan permission ID。nil = 未在阅读。
+    var activePlanReviewId: String?
+
+    /// Plan 评论文本（独立于 draftText）。
+    var planCommentText: String = ""
+
+    /// Plan 引用选区列表。
+    var pendingCommentSelections: [PlanComment.SelectionRange] = []
+
+    /// Plan 模式搜索状态。
+    var planSearchQuery: String = ""
+
+    /// WebView 滚动状态。由 bridge 回调设置。
+    var isAtBottom: Bool = true
+
+    /// 进程退出错误（用于 .alert）。
+    var processExitError: ProcessExitError?
+
+    /// 是否已展示过退出错误弹窗。
+    var hasShownExitAlert: Bool = false
+
+    /// Execute 二次确认弹窗状态（有未发送评论时）。
+    var pendingExecuteMode: PlanExecutionMode?
+
+    /// 动画禁用标记（session 切换时临时禁用）。
+    var animationsDisabled: Bool = false
+
+    // MARK: - Branch Monitor
+
+    @ObservationIgnored let branchMonitor = GitBranchMonitor()
+
+    var displayBranch: String? {
+        if branchGenerating { return String(localized: "Generating branch…") }
+        if isWorktree && status == .notStarted, let base = worktreeBaseBranch { return base }
+        return branchMonitor.branch
+    }
+
+    func updateBranchMonitor(directory: String? = nil) {
+        if let dir = directory ?? cwd ?? originPath {
+            branchMonitor.monitor(directory: dir)
+        } else {
+            branchMonitor.stop()
+        }
+    }
+
+    // MARK: - Computed Helpers
+
+    var isProcessIdle: Bool { status == .notStarted || status == .inactive }
+    var isPrimaryPathEditable: Bool { status == .notStarted }
+    var isAdditionalPathEditable: Bool { status == .notStarted }
+    var isDirectoryUnset: Bool { isPrimaryPathEditable && originPath == nil }
+    var showPathBar: Bool { isPrimaryPathEditable || originPath != nil }
+    var isInputDisabled: Bool { status == .starting || status == .interrupting }
+    var showStartingOverlay: Bool { status == .starting }
+    var isWorktreeEditable: Bool { status == .notStarted }
+    var showWorktreeButton: Bool {
+        if isAdditionalPathEditable {
+            return originPath.map { GitUtils.isGitRepository(at: $0) } ?? false
+        }
+        return isWorktree
+    }
+
+    var showQueuedMessages: Bool {
+        !queuedMessages.isEmpty
+    }
+
+    var contextRingText: String {
+        let used = formatTokenCount(contextUsedTokens)
+        let total = formatTokenCount(contextWindowTokens)
+        let pct = Int(contextUsedPercent ?? 0)
+        return "\(used) / \(total)  (\(pct)%)"
+    }
+
+    var isEffortSupported: Bool {
+        !CLICapabilityStore.shared.supportedEffortLevels(for: selectedModel).isEmpty
+    }
+
+    var canSend: Bool {
+        !draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var trimmedDraftText: String {
+        draftText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var pluginDirCount: Int { pluginDirectories.count }
+
+    var isBranchGenerating: Bool { branchGenerating }
+
+    private func formatTokenCount(_ count: Int) -> String {
+        String(format: "%.1fk", Double(count) / 1000.0)
+    }
+
+    // MARK: - User Actions
+
+    func selectModel(_ model: String?) {
+        selectedModel = model
+        setModel(model)
+        reconcileCapabilities()
+    }
+
+    func selectEffort(_ effort: Effort) {
+        selectedEffort = effort
+        setEffort(effort)
+    }
+
+    func selectPermissionMode(_ mode: PermissionMode) {
+        guard status != .starting else { return }
+        permissionMode = mode
+        setPermissionMode(mode)
+    }
+
+    func cyclePermissionMode() {
+        let modes = PermissionMode.allCases
+            .filter { $0 != .auto || CLICapabilityStore.shared.supportsAutoMode(for: selectedModel) }
+        guard let idx = modes.firstIndex(of: permissionMode) else { return }
+        let next = modes[(idx + 1) % modes.count]
+        selectPermissionMode(next)
+    }
+
+    func setWorktree(_ value: Bool) {
+        guard isProcessIdle, status == .notStarted else { return }
+        isWorktree = value
+    }
+
+    func scrollToBottom() {
+        bridge?.scrollToBottom()
+    }
+
+    private func reconcileCapabilities() {
+        let store = CLICapabilityStore.shared
+        let supported = store.supportedEffortLevels(for: selectedModel)
+        if !supported.isEmpty && !supported.contains(selectedEffort) {
+            selectEffort(.medium)
+        }
+        if permissionMode == .auto && !store.supportsAutoMode(for: selectedModel) {
+            selectPermissionMode(.default)
+        }
+    }
+
+    // MARK: - Slash Command Provider
+
+    var slashCommandProvider: ((_ query: String, _ completion: @escaping ([SlashCommandStore.Match]) -> Void) -> Void)? {
+        guard !slashCommands.isEmpty else { return nil }
+        let commands = slashCommands
+        return { query, cb in
+            let matches = commands.map {
+                SlashCommandStore.Match(name: $0.name, description: $0.description, rank: 0, isBuiltIn: $0.isBuiltIn)
+            }.filter {
+                query.isEmpty || $0.name.localizedCaseInsensitiveContains(query)
+            }
+            cb(matches)
+        }
+    }
+
+    // MARK: - Plan Extraction
+
+    static func extractPlan(from request: PermissionRequest) -> String {
+        if case .ExitPlanMode(let v) = request.toolInput {
+            return v.input?.plan ?? ""
+        }
+        return ""
+    }
+
+    static func extractPlanFilePath(from request: PermissionRequest) -> String? {
+        return nil
+    }
+
+    // MARK: - Self-handled Events
+
+    /// 自处理 status 变化副作用。由 status didSet emit 的事件触发。
+    internal func handleStatusSideEffect(old: Status, new: Status) {
+        if new == .responding && !draftText.isEmpty {
+            clearDraft()
+        }
+    }
+
+    /// 自处理 cwd 变化副作用。
+    internal func handleCwdSideEffect(_ newDir: String) {
+        updateBranchMonitor(directory: newDir)
+    }
+
+    /// 自处理进程退出副作用。
+    internal func handleProcessExitSideEffect(_ exit: ProcessExit) {
+        guard exit.exitCode != 0, !hasShownExitAlert else { return }
+        hasShownExitAlert = true
+        processExitError = ProcessExitError(exitCode: exit.exitCode, stderr: exit.stderr)
+    }
 }
 
 // MARK: - SessionHandle.Status
@@ -548,6 +828,8 @@ extension SessionHandle {
     /// 子进程运行时状态（内存中，不持久化）。
     /// 持久化生命周期状态见 SessionStatus。
     enum Status {
+        /// 新对话，用户尚未发送消息。
+        case notStarted
         /// 无子进程。历史会话或尚未启动。
         case inactive
         /// 子进程已启动，正在初始化（等待 sessionInit）。
@@ -559,8 +841,8 @@ extension SessionHandle {
         /// 已发送中断，等待模型停止。
         case interrupting
 
-        /// 是否有活跃的子进程（非 inactive）。
-        var isActive: Bool { self != .inactive }
+        /// 是否有活跃的子进程（非 inactive 且非 notStarted）。
+        var isActive: Bool { self != .inactive && self != .notStarted }
     }
 }
 

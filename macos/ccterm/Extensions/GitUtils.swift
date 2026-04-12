@@ -207,6 +207,53 @@ enum GitUtils {
         var errorDescription: String? { stderr }
     }
 
+    /// Creates a git worktree in detached HEAD mode (no branch).
+    /// Used for async branch generation: worktree starts immediately, branch is created later.
+    static func createWorktreeDetached(repoPath: String, worktreePath: String, baseBranch: String) -> Result<Void, WorktreeError> {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", repoPath, "worktree", "add", "--detach", worktreePath, baseBranch]
+        process.standardOutput = FileHandle.nullDevice
+        let stderrPipe = Pipe()
+        process.standardError = stderrPipe
+        do {
+            try process.run()
+            process.waitUntilExit()
+            if process.terminationStatus == 0 {
+                return .success(())
+            }
+            let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+            let stderr = String(data: stderrData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return .failure(WorktreeError(stderr: stderr, isBranchConflict: false))
+        } catch {
+            return .failure(WorktreeError(stderr: error.localizedDescription, isBranchConflict: false))
+        }
+    }
+
+    /// Creates a new branch at the current HEAD in the given worktree directory.
+    /// Used after async branch name generation to attach a branch to a detached HEAD worktree.
+    static func checkoutNewBranch(at worktreePath: String, branch: String) -> Result<Void, WorktreeError> {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", worktreePath, "checkout", "-b", branch]
+        process.standardOutput = FileHandle.nullDevice
+        let stderrPipe = Pipe()
+        process.standardError = stderrPipe
+        do {
+            try process.run()
+            process.waitUntilExit()
+            if process.terminationStatus == 0 {
+                return .success(())
+            }
+            let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+            let stderr = String(data: stderrData, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let isBranchConflict = stderr.contains("already exists")
+            return .failure(WorktreeError(stderr: stderr, isBranchConflict: isBranchConflict))
+        } catch {
+            return .failure(WorktreeError(stderr: error.localizedDescription, isBranchConflict: false))
+        }
+    }
+
     /// Creates a git worktree at the specified path for an existing branch (no `-b`).
     /// Used when restoring a worktree from archive.
     /// Returns `true` if the worktree was created successfully.

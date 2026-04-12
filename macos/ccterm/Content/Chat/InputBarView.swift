@@ -12,6 +12,7 @@ struct InputBarView: View {
     @State private var showFolderPicker = false
     @State private var showBranchPicker = false
     @State private var copiedFeedback: CopiedTarget?
+    @State private var shimmerPhase: CGFloat = 0
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("sendKeyBehavior") private var sendKeyBehaviorRaw: String = SendKeyBehavior.commandEnter.rawValue
 
@@ -293,7 +294,8 @@ struct InputBarView: View {
     }
 
     private func branchButton(branch: String) -> some View {
-        Button {
+        let isGenerating = viewModel.isBranchGenerating
+        return Button {
             showBranchPicker = true
         } label: {
             HStack(spacing: 4) {
@@ -305,9 +307,25 @@ struct InputBarView: View {
                     .lineLimit(1)
             }
             .foregroundStyle(.secondary)
+            .overlay {
+                if isGenerating {
+                    shimmerOverlay
+                        .clipped()
+                }
+            }
+            .compositingGroup()
         }
-        .buttonStyle(isBranchInteractive ? HoverCapsuleStyle() : HoverCapsuleStyle(hoverOpacity: 0, pressOpacity: 0))
-        .allowsHitTesting(isBranchInteractive)
+        .buttonStyle(isGenerating ? HoverCapsuleStyle(hoverOpacity: 0, pressOpacity: 0) : (isBranchInteractive ? HoverCapsuleStyle() : HoverCapsuleStyle(hoverOpacity: 0, pressOpacity: 0)))
+        .allowsHitTesting(!isGenerating && isBranchInteractive)
+        .onChange(of: isGenerating) { _, generating in
+            if generating {
+                withAnimation(.linear(duration: 1.5).repeatForever(autoreverses: false)) {
+                    shimmerPhase = 1
+                }
+            } else {
+                shimmerPhase = 0
+            }
+        }
         .popover(isPresented: $showBranchPicker) {
             BranchPickerView(
                 branches: GitUtils.listBranches(at: viewModel.cwd ?? ""),
@@ -325,6 +343,24 @@ struct InputBarView: View {
                 }
             )
         }
+    }
+
+    // MARK: - Shimmer Overlay
+
+    private var shimmerOverlay: some View {
+        LinearGradient(
+            stops: [
+                .init(color: .clear, location: 0),
+                .init(color: .white.opacity(0.4), location: 0.5),
+                .init(color: .clear, location: 1)
+            ],
+            startPoint: .leading,
+            endPoint: .trailing
+        )
+        .frame(width: 40)
+        .offset(x: shimmerPhase * 160 - 80)
+        .blendMode(.sourceAtop)
+        .allowsHitTesting(false)
     }
 
     // MARK: - Worktree Button

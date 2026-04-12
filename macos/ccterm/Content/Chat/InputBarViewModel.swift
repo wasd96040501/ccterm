@@ -221,8 +221,16 @@ final class InputBarViewModel {
         return isWorktree
     }
 
-    /// Branch to display: worktree 未启动时展示用户选的 baseBranch，否则展示 monitor 实时值。
+    /// 是否正在异步生成分支名（从 handle 直读）。
+    var isBranchGenerating: Bool {
+        handle?.branchGenerating ?? false
+    }
+
+    /// Branch to display: 生成中时返回占位文案，worktree 未启动时展示用户选的 baseBranch，否则展示 monitor 实时值。
     var displayBranch: String? {
+        if isBranchGenerating {
+            return String(localized: "Generating branch…")
+        }
         if isWorktree && barState == .notStarted, let base = worktreeBaseBranch {
             return base
         }

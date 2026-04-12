@@ -50,7 +50,6 @@ final class WebViewBridge: NSObject {
     }
 
     func setBottomPadding(_ height: CGFloat) {
-        appLog(.debug, "Bridge", "setBottomPadding: height=\(String(format: "%.1f", height)) isReady=\(isReady)")
         send(type: "setBottomPadding", payload: SetBottomPaddingPayload(height: height))
     }
 
@@ -90,7 +89,10 @@ final class WebViewBridge: NSObject {
         let operation = { [weak self] in
             guard let self else { return }
             guard let data = try? JSONSerialization.data(withJSONObject: payload),
-                  let json = String(data: data, encoding: .utf8) else { return }
+                  let json = String(data: data, encoding: .utf8) else {
+                appLog(.error, "Bridge", "sendRaw JSON serialization failed type=\(type)")
+                return
+            }
             self.webView.callAsyncJavaScript(
                 "window.__bridge(type, json)",
                 arguments: ["type": type, "json": json],
@@ -110,7 +112,10 @@ final class WebViewBridge: NSObject {
         let operation = { [weak self] in
             guard let self else { return }
             guard let data = try? self.encoder.encode(payload),
-                  let json = String(data: data, encoding: .utf8) else { return }
+                  let json = String(data: data, encoding: .utf8) else {
+                appLog(.error, "Bridge", "send encode failed type=\(type)")
+                return
+            }
             self.webView.callAsyncJavaScript(
                 "window.__bridge(type, json)",
                 arguments: ["type": type, "json": json],

@@ -8,6 +8,8 @@ struct LogRowView: View {
     @State private var isHovered = false
     @State private var copied = false
 
+    private static let messageLineLimit = 10
+
     private static let timeFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "HH:mm:ss.SSS"
@@ -15,7 +17,7 @@ struct LogRowView: View {
     }()
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 0) {
+        HStack(alignment: .top, spacing: 0) {
             Text(Self.timeFormatter.string(from: entry.timestamp))
                 .foregroundStyle(.secondary)
                 .frame(width: 90, alignment: .leading)
@@ -32,11 +34,8 @@ struct LogRowView: View {
                 .lineLimit(1)
                 .frame(width: 160, alignment: .leading)
 
-            Text(entry.message)
-                .foregroundStyle(.primary)
-                .lineLimit(5)
+            SelectableText(text: entry.message, lineLimit: Self.messageLineLimit)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .textSelection(.enabled)
 
             Button {
                 NSPasteboard.general.clearContents()

@@ -15,8 +15,7 @@ struct ToolContentView: View {
                 DescriptionLabel(text: desc, maxLines: 4)
             }
             if let cmd = v.input?.command, !cmd.isEmpty {
-                NativeBashView(command: cmd)
-                    .frame(maxHeight: 300)
+                NativeBashView(command: cmd, maxHeight: 300)
             }
 
         case .Read(let v):

@@ -263,7 +263,7 @@ final class InputBarViewModel {
     private func handleEvent(_ event: SessionEvent) {
         switch event {
         case .statusChanged(_, let new):
-            if new != .starting && new != .idle && new != .interrupting && !inputVM.text.isEmpty {
+            if new == .responding && !inputVM.text.isEmpty {
                 inputVM.clearInput()
             }
         case .permissionsChanged:

@@ -36,6 +36,7 @@ enum SidebarActionKind: String, Identifiable, CaseIterable, Hashable {
     case cardGallery
     case chatGallery
     case planGallery
+    case scrollHugTest
     #endif
 
     var id: String { rawValue }
@@ -48,6 +49,7 @@ enum SidebarActionKind: String, Identifiable, CaseIterable, Hashable {
         case .cardGallery: "Card Gallery"
         case .chatGallery: "Chat Gallery"
         case .planGallery: "Plan Gallery"
+        case .scrollHugTest: "Scroll Hug Test"
         #endif
         }
     }
@@ -60,6 +62,7 @@ enum SidebarActionKind: String, Identifiable, CaseIterable, Hashable {
         case .cardGallery: "rectangle.on.rectangle.angled"
         case .chatGallery: "bubble.left.and.bubble.right"
         case .planGallery: "doc.text.magnifyingglass"
+        case .scrollHugTest: "arrow.up.and.down.text.horizontal"
         #endif
         }
     }

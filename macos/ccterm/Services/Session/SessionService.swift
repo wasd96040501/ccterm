@@ -397,7 +397,7 @@ class SessionService {
 
     /// 新会话启动。调用方须先 provisionSession 并设 handle.status = .starting。
     /// Worktree 模式下先以 detached HEAD 创建 worktree 并立即启动 session，
-    /// 分支名异步生成完成后通过 `git checkout -b` 挂载。
+    /// 分支名与 worktree 创建 + bootstrap 并发，生成完成后通过 `git checkout -b` 挂载。
     func launch(sessionId: String, config: SessionConfig, taskDescription: String? = nil) async throws {
         let handle = getOrCreateHandle(sessionId)
         appLog(.info, "SessionService", "launch() sessionId=\(sessionId)")
@@ -413,8 +413,15 @@ class SessionService {
         let plugins = config.pluginDirs ?? []
         let exportDir = Self.exportDirectory
 
+        // 分支名生成与 worktree 创建 + bootstrap 并发启动
+        let branchTask: Task<String?, Never>? = isWorktree ? Task.detached {
+            await SessionService.generateBranchName(description: taskDescription ?? "")
+        } : nil
+
+        if isWorktree { handle.branchGenerating = true }
+
         // 后台线程：创建 worktree（detached HEAD，无需等分支名）+ 构造 session
-        nonisolated(unsafe) let agentSession = try await Task.detached {
+        nonisolated(unsafe) let (agentSession, worktreeCwd) = try await Task.detached {
             var cwd = originPath
             if isWorktree {
                 cwd = try SessionService.createWorktreeDirectory(
@@ -438,18 +445,18 @@ class SessionService {
             )
             let session = AgentSDK.Session(configuration: agentConfig)
             session.lastKnownSessionId = sessionId
-            return session
+            return (session, cwd)
         }.value
 
         handle.isWorktree = config.isWorktree
         handle.permissionMode = config.permissionMode
         try await bootstrap(handle: handle, agentSession: agentSession, sessionId: sessionId)
 
-        // 异步生成分支名并挂载（fire-and-forget，不阻塞 session）
-        if isWorktree, let cwd = handle.cwd {
-            handle.branchGenerating = true
+        // 等分支名结果（可能已经在 bootstrap 期间完成），挂载到 worktree
+        if let branchTask {
+            let cwd = worktreeCwd
             Task.detached { [weak handle] in
-                let branchName = await SessionService.generateBranchName(description: taskDescription ?? "")
+                let branchName = await branchTask.value
                 if let branchName {
                     let result = GitUtils.checkoutNewBranch(at: cwd, branch: branchName)
                     switch result {

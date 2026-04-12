@@ -69,7 +69,6 @@ final class SlashCommandStore {
         knownCommands: [SlashCommand]?,
         completion: @escaping ([Match]) -> Void
     ) {
-        appLog(.debug, "SlashCmd", "complete query='\(query)' path='\(path)' knownCommands=\(knownCommands == nil ? "nil" : "\(knownCommands!.count) items")")
         let builtIn = Self.builtInCommands()
         queue.async { [weak self] in
             guard let self else { return }
@@ -77,17 +76,14 @@ final class SlashCommandStore {
             if let known = knownCommands {
                 let merged = builtIn + known
                 let matches = self.matchCommands(query: query, commands: merged)
-                appLog(.debug, "SlashCmd", "knownCommands fast path → \(matches.count) matches")
                 DispatchQueue.main.async { completion(matches) }
                 return
             }
 
             let key = CacheKey(path: path, pluginDirs: Set(pluginDirs))
-            appLog(.debug, "SlashCmd", "resolveCommands for key cached=\(self.cache[key] != nil ? 1 : 0)")
             self.resolveCommands(for: key, pluginDirs: pluginDirs) { commands in
                 let merged = builtIn + commands
                 let matches = self.matchCommands(query: query, commands: merged)
-                appLog(.debug, "SlashCmd", "resolved → \(commands.count) commands, \(matches.count) matches")
                 DispatchQueue.main.async { completion(matches) }
             }
         }

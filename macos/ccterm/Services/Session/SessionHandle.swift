@@ -296,13 +296,16 @@ class SessionHandle {
         session.onPermissionRequest = { [weak self] request, completion in
             Task { @MainActor [weak self] in
                 guard let self else {
+                    appLog(.warning, "SessionHandle", "permissionRequest ignored — deallocated id=\(request.requestId)")
                     completion(.deny(reason: "SessionHandle deallocated"))
                     return
                 }
+                appLog(.info, "SessionHandle", "permissionRequest id=\(request.requestId) tool=\(request.toolName) \(self.sessionId)")
                 let pending = PendingPermission(
                     id: request.requestId,
                     request: request,
                     respond: { [weak self] decision in
+                        appLog(.info, "SessionHandle", "permissionDecision id=\(request.requestId) decision=\(decision) \(self?.sessionId ?? "?")")
                         completion(decision)
                         Task { @MainActor [weak self] in
                             guard let self else { return }
@@ -319,6 +322,7 @@ class SessionHandle {
         session.onPermissionCancelled = { [weak self] requestId in
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                appLog(.info, "SessionHandle", "permissionCancelled id=\(requestId) \(self.sessionId)")
                 self.pendingPermissions.removeAll { $0.id == requestId }
                 self.emit(.permissionsChanged(self.pendingPermissions))
             }
@@ -336,16 +340,19 @@ class SessionHandle {
             }
         }
 
-        session.onHookRequest = { request in
-            .success()
+        session.onHookRequest = { [weak self] request in
+            appLog(.debug, "SessionHandle", "hookRequest \(self?.sessionId ?? "?")")
+            return .success()
         }
 
-        session.onMCPRequest = { request in
-            .success()
+        session.onMCPRequest = { [weak self] request in
+            appLog(.debug, "SessionHandle", "mcpRequest \(self?.sessionId ?? "?")")
+            return .success()
         }
 
-        session.onElicitationRequest = { request in
-            .cancel
+        session.onElicitationRequest = { [weak self] request in
+            appLog(.debug, "SessionHandle", "elicitationRequest → cancel \(self?.sessionId ?? "?")")
+            return .cancel
         }
     }
 
@@ -385,9 +392,6 @@ class SessionHandle {
         if result.shouldForward, let bridge {
             let json = message.toJSON() as? [String: Any] ?? [:]
             bridge.forwardRawMessage(conversationId: sessionId, messageJSON: json)
-            appLog(.debug, "SessionHandle", "forwardRawMessage type=\(msgType) forward=true \(sessionId)")
-        } else {
-            appLog(.debug, "SessionHandle", "handleLiveMessage type=\(msgType) forward=\(result.shouldForward ? "true" : "false") bridge=\(bridge == nil ? "nil" : "ok") \(sessionId)")
         }
     }
 

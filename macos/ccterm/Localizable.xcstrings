@@ -608,6 +608,16 @@
         }
       }
     },
+    "Generating branch…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "生成分支中…"
+          }
+        }
+      }
+    },
     "Go to Session": {
       "extractionState": "stale",
       "localizations": {

@@ -103,11 +103,17 @@ class SessionService {
 
     /// Generates a worktree folder name: `<name>/<project-name>`.
     /// If `semanticName` is provided (e.g. "user-auth-login"), uses it as folder name with collision fallback.
-    /// Otherwise falls back to random `<4-hex>`.
+    /// Otherwise generates a random 8-char alphanumeric string.
     private static func generateWorktreeName(for path: String, semanticName: String?) -> String {
         let projectName = URL(fileURLWithPath: path).lastPathComponent
-        let baseName = semanticName ?? String(format: "%04x", UInt16.random(in: 0...0xFFFF))
+        let baseName = semanticName ?? randomAlphanumeric(length: 8)
         return "\(baseName)/\(projectName)"
+    }
+
+    /// Generates a random alphanumeric string of the given length ([0-9a-zA-Z]).
+    private static func randomAlphanumeric(length: Int) -> String {
+        let chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        return String((0..<length).map { _ in chars.randomElement()! })
     }
 
     /// Uses LLM (via AgentSDK Prompt API) to generate a semantic branch name from a task description.
@@ -191,7 +197,6 @@ class SessionService {
 
     /// Creates a worktree directory at `.claude/worktrees/<name>/<project>` under the given repo path.
     /// If `branchName` is provided (e.g. "feat/user-auth-login"), uses it as branch and derives folder name.
-    /// Uses random `wt-<hex>` branch when `branchName` is nil.
     /// On branch name collision, retries with incrementing suffix (`-2`, `-3`, ...) up to 10 attempts.
     /// Throws on failure instead of silently falling back.
     static func createWorktreeDirectory(repoPath: String, baseBranch: String?, branchName: String?) throws -> String {
@@ -222,48 +227,76 @@ class SessionService {
         }
 
         let worktreesBase = (repoPath as NSString).appendingPathComponent(".claude/worktrees")
-        let resolvedBranch = branchName ?? "wt-\(String(format: "%04x", UInt16.random(in: 0...0xFFFF)))"
 
-        // Try with incrementing suffix on branch collision: base, base-2, base-3, ...
-        let maxAttempts = 10
-        var lastError: GitUtils.WorktreeError?
+        if let branchName {
+            // Named branch mode: create worktree with -b <branch>
+            let maxAttempts = 10
+            var lastError: GitUtils.WorktreeError?
 
-        for attempt in 1...maxAttempts {
-            let suffix = attempt == 1 ? "" : "-\(attempt)"
-            let candidateBranch = resolvedBranch + suffix
-            let candidateFolder = folderName.map { $0 + suffix }
-            let name = generateWorktreeName(for: repoPath, semanticName: candidateFolder)
-            let worktreePath = (worktreesBase as NSString).appendingPathComponent(name)
-            let parentDir = (worktreePath as NSString).deletingLastPathComponent
+            for attempt in 1...maxAttempts {
+                let suffix = attempt == 1 ? "" : "-\(attempt)"
+                let candidateBranch = branchName + suffix
+                let candidateFolder = folderName.map { $0 + suffix }
+                let name = generateWorktreeName(for: repoPath, semanticName: candidateFolder)
+                let worktreePath = (worktreesBase as NSString).appendingPathComponent(name)
+                let parentDir = (worktreePath as NSString).deletingLastPathComponent
 
-            do {
-                try FileManager.default.createDirectory(atPath: parentDir, withIntermediateDirectories: true)
-            } catch {
-                throw WorktreeCreationError.directoryCreationFailed(path: parentDir, underlying: error.localizedDescription)
-            }
-
-            switch GitUtils.createWorktree(repoPath: repoPath, worktreePath: worktreePath, branch: candidateBranch, baseBranch: resolvedBase) {
-            case .success:
-                copyLocalSettings(from: repoPath, to: worktreePath)
-                return worktreePath
-            case .failure(let wtError):
-                lastError = wtError
-                if wtError.isBranchConflict {
-                    // Clean up the failed worktree path if it was partially created
-                    try? FileManager.default.removeItem(atPath: worktreePath)
-                    continue
+                do {
+                    try FileManager.default.createDirectory(atPath: parentDir, withIntermediateDirectories: true)
+                } catch {
+                    throw WorktreeCreationError.directoryCreationFailed(path: parentDir, underlying: error.localizedDescription)
                 }
-                // Non-collision error: no point retrying
-                throw WorktreeCreationError.gitError(stderr: wtError.stderr)
-            }
-        }
 
-        // Exhausted all attempts — all were branch collisions
-        throw WorktreeCreationError.branchCollisionExhausted(
-            branch: resolvedBranch,
-            attempts: maxAttempts,
-            lastStderr: lastError?.stderr ?? ""
-        )
+                switch GitUtils.createWorktree(repoPath: repoPath, worktreePath: worktreePath, branch: candidateBranch, baseBranch: resolvedBase) {
+                case .success:
+                    copyLocalSettings(from: repoPath, to: worktreePath)
+                    return worktreePath
+                case .failure(let wtError):
+                    lastError = wtError
+                    if wtError.isBranchConflict {
+                        try? FileManager.default.removeItem(atPath: worktreePath)
+                        continue
+                    }
+                    throw WorktreeCreationError.gitError(stderr: wtError.stderr)
+                }
+            }
+
+            throw WorktreeCreationError.branchCollisionExhausted(
+                branch: branchName,
+                attempts: maxAttempts,
+                lastStderr: lastError?.stderr ?? ""
+            )
+        } else {
+            // Detached HEAD mode: random 8-char folder, no branch
+            let maxAttempts = 10
+            for attempt in 1...maxAttempts {
+                let name = generateWorktreeName(for: repoPath, semanticName: nil)
+                let worktreePath = (worktreesBase as NSString).appendingPathComponent(name)
+                let parentDir = (worktreePath as NSString).deletingLastPathComponent
+
+                // Skip if directory already exists (random collision)
+                if FileManager.default.fileExists(atPath: worktreePath) { continue }
+
+                do {
+                    try FileManager.default.createDirectory(atPath: parentDir, withIntermediateDirectories: true)
+                } catch {
+                    throw WorktreeCreationError.directoryCreationFailed(path: parentDir, underlying: error.localizedDescription)
+                }
+
+                switch GitUtils.createWorktreeDetached(repoPath: repoPath, worktreePath: worktreePath, baseBranch: resolvedBase) {
+                case .success:
+                    copyLocalSettings(from: repoPath, to: worktreePath)
+                    return worktreePath
+                case .failure(let wtError):
+                    try? FileManager.default.removeItem(atPath: worktreePath)
+                    if attempt == maxAttempts {
+                        throw WorktreeCreationError.gitError(stderr: wtError.stderr)
+                    }
+                }
+            }
+
+            throw WorktreeCreationError.gitError(stderr: "Failed to create detached worktree after \(maxAttempts) attempts")
+        }
     }
 
     enum WorktreeCreationError: Error, LocalizedError {
@@ -363,7 +396,8 @@ class SessionService {
     }
 
     /// 新会话启动。调用方须先 provisionSession 并设 handle.status = .starting。
-    /// 重活（worktree 创建、config 构造）在后台线程执行，不阻塞主线程。
+    /// Worktree 模式下先以 detached HEAD 创建 worktree 并立即启动 session，
+    /// 分支名与 worktree 创建 + bootstrap 并发，生成完成后通过 `git checkout -b` 挂载。
     func launch(sessionId: String, config: SessionConfig, taskDescription: String? = nil) async throws {
         let handle = getOrCreateHandle(sessionId)
         appLog(.info, "SessionService", "launch() sessionId=\(sessionId)")
@@ -379,13 +413,19 @@ class SessionService {
         let plugins = config.pluginDirs ?? []
         let exportDir = Self.exportDirectory
 
-        // 后台线程：重活
-        nonisolated(unsafe) let agentSession = try await Task.detached {
+        // 分支名生成与 worktree 创建 + bootstrap 并发启动
+        let branchTask: Task<String?, Never>? = isWorktree ? Task.detached {
+            await SessionService.generateBranchName(description: taskDescription ?? "")
+        } : nil
+
+        if isWorktree { handle.branchGenerating = true }
+
+        // 后台线程：创建 worktree（detached HEAD，无需等分支名）+ 构造 session
+        nonisolated(unsafe) let (agentSession, worktreeCwd) = try await Task.detached {
             var cwd = originPath
             if isWorktree {
-                let branchName = await SessionService.generateBranchName(description: taskDescription ?? "")
                 cwd = try SessionService.createWorktreeDirectory(
-                    repoPath: originPath, baseBranch: baseBranch, branchName: branchName
+                    repoPath: originPath, baseBranch: baseBranch, branchName: nil
                 )
             }
             let customCLI = UserDefaults.standard.string(forKey: "customCLICommand")
@@ -405,12 +445,34 @@ class SessionService {
             )
             let session = AgentSDK.Session(configuration: agentConfig)
             session.lastKnownSessionId = sessionId
-            return session
+            return (session, cwd)
         }.value
 
         handle.isWorktree = config.isWorktree
         handle.permissionMode = config.permissionMode
         try await bootstrap(handle: handle, agentSession: agentSession, sessionId: sessionId)
+
+        // 等分支名结果（可能已经在 bootstrap 期间完成），挂载到 worktree
+        if let branchTask {
+            let cwd = worktreeCwd
+            Task.detached { [weak handle] in
+                let branchName = await branchTask.value
+                if let branchName {
+                    let result = GitUtils.checkoutNewBranch(at: cwd, branch: branchName)
+                    switch result {
+                    case .success:
+                        appLog(.info, "SessionService", "Async branch checkout succeeded: \(branchName)")
+                    case .failure(let error):
+                        appLog(.warning, "SessionService", "Async branch checkout failed: \(error.stderr), staying detached")
+                    }
+                } else {
+                    appLog(.info, "SessionService", "Branch name generation returned nil, staying detached")
+                }
+                await MainActor.run {
+                    handle?.branchGenerating = false
+                }
+            }
+        }
     }
 
     /// 恢复已停止会话。调用方须先设 handle.status = .starting。

@@ -119,6 +119,9 @@ class SessionHandle {
     /// 是否处于 worktree 模式。初始值从 SessionConfig 传入，运行中由 enterWorktree/exitWorktree 更新。
     internal(set) var isWorktree: Bool = false
 
+    /// 是否正在异步生成分支名。为 true 时 UI 显示生成中状态 + shimmer 效果。
+    internal(set) var branchGenerating: Bool = false
+
     /// 当前权限模式。初始值从 SessionConfig 传入，运行中由 CLI 推送更新。
     internal(set) var permissionMode: PermissionMode = .default
 

@@ -24,6 +24,7 @@ macos/Local.xcconfig
 
 # Claude Code
 .claude/
+.claude/worktrees/
 
 # Private development notes
 docs/

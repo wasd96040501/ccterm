@@ -9,30 +9,34 @@ extension SessionHandle2 {
 
     /// 绑定后端。注册所有 CLI 回调，status 从 .inactive → .starting。
     /// 调用方：SessionService。
-    func attach(backend: SessionBackend, bridge: SessionBridge) {
+    func attach(backend: SessionBackend) {
+        appLog(.info, "SessionHandle2", "attach \(sessionId)")
         self.backend = backend
-        self.bridge = bridge
         status = .starting
         historyLoadState = .loaded
 
         backend.onMessage = { [weak self] message in
-            Task { @MainActor [weak self] in
+            Task { @MainActor in
                 self?.handleMessage(message)
             }
         }
 
         backend.onPermissionRequest = { [weak self] request, completion in
-            Task { @MainActor [weak self] in
+            Task { @MainActor in
                 guard let self else {
                     completion(.deny(reason: "SessionHandle deallocated"))
                     return
                 }
+                appLog(.info, "SessionHandle2", "permissionRequest id=\(request.requestId) tool=\(request.toolName) \(self.sessionId)")
+                var responded = false
                 let pending = PendingPermission(
                     id: request.requestId,
                     request: request,
                     respond: { [weak self] decision in
+                        guard !responded else { return }
+                        responded = true
                         completion(decision)
-                        Task { @MainActor [weak self] in
+                        Task { @MainActor in
                             self?.pendingPermissions.removeAll { $0.id == request.requestId }
                         }
                     }
@@ -42,37 +46,29 @@ extension SessionHandle2 {
         }
 
         backend.onPermissionCancelled = { [weak self] requestId in
-            Task { @MainActor [weak self] in
+            Task { @MainActor in
                 self?.pendingPermissions.removeAll { $0.id == requestId }
             }
         }
 
         backend.onProcessExit = { [weak self] exitCode in
-            Task { @MainActor [weak self] in
+            Task { @MainActor in
                 self?.handleProcessExit(exitCode)
             }
         }
 
         backend.onStderr = { [weak self] text in
-            Task { @MainActor [weak self] in
+            Task { @MainActor in
                 self?.stderrBuffer += text
             }
         }
     }
 
-    /// 断开后端。拒绝所有 pending 权限，清空 stderr，status → .inactive。
+    /// 用户主动停止。teardown 清 backend，fulfill pending wait 为 terminated。
     /// 调用方：SessionService。
     func detach() {
-        for pending in pendingPermissions {
-            pending.respond(.deny(reason: "Session stopped"))
-        }
-        pendingPermissions.removeAll()
-
-        backend?.close()
-        backend = nil
-        status = .inactive
-        notifyTurnActive()
-        stderrBuffer = ""
+        appLog(.info, "SessionHandle2", "detach \(sessionId)")
+        teardown()
     }
 
     /// 异步等待 sessionInit 到达。30 秒超时。
@@ -83,13 +79,19 @@ extension SessionHandle2 {
                 continuation.resume()
                 return
             }
+            // supersede 旧等待
             sessionInitContinuation?.resume(throwing: SessionInitError.superseded)
+            sessionInitGeneration += 1
+            let gen = sessionInitGeneration
             sessionInitContinuation = continuation
 
             Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: 30_000_000_000)
-                guard let self, let cont = self.sessionInitContinuation else { return }
+                guard let self,
+                      self.sessionInitGeneration == gen,
+                      let cont = self.sessionInitContinuation else { return }
                 self.sessionInitContinuation = nil
+                self.sessionInitGeneration += 1
                 cont.resume(throwing: SessionInitError.timeout)
             }
         }
@@ -123,6 +125,7 @@ extension SessionHandle2 {
     private func applySessionInit(_ effects: MessageProcessorEffects) {
         guard let info = effects.sessionInit else { return }
 
+        appLog(.info, "SessionHandle2", "sessionInit cwd=\(info.cwd ?? "nil") \(sessionId)")
         if let cwd = info.cwd {
             workspace = Workspace(cwd: cwd, isWorktree: workspace.isWorktree)
         }
@@ -146,12 +149,12 @@ extension SessionHandle2 {
 
     private func applyTurnEnd(_ effects: MessageProcessorEffects) {
         guard effects.turnEnded else { return }
-        let oldStatus = status
+        let wasResponding = status == .responding
         status = .idle
         notifyTurnActive()
 
-        if oldStatus == .responding && !isFocused {
-            hasUnread = true
+        if wasResponding && !ui.isFocused {
+            ui.hasUnread = true
         }
 
         flushQueueIfNeeded()
@@ -160,29 +163,41 @@ extension SessionHandle2 {
     // MARK: - Process Exit
 
     private func handleProcessExit(_ exitCode: Int32) {
+        appLog(.warning, "SessionHandle2", "processExit code=\(exitCode) \(sessionId)")
         if exitCode != 0 {
-            unshownExitError = ProcessExit(
+            ui.unshownExitError = ProcessExit(
                 exitCode: exitCode,
                 stderr: stderrBuffer.isEmpty ? nil : stderrBuffer
             )
         }
+        teardown()
+    }
+
+    // MARK: - Teardown (shared by detach + processExit)
+
+    /// 共享清理路径：清 pending → 断 backend → status=inactive → fulfill wait。
+    /// CLI 已失联，pending 权限不再回调 completion（CLI 已不再听）。
+    private func teardown() {
+        pendingPermissions.removeAll()
         stderrBuffer = ""
+        backend?.close()
         backend = nil
         status = .inactive
         notifyTurnActive()
-        fulfillSessionInit()
-
-        for pending in pendingPermissions {
-            pending.respond(.deny(reason: "Process exited"))
-        }
-        pendingPermissions.removeAll()
+        fulfillSessionInit(throwing: .terminated)
     }
 
     // MARK: - Session Init Continuation
 
-    private func fulfillSessionInit() {
+    /// 以成功或失败方式结束当前等待的 sessionInit。递增 generation 让任何未到期超时 Task 作废。
+    private func fulfillSessionInit(throwing error: SessionInitError? = nil) {
+        sessionInitGeneration += 1
         let cont = sessionInitContinuation
         sessionInitContinuation = nil
-        cont?.resume()
+        if let error {
+            cont?.resume(throwing: error)
+        } else {
+            cont?.resume()
+        }
     }
 }

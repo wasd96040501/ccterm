@@ -10,8 +10,11 @@ import AgentSDK
 /// - 管理消息队列
 /// - 处理 CLI 回调并更新自身状态（见 +CLIBinding）
 ///
+/// 消息过滤/配对：
+/// - live/replay 两条路径共用 `MessageFilter`（nonisolated 纯函数 + State）
+/// - React 渲染侧做 tool_use ↔ tool_result 配对；Swift 在 replay 路径解析 resolver 仅为了提取 pathChange
+///
 /// 非职责：
-/// - 不做消息配对（tool_use ↔ tool_result 配对由 React 做）
 /// - 不做持久化（SessionService 观察状态变化做持久化）
 ///
 /// 生命周期：会话创建时即诞生（status=.inactive），持续到用户删除会话。
@@ -32,7 +35,6 @@ final class SessionHandle2 {
     internal(set) var slashCommands: [SlashCommand] = []
     internal(set) var pendingPermissions: [PendingPermission] = []
     internal(set) var queuedMessages: [String] = []
-    internal(set) var branchGenerating: Bool = false
     internal(set) var historyLoadState: HistoryLoadState = .notLoaded
 
     // MARK: - Configuration
@@ -41,11 +43,9 @@ final class SessionHandle2 {
     internal(set) var model: String?
     internal(set) var effort: Effort?
 
-    // MARK: - UI State (self-managing closed loops)
+    // MARK: - UI State
 
-    internal(set) var isFocused: Bool = false
-    internal(set) var hasUnread: Bool = false
-    internal(set) var unshownExitError: ProcessExit? = nil
+    var ui = UIState()
 
     // MARK: - Implementation State (cross-file access by extensions)
 
@@ -54,6 +54,9 @@ final class SessionHandle2 {
     @ObservationIgnored internal var filterState = MessageFilter.State()
     @ObservationIgnored internal var stderrBuffer: String = ""
     @ObservationIgnored internal var sessionInitContinuation: CheckedContinuation<Void, Error>?
+    /// 单调递增的 sessionInit 代次。supersede/fulfill/teardown 都会递增，
+    /// 用来让已调度但尚未到期的超时 Task 识别自己是否仍应生效。
+    @ObservationIgnored internal var sessionInitGeneration: Int = 0
 
     // MARK: - Init
 
@@ -77,32 +80,22 @@ final class SessionHandle2 {
     // MARK: - Commands
 
     /// 发送消息。idle 时立即发送，非 idle 自动入队。
-    func send(_ text: String, extra: MessageExtra? = nil) {
-        guard let backend else { return }
-
-        if status != .idle {
+    func send(_ text: String, planContent: String? = nil) {
+        guard status == .idle else {
+            appLog(.info, "SessionHandle2", "send queued — status=\(status) \(sessionId)")
             enqueue(text)
             return
         }
-
-        renderUserMessage(text)
-
-        var extraDict: [String: Any] = [:]
-        if let planContent = extra?.planContent {
-            extraDict["planContent"] = planContent
-        }
-        backend.sendMessage(text, extra: extraDict)
-
-        status = .responding
-        notifyTurnActive()
+        startTurn(text, planContent: planContent)
     }
 
     /// 中断当前响应。仅 .responding 时有效。
     func interrupt() {
         guard status == .responding, let backend else { return }
+        appLog(.info, "SessionHandle2", "interrupt → interrupting \(sessionId)")
         status = .interrupting
         backend.interrupt { [weak self] in
-            Task { @MainActor [weak self] in
+            Task { @MainActor in
                 guard let self else { return }
                 self.status = .idle
                 self.notifyTurnActive(interrupted: true)
@@ -141,32 +134,23 @@ final class SessionHandle2 {
 
     /// 由 ChatRouter 调用，维护"全局唯一 focused"不变量。聚焦时自动清 hasUnread。
     func setFocused(_ focused: Bool) {
-        isFocused = focused
+        ui.isFocused = focused
         if focused {
-            hasUnread = false
+            ui.hasUnread = false
         }
     }
 
     /// 用户关闭错误 alert 后调用。
     func dismissExitError() {
-        unshownExitError = nil
+        ui.unshownExitError = nil
     }
 
-    // MARK: - Internal Helpers (shared across extensions)
+    // MARK: - Internal Primitives (shared across extensions)
 
-    /// 合并队列消息并一次性发送。idle 且有排队消息时调用。
-    internal func flushQueueIfNeeded() {
-        guard status == .idle, !queuedMessages.isEmpty, let backend else { return }
-        let merged = queuedMessages.joined(separator: "\n\n")
-        queuedMessages.removeAll()
-        renderUserMessage(merged)
-        backend.sendMessage(merged, extra: [:])
-        status = .responding
-        notifyTurnActive()
-    }
-
-    /// 合成 user 消息 JSON 发送给 React。
-    internal func renderUserMessage(_ text: String) {
+    /// 单一 send primitive：渲染 user 消息 → 调 backend → 转 responding → 通知 bridge。
+    /// 调用方保证 `status == .idle`。
+    internal func startTurn(_ text: String, planContent: String? = nil) {
+        guard let backend else { return }
         let userJSON: [String: Any] = [
             "type": "user",
             "message": [
@@ -175,6 +159,17 @@ final class SessionHandle2 {
             ],
         ]
         bridge?.forwardRawMessage(conversationId: sessionId, messageJSON: userJSON)
+        backend.sendMessage(text, planContent: planContent)
+        status = .responding
+        notifyTurnActive()
+    }
+
+    /// 合并队列消息并一次性发送。idle 且有排队消息时调用。
+    internal func flushQueueIfNeeded() {
+        guard status == .idle, !queuedMessages.isEmpty else { return }
+        let merged = queuedMessages.joined(separator: "\n\n")
+        queuedMessages.removeAll()
+        startTurn(merged)
     }
 
     /// 通知 React 当前是否处于 turn active 状态。
@@ -214,5 +209,14 @@ extension SessionHandle2 {
     enum SessionInitError: Error {
         case timeout
         case superseded
+        /// backend 消失（detach 或进程退出），init 永远不会到达。
+        case terminated
+    }
+
+    /// UI 专属状态，与 CLI 运行时解耦。聚焦/未读/未展示的退出错误。
+    struct UIState {
+        var isFocused: Bool = false
+        var hasUnread: Bool = false
+        var unshownExitError: ProcessExit? = nil
     }
 }

@@ -28,12 +28,11 @@ final class SessionHandle2Tests: XCTestCase {
         XCTAssertTrue(handle.slashCommands.isEmpty)
         XCTAssertTrue(handle.pendingPermissions.isEmpty)
         XCTAssertTrue(handle.queuedMessages.isEmpty)
-        XCTAssertFalse(handle.branchGenerating)
         XCTAssertEqual(handle.historyLoadState, .notLoaded)
 
-        XCTAssertFalse(handle.isFocused)
-        XCTAssertFalse(handle.hasUnread)
-        XCTAssertNil(handle.unshownExitError)
+        XCTAssertFalse(handle.ui.isFocused)
+        XCTAssertFalse(handle.ui.hasUnread)
+        XCTAssertNil(handle.ui.unshownExitError)
         XCTAssertNil(handle.contextUsage)
     }
 
@@ -46,6 +45,7 @@ final class SessionHandle2Tests: XCTestCase {
         handle.send("first")
         XCTAssertEqual(backend.sentMessages.count, 1)
         XCTAssertEqual(backend.sentMessages[0].text, "first")
+        XCTAssertNil(backend.sentMessages[0].planContent)
         XCTAssertEqual(handle.status, .responding)
         XCTAssertEqual(bridge.forwardedMessages.last?.messageJSON["type"] as? String, "user")
         XCTAssertEqual(bridge.turnActiveCalls.last?.isTurnActive, true)
@@ -62,6 +62,13 @@ final class SessionHandle2Tests: XCTestCase {
         XCTAssertEqual(backend.sentMessages.count, 2)
         XCTAssertEqual(backend.sentMessages[1].text, "queued-1\n\nqueued-2")
         XCTAssertEqual(handle.status, .responding, "flush 后重新进入 responding")
+    }
+
+    func test_send_passesPlanContentThrough() async {
+        let (handle, backend, _) = await makeAttached()
+        handle.send("hello", planContent: "plan-body")
+        XCTAssertEqual(backend.sentMessages.count, 1)
+        XCTAssertEqual(backend.sentMessages[0].planContent, "plan-body")
     }
 
     // MARK: - #3 Interrupt
@@ -120,7 +127,7 @@ final class SessionHandle2Tests: XCTestCase {
             effort: .medium,
             bridge: bridge
         )
-        handle.attach(backend: backend, bridge: bridge)
+        handle.attach(backend: backend)
         XCTAssertEqual(handle.status, .starting)
 
         // 异步等 sessionInit
@@ -212,6 +219,23 @@ final class SessionHandle2Tests: XCTestCase {
         XCTAssertTrue(handle.pendingPermissions.isEmpty)
     }
 
+    func test_permission_respondIsIdempotent() async {
+        let (handle, backend, _) = await makeAttached()
+
+        var callCount = 0
+        await backend.firePermissionRequest(
+            PermissionRequest.makePreview(requestId: "req-x", toolName: "Bash", input: [:])
+        ) { _ in callCount += 1 }
+
+        let pending = handle.pendingPermissions[0]
+        pending.respond(.allow(updatedInput: nil))
+        pending.respond(.deny(reason: "should not reach CLI"))
+        pending.respond(.allow(updatedInput: nil))
+        await yieldSeveral()
+
+        XCTAssertEqual(callCount, 1, "后续 respond 调用必须被吞掉")
+    }
+
     // MARK: - #9 Process Exit + Error Dismiss
 
     func test_processExit_completeFlow() async {
@@ -219,31 +243,29 @@ final class SessionHandle2Tests: XCTestCase {
 
         // 先累积一些 stderr 和 pending permission
         await backend.fireStderr("fatal: something broke\n")
-        var denialReason: String?
+        var cliGotDecision = false
         await backend.firePermissionRequest(
             PermissionRequest.makePreview(requestId: "r", toolName: "Bash", input: [:])
-        ) { decision in
-            if case .deny(let reason, _) = decision { denialReason = reason }
-        }
+        ) { _ in cliGotDecision = true }
 
         // 非零退出
         await backend.fireProcessExit(1)
 
         XCTAssertEqual(handle.status, .inactive)
-        XCTAssertEqual(handle.unshownExitError?.exitCode, 1)
-        XCTAssertEqual(handle.unshownExitError?.stderr, "fatal: something broke\n")
+        XCTAssertEqual(handle.ui.unshownExitError?.exitCode, 1)
+        XCTAssertEqual(handle.ui.unshownExitError?.stderr, "fatal: something broke\n")
         XCTAssertTrue(handle.pendingPermissions.isEmpty)
-        XCTAssertEqual(denialReason, "Process exited")
+        XCTAssertFalse(cliGotDecision, "CLI 已退出，不应再回调 completion")
 
         // dismiss 清零
         handle.dismissExitError()
-        XCTAssertNil(handle.unshownExitError)
+        XCTAssertNil(handle.ui.unshownExitError)
 
         // 零退出不设错误
         let (handle2, backend2, _) = await makeAttached()
         await backend2.fireProcessExit(0)
         XCTAssertEqual(handle2.status, .inactive)
-        XCTAssertNil(handle2.unshownExitError)
+        XCTAssertNil(handle2.ui.unshownExitError)
     }
 
     // MARK: - #10 Unread Closed Loop
@@ -252,26 +274,26 @@ final class SessionHandle2Tests: XCTestCase {
         let (handle, backend, _) = await makeAttached()
 
         // unfocused + responding→idle → hasUnread=true
-        XCTAssertFalse(handle.isFocused)
+        XCTAssertFalse(handle.ui.isFocused)
         handle.send("msg")
         XCTAssertEqual(handle.status, .responding)
         await backend.deliver(makeResultSuccessMessage())
-        XCTAssertTrue(handle.hasUnread)
+        XCTAssertTrue(handle.ui.hasUnread)
 
         // setFocused(true) → 清零 + isFocused=true
         handle.setFocused(true)
-        XCTAssertTrue(handle.isFocused)
-        XCTAssertFalse(handle.hasUnread)
+        XCTAssertTrue(handle.ui.isFocused)
+        XCTAssertFalse(handle.ui.hasUnread)
 
         // focused 情况下 responding→idle → hasUnread 不被置为 true
         handle.send("msg2")
         await backend.deliver(makeResultSuccessMessage())
-        XCTAssertFalse(handle.hasUnread)
+        XCTAssertFalse(handle.ui.hasUnread)
 
         // setFocused(false) → isFocused=false，hasUnread 不被动清零
         handle.setFocused(false)
-        XCTAssertFalse(handle.isFocused)
-        XCTAssertFalse(handle.hasUnread)
+        XCTAssertFalse(handle.ui.isFocused)
+        XCTAssertFalse(handle.ui.hasUnread)
     }
 
     // MARK: - #11 Detach Cleanup
@@ -295,13 +317,13 @@ final class SessionHandle2Tests: XCTestCase {
         XCTAssertTrue(handle.pendingPermissions.isEmpty)
         XCTAssertEqual(backend.closeCallCount, 1)
 
-        // stderrBuffer 是内部状态：通过"detach 后新 session exit 不带旧 stderr"间接验证
+        // stderrBuffer 是内部状态：通过 "detach 后新 session exit 不带旧 stderr" 间接验证
         let (handle2, backend2, _) = await makeAttached()
         await backend2.fireProcessExit(1)
-        XCTAssertNil(handle2.unshownExitError?.stderr)
+        XCTAssertNil(handle2.ui.unshownExitError?.stderr)
     }
 
-    // MARK: - #12 waitForSessionInit Supersede
+    // MARK: - #12 waitForSessionInit: supersede / terminate via detach / terminate via process exit
 
     func test_waitForSessionInit_superseded() async throws {
         let bridge = FakeSessionBridge()
@@ -314,7 +336,7 @@ final class SessionHandle2Tests: XCTestCase {
             effort: .medium,
             bridge: bridge
         )
-        handle.attach(backend: backend, bridge: bridge)
+        handle.attach(backend: backend)
         XCTAssertEqual(handle.status, .starting)
 
         let firstTask: Task<Error?, Never> = Task { @MainActor in
@@ -347,6 +369,66 @@ final class SessionHandle2Tests: XCTestCase {
         XCTAssertNil(secondError, "second wait should resume normally")
     }
 
+    /// 进程退出时 pending 的 wait 必须以 .terminated 抛出，不能永远挂着也不能假装成功。
+    func test_waitForSessionInit_terminatesOnProcessExit() async throws {
+        let bridge = FakeSessionBridge()
+        let backend = FakeSessionBackend()
+        let handle = SessionHandle2(
+            sessionId: "s1",
+            workspace: Workspace(cwd: "/init", isWorktree: false),
+            permissionMode: .default,
+            model: "sonnet",
+            effort: .medium,
+            bridge: bridge
+        )
+        handle.attach(backend: backend)
+
+        let waitTask: Task<Error?, Never> = Task { @MainActor in
+            do {
+                try await handle.waitForSessionInit()
+                return nil
+            } catch {
+                return error
+            }
+        }
+
+        await yieldSeveral()
+        await backend.fireProcessExit(1)
+
+        let error = await waitTask.value
+        XCTAssertTrue((error as? SessionHandle2.SessionInitError) == .terminated)
+    }
+
+    /// detach 时 pending 的 wait 也必须以 .terminated 抛出。
+    func test_waitForSessionInit_terminatesOnDetach() async throws {
+        let bridge = FakeSessionBridge()
+        let backend = FakeSessionBackend()
+        let handle = SessionHandle2(
+            sessionId: "s1",
+            workspace: Workspace(cwd: "/init", isWorktree: false),
+            permissionMode: .default,
+            model: "sonnet",
+            effort: .medium,
+            bridge: bridge
+        )
+        handle.attach(backend: backend)
+
+        let waitTask: Task<Error?, Never> = Task { @MainActor in
+            do {
+                try await handle.waitForSessionInit()
+                return nil
+            } catch {
+                return error
+            }
+        }
+
+        await yieldSeveral()
+        handle.detach()
+
+        let error = await waitTask.value
+        XCTAssertTrue((error as? SessionHandle2.SessionInitError) == .terminated)
+    }
+
     // MARK: - Helpers
 
     private func makeHandle() -> (SessionHandle2, FakeSessionBackend, FakeSessionBridge) {
@@ -366,7 +448,7 @@ final class SessionHandle2Tests: XCTestCase {
     /// 创建 handle + attach + 喂一条 sessionInit 推进到 .idle，便于后续发送/中断路径测试。
     private func makeAttached() async -> (SessionHandle2, FakeSessionBackend, FakeSessionBridge) {
         let (handle, backend, bridge) = makeHandle()
-        handle.attach(backend: backend, bridge: bridge)
+        handle.attach(backend: backend)
         await backend.deliver(makeInitMessage(cwd: nil, slashCommands: nil, permissionMode: nil))
         return (handle, backend, bridge)
     }
@@ -383,7 +465,7 @@ final class SessionHandle2Tests: XCTestCase {
 final class FakeSessionBackend: SessionBackend {
     struct SentMessage {
         let text: String
-        let extra: [String: Any]
+        let planContent: String?
     }
     var sentMessages: [SentMessage] = []
     var interruptCallCount = 0
@@ -399,8 +481,8 @@ final class FakeSessionBackend: SessionBackend {
     var onProcessExit: ((Int32) -> Void)?
     var onStderr: ((String) -> Void)?
 
-    func sendMessage(_ text: String, extra: [String: Any]) {
-        sentMessages.append(SentMessage(text: text, extra: extra))
+    func sendMessage(_ text: String, planContent: String?) {
+        sentMessages.append(SentMessage(text: text, planContent: planContent))
     }
 
     func interrupt(completion: @escaping () -> Void) {

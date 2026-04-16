@@ -24,7 +24,7 @@ struct ContextUsage: Equatable {
 
 /// CLI 后端协议。生产环境由 AgentSDK.Session 的适配器实现，测试环境注入 fake。
 protocol SessionBackend: AnyObject {
-    func sendMessage(_ text: String, extra: [String: Any])
+    func sendMessage(_ text: String, planContent: String?)
     func interrupt(completion: @escaping () -> Void)
     func setModel(_ model: String)
     func setEffort(_ effort: Effort)

@@ -10,9 +10,10 @@ import AgentSDK
 /// - 管理消息队列
 /// - 处理 CLI 回调并更新自身状态（见 +CLIBinding）
 ///
-/// 消息过滤/配对：
-/// - live/replay 两条路径共用 `MessageFilter`（nonisolated 纯函数 + State）
-/// - React 渲染侧做 tool_use ↔ tool_result 配对；Swift 在 replay 路径解析 resolver 仅为了提取 pathChange
+/// 消息处理：
+/// - Swift 只做 state 抽取（contextUsage、sessionInit、workspace 变更、turn 结束）
+/// - 所有 Message2 一律原始转发给 React，显示过滤由 render 层决定
+/// - live/replay 共用 `usageDelta` 一个 nonisolated helper
 ///
 /// 非职责：
 /// - 不做持久化（SessionService 观察状态变化做持久化）
@@ -51,7 +52,9 @@ final class SessionHandle2 {
 
     @ObservationIgnored internal var backend: SessionBackend?
     @ObservationIgnored internal weak var bridge: SessionBridge?
-    @ObservationIgnored internal var filterState = MessageFilter.State()
+    /// 跨消息缓存的各模型 context window。result.modelUsage 到达时更新，
+    /// assistant 消息据此立刻填 contextUsage.window。live/replay 共用。
+    @ObservationIgnored internal var modelContextWindows: [String: Int] = [:]
     @ObservationIgnored internal var stderrBuffer: String = ""
     @ObservationIgnored internal var sessionInitContinuation: CheckedContinuation<Void, Error>?
     /// 单调递增的 sessionInit 代次。supersede/fulfill/teardown 都会递增，

@@ -1,7 +1,7 @@
 import Foundation
 import AgentSDK
 
-/// 历史消息懒加载。后台读取 JSONL，过滤后将 raw JSON 批量发送到 bridge。
+/// 历史消息懒加载。后台读取 JSONL，原始转发给 bridge（React 自行过滤显示）。
 ///
 /// 仅对 inactive 会话有意义——live 会话走 CLI 推送路径。
 extension SessionHandle2 {
@@ -28,40 +28,39 @@ extension SessionHandle2 {
         historyLoadState = .loading
 
         Task.detached { [sessionId] in
-            let (jsons, finalState) = Self.replayJSONL(from: jsonlFileURL)
+            let result = Self.replayJSONL(from: jsonlFileURL)
             await MainActor.run { [weak self] in
                 guard let self else { return }
-                // 加载期间被 attach 抢占则放弃本次结果，避免覆盖 live 的 filterState。
+                // 加载期间被 attach 抢占则放弃本次结果，避免覆盖 live 的 modelContextWindows。
                 guard self.historyLoadState == .loading else {
                     completion?()
                     return
                 }
-                self.filterState = finalState
-                if let snapshot = finalState.contextUsageSnapshot {
-                    self.contextUsage = ContextUsage(
-                        used: snapshot.usedTokens,
-                        window: snapshot.windowTokens
-                    )
+                self.modelContextWindows = result.modelContextWindows
+                if let usage = result.contextUsage {
+                    self.contextUsage = usage
                 }
-                self.bridge?.setRawMessages(conversationId: sessionId, messagesJSON: jsons)
+                self.bridge?.setRawMessages(conversationId: sessionId, messagesJSON: result.jsons)
                 self.historyLoadState = .loaded
                 completion?()
             }
         }
     }
 
-    /// 后台安全的 JSONL 回放：解析 → 过滤 → 返回 raw JSON 数组与最终 filterState。
+    /// 后台安全的 JSONL 回放：解析 → 全部转发 → 计算最终 contextUsage 快照与 window 缓存。
     nonisolated static func replayJSONL(
         from fileURL: URL?
-    ) -> ([[String: Any]], MessageFilter.State) {
+    ) -> (jsons: [[String: Any]], modelContextWindows: [String: Int], contextUsage: ContextUsage?) {
         guard let fileURL,
               let data = try? Data(contentsOf: fileURL),
               let content = String(data: data, encoding: .utf8) else {
-            return ([], MessageFilter.State())
+            return ([], [:], nil)
         }
 
-        var filterState = MessageFilter.State()
+        var modelContextWindows: [String: Int] = [:]
         var jsons: [[String: Any]] = []
+        var lastUsed: Int?
+        var lastWindow: Int?
 
         let resolver = Message2Resolver()
         for line in content.components(separatedBy: .newlines) {
@@ -71,12 +70,18 @@ extension SessionHandle2 {
                   let message = try? resolver.resolve(json) else {
                 continue
             }
-            let result = MessageFilter.filter(message, state: &filterState)
-            if result.shouldForward {
-                jsons.append(json)
-            }
+            jsons.append(json)
+
+            let (used, window) = usageDelta(for: message, modelContextWindows: &modelContextWindows)
+            if let u = used { lastUsed = u }
+            if let w = window { lastWindow = w }
         }
 
-        return (jsons, filterState)
+        let contextUsage: ContextUsage? = {
+            guard let used = lastUsed, let window = lastWindow, window > 0 else { return nil }
+            return ContextUsage(used: used, window: window)
+        }()
+
+        return (jsons, modelContextWindows, contextUsage)
     }
 }

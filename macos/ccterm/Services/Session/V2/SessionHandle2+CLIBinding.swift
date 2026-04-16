@@ -99,32 +99,37 @@ extension SessionHandle2 {
 
     // MARK: - Message Handling
 
-    /// 处理 CLI 推送的消息：提取副作用 → 更新状态 → 转发 JSON 到 bridge。
+    /// CLI 推送的消息：抽状态 → 统一原始转发给 bridge。过滤交给 React。
     internal func handleMessage(_ message: Message2) {
-        let result = MessageFilter.filter(message, state: &filterState)
+        updateContextUsage(for: message)
 
-        applyContextUsage(result.effects)
-        applySessionInit(result.effects)
-        applyPathChange(result.effects)
-        applyTurnEnd(result.effects)
-
-        if result.shouldForward {
-            let raw = (message.toJSON() as? [String: Any]) ?? [:]
-            bridge?.forwardRawMessage(conversationId: sessionId, messageJSON: raw)
+        switch message {
+        case .system(let sys):
+            if case .`init`(let info) = sys {
+                applySessionInit(info)
+            }
+        case .result:
+            applyTurnEnd()
+        case .user(let u):
+            applyWorktreeChangeIfAny(u)
+        default:
+            break
         }
+
+        let raw = (message.toJSON() as? [String: Any]) ?? [:]
+        bridge?.forwardRawMessage(conversationId: sessionId, messageJSON: raw)
     }
 
-    private func applyContextUsage(_ effects: MessageProcessorEffects) {
-        guard effects.contextUsed != nil || effects.contextWindow != nil else { return }
+    private func updateContextUsage(for message: Message2) {
+        let (used, window) = Self.usageDelta(for: message, modelContextWindows: &modelContextWindows)
+        guard used != nil || window != nil else { return }
         contextUsage = ContextUsage(
-            used: effects.contextUsed ?? contextUsage?.used ?? 0,
-            window: effects.contextWindow ?? contextUsage?.window ?? 0
+            used: used ?? contextUsage?.used ?? 0,
+            window: window ?? contextUsage?.window ?? 0
         )
     }
 
-    private func applySessionInit(_ effects: MessageProcessorEffects) {
-        guard let info = effects.sessionInit else { return }
-
+    private func applySessionInit(_ info: Init) {
         appLog(.info, "SessionHandle2", "sessionInit cwd=\(info.cwd ?? "nil") \(sessionId)")
         if let cwd = info.cwd {
             workspace = Workspace(cwd: cwd, isWorktree: workspace.isWorktree)
@@ -142,22 +147,67 @@ extension SessionHandle2 {
         fulfillSessionInit()
     }
 
-    private func applyPathChange(_ effects: MessageProcessorEffects) {
-        guard let change = effects.pathChange else { return }
-        workspace = Workspace(cwd: change.cwd, isWorktree: change.isWorktree)
-    }
-
-    private func applyTurnEnd(_ effects: MessageProcessorEffects) {
-        guard effects.turnEnded else { return }
+    private func applyTurnEnd() {
         let wasResponding = status == .responding
         status = .idle
         notifyTurnActive()
-
         if wasResponding && !ui.isFocused {
             ui.hasUnread = true
         }
-
         flushQueueIfNeeded()
+    }
+
+    private func applyWorktreeChangeIfAny(_ u: Message2User) {
+        guard u.parentToolUseId == nil else { return }
+        guard case .object(let obj) = u.toolUseResult else { return }
+        switch obj {
+        case .EnterWorktree(let o, _):
+            if let p = o.worktreePath {
+                workspace = Workspace(cwd: p, isWorktree: true)
+            }
+        case .ExitWorktree(let o, _):
+            if let p = o.originalCwd {
+                workspace = Workspace(cwd: p, isWorktree: false)
+            }
+        default:
+            break
+        }
+    }
+
+    // MARK: - Shared with HistoryReplay (nonisolated)
+
+    /// 从单条消息提取 (used, window) 增量。调用方合并进当前 contextUsage。
+    /// assistant（非 sub-agent）的 usage 给 used、从缓存取 window；
+    /// result 的 modelUsage 更新缓存并返回最大 window。
+    nonisolated static func usageDelta(
+        for message: Message2,
+        modelContextWindows: inout [String: Int]
+    ) -> (used: Int?, window: Int?) {
+        switch message {
+        case .assistant(let a) where a.parentToolUseId == nil:
+            guard let usage = a.message?.usage else { return (nil, nil) }
+            let used = (usage.inputTokens ?? 0)
+                + (usage.cacheCreationInputTokens ?? 0)
+                + (usage.cacheReadInputTokens ?? 0)
+            let window = a.message?.model.flatMap { modelContextWindows[$0] }
+            return (used, window)
+
+        case .result(let r):
+            let modelUsage: [String: ModelUsageValue]?
+            switch r {
+            case .success(let s): modelUsage = s.modelUsage
+            case .errorDuringExecution(let e): modelUsage = e.modelUsage
+            default: return (nil, nil)
+            }
+            guard let modelUsage else { return (nil, nil) }
+            for (m, v) in modelUsage {
+                if let w = v.contextWindow { modelContextWindows[m] = w }
+            }
+            return (nil, modelUsage.values.compactMap(\.contextWindow).max())
+
+        default:
+            return (nil, nil)
+        }
     }
 
     // MARK: - Process Exit

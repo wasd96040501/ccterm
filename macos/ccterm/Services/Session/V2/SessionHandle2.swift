@@ -46,7 +46,8 @@ final class SessionHandle2 {
 
     // MARK: - UI State
 
-    var ui = UIState()
+    /// 外部只读。写操作统一走 `setFocused(_:)` / `dismissExitError()` 以保证副作用不被绕过。
+    private(set) var ui = UIState()
 
     // MARK: - Implementation State (cross-file access by extensions)
 
@@ -60,6 +61,9 @@ final class SessionHandle2 {
     /// 单调递增的 sessionInit 代次。supersede/fulfill/teardown 都会递增，
     /// 用来让已调度但尚未到期的超时 Task 识别自己是否仍应生效。
     @ObservationIgnored internal var sessionInitGeneration: Int = 0
+    /// 等待首次 history 加载完成的回调。`.loading` 期间的并发 caller 会合流到这里，
+    /// 加载完成后一起 fire。`.loaded` 后恒为空。
+    @ObservationIgnored internal var historyLoadWaiters: [() -> Void] = []
 
     // MARK: - Init
 
@@ -82,11 +86,11 @@ final class SessionHandle2 {
 
     // MARK: - Commands
 
-    /// 发送消息。idle 时立即发送，非 idle 自动入队。
+    /// 唯一发送入口。idle 时立即开新 turn，非 idle 自动入队。
     func send(_ text: String, planContent: String? = nil) {
         guard status == .idle else {
             appLog(.info, "SessionHandle2", "send queued — status=\(status) \(sessionId)")
-            enqueue(text)
+            queuedMessages.append(text)
             return
         }
         startTurn(text, planContent: planContent)
@@ -124,10 +128,7 @@ final class SessionHandle2 {
 
     // MARK: - Queue
 
-    func enqueue(_ text: String) {
-        queuedMessages.append(text)
-    }
-
+    /// 移除队列中指定位置的消息（用户撤销排队）。入队走 `send`。
     func dequeue(at index: Int) {
         guard queuedMessages.indices.contains(index) else { return }
         queuedMessages.remove(at: index)
@@ -146,6 +147,18 @@ final class SessionHandle2 {
     /// 用户关闭错误 alert 后调用。
     func dismissExitError() {
         ui.unshownExitError = nil
+    }
+
+    // MARK: - Internal UI Writers (for extensions)
+
+    /// 标记未读。失焦且刚结束 turn 时由 CLIBinding 调。
+    internal func markUnread() {
+        ui.hasUnread = true
+    }
+
+    /// 记录未展示的退出错误。processExit 时由 CLIBinding 调。
+    internal func recordExitError(_ exit: ProcessExit) {
+        ui.unshownExitError = exit
     }
 
     // MARK: - Internal Primitives (shared across extensions)

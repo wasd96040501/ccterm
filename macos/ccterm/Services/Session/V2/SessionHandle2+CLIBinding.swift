@@ -8,12 +8,20 @@ import AgentSDK
 extension SessionHandle2 {
 
     /// 绑定后端。注册所有 CLI 回调，status 从 .inactive → .starting。
-    /// 调用方：SessionService。
+    /// 调用方：SessionService。必须仅在 .inactive 状态下调用——重入会静默丢弃，避免覆盖已挂回调的旧 backend。
     func attach(backend: SessionBackend) {
+        guard status == .inactive else {
+            appLog(.warning, "SessionHandle2", "attach ignored — status=\(status) already active \(sessionId)")
+            return
+        }
         appLog(.info, "SessionHandle2", "attach \(sessionId)")
         self.backend = backend
         status = .starting
+        // 抢占正在后台跑的 history replay——下面的 waiters fire 保证并发 caller 的 completion 不会永远挂着。
         historyLoadState = .loaded
+        let waiters = historyLoadWaiters
+        historyLoadWaiters.removeAll()
+        for waiter in waiters { waiter() }
 
         backend.onMessage = { [weak self] message in
             Task { @MainActor in
@@ -152,7 +160,7 @@ extension SessionHandle2 {
         status = .idle
         notifyTurnActive()
         if wasResponding && !ui.isFocused {
-            ui.hasUnread = true
+            markUnread()
         }
         flushQueueIfNeeded()
     }
@@ -215,10 +223,10 @@ extension SessionHandle2 {
     private func handleProcessExit(_ exitCode: Int32) {
         appLog(.warning, "SessionHandle2", "processExit code=\(exitCode) \(sessionId)")
         if exitCode != 0 {
-            ui.unshownExitError = ProcessExit(
+            recordExitError(ProcessExit(
                 exitCode: exitCode,
                 stderr: stderrBuffer.isEmpty ? nil : stderrBuffer
-            )
+            ))
         }
         teardown()
     }

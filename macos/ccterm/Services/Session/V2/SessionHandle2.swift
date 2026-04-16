@@ -11,9 +11,8 @@ import AgentSDK
 /// - 处理 CLI 回调并更新自身状态（见 +CLIBinding）
 ///
 /// 非职责：
-/// - 不做渲染过滤（原始消息无脑转发 bridge，React 负责过滤）
 /// - 不做消息配对（tool_use ↔ tool_result 配对由 React 做）
-/// - 不做持久化（SessionService 订阅状态变化做持久化）
+/// - 不做持久化（SessionService 观察状态变化做持久化）
 ///
 /// 生命周期：会话创建时即诞生（status=.inactive），持续到用户删除会话。
 /// attach/detach 只切换"是否有活跃子进程"，不影响 handle 存在。
@@ -27,51 +26,34 @@ final class SessionHandle2 {
 
     // MARK: - Runtime State
 
-    /// 子进程运行时状态。
-    private(set) var status: Status = .inactive
-
-    /// 工作区（cwd + isWorktree）。attach 后由 sessionInit / pathChange 更新。
-    private(set) var workspace: Workspace
-
-    /// 上下文 token 用量。首条 assistant 消息到达前为 nil。
-    private(set) var contextUsage: ContextUsage? = nil
-
-    /// sessionInit 返回的可用 slash commands。
-    private(set) var slashCommands: [SlashCommand] = []
-
-    /// 等待用户决策的权限请求。
-    private(set) var pendingPermissions: [PendingPermission] = []
-
-    /// 排队中的待发送消息。
-    private(set) var queuedMessages: [String] = []
-
-    /// 是否正在异步生成 worktree 分支名。
-    private(set) var branchGenerating: Bool = false
-
-    /// 历史消息加载状态。
-    private(set) var historyLoadState: HistoryLoadState = .notLoaded
+    internal(set) var status: Status = .inactive
+    internal(set) var workspace: Workspace
+    internal(set) var contextUsage: ContextUsage? = nil
+    internal(set) var slashCommands: [SlashCommand] = []
+    internal(set) var pendingPermissions: [PendingPermission] = []
+    internal(set) var queuedMessages: [String] = []
+    internal(set) var branchGenerating: Bool = false
+    internal(set) var historyLoadState: HistoryLoadState = .notLoaded
 
     // MARK: - Configuration
 
-    /// 权限模式。用户可改，CLI 也可能推送覆盖。
-    private(set) var permissionMode: PermissionMode
-
-    /// 当前模型。
-    private(set) var model: String?
-
-    /// 当前 effort 级别。nil = 使用 CLI 默认。
-    private(set) var effort: Effort?
+    internal(set) var permissionMode: PermissionMode
+    internal(set) var model: String?
+    internal(set) var effort: Effort?
 
     // MARK: - UI State (self-managing closed loops)
 
-    /// 当前是否被用户聚焦。由 ChatRouter 通过 setFocused 维护"全局唯一 focused"不变量。
-    private(set) var isFocused: Bool = false
+    internal(set) var isFocused: Bool = false
+    internal(set) var hasUnread: Bool = false
+    internal(set) var unshownExitError: ProcessExit? = nil
 
-    /// 有未读内容。未聚焦状态下响应完成时自动置 true；聚焦时自动清零。
-    private(set) var hasUnread: Bool = false
+    // MARK: - Implementation State (cross-file access by extensions)
 
-    /// 待展示的异常退出信息。非零退出时设置，用户关闭 alert 后清零。
-    private(set) var unshownExitError: ProcessExit? = nil
+    @ObservationIgnored internal var backend: SessionBackend?
+    @ObservationIgnored internal weak var bridge: SessionBridge?
+    @ObservationIgnored internal var filterState = MessageFilter.State()
+    @ObservationIgnored internal var stderrBuffer: String = ""
+    @ObservationIgnored internal var sessionInitContinuation: CheckedContinuation<Void, Error>?
 
     // MARK: - Init
 
@@ -81,53 +63,127 @@ final class SessionHandle2 {
         workspace: Workspace,
         permissionMode: PermissionMode,
         model: String?,
-        effort: Effort?
+        effort: Effort?,
+        bridge: SessionBridge
     ) {
         self.sessionId = sessionId
         self.workspace = workspace
         self.permissionMode = permissionMode
         self.model = model
         self.effort = effort
+        self.bridge = bridge
     }
 
     // MARK: - Commands
 
     /// 发送消息。idle 时立即发送，非 idle 自动入队。
-    /// 首次发送自动将内容设为会话标题。
     func send(_ text: String, extra: MessageExtra? = nil) {
-        fatalError("TODO")
+        guard let backend else { return }
+
+        if status != .idle {
+            enqueue(text)
+            return
+        }
+
+        renderUserMessage(text)
+
+        var extraDict: [String: Any] = [:]
+        if let planContent = extra?.planContent {
+            extraDict["planContent"] = planContent
+        }
+        backend.sendMessage(text, extra: extraDict)
+
+        status = .responding
+        notifyTurnActive()
     }
 
     /// 中断当前响应。仅 .responding 时有效。
     func interrupt() {
-        fatalError("TODO")
+        guard status == .responding, let backend else { return }
+        status = .interrupting
+        backend.interrupt { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.status = .idle
+                self.notifyTurnActive(interrupted: true)
+                self.flushQueueIfNeeded()
+            }
+        }
     }
 
-    /// 变更会话配置，写 stdin 通知 CLI。
+    /// 变更会话配置。本地状态立即更新（乐观），若有 backend 则同步写 stdin。
     func configure(_ change: ConfigChange) {
-        fatalError("TODO")
+        switch change {
+        case .permissionMode(let mode):
+            permissionMode = mode
+            backend?.setPermissionMode(mode.toSDK())
+        case .model(let newModel):
+            model = newModel
+            backend?.setModel(newModel)
+        case .effort(let newEffort):
+            effort = newEffort
+            backend?.setEffort(newEffort)
+        }
     }
 
     // MARK: - Queue
 
     func enqueue(_ text: String) {
-        fatalError("TODO")
+        queuedMessages.append(text)
     }
 
     func dequeue(at index: Int) {
-        fatalError("TODO")
+        guard queuedMessages.indices.contains(index) else { return }
+        queuedMessages.remove(at: index)
     }
 
     // MARK: - UI State Control
 
-    /// 由 ChatRouter 调用。聚焦时自动清 hasUnread。
+    /// 由 ChatRouter 调用，维护"全局唯一 focused"不变量。聚焦时自动清 hasUnread。
     func setFocused(_ focused: Bool) {
-        fatalError("TODO")
+        isFocused = focused
+        if focused {
+            hasUnread = false
+        }
     }
 
     /// 用户关闭错误 alert 后调用。
     func dismissExitError() {
-        fatalError("TODO")
+        unshownExitError = nil
+    }
+
+    // MARK: - Internal Helpers (shared across extensions)
+
+    /// 合并队列消息并一次性发送。idle 且有排队消息时调用。
+    internal func flushQueueIfNeeded() {
+        guard status == .idle, !queuedMessages.isEmpty, let backend else { return }
+        let merged = queuedMessages.joined(separator: "\n\n")
+        queuedMessages.removeAll()
+        renderUserMessage(merged)
+        backend.sendMessage(merged, extra: [:])
+        status = .responding
+        notifyTurnActive()
+    }
+
+    /// 合成 user 消息 JSON 发送给 React。
+    internal func renderUserMessage(_ text: String) {
+        let userJSON: [String: Any] = [
+            "type": "user",
+            "message": [
+                "role": "user",
+                "content": text,
+            ],
+        ]
+        bridge?.forwardRawMessage(conversationId: sessionId, messageJSON: userJSON)
+    }
+
+    /// 通知 React 当前是否处于 turn active 状态。
+    internal func notifyTurnActive(interrupted: Bool = false) {
+        bridge?.setTurnActive(
+            conversationId: sessionId,
+            isTurnActive: status == .responding || status == .interrupting,
+            interrupted: interrupted
+        )
     }
 }
 

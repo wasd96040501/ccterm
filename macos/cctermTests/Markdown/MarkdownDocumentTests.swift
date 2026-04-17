@@ -277,6 +277,61 @@ final class MarkdownDocumentTests: XCTestCase {
         XCTAssertFalse(segs.isEmpty)
     }
 
+    func testHardAndSoftBreaks() {
+        // Trailing two spaces produces a hard line break inside a paragraph.
+        // A plain newline in a paragraph produces a soft break.
+        let src = "line1  \nline2\nline3"
+        let segs = MarkdownDocument(parsing: src).segments
+        let inlines = blockInlines(blocks(segs[0])[0])
+        let hasHard = inlines.contains { if case .lineBreak = $0 { return true }; return false }
+        let hasSoft = inlines.contains { if case .softBreak = $0 { return true }; return false }
+        XCTAssertTrue(hasHard, "expected a .lineBreak from trailing two spaces")
+        XCTAssertTrue(hasSoft, "expected a .softBreak between line2 and line3")
+    }
+
+    func testUnclosedBlockMathFallsThrough() {
+        // No closing $$: the whole thing must not be treated as a math segment.
+        let src = """
+        $$
+        a = b
+        """
+        let segs = MarkdownDocument(parsing: src).segments
+        XCTAssertEqual(kinds(segs), ["markdown"])
+        XCTAssertFalse(segs.contains { if case .mathBlock = $0 { return true }; return false })
+    }
+
+    func testUnclosedInlineMathFallsThrough() {
+        // A lone $ without a closing $ on the same line must stay as literal text.
+        let src = "tail $foo and more without close"
+        let segs = MarkdownDocument(parsing: src).segments
+        let inlines = blockInlines(blocks(segs[0])[0])
+        XCTAssertFalse(inlines.contains { if case .inlineMath = $0 { return true }; return false })
+    }
+
+    func testInlineMathWithEscapedDollar() {
+        // cmark-gfm resolves `\$` to a literal `$` before our inline-math scan sees it,
+        // so an inner `\$` ends the math run just like a bare `$` would. Pin that
+        // behavior so anyone swapping the parser sees this test flip.
+        let src = "eq $a\\$b$ tail"
+        let segs = MarkdownDocument(parsing: src).segments
+        let inlines = blockInlines(blocks(segs[0])[0])
+        var got: String?
+        for n in inlines { if case .inlineMath(let s) = n { got = s; break } }
+        XCTAssertEqual(got, "a")
+    }
+
+    func testMultipleConsecutiveBlockMath() {
+        let src = """
+        $$a$$
+
+        $$b$$
+        """
+        let segs = MarkdownDocument(parsing: src).segments
+        XCTAssertEqual(kinds(segs), ["mathBlock", "mathBlock"])
+        if case .mathBlock(let m1) = segs[0] { XCTAssertEqual(m1, "a") }
+        if case .mathBlock(let m2) = segs[1] { XCTAssertEqual(m2, "b") }
+    }
+
     // MARK: - Private helpers
 
     private func blockInlines(_ block: MarkdownBlock) -> [MarkdownInline] {

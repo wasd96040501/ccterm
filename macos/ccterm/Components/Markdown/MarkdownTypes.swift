@@ -1,6 +1,6 @@
 import Foundation
 
-public enum MarkdownSegment: Equatable, Sendable {
+public enum MarkdownSegment: Hashable, Sendable {
     case markdown([MarkdownBlock])
     case codeBlock(MarkdownCodeBlock)
     case table(MarkdownTable)
@@ -8,14 +8,14 @@ public enum MarkdownSegment: Equatable, Sendable {
     case thematicBreak
 }
 
-public indirect enum MarkdownBlock: Equatable, Sendable {
+public indirect enum MarkdownBlock: Hashable, Sendable {
     case paragraph([MarkdownInline])
     case heading(level: Int, children: [MarkdownInline])
     case blockquote([MarkdownBlock])
     case list(MarkdownList)
 }
 
-public struct MarkdownList: Equatable, Sendable {
+public struct MarkdownList: Hashable, Sendable {
     public let ordered: Bool
     public let startIndex: Int?
     public let items: [MarkdownListItem]
@@ -27,8 +27,8 @@ public struct MarkdownList: Equatable, Sendable {
     }
 }
 
-public struct MarkdownListItem: Equatable, Sendable {
-    public enum Checkbox: Equatable, Sendable { case checked, unchecked }
+public struct MarkdownListItem: Hashable, Sendable {
+    public enum Checkbox: Hashable, Sendable { case checked, unchecked }
 
     public let checkbox: Checkbox?
     public let content: [MarkdownBlock]
@@ -39,7 +39,7 @@ public struct MarkdownListItem: Equatable, Sendable {
     }
 }
 
-public indirect enum MarkdownInline: Equatable, Sendable {
+public indirect enum MarkdownInline: Hashable, Sendable {
     case text(String)
     case emphasis([MarkdownInline])
     case strong([MarkdownInline])
@@ -52,7 +52,7 @@ public indirect enum MarkdownInline: Equatable, Sendable {
     case softBreak
 }
 
-public struct MarkdownCodeBlock: Equatable, Sendable {
+public struct MarkdownCodeBlock: Hashable, Sendable {
     public let language: String?
     public let code: String
 
@@ -62,8 +62,8 @@ public struct MarkdownCodeBlock: Equatable, Sendable {
     }
 }
 
-public struct MarkdownTable: Equatable, Sendable {
-    public enum Alignment: Equatable, Sendable { case none, left, center, right }
+public struct MarkdownTable: Hashable, Sendable {
+    public enum Alignment: Hashable, Sendable { case none, left, center, right }
 
     public let header: [[MarkdownInline]]
     public let alignments: [Alignment]

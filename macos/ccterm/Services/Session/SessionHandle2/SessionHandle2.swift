@@ -66,7 +66,7 @@ class SessionHandle2 {
     ///   `cwd` / `isWorktree` / `model` / `effort` / `permissionMode` / `addDirs` / `plugins`
     ///   （repository 无记录时这些字段保持默认值）。
     /// - **不加载历史消息**。`messages` 为空，`historyLoadState = .notLoaded`。
-    ///   历史消息在首次调用 `start()` 或 UI 进入该 session 时异步加载。
+    ///   UI 进入 session 视图时显式调 `loadHistory()`，与 `start()` 解耦。
     /// - `status = .notStarted`。
     ///
     /// ## DB 写入时机（跨所有方法的总纲）
@@ -83,7 +83,7 @@ class SessionHandle2 {
 
     // MARK: - Lifecycle commands
 
-    /// 启动 CLI 子进程。
+    /// 启动 CLI 子进程。**不触发 loadHistory**（两者正交）。
     ///
     /// - `.notStarted` / `.stopped`：组装 `SessionConfiguration`（基于当前字段 +
     ///   app-level 启动参数），CLI launch 时若 `repository` 有历史记录则走 resume，否则 fresh。
@@ -92,6 +92,19 @@ class SessionHandle2 {
     ///
     /// 调用方（SessionService）不感知 fresh / resume 区别。
     func start() { fatalError() }
+
+    /// 后台加载历史消息到 `messages`。幂等，按 `historyLoadState` 分派。
+    ///
+    /// - `.notLoaded`：`historyLoadState` → `.loading`，dispatch 后台 queue 读 JSONL 并解析；
+    ///   完成后在主线程 append 到 `messages`，`historyLoadState` → `.loaded`。
+    ///   解析失败 → `.failed(reason)`。
+    /// - `.loading`：no-op（防重复调用）。
+    /// - `.loaded`：no-op。
+    /// - `.failed`：重试——切回 `.notLoaded` 并重新触发加载。
+    ///
+    /// 方法本身不阻塞调用线程；UI 通过观察 `historyLoadState` 展示 spinner / 错误。
+    /// 与 `start()` 独立——stopped / notStarted session 也能查看历史。
+    func loadHistory() { fatalError() }
 
     /// 手动停止 CLI 子进程。
     ///

@@ -50,6 +50,38 @@ final class PromptTitleAndBranchTests: XCTestCase {
         XCTAssertEqual(Prompt.slugifyToBranch("café latté"), "claude/caf-latt")
     }
 
+    // MARK: - truncateHead
+
+    func test_truncateHead_underLimit_untouched() {
+        XCTAssertEqual(Prompt.truncateHead("hello", to: 100), "hello")
+        XCTAssertEqual(Prompt.truncateHead("", to: 100), "")
+    }
+
+    func test_truncateHead_atLimit_untouched() {
+        let s = String(repeating: "a", count: 100)
+        XCTAssertEqual(Prompt.truncateHead(s, to: 100), s)
+    }
+
+    func test_truncateHead_overLimit_prefixWithEllipsis() {
+        let s = String(repeating: "a", count: 150)
+        let out = Prompt.truncateHead(s, to: 100)
+        XCTAssertEqual(out.count, 102)  // 100 chars + " …"
+        XCTAssertTrue(out.hasPrefix(String(repeating: "a", count: 100)))
+        XCTAssertTrue(out.hasSuffix(" …"))
+    }
+
+    func test_truncateHead_unicodeGraphemeSafe() {
+        // 中文 + emoji 按 grapheme cluster 计数，不切坏字符
+        let s = "中文测试" + String(repeating: "a", count: 100)
+        let out = Prompt.truncateHead(s, to: 4)
+        XCTAssertEqual(out, "中文测试 …")
+    }
+
+    func test_truncateHead_nonPositiveLimit_untouched() {
+        XCTAssertEqual(Prompt.truncateHead("hello", to: 0), "hello")
+        XCTAssertEqual(Prompt.truncateHead("hello", to: -5), "hello")
+    }
+
     // MARK: - extractTag
 
     func test_extractTag_titleBasic() {

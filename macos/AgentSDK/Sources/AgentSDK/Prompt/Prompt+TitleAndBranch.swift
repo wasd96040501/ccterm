@@ -11,14 +11,19 @@ extension Prompt {
     /// - branch = `claude/<slugify(title).prefix(50)>`（字符串派生，不做第二次 LLM）
     ///
     /// 与 `run(message:configuration:)` 的差异：提示词内置、返回 typed 结构、自带超时。
+    ///
+    /// `firstMessage` 会被 head-truncate 到 `maxDescriptionChars`（默认 2000 字符，约
+    /// 500 tokens）避免用户贴长 diff/代码把 token 打爆——title 意图几乎全在开头。
     public static func runTitleAndBranch(
         firstMessage: String,
         configuration: PromptConfiguration,
-        timeout: TimeInterval = 30
+        timeout: TimeInterval = 30,
+        maxDescriptionChars: Int = 2000
     ) async throws -> TitleAndBranch {
+        let description = truncateHead(firstMessage, to: maxDescriptionChars)
         let filledPrompt = codingTitlePrompt.replacingOccurrences(
             of: "{session_description}",
-            with: firstMessage
+            with: description
         )
 
         return try await Task.detached {
@@ -136,6 +141,13 @@ extension Prompt {
     /// 仍保留：LLM 回复里抓 `<title>...</title>`。历史兼容。
     public static func extractTitle(from text: String) -> String? {
         extractTag("title", from: text)
+    }
+
+    /// Head-truncate：字符数超过 `limit` 时截取前 `limit` 字符并追加 `" …"` 标记。
+    /// 使用 Swift `String.Index` 按 character（grapheme cluster）计数，中英混合安全。
+    public static func truncateHead(_ text: String, to limit: Int) -> String {
+        guard limit > 0, text.count > limit else { return text }
+        return String(text.prefix(limit)) + " …"
     }
 
     /// 通用单标签提取：第一处 `<tag>…</tag>` 之间的内容，trim 空白，空串返回 nil。

@@ -42,12 +42,6 @@ struct RootView: View {
                     appState.activeAction = nil
                     appState.chatRouter.activateNewConversation()
                 case .action(let action):
-                    #if DEBUG
-                    if action == .planGallery {
-                        appState.activatePlanGallery()
-                        return
-                    }
-                    #endif
                     appState.activeAction = action
                 case nil:
                     break

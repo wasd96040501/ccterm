@@ -76,12 +76,6 @@ struct ContentView: View {
         case .archive:
             ArchiveView(sessionService: sessionService, sidebarViewModel: sidebarViewModel)
         #if DEBUG
-        case .cardGallery:
-            PermissionCardGalleryView()
-        case .chatGallery:
-            ChatGalleryView()
-        case .planGallery:
-            EmptyView() // handled by AppState.activatePlanGallery()
         case .scrollHugTest:
             ScrollHugTestView()
         #endif

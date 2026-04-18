@@ -7,7 +7,7 @@ import Markdown
 /// content that should be rendered by dedicated SwiftUI components (code blocks,
 /// tables, block math). Thematic breaks are emitted as their own segment so the
 /// host view can draw a native divider.
-public struct MarkdownDocument {
+public struct MarkdownDocument: Hashable, Sendable {
     public let segments: [MarkdownSegment]
 
     public init(parsing source: String) {

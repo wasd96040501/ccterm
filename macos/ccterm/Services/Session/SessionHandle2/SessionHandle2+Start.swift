@@ -1,0 +1,395 @@
+import Foundation
+import AgentSDK
+
+// MARK: - Lifecycle
+
+extension SessionHandle2 {
+
+    /// 启动 CLI 子进程。**不触发 loadHistory**（两者正交）。
+    ///
+    /// - `.notStarted` / `.stopped`：组装 `SessionConfiguration`（基于当前 handle 字段），
+    ///   fresh（repository 无记录）→ `repository.save` 完整 record；resume（repository
+    ///   有记录）→ 以内存为 authoritative，覆盖写 cwd / title / extra。`status` → `.starting`。
+    ///   异步 bootstrap：SDK ready → `.idle` 且 flush queued；SDK 失败 → `.stopped` +
+    ///   `termination` + `repository.updateError`。
+    /// - 其他 status：no-op。调用方不感知 fresh / resume 区别。
+    func start() {
+        guard status == .notStarted || status == .stopped else {
+            appLog(.info, "SessionHandle2", "start() ignored — status=\(status) \(sessionId)")
+            return
+        }
+        appLog(.info, "SessionHandle2", "start() begin \(sessionId)")
+
+        status = .starting
+        termination = nil
+        stderrBuffer = ""
+
+        let fresh = (repository.find(sessionId) == nil)
+        needsTitleGen = fresh && title.isEmpty
+
+        // stage 2: fresh + isWorktree 时需要先 provision worktree 目录，然后把 cwd 同步到 handle。
+        // 失败直接走失败路径（状态 → .stopped，不走 bootstrap）。
+        if fresh, isWorktree {
+            do {
+                let worktreePath = try provisionWorktreeIfNeeded()
+                cwd = worktreePath
+            } catch {
+                appLog(.error, "SessionHandle2", "worktree provision FAILED \(sessionId) err=\(error)")
+                termination = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                status = .stopped
+                // 没 save 过 db，不 updateError
+                return
+            }
+        }
+
+        persistConfiguration(fresh: fresh)
+
+        if skipBootstrapForTesting { return }
+
+        let config = makeAgentConfig(fresh: fresh)
+        Task { @MainActor [weak self] in
+            await self?.bootstrap(configuration: config, fresh: fresh)
+        }
+    }
+
+    private func provisionWorktreeIfNeeded() throws -> String {
+        guard let origin = originPath else {
+            throw WorktreeProvisioner.WorktreeError.notGitRepository(path: "(nil originPath)")
+        }
+        // 使用已 hydrate 的 worktreeBranch 作为 sourceBranch（resume 不走这里，所以
+        // worktreeBranch 在 fresh 场景下更常为 nil，表示"用当前分支"）。
+        return try WorktreeProvisioner.createDetachedWorktree(
+            repoPath: origin,
+            sourceBranch: worktreeBranch
+        )
+    }
+
+    /// 手动停止 CLI 子进程。active 态下调 `close()`；之后由 onProcessExit 回调接管
+    /// status/termination/pendingPermissions 清理。其他 status 下 no-op。
+    func stop() {
+        switch status {
+        case .notStarted, .stopped:
+            return
+        default:
+            break
+        }
+        appLog(.info, "SessionHandle2", "stop() close agent \(sessionId)")
+        agentSession?.close()
+    }
+}
+
+// MARK: - Messaging
+
+extension SessionHandle2 {
+
+    /// 唯一发送入口。无条件 append 一条 user `MessageEntry`（delivery=.queued），
+    /// 若 `status == .idle` 则立即 flush；否则保留在队列，待 status 回落 `.idle` 自动发。
+    ///
+    /// Stage 3：fresh + `needsTitleGen` + 首条文本时，异步起 LLM 调用生成 title / branch，
+    /// 不阻塞发送路径。生成结果通过 `isGeneratingTitle` 对外可观察。
+    func send(_ message: SessionMessage) {
+        let entry = makeQueuedEntry(for: message)
+        messages.append(entry)
+
+        if status == .idle {
+            flushQueueIfNeeded()
+        }
+
+        if needsTitleGen, case .text(let text, _) = message, !text.isEmpty {
+            needsTitleGen = false
+            isGeneratingTitle = true
+            triggerTitleGeneration(firstMessage: text)
+        }
+    }
+}
+
+// MARK: - Private impl
+
+private extension SessionHandle2 {
+
+    // MARK: - Title / branch LLM (stage 3)
+
+    func triggerTitleGeneration(firstMessage: String) {
+        if skipTitleGenForTesting { return }
+
+        let sid = sessionId
+        let repo = repository
+        let isWT = isWorktree
+        let currentCwd = cwd
+        let customCLI = UserDefaults.standard.string(forKey: "customCLICommand")
+
+        Task.detached { [weak self] in
+            let tmp = FileManager.default.temporaryDirectory
+                .appendingPathComponent("title-gen-\(UUID().uuidString.prefix(8))")
+            try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: tmp) }
+
+            let config = PromptConfiguration(
+                workingDirectory: tmp,
+                customCommand: customCLI
+            )
+            let result: Prompt.TitleAndBranch?
+            do {
+                result = try await Prompt.runTitleAndBranch(
+                    firstMessage: firstMessage,
+                    configuration: config
+                )
+            } catch {
+                appLog(.warning, "SessionHandle2", "title-gen failed \(sid): \(error.localizedDescription)")
+                result = nil
+            }
+
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.isGeneratingTitle = false
+                guard let r = result else { return }
+
+                self.title = r.titleI18n
+                repo.updateTitle(sid, title: r.titleI18n)
+
+                if isWT, !r.branch.isEmpty, let wtPath = currentCwd {
+                    let res = GitUtils.checkoutNewBranch(at: wtPath, branch: r.branch)
+                    switch res {
+                    case .success:
+                        self.worktreeBranch = r.branch
+                        repo.updateWorktreeBranch(sid, branch: r.branch)
+                        appLog(.info, "SessionHandle2", "title-gen branch attached \(sid) → \(r.branch)")
+                    case .failure(let err):
+                        appLog(.warning, "SessionHandle2", "title-gen branch checkout failed \(sid): \(err.stderr)")
+                    }
+                }
+                appLog(.info, "SessionHandle2", "title-gen done \(sid) title=\(r.titleI18n)")
+            }
+        }
+    }
+
+    func persistConfiguration(fresh: Bool) {
+        if fresh {
+            let record = SessionRecord(
+                sessionId: sessionId,
+                title: title,
+                cwd: cwd,
+                isWorktree: isWorktree,
+                originPath: originPath,
+                status: .pending,
+                extra: currentExtra(),
+                worktreeBranch: worktreeBranch
+            )
+            repository.save(record)
+            appLog(.info, "SessionHandle2", "persistConfiguration fresh save \(sessionId)")
+        } else {
+            // resume：以内存为 authoritative，整体覆盖 db 涉及字段。
+            if let cwd {
+                repository.updateCwd(sessionId, cwd: cwd)
+            }
+            if !title.isEmpty {
+                repository.updateTitle(sessionId, title: title)
+            }
+            repository.updateExtra(sessionId, with: SessionExtraUpdate(
+                pluginDirs: pluginDirectories,
+                permissionMode: permissionMode.rawValue,
+                addDirs: additionalDirectories,
+                model: model,
+                effort: effort?.rawValue
+            ))
+            appLog(.info, "SessionHandle2", "persistConfiguration resume overwrite \(sessionId)")
+        }
+    }
+
+    func currentExtra() -> SessionExtra {
+        SessionExtra(
+            pluginDirs: pluginDirectories.isEmpty ? nil : pluginDirectories,
+            permissionMode: permissionMode.rawValue,
+            addDirs: additionalDirectories.isEmpty ? nil : additionalDirectories,
+            model: model,
+            effort: effort?.rawValue
+        )
+    }
+
+    func makeAgentConfig(fresh: Bool) -> SessionConfiguration {
+        let customCommand = UserDefaults.standard.string(forKey: "customCLICommand")
+        let wd = URL(fileURLWithPath: cwd ?? originPath ?? FileManager.default.currentDirectoryPath)
+        return SessionConfiguration(
+            workingDirectory: wd,
+            model: model,
+            permissionMode: permissionMode.toSDK(),
+            sessionId: fresh ? sessionId : nil,
+            resume: fresh ? nil : sessionId,
+            effort: effort,
+            addDirs: additionalDirectories,
+            plugins: pluginDirectories,
+            customCommand: customCommand,
+            allowDangerouslySkipPermissions: true
+        )
+    }
+
+    func bootstrap(configuration: SessionConfiguration, fresh: Bool) async {
+        let session = AgentSDK.Session(configuration: configuration)
+        session.lastKnownSessionId = sessionId
+        attachCallbacks(to: session)
+        self.agentSession = session
+
+        do {
+            try await session.start()
+            _ = await withCheckedContinuation { (cont: CheckedContinuation<InitializeResponse?, Never>) in
+                session.initialize(promptSuggestions: true) { cont.resume(returning: $0) }
+            }
+        } catch {
+            appLog(.error, "SessionHandle2", "bootstrap FAILED \(sessionId) err=\(error)")
+            self.agentSession = nil
+            self.termination = error.localizedDescription
+            self.status = .stopped
+            self.repository.updateError(sessionId, error: error.localizedDescription)
+            return
+        }
+
+        status = .idle
+        if fresh {
+            repository.updateStatus(sessionId, to: .created)
+        }
+        flushQueueIfNeeded()
+        appLog(.info, "SessionHandle2", "bootstrap done \(sessionId) fresh=\(fresh)")
+    }
+
+    func attachCallbacks(to session: AgentSDK.Session) {
+        session.onMessage = { [weak self] msg in
+            Task { @MainActor [weak self] in
+                self?.receive(msg, mode: .live)
+            }
+        }
+
+        session.onPermissionRequest = { [weak self] request, completion in
+            Task { @MainActor [weak self] in
+                guard let self else {
+                    completion(.deny(reason: "SessionHandle2 deallocated"))
+                    return
+                }
+                self.enqueuePermission(request, completion: completion)
+            }
+        }
+
+        session.onPermissionCancelled = { [weak self] requestId in
+            Task { @MainActor [weak self] in
+                self?.pendingPermissions.removeAll { $0.id == requestId }
+            }
+        }
+
+        session.onProcessExit = { [weak self] code in
+            Task { @MainActor [weak self] in
+                self?.handleProcessExit(code)
+            }
+        }
+
+        session.onStderr = { [weak self] text in
+            Task { @MainActor [weak self] in
+                self?.stderrBuffer += text
+            }
+        }
+
+        // stage 1 的最小 no-op；hook/mcp/elicitation 按需后续补。
+        session.onHookRequest = { _ in HookResult.success() }
+        session.onMCPRequest = { _ in MCPResponse.success() }
+        session.onElicitationRequest = { _ in .cancel }
+    }
+
+    func enqueuePermission(
+        _ request: PermissionRequest,
+        completion: @escaping (PermissionDecision) -> Void
+    ) {
+        let pending = PendingPermission(
+            id: request.requestId,
+            request: request,
+            respond: { [weak self] decision in
+                completion(decision)
+                Task { @MainActor [weak self] in
+                    self?.pendingPermissions.removeAll { $0.id == request.requestId }
+                }
+            }
+        )
+        pendingPermissions.append(pending)
+    }
+
+    func handleProcessExit(_ code: Int32) {
+        let trimmed = stderrBuffer.isEmpty ? nil : String(stderrBuffer.prefix(500))
+        let desc = trimmed.map { "process exited (code \(code)): \($0)" }
+            ?? "process exited (code \(code))"
+        appLog(.warning, "SessionHandle2", "handleProcessExit \(sessionId) \(desc)")
+
+        stderrBuffer = ""
+        agentSession = nil
+        termination = desc
+        status = .stopped
+
+        for pending in pendingPermissions {
+            pending.respond(.deny(reason: "Process exited"))
+        }
+        pendingPermissions.removeAll()
+
+        for i in messages.indices where messages[i].delivery == .inFlight {
+            messages[i].delivery = .failed(reason: "session stopped")
+        }
+
+        repository.updateError(sessionId, error: desc)
+    }
+
+    func makeQueuedEntry(for message: SessionMessage) -> MessageEntry {
+        let raw: [String: Any]
+        switch message {
+        case .text(let text, let extra):
+            var dict: [String: Any] = [
+                "type": "user",
+                "message": [
+                    "role": "user",
+                    "content": text,
+                ],
+                "session_id": sessionId,
+            ]
+            if let plan = extra?.planContent {
+                dict["plan_content"] = plan
+            }
+            raw = dict
+        case .image:
+            raw = [
+                "type": "user",
+                "message": [
+                    "role": "user",
+                    "content": "[image]",
+                ],
+                "session_id": sessionId,
+            ]
+        }
+        let msg = (try? Message2(json: raw)) ?? Message2.unknown(name: "user", raw: raw)
+        return MessageEntry(id: UUID(), message: msg, delivery: .queued, toolResults: [:])
+    }
+
+    func flushQueueIfNeeded() {
+        guard status == .idle, let session = agentSession else { return }
+        var didFlush = false
+        for i in messages.indices where messages[i].delivery == .queued {
+            guard let text = textFromEntry(messages[i]) else { continue }
+            session.sendMessage(text)
+            messages[i].delivery = .inFlight
+            didFlush = true
+        }
+        if didFlush {
+            status = .responding
+        }
+    }
+
+    func textFromEntry(_ entry: MessageEntry) -> String? {
+        guard case .user(let u) = entry.message,
+              let content = u.message?.content else { return nil }
+        switch content {
+        case .string(let s):
+            return s
+        case .array(let items):
+            let parts = items.compactMap { item -> String? in
+                if case .text(let t) = item { return t.text }
+                return nil
+            }
+            return parts.joined(separator: "\n")
+        case .other:
+            return nil
+        }
+    }
+}

@@ -25,7 +25,7 @@ final class SessionHandle2InitTests: XCTestCase {
         XCTAssertFalse(handle.isWorktree)
         XCTAssertNil(handle.originPath)
         XCTAssertNil(handle.worktreeBranch)
-        XCTAssertFalse(handle.isGeneratingBranch)
+        XCTAssertFalse(handle.isGeneratingTitle)
         XCTAssertNil(handle.termination)
         XCTAssertNil(handle.model)
         XCTAssertNil(handle.effort)

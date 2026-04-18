@@ -41,7 +41,9 @@ class SessionHandle2 {
     internal(set) var title: String = ""
     internal(set) var originPath: String?
     internal(set) var worktreeBranch: String?
-    internal(set) var isGeneratingBranch: Bool = false
+    /// true 表示正在异步生成 title（以及 worktree 场景下的 branch）。UI 据此显示 shimmer/loading。
+    /// 由 fresh session 的首条 `send()` 触发，`Prompt.runTitleAndBranch` 完成后复位。
+    internal(set) var isGeneratingTitle: Bool = false
 
     // MARK: - Configuration
 
@@ -66,6 +68,27 @@ class SessionHandle2 {
 
     internal(set) var isFocused: Bool = false
     internal(set) var hasUnread: Bool = false
+
+    // MARK: - Internal runtime
+
+    /// 已绑定的 AgentSDK 子进程。`start()` 成功 bootstrap 后赋值，进程退出/stop 时清零。
+    internal var agentSession: AgentSDK.Session?
+
+    /// stderr 累积缓冲。进程退出时写入 `termination`。不持久化。
+    @ObservationIgnored internal var stderrBuffer: String = ""
+
+    /// fresh session 且尚未生成 title 时为 true。首条 `send()` 时触发 LLM 异步生成。
+    /// 只在本进程生命周期内有效——session 重开会重新从 repository.title 判断。
+    @ObservationIgnored internal var needsTitleGen: Bool = false
+
+    /// 测试专用 hook：置 true 时 `start()` 完成同步部分后立刻返回，不起 bootstrap Task，
+    /// 也不动 CLI。用于纯 DB/状态断言。生产代码不得设置。
+    @ObservationIgnored internal var skipBootstrapForTesting: Bool = false
+
+    /// 测试专用 hook：置 true 时 `send()` 触发的 title/branch LLM 调用被跳过，
+    /// 只做 `needsTitleGen`→false 和 `isGeneratingTitle`→true 的同步 flag 翻转。
+    /// 生产代码不得设置。
+    @ObservationIgnored internal var skipTitleGenForTesting: Bool = false
 
     // MARK: - Init
 
@@ -116,15 +139,7 @@ class SessionHandle2 {
 
     // MARK: - Lifecycle commands
 
-    /// 启动 CLI 子进程。**不触发 loadHistory**（两者正交）。
-    ///
-    /// - `.notStarted` / `.stopped`：组装 `SessionConfiguration`（基于当前字段 +
-    ///   app-level 启动参数），CLI launch 时若 `repository` 有历史记录则走 resume，否则 fresh。
-    ///   `status` → `.starting` →（SDK ready）`.idle` 或（SDK 失败）`.stopped` + `termination` 写入。
-    /// - 其他 status：no-op。
-    ///
-    /// 调用方（SessionService）不感知 fresh / resume 区别。
-    func start() { fatalError() }
+    // `start()` / `stop()` / `send(_:)` 实现与文档均在 `SessionHandle2+Start.swift`。
 
     /// 后台加载历史消息到 `messages`。幂等，按 `historyLoadState` 分派。
     ///
@@ -139,24 +154,7 @@ class SessionHandle2 {
     /// 与 `start()` 独立——stopped / notStarted session 也能查看历史。
     func loadHistory() { fatalError() }
 
-    /// 手动停止 CLI 子进程。
-    ///
-    /// - active 状态（`.starting` / `.idle` / `.responding` / `.interrupting`）：
-    ///   断开 SDK；`status` → `.stopped`；`.inFlight` 的 MessageEntry 转
-    ///   `.failed("session stopped")`；`.queued` **保留**（下次 `start()` 后自动 flush）。
-    /// - non-active：no-op。
-    func stop() { fatalError() }
-
     // MARK: - Messaging commands
-
-    /// 唯一发送入口。使用方不需要判断 status。
-    ///
-    /// 行为：
-    /// 1. 无条件 append 一条 user `MessageEntry`（delivery = `.queued`）到 `messages`。
-    /// 2. 如果 `status == .idle`：立即 flush 到 CLI，delivery → `.inFlight`，`status` → `.responding`。
-    /// 3. 其他 status（`.responding` / `.interrupting` / `.notStarted` / `.starting` / `.stopped`）：
-    ///    消息保留在 `.queued`；status 进入 `.idle` 时自动 flush。
-    func send(_ message: SessionMessage) { fatalError() }
 
     /// 中断当前模型响应。
     ///
@@ -173,18 +171,20 @@ class SessionHandle2 {
 
     // MARK: - Configuration commands
 
-    /// 变更 model。
+    /// 变更 model。**乐观写入**语义：
     ///
-    /// - `.notStarted` / `.stopped`（non-active）：**本地写入** `model` 字段，下次 `start()` 作为启动参数。
-    /// - attached（`.idle` / `.responding` / `.interrupting`）：**发 RPC** 请求 CLI 切换；
-    ///   `model` 字段不立即改，等 CLI init 消息回包覆盖。
-    /// - `.starting`：待定（取决于 SDK 是否已 attach），保守按 attached 处理。
+    /// - `.notStarted` / `.stopped`（non-active）：仅改内存，下次 `start()` 作为启动参数。
+    /// - attached（`.idle` / `.responding` / `.interrupting` / `.starting`）：
+    ///   1. **立刻改内存**（UI 即时反馈，避免 RPC 往返的 100-300ms 停顿）
+    ///   2. 并发发 RPC 通知 CLI 切换
+    ///   3. CLI 后续 init/config 消息回包是 **authoritative**，若值与本地猜测不一致，
+    ///      回包直接覆盖内存（不做 rollback，回包即真相）
     func setModel(_ model: String?) { fatalError() }
 
-    /// 变更推理力度。路由规则同 `setModel`。
+    /// 变更推理力度。路由规则同 `setModel`（乐观写入 + RPC + 回包覆盖）。
     func setEffort(_ effort: Effort?) { fatalError() }
 
-    /// 变更权限模式。路由规则同 `setModel`。
+    /// 变更权限模式。路由规则同 `setModel`（乐观写入 + RPC + 回包覆盖）。
     func setPermissionMode(_ mode: PermissionMode) { fatalError() }
 
     /// 变更工作目录。

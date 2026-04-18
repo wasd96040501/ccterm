@@ -48,11 +48,11 @@ struct MarkdownView: View {
         if let state {
             switch layout {
             case .eager:
-                VStack(alignment: .leading, spacing: theme.segmentSpacing) {
+                VStack(alignment: .leading, spacing: theme.l2) {
                     segmentViews(for: state)
                 }
             case .lazy:
-                LazyVStack(alignment: .leading, spacing: theme.segmentSpacing) {
+                LazyVStack(alignment: .leading, spacing: theme.l2) {
                     segmentViews(for: state)
                 }
             }
@@ -66,14 +66,23 @@ struct MarkdownView: View {
     private func segmentViews(for state: RenderState) -> some View {
         ForEach(Array(state.document.segments.enumerated()), id: \.offset) { idx, segment in
             segmentView(segment: segment, prebuilt: state.prebuilt[idx])
+                .padding(.top, headingTopPadding(idx: idx, segment: segment))
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    /// Heading segments get an extra top padding so total gap above = l1.
+    /// (segmentSpacing already provides l2; we add l1 - l2.) Skip for the very
+    /// first segment — no content above it to push away from.
+    private func headingTopPadding(idx: Int, segment: MarkdownSegment) -> CGFloat {
+        guard case .heading = segment, idx > 0 else { return 0 }
+        return max(0, theme.l1 - theme.l2)
     }
 
     @ViewBuilder
     private func segmentView(segment: MarkdownSegment, prebuilt: NSAttributedString?) -> some View {
         switch segment {
-        case .markdown:
+        case .markdown, .heading:
             if let prebuilt {
                 MarkdownTextView(
                     attributed: prebuilt,
@@ -116,10 +125,14 @@ struct MarkdownView: View {
 
         let builder = MarkdownAttributedBuilder(theme: theme)
         let prebuilt: [NSAttributedString?] = document.segments.map { segment in
-            if case .markdown(let blocks) = segment {
+            switch segment {
+            case .markdown(let blocks):
                 return builder.build(blocks: blocks)
+            case .heading(let level, let inlines):
+                return builder.buildHeading(level: level, inlines: inlines)
+            default:
+                return nil
             }
-            return nil
         }
         guard !Task.isCancelled else { return }
         state = RenderState(document: document, prebuilt: prebuilt)
@@ -193,15 +206,24 @@ extension View {
 
 #Preview("Markdown demo") {
     let sample = #"""
-    # Markdown Renderer
+    # Heading 1 — page title
+    ## Heading 2 — section
+    ### Heading 3 — subsection
+    #### Heading 4
+    ##### Heading 5
+    ###### Heading 6
 
-    Native **SwiftUI** + *TextKit 1* rendering. Visit [Apple](https://apple.com) or read the `README.md`.
+    ## Inline styles
+
+    Native **SwiftUI** + *TextKit 1* + ~~legacy WebView~~. Visit [Apple](https://apple.com) or read the `README.md`.
 
     Soft
     break collapses. Hard break below.\
     New line.
 
-    ## Features
+    Image fallback: ![Diagram](https://example.com/img.png)
+
+    ## Lists
 
     - Paragraphs with **bold**, *italic*, ~~strike~~, `inline code`
     - Links like [GitHub](https://github.com)
@@ -213,18 +235,18 @@ extension View {
       - level 2
         - level 3
 
-    1. First ordered
-    2. Second
-    3. Third
+    10. Tenth (ordered with start)
+    11. Eleventh
+    12. Twelfth
 
-    ### Blockquote
+    ## Blockquote
 
     > This is a blockquote.
     > Second line, same paragraph.
     >
     > Nested paragraphs work too.
 
-    ### Code
+    ## Code
 
     ```swift
     func greet(_ name: String) -> String {
@@ -232,14 +254,18 @@ extension View {
     }
     ```
 
-    ### Table
+    ```
+    fenced without language
+    ```
+
+    ## Table
 
     | Name  | Age | Role     |
     |:------|:---:|---------:|
     | Alice |  30 | Engineer |
     | Bob   |  25 | Designer |
 
-    ### Math
+    ## Math
 
     Inline: $E = mc^2$. Block below:
 
@@ -256,7 +282,7 @@ extension View {
         MarkdownView(sample)
             .padding()
     }
-    .frame(width: 640, height: 800)
+    .frame(width: 640, height: 560)
 }
 
 #Preview("Short — eager, dark") {
@@ -273,5 +299,5 @@ extension View {
             .markdownLayout(.lazy)
             .padding()
     }
-    .frame(width: 520, height: 700)
+    .frame(width: 520, height: 500)
 }

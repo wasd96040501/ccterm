@@ -18,13 +18,22 @@ struct MarkdownAttributedBuilder {
             renderBlock(
                 block,
                 indent: 0,
-                trailingSpacing: isLast ? 0 : theme.paragraphSpacing,
+                trailingSpacing: isLast ? 0 : theme.l2,
                 into: out)
             if !isLast {
                 out.append(NSAttributedString(string: "\n"))
             }
         }
         return out
+    }
+
+    /// Build the attributed string for a standalone heading segment.
+    func buildHeading(level: Int, inlines: [MarkdownInline]) -> NSAttributedString {
+        let font = theme.headingFont(level: level)
+        let content = renderInlines(inlines, baseFont: font, color: theme.primaryColor)
+        let style = paragraphStyle(indent: 0, trailing: 0)
+        apply(style, to: content)
+        return content
     }
 
     /// Render a flat list of inlines — used for table cells.
@@ -53,10 +62,7 @@ struct MarkdownAttributedBuilder {
         case .heading(let level, let inlines):
             let font = theme.headingFont(level: level)
             let content = renderInlines(inlines, baseFont: font, color: theme.primaryColor)
-            let style = paragraphStyle(
-                indent: indent,
-                trailing: max(trailingSpacing, theme.headingSpacingAfter),
-                before: out.length == 0 ? 0 : theme.headingSpacingBefore)
+            let style = paragraphStyle(indent: indent, trailing: trailingSpacing)
             apply(style, to: content)
             out.append(content)
 
@@ -67,7 +73,7 @@ struct MarkdownAttributedBuilder {
                 renderBlock(
                     b,
                     indent: indent + theme.blockquoteIndent,
-                    trailingSpacing: isLast ? trailingSpacing : theme.paragraphSpacing,
+                    trailingSpacing: isLast ? trailingSpacing : theme.l2,
                     into: inner)
                 if !isLast {
                     inner.append(NSAttributedString(string: "\n"))
@@ -91,7 +97,7 @@ struct MarkdownAttributedBuilder {
     ) {
         for (idx, item) in list.items.enumerated() {
             let isLast = idx == list.items.count - 1
-            let itemTrailing = isLast ? trailingSpacing : theme.listItemSpacing
+            let itemTrailing = isLast ? trailingSpacing : theme.l3Item
 
             let markerString: String
             if let checkbox = item.checkbox {
@@ -121,7 +127,7 @@ struct MarkdownAttributedBuilder {
                 for (bi, block) in item.content.enumerated() {
                     let isFirst = bi == 0
                     let isLastInItem = bi == item.content.count - 1
-                    let blockTrailing = isLastInItem ? itemTrailing : theme.paragraphSpacing
+                    let blockTrailing = isLastInItem ? itemTrailing : theme.l2
 
                     if isFirst, case .paragraph(let inlines) = block {
                         let line = NSMutableAttributedString()
@@ -280,13 +286,11 @@ struct MarkdownAttributedBuilder {
     private func paragraphStyle(
         indent: CGFloat,
         trailing: CGFloat,
-        before: CGFloat = 0,
         firstLineIndent: CGFloat? = nil
     ) -> NSParagraphStyle {
         let style = NSMutableParagraphStyle()
-        style.lineSpacing = theme.lineSpacing
+        style.lineSpacing = theme.l3Line
         style.paragraphSpacing = trailing
-        style.paragraphSpacingBefore = before
         style.firstLineHeadIndent = firstLineIndent ?? indent
         style.headIndent = indent
         return style

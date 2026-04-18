@@ -14,7 +14,7 @@ struct MarkdownCodeBlockView: View {
             .foregroundStyle(Color(nsColor: theme.primaryColor))
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 8)
+            .padding(.vertical, theme.blockPadding)
             .padding(.horizontal, 12)
             .background(Color(nsColor: theme.codeBlockBackground))
             .clipShape(RoundedRectangle(cornerRadius: 6))

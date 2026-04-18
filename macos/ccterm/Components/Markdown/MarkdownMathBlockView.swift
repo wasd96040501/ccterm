@@ -14,7 +14,7 @@ struct MarkdownMathBlockView: View {
             .foregroundStyle(Color(nsColor: theme.secondaryColor))
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 8)
+            .padding(.vertical, theme.blockPadding)
             .padding(.horizontal, 12)
             .background(Color(nsColor: theme.codeBlockBackground).opacity(0.5))
             .clipShape(RoundedRectangle(cornerRadius: 6))
@@ -24,6 +24,6 @@ struct MarkdownMathBlockView: View {
 /// v1 ``MarkdownSegment/thematicBreak`` renderer.
 struct MarkdownThematicBreakView: View {
     var body: some View {
-        Divider().padding(.vertical, 2)
+        Divider()
     }
 }

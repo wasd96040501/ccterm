@@ -48,7 +48,7 @@ struct MarkdownTableView: View {
         Text(attr)
             .textSelection(.enabled)
             .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            .padding(.vertical, theme.blockPadding)
             .frame(maxWidth: .infinity, alignment: alignment(for: column))
     }
 

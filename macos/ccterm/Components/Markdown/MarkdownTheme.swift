@@ -14,17 +14,23 @@ struct MarkdownTheme {
 
     var headingSizes: [CGFloat] = [22, 19, 16, 14, 13, 12]
 
-    var lineSpacing: CGFloat = 2
-    var paragraphSpacing: CGFloat = 8
-    var headingSpacingBefore: CGFloat = 10
-    var headingSpacingAfter: CGFloat = 4
+    // MARK: - Spacing (three semantic layers)
 
-    // MARK: - Spacing
+    /// Section break — extra space above a heading (added on top of l2 segment gap).
+    var l1: CGFloat = 16
+    /// Block-level — between adjacent segments and between blocks inside a markdown segment.
+    var l2: CGFloat = 8
+    /// Item-level — between list items.
+    var l3Item: CGFloat = 4
+    /// Line-level — intra-paragraph line spacing.
+    var l3Line: CGFloat = 2
+
+    // MARK: - Layout
 
     var listIndent: CGFloat = 18
-    var listItemSpacing: CGFloat = 2
     var blockquoteIndent: CGFloat = 14
-    var segmentSpacing: CGFloat = 10
+    /// Vertical inset inside code/table/math blocks.
+    var blockPadding: CGFloat = 8
 
     // MARK: - Derived fonts
 
@@ -92,14 +98,13 @@ struct MarkdownTheme {
         let bodyFontSize: CGFloat
         let codeFontSize: CGFloat
         let headingSizes: [CGFloat]
-        let lineSpacing: CGFloat
-        let paragraphSpacing: CGFloat
-        let headingSpacingBefore: CGFloat
-        let headingSpacingAfter: CGFloat
+        let l1: CGFloat
+        let l2: CGFloat
+        let l3Item: CGFloat
+        let l3Line: CGFloat
         let listIndent: CGFloat
-        let listItemSpacing: CGFloat
         let blockquoteIndent: CGFloat
-        let segmentSpacing: CGFloat
+        let blockPadding: CGFloat
     }
 
     var fingerprint: Fingerprint {
@@ -107,14 +112,13 @@ struct MarkdownTheme {
             bodyFontSize: bodyFontSize,
             codeFontSize: codeFontSize,
             headingSizes: headingSizes,
-            lineSpacing: lineSpacing,
-            paragraphSpacing: paragraphSpacing,
-            headingSpacingBefore: headingSpacingBefore,
-            headingSpacingAfter: headingSpacingAfter,
+            l1: l1,
+            l2: l2,
+            l3Item: l3Item,
+            l3Line: l3Line,
             listIndent: listIndent,
-            listItemSpacing: listItemSpacing,
             blockquoteIndent: blockquoteIndent,
-            segmentSpacing: segmentSpacing)
+            blockPadding: blockPadding)
     }
 }
 

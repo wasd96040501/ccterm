@@ -11,7 +11,7 @@ struct MarkdownTextView: NSViewRepresentable {
     let linkColor: NSColor
     let onOpenURL: (URL) -> Void
     var inlineCodeHPadding: CGFloat = 4
-    var inlineCodeVPadding: CGFloat = 1
+    var inlineCodeVPadding: CGFloat = 0
     var inlineCodeCornerRadius: CGFloat = 3
 
     func makeNSView(context: Context) -> WrappedTextView {

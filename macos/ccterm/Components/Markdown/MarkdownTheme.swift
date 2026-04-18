@@ -46,9 +46,11 @@ struct MarkdownTheme {
     /// Inline code chip: horizontal padding (chip extends past glyph rect by
     /// this much on each side; ≈ 0.33em on a 12pt code font).
     var inlineCodeHPadding: CGFloat = 4
-    /// Inline code chip: vertical padding (kept tight so line height isn't
-    /// disturbed; ≈ 0.08em).
-    var inlineCodeVPadding: CGFloat = 1
+    /// Inline code chip: vertical padding. Kept at 0 — anything > 0 lets the
+    /// chip extend past the line fragment's top/bottom and get clipped by the
+    /// NSTextView's drawing bounds. The chip already fills the line height,
+    /// so 0 still reads as a comfortable container.
+    var inlineCodeVPadding: CGFloat = 0
     /// Inline code chip: corner radius (≈ 0.21 of chip height — moderate).
     var inlineCodeCornerRadius: CGFloat = 3
     /// Spacing pushed onto the characters immediately before and after an

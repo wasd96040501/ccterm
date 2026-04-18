@@ -16,7 +16,7 @@ extension NSAttributedString.Key {
 /// them from the theme.
 final class MarkdownLayoutManager: NSLayoutManager {
     var inlineCodeHorizontalPadding: CGFloat = 4
-    var inlineCodeVerticalPadding: CGFloat = 1
+    var inlineCodeVerticalPadding: CGFloat = 0
     var inlineCodeCornerRadius: CGFloat = 3
 
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {

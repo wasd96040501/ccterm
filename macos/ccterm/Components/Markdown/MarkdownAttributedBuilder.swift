@@ -347,28 +347,35 @@ struct MarkdownAttributedBuilder {
             // Custom marker — drawn as a padded rounded chip by
             // ``MarkdownLayoutManager``. Built-in `.backgroundColor` only
             // supports tight rectangles.
-            let attrs: [NSAttributedString.Key: Any] = [
+            let chipAttrs: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: color,
                 .inlineCodeBackground: theme.inlineCodeBackground,
             ]
-            let chip = NSMutableAttributedString(string: s, attributes: attrs)
-            // Push the *next* character past the chip's right edge: kern adds
-            // spacing after the character it's applied to, so set it on the
-            // last char of the code run.
-            if chip.length > 0 {
-                chip.addAttribute(
-                    .kern,
-                    value: theme.inlineCodeSideKern,
-                    range: NSRange(location: chip.length - 1, length: 1))
-            }
-            // Push the chip itself away from the *previous* character by
-            // bumping that char's kern in the already-emitted output.
+            let chip = NSAttributedString(string: s, attributes: chipAttrs)
+
+            // LEFT side: push the chip away from the previous character by
+            // bumping that char's kern in the already-emitted output. The kern
+            // sits on a glyph OUTSIDE the chip's marker range, so it shifts
+            // the chip's start position without widening the chip itself.
             if out.length > 0 {
                 let prevRange = NSRange(location: out.length - 1, length: 1)
                 out.addAttribute(.kern, value: theme.inlineCodeSideKern, range: prevRange)
             }
             out.append(chip)
+
+            // RIGHT side: append a zero-width word joiner (U+2060) carrying
+            // the kern. CRITICAL — putting the kern on the chip's *last*
+            // character would widen `enumerateEnclosingRects`'s result and
+            // pull the following glyph INSIDE the chip's rounded right edge.
+            // The U+2060 is invisible, has no advance, and is unmarked, so it
+            // sits outside the chip range; only its post-kern carries through
+            // to push the next visible glyph past the chip's drawn edge.
+            let trailing = NSAttributedString(string: "\u{2060}", attributes: [
+                .font: font,
+                .kern: theme.inlineCodeSideKern,
+            ])
+            out.append(trailing)
 
         case .link(let destination, let children):
             let before = out.length

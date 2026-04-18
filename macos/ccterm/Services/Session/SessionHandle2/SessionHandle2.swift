@@ -79,6 +79,22 @@ class SessionHandle2 {
     init(sessionId: String, repository: SessionRepository) {
         self.sessionId = sessionId
         self.repository = repository
+        hydrateFromRepository()
+    }
+
+    /// 从 repository 读取并填充持久化配置字段。无记录时保持默认值。
+    private func hydrateFromRepository() {
+        guard let record = repository.find(sessionId) else { return }
+        cwd = record.cwd
+        isWorktree = record.isWorktree
+        model = record.extra.model
+        effort = record.extra.effort.flatMap(Effort.init(rawValue:))
+        if let raw = record.extra.permissionMode,
+           let mapped = PermissionMode(rawValue: raw) {
+            permissionMode = mapped
+        }
+        addDirs = record.extra.addDirs ?? []
+        plugins = record.extra.pluginDirs ?? []
     }
 
     // MARK: - Lifecycle commands

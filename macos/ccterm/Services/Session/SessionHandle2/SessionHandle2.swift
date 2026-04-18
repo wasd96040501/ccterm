@@ -38,6 +38,8 @@ class SessionHandle2 {
     private(set) var model: String?
     private(set) var effort: Effort?
     private(set) var permissionMode: PermissionMode = .default
+    private(set) var addDirs: [String] = []
+    private(set) var plugins: [String] = []
 
     // MARK: - Runtime
 
@@ -77,6 +79,8 @@ class SessionHandle2 {
     func setPermissionMode(_ mode: PermissionMode) { fatalError() }
     func setCwd(_ cwd: String) { fatalError() }
     func setWorktree(_ isWorktree: Bool) { fatalError() }
+    func setAddDirs(_ dirs: [String]) { fatalError() }
+    func setPlugins(_ plugins: [String]) { fatalError() }
 
     // MARK: - Permission
 

@@ -6,79 +6,93 @@ import AgentSDK
 extension SessionHandle2 {
 
     /// live 来自 CLI 实时推送；replay 来自 JSONL 历史回放。
-    /// 唯一差异：replay 不推进 lifecycle，不触发 hasUnread。
-    enum ReceiveMode {
-        case live
-        case replay
-    }
+    /// 唯一差异：replay 不推进 lifecycle，不置 hasUnread。
+    enum ReceiveMode { case live, replay }
 }
 
-// MARK: - Receive
+// MARK: - receive
 
 extension SessionHandle2 {
 
-    /// 单一 ingest 入口。吞入一条 Message2：
-    /// 1. 识别 tool_result 块 → 原位更新对应 assistant entry 的 `toolResults`，不 append
-    /// 2. 过滤不可见消息（synthetic / compact / subagent / 空文本 / 非 user/assistant）
-    /// 3. 包为 MessageEntry append 到 `messages`
-    /// 4. 副作用：contextUsedTokens/Window、cwd、slashCommands、permissionMode、lifecycle 推进
+    /// 单一 ingest 入口。吞一条 Message2 并更新 handle：
+    /// - 同步副作用（usage、contextWindow、cwd、slashCommands、permissionMode、lifecycle）
+    /// - tool_result 原位合并到对应 assistant entry，或按可见性追加 MessageEntry
     ///
-    /// live 与 replay 走同一路径。
+    /// live 与 replay 走同一路径；`mode` 仅影响 lifecycle 推进与 hasUnread 触发。
     func receive(_ message: Message2, mode: ReceiveMode = .live) {
-        applyEffects(of: message, mode: mode)
-
-        if let payload = Self.toolResultPayload(in: message) {
-            mergeToolResult(toolUseId: payload.toolUseId, result: payload.result)
-            return
+        switch message {
+        case .assistant(let a): noteUsage(a.message?.usage)
+        case .result(let r): finishTurn(with: r, mode: mode)
+        case .system(.`init`(let info)): adopt(info, mode: mode)
+        default: break
         }
 
-        guard Self.shouldAppend(message) else { return }
+        switch action(for: message) {
+        case .merge(let id, let result): attachToolResult(result, to: id)
+        case .append: appendToTimeline(message, mode: mode)
+        case .skip: break
+        }
+    }
+}
 
+// MARK: - Dispatch
+
+private extension SessionHandle2 {
+
+    enum Action {
+        case merge(toolUseId: String, result: ItemToolResult)
+        case append
+        case skip
+    }
+
+    func action(for message: Message2) -> Action {
+        switch message {
+        case .user(let u):
+            if let r = u.toolResultBlock, let id = r.toolUseId {
+                return .merge(toolUseId: id, result: r)
+            }
+            return u.isVisible ? .append : .skip
+        case .assistant(let a):
+            return a.isVisible ? .append : .skip
+        default:
+            return .skip
+        }
+    }
+}
+
+// MARK: - Timeline writes
+
+private extension SessionHandle2 {
+
+    func appendToTimeline(_ message: Message2, mode: ReceiveMode) {
         messages.append(MessageEntry(
             id: UUID(),
             message: message,
             delivery: nil,
             toolResults: [:]
         ))
+        if mode == .live, !isFocused { hasUnread = true }
+    }
 
-        if mode == .live, !isFocused {
-            hasUnread = true
-        }
+    func attachToolResult(_ result: ItemToolResult, to toolUseId: String) {
+        guard let idx = messages.lastIndex(where: { $0.owns(toolUseId: toolUseId) }) else { return }
+        messages[idx].toolResults[toolUseId] = result
     }
 }
 
-// MARK: - Effects
+// MARK: - Effect application
 
 private extension SessionHandle2 {
 
-    func applyEffects(of message: Message2, mode: ReceiveMode) {
-        switch message {
-        case .assistant(let m):
-            applyAssistantUsage(m)
-        case .result(let r):
-            applyResult(r, mode: mode)
-        case .system(.`init`(let init_)):
-            applyInit(init_, mode: mode)
-        default:
-            break
-        }
-    }
-
-    func applyAssistantUsage(_ msg: Message2Assistant) {
-        guard let usage = msg.message?.usage else { return }
+    func noteUsage(_ usage: MessageUsage?) {
+        guard let usage else { return }
         contextUsedTokens = (usage.inputTokens ?? 0)
             + (usage.cacheCreationInputTokens ?? 0)
             + (usage.cacheReadInputTokens ?? 0)
     }
 
-    func applyResult(_ result: Message2Result, mode: ReceiveMode) {
-        let modelUsage: [String: ModelUsageValue]?
-        switch result {
-        case .success(let s): modelUsage = s.modelUsage
-        case .errorDuringExecution(let e): modelUsage = e.modelUsage
-        case .unknown: modelUsage = nil
-        }
-        if let window = modelUsage?.values.compactMap(\.contextWindow).max() {
+    func finishTurn(with result: Message2Result, mode: ReceiveMode) {
+        if let window = result.contextWindow {
             contextWindowTokens = window
         }
         if mode == .live, case .responding = status {
@@ -86,13 +100,13 @@ private extension SessionHandle2 {
         }
     }
 
-    func applyInit(_ init_: Init, mode: ReceiveMode) {
-        if let c = init_.cwd { cwd = c }
-        if let cmds = init_.slashCommands {
-            slashCommands = cmds.map { SlashCommand(name: $0, description: nil) }
+    func adopt(_ info: Init, mode: ReceiveMode) {
+        if let c = info.cwd { cwd = c }
+        if let raw = info.permissionMode, let mapped = PermissionMode(rawValue: raw) {
+            permissionMode = mapped
         }
-        if let raw = init_.permissionMode, let pm = PermissionMode(rawValue: raw) {
-            permissionMode = pm
+        if let cmds = info.slashCommands {
+            slashCommands = cmds.map { SlashCommand(name: $0, description: nil) }
         }
         if mode == .live, case .starting = status {
             status = .idle
@@ -100,97 +114,83 @@ private extension SessionHandle2 {
     }
 }
 
-// MARK: - Tool result merge
+// MARK: - Message introspection
 
-private extension SessionHandle2 {
+private extension Message2User {
 
-    struct ToolResultPayload {
-        let toolUseId: String
-        let result: ItemToolResult
+    /// 本消息是否作为独立 entry 进 timeline。
+    /// 剔除子 agent、synthetic、compact summary、transcript-only、空文本。
+    var isVisible: Bool {
+        guard parentToolUseId == nil,
+              isSynthetic != true,
+              isCompactSummary != true,
+              isVisibleInTranscriptOnly != true
+        else { return false }
+        return hasVisibleText
     }
 
-    /// 从 user 消息中提取第一条 tool_result block（通常每条消息只带一个）。
-    static func toolResultPayload(in message: Message2) -> ToolResultPayload? {
-        guard case .user(let u) = message,
-              case .array(let items) = u.message?.content else { return nil }
-        for item in items {
-            if case .toolResult(let r) = item, let id = r.toolUseId {
-                return ToolResultPayload(toolUseId: id, result: r)
-            }
-        }
-        return nil
-    }
-
-    func mergeToolResult(toolUseId: String, result: ItemToolResult) {
-        guard let idx = indexOfAssistantOwning(toolUseId: toolUseId) else { return }
-        var entry = messages[idx]
-        entry.toolResults[toolUseId] = result
-        messages[idx] = entry
-    }
-
-    func indexOfAssistantOwning(toolUseId: String) -> Int? {
-        for i in messages.indices.reversed() {
-            guard case .assistant(let a) = messages[i].message,
-                  let blocks = a.message?.content else { continue }
-            if blocks.contains(where: { Self.matchesToolUse($0, id: toolUseId) }) {
-                return i
-            }
-        }
-        return nil
-    }
-
-    static func matchesToolUse(_ block: Message2AssistantMessageContent, id: String) -> Bool {
-        guard case .toolUse(let tu) = block else { return false }
-        return (tu.toJSON() as? [String: Any])?["id"] as? String == id
-    }
-}
-
-// MARK: - Visibility filter
-
-private extension SessionHandle2 {
-
-    /// 是否追加到 timeline。仅 user / assistant 进 timeline；
-    /// 并进一步过滤 synthetic / compact / subagent / 空消息 / thinking-only。
-    static func shouldAppend(_ message: Message2) -> Bool {
-        switch message {
-        case .user(let u): return isVisibleUser(u)
-        case .assistant(let a): return isVisibleAssistant(a)
-        default: return false
-        }
-    }
-
-    static func isVisibleUser(_ u: Message2User) -> Bool {
-        if u.parentToolUseId != nil { return false }
-        if u.isSynthetic == true { return false }
-        if u.isCompactSummary == true { return false }
-        if u.isVisibleInTranscriptOnly == true { return false }
-        return hasTextContent(u)
-    }
-
-    static func hasTextContent(_ u: Message2User) -> Bool {
-        guard let content = u.message?.content else { return false }
-        switch content {
-        case .string(let s):
+    var hasVisibleText: Bool {
+        switch message?.content {
+        case .string(let s)?:
             return !s.isEmpty
-        case .array(let items):
-            return items.contains { item in
-                if case .text(let t) = item { return !(t.text?.isEmpty ?? true) }
+        case .array(let items)?:
+            return items.contains {
+                if case .text(let t) = $0 { return !(t.text?.isEmpty ?? true) }
                 return false
             }
-        case .other:
+        default:
             return false
         }
     }
 
-    static func isVisibleAssistant(_ a: Message2Assistant) -> Bool {
-        if a.parentToolUseId != nil { return false }
-        guard let content = a.message?.content else { return false }
-        return content.contains { block in
+    /// 第一个 tool_result 块（通常每条 user 消息只带一个）。
+    var toolResultBlock: ItemToolResult? {
+        guard case .array(let items) = message?.content else { return nil }
+        for item in items {
+            if case .toolResult(let r) = item { return r }
+        }
+        return nil
+    }
+}
+
+private extension Message2Assistant {
+
+    /// 是否有可见内容（text 或 tool_use）。thinking-only / subagent 视为不可见。
+    var isVisible: Bool {
+        guard parentToolUseId == nil, let blocks = message?.content else { return false }
+        return blocks.contains { block in
             switch block {
             case .text(let t): return !(t.text?.isEmpty ?? true)
             case .toolUse: return true
             default: return false
             }
+        }
+    }
+}
+
+private extension Message2Result {
+
+    /// 从 modelUsage 取最大的 contextWindow。success / errorDuringExecution 共用。
+    var contextWindow: Int? {
+        let usage: [String: ModelUsageValue]?
+        switch self {
+        case .success(let s): usage = s.modelUsage
+        case .errorDuringExecution(let e): usage = e.modelUsage
+        case .unknown: usage = nil
+        }
+        return usage?.values.compactMap(\.contextWindow).max()
+    }
+}
+
+private extension MessageEntry {
+
+    /// 本 entry 是否为发起该 tool_use 的 assistant 消息。
+    func owns(toolUseId: String) -> Bool {
+        guard case .assistant(let a) = message,
+              let blocks = a.message?.content else { return false }
+        return blocks.contains { block in
+            guard case .toolUse(let t) = block else { return false }
+            return (t.toJSON() as? [String: Any])?["id"] as? String == toolUseId
         }
     }
 }

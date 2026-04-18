@@ -12,7 +12,9 @@ struct MarkdownTheme {
     var bodyFontSize: CGFloat = 13
     var codeFontSize: CGFloat = 12
 
-    var headingSizes: [CGFloat] = [22, 19, 16, 14, 13, 12]
+    /// h1-h6 font sizes. h4-h6 collapse to h3's size — distinguish by weight only,
+    /// matching GitHub / Apple HIG convention where deeper headings stop scaling.
+    var headingSizes: [CGFloat] = [22, 19, 16, 16, 16, 16]
 
     // MARK: - Spacing (three semantic layers)
 
@@ -29,6 +31,10 @@ struct MarkdownTheme {
 
     var listIndent: CGFloat = 18
     var blockquoteIndent: CGFloat = 14
+    /// Width of the vertical bar in the blockquote SwiftUI segment.
+    var blockquoteBarWidth: CGFloat = 4
+    /// Gap between the blockquote bar and its content.
+    var blockquoteBarGap: CGFloat = 12
     /// Vertical inset inside code/table/math blocks.
     var blockPadding: CGFloat = 8
 

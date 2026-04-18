@@ -9,6 +9,7 @@ final class MarkdownDocumentTests: XCTestCase {
             switch $0 {
             case .markdown: return "markdown"
             case .heading: return "heading"
+            case .blockquote: return "blockquote"
             case .codeBlock: return "codeBlock"
             case .table: return "table"
             case .mathBlock: return "mathBlock"
@@ -88,15 +89,16 @@ final class MarkdownDocumentTests: XCTestCase {
             kinds(segs),
             [
                 "heading", "markdown",
-                "heading", "markdown",
+                "heading", "markdown", "blockquote", "markdown",
                 "codeBlock", "table", "thematicBreak", "mathBlock", "markdown",
             ]
         )
 
-        // Second markdown segment (after the H2) holds lists, blockquote, image
-        // paragraph, and inline math paragraph.
-        let second = blocks(segs[3])
-        let blockKinds = second.map { block -> String in
+        // Second markdown segment (after the H2) holds the three lists. The
+        // blockquote that followed is now its own segment, and the image +
+        // inline-math paragraphs are merged into a third markdown segment.
+        let lists = blocks(segs[3])
+        let listKinds = lists.map { block -> String in
             switch block {
             case .heading: return "heading"
             case .paragraph: return "paragraph"
@@ -104,19 +106,16 @@ final class MarkdownDocumentTests: XCTestCase {
             case .blockquote: return "blockquote"
             }
         }
-        XCTAssertEqual(
-            blockKinds,
-            ["ul", "ol", "ul", "blockquote", "paragraph", "paragraph"]
-        )
+        XCTAssertEqual(listKinds, ["ul", "ol", "ul"])
 
         // Code block content
-        if case .codeBlock(let cb) = segs[4] {
+        if case .codeBlock(let cb) = segs[6] {
             XCTAssertEqual(cb.language, "swift")
             XCTAssertEqual(cb.code, "let x = 1")
         } else { XCTFail("expected codeBlock") }
 
         // Table dimensions and alignments
-        if case .table(let t) = segs[5] {
+        if case .table(let t) = segs[7] {
             XCTAssertEqual(t.header.count, 2)
             XCTAssertEqual(t.alignments, [.left, .right])
             XCTAssertEqual(t.rows.count, 1)
@@ -124,7 +123,7 @@ final class MarkdownDocumentTests: XCTestCase {
         } else { XCTFail("expected table") }
 
         // Math block strips delimiters
-        if case .mathBlock(let m) = segs[7] {
+        if case .mathBlock(let m) = segs[9] {
             XCTAssertEqual(m, "x = y + z")
         } else { XCTFail("expected mathBlock") }
     }

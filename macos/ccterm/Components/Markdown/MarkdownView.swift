@@ -89,6 +89,10 @@ struct MarkdownView: View {
                     linkColor: theme.linkColor,
                     onOpenURL: { openURL($0) })
             }
+        case .blockquote:
+            if let prebuilt {
+                MarkdownBlockquoteView(attributed: prebuilt)
+            }
         case .codeBlock(let block):
             MarkdownCodeBlockView(block: block)
         case .table(let table):
@@ -130,6 +134,8 @@ struct MarkdownView: View {
                 return builder.build(blocks: blocks)
             case .heading(let level, let inlines):
                 return builder.buildHeading(level: level, inlines: inlines)
+            case .blockquote(let blocks):
+                return builder.buildBlockquote(blocks: blocks)
             default:
                 return nil
             }
@@ -217,6 +223,8 @@ extension View {
 
     Native **SwiftUI** + *TextKit 1* + ~~legacy WebView~~. Visit [Apple](https://apple.com) or read the `README.md`.
 
+    This is a deliberately long paragraph used to verify line-wrapping and intra-paragraph line spacing. It mixes **bold**, *italic*, `inline code`, [a link](https://example.com), and ~~strikethrough~~ to make sure the rendered run feels cohesive across multiple wrapped lines without odd vertical gaps or alignment quirks. Add a few more clauses so the text reliably spills onto a third or fourth line at the preview's frame width — that's where the rhythm becomes visible.
+
     Soft
     break collapses. Hard break below.\
     New line.
@@ -235,9 +243,12 @@ extension View {
       - level 2
         - level 3
 
-    10. Tenth (ordered with start)
+    9. Ninth — last single-digit row
+    10. Tenth — width jumps; content x must still align
     11. Eleventh
-    12. Twelfth
+
+    99. Ninety-ninth
+    100. Hundredth — three digits, period stays right-aligned
 
     ## Blockquote
 

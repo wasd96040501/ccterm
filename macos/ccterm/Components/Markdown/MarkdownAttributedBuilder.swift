@@ -36,6 +36,16 @@ struct MarkdownAttributedBuilder {
         return content
     }
 
+    /// Build the attributed string for a top-level blockquote segment. The
+    /// surrounding SwiftUI view draws the vertical bar and provides the indent;
+    /// the builder only colors the inner blocks with the secondary color.
+    func buildBlockquote(blocks: [MarkdownBlock]) -> NSAttributedString {
+        let inner = NSMutableAttributedString(attributedString: build(blocks: blocks))
+        let range = NSRange(location: 0, length: inner.length)
+        inner.addAttribute(.foregroundColor, value: theme.blockquoteTextColor, range: range)
+        return inner
+    }
+
     /// Render a flat list of inlines — used for table cells.
     func buildInline(_ inlines: [MarkdownInline], bold: Bool = false) -> NSAttributedString {
         let base: NSFont = bold
@@ -67,6 +77,9 @@ struct MarkdownAttributedBuilder {
             out.append(content)
 
         case .blockquote(let innerBlocks):
+            // Reached only when blockquote is nested inside another block (e.g. list
+            // item). Top-level blockquotes are split out into their own segment by
+            // the segmenter and rendered with a SwiftUI bar instead.
             let inner = NSMutableAttributedString()
             for (idx, b) in innerBlocks.enumerated() {
                 let isLast = idx == innerBlocks.count - 1
@@ -81,7 +94,6 @@ struct MarkdownAttributedBuilder {
             }
             let range = NSRange(location: 0, length: inner.length)
             inner.addAttribute(.foregroundColor, value: theme.blockquoteTextColor, range: range)
-            inner.addAttribute(.obliqueness, value: 0.1, range: range)
             out.append(inner)
 
         case .list(let list):
@@ -95,33 +107,47 @@ struct MarkdownAttributedBuilder {
         trailingSpacing: CGFloat,
         into out: NSMutableAttributedString
     ) {
+        // Marker font: monospaced digits for ordered lists so 9, 10, 99, 100
+        // share the same digit width and right-align cleanly.
+        let markerFont: NSFont = list.ordered
+            ? NSFont.monospacedDigitSystemFont(ofSize: theme.bodyFontSize, weight: .regular)
+            : theme.bodyFont
+
+        // Pre-pass: compute the widest marker across this list so every item
+        // shares one right-aligned tab stop.
+        var maxMarkerWidth: CGFloat = 0
+        for (idx, item) in list.items.enumerated() {
+            let m = makeMarker(item: item, idx: idx, list: list, markerFont: markerFont)
+            maxMarkerWidth = max(maxMarkerWidth, m.size().width)
+        }
+        let markerRightX = indent + maxMarkerWidth
+        // Half-em gap between marker and content.
+        let contentX = markerRightX + theme.bodyFontSize * 0.5
+        let tabStops = [
+            NSTextTab(textAlignment: .right, location: markerRightX),
+            NSTextTab(textAlignment: .left, location: contentX),
+        ]
+
+        func listLineStyle(trailing: CGFloat) -> NSParagraphStyle {
+            let style = NSMutableParagraphStyle()
+            style.lineSpacing = theme.l3Line
+            style.paragraphSpacing = trailing
+            style.firstLineHeadIndent = indent
+            style.headIndent = contentX
+            style.tabStops = tabStops
+            return style
+        }
+
         for (idx, item) in list.items.enumerated() {
             let isLast = idx == list.items.count - 1
             let itemTrailing = isLast ? trailingSpacing : theme.l3Item
-
-            let markerString: String
-            if let checkbox = item.checkbox {
-                markerString = checkbox == .checked ? "☑  " : "☐  "
-            } else if list.ordered {
-                let n = (list.startIndex ?? 1) + idx
-                markerString = "\(n).  "
-            } else {
-                markerString = "•  "
-            }
-            let marker = NSAttributedString(string: markerString, attributes: [
-                .font: theme.bodyFont,
-                .foregroundColor: theme.secondaryColor,
-            ])
-            let markerWidth = marker.size().width
-            let contentIndent = indent + markerWidth
+            let marker = makeMarker(item: item, idx: idx, list: list, markerFont: markerFont)
 
             if item.content.isEmpty {
-                let line = NSMutableAttributedString(attributedString: marker)
-                let style = paragraphStyle(
-                    indent: contentIndent,
-                    trailing: itemTrailing,
-                    firstLineIndent: indent)
-                apply(style, to: line)
+                let line = NSMutableAttributedString(string: "\t")
+                line.append(marker)
+                line.append(NSAttributedString(string: "\t"))
+                apply(listLineStyle(trailing: itemTrailing), to: line)
                 out.append(line)
             } else {
                 for (bi, block) in item.content.enumerated() {
@@ -130,22 +156,19 @@ struct MarkdownAttributedBuilder {
                     let blockTrailing = isLastInItem ? itemTrailing : theme.l2
 
                     if isFirst, case .paragraph(let inlines) = block {
-                        let line = NSMutableAttributedString()
+                        let line = NSMutableAttributedString(string: "\t")
                         line.append(marker)
+                        line.append(NSAttributedString(string: "\t"))
                         line.append(renderInlines(
                             inlines,
                             baseFont: theme.bodyFont,
                             color: theme.primaryColor))
-                        let style = paragraphStyle(
-                            indent: contentIndent,
-                            trailing: blockTrailing,
-                            firstLineIndent: indent)
-                        apply(style, to: line)
+                        apply(listLineStyle(trailing: blockTrailing), to: line)
                         out.append(line)
                     } else {
                         renderBlock(
                             block,
-                            indent: contentIndent,
+                            indent: contentX,
                             trailingSpacing: blockTrailing,
                             into: out)
                     }
@@ -160,6 +183,57 @@ struct MarkdownAttributedBuilder {
                 out.append(NSAttributedString(string: "\n"))
             }
         }
+    }
+
+    private func makeMarker(
+        item: MarkdownListItem,
+        idx: Int,
+        list: MarkdownList,
+        markerFont: NSFont
+    ) -> NSAttributedString {
+        if let checkbox = item.checkbox {
+            return checkboxAttachment(checked: checkbox == .checked)
+        }
+        if list.ordered {
+            let n = (list.startIndex ?? 1) + idx
+            return NSAttributedString(string: "\(n).", attributes: [
+                .font: markerFont,
+                .foregroundColor: theme.secondaryColor,
+            ])
+        }
+        return NSAttributedString(string: "•", attributes: [
+            .font: markerFont,
+            .foregroundColor: theme.secondaryColor,
+        ])
+    }
+
+    /// SF Symbols `square` / `checkmark.square` rendered as an `NSTextAttachment`
+    /// so checked and unchecked boxes are guaranteed to be the exact same size.
+    /// Aligned so the symbol's vertical center matches the body font's x-height.
+    private func checkboxAttachment(checked: Bool) -> NSAttributedString {
+        let name = checked ? "checkmark.square" : "square"
+        let config = NSImage.SymbolConfiguration(pointSize: theme.bodyFontSize, weight: .regular)
+        guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config)
+        else {
+            // Fallback to the legacy glyphs if the symbol isn't available.
+            return NSAttributedString(string: checked ? "☑" : "☐", attributes: [
+                .font: theme.bodyFont,
+                .foregroundColor: theme.secondaryColor,
+            ])
+        }
+        image.isTemplate = true
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        let h = theme.bodyFontSize
+        let xHeight = theme.bodyFont.xHeight
+        attachment.bounds = CGRect(x: 0, y: (xHeight - h) / 2, width: h, height: h)
+        let attr = NSMutableAttributedString(attachment: attachment)
+        attr.addAttribute(
+            .foregroundColor,
+            value: theme.secondaryColor,
+            range: NSRange(location: 0, length: attr.length))
+        return attr
     }
 
     // MARK: - Inline rendering

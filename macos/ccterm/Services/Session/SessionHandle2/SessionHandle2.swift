@@ -12,7 +12,7 @@ class SessionHandle2 {
         case idle
         case responding
         case interrupting
-        case stopped(ProcessExit?)
+        case stopped
     }
 
     enum HistoryLoadState {
@@ -32,6 +32,17 @@ class SessionHandle2 {
     internal(set) var status: Status = .notStarted
     internal(set) var historyLoadState: HistoryLoadState = .notLoaded
 
+    /// 最近一次启动失败或进程异常退出的描述（含 exit code）。nil 表示"未发生"。
+    /// 运行时由进程退出 handler 写入；hydrate 时从 `record.error` 还原。
+    internal(set) var termination: String?
+
+    // MARK: - Metadata
+
+    internal(set) var title: String = ""
+    internal(set) var originPath: String?
+    internal(set) var worktreeBranch: String?
+    internal(set) var isGeneratingBranch: Bool = false
+
     // MARK: - Configuration
 
     internal(set) var cwd: String?
@@ -39,8 +50,8 @@ class SessionHandle2 {
     internal(set) var model: String?
     internal(set) var effort: Effort?
     internal(set) var permissionMode: PermissionMode = .default
-    internal(set) var addDirs: [String] = []
-    internal(set) var plugins: [String] = []
+    internal(set) var additionalDirectories: [String] = []
+    internal(set) var pluginDirectories: [String] = []
 
     // MARK: - Runtime
 
@@ -62,9 +73,10 @@ class SessionHandle2 {
     /// 新旧 session 的差异由 handle 内部通过 `repository` 判断。
     ///
     /// 行为：
-    /// - 同步从 `repository.find(sessionId)` 读取并 hydrate 持久化的配置字段：
-    ///   `cwd` / `isWorktree` / `model` / `effort` / `permissionMode` / `addDirs` / `plugins`
-    ///   （repository 无记录时这些字段保持默认值）。
+    /// - 同步从 `repository.find(sessionId)` 读取并 apply 持久化字段：`title` /
+    ///   `cwd` / `isWorktree` / `originPath` / `worktreeBranch` / `termination` /
+    ///   `model` / `effort` / `permissionMode` / `additionalDirectories` /
+    ///   `pluginDirectories`（无记录时保持默认）。
     /// - **不加载历史消息**。`messages` 为空，`historyLoadState = .notLoaded`。
     ///   UI 进入 session 视图时显式调 `loadHistory()`，与 `start()` 解耦。
     /// - `status = .notStarted`。
@@ -79,22 +91,27 @@ class SessionHandle2 {
     init(sessionId: String, repository: SessionRepository) {
         self.sessionId = sessionId
         self.repository = repository
-        hydrateFromRepository()
+        if let record = repository.find(sessionId) {
+            apply(record)
+        }
     }
 
-    /// 从 repository 读取并填充持久化配置字段。无记录时保持默认值。
-    private func hydrateFromRepository() {
-        guard let record = repository.find(sessionId) else { return }
+    /// 把 `record` 的持久化字段映射到当前 handle。仅覆盖字段，不碰 status / messages。
+    private func apply(_ record: SessionRecord) {
+        title = record.title
         cwd = record.cwd
         isWorktree = record.isWorktree
+        originPath = record.originPath
+        worktreeBranch = record.worktreeBranch
+        termination = record.error
         model = record.extra.model
         effort = record.extra.effort.flatMap(Effort.init(rawValue:))
         if let raw = record.extra.permissionMode,
            let mapped = PermissionMode(rawValue: raw) {
             permissionMode = mapped
         }
-        addDirs = record.extra.addDirs ?? []
-        plugins = record.extra.pluginDirs ?? []
+        additionalDirectories = record.extra.addDirs ?? []
+        pluginDirectories = record.extra.pluginDirs ?? []
     }
 
     // MARK: - Lifecycle commands
@@ -103,7 +120,7 @@ class SessionHandle2 {
     ///
     /// - `.notStarted` / `.stopped`：组装 `SessionConfiguration`（基于当前字段 +
     ///   app-level 启动参数），CLI launch 时若 `repository` 有历史记录则走 resume，否则 fresh。
-    ///   `status` → `.starting` → （SDK ready）`.idle` 或 （SDK 失败）`.stopped(.abnormal)`。
+    ///   `status` → `.starting` →（SDK ready）`.idle` 或（SDK 失败）`.stopped` + `termination` 写入。
     /// - 其他 status：no-op。
     ///
     /// 调用方（SessionService）不感知 fresh / resume 区别。
@@ -125,7 +142,7 @@ class SessionHandle2 {
     /// 手动停止 CLI 子进程。
     ///
     /// - active 状态（`.starting` / `.idle` / `.responding` / `.interrupting`）：
-    ///   断开 SDK；`status` → `.stopped(nil)`；`.inFlight` 的 MessageEntry 转
+    ///   断开 SDK；`status` → `.stopped`；`.inFlight` 的 MessageEntry 转
     ///   `.failed("session stopped")`；`.queued` **保留**（下次 `start()` 后自动 flush）。
     /// - non-active：no-op。
     func stop() { fatalError() }
@@ -180,11 +197,12 @@ class SessionHandle2 {
     func setWorktree(_ isWorktree: Bool) { fatalError() }
 
     /// 变更额外工作目录列表。路由规则同 `setCwd`（目前 AgentSDK 无运行时 RPC）。
-    /// UI 层加/删单项用 read-modify-write：`handle.setAddDirs(handle.addDirs + [path])`。
-    func setAddDirs(_ dirs: [String]) { fatalError() }
+    /// UI 层加/删单项用 read-modify-write：
+    /// `handle.setAdditionalDirectories(handle.additionalDirectories + [path])`。
+    func setAdditionalDirectories(_ dirs: [String]) { fatalError() }
 
-    /// 变更插件目录列表。路由规则同 `setAddDirs`。
-    func setPlugins(_ plugins: [String]) { fatalError() }
+    /// 变更插件目录列表。路由规则同 `setAdditionalDirectories`。
+    func setPluginDirectories(_ dirs: [String]) { fatalError() }
 
     // MARK: - Permission
 

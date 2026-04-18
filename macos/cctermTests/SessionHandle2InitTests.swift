@@ -20,13 +20,18 @@ final class SessionHandle2InitTests: XCTestCase {
         let repo = makeRepo()
         let handle = SessionHandle2(sessionId: "fresh", repository: repo)
 
+        XCTAssertEqual(handle.title, "")
         XCTAssertNil(handle.cwd)
         XCTAssertFalse(handle.isWorktree)
+        XCTAssertNil(handle.originPath)
+        XCTAssertNil(handle.worktreeBranch)
+        XCTAssertFalse(handle.isGeneratingBranch)
+        XCTAssertNil(handle.termination)
         XCTAssertNil(handle.model)
         XCTAssertNil(handle.effort)
         XCTAssertEqual(handle.permissionMode, .default)
-        XCTAssertTrue(handle.addDirs.isEmpty)
-        XCTAssertTrue(handle.plugins.isEmpty)
+        XCTAssertTrue(handle.additionalDirectories.isEmpty)
+        XCTAssertTrue(handle.pluginDirectories.isEmpty)
         XCTAssertTrue(handle.messages.isEmpty)
 
         guard case .notStarted = handle.status else {
@@ -46,7 +51,7 @@ final class SessionHandle2InitTests: XCTestCase {
 
     // MARK: - With record: all fields hydrated
 
-    func testInit_hydratesAllConfigFields() {
+    func testInit_hydratesAllFields() {
         let repo = makeRepo()
         let extra = SessionExtra(
             pluginDirs: ["/plug/a", "/plug/b"],
@@ -57,23 +62,31 @@ final class SessionHandle2InitTests: XCTestCase {
         )
         repo.save(SessionRecord(
             sessionId: "hydrated",
+            title: "my chat",
             cwd: "/work/repo",
             isWorktree: true,
-            extra: extra
+            originPath: "/origin/repo",
+            extra: extra,
+            error: "boot failed: exit 137",
+            worktreeBranch: "feature/x"
         ))
 
         let handle = SessionHandle2(sessionId: "hydrated", repository: repo)
 
+        XCTAssertEqual(handle.title, "my chat")
         XCTAssertEqual(handle.cwd, "/work/repo")
         XCTAssertTrue(handle.isWorktree)
+        XCTAssertEqual(handle.originPath, "/origin/repo")
+        XCTAssertEqual(handle.worktreeBranch, "feature/x")
+        XCTAssertEqual(handle.termination, "boot failed: exit 137")
         XCTAssertEqual(handle.model, "claude-opus-4-7")
         XCTAssertEqual(handle.effort, .high)
         XCTAssertEqual(handle.permissionMode, .acceptEdits)
-        XCTAssertEqual(handle.addDirs, ["/extra/one"])
-        XCTAssertEqual(handle.plugins, ["/plug/a", "/plug/b"])
+        XCTAssertEqual(handle.additionalDirectories, ["/extra/one"])
+        XCTAssertEqual(handle.pluginDirectories, ["/plug/a", "/plug/b"])
     }
 
-    func testInit_partialExtra_unsetFieldsStayDefault() {
+    func testInit_partialRecord_unsetFieldsStayDefault() {
         let repo = makeRepo()
         repo.save(SessionRecord(
             sessionId: "partial",
@@ -87,8 +100,11 @@ final class SessionHandle2InitTests: XCTestCase {
         XCTAssertEqual(handle.permissionMode, .plan)
         XCTAssertNil(handle.model)
         XCTAssertNil(handle.effort)
-        XCTAssertTrue(handle.addDirs.isEmpty)
-        XCTAssertTrue(handle.plugins.isEmpty)
+        XCTAssertNil(handle.originPath)
+        XCTAssertNil(handle.worktreeBranch)
+        XCTAssertNil(handle.termination)
+        XCTAssertTrue(handle.additionalDirectories.isEmpty)
+        XCTAssertTrue(handle.pluginDirectories.isEmpty)
     }
 
     func testInit_unrecognizedPermissionMode_keepsDefault() {

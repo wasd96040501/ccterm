@@ -214,15 +214,20 @@ extension LabelStyle where Self == ToolBlockHeaderLabelStyle {
 // MARK: - Previews
 
 private struct PreviewHarness<C: View>: View {
+    let height: CGFloat
     let content: C
-    init(@ViewBuilder _ content: () -> C) { self.content = content() }
+
+    init(height: CGFloat = 220, @ViewBuilder _ content: () -> C) {
+        self.height = height
+        self.content = content()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             content
         }
         .padding()
-        .frame(width: 520)
+        .frame(width: 520, height: height)
     }
 }
 
@@ -240,7 +245,7 @@ private struct PreviewHarness<C: View>: View {
 
 #Preview("Idle — expanded") {
     @Previewable @State var expanded = true
-    PreviewHarness {
+    PreviewHarness(height: 260) {
         ToolBlock(status: .idle, isExpanded: $expanded) {
             Text("Some body content revealed on expand.")
                 .font(.system(size: 12, design: .monospaced))
@@ -268,7 +273,7 @@ private struct PreviewHarness<C: View>: View {
 
 #Preview("Error — auto-expanded banner") {
     @Previewable @State var expanded = false
-    PreviewHarness {
+    PreviewHarness(height: 260) {
         ToolBlock(
             status: .error("EACCES: permission denied, open '/etc/hosts'"),
             isExpanded: $expanded
@@ -282,7 +287,7 @@ private struct PreviewHarness<C: View>: View {
 }
 
 #Preview("Header-only (no body)") {
-    PreviewHarness {
+    PreviewHarness(height: 280) {
         ToolBlock(status: .idle) {
             Label("/Users/me/Source/repo/README.md", systemImage: "doc.text")
         }
@@ -300,7 +305,7 @@ private struct PreviewHarness<C: View>: View {
     @Previewable @State var b = true
     @Previewable @State var c = false
     @Previewable @State var d = false
-    PreviewHarness {
+    PreviewHarness(height: 420) {
         ToolBlock(status: .idle, isExpanded: $a) {
             Text("idle collapsed body").font(.system(size: 12, design: .monospaced))
         } label: {

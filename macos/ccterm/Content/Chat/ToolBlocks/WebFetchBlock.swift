@@ -56,7 +56,7 @@ struct WebFetchBlock: View {
         status: .idle
     )
     .padding()
-    .frame(width: 600)
+    .frame(width: 600, height: 480)
     .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }
 
@@ -68,7 +68,7 @@ struct WebFetchBlock: View {
         status: .running
     )
     .padding()
-    .frame(width: 600)
+    .frame(width: 600, height: 320)
 }
 
 #Preview("Error — 404") {
@@ -79,5 +79,5 @@ struct WebFetchBlock: View {
         status: .error("HTTP 404 Not Found")
     )
     .padding()
-    .frame(width: 600)
+    .frame(width: 600, height: 320)
 }

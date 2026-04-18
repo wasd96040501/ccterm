@@ -38,13 +38,10 @@ struct ToolBlockView: View {
             GenericToolBlock(
                 name: "Skill(\(t.input?.skill ?? "?"))",
                 status: status())
-        // Hidden — no UI
-        case .ToolSearch, .TodoWrite,
-             .EnterPlanMode, .EnterWorktree, .ExitWorktree, .ExitPlanMode:
-            EmptyView()
-        // Fallback
         case .CronCreate, .SendMessage,
-             .TaskCreate, .TaskOutput, .TaskStop, .TaskUpdate, .TeamCreate:
+             .EnterPlanMode, .EnterWorktree, .ExitPlanMode, .ExitWorktree,
+             .TaskCreate, .TaskOutput, .TaskStop, .TaskUpdate,
+             .TeamCreate, .TodoWrite, .ToolSearch:
             GenericToolBlock(name: name(of: toolUse), status: status())
         case .unknown(let name, _):
             GenericToolBlock(name: name, status: status())

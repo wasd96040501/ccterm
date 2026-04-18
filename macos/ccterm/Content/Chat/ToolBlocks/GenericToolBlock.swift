@@ -19,13 +19,13 @@ struct GenericToolBlock: View {
 #Preview("Idle") {
     GenericToolBlock(name: "CronCreate", status: .idle)
         .padding()
-        .frame(width: 400)
+        .frame(width: 400, height: 140)
 }
 
 #Preview("Running") {
     GenericToolBlock(name: "CronList", status: .running)
         .padding()
-        .frame(width: 400)
+        .frame(width: 400, height: 140)
 }
 
 #Preview("Error") {
@@ -34,7 +34,7 @@ struct GenericToolBlock: View {
         status: .error("skill not installed")
     )
     .padding()
-    .frame(width: 400)
+    .frame(width: 400, height: 140)
 }
 
 #Preview("Stacked") {
@@ -44,5 +44,5 @@ struct GenericToolBlock: View {
         GenericToolBlock(name: "Skill(pdf)", status: .error("not installed"))
     }
     .padding()
-    .frame(width: 400)
+    .frame(width: 400, height: 260)
 }

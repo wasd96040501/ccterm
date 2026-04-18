@@ -33,7 +33,7 @@ struct FileEditBlock: View {
         status: .idle
     )
     .padding()
-    .frame(width: 640)
+    .frame(width: 640, height: 320)
     .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }
 
@@ -45,7 +45,7 @@ struct FileEditBlock: View {
         status: .running
     )
     .padding()
-    .frame(width: 640)
+    .frame(width: 640, height: 320)
     .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }
 
@@ -57,7 +57,7 @@ struct FileEditBlock: View {
         status: .error("Permission denied")
     )
     .padding()
-    .frame(width: 640)
+    .frame(width: 640, height: 320)
     .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }
 
@@ -78,6 +78,6 @@ struct FileEditBlock: View {
         status: .idle
     )
     .padding()
-    .frame(width: 640)
+    .frame(width: 640, height: 320)
     .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }

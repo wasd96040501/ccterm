@@ -78,7 +78,7 @@ private struct ResultRow: View {
         status: .idle
     )
     .padding()
-    .frame(width: 600)
+    .frame(width: 600, height: 300)
 }
 
 #Preview("Running") {
@@ -88,7 +88,7 @@ private struct ResultRow: View {
         status: .running
     )
     .padding()
-    .frame(width: 600)
+    .frame(width: 600, height: 300)
 }
 
 #Preview("Error") {
@@ -98,5 +98,5 @@ private struct ResultRow: View {
         status: .error("rate limit exceeded")
     )
     .padding()
-    .frame(width: 600)
+    .frame(width: 600, height: 300)
 }

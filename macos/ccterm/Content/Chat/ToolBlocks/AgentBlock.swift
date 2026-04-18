@@ -86,7 +86,7 @@ struct AgentBlock: View {
         status: .running
     )
     .padding()
-    .frame(width: 600)
+    .frame(width: 600, height: 320)
     .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }
 
@@ -111,7 +111,7 @@ struct AgentBlock: View {
         status: .idle
     )
     .padding()
-    .frame(width: 600)
+    .frame(width: 600, height: 480)
     .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }
 
@@ -125,7 +125,7 @@ struct AgentBlock: View {
         status: .error("agent exceeded context window")
     )
     .padding()
-    .frame(width: 600)
+    .frame(width: 600, height: 320)
     .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }
 
@@ -139,6 +139,6 @@ struct AgentBlock: View {
         status: .idle
     )
     .padding()
-    .frame(width: 600)
+    .frame(width: 600, height: 320)
     .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }

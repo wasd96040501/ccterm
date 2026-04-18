@@ -83,7 +83,7 @@ private struct QARow: View {
         status: .idle
     )
     .padding()
-    .frame(width: 560)
+    .frame(width: 560, height: 240)
 }
 
 #Preview("Awaiting answer — running") {
@@ -94,7 +94,7 @@ private struct QARow: View {
         status: .running
     )
     .padding()
-    .frame(width: 560)
+    .frame(width: 560, height: 240)
 }
 
 #Preview("Error") {
@@ -105,5 +105,5 @@ private struct QARow: View {
         status: .error("user declined to answer")
     )
     .padding()
-    .frame(width: 560)
+    .frame(width: 560, height: 240)
 }

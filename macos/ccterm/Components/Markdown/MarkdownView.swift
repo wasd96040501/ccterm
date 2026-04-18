@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import SwiftMath
 
 // MARK: - Public API
 
@@ -31,6 +32,7 @@ struct MarkdownView: View {
     @Environment(\.markdownTheme) private var theme
     @Environment(\.markdownLayout) private var layout
     @Environment(\.openURL) private var openURL
+    @Environment(\.syntaxEngine) private var syntaxEngine
 
     @State private var state: RenderState?
 
@@ -65,7 +67,12 @@ struct MarkdownView: View {
     @ViewBuilder
     private func segmentViews(for state: RenderState) -> some View {
         ForEach(Array(state.document.segments.enumerated()), id: \.offset) { idx, segment in
-            segmentView(segment: segment, prebuilt: state.prebuilt[idx])
+            segmentView(
+                segment: segment,
+                prebuilt: state.prebuilt[idx],
+                tokens: state.codeTokens[idx],
+                mathImage: state.mathImages[idx],
+                tableData: state.tableCells[idx])
                 .padding(.top, headingTopPadding(idx: idx, segment: segment))
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -80,7 +87,13 @@ struct MarkdownView: View {
     }
 
     @ViewBuilder
-    private func segmentView(segment: MarkdownSegment, prebuilt: NSAttributedString?) -> some View {
+    private func segmentView(
+        segment: MarkdownSegment,
+        prebuilt: NSAttributedString?,
+        tokens: [SyntaxToken]?,
+        mathImage: NSImage?,
+        tableData: PrebuiltTable?
+    ) -> some View {
         switch segment {
         case .markdown, .heading:
             if let prebuilt {
@@ -94,11 +107,11 @@ struct MarkdownView: View {
                 MarkdownBlockquoteView(attributed: prebuilt)
             }
         case .codeBlock(let block):
-            MarkdownCodeBlockView(block: block)
+            MarkdownCodeBlockView(block: block, tokens: tokens)
         case .table(let table):
-            MarkdownTableView(table: table)
+            MarkdownTableView(table: table, prebuilt: tableData)
         case .mathBlock(let raw):
-            MarkdownMathBlockView(raw: raw)
+            MarkdownMathBlockView(raw: raw, image: mathImage)
         case .thematicBreak:
             MarkdownThematicBreakView()
         }
@@ -128,20 +141,94 @@ struct MarkdownView: View {
         guard !Task.isCancelled else { return }
 
         let builder = MarkdownAttributedBuilder(theme: theme)
-        let prebuilt: [NSAttributedString?] = document.segments.map { segment in
+        var prebuilt: [NSAttributedString?] = []
+        var mathImages: [Int: NSImage] = [:]
+        var tableCells: [Int: PrebuiltTable] = [:]
+
+        for (idx, segment) in document.segments.enumerated() {
             switch segment {
             case .markdown(let blocks):
-                return builder.build(blocks: blocks)
+                prebuilt.append(builder.build(blocks: blocks))
             case .heading(let level, let inlines):
-                return builder.buildHeading(level: level, inlines: inlines)
+                prebuilt.append(builder.buildHeading(level: level, inlines: inlines))
             case .blockquote(let blocks):
-                return builder.buildBlockquote(blocks: blocks)
+                prebuilt.append(builder.buildBlockquote(blocks: blocks))
+            case .mathBlock(let raw):
+                prebuilt.append(nil)
+                if let image = renderMathImage(latex: raw) {
+                    mathImages[idx] = image
+                }
+            case .table(let table):
+                prebuilt.append(nil)
+                tableCells[idx] = buildTable(table, builder: builder)
             default:
-                return nil
+                prebuilt.append(nil)
             }
         }
+
+        // Pre-tokenize all code blocks so the first paint already shows the
+        // syntax-highlighted attributed string — no plain-text → highlighted
+        // flicker. Falls back silently to plain text if no engine is in env.
+        var codeTokens: [Int: [SyntaxToken]] = [:]
+        if let engine = syntaxEngine {
+            await engine.load()
+            for (idx, segment) in document.segments.enumerated() {
+                guard case .codeBlock(let block) = segment else { continue }
+                if Task.isCancelled { return }
+                codeTokens[idx] = await engine.highlight(
+                    code: block.code,
+                    language: block.language)
+            }
+        }
+
         guard !Task.isCancelled else { return }
-        state = RenderState(document: document, prebuilt: prebuilt)
+        state = RenderState(
+            document: document,
+            prebuilt: prebuilt,
+            codeTokens: codeTokens,
+            mathImages: mathImages,
+            tableCells: tableCells)
+    }
+
+    /// Render a LaTeX block to an NSImage via SwiftMath. Returns nil on parse
+    /// failure (the view falls back to monospaced source text).
+    private func renderMathImage(latex: String) -> NSImage? {
+        var img = MathImage(
+            latex: latex,
+            fontSize: theme.bodyFontSize * 1.4,
+            textColor: theme.primaryColor,
+            labelMode: .display,
+            textAlignment: .center)
+        let (error, image, _) = img.asImage()
+        guard error == nil, let image else { return nil }
+        return image
+    }
+
+    /// Convert a parsed `MarkdownTable` into per-cell AttributedStrings so the
+    /// table view body becomes a pure data lookup.
+    private func buildTable(
+        _ table: MarkdownTable,
+        builder: MarkdownAttributedBuilder
+    ) -> PrebuiltTable {
+        let columnCount = max(
+            table.header.count,
+            table.rows.map(\.count).max() ?? 0)
+
+        func attr(_ inlines: [MarkdownInline], bold: Bool) -> AttributedString {
+            let ns = builder.buildInline(inlines, bold: bold)
+            return (try? AttributedString(ns, including: \.appKit))
+                ?? AttributedString(ns.string)
+        }
+
+        let header = (0..<columnCount).map { col in
+            attr(col < table.header.count ? table.header[col] : [], bold: true)
+        }
+        let rows = table.rows.map { row in
+            (0..<columnCount).map { col in
+                attr(col < row.count ? row[col] : [], bold: false)
+            }
+        }
+        return PrebuiltTable(header: header, rows: rows, columnCount: columnCount)
     }
 
     // MARK: - Types
@@ -153,7 +240,23 @@ struct MarkdownView: View {
 
     private struct RenderState {
         let document: MarkdownDocument
+        /// NSAttributedString for markdown / heading / blockquote segments.
         let prebuilt: [NSAttributedString?]
+        /// Pre-tokenized highlight tokens for codeBlock segments.
+        let codeTokens: [Int: [SyntaxToken]]
+        /// Pre-rendered SwiftMath image for mathBlock segments.
+        let mathImages: [Int: NSImage]
+        /// Pre-built per-cell attributed strings for table segments. Outer
+        /// dictionary keyed by segment index; inner array is rows then cells.
+        let tableCells: [Int: PrebuiltTable]
+    }
+
+    /// Pre-built table data: header cells + body row cells, all already
+    /// converted to AttributedString so view body stays pure.
+    struct PrebuiltTable {
+        let header: [AttributedString]
+        let rows: [[AttributedString]]
+        let columnCount: Int
     }
 
     private struct TaskKey: Hashable {
@@ -294,6 +397,7 @@ extension View {
             .padding()
     }
     .frame(width: 640, height: 560)
+    .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }
 
 #Preview("Short — eager, dark") {
@@ -301,6 +405,7 @@ extension View {
         .padding()
         .frame(width: 400)
         .preferredColorScheme(.dark)
+        .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }
 
 #Preview("Lazy layout") {
@@ -311,4 +416,5 @@ extension View {
             .padding()
     }
     .frame(width: 520, height: 500)
+    .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }

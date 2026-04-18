@@ -1,45 +1,51 @@
 import SwiftUI
 
-/// v1 placeholder for ``MarkdownSegment/table(_:)`` using SwiftUI `Grid`.
-/// Cell contents are rendered via the shared attributed builder so inline
-/// styles (code, emphasis, links) work inside cells.
+/// Renders a parsed Markdown table via SwiftUI `Grid`. All cell contents are
+/// pre-built into `AttributedString`s during ``MarkdownView`` `refresh()`, so
+/// `body` is a pure data lookup with no per-evaluation work.
 struct MarkdownTableView: View {
     let table: MarkdownTable
+    let prebuilt: MarkdownView.PrebuiltTable?
 
     @Environment(\.markdownTheme) private var theme
 
-    private var columnCount: Int {
-        max(table.header.count, table.rows.map(\.count).max() ?? 0)
+    var body: some View {
+        if let prebuilt {
+            grid(prebuilt: prebuilt)
+        } else {
+            // Reached only when prebuilt construction was skipped (e.g. theme
+            // change races refresh). Render nothing — refresh will re-fire.
+            Color.clear.frame(height: 0)
+        }
     }
 
-    var body: some View {
+    @ViewBuilder
+    private func grid(prebuilt: MarkdownView.PrebuiltTable) -> some View {
+        let columnCount = prebuilt.columnCount
         Grid(alignment: .leading, horizontalSpacing: 0, verticalSpacing: 0) {
             GridRow {
                 ForEach(0..<columnCount, id: \.self) { col in
-                    cell(inlines: col < table.header.count ? table.header[col] : [],
-                         isHeader: true,
-                         column: col)
+                    cell(text: prebuilt.header[col], column: col)
                 }
             }
             .background(Color(nsColor: theme.tableHeaderBackground))
 
-            // Header / body separator — slightly stronger than between body rows.
-            Divider()
+            // Header / body separator — uses the outer border color so it
+            // reads as the strongest line in the grid.
+            divider(color: theme.tableBorderColor)
 
-            ForEach(Array(table.rows.enumerated()), id: \.offset) { idx, row in
+            ForEach(Array(prebuilt.rows.enumerated()), id: \.offset) { idx, row in
                 GridRow {
                     ForEach(0..<columnCount, id: \.self) { col in
-                        cell(inlines: col < row.count ? row[col] : [],
-                             isHeader: false,
-                             column: col)
+                        cell(text: row[col], column: col)
                     }
                 }
                 .background(idx.isMultiple(of: 2)
                     ? Color.clear
                     : Color(nsColor: theme.tableZebraBackground))
 
-                if idx < table.rows.count - 1 {
-                    Divider()
+                if idx < prebuilt.rows.count - 1 {
+                    divider(color: theme.tableInnerDividerColor)
                 }
             }
         }
@@ -50,12 +56,18 @@ struct MarkdownTableView: View {
         .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 
+    /// Hairline 1pt rule used between header and body, and between body rows.
+    /// `Divider()` always uses `.separatorColor`; we want a configurable color.
     @ViewBuilder
-    private func cell(inlines: [MarkdownInline], isHeader: Bool, column: Int) -> some View {
-        let builder = MarkdownAttributedBuilder(theme: theme)
-        let ns = builder.buildInline(inlines, bold: isHeader)
-        let attr = (try? AttributedString(ns, including: \.appKit)) ?? AttributedString(ns.string)
-        Text(attr)
+    private func divider(color: NSColor) -> some View {
+        Rectangle()
+            .fill(Color(nsColor: color))
+            .frame(height: 1)
+    }
+
+    @ViewBuilder
+    private func cell(text: AttributedString, column: Int) -> some View {
+        Text(text)
             .textSelection(.enabled)
             .padding(.horizontal, 8)
             .padding(.vertical, theme.blockPadding)

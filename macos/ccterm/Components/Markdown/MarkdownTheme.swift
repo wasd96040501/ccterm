@@ -87,6 +87,19 @@ struct MarkdownTheme {
 
     var tableBorderColor: NSColor { .separatorColor }
 
+    /// Inner row separator — same width as the outer border but a more muted
+    /// color so the body grid reads as one block rather than a busy lattice.
+    /// Standard practice: keep the stroke width consistent across borders and
+    /// dial only the color/alpha down for inner lines.
+    var tableInnerDividerColor: NSColor {
+        NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            return isDark
+                ? NSColor(white: 1, alpha: 0.10)
+                : NSColor(white: 0, alpha: 0.06)
+        }
+    }
+
     /// Header row tint — distinctly deeper than the zebra stripe so the header
     /// reads as a separate band rather than just another body row.
     var tableHeaderBackground: NSColor {

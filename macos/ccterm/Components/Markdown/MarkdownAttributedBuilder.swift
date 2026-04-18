@@ -40,11 +40,26 @@ struct MarkdownAttributedBuilder {
     /// Build the attributed string for a top-level blockquote segment. The
     /// surrounding SwiftUI view draws the vertical bar and provides the indent;
     /// the builder only colors the inner blocks with the secondary color.
+    ///
+    /// Internal block-to-block spacing uses ``MarkdownTheme/l3Item`` (tighter
+    /// than top-level prose) so the quote reads as one cohesive unit rather
+    /// than a sequence of independent paragraphs.
     func buildBlockquote(blocks: [MarkdownBlock]) -> NSAttributedString {
-        let inner = NSMutableAttributedString(attributedString: build(blocks: blocks))
-        let range = NSRange(location: 0, length: inner.length)
-        inner.addAttribute(.foregroundColor, value: theme.blockquoteTextColor, range: range)
-        return inner
+        let out = NSMutableAttributedString()
+        for (idx, block) in blocks.enumerated() {
+            let isLast = idx == blocks.count - 1
+            renderBlock(
+                block,
+                indent: 0,
+                trailingSpacing: isLast ? 0 : theme.l3Item,
+                into: out)
+            if !isLast {
+                out.append(NSAttributedString(string: "\n"))
+            }
+        }
+        let range = NSRange(location: 0, length: out.length)
+        out.addAttribute(.foregroundColor, value: theme.blockquoteTextColor, range: range)
+        return out
     }
 
     /// Render a flat list of inlines — used for table cells.
@@ -80,14 +95,15 @@ struct MarkdownAttributedBuilder {
         case .blockquote(let innerBlocks):
             // Reached only when blockquote is nested inside another block (e.g. list
             // item). Top-level blockquotes are split out into their own segment by
-            // the segmenter and rendered with a SwiftUI bar instead.
+            // the segmenter and rendered with a SwiftUI bar instead. Inner block
+            // spacing matches ``buildBlockquote`` — l3 for cohesive quote feel.
             let inner = NSMutableAttributedString()
             for (idx, b) in innerBlocks.enumerated() {
                 let isLast = idx == innerBlocks.count - 1
                 renderBlock(
                     b,
                     indent: indent + theme.blockquoteIndent,
-                    trailingSpacing: isLast ? trailingSpacing : theme.l2,
+                    trailingSpacing: isLast ? trailingSpacing : theme.l3Item,
                     into: inner)
                 if !isLast {
                     inner.append(NSAttributedString(string: "\n"))

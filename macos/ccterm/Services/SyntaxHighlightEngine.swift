@@ -6,6 +6,9 @@ actor SyntaxHighlightEngine {
     private var tokenizeFn: JSValue?
 
     func load() {
+        // Idempotent — callers (AppState eager preload + MarkdownView lazy)
+        // both invoke this; only the first call does real work.
+        guard tokenizeFn == nil else { return }
         guard let url = Bundle.main.url(forResource: "hljs-jscore", withExtension: "js"),
               let source = try? String(contentsOf: url, encoding: .utf8)
         else {

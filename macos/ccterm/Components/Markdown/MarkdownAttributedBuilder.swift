@@ -170,7 +170,13 @@ struct MarkdownAttributedBuilder {
                 for (bi, block) in item.content.enumerated() {
                     let isFirst = bi == 0
                     let isLastInItem = bi == item.content.count - 1
-                    let blockTrailing = isLastInItem ? itemTrailing : theme.l2
+                    // Use l3Item (not l2) between blocks WITHIN one list item:
+                    // a list item is a single semantic unit, so its internal
+                    // blocks (paragraph + nested list, or multi-paragraph
+                    // content) should sit tighter than top-level paragraphs.
+                    // Mirrors the same convention used for blockquote inner
+                    // blocks in `buildBlockquote`.
+                    let blockTrailing = isLastInItem ? itemTrailing : theme.l3Item
 
                     if isFirst, case .paragraph(let inlines) = block {
                         let line = NSMutableAttributedString(string: "\t")

@@ -23,13 +23,23 @@ struct MarkdownTableView: View {
             }
             .background(Color(nsColor: theme.tableHeaderBackground))
 
-            ForEach(Array(table.rows.enumerated()), id: \.offset) { _, row in
+            // Header / body separator — slightly stronger than between body rows.
+            Divider()
+
+            ForEach(Array(table.rows.enumerated()), id: \.offset) { idx, row in
                 GridRow {
                     ForEach(0..<columnCount, id: \.self) { col in
                         cell(inlines: col < row.count ? row[col] : [],
                              isHeader: false,
                              column: col)
                     }
+                }
+                .background(idx.isMultiple(of: 2)
+                    ? Color.clear
+                    : Color(nsColor: theme.tableZebraBackground))
+
+                if idx < table.rows.count - 1 {
+                    Divider()
                 }
             }
         }

@@ -209,14 +209,15 @@ struct MarkdownAttributedBuilder {
 
     /// SF Symbols `square` / `checkmark.square` rendered as an `NSTextAttachment`
     /// so checked and unchecked boxes are guaranteed to be the exact same size.
-    /// Aligned so the symbol's vertical center matches the body font's x-height.
+    /// Sized at 1.2× body font and `.medium` weight — the default `.regular`
+    /// stroke reads thin at body sizes. Vertical centre aligned with x-height.
     private func checkboxAttachment(checked: Bool) -> NSAttributedString {
+        let symbolSize = theme.bodyFontSize * 1.2
         let name = checked ? "checkmark.square" : "square"
-        let config = NSImage.SymbolConfiguration(pointSize: theme.bodyFontSize, weight: .regular)
+        let config = NSImage.SymbolConfiguration(pointSize: symbolSize, weight: .medium)
         guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
             .withSymbolConfiguration(config)
         else {
-            // Fallback to the legacy glyphs if the symbol isn't available.
             return NSAttributedString(string: checked ? "☑" : "☐", attributes: [
                 .font: theme.bodyFont,
                 .foregroundColor: theme.secondaryColor,
@@ -225,9 +226,12 @@ struct MarkdownAttributedBuilder {
         image.isTemplate = true
         let attachment = NSTextAttachment()
         attachment.image = image
-        let h = theme.bodyFontSize
         let xHeight = theme.bodyFont.xHeight
-        attachment.bounds = CGRect(x: 0, y: (xHeight - h) / 2, width: h, height: h)
+        attachment.bounds = CGRect(
+            x: 0,
+            y: (xHeight - symbolSize) / 2,
+            width: symbolSize,
+            height: symbolSize)
         let attr = NSMutableAttributedString(attachment: attachment)
         attr.addAttribute(
             .foregroundColor,
@@ -313,10 +317,21 @@ struct MarkdownAttributedBuilder {
                 .underlineStyle: NSUnderlineStyle.single.rawValue,
             ], range: NSRange(location: before, length: after - before))
 
-        case .image(_, let alt):
-            // v1: render as alt text. No attachment, no network fetch.
-            out.append(styled(alt, baseFont: baseFont, color: theme.secondaryColor,
+        case .image(let source, let alt):
+            // v1: render images as a clickable link to the source URL. The
+            // visible label uses the alt text when present, otherwise the URL
+            // itself, so the user can still see what the link points at.
+            let label = alt.isEmpty ? source : alt
+            guard !label.isEmpty else { break }
+            let before = out.length
+            out.append(styled(label, baseFont: baseFont, color: theme.linkColor,
                               bold: bold, italic: italic, strike: strike))
+            let after = out.length
+            guard !source.isEmpty, after > before else { break }
+            out.addAttributes([
+                .link: source,
+                .underlineStyle: NSUnderlineStyle.single.rawValue,
+            ], range: NSRange(location: before, length: after - before))
 
         case .inlineMath(let s):
             let font = NSFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .regular)

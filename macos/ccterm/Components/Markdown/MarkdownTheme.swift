@@ -86,12 +86,26 @@ struct MarkdownTheme {
     var blockquoteBarColor: NSColor { .tertiaryLabelColor }
 
     var tableBorderColor: NSColor { .separatorColor }
+
+    /// Header row tint — distinctly deeper than the zebra stripe so the header
+    /// reads as a separate band rather than just another body row.
     var tableHeaderBackground: NSColor {
         NSColor(name: nil) { appearance in
             let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             return isDark
-                ? NSColor(white: 1, alpha: 0.06)
-                : NSColor(white: 0, alpha: 0.04)
+                ? NSColor(white: 1, alpha: 0.14)
+                : NSColor(white: 0, alpha: 0.08)
+        }
+    }
+
+    /// Zebra stripe applied to odd body rows. Subtle — only there to make
+    /// long rows easier to track horizontally.
+    var tableZebraBackground: NSColor {
+        NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            return isDark
+                ? NSColor(white: 1, alpha: 0.04)
+                : NSColor(white: 0, alpha: 0.025)
         }
     }
 

@@ -29,32 +29,32 @@ class SessionHandle2 {
 
     // MARK: - Status
 
-    private(set) var status: Status = .notStarted
-    private(set) var historyLoadState: HistoryLoadState = .notLoaded
+    internal(set) var status: Status = .notStarted
+    internal(set) var historyLoadState: HistoryLoadState = .notLoaded
 
     // MARK: - Configuration
 
-    private(set) var cwd: String?
-    private(set) var isWorktree: Bool = false
-    private(set) var model: String?
-    private(set) var effort: Effort?
-    private(set) var permissionMode: PermissionMode = .default
-    private(set) var addDirs: [String] = []
-    private(set) var plugins: [String] = []
+    internal(set) var cwd: String?
+    internal(set) var isWorktree: Bool = false
+    internal(set) var model: String?
+    internal(set) var effort: Effort?
+    internal(set) var permissionMode: PermissionMode = .default
+    internal(set) var addDirs: [String] = []
+    internal(set) var plugins: [String] = []
 
     // MARK: - Runtime
 
-    private(set) var messages: [MessageEntry] = []
-    private(set) var pendingPermissions: [PendingPermission] = []
-    private(set) var contextUsedTokens: Int = 0
-    private(set) var contextWindowTokens: Int = 0
-    private(set) var slashCommands: [SlashCommand] = []
-    private(set) var availableModels: [String] = []
+    internal(set) var messages: [MessageEntry] = []
+    internal(set) var pendingPermissions: [PendingPermission] = []
+    internal(set) var contextUsedTokens: Int = 0
+    internal(set) var contextWindowTokens: Int = 0
+    internal(set) var slashCommands: [SlashCommand] = []
+    internal(set) var availableModels: [String] = []
 
     // MARK: - Presence
 
-    private(set) var isFocused: Bool = false
-    private(set) var hasUnread: Bool = false
+    internal(set) var isFocused: Bool = false
+    internal(set) var hasUnread: Bool = false
 
     // MARK: - Init
 

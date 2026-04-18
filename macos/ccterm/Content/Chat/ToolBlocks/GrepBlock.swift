@@ -95,7 +95,7 @@ private struct ContentPreview: View {
         status: .idle
     )
     .padding()
-    .frame(width: 560, height: 260)
+    .frame(width: 560, height: 260, alignment: .topLeading)
 }
 
 #Preview("Idle with content preview") {
@@ -110,7 +110,7 @@ private struct ContentPreview: View {
         status: .idle
     )
     .padding()
-    .frame(width: 560, height: 260)
+    .frame(width: 560, height: 260, alignment: .topLeading)
 }
 
 #Preview("Running") {
@@ -123,7 +123,7 @@ private struct ContentPreview: View {
         status: .running
     )
     .padding()
-    .frame(width: 560, height: 260)
+    .frame(width: 560, height: 260, alignment: .topLeading)
 }
 
 #Preview("Error") {
@@ -136,7 +136,7 @@ private struct ContentPreview: View {
         status: .error("regex parse error: missing ')'")
     )
     .padding()
-    .frame(width: 560, height: 260)
+    .frame(width: 560, height: 260, alignment: .topLeading)
 }
 
 #Preview("Empty — no matches") {
@@ -149,5 +149,5 @@ private struct ContentPreview: View {
         status: .idle
     )
     .padding()
-    .frame(width: 560, height: 260)
+    .frame(width: 560, height: 260, alignment: .topLeading)
 }

@@ -99,7 +99,7 @@ private struct NewFileContentView: View {
         status: .idle
     )
     .padding()
-    .frame(width: 640, height: 360)
+    .frame(width: 640, height: 360, alignment: .topLeading)
     .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }
 
@@ -117,7 +117,7 @@ private struct NewFileContentView: View {
         status: .idle
     )
     .padding()
-    .frame(width: 640, height: 360)
+    .frame(width: 640, height: 360, alignment: .topLeading)
     .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }
 
@@ -129,7 +129,7 @@ private struct NewFileContentView: View {
         status: .running
     )
     .padding()
-    .frame(width: 640, height: 360)
+    .frame(width: 640, height: 360, alignment: .topLeading)
     .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }
 
@@ -141,6 +141,6 @@ private struct NewFileContentView: View {
         status: .error("Write failed: read-only file system")
     )
     .padding()
-    .frame(width: 640, height: 360)
+    .frame(width: 640, height: 360, alignment: .topLeading)
     .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }

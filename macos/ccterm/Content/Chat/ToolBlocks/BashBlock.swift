@@ -71,7 +71,7 @@ private struct OutputView: View {
         status: .idle
     )
     .padding()
-    .frame(width: 520, height: 260)
+    .frame(width: 520, height: 260, alignment: .topLeading)
     .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }
 
@@ -83,7 +83,7 @@ private struct OutputView: View {
         status: .running
     )
     .padding()
-    .frame(width: 520, height: 260)
+    .frame(width: 520, height: 260, alignment: .topLeading)
     .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }
 
@@ -95,7 +95,7 @@ private struct OutputView: View {
         status: .error("Command failed with exit code 1")
     )
     .padding()
-    .frame(width: 520, height: 260)
+    .frame(width: 520, height: 260, alignment: .topLeading)
     .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }
 
@@ -107,7 +107,7 @@ private struct OutputView: View {
         status: .idle
     )
     .padding()
-    .frame(width: 520, height: 260)
+    .frame(width: 520, height: 260, alignment: .topLeading)
     .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }
 
@@ -119,6 +119,6 @@ private struct OutputView: View {
         status: .idle
     )
     .padding()
-    .frame(width: 520, height: 260)
+    .frame(width: 520, height: 260, alignment: .topLeading)
     .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }

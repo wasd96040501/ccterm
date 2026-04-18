@@ -58,7 +58,7 @@ struct ToolBlock<Label: View, Content: View>: View {
             header
             if effectivelyExpanded {
                 bodyArea
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .transition(.opacity)
             }
         }
         .background(backgroundColor)
@@ -66,6 +66,7 @@ struct ToolBlock<Label: View, Content: View>: View {
         .overlay(
             RoundedRectangle(cornerRadius: 8)
                 .stroke(borderColor, lineWidth: 0.5))
+        .animation(.easeInOut(duration: 0.2), value: effectivelyExpanded)
     }
 
     // MARK: Header
@@ -73,9 +74,7 @@ struct ToolBlock<Label: View, Content: View>: View {
     private var header: some View {
         Button {
             guard isExpandable else { return }
-            withAnimation(.easeInOut(duration: 0.2)) {
-                isExpanded.toggle()
-            }
+            isExpanded.toggle()
         } label: {
             HStack(spacing: 8) {
                 chevron
@@ -227,7 +226,7 @@ private struct PreviewHarness<C: View>: View {
             content
         }
         .padding()
-        .frame(width: 520, height: height)
+        .frame(width: 520, height: height, alignment: .topLeading)
     }
 }
 

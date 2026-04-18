@@ -60,7 +60,7 @@ struct GlobBlock: View {
         status: .idle
     )
     .padding()
-    .frame(width: 560, height: 280)
+    .frame(width: 560, height: 280, alignment: .topLeading)
 }
 
 #Preview("Truncated") {
@@ -72,7 +72,7 @@ struct GlobBlock: View {
         status: .idle
     )
     .padding()
-    .frame(width: 560, height: 480)
+    .frame(width: 560, height: 480, alignment: .topLeading)
 }
 
 #Preview("Running") {
@@ -84,7 +84,7 @@ struct GlobBlock: View {
         status: .running
     )
     .padding()
-    .frame(width: 560, height: 280)
+    .frame(width: 560, height: 280, alignment: .topLeading)
 }
 
 #Preview("Error") {
@@ -96,5 +96,5 @@ struct GlobBlock: View {
         status: .error("invalid glob pattern")
     )
     .padding()
-    .frame(width: 560, height: 280)
+    .frame(width: 560, height: 280, alignment: .topLeading)
 }

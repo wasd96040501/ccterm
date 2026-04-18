@@ -21,7 +21,7 @@ struct FileReadBlock: View {
         status: .idle
     )
     .padding()
-    .frame(width: 520, height: 140)
+    .frame(width: 520, height: 140, alignment: .topLeading)
 }
 
 #Preview("Running") {
@@ -30,7 +30,7 @@ struct FileReadBlock: View {
         status: .running
     )
     .padding()
-    .frame(width: 520, height: 140)
+    .frame(width: 520, height: 140, alignment: .topLeading)
 }
 
 #Preview("Error") {
@@ -39,7 +39,7 @@ struct FileReadBlock: View {
         status: .error("ENOENT: no such file or directory")
     )
     .padding()
-    .frame(width: 520, height: 140)
+    .frame(width: 520, height: 140, alignment: .topLeading)
 }
 
 #Preview("Stacked") {
@@ -49,5 +49,5 @@ struct FileReadBlock: View {
         FileReadBlock(filePath: "/Users/me/c.txt", status: .error("permission denied"))
     }
     .padding()
-    .frame(width: 520, height: 260)
+    .frame(width: 520, height: 260, alignment: .topLeading)
 }

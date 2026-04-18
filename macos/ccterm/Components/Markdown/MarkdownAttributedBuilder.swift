@@ -1,4 +1,5 @@
 import AppKit
+import SwiftMath
 
 /// Builds `NSAttributedString` output for `.markdown` segments and table cells.
 ///
@@ -207,10 +208,46 @@ struct MarkdownAttributedBuilder {
         ])
     }
 
+    /// Render an inline `$..$` math run via SwiftMath as an `NSTextAttachment`,
+    /// so the typeset image flows with the surrounding prose. The image's
+    /// baseline aligns with the text baseline using SwiftMath's reported
+    /// descent. On parse failure we fall back to monospaced text in the
+    /// secondary colour so users still see the source.
+    private func inlineMathAttachment(latex: String, baseFont: NSFont, color: NSColor) -> NSAttributedString {
+        var img = MathImage(
+            latex: latex,
+            fontSize: baseFont.pointSize,
+            textColor: color,
+            labelMode: .text,
+            textAlignment: .left)
+        let (error, image, layout) = img.asImage()
+        guard error == nil, let image, let layout else {
+            let font = NSFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .regular)
+            return NSAttributedString(string: latex, attributes: [
+                .font: font,
+                .foregroundColor: theme.secondaryColor,
+            ])
+        }
+        let attachment = NSTextAttachment()
+        attachment.image = image
+        attachment.bounds = CGRect(
+            x: 0,
+            y: -layout.descent,
+            width: image.size.width,
+            height: image.size.height)
+        return NSAttributedString(attachment: attachment)
+    }
+
     /// SF Symbols `square` / `checkmark.square` rendered as an `NSTextAttachment`
     /// so checked and unchecked boxes are guaranteed to be the exact same size.
     /// Sized at 1.2× body font and `.medium` weight — the default `.regular`
-    /// stroke reads thin at body sizes. Vertical centre aligned with x-height.
+    /// stroke reads thin at body sizes.
+    ///
+    /// Vertical alignment uses the font's **cap height** centre rather than
+    /// x-height. SF Symbol bounding boxes carry asymmetric internal padding,
+    /// and the x-height reference visibly sits the chip below the text mean
+    /// line. capHeight/2 puts the symbol's geometric centre on the same line
+    /// as uppercase letters, which reads as properly centred.
     private func checkboxAttachment(checked: Bool) -> NSAttributedString {
         let symbolSize = theme.bodyFontSize * 1.2
         let name = checked ? "checkmark.square" : "square"
@@ -226,10 +263,10 @@ struct MarkdownAttributedBuilder {
         image.isTemplate = true
         let attachment = NSTextAttachment()
         attachment.image = image
-        let xHeight = theme.bodyFont.xHeight
+        let capHeight = theme.bodyFont.capHeight
         attachment.bounds = CGRect(
             x: 0,
-            y: (xHeight - symbolSize) / 2,
+            y: (capHeight - symbolSize) / 2,
             width: symbolSize,
             height: symbolSize)
         let attr = NSMutableAttributedString(attachment: attachment)
@@ -291,10 +328,13 @@ struct MarkdownAttributedBuilder {
 
         case .code(let s):
             let font = NSFont.monospacedSystemFont(ofSize: baseFont.pointSize * 0.92, weight: .regular)
+            // Custom marker — drawn as a padded rounded chip by
+            // ``MarkdownLayoutManager``. Built-in `.backgroundColor` only
+            // supports tight rectangles.
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: color,
-                .backgroundColor: theme.inlineCodeBackground,
+                .inlineCodeBackground: theme.inlineCodeBackground,
             ]
             out.append(NSAttributedString(string: s, attributes: attrs))
 
@@ -334,11 +374,7 @@ struct MarkdownAttributedBuilder {
             ], range: NSRange(location: before, length: after - before))
 
         case .inlineMath(let s):
-            let font = NSFont.monospacedSystemFont(ofSize: baseFont.pointSize, weight: .regular)
-            out.append(NSAttributedString(string: s, attributes: [
-                .font: font,
-                .foregroundColor: theme.secondaryColor,
-            ]))
+            out.append(inlineMathAttachment(latex: s, baseFont: baseFont, color: color))
 
         case .lineBreak:
             out.append(NSAttributedString(string: "\n"))

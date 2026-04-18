@@ -12,7 +12,20 @@ struct MarkdownTextView: NSViewRepresentable {
     let onOpenURL: (URL) -> Void
 
     func makeNSView(context: Context) -> WrappedTextView {
-        let tv = WrappedTextView(frame: .zero)
+        // Custom layout manager so inline-code chips can be drawn with
+        // horizontal padding and rounded corners.
+        let textStorage = NSTextStorage()
+        let layoutManager = MarkdownLayoutManager()
+        let containerSize = CGSize(
+            width: 0,
+            height: CGFloat.greatestFiniteMagnitude)
+        let container = NSTextContainer(size: containerSize)
+        container.widthTracksTextView = true
+        container.lineFragmentPadding = 0
+        textStorage.addLayoutManager(layoutManager)
+        layoutManager.addTextContainer(container)
+
+        let tv = WrappedTextView(frame: .zero, textContainer: container)
         tv.isEditable = false
         tv.isSelectable = true
         tv.drawsBackground = false
@@ -23,16 +36,15 @@ struct MarkdownTextView: NSViewRepresentable {
         tv.isAutomaticDashSubstitutionEnabled = false
         tv.isAutomaticTextReplacementEnabled = false
         tv.isAutomaticSpellingCorrectionEnabled = false
-        tv.textContainerInset = .zero
-        tv.textContainer?.lineFragmentPadding = 0
-        tv.textContainer?.widthTracksTextView = true
+        tv.textContainerInset = NSSize.zero
         tv.isHorizontallyResizable = false
         tv.isVerticallyResizable = true
         tv.autoresizingMask = []
-        tv.linkTextAttributes = [
+        let linkAttrs: [NSAttributedString.Key: Any] = [
             .foregroundColor: linkColor,
             .cursor: NSCursor.pointingHand,
         ]
+        tv.linkTextAttributes = linkAttrs
         tv.onOpenURL = onOpenURL
         tv.textStorage?.setAttributedString(attributed)
         return tv

@@ -66,7 +66,6 @@ struct ToolBlock<Label: View, Content: View>: View {
         .overlay(
             RoundedRectangle(cornerRadius: 8)
                 .stroke(borderColor, lineWidth: 0.5))
-        .animation(.easeInOut(duration: 0.2), value: effectivelyExpanded)
     }
 
     // MARK: Header
@@ -74,7 +73,9 @@ struct ToolBlock<Label: View, Content: View>: View {
     private var header: some View {
         Button {
             guard isExpandable else { return }
-            isExpanded.toggle()
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isExpanded.toggle()
+            }
         } label: {
             HStack(spacing: 8) {
                 chevron

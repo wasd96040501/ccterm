@@ -19,7 +19,7 @@ struct MarkdownCodeBlockView: View {
             .padding(.vertical, theme.blockPadding)
             .padding(.horizontal, 12)
             .background(Color(nsColor: theme.codeBlockBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: theme.blockCornerRadius))
     }
 
     private var content: AttributedString {

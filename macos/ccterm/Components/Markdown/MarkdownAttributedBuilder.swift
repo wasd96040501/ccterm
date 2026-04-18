@@ -352,7 +352,23 @@ struct MarkdownAttributedBuilder {
                 .foregroundColor: color,
                 .inlineCodeBackground: theme.inlineCodeBackground,
             ]
-            out.append(NSAttributedString(string: s, attributes: attrs))
+            let chip = NSMutableAttributedString(string: s, attributes: attrs)
+            // Push the *next* character past the chip's right edge: kern adds
+            // spacing after the character it's applied to, so set it on the
+            // last char of the code run.
+            if chip.length > 0 {
+                chip.addAttribute(
+                    .kern,
+                    value: theme.inlineCodeSideKern,
+                    range: NSRange(location: chip.length - 1, length: 1))
+            }
+            // Push the chip itself away from the *previous* character by
+            // bumping that char's kern in the already-emitted output.
+            if out.length > 0 {
+                let prevRange = NSRange(location: out.length - 1, length: 1)
+                out.addAttribute(.kern, value: theme.inlineCodeSideKern, range: prevRange)
+            }
+            out.append(chip)
 
         case .link(let destination, let children):
             let before = out.length

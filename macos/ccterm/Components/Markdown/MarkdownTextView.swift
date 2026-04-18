@@ -10,12 +10,18 @@ struct MarkdownTextView: NSViewRepresentable {
     let attributed: NSAttributedString
     let linkColor: NSColor
     let onOpenURL: (URL) -> Void
+    var inlineCodeHPadding: CGFloat = 4
+    var inlineCodeVPadding: CGFloat = 1
+    var inlineCodeCornerRadius: CGFloat = 3
 
     func makeNSView(context: Context) -> WrappedTextView {
         // Custom layout manager so inline-code chips can be drawn with
         // horizontal padding and rounded corners.
         let textStorage = NSTextStorage()
         let layoutManager = MarkdownLayoutManager()
+        layoutManager.inlineCodeHorizontalPadding = inlineCodeHPadding
+        layoutManager.inlineCodeVerticalPadding = inlineCodeVPadding
+        layoutManager.inlineCodeCornerRadius = inlineCodeCornerRadius
         let containerSize = CGSize(
             width: 0,
             height: CGFloat.greatestFiniteMagnitude)
@@ -56,6 +62,11 @@ struct MarkdownTextView: NSViewRepresentable {
             .foregroundColor: linkColor,
             .cursor: NSCursor.pointingHand,
         ]
+        if let lm = nsView.layoutManager as? MarkdownLayoutManager {
+            lm.inlineCodeHorizontalPadding = inlineCodeHPadding
+            lm.inlineCodeVerticalPadding = inlineCodeVPadding
+            lm.inlineCodeCornerRadius = inlineCodeCornerRadius
+        }
         if nsView.textStorage?.isEqual(to: attributed) == false {
             nsView.textStorage?.setAttributedString(attributed)
             nsView.invalidateIntrinsicContentSize()

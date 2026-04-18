@@ -50,10 +50,10 @@ struct MarkdownTableView: View {
             }
         }
         .overlay(
-            RoundedRectangle(cornerRadius: 4)
+            RoundedRectangle(cornerRadius: theme.blockCornerRadius)
                 .stroke(Color(nsColor: theme.tableBorderColor), lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .clipShape(RoundedRectangle(cornerRadius: theme.blockCornerRadius))
     }
 
     /// Hairline 1pt rule used between header and body, and between body rows.

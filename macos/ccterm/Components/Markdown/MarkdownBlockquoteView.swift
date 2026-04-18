@@ -19,7 +19,10 @@ struct MarkdownBlockquoteView: View {
             MarkdownTextView(
                 attributed: attributed,
                 linkColor: theme.linkColor,
-                onOpenURL: { openURL($0) })
+                onOpenURL: { openURL($0) },
+                inlineCodeHPadding: theme.inlineCodeHPadding,
+                inlineCodeVPadding: theme.inlineCodeVPadding,
+                inlineCodeCornerRadius: theme.inlineCodeCornerRadius)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .fixedSize(horizontal: false, vertical: true)

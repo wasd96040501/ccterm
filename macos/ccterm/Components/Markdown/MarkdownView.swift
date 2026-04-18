@@ -100,7 +100,10 @@ struct MarkdownView: View {
                 MarkdownTextView(
                     attributed: prebuilt,
                     linkColor: theme.linkColor,
-                    onOpenURL: { openURL($0) })
+                    onOpenURL: { openURL($0) },
+                    inlineCodeHPadding: theme.inlineCodeHPadding,
+                    inlineCodeVPadding: theme.inlineCodeVPadding,
+                    inlineCodeCornerRadius: theme.inlineCodeCornerRadius)
             }
         case .blockquote:
             if let prebuilt {

@@ -26,8 +26,10 @@ struct MarkdownMathBlockView: View {
         }
         .padding(.vertical, theme.blockPadding)
         .padding(.horizontal, 12)
-        .background(Color(nsColor: theme.codeBlockBackground).opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        // Same fill as code blocks — both are non-prose containers and should
+        // read with equal visual weight.
+        .background(Color(nsColor: theme.codeBlockBackground))
+        .clipShape(RoundedRectangle(cornerRadius: theme.blockCornerRadius))
     }
 }
 

@@ -38,6 +38,25 @@ struct MarkdownTheme {
     /// Vertical inset inside code/table/math blocks.
     var blockPadding: CGFloat = 8
 
+    /// Corner radius shared by all block-level containers (code, math, table).
+    /// Picked so radius/height ≈ 0.05-0.08 — soft-square "information
+    /// container" feel without looking like a button or card.
+    var blockCornerRadius: CGFloat = 6
+
+    /// Inline code chip: horizontal padding (chip extends past glyph rect by
+    /// this much on each side; ≈ 0.33em on a 12pt code font).
+    var inlineCodeHPadding: CGFloat = 4
+    /// Inline code chip: vertical padding (kept tight so line height isn't
+    /// disturbed; ≈ 0.08em).
+    var inlineCodeVPadding: CGFloat = 1
+    /// Inline code chip: corner radius (≈ 0.21 of chip height — moderate).
+    var inlineCodeCornerRadius: CGFloat = 3
+    /// Spacing pushed onto the characters immediately before and after an
+    /// inline code run (via NSAttributedString `.kern`) so the chip never
+    /// visually overlaps neighbouring glyphs. Should be ≥ `inlineCodeHPadding`
+    /// plus a small visual gap.
+    var inlineCodeSideKern: CGFloat = 5
+
     // MARK: - Derived fonts
 
     var bodyFont: NSFont { .systemFont(ofSize: bodyFontSize) }

@@ -50,24 +50,34 @@ final class PromptTitleAndBranchTests: XCTestCase {
         XCTAssertEqual(Prompt.slugifyToBranch("café latté"), "claude/caf-latt")
     }
 
-    // MARK: - extractTitle
+    // MARK: - extractTag
 
-    func test_extractTitle_basic() {
-        XCTAssertEqual(Prompt.extractTitle(from: "<title>Fix login bug</title>"), "Fix login bug")
+    func test_extractTag_titleBasic() {
+        XCTAssertEqual(Prompt.extractTag("title", from: "<title>Fix login bug</title>"), "Fix login bug")
     }
 
-    func test_extractTitle_surroundedByText() {
+    func test_extractTag_surroundedByText() {
         let text = "Here is the answer:\n<title>Add dark mode toggle</title>\nthanks!"
-        XCTAssertEqual(Prompt.extractTitle(from: text), "Add dark mode toggle")
+        XCTAssertEqual(Prompt.extractTag("title", from: text), "Add dark mode toggle")
     }
 
-    func test_extractTitle_trimsWhitespace() {
-        XCTAssertEqual(Prompt.extractTitle(from: "<title>  Hello  </title>"), "Hello")
+    func test_extractTag_trimsWhitespace() {
+        XCTAssertEqual(Prompt.extractTag("title", from: "<title>  Hello  </title>"), "Hello")
     }
 
-    func test_extractTitle_missingTagReturnsNil() {
-        XCTAssertNil(Prompt.extractTitle(from: "No tag here"))
-        XCTAssertNil(Prompt.extractTitle(from: "<title>no close"))
+    func test_extractTag_missingTagReturnsNil() {
+        XCTAssertNil(Prompt.extractTag("title", from: "No tag here"))
+        XCTAssertNil(Prompt.extractTag("title", from: "<title>no close"))
+    }
+
+    func test_extractTag_multipleTagsIndependent() {
+        let text = "<title>English here</title>\n<title_i18n>中文在这</title_i18n>"
+        XCTAssertEqual(Prompt.extractTag("title", from: text), "English here")
+        XCTAssertEqual(Prompt.extractTag("title_i18n", from: text), "中文在这")
+    }
+
+    func test_extractTitle_backCompat() {
+        XCTAssertEqual(Prompt.extractTitle(from: "<title>legacy</title>"), "legacy")
     }
 
     // MARK: - Integration (real CLI)
@@ -88,27 +98,63 @@ final class PromptTitleAndBranchTests: XCTestCase {
             configuration: PromptConfiguration(workingDirectory: tmp)
         )
 
-        NSLog("[PromptTitleAndBranchTests] firstMessage: %@", firstMessage)
-        NSLog("[PromptTitleAndBranchTests] title: %@", result.title)
-        NSLog("[PromptTitleAndBranchTests] branch: %@", result.branch)
-        // NSLog in XCTest sometimes routes to os_log instead of stdout — mirror via fputs to stderr.
-        FileHandle.standardError.write(Data("===TITLE_GEN===\nfirstMessage: \(firstMessage)\ntitle: \(result.title)\nbranch: \(result.branch)\n===END===\n".utf8))
+        let debug = """
+        ===TITLE_GEN===
+        firstMessage: \(firstMessage)
+        title:        \(result.title)
+        titleI18n:    \(result.titleI18n)
+        branch:       \(result.branch)
+        ===END===
+        """
+        NSLog("%@", debug)
+        FileHandle.standardError.write(Data((debug + "\n").utf8))
 
         XCTAssertFalse(result.title.isEmpty, "title should not be empty")
+        XCTAssertFalse(result.titleI18n.isEmpty, "titleI18n should not be empty")
         XCTAssertLessThanOrEqual(result.title.count, 120, "title should be reasonably short")
 
-        // JMr 行为：ASCII 无 alnum 时 branch 就是空串（调用方 fallback）。
-        // 只要 title 带 ASCII 字母/数字，branch 必须是 claude/<slug> 且 body ≤ 50。
-        let titleHasAscii = result.title.lowercased().unicodeScalars.contains { scalar in
-            (scalar >= "a" && scalar <= "z") || (scalar >= "0" && scalar <= "9")
+        // title 强制英文 → branch 应有 ASCII alnum → 必出 claude/<slug>。
+        XCTAssertTrue(result.branch.hasPrefix("claude/"), "branch should start with claude/, got: \(result.branch)")
+        let body = result.branch.replacingOccurrences(of: "claude/", with: "")
+        XCTAssertFalse(body.isEmpty, "branch body should not be empty")
+        XCTAssertLessThanOrEqual(body.count, 50, "branch body should be ≤ 50 chars")
+    }
+
+    func test_runTitleAndBranch_chineseInputYieldsChineseI18n() async throws {
+        if ProcessInfo.processInfo.environment["SKIP_CLI_TESTS"] != nil {
+            throw XCTSkip("SKIP_CLI_TESTS set")
         }
-        if titleHasAscii {
-            XCTAssertTrue(result.branch.hasPrefix("claude/"), "branch should start with claude/, got: \(result.branch)")
-            let body = result.branch.replacingOccurrences(of: "claude/", with: "")
-            XCTAssertFalse(body.isEmpty, "branch body should not be empty for ASCII title")
-            XCTAssertLessThanOrEqual(body.count, 50, "branch body should be ≤ 50 chars")
-        } else {
-            XCTAssertEqual(result.branch, "", "non-ASCII title should yield empty branch")
-        }
+
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("title-zh-test-\(UUID().uuidString.prefix(8))")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let firstMessage = "修复用户输入空密码时登录页面崩溃的问题"
+        let result = try await Prompt.runTitleAndBranch(
+            firstMessage: firstMessage,
+            configuration: PromptConfiguration(workingDirectory: tmp)
+        )
+
+        let debug = """
+        ===TITLE_GEN_ZH===
+        firstMessage: \(firstMessage)
+        title:        \(result.title)
+        titleI18n:    \(result.titleI18n)
+        branch:       \(result.branch)
+        ===END===
+        """
+        NSLog("%@", debug)
+        FileHandle.standardError.write(Data((debug + "\n").utf8))
+
+        XCTAssertFalse(result.title.isEmpty)
+        XCTAssertFalse(result.titleI18n.isEmpty)
+        // title 必须英文（ASCII）——因为 branch 依赖它
+        XCTAssertTrue(result.branch.hasPrefix("claude/"), "English title should yield claude/ branch, got: \(result.branch)")
+        // titleI18n 应和 title 不相同（中文输入理应给中文 i18n）
+        XCTAssertNotEqual(result.title, result.titleI18n, "Chinese input should produce a non-English titleI18n")
+        // titleI18n 至少含一个非 ASCII 字符
+        let hasNonAscii = result.titleI18n.unicodeScalars.contains { !$0.isASCII }
+        XCTAssertTrue(hasNonAscii, "titleI18n should contain non-ASCII chars for Chinese input, got: \(result.titleI18n)")
     }
 }

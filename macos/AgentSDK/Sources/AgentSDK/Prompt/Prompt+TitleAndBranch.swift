@@ -87,20 +87,26 @@ extension Prompt {
                 )
             }
 
-            guard let title = extractTitle(from: resultText) else {
+            guard let title = extractTag("title", from: resultText) else {
                 throw AgentSDKError.promptFailed(
                     exitCode: 0,
                     stderr: "No <title> tag found in: \(resultText.prefix(200))"
                 )
             }
 
+            // title_i18n 缺失时 fallback 到 title，保证非空
+            let titleI18n = extractTag("title_i18n", from: resultText) ?? title
             let branch = slugifyToBranch(title)
-            return TitleAndBranch(title: title, branch: branch)
+            return TitleAndBranch(title: title, titleI18n: titleI18n, branch: branch)
         }.value
     }
 
     public struct TitleAndBranch: Sendable, Equatable {
+        /// 英文 title（固定英文，给 branch slug 用）。
         public let title: String
+        /// 与用户输入同语言的 title。若输入是英文则等同 `title`。
+        public let titleI18n: String
+        /// `claude/<slug(title).prefix(50)>`，无 ASCII 可 slug 时为空串。
         public let branch: String
     }
 
@@ -127,9 +133,17 @@ extension Prompt {
         return slug.isEmpty ? "" : "claude/\(slug)"
     }
 
+    /// 仍保留：LLM 回复里抓 `<title>...</title>`。历史兼容。
     public static func extractTitle(from text: String) -> String? {
-        guard let start = text.range(of: "<title>"),
-              let end = text.range(of: "</title>", range: start.upperBound..<text.endIndex) else {
+        extractTag("title", from: text)
+    }
+
+    /// 通用单标签提取：第一处 `<tag>…</tag>` 之间的内容，trim 空白，空串返回 nil。
+    public static func extractTag(_ tag: String, from text: String) -> String? {
+        let openTag = "<\(tag)>"
+        let closeTag = "</\(tag)>"
+        guard let start = text.range(of: openTag),
+              let end = text.range(of: closeTag, range: start.upperBound..<text.endIndex) else {
             return nil
         }
         let inner = text[start.upperBound..<end.lowerBound]
@@ -174,19 +188,30 @@ extension Prompt {
         return resolved
     }
 
-    /// coding-session 模板，逐字抄自 Claude.app 的 `HMr`（`/tmp/claude-index.beautified.js` L232130）。
+    /// coding-session 模板，基于 Claude.app 的 `HMr`（`/tmp/claude-index.beautified.js` L232130）
+    /// 扩展：要求同时输出英文 `<title>`（branch slug 用）和用户原语言的 `<title_i18n>`。
     fileprivate static let codingTitlePrompt = """
     You are coming up with a succinct title for a coding session based on the provided description. The title should be clear, concise, and accurately reflect the content of the coding task.
     You should keep it short and simple, ideally no more than 6 words. Avoid using jargon or overly technical terms unless absolutely necessary. The title should be easy to understand for anyone reading it.
-    You should wrap the title in <title> tags.
 
-    For example:
+    You must output TWO titles in XML tags, in this exact order:
+    1. <title>…</title> — always in English, no more than 6 words. This is used for git branch naming, so it must be English regardless of the description language.
+    2. <title_i18n>…</title_i18n> — same meaning as <title>, but in the SAME language as the user's description. If the description is already in English, repeat the English title verbatim.
+
+    For example (English input):
     <title>Fix login button not working on mobile</title>
-    <title>Update README with installation instructions</title>
-    <title>Improve performance of data processing script</title>
+    <title_i18n>Fix login button not working on mobile</title_i18n>
+
+    For example (Chinese input):
+    <title>Fix empty-password login crash</title>
+    <title_i18n>修复空密码登录崩溃</title_i18n>
+
+    For example (Japanese input):
+    <title>Add dark mode to settings</title>
+    <title_i18n>設定にダークモードを追加</title_i18n>
 
     Here is the session description:
     <description>{session_description}</description>
-    Please generate a title for this session.
+    Please generate the two titles for this session.
     """
 }

@@ -56,10 +56,18 @@ struct ToolBlock<Label: View, Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            if effectivelyExpanded {
-                bodyArea
-                    .transition(.opacity)
-            }
+            // bodyArea is kept mounted even when collapsed so that its
+            // subviews' `@State` (syntax-highlight tokens, diff hunks,
+            // rendered markdown) survives collapse/expand cycles. We hide
+            // it with a zero-height frame + clip + opacity rather than
+            // removing it from the tree, so `.task { … }` runs once on
+            // first appearance and the work is already done by the time
+            // the user expands the block.
+            bodyArea
+                .frame(height: effectivelyExpanded ? nil : 0, alignment: .top)
+                .clipped()
+                .opacity(effectivelyExpanded ? 1 : 0)
+                .allowsHitTesting(effectivelyExpanded)
         }
         .background(backgroundColor)
         .clipShape(RoundedRectangle(cornerRadius: 8))

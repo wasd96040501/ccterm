@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		EA5A16ED2F5B000000AA1A46 /* AgentSDK in Frameworks */ = {isa = PBXBuildFile; productRef = EA5A16EE2F5B000000AA1A46 /* AgentSDK */; };
 		EA5A17002F5C000000AA1A47 /* Markdown in Frameworks */ = {isa = PBXBuildFile; productRef = EA5A17012F5C000000AA1A47 /* Markdown */; };
+		EA5A17202F5D000000AA1A48 /* SwiftMath in Frameworks */ = {isa = PBXBuildFile; productRef = EA5A17212F5D000000AA1A48 /* SwiftMath */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -60,6 +61,7 @@
 			files = (
 				EA5A16ED2F5B000000AA1A46 /* AgentSDK in Frameworks */,
 				EA5A17002F5C000000AA1A47 /* Markdown in Frameworks */,
+				EA5A17202F5D000000AA1A48 /* SwiftMath in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -126,6 +128,7 @@
 			packageProductDependencies = (
 				EA5A16EE2F5B000000AA1A46 /* AgentSDK */,
 				EA5A17012F5C000000AA1A47 /* Markdown */,
+				EA5A17212F5D000000AA1A48 /* SwiftMath */,
 			);
 			productName = ccterm;
 			productReference = 2B3DA4E42F5701A1000987D3 /* ccterm.app */;
@@ -213,6 +216,7 @@
 			packageReferences = (
 				EA5A16EF2F5B000000AA1A46 /* XCLocalSwiftPackageReference "AgentSDK" */,
 				EA5A17022F5C000000AA1A47 /* XCRemoteSwiftPackageReference "swift-markdown" */,
+				EA5A17222F5D000000AA1A48 /* XCRemoteSwiftPackageReference "SwiftMath" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 2B3DA4E52F5701A1000987D3 /* Products */;
@@ -528,7 +532,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.4;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ccterm.app.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -549,7 +553,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
-				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.4;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.ccterm.app.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -657,6 +661,14 @@
 				version = 0.7.3;
 			};
 		};
+		EA5A17222F5D000000AA1A48 /* XCRemoteSwiftPackageReference "SwiftMath" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mgriebling/SwiftMath";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.7.1;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -668,6 +680,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = EA5A17022F5C000000AA1A47 /* XCRemoteSwiftPackageReference "swift-markdown" */;
 			productName = Markdown;
+		};
+		EA5A17212F5D000000AA1A48 /* SwiftMath */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EA5A17222F5D000000AA1A48 /* XCRemoteSwiftPackageReference "SwiftMath" */;
+			productName = SwiftMath;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -44,6 +44,16 @@ public struct MarkdownDocument: Hashable, Sendable {
 
         for child in document.blockChildren {
             switch child {
+            case let heading as Markdown.Heading:
+                flushBuffer()
+                let inlines = MarkdownConvert.inlines(Array(heading.inlineChildren))
+                out.append(.heading(level: heading.level, inlines: inlines))
+
+            case let quote as Markdown.BlockQuote:
+                flushBuffer()
+                let inner = MarkdownConvert.blocks(Array(quote.blockChildren))
+                out.append(.blockquote(inner))
+
             case let code as Markdown.CodeBlock:
                 flushBuffer()
                 let language = code.language?.trimmingCharacters(in: .whitespaces)

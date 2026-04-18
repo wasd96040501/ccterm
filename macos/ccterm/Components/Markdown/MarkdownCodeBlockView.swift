@@ -1,22 +1,38 @@
 import SwiftUI
 
-/// v1 placeholder for ``MarkdownSegment/codeBlock(_:)`` — monospaced text with
-/// a tinted background. Syntax highlighting can plug in later via the existing
-/// `SyntaxHighlightEngine`.
+/// Renders a fenced code block. Tokens are pre-computed by ``MarkdownView``
+/// during `refresh()` and passed in here, so the first paint already shows
+/// the syntax-highlighted attributed string — there is no plain → colored
+/// flicker. When `tokens` is `nil` (e.g. no ``SyntaxHighlightEngine`` in the
+/// environment), the body falls back to a plain monospaced rendering.
 struct MarkdownCodeBlockView: View {
     let block: MarkdownCodeBlock
+    let tokens: [SyntaxToken]?
 
     @Environment(\.markdownTheme) private var theme
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        Text(block.code)
-            .font(.system(size: theme.codeFontSize, design: .monospaced))
-            .foregroundStyle(Color(nsColor: theme.primaryColor))
+        Text(content)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 8)
+            .padding(.vertical, theme.blockPadding)
             .padding(.horizontal, 12)
             .background(Color(nsColor: theme.codeBlockBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 6))
+            .clipShape(RoundedRectangle(cornerRadius: theme.blockCornerRadius))
+    }
+
+    private var content: AttributedString {
+        let font = Font.system(size: theme.codeFontSize, design: .monospaced)
+        if let tokens {
+            return SyntaxAttributedString.build(
+                tokens: tokens,
+                colorScheme: colorScheme,
+                font: font)
+        }
+        var plain = AttributedString(block.code)
+        plain.font = font
+        plain.foregroundColor = SyntaxTheme.plainColor(colorScheme)
+        return plain
     }
 }

@@ -2,6 +2,8 @@ import Foundation
 
 public enum MarkdownSegment: Hashable, Sendable {
     case markdown([MarkdownBlock])
+    case heading(level: Int, inlines: [MarkdownInline])
+    case blockquote([MarkdownBlock])
     case codeBlock(MarkdownCodeBlock)
     case table(MarkdownTable)
     case mathBlock(String)

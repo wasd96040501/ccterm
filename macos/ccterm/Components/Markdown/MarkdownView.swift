@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import SwiftMath
 
 // MARK: - Public API
 
@@ -31,6 +32,7 @@ struct MarkdownView: View {
     @Environment(\.markdownTheme) private var theme
     @Environment(\.markdownLayout) private var layout
     @Environment(\.openURL) private var openURL
+    @Environment(\.syntaxEngine) private var syntaxEngine
 
     @State private var state: RenderState?
 
@@ -48,11 +50,11 @@ struct MarkdownView: View {
         if let state {
             switch layout {
             case .eager:
-                VStack(alignment: .leading, spacing: theme.segmentSpacing) {
+                VStack(alignment: .leading, spacing: theme.l2) {
                     segmentViews(for: state)
                 }
             case .lazy:
-                LazyVStack(alignment: .leading, spacing: theme.segmentSpacing) {
+                LazyVStack(alignment: .leading, spacing: theme.l2) {
                     segmentViews(for: state)
                 }
             }
@@ -65,27 +67,54 @@ struct MarkdownView: View {
     @ViewBuilder
     private func segmentViews(for state: RenderState) -> some View {
         ForEach(Array(state.document.segments.enumerated()), id: \.offset) { idx, segment in
-            segmentView(segment: segment, prebuilt: state.prebuilt[idx])
+            segmentView(
+                segment: segment,
+                prebuilt: state.prebuilt[idx],
+                tokens: state.codeTokens[idx],
+                mathImage: state.mathImages[idx],
+                tableData: state.tableCells[idx])
+                .padding(.top, headingTopPadding(idx: idx, segment: segment))
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
+    /// Heading segments get an extra top padding so total gap above = l1.
+    /// (segmentSpacing already provides l2; we add l1 - l2.) Skip for the very
+    /// first segment — no content above it to push away from.
+    private func headingTopPadding(idx: Int, segment: MarkdownSegment) -> CGFloat {
+        guard case .heading = segment, idx > 0 else { return 0 }
+        return max(0, theme.l1 - theme.l2)
+    }
+
     @ViewBuilder
-    private func segmentView(segment: MarkdownSegment, prebuilt: NSAttributedString?) -> some View {
+    private func segmentView(
+        segment: MarkdownSegment,
+        prebuilt: NSAttributedString?,
+        tokens: [SyntaxToken]?,
+        mathImage: NSImage?,
+        tableData: PrebuiltTable?
+    ) -> some View {
         switch segment {
-        case .markdown:
+        case .markdown, .heading:
             if let prebuilt {
                 MarkdownTextView(
                     attributed: prebuilt,
                     linkColor: theme.linkColor,
-                    onOpenURL: { openURL($0) })
+                    onOpenURL: { openURL($0) },
+                    inlineCodeHPadding: theme.inlineCodeHPadding,
+                    inlineCodeVPadding: theme.inlineCodeVPadding,
+                    inlineCodeCornerRadius: theme.inlineCodeCornerRadius)
+            }
+        case .blockquote:
+            if let prebuilt {
+                MarkdownBlockquoteView(attributed: prebuilt)
             }
         case .codeBlock(let block):
-            MarkdownCodeBlockView(block: block)
+            MarkdownCodeBlockView(block: block, tokens: tokens)
         case .table(let table):
-            MarkdownTableView(table: table)
+            MarkdownTableView(table: table, prebuilt: tableData)
         case .mathBlock(let raw):
-            MarkdownMathBlockView(raw: raw)
+            MarkdownMathBlockView(raw: raw, image: mathImage)
         case .thematicBreak:
             MarkdownThematicBreakView()
         }
@@ -115,14 +144,94 @@ struct MarkdownView: View {
         guard !Task.isCancelled else { return }
 
         let builder = MarkdownAttributedBuilder(theme: theme)
-        let prebuilt: [NSAttributedString?] = document.segments.map { segment in
-            if case .markdown(let blocks) = segment {
-                return builder.build(blocks: blocks)
+        var prebuilt: [NSAttributedString?] = []
+        var mathImages: [Int: NSImage] = [:]
+        var tableCells: [Int: PrebuiltTable] = [:]
+
+        for (idx, segment) in document.segments.enumerated() {
+            switch segment {
+            case .markdown(let blocks):
+                prebuilt.append(builder.build(blocks: blocks))
+            case .heading(let level, let inlines):
+                prebuilt.append(builder.buildHeading(level: level, inlines: inlines))
+            case .blockquote(let blocks):
+                prebuilt.append(builder.buildBlockquote(blocks: blocks))
+            case .mathBlock(let raw):
+                prebuilt.append(nil)
+                if let image = renderMathImage(latex: raw) {
+                    mathImages[idx] = image
+                }
+            case .table(let table):
+                prebuilt.append(nil)
+                tableCells[idx] = buildTable(table, builder: builder)
+            default:
+                prebuilt.append(nil)
             }
-            return nil
         }
+
+        // Pre-tokenize all code blocks so the first paint already shows the
+        // syntax-highlighted attributed string — no plain-text → highlighted
+        // flicker. Falls back silently to plain text if no engine is in env.
+        var codeTokens: [Int: [SyntaxToken]] = [:]
+        if let engine = syntaxEngine {
+            await engine.load()
+            for (idx, segment) in document.segments.enumerated() {
+                guard case .codeBlock(let block) = segment else { continue }
+                if Task.isCancelled { return }
+                codeTokens[idx] = await engine.highlight(
+                    code: block.code,
+                    language: block.language)
+            }
+        }
+
         guard !Task.isCancelled else { return }
-        state = RenderState(document: document, prebuilt: prebuilt)
+        state = RenderState(
+            document: document,
+            prebuilt: prebuilt,
+            codeTokens: codeTokens,
+            mathImages: mathImages,
+            tableCells: tableCells)
+    }
+
+    /// Render a LaTeX block to an NSImage via SwiftMath. Returns nil on parse
+    /// failure (the view falls back to monospaced source text).
+    private func renderMathImage(latex: String) -> NSImage? {
+        var img = MathImage(
+            latex: latex,
+            fontSize: theme.bodyFontSize * 1.4,
+            textColor: theme.primaryColor,
+            labelMode: .display,
+            textAlignment: .center)
+        let (error, image, _) = img.asImage()
+        guard error == nil, let image else { return nil }
+        return image
+    }
+
+    /// Convert a parsed `MarkdownTable` into per-cell AttributedStrings so the
+    /// table view body becomes a pure data lookup.
+    private func buildTable(
+        _ table: MarkdownTable,
+        builder: MarkdownAttributedBuilder
+    ) -> PrebuiltTable {
+        let columnCount = max(
+            table.header.count,
+            table.rows.map(\.count).max() ?? 0)
+
+        func attr(_ inlines: [MarkdownInline], bold: Bool) -> AttributedString {
+            let ns = builder.buildInline(inlines, bold: bold)
+            return (try? AttributedString(ns, including: \.appKit))
+                ?? AttributedString(ns.string)
+        }
+
+        let header = (0..<columnCount).map { col in
+            attr(col < table.header.count ? table.header[col] : [], bold: true)
+        }
+        let rows = table.rows.map { row in
+            (0..<columnCount).map { col in
+                attr(col < row.count ? row[col] : [], bold: false)
+            }
+        }
+        return PrebuiltTable(header: header, rows: rows, columnCount: columnCount)
     }
 
     // MARK: - Types
@@ -134,7 +243,23 @@ struct MarkdownView: View {
 
     private struct RenderState {
         let document: MarkdownDocument
+        /// NSAttributedString for markdown / heading / blockquote segments.
         let prebuilt: [NSAttributedString?]
+        /// Pre-tokenized highlight tokens for codeBlock segments.
+        let codeTokens: [Int: [SyntaxToken]]
+        /// Pre-rendered SwiftMath image for mathBlock segments.
+        let mathImages: [Int: NSImage]
+        /// Pre-built per-cell attributed strings for table segments. Outer
+        /// dictionary keyed by segment index; inner array is rows then cells.
+        let tableCells: [Int: PrebuiltTable]
+    }
+
+    /// Pre-built table data: header cells + body row cells, all already
+    /// converted to AttributedString so view body stays pure.
+    struct PrebuiltTable {
+        let header: [AttributedString]
+        let rows: [[AttributedString]]
+        let columnCount: Int
     }
 
     private struct TaskKey: Hashable {
@@ -193,15 +318,26 @@ extension View {
 
 #Preview("Markdown demo") {
     let sample = #"""
-    # Markdown Renderer
+    # Heading 1 — page title
+    ## Heading 2 — section
+    ### Heading 3 — subsection
+    #### Heading 4
+    ##### Heading 5
+    ###### Heading 6
 
-    Native **SwiftUI** + *TextKit 1* rendering. Visit [Apple](https://apple.com) or read the `README.md`.
+    ## Inline styles
+
+    Native **SwiftUI** + *TextKit 1* + ~~legacy WebView~~. Visit [Apple](https://apple.com) or read the `README.md`.
+
+    This is a deliberately long paragraph used to verify line-wrapping and intra-paragraph line spacing. It mixes **bold**, *italic*, `inline code`, [a link](https://example.com), and ~~strikethrough~~ to make sure the rendered run feels cohesive across multiple wrapped lines without odd vertical gaps or alignment quirks. Add a few more clauses so the text reliably spills onto a third or fourth line at the preview's frame width — that's where the rhythm becomes visible.
 
     Soft
     break collapses. Hard break below.\
     New line.
 
-    ## Features
+    Image fallback: ![Diagram](https://example.com/img.png)
+
+    ## Lists
 
     - Paragraphs with **bold**, *italic*, ~~strike~~, `inline code`
     - Links like [GitHub](https://github.com)
@@ -213,18 +349,21 @@ extension View {
       - level 2
         - level 3
 
-    1. First ordered
-    2. Second
-    3. Third
+    9. Ninth — last single-digit row
+    10. Tenth — width jumps; content x must still align
+    11. Eleventh
 
-    ### Blockquote
+    99. Ninety-ninth
+    100. Hundredth — three digits, period stays right-aligned
+
+    ## Blockquote
 
     > This is a blockquote.
     > Second line, same paragraph.
     >
     > Nested paragraphs work too.
 
-    ### Code
+    ## Code
 
     ```swift
     func greet(_ name: String) -> String {
@@ -232,14 +371,18 @@ extension View {
     }
     ```
 
-    ### Table
+    ```
+    fenced without language
+    ```
+
+    ## Table
 
     | Name  | Age | Role     |
     |:------|:---:|---------:|
     | Alice |  30 | Engineer |
     | Bob   |  25 | Designer |
 
-    ### Math
+    ## Math
 
     Inline: $E = mc^2$. Block below:
 
@@ -256,7 +399,8 @@ extension View {
         MarkdownView(sample)
             .padding()
     }
-    .frame(width: 640, height: 800)
+    .frame(width: 640, height: 560)
+    .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }
 
 #Preview("Short — eager, dark") {
@@ -264,6 +408,7 @@ extension View {
         .padding()
         .frame(width: 400)
         .preferredColorScheme(.dark)
+        .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }
 
 #Preview("Lazy layout") {
@@ -273,5 +418,6 @@ extension View {
             .markdownLayout(.lazy)
             .padding()
     }
-    .frame(width: 520, height: 700)
+    .frame(width: 520, height: 500)
+    .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }

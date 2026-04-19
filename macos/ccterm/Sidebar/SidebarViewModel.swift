@@ -32,9 +32,6 @@ enum SidebarSelection: Hashable {
 enum SidebarActionKind: String, Identifiable, CaseIterable, Hashable {
     case newConversation
     case archive
-    #if DEBUG
-    case scrollHugTest
-    #endif
 
     var id: String { rawValue }
 
@@ -42,9 +39,6 @@ enum SidebarActionKind: String, Identifiable, CaseIterable, Hashable {
         switch self {
         case .newConversation: String(localized: "New Conversation")
         case .archive: String(localized: "Archive")
-        #if DEBUG
-        case .scrollHugTest: "Scroll Hug Test"
-        #endif
         }
     }
 
@@ -52,9 +46,6 @@ enum SidebarActionKind: String, Identifiable, CaseIterable, Hashable {
         switch self {
         case .newConversation: "square.and.pencil"
         case .archive: "archivebox"
-        #if DEBUG
-        case .scrollHugTest: "arrow.up.and.down.text.horizontal"
-        #endif
         }
     }
 }

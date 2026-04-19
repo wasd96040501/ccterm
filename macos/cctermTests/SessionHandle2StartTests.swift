@@ -268,14 +268,28 @@ final class SessionHandle2StartTests: XCTestCase {
 
         XCTAssertEqual(handle.status, .starting, "skipBootstrap 下只完成同步部分")
         XCTAssertNotNil(handle.cwd)
+        // 新形状：<repo>/.claude/worktrees/<name>/ 单层
         XCTAssertTrue(handle.cwd?.hasPrefix(repo + "/.claude/worktrees/") ?? false,
-                      "cwd 应指向 <repo>/.claude/worktrees/<name>/<project>，got: \(handle.cwd ?? "nil")")
+                      "cwd should be under <repo>/.claude/worktrees/, got: \(handle.cwd ?? "nil")")
+        let suffix = handle.cwd?.dropFirst(repo.count + "/.claude/worktrees/".count)
+        XCTAssertFalse(suffix?.contains("/") ?? true, "worktree dir should be single-level, got: \(handle.cwd ?? "nil")")
         XCTAssertTrue(FileManager.default.fileExists(atPath: handle.cwd ?? ""))
+
+        // worktreeBranch 立即落上初始随机名（adj-sci-hex6）
+        XCTAssertNotNil(handle.worktreeBranch)
+        let adjSciHex = try! NSRegularExpression(pattern: "^[a-z]+-[a-z]+-[0-9a-f]{6}$")
+        if let b = handle.worktreeBranch {
+            let range = NSRange(b.startIndex..., in: b)
+            XCTAssertNotNil(adjSciHex.firstMatch(in: b, range: range),
+                            "worktreeBranch should match adj-sci-hex6, got: \(b)")
+        }
 
         let record = sessionRepo.find("wt-int")
         XCTAssertEqual(record?.cwd, handle.cwd)
         XCTAssertTrue(record?.isWorktree ?? false)
         XCTAssertEqual(record?.originPath, repo)
+        XCTAssertEqual(record?.worktreeBranch, handle.worktreeBranch,
+                       "db worktreeBranch must match handle's initial name")
     }
 
     func test_start_isWorktree_errorsWhenOriginPathNotGitRepo() throws {

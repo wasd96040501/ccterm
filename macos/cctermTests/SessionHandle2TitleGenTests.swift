@@ -93,6 +93,125 @@ final class SessionHandle2TitleGenTests: XCTestCase {
         XCTAssertFalse(handle.isGeneratingTitle)
     }
 
+    // MARK: - applyGeneratedTitleAndBranch (direct drive, no LLM)
+
+    /// worktree 场景：apply 应把 title 和 branch 都更新；branch 走 rename 路径。
+    func test_applyGeneratedTitleAndBranch_renamesWorktreeBranch() throws {
+        let gitRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sh2-apply-\(UUID().uuidString.prefix(8))")
+            .path
+        try initGitRepo(at: gitRoot)
+        defer { try? FileManager.default.removeItem(atPath: gitRoot) }
+
+        let sessionRepo = makeRepo()
+        let handle = SessionHandle2(sessionId: "apply-rename", repository: sessionRepo)
+        handle.skipBootstrapForTesting = true
+        handle.skipTitleGenForTesting = true
+        handle.isWorktree = true
+        handle.originPath = gitRoot
+
+        handle.start()
+
+        let initialBranch = try XCTUnwrap(handle.worktreeBranch)
+        handle.isGeneratingTitle = true  // 模拟进入生成中
+
+        handle.applyGeneratedTitleAndBranch(
+            .init(title: "New Title", titleI18n: "New Title", branch: "feat/apply-test")
+        )
+
+        XCTAssertFalse(handle.isGeneratingTitle)
+        XCTAssertEqual(handle.title, "New Title")
+        XCTAssertEqual(handle.worktreeBranch, "feat/apply-test")
+
+        let record = sessionRepo.find("apply-rename")
+        XCTAssertEqual(record?.title, "New Title")
+        XCTAssertEqual(record?.worktreeBranch, "feat/apply-test")
+
+        // git 层：当前 branch 是 feat/apply-test，initial 名不在 branch 列表
+        let (_, cur) = runGit(["branch", "--show-current"], cwd: handle.cwd!)
+        XCTAssertEqual(cur.trimmingCharacters(in: .whitespacesAndNewlines), "feat/apply-test")
+        let (_, list) = runGit(["branch", "--list", "--format=%(refname:short)"], cwd: gitRoot)
+        XCTAssertFalse(list.contains(initialBranch), "initial branch should be gone after rename")
+        XCTAssertTrue(list.contains("feat/apply-test"))
+    }
+
+    /// 目标 branch 已被占用 → rename 追加 `-2` 后缀。
+    func test_applyGeneratedTitleAndBranch_conflict_takesSuffix() throws {
+        let gitRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sh2-apply-conflict-\(UUID().uuidString.prefix(8))")
+            .path
+        try initGitRepo(at: gitRoot)
+        defer { try? FileManager.default.removeItem(atPath: gitRoot) }
+
+        // 预先占掉目标 branch
+        _ = runGit(["branch", "feat/clash"], cwd: gitRoot)
+
+        let sessionRepo = makeRepo()
+        let handle = SessionHandle2(sessionId: "apply-clash", repository: sessionRepo)
+        handle.skipBootstrapForTesting = true
+        handle.skipTitleGenForTesting = true
+        handle.isWorktree = true
+        handle.originPath = gitRoot
+
+        handle.start()
+
+        handle.applyGeneratedTitleAndBranch(
+            .init(title: "X", titleI18n: "X", branch: "feat/clash")
+        )
+
+        XCTAssertEqual(handle.worktreeBranch, "feat/clash-2")
+        XCTAssertEqual(sessionRepo.find("apply-clash")?.worktreeBranch, "feat/clash-2")
+    }
+
+    /// 10 个候选全占 → rename 耗尽，worktreeBranch 保留 initial。
+    func test_applyGeneratedTitleAndBranch_rename_exhausted_keepsInitial() throws {
+        let gitRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sh2-apply-exhaust-\(UUID().uuidString.prefix(8))")
+            .path
+        try initGitRepo(at: gitRoot)
+        defer { try? FileManager.default.removeItem(atPath: gitRoot) }
+
+        _ = runGit(["branch", "feat/taken"], cwd: gitRoot)
+        for n in 2...10 {
+            _ = runGit(["branch", "feat/taken-\(n)"], cwd: gitRoot)
+        }
+
+        let sessionRepo = makeRepo()
+        let handle = SessionHandle2(sessionId: "apply-exhaust", repository: sessionRepo)
+        handle.skipBootstrapForTesting = true
+        handle.skipTitleGenForTesting = true
+        handle.isWorktree = true
+        handle.originPath = gitRoot
+
+        handle.start()
+        let initial = try XCTUnwrap(handle.worktreeBranch)
+
+        handle.applyGeneratedTitleAndBranch(
+            .init(title: "X", titleI18n: "X", branch: "feat/taken")
+        )
+
+        XCTAssertEqual(handle.worktreeBranch, initial, "rename 耗尽 → 保留初始 branch")
+        XCTAssertEqual(sessionRepo.find("apply-exhaust")?.worktreeBranch, initial)
+    }
+
+    /// 非 worktree 会话：apply 只更新 title，不触碰 branch。
+    func test_applyGeneratedTitleAndBranch_nonWorktree_onlyUpdatesTitle() {
+        let sessionRepo = makeRepo()
+        let handle = SessionHandle2(sessionId: "apply-plain", repository: sessionRepo)
+        handle.skipBootstrapForTesting = true
+        handle.skipTitleGenForTesting = true
+        handle.cwd = FileManager.default.temporaryDirectory.path
+        handle.start()
+
+        handle.applyGeneratedTitleAndBranch(
+            .init(title: "Plain Title", titleI18n: "Plain Title", branch: "feat/ignored")
+        )
+
+        XCTAssertEqual(handle.title, "Plain Title")
+        XCTAssertNil(handle.worktreeBranch)
+        XCTAssertNil(sessionRepo.find("apply-plain")?.worktreeBranch)
+    }
+
     // MARK: - Integration — real LLM + optional worktree
 
     func test_integration_firstSend_updatesTitleInHandleAndRepo() async throws {

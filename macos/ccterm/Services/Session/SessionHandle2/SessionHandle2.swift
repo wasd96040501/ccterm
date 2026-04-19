@@ -40,6 +40,10 @@ class SessionHandle2 {
 
     internal(set) var title: String = ""
     internal(set) var originPath: String?
+    /// worktree 场景下的 branch 名。fresh + isWorktree 在 `start()` 成功完成那刻立即
+    /// 置为初始随机名（`<adj>-<sci>-<hex6>`）；随后 LLM 生成语义化名，
+    /// `applyGeneratedTitleAndBranch` 调 `Worktree.renameBranch(to:)` 把它改为最终值
+    /// （冲突时可能带 `-N` 后缀）。rename 失败 / 非 worktree 会话 → 保持原值。
     internal(set) var worktreeBranch: String?
     /// true 表示正在异步生成 title（以及 worktree 场景下的 branch）。UI 据此显示 shimmer/loading。
     /// 由 fresh session 的首条 `send()` 触发，`Prompt.runTitleAndBranch` 完成后复位。

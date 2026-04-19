@@ -27,17 +27,18 @@ extension SessionHandle2 {
         let fresh = (repository.find(sessionId) == nil)
         needsTitleGen = fresh && title.isEmpty
 
-        // stage 2: fresh + isWorktree 时需要先 provision worktree 目录，然后把 cwd 同步到 handle。
-        // 失败直接走失败路径（状态 → .stopped，不走 bootstrap）。
+        // stage 2: fresh + isWorktree 时先 provision worktree，同步更新 cwd +
+        // 初始 branch（adj-sci-hex）。后续 LLM rename 会改 branch，但不改 cwd。
+        // 失败直接走失败路径（status → .stopped，不走 bootstrap，也不写 db）。
         if fresh, isWorktree {
             do {
-                let worktreePath = try provisionWorktreeIfNeeded()
-                cwd = worktreePath
+                let wt = try provisionWorktreeIfNeeded()
+                cwd = wt.path
+                worktreeBranch = wt.name
             } catch {
                 appLog(.error, "SessionHandle2", "worktree provision FAILED \(sessionId) err=\(error)")
                 termination = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
                 status = .stopped
-                // 没 save 过 db，不 updateError
                 return
             }
         }
@@ -52,16 +53,13 @@ extension SessionHandle2 {
         }
     }
 
-    private func provisionWorktreeIfNeeded() throws -> String {
+    private func provisionWorktreeIfNeeded() throws -> Worktree {
         guard let origin = originPath else {
-            throw WorktreeProvisioner.WorktreeError.notGitRepository(path: "(nil originPath)")
+            throw Worktree.Error.notGitRepository(path: "(nil originPath)")
         }
-        // 使用已 hydrate 的 worktreeBranch 作为 sourceBranch（resume 不走这里，所以
-        // worktreeBranch 在 fresh 场景下更常为 nil，表示"用当前分支"）。
-        return try WorktreeProvisioner.createDetachedWorktree(
-            repoPath: origin,
-            sourceBranch: worktreeBranch
-        )
+        // 已 hydrate 的 worktreeBranch（如果有）用作 sourceBranch——fresh 场景常为 nil，
+        // 表示"用 baseRepo 当前 branch"；resume 不走这里。
+        return try Worktree.create(from: origin, sourceBranch: worktreeBranch)
     }
 
     /// 手动停止 CLI 子进程。active 态下调 `close()`；之后由 onProcessExit 回调接管
@@ -124,6 +122,49 @@ extension SessionHandle2 {
     }
 }
 
+// MARK: - Title / branch application (internal for tests)
+
+extension SessionHandle2 {
+
+    /// 应用 LLM 生成的 title + branch 到 handle 和 db。
+    ///
+    /// - 总是先复位 `isGeneratingTitle`、写 title
+    /// - worktree 场景下用 `Worktree.renameBranch(to:)` rename 初始 branch；
+    ///   成功把最终 branch（可能带 `-N` 后缀）写回内存与 db；失败保留初始 branch
+    ///
+    /// 拆成独立方法便于测试直接驱动，无需触发真 LLM 调用。
+    func applyGeneratedTitleAndBranch(_ result: Prompt.TitleAndBranch) {
+        isGeneratingTitle = false
+        title = result.titleI18n
+        repository.updateTitle(sessionId, title: result.titleI18n)
+
+        guard isWorktree,
+              !result.branch.isEmpty,
+              let wtPath = cwd,
+              let initial = worktreeBranch
+        else {
+            appLog(.info, "SessionHandle2", "title-gen done \(sessionId) title=\(result.titleI18n)")
+            return
+        }
+
+        let wt = Worktree(
+            path: wtPath,
+            name: initial,
+            baseRepo: originPath ?? "",
+            sourceBranch: nil
+        )
+        switch wt.renameBranch(to: result.branch) {
+        case .success(let finalBranch):
+            worktreeBranch = finalBranch
+            repository.updateWorktreeBranch(sessionId, branch: finalBranch)
+            appLog(.info, "SessionHandle2", "title-gen branch renamed \(sessionId) \(initial) → \(finalBranch)")
+        case .failure(let err):
+            appLog(.warning, "SessionHandle2", "title-gen rename failed \(sessionId): \(err)")
+            // 保留 initial，不改 db
+        }
+    }
+}
+
 // MARK: - Private impl
 
 private extension SessionHandle2 {
@@ -134,9 +175,6 @@ private extension SessionHandle2 {
         if skipTitleGenForTesting { return }
 
         let sid = sessionId
-        let repo = repository
-        let isWT = isWorktree
-        let currentCwd = cwd
         let customCLI = UserDefaults.standard.string(forKey: "customCLICommand")
 
         Task.detached { [weak self] in
@@ -162,24 +200,11 @@ private extension SessionHandle2 {
 
             await MainActor.run { [weak self] in
                 guard let self else { return }
-                self.isGeneratingTitle = false
-                guard let r = result else { return }
-
-                self.title = r.titleI18n
-                repo.updateTitle(sid, title: r.titleI18n)
-
-                if isWT, !r.branch.isEmpty, let wtPath = currentCwd {
-                    let res = GitUtils.checkoutNewBranch(at: wtPath, branch: r.branch)
-                    switch res {
-                    case .success:
-                        self.worktreeBranch = r.branch
-                        repo.updateWorktreeBranch(sid, branch: r.branch)
-                        appLog(.info, "SessionHandle2", "title-gen branch attached \(sid) → \(r.branch)")
-                    case .failure(let err):
-                        appLog(.warning, "SessionHandle2", "title-gen branch checkout failed \(sid): \(err.stderr)")
-                    }
+                guard let r = result else {
+                    self.isGeneratingTitle = false
+                    return
                 }
-                appLog(.info, "SessionHandle2", "title-gen done \(sid) title=\(r.titleI18n)")
+                self.applyGeneratedTitleAndBranch(r)
             }
         }
     }

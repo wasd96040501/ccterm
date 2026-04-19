@@ -113,6 +113,12 @@ extension Prompt {
         public let titleI18n: String
         /// `claude/<slug(title).prefix(50)>`，无 ASCII 可 slug 时为空串。
         public let branch: String
+
+        public init(title: String, titleI18n: String, branch: String) {
+            self.title = title
+            self.titleI18n = titleI18n
+            self.branch = branch
+        }
     }
 
     /// 照抄 Claude.app 的 `JMr`：

@@ -179,6 +179,13 @@ class SessionRepository {
         coreDataStack.saveContext()
     }
 
+    /// 更新 isWorktree 开关。仅 non-active 下由 SessionHandle 调用。
+    func updateIsWorktree(_ sessionId: String, isWorktree: Bool) {
+        guard let entity = fetchEntity(sessionId) else { return }
+        entity.isWorktree = isWorktree
+        coreDataStack.saveContext()
+    }
+
     /// 置顶会话。
     func pinSession(sessionId: String) {
         guard let entity = fetchEntity(sessionId) else { return }

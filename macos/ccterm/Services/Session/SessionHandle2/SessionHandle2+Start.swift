@@ -103,6 +103,27 @@ extension SessionHandle2 {
     }
 }
 
+// MARK: - Queue flush (internal for messaging / configuration callbacks)
+
+extension SessionHandle2 {
+
+    /// 把 `.queued` 的 user entry 合并发往 CLI 并切 `.inFlight`，`status` → `.responding`。
+    /// 前置：`status == .idle` 且已 attach agentSession。否则 no-op。
+    func flushQueueIfNeeded() {
+        guard status == .idle, let session = agentSession else { return }
+        var didFlush = false
+        for i in messages.indices where messages[i].delivery == .queued {
+            guard let text = textFromEntry(messages[i]) else { continue }
+            session.sendMessage(text)
+            messages[i].delivery = .inFlight
+            didFlush = true
+        }
+        if didFlush {
+            status = .responding
+        }
+    }
+}
+
 // MARK: - Private impl
 
 private extension SessionHandle2 {
@@ -360,20 +381,6 @@ private extension SessionHandle2 {
         }
         let msg = (try? Message2(json: raw)) ?? Message2.unknown(name: "user", raw: raw)
         return MessageEntry(id: UUID(), message: msg, delivery: .queued, toolResults: [:])
-    }
-
-    func flushQueueIfNeeded() {
-        guard status == .idle, let session = agentSession else { return }
-        var didFlush = false
-        for i in messages.indices where messages[i].delivery == .queued {
-            guard let text = textFromEntry(messages[i]) else { continue }
-            session.sendMessage(text)
-            messages[i].delivery = .inFlight
-            didFlush = true
-        }
-        if didFlush {
-            status = .responding
-        }
     }
 
     func textFromEntry(_ entry: MessageEntry) -> String? {

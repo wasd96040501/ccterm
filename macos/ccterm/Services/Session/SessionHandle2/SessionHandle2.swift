@@ -152,7 +152,7 @@ class SessionHandle2 {
     ///
     /// 方法本身不阻塞调用线程；UI 通过观察 `historyLoadState` 展示 spinner / 错误。
     /// 与 `start()` 独立——stopped / notStarted session 也能查看历史。
-    func loadHistory() { fatalError() }
+    // impl in SessionHandle2+History.swift
 
     // MARK: - Messaging commands
 
@@ -160,14 +160,14 @@ class SessionHandle2 {
     ///
     /// - `.responding`：`status` → `.interrupting`；SDK ack 后 → `.idle`（并自动 flush queue）。
     /// - 其他 status：no-op。
-    func interrupt() { fatalError() }
+    // impl in SessionHandle2+Messaging.swift
 
     /// 取消一条尚未发出或已失败的消息。
     ///
     /// - 目标 entry 的 delivery 为 `.queued` / `.failed`：从 `messages` 数组移除。
     /// - delivery 为 `.inFlight` / `.delivered`：no-op（已发出的不可取消，已完成的无必要）。
     /// - id 不存在或不是 user entry：no-op。
-    func cancelMessage(id: UUID) { fatalError() }
+    // impl in SessionHandle2+Messaging.swift
 
     // MARK: - Configuration commands
 
@@ -179,30 +179,30 @@ class SessionHandle2 {
     ///   2. 并发发 RPC 通知 CLI 切换
     ///   3. CLI 后续 init/config 消息回包是 **authoritative**，若值与本地猜测不一致，
     ///      回包直接覆盖内存（不做 rollback，回包即真相）
-    func setModel(_ model: String?) { fatalError() }
+    // impl in SessionHandle2+Configuration.swift
 
     /// 变更推理力度。路由规则同 `setModel`（乐观写入 + RPC + 回包覆盖）。
-    func setEffort(_ effort: Effort?) { fatalError() }
+    // impl in SessionHandle2+Configuration.swift
 
     /// 变更权限模式。路由规则同 `setModel`（乐观写入 + RPC + 回包覆盖）。
-    func setPermissionMode(_ mode: PermissionMode) { fatalError() }
+    // impl in SessionHandle2+Configuration.swift
 
     /// 变更工作目录。
     ///
     /// - non-active（`.notStarted` / `.stopped`）：本地写入 `cwd`。
     /// - active：no-op（CLI 运行时不支持改 cwd；需先 `stop()`）。
-    func setCwd(_ cwd: String) { fatalError() }
+    // impl in SessionHandle2+Configuration.swift
 
     /// 变更 worktree 开关。路由规则同 `setCwd`（运行时不可改）。
-    func setWorktree(_ isWorktree: Bool) { fatalError() }
+    // impl in SessionHandle2+Configuration.swift
 
     /// 变更额外工作目录列表。路由规则同 `setCwd`（目前 AgentSDK 无运行时 RPC）。
     /// UI 层加/删单项用 read-modify-write：
     /// `handle.setAdditionalDirectories(handle.additionalDirectories + [path])`。
-    func setAdditionalDirectories(_ dirs: [String]) { fatalError() }
+    // impl in SessionHandle2+Configuration.swift
 
     /// 变更插件目录列表。路由规则同 `setAdditionalDirectories`。
-    func setPluginDirectories(_ dirs: [String]) { fatalError() }
+    // impl in SessionHandle2+Configuration.swift
 
     // MARK: - Permission
 
@@ -210,7 +210,7 @@ class SessionHandle2 {
     ///
     /// - 在 `pendingPermissions` 中找到对应 id：调用其 respond 闭包（自动回调 CLI 并从数组移除）。
     /// - id 不存在：no-op。
-    func respond(to permissionId: String, decision: PermissionDecision) { fatalError() }
+    // impl in SessionHandle2+Configuration.swift
 
     // MARK: - Presence
 
@@ -222,5 +222,5 @@ class SessionHandle2 {
     /// 调用时机（UI 层职责）：
     /// - `ChatRouter.activateSession` 切换：旧 handle 写 false、新 handle 写 true。
     /// - `AppState` 观察 NSWindow 失焦 / 重获焦点：对当前展示的 handle 写对应值。
-    func setFocused(_ focused: Bool) { fatalError() }
+    // impl in SessionHandle2+Configuration.swift
 }

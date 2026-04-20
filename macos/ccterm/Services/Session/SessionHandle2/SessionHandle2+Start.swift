@@ -49,13 +49,13 @@ extension SessionHandle2 {
     ///
     /// title 生成是正交能力——调用方（fresh + 首条文本场景）显式调 `generateTitle(from:)`。
     func send(_ message: SessionMessage) {
-        let entry = makeQueuedEntry(for: message)
-        messages.append(entry)
+        let single = makeQueuedSingle(for: message)
+        messages.append(.single(single))
 
         ensureStarted()
 
         if let session = agentSession {
-            writeEntryToCLI(entry, session: session)
+            writeSingleToCLI(single, session: session)
         }
         // 否则 bootstrap 成功后 `drainQueuedEntries` 会把它写到 CLI。
     }
@@ -144,18 +144,24 @@ extension SessionHandle2 {
 
     /// 把所有 `.queued` user entry 写到 CLI。仅在 bootstrap 刚成功、`agentSession`
     /// 就绪那一刻调用一次。此后的 `send(_:)` 走"立即写 CLI"的快路径。
+    ///
+    /// user 消息永远是 `.single`（不参与 grouping），所以只扫 `.single`。
     func drainQueuedEntries() {
         guard let session = agentSession else { return }
-        for idx in messages.indices where messages[idx].delivery == .queued {
-            writeEntryToCLI(messages[idx], session: session)
+        for entry in messages {
+            guard case .single(let single) = entry, single.delivery == .queued else { continue }
+            writeSingleToCLI(single, session: session)
         }
     }
 
     /// 将所有当前 `.queued` 的 user entry 打成 `.failed`（bootstrap 失败 /
     /// 进程异常退出都走这里）。已 `.confirmed` 的保持不变。
     func failQueuedEntries(reason: String) {
-        for idx in messages.indices where messages[idx].delivery == .queued {
-            messages[idx].delivery = .failed(reason: reason)
+        for idx in messages.indices {
+            guard case .single(var single) = messages[idx],
+                  single.delivery == .queued else { continue }
+            single.delivery = .failed(reason: reason)
+            messages[idx] = .single(single)
         }
     }
 }
@@ -389,9 +395,9 @@ private extension SessionHandle2 {
 
     // MARK: Message construction
 
-    /// 把下游 `SessionMessage` 打包成一条 `.queued` user MessageEntry。
-    /// entry.id 同时作为即将发给 CLI 的 `uuid` 字段（CLI echo 时按此匹配）。
-    func makeQueuedEntry(for message: SessionMessage) -> MessageEntry {
+    /// 把下游 `SessionMessage` 打包成一条 `.queued` user `SingleEntry`。
+    /// entry.id 同时作为随消息发给 CLI 的 `uuid` 字段（CLI echo 时按此匹配）。
+    func makeQueuedSingle(for message: SessionMessage) -> SingleEntry {
         let entryId = UUID()
         let uuidString = entryId.uuidString.lowercased()
         let raw: [String: Any]
@@ -422,15 +428,15 @@ private extension SessionHandle2 {
             ]
         }
         let msg = (try? Message2(json: raw)) ?? Message2.unknown(name: "user", raw: raw)
-        return MessageEntry(id: entryId, message: msg, delivery: .queued, toolResults: [:])
+        return SingleEntry(id: entryId, message: msg, delivery: .queued, toolResults: [:])
     }
 
-    func writeEntryToCLI(_ entry: MessageEntry, session: AgentSDK.Session) {
+    func writeSingleToCLI(_ entry: SingleEntry, session: AgentSDK.Session) {
         guard let text = textFromEntry(entry) else { return }
         session.sendMessage(text, extra: ["uuid": entry.id.uuidString.lowercased()])
     }
 
-    func textFromEntry(_ entry: MessageEntry) -> String? {
+    func textFromEntry(_ entry: SingleEntry) -> String? {
         guard case .user(let u) = entry.message,
               let content = u.message?.content else { return nil }
         switch content {

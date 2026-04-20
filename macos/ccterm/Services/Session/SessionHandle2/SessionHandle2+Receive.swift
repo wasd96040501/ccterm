@@ -17,7 +17,8 @@ extension SessionHandle2 {
     /// 单一 ingest 入口。吞一条 Message2 并更新 handle：
     /// - 同步副作用（usage、contextWindow、cwd、slashCommands、permissionMode、lifecycle）
     /// - user echo 带 uuid 命中本地 `.queued` entry → 切 `.confirmed`，并推进 status
-    /// - tool_result 原位合并到对应 assistant entry，或按可见性追加 MessageEntry
+    /// - tool_result 原位合并到对应 assistant single（可能位于 group 内部）
+    /// - 其它可见消息按「可分组」规则 append 到 timeline
     ///
     /// live 与 replay 走同一路径；`mode` 仅影响 lifecycle 推进与 hasUnread 触发。
     func receive(_ message: Message2, mode: ReceiveMode = .live) {
@@ -83,18 +84,42 @@ private extension SessionHandle2 {
 private extension SessionHandle2 {
 
     func appendToTimeline(_ message: Message2, mode: ReceiveMode) {
-        messages.append(MessageEntry(
-            id: UUID(),
-            message: message,
-            delivery: nil,
-            toolResults: [:]
-        ))
+        let single = SingleEntry(id: UUID(), message: message, delivery: nil, toolResults: [:])
+
+        if message.isGroupableAssistant {
+            // 可分组：last 是 group → 追加到 items；否则开新 group。
+            if case .group(var g) = messages.last {
+                g.items.append(single)
+                messages[messages.count - 1] = .group(g)
+            } else {
+                messages.append(.group(GroupEntry(id: UUID(), items: [single])))
+            }
+        } else {
+            messages.append(.single(single))
+        }
+
         if mode == .live, !isFocused { hasUnread = true }
     }
 
+    /// 把 tool_result 挂到发起该 tool_use 的 assistant single 上。
+    /// 倒序搜索：匹配顶层 `.single` 直接挂；匹配 `.group` 时下探 items。
     func attachToolResult(_ result: ItemToolResult, to toolUseId: String) {
-        guard let idx = messages.lastIndex(where: { $0.owns(toolUseId: toolUseId) }) else { return }
-        messages[idx].toolResults[toolUseId] = result
+        for i in messages.indices.reversed() {
+            switch messages[i] {
+            case .single(var e):
+                if e.ownsToolUse(toolUseId) {
+                    e.toolResults[toolUseId] = result
+                    messages[i] = .single(e)
+                    return
+                }
+            case .group(var g):
+                if let j = g.items.lastIndex(where: { $0.ownsToolUse(toolUseId) }) {
+                    g.items[j].toolResults[toolUseId] = result
+                    messages[i] = .group(g)
+                    return
+                }
+            }
+        }
     }
 
     /// CLI 开始处理一条先前 `send()` 的消息：原位更新 delivery，并把 status
@@ -196,6 +221,22 @@ private extension Message2Assistant {
     }
 }
 
+private extension Message2 {
+
+    /// 「可分组」：assistant 消息，其所有非空 content block 均为白名单 tool_use。
+    /// 混合 text / thinking / 非白名单 tool_use 的整条视为不可分组。
+    var isGroupableAssistant: Bool {
+        guard case .assistant(let a) = self,
+              let blocks = a.message?.content,
+              !blocks.isEmpty else { return false }
+        for block in blocks {
+            guard case .toolUse(let t) = block,
+                  t.groupableKind != nil else { return false }
+        }
+        return true
+    }
+}
+
 private extension Message2Result {
 
     /// 从 modelUsage 取最大的 contextWindow。success / errorDuringExecution 共用。
@@ -207,18 +248,5 @@ private extension Message2Result {
         case .unknown: usage = nil
         }
         return usage?.values.compactMap(\.contextWindow).max()
-    }
-}
-
-private extension MessageEntry {
-
-    /// 本 entry 是否为发起该 tool_use 的 assistant 消息。
-    func owns(toolUseId: String) -> Bool {
-        guard case .assistant(let a) = message,
-              let blocks = a.message?.content else { return false }
-        return blocks.contains { block in
-            guard case .toolUse(let t) = block else { return false }
-            return t.id == toolUseId
-        }
     }
 }

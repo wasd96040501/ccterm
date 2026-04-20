@@ -61,12 +61,13 @@ final class SessionHandle2ReceiveTests: XCTestCase {
         let handle = makeHandle()
         feed(try loadFixture("live-sample.jsonl"), into: handle, mode: .live)
 
-        let merged = handle.messages.reduce(0) { $0 + $1.toolResults.count }
-        XCTAssertGreaterThan(merged, 0, "at least one assistant entry should have a tool_result merged")
+        let singles = handle.messages.flatMap(\.singles)
+        let merged = singles.reduce(0) { $0 + $1.toolResults.count }
+        XCTAssertGreaterThan(merged, 0, "at least one assistant single should have a tool_result merged")
 
-        for entry in handle.messages where !entry.toolResults.isEmpty {
-            guard case .assistant = entry.message else {
-                XCTFail("toolResults attached to non-assistant entry"); return
+        for single in singles where !single.toolResults.isEmpty {
+            guard case .assistant = single.message else {
+                XCTFail("toolResults attached to non-assistant single"); return
             }
         }
     }
@@ -91,7 +92,7 @@ final class SessionHandle2ReceiveTests: XCTestCase {
     func testReceive_replay_mergesToolResults() throws {
         let handle = makeHandle()
         feed(try loadFixture("replay-sample.jsonl"), into: handle, mode: .replay)
-        let merged = handle.messages.reduce(0) { $0 + $1.toolResults.count }
+        let merged = handle.messages.flatMap(\.singles).reduce(0) { $0 + $1.toolResults.count }
         XCTAssertGreaterThan(merged, 0)
     }
 
@@ -163,6 +164,167 @@ final class SessionHandle2ReceiveTests: XCTestCase {
         let handle = makeHandle()
         handle.receive(makeUserText(""), mode: .live)
         XCTAssertTrue(handle.messages.isEmpty)
+    }
+
+    // MARK: - Grouping
+
+    func testGrouping_firstGroupableMessage_opensGroupOfOne() {
+        let handle = makeHandle()
+        handle.receive(makeToolUse(name: "Read", id: "t1", input: ["file_path": "/x/a.swift"]), mode: .live)
+
+        XCTAssertEqual(handle.messages.count, 1)
+        guard case .group(let g) = handle.messages[0] else {
+            return XCTFail("expected .group, got \(handle.messages[0])")
+        }
+        XCTAssertEqual(g.items.count, 1)
+    }
+
+    func testGrouping_adjacentGroupableAssistants_merge() {
+        let handle = makeHandle()
+        handle.receive(makeToolUse(name: "Read",  id: "t1", input: ["file_path": "/x/a.swift"]), mode: .live)
+        handle.receive(makeToolUse(name: "Grep",  id: "t2", input: ["pattern": "foo"]),           mode: .live)
+        handle.receive(makeToolUse(name: "Glob",  id: "t3", input: ["pattern": "**/*.ts"]),       mode: .live)
+        handle.receive(makeToolUse(name: "Edit",  id: "t4", input: ["file_path": "/x/b.swift"]),  mode: .live)
+        handle.receive(makeToolUse(name: "Bash",  id: "t5", input: ["command": "make", "description": "build"]), mode: .live)
+
+        XCTAssertEqual(handle.messages.count, 1, "5 adjacent groupable assistants should collapse into 1 group")
+        guard case .group(let g) = handle.messages[0] else { return XCTFail("expected .group") }
+        XCTAssertEqual(g.items.count, 5)
+    }
+
+    func testGrouping_userBreaksGroup() {
+        let handle = makeHandle()
+        handle.receive(makeToolUse(name: "Read", id: "t1", input: ["file_path": "/x/a.swift"]), mode: .live)
+        handle.receive(makeUserText("continue"), mode: .live)
+        handle.receive(makeToolUse(name: "Read", id: "t2", input: ["file_path": "/x/b.swift"]), mode: .live)
+
+        XCTAssertEqual(handle.messages.count, 3, "user text between two Reads must split into two groups + single")
+
+        guard case .group(let g1) = handle.messages[0] else { return XCTFail("index 0 must be group") }
+        XCTAssertEqual(g1.items.count, 1)
+        guard case .single = handle.messages[1] else { return XCTFail("index 1 must be single user") }
+        guard case .group(let g2) = handle.messages[2] else { return XCTFail("index 2 must be group") }
+        XCTAssertEqual(g2.items.count, 1)
+    }
+
+    func testGrouping_nonGroupableToolDoesNotJoinGroup() {
+        let handle = makeHandle()
+        handle.receive(makeToolUse(name: "Read", id: "t1", input: ["file_path": "/x/a.swift"]), mode: .live)
+        // TodoWrite is not on the whitelist → single, not appended to group.
+        handle.receive(makeToolUse(name: "TodoWrite", id: "t2", input: ["todos": []]), mode: .live)
+        handle.receive(makeToolUse(name: "Read", id: "t3", input: ["file_path": "/x/b.swift"]), mode: .live)
+
+        XCTAssertEqual(handle.messages.count, 3)
+        guard case .group = handle.messages[0] else { return XCTFail("first must be group") }
+        guard case .single = handle.messages[1] else { return XCTFail("TodoWrite must be single") }
+        guard case .group = handle.messages[2] else { return XCTFail("last must be fresh group") }
+    }
+
+    func testGrouping_assistantTextBreaksGroup() {
+        let handle = makeHandle()
+        handle.receive(makeToolUse(name: "Read", id: "t1", input: ["file_path": "/x/a.swift"]), mode: .live)
+        handle.receive(makeAssistantText("thinking aloud"), mode: .live)
+        handle.receive(makeToolUse(name: "Read", id: "t2", input: ["file_path": "/x/b.swift"]), mode: .live)
+
+        XCTAssertEqual(handle.messages.count, 3)
+        guard case .group(let g1) = handle.messages[0] else { return XCTFail() }
+        XCTAssertEqual(g1.items.count, 1)
+        guard case .single = handle.messages[1] else { return XCTFail("assistant text must be single") }
+        guard case .group(let g2) = handle.messages[2] else { return XCTFail() }
+        XCTAssertEqual(g2.items.count, 1)
+    }
+
+    func testGrouping_toolResultAttachesInsideGroup() {
+        let handle = makeHandle()
+        handle.receive(makeToolUse(name: "Read", id: "t1", input: ["file_path": "/x/a.swift"]), mode: .live)
+        handle.receive(makeToolUse(name: "Grep", id: "t2", input: ["pattern": "foo"]),           mode: .live)
+        handle.receive(makeToolResult(toolUseId: "t2", content: "matches"), mode: .live)
+
+        guard case .group(let g) = handle.messages[0] else { return XCTFail("expected group") }
+        XCTAssertEqual(g.items.count, 2)
+        XCTAssertTrue(g.items[0].toolResults.isEmpty, "t1 should not have a result yet")
+        XCTAssertEqual(g.items[1].toolResults["t2"]?.toolUseId, "t2", "t2 result must attach to its owning single")
+    }
+
+    // MARK: - Group title
+
+    /// Title assertions compose expected values through the same `String(localized:)`
+    /// path so they hold regardless of the runtime locale.
+
+    func testTitle_active_showsLastItemProgressive() {
+        var g = GroupEntry(id: UUID(), items: [])
+        g.items.append(singleAssistant(makeToolUse(name: "Read", id: "t1", input: ["file_path": "/x/Alpha.swift"])))
+        g.items.append(singleAssistant(makeToolUse(name: "Bash", id: "t2", input: ["command": "make", "description": "build project"])))
+
+        let expected = String(localized: "Running: \("build project")")
+        XCTAssertEqual(g.title(isActive: true), expected)
+    }
+
+    func testTitle_completed_bucketsByVerbCountFirstOccurrenceOrder() {
+        var g = GroupEntry(id: UUID(), items: [])
+        g.items.append(singleAssistant(makeToolUse(name: "Read",   id: "r1", input: ["file_path": "/x/a.swift"])))
+        g.items.append(singleAssistant(makeToolUse(name: "Grep",   id: "s1", input: ["pattern": "foo"])))
+        g.items.append(singleAssistant(makeToolUse(name: "Read",   id: "r2", input: ["file_path": "/x/b.swift"])))
+        g.items.append(singleAssistant(makeToolUse(name: "Bash",   id: "b1", input: ["command": "ls", "description": "list"])))
+        g.items.append(singleAssistant(makeToolUse(name: "Read",   id: "r3", input: ["file_path": "/x/c.swift"])))
+
+        let expected = [
+            String(localized: "Read \(3) files"),
+            String(localized: "Searched \(1) patterns"),
+            String(localized: "Ran \(1) commands"),
+        ].joined(separator: " · ")
+        XCTAssertEqual(g.title(isActive: false), expected)
+    }
+
+    func testTitle_completed_singleItemStillUsesCountForm() {
+        var g = GroupEntry(id: UUID(), items: [])
+        g.items.append(singleAssistant(makeToolUse(name: "Read", id: "r1", input: ["file_path": "/x/a.swift"])))
+        XCTAssertEqual(g.title(isActive: false), String(localized: "Read \(1) files"))
+    }
+
+    // MARK: - Message factories
+
+    private func singleAssistant(_ m: Message2) -> SingleEntry {
+        SingleEntry(id: UUID(), message: m, delivery: nil, toolResults: [:])
+    }
+
+    private func makeToolUse(name: String, id: String, input: [String: Any]) -> Message2 {
+        resolve([
+            "type": "assistant",
+            "message": [
+                "role": "assistant",
+                "content": [[
+                    "type": "tool_use",
+                    "id": id,
+                    "name": name,
+                    "input": input,
+                ]],
+            ],
+        ])
+    }
+
+    private func makeAssistantText(_ text: String) -> Message2 {
+        resolve([
+            "type": "assistant",
+            "message": [
+                "role": "assistant",
+                "content": [["type": "text", "text": text]],
+            ],
+        ])
+    }
+
+    private func makeToolResult(toolUseId: String, content: String) -> Message2 {
+        resolve([
+            "type": "user",
+            "message": [
+                "role": "user",
+                "content": [[
+                    "type": "tool_result",
+                    "tool_use_id": toolUseId,
+                    "content": content,
+                ]],
+            ],
+        ])
     }
 
     // MARK: - Message factories

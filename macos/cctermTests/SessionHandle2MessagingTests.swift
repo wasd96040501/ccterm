@@ -34,9 +34,9 @@ final class SessionHandle2MessagingTests: XCTestCase {
             ],
         ]
         let msg = (try? Message2(json: json)) ?? Message2.unknown(name: "assistant", raw: json)
-        let entry = MessageEntry(id: UUID(), message: msg, delivery: nil, toolResults: [:])
-        handle.messages.append(entry)
-        return entry.id
+        let single = SingleEntry(id: UUID(), message: msg, delivery: nil, toolResults: [:])
+        handle.messages.append(.single(single))
+        return single.id
     }
 
     // MARK: - interrupt() guard

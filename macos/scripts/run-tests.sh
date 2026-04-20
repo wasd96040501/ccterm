@@ -15,6 +15,7 @@ TARGET="${1:-cctermTests}"
 
 TEST_LOG="/tmp/ccterm-test-$$.log"
 TEST_SUMMARY="/tmp/ccterm-test-$$-summary.log"
+CRASH_LOG="/tmp/ccterm-test-$$-crashes.log"
 
 echo "Testing: ${TARGET}..."
 
@@ -34,7 +35,155 @@ ELAPSED=$(( $(date +%s) - START_TIME ))
 # Extract summary: test results, errors, failures, and NSLog output
 grep -E '(^Test |^	 Executed|\*\* TEST|error:.*\.swift|Testing failed|failed -|XCTAssert|ccterm\[.*\] ===)' "$TEST_LOG" > "$TEST_SUMMARY" 2>/dev/null || true
 
+# Collect crash reports produced during this run.
+# - A one-line headline per crash goes to the summary (procName/signal/top project frame).
+# - Full parsed backtrace goes to $CRASH_LOG (a separate file) to keep the summary small.
+# xcodebuild only reports "Early unexpected exit" when the test host crashes — the real
+# backtrace lives in ~/Library/Logs/DiagnosticReports/<name>-<date>.ips.
+collect_crash_reports() {
+  local since_epoch=$1
+  local crash_dir="$HOME/Library/Logs/DiagnosticReports"
+  [ -d "$crash_dir" ] || return 0
+
+  # Use a timestamp reference file so `find -newer` picks up any .ips whose
+  # mtime is >= test start. (BSD find lacks -newerXt / -mmin with floats.)
+  local ref
+  ref=$(mktemp -t cctermtest-ref) || return 0
+  touch -t "$(date -r "$since_epoch" +%Y%m%d%H%M.%S)" "$ref"
+
+  local crashes
+  crashes=$(find "$crash_dir" -maxdepth 1 -type f \
+    \( -name 'ccterm-*.ips' -o -name 'cctermTests-*.ips' -o -name 'xctest-*.ips' \) \
+    -newer "$ref" 2>/dev/null | sort)
+  rm -f "$ref"
+
+  [ -n "$crashes" ] || return 0
+
+  : > "$CRASH_LOG"
+  echo "" >> "$TEST_SUMMARY"
+  echo "=== Crash Reports (headlines; full backtrace in $CRASH_LOG) ===" >> "$TEST_SUMMARY"
+
+  echo "$crashes" | while IFS= read -r ips; do
+    echo "" >> "$CRASH_LOG"
+    echo "========== $(basename "$ips") ==========" >> "$CRASH_LOG"
+    # python writes the short headline to $TEST_SUMMARY (append) and the full
+    # parsed backtrace to stdout (→ $CRASH_LOG). Keeping the full stack out of
+    # stdout avoids dumping it into Claude's context on every failure.
+    /usr/bin/python3 - "$ips" "$TEST_SUMMARY" "$(basename "$ips")" >> "$CRASH_LOG" <<'PY' || echo "(failed to parse $ips)" >> "$CRASH_LOG"
+"""Render a .ips crash report.
+
+- headline (1-4 lines) appended to the summary file given as argv[2]
+- full, trimmed backtrace written to stdout (caller redirects to CRASH_LOG)
+"""
+import json, sys, os
+
+ips_path = sys.argv[1]
+summary_path = sys.argv[2]
+ips_name = sys.argv[3] if len(sys.argv) > 3 else os.path.basename(ips_path)
+
+try:
+    with open(ips_path) as fh:
+        raw = fh.read()
+except OSError as e:
+    print(f"(open failed: {e})")
+    sys.exit(0)
+parts = raw.split('\n', 1)
+if len(parts) != 2:
+    print(raw[:4000]); sys.exit(0)
+try:
+    body = json.loads(parts[1])
+except Exception as e:
+    print(f"(json parse failed: {e})"); print(raw[:2000]); sys.exit(0)
+
+images = body.get('usedImages') or []
+def binary_name(idx):
+    if idx is None or idx < 0 or idx >= len(images): return '?'
+    return images[idx].get('name') or os.path.basename(images[idx].get('path') or '') or '?'
+
+TAIL_NOISE = {
+    'start', '_pthread_start', 'thread_start',
+    '_CFRunLoopRun', '_CFRunLoopRunSpecificWithOptions', 'CFRunLoopRun',
+    '__CFRunLoopRun', '__CFRunLoopDoSource0', '__CFRunLoopDoSource1',
+    '__CFRunLoopDoSources0', '__CFRUNLOOP_IS_CALLING_OUT_TO_A_SOURCE0_PERFORM_FUNCTION__',
+    '__CFRUNLOOP_IS_CALLING_OUT_TO_A_SOURCE1_PERFORM_FUNCTION__',
+    '__CFMachPortPerform', '__CFRunLoopServiceMachPort',
+    'RunCurrentEventLoopInMode', 'ReceiveNextEventCommon',
+    '_BlockUntilNextEventMatchingListInMode', '_DPSBlockUntilNextEventMatchingListInMode',
+    '_DPSNextEvent', 'NSApplicationMain',
+}
+
+def trim_tail(frames):
+    i = len(frames)
+    while i > 0 and (frames[i-1].get('symbol') or '') in TAIL_NOISE:
+        i -= 1
+    return frames[:i]
+
+def fmt_frame(fr):
+    sym = fr.get('symbol') or f"0x{fr.get('imageOffset',0):x}"
+    loc = fr.get('symbolLocation', 0)
+    img = binary_name(fr.get('imageIndex'))
+    src = fr.get('sourceFile'); line = fr.get('sourceLine')
+    src_str = f"  [{src}:{line}]" if src and line else ""
+    return f"{img:<28} {sym} + {loc}{src_str}"
+
+exc = body.get('exception') or {}
+term = body.get('termination') or {}
+asi = body.get('asi') or {}
+
+# --- full version → stdout → CRASH_LOG -----------------------------------
+print(f"proc: {body.get('procName')}  pid: {body.get('pid')}")
+print(f"exc:  {exc.get('type')} / signal={exc.get('signal')}  codes={exc.get('codes')}")
+if term.get('indicator'):
+    print(f"term: {term.get('indicator')}")
+for k, v in asi.items():
+    for line in v:
+        print(f"asi[{k}]: {line}")
+for key in ('lastExceptionBacktrace', 'ktriageinfo'):
+    if body.get(key):
+        print(f"{key}: {json.dumps(body[key])[:500]}")
+
+threads = body.get('threads') or []
+crashed = next((t for t in threads if t.get('triggered')), threads[0] if threads else None)
+if not crashed:
+    sys.exit(0)
+frames = trim_tail(crashed.get('frames') or [])
+
+system_bases = ('/usr/lib/', '/System/', '/Library/Apple/', '/Library/Developer/')
+def is_project(fr):
+    idx = fr.get('imageIndex')
+    if idx is None or idx < 0 or idx >= len(images):
+        return False
+    p = images[idx].get('path') or ''
+    return p and not any(p.startswith(b) for b in system_bases)
+top_user = next((fr for fr in frames if is_project(fr)), None)
+
+if top_user:
+    print(f"crashed at (top project frame): {fmt_frame(top_user)}")
+q = crashed.get('queue')
+print(f"backtrace (queue={q}):" if q else "backtrace:")
+for i, fr in enumerate(frames[:30]):
+    print(f"  {i:3d}  {fmt_frame(fr)}")
+if len(frames) > 30:
+    print(f"  ... ({len(frames)-30} more frames trimmed)")
+
+# --- headline → summary file (append) -----------------------------------
+with open(summary_path, 'a') as s:
+    s.write(f"\n  {ips_name}\n")
+    s.write(f"    signal={exc.get('signal')} term={term.get('indicator') or '-'}\n")
+    if top_user:
+        s.write(f"    top project: {fmt_frame(top_user)}\n")
+    asi_line = None
+    for k, v in asi.items():
+        if v:
+            asi_line = v[0]; break
+    if asi_line:
+        s.write(f"    asi: {asi_line}\n")
+PY
+  done
+}
+
 if [ "$TEST_EXIT" -ne 0 ]; then
+  collect_crash_reports "$START_TIME"
   echo ""
   cat "$TEST_SUMMARY"
   echo ""

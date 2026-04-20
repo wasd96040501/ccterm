@@ -362,7 +362,10 @@ private enum PreviewFactory {
             uses: [PreviewFactory.toolUse(
                 id: bashId,
                 name: "Bash",
-                input: ["command": "ls -la /usr/local/bin"])]),
+                input: [
+                    "command": "ls -la /usr/local/bin",
+                    "description": "list /usr/local/bin",
+                ])]),
             results: [bashId: PreviewFactory.payload(
                 toolUseId: bashId,
                 text: "total 128\ndrwxr-xr-x  brew  staff  4096 Apr 18 10:30 .\n-rwxr-xr-x  brew  staff  2048 Apr 17 08:12 bun\n-rwxr-xr-x  brew  staff  1024 Apr 17 08:12 fzf")]),
@@ -423,7 +426,10 @@ private enum PreviewFactory {
         PreviewFactory.single(PreviewFactory.assistantToolUses([
             PreviewFactory.toolUse(
                 id: ids.bash, name: "Bash",
-                input: ["command": "make build"]),
+                input: [
+                    "command": "make build",
+                    "description": "build project",
+                ]),
             PreviewFactory.toolUse(
                 id: ids.edit, name: "Edit",
                 input: [
@@ -515,7 +521,10 @@ private enum PreviewFactory {
         PreviewFactory.single(PreviewFactory.assistantToolUses([
             PreviewFactory.toolUse(
                 id: bash, name: "Bash",
-                input: ["command": "rm /does/not/exist"]),
+                input: [
+                    "command": "rm /does/not/exist",
+                    "description": "remove missing file",
+                ]),
             PreviewFactory.toolUse(
                 id: edit, name: "Edit",
                 input: [

@@ -66,7 +66,7 @@ private struct SingleEntryView: View {
 
 private struct AssistantContentView: View {
     let blocks: [Message2AssistantMessageContent]
-    let toolResults: [String: ItemToolResult]
+    let toolResults: [String: ToolResultPayload]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -78,7 +78,7 @@ private struct AssistantContentView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 case .toolUse(let use):
-                    ToolBlockRow(toolUse: use, item: use.id.flatMap { toolResults[$0] })
+                    ToolBlockRow(toolUse: use, payload: use.id.flatMap { toolResults[$0] })
                 case .thinking, .unknown:
                     EmptyView()
                 }
@@ -98,7 +98,7 @@ private struct GroupEntryView: View {
     var body: some View {
         GroupBlock(isExpanded: $isExpanded) {
             ForEach(Array(toolUses.enumerated()), id: \.offset) { _, pair in
-                ToolBlockRow(toolUse: pair.toolUse, item: pair.item)
+                ToolBlockRow(toolUse: pair.toolUse, payload: pair.payload)
             }
         } label: {
             Text(group.title(isActive: isActive))
@@ -109,7 +109,7 @@ private struct GroupEntryView: View {
         }
     }
 
-    private var toolUses: [(toolUse: ToolUse, item: ItemToolResult?)] {
+    private var toolUses: [(toolUse: ToolUse, payload: ToolResultPayload?)] {
         group.items.flatMap { item in
             item.toolUses.map { use in
                 (use, use.id.flatMap { item.toolResults[$0] })
@@ -122,25 +122,25 @@ private struct GroupEntryView: View {
 
 private struct ToolBlockRow: View {
     let toolUse: ToolUse
-    let item: ItemToolResult?
+    let payload: ToolResultPayload?
 
     var body: some View {
         ToolBlockView(
             toolUse: toolUse,
-            result: item.flatMap(toolUseResult(from:)),
-            isError: item?.isError ?? false,
-            errorText: item.flatMap(errorText(from:)))
+            result: payload.flatMap(resolvedResult(from:)),
+            isError: payload?.isError ?? false,
+            errorText: payload.flatMap(errorText(from:)))
     }
 }
 
-// MARK: - ItemToolResult → ToolBlockView inputs
+// MARK: - Payload → ToolBlockView inputs
 
-/// Best-effort mapping from the block-level `tool_result` into the typed
-/// ``ToolUseResult`` the tool blocks expect. Typed object projections
-/// (``ToolUseResultObject``) aren't recoverable from the block content alone;
-/// we fall back to string form so generic / text-based blocks still render.
-private func toolUseResult(from item: ItemToolResult) -> ToolUseResult? {
-    switch item.content {
+/// Prefer the typed projection (carries `ObjectBash`, `ObjectGrep`, etc.
+/// needed by body renderers). Fall back to a string reconstruction of the
+/// tool_result block content so generic / text-only blocks still render.
+private func resolvedResult(from payload: ToolResultPayload) -> ToolUseResult? {
+    if let typed = payload.typed { return typed }
+    switch payload.item.content {
     case .string(let s)?:
         return .string(s)
     case .array(let items)?:
@@ -154,10 +154,20 @@ private func toolUseResult(from item: ItemToolResult) -> ToolUseResult? {
     }
 }
 
-private func errorText(from item: ItemToolResult) -> String? {
-    guard item.isError == true else { return nil }
-    if case .string(let s) = toolUseResult(from: item) { return s }
-    return nil
+private func errorText(from payload: ToolResultPayload) -> String? {
+    guard payload.isError == true else { return nil }
+    switch payload.item.content {
+    case .string(let s)?:
+        return s
+    case .array(let items)?:
+        let texts = items.compactMap { entry -> String? in
+            if case .text(let t) = entry { return t.text }
+            return nil
+        }
+        return texts.isEmpty ? nil : texts.joined(separator: "\n")
+    case .other?, nil:
+        return nil
+    }
 }
 
 // MARK: - User message text extraction
@@ -259,21 +269,59 @@ private enum PreviewFactory {
         ]
     }
 
-    static func itemResult(
+    static func payload(
         toolUseId: String,
         text: String,
-        isError: Bool = false
-    ) -> ItemToolResult {
+        isError: Bool = false,
+        typed: ToolUseResult? = nil
+    ) -> ToolResultPayload {
         let json: [String: Any] = [
             "type": "tool_result",
             "tool_use_id": toolUseId,
             "content": [["type": "text", "text": text]],
             "is_error": isError,
         ]
-        return try! ItemToolResult(json: json)
+        return ToolResultPayload(item: try! ItemToolResult(json: json), typed: typed)
     }
 
-    static func single(_ message: Message2, results: [String: ItemToolResult] = [:]) -> MessageEntry {
+    static func grepResult(
+        filenames: [String] = [],
+        content: String? = nil,
+        numFiles: Int? = nil,
+        numMatches: Int? = nil
+    ) -> ToolUseResult {
+        var raw: [String: Any] = [:]
+        if !filenames.isEmpty { raw["filenames"] = filenames }
+        if let content { raw["content"] = content }
+        if let numFiles { raw["num_files"] = numFiles }
+        if let numMatches { raw["num_matches"] = numMatches }
+        return .object(.Grep(try! ObjectGrep(json: raw), origin: nil))
+    }
+
+    static func webSearchResult(queryResults: [(title: String, url: String)]) -> ToolUseResult {
+        let results: [[String: Any]] = queryResults.map { r in
+            [
+                "tool_use_id": UUID().uuidString,
+                "content": [["title": r.title, "url": r.url]],
+            ]
+        }
+        let raw: [String: Any] = ["results": results]
+        return .object(.WebSearch(try! ObjectWebSearch(json: raw), origin: nil))
+    }
+
+    static func webFetchResult(code: Int, result: String) -> ToolUseResult {
+        let raw: [String: Any] = ["code": code, "result": result]
+        return .object(.WebFetch(try! ObjectWebFetch(json: raw), origin: nil))
+    }
+
+    static func bashResult(stdout: String? = nil, stderr: String? = nil) -> ToolUseResult {
+        var raw: [String: Any] = [:]
+        if let stdout { raw["stdout"] = stdout }
+        if let stderr { raw["stderr"] = stderr }
+        return .object(.Bash(try! ObjectBash(json: raw), origin: nil))
+    }
+
+    static func single(_ message: Message2, results: [String: ToolResultPayload] = [:]) -> MessageEntry {
         .single(SingleEntry(id: UUID(), message: message, delivery: nil, toolResults: results))
     }
 
@@ -281,7 +329,10 @@ private enum PreviewFactory {
         .group(GroupEntry(id: UUID(), items: items))
     }
 
-    static func assistantSingle(_ uses: [[String: Any]], results: [String: ItemToolResult] = [:]) -> SingleEntry {
+    static func assistantSingle(
+        _ uses: [[String: Any]],
+        results: [String: ToolResultPayload] = [:]
+    ) -> SingleEntry {
         SingleEntry(
             id: UUID(),
             message: assistantToolUses(uses),
@@ -312,7 +363,7 @@ private enum PreviewFactory {
                 id: bashId,
                 name: "Bash",
                 input: ["command": "ls -la /usr/local/bin"])]),
-            results: [bashId: PreviewFactory.itemResult(
+            results: [bashId: PreviewFactory.payload(
                 toolUseId: bashId,
                 text: "total 128\ndrwxr-xr-x  brew  staff  4096 Apr 18 10:30 .\n-rwxr-xr-x  brew  staff  2048 Apr 17 08:12 bun\n-rwxr-xr-x  brew  staff  1024 Apr 17 08:12 fzf")]),
         PreviewFactory.single(PreviewFactory.assistantMixed(
@@ -415,37 +466,100 @@ private enum PreviewFactory {
                 input: ["skill": "review"]),
         ]),
             results: [
-                ids.bash: PreviewFactory.itemResult(
+                ids.bash: PreviewFactory.payload(
                     toolUseId: ids.bash,
-                    text: "** BUILD SUCCEEDED **"),
-                ids.read: PreviewFactory.itemResult(
+                    text: "** BUILD SUCCEEDED **",
+                    typed: PreviewFactory.bashResult(
+                        stdout: "Compiling Foo.swift\nCompiling Bar.swift\n** BUILD SUCCEEDED **",
+                        stderr: nil)),
+                ids.read: PreviewFactory.payload(
                     toolUseId: ids.read,
                     text: "1\timport Foundation\n2\t\n3\tprint(\"hello\")"),
-                ids.grep: PreviewFactory.itemResult(
+                ids.grep: PreviewFactory.payload(
                     toolUseId: ids.grep,
-                    text: "src/main.swift:3:func main() {"),
+                    text: "2 matches across 1 file",
+                    typed: PreviewFactory.grepResult(
+                        filenames: ["src/main.swift"],
+                        content: "src/main.swift:3:func main() {\nsrc/main.swift:12:    main()",
+                        numFiles: 1,
+                        numMatches: 2)),
+                ids.webFetch: PreviewFactory.payload(
+                    toolUseId: ids.webFetch,
+                    text: "fetched",
+                    typed: PreviewFactory.webFetchResult(
+                        code: 200,
+                        result: "# Example\n\nThis is the fetched markdown content.\n\n- item 1\n- item 2")),
+                ids.webSearch: PreviewFactory.payload(
+                    toolUseId: ids.webSearch,
+                    text: "2 results",
+                    typed: PreviewFactory.webSearchResult(queryResults: [
+                        (title: "Swift Concurrency — the road to Swift 6",
+                         url: "https://swift.org/blog/concurrency"),
+                        (title: "WWDC: Meet async/await",
+                         url: "https://developer.apple.com/videos/play/wwdc2021/10132"),
+                    ])),
             ]),
     ])
     .frame(width: 780, height: 900)
     .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }
 
-#Preview("Error — assistant tool failure") {
-    let bashId = "err-bash"
+#Preview("Errors — mixed tools") {
+    let bash = "err-bash"
+    let edit = "err-edit"
+    let write = "err-write"
+    let read = "err-read"
+    let grep = "err-grep"
+
     return ChatTranscriptView(entries: [
-        PreviewFactory.single(PreviewFactory.userMessage("rm the missing file please")),
-        PreviewFactory.single(PreviewFactory.assistantMixed(
-            text: "Trying:",
-            uses: [PreviewFactory.toolUse(
-                id: bashId,
-                name: "Bash",
-                input: ["command": "rm /does/not/exist"])]),
-            results: [bashId: PreviewFactory.itemResult(
-                toolUseId: bashId,
-                text: "rm: /does/not/exist: No such file or directory",
-                isError: true)]),
+        PreviewFactory.single(PreviewFactory.assistantToolUses([
+            PreviewFactory.toolUse(
+                id: bash, name: "Bash",
+                input: ["command": "rm /does/not/exist"]),
+            PreviewFactory.toolUse(
+                id: edit, name: "Edit",
+                input: [
+                    "file_path": "/readonly/file.swift",
+                    "old_string": "let a = 1",
+                    "new_string": "let a = 2",
+                ]),
+            PreviewFactory.toolUse(
+                id: write, name: "Write",
+                input: [
+                    "file_path": "/readonly/NEW.md",
+                    "content": "# header\nbody",
+                ]),
+            PreviewFactory.toolUse(
+                id: read, name: "Read",
+                input: ["file_path": "/missing/file.txt"]),
+            PreviewFactory.toolUse(
+                id: grep, name: "Grep",
+                input: ["pattern": "[unterminated"]),
+        ]),
+            results: [
+                bash: PreviewFactory.payload(
+                    toolUseId: bash,
+                    text: "rm: /does/not/exist: No such file or directory",
+                    isError: true),
+                edit: PreviewFactory.payload(
+                    toolUseId: edit,
+                    text: "EACCES: permission denied, open '/readonly/file.swift'",
+                    isError: true),
+                write: PreviewFactory.payload(
+                    toolUseId: write,
+                    text: "EROFS: read-only file system",
+                    isError: true),
+                read: PreviewFactory.payload(
+                    toolUseId: read,
+                    text: "ENOENT: no such file or directory",
+                    isError: true),
+                grep: PreviewFactory.payload(
+                    toolUseId: grep,
+                    text: "regex parse error: missing closing bracket",
+                    isError: true),
+            ]),
     ])
-    .frame(width: 720, height: 420)
+    .frame(width: 760, height: 720)
     .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }
 

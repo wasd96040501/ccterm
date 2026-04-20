@@ -30,7 +30,7 @@ extension SessionHandle2 {
         }
 
         switch action(for: message) {
-        case .merge(let id, let result): attachToolResult(result, to: id)
+        case .merge(let id, let payload): attachToolResult(payload, to: id)
         case .confirm(let id): confirmQueuedEntry(id: id, mode: mode)
         case .append: appendToTimeline(message, mode: mode)
         case .skip: break
@@ -43,7 +43,7 @@ extension SessionHandle2 {
 private extension SessionHandle2 {
 
     enum Action {
-        case merge(toolUseId: String, result: ItemToolResult)
+        case merge(toolUseId: String, payload: ToolResultPayload)
         /// 本地 `.queued` entry 命中 CLI echo（按 uuid 匹配），切 `.confirmed`。
         case confirm(entryId: UUID)
         case append
@@ -54,7 +54,8 @@ private extension SessionHandle2 {
         switch message {
         case .user(let u):
             if let r = u.toolResultBlock, let id = r.toolUseId {
-                return .merge(toolUseId: id, result: r)
+                let payload = ToolResultPayload(item: r, typed: u.toolUseResult)
+                return .merge(toolUseId: id, payload: payload)
             }
             if u.isVisible, let entryId = matchQueuedEntry(for: u) {
                 return .confirm(entryId: entryId)
@@ -103,18 +104,18 @@ private extension SessionHandle2 {
 
     /// 把 tool_result 挂到发起该 tool_use 的 assistant single 上。
     /// 倒序搜索：匹配顶层 `.single` 直接挂；匹配 `.group` 时下探 items。
-    func attachToolResult(_ result: ItemToolResult, to toolUseId: String) {
+    func attachToolResult(_ payload: ToolResultPayload, to toolUseId: String) {
         for i in messages.indices.reversed() {
             switch messages[i] {
             case .single(var e):
                 if e.ownsToolUse(toolUseId) {
-                    e.toolResults[toolUseId] = result
+                    e.toolResults[toolUseId] = payload
                     messages[i] = .single(e)
                     return
                 }
             case .group(var g):
                 if let j = g.items.lastIndex(where: { $0.ownsToolUse(toolUseId) }) {
-                    g.items[j].toolResults[toolUseId] = result
+                    g.items[j].toolResults[toolUseId] = payload
                     messages[i] = .group(g)
                     return
                 }

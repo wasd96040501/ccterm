@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Borderless, header-only disclosure container.
@@ -51,6 +52,13 @@ struct GroupBlock<Label: View, Content: View>: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            if hovering {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
     }
 
     private var bodyArea: some View {

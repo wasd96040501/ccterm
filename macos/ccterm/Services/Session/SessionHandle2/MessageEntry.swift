@@ -55,7 +55,19 @@ struct SingleEntry: Identifiable {
     let id: UUID
     let message: Message2
     var delivery: DeliveryState?
-    var toolResults: [String: ItemToolResult]
+    var toolResults: [String: ToolResultPayload]
+}
+
+/// Merged view of a tool_use's result: the raw tool_result block (text +
+/// isError) plus the user message's typed `tool_use_result` projection.
+/// Typed-aware blocks (Grep, WebSearch, WebFetch, Bash, etc.) read from
+/// `typed`; generic / text-only blocks can fall back to `item.content`.
+struct ToolResultPayload {
+    let item: ItemToolResult
+    let typed: ToolUseResult?
+
+    var toolUseId: String? { item.toolUseId }
+    var isError: Bool? { item.isError }
 }
 
 extension SingleEntry {

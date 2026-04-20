@@ -84,8 +84,7 @@ extension SessionHandle2 {
     ///
     /// title 生成是正交能力——调用方（fresh + 首条文本场景）显式调 `generateTitle(from:)`。
     func send(_ message: SessionMessage) {
-        let entry = makeQueuedEntry(for: message)
-        messages.append(entry)
+        messages.append(.single(makeQueuedSingle(for: message)))
 
         if status == .idle {
             flushQueueIfNeeded()
@@ -99,13 +98,17 @@ extension SessionHandle2 {
 
     /// 把 `.queued` 的 user entry 合并发往 CLI 并切 `.inFlight`，`status` → `.responding`。
     /// 前置：`status == .idle` 且已 attach agentSession。否则 no-op。
+    ///
+    /// user 消息永远是 `.single`（不参与 grouping），所以只需要扫 `.single`。
     func flushQueueIfNeeded() {
         guard status == .idle, let session = agentSession else { return }
         var didFlush = false
-        for i in messages.indices where messages[i].delivery == .queued {
-            guard let text = textFromEntry(messages[i]) else { continue }
+        for i in messages.indices {
+            guard case .single(var e) = messages[i], e.delivery == .queued else { continue }
+            guard let text = textFromEntry(e) else { continue }
             session.sendMessage(text)
-            messages[i].delivery = .inFlight
+            e.delivery = .inFlight
+            messages[i] = .single(e)
             didFlush = true
         }
         if didFlush {
@@ -360,7 +363,7 @@ private extension SessionHandle2 {
         repository.updateError(sessionId, error: desc)
     }
 
-    func makeQueuedEntry(for message: SessionMessage) -> MessageEntry {
+    func makeQueuedSingle(for message: SessionMessage) -> SingleEntry {
         let raw: [String: Any]
         switch message {
         case .text(let text, let extra):
@@ -387,10 +390,10 @@ private extension SessionHandle2 {
             ]
         }
         let msg = (try? Message2(json: raw)) ?? Message2.unknown(name: "user", raw: raw)
-        return MessageEntry(id: UUID(), message: msg, delivery: .queued, toolResults: [:])
+        return SingleEntry(id: UUID(), message: msg, delivery: .queued, toolResults: [:])
     }
 
-    func textFromEntry(_ entry: MessageEntry) -> String? {
+    func textFromEntry(_ entry: SingleEntry) -> String? {
         guard case .user(let u) = entry.message,
               let content = u.message?.content else { return nil }
         switch content {

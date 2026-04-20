@@ -497,6 +497,56 @@
         }
       }
     },
+    "Edited %lld files": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Edited %lld file"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Edited %lld files"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已编辑 %lld 个文件"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已编辑 %lld 个文件"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Editing %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在编辑 %@"
+          }
+        }
+      }
+    },
     "Enter (↩)": {
       "localizations": {
         "zh-Hans": {
@@ -614,6 +664,56 @@
           "stringUnit": {
             "state": "translated",
             "value": "生成分支中…"
+          }
+        }
+      }
+    },
+    "Globbed %lld patterns": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Globbed %lld pattern"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Globbed %lld patterns"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已匹配 %lld 个 pattern"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已匹配 %lld 个 pattern"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Globbing \"%@\"": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在匹配 “%@”"
           }
         }
       }
@@ -886,6 +986,96 @@
         }
       }
     },
+    "Ran %lld commands": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Ran %lld command"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Ran %lld commands"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已执行 %lld 个命令"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已执行 %lld 个命令"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Read %lld files": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Read %lld file"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Read %lld files"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已读取 %lld 个文件"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已读取 %lld 个文件"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Reading %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在读取 %@"
+          }
+        }
+      }
+    },
     "Reject": {
       "localizations": {
         "zh-Hans": {
@@ -957,6 +1147,16 @@
         }
       }
     },
+    "Running: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在执行：%@"
+          }
+        }
+      }
+    },
     "Scenario": {},
     "Search branches…": {
       "localizations": {
@@ -974,6 +1174,56 @@
           "stringUnit": {
             "state": "translated",
             "value": "搜索文件夹…"
+          }
+        }
+      }
+    },
+    "Searched %lld patterns": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Searched %lld pattern"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Searched %lld patterns"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已搜索 %lld 个 pattern"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已搜索 %lld 个 pattern"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Searching \"%@\"": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在搜索 “%@”"
           }
         }
       }
@@ -1202,6 +1452,56 @@
         }
       }
     },
+    "Writing %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在写入 %@"
+          }
+        }
+      }
+    },
+    "Wrote %lld files": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Wrote %lld file"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Wrote %lld files"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已写入 %lld 个文件"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已写入 %lld 个文件"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "You have unsent comments": {
       "localizations": {
         "zh-Hans": {
@@ -1230,6 +1530,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "当前"
+          }
+        }
+      }
+    },
+    "file": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件"
           }
         }
       }

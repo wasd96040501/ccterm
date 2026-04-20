@@ -44,7 +44,7 @@ class SessionHandle2 {
     /// 置为初始随机名（`<adj>-<sci>-<hex6>`），后续不再变更。非 worktree 会话为 nil。
     internal(set) var worktreeBranch: String?
     /// true 表示正在异步生成 title。UI 据此显示 shimmer/loading。
-    /// 由 fresh session 的首条 `send()` 触发，`Prompt.runTitleAndBranch` 完成后复位。
+    /// 由 `generateTitle(from:)` 触发，`Prompt.runTitleAndBranch` 完成后复位。
     internal(set) var isGeneratingTitle: Bool = false
 
     // MARK: - Configuration
@@ -79,18 +79,9 @@ class SessionHandle2 {
     /// stderr 累积缓冲。进程退出时写入 `termination`。不持久化。
     @ObservationIgnored internal var stderrBuffer: String = ""
 
-    /// fresh session 且尚未生成 title 时为 true。首条 `send()` 时触发 LLM 异步生成。
-    /// 只在本进程生命周期内有效——session 重开会重新从 repository.title 判断。
-    @ObservationIgnored internal var needsTitleGen: Bool = false
-
     /// 测试专用 hook：置 true 时 `start()` 完成同步部分后立刻返回，不起 bootstrap Task，
     /// 也不动 CLI。用于纯 DB/状态断言。生产代码不得设置。
     @ObservationIgnored internal var skipBootstrapForTesting: Bool = false
-
-    /// 测试专用 hook：置 true 时 `send()` 触发的 title/branch LLM 调用被跳过，
-    /// 只做 `needsTitleGen`→false 和 `isGeneratingTitle`→true 的同步 flag 翻转。
-    /// 生产代码不得设置。
-    @ObservationIgnored internal var skipTitleGenForTesting: Bool = false
 
     // MARK: - Init
 

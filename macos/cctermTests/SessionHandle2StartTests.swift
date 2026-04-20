@@ -104,26 +104,6 @@ final class SessionHandle2StartTests: XCTestCase {
         XCTAssertEqual(rec?.status, .pending, "pending 直到 bootstrap 成功后改 .created")
     }
 
-    func test_start_fresh_needsTitleGenFlagSet_whenTitleEmpty() {
-        let repo = makeRepo()
-        let handle = makeSyncHandle(id: "fresh-needs-title", in: repo)
-        // title 留空
-
-        handle.start()
-
-        XCTAssertTrue(handle.needsTitleGen, "fresh + 空 title 应触发 LLM 生成")
-    }
-
-    func test_start_fresh_needsTitleGenNotSet_whenTitleProvided() {
-        let repo = makeRepo()
-        let handle = makeSyncHandle(id: "fresh-has-title", in: repo)
-        handle.title = "already set"
-
-        handle.start()
-
-        XCTAssertFalse(handle.needsTitleGen, "调用方已给 title 就不重复生成")
-    }
-
     // MARK: - start(): resume path
 
     func test_start_resume_overwritesCwdAndExtra() {
@@ -163,18 +143,6 @@ final class SessionHandle2StartTests: XCTestCase {
         XCTAssertEqual(rec?.extra.permissionMode, "acceptEdits")
         XCTAssertEqual(rec?.extra.addDirs, ["/new/add"])
         XCTAssertEqual(rec?.extra.pluginDirs, ["/new/plug"])
-    }
-
-    func test_start_resume_doesNotSetNeedsTitleGen() {
-        let repo = makeRepo()
-        repo.save(SessionRecord(sessionId: "resume-title", title: "已有", cwd: "/tmp"))
-
-        let handle = SessionHandle2(sessionId: "resume-title", repository: repo)
-        handle.skipBootstrapForTesting = true
-
-        handle.start()
-
-        XCTAssertFalse(handle.needsTitleGen, "resume 不再生成 title")
     }
 
     // MARK: - send(): queue behaviors

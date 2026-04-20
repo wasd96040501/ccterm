@@ -25,7 +25,6 @@ extension SessionHandle2 {
         stderrBuffer = ""
 
         let fresh = (repository.find(sessionId) == nil)
-        needsTitleGen = fresh && title.isEmpty
 
         // stage 2: fresh + isWorktree 时先 provision worktree，同步更新 cwd +
         // 初始 branch（adj-sci-hex）。后续 LLM rename 会改 branch，但不改 cwd。
@@ -83,20 +82,13 @@ extension SessionHandle2 {
     /// 唯一发送入口。无条件 append 一条 user `MessageEntry`（delivery=.queued），
     /// 若 `status == .idle` 则立即 flush；否则保留在队列，待 status 回落 `.idle` 自动发。
     ///
-    /// Stage 3：fresh + `needsTitleGen` + 首条文本时，异步起 LLM 调用生成 title / branch，
-    /// 不阻塞发送路径。生成结果通过 `isGeneratingTitle` 对外可观察。
+    /// title 生成是正交能力——调用方（fresh + 首条文本场景）显式调 `generateTitle(from:)`。
     func send(_ message: SessionMessage) {
         let entry = makeQueuedEntry(for: message)
         messages.append(entry)
 
         if status == .idle {
             flushQueueIfNeeded()
-        }
-
-        if needsTitleGen, case .text(let text, _) = message, !text.isEmpty {
-            needsTitleGen = false
-            isGeneratingTitle = true
-            triggerTitleGeneration(firstMessage: text)
         }
     }
 }
@@ -122,9 +114,25 @@ extension SessionHandle2 {
     }
 }
 
-// MARK: - Title application (internal for tests)
+// MARK: - Title generation (public entry + application)
 
 extension SessionHandle2 {
+
+    /// 生成 title 的唯一入口。与 `start()` 正交——fresh + 空 title 的 policy
+    /// 由调用方（ChatRouter）决定，handle 只提供能力。
+    ///
+    /// 可重入：空 `firstMessage` 或 `isGeneratingTitle == true` 时 no-op，
+    /// 调用方失败重试 / 用户手动重生成直接再调即可。
+    ///
+    /// 生成过程异步（`Task.detached`），不阻塞调用线程。完成后通过
+    /// `applyGeneratedTitle` 写回 handle + repository；失败时 `isGeneratingTitle`
+    /// 复位、不改 title。
+    func generateTitle(from firstMessage: String) {
+        guard !firstMessage.isEmpty else { return }
+        guard !isGeneratingTitle else { return }
+        isGeneratingTitle = true
+        launchTitleGenerationTask(firstMessage: firstMessage)
+    }
 
     /// 应用 LLM 生成的 title 到 handle 和 db。
     ///
@@ -147,9 +155,7 @@ private extension SessionHandle2 {
 
     // MARK: - Title / branch LLM (stage 3)
 
-    func triggerTitleGeneration(firstMessage: String) {
-        if skipTitleGenForTesting { return }
-
+    func launchTitleGenerationTask(firstMessage: String) {
         let sid = sessionId
         let customCLI = UserDefaults.standard.string(forKey: "customCLICommand")
 

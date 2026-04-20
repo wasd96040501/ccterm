@@ -93,19 +93,20 @@ struct ToolBlock<Label: View, Content: View>: View {
             }
         } label: {
             HStack(spacing: 8) {
-                chevron
                 label()
                     .labelStyle(.toolBlockHeader)
                     .lineLimit(1)
                     .truncationMode(.tail)
                 Spacer(minLength: 8)
                 trailingIndicator
+                chevron
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .allowsHitTesting(isExpandable)
     }
 
     private var chevron: some View {

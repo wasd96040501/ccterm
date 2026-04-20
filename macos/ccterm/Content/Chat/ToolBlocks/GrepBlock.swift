@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// Tool block for the `Grep` tool — header shows the pattern and match counts;
-/// body shows matching filenames and (when available) the inline content
-/// preview.
+/// Tool block for the `Grep` tool — header is caller-supplied; body shows
+/// matching filenames and (when available) the inline content preview.
 struct GrepBlock: View {
+    let title: String
     let pattern: String
     let filenames: [String]
     let content: String?
@@ -14,7 +14,11 @@ struct GrepBlock: View {
     @State private var isExpanded = false
 
     var body: some View {
-        ToolBlock(status: status, isExpanded: $isExpanded) {
+        ToolBlock(
+            status: status,
+            isExpanded: $isExpanded,
+            hasExpandableContent: !filenames.isEmpty || content?.isEmpty == false
+        ) {
             VStack(alignment: .leading, spacing: 8) {
                 if !filenames.isEmpty {
                     FilenameList(filenames: filenames)
@@ -24,19 +28,8 @@ struct GrepBlock: View {
                 }
             }
         } label: {
-            Label(labelText, systemImage: "magnifyingglass")
+            Label(title, systemImage: "magnifyingglass")
         }
-    }
-
-    private var labelText: String {
-        var out = "\"\(pattern)\""
-        switch (numFiles, numMatches) {
-        case let (f?, m?): out += "  (\(f) files, \(m) matches)"
-        case let (f?, nil): out += "  (\(f) files)"
-        case let (nil, m?): out += "  (\(m) matches)"
-        default: break
-        }
-        return out
     }
 }
 
@@ -74,8 +67,7 @@ private struct ContentPreview: View {
                 .padding(8)
         }
         .frame(maxHeight: 260)
-        .background(Color.black.opacity(0.04))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .toolBlockSecondarySectionStyle()
     }
 }
 
@@ -83,6 +75,7 @@ private struct ContentPreview: View {
 
 #Preview("Idle with filenames") {
     GrepBlock(
+        title: "Searched \"pattern\"",
         pattern: "TODO",
         filenames: [
             "/Users/me/project/src/Foo.swift",
@@ -100,6 +93,7 @@ private struct ContentPreview: View {
 
 #Preview("Idle with content preview") {
     GrepBlock(
+        title: "Searched \"pattern\"",
         pattern: "func greet",
         filenames: [
             "/Users/me/project/src/Greeter.swift",
@@ -115,6 +109,7 @@ private struct ContentPreview: View {
 
 #Preview("Running") {
     GrepBlock(
+        title: "Searched \"pattern\"",
         pattern: "import Foundation",
         filenames: [],
         content: nil,
@@ -128,6 +123,7 @@ private struct ContentPreview: View {
 
 #Preview("Error") {
     GrepBlock(
+        title: "Searched \"pattern\"",
         pattern: "[invalid(regex",
         filenames: [],
         content: nil,
@@ -141,6 +137,7 @@ private struct ContentPreview: View {
 
 #Preview("Empty — no matches") {
     GrepBlock(
+        title: "Searched \"pattern\"",
         pattern: "zzzxxxqqq",
         filenames: [],
         content: nil,

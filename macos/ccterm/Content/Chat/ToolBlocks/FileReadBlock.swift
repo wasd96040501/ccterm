@@ -3,12 +3,13 @@ import SwiftUI
 /// Tool block for the `Read` tool — success state is header-only (no body);
 /// error state shows the banner inline via the shared shell.
 struct FileReadBlock: View {
+    let title: String
     let filePath: String
     let status: ToolBlockStatus
 
     var body: some View {
         ToolBlock(status: status) {
-            Label(filePath.truncatedPath(), systemImage: "doc.text")
+            Label(title, systemImage: "doc.text")
         }
     }
 }
@@ -17,6 +18,7 @@ struct FileReadBlock: View {
 
 #Preview("Idle") {
     FileReadBlock(
+        title: "Read RootView.swift",
         filePath: "/Users/me/Source/ccterm/macos/ccterm/App/RootView.swift",
         status: .idle
     )
@@ -26,6 +28,7 @@ struct FileReadBlock: View {
 
 #Preview("Running") {
     FileReadBlock(
+        title: "Reading File.swift",
         filePath: "/Users/me/Source/ccterm/very/long/path/to/some/deeply/nested/File.swift",
         status: .running
     )
@@ -35,6 +38,7 @@ struct FileReadBlock: View {
 
 #Preview("Error") {
     FileReadBlock(
+        title: "Read file.txt",
         filePath: "/missing/file.txt",
         status: .error("ENOENT: no such file or directory")
     )
@@ -44,9 +48,9 @@ struct FileReadBlock: View {
 
 #Preview("Stacked") {
     VStack(spacing: 8) {
-        FileReadBlock(filePath: "/Users/me/a.txt", status: .idle)
-        FileReadBlock(filePath: "/Users/me/b.txt", status: .running)
-        FileReadBlock(filePath: "/Users/me/c.txt", status: .error("permission denied"))
+        FileReadBlock(title: "Read a.txt", filePath: "/Users/me/a.txt", status: .idle)
+        FileReadBlock(title: "Reading b.txt", filePath: "/Users/me/b.txt", status: .running)
+        FileReadBlock(title: "Read c.txt", filePath: "/Users/me/c.txt", status: .error("permission denied"))
     }
     .padding()
     .frame(width: 520, height: 260, alignment: .topLeading)

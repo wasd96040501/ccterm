@@ -1,10 +1,11 @@
 import SwiftUI
 
-/// Tool block for the `Write` tool — header shows the target path (and a
-/// "(new file)" suffix when `originalContent` is nil). Body shows a unified
-/// diff against `originalContent` when present, otherwise the full new
-/// content as a monospaced code block.
+/// Tool block for the `Write` tool — header is caller-supplied; body shows
+/// a unified diff against `originalContent` when present, or the full new
+/// content with line numbers + syntax highlighting (no `+` / green) when
+/// the file is new.
 struct FileWriteBlock: View {
+    let title: String
     let filePath: String
     let content: String
     /// `nil` when this is a new file; otherwise the file's pre-write content
@@ -15,67 +16,20 @@ struct FileWriteBlock: View {
     @State private var isExpanded = false
 
     var body: some View {
-        ToolBlock(status: status, isExpanded: $isExpanded) {
-            if let originalContent {
-                NativeDiffView(
-                    filePath: filePath,
-                    oldString: originalContent,
-                    newString: content,
-                    maxHeight: 360)
-            } else {
-                NewFileContentView(filePath: filePath, content: content)
-            }
+        ToolBlock(
+            status: status,
+            isExpanded: $isExpanded,
+            hasExpandableContent: !content.isEmpty || originalContent?.isEmpty == false
+        ) {
+            NativeDiffView(
+                filePath: filePath,
+                oldString: originalContent ?? "",
+                newString: content,
+                maxHeight: 360,
+                suppressInsertionStyle: originalContent == nil)
         } label: {
-            Label(labelText, systemImage: "doc.badge.plus")
+            Label(title, systemImage: "doc.badge.plus")
         }
-    }
-
-    private var labelText: String {
-        let path = filePath.truncatedPath()
-        return originalContent == nil ? "\(path) (new file)" : path
-    }
-}
-
-// MARK: - New file content view
-
-private struct NewFileContentView: View {
-    let filePath: String
-    let content: String
-
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.syntaxEngine) private var syntaxEngine
-    @State private var tokens: [SyntaxToken]?
-
-    var body: some View {
-        ScrollView([.horizontal, .vertical]) {
-            Text(attributed)
-                .font(.system(size: 12, design: .monospaced))
-                .lineSpacing(3)
-                .fixedSize()
-                .textSelection(.enabled)
-                .padding(10)
-        }
-        .frame(maxHeight: 360)
-        .scrollIndicators(.never)
-        .background(Color.secondary.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .task(id: content) {
-            guard let engine = syntaxEngine else { return }
-            let lang = LanguageDetection.language(for: filePath)
-            tokens = await engine.highlight(code: content, language: lang)
-        }
-    }
-
-    private var attributed: AttributedString {
-        let font = Font.system(size: 12, design: .monospaced)
-        if let tokens {
-            return SyntaxAttributedString.build(
-                tokens: tokens, colorScheme: colorScheme, font: font)
-        }
-        var plain = AttributedString(content)
-        plain.font = font
-        plain.foregroundColor = SyntaxTheme.plainColor(colorScheme)
-        return plain
     }
 }
 
@@ -83,6 +37,7 @@ private struct NewFileContentView: View {
 
 #Preview("New file") {
     FileWriteBlock(
+        title: "Wrote NewFile.swift",
         filePath: "/Users/me/project/src/NewFile.swift",
         content: """
         import Foundation
@@ -105,6 +60,7 @@ private struct NewFileContentView: View {
 
 #Preview("Overwrite existing") {
     FileWriteBlock(
+        title: "Wrote Config.swift",
         filePath: "/Users/me/project/src/Config.swift",
         content: """
         let apiVersion = "v2"
@@ -123,6 +79,7 @@ private struct NewFileContentView: View {
 
 #Preview("Running") {
     FileWriteBlock(
+        title: "Writing Foo.swift",
         filePath: "/Users/me/project/src/Foo.swift",
         content: "",
         originalContent: nil,
@@ -135,6 +92,7 @@ private struct NewFileContentView: View {
 
 #Preview("Error") {
     FileWriteBlock(
+        title: "Wrote file.txt",
         filePath: "/readonly/path/file.txt",
         content: "new content",
         originalContent: nil,

@@ -16,8 +16,19 @@ TARGET="${1:-cctermTests}"
 TEST_LOG="/tmp/ccterm-test-$$.log"
 TEST_SUMMARY="/tmp/ccterm-test-$$-summary.log"
 CRASH_LOG="/tmp/ccterm-test-$$-crashes.log"
+CRASH_DIR="$HOME/Library/Logs/DiagnosticReports"
 
 echo "Testing: ${TARGET}..."
+
+# Snapshot the DiagnosticReports directory *before* the run so we can diff
+# afterwards. This is more precise than mtime filtering — it ignores any
+# pre-existing .ips with a future mtime (clock skew) and captures crashes of
+# any procName (XCTRunner-*, SwiftUI-*, ...) without needing a name allowlist.
+DIAG_BEFORE=$(mktemp -t cctermtest-before)
+if [ -d "$CRASH_DIR" ]; then
+  (cd "$CRASH_DIR" && ls -1 2>/dev/null) > "$DIAG_BEFORE" || true
+fi
+trap 'rm -f "$DIAG_BEFORE"' EXIT
 
 START_TIME=$(date +%s)
 
@@ -36,34 +47,59 @@ ELAPSED=$(( $(date +%s) - START_TIME ))
 grep -E '(^Test |^	 Executed|\*\* TEST|error:.*\.swift|Testing failed|failed -|XCTAssert|ccterm\[.*\] ===)' "$TEST_LOG" > "$TEST_SUMMARY" 2>/dev/null || true
 
 # Collect crash reports produced during this run.
-# - A one-line headline per crash goes to the summary (procName/signal/top project frame).
-# - Full parsed backtrace goes to $CRASH_LOG (a separate file) to keep the summary small.
-# xcodebuild only reports "Early unexpected exit" when the test host crashes — the real
-# backtrace lives in ~/Library/Logs/DiagnosticReports/<name>-<date>.ips.
+# - Directory diff against $DIAG_BEFORE snapshot → only ips files created during the run.
+# - Filter each candidate by procPath matching our DerivedData build product, so crashes
+#   from unrelated processes (e.g. another ccterm instance the user has open) are dropped.
+# - Headline (short) → summary log. Full parsed backtrace → $CRASH_LOG (separate file).
 collect_crash_reports() {
-  local since_epoch=$1
-  local crash_dir="$HOME/Library/Logs/DiagnosticReports"
-  [ -d "$crash_dir" ] || return 0
+  local snapshot=$1
+  [ -d "$CRASH_DIR" ] || return 0
+  [ -f "$snapshot" ] || return 0
 
-  # Use a timestamp reference file so `find -newer` picks up any .ips whose
-  # mtime is >= test start. (BSD find lacks -newerXt / -mmin with floats.)
-  local ref
-  ref=$(mktemp -t cctermtest-ref) || return 0
-  touch -t "$(date -r "$since_epoch" +%Y%m%d%H%M.%S)" "$ref"
+  local after
+  after=$(mktemp -t cctermtest-after)
+  (cd "$CRASH_DIR" && ls -1 2>/dev/null) > "$after"
+  local new_names
+  new_names=$(comm -13 <(sort "$snapshot") <(sort "$after"))
+  rm -f "$after"
+  [ -n "$new_names" ] || return 0
 
-  local crashes
-  crashes=$(find "$crash_dir" -maxdepth 1 -type f \
-    \( -name 'ccterm-*.ips' -o -name 'cctermTests-*.ips' -o -name 'xctest-*.ips' \) \
-    -newer "$ref" 2>/dev/null | sort)
-  rm -f "$ref"
+  # Keep only crashes of our build product. procPath in the .ips body is the
+  # absolute path of the crashed executable — DerivedData hash makes it unique
+  # per-build so it won't false-match other ccterm instances.
+  local ours=""
+  while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    local ips="$CRASH_DIR/$name"
+    [ -f "$ips" ] || continue
+    if /usr/bin/python3 - "$ips" <<'PY'
+import json, sys, fnmatch
+try:
+    with open(sys.argv[1]) as fh:
+        parts = fh.read().split('\n', 1)
+    body = json.loads(parts[1]) if len(parts) == 2 else {}
+except Exception:
+    sys.exit(1)
+patterns = [
+    '*/Library/Developer/Xcode/DerivedData/ccterm-*/Build/Products/*/ccterm.app/*',
+    '*/Library/Developer/Xcode/DerivedData/ccterm-*/Build/Products/*/cctermTests*',
+]
+p = body.get('procPath') or ''
+sys.exit(0 if any(fnmatch.fnmatchcase(p, pat) for pat in patterns) else 1)
+PY
+    then
+      ours+="$ips"$'\n'
+    fi
+  done <<< "$new_names"
 
-  [ -n "$crashes" ] || return 0
+  [ -n "$ours" ] || return 0
 
   : > "$CRASH_LOG"
   echo "" >> "$TEST_SUMMARY"
   echo "=== Crash Reports (headlines; full backtrace in $CRASH_LOG) ===" >> "$TEST_SUMMARY"
 
-  echo "$crashes" | while IFS= read -r ips; do
+  printf '%s' "$ours" | while IFS= read -r ips; do
+    [ -n "$ips" ] || continue
     echo "" >> "$CRASH_LOG"
     echo "========== $(basename "$ips") ==========" >> "$CRASH_LOG"
     # python writes the short headline to $TEST_SUMMARY (append) and the full
@@ -183,7 +219,7 @@ PY
 }
 
 if [ "$TEST_EXIT" -ne 0 ]; then
-  collect_crash_reports "$START_TIME"
+  collect_crash_reports "$DIAG_BEFORE"
   echo ""
   cat "$TEST_SUMMARY"
   echo ""

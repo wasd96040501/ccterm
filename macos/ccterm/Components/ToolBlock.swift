@@ -109,13 +109,15 @@ struct ToolBlock<Label: View, Content: View>: View {
         .allowsHitTesting(isExpandable)
     }
 
+    @ViewBuilder
     private var chevron: some View {
-        Image(systemName: "chevron.right")
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(.secondary)
-            .rotationEffect(.degrees(effectivelyExpanded ? 90 : 0))
-            .frame(width: 10)
-            .opacity(isExpandable ? 1 : 0)
+        if isExpandable {
+            Image(systemName: "chevron.right")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .rotationEffect(.degrees(effectivelyExpanded ? 90 : 0))
+                .frame(width: 10)
+        }
     }
 
     @ViewBuilder

@@ -62,6 +62,7 @@ struct ToolBlockView: View {
         let obj = bashResult()
         return BashBlock(
             command: t.input?.command ?? "",
+            description: t.input?.description,
             stdout: obj?.stdout,
             stderr: obj?.stderr,
             status: status())

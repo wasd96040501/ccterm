@@ -1,9 +1,13 @@
 import SwiftUI
 
-/// Tool block for the `Bash` tool — shows the command in the header and the
-/// merged stdout / stderr output on expand.
+/// Tool block for the `Bash` tool — header reads `Bash <intent>`; body
+/// shows the actual command + merged stdout / stderr.
 struct BashBlock: View {
     let command: String
+    /// Short natural-language intent from `v.input.description`. When
+    /// present the header uses it; otherwise the header falls back to the
+    /// command itself (truncated).
+    let description: String?
     let stdout: String?
     let stderr: String?
     let status: ToolBlockStatus
@@ -14,7 +18,9 @@ struct BashBlock: View {
         ToolBlock(
             status: status,
             isExpanded: $isExpanded,
-            hasExpandableContent: hasBodyContent
+            hasExpandableContent: !command.isEmpty
+                || stdout?.isEmpty == false
+                || stderr?.isEmpty == false
         ) {
             VStack(alignment: .leading, spacing: 8) {
                 NativeBashView(command: command, maxHeight: 260)
@@ -26,23 +32,15 @@ struct BashBlock: View {
                 }
             }
         } label: {
-            Label(headerText, systemImage: "terminal")
+            Label("Bash \(intent)", systemImage: "terminal")
         }
     }
 
-    private var headerText: String {
+    private var intent: String {
+        if let description, !description.isEmpty { return description }
         let collapsed = command.replacingOccurrences(of: "\n", with: " ")
         if collapsed.count <= 80 { return collapsed }
         return String(collapsed.prefix(80)) + "…"
-    }
-
-    /// Header already shows the command (truncated at 80). Body is worth
-    /// opening only when it carries something the header doesn't: the full
-    /// command (if truncated), or any output stream.
-    private var hasBodyContent: Bool {
-        command.count > 80
-            || !(stdout?.isEmpty ?? true)
-            || !(stderr?.isEmpty ?? true)
     }
 }
 
@@ -78,6 +76,7 @@ private struct OutputView: View {
 #Preview("Idle — simple") {
     BashBlock(
         command: "ls -la /usr/local/bin",
+        description: nil,
         stdout: "total 128\ndrwxr-xr-x  brew  staff  4096 Apr 18 10:30 .\ndrwxr-xr-x  root  wheel  4096 Apr 18 10:30 ..",
         stderr: nil,
         status: .idle
@@ -90,6 +89,7 @@ private struct OutputView: View {
 #Preview("Running") {
     BashBlock(
         command: "make build",
+        description: nil,
         stdout: nil,
         stderr: nil,
         status: .running
@@ -102,6 +102,7 @@ private struct OutputView: View {
 #Preview("Error — non-zero exit") {
     BashBlock(
         command: "cat /nonexistent/file.txt",
+        description: nil,
         stdout: nil,
         stderr: "cat: /nonexistent/file.txt: No such file or directory",
         status: .error("Command failed with exit code 1")
@@ -114,6 +115,7 @@ private struct OutputView: View {
 #Preview("Long command truncated") {
     BashBlock(
         command: "find /usr/local -name '*.dylib' -type f -exec ls -la {} \\; | sort -k5 -n -r | head -20",
+        description: nil,
         stdout: "lrwxr-xr-x  1 admin  wheel  1234 Apr  4 12:00 libfoo.dylib\n...",
         stderr: nil,
         status: .idle
@@ -126,6 +128,7 @@ private struct OutputView: View {
 #Preview("Mixed stdout + stderr") {
     BashBlock(
         command: "npm test",
+        description: nil,
         stdout: "> project@1.0.0 test\n> jest\n\nPASS  src/foo.test.ts\nPASS  src/bar.test.ts",
         stderr: "npm WARN deprecated package@1.0.0: use newer version",
         status: .idle

@@ -32,7 +32,7 @@ struct WebSearchBlock: View {
             .background(Color.secondary.opacity(0.06))
             .clipShape(RoundedRectangle(cornerRadius: 6))
         } label: {
-            Label("\"\(query)\"", systemImage: "text.magnifyingglass")
+            Label("WebSearch \"\(query)\"", systemImage: "text.magnifyingglass")
         }
     }
 }

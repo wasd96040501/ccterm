@@ -22,7 +22,7 @@ struct FileEditBlock: View {
                 newString: newString,
                 maxHeight: 360)
         } label: {
-            Label(filePath.truncatedPath(), systemImage: "pencil")
+            Label("Edit \(filePath.truncatedPath())", systemImage: "pencil")
         }
     }
 }

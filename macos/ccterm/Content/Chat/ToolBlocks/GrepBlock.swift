@@ -17,7 +17,7 @@ struct GrepBlock: View {
         ToolBlock(
             status: status,
             isExpanded: $isExpanded,
-            hasExpandableContent: hasBodyContent
+            hasExpandableContent: !filenames.isEmpty || content?.isEmpty == false
         ) {
             VStack(alignment: .leading, spacing: 8) {
                 if !filenames.isEmpty {
@@ -32,12 +32,8 @@ struct GrepBlock: View {
         }
     }
 
-    private var hasBodyContent: Bool {
-        !filenames.isEmpty || !(content?.isEmpty ?? true)
-    }
-
     private var labelText: String {
-        var out = "\"\(pattern)\""
+        var out = "Grep \"\(pattern)\""
         switch (numFiles, numMatches) {
         case let (f?, m?): out += "  (\(f) files, \(m) matches)"
         case let (f?, nil): out += "  (\(f) files)"

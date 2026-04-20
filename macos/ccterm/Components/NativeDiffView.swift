@@ -41,7 +41,7 @@ struct NativeDiffView: View {
             }
         }
         .background(DiffColors.tableBg(colorScheme))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
         .task(id: "\(oldString.hashValue)_\(newString.hashValue)") {
             hunks = DiffEngine.computeHunks(old: oldString, new: newString)
             rebuildAttributedContent()

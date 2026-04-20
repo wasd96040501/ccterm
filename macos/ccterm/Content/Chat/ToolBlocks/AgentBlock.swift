@@ -24,7 +24,7 @@ struct AgentBlock: View {
         ToolBlock(
             status: status,
             isExpanded: $isExpanded,
-            hasExpandableContent: !progress.isEmpty || !(outputText?.isEmpty ?? true)
+            hasExpandableContent: !progress.isEmpty || outputText?.isEmpty == false
         ) {
             VStack(alignment: .leading, spacing: 8) {
                 if !progress.isEmpty {
@@ -65,7 +65,7 @@ struct AgentBlock: View {
     }
 
     private var labelText: String {
-        var out = description
+        var out = "Agent \(description)"
         var suffix: [String] = []
         if let agentState { suffix.append(agentState) }
         if let toolUseCount, toolUseCount > 0 { suffix.append("\(toolUseCount) tools") }

@@ -18,7 +18,7 @@ struct FileWriteBlock: View {
         ToolBlock(
             status: status,
             isExpanded: $isExpanded,
-            hasExpandableContent: !content.isEmpty || !(originalContent?.isEmpty ?? true)
+            hasExpandableContent: !content.isEmpty || originalContent?.isEmpty == false
         ) {
             NativeDiffView(
                 filePath: filePath,
@@ -33,7 +33,8 @@ struct FileWriteBlock: View {
 
     private var labelText: String {
         let path = filePath.truncatedPath()
-        return originalContent == nil ? "\(path) (new file)" : path
+        let suffix = originalContent == nil ? " (new file)" : ""
+        return "Write \(path)\(suffix)"
     }
 }
 

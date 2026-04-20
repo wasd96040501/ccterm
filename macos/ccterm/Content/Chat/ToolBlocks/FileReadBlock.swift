@@ -8,7 +8,7 @@ struct FileReadBlock: View {
 
     var body: some View {
         ToolBlock(status: status) {
-            Label(filePath.truncatedPath(), systemImage: "doc.text")
+            Label("Read \(filePath.truncatedPath())", systemImage: "doc.text")
         }
     }
 }

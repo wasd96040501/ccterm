@@ -12,7 +12,11 @@ struct GlobBlock: View {
     @State private var isExpanded = false
 
     var body: some View {
-        ToolBlock(status: status, isExpanded: $isExpanded) {
+        ToolBlock(
+            status: status,
+            isExpanded: $isExpanded,
+            hasExpandableContent: !filenames.isEmpty
+        ) {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(filenames, id: \.self) { name in
                     Text(name)
@@ -37,7 +41,7 @@ struct GlobBlock: View {
     }
 
     private var labelText: String {
-        var out = pattern
+        var out = "Glob \"\(pattern)\""
         if let numFiles { out += "  (\(numFiles) files" + (truncated ? ", truncated" : "") + ")" }
         else if truncated { out += "  (truncated)" }
         return out

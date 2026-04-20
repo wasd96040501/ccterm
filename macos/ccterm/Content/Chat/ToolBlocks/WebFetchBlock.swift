@@ -14,7 +14,7 @@ struct WebFetchBlock: View {
         ToolBlock(
             status: status,
             isExpanded: $isExpanded,
-            hasExpandableContent: !(result?.isEmpty ?? true)
+            hasExpandableContent: result?.isEmpty == false
         ) {
             if let result, !result.isEmpty {
                 ScrollView([.vertical]) {
@@ -32,7 +32,7 @@ struct WebFetchBlock: View {
     }
 
     private var labelText: String {
-        var out = url
+        var out = "WebFetch \(url)"
         if let httpStatus { out += "  (\(httpStatus))" }
         return out
     }

@@ -36,7 +36,7 @@ struct AskUserQuestionBlock: View {
     }
 
     private var labelText: String {
-        items.first?.question ?? "Question"
+        "AskUserQuestion \(items.first?.question ?? "")"
     }
 }
 

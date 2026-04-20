@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// Tool block for the `Glob` tool — header shows the pattern and file count
-/// (plus truncation flag); body lists matched file paths.
+/// Tool block for the `Glob` tool — header is caller-supplied; body lists
+/// matched file paths.
 struct GlobBlock: View {
+    let title: String
     let pattern: String
     let filenames: [String]
     let numFiles: Int?
@@ -36,15 +37,8 @@ struct GlobBlock: View {
             .background(Color.secondary.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: 6))
         } label: {
-            Label(labelText, systemImage: "folder")
+            Label(title, systemImage: "folder")
         }
-    }
-
-    private var labelText: String {
-        var out = "Glob \"\(pattern)\""
-        if let numFiles { out += "  (\(numFiles) files" + (truncated ? ", truncated" : "") + ")" }
-        else if truncated { out += "  (truncated)" }
-        return out
     }
 }
 
@@ -52,6 +46,7 @@ struct GlobBlock: View {
 
 #Preview("Idle") {
     GlobBlock(
+        title: "Globbed \"pattern\"",
         pattern: "**/*.swift",
         filenames: [
             "/Users/me/project/src/App.swift",
@@ -69,6 +64,7 @@ struct GlobBlock: View {
 
 #Preview("Truncated") {
     GlobBlock(
+        title: "Globbed \"pattern\"",
         pattern: "**/*",
         filenames: (1...20).map { "/Users/me/project/file\($0).txt" },
         numFiles: 100,
@@ -81,6 +77,7 @@ struct GlobBlock: View {
 
 #Preview("Running") {
     GlobBlock(
+        title: "Globbed \"pattern\"",
         pattern: "**/*.tsx",
         filenames: [],
         numFiles: nil,
@@ -93,6 +90,7 @@ struct GlobBlock: View {
 
 #Preview("Error") {
     GlobBlock(
+        title: "Globbed \"pattern\"",
         pattern: "[[[",
         filenames: [],
         numFiles: nil,

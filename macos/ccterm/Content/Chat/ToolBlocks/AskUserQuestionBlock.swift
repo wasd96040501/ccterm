@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// Tool block for the `AskUserQuestion` tool — header shows the first
-/// question; body lists each question along with the user's answer (when
-/// available).
+/// Tool block for the `AskUserQuestion` tool — header is caller-supplied;
+/// body lists each question along with the user's answer (when available).
 struct AskUserQuestionBlock: View {
+    let title: String
     let items: [QAItem]
     let status: ToolBlockStatus
 
@@ -31,12 +31,8 @@ struct AskUserQuestionBlock: View {
             .background(Color.secondary.opacity(0.06))
             .clipShape(RoundedRectangle(cornerRadius: 6))
         } label: {
-            Label(labelText, systemImage: "questionmark.bubble")
+            Label(title, systemImage: "questionmark.bubble")
         }
-    }
-
-    private var labelText: String {
-        "AskUserQuestion \(items.first?.question ?? "")"
     }
 }
 
@@ -76,6 +72,7 @@ private struct QARow: View {
 
 #Preview("Answered") {
     AskUserQuestionBlock(
+        title: "Asked: question",
         items: [
             .init(
                 question: "Which framework should we use for navigation?",
@@ -92,6 +89,7 @@ private struct QARow: View {
 
 #Preview("Awaiting answer — running") {
     AskUserQuestionBlock(
+        title: "Asked: question",
         items: [
             .init(question: "Would you like to continue?", answer: nil)
         ],
@@ -103,6 +101,7 @@ private struct QARow: View {
 
 #Preview("Error") {
     AskUserQuestionBlock(
+        title: "Asked: question",
         items: [
             .init(question: "Pick an option", answer: nil)
         ],

@@ -186,34 +186,111 @@ extension ToolUse {
         }
     }
 
-    /// Progressive-form fragment (e.g. `Reading foo.swift`). Only populated for
-    /// groupable tools.
+    /// Progressive / present-continuous phrase (e.g. `Reading foo.swift`).
+    /// Consumed by both group titles and standalone ToolBlock headers while
+    /// the tool is running. `nil` only for tools where a generic fallback to
+    /// `caseName` reads better.
     var activeFragment: String? {
         switch self {
         case .Read(let v):
-            let name = basename(v.input?.filePath) ?? String(localized: "file")
-            return String(localized: "Reading \(name)")
+            return String(localized: "Reading \(readTarget(v))")
         case .Edit(let v):
-            let name = basename(v.input?.filePath) ?? String(localized: "file")
-            return String(localized: "Editing \(name)")
+            return String(localized: "Editing \(editTarget(v))")
         case .Write(let v):
-            let name = basename(v.input?.filePath) ?? String(localized: "file")
-            return String(localized: "Writing \(name)")
+            return String(localized: "Writing \(writeTarget(v))")
         case .Grep(let v):
-            let pattern = v.input?.pattern ?? ""
-            return String(localized: "Searching \"\(pattern)\"")
+            return String(localized: "Searching \"\(grepTarget(v))\"")
         case .Glob(let v):
-            let pattern = v.input?.pattern ?? ""
-            return String(localized: "Globbing \"\(pattern)\"")
+            return String(localized: "Globbing \"\(globTarget(v))\"")
         case .Bash(let v):
-            let intent = v.input?.description
-                ?? v.input?.command.map { String($0.prefix(40)) }
-                ?? ""
-            return String(localized: "Running: \(intent)")
+            return String(localized: "Running: \(bashTarget(v))")
+        case .WebFetch(let v):
+            return String(localized: "Fetching \(webFetchTarget(v))")
+        case .WebSearch(let v):
+            return String(localized: "Searching \"\(webSearchTarget(v))\"")
+        case .Agent(let v):
+            return String(localized: "Running agent: \(agentTarget(v))")
+        case .AskUserQuestion(let v):
+            return String(localized: "Asking: \(askTarget(v))")
         default:
             return nil
         }
     }
+
+    /// Past-tense counterpart of ``activeFragment`` (e.g. `Read foo.swift`).
+    /// Used for standalone ToolBlock headers once the tool finishes. Group
+    /// titles have their own aggregated form (`Read 3 files · …`) and do not
+    /// go through this.
+    var completedFragment: String? {
+        switch self {
+        case .Read(let v):
+            return String(localized: "Read \(readTarget(v))")
+        case .Edit(let v):
+            return String(localized: "Edited \(editTarget(v))")
+        case .Write(let v):
+            return String(localized: "Wrote \(writeTarget(v))")
+        case .Grep(let v):
+            return String(localized: "Searched \"\(grepTarget(v))\"")
+        case .Glob(let v):
+            return String(localized: "Globbed \"\(globTarget(v))\"")
+        case .Bash(let v):
+            return String(localized: "Ran: \(bashTarget(v))")
+        case .WebFetch(let v):
+            return String(localized: "Fetched \(webFetchTarget(v))")
+        case .WebSearch(let v):
+            return String(localized: "Searched \"\(webSearchTarget(v))\"")
+        case .Agent(let v):
+            return String(localized: "Agent: \(agentTarget(v))")
+        case .AskUserQuestion(let v):
+            return String(localized: "Asked: \(askTarget(v))")
+        default:
+            return nil
+        }
+    }
+}
+
+// MARK: - Fragment targets
+
+private func readTarget(_ v: ToolUseRead) -> String {
+    basename(v.input?.filePath) ?? String(localized: "file")
+}
+
+private func editTarget(_ v: ToolUseEdit) -> String {
+    basename(v.input?.filePath) ?? String(localized: "file")
+}
+
+private func writeTarget(_ v: ToolUseWrite) -> String {
+    basename(v.input?.filePath) ?? String(localized: "file")
+}
+
+private func grepTarget(_ v: ToolUseGrep) -> String {
+    v.input?.pattern ?? ""
+}
+
+private func globTarget(_ v: ToolUseGlob) -> String {
+    v.input?.pattern ?? ""
+}
+
+private func bashTarget(_ v: ToolUseBash) -> String {
+    v.input?.description
+        ?? v.input?.command.map { String($0.prefix(40)) }
+        ?? ""
+}
+
+private func webFetchTarget(_ v: ToolUseWebFetch) -> String {
+    v.input?.url ?? ""
+}
+
+private func webSearchTarget(_ v: ToolUseWebSearch) -> String {
+    v.input?.query ?? v.input?.searchQuery ?? ""
+}
+
+private func agentTarget(_ v: Agent) -> String {
+    v.input?.description ?? v.input?.name ?? ""
+}
+
+private func askTarget(_ v: ToolUseAskUserQuestion) -> String {
+    v.input?.questions?.first?.question ?? ""
 }
 
 private func basename(_ path: String?) -> String? {

@@ -1,13 +1,11 @@
 import SwiftUI
 
-/// Tool block for the `Bash` tool — header reads `Bash <intent>`; body
-/// shows the actual command + merged stdout / stderr.
+/// Tool block for the `Bash` tool — header is caller-supplied (unified with
+/// the group-title active/completed phrasing); body shows the command +
+/// merged stdout / stderr.
 struct BashBlock: View {
+    let title: String
     let command: String
-    /// Short natural-language intent from `v.input.description`. When
-    /// present the header uses it; otherwise the header falls back to the
-    /// command itself (truncated).
-    let description: String?
     let stdout: String?
     let stderr: String?
     let status: ToolBlockStatus
@@ -32,15 +30,8 @@ struct BashBlock: View {
                 }
             }
         } label: {
-            Label("Bash \(intent)", systemImage: "terminal")
+            Label(title, systemImage: "terminal")
         }
-    }
-
-    private var intent: String {
-        if let description, !description.isEmpty { return description }
-        let collapsed = command.replacingOccurrences(of: "\n", with: " ")
-        if collapsed.count <= 80 { return collapsed }
-        return String(collapsed.prefix(80)) + "…"
     }
 }
 
@@ -75,8 +66,8 @@ private struct OutputView: View {
 
 #Preview("Idle — simple") {
     BashBlock(
+        title: "Ran: ls -la /usr/local/bin",
         command: "ls -la /usr/local/bin",
-        description: nil,
         stdout: "total 128\ndrwxr-xr-x  brew  staff  4096 Apr 18 10:30 .\ndrwxr-xr-x  root  wheel  4096 Apr 18 10:30 ..",
         stderr: nil,
         status: .idle
@@ -88,8 +79,8 @@ private struct OutputView: View {
 
 #Preview("Running") {
     BashBlock(
+        title: "Running: build project",
         command: "make build",
-        description: nil,
         stdout: nil,
         stderr: nil,
         status: .running
@@ -101,8 +92,8 @@ private struct OutputView: View {
 
 #Preview("Error — non-zero exit") {
     BashBlock(
+        title: "Ran: cat /nonexistent/file.txt",
         command: "cat /nonexistent/file.txt",
-        description: nil,
         stdout: nil,
         stderr: "cat: /nonexistent/file.txt: No such file or directory",
         status: .error("Command failed with exit code 1")
@@ -114,8 +105,8 @@ private struct OutputView: View {
 
 #Preview("Long command truncated") {
     BashBlock(
+        title: "Ran: find /usr/local -name '*.dylib' -type…",
         command: "find /usr/local -name '*.dylib' -type f -exec ls -la {} \\; | sort -k5 -n -r | head -20",
-        description: nil,
         stdout: "lrwxr-xr-x  1 admin  wheel  1234 Apr  4 12:00 libfoo.dylib\n...",
         stderr: nil,
         status: .idle
@@ -127,8 +118,8 @@ private struct OutputView: View {
 
 #Preview("Mixed stdout + stderr") {
     BashBlock(
+        title: "Ran: npm test",
         command: "npm test",
-        description: nil,
         stdout: "> project@1.0.0 test\n> jest\n\nPASS  src/foo.test.ts\nPASS  src/bar.test.ts",
         stderr: "npm WARN deprecated package@1.0.0: use newer version",
         status: .idle

@@ -130,6 +130,16 @@
         }
       }
     },
+    "Agent: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent：%@"
+          }
+        }
+      }
+    },
     "All": {},
     "All Categories": {},
     "Allow": {
@@ -191,6 +201,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "每次使用工具前询问"
+          }
+        }
+      }
+    },
+    "Asked: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已询问：%@"
+          }
+        }
+      }
+    },
+    "Asking: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在询问：%@"
           }
         }
       }
@@ -497,6 +527,16 @@
         }
       }
     },
+    "Edited %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已编辑 %@"
+          }
+        }
+      }
+    },
     "Edited %lld files": {
       "localizations": {
         "en": {
@@ -617,6 +657,26 @@
         }
       }
     },
+    "Fetched %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已抓取 %@"
+          }
+        }
+      }
+    },
+    "Fetching %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在抓取 %@"
+          }
+        }
+      }
+    },
     "Filter": {},
     "Find": {
       "localizations": {
@@ -664,6 +724,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "生成分支中…"
+          }
+        }
+      }
+    },
+    "Globbed \"%@\"": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已 glob \"%@\""
           }
         }
       }
@@ -1026,6 +1096,26 @@
         }
       }
     },
+    "Ran: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已运行：%@"
+          }
+        }
+      }
+    },
+    "Read %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已读取 %@"
+          }
+        }
+      }
+    },
     "Read %lld files": {
       "localizations": {
         "en": {
@@ -1147,6 +1237,16 @@
         }
       }
     },
+    "Running agent: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在运行 agent：%@"
+          }
+        }
+      }
+    },
     "Running: %@": {
       "localizations": {
         "zh-Hans": {
@@ -1174,6 +1274,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "搜索文件夹…"
+          }
+        }
+      }
+    },
+    "Searched \"%@\"": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已搜索 \"%@\""
           }
         }
       }
@@ -1458,6 +1568,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在写入 %@"
+          }
+        }
+      }
+    },
+    "Wrote %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已写入 %@"
           }
         }
       }

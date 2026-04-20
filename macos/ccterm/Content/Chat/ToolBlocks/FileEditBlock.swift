@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// Tool block for the `Edit` tool — header shows file path, body shows the
-/// unified diff between `oldString` and `newString`.
+/// Tool block for the `Edit` tool — header is caller-supplied; body shows
+/// the unified diff between `oldString` and `newString`.
 struct FileEditBlock: View {
+    let title: String
     let filePath: String
     let oldString: String
     let newString: String
@@ -22,7 +23,7 @@ struct FileEditBlock: View {
                 newString: newString,
                 maxHeight: 360)
         } label: {
-            Label("Edit \(filePath.truncatedPath())", systemImage: "pencil")
+            Label(title, systemImage: "pencil")
         }
     }
 }
@@ -31,6 +32,7 @@ struct FileEditBlock: View {
 
 #Preview("Small single-hunk edit") {
     FileEditBlock(
+        title: "Edited RootView.swift",
         filePath: "/Users/me/Source/ccterm/macos/ccterm/App/RootView.swift",
         oldString: "var body: some View {\n    Text(\"hello\")\n}",
         newString: "var body: some View {\n    Text(\"hello, world\")\n        .font(.title)\n}",
@@ -43,6 +45,7 @@ struct FileEditBlock: View {
 
 #Preview("Running") {
     FileEditBlock(
+        title: "Editing Foo.swift",
         filePath: "/Users/me/project/src/Foo.swift",
         oldString: "",
         newString: "",
@@ -55,6 +58,7 @@ struct FileEditBlock: View {
 
 #Preview("Error") {
     FileEditBlock(
+        title: "Edited hosts",
         filePath: "/etc/hosts",
         oldString: "127.0.0.1 localhost",
         newString: "127.0.0.1 localhost\n::1 localhost",
@@ -67,6 +71,7 @@ struct FileEditBlock: View {
 
 #Preview("Multi-line swift change") {
     FileEditBlock(
+        title: "Edited App.swift",
         filePath: "/Users/me/project/Sources/App.swift",
         oldString: """
         func greet(name: String) {

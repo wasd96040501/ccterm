@@ -1,10 +1,11 @@
 import SwiftUI
 
-/// Tool block for the `Write` tool — header shows the target path (and a
-/// "(new file)" suffix when `originalContent` is nil). Body shows a unified
-/// diff against `originalContent` when present, or the full new content with
-/// line numbers + syntax highlighting (no `+` / green) when the file is new.
+/// Tool block for the `Write` tool — header is caller-supplied; body shows
+/// a unified diff against `originalContent` when present, or the full new
+/// content with line numbers + syntax highlighting (no `+` / green) when
+/// the file is new.
 struct FileWriteBlock: View {
+    let title: String
     let filePath: String
     let content: String
     /// `nil` when this is a new file; otherwise the file's pre-write content
@@ -27,14 +28,8 @@ struct FileWriteBlock: View {
                 maxHeight: 360,
                 suppressInsertionStyle: originalContent == nil)
         } label: {
-            Label(labelText, systemImage: "doc.badge.plus")
+            Label(title, systemImage: "doc.badge.plus")
         }
-    }
-
-    private var labelText: String {
-        let path = filePath.truncatedPath()
-        let suffix = originalContent == nil ? " (new file)" : ""
-        return "Write \(path)\(suffix)"
     }
 }
 
@@ -42,6 +37,7 @@ struct FileWriteBlock: View {
 
 #Preview("New file") {
     FileWriteBlock(
+        title: "Wrote NewFile.swift",
         filePath: "/Users/me/project/src/NewFile.swift",
         content: """
         import Foundation
@@ -64,6 +60,7 @@ struct FileWriteBlock: View {
 
 #Preview("Overwrite existing") {
     FileWriteBlock(
+        title: "Wrote Config.swift",
         filePath: "/Users/me/project/src/Config.swift",
         content: """
         let apiVersion = "v2"
@@ -82,6 +79,7 @@ struct FileWriteBlock: View {
 
 #Preview("Running") {
     FileWriteBlock(
+        title: "Writing Foo.swift",
         filePath: "/Users/me/project/src/Foo.swift",
         content: "",
         originalContent: nil,
@@ -94,6 +92,7 @@ struct FileWriteBlock: View {
 
 #Preview("Error") {
     FileWriteBlock(
+        title: "Wrote file.txt",
         filePath: "/readonly/path/file.txt",
         content: "new content",
         originalContent: nil,

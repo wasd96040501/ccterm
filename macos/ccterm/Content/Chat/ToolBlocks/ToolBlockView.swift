@@ -34,17 +34,13 @@ struct ToolBlockView: View {
             taskBlock(t)
         case .AskUserQuestion(let t):
             askUserQuestionBlock(t)
-        case .Skill(let t):
-            GenericToolBlock(
-                name: "Skill(\(t.input?.skill ?? "?"))",
-                status: status())
-        case .CronCreate, .SendMessage,
+        case .Skill,
+             .CronCreate, .SendMessage,
              .EnterPlanMode, .EnterWorktree, .ExitPlanMode, .ExitWorktree,
              .TaskCreate, .TaskOutput, .TaskStop, .TaskUpdate,
-             .TeamCreate, .TodoWrite, .ToolSearch:
-            GenericToolBlock(name: name(of: toolUse), status: status())
-        case .unknown(let name, _):
-            GenericToolBlock(name: name, status: status())
+             .TeamCreate, .TodoWrite, .ToolSearch,
+             .unknown:
+            GenericToolBlock(name: headerTitle, status: status())
         }
     }
 
@@ -56,13 +52,29 @@ struct ToolBlockView: View {
         return .idle
     }
 
+    // MARK: - Header title
+
+    /// Single source of truth for header text across all tool blocks.
+    /// Running → `activeFragment`; idle / error → `completedFragment`.
+    /// Fallback to `caseName` for tools without tailored phrasing.
+    private var headerTitle: String {
+        let useActive: Bool
+        switch status() {
+        case .running: useActive = true
+        case .idle, .error: useActive = false
+        }
+        if useActive, let frag = toolUse.activeFragment { return frag }
+        if !useActive, let frag = toolUse.completedFragment { return frag }
+        return toolUse.caseName
+    }
+
     // MARK: - Blocks
 
     private func bashBlock(_ t: ToolUseBash) -> some View {
         let obj = bashResult()
         return BashBlock(
+            title: headerTitle,
             command: t.input?.command ?? "",
-            description: t.input?.description,
             stdout: obj?.stdout,
             stderr: obj?.stderr,
             status: status())
@@ -71,6 +83,7 @@ struct ToolBlockView: View {
     private func editBlock(_ t: ToolUseEdit) -> some View {
         let input = t.input
         return FileEditBlock(
+            title: headerTitle,
             filePath: input?.filePath ?? "",
             oldString: input?.oldString ?? "",
             newString: input?.newString ?? "",
@@ -80,6 +93,7 @@ struct ToolBlockView: View {
     private func writeBlock(_ t: ToolUseWrite) -> some View {
         let obj = writeResultObject()
         return FileWriteBlock(
+            title: headerTitle,
             filePath: t.input?.filePath ?? "",
             content: t.input?.content ?? "",
             originalContent: obj?.originalFile,
@@ -88,6 +102,7 @@ struct ToolBlockView: View {
 
     private func readBlock(_ t: ToolUseRead) -> some View {
         FileReadBlock(
+            title: headerTitle,
             filePath: t.input?.filePath ?? "",
             status: status())
     }
@@ -95,6 +110,7 @@ struct ToolBlockView: View {
     private func grepBlock(_ t: ToolUseGrep) -> some View {
         let obj = grepResult()
         return GrepBlock(
+            title: headerTitle,
             pattern: t.input?.pattern ?? "",
             filenames: obj?.filenames ?? [],
             content: obj?.content,
@@ -106,6 +122,7 @@ struct ToolBlockView: View {
     private func globBlock(_ t: ToolUseGlob) -> some View {
         let obj = globResult()
         return GlobBlock(
+            title: headerTitle,
             pattern: t.input?.pattern ?? "",
             filenames: obj?.filenames ?? [],
             numFiles: obj?.numFiles,
@@ -116,6 +133,7 @@ struct ToolBlockView: View {
     private func webFetchBlock(_ t: ToolUseWebFetch) -> some View {
         let obj = webFetchResult()
         return WebFetchBlock(
+            title: headerTitle,
             url: t.input?.url ?? "",
             httpStatus: obj?.code,
             result: obj?.result,
@@ -125,6 +143,7 @@ struct ToolBlockView: View {
     private func webSearchBlock(_ t: ToolUseWebSearch) -> some View {
         let obj = webSearchResult()
         return WebSearchBlock(
+            title: headerTitle,
             query: t.input?.query ?? t.input?.searchQuery ?? "",
             results: webSearchResults(from: obj),
             status: status())
@@ -133,6 +152,7 @@ struct ToolBlockView: View {
     private func agentBlock(_ t: Agent) -> some View {
         let obj = taskResult()
         return AgentBlock(
+            title: headerTitle,
             description: t.input?.description ?? t.input?.name ?? "Agent",
             progress: agentProgress(from: obj),
             outputText: agentOutputText(from: obj),
@@ -143,7 +163,7 @@ struct ToolBlockView: View {
 
     private func taskBlock(_ t: ToolUseTask) -> some View {
         GenericToolBlock(
-            name: "Task",
+            name: headerTitle,
             status: status())
     }
 
@@ -154,7 +174,7 @@ struct ToolBlockView: View {
                 question: q.question ?? "",
                 answer: obj?.answers?[q.question ?? ""])
         }
-        return AskUserQuestionBlock(items: items, status: status())
+        return AskUserQuestionBlock(title: headerTitle, items: items, status: status())
     }
 
     // MARK: - Result extraction
@@ -240,36 +260,4 @@ struct ToolBlockView: View {
         return texts.isEmpty ? nil : texts.joined(separator: "\n\n")
     }
 
-    // MARK: - Tool name helper
-
-    private func name(of toolUse: ToolUse) -> String {
-        switch toolUse {
-        case .Agent: return "Agent"
-        case .AskUserQuestion: return "AskUserQuestion"
-        case .Bash: return "Bash"
-        case .CronCreate: return "CronCreate"
-        case .Edit: return "Edit"
-        case .EnterPlanMode: return "EnterPlanMode"
-        case .EnterWorktree: return "EnterWorktree"
-        case .ExitPlanMode: return "ExitPlanMode"
-        case .ExitWorktree: return "ExitWorktree"
-        case .Glob: return "Glob"
-        case .Grep: return "Grep"
-        case .Read: return "Read"
-        case .SendMessage: return "SendMessage"
-        case .Skill: return "Skill"
-        case .Task: return "Task"
-        case .TaskCreate: return "TaskCreate"
-        case .TaskOutput: return "TaskOutput"
-        case .TaskStop: return "TaskStop"
-        case .TaskUpdate: return "TaskUpdate"
-        case .TeamCreate: return "TeamCreate"
-        case .TodoWrite: return "TodoWrite"
-        case .ToolSearch: return "ToolSearch"
-        case .WebFetch: return "WebFetch"
-        case .WebSearch: return "WebSearch"
-        case .Write: return "Write"
-        case .unknown(let n, _): return n
-        }
-    }
 }

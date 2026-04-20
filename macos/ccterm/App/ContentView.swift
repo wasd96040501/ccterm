@@ -75,10 +75,6 @@ struct ContentView: View {
         switch activeAction {
         case .archive:
             ArchiveView(sessionService: sessionService, sidebarViewModel: sidebarViewModel)
-        #if DEBUG
-        case .scrollHugTest:
-            ScrollHugTestView()
-        #endif
         case .newConversation, nil:
             EmptyView()
         }

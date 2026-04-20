@@ -122,46 +122,22 @@ extension SessionHandle2 {
     }
 }
 
-// MARK: - Title / branch application (internal for tests)
+// MARK: - Title application (internal for tests)
 
 extension SessionHandle2 {
 
-    /// 应用 LLM 生成的 title + branch 到 handle 和 db。
+    /// 应用 LLM 生成的 title 到 handle 和 db。
     ///
-    /// - 总是先复位 `isGeneratingTitle`、写 title
-    /// - worktree 场景下用 `Worktree.renameBranch(to:)` rename 初始 branch；
-    ///   成功把最终 branch（可能带 `-N` 后缀）写回内存与 db；失败保留初始 branch
+    /// 总是复位 `isGeneratingTitle`、写 title。worktree 场景下 branch 保持
+    /// `start()` 里 provision 出的初始随机名不变（`Prompt.TitleAndBranch.branch`
+    /// 字段被丢弃）。
     ///
     /// 拆成独立方法便于测试直接驱动，无需触发真 LLM 调用。
-    func applyGeneratedTitleAndBranch(_ result: Prompt.TitleAndBranch) {
+    func applyGeneratedTitle(_ result: Prompt.TitleAndBranch) {
         isGeneratingTitle = false
         title = result.titleI18n
         repository.updateTitle(sessionId, title: result.titleI18n)
-
-        guard isWorktree,
-              !result.branch.isEmpty,
-              let wtPath = cwd,
-              let initial = worktreeBranch
-        else {
-            appLog(.info, "SessionHandle2", "title-gen done \(sessionId) title=\(result.titleI18n)")
-            return
-        }
-
-        let wt = Worktree(
-            path: wtPath,
-            name: initial,
-            baseRepo: originPath ?? "",
-            sourceBranch: nil
-        )
-        switch wt.renameBranch(to: result.branch) {
-        case .success(let finalBranch):
-            worktreeBranch = finalBranch
-            repository.updateWorktreeBranch(sessionId, branch: finalBranch)
-            appLog(.info, "SessionHandle2", "title-gen branch renamed \(sessionId) \(initial) → \(finalBranch)")
-        case .failure(let err):
-            appLog(.warning, "SessionHandle2", "title-gen rename failed \(sessionId): \(err)")
-            // 保留 initial，不改 db
-        }
+        appLog(.info, "SessionHandle2", "title-gen done \(sessionId) title=\(result.titleI18n)")
     }
 }
 
@@ -204,7 +180,7 @@ private extension SessionHandle2 {
                     self.isGeneratingTitle = false
                     return
                 }
-                self.applyGeneratedTitleAndBranch(r)
+                self.applyGeneratedTitle(r)
             }
         }
     }

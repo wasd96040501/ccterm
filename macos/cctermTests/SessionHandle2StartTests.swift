@@ -151,25 +151,45 @@ final class SessionHandle2StartTests: XCTestCase {
         let repo = makeRepo()
         let handle = makeSyncHandle(id: "not-started-send", in: repo)
 
-        handle.send(.text("hello world"))
+        handle.send(text: "hello world")
 
         XCTAssertEqual(handle.messages.count, 1)
         XCTAssertEqual(handle.messages.first?.delivery, .queued)
-        if case .user(let u) = handle.messages.first?.message,
-           case .string(let s)? = u.message?.content {
-            XCTAssertEqual(s, "hello world")
+        if case .single(let s) = handle.messages.first,
+           case .localUser(let input) = s.payload {
+            XCTAssertEqual(input.text, "hello world")
+            XCTAssertNil(input.image)
         } else {
-            XCTFail("expected .user message with string content")
+            XCTFail("expected .localUser payload")
         }
+    }
+
+    func test_send_image_queuesLocalUserWithImagePayload() {
+        let repo = makeRepo()
+        let handle = makeSyncHandle(id: "image-queue", in: repo)
+
+        let data = Data([0x89, 0x50, 0x4E, 0x47])
+        handle.send(image: data, mediaType: "image/png", caption: "look")
+
+        XCTAssertEqual(handle.messages.count, 1)
+        XCTAssertEqual(handle.messages.first?.delivery, .queued)
+        guard case .single(let s) = handle.messages.first,
+              case .localUser(let input) = s.payload else {
+            XCTFail("expected .localUser payload"); return
+        }
+        XCTAssertEqual(input.text, "look")
+        XCTAssertEqual(input.image?.data, data)
+        XCTAssertEqual(input.image?.mediaType, "image/png")
+        XCTAssertNil(input.planContent)
     }
 
     func test_send_multiple_allQueued_whenNotStarted() {
         let repo = makeRepo()
         let handle = makeSyncHandle(id: "multi-queued", in: repo)
 
-        handle.send(.text("a"))
-        handle.send(.text("b"))
-        handle.send(.text("c"))
+        handle.send(text: "a")
+        handle.send(text: "b")
+        handle.send(text: "c")
 
         XCTAssertEqual(handle.messages.count, 3)
         XCTAssertTrue(handle.messages.allSatisfy { $0.delivery == .queued })
@@ -180,7 +200,7 @@ final class SessionHandle2StartTests: XCTestCase {
         let handle = makeSyncHandle(id: "stopped-send", in: repo)
         handle.status = .stopped
 
-        handle.send(.text("during stopped"))
+        handle.send(text: "during stopped")
 
         XCTAssertEqual(handle.messages.count, 1)
         XCTAssertEqual(handle.messages.first?.delivery, .queued)
@@ -195,7 +215,7 @@ final class SessionHandle2StartTests: XCTestCase {
         let handle = makeSyncHandle(id: "idle-no-session", in: repo)
         handle.status = .idle
 
-        handle.send(.text("nowhere to go"))
+        handle.send(text: "nowhere to go")
 
         XCTAssertEqual(handle.messages.count, 1)
         XCTAssertEqual(handle.messages.first?.delivery, .queued)
@@ -208,7 +228,7 @@ final class SessionHandle2StartTests: XCTestCase {
         let handle = makeSyncHandle(id: "auto-activate", in: repo)
         handle.cwd = "/tmp/auto"
 
-        handle.send(.text("auto start me"))
+        handle.send(text: "auto start me")
 
         XCTAssertEqual(handle.status, .starting)
         XCTAssertEqual(handle.messages.count, 1)
@@ -227,7 +247,7 @@ final class SessionHandle2StartTests: XCTestCase {
         handle.cwd = "/tmp/echo"
         handle.status = .idle  // 模拟 bootstrap 已完成
 
-        handle.send(.text("hello"))
+        handle.send(text: "hello")
         let entryId = handle.messages[0].id
         XCTAssertEqual(handle.messages[0].delivery, .queued)
 
@@ -237,6 +257,11 @@ final class SessionHandle2StartTests: XCTestCase {
         XCTAssertEqual(handle.messages.count, 1, "不应 append 新 entry，本地原位更新")
         XCTAssertEqual(handle.messages[0].delivery, .confirmed)
         XCTAssertEqual(handle.status, .responding, "echo 到达应推进到 .responding")
+        // payload 应从 .localUser 切换到 .remote(echo)
+        guard case .single(let s) = handle.messages[0],
+              case .remote(.user(_)) = s.payload else {
+            XCTFail("expected payload swapped to .remote(.user(echo))"); return
+        }
     }
 
     func test_receive_echoWithUnknownUuid_appendsNewEntry() {
@@ -259,7 +284,7 @@ final class SessionHandle2StartTests: XCTestCase {
         let handle = makeSyncHandle(id: "echo-replay", in: repo)
         handle.status = .idle
 
-        handle.send(.text("hi"))
+        handle.send(text: "hi")
         let entryId = handle.messages[0].id
 
         let echo = userEchoMessage(uuidString: entryId.uuidString.lowercased(), text: "hi")
@@ -286,7 +311,7 @@ final class SessionHandle2StartTests: XCTestCase {
         handle.isWorktree = true
         handle.originPath = notRepo
 
-        handle.send(.text("will fail"))
+        handle.send(text: "will fail")
 
         XCTAssertEqual(handle.status, .stopped)
         XCTAssertEqual(handle.messages.count, 1)
@@ -447,9 +472,9 @@ final class SessionHandle2StartTests: XCTestCase {
         let handle = SessionHandle2(sessionId: sessionId, repository: repo)
         handle.cwd = FileManager.default.temporaryDirectory.path
 
-        // send 自动触发 ensureStarted，CLI bootstrap 后 drainQueuedEntries 写 stdin，
+        // send 自动触发 ensureStarted，CLI bootstrap 后 flushBootstrapBacklog 写 stdin，
         // CLI echo user 消息带同 uuid → entry.delivery 切 .confirmed。
-        handle.send(.text("Reply with exactly: PONG"))
+        handle.send(text: "Reply with exactly: PONG")
         XCTAssertEqual(handle.messages.count, 1)
         XCTAssertEqual(handle.messages.first?.delivery, .queued)
         XCTAssertEqual(handle.status, .starting, "send 应自动 ensureStarted")
@@ -459,6 +484,49 @@ final class SessionHandle2StartTests: XCTestCase {
         let entry = handle.messages.first
         XCTAssertNotNil(entry)
         XCTAssertEqual(entry?.delivery, .confirmed, "收到 CLI echo 后应 .confirmed")
+
+        handle.stop()
+    }
+
+    /// 端到端：image send → CLI 走 contentBlocks 重载 → echo 回来 payload 切 .remote 且
+    /// content 里保留 image block。覆盖 `send(image:)` + `writeUserEntryToCLI` 的 array
+    /// 分支 + `confirmQueuedEntry` 的 payload 替换。
+    func test_integration_sendImage_viaContentBlocks_confirmsViaEcho() async throws {
+        if ProcessInfo.processInfo.environment["SKIP_CLI_TESTS"] != nil {
+            throw XCTSkip("SKIP_CLI_TESTS set")
+        }
+
+        // 1x1 红色 PNG，足以走通 CLI replay；是否调模型成功不影响本测试关注的 wire 路径。
+        let pngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNi+P//PwAFBQIAX8jx0gAAAABJRU5ErkJggg=="
+        guard let pngData = Data(base64Encoded: pngBase64) else {
+            XCTFail("failed to decode test PNG"); return
+        }
+
+        let repo = makeRepo()
+        let sessionId = UUID().uuidString
+        let handle = SessionHandle2(sessionId: sessionId, repository: repo)
+        handle.cwd = FileManager.default.temporaryDirectory.path
+
+        handle.send(image: pngData, mediaType: "image/png", caption: "desc")
+        let entryId = handle.messages.first?.id
+        XCTAssertNotNil(entryId)
+        XCTAssertEqual(handle.messages.first?.delivery, .queued)
+
+        try await waitForEntryLeavesQueued(handle, timeout: 25)
+
+        guard case .single(let single) = handle.messages.first else {
+            XCTFail("expected single entry"); return
+        }
+        XCTAssertEqual(single.delivery, .confirmed, "echo 到达后应 .confirmed")
+        guard case .remote(.user(let u)) = single.payload else {
+            XCTFail("payload should be .remote(.user(echo)) after confirm"); return
+        }
+        // echo 保留 array content，且有一个 image block。
+        guard case .array(let items)? = u.message?.content else {
+            XCTFail("echo content should be array, got: \(String(describing: u.message?.content))"); return
+        }
+        let hasImage = items.contains { if case .image = $0 { return true } else { return false } }
+        XCTAssertTrue(hasImage, "echo content array 应含 image block")
 
         handle.stop()
     }

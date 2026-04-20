@@ -35,29 +35,49 @@ extension SessionHandle2 {
 
 extension SessionHandle2 {
 
-    /// 唯一发送入口。语义：
-    /// 1. 立即 append 一条 `.queued` user `MessageEntry`（UI 即时看到）。
+    /// 发送文本消息。语义见 `enqueueAndSend(_:)`。
+    /// `planContent` 透传给 CLI 的 `plan_content` 字段（ExitPlanMode 场景）。
+    func send(text: String, planContent: String? = nil) {
+        enqueueAndSend(LocalUserInput(text: text, image: nil, planContent: planContent))
+    }
+
+    /// 发送图片消息。`caption` 作为文字伴随 block（默认 "[image]"），image
+    /// 以 base64 打包进 content array。语义见 `enqueueAndSend(_:)`。
+    func send(image data: Data, mediaType: String, caption: String? = nil) {
+        enqueueAndSend(LocalUserInput(
+            text: caption,
+            image: (data: data, mediaType: mediaType),
+            planContent: nil
+        ))
+    }
+
+    /// 统一发送路径：
+    /// 1. 立即 append 一条 `.queued` `.localUser(input)` `SingleEntry`（UI 即时看到）。
     /// 2. 如果 session 尚未启动/已停止，自动触发 `ensureStarted()`。
-    /// 3. 如果 CLI 已 attach（`agentSession != nil`），立即把文本写到 stdin；
+    /// 3. 如果 CLI 已 attach（`agentSession != nil`），立即把消息写到 stdin；
     ///    CLI 侧自己排队，不在 Swift 侧做 flush gating。
     /// 4. CLI 吃到消息后会 echo 回一条带同 uuid 的 user 消息，`receive` 按 uuid
-    ///    匹配这个 entry 切换到 `.confirmed`。
+    ///    命中本条 entry 并把 payload 替换成 `.remote(echo)`、delivery 切 `.confirmed`。
     ///
     /// entry.id 作为 `uuid` 字段随消息发给 CLI（`--replay-user-messages` 确保
-    /// CLI 原样回显），用于精确匹配。无 id 关联则只能 content 文本启发式，
-    /// 那是不可靠的。
+    /// CLI 原样回显），用于精确匹配。
     ///
     /// title 生成是正交能力——调用方（fresh + 首条文本场景）显式调 `generateTitle(from:)`。
-    func send(_ message: SessionMessage) {
-        let single = makeQueuedSingle(for: message)
+    private func enqueueAndSend(_ input: LocalUserInput) {
+        let single = SingleEntry(
+            id: UUID(),
+            payload: .localUser(input),
+            delivery: .queued,
+            toolResults: [:]
+        )
         messages.append(.single(single))
 
         ensureStarted()
 
         if let session = agentSession {
-            writeSingleToCLI(single, session: session)
+            writeUserEntryToCLI(single, session: session)
         }
-        // 否则 bootstrap 成功后 `drainQueuedEntries` 会把它写到 CLI。
+        // 否则 bootstrap 成功后 `flushBootstrapBacklog` 会把它写到 CLI。
     }
 }
 
@@ -142,15 +162,16 @@ extension SessionHandle2 {
         }
     }
 
-    /// 把所有 `.queued` user entry 写到 CLI。仅在 bootstrap 刚成功、`agentSession`
-    /// 就绪那一刻调用一次。此后的 `send(_:)` 走"立即写 CLI"的快路径。
-    ///
-    /// user 消息永远是 `.single`（不参与 grouping），所以只扫 `.single`。
-    func drainQueuedEntries() {
+    /// 把所有 `.queued` `.localUser` entry 写到 CLI。仅在 bootstrap 刚成功、
+    /// `agentSession` 就绪那一刻调用一次。此后的 `send(_:)` 走"立即写 CLI"
+    /// 的快路径。user 消息永远是 `.single`（不参与 grouping），所以只扫 `.single`。
+    func flushBootstrapBacklog() {
         guard let session = agentSession else { return }
         for entry in messages {
-            guard case .single(let single) = entry, single.delivery == .queued else { continue }
-            writeSingleToCLI(single, session: session)
+            guard case .single(let single) = entry,
+                  single.delivery == .queued,
+                  case .localUser = single.payload else { continue }
+            writeUserEntryToCLI(single, session: session)
         }
     }
 
@@ -308,7 +329,7 @@ private extension SessionHandle2 {
         if fresh {
             repository.updateStatus(sessionId, to: .created)
         }
-        drainQueuedEntries()
+        flushBootstrapBacklog()
         appLog(.info, "SessionHandle2", "bootstrap done \(sessionId) fresh=\(fresh)")
     }
 
@@ -393,63 +414,40 @@ private extension SessionHandle2 {
         repository.updateError(sessionId, error: desc)
     }
 
-    // MARK: Message construction
+    // MARK: Outgoing wire
 
-    /// 把下游 `SessionMessage` 打包成一条 `.queued` user `SingleEntry`。
-    /// entry.id 同时作为随消息发给 CLI 的 `uuid` 字段（CLI echo 时按此匹配）。
-    func makeQueuedSingle(for message: SessionMessage) -> SingleEntry {
-        let entryId = UUID()
-        let uuidString = entryId.uuidString.lowercased()
-        let raw: [String: Any]
-        switch message {
-        case .text(let text, let extra):
-            var dict: [String: Any] = [
-                "type": "user",
-                "message": [
-                    "role": "user",
-                    "content": text,
-                ],
-                "session_id": sessionId,
-                "uuid": uuidString,
-            ]
-            if let plan = extra?.planContent {
-                dict["plan_content"] = plan
-            }
-            raw = dict
-        case .image:
-            raw = [
-                "type": "user",
-                "message": [
-                    "role": "user",
-                    "content": "[image]",
-                ],
-                "session_id": sessionId,
-                "uuid": uuidString,
-            ]
+    /// 把一条 `.localUser` SingleEntry 写到 CLI stdin。`.remote` 或非 user entry
+    /// 直接忽略——只有本地尚未 echo 的 entry 才有 outgoing 职责。
+    ///
+    /// - text-only：走 string-content 的 `sendMessage(_:extra:)`。
+    /// - 带 image：构造 text + image(base64) 的 content array，走
+    ///   `sendMessage(contentBlocks:extra:)`。
+    ///
+    /// `entry.id` 作为 `uuid` extra 伴随发出，CLI 在 `--replay-user-messages`
+    /// 开启下原样回显，用于 `confirmQueuedEntry` 的精确匹配。
+    func writeUserEntryToCLI(_ entry: SingleEntry, session: AgentSDK.Session) {
+        guard case .localUser(let input) = entry.payload else { return }
+        var extra: [String: Any] = ["uuid": entry.id.uuidString.lowercased()]
+        if let plan = input.planContent {
+            extra["plan_content"] = plan
         }
-        let msg = (try? Message2(json: raw)) ?? Message2.unknown(name: "user", raw: raw)
-        return SingleEntry(id: entryId, message: msg, delivery: .queued, toolResults: [:])
-    }
 
-    func writeSingleToCLI(_ entry: SingleEntry, session: AgentSDK.Session) {
-        guard let text = textFromEntry(entry) else { return }
-        session.sendMessage(text, extra: ["uuid": entry.id.uuidString.lowercased()])
-    }
-
-    func textFromEntry(_ entry: SingleEntry) -> String? {
-        guard case .user(let u) = entry.message,
-              let content = u.message?.content else { return nil }
-        switch content {
-        case .string(let s):
-            return s
-        case .array(let items):
-            let parts = items.compactMap { item -> String? in
-                if case .text(let t) = item { return t.text }
-                return nil
+        if let (data, mediaType) = input.image {
+            var blocks: [[String: Any]] = []
+            if let text = input.text, !text.isEmpty {
+                blocks.append(["type": "text", "text": text])
             }
-            return parts.joined(separator: "\n")
-        case .other:
-            return nil
+            blocks.append([
+                "type": "image",
+                "source": [
+                    "type": "base64",
+                    "media_type": mediaType,
+                    "data": data.base64EncodedString(),
+                ],
+            ])
+            session.sendMessage(contentBlocks: blocks, extra: extra)
+        } else {
+            session.sendMessage(input.text ?? "", extra: extra)
         }
     }
 }

@@ -16,7 +16,8 @@ extension SessionHandle2 {
 
     /// 单一 ingest 入口。吞一条 Message2 并更新 handle：
     /// - 同步副作用（usage、contextWindow、cwd、slashCommands、permissionMode、lifecycle）
-    /// - user echo 带 uuid 命中本地 `.queued` entry → 切 `.confirmed`，并推进 status
+    /// - user echo 带 uuid 命中本地 `.queued` entry → 切 `.confirmed` 并把 payload
+    ///   从 `.localUser` 替换为 `.remote(echo)`，推进 status
     /// - tool_result 原位合并到对应 assistant single（可能位于 group 内部）
     /// - 其它可见消息按「可分组」规则 append 到 timeline
     ///
@@ -31,7 +32,7 @@ extension SessionHandle2 {
 
         switch action(for: message) {
         case .merge(let id, let result): attachToolResult(result, to: id)
-        case .confirm(let id): confirmQueuedEntry(id: id, mode: mode)
+        case .confirm(let id, let echo): confirmQueuedEntry(id: id, echo: echo, mode: mode)
         case .append: appendToTimeline(message, mode: mode)
         case .skip: break
         }
@@ -44,8 +45,9 @@ private extension SessionHandle2 {
 
     enum Action {
         case merge(toolUseId: String, result: ItemToolResult)
-        /// 本地 `.queued` entry 命中 CLI echo（按 uuid 匹配），切 `.confirmed`。
-        case confirm(entryId: UUID)
+        /// 本地 `.queued` entry 命中 CLI echo（按 uuid 匹配），切 `.confirmed` 且
+        /// payload 从 `.localUser` 替换为 `.remote(echo)`。
+        case confirm(entryId: UUID, echo: Message2)
         case append
         case skip
     }
@@ -57,7 +59,7 @@ private extension SessionHandle2 {
                 return .merge(toolUseId: id, result: r)
             }
             if u.isVisible, let entryId = matchQueuedEntry(for: u) {
-                return .confirm(entryId: entryId)
+                return .confirm(entryId: entryId, echo: message)
             }
             return u.isVisible ? .append : .skip
         case .assistant(let a):
@@ -84,7 +86,7 @@ private extension SessionHandle2 {
 private extension SessionHandle2 {
 
     func appendToTimeline(_ message: Message2, mode: ReceiveMode) {
-        let single = SingleEntry(id: UUID(), message: message, delivery: nil, toolResults: [:])
+        let single = SingleEntry(id: UUID(), payload: .remote(message), delivery: nil, toolResults: [:])
 
         if message.isGroupableAssistant {
             // 可分组：last 是 group → 追加到 items；否则开新 group。
@@ -122,11 +124,15 @@ private extension SessionHandle2 {
         }
     }
 
-    /// CLI 开始处理一条先前 `send()` 的消息：原位更新 delivery，并把 status
-    /// 推进到 `.responding`（仅 live）。用本地 entry 继续展示，不重复 append。
-    func confirmQueuedEntry(id: UUID, mode: ReceiveMode) {
+    /// CLI 开始处理一条先前 `send()` 的消息：把 payload 从 `.localUser` 换成
+    /// `.remote(echo)`、delivery 切 `.confirmed`，并把 status 推进到 `.responding`
+    /// （仅 live）。用本地 entry 继续展示，不重复 append。
+    func confirmQueuedEntry(id: UUID, echo: Message2, mode: ReceiveMode) {
         guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
-        messages[idx].delivery = .confirmed
+        guard case .single(var single) = messages[idx] else { return }
+        single.payload = .remote(echo)
+        single.delivery = .confirmed
+        messages[idx] = .single(single)
         if mode == .live, status == .idle {
             status = .responding
         }

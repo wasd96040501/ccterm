@@ -41,8 +41,17 @@ extension SessionHandle2 {
     /// 需要 CLI 支持，目前没有。
     func cancelMessage(id: UUID) {
         guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
-        guard case .user = messages[idx].message else { return }
-        switch messages[idx].delivery {
+        guard case .single(let single) = messages[idx] else { return }
+        let isUserEntry: Bool = {
+            switch single.payload {
+            case .localUser: return true
+            case .remote(let m):
+                if case .user = m { return true }
+                return false
+            }
+        }()
+        guard isUserEntry else { return }
+        switch single.delivery {
         case .queued, .failed:
             messages.remove(at: idx)
         default:

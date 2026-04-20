@@ -225,11 +225,21 @@ public final class Session {
 
     // MARK: - Send User Message
 
-    /// 发送用户消息。
+    /// 发送 string content 的用户消息。
     public func sendMessage(_ text: String, extra: [String: Any] = [:]) {
+        sendUserJSON(content: text, extra: extra)
+    }
+
+    /// 发送 array content 的用户消息（text / image 等混合 block）。
+    /// 每个 block 为 raw dict，如 `["type": "image", "source": ["type": "base64", ...]]`。
+    public func sendMessage(contentBlocks: [[String: Any]], extra: [String: Any] = [:]) {
+        sendUserJSON(content: contentBlocks, extra: extra)
+    }
+
+    private func sendUserJSON(content: Any, extra: [String: Any]) {
         var json: [String: Any] = [
             "type": "user",
-            "message": ["role": "user", "content": text],
+            "message": ["role": "user", "content": content],
         ]
         if let sessionId = lastKnownSessionId {
             json["session_id"] = sessionId

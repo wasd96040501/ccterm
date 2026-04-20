@@ -28,9 +28,10 @@ enum MessageEntry: Identifiable {
         }
     }
 
-    /// Convenience forwarder to the inner `.single` payload. `nil` for `.group`.
+    /// Convenience forwarder to the inner `.single`'s remote Message2.
+    /// Returns `nil` for `.group` and for local (not-yet-echoed) user entries.
     var message: Message2? {
-        if case .single(let e) = self { return e.message }
+        if case .single(let e) = self { return e.remoteMessage }
         return nil
     }
 
@@ -53,16 +54,43 @@ enum MessageEntry: Identifiable {
 
 struct SingleEntry: Identifiable {
     let id: UUID
-    let message: Message2
+    var payload: Payload
     var delivery: DeliveryState?
     var toolResults: [String: ItemToolResult]
+
+    /// Payload 有两种形态：
+    /// - `.localUser`：`send(text:)` / `send(image:)` 刚 append 的条目，尚未收到 CLI echo。
+    ///   保留原始 text / image / planContent，write 到 CLI 时直接用，无需解析 `Message2`。
+    /// - `.remote`：来自 CLI（或 JSONL 回放）的已解析 `Message2`。user echo 到达时，
+    ///   `.localUser` 会被替换成 `.remote`；assistant / tool_result 始终是 `.remote`。
+    enum Payload {
+        case localUser(LocalUserInput)
+        case remote(Message2)
+    }
+}
+
+/// 本地发给 CLI 的用户消息快照。`send(_:)` 入口保留的原始输入，
+/// `writeUserEntryToCLI` 直接读这里的字段，无需往 `Message2` 里塞再扒出来。
+struct LocalUserInput {
+    var text: String?
+    var image: (data: Data, mediaType: String)?
+    var planContent: String?
 }
 
 extension SingleEntry {
+    /// 等价于旧 `message` 字段：仅 `.remote` 时非空。
+    var remoteMessage: Message2? {
+        if case .remote(let m) = payload { return m }
+        return nil
+    }
+
+    /// 旧 API 兼容：尽量返回一个 Message2。`.localUser` 没有，返回 nil。
+    var message: Message2? { remoteMessage }
+
     /// All `toolUse` blocks inside an assistant single, in order. Empty for
     /// user / non-assistant / non-tool_use messages.
     var toolUses: [ToolUse] {
-        guard case .assistant(let a) = message,
+        guard case .assistant(let a) = remoteMessage,
               let blocks = a.message?.content else { return [] }
         return blocks.compactMap { block in
             if case .toolUse(let t) = block { return t }

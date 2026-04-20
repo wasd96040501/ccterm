@@ -285,7 +285,7 @@ final class SessionHandle2ReceiveTests: XCTestCase {
     // MARK: - Message factories
 
     private func singleAssistant(_ m: Message2) -> SingleEntry {
-        SingleEntry(id: UUID(), message: m, delivery: nil, toolResults: [:])
+        SingleEntry(id: UUID(), payload: .remote(m), delivery: nil, toolResults: [:])
     }
 
     private func makeToolUse(name: String, id: String, input: [String: Any]) -> Message2 {

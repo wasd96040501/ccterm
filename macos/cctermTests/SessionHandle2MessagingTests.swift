@@ -21,7 +21,7 @@ final class SessionHandle2MessagingTests: XCTestCase {
     /// 构造一条 `.queued` user MessageEntry 并 append。返回 entry id。
     @discardableResult
     private func appendQueuedUser(_ handle: SessionHandle2, text: String) -> UUID {
-        handle.send(.text(text))
+        handle.send(text: text)
         return handle.messages.last!.id
     }
 
@@ -34,7 +34,7 @@ final class SessionHandle2MessagingTests: XCTestCase {
             ],
         ]
         let msg = (try? Message2(json: json)) ?? Message2.unknown(name: "assistant", raw: json)
-        let single = SingleEntry(id: UUID(), message: msg, delivery: nil, toolResults: [:])
+        let single = SingleEntry(id: UUID(), payload: .remote(msg), delivery: nil, toolResults: [:])
         handle.messages.append(.single(single))
         return single.id
     }
@@ -106,6 +106,33 @@ final class SessionHandle2MessagingTests: XCTestCase {
         XCTAssertEqual(h.messages[0].delivery, .confirmed)
     }
 
+    func test_cancelMessage_noOpAfterEchoSwappedToRemote() {
+        // 完整路径：send → CLI echo → confirmQueuedEntry 把 payload 换成 .remote(.user)、
+        // delivery 切 .confirmed。cancelMessage 仍应 no-op（cancelable 仅 queued/failed）。
+        let h = makeHandle()
+        h.status = .idle
+        _ = appendQueuedUser(h, text: "hi")
+        let entryId = h.messages[0].id
+
+        let echoJson: [String: Any] = [
+            "type": "user",
+            "uuid": entryId.uuidString.lowercased(),
+            "message": ["role": "user", "content": "hi"],
+        ]
+        let echo = (try? Message2(json: echoJson)) ?? Message2.unknown(name: "user", raw: echoJson)
+        h.receive(echo, mode: .live)
+        XCTAssertEqual(h.messages[0].delivery, .confirmed)
+        guard case .single(let s0) = h.messages[0],
+              case .remote(.user(_)) = s0.payload else {
+            XCTFail("precondition: payload should be .remote(.user)"); return
+        }
+
+        h.cancelMessage(id: entryId)
+
+        XCTAssertEqual(h.messages.count, 1, "confirmed .remote user 不可取消")
+        XCTAssertEqual(h.messages[0].delivery, .confirmed)
+    }
+
     func test_cancelMessage_noOpForUnknownId() {
         let h = makeHandle()
         _ = appendQueuedUser(h, text: "kept")
@@ -133,9 +160,9 @@ final class SessionHandle2MessagingTests: XCTestCase {
 
         XCTAssertEqual(h.messages.count, 2)
         let texts = h.messages.compactMap { entry -> String? in
-            guard case .user(let u) = entry.message,
-                  case .string(let s)? = u.message?.content else { return nil }
-            return s
+            guard case .single(let s) = entry,
+                  case .localUser(let input) = s.payload else { return nil }
+            return input.text
         }
         XCTAssertEqual(texts, ["a", "c"])
     }

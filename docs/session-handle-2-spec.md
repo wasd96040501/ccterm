@@ -132,7 +132,7 @@ stop():
 Envelope 模式：保留 Message2 原样，外挂 runtime 信息。不做 discriminated enum。
 
 ```swift
-struct MessageEntry: Equatable, Identifiable {
+struct MessageEntry: Identifiable {
     let id: UUID                                  // 本地 UI identity，永不变
     let message: Message2                         // 原始 wire 消息（schema 生成）
     var delivery: DeliveryState?                  // 仅 user message envelope 有值
@@ -201,7 +201,7 @@ handle 只存 `cwd` + `isWorktree`。UI 需要分支 / 仓库元数据时按 `cw
 3. 新消息用原地 `messages.append(_)`，禁止 `messages = messages + [x]`（复制整数组）。
 4. Streaming 更新最后一条：`messages[lastIndex] = updated`；`MessageEntry` 是 struct，单项替换会触发 `messages` keypath 通知。
 5. 历史 replay 用 `messages.append(contentsOf: batch)` 一次性 mutation，只发一次通知。
-6. MessageEntry 所有字段都是值类型；`Equatable` by id + content hash。
+6. MessageEntry 所有字段都是值类型。
 
 ### 性能模型
 

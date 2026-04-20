@@ -190,7 +190,7 @@ private extension MessageEntry {
               let blocks = a.message?.content else { return false }
         return blocks.contains { block in
             guard case .toolUse(let t) = block else { return false }
-            return (t.toJSON() as? [String: Any])?["id"] as? String == toolUseId
+            return t.id == toolUseId
         }
     }
 }

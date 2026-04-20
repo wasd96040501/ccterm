@@ -78,11 +78,12 @@ extension Worktree {
             // 清掉已创建的空目录
             try? FileManager.default.removeItem(atPath: path)
 
-            if stderr.contains("already exists") || stderr.contains("already checked out") {
-                // Branch / path 冲突 → 重抽
+            // `already exists` = 新 branch 名 / 目录撞上，重抽 name 能解决。
+            // `already checked out` = startPoint 分支已被其它 worktree 签出，与 name
+            // 无关，重抽无效，直接抛。
+            if stderr.contains("already exists") {
                 continue
             }
-            // 其他错误直接抛
             throw Error.git(stderr: stderr, isBranchConflict: false)
         }
         throw Error.git(stderr: lastStderr, isBranchConflict: true)

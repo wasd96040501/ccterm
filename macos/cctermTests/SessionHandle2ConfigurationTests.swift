@@ -21,10 +21,10 @@ final class SessionHandle2ConfigurationTests: XCTestCase {
         return h
     }
 
-    /// 先 start() 一次把 record 落 db，再手动把 status 改回 .stopped，
-    /// 模拟 "已 start 过、当前非 active" 的状态。
+    /// 先 activate() 一次把 record 落 db，再手动把 status 改回 .stopped，
+    /// 模拟 "已 activate 过、当前非 active" 的状态。
     private func startThenStop(_ handle: SessionHandle2) {
-        handle.start()
+        handle.activate()
         handle.status = .stopped
     }
 

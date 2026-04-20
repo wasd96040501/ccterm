@@ -14,7 +14,7 @@ extension SessionHandle2 {
     }
 
     /// 当前 sessionId 是否已在 repository 中持久化。用于决定 set* 是否写 db。
-    /// 首次 start() 前 fresh 态为 false；start() 后或 resume 均为 true。
+    /// 首次 `ensureStarted()` 前 fresh 态为 false；之后或 resume 均为 true。
     private var isPersisted: Bool { repository.find(sessionId) != nil }
 }
 

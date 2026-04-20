@@ -2,7 +2,7 @@ import XCTest
 import AgentSDK
 @testable import ccterm
 
-/// Covers `SessionHandle2.start()` / `stop()` / `send(_:)` lifecycle.
+/// Covers `SessionHandle2.activate()` / `stop()` / `send(_:)` lifecycle.
 ///
 /// 同步类：用 `skipBootstrapForTesting = true` 跳过真实 CLI，只断言
 /// guard 逻辑、DB 写入路径、send queue 行为。
@@ -23,55 +23,55 @@ final class SessionHandle2StartTests: XCTestCase {
         return h
     }
 
-    // MARK: - start(): guard
+    // MARK: - activate(): guard
 
-    func test_start_ignored_whenAlreadyIdle() {
+    func test_activate_ignored_whenAlreadyIdle() {
         let repo = makeRepo()
         let handle = makeSyncHandle(id: "already-idle", in: repo)
         handle.status = .idle  // 模拟已启动
 
-        handle.start()
+        handle.activate()
 
         // 既未转 .starting 也未写 db
         XCTAssertEqual(handle.status, .idle)
         XCTAssertNil(repo.find("already-idle"))
     }
 
-    func test_start_ignored_whenResponding() {
+    func test_activate_ignored_whenResponding() {
         let repo = makeRepo()
         let handle = makeSyncHandle(id: "responding", in: repo)
         handle.status = .responding
 
-        handle.start()
+        handle.activate()
 
         XCTAssertEqual(handle.status, .responding)
         XCTAssertNil(repo.find("responding"))
     }
 
-    func test_start_ignored_whenStarting() {
+    func test_activate_ignored_whenStarting() {
         let repo = makeRepo()
         let handle = makeSyncHandle(id: "starting", in: repo)
         handle.status = .starting
 
-        handle.start()
+        handle.activate()
 
         XCTAssertEqual(handle.status, .starting)
         XCTAssertNil(repo.find("starting"))
     }
 
-    // MARK: - start(): fresh path
+    // MARK: - activate(): fresh path
 
-    func test_start_fresh_transitionsToStarting() {
+    func test_activate_fresh_transitionsToStarting() {
         let repo = makeRepo()
         let handle = makeSyncHandle(id: "fresh-trans", in: repo)
 
-        handle.start()
+        handle.activate()
 
         XCTAssertEqual(handle.status, .starting)
-        XCTAssertNil(handle.termination, "termination should be cleared on start()")
+        XCTAssertNil(handle.termination, "termination should be cleared on activate()")
     }
 
-    func test_start_fresh_savesCompleteRecord() {
+    func test_activate_fresh_savesCompleteRecord() {
         // 非 worktree 路径，避免触发 stage 2 的 git provision。worktree 的集成断言
         // 见 `test_start_isWorktree_provisionsWorktreeAndUpdatesCwd`。
         let repo = makeRepo()
@@ -88,7 +88,7 @@ final class SessionHandle2StartTests: XCTestCase {
 
         XCTAssertNil(repo.find("fresh-save"))
 
-        handle.start()
+        handle.activate()
 
         let rec = repo.find("fresh-save")
         XCTAssertNotNil(rec)
@@ -104,9 +104,9 @@ final class SessionHandle2StartTests: XCTestCase {
         XCTAssertEqual(rec?.status, .pending, "pending 直到 bootstrap 成功后改 .created")
     }
 
-    // MARK: - start(): resume path
+    // MARK: - activate(): resume path
 
-    func test_start_resume_overwritesCwdAndExtra() {
+    func test_activate_resume_overwritesCwdAndExtra() {
         let repo = makeRepo()
         let oldExtra = SessionExtra(
             pluginDirs: ["/old/plug"],
@@ -133,7 +133,7 @@ final class SessionHandle2StartTests: XCTestCase {
         handle.additionalDirectories = ["/new/add"]
         handle.pluginDirectories = ["/new/plug"]
 
-        handle.start()
+        handle.activate()
 
         let rec = repo.find("resume")
         XCTAssertEqual(rec?.cwd, "/new/cwd")
@@ -186,9 +186,11 @@ final class SessionHandle2StartTests: XCTestCase {
         XCTAssertEqual(handle.messages.first?.delivery, .queued)
     }
 
-    func test_send_whenIdleButNoAgentSession_doesNotFlush() {
+    func test_send_whenIdleButNoAgentSession_staysQueuedAndIdle() {
         // 罕见边界：skipBootstrap 下 status 手动改 .idle，但 agentSession 仍 nil。
-        // flushQueueIfNeeded 必须 guard 住，delivery 保持 .queued，不崩。
+        // send 走 ensureStarted（guard 掉 .idle，no-op），agentSession 为 nil → 不写 CLI，
+        // entry 保持 .queued，status 不动。真正的 .responding 必须等 CLI echo 命中
+        // matchQueuedEntry 才触发。
         let repo = makeRepo()
         let handle = makeSyncHandle(id: "idle-no-session", in: repo)
         handle.status = .idle
@@ -197,7 +199,117 @@ final class SessionHandle2StartTests: XCTestCase {
 
         XCTAssertEqual(handle.messages.count, 1)
         XCTAssertEqual(handle.messages.first?.delivery, .queued)
-        XCTAssertEqual(handle.status, .idle, "没 flush 就别改 .responding")
+        XCTAssertEqual(handle.status, .idle, "没 CLI echo 就别改 .responding")
+    }
+
+    func test_send_whenNotStarted_autoActivates() {
+        // send 自动调用 ensureStarted：fresh 下写 db + status .starting。
+        let repo = makeRepo()
+        let handle = makeSyncHandle(id: "auto-activate", in: repo)
+        handle.cwd = "/tmp/auto"
+
+        handle.send(.text("auto start me"))
+
+        XCTAssertEqual(handle.status, .starting)
+        XCTAssertEqual(handle.messages.count, 1)
+        XCTAssertEqual(handle.messages.first?.delivery, .queued)
+        XCTAssertNotNil(repo.find("auto-activate"), "ensureStarted 会 persistConfiguration")
+    }
+
+    // MARK: - CLI echo → .confirmed (feed fake Message2)
+
+    /// 核心新逻辑：receive 收到同 uuid 的 user echo 时，本地 .queued entry 切 .confirmed，
+    /// 且 status .idle → .responding（仅 live）。用 fake Message2 直接喂 receive，
+    /// 不起 CLI，毫秒级验证。
+    func test_receive_echoMatchesQueuedEntry_flipsToConfirmedAndResponding() {
+        let repo = makeRepo()
+        let handle = makeSyncHandle(id: "echo-match", in: repo)
+        handle.cwd = "/tmp/echo"
+        handle.status = .idle  // 模拟 bootstrap 已完成
+
+        handle.send(.text("hello"))
+        let entryId = handle.messages[0].id
+        XCTAssertEqual(handle.messages[0].delivery, .queued)
+
+        let echo = userEchoMessage(uuidString: entryId.uuidString.lowercased(), text: "hello")
+        handle.receive(echo, mode: .live)
+
+        XCTAssertEqual(handle.messages.count, 1, "不应 append 新 entry，本地原位更新")
+        XCTAssertEqual(handle.messages[0].delivery, .confirmed)
+        XCTAssertEqual(handle.status, .responding, "echo 到达应推进到 .responding")
+    }
+
+    func test_receive_echoWithUnknownUuid_appendsNewEntry() {
+        // CLI emit 一条本地找不到 .queued 匹配的 user echo（比如 interrupt 后 CLI
+        // 仍处理队列里的消息，但本地 entry 已被 cancelMessage 移除）——走 append。
+        let repo = makeRepo()
+        let handle = makeSyncHandle(id: "echo-orphan", in: repo)
+        handle.status = .idle
+
+        let orphan = userEchoMessage(uuidString: UUID().uuidString.lowercased(), text: "orphan")
+        handle.receive(orphan, mode: .live)
+
+        XCTAssertEqual(handle.messages.count, 1, "无匹配 queued → append")
+        XCTAssertNil(handle.messages[0].delivery, "append 的 entry delivery 为 nil")
+    }
+
+    func test_receive_replayMode_doesNotAdvanceStatus() {
+        // replay 路径（加载历史）不应改 status。
+        let repo = makeRepo()
+        let handle = makeSyncHandle(id: "echo-replay", in: repo)
+        handle.status = .idle
+
+        handle.send(.text("hi"))
+        let entryId = handle.messages[0].id
+
+        let echo = userEchoMessage(uuidString: entryId.uuidString.lowercased(), text: "hi")
+        handle.receive(echo, mode: .replay)
+
+        XCTAssertEqual(handle.messages[0].delivery, .confirmed, "replay 也切 confirmed")
+        XCTAssertEqual(handle.status, .idle, "replay 不推进 status")
+    }
+
+    // MARK: - Failure paths: .queued → .failed
+
+    func test_activate_worktreeProvisionFailed_failsQueuedEntries() {
+        // send 先入队，再 activate 触发 worktree provision（originPath 不是 git repo）
+        // → status .stopped，entry delivery .failed。
+        let notRepo = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sh2-failq-\(UUID().uuidString.prefix(8))")
+            .path
+        try? FileManager.default.createDirectory(atPath: notRepo, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: notRepo) }
+
+        let repo = makeRepo()
+        let handle = SessionHandle2(sessionId: "wt-failq", repository: repo)
+        handle.skipBootstrapForTesting = true
+        handle.isWorktree = true
+        handle.originPath = notRepo
+
+        handle.send(.text("will fail"))
+
+        XCTAssertEqual(handle.status, .stopped)
+        XCTAssertEqual(handle.messages.count, 1)
+        if case .failed(let reason) = handle.messages[0].delivery {
+            XCTAssertTrue(reason.contains("worktree provision"), "failure reason: \(reason)")
+        } else {
+            XCTFail("expected .failed, got \(String(describing: handle.messages[0].delivery))")
+        }
+    }
+
+    // MARK: - Test fixtures
+
+    /// 构造一条 CLI replay-user-messages 风格的 user echo（带 uuid 字段）。
+    private func userEchoMessage(uuidString: String, text: String) -> Message2 {
+        let raw: [String: Any] = [
+            "type": "user",
+            "uuid": uuidString,
+            "message": [
+                "role": "user",
+                "content": text,
+            ],
+        ]
+        return (try? Message2(json: raw)) ?? Message2.unknown(name: "user", raw: raw)
     }
 
     // MARK: - stop(): guard
@@ -219,7 +331,7 @@ final class SessionHandle2StartTests: XCTestCase {
 
     // MARK: - Worktree integration (real git, no CLI)
 
-    func test_start_isWorktree_provisionsWorktreeAndUpdatesCwd() throws {
+    func test_activate_isWorktree_provisionsWorktreeAndUpdatesCwd() throws {
         let repo = FileManager.default.temporaryDirectory
             .appendingPathComponent("sh2-wt-\(UUID().uuidString.prefix(8))")
             .path
@@ -232,7 +344,7 @@ final class SessionHandle2StartTests: XCTestCase {
         handle.isWorktree = true
         handle.originPath = repo
 
-        handle.start()
+        handle.activate()
 
         XCTAssertEqual(handle.status, .starting, "skipBootstrap 下只完成同步部分")
         XCTAssertNotNil(handle.cwd)
@@ -260,7 +372,7 @@ final class SessionHandle2StartTests: XCTestCase {
                        "db worktreeBranch must match handle's initial name")
     }
 
-    func test_start_isWorktree_errorsWhenOriginPathNotGitRepo() throws {
+    func test_activate_isWorktree_errorsWhenOriginPathNotGitRepo() throws {
         let notRepo = FileManager.default.temporaryDirectory
             .appendingPathComponent("sh2-plain-\(UUID().uuidString.prefix(8))")
             .path
@@ -273,7 +385,7 @@ final class SessionHandle2StartTests: XCTestCase {
         handle.isWorktree = true
         handle.originPath = notRepo
 
-        handle.start()
+        handle.activate()
 
         XCTAssertEqual(handle.status, .stopped, "worktree provision 失败 → 直接 stopped")
         XCTAssertNotNil(handle.termination)
@@ -304,7 +416,7 @@ final class SessionHandle2StartTests: XCTestCase {
 
     // MARK: - Integration (real claude CLI)
 
-    func test_integration_freshStart_reachesIdle_andSetsCreatedStatus() async throws {
+    func test_integration_freshActivate_reachesIdle_andSetsCreatedStatus() async throws {
         if ProcessInfo.processInfo.environment["SKIP_CLI_TESTS"] != nil {
             throw XCTSkip("SKIP_CLI_TESTS set")
         }
@@ -314,7 +426,7 @@ final class SessionHandle2StartTests: XCTestCase {
         let handle = SessionHandle2(sessionId: sessionId, repository: repo)
         handle.cwd = FileManager.default.temporaryDirectory.path
 
-        handle.start()
+        handle.activate()
         XCTAssertEqual(handle.status, .starting)
 
         try await waitForStatus(handle, equal: .idle, timeout: 20)
@@ -325,7 +437,7 @@ final class SessionHandle2StartTests: XCTestCase {
         handle.stop()
     }
 
-    func test_integration_sendBeforeStart_flushesAfterIdle() async throws {
+    func test_integration_sendAutoActivates_andConfirmsViaEcho() async throws {
         if ProcessInfo.processInfo.environment["SKIP_CLI_TESTS"] != nil {
             throw XCTSkip("SKIP_CLI_TESTS set")
         }
@@ -335,20 +447,18 @@ final class SessionHandle2StartTests: XCTestCase {
         let handle = SessionHandle2(sessionId: sessionId, repository: repo)
         handle.cwd = FileManager.default.temporaryDirectory.path
 
-        // 先 send，后 start —— "先 send 后 start" 合法
+        // send 自动触发 ensureStarted，CLI bootstrap 后 drainQueuedEntries 写 stdin，
+        // CLI echo user 消息带同 uuid → entry.delivery 切 .confirmed。
         handle.send(.text("Reply with exactly: PONG"))
         XCTAssertEqual(handle.messages.count, 1)
         XCTAssertEqual(handle.messages.first?.delivery, .queued)
+        XCTAssertEqual(handle.status, .starting, "send 应自动 ensureStarted")
 
-        handle.start()
+        try await waitForEntryLeavesQueued(handle, timeout: 25)
 
-        // 等 bootstrap 完成 + flush 完成 + turn 结束回到 idle
-        try await waitForInFlightOrDelivered(handle, timeout: 25)
-
-        // queued 的那条应已被 flush（delivery 变化）
         let entry = handle.messages.first
         XCTAssertNotNil(entry)
-        XCTAssertNotEqual(entry?.delivery, .queued, "queued 应被 flush")
+        XCTAssertEqual(entry?.delivery, .confirmed, "收到 CLI echo 后应 .confirmed")
 
         handle.stop()
     }
@@ -371,7 +481,7 @@ final class SessionHandle2StartTests: XCTestCase {
     }
 
     /// Wait until the first message transitions out of `.queued`.
-    private func waitForInFlightOrDelivered(
+    private func waitForEntryLeavesQueued(
         _ handle: SessionHandle2,
         timeout: TimeInterval
     ) async throws {

@@ -27,7 +27,7 @@ final class SessionHandle2TitleGenTests: XCTestCase {
     func test_generateTitle_emptyMessage_doesNotFlipFlag() {
         let repo = makeRepo()
         let handle = makeHandle(id: "gen-empty", in: repo)
-        handle.start()
+        handle.activate()
 
         handle.generateTitle(from: "")
 
@@ -37,7 +37,7 @@ final class SessionHandle2TitleGenTests: XCTestCase {
     func test_generateTitle_whenAlreadyGenerating_noop() {
         let repo = makeRepo()
         let handle = makeHandle(id: "gen-busy", in: repo)
-        handle.start()
+        handle.activate()
         handle.isGeneratingTitle = true  // 模拟已有生成任务在跑
 
         // 第二次调用：guard 命中直接返回，不会再起 Task
@@ -62,7 +62,7 @@ final class SessionHandle2TitleGenTests: XCTestCase {
         handle.isWorktree = true
         handle.originPath = gitRoot
 
-        handle.start()
+        handle.activate()
 
         let initialBranch = try XCTUnwrap(handle.worktreeBranch)
         handle.isGeneratingTitle = true  // 模拟进入生成中
@@ -93,7 +93,7 @@ final class SessionHandle2TitleGenTests: XCTestCase {
         let handle = SessionHandle2(sessionId: "apply-plain", repository: sessionRepo)
         handle.skipBootstrapForTesting = true
         handle.cwd = FileManager.default.temporaryDirectory.path
-        handle.start()
+        handle.activate()
 
         handle.applyGeneratedTitle(
             .init(title: "Plain Title", titleI18n: "Plain Title", branch: "feat/ignored")
@@ -115,7 +115,7 @@ final class SessionHandle2TitleGenTests: XCTestCase {
         let handle = SessionHandle2(sessionId: "title-int", repository: repo)
         handle.skipBootstrapForTesting = true  // 不关心 CLI bootstrap，只测 title-gen
         handle.cwd = FileManager.default.temporaryDirectory.path
-        handle.start()
+        handle.activate()
 
         handle.generateTitle(from: "Fix the login page crashing when users enter an empty password")
         XCTAssertTrue(handle.isGeneratingTitle, "入口同步翻转 flag")
@@ -146,7 +146,7 @@ final class SessionHandle2TitleGenTests: XCTestCase {
         handle.isWorktree = true
         handle.originPath = repo
 
-        handle.start()
+        handle.activate()
         XCTAssertNotNil(handle.cwd, "worktree 应被 provision")
         let initialBranch = try XCTUnwrap(handle.worktreeBranch)
 

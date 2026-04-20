@@ -16,6 +16,7 @@ extension SessionHandle2 {
 
     /// 单一 ingest 入口。吞一条 Message2 并更新 handle：
     /// - 同步副作用（usage、contextWindow、cwd、slashCommands、permissionMode、lifecycle）
+    /// - user echo 带 uuid 命中本地 `.queued` entry → 切 `.confirmed`，并推进 status
     /// - tool_result 原位合并到对应 assistant entry，或按可见性追加 MessageEntry
     ///
     /// live 与 replay 走同一路径；`mode` 仅影响 lifecycle 推进与 hasUnread 触发。
@@ -29,6 +30,7 @@ extension SessionHandle2 {
 
         switch action(for: message) {
         case .merge(let id, let result): attachToolResult(result, to: id)
+        case .confirm(let id): confirmQueuedEntry(id: id, mode: mode)
         case .append: appendToTimeline(message, mode: mode)
         case .skip: break
         }
@@ -41,6 +43,8 @@ private extension SessionHandle2 {
 
     enum Action {
         case merge(toolUseId: String, result: ItemToolResult)
+        /// 本地 `.queued` entry 命中 CLI echo（按 uuid 匹配），切 `.confirmed`。
+        case confirm(entryId: UUID)
         case append
         case skip
     }
@@ -51,12 +55,26 @@ private extension SessionHandle2 {
             if let r = u.toolResultBlock, let id = r.toolUseId {
                 return .merge(toolUseId: id, result: r)
             }
+            if u.isVisible, let entryId = matchQueuedEntry(for: u) {
+                return .confirm(entryId: entryId)
+            }
             return u.isVisible ? .append : .skip
         case .assistant(let a):
             return a.isVisible ? .append : .skip
         default:
             return .skip
         }
+    }
+
+    /// 在 `messages` 里找 uuid 和该 user echo 一致、且仍 `.queued` 的 entry。
+    /// CLI 通过 `--replay-user-messages` 原样回显我们发送时塞的 uuid，因此此处
+    /// 按 entry.id ↔ echo.uuid 精确配对，不做文本启发式。
+    func matchQueuedEntry(for echo: Message2User) -> UUID? {
+        guard let raw = echo.uuid,
+              let echoId = UUID(uuidString: raw) else { return nil }
+        return messages.first { entry in
+            entry.id == echoId && entry.delivery == .queued
+        }?.id
     }
 }
 
@@ -77,6 +95,16 @@ private extension SessionHandle2 {
     func attachToolResult(_ result: ItemToolResult, to toolUseId: String) {
         guard let idx = messages.lastIndex(where: { $0.owns(toolUseId: toolUseId) }) else { return }
         messages[idx].toolResults[toolUseId] = result
+    }
+
+    /// CLI 开始处理一条先前 `send()` 的消息：原位更新 delivery，并把 status
+    /// 推进到 `.responding`（仅 live）。用本地 entry 继续展示，不重复 append。
+    func confirmQueuedEntry(id: UUID, mode: ReceiveMode) {
+        guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
+        messages[idx].delivery = .confirmed
+        if mode == .live, status == .idle {
+            status = .responding
+        }
     }
 }
 

@@ -93,25 +93,17 @@ final class SessionHandle2MessagingTests: XCTestCase {
         XCTAssertTrue(h.messages.isEmpty)
     }
 
-    func test_cancelMessage_noOpForInFlight() {
+    func test_cancelMessage_noOpForConfirmed() {
+        // .confirmed 意味着 CLI 已在处理这条消息——本地 remove 无法让 CLI 停下，
+        // 所以 cancel 必须 no-op。
         let h = makeHandle()
         _ = appendQueuedUser(h, text: "x")
-        h.messages[0].delivery = .inFlight
+        h.messages[0].delivery = .confirmed
 
         h.cancelMessage(id: h.messages[0].id)
 
-        XCTAssertEqual(h.messages.count, 1, "inFlight 不可取消")
-        XCTAssertEqual(h.messages[0].delivery, .inFlight)
-    }
-
-    func test_cancelMessage_noOpForDelivered() {
-        let h = makeHandle()
-        _ = appendQueuedUser(h, text: "x")
-        h.messages[0].delivery = .delivered
-
-        h.cancelMessage(id: h.messages[0].id)
-
-        XCTAssertEqual(h.messages.count, 1)
+        XCTAssertEqual(h.messages.count, 1, "confirmed 不可取消")
+        XCTAssertEqual(h.messages[0].delivery, .confirmed)
     }
 
     func test_cancelMessage_noOpForUnknownId() {

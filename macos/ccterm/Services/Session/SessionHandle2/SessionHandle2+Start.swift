@@ -1,64 +1,20 @@
 import Foundation
 import AgentSDK
 
-// MARK: - Lifecycle
+// MARK: - Lifecycle (public)
 
 extension SessionHandle2 {
 
-    /// 启动 CLI 子进程。**不触发 loadHistory**（两者正交）。
+    /// 显式激活 session：确保 CLI 子进程已起、initialize 完毕（拿到 slashCommands /
+    /// availableModels / contextWindow）。不会发送消息。
     ///
-    /// - `.notStarted` / `.stopped`：组装 `SessionConfiguration`（基于当前 handle 字段），
-    ///   fresh（repository 无记录）→ `repository.save` 完整 record；resume（repository
-    ///   有记录）→ 以内存为 authoritative，覆盖写 cwd / title / extra。`status` → `.starting`。
-    ///   异步 bootstrap：SDK ready → `.idle` 且 flush queued；SDK 失败 → `.stopped` +
-    ///   `termination` + `repository.updateError`。
-    /// - 其他 status：no-op。调用方不感知 fresh / resume 区别。
-    func start() {
-        guard status == .notStarted || status == .stopped else {
-            appLog(.info, "SessionHandle2", "start() ignored — status=\(status) \(sessionId)")
-            return
-        }
-        appLog(.info, "SessionHandle2", "start() begin \(sessionId)")
-
-        status = .starting
-        termination = nil
-        stderrBuffer = ""
-
-        let fresh = (repository.find(sessionId) == nil)
-
-        // stage 2: fresh + isWorktree 时先 provision worktree，同步更新 cwd +
-        // 初始 branch（adj-sci-hex）。后续 LLM rename 会改 branch，但不改 cwd。
-        // 失败直接走失败路径（status → .stopped，不走 bootstrap，也不写 db）。
-        if fresh, isWorktree {
-            do {
-                let wt = try provisionWorktreeIfNeeded()
-                cwd = wt.path
-                worktreeBranch = wt.name
-            } catch {
-                appLog(.error, "SessionHandle2", "worktree provision FAILED \(sessionId) err=\(error)")
-                termination = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-                status = .stopped
-                return
-            }
-        }
-
-        persistConfiguration(fresh: fresh)
-
-        if skipBootstrapForTesting { return }
-
-        let config = makeAgentConfig(fresh: fresh)
-        Task { @MainActor [weak self] in
-            await self?.bootstrap(configuration: config, fresh: fresh)
-        }
-    }
-
-    private func provisionWorktreeIfNeeded() throws -> Worktree {
-        guard let origin = originPath else {
-            throw Worktree.Error.notGitRepository(path: "(nil originPath)")
-        }
-        // 已 hydrate 的 worktreeBranch（如果有）用作 sourceBranch——fresh 场景常为 nil，
-        // 表示"用 baseRepo 当前 branch"；resume 不走这里。
-        return try Worktree.create(from: origin, sourceBranch: worktreeBranch)
+    /// 幂等：`.notStarted` / `.stopped` → 启动 bootstrap；其他 status 直接 no-op。
+    /// UI 打开 session 视图时调用此方法预热 CLI，让 slash 补全等元数据立即可用。
+    ///
+    /// 与 `send(_:)` 的关系：`send` 内部也会自动确保启动，所以用户如果直接发消息
+    /// 不需要显式先调 `activate()`——`activate()` 的价值在于"不发消息也要 CLI 就绪"的场景。
+    func activate() {
+        ensureStarted()
     }
 
     /// 手动停止 CLI 子进程。active 态下调 `close()`；之后由 onProcessExit 回调接管
@@ -75,50 +31,41 @@ extension SessionHandle2 {
     }
 }
 
-// MARK: - Messaging
+// MARK: - Messaging (public)
 
 extension SessionHandle2 {
 
-    /// 唯一发送入口。无条件 append 一条 user `MessageEntry`（delivery=.queued），
-    /// 若 `status == .idle` 则立即 flush；否则保留在队列，待 status 回落 `.idle` 自动发。
+    /// 唯一发送入口。语义：
+    /// 1. 立即 append 一条 `.queued` user `MessageEntry`（UI 即时看到）。
+    /// 2. 如果 session 尚未启动/已停止，自动触发 `ensureStarted()`。
+    /// 3. 如果 CLI 已 attach（`agentSession != nil`），立即把文本写到 stdin；
+    ///    CLI 侧自己排队，不在 Swift 侧做 flush gating。
+    /// 4. CLI 吃到消息后会 echo 回一条带同 uuid 的 user 消息，`receive` 按 uuid
+    ///    匹配这个 entry 切换到 `.confirmed`。
+    ///
+    /// entry.id 作为 `uuid` 字段随消息发给 CLI（`--replay-user-messages` 确保
+    /// CLI 原样回显），用于精确匹配。无 id 关联则只能 content 文本启发式，
+    /// 那是不可靠的。
     ///
     /// title 生成是正交能力——调用方（fresh + 首条文本场景）显式调 `generateTitle(from:)`。
     func send(_ message: SessionMessage) {
         let entry = makeQueuedEntry(for: message)
         messages.append(entry)
 
-        if status == .idle {
-            flushQueueIfNeeded()
+        ensureStarted()
+
+        if let session = agentSession {
+            writeEntryToCLI(entry, session: session)
         }
+        // 否则 bootstrap 成功后 `drainQueuedEntries` 会把它写到 CLI。
     }
 }
 
-// MARK: - Queue flush (internal for messaging / configuration callbacks)
+// MARK: - Title generation (public)
 
 extension SessionHandle2 {
 
-    /// 把 `.queued` 的 user entry 合并发往 CLI 并切 `.inFlight`，`status` → `.responding`。
-    /// 前置：`status == .idle` 且已 attach agentSession。否则 no-op。
-    func flushQueueIfNeeded() {
-        guard status == .idle, let session = agentSession else { return }
-        var didFlush = false
-        for i in messages.indices where messages[i].delivery == .queued {
-            guard let text = textFromEntry(messages[i]) else { continue }
-            session.sendMessage(text)
-            messages[i].delivery = .inFlight
-            didFlush = true
-        }
-        if didFlush {
-            status = .responding
-        }
-    }
-}
-
-// MARK: - Title generation (public entry + application)
-
-extension SessionHandle2 {
-
-    /// 生成 title 的唯一入口。与 `start()` 正交——fresh + 空 title 的 policy
+    /// 生成 title 的唯一入口。与 `activate()` 正交——fresh + 空 title 的 policy
     /// 由调用方（ChatRouter）决定，handle 只提供能力。
     ///
     /// 可重入：空 `firstMessage` 或 `isGeneratingTitle == true` 时 no-op，
@@ -137,7 +84,7 @@ extension SessionHandle2 {
     /// 应用 LLM 生成的 title 到 handle 和 db。
     ///
     /// 总是复位 `isGeneratingTitle`、写 title。worktree 场景下 branch 保持
-    /// `start()` 里 provision 出的初始随机名不变（`Prompt.TitleAndBranch.branch`
+    /// `ensureStarted` 里 provision 出的初始随机名不变（`Prompt.TitleAndBranch.branch`
     /// 字段被丢弃）。
     ///
     /// 拆成独立方法便于测试直接驱动，无需触发真 LLM 调用。
@@ -149,11 +96,84 @@ extension SessionHandle2 {
     }
 }
 
+// MARK: - Internal bootstrap
+
+extension SessionHandle2 {
+
+    /// 幂等启动入口。`.notStarted` / `.stopped` 下组装 configuration、provision
+    /// worktree（fresh + isWorktree）、persist config、启动 bootstrap Task；
+    /// 其他 status 直接 no-op。
+    ///
+    /// 不对外暴露——外部只通过 `activate()` 或 `send(_:)` 进入。
+    func ensureStarted() {
+        guard status == .notStarted || status == .stopped else { return }
+        appLog(.info, "SessionHandle2", "ensureStarted begin \(sessionId)")
+
+        status = .starting
+        termination = nil
+        stderrBuffer = ""
+
+        let fresh = (repository.find(sessionId) == nil)
+
+        // fresh + isWorktree 时先 provision worktree，同步更新 cwd + 初始 branch
+        // （adj-sci-hex）。后续 LLM rename 会改 branch，但不改 cwd。失败直接走
+        // 失败路径（status → .stopped，不写 db，不走 bootstrap）。
+        if fresh, isWorktree {
+            do {
+                let wt = try provisionWorktreeIfNeeded()
+                cwd = wt.path
+                worktreeBranch = wt.name
+            } catch {
+                appLog(.error, "SessionHandle2", "worktree provision FAILED \(sessionId) err=\(error)")
+                termination = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                status = .stopped
+                failQueuedEntries(reason: "worktree provision failed")
+                return
+            }
+        }
+
+        persistConfiguration(fresh: fresh)
+
+        if skipBootstrapForTesting { return }
+
+        let config = makeAgentConfig(fresh: fresh)
+        Task { @MainActor [weak self] in
+            await self?.bootstrap(configuration: config, fresh: fresh)
+        }
+    }
+
+    /// 把所有 `.queued` user entry 写到 CLI。仅在 bootstrap 刚成功、`agentSession`
+    /// 就绪那一刻调用一次。此后的 `send(_:)` 走"立即写 CLI"的快路径。
+    func drainQueuedEntries() {
+        guard let session = agentSession else { return }
+        for idx in messages.indices where messages[idx].delivery == .queued {
+            writeEntryToCLI(messages[idx], session: session)
+        }
+    }
+
+    /// 将所有当前 `.queued` 的 user entry 打成 `.failed`（bootstrap 失败 /
+    /// 进程异常退出都走这里）。已 `.confirmed` 的保持不变。
+    func failQueuedEntries(reason: String) {
+        for idx in messages.indices where messages[idx].delivery == .queued {
+            messages[idx].delivery = .failed(reason: reason)
+        }
+    }
+}
+
 // MARK: - Private impl
 
 private extension SessionHandle2 {
 
-    // MARK: - Title / branch LLM (stage 3)
+    // MARK: Worktree
+
+    func provisionWorktreeIfNeeded() throws -> Worktree {
+        guard let origin = originPath else {
+            throw Worktree.Error.notGitRepository(path: "(nil originPath)")
+        }
+        return try Worktree.create(from: origin, sourceBranch: worktreeBranch)
+    }
+
+    // MARK: Title generation
 
     func launchTitleGenerationTask(firstMessage: String) {
         let sid = sessionId
@@ -191,6 +211,8 @@ private extension SessionHandle2 {
         }
     }
 
+    // MARK: Configuration persistence
+
     func persistConfiguration(fresh: Bool) {
         if fresh {
             let record = SessionRecord(
@@ -206,7 +228,6 @@ private extension SessionHandle2 {
             repository.save(record)
             appLog(.info, "SessionHandle2", "persistConfiguration fresh save \(sessionId)")
         } else {
-            // resume：以内存为 authoritative，整体覆盖 db 涉及字段。
             if let cwd {
                 repository.updateCwd(sessionId, cwd: cwd)
             }
@@ -251,33 +272,41 @@ private extension SessionHandle2 {
         )
     }
 
+    // MARK: Bootstrap
+
     func bootstrap(configuration: SessionConfiguration, fresh: Bool) async {
         let session = AgentSDK.Session(configuration: configuration)
         session.lastKnownSessionId = sessionId
         attachCallbacks(to: session)
-        self.agentSession = session
 
         do {
             try await session.start()
-            _ = await withCheckedContinuation { (cont: CheckedContinuation<InitializeResponse?, Never>) in
-                session.initialize(promptSuggestions: true) { cont.resume(returning: $0) }
-            }
         } catch {
             appLog(.error, "SessionHandle2", "bootstrap FAILED \(sessionId) err=\(error)")
-            self.agentSession = nil
             self.termination = error.localizedDescription
             self.status = .stopped
             self.repository.updateError(sessionId, error: error.localizedDescription)
+            failQueuedEntries(reason: "bootstrap failed")
             return
+        }
+
+        // stdin 真正就绪后才暴露 agentSession，避免 send() 在 start() 完成前写入
+        // stdin（writeJSON guard 了 nil pipe，但保持不变量更清晰）。
+        self.agentSession = session
+
+        _ = await withCheckedContinuation { (cont: CheckedContinuation<InitializeResponse?, Never>) in
+            session.initialize(promptSuggestions: true) { cont.resume(returning: $0) }
         }
 
         status = .idle
         if fresh {
             repository.updateStatus(sessionId, to: .created)
         }
-        flushQueueIfNeeded()
+        drainQueuedEntries()
         appLog(.info, "SessionHandle2", "bootstrap done \(sessionId) fresh=\(fresh)")
     }
+
+    // MARK: Callbacks
 
     func attachCallbacks(to session: AgentSDK.Session) {
         session.onMessage = { [weak self] msg in
@@ -353,14 +382,18 @@ private extension SessionHandle2 {
         }
         pendingPermissions.removeAll()
 
-        for i in messages.indices where messages[i].delivery == .inFlight {
-            messages[i].delivery = .failed(reason: "session stopped")
-        }
+        failQueuedEntries(reason: "session stopped")
 
         repository.updateError(sessionId, error: desc)
     }
 
+    // MARK: Message construction
+
+    /// 把下游 `SessionMessage` 打包成一条 `.queued` user MessageEntry。
+    /// entry.id 同时作为即将发给 CLI 的 `uuid` 字段（CLI echo 时按此匹配）。
     func makeQueuedEntry(for message: SessionMessage) -> MessageEntry {
+        let entryId = UUID()
+        let uuidString = entryId.uuidString.lowercased()
         let raw: [String: Any]
         switch message {
         case .text(let text, let extra):
@@ -371,6 +404,7 @@ private extension SessionHandle2 {
                     "content": text,
                 ],
                 "session_id": sessionId,
+                "uuid": uuidString,
             ]
             if let plan = extra?.planContent {
                 dict["plan_content"] = plan
@@ -384,10 +418,16 @@ private extension SessionHandle2 {
                     "content": "[image]",
                 ],
                 "session_id": sessionId,
+                "uuid": uuidString,
             ]
         }
         let msg = (try? Message2(json: raw)) ?? Message2.unknown(name: "user", raw: raw)
-        return MessageEntry(id: UUID(), message: msg, delivery: .queued, toolResults: [:])
+        return MessageEntry(id: entryId, message: msg, delivery: .queued, toolResults: [:])
+    }
+
+    func writeEntryToCLI(_ entry: MessageEntry, session: AgentSDK.Session) {
+        guard let text = textFromEntry(entry) else { return }
+        session.sendMessage(text, extra: ["uuid": entry.id.uuidString.lowercased()])
     }
 
     func textFromEntry(_ entry: MessageEntry) -> String? {

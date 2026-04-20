@@ -7,7 +7,7 @@ import AgentSDK
 /// - parseJSONL 纯函数解析 / 错误路径
 /// - loadHistory 的 state machine（notLoaded → loading → loaded/failed）
 /// - 幂等性
-/// - 与 `start()` 正交
+/// - 与 `activate()` 正交
 @MainActor
 final class SessionHandle2HistoryTests: XCTestCase {
 
@@ -199,7 +199,7 @@ final class SessionHandle2HistoryTests: XCTestCase {
         XCTAssertEqual(h.messages.count, sentinelCount)
     }
 
-    // MARK: - Orthogonal to start()
+    // MARK: - Orthogonal to activate()
 
     func test_loadHistory_worksWhileNotStarted() async throws {
         let h = makeHandle()

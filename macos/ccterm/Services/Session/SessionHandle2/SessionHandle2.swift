@@ -40,7 +40,7 @@ class SessionHandle2 {
 
     internal(set) var title: String = ""
     internal(set) var originPath: String?
-    /// worktree 场景下的 branch 名。fresh + isWorktree 在 `start()` 成功完成那刻
+    /// worktree 场景下的 branch 名。fresh + isWorktree 在 `ensureStarted()` 成功完成那刻
     /// 置为初始随机名（`<adj>-<sci>-<hex6>`），后续不再变更。非 worktree 会话为 nil。
     internal(set) var worktreeBranch: String?
     /// true 表示正在异步生成 title。UI 据此显示 shimmer/loading。
@@ -73,13 +73,14 @@ class SessionHandle2 {
 
     // MARK: - Internal runtime
 
-    /// 已绑定的 AgentSDK 子进程。`start()` 成功 bootstrap 后赋值，进程退出/stop 时清零。
+    /// 已绑定的 AgentSDK 子进程。bootstrap 中 `session.start()` 成功后赋值，
+    /// 进程退出/stop 时清零。
     internal var agentSession: AgentSDK.Session?
 
     /// stderr 累积缓冲。进程退出时写入 `termination`。不持久化。
     @ObservationIgnored internal var stderrBuffer: String = ""
 
-    /// 测试专用 hook：置 true 时 `start()` 完成同步部分后立刻返回，不起 bootstrap Task，
+    /// 测试专用 hook：置 true 时 `ensureStarted()` 完成同步部分后立刻返回，不起 bootstrap Task，
     /// 也不动 CLI。用于纯 DB/状态断言。生产代码不得设置。
     @ObservationIgnored internal var skipBootstrapForTesting: Bool = false
 
@@ -94,14 +95,15 @@ class SessionHandle2 {
     ///   `model` / `effort` / `permissionMode` / `additionalDirectories` /
     ///   `pluginDirectories`（无记录时保持默认）。
     /// - **不加载历史消息**。`messages` 为空，`historyLoadState = .notLoaded`。
-    ///   UI 进入 session 视图时显式调 `loadHistory()`，与 `start()` 解耦。
+    ///   UI 进入 session 视图时显式调 `loadHistory()`，与 `activate()` 解耦。
     /// - `status = .notStarted`。
     ///
     /// ## DB 写入时机（跨所有方法的总纲）
     ///
     /// - `init`：**不写 db**（纯内存构造，即使 sessionId 无记录也不创建孤儿）。
     /// - `.notStarted` 下的 `set*` 配置命令：只写字段（in-memory draft），**不写 db**。
-    /// - `start()` 首次执行：把当前完整 configuration 一次性 `save` 到 db。
+    /// - 首次 `ensureStarted()`（由 `activate()` 或 `send(_:)` 触发）：把当前完整
+    ///   configuration 一次性 `save` 到 db。
     /// - 已 start 后字段变化（CLI init 回包 / non-active 下重改）：didSet 触发
     ///   `repository.updateXxx` 增量更新。
     init(sessionId: String, repository: SessionRepository) {
@@ -137,7 +139,7 @@ class SessionHandle2 {
 
     // MARK: - Lifecycle commands
 
-    // `start()` / `stop()` / `send(_:)` 实现与文档均在 `SessionHandle2+Start.swift`。
+    // `activate()` / `stop()` / `send(_:)` 实现与文档均在 `SessionHandle2+Start.swift`。
 
     /// 后台加载历史消息到 `messages`。幂等，按 `historyLoadState` 分派。
     ///
@@ -149,21 +151,21 @@ class SessionHandle2 {
     /// - `.failed`：重试——切回 `.notLoaded` 并重新触发加载。
     ///
     /// 方法本身不阻塞调用线程；UI 通过观察 `historyLoadState` 展示 spinner / 错误。
-    /// 与 `start()` 独立——stopped / notStarted session 也能查看历史。
+    /// 与 `activate()` 独立——stopped / notStarted session 也能查看历史。
     // impl in SessionHandle2+History.swift
 
     // MARK: - Messaging commands
 
     /// 中断当前模型响应。
     ///
-    /// - `.responding`：`status` → `.interrupting`；SDK ack 后 → `.idle`（并自动 flush queue）。
+    /// - `.responding`：`status` → `.interrupting`；SDK ack 后 → `.idle`。
     /// - 其他 status：no-op。
     // impl in SessionHandle2+Messaging.swift
 
     /// 取消一条尚未发出或已失败的消息。
     ///
     /// - 目标 entry 的 delivery 为 `.queued` / `.failed`：从 `messages` 数组移除。
-    /// - delivery 为 `.inFlight` / `.delivered`：no-op（已发出的不可取消，已完成的无必要）。
+    /// - delivery 为 `.confirmed`：no-op（CLI 已在处理，本地移除也无法让 CLI 停下）。
     /// - id 不存在或不是 user entry：no-op。
     // impl in SessionHandle2+Messaging.swift
 
@@ -171,7 +173,7 @@ class SessionHandle2 {
 
     /// 变更 model。**乐观写入**语义：
     ///
-    /// - `.notStarted` / `.stopped`（non-active）：仅改内存，下次 `start()` 作为启动参数。
+    /// - `.notStarted` / `.stopped`（non-active）：仅改内存，下次 `ensureStarted` 作为启动参数。
     /// - attached（`.idle` / `.responding` / `.interrupting` / `.starting`）：
     ///   1. **立刻改内存**（UI 即时反馈，避免 RPC 往返的 100-300ms 停顿）
     ///   2. 并发发 RPC 通知 CLI 切换

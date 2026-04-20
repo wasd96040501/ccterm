@@ -18,7 +18,7 @@ extension SessionHandle2 {
     }
 
     /// 本 session 的历史 JSONL URL。export 优先；不存在则回落到 live；再不存在则 nil。
-    /// slug 需要 repository 里的 cwd，所以 start() 之前 resume 也能拿到。
+    /// slug 需要 repository 里的 cwd，所以 `activate()` 之前 resume 也能拿到。
     var historyJSONLURL: URL? {
         let export = Self.exportRoot.appendingPathComponent("\(sessionId).jsonl")
         if FileManager.default.fileExists(atPath: export.path) { return export }
@@ -37,7 +37,7 @@ extension SessionHandle2 {
 
     /// 后台加载历史消息 → 回主线程逐条喂 `receive(_:mode:.replay)`。
     /// 幂等：`.loading` / `.loaded` 直接返回；`.failed` 视为重试。
-    /// 与 `start()` 完全正交——stopped / notStarted session 也能查看历史。
+    /// 与 `activate()` 完全正交——stopped / notStarted session 也能查看历史。
     ///
     /// - Parameter url: 可选路径覆盖，仅测试使用；生产代码调 `loadHistory()` 走默认解析。
     func loadHistory(overrideURL url: URL? = nil) {

@@ -16,7 +16,11 @@ struct AskUserQuestionBlock: View {
     }
 
     var body: some View {
-        ToolBlock(status: status, isExpanded: $isExpanded) {
+        ToolBlock(
+            status: status,
+            isExpanded: $isExpanded,
+            hasExpandableContent: !items.isEmpty
+        ) {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(items) { item in
                     QARow(item: item)

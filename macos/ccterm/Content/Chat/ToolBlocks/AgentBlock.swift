@@ -21,7 +21,11 @@ struct AgentBlock: View {
     }
 
     var body: some View {
-        ToolBlock(status: status, isExpanded: $isExpanded) {
+        ToolBlock(
+            status: status,
+            isExpanded: $isExpanded,
+            hasExpandableContent: !progress.isEmpty || !(outputText?.isEmpty ?? true)
+        ) {
             VStack(alignment: .leading, spacing: 8) {
                 if !progress.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {

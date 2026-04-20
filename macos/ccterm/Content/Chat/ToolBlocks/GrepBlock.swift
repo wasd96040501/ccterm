@@ -14,7 +14,11 @@ struct GrepBlock: View {
     @State private var isExpanded = false
 
     var body: some View {
-        ToolBlock(status: status, isExpanded: $isExpanded) {
+        ToolBlock(
+            status: status,
+            isExpanded: $isExpanded,
+            hasExpandableContent: hasBodyContent
+        ) {
             VStack(alignment: .leading, spacing: 8) {
                 if !filenames.isEmpty {
                     FilenameList(filenames: filenames)
@@ -26,6 +30,10 @@ struct GrepBlock: View {
         } label: {
             Label(labelText, systemImage: "magnifyingglass")
         }
+    }
+
+    private var hasBodyContent: Bool {
+        !filenames.isEmpty || !(content?.isEmpty ?? true)
     }
 
     private var labelText: String {
@@ -74,8 +82,7 @@ private struct ContentPreview: View {
                 .padding(8)
         }
         .frame(maxHeight: 260)
-        .background(Color.black.opacity(0.04))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .toolBlockSecondarySectionStyle()
     }
 }
 

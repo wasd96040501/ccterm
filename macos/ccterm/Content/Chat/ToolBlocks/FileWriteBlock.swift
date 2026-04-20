@@ -15,7 +15,11 @@ struct FileWriteBlock: View {
     @State private var isExpanded = false
 
     var body: some View {
-        ToolBlock(status: status, isExpanded: $isExpanded) {
+        ToolBlock(
+            status: status,
+            isExpanded: $isExpanded,
+            hasExpandableContent: !content.isEmpty || !(originalContent?.isEmpty ?? true)
+        ) {
             NativeDiffView(
                 filePath: filePath,
                 oldString: originalContent ?? "",

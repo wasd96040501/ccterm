@@ -38,17 +38,24 @@ enum ToolBlockStatus: Equatable {
 struct ToolBlock<Label: View, Content: View>: View {
     let status: ToolBlockStatus
     @Binding var isExpanded: Bool
+    /// Whether the body has anything to show right now. Driven by data, not
+    /// by `status` — a `.running` block may already have streamable content
+    /// (and should be expandable), while a `.idle` block whose result is
+    /// genuinely empty should not be. Errors override and force-expand.
+    let hasExpandableContent: Bool
     let content: () -> Content
     let label: () -> Label
 
     init(
         status: ToolBlockStatus = .idle,
         isExpanded: Binding<Bool>,
+        hasExpandableContent: Bool = true,
         @ViewBuilder content: @escaping () -> Content,
         @ViewBuilder label: @escaping () -> Label
     ) {
         self.status = status
         self._isExpanded = isExpanded
+        self.hasExpandableContent = hasExpandableContent
         self.content = content
         self.label = label
     }
@@ -99,7 +106,6 @@ struct ToolBlock<Label: View, Content: View>: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(!isExpandable)
     }
 
     private var chevron: some View {
@@ -160,7 +166,8 @@ struct ToolBlock<Label: View, Content: View>: View {
 
     private var isExpandable: Bool {
         if case .error = status { return true }
-        return Content.self != EmptyView.self
+        if Content.self == EmptyView.self { return false }
+        return hasExpandableContent
     }
 
     private var effectivelyExpanded: Bool {
@@ -191,6 +198,30 @@ extension ToolBlock where Content == EmptyView {
             isExpanded: .constant(false),
             content: { EmptyView() },
             label: label)
+    }
+}
+
+// MARK: - Section background helpers
+
+/// Tinted background for a "secondary" content section inside a tool block —
+/// e.g. Bash stdout/stderr, Grep content preview. Visually distinct from a
+/// primary section (lighter, denser) and from the outer ToolBlock card, so
+/// nested sections read as their own region without disappearing into the
+/// chrome.
+struct ToolBlockSecondarySectionStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .background(Color.secondary.opacity(0.12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color.secondary.opacity(0.18), lineWidth: 0.5))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+}
+
+extension View {
+    func toolBlockSecondarySectionStyle() -> some View {
+        modifier(ToolBlockSecondarySectionStyle())
     }
 }
 

@@ -11,7 +11,11 @@ struct BashBlock: View {
     @State private var isExpanded = false
 
     var body: some View {
-        ToolBlock(status: status, isExpanded: $isExpanded) {
+        ToolBlock(
+            status: status,
+            isExpanded: $isExpanded,
+            hasExpandableContent: hasBodyContent
+        ) {
             VStack(alignment: .leading, spacing: 8) {
                 NativeBashView(command: command, maxHeight: 260)
                 if let stdout, !stdout.isEmpty {
@@ -31,6 +35,15 @@ struct BashBlock: View {
         if collapsed.count <= 80 { return collapsed }
         return String(collapsed.prefix(80)) + "…"
     }
+
+    /// Header already shows the command (truncated at 80). Body is worth
+    /// opening only when it carries something the header doesn't: the full
+    /// command (if truncated), or any output stream.
+    private var hasBodyContent: Bool {
+        command.count > 80
+            || !(stdout?.isEmpty ?? true)
+            || !(stderr?.isEmpty ?? true)
+    }
 }
 
 // MARK: - Output view
@@ -49,8 +62,7 @@ private struct OutputView: View {
                 .padding(8)
         }
         .frame(maxHeight: 240)
-        .background(Color.black.opacity(0.04))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .toolBlockSecondarySectionStyle()
     }
 
     private var cleaned: String {

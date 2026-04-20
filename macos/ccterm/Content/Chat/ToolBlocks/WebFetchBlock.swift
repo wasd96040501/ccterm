@@ -11,7 +11,11 @@ struct WebFetchBlock: View {
     @State private var isExpanded = false
 
     var body: some View {
-        ToolBlock(status: status, isExpanded: $isExpanded) {
+        ToolBlock(
+            status: status,
+            isExpanded: $isExpanded,
+            hasExpandableContent: !(result?.isEmpty ?? true)
+        ) {
             if let result, !result.isEmpty {
                 ScrollView([.vertical]) {
                     MarkdownView(result)

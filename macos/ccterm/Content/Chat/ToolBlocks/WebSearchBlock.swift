@@ -17,7 +17,11 @@ struct WebSearchBlock: View {
     }
 
     var body: some View {
-        ToolBlock(status: status, isExpanded: $isExpanded) {
+        ToolBlock(
+            status: status,
+            isExpanded: $isExpanded,
+            hasExpandableContent: !results.isEmpty
+        ) {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(results) { result in
                     ResultRow(result: result)

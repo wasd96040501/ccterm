@@ -7,7 +7,7 @@ import Markdown
 /// content that should be rendered by dedicated SwiftUI components (code blocks,
 /// tables, block math). Thematic breaks are emitted as their own segment so the
 /// host view can draw a native divider.
-public struct MarkdownDocument {
+public struct MarkdownDocument: Hashable, Sendable {
     public let segments: [MarkdownSegment]
 
     public init(parsing source: String) {
@@ -44,6 +44,16 @@ public struct MarkdownDocument {
 
         for child in document.blockChildren {
             switch child {
+            case let heading as Markdown.Heading:
+                flushBuffer()
+                let inlines = MarkdownConvert.inlines(Array(heading.inlineChildren))
+                out.append(.heading(level: heading.level, inlines: inlines))
+
+            case let quote as Markdown.BlockQuote:
+                flushBuffer()
+                let inner = MarkdownConvert.blocks(Array(quote.blockChildren))
+                out.append(.blockquote(inner))
+
             case let code as Markdown.CodeBlock:
                 flushBuffer()
                 let language = code.language?.trimmingCharacters(in: .whitespaces)

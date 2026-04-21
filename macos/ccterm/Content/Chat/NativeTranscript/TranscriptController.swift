@@ -2,17 +2,20 @@ import AppKit
 
 /// 持有 `[TranscriptRow]`，实现 `NSTableViewDataSource` / `NSTableViewDelegate`。
 ///
-/// 对齐 Telegram `TableView`：不用整体 reloadData，改走 **增量 transition**：
-/// - `setEntries` → diff → `merge(with: transition)` → `insertRows` / `removeRows` /
-///   per-row `reloadData(row:)`。同 stableId 且内容未变的 row 直接 carry-over，
-///   保留已经算好的 `cachedHeight` / layout。
-/// - `tableWidthChanged` → 逐 row `makeSize`，**只**对 height 实际变化的 row 调
-///   `noteHeightOfRows`；同时保存 / 还原 scroll anchor，避免拖拽 resize 时可视
-///   区域漂移。
-/// - row 侧可以通过 `table.noteHeightOfRow(_:)` / `table.reloadRow(_:)` 反向触发
-///   单行刷新（=未来 tool block 展开 / 收起的入口）。
+/// 走**增量 transition** + **async preprocess**：
+/// - `setEntries` 同步算 diff（stableId + contentHash）；对新 / 更新过的
+///   `AssistantMarkdownRow` kick off 一个 Task 做 batch syntax highlight；
+///   Task 完成后 main-actor apply transition——**paint 前 tokens 已就绪，
+///   没有 plain→彩色的视觉跳变**。
+/// - `tableWidthChanged` 逐 row `makeSize`，仅对 height 实际变化的 row 通知
+///   NSTableView；同时保存 / 还原 scroll anchor。
+/// - Row 侧可通过 `noteHeightOfRow` / `reloadRow` 反向触发单行刷新（tool block
+///   动态展开用）。
+/// - 文本选中由 `TranscriptSelectionController` 协调；controller 暴露
+///   `notifyRowSelectionChanged` / `redrawAllVisibleRows` 给它。
+@MainActor
 final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDelegate {
-    private weak var tableView: TranscriptTableView?
+    weak var tableView: TranscriptTableView?
     private(set) var rows: [TranscriptRow] = []
 
     var theme: MarkdownTheme?
@@ -27,17 +30,28 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
     private var lastEntriesSignature: [UUID] = []
     private var lastThemeFingerprint: MarkdownTheme.Fingerprint?
 
+    /// 活跃 preprocess Task。每次新 setEntries 来了就 cancel 当前 Task，避免
+    /// 过期 highlight 结果 apply 到已经被换掉的 rows。
+    private var activePreprocessTask: Task<Void, Never>?
+
+    /// Generation token。Task 完成时和这个对比，不匹配说明期间发生过新 setEntries
+    /// —— 丢弃老结果。
+    private var setEntriesGeneration: Int = 0
+
+    /// 文本选中协调器。Controller 持有；`TranscriptTableView` 的鼠标事件直接转给它。
+    let selectionController = TranscriptSelectionController()
+
     init(tableView: TranscriptTableView) {
         self.tableView = tableView
         super.init()
+        selectionController.controller = self
     }
 
-    // MARK: - Public entry：setEntries
+    // MARK: - setEntries
 
-    /// 新 entries 进来——构造新 row 列表、算 diff、增量 apply。
+    /// 新 entries 进来——diff、preprocess（async）、统一 apply。
     ///
-    /// Short-circuit：entries id 列表 + theme 指纹都等价 → 立即返回。SwiftUI 的
-    /// reconcile 会高频触发 updateNSView，这里必须早退以避免 O(N) 重排。
+    /// Short-circuit：entries id 列表 + theme 指纹都等价 → 立即返回。
     func setEntries(_ entries: [MessageEntry], themeChanged: Bool) {
         guard let tableView else { return }
         let themeToUse = theme ?? .default
@@ -48,45 +62,75 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
             return
         }
 
-        let newRows = TranscriptRowBuilder.build(entries: entries, theme: themeToUse)
-        let width = effectiveWidth()
+        setEntriesGeneration += 1
+        let generation = setEntriesGeneration
+        activePreprocessTask?.cancel()
 
-        // Diff：新旧 row 按 stableId + contentHash 比对。
+        let t0 = CFAbsoluteTimeGetCurrent()
+        let newRows = TranscriptRowBuilder.build(entries: entries, theme: themeToUse)
+        let tBuild = CFAbsoluteTimeGetCurrent()
+
         let transition = TranscriptDiff.compute(
             old: rows,
             new: newRows,
             animated: false)
 
-        appLog(.debug, "TranscriptController",
-            "setEntries table=\(Int(tableView.bounds.width)) clip=\(Int(tableView.enclosingScrollView?.contentView.bounds.width ?? 0)) → use=\(Int(width))")
+        // 收集新 / 更新的 assistant row——它们的 code blocks 需要 highlight。
+        // carry-over 的 row 不进——它们的 tokens 上轮已经贴好。
+        var assistantRows: [AssistantMarkdownRow] = []
+        for (_, row) in transition.inserted { if let a = row as? AssistantMarkdownRow { assistantRows.append(a) } }
+        for (_, row) in transition.updated { if let a = row as? AssistantMarkdownRow { assistantRows.append(a) } }
 
-        let t0 = CFAbsoluteTimeGetCurrent()
-        // 对新插入 / 内容更新过的 row 先算一次 size，carry-over 的 row 若 width
-        // 没变则什么都不做（makeSize 幂等），若 width 变了则算新 layout。
-        for (_, row) in transition.inserted { row.makeSize(width: width) }
-        for (_, row) in transition.updated { row.makeSize(width: width) }
-        for row in transition.finalRows where row.cachedWidth != width {
-            row.makeSize(width: width)
-        }
-        let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
-        let reusedCount = transition.finalRows.count
-            - transition.inserted.count - transition.updated.count
-        if !newRows.isEmpty {
-            appLog(.info, "TranscriptController",
-                "layout rows=\(newRows.count) (+\(transition.inserted.count) / ~\(transition.updated.count) / -\(transition.deleted.count) / reused=\(reusedCount)) in \(ms)ms width=\(Int(width))")
-        }
+        let width = effectiveWidth()
 
         lastLayoutWidth = width
         lastEntriesSignature = signature
         lastThemeFingerprint = themeFingerprint
 
-        merge(with: transition)
+        // Async preprocess + apply。
+        let engine = syntaxEngine
+        let reusedCount = transition.finalRows.count
+            - transition.inserted.count - transition.updated.count
+        let deletedCount = transition.deleted.count
+
+        activePreprocessTask = Task { [weak self] in
+            let tPre0 = CFAbsoluteTimeGetCurrent()
+            let timing = await TranscriptPreprocessor.run(
+                rows: assistantRows,
+                engine: engine)
+            let tPre1 = CFAbsoluteTimeGetCurrent()
+
+            await MainActor.run {
+                guard let self, self.setEntriesGeneration == generation else { return }
+                let tApply0 = CFAbsoluteTimeGetCurrent()
+                // Layout（受 width 影响的那一段）——每行按当前 width 排版。
+                // carry-over row 若 cachedWidth 一致则 O(1) 早退。
+                for row in transition.finalRows where row.cachedWidth != width {
+                    row.makeSize(width: width)
+                }
+                let tApply1 = CFAbsoluteTimeGetCurrent()
+                self.merge(with: transition)
+                let tApply2 = CFAbsoluteTimeGetCurrent()
+
+                let parseBuildMs = Int((tBuild - t0) * 1000)
+                let diffMs = Int((tPre0 - tBuild) * 1000)
+                let preMs = Int((tPre1 - tPre0) * 1000)
+                let layoutMs = Int((tApply1 - tApply0) * 1000)
+                let mergeMs = Int((tApply2 - tApply1) * 1000)
+                let totalMs = Int((tApply2 - t0) * 1000)
+                appLog(.info, "TranscriptController",
+                    "setEntries total=\(totalMs)ms "
+                    + "(+\(transition.inserted.count) / ~\(transition.updated.count) / -\(deletedCount) / reused=\(reusedCount)) "
+                    + "parseBuild=\(parseBuildMs) diff=\(diffMs) preprocess=\(preMs)"
+                    + " (hl=\(timing.highlightMs)ms code=\(timing.codeBlockCount)) "
+                    + "layout=\(layoutMs) merge=\(mergeMs) width=\(Int(width))")
+            }
+        }
     }
 
-    // MARK: - merge (对齐 Telegram `TableView.merge(with:)`)
+    // MARK: - merge
 
-    /// 把 transition 应用到 tableView：先 delete（倒序）、后 insert（正序）、
-    /// 最后对 updated 位置做 per-row reload。每一步过后都重新给 row 分配 index。
+    /// 把 transition 应用到 tableView。主线程。
     private func merge(with transition: TranscriptUpdateTransition) {
         guard let tableView else { return }
 
@@ -95,7 +139,7 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
             NSAnimationContext.current.duration = 0
         }
 
-        // 空 transition（比如 theme 变了但 rows 引用未变）：直接赋值即可。
+        // 空 transition 保护。
         if transition.isEmpty, rows.count == transition.finalRows.count,
            zip(rows, transition.finalRows).allSatisfy({ $0 === $1 }) {
             return
@@ -103,10 +147,8 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
 
         tableView.beginUpdates()
 
-        // --- deletes：倒序，避免前面的 remove 让后面的 index 失效。
         if !transition.deleted.isEmpty {
             let desc = transition.deleted.sorted(by: >)
-            // 先清 row 侧的 table/index，防止被删的 row 继续反向调用。
             for idx in desc where idx >= 0 && idx < rows.count {
                 let row = rows[idx]
                 row.table = nil
@@ -118,9 +160,6 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
             tableView.removeRows(at: IndexSet(desc), withAnimation: anim)
         }
 
-        // --- inserts：正序。此时 `rows` 已经是「删除后」的中间状态，
-        // inserted 的 index 是**新列表**中的下标。由于新列表 = 中间态 + 按顺序
-        // 插入后的结果，正序遍历时每一步的新下标都落在合法范围。
         if !transition.inserted.isEmpty {
             var insertedIndexes = IndexSet()
             for (i, row) in transition.inserted {
@@ -131,18 +170,13 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
             tableView.insertRows(at: insertedIndexes, withAnimation: anim)
         }
 
-        // --- updates：已经在 finalRows 对应位置——把旧 row 对象换成新 row，
-        // 再对每个 index 单独 reload（视图能复用则 set(row:)，不能复用则 remove+insert）。
         if !transition.updated.isEmpty {
             for (i, row) in transition.updated where i >= 0 && i < rows.count {
                 rows[i] = row
             }
         }
 
-        // 关键：此时 `rows` 应该严格等于 `finalRows`。断言一下、同时用 finalRows
-        // 覆盖掉可能的排列偏差（按 stableId 对齐）。
         if !rowsMatchFinal(transition.finalRows) {
-            // 理论不该到这里——若出现，直接以 finalRows 为准重排。
             appLog(.warning, "TranscriptController",
                 "merge: rows drifted from finalRows (rows=\(rows.count) final=\(transition.finalRows.count)); overriding")
             rows = transition.finalRows
@@ -151,8 +185,6 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
         reindexAllRows()
         tableView.endUpdates()
 
-        // updates 的 per-row reload 放在 endUpdates 之后——避免和 insert / remove
-        // 的批量动画相互干扰。rowView 若还是同 class 就原地 set，否则 reload。
         for (i, _) in transition.updated where i >= 0 && i < rows.count {
             reloadRowView(at: i, animated: transition.animated)
         }
@@ -171,10 +203,8 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
         }
     }
 
-    // MARK: - Row-level table ops (Telegram TableView.noteHeightOfRow / reloadData(row:))
+    // MARK: - Row-level reload (row 自己反向调，或 selection 写入后用)
 
-    /// 单行高度 invalidate —— 调用方一般是 row 自己（`row.noteHeightOfRow()`）。
-    /// 视图还挂着就顺便 `set(row:)` 触发重绘。
     func noteHeightOfRow(_ row: Int, animated: Bool = false) {
         guard let tableView, row >= 0, row < rows.count else { return }
         if !animated {
@@ -186,8 +216,6 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
         }
     }
 
-    /// 单行整体 reload —— 视图类不变时原地 set + noteHeight；变了才做 remove+insert。
-    /// 对应 Telegram `reloadData(row:animated:)`。
     func reloadRow(_ row: Int, animated: Bool = false) {
         guard let tableView, row >= 0, row < rows.count else { return }
         reloadRowView(at: row, animated: animated)
@@ -203,7 +231,6 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
             rv.set(row: data)
             return
         }
-        // 视图类变了——走 remove+insert 让 makeView 拿新类。
         let anim: NSTableView.AnimationOptions = animated ? .effectFade : []
         if !animated { NSAnimationContext.current.duration = 0 }
         tableView.beginUpdates()
@@ -212,22 +239,50 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
         tableView.endUpdates()
     }
 
-    // MARK: - Resize (对齐 Telegram `layoutIfNeeded(with:oldWidth:)`)
+    // MARK: - Selection hooks (called by TranscriptSelectionController)
 
-    /// 宽度变化入口 —— 逐 row 做 `before/after` height 对比，只对变了的 row 通知
-    /// NSTableView。同时保存 / 还原 scroll anchor，让 resize 期间可视区域不漂。
+    func notifyRowSelectionChanged(index: Int) {
+        guard let tableView, index >= 0, index < rows.count else { return }
+        if let rv = tableView.rowView(atRow: index, makeIfNecessary: false) as? TranscriptRowView {
+            rv.set(row: rows[index])
+        }
+    }
+
+    func notifyRowSelectionCleared(stableId: AnyHashable) {
+        guard let tableView else { return }
+        if let row = rows.first(where: { $0.stableId == stableId }),
+           let selectable = row as? TextSelectable {
+            selectable.clearSelection()
+        }
+        if let idx = rows.firstIndex(where: { $0.stableId == stableId }),
+           let rv = tableView.rowView(atRow: idx, makeIfNecessary: false) as? TranscriptRowView {
+            rv.set(row: rows[idx])
+        }
+    }
+
+    func redrawAllVisibleRows() {
+        guard let tableView else { return }
+        tableView.enumerateAvailableRowViews { view, index in
+            guard index >= 0, index < self.rows.count else { return }
+            (view as? TranscriptRowView)?.set(row: self.rows[index])
+        }
+    }
+
+    // MARK: - Resize
+
     func tableWidthChanged(_ newWidth: CGFloat) {
         guard let tableView else { return }
         guard newWidth > 0, abs(newWidth - lastLayoutWidth) > 0.5 else { return }
         let oldWidth = lastLayoutWidth
         lastLayoutWidth = newWidth
-        appLog(.debug, "TranscriptController",
-            "tableWidthChanged \(Int(oldWidth))→\(Int(newWidth)) rows=\(rows.count)")
+        appLog(.info, "TranscriptController",
+            "resize \(Int(oldWidth))→\(Int(newWidth)) rows=\(rows.count)")
 
         guard !rows.isEmpty else { return }
 
         let anchor = captureScrollAnchor()
 
+        let t0 = CFAbsoluteTimeGetCurrent()
         tableView.beginUpdates()
         var changed = IndexSet()
         for (i, row) in rows.enumerated() {
@@ -242,22 +297,21 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
             tableView.noteHeightOfRows(withIndexesChanged: changed)
         }
         tableView.endUpdates()
+        let layoutMs = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
 
-        // 宽度变了 ≠ 仅高度变——行内 wrap / bubble geometry 也会变。
-        // 所有可视 rowView 都要重画一遍。noteHeightOfRows 只改高度不触发重绘。
         tableView.enumerateAvailableRowViews { view, index in
             guard index >= 0, index < self.rows.count else { return }
             (view as? TranscriptRowView)?.set(row: self.rows[index])
         }
 
         restoreScrollAnchor(anchor)
+
+        appLog(.debug, "TranscriptController",
+            "resize done layout=\(layoutMs)ms changed=\(changed.count)")
     }
 
     // MARK: - Scroll anchor
 
-    /// (stableId, 该行在 viewport 内的 top 偏移)。resize / merge 前保存，完成后
-    /// 用新 `rect(ofRow:)` 反推需要的 clipView origin，让锚点 row 保持在同一
-    /// viewport 位置。对齐 Telegram `saveScrollState` / `getScrollY`。
     private struct ScrollAnchor {
         let stableId: AnyHashable
         let topOffset: CGFloat
@@ -268,7 +322,6 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
               let clip = tableView.enclosingScrollView?.contentView else { return nil }
         let vr = tableView.rows(in: clip.bounds)
         guard vr.length > 0, vr.location >= 0 else { return nil }
-        // 取最上面那一行作为锚（flipped 下 = smallest index）。
         let idx = vr.location
         guard idx < rows.count else { return nil }
         let rowRect = tableView.rect(ofRow: idx)
@@ -285,7 +338,6 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
         }
         let newRect = tableView.rect(ofRow: idx)
         let newY = newRect.minY - anchor.topOffset
-        // clamp：别推到文档之外（否则滚动条会反弹）。
         let maxY = max(0, tableView.bounds.height - clip.bounds.height)
         let clamped = max(0, min(newY, maxY))
         guard abs(clamped - clip.bounds.minY) > 0.5 else { return }
@@ -293,11 +345,9 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
         tableView.enclosingScrollView?.reflectScrolledClipView(clip)
     }
 
-    // MARK: - NSTableViewDataSource
+    // MARK: - NSTableViewDataSource / Delegate
 
     func numberOfRows(in tableView: NSTableView) -> Int { rows.count }
-
-    // MARK: - NSTableViewDelegate
 
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
         guard row >= 0, row < rows.count else { return 1 }
@@ -320,16 +370,12 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
         return rowView
     }
 
-    /// 所有绘制在 rowView，`viewFor` 返回 nil。
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         nil
     }
 
     // MARK: - Helpers
 
-    /// 优先读 clipView(= scroll viewport 可视宽度)。tableView 自己的宽度是
-    /// documentView 宽度,可能大于或小于 clipView——rows 要按"可视宽度"排版,
-    /// 不是按 tableView 物理宽度。
     private func effectiveWidth() -> CGFloat {
         if let clip = tableView?.enclosingScrollView?.contentView.bounds.width, clip > 0 {
             return clip

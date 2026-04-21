@@ -4,6 +4,9 @@ import AppKit
 /// - responsive scrolling：让 AppKit 在滚动时可以拼 layer bitmap 而非同步 drawRect
 /// - layer-backed + `.never` redraw：滚动 0 个 draw 调用
 /// - 自带 `FlippedClipView` + `TranscriptTableView` + `TranscriptController`
+///
+/// 负宽度保护：AppKit 会在初装 / 滚动条计算期临时给 0 或负宽度。我们这里
+/// + `TranscriptTableView.setFrameSize` 两层都 clamp 到 ≥ 0。
 final class TranscriptScrollView: NSScrollView {
     let controller: TranscriptController
     private let tableView: TranscriptTableView
@@ -26,10 +29,6 @@ final class TranscriptScrollView: NSScrollView {
         horizontalScrollElasticity = .none
         autohidesScrollers = true
 
-        // Pad the scrollable content so the first / last row don't kiss the
-        // viewport edges. Combined with `rowVerticalPadding` = 8 per row,
-        // first row's visible top gap = 12 + 8 = 20pt (matches legacy VStack
-        // `.padding(.vertical, 20)`).
         automaticallyAdjustsContentInsets = false
         contentInsets = NSEdgeInsets(top: 12, left: 0, bottom: 12, right: 0)
 
@@ -49,11 +48,8 @@ final class TranscriptScrollView: NSScrollView {
     override func tile() {
         super.tile()
         let target = contentView.bounds.width
-        appLog(.debug, "TranscriptScrollView",
-            "tile clip=\(Int(target)) table=\(Int(tableView.frame.width))")
-        // `contentView.bounds.width` can briefly be <= 0 during scroller
-        // accounting (e.g. scroller eats 17pt out of a 0-width scroll view).
-        // Propagating that to setFrameSize produces "Invalid view geometry".
+        // contentView.bounds.width 在 scroller 还没定好前可能 <= 0（比如 0 width
+        // 减去 17pt scroller 变成 -17）——propagate 下去会触发 AppKit 警告。
         guard target > 0.5 else { return }
         if abs(tableView.frame.width - target) > 0.5 {
             tableView.setFrameSize(NSSize(width: target, height: tableView.frame.height))

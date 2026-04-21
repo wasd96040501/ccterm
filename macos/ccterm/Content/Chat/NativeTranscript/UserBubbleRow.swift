@@ -15,6 +15,10 @@ final class UserBubbleRow: TranscriptRow {
 
     private var textLayout: TranscriptTextLayout = .empty
     private var bubbleRect: CGRect = .zero
+    private var textOriginInRow: CGPoint = .zero
+
+    /// 由 selection controller 写入。
+    fileprivate var currentSelection: NSRange = NSRange(location: NSNotFound, length: 0)
 
     init(text: String, theme: TranscriptTheme, stable: AnyHashable) {
         self.text = text
@@ -55,6 +59,9 @@ final class UserBubbleRow: TranscriptRow {
         let bubbleX = width - theme.bubbleRightInset - bubbleWidth
         let bubbleY = theme.rowVerticalPadding
         bubbleRect = CGRect(x: bubbleX, y: bubbleY, width: bubbleWidth, height: bubbleHeight)
+        textOriginInRow = CGPoint(
+            x: bubbleRect.minX + theme.bubbleHorizontalPadding,
+            y: bubbleRect.minY + theme.bubbleVerticalPadding)
 
         cachedHeight = bubbleHeight + 2 * theme.rowVerticalPadding
     }
@@ -72,9 +79,35 @@ final class UserBubbleRow: TranscriptRow {
         ctx.fillPath()
         ctx.restoreGState()
 
-        let textOrigin = CGPoint(
-            x: bubbleRect.minX + theme.bubbleHorizontalPadding,
-            y: bubbleRect.minY + theme.bubbleVerticalPadding)
-        textLayout.draw(origin: textOrigin, in: ctx)
+        let sel: NSRange? = (currentSelection.location != NSNotFound && currentSelection.length > 0)
+            ? currentSelection : nil
+        textLayout.draw(origin: textOriginInRow, selection: sel, in: ctx)
+    }
+}
+
+// MARK: - TextSelectable
+
+extension UserBubbleRow: TextSelectable {
+    var selectableRegions: [SelectableTextRegion] {
+        guard !textLayout.lines.isEmpty else { return [] }
+        let region = SelectableTextRegion(
+            rowStableId: stableId,
+            regionIndex: 0,
+            frameInRow: CGRect(
+                x: textOriginInRow.x,
+                y: textOriginInRow.y,
+                width: max(textLayout.measuredWidth, 1),
+                height: max(textLayout.totalHeight, 1)),
+            layout: textLayout,
+            setSelection: { [weak self] range in
+                self?.currentSelection = range
+            })
+        return [region]
+    }
+
+    var selectionHeader: String? { nil }
+
+    func clearSelection() {
+        currentSelection = NSRange(location: NSNotFound, length: 0)
     }
 }

@@ -1,22 +1,51 @@
 import AppKit
+import SwiftUI
 
-/// Assistant 消息（纯文本部分）。一条 assistant 消息中所有 text block 的
-/// markdown 源码拼接后，解析为 `MarkdownDocument`，逐 segment 构造 Core Text
-/// layout。
+/// Assistant 消息（纯文本部分）。
 ///
-/// 绘制时按 segment 顺序累加 y 偏移，段间间距遵从 `MarkdownTheme.l1/l2`。
+/// 三段分离：
+/// 1. **Parse（init 时同步）**：`MarkdownDocument(parsing:)` 拆 segment。
+/// 2. **Prebuild（init 时同步 + 高亮完成后再来一次）**：每个 segment 转成
+///    layout 需要的「宽度无关」中间物（`NSAttributedString` 或 table 模型）。
+///    syntax highlight 未就绪前 code block 用 plain monospaced；
+///    `apply(codeTokens:)` 回灌后重 build 一次。
+/// 3. **Layout（`makeSize(width:)`）**：按宽度喂 `TranscriptTextLayout` /
+///    `TranscriptTableLayout` 排版，不做任何 parse / build。
+///
+/// window resize 只重 layout；theme / source 不变不重 parse；syntax highlight
+/// 由 `TranscriptPreprocessor` 在 paint 前批量完成，无 plain→彩色跳变。
 final class AssistantMarkdownRow: TranscriptRow {
     let source: String
     let theme: TranscriptTheme
     private let stable: AnyHashable
 
+    /// 一次性 parse 的结果。
+    private let parsedDocument: MarkdownDocument
+
+    /// 宽度无关的预构造物——和 `parsedDocument.segments` 一一对应。
+    private var prebuilt: [PrebuiltSegment] = []
+
+    /// 按当前 width 排版的结果。`makeSize` 填。
     private var rendered: [RenderedSegment] = []
+
+    /// 每段 attributed segment 在 row 坐标系里的「layout 原点」——选中用。
+    /// index 与 `prebuilt` / `rendered` 对齐。
+    private var attributedOrigins: [Int: CGPoint] = [:]
+
+    /// 每段 attributed segment 当前的选中 range。`NSNotFound` = 未选。
+    private var selections: [Int: NSRange] = [:]
 
     init(source: String, theme: TranscriptTheme, stable: AnyHashable) {
         self.source = source
         self.theme = theme
         self.stable = stable
+        self.parsedDocument = MarkdownDocument(parsing: source)
         super.init()
+        self.prebuilt = Self.buildPrebuilt(
+            document: parsedDocument,
+            theme: theme,
+            codeTokens: [:],
+            colorScheme: Self.currentColorScheme())
     }
 
     override var stableId: AnyHashable { stable }
@@ -28,37 +57,30 @@ final class AssistantMarkdownRow: TranscriptRow {
         return h.finalize()
     }
 
-    // MARK: - Segment model
+    // MARK: - Preprocessor 回灌 code block tokens
 
-    /// 已计算 layout 的单个 segment。`topPadding` 是此 segment 顶部与前一 segment
-    /// 底部之间的垂直间隙。`contentHeight` 不含 topPadding。
-    enum RenderedSegment {
-        case text(TranscriptTextLayout, topPadding: CGFloat)
-        case blockquote(TranscriptTextLayout, topPadding: CGFloat)
-        case codeBlock(TranscriptTextLayout, topPadding: CGFloat)
-        case table(TranscriptTableLayout, topPadding: CGFloat)
-        case thematicBreak(topPadding: CGFloat)
+    /// `TranscriptPreprocessor` 在 `setEntries` 的 Task 里 batch await highlight
+    /// 完成后调这里。重 build 一次 prebuilt，清 layout cache。主线程调用。
+    func apply(codeTokens: [Int: [SyntaxToken]]) {
+        prebuilt = Self.buildPrebuilt(
+            document: parsedDocument,
+            theme: theme,
+            codeTokens: codeTokens,
+            colorScheme: Self.currentColorScheme())
+        cachedWidth = 0
+        rendered = []
+        attributedOrigins = [:]
+    }
 
-        var topPadding: CGFloat {
-            switch self {
-            case .text(_, let p), .blockquote(_, let p),
-                 .codeBlock(_, let p), .thematicBreak(let p):
-                return p
-            case .table(_, let p):
-                return p
+    /// 暴露给 preprocessor 的请求列表：`(segmentIndex, code, language)`。
+    var codeBlockRequests: [(segmentIndex: Int, code: String, language: String?)] {
+        var out: [(Int, String, String?)] = []
+        for (i, seg) in parsedDocument.segments.enumerated() {
+            if case .codeBlock(let block) = seg {
+                out.append((i, block.code, block.language))
             }
         }
-
-        var contentHeight: CGFloat {
-            switch self {
-            case .text(let l, _), .blockquote(let l, _), .codeBlock(let l, _):
-                return l.totalHeight
-            case .table(let t, _):
-                return t.totalHeight
-            case .thematicBreak:
-                return 1
-            }
-        }
+        return out
     }
 
     // MARK: - Layout
@@ -67,142 +89,109 @@ final class AssistantMarkdownRow: TranscriptRow {
         guard width != cachedWidth else { return }
         cachedWidth = width
 
-        let document = MarkdownDocument(parsing: source)
-        let builder = MarkdownAttributedBuilder(theme: theme.markdown)
         let contentWidth = max(40, width - 2 * theme.rowHorizontalPadding)
-
         var segments: [RenderedSegment] = []
+        var origins: [Int: CGPoint] = [:]
+        var y: CGFloat = theme.rowVerticalPadding
 
-        for (idx, seg) in document.segments.enumerated() {
-            let gap = gapBefore(idx: idx, segment: seg)
+        for (idx, prebuiltSeg) in prebuilt.enumerated() {
+            y += prebuiltSeg.topPadding
 
-            switch seg {
-            case .markdown(let blocks):
-                let attr = builder.build(blocks: blocks)
-                let layout = TranscriptTextLayout.make(
-                    attributed: attr, maxWidth: contentWidth)
-                segments.append(.text(layout, topPadding: gap))
+            switch prebuiltSeg {
+            case .attributed(let attr, let kind, _):
+                let maxWidth: CGFloat
+                let layoutOriginX: CGFloat
+                let layoutOriginY: CGFloat
+                switch kind {
+                case .text, .heading:
+                    maxWidth = contentWidth
+                    layoutOriginX = theme.rowHorizontalPadding
+                    layoutOriginY = y
+                case .blockquote:
+                    let barSpace = theme.markdown.blockquoteBarWidth + theme.markdown.blockquoteBarGap
+                    maxWidth = max(40, contentWidth - barSpace)
+                    layoutOriginX = theme.rowHorizontalPadding + barSpace
+                    layoutOriginY = y
+                case .codeBlock:
+                    maxWidth = max(40, contentWidth - 2 * theme.codeBlockHorizontalPadding)
+                    layoutOriginX = theme.rowHorizontalPadding + theme.codeBlockHorizontalPadding
+                    layoutOriginY = y + theme.codeBlockVerticalPadding
+                }
+                let layout = TranscriptTextLayout.make(attributed: attr, maxWidth: maxWidth)
+                segments.append(.attributed(
+                    layout, kind: kind,
+                    layoutOrigin: CGPoint(x: layoutOriginX, y: layoutOriginY)))
+                origins[idx] = CGPoint(x: layoutOriginX, y: layoutOriginY)
 
-            case .heading(let level, let inlines):
-                let attr = builder.buildHeading(level: level, inlines: inlines)
-                let layout = TranscriptTextLayout.make(
-                    attributed: attr, maxWidth: contentWidth)
-                segments.append(.text(layout, topPadding: gap))
+                switch kind {
+                case .codeBlock:
+                    y += layout.totalHeight + 2 * theme.codeBlockVerticalPadding
+                default:
+                    y += layout.totalHeight
+                }
 
-            case .blockquote(let blocks):
-                let attr = builder.buildBlockquote(blocks: blocks)
-                let barSpace = theme.markdown.blockquoteBarWidth + theme.markdown.blockquoteBarGap
-                let innerWidth = max(40, contentWidth - barSpace)
-                let layout = TranscriptTextLayout.make(
-                    attributed: attr, maxWidth: innerWidth)
-                segments.append(.blockquote(layout, topPadding: gap))
-
-            case .codeBlock(let block):
-                let font = NSFont.monospacedSystemFont(
-                    ofSize: theme.markdown.codeFontSize, weight: .regular)
-                let attr = NSAttributedString(
-                    string: block.code,
-                    attributes: [
-                        .font: font,
-                        .foregroundColor: theme.markdown.primaryColor,
-                    ])
-                let pad = theme.codeBlockHorizontalPadding
-                let innerWidth = max(40, contentWidth - 2 * pad)
-                let layout = TranscriptTextLayout.make(
-                    attributed: attr, maxWidth: innerWidth)
-                segments.append(.codeBlock(layout, topPadding: gap))
-
-            case .table(let table):
+            case .table(let table, _):
+                let builder = MarkdownAttributedBuilder(theme: theme.markdown)
                 let tableLayout = TranscriptTableLayout.make(
                     table: table,
                     builder: builder,
                     theme: theme,
                     maxWidth: contentWidth)
-                segments.append(.table(tableLayout, topPadding: gap))
-
-            case .mathBlock(let raw):
-                let attr = monospacedFallback(raw)
-                let layout = TranscriptTextLayout.make(
-                    attributed: attr, maxWidth: contentWidth)
-                segments.append(.text(layout, topPadding: gap))
+                segments.append(.table(
+                    tableLayout,
+                    origin: CGPoint(x: theme.rowHorizontalPadding, y: y)))
+                y += tableLayout.totalHeight
 
             case .thematicBreak:
-                segments.append(.thematicBreak(topPadding: gap))
+                segments.append(.thematicBreak(y: y))
+                y += 1
             }
         }
 
-        // 总高度 = 每个 segment 的 topPadding + contentHeight + 上/下 rowVerticalPadding。
-        // codeBlock 的 contentHeight 已经含 layout.height，外加块 vPad 要加一次。
-        var total: CGFloat = 0
-        for seg in segments {
-            total += seg.topPadding
-            switch seg {
-            case .codeBlock(let l, _):
-                total += l.totalHeight + 2 * theme.codeBlockVerticalPadding
-            default:
-                total += seg.contentHeight
-            }
-        }
-
+        y += theme.rowVerticalPadding
         rendered = segments
-        cachedHeight = total + 2 * theme.rowVerticalPadding
-    }
-
-    private func gapBefore(idx: Int, segment: MarkdownSegment) -> CGFloat {
-        if idx == 0 { return 0 }
-        if case .heading = segment { return theme.markdown.l1 }
-        return theme.markdown.l2
-    }
-
-    private func monospacedFallback(_ s: String) -> NSAttributedString {
-        NSAttributedString(
-            string: s,
-            attributes: [
-                .font: NSFont.monospacedSystemFont(
-                    ofSize: theme.markdown.codeFontSize, weight: .regular),
-                .foregroundColor: theme.markdown.primaryColor,
-            ])
+        attributedOrigins = origins
+        cachedHeight = y
     }
 
     // MARK: - Draw
 
     override func draw(in ctx: CGContext, bounds: CGRect) {
-        var y: CGFloat = theme.rowVerticalPadding
-        for seg in rendered {
-            y += seg.topPadding
+        for (idx, seg) in rendered.enumerated() {
             switch seg {
-            case .text(let layout, _):
-                layout.draw(
-                    origin: CGPoint(x: theme.rowHorizontalPadding, y: y),
-                    in: ctx)
-                y += layout.totalHeight
+            case .attributed(let layout, let kind, let origin):
+                let sel = selections[idx]
+                let selectionForDraw: NSRange? =
+                    (sel?.location ?? NSNotFound) != NSNotFound && (sel?.length ?? 0) > 0 ? sel : nil
+                switch kind {
+                case .text, .heading:
+                    layout.draw(origin: origin, selection: selectionForDraw, in: ctx)
+                case .blockquote:
+                    drawBlockquoteBar(origin: origin, height: layout.totalHeight, in: ctx)
+                    layout.draw(origin: origin, selection: selectionForDraw, in: ctx)
+                case .codeBlock:
+                    drawCodeBlockBackground(
+                        layoutOrigin: origin,
+                        layoutHeight: layout.totalHeight,
+                        bounds: bounds,
+                        in: ctx)
+                    layout.draw(origin: origin, selection: selectionForDraw, in: ctx)
+                }
 
-            case .blockquote(let layout, _):
-                drawBlockquote(layout: layout, y: y, in: ctx)
-                y += layout.totalHeight
+            case .table(let tableLayout, let origin):
+                tableLayout.draw(origin: origin, in: ctx)
 
-            case .codeBlock(let layout, _):
-                let h = layout.totalHeight + 2 * theme.codeBlockVerticalPadding
-                drawCodeBlock(layout: layout, y: y, height: h, bounds: bounds, in: ctx)
-                y += h
-
-            case .table(let tableLayout, _):
-                tableLayout.draw(
-                    origin: CGPoint(x: theme.rowHorizontalPadding, y: y),
-                    in: ctx)
-                y += tableLayout.totalHeight
-
-            case .thematicBreak:
+            case .thematicBreak(let y):
                 drawThematicBreak(y: y, width: bounds.width, in: ctx)
-                y += 1
             }
         }
     }
 
-    private func drawBlockquote(layout: TranscriptTextLayout, y: CGFloat, in ctx: CGContext) {
-        let barX = theme.rowHorizontalPadding
+    private func drawBlockquoteBar(origin: CGPoint, height: CGFloat, in ctx: CGContext) {
         let barW = theme.markdown.blockquoteBarWidth
-        let barRect = CGRect(x: barX, y: y, width: barW, height: layout.totalHeight)
+        let barGap = theme.markdown.blockquoteBarGap
+        let barX = origin.x - barGap - barW
+        let barRect = CGRect(x: barX, y: origin.y, width: barW, height: height)
         ctx.saveGState()
         ctx.setFillColor(theme.markdown.blockquoteBarColor.cgColor)
         let path = CGPath(
@@ -211,25 +200,19 @@ final class AssistantMarkdownRow: TranscriptRow {
         ctx.addPath(path)
         ctx.fillPath()
         ctx.restoreGState()
-
-        let textX = theme.rowHorizontalPadding
-            + theme.markdown.blockquoteBarWidth
-            + theme.markdown.blockquoteBarGap
-        layout.draw(origin: CGPoint(x: textX, y: y), in: ctx)
     }
 
-    private func drawCodeBlock(
-        layout: TranscriptTextLayout,
-        y: CGFloat,
-        height: CGFloat,
+    private func drawCodeBlockBackground(
+        layoutOrigin: CGPoint,
+        layoutHeight: CGFloat,
         bounds: CGRect,
         in ctx: CGContext
     ) {
         let rect = CGRect(
             x: theme.rowHorizontalPadding,
-            y: y,
+            y: layoutOrigin.y - theme.codeBlockVerticalPadding,
             width: bounds.width - 2 * theme.rowHorizontalPadding,
-            height: height)
+            height: layoutHeight + 2 * theme.codeBlockVerticalPadding)
         ctx.saveGState()
         ctx.setFillColor(theme.markdown.codeBlockBackground.cgColor)
         let path = CGPath(
@@ -240,11 +223,6 @@ final class AssistantMarkdownRow: TranscriptRow {
         ctx.addPath(path)
         ctx.fillPath()
         ctx.restoreGState()
-
-        let textOrigin = CGPoint(
-            x: rect.minX + theme.codeBlockHorizontalPadding,
-            y: rect.minY + theme.codeBlockVerticalPadding)
-        layout.draw(origin: textOrigin, in: ctx)
     }
 
     private func drawThematicBreak(y: CGFloat, width: CGFloat, in ctx: CGContext) {
@@ -256,5 +234,142 @@ final class AssistantMarkdownRow: TranscriptRow {
         ctx.addLine(to: CGPoint(x: width - theme.rowHorizontalPadding, y: y + 0.5))
         ctx.strokePath()
         ctx.restoreGState()
+    }
+
+    // MARK: - Data model
+
+    enum SegmentKind {
+        case text, heading, blockquote, codeBlock
+    }
+
+    enum PrebuiltSegment {
+        case attributed(NSAttributedString, kind: SegmentKind, topPadding: CGFloat)
+        case table(MarkdownTable, topPadding: CGFloat)
+        case thematicBreak(topPadding: CGFloat)
+
+        var topPadding: CGFloat {
+            switch self {
+            case .attributed(_, _, let p), .table(_, let p), .thematicBreak(let p):
+                return p
+            }
+        }
+    }
+
+    enum RenderedSegment {
+        case attributed(TranscriptTextLayout, kind: SegmentKind, layoutOrigin: CGPoint)
+        case table(TranscriptTableLayout, origin: CGPoint)
+        case thematicBreak(y: CGFloat)
+    }
+
+    // MARK: - Prebuild pipeline
+
+    private static func buildPrebuilt(
+        document: MarkdownDocument,
+        theme: TranscriptTheme,
+        codeTokens: [Int: [SyntaxToken]],
+        colorScheme: ColorScheme
+    ) -> [PrebuiltSegment] {
+        let builder = MarkdownAttributedBuilder(theme: theme.markdown)
+        var out: [PrebuiltSegment] = []
+        out.reserveCapacity(document.segments.count)
+
+        for (idx, seg) in document.segments.enumerated() {
+            let gap = gapBefore(idx: idx, segment: seg, theme: theme.markdown)
+
+            switch seg {
+            case .markdown(let blocks):
+                out.append(.attributed(builder.build(blocks: blocks), kind: .text, topPadding: gap))
+            case .heading(let level, let inlines):
+                out.append(.attributed(builder.buildHeading(level: level, inlines: inlines), kind: .heading, topPadding: gap))
+            case .blockquote(let blocks):
+                out.append(.attributed(builder.buildBlockquote(blocks: blocks), kind: .blockquote, topPadding: gap))
+            case .codeBlock(let block):
+                let attr = buildCodeBlockAttributed(
+                    block: block,
+                    tokens: codeTokens[idx],
+                    theme: theme,
+                    colorScheme: colorScheme)
+                out.append(.attributed(attr, kind: .codeBlock, topPadding: gap))
+            case .table(let table):
+                out.append(.table(table, topPadding: gap))
+            case .mathBlock(let raw):
+                let attr = NSAttributedString(
+                    string: raw,
+                    attributes: [
+                        .font: NSFont.monospacedSystemFont(
+                            ofSize: theme.markdown.codeFontSize, weight: .regular),
+                        .foregroundColor: theme.markdown.primaryColor,
+                    ])
+                out.append(.attributed(attr, kind: .text, topPadding: gap))
+            case .thematicBreak:
+                out.append(.thematicBreak(topPadding: gap))
+            }
+        }
+        return out
+    }
+
+    private static func buildCodeBlockAttributed(
+        block: MarkdownCodeBlock,
+        tokens: [SyntaxToken]?,
+        theme: TranscriptTheme,
+        colorScheme: ColorScheme
+    ) -> NSAttributedString {
+        let font = NSFont.monospacedSystemFont(
+            ofSize: theme.markdown.codeFontSize, weight: .regular)
+        if let tokens, !tokens.isEmpty {
+            return SyntaxAttributedString.buildNS(
+                tokens: tokens,
+                colorScheme: colorScheme,
+                font: font)
+        }
+        return NSAttributedString(
+            string: block.code,
+            attributes: [
+                .font: font,
+                .foregroundColor: theme.markdown.primaryColor,
+            ])
+    }
+
+    private static func gapBefore(idx: Int, segment: MarkdownSegment, theme: MarkdownTheme) -> CGFloat {
+        if idx == 0 { return 0 }
+        if case .heading = segment { return theme.l1 }
+        return theme.l2
+    }
+
+    private static func currentColorScheme() -> ColorScheme {
+        let match = NSApp?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua])
+        return match == .darkAqua ? .dark : .light
+    }
+}
+
+// MARK: - TextSelectable
+
+extension AssistantMarkdownRow: TextSelectable {
+    var selectableRegions: [SelectableTextRegion] {
+        var regions: [SelectableTextRegion] = []
+        for (idx, seg) in rendered.enumerated() {
+            guard case .attributed(let layout, _, let origin) = seg,
+                  !layout.lines.isEmpty else { continue }
+            let region = SelectableTextRegion(
+                rowStableId: stableId,
+                regionIndex: idx,
+                frameInRow: CGRect(
+                    x: origin.x,
+                    y: origin.y,
+                    width: max(layout.measuredWidth, 1),
+                    height: max(layout.totalHeight, 1)),
+                layout: layout,
+                setSelection: { [weak self] range in
+                    self?.selections[idx] = range
+                })
+            regions.append(region)
+        }
+        return regions
+    }
+
+    var selectionHeader: String? { nil }
+
+    func clearSelection() {
+        selections.removeAll()
     }
 }

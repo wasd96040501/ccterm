@@ -181,7 +181,7 @@ final class SessionHandle2ConfigurationTests: XCTestCase {
         XCTAssertFalse(h.isWorktree)
     }
 
-    // MARK: - setAdditionalDirectories / setPluginDirectories
+    // MARK: - setAdditionalDirectories（运行时可改）
 
     func test_setAdditionalDirectories_stopped_writesDB() {
         let repo = makeRepo()
@@ -195,16 +195,22 @@ final class SessionHandle2ConfigurationTests: XCTestCase {
         XCTAssertEqual(repo.find("adddirs")?.extra.addDirs, ["/a", "/b"])
     }
 
-    func test_setAdditionalDirectories_ignoredWhenAttached() {
+    /// 运行时修改（attached）被接受：memory + db 都更新。RPC 路径需要真 agentSession，
+    /// 此处不验证（见 setModel/setEffort 同理）；不崩即过。
+    func test_setAdditionalDirectories_attached_writesMemoryAndDB() {
         let repo = makeRepo()
         let h = makeHandle(id: "adddirs-attached", in: repo)
-        h.additionalDirectories = ["/kept"]
-        h.status = .idle
+        h.cwd = "/tmp/a"
+        startThenStop(h)     // 落 db
+        h.status = .idle     // 模拟 attached
 
-        h.setAdditionalDirectories(["/nope"])
+        h.setAdditionalDirectories(["/live"])
 
-        XCTAssertEqual(h.additionalDirectories, ["/kept"])
+        XCTAssertEqual(h.additionalDirectories, ["/live"])
+        XCTAssertEqual(repo.find("adddirs-attached")?.extra.addDirs, ["/live"])
     }
+
+    // MARK: - setPluginDirectories（non-active only）
 
     func test_setPluginDirectories_stopped_writesDB() {
         let repo = makeRepo()
@@ -216,6 +222,46 @@ final class SessionHandle2ConfigurationTests: XCTestCase {
 
         XCTAssertEqual(h.pluginDirectories, ["/plug1"])
         XCTAssertEqual(repo.find("plugs")?.extra.pluginDirs, ["/plug1"])
+    }
+
+    /// attached 下 setPluginDirectories no-op——内存与 db 都不动。
+    func test_setPluginDirectories_ignoredWhenAttached() {
+        let repo = makeRepo()
+        let h = makeHandle(id: "plugs-attached", in: repo)
+        h.cwd = "/tmp/p"
+        startThenStop(h)
+        h.setPluginDirectories(["/initial"])
+        h.status = .idle
+
+        h.setPluginDirectories(["/ignored"])
+
+        XCTAssertEqual(h.pluginDirectories, ["/initial"])
+        XCTAssertEqual(repo.find("plugs-attached")?.extra.pluginDirs, ["/initial"])
+    }
+
+    // MARK: - canSet* flags
+
+    /// canSetCwd / canSetWorktree / canSetPluginDirectories 全部随 isAttached 切换。
+    func test_canSet_flags_trackIsAttached() {
+        let repo = makeRepo()
+        let h = makeHandle(id: "can-set", in: repo)
+
+        // .notStarted
+        XCTAssertTrue(h.canSetCwd)
+        XCTAssertTrue(h.canSetWorktree)
+        XCTAssertTrue(h.canSetPluginDirectories)
+
+        for attached in [SessionHandle2.Status.starting, .idle, .responding, .interrupting] {
+            h.status = attached
+            XCTAssertFalse(h.canSetCwd, "attached=\(attached)")
+            XCTAssertFalse(h.canSetWorktree, "attached=\(attached)")
+            XCTAssertFalse(h.canSetPluginDirectories, "attached=\(attached)")
+        }
+
+        h.status = .stopped
+        XCTAssertTrue(h.canSetCwd)
+        XCTAssertTrue(h.canSetWorktree)
+        XCTAssertTrue(h.canSetPluginDirectories)
     }
 
     // MARK: - respond(to:decision:)

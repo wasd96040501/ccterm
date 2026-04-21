@@ -13,6 +13,18 @@ extension SessionHandle2 {
         }
     }
 
+    // MARK: - canSet* (observable, for UI binding)
+    //
+    // 只为「运行时受限」的 setter 暴露 canSet*；永远可调的 setter（model / effort /
+    // permissionMode / additionalDirectories / focused）无 flag——UI 不需要禁用。
+
+    /// `setCwd` 是否可调。CLI 运行时不支持改 cwd，attached 下拒。
+    var canSetCwd: Bool { !isAttached }
+    /// `setWorktree` 是否可调。运行时不可改。
+    var canSetWorktree: Bool { !isAttached }
+    /// `setPluginDirectories` 是否可调。`--plugin-dir` 是 CLI 启动参数，运行时无 RPC。
+    var canSetPluginDirectories: Bool { !isAttached }
+
     /// 当前 sessionId 是否已在 repository 中持久化。用于决定 set* 是否写 db。
     /// 首次 `ensureStarted()` 前 fresh 态为 false；之后或 resume 均为 true。
     private var isPersisted: Bool { repository.find(sessionId) != nil }
@@ -88,21 +100,8 @@ extension SessionHandle2 {
         }
     }
 
-    /// 变更额外工作目录列表。路由规则同 `setCwd`（AgentSDK 无运行时 RPC）。
-    /// UI 层加/删单项用 read-modify-write：
-    /// `handle.setAdditionalDirectories(handle.additionalDirectories + [path])`。
-    func setAdditionalDirectories(_ dirs: [String]) {
-        guard !isAttached else {
-            appLog(.info, "SessionHandle2", "setAdditionalDirectories ignored — attached \(sessionId)")
-            return
-        }
-        self.additionalDirectories = dirs
-        if isPersisted {
-            repository.updateExtra(sessionId, with: SessionExtraUpdate(addDirs: dirs))
-        }
-    }
-
-    /// 变更插件目录列表。路由规则同 `setAdditionalDirectories`。
+    /// 变更插件目录列表。`--plugin-dir` 是 CLI 启动参数，运行时无对应 RPC——attached
+    /// 下 no-op（不写内存、不写 db），UI 直接 bind `canSetPluginDirectories` 禁用入口。
     func setPluginDirectories(_ dirs: [String]) {
         guard !isAttached else {
             appLog(.info, "SessionHandle2", "setPluginDirectories ignored — attached \(sessionId)")
@@ -111,6 +110,28 @@ extension SessionHandle2 {
         self.pluginDirectories = dirs
         if isPersisted {
             repository.updateExtra(sessionId, with: SessionExtraUpdate(pluginDirs: dirs))
+        }
+    }
+}
+
+// MARK: - Configuration: additionalDirectories（运行时可改；attached 下走 RPC）
+
+extension SessionHandle2 {
+
+    /// 变更额外工作目录列表。运行时可改——走 `applyFlagSettings.permissions.additionalDirectories`。
+    /// UI 层加/删单项用 read-modify-write：
+    /// `handle.setAdditionalDirectories(handle.additionalDirectories + [path])`。
+    func setAdditionalDirectories(_ dirs: [String]) {
+        self.additionalDirectories = dirs
+        if isPersisted {
+            repository.updateExtra(sessionId, with: SessionExtraUpdate(addDirs: dirs))
+        }
+        if isAttached {
+            var perms = FlagSettings.Permissions()
+            perms.additionalDirectories = dirs
+            var settings = FlagSettings()
+            settings.permissions = .set(perms)
+            agentSession?.applyFlagSettings(settings)
         }
     }
 }

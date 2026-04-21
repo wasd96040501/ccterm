@@ -106,6 +106,17 @@ class SessionHandle2 {
     ///   configuration 一次性 `save` 到 db。
     /// - 已 start 后字段变化（CLI init 回包 / non-active 下重改）：didSet 触发
     ///   `repository.updateXxx` 增量更新。
+    ///
+    /// ## Setter 可调性矩阵
+    ///
+    /// | setter | attached 下 | 暴露的 canSet* |
+    /// |---|---|---|
+    /// | `setModel` / `setEffort` / `setPermissionMode` | 本地 + db + RPC | —（永远可调） |
+    /// | `setAdditionalDirectories` | 本地 + db + applyFlagSettings RPC | —（永远可调） |
+    /// | `setCwd` / `setWorktree` | no-op（CLI 运行时不支持） | `canSetCwd` / `canSetWorktree` |
+    /// | `setPluginDirectories` | no-op（`--plugin-dir` 是启动参数） | `canSetPluginDirectories` |
+    /// | `setFocused` | 本地（不碰 CLI） | —（永远可调） |
+    /// | `respond(to:decision:)` | 本地（命中 pending 才生效） | — |
     init(sessionId: String, repository: SessionRepository) {
         self.sessionId = sessionId
         self.repository = repository
@@ -196,12 +207,14 @@ class SessionHandle2 {
     /// 变更 worktree 开关。路由规则同 `setCwd`（运行时不可改）。
     // impl in SessionHandle2+Configuration.swift
 
-    /// 变更额外工作目录列表。路由规则同 `setCwd`（目前 AgentSDK 无运行时 RPC）。
+    /// 变更额外工作目录列表。**运行时可改**——attached 下走
+    /// `applyFlagSettings.permissions.additionalDirectories`。
     /// UI 层加/删单项用 read-modify-write：
     /// `handle.setAdditionalDirectories(handle.additionalDirectories + [path])`。
     // impl in SessionHandle2+Configuration.swift
 
-    /// 变更插件目录列表。路由规则同 `setAdditionalDirectories`。
+    /// 变更插件目录列表。路由规则同 `setCwd`（`--plugin-dir` 是 CLI 启动参数，
+    /// 运行时无 RPC）。UI 用 `canSetPluginDirectories` 禁用入口。
     // impl in SessionHandle2+Configuration.swift
 
     // MARK: - Permission

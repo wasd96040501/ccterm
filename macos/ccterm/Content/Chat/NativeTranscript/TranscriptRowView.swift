@@ -43,9 +43,27 @@ class TranscriptRowView: NSTableRowView, CALayerDelegate {
     /// 也设上，CA 传进来的 `ctx` 已经是 y 向下（原点左上）——直接喂给 `row.draw`
     /// 不需要再做坐标翻转。文字层面由 `ctx.textMatrix = (1, -1)` 翻 glyph 即可
     /// （跟 Telegram 的做法一致）。
+    ///
+    /// 绑定 **当前视图的 effectiveAppearance** 为 drawing appearance：
+    /// CALayerDelegate.draw 没有 AppKit 的 NSGraphicsContext，dynamic NSColor
+    /// （例如 `.labelColor` / 主题的 `NSColor(name:nil){appearance in ...}` 动态
+    /// 色）默认会 fall back 到应用默认外观，不跟随 system dark/light。
+    /// `performAsCurrentDrawingAppearance` 把 view 的 `effectiveAppearance` 装
+    /// 到线程局部，`.cgColor` 解析时命中正确的分支——系统 appearance 切换后配合
+    /// `viewDidChangeEffectiveAppearance` 触发重绘即可。
     func draw(_ layer: CALayer, in ctx: CGContext) {
         guard let row else { return }
-        row.draw(in: ctx, bounds: bounds)
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            row.draw(in: ctx, bounds: bounds)
+        }
+    }
+
+    /// 系统 light/dark 切换时，AppKit 先更新 `effectiveAppearance`，再调用
+    /// 所有 view 的这个 hook。dynamic NSColors 的解析会在下一次 draw 命中
+    /// 新外观，但 CA 的 backing bitmap 仍是旧像素——必须显式触发重绘。
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        layer?.setNeedsDisplay()
     }
 
     // NSTableRowView 默认还会画 selection / hover / separator——transcript 纯只读，全关。

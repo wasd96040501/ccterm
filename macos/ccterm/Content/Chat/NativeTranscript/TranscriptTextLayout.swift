@@ -118,7 +118,10 @@ struct TranscriptTextLayout {
     // MARK: - Hit-testing / Selection range
 
     /// `point` 必须已经是 layout 自己的坐标系（左上为原点，y 向下）。
-    /// 返回命中的字符 index（或最接近的）；越界返回 nil。
+    /// 返回命中的字符 index（或最接近的）；越界或完全不可命中返回 nil。
+    ///
+    /// `CTLineGetStringIndexForPosition` 在点完全偏出 line 时返回 `kCFNotFound`
+    /// (= -1)。下游 range 运算不能吃 -1，这里归一成 nil 让调用方走快速路径。
     func characterIndex(at point: CGPoint) -> CFIndex? {
         guard !lines.isEmpty else { return nil }
         let lineIdx = findLineIndex(for: point.y)
@@ -128,6 +131,7 @@ struct TranscriptTextLayout {
         // y 忽略。
         let local = CGPoint(x: point.x - origin.x, y: 0)
         let idx = CTLineGetStringIndexForPosition(line, local)
+        if idx < 0 { return nil }
         return idx
     }
 
@@ -176,6 +180,12 @@ struct TranscriptTextLayout {
                 endIdx = lineEnd
             }
 
+            // CTLineGetStringIndexForPosition 可能返回 kCFNotFound(-1)——点完
+            // 全偏出 line 的场景。负值混进 range 算术会得到无意义负长度，最后
+            // clamp 到 0 覆盖掉，但中间结果不安全，这里一次性丢掉这类 case。
+            if startIdx < 0 || endIdx < 0 {
+                continue
+            }
             if startIdx > endIdx {
                 swap(&startIdx, &endIdx)
             }

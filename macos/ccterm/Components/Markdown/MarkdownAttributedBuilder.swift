@@ -187,8 +187,12 @@ struct MarkdownAttributedBuilder {
                         let line = NSMutableAttributedString(string: "\t")
                         line.append(marker)
                         line.append(NSAttributedString(string: "\t"))
+                        // Trim leading whitespace from the first text run —
+                        // nested-list content sometimes carries over indentation
+                        // from the source (` - inner` yields `" inner"`), which
+                        // reads as an unwanted tab/space right after the marker.
                         line.append(renderInlines(
-                            inlines,
+                            Self.trimLeadingWhitespace(inlines),
                             baseFont: theme.bodyFont,
                             color: theme.primaryColor))
                         apply(listLineStyle(trailing: blockTrailing), to: line)
@@ -265,43 +269,40 @@ struct MarkdownAttributedBuilder {
         return NSAttributedString(attachment: attachment)
     }
 
-    /// SF Symbols `square` / `checkmark.square` rendered as an `NSTextAttachment`
-    /// so checked and unchecked boxes are guaranteed to be the exact same size.
-    /// Sized at 1.2× body font and `.medium` weight — the default `.regular`
-    /// stroke reads thin at body sizes.
-    ///
-    /// Vertical alignment uses the font's **cap height** centre rather than
-    /// x-height. SF Symbol bounding boxes carry asymmetric internal padding,
-    /// and the x-height reference visibly sits the chip below the text mean
-    /// line. capHeight/2 puts the symbol's geometric centre on the same line
-    /// as uppercase letters, which reads as properly centred.
-    private func checkboxAttachment(checked: Bool) -> NSAttributedString {
-        let symbolSize = theme.bodyFontSize * 1.2
-        let name = checked ? "checkmark.square" : "square"
-        let config = NSImage.SymbolConfiguration(pointSize: symbolSize, weight: .medium)
-        guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-            .withSymbolConfiguration(config)
-        else {
-            return NSAttributedString(string: checked ? "☑" : "☐", attributes: [
-                .font: theme.bodyFont,
-                .foregroundColor: theme.secondaryColor,
-            ])
+    /// Trim leading ASCII whitespace from the first text inline of a sequence.
+    /// Used when rendering a list item's first paragraph — see the caller for
+    /// the "nested list bleeds an indent" rationale. Newlines are preserved;
+    /// we only strip spaces/tabs that would render as leading gutter whitespace.
+    static func trimLeadingWhitespace(_ inlines: [MarkdownInline]) -> [MarkdownInline] {
+        guard case let .text(s)? = inlines.first else { return inlines }
+        let trimmed = s.drop(while: { $0 == " " || $0 == "\t" })
+        if trimmed.count == s.count { return inlines }
+        var result = Array(inlines.dropFirst())
+        if !trimmed.isEmpty {
+            result.insert(.text(String(trimmed)), at: 0)
         }
-        image.isTemplate = true
-        let attachment = NSTextAttachment()
-        attachment.image = image
-        let capHeight = theme.bodyFont.capHeight
-        attachment.bounds = CGRect(
-            x: 0,
-            y: (capHeight - symbolSize) / 2,
-            width: symbolSize,
-            height: symbolSize)
-        let attr = NSMutableAttributedString(attachment: attachment)
-        attr.addAttribute(
-            .foregroundColor,
-            value: theme.secondaryColor,
-            range: NSRange(location: 0, length: attr.length))
-        return attr
+        return result
+    }
+
+    /// Task list checkbox rendered as Unicode glyphs (☐ / ☑).
+    ///
+    /// Historically we used an `NSTextAttachment` wrapping an SF Symbol image,
+    /// but CoreText (which the NativeTranscript renderer uses) does NOT run
+    /// the TextKit attachment substitution pass — attachment characters are
+    /// typeset as zero-width (or the object-replacement-glyph) with no image
+    /// drawn. Unicode BALLOT BOX / BALLOT BOX WITH CHECK ship in SF Pro and
+    /// render cleanly through the standard glyph pipeline.
+    ///
+    /// Size bumped slightly (1.05× body) so the box reads at similar visual
+    /// weight to surrounding text. Checked box uses `primaryColor` so the
+    /// tick stands out; unchecked uses `secondaryColor` for a softer empty
+    /// box.
+    private func checkboxAttachment(checked: Bool) -> NSAttributedString {
+        let font = NSFont.systemFont(ofSize: theme.bodyFontSize * 1.05, weight: .regular)
+        return NSAttributedString(string: checked ? "☑" : "☐", attributes: [
+            .font: font,
+            .foregroundColor: checked ? theme.primaryColor : theme.secondaryColor,
+        ])
     }
 
     // MARK: - Inline rendering
@@ -355,9 +356,9 @@ struct MarkdownAttributedBuilder {
 
         case .code(let s):
             let font = NSFont.monospacedSystemFont(ofSize: baseFont.pointSize * 0.92, weight: .regular)
-            // Custom marker — drawn as a padded rounded chip by
-            // ``MarkdownLayoutManager``. Built-in `.backgroundColor` only
-            // supports tight rectangles.
+            // Custom marker — drawn as a padded rounded chip by the CoreText
+            // renderer. Built-in `.backgroundColor` only supports tight
+            // character-bounds rectangles.
             let chipAttrs: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: color,
@@ -365,28 +366,29 @@ struct MarkdownAttributedBuilder {
             ]
             let chip = NSAttributedString(string: s, attributes: chipAttrs)
 
-            // LEFT side: push the chip away from the previous character by
-            // bumping that char's kern in the already-emitted output. The kern
-            // sits on a glyph OUTSIDE the chip's marker range, so it shifts
-            // the chip's start position without widening the chip itself.
-            if out.length > 0 {
-                let prevRange = NSRange(location: out.length - 1, length: 1)
-                out.addAttribute(.kern, value: theme.inlineCodeSideKern, range: prevRange)
-            }
-            out.append(chip)
-
-            // RIGHT side: append a zero-width word joiner (U+2060) carrying
-            // the kern. CRITICAL — putting the kern on the chip's *last*
-            // character would widen `enumerateEnclosingRects`'s result and
-            // pull the following glyph INSIDE the chip's rounded right edge.
-            // The U+2060 is invisible, has no advance, and is unmarked, so it
-            // sits outside the chip range; only its post-kern carries through
-            // to push the next visible glyph past the chip's drawn edge.
-            let trailing = NSAttributedString(string: "\u{2060}", attributes: [
+            // External gap: BOTH sides insert an invisible U+2060 word joiner
+            // carrying the same `.kern`. The joiner is 0-advance and carries
+            // no ink, so it lives OUTSIDE the chip's CTRun — only its kern
+            // shifts the next glyph past the chip's drawn edge.
+            //
+            // Earlier we kerned the character immediately before the chip,
+            // but `.kern` stacks on top of that character's intrinsic advance.
+            // When the preceding char was a space (" `code`") the space's own
+            // 3-4pt width plus our kern showed up as a double-wide gap on the
+            // left side, while the right side still read as a single gap.
+            // Using a joiner on both sides makes the mechanism — and the
+            // resulting gap — perfectly symmetric regardless of the neighbour
+            // glyph.
+            let joinerAttrs: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .kern: theme.inlineCodeSideKern,
-            ])
-            out.append(trailing)
+            ]
+            let joiner = NSAttributedString(string: "\u{2060}", attributes: joinerAttrs)
+            if out.length > 0 {
+                out.append(joiner)
+            }
+            out.append(chip)
+            out.append(joiner)
 
         case .link(let destination, let children):
             let before = out.length

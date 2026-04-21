@@ -44,8 +44,7 @@ final class AssistantMarkdownRow: TranscriptRow {
         self.prebuilt = Self.buildPrebuilt(
             document: parsedDocument,
             theme: theme,
-            codeTokens: [:],
-            colorScheme: Self.currentColorScheme())
+            codeTokens: [:])
     }
 
     override var stableId: AnyHashable { stable }
@@ -65,8 +64,7 @@ final class AssistantMarkdownRow: TranscriptRow {
         prebuilt = Self.buildPrebuilt(
             document: parsedDocument,
             theme: theme,
-            codeTokens: codeTokens,
-            colorScheme: Self.currentColorScheme())
+            codeTokens: codeTokens)
         cachedWidth = 0
         rendered = []
         attributedOrigins = [:]
@@ -266,8 +264,7 @@ final class AssistantMarkdownRow: TranscriptRow {
     private static func buildPrebuilt(
         document: MarkdownDocument,
         theme: TranscriptTheme,
-        codeTokens: [Int: [SyntaxToken]],
-        colorScheme: ColorScheme
+        codeTokens: [Int: [SyntaxToken]]
     ) -> [PrebuiltSegment] {
         let builder = MarkdownAttributedBuilder(theme: theme.markdown)
         var out: [PrebuiltSegment] = []
@@ -287,8 +284,7 @@ final class AssistantMarkdownRow: TranscriptRow {
                 let attr = buildCodeBlockAttributed(
                     block: block,
                     tokens: codeTokens[idx],
-                    theme: theme,
-                    colorScheme: colorScheme)
+                    theme: theme)
                 out.append(.attributed(attr, kind: .codeBlock, topPadding: gap))
             case .table(let table):
                 out.append(.table(table, topPadding: gap))
@@ -311,16 +307,30 @@ final class AssistantMarkdownRow: TranscriptRow {
     private static func buildCodeBlockAttributed(
         block: MarkdownCodeBlock,
         tokens: [SyntaxToken]?,
-        theme: TranscriptTheme,
-        colorScheme: ColorScheme
+        theme: TranscriptTheme
     ) -> NSAttributedString {
         let font = NSFont.monospacedSystemFont(
             ofSize: theme.markdown.codeFontSize, weight: .regular)
         if let tokens, !tokens.isEmpty {
-            return SyntaxAttributedString.buildNS(
-                tokens: tokens,
-                colorScheme: colorScheme,
-                font: font)
+            // Build with dynamic NSColors — the attributed string outlives the
+            // current appearance (it's cached in the layout). Each token's
+            // color resolves at draw time via
+            // `NSAppearance.performAsCurrentDrawingAppearance` in the row view,
+            // so switching system appearance doesn't need a token rebuild.
+            let result = NSMutableAttributedString()
+            for token in tokens {
+                let scope = token.scope
+                let color = NSColor(name: nil) { appearance in
+                    let match = appearance.bestMatch(from: [.darkAqua, .aqua])
+                    let scheme: ColorScheme = match == .darkAqua ? .dark : .light
+                    return NSColor(SyntaxTheme.color(for: scope, scheme: scheme))
+                }
+                result.append(NSAttributedString(string: token.text, attributes: [
+                    .font: font,
+                    .foregroundColor: color,
+                ]))
+            }
+            return result
         }
         return NSAttributedString(
             string: block.code,
@@ -336,10 +346,6 @@ final class AssistantMarkdownRow: TranscriptRow {
         return theme.l2
     }
 
-    private static func currentColorScheme() -> ColorScheme {
-        let match = NSApp?.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua])
-        return match == .darkAqua ? .dark : .light
-    }
 }
 
 // MARK: - TextSelectable

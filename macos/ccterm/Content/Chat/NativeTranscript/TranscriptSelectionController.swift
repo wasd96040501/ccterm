@@ -152,11 +152,16 @@ final class TranscriptSelectionController: NSResponder {
         let upper = anchor.y <= focus.y ? anchor : focus
         let lower = anchor.y <= focus.y ? focus : anchor
 
-        let upperRow = clampedRow(at: upper, tableView: tableView)
-        let lowerRow = clampedRow(at: lower, tableView: tableView)
+        var upperRow = clampedRow(at: upper, tableView: tableView)
+        var lowerRow = clampedRow(at: lower, tableView: tableView)
         guard upperRow >= 0, lowerRow >= 0,
               upperRow < controller.rows.count, lowerRow < controller.rows.count else {
             return
+        }
+        // Clamp 后理应 upperRow <= lowerRow，这里兜底交换——避免罕见几何下
+        // (如 resize 过程中 bounds 瞬间为 0) 走到 `upperRow...lowerRow` 崩溃。
+        if upperRow > lowerRow {
+            swap(&upperRow, &lowerRow)
         }
 
         var nextEntries: [Entry] = []
@@ -327,13 +332,27 @@ final class TranscriptSelectionController: NSResponder {
         return bestIdx
     }
 
+    /// 把 doc point 归一成 tableView 内的有效 row。
+    ///
+    /// 注意：`NSTableView.row(at:)` 对 **任何** 超出 bounds 的点都返回 -1——
+    /// 包括 x 出界、y 在界内的情况。如果仅拿 y 走 fallback（y<=0→0，否则
+    /// rowCount-1），upper 点 x 越界 + lower 点 x 在界内时会得到 upperRow =
+    /// rowCount-1 > lowerRow 的非法组合，撞上
+    /// `for rowIdx in upperRow...lowerRow` 的 `lowerBound <= upperBound` 断言。
+    ///
+    /// 解决：先把 point 夹回 bounds 再 `row(at:)`，这样 y 的行序在 clamp 后仍
+    /// 保持单调——upper.y <= lower.y 必然推出 upperRow <= lowerRow。
     private func clampedRow(at point: CGPoint, tableView: NSTableView) -> Int {
         let rowCount = tableView.numberOfRows
         guard rowCount > 0 else { return -1 }
-        let raw = tableView.row(at: point)
+        let b = tableView.bounds
+        guard b.width > 0, b.height > 0 else { return -1 }
+        let cx = min(max(point.x, b.minX), b.maxX - 1)
+        let cy = min(max(point.y, b.minY), b.maxY - 1)
+        let raw = tableView.row(at: CGPoint(x: cx, y: cy))
         if raw >= 0 { return raw }
-        if point.y <= 0 { return 0 }
-        return rowCount - 1
+        // clamp 后 row(at:) 理论上必中；保留 y-fallback 以防万一。
+        return cy <= b.minY ? 0 : rowCount - 1
     }
 
     // MARK: - NSResponder / copy

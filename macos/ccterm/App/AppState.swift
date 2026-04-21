@@ -7,6 +7,7 @@ import AgentSDK
 final class AppState {
     // MARK: - Services
     let sessionService = SessionService()
+    let sessionManager2 = SessionManager2()
     let gitBranchService = GitBranchService()
     let syntaxEngine = SyntaxHighlightEngine()
     // MARK: - ViewModels

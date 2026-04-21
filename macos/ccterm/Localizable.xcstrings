@@ -657,6 +657,16 @@
         }
       }
     },
+    "Failed to load history": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加载历史失败"
+          }
+        }
+      }
+    },
     "Fetched %@": {
       "localizations": {
         "zh-Hans": {

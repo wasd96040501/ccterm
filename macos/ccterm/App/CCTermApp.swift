@@ -36,6 +36,7 @@ struct CCTermApp: App {
         CLICapabilityStore.shared.detectVersion()
         CLICapabilityStore.shared.loadFromCache()
         ModelStore.prefetchIfNeeded()
+        MainThreadWatchdog.start()
     }
 }
 

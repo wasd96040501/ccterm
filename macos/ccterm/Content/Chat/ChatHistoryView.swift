@@ -36,7 +36,7 @@ struct ChatHistoryView: View {
                 description: Text(reason)
             )
         case .loaded:
-            ChatTranscriptView(entries: handle.messages)
+            NativeTranscriptView(entries: handle.messages)
         }
     }
 }

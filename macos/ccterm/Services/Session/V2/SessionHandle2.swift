@@ -20,6 +20,12 @@ import AgentSDK
 ///
 /// 生命周期：会话创建时即诞生（status=.inactive），持续到用户删除会话。
 /// attach/detach 只切换"是否有活跃子进程"，不影响 handle 存在。
+///
+/// 对外 API 两大类：
+/// - **Command**（`send` / `interrupt`）：严格看 status；可用性通过 `canSend` / `canInterrupt` observe。
+/// - **Setter**（`setModel` / `setPermissionMode` / `setEffort` / `setAdditionalDirectories` /
+///   `setPlugins` / `setFocused` / `dismissExitError`）：永远可调。本地 observable 立即更新；
+///   若有 backend，同步写 CLI stdin。无 backend 时仅更新本地值，下次 attach 时作为启动初值。
 @Observable
 @MainActor
 final class SessionHandle2 {
@@ -43,11 +49,20 @@ final class SessionHandle2 {
     internal(set) var permissionMode: PermissionMode
     internal(set) var model: String?
     internal(set) var effort: Effort?
+    internal(set) var additionalDirectories: [String]
+    internal(set) var plugins: [String: Any]
 
     // MARK: - UI State
 
     /// 外部只读。写操作统一走 `setFocused(_:)` / `dismissExitError()` 以保证副作用不被绕过。
     private(set) var ui = UIState()
+
+    // MARK: - Command Availability (observable, derived from status)
+
+    /// 用户发送是否可用。`.inactive` 时拒绝——进程已死，不再收新消息。
+    var canSend: Bool { status != .inactive }
+    /// 用户中断是否可用。仅响应中才能中断。
+    var canInterrupt: Bool { status == .responding }
 
     // MARK: - Implementation State (cross-file access by extensions)
 
@@ -74,6 +89,8 @@ final class SessionHandle2 {
         permissionMode: PermissionMode,
         model: String?,
         effort: Effort?,
+        additionalDirectories: [String] = [],
+        plugins: [String: Any] = [:],
         bridge: SessionBridge
     ) {
         self.sessionId = sessionId
@@ -81,13 +98,19 @@ final class SessionHandle2 {
         self.permissionMode = permissionMode
         self.model = model
         self.effort = effort
+        self.additionalDirectories = additionalDirectories
+        self.plugins = plugins
         self.bridge = bridge
     }
 
     // MARK: - Commands
 
-    /// 唯一发送入口。idle 时立即开新 turn，非 idle 自动入队。
+    /// 唯一发送入口。idle 时立即开新 turn，非 idle 自动入队。`.inactive` 拒绝。
     func send(_ text: String, planContent: String? = nil) {
+        guard canSend else {
+            appLog(.warning, "SessionHandle2", "send ignored — status=\(status) \(sessionId)")
+            return
+        }
         guard status == .idle else {
             appLog(.info, "SessionHandle2", "send queued — status=\(status) \(sessionId)")
             queuedMessages.append(text)
@@ -96,9 +119,9 @@ final class SessionHandle2 {
         startTurn(text, planContent: planContent)
     }
 
-    /// 中断当前响应。仅 .responding 时有效。
+    /// 中断当前响应。仅 `.responding` 时有效。
     func interrupt() {
-        guard status == .responding, let backend else { return }
+        guard canInterrupt, let backend else { return }
         appLog(.info, "SessionHandle2", "interrupt → interrupting \(sessionId)")
         status = .interrupting
         backend.interrupt { [weak self] in
@@ -111,30 +134,47 @@ final class SessionHandle2 {
         }
     }
 
-    /// 变更会话配置。本地状态立即更新（乐观），若有 backend 则同步写 stdin。
-    func configure(_ change: ConfigChange) {
-        switch change {
-        case .permissionMode(let mode):
-            permissionMode = mode
-            backend?.setPermissionMode(mode.toSDK())
-        case .model(let newModel):
-            model = newModel
-            backend?.setModel(newModel)
-        case .effort(let newEffort):
-            effort = newEffort
-            backend?.setEffort(newEffort)
-        }
+    // MARK: - Setters (永远可调；本地 observable 立即更新；有 backend 则同步写 CLI)
+
+    /// 改权限模式。走独立 `set_permission_mode` control request。
+    func setPermissionMode(_ mode: PermissionMode) {
+        permissionMode = mode
+        backend?.setPermissionMode(mode.toSDK())
     }
 
-    // MARK: - Queue
-
-    /// 移除队列中指定位置的消息（用户撤销排队）。入队走 `send`。
-    func dequeue(at index: Int) {
-        guard queuedMessages.indices.contains(index) else { return }
-        queuedMessages.remove(at: index)
+    /// 改模型。走独立 `set_model` control request。
+    func setModel(_ model: String) {
+        self.model = model
+        backend?.setModel(model)
     }
 
-    // MARK: - UI State Control
+    /// 改 effort。走 `apply_flag_settings`。
+    func setEffort(_ effort: Effort) {
+        self.effort = effort
+        var settings = FlagSettings()
+        settings.effortLevel = .set(effort)
+        backend?.applyFlagSettings(settings)
+    }
+
+    /// 改额外工作目录。走 `apply_flag_settings` → `permissions.additionalDirectories`。
+    func setAdditionalDirectories(_ dirs: [String]) {
+        additionalDirectories = dirs
+        var perms = FlagSettings.Permissions()
+        perms.additionalDirectories = dirs
+        var settings = FlagSettings()
+        settings.permissions = .set(perms)
+        backend?.applyFlagSettings(settings)
+    }
+
+    /// 改启用的插件。key 格式 `"plugin-id@marketplace-id"`。走 `apply_flag_settings` → `enabledPlugins`。
+    func setPlugins(_ plugins: [String: Any]) {
+        self.plugins = plugins
+        var settings = FlagSettings()
+        settings.enabledPlugins = .set(plugins)
+        backend?.applyFlagSettings(settings)
+    }
+
+    // MARK: - UI State Setters (纯本地，不碰 CLI)
 
     /// 由 ChatRouter 调用，维护"全局唯一 focused"不变量。聚焦时自动清 hasUnread。
     func setFocused(_ focused: Bool) {
@@ -210,12 +250,6 @@ extension SessionHandle2 {
         case interrupting   // 已发中断，等待模型停止
 
         var isActive: Bool { self != .inactive }
-    }
-
-    enum ConfigChange {
-        case permissionMode(PermissionMode)
-        case model(String)
-        case effort(Effort)
     }
 
     enum HistoryLoadState {

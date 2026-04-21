@@ -96,22 +96,106 @@ final class SessionHandle2Tests: XCTestCase {
         XCTAssertEqual(bridge.turnActiveCalls.last?.isTurnActive, false)
     }
 
-    // MARK: - #4 Configure
+    // MARK: - #4 Setters (CLI-backed 配置)
 
-    func test_configure_all3Cases() async {
+    /// 独立 control request 类（setModel / setPermissionMode）：本地镜像 + 专用 backend 方法。
+    /// FlagSettings 类（setEffort / setAdditionalDirectories / setPlugins）：本地镜像 + applyFlagSettings。
+    func test_setters_routeToCorrectBackendChannel() async {
         let (handle, backend, _) = await makeAttached()
 
-        handle.configure(.permissionMode(.plan))
+        // 独立 subtype
+        handle.setPermissionMode(.plan)
         XCTAssertEqual(handle.permissionMode, .plan)
         XCTAssertEqual(backend.permissionModeSet, .plan)
 
-        handle.configure(.model("haiku"))
+        handle.setModel("haiku")
         XCTAssertEqual(handle.model, "haiku")
         XCTAssertEqual(backend.modelSet, "haiku")
 
-        handle.configure(.effort(.high))
+        // 走 applyFlagSettings 的三个
+        handle.setEffort(.high)
         XCTAssertEqual(handle.effort, .high)
-        XCTAssertEqual(backend.effortSet, .high)
+        if case .set(let e) = backend.flagSettingsApplied.last?.effortLevel ?? .unset {
+            XCTAssertEqual(e, .high)
+        } else {
+            XCTFail("effortLevel should be .set(.high)")
+        }
+
+        handle.setAdditionalDirectories(["/tmp/a", "/tmp/b"])
+        XCTAssertEqual(handle.additionalDirectories, ["/tmp/a", "/tmp/b"])
+        if case .set(let p) = backend.flagSettingsApplied.last?.permissions ?? .unset {
+            XCTAssertEqual(p.additionalDirectories, ["/tmp/a", "/tmp/b"])
+        } else {
+            XCTFail("permissions should be .set with additionalDirectories")
+        }
+
+        handle.setPlugins(["pluginA@mk": true])
+        XCTAssertEqual(handle.plugins["pluginA@mk"] as? Bool, true)
+        if case .set(let map) = backend.flagSettingsApplied.last?.enabledPlugins ?? .unset {
+            XCTAssertEqual(map["pluginA@mk"] as? Bool, true)
+        } else {
+            XCTFail("enabledPlugins should be .set")
+        }
+    }
+
+    /// 无 backend 时 setter 仍更新本地 observable（作为下次 attach 的启动初值）。
+    func test_setters_withoutBackend_updateLocalOnly() async {
+        let (handle, backend, _) = makeHandle()
+
+        handle.setPermissionMode(.plan)
+        handle.setModel("opus")
+        handle.setEffort(.low)
+        handle.setAdditionalDirectories(["/x"])
+        handle.setPlugins(["p@m": true])
+
+        XCTAssertEqual(handle.permissionMode, .plan)
+        XCTAssertEqual(handle.model, "opus")
+        XCTAssertEqual(handle.effort, .low)
+        XCTAssertEqual(handle.additionalDirectories, ["/x"])
+        XCTAssertEqual(handle.plugins["p@m"] as? Bool, true)
+
+        XCTAssertNil(backend.permissionModeSet)
+        XCTAssertNil(backend.modelSet)
+        XCTAssertTrue(backend.flagSettingsApplied.isEmpty)
+    }
+
+    /// canSend / canInterrupt 随 status 变化。
+    func test_commandAvailabilityFlags() async {
+        let (handle, backend, _) = makeHandle()
+
+        // .inactive：全关
+        XCTAssertFalse(handle.canSend)
+        XCTAssertFalse(handle.canInterrupt)
+
+        handle.attach(backend: backend)
+        // .starting：canSend=true（入队到 .idle 冲刷），canInterrupt=false
+        XCTAssertEqual(handle.status, .starting)
+        XCTAssertTrue(handle.canSend)
+        XCTAssertFalse(handle.canInterrupt)
+
+        await backend.deliver(makeInitMessage(cwd: nil, slashCommands: nil, permissionMode: nil))
+        // .idle
+        XCTAssertTrue(handle.canSend)
+        XCTAssertFalse(handle.canInterrupt)
+
+        handle.send("msg")
+        // .responding
+        XCTAssertEqual(handle.status, .responding)
+        XCTAssertTrue(handle.canSend)
+        XCTAssertTrue(handle.canInterrupt)
+
+        handle.interrupt()
+        // .interrupting
+        XCTAssertEqual(handle.status, .interrupting)
+        XCTAssertTrue(handle.canSend)
+        XCTAssertFalse(handle.canInterrupt)
+    }
+
+    /// `.inactive` 下 send 被拒（不入队到永远不会冲刷的死队列）。
+    func test_send_rejectedWhenInactive() async {
+        let (handle, _, _) = makeHandle()
+        handle.send("lost")
+        XCTAssertTrue(handle.queuedMessages.isEmpty)
     }
 
     // MARK: - #5 sessionInit
@@ -471,8 +555,8 @@ final class FakeSessionBackend: SessionBackend {
     var interruptCallCount = 0
     var pendingInterruptCompletion: (() -> Void)?
     var modelSet: String?
-    var effortSet: Effort?
     var permissionModeSet: AgentSDK.PermissionMode?
+    var flagSettingsApplied: [FlagSettings] = []
     var closeCallCount = 0
 
     var onMessage: ((Message2) -> Void)?
@@ -491,8 +575,8 @@ final class FakeSessionBackend: SessionBackend {
     }
 
     func setModel(_ model: String) { modelSet = model }
-    func setEffort(_ effort: Effort) { effortSet = effort }
     func setPermissionMode(_ mode: AgentSDK.PermissionMode) { permissionModeSet = mode }
+    func applyFlagSettings(_ settings: FlagSettings) { flagSettingsApplied.append(settings) }
     func close() { closeCallCount += 1 }
 
     // MARK: - Test triggers

@@ -23,12 +23,18 @@ struct ContextUsage: Equatable {
 // MARK: - Backend Protocol
 
 /// CLI 后端协议。生产环境由 AgentSDK.Session 的适配器实现，测试环境注入 fake。
+///
+/// 配置写回 CLI 分两种 control request：
+/// - `setModel` / `setPermissionMode`：各自独立 subtype（`set_model` / `set_permission_mode`）。
+/// - `applyFlagSettings`：统一 `apply_flag_settings` 通道，承载 effort / additionalDirectories /
+///   enabledPlugins / fastMode / thinking 等一切 flag 层配置。SessionHandle2 的对应 setter 内部
+///   构造 `FlagSettings` 调这一个入口，不在 backend 上为每项加专用方法。
 protocol SessionBackend: AnyObject {
     func sendMessage(_ text: String, planContent: String?)
     func interrupt(completion: @escaping () -> Void)
     func setModel(_ model: String)
-    func setEffort(_ effort: Effort)
     func setPermissionMode(_ mode: AgentSDK.PermissionMode)
+    func applyFlagSettings(_ settings: FlagSettings)
     func close()
 
     var onMessage: ((Message2) -> Void)? { get set }

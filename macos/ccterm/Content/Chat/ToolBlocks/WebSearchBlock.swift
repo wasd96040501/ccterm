@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// Tool block for the `WebSearch` tool — header shows the query; body lists
-/// search result entries (title + URL + optional snippet).
+/// Tool block for the `WebSearch` tool — header is caller-supplied; body
+/// lists search result entries (title + URL + optional snippet).
 struct WebSearchBlock: View {
+    let title: String
     let query: String
     let results: [SearchResult]
     let status: ToolBlockStatus
@@ -17,7 +18,11 @@ struct WebSearchBlock: View {
     }
 
     var body: some View {
-        ToolBlock(status: status, isExpanded: $isExpanded) {
+        ToolBlock(
+            status: status,
+            isExpanded: $isExpanded,
+            hasExpandableContent: !results.isEmpty
+        ) {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach(results) { result in
                     ResultRow(result: result)
@@ -28,7 +33,7 @@ struct WebSearchBlock: View {
             .background(Color.secondary.opacity(0.06))
             .clipShape(RoundedRectangle(cornerRadius: 6))
         } label: {
-            Label("\"\(query)\"", systemImage: "text.magnifyingglass")
+            Label(title, systemImage: "text.magnifyingglass")
         }
     }
 }
@@ -64,6 +69,7 @@ private struct ResultRow: View {
 
 #Preview("Idle") {
     WebSearchBlock(
+        title: "Searched \"query\"",
         query: "swiftui disclosure group custom style",
         results: [
             .init(
@@ -83,6 +89,7 @@ private struct ResultRow: View {
 
 #Preview("Running") {
     WebSearchBlock(
+        title: "Searched \"query\"",
         query: "how to build swift ui app on macos",
         results: [],
         status: .running
@@ -93,6 +100,7 @@ private struct ResultRow: View {
 
 #Preview("Error") {
     WebSearchBlock(
+        title: "Searched \"query\"",
         query: "some query",
         results: [],
         status: .error("rate limit exceeded")

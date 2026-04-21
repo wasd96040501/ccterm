@@ -27,8 +27,8 @@ macos/Local.xcconfig
 .claude/worktrees/
 
 # Private development notes
-docs/
 prds/
+docs/
 
 # Environment
 .env

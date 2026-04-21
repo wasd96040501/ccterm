@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// Tool block for the `Agent` / `Task` tool — header shows description and a
-/// status summary; body shows the progress entries and final output text.
+/// Tool block for the `Agent` / `Task` tool — header is caller-supplied;
+/// body shows the progress entries and final output text.
 struct AgentBlock: View {
+    let title: String
     let description: String
     let progress: [ProgressEntry]
     /// Final text output after the agent completes.
@@ -21,7 +22,11 @@ struct AgentBlock: View {
     }
 
     var body: some View {
-        ToolBlock(status: status, isExpanded: $isExpanded) {
+        ToolBlock(
+            status: status,
+            isExpanded: $isExpanded,
+            hasExpandableContent: !progress.isEmpty || outputText?.isEmpty == false
+        ) {
             VStack(alignment: .leading, spacing: 8) {
                 if !progress.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
@@ -56,17 +61,8 @@ struct AgentBlock: View {
                 }
             }
         } label: {
-            Label(labelText, systemImage: "person.crop.circle.badge.questionmark")
+            Label(title, systemImage: "person.crop.circle.badge.questionmark")
         }
-    }
-
-    private var labelText: String {
-        var out = description
-        var suffix: [String] = []
-        if let agentState { suffix.append(agentState) }
-        if let toolUseCount, toolUseCount > 0 { suffix.append("\(toolUseCount) tools") }
-        if !suffix.isEmpty { out += "  (\(suffix.joined(separator: ", ")))" }
-        return out
     }
 }
 
@@ -74,6 +70,7 @@ struct AgentBlock: View {
 
 #Preview("Running with progress") {
     AgentBlock(
+        title: "Agent: research",
         description: "Research how SwiftUI animation timing works",
         progress: [
             .init(text: "Searching documentation…"),
@@ -92,6 +89,7 @@ struct AgentBlock: View {
 
 #Preview("Completed with output") {
     AgentBlock(
+        title: "Agent: research",
         description: "Audit repo for TODOs",
         progress: [
             .init(text: "Grep pattern 'TODO' across repo"),
@@ -117,6 +115,7 @@ struct AgentBlock: View {
 
 #Preview("Error") {
     AgentBlock(
+        title: "Agent: research",
         description: "Deploy to staging",
         progress: [],
         outputText: nil,
@@ -131,6 +130,7 @@ struct AgentBlock: View {
 
 #Preview("Minimal") {
     AgentBlock(
+        title: "Agent: research",
         description: "Analyse changes",
         progress: [],
         outputText: nil,

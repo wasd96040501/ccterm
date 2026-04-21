@@ -30,7 +30,7 @@ struct NativeBashView: View {
         .onPreferenceChange(ContentHeightKey.self) { contentHeight = $0 }
         .frame(height: resolvedHeight)
         .background(backgroundColor)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
         .task(id: command) {
             guard let engine = syntaxEngine else { return }
             let code = cleanedCommand

@@ -1,8 +1,10 @@
 import SwiftUI
 
-/// Tool block for the `Bash` tool — shows the command in the header and the
-/// merged stdout / stderr output on expand.
+/// Tool block for the `Bash` tool — header is caller-supplied (unified with
+/// the group-title active/completed phrasing); body shows the command +
+/// merged stdout / stderr.
 struct BashBlock: View {
+    let title: String
     let command: String
     let stdout: String?
     let stderr: String?
@@ -11,7 +13,13 @@ struct BashBlock: View {
     @State private var isExpanded = false
 
     var body: some View {
-        ToolBlock(status: status, isExpanded: $isExpanded) {
+        ToolBlock(
+            status: status,
+            isExpanded: $isExpanded,
+            hasExpandableContent: !command.isEmpty
+                || stdout?.isEmpty == false
+                || stderr?.isEmpty == false
+        ) {
             VStack(alignment: .leading, spacing: 8) {
                 NativeBashView(command: command, maxHeight: 260)
                 if let stdout, !stdout.isEmpty {
@@ -22,14 +30,8 @@ struct BashBlock: View {
                 }
             }
         } label: {
-            Label(headerText, systemImage: "terminal")
+            Label(title, systemImage: "terminal")
         }
-    }
-
-    private var headerText: String {
-        let collapsed = command.replacingOccurrences(of: "\n", with: " ")
-        if collapsed.count <= 80 { return collapsed }
-        return String(collapsed.prefix(80)) + "…"
     }
 }
 
@@ -49,8 +51,7 @@ private struct OutputView: View {
                 .padding(8)
         }
         .frame(maxHeight: 240)
-        .background(Color.black.opacity(0.04))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .toolBlockSecondarySectionStyle()
     }
 
     private var cleaned: String {
@@ -65,6 +66,7 @@ private struct OutputView: View {
 
 #Preview("Idle — simple") {
     BashBlock(
+        title: "Ran: ls -la /usr/local/bin",
         command: "ls -la /usr/local/bin",
         stdout: "total 128\ndrwxr-xr-x  brew  staff  4096 Apr 18 10:30 .\ndrwxr-xr-x  root  wheel  4096 Apr 18 10:30 ..",
         stderr: nil,
@@ -77,6 +79,7 @@ private struct OutputView: View {
 
 #Preview("Running") {
     BashBlock(
+        title: "Running: build project",
         command: "make build",
         stdout: nil,
         stderr: nil,
@@ -89,6 +92,7 @@ private struct OutputView: View {
 
 #Preview("Error — non-zero exit") {
     BashBlock(
+        title: "Ran: cat /nonexistent/file.txt",
         command: "cat /nonexistent/file.txt",
         stdout: nil,
         stderr: "cat: /nonexistent/file.txt: No such file or directory",
@@ -101,6 +105,7 @@ private struct OutputView: View {
 
 #Preview("Long command truncated") {
     BashBlock(
+        title: "Ran: find /usr/local -name '*.dylib' -type…",
         command: "find /usr/local -name '*.dylib' -type f -exec ls -la {} \\; | sort -k5 -n -r | head -20",
         stdout: "lrwxr-xr-x  1 admin  wheel  1234 Apr  4 12:00 libfoo.dylib\n...",
         stderr: nil,
@@ -113,6 +118,7 @@ private struct OutputView: View {
 
 #Preview("Mixed stdout + stderr") {
     BashBlock(
+        title: "Ran: npm test",
         command: "npm test",
         stdout: "> project@1.0.0 test\n> jest\n\nPASS  src/foo.test.ts\nPASS  src/bar.test.ts",
         stderr: "npm WARN deprecated package@1.0.0: use newer version",

@@ -7,6 +7,10 @@ struct NativeDiffView: View {
     let oldString: String
     let newString: String
     var maxHeight: CGFloat? = nil
+    /// When true, `.add` lines render like `.context` — no `+` sign, no green
+    /// background. Line numbers and syntax highlighting are kept. Use for
+    /// "new file" views that want a gutter + code without the diff noise.
+    var suppressInsertionStyle: Bool = false
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.syntaxEngine) private var syntaxEngine
@@ -37,7 +41,7 @@ struct NativeDiffView: View {
             }
         }
         .background(DiffColors.tableBg(colorScheme))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
         .task(id: "\(oldString.hashValue)_\(newString.hashValue)") {
             hunks = DiffEngine.computeHunks(old: oldString, new: newString)
             rebuildAttributedContent()
@@ -101,16 +105,19 @@ struct NativeDiffView: View {
         let lineNoStr = line.lineNo.map(String.init) ?? ""
         let paddedLineNo = String(repeating: " ", count: max(0, gutterDigits - lineNoStr.count)) + lineNoStr
 
+        let effectiveType: DiffEngine.Line.LineType =
+            (suppressInsertionStyle && line.type == .add) ? .context : line.type
+
         let sign: String
         let signColor: NSColor
-        switch line.type {
+        switch effectiveType {
         case .add:     sign = "+"; signColor = NSColor(DiffColors.signAdd(colorScheme))
         case .del:     sign = "-"; signColor = NSColor(DiffColors.signDel(colorScheme))
         case .context: sign = " "; signColor = .clear
         }
 
-        let gutterBg = NSColor(DiffColors.gutterBg(line.type, colorScheme))
-        let contentBg = NSColor(DiffColors.contentBg(line.type, colorScheme))
+        let gutterBg = NSColor(DiffColors.gutterBg(effectiveType, colorScheme))
+        let contentBg = NSColor(DiffColors.contentBg(effectiveType, colorScheme))
 
         let result = NSMutableAttributedString()
 
@@ -468,6 +475,17 @@ func greet(name: String, greeting: String = "Hello") {
     )
     .padding()
     .frame(width: 400)
+}
+
+#Preview("New file — suppressed insertion style") {
+    NativeDiffView(
+        filePath: "Sources/Greeter.swift",
+        oldString: "",
+        newString: sampleNew,
+        suppressInsertionStyle: true
+    )
+    .padding()
+    .frame(width: 500)
 }
 
 #Preview("Delete lines") {

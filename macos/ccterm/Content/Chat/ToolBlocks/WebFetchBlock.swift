@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// Tool block for the `WebFetch` tool — header shows URL + HTTP status; body
+/// Tool block for the `WebFetch` tool — header is caller-supplied; body
 /// renders the fetched content as markdown.
 struct WebFetchBlock: View {
+    let title: String
     let url: String
     let httpStatus: Int?
     let result: String?
@@ -11,7 +12,11 @@ struct WebFetchBlock: View {
     @State private var isExpanded = false
 
     var body: some View {
-        ToolBlock(status: status, isExpanded: $isExpanded) {
+        ToolBlock(
+            status: status,
+            isExpanded: $isExpanded,
+            hasExpandableContent: result?.isEmpty == false
+        ) {
             if let result, !result.isEmpty {
                 ScrollView([.vertical]) {
                     MarkdownView(result)
@@ -23,14 +28,8 @@ struct WebFetchBlock: View {
                 .clipShape(RoundedRectangle(cornerRadius: 6))
             }
         } label: {
-            Label(labelText, systemImage: "globe")
+            Label(title, systemImage: "globe")
         }
-    }
-
-    private var labelText: String {
-        var out = url
-        if let httpStatus { out += "  (\(httpStatus))" }
-        return out
     }
 }
 
@@ -38,6 +37,7 @@ struct WebFetchBlock: View {
 
 #Preview("Idle — markdown body") {
     WebFetchBlock(
+        title: "Fetched https://example.com",
         url: "https://example.com/docs",
         httpStatus: 200,
         result: """
@@ -62,6 +62,7 @@ struct WebFetchBlock: View {
 
 #Preview("Running") {
     WebFetchBlock(
+        title: "Fetched https://example.com",
         url: "https://api.example.com/slow-endpoint",
         httpStatus: nil,
         result: nil,
@@ -73,6 +74,7 @@ struct WebFetchBlock: View {
 
 #Preview("Error — 404") {
     WebFetchBlock(
+        title: "Fetched https://example.com",
         url: "https://example.com/not-found",
         httpStatus: 404,
         result: nil,

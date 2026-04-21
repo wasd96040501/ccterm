@@ -2,13 +2,13 @@ import AppKit
 
 /// User 消息右对齐气泡。
 ///
-/// 布局:
+/// 布局：
 /// - maxBubbleWidth = frame.width - bubbleMinLeftGutter - bubbleRightInset
 /// - 实际 bubbleWidth = min(maxBubbleWidth, textMeasuredWidth + 2 * hPad)
 /// - bubbleX = frame.width - bubbleRightInset - bubbleWidth
 ///
-/// 短文本 hug 内容,长文本 wrap 到 maxBubbleWidth。
-final class UserBubbleRowItem: TranscriptRowItem {
+/// 短文本 hug 内容，长文本 wrap 到 maxBubbleWidth。
+final class UserBubbleRow: TranscriptRow {
     let text: String
     let theme: TranscriptTheme
     private let stable: AnyHashable
@@ -37,7 +37,7 @@ final class UserBubbleRowItem: TranscriptRowItem {
             .foregroundColor: theme.markdown.primaryColor,
         ]
         let attr = NSAttributedString(string: text, attributes: attrs)
-        textLayout = TranscriptTextRenderer.makeLayout(
+        textLayout = TranscriptTextLayout.make(
             attributed: attr,
             maxWidth: contentMaxWidth)
 
@@ -68,6 +68,6 @@ final class UserBubbleRowItem: TranscriptRowItem {
         let textOrigin = CGPoint(
             x: bubbleRect.minX + theme.bubbleHorizontalPadding,
             y: bubbleRect.minY + theme.bubbleVerticalPadding)
-        TranscriptTextRenderer.draw(textLayout, origin: textOrigin, in: ctx)
+        textLayout.draw(origin: textOrigin, in: ctx)
     }
 }

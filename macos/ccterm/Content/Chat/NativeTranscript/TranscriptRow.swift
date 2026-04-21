@@ -4,7 +4,7 @@ import AppKit
 ///
 /// NSTableView 走 `rowView-only` 路径：每一行由 `TranscriptRowView` 子类
 /// 全权负责绘制，没有 cell view。reuse 以 `identifier` 分桶——子类默认返回
-/// 类名即可让同类 item 复用同一个 view pool。
+/// 类名即可让同类 row 复用同一个 view pool。
 ///
 /// 子类必须 override：
 /// - ``stableId``：diff / reload 用
@@ -12,13 +12,13 @@ import AppKit
 /// - ``draw(in:bounds:)``：绘制内容到当前 flipped CGContext
 /// - ``viewClass()``：若需要自定义 row view 子类
 @MainActor
-class TranscriptRowItem {
+class TranscriptRow {
     init() {}
 
     /// 逻辑稳定 id。diff 时按此比较；Stage 1 不做细粒度 diff，仅作为排查依据。
     var stableId: AnyHashable { ObjectIdentifier(self) }
 
-    /// NSTableView 的 reuse identifier。默认按 item 类名分桶，同类互相复用。
+    /// NSTableView 的 reuse identifier。默认按 row 类名分桶，同类互相复用。
     var identifier: String { String(describing: type(of: self)) }
 
     /// 最近一次 `makeSize(width:)` 得到的宽度 + 高度。
@@ -34,8 +34,8 @@ class TranscriptRowItem {
         cachedHeight = 0
     }
 
-    /// rowView 类。默认 `TranscriptRowView`——仅负责把绘制委派回 item。
-    /// 若需要 hover / track events 等 per-item 行为，再 override。
+    /// rowView 类。默认 `TranscriptRowView`——仅负责把绘制委派回 row。
+    /// 若需要 hover / track events 等 per-row 行为，再 override。
     func viewClass() -> TranscriptRowView.Type {
         TranscriptRowView.self
     }

@@ -86,7 +86,7 @@ struct TranscriptTableLayout {
             for (c, attr) in row.enumerated() {
                 let cellW = columnWidths[c]
                 let innerW = max(1, cellW - 2 * hPad)
-                let layout = TranscriptTextRenderer.makeLayout(
+                let layout = TranscriptTextLayout.make(
                     attributed: attr, maxWidth: innerW)
                 laid.append(layout)
                 maxCellH = max(maxCellH, layout.totalHeight)
@@ -180,8 +180,7 @@ struct TranscriptTableLayout {
                 }
                 let yOrigin = curY + vPad
 
-                TranscriptTextRenderer.draw(
-                    cellLayout,
+                cellLayout.draw(
                     origin: CGPoint(x: xOrigin, y: yOrigin),
                     in: ctx)
                 curX += cellW

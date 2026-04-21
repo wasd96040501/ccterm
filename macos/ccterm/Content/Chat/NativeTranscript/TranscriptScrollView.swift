@@ -3,7 +3,7 @@ import AppKit
 /// Transcript 顶层 NSScrollView：
 /// - responsive scrolling：让 AppKit 在滚动时可以拼 layer bitmap 而非同步 drawRect
 /// - layer-backed + `.never` redraw：滚动 0 个 draw 调用
-/// - 自带 `TranscriptClipView` + `TranscriptTableView` + `TranscriptController`
+/// - 自带 `FlippedClipView` + `TranscriptTableView` + `TranscriptController`
 final class TranscriptScrollView: NSScrollView {
     let controller: TranscriptController
     private let tableView: TranscriptTableView
@@ -33,7 +33,7 @@ final class TranscriptScrollView: NSScrollView {
         automaticallyAdjustsContentInsets = false
         contentInsets = NSEdgeInsets(top: 12, left: 0, bottom: 12, right: 0)
 
-        let clip = TranscriptClipView(frame: frameRect)
+        let clip = FlippedClipView(frame: frameRect)
         contentView = clip
         documentView = table
 
@@ -59,4 +59,23 @@ final class TranscriptScrollView: NSScrollView {
             tableView.setFrameSize(NSSize(width: target, height: tableView.frame.height))
         }
     }
+}
+
+// MARK: - ClipView
+
+/// NSClipView 子类，仅改变两件事：
+/// - flipped：配合 `TranscriptTableView` 的坐标系
+/// - layer-backed + `.never` redraw：滚动时 GPU composite，不触发重画
+private final class FlippedClipView: NSClipView {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layerContentsRedrawPolicy = .never
+        drawsBackground = false
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:)") }
+
+    override var isFlipped: Bool { true }
+    override var isOpaque: Bool { false }
 }

@@ -2,8 +2,8 @@ import AppKit
 import CoreText
 
 /// 工具调用 / thinking / group 的占位 row。
-/// 灰色虚线边框 + label 文本,固定高度约 36pt。
-final class PlaceholderRowItem: TranscriptRowItem {
+/// 灰色虚线边框 + label 文本，固定高度约 36pt。
+final class PlaceholderRow: TranscriptRow {
     let label: String
     let theme: TranscriptTheme
     private let stable: AnyHashable

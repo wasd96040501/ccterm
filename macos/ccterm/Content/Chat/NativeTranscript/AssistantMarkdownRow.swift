@@ -1,10 +1,11 @@
 import AppKit
 
-/// Assistant 消息(纯文本部分)。一条 assistant 消息中所有 text block 的 markdown
-/// 源码拼接后,解析为 `MarkdownDocument`,逐 segment 构造 Core Text layout。
+/// Assistant 消息（纯文本部分）。一条 assistant 消息中所有 text block 的
+/// markdown 源码拼接后，解析为 `MarkdownDocument`，逐 segment 构造 Core Text
+/// layout。
 ///
-/// 绘制时按 segment 顺序累加 y 偏移,段间间距遵从 `MarkdownTheme.l1/l2`。
-final class AssistantMarkdownRowItem: TranscriptRowItem {
+/// 绘制时按 segment 顺序累加 y 偏移，段间间距遵从 `MarkdownTheme.l1/l2`。
+final class AssistantMarkdownRow: TranscriptRow {
     let source: String
     let theme: TranscriptTheme
     private let stable: AnyHashable
@@ -71,13 +72,13 @@ final class AssistantMarkdownRowItem: TranscriptRowItem {
             switch seg {
             case .markdown(let blocks):
                 let attr = builder.build(blocks: blocks)
-                let layout = TranscriptTextRenderer.makeLayout(
+                let layout = TranscriptTextLayout.make(
                     attributed: attr, maxWidth: contentWidth)
                 segments.append(.text(layout, topPadding: gap))
 
             case .heading(let level, let inlines):
                 let attr = builder.buildHeading(level: level, inlines: inlines)
-                let layout = TranscriptTextRenderer.makeLayout(
+                let layout = TranscriptTextLayout.make(
                     attributed: attr, maxWidth: contentWidth)
                 segments.append(.text(layout, topPadding: gap))
 
@@ -85,7 +86,7 @@ final class AssistantMarkdownRowItem: TranscriptRowItem {
                 let attr = builder.buildBlockquote(blocks: blocks)
                 let barSpace = theme.markdown.blockquoteBarWidth + theme.markdown.blockquoteBarGap
                 let innerWidth = max(40, contentWidth - barSpace)
-                let layout = TranscriptTextRenderer.makeLayout(
+                let layout = TranscriptTextLayout.make(
                     attributed: attr, maxWidth: innerWidth)
                 segments.append(.blockquote(layout, topPadding: gap))
 
@@ -100,7 +101,7 @@ final class AssistantMarkdownRowItem: TranscriptRowItem {
                     ])
                 let pad = theme.codeBlockHorizontalPadding
                 let innerWidth = max(40, contentWidth - 2 * pad)
-                let layout = TranscriptTextRenderer.makeLayout(
+                let layout = TranscriptTextLayout.make(
                     attributed: attr, maxWidth: innerWidth)
                 segments.append(.codeBlock(layout, topPadding: gap))
 
@@ -114,7 +115,7 @@ final class AssistantMarkdownRowItem: TranscriptRowItem {
 
             case .mathBlock(let raw):
                 let attr = monospacedFallback(raw)
-                let layout = TranscriptTextRenderer.makeLayout(
+                let layout = TranscriptTextLayout.make(
                     attributed: attr, maxWidth: contentWidth)
                 segments.append(.text(layout, topPadding: gap))
 
@@ -123,8 +124,8 @@ final class AssistantMarkdownRowItem: TranscriptRowItem {
             }
         }
 
-        // 总高度 = 每个 segment 的 topPadding + contentHeight + 上/下 rowVerticalPadding
-        // codeBlock 的 contentHeight 已经含 layout.height,外加块 vPad 要加一次。
+        // 总高度 = 每个 segment 的 topPadding + contentHeight + 上/下 rowVerticalPadding。
+        // codeBlock 的 contentHeight 已经含 layout.height，外加块 vPad 要加一次。
         var total: CGFloat = 0
         for seg in segments {
             total += seg.topPadding
@@ -164,8 +165,7 @@ final class AssistantMarkdownRowItem: TranscriptRowItem {
             y += seg.topPadding
             switch seg {
             case .text(let layout, _):
-                TranscriptTextRenderer.draw(
-                    layout,
+                layout.draw(
                     origin: CGPoint(x: theme.rowHorizontalPadding, y: y),
                     in: ctx)
                 y += layout.totalHeight
@@ -208,10 +208,7 @@ final class AssistantMarkdownRowItem: TranscriptRowItem {
         let textX = theme.rowHorizontalPadding
             + theme.markdown.blockquoteBarWidth
             + theme.markdown.blockquoteBarGap
-        TranscriptTextRenderer.draw(
-            layout,
-            origin: CGPoint(x: textX, y: y),
-            in: ctx)
+        layout.draw(origin: CGPoint(x: textX, y: y), in: ctx)
     }
 
     private func drawCodeBlock(
@@ -240,7 +237,7 @@ final class AssistantMarkdownRowItem: TranscriptRowItem {
         let textOrigin = CGPoint(
             x: rect.minX + theme.codeBlockHorizontalPadding,
             y: rect.minY + theme.codeBlockVerticalPadding)
-        TranscriptTextRenderer.draw(layout, origin: textOrigin, in: ctx)
+        layout.draw(origin: textOrigin, in: ctx)
     }
 
     private func drawThematicBreak(y: CGFloat, width: CGFloat, in ctx: CGContext) {

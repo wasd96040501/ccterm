@@ -78,6 +78,69 @@ final class TranscriptSelectionController: NSResponder {
 
     var isEmpty: Bool { entries.isEmpty }
 
+    // MARK: - Click-granular selection (double = word, triple = paragraph)
+
+    /// 双击：选中命中 region 内的 word（CFStringTokenizer）。
+    /// 对齐 Telegram `TextView.mouseUp` clickCount==2 → `selectWord(at:)`。
+    func selectWord(at documentPoint: CGPoint) {
+        anchorPoint = nil
+        focusPoint = nil
+        applyGranular(at: documentPoint) { layout, local in
+            layout.wordRange(at: local)
+        }
+    }
+
+    /// 三击：选中命中 region 内的段落（\n 切）。
+    /// 对齐 Telegram `TextView.mouseUp` clickCount==3 → `selectAll(at:)`
+    /// 的段落语义。
+    func selectParagraph(at documentPoint: CGPoint) {
+        anchorPoint = nil
+        focusPoint = nil
+        applyGranular(at: documentPoint) { layout, local in
+            layout.paragraphRange(at: local)
+        }
+    }
+
+    /// 给定一个 doc point，定位 row + region，把 `rangeProvider` 返回的 range
+    /// 写到该 region 上并更新记账。
+    private func applyGranular(
+        at documentPoint: CGPoint,
+        rangeProvider: (TranscriptTextLayout, CGPoint) -> NSRange
+    ) {
+        clear()
+        guard let controller, let tableView = controller.tableView else { return }
+        let rowIdx = tableView.row(at: documentPoint)
+        guard rowIdx >= 0, rowIdx < controller.rows.count else { return }
+        guard let selectable = controller.rows[rowIdx] as? TextSelectable else { return }
+        let regions = selectable.selectableRegions
+        guard !regions.isEmpty else { return }
+        let rowRect = tableView.rect(ofRow: rowIdx)
+        let pointInRow = CGPoint(
+            x: documentPoint.x - rowRect.origin.x,
+            y: documentPoint.y - rowRect.origin.y)
+        let regionIdx = findRegionIndex(for: pointInRow, regions: regions)
+        let region = regions[regionIdx]
+
+        let local = CGPoint(
+            x: pointInRow.x - region.frameInRow.origin.x,
+            y: pointInRow.y - region.frameInRow.origin.y)
+
+        let range = rangeProvider(region.layout, local)
+        guard range.location != NSNotFound, range.length > 0 else { return }
+
+        region.setSelection(range)
+        let sub = region.layout.attributed.attributedSubstring(from: range)
+        entries = [Entry(
+            rowStableId: region.rowStableId,
+            rowIndex: rowIdx,
+            regionIndex: region.regionIndex,
+            substring: sub)]
+        lastSelectedKeys = [SelectionKey(
+            rowStableId: region.rowStableId,
+            regionIndex: region.regionIndex)]
+        controller.notifyRowSelectionChanged(index: rowIdx)
+    }
+
     // MARK: - Recompute
 
     private func recomputeSelection() {

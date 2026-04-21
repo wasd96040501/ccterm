@@ -55,9 +55,11 @@ struct MarkdownTheme {
     var inlineCodeCornerRadius: CGFloat = 3
     /// Spacing pushed onto the characters immediately before and after an
     /// inline code run (via NSAttributedString `.kern`) so the chip never
-    /// visually overlaps neighbouring glyphs. Should be ≥ `inlineCodeHPadding`
-    /// plus a small visual gap.
-    var inlineCodeSideKern: CGFloat = 5
+    /// visually overlaps neighbouring glyphs. Must exceed `inlineCodeHPadding`
+    /// by enough to absorb the neighbour glyph's LSB — punctuation like `.` and
+    /// `,` has a small LSB, so a 1pt gap (kern=padding+1) still reads as the
+    /// dot touching the chip. Use +3pt of visual breathing room.
+    var inlineCodeSideKern: CGFloat = 7
 
     // MARK: - Derived fonts
 

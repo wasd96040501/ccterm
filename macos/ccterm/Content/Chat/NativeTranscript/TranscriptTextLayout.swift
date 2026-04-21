@@ -195,6 +195,47 @@ struct TranscriptTextLayout {
         return NSRange(location: loc, length: len)
     }
 
+    /// 命中点 → 字符所属 word range（Unicode 词切分，CJK 下单字为词）。
+    /// 对齐 Telegram `selectWord(at:)`：双击触发的词粒度选中。
+    func wordRange(at point: CGPoint) -> NSRange {
+        guard let ci = characterIndex(at: point) else {
+            return NSRange(location: NSNotFound, length: 0)
+        }
+        let str = attributed.string as CFString
+        let length = CFStringGetLength(str)
+        guard length > 0 else { return NSRange(location: NSNotFound, length: 0) }
+        let clamped = min(max(0, Int(ci)), Int(length) - 1)
+
+        let locale = CFLocaleCopyCurrent()
+        let tokenizer = CFStringTokenizerCreate(
+            kCFAllocatorDefault,
+            str,
+            CFRangeMake(0, length),
+            kCFStringTokenizerUnitWordBoundary,
+            locale)
+        let kind = CFStringTokenizerGoToTokenAtIndex(tokenizer, clamped)
+        guard kind != [] else { return NSRange(location: NSNotFound, length: 0) }
+        let r = CFStringTokenizerGetCurrentTokenRange(tokenizer)
+        guard r.location != kCFNotFound, r.length > 0 else {
+            return NSRange(location: NSNotFound, length: 0)
+        }
+        return NSRange(location: r.location, length: r.length)
+    }
+
+    /// 命中点 → 所在段落 range（按 `\n` 分段——NSString `paragraphRange(for:)`）。
+    /// 对齐 Telegram `selectAll(at:)`：三击触发的段落粒度选中。
+    func paragraphRange(at point: CGPoint) -> NSRange {
+        guard let ci = characterIndex(at: point) else {
+            return NSRange(location: NSNotFound, length: 0)
+        }
+        let s = attributed.string as NSString
+        guard s.length > 0 else { return NSRange(location: NSNotFound, length: 0) }
+        let clamped = min(max(0, Int(ci)), s.length)
+        let range = s.paragraphRange(for: NSRange(location: clamped, length: 0))
+        guard range.length > 0 else { return NSRange(location: NSNotFound, length: 0) }
+        return range
+    }
+
     /// y 坐标 → 命中的行下标。
     ///
     /// 关键：行间有 lineSpacing / paragraphSpacing 的 gap，严格 rect 包含测试
@@ -253,9 +294,15 @@ struct TranscriptTextLayout {
 
     struct InlineCodeChipStyle {
         var horizontalPadding: CGFloat
+        /// 上下方向纯视觉 overflow。不影响 CTLine 布局——chip 画到 ascent/descent
+        /// 之外，吃掉一部分行间 spacing。用于让 chip 看起来比字形稍大一圈。
+        var verticalOverflow: CGFloat
         var cornerRadius: CGFloat
 
-        static let `default` = InlineCodeChipStyle(horizontalPadding: 4, cornerRadius: 3)
+        static let `default` = InlineCodeChipStyle(
+            horizontalPadding: 4,
+            verticalOverflow: 2,
+            cornerRadius: 3)
     }
 
     /// 三趟：选中底色（如果有）→ inline code chip → glyph。
@@ -324,9 +371,9 @@ struct TranscriptTextLayout {
 
             let chipRect = CGRect(
                 x: baseline.x + firstPos.x - style.horizontalPadding,
-                y: baseline.y - ascent,
+                y: baseline.y - ascent - style.verticalOverflow,
                 width: width + 2 * style.horizontalPadding,
-                height: ascent + descent)
+                height: ascent + descent + 2 * style.verticalOverflow)
 
             ctx.saveGState()
             ctx.setFillColor(color.cgColor)

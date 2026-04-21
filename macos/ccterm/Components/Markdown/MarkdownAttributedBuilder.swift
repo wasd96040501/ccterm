@@ -124,10 +124,15 @@ struct MarkdownAttributedBuilder {
         trailingSpacing: CGFloat,
         into out: NSMutableAttributedString
     ) {
-        // Marker font: monospaced digits for ordered lists so 9, 10, 99, 100
-        // share the same digit width and right-align cleanly.
+        // Marker font: fully monospaced (SF Mono) for ordered lists. Previously
+        // used `monospacedDigitSystemFont`, which only gives tabular digit
+        // advances — the digit→`.` pair kerning still varies by digit in SF Pro,
+        // so "1." / "2." / "3." widths were subtly unequal and visually drifted
+        // under the right-aligned tab stop. SF Mono has no context-dependent
+        // kerning, so every marker lines up exactly at both the dot and the
+        // digits above it.
         let markerFont: NSFont = list.ordered
-            ? NSFont.monospacedDigitSystemFont(ofSize: theme.bodyFontSize, weight: .regular)
+            ? NSFont.monospacedSystemFont(ofSize: theme.bodyFontSize, weight: .regular)
             : theme.bodyFont
 
         // Pre-pass: compute the widest marker across this list so every item

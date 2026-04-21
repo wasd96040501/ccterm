@@ -1,94 +1,106 @@
 import AppKit
 import CoreText
 
-/// Static helpers: turn an `NSAttributedString` into a drawable
-/// ``TranscriptTextLayout``, and blit it into a flipped `CGContext`.
-///
-/// Uses `CTFramesetter` (not `CTTypesetter` directly) so `NSParagraphStyle`
-/// attributes—`paragraphSpacing`, `lineSpacing`, head indents, tab stops—that
-/// `MarkdownAttributedBuilder` already emits are respected without a
-/// re-implementation.
+/// 对齐 Telegram `TextViewLayout.calculateLayout` 的做法:用 `CTTypesetter` 逐行
+/// 排版,行高/段距全部手算,不依赖 `CTFramesetter` 的 suggested size。
+/// 好处:
+/// - `totalHeight` = 实际各行占用之和,天然不会裁 descender/ascender
+/// - `NSParagraphStyle` 的 `lineSpacing` / `paragraphSpacing` / 缩进精确生效
+///   (`CTFramesetter` 只会"尽量"honor,会出现 1-2pt 偏差)
 enum TranscriptTextRenderer {
 
     // MARK: - Layout
 
-    /// Typeset `attributed` within `maxWidth`. Returned layout's
-    /// ``TranscriptTextLayout/totalHeight`` fits all lines.
+    /// 逐行排版 `attributed`(最大宽度 `maxWidth`)。
     static func makeLayout(
         attributed: NSAttributedString,
         maxWidth: CGFloat
     ) -> TranscriptTextLayout {
         guard attributed.length > 0, maxWidth > 0 else {
-            return TranscriptTextLayout(
-                attributed: attributed,
-                lines: [],
-                lineOrigins: [],
-                totalHeight: 0,
-                measuredWidth: 0)
+            return .empty
         }
 
-        let framesetter = CTFramesetterCreateWithAttributedString(attributed)
-        let suggested = CTFramesetterSuggestFrameSizeWithConstraints(
-            framesetter,
-            CFRange(location: 0, length: 0),
-            nil,
-            CGSize(width: maxWidth, height: .greatestFiniteMagnitude),
-            nil)
-        let height = ceil(suggested.height) + 1  // +1 guard against descender clipping
+        let typesetter = CTTypesetterCreateWithAttributedString(attributed)
+        let ns = attributed.string as NSString
 
-        let path = CGPath(
-            rect: CGRect(x: 0, y: 0, width: maxWidth, height: height),
-            transform: nil)
-        let frame = CTFramesetterCreateFrame(
-            framesetter,
-            CFRange(location: 0, length: 0),
-            path,
-            nil)
+        var lines: [CTLine] = []
+        var lineOrigins: [CGPoint] = []
+        var y: CGFloat = 0
+        var maxLineWidth: CGFloat = 0
 
-        let ctLines = (CTFrameGetLines(frame) as? [CTLine]) ?? []
-        guard !ctLines.isEmpty else {
-            return TranscriptTextLayout(
-                attributed: attributed,
-                lines: [],
-                lineOrigins: [],
-                totalHeight: 0,
-                measuredWidth: 0)
-        }
-        var origins = [CGPoint](repeating: .zero, count: ctLines.count)
-        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
+        var start: CFIndex = 0
+        let total: CFIndex = attributed.length
 
-        var measuredWidth: CGFloat = 0
-        var flippedOrigins: [CGPoint] = []
-        flippedOrigins.reserveCapacity(ctLines.count)
-        var lowestBaseline: CGFloat = 0  // smallest origin.y seen (used to trim height)
-        for (i, line) in ctLines.enumerated() {
+        while start < total {
+            // 当前段的 paragraph style。MarkdownAttributedBuilder 对每段都贴了完整
+            // NSParagraphStyle(首行缩进 / 后续行缩进 / 行距 / 段距)。
+            let style = (attributed.attribute(
+                .paragraphStyle,
+                at: start,
+                effectiveRange: nil) as? NSParagraphStyle) ?? .default
+
+            let isFirstLineOfParagraph = (start == 0)
+                || ns.character(at: start - 1) == 10  // '\n'
+
+            let indent = isFirstLineOfParagraph
+                ? style.firstLineHeadIndent
+                : style.headIndent
+            let avail = max(1, maxWidth - indent)
+
+            // 找断点。`SuggestLineBreak` 可能返回 0(异常字符或超宽单 glyph)——
+            // 强制至少消费 1 个字符避免死循环。
+            var count = CTTypesetterSuggestLineBreak(typesetter, start, Double(avail))
+            if count <= 0 { count = 1 }
+
+            let line = CTTypesetterCreateLine(
+                typesetter,
+                CFRange(location: start, length: count))
+
             var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
-            let w = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
-            measuredWidth = max(measuredWidth, w)
-            let o = origins[i]
-            lowestBaseline = min(lowestBaseline, o.y - descent)
-            // Flipped: y increases down. baseline_y = frameHeight - o.y.
-            flippedOrigins.append(CGPoint(x: o.x, y: height - o.y))
+            let rawWidth = CGFloat(CTLineGetTypographicBounds(
+                line, &ascent, &descent, &leading))
+
+            maxLineWidth = max(maxLineWidth, rawWidth + indent)
+
+            // 行高:遵循 Telegram,使用 floor(ascent + descent)。
+            let lineHeight = floor(ascent + descent)
+            // 行距:paragraphStyle 有值就用,否则按 12% line height 兜底(Telegram 默认)。
+            let lineSpacing: CGFloat = style.lineSpacing > 0
+                ? style.lineSpacing
+                : floor(lineHeight * 0.12)
+
+            // 非首行:先扣上一行的行距。
+            if !lineOrigins.isEmpty {
+                y += lineSpacing
+            }
+
+            // baseline_y(flipped 坐标,从 layout top 往下)= 当前 y 偏移 + ascent
+            lineOrigins.append(CGPoint(x: indent, y: y + ascent))
+            y += lineHeight
+
+            lines.append(line)
+            start += count
+
+            // 段落结束(以 \n 收尾)→ 吃掉 paragraphSpacing
+            let endsParagraph = start > 0
+                && start <= ns.length
+                && ns.character(at: start - 1) == 10
+            if endsParagraph, style.paragraphSpacing > 0 {
+                y += style.paragraphSpacing
+            }
         }
-        let trimmedHeight = ceil(height - max(0, lowestBaseline))
 
         return TranscriptTextLayout(
             attributed: attributed,
-            lines: ctLines,
-            lineOrigins: flippedOrigins,
-            totalHeight: trimmedHeight,
-            measuredWidth: ceil(measuredWidth))
+            lines: lines,
+            lineOrigins: lineOrigins,
+            totalHeight: ceil(y),
+            measuredWidth: ceil(maxLineWidth))
     }
 
     // MARK: - Draw
 
-    /// Blit a laid-out `layout` into the current flipped `CGContext` at
-    /// `origin` (left-top of the layout in the view's flipped coordinates).
-    ///
-    /// Two passes:
-    /// 1. Inline code chip backgrounds (rounded rects drawn per `CTRun` that
-    ///    carries `.inlineCodeBackground`)
-    /// 2. Glyphs via `CTLineDraw` (text matrix flipped so glyphs render upright)
+    /// 两趟:先 inline code chip 背景,再 glyph。
     static func draw(
         _ layout: TranscriptTextLayout,
         origin: CGPoint,
@@ -97,7 +109,6 @@ enum TranscriptTextRenderer {
     ) {
         guard !layout.lines.isEmpty else { return }
 
-        // Pass 1: inline code chip backgrounds.
         if let style = inlineCodeChip {
             for (line, p) in zip(layout.lines, layout.lineOrigins) {
                 let baseline = CGPoint(x: origin.x + p.x, y: origin.y + p.y)
@@ -107,7 +118,6 @@ enum TranscriptTextRenderer {
             }
         }
 
-        // Pass 2: glyphs.
         ctx.saveGState()
         ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
         for (line, p) in zip(layout.lines, layout.lineOrigins) {
@@ -148,8 +158,6 @@ enum TranscriptTextRenderer {
                 CFRange(location: 0, length: 0),
                 &ascent, &descent, &leading))
 
-            // Flipped coords: baseline.y is the baseline; chip extends by
-            // `ascent` upward (= smaller y) and `descent` downward.
             let chipRect = CGRect(
                 x: baseline.x + firstPos.x - style.horizontalPadding,
                 y: baseline.y - ascent,

@@ -4,14 +4,6 @@ import AppKit
 /// 源码拼接后,解析为 `MarkdownDocument`,逐 segment 构造 Core Text layout。
 ///
 /// 绘制时按 segment 顺序累加 y 偏移,段间间距遵从 `MarkdownTheme.l1/l2`。
-///
-/// Stage 2 的 segment 覆盖:
-/// - `.markdown` / `.heading`:通过 `MarkdownAttributedBuilder` 产 attributed,
-///   Core Text 排版
-/// - `.blockquote`:同上,额外画左侧竖条
-/// - `.codeBlock`:灰底 + 圆角 + 等宽字体(语法高亮在 Stage 3 异步补上)
-/// - `.table` / `.mathBlock`:fallback 为等宽原文;Stage 3 再做精细渲染
-/// - `.thematicBreak`:画一条水平线
 final class AssistantMarkdownRowItem: TranscriptRowItem {
     let source: String
     let theme: TranscriptTheme
@@ -31,11 +23,12 @@ final class AssistantMarkdownRowItem: TranscriptRowItem {
     // MARK: - Segment model
 
     /// 已计算 layout 的单个 segment。`topPadding` 是此 segment 顶部与前一 segment
-    /// 底部之间的垂直间隙。`height` 不含 topPadding。
+    /// 底部之间的垂直间隙。`contentHeight` 不含 topPadding。
     enum RenderedSegment {
         case text(TranscriptTextLayout, topPadding: CGFloat)
         case blockquote(TranscriptTextLayout, topPadding: CGFloat)
         case codeBlock(TranscriptTextLayout, topPadding: CGFloat)
+        case table(TranscriptTableLayout, topPadding: CGFloat)
         case thematicBreak(topPadding: CGFloat)
 
         var topPadding: CGFloat {
@@ -43,15 +36,17 @@ final class AssistantMarkdownRowItem: TranscriptRowItem {
             case .text(_, let p), .blockquote(_, let p),
                  .codeBlock(_, let p), .thematicBreak(let p):
                 return p
+            case .table(_, let p):
+                return p
             }
         }
 
         var contentHeight: CGFloat {
             switch self {
-            case .text(let l, _), .blockquote(let l, _):
+            case .text(let l, _), .blockquote(let l, _), .codeBlock(let l, _):
                 return l.totalHeight
-            case .codeBlock(let l, _):
-                return l.totalHeight
+            case .table(let t, _):
+                return t.totalHeight
             case .thematicBreak:
                 return 1
             }
@@ -69,7 +64,6 @@ final class AssistantMarkdownRowItem: TranscriptRowItem {
         let contentWidth = max(40, width - 2 * theme.rowHorizontalPadding)
 
         var segments: [RenderedSegment] = []
-        var total: CGFloat = 0
 
         for (idx, seg) in document.segments.enumerated() {
             let gap = gapBefore(idx: idx, segment: seg)
@@ -80,14 +74,12 @@ final class AssistantMarkdownRowItem: TranscriptRowItem {
                 let layout = TranscriptTextRenderer.makeLayout(
                     attributed: attr, maxWidth: contentWidth)
                 segments.append(.text(layout, topPadding: gap))
-                total += gap + layout.totalHeight
 
             case .heading(let level, let inlines):
                 let attr = builder.buildHeading(level: level, inlines: inlines)
                 let layout = TranscriptTextRenderer.makeLayout(
                     attributed: attr, maxWidth: contentWidth)
                 segments.append(.text(layout, topPadding: gap))
-                total += gap + layout.totalHeight
 
             case .blockquote(let blocks):
                 let attr = builder.buildBlockquote(blocks: blocks)
@@ -96,7 +88,6 @@ final class AssistantMarkdownRowItem: TranscriptRowItem {
                 let layout = TranscriptTextRenderer.makeLayout(
                     attributed: attr, maxWidth: innerWidth)
                 segments.append(.blockquote(layout, topPadding: gap))
-                total += gap + layout.totalHeight
 
             case .codeBlock(let block):
                 let font = NSFont.monospacedSystemFont(
@@ -112,40 +103,29 @@ final class AssistantMarkdownRowItem: TranscriptRowItem {
                 let layout = TranscriptTextRenderer.makeLayout(
                     attributed: attr, maxWidth: innerWidth)
                 segments.append(.codeBlock(layout, topPadding: gap))
-                let blockHeight = layout.totalHeight + 2 * theme.codeBlockVerticalPadding
-                total += gap
-                total += blockHeight
-                _ = 0  // placeholder; contentHeight is overridden below via blockHeight accounting
-                // Store block height via adjusting the last case's layout — simpler:
-                // we'll recompute height in draw. To keep total correct, use blockHeight
-                // for accounting, and account contentHeight via layout + padding in draw.
 
-            case .table:
-                // Stage 2 fallback: render as plain monospaced source so the
-                // message is readable. Stage 3 replaces with the grid renderer.
-                let raw = tableFallbackText(segments: [seg])
-                let attr = monospacedFallback(raw)
-                let layout = TranscriptTextRenderer.makeLayout(
-                    attributed: attr, maxWidth: contentWidth)
-                segments.append(.text(layout, topPadding: gap))
-                total += gap + layout.totalHeight
+            case .table(let table):
+                let tableLayout = TranscriptTableLayout.make(
+                    table: table,
+                    builder: builder,
+                    theme: theme,
+                    maxWidth: contentWidth)
+                segments.append(.table(tableLayout, topPadding: gap))
 
             case .mathBlock(let raw):
                 let attr = monospacedFallback(raw)
                 let layout = TranscriptTextRenderer.makeLayout(
                     attributed: attr, maxWidth: contentWidth)
                 segments.append(.text(layout, topPadding: gap))
-                total += gap + layout.totalHeight
 
             case .thematicBreak:
                 segments.append(.thematicBreak(topPadding: gap))
-                total += gap + 1
             }
         }
 
-        // Correct the total for any `.codeBlock` entries (we need the outer
-        // padding included in the per-segment height for draw):
-        total = 0
+        // 总高度 = 每个 segment 的 topPadding + contentHeight + 上/下 rowVerticalPadding
+        // codeBlock 的 contentHeight 已经含 layout.height,外加块 vPad 要加一次。
+        var total: CGFloat = 0
         for seg in segments {
             total += seg.topPadding
             switch seg {
@@ -176,40 +156,6 @@ final class AssistantMarkdownRowItem: TranscriptRowItem {
             ])
     }
 
-    private func tableFallbackText(segments: [MarkdownSegment]) -> String {
-        segments.reduce(into: "") { acc, seg in
-            if case .table(let t) = seg {
-                let headerLine = t.header
-                    .map(inlineFlatten)
-                    .joined(separator: " | ")
-                acc += headerLine + "\n"
-                acc += String(repeating: "-", count: max(1, headerLine.count)) + "\n"
-                for row in t.rows {
-                    acc += row.map(inlineFlatten).joined(separator: " | ") + "\n"
-                }
-            }
-        }
-    }
-
-    /// Very light inline → plain-text flattening. Only used for the table
-    /// fallback; Stage 3 grid renderer does proper attr cells.
-    private func inlineFlatten(_ inlines: [MarkdownInline]) -> String {
-        var out = ""
-        for inline in inlines {
-            switch inline {
-            case .text(let s): out += s
-            case .code(let s): out += s
-            case .emphasis(let c), .strong(let c), .strikethrough(let c):
-                out += inlineFlatten(c)
-            case .link(_, let c): out += inlineFlatten(c)
-            case .image(_, let alt): out += alt
-            case .inlineMath(let s): out += s
-            case .lineBreak, .softBreak: out += " "
-            }
-        }
-        return out
-    }
-
     // MARK: - Draw
 
     override func draw(in ctx: CGContext, bounds: CGRect) {
@@ -232,6 +178,12 @@ final class AssistantMarkdownRowItem: TranscriptRowItem {
                 let h = layout.totalHeight + 2 * theme.codeBlockVerticalPadding
                 drawCodeBlock(layout: layout, y: y, height: h, bounds: bounds, in: ctx)
                 y += h
+
+            case .table(let tableLayout, _):
+                tableLayout.draw(
+                    origin: CGPoint(x: theme.rowHorizontalPadding, y: y),
+                    in: ctx)
+                y += tableLayout.totalHeight
 
             case .thematicBreak:
                 drawThematicBreak(y: y, width: bounds.width, in: ctx)

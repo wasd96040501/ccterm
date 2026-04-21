@@ -35,7 +35,6 @@ struct CCTermApp: App {
         CLICapabilityStore.shared.detectVersion()
         CLICapabilityStore.shared.loadFromCache()
         ModelStore.prefetchIfNeeded()
-        DispatchQueue.main.async { _ = NSOpenPanel() }
     }
 }
 

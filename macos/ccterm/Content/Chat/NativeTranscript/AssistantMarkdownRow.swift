@@ -21,6 +21,13 @@ final class AssistantMarkdownRow: TranscriptRow {
 
     override var stableId: AnyHashable { stable }
 
+    override var contentHash: Int {
+        var h = Hasher()
+        h.combine(source)
+        h.combine(theme.markdown.fingerprint)
+        return h.finalize()
+    }
+
     // MARK: - Segment model
 
     /// 已计算 layout 的单个 segment。`topPadding` 是此 segment 顶部与前一 segment

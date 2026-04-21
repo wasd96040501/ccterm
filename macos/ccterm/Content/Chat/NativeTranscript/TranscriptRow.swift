@@ -8,15 +8,24 @@ import AppKit
 ///
 /// 子类必须 override：
 /// - ``stableId``：diff / reload 用
+/// - ``contentHash``：同 stableId 下检测内容变化的指纹
 /// - ``makeSize(width:)``：按 width 计算 `cachedHeight` + 内部 layout
 /// - ``draw(in:bounds:)``：绘制内容到当前 flipped CGContext
 /// - ``viewClass()``：若需要自定义 row view 子类
+///
+/// 对齐 Telegram `TableRowItem`：持 `weak var table` + `index`，row 可以反向
+/// 调用 `table.noteHeightOfRow(_:)` 让表只刷新自己这一行——这是 tool block
+/// 动态展开 / 收起的基础设施。
 @MainActor
 class TranscriptRow {
     init() {}
 
-    /// 逻辑稳定 id。diff 时按此比较；Stage 1 不做细粒度 diff，仅作为排查依据。
+    /// 逻辑稳定 id。diff 时按此比较新旧列表中的同一条消息。
     var stableId: AnyHashable { ObjectIdentifier(self) }
+
+    /// 内容指纹。`stableId` 一样 + `contentHash` 一样 → 视为未变，旧 row 对象
+    /// 直接 carry-over（保留 cached layout）。子类 override：返回 `Hasher` 结果。
+    var contentHash: Int { 0 }
 
     /// NSTableView 的 reuse identifier。默认按 row 类名分桶，同类互相复用。
     var identifier: String { String(describing: type(of: self)) }
@@ -25,6 +34,14 @@ class TranscriptRow {
     /// controller 读 `cachedHeight` 喂 `tableView(_:heightOfRow:)`。
     var cachedHeight: CGFloat = 0
     var cachedWidth: CGFloat = 0
+
+    /// 宿主 controller（= Telegram 的 `table` 字段）。`merge` / `replace` 后由
+    /// controller 负责维护，row 侧只读。
+    weak var table: TranscriptController?
+
+    /// row 在 controller.rows 中的当前下标。未挂载时为 -1。
+    /// controller 每次改动 `rows` 后会重算一次，row 侧只读。
+    var index: Int = -1
 
     /// 按当前宽度计算 layout / 尺寸。子类 override。
     /// 保证幂等：同宽度重复调用只计算一次。
@@ -43,4 +60,21 @@ class TranscriptRow {
     /// 绘制入口。`bounds` 是 rowView 的 bounds（已是 flipped 坐标：y 向下递增）。
     /// 子类 override 写具体绘制逻辑。基类空实现。
     func draw(in ctx: CGContext, bounds: CGRect) {}
+
+    // MARK: - Row-level table ops (对齐 Telegram TableRowItem.redraw / noteHeightOfRow)
+
+    /// 高度变了、内容没换——让 table 只刷新我这一行的高度 + 重绘。
+    /// 典型用法：tool block 展开 / 收起、流式 assistant 消息增长。
+    /// 必须在主线程调用。
+    func noteHeightOfRow(animated: Bool = false) {
+        guard index >= 0 else { return }
+        table?.noteHeightOfRow(index, animated: animated)
+    }
+
+    /// 整行重画——内容发生本质变化但 stableId 不变的场景。
+    /// 等价于 Telegram `TableRowItem.redraw`。
+    func redraw(animated: Bool = false) {
+        guard index >= 0 else { return }
+        table?.reloadRow(index, animated: animated)
+    }
 }

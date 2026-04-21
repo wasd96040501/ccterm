@@ -25,6 +25,13 @@ final class UserBubbleRow: TranscriptRow {
 
     override var stableId: AnyHashable { stable }
 
+    override var contentHash: Int {
+        var h = Hasher()
+        h.combine(text)
+        h.combine(theme.markdown.fingerprint)
+        return h.finalize()
+    }
+
     override func makeSize(width: CGFloat) {
         guard width != cachedWidth else { return }
         cachedWidth = width

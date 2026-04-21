@@ -4,8 +4,17 @@ import SwiftUI
 /// Renders a prebuilt `NSAttributedString` for a single `.markdown` segment
 /// using TextKit 1 + `NSTextView`. Read-only, selectable, link-aware.
 ///
-/// `sizeThatFits` measures the layout for the proposed width so SwiftUI gives
-/// the view exactly the height it needs — no scroll view, no explicit frame.
+/// Sizing follows the standard AppKit-in-SwiftUI pattern:
+/// `intrinsicContentSize` reports `(noIntrinsicMetric, usedHeight)` so the
+/// view accepts whatever width SwiftUI provides, then reports the height
+/// produced by the layout manager at that width. `widthTracksTextView = true`
+/// keeps the text container synced with frame changes; `layout()` invalidates
+/// the intrinsic size after each pass so SwiftUI re-reads the new height.
+///
+/// No `sizeThatFits` override — that route is fragile under `.infinity`
+/// proposals (e.g. initial layout passes inside a `NavigationSplitView`
+/// detail column) and would require a separate measurement stack to avoid
+/// polluting the render container.
 struct MarkdownTextView: NSViewRepresentable {
     let attributed: NSAttributedString
     let linkColor: NSColor
@@ -72,26 +81,28 @@ struct MarkdownTextView: NSViewRepresentable {
             nsView.invalidateIntrinsicContentSize()
         }
     }
-
-    func sizeThatFits(
-        _ proposal: ProposedViewSize,
-        nsView: WrappedTextView,
-        context: Context
-    ) -> CGSize? {
-        let width = proposal.width ?? 400
-        guard
-            let container = nsView.textContainer,
-            let layout = nsView.layoutManager
-        else { return nil }
-        container.size = CGSize(width: width, height: .greatestFiniteMagnitude)
-        layout.ensureLayout(for: container)
-        let used = layout.usedRect(for: container)
-        return CGSize(width: width, height: ceil(used.height))
-    }
 }
 
 final class WrappedTextView: NSTextView {
     var onOpenURL: ((URL) -> Void)?
+
+    /// width = `noIntrinsicMetric` → SwiftUI 给多少我用多少;
+    /// height = 在当前 container 尺寸下排版后的 usedRect.height。
+    override var intrinsicContentSize: NSSize {
+        guard let lm = layoutManager, let container = textContainer else {
+            return super.intrinsicContentSize
+        }
+        lm.ensureLayout(for: container)
+        let used = lm.usedRect(for: container)
+        return NSSize(width: NSView.noIntrinsicMetric, height: ceil(used.height))
+    }
+
+    /// frame width 变化 → `widthTracksTextView = true` 让 container 同步 →
+    /// layoutManager 重排版 → 通知 SwiftUI 下一帧读新的 intrinsic height。
+    override func layout() {
+        super.layout()
+        invalidateIntrinsicContentSize()
+    }
 
     override func clicked(onLink link: Any, at charIndex: Int) {
         let url: URL? = {

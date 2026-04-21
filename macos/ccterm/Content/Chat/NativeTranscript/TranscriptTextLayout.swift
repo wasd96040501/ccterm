@@ -195,14 +195,29 @@ struct TranscriptTextLayout {
         return NSRange(location: loc, length: len)
     }
 
-    /// y 坐标 → 命中的行下标。超出上/下端分别 clamp 到第一/最后一行。
+    /// y 坐标 → 命中的行下标。
+    ///
+    /// 关键：行间有 lineSpacing / paragraphSpacing 的 gap，严格 rect 包含测试
+    /// 会让 y 落入 gap 时完全不命中——老实现会 fall through 返回 `lines.count-1`，
+    /// 于是「拖到两行之间」会瞬间选到文末。
+    ///
+    /// 对齐 Telegram `findClosestRect`：先 rect 命中，不中则取 **midY 距离
+    /// 最近** 的行。
     private func findLineIndex(for y: CGFloat) -> Int {
-        if y <= lineRects.first?.minY ?? 0 { return 0 }
-        if y >= lineRects.last?.maxY ?? 0 { return lines.count - 1 }
+        guard !lineRects.isEmpty else { return 0 }
+        if y <= lineRects.first!.minY { return 0 }
+        if y >= lineRects.last!.maxY { return lineRects.count - 1 }
         for (i, rect) in lineRects.enumerated() {
             if y >= rect.minY && y < rect.maxY { return i }
         }
-        return lines.count - 1
+        // gap 兜底：找 midY 最近的那一行
+        var bestIdx = 0
+        var bestDist = CGFloat.greatestFiniteMagnitude
+        for (i, rect) in lineRects.enumerated() {
+            let d = abs(rect.midY - y)
+            if d < bestDist { bestDist = d; bestIdx = i }
+        }
+        return bestIdx
     }
 
     /// 给定 `range`，返回它在每条行内对应的高亮矩形（layout 坐标系）。

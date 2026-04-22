@@ -64,15 +64,15 @@ final class MarkdownAttributedBuilderTests: XCTestCase {
     // MARK: - Inline code: spacer symmetry
 
     func testInlineCodeHasBalancedRunDelegateSpacers() {
-        // LEFT 和 RIGHT 两侧都应插入 `InlineSpacer`（U+2060 + CTRunDelegate），
+        // LEFT 和 RIGHT 两侧都应插入 `InlineSpacer`（U+FFFC + CTRunDelegate），
         // 不再用 `.kern` hack。要求：
-        // - 字串里有两个 U+2060
-        // - 两个 U+2060 都带 CTRunDelegate attribute（独立 CTRun）
+        // - 字串里有两个 U+FFFC
+        // - 两个 U+FFFC 都带 CTRunDelegate attribute（独立 CTRun）
         // - 两个 spacer 的 advance 必须一致——验 CTRunDelegate.getWidth 回调
         //   返回相同的 CGFloat。
         let out = build("a `c` b")
         let s = out.string
-        let joinerCount = s.filter { $0 == "\u{2060}" }.count
+        let joinerCount = s.filter { $0 == "\u{FFFC}" }.count
         XCTAssertEqual(joinerCount, 2, "inline code must have spacer on both sides")
 
         // 在原 NSAttributedString 上枚举 CTRunDelegate attribute——不依赖
@@ -86,19 +86,83 @@ final class MarkdownAttributedBuilderTests: XCTestCase {
                                in: NSRange(location: 0, length: out.length),
                                options: []) { value, range, _ in
             guard let v = value else { return }
-            // 只看 U+2060——把 attachment 之类其它 delegate 用法排除掉。
-            guard ns.substring(with: range).contains("\u{2060}") else { return }
+            // 只看 U+FFFC——把 attachment 之类其它 delegate 用法排除掉。
+            guard ns.substring(with: range).contains("\u{FFFC}") else { return }
             let delegate = v as! CTRunDelegate
             let refCon = CTRunDelegateGetRefCon(delegate)
             spacerWidths.append(refCon.assumingMemoryBound(to: CGFloat.self).pointee)
         }
         XCTAssertEqual(spacerWidths.count, 2,
-                       "both spacers must carry CTRunDelegate on U+2060")
+                       "both spacers must carry CTRunDelegate on U+FFFC")
         if spacerWidths.count >= 2 {
             XCTAssertEqual(spacerWidths[0], spacerWidths[1], accuracy: 0.01,
                            "left and right spacers must share advance width")
             XCTAssertGreaterThan(spacerWidths[0], 0, "spacer advance must be positive")
+            // Visible external gap = spacer.width - chipPadding. Spacer must
+            // overshoot by chipPadding so the chip's drawn rect (which extends
+            // chipPadding past its glyphs) doesn't eat the requested gap.
+            // This regression guards against re-introducing the "gap = 6 ⇒ visible 2"
+            // bug where the spacer was sized to the visible gap directly.
+            let theme = MarkdownTheme()
+            XCTAssertEqual(
+                spacerWidths[0],
+                theme.inlineCodeOuterGap + theme.inlineCodeHPadding,
+                accuracy: 0.01,
+                "spacer width must compensate for chip padding")
         }
+    }
+
+    /// 端到端验证：chip 旁边的 next 字符的实际 layout 位置必须在 chip 外缘之外
+    /// 至少 `inlineCodeOuterGap` 点。这个测试是上面 width 断言的"行为版"，
+    /// 直接跑 CTLine 排版，避免我们再次记错 padding 几何。
+    func testInlineCodeChipLeavesVisibleExternalGap() {
+        let out = build("a `c` b")
+        let line = CTLineCreateWithAttributedString(out)
+        let runs = CTLineGetGlyphRuns(line) as! [CTRun]
+
+        // chip run = 唯一带 inlineCodeBackground attribute 的 run
+        var chipRun: CTRun?
+        for run in runs {
+            let attrs = CTRunGetAttributes(run) as NSDictionary
+            if attrs[NSAttributedString.Key.inlineCodeBackground] != nil {
+                chipRun = run
+                break
+            }
+        }
+        guard let chip = chipRun else { return XCTFail("no chip run found") }
+
+        // chip glyph 0 的 x 位置 + chip 总 advance = chip 末 glyph 末位
+        var firstPos = CGPoint.zero
+        CTRunGetPositions(chip, CFRange(location: 0, length: 1), &firstPos)
+        let chipAdvance = CTRunGetTypographicBounds(chip, CFRange(location: 0, length: 0), nil, nil, nil)
+        let chipLastGlyphEnd = firstPos.x + CGFloat(chipAdvance)
+
+        // chip 之后下一个 run 的 first glyph x
+        var nextRun: CTRun?
+        var foundChip = false
+        for run in runs {
+            if foundChip {
+                // skip spacer (zero glyph or U+FFFC run) — find the next run with visible glyphs
+                let r = CTRunGetStringRange(run)
+                if r.length > 0 {
+                    let s = (out.string as NSString).substring(
+                        with: NSRange(location: r.location, length: r.length))
+                    if s != "\u{FFFC}" { nextRun = run; break }
+                }
+            }
+            if run === chip { foundChip = true }
+        }
+        guard let next = nextRun else { return XCTFail("no run after chip") }
+        var nextPos = CGPoint.zero
+        CTRunGetPositions(next, CFRange(location: 0, length: 1), &nextPos)
+
+        let theme = MarkdownTheme()
+        let chipRightEdge = chipLastGlyphEnd + theme.inlineCodeHPadding
+        let visibleGap = nextPos.x - chipRightEdge
+        XCTAssertEqual(
+            visibleGap, theme.inlineCodeOuterGap, accuracy: 0.5,
+            "visible external gap must equal inlineCodeOuterGap "
+            + "(got \(visibleGap), expected \(theme.inlineCodeOuterGap))")
     }
 
     // MARK: - Nested list: leading whitespace trimmed

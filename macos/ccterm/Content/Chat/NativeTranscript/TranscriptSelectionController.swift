@@ -367,6 +367,9 @@ final class TranscriptSelectionController: NSResponder {
     }
 
     /// Cmd-C。跨 row 间隔 `\n\n`，同 row 内不同 region 间 `\n`。
+    ///
+    /// U+FFFC（OBJECT REPLACEMENT CHARACTER）是 `InlineSpacer` / NSTextAttachment
+    /// 在 backing store 里的占位符——纯 layout 用，绝对不能进剪贴板。
     @objc func copy(_ sender: Any?) {
         guard !entries.isEmpty else { return }
         let out = NSMutableString()
@@ -379,7 +382,9 @@ final class TranscriptSelectionController: NSResponder {
                     out.append("\n\n")
                 }
             }
-            out.append(entry.substring.string)
+            let cleaned = entry.substring.string
+                .replacingOccurrences(of: "\u{FFFC}", with: "")
+            out.append(cleaned)
             prevRowIndex = entry.rowIndex
         }
         let pb = NSPasteboard.general

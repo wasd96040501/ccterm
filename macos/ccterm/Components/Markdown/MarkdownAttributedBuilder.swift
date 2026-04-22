@@ -367,22 +367,22 @@ struct MarkdownAttributedBuilder {
             let chip = NSAttributedString(string: s, attributes: chipAttrs)
 
             // External gap on each side via `InlineSpacer` (CTRunDelegate over
-            // U+2060). Replaces the previous `.kern`-based hack:
-            // - kern stacks on top of the carrying char's intrinsic advance,
-            //   so the visible gap depended on what character carried the kern
-            //   (a space-prev produced double the gap of a letter-prev).
-            // - kern requires `kern > inlineCodeHPadding` so the chip's drawn
-            //   edge sits inside the pushed neighbour — the actual external
-            //   gap was `kern - chipHPadding`, an indirect derivation.
-            // RunDelegate spacers fix the gap to exactly `inlineCodeOuterGap`
-            // points, regardless of neighbour glyph metrics, and live in their
-            // own CTRun so the chip's typographic bounds stay clean.
-            let gap = theme.inlineCodeOuterGap
-            if out.length > 0 {
-                out.append(InlineSpacer.attributedString(width: gap))
-            }
+            // U+2060). Spacer width has to compensate for the chip's own
+            // horizontal padding — chipRect extends `chipPadding` past the
+            // last/first glyph, so a spacer of N points only yields
+            // `N - chipPadding` of visible gap. To get exactly `outerGap`
+            // visible breathing room on each side, the spacer must be
+            // `outerGap + chipPadding`.
+            //
+            // Spacers are inserted unconditionally on both sides — at the very
+            // start of a paragraph there's no preceding char, but a missing
+            // leading spacer would put chipRect at x = -chipPadding, clipped
+            // by the layout origin. Always emitting the spacer keeps the chip
+            // honest at line/paragraph boundaries too.
+            let spacerWidth = theme.inlineCodeOuterGap + theme.inlineCodeHPadding
+            out.append(InlineSpacer.attributedString(width: spacerWidth))
             out.append(chip)
-            out.append(InlineSpacer.attributedString(width: gap))
+            out.append(InlineSpacer.attributedString(width: spacerWidth))
 
         case .link(let destination, let children):
             let before = out.length

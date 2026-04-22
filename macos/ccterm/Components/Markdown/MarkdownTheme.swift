@@ -53,11 +53,13 @@ struct MarkdownTheme {
     var inlineCodeVPadding: CGFloat = 0
     /// Inline code chip: corner radius (≈ 0.21 of chip height — moderate).
     var inlineCodeCornerRadius: CGFloat = 3
-    /// Horizontal gap between the chip's outer (rounded-rect) edge and the
-    /// surrounding text on each side. Inserted as a fixed-width invisible run
-    /// (`InlineSpacer`, CTRunDelegate over U+2060) — the value here IS the
-    /// rendered gap, no offset arithmetic against `inlineCodeHPadding`.
-    var inlineCodeOuterGap: CGFloat = 6
+    /// Visible horizontal gap between the chip's outer (rounded-rect) edge
+    /// and the surrounding text on each side. The actual `InlineSpacer`
+    /// advance written to the attributed string is `inlineCodeOuterGap +
+    /// inlineCodeHPadding` — the chip's drawn edge already extends
+    /// `inlineCodeHPadding` past its glyphs, so the spacer has to overshoot
+    /// by that much to leave the requested visible breathing room.
+    var inlineCodeOuterGap: CGFloat = 4
 
     // MARK: - Derived fonts
 

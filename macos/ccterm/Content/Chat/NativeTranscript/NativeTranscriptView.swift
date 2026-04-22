@@ -7,16 +7,31 @@ import SwiftUI
 /// - 自绘 Core Text → 每行只做一次排版，CTLine 缓存
 /// - NSTableView 的 rowView recycling 复用已经画好的 layer backing
 ///
-/// 入口是 `NSViewRepresentable`，SwiftUI 侧可无感替换旧 `ChatTranscriptView`。
+/// 消费契约：绑定 `SessionHandle2.snapshot`，每次 snapshot 变更 → controller
+/// `setEntries(..., reason: snapshot.reason, ...)`。**reason 由 storage 层决定**，
+/// controller 不从 entries delta 形状推断（对齐 Telegram `ChatHistoryViewUpdateType`
+/// → `TableScrollState` 分层）。
+///
+/// Preview / 测试可直接用 `init(entries:reason:)` 跳过 snapshot，模拟一次固定
+/// reason 的 paint。
 struct NativeTranscriptView: NSViewRepresentable {
     let entries: [MessageEntry]
+    let reason: TranscriptUpdateReason
     /// 用户点击 sidebar 的时刻（从 `ChatHistoryView.task` 传入）。non-nil 时
-    /// controller 会在首次 `.bottom` setEntries 完成后 emit 一条 OpenMetrics
-    /// 日志，包含真实 TTFP（含 loadHistory I/O）+ cache 命中率。
+    /// controller 会在首次 `.initialPaint` 的 Phase 2 merge 完成后 emit 一条
+    /// OpenMetrics 日志，包含真实 TTFP（含 loadHistory I/O）+ cache 命中率。
     var openT0: CFAbsoluteTime? = nil
 
     @Environment(\.markdownTheme) private var theme
     @Environment(\.syntaxEngine) private var syntaxEngine
+
+    init(entries: [MessageEntry],
+         reason: TranscriptUpdateReason = .initialPaint,
+         openT0: CFAbsoluteTime? = nil) {
+        self.entries = entries
+        self.reason = reason
+        self.openT0 = openT0
+    }
 
     func makeNSView(context: Context) -> TranscriptScrollView {
         let sv = TranscriptScrollView()
@@ -38,7 +53,7 @@ struct NativeTranscriptView: NSViewRepresentable {
         if let t0 = openT0, ctrl.openStartedAt == nil {
             ctrl.openStartedAt = t0
         }
-        ctrl.setEntries(entries, themeChanged: themeChanged)
+        ctrl.setEntries(entries, reason: reason, themeChanged: themeChanged)
     }
 }
 

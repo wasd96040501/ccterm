@@ -27,7 +27,7 @@ final class CenteredColumnTests: XCTestCase {
         let ctrl = sv.controller
         ctrl.theme = .default
 
-        ctrl.setEntries([userEntry("Hello")], themeChanged: false)
+        ctrl.setEntries([userEntry("Hello")], reason: .initialPaint, themeChanged: false)
         waitUntil { !ctrl.rows.isEmpty && ctrl.rows[0].cachedWidth > 0 }
 
         XCTAssertEqual(ctrl.rows.count, 1)
@@ -46,7 +46,7 @@ final class CenteredColumnTests: XCTestCase {
         let ctrl = sv.controller
         ctrl.theme = .default
 
-        ctrl.setEntries([userEntry("Hi")], themeChanged: false)
+        ctrl.setEntries([userEntry("Hi")], reason: .initialPaint, themeChanged: false)
         waitUntil { !ctrl.rows.isEmpty && ctrl.rows[0].cachedWidth > 0 }
 
         XCTAssertEqual(ctrl.rows[0].cachedWidth, width, accuracy: 1)

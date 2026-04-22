@@ -30,10 +30,20 @@ extension SessionHandle2 {
         default: break
         }
 
-        switch action(for: message) {
+        let act = action(for: message)
+        switch act {
         case .merge(let id, let payload): attachToolResult(payload, to: id)
         case .confirm(let id, let echo): confirmQueuedEntry(id: id, echo: echo, mode: mode)
         case .append: appendToTimeline(message, mode: mode)
+        case .skip: break
+        }
+
+        // replay 批量 ingest 由调用方（loadHistory Phase A / Phase B）一次性
+        // emit `.initialPaint` / `.prependHistory`——此处不发 per-message。
+        guard mode == .live else { return }
+        switch act {
+        case .append: emitSnapshot(.liveAppend)
+        case .merge, .confirm: emitSnapshot(.update)
         case .skip: break
         }
     }

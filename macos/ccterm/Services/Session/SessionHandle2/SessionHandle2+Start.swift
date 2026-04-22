@@ -71,6 +71,7 @@ extension SessionHandle2 {
             toolResults: [:]
         )
         messages.append(.single(single))
+        emitSnapshot(.liveAppend)
 
         ensureStarted()
 
@@ -178,12 +179,15 @@ extension SessionHandle2 {
     /// 将所有当前 `.queued` 的 user entry 打成 `.failed`（bootstrap 失败 /
     /// 进程异常退出都走这里）。已 `.confirmed` 的保持不变。
     func failQueuedEntries(reason: String) {
+        var anyChanged = false
         for idx in messages.indices {
             guard case .single(var single) = messages[idx],
                   single.delivery == .queued else { continue }
             single.delivery = .failed(reason: reason)
             messages[idx] = .single(single)
+            anyChanged = true
         }
+        if anyChanged { emitSnapshot(.update) }
     }
 }
 

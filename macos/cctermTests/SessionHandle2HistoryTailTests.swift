@@ -158,4 +158,29 @@ final class SessionHandle2HistoryTailTests: XCTestCase {
         }
         XCTAssertTrue(h.messages.isEmpty)
     }
+
+    // MARK: - Snapshot reason 序列
+
+    /// 两段式 loadHistory 应当依次 emit `.initialPaint`（Phase A 结束）和
+    /// `.prependHistory`（Phase B 结束且 prefix 非空）。Revision 严格递增。
+    func test_snapshot_emits_initialPaint_then_prependHistory() async throws {
+        let h = makeHandle(id: "hist-snapshot-seq")
+        XCTAssertEqual(h.snapshot.reason, .idle)
+        XCTAssertEqual(h.snapshot.revision, 0)
+
+        h.loadHistory(overrideURL: Self.fixtureURL(), tailTarget: 20)
+
+        try await waitForTail(h)
+        let tailSnap = h.snapshot
+        XCTAssertEqual(tailSnap.reason, .initialPaint,
+            "Phase A 结束必须 emit .initialPaint, got \(tailSnap.reason)")
+        XCTAssertGreaterThan(tailSnap.revision, 0)
+
+        try await waitForTerminal(h)
+        let fullSnap = h.snapshot
+        XCTAssertEqual(fullSnap.reason, .prependHistory,
+            "Phase B 结束（含 prefix）必须 emit .prependHistory, got \(fullSnap.reason)")
+        XCTAssertGreaterThan(fullSnap.revision, tailSnap.revision)
+        XCTAssertGreaterThan(fullSnap.messages.count, tailSnap.messages.count)
+    }
 }

@@ -85,6 +85,10 @@ extension SessionHandle2 {
                     for m in parsed.messages { self.receive(m, mode: .replay) }
                     let count = parsed.messages.count
                     self.historyLoadState = .tailLoaded(count: count)
+                    // Phase A 批量 ingest 完毕 → 首帧意图。哪怕 messages 为空
+                    // (session 没有任何可渲染消息) 也要发一次,让视图从 .idle
+                    // 翻到 initialPaint 对应的渲染分支。
+                    self.emitSnapshot(.initialPaint)
                     let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
                     appLog(.info, "SessionHandle2",
                         "loadHistory tail done \(self.sessionId) count=\(count) ingest=\(ms)ms")
@@ -137,6 +141,13 @@ extension SessionHandle2 {
                         to: &self.messages, from: newTailStart, using: index)
 
                     self.historyLoadState = .loaded
+                    // Phase B 完成 → emit 前插意图(哪怕 prefix 为空也要发:
+                    // tool_result reresolve 也算 update)。
+                    if prefixCount > 0 {
+                        self.emitSnapshot(.prependHistory)
+                    } else if !updatedIdx.isEmpty {
+                        self.emitSnapshot(.update)
+                    }
                     let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
                     appLog(.info, "SessionHandle2",
                         "loadHistory full done \(self.sessionId) prefix=\(prefixCount) "

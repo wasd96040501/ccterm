@@ -55,9 +55,13 @@ final class TranscriptTestHarness {
         window.displayIfNeeded()
     }
 
-    /// 推 entries 进去 + 推 layout + 主线程跑尽 Phase 2 task。
-    func setEntries(_ entries: [MessageEntry]) {
-        controller.setEntries(entries, themeChanged: false)
+    /// 推 entries 进去 + 推 layout + 主线程跑尽 Phase 2 task。默认 `.initialPaint`
+    /// 意图，需要别的 reason 直接调 `controller.setEntries(_:reason:themeChanged:)`。
+    func setEntries(
+        _ entries: [MessageEntry],
+        reason: TranscriptUpdateReason = .initialPaint
+    ) {
+        controller.setEntries(entries, reason: reason, themeChanged: false)
         pumpLayout()
         flushRunLoop()
     }

@@ -59,7 +59,7 @@ struct MarkdownTheme {
     /// inlineCodeHPadding` — the chip's drawn edge already extends
     /// `inlineCodeHPadding` past its glyphs, so the spacer has to overshoot
     /// by that much to leave the requested visible breathing room.
-    var inlineCodeOuterGap: CGFloat = 4
+    var inlineCodeOuterGap: CGFloat = 2
 
     // MARK: - Derived fonts
 

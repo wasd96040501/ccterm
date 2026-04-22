@@ -108,17 +108,12 @@ final class TranscriptSelectionController: NSResponder {
         rangeProvider: (TranscriptTextLayout, CGPoint) -> NSRange
     ) {
         clear()
-        guard let controller, let tableView = controller.tableView else { return }
-        let rowIdx = tableView.row(at: documentPoint)
-        guard rowIdx >= 0, rowIdx < controller.rows.count else { return }
-        guard let selectable = controller.rows[rowIdx] as? TextSelectable else { return }
+        guard let controller else { return }
+        guard let ctx = controller.rowLocalContext(at: documentPoint) else { return }
+        guard let selectable = controller.rows[ctx.rowIndex] as? TextSelectable else { return }
         let regions = selectable.selectableRegions
         guard !regions.isEmpty else { return }
-        let rowRect = tableView.rect(ofRow: rowIdx)
-        let inset = controller.contentInset(forRow: rowIdx, rowRect: rowRect)
-        let pointInRow = CGPoint(
-            x: documentPoint.x - rowRect.origin.x - inset,
-            y: documentPoint.y - rowRect.origin.y)
+        let pointInRow = ctx.toRowLocal(documentPoint)
         let regionIdx = findRegionIndex(for: pointInRow, regions: regions)
         let region = regions[regionIdx]
 
@@ -133,13 +128,13 @@ final class TranscriptSelectionController: NSResponder {
         let sub = region.layout.attributed.attributedSubstring(from: range)
         entries = [Entry(
             rowStableId: region.rowStableId,
-            rowIndex: rowIdx,
+            rowIndex: ctx.rowIndex,
             regionIndex: region.regionIndex,
             substring: sub)]
         lastSelectedKeys = [SelectionKey(
             rowStableId: region.rowStableId,
             regionIndex: region.regionIndex)]
-        controller.notifyRowSelectionChanged(index: rowIdx)
+        controller.notifyRowSelectionChanged(index: ctx.rowIndex)
     }
 
     // MARK: - Recompute
@@ -175,16 +170,11 @@ final class TranscriptSelectionController: NSResponder {
             guard let selectable = row as? TextSelectable else { continue }
             let regions = selectable.selectableRegions
             guard !regions.isEmpty else { continue }
-            let rowRect = tableView.rect(ofRow: rowIdx)
-            let inset = controller.contentInset(forRow: rowIdx, rowRect: rowRect)
+            guard let ctx = controller.rowLocalContext(forRow: rowIdx) else { continue }
 
             // 点在 row 坐标系内的位置——用于匹配 region
-            let upperInRow = CGPoint(
-                x: upper.x - rowRect.origin.x - inset,
-                y: upper.y - rowRect.origin.y)
-            let lowerInRow = CGPoint(
-                x: lower.x - rowRect.origin.x - inset,
-                y: lower.y - rowRect.origin.y)
+            let upperInRow = ctx.toRowLocal(upper)
+            let lowerInRow = ctx.toRowLocal(lower)
 
             // row 在 upperRow / lowerRow 时才需要「哪个 region 被点命中」
             let upperRegionIdx = rowIdx == upperRow
@@ -210,16 +200,16 @@ final class TranscriptSelectionController: NSResponder {
                         // 两端同 region：直接 anchor→focus 喂给 layout；
                         // layout.selectionRange 内部会 swap reversed 的 x
                         participates = true
-                        startLocal = toLocal(anchor, inRow: rowRect, rowInset: inset, region: region)
-                        endLocal = toLocal(focus, inRow: rowRect, rowInset: inset, region: region)
+                        startLocal = toLocal(anchor, ctx: ctx, region: region)
+                        endLocal = toLocal(focus, ctx: ctx, region: region)
                     } else if idx == upperRegionIdx {
                         participates = true
-                        startLocal = toLocal(upper, inRow: rowRect, rowInset: inset, region: region)
+                        startLocal = toLocal(upper, ctx: ctx, region: region)
                         endLocal = regionEnd(region)
                     } else if idx == lowerRegionIdx {
                         participates = true
                         startLocal = .zero
-                        endLocal = toLocal(lower, inRow: rowRect, rowInset: inset, region: region)
+                        endLocal = toLocal(lower, ctx: ctx, region: region)
                     } else {
                         participates = true
                         startLocal = .zero
@@ -233,7 +223,7 @@ final class TranscriptSelectionController: NSResponder {
                         endLocal = .zero
                     } else if idx == upperRegionIdx {
                         participates = true
-                        startLocal = toLocal(upper, inRow: rowRect, rowInset: inset, region: region)
+                        startLocal = toLocal(upper, ctx: ctx, region: region)
                         endLocal = regionEnd(region)
                     } else {
                         participates = true
@@ -249,7 +239,7 @@ final class TranscriptSelectionController: NSResponder {
                     } else if idx == lowerRegionIdx {
                         participates = true
                         startLocal = .zero
-                        endLocal = toLocal(lower, inRow: rowRect, rowInset: inset, region: region)
+                        endLocal = toLocal(lower, ctx: ctx, region: region)
                     } else {
                         participates = true
                         startLocal = .zero
@@ -307,13 +297,13 @@ final class TranscriptSelectionController: NSResponder {
 
     private func toLocal(
         _ docPoint: CGPoint,
-        inRow rowRect: CGRect,
-        rowInset: CGFloat,
+        ctx: TranscriptController.RowLocalContext,
         region: SelectableTextRegion
     ) -> CGPoint {
-        CGPoint(
-            x: docPoint.x - rowRect.origin.x - rowInset - region.frameInRow.origin.x,
-            y: docPoint.y - rowRect.origin.y - region.frameInRow.origin.y)
+        let pointInRow = ctx.toRowLocal(docPoint)
+        return CGPoint(
+            x: pointInRow.x - region.frameInRow.origin.x,
+            y: pointInRow.y - region.frameInRow.origin.y)
     }
 
     private func regionEnd(_ region: SelectableTextRegion) -> CGPoint {

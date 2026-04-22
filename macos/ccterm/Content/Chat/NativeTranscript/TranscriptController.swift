@@ -544,23 +544,48 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
         return max(0, (rowRect.width - rows[idx].cachedWidth) / 2)
     }
 
+    // MARK: - Row-local point conversion
+
+    /// 单个 row 的 documentPoint→rowLocalPoint 变换上下文。把 `(rowRect, inset)`
+    /// 一次算好缓存起来，多次变换（典型如 selection 的 upper/lower 两点）只需
+    /// 调 `toRowLocal(_:)`，避免重复 `rect(ofRow:)` 和 `contentInset` 调用。
+    struct RowLocalContext {
+        let rowIndex: Int
+        let rowRect: CGRect
+        let inset: CGFloat
+
+        func toRowLocal(_ documentPoint: CGPoint) -> CGPoint {
+            CGPoint(
+                x: documentPoint.x - rowRect.origin.x - inset,
+                y: documentPoint.y - rowRect.origin.y)
+        }
+    }
+
+    /// `documentPoint` 命中哪一行 + 该行的坐标变换上下文。miss 任何一行返回 nil。
+    func rowLocalContext(at documentPoint: CGPoint) -> RowLocalContext? {
+        guard let tableView else { return nil }
+        return rowLocalContext(forRow: tableView.row(at: documentPoint))
+    }
+
+    /// 已知 rowIndex，构造该行的坐标变换上下文。越界返回 nil。
+    func rowLocalContext(forRow rowIndex: Int) -> RowLocalContext? {
+        guard let tableView, rowIndex >= 0, rowIndex < rows.count else { return nil }
+        let rowRect = tableView.rect(ofRow: rowIndex)
+        let inset = contentInset(forRow: rowIndex, rowRect: rowRect)
+        return RowLocalContext(rowIndex: rowIndex, rowRect: rowRect, inset: inset)
+    }
+
     // MARK: - Link hit-test
 
     /// 命中 point 处的 `.link` 属性。链接存放格式沿用
     /// `MarkdownAttributedBuilder`：`.link` 挂 `String`(markdown destination)。
     /// 这里转成 URL；不合法的 URL 不返回。
     func linkURL(atDocumentPoint documentPoint: CGPoint) -> URL? {
-        guard let tableView else { return nil }
-        let rowIdx = tableView.row(at: documentPoint)
-        guard rowIdx >= 0, rowIdx < rows.count else { return nil }
-        guard let selectable = rows[rowIdx] as? TextSelectable else { return nil }
+        guard let ctx = rowLocalContext(at: documentPoint) else { return nil }
+        guard let selectable = rows[ctx.rowIndex] as? TextSelectable else { return nil }
         let regions = selectable.selectableRegions
         guard !regions.isEmpty else { return nil }
-        let rowRect = tableView.rect(ofRow: rowIdx)
-        let inset = contentInset(forRow: rowIdx, rowRect: rowRect)
-        let pointInRow = CGPoint(
-            x: documentPoint.x - rowRect.origin.x - inset,
-            y: documentPoint.y - rowRect.origin.y)
+        let pointInRow = ctx.toRowLocal(documentPoint)
 
         for region in regions where region.frameInRow.contains(pointInRow) {
             let local = CGPoint(
@@ -612,17 +637,11 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
     private func resolveCodeBlockHit(atDocumentPoint documentPoint: CGPoint)
         -> CodeBlockResolved?
     {
-        guard let tableView else { return nil }
-        let rowIdx = tableView.row(at: documentPoint)
-        guard rowIdx >= 0, rowIdx < rows.count else { return nil }
-        guard let row = rows[rowIdx] as? AssistantMarkdownRow else { return nil }
-        let rowRect = tableView.rect(ofRow: rowIdx)
-        let inset = contentInset(forRow: rowIdx, rowRect: rowRect)
-        let pointInRow = CGPoint(
-            x: documentPoint.x - rowRect.origin.x - inset,
-            y: documentPoint.y - rowRect.origin.y)
+        guard let ctx = rowLocalContext(at: documentPoint) else { return nil }
+        guard let row = rows[ctx.rowIndex] as? AssistantMarkdownRow else { return nil }
+        let pointInRow = ctx.toRowLocal(documentPoint)
         guard let hit = row.codeBlockHit(atRowPoint: pointInRow) else { return nil }
-        return CodeBlockResolved(row: row, rowIndex: rowIdx, hit: hit)
+        return CodeBlockResolved(row: row, rowIndex: ctx.rowIndex, hit: hit)
     }
 
     private func redrawRow(at index: Int) {
@@ -642,15 +661,9 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
     /// cursorUpdate 用——优先级高于 `linkURL`（chevron 叠 URL 时显示 pointingHand
     /// 但语义是 toggle，不是 open URL——cursor 上只要表达"可点击"即可）。
     func isOverUserBubbleChevron(atDocumentPoint documentPoint: CGPoint) -> Bool {
-        guard let tableView else { return false }
-        let rowIdx = tableView.row(at: documentPoint)
-        guard rowIdx >= 0, rowIdx < rows.count else { return false }
-        guard let row = rows[rowIdx] as? UserBubbleRow else { return false }
-        let rowRect = tableView.rect(ofRow: rowIdx)
-        let inset = contentInset(forRow: rowIdx, rowRect: rowRect)
-        let pointInRow = CGPoint(
-            x: documentPoint.x - rowRect.origin.x - inset,
-            y: documentPoint.y - rowRect.origin.y)
+        guard let ctx = rowLocalContext(at: documentPoint) else { return false }
+        guard let row = rows[ctx.rowIndex] as? UserBubbleRow else { return false }
+        let pointInRow = ctx.toRowLocal(documentPoint)
         return row.chevronHitRectInRow()?.contains(pointInRow) == true
     }
 
@@ -660,16 +673,10 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
     /// 关键：不走 `setEntries` / rebuild——只改 set + row 字段 + `makeSize` +
     /// `noteHeightOfRow`。`makeSize` 两阶段实现让 state-only 变更不重跑 CT。
     func toggleUserBubble(atDocumentPoint documentPoint: CGPoint) -> Bool {
-        guard let tableView else { return false }
         guard lastLayoutWidth > 0 else { return false }
-        let rowIdx = tableView.row(at: documentPoint)
-        guard rowIdx >= 0, rowIdx < rows.count else { return false }
-        guard let row = rows[rowIdx] as? UserBubbleRow else { return false }
-        let rowRect = tableView.rect(ofRow: rowIdx)
-        let inset = contentInset(forRow: rowIdx, rowRect: rowRect)
-        let pointInRow = CGPoint(
-            x: documentPoint.x - rowRect.origin.x - inset,
-            y: documentPoint.y - rowRect.origin.y)
+        guard let ctx = rowLocalContext(at: documentPoint) else { return false }
+        guard let row = rows[ctx.rowIndex] as? UserBubbleRow else { return false }
+        let pointInRow = ctx.toRowLocal(documentPoint)
         guard let hit = row.chevronHitRectInRow(), hit.contains(pointInRow) else {
             return false
         }
@@ -683,7 +690,7 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
             row.isExpanded = true
         }
         row.makeSize(width: lastLayoutWidth)
-        noteHeightOfRow(rowIdx)
+        noteHeightOfRow(ctx.rowIndex)
         return true
     }
 }

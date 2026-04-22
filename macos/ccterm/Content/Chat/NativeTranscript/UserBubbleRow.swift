@@ -27,9 +27,10 @@ final class UserBubbleRow: TranscriptRow {
     private var bubbleWidth: CGFloat = 0
     private var bubbleX: CGFloat = 0
 
-    /// 上一次 makeSize 记录的 isExpanded，用来识别「宽度没变、但 state 刚翻」
-    /// 的场景——走几何分支，不重跑 CT。
-    private var cachedExpandedState: Bool = false
+    /// 上一次 `makeSize` 跑布局时采用的 `isExpanded` 值（**输入快照**，不是
+    /// 排版结果缓存——和 `cachedWidth` / `cachedHeight` 语义不同）。用来识别
+    /// 「宽度没变、但 state 刚翻」的场景，从而走几何分支，不重跑 CT。
+    private var lastLayoutExpanded: Bool = false
 
     /// 由 selection controller 写入。
     fileprivate var currentSelection: NSRange = NSRange(location: NSNotFound, length: 0)
@@ -66,7 +67,7 @@ final class UserBubbleRow: TranscriptRow {
 
     override func makeSize(width: CGFloat) {
         let widthChanged = width != cachedWidth
-        let stateChanged = cachedExpandedState != isExpanded
+        let stateChanged = lastLayoutExpanded != isExpanded
         guard widthChanged || stateChanged else { return }
 
         // 排版阶段：仅 widthChanged 时跑 CT。textLayout / bubbleWidth / bubbleX
@@ -102,7 +103,7 @@ final class UserBubbleRow: TranscriptRow {
             x: bubbleRect.minX + theme.bubbleHorizontalPadding,
             y: bubbleRect.minY + theme.bubbleVerticalPadding)
         cachedHeight = bubbleHeight + 2 * theme.rowVerticalPadding
-        cachedExpandedState = isExpanded
+        lastLayoutExpanded = isExpanded
     }
 
     private func computeBubbleHeight() -> CGFloat {

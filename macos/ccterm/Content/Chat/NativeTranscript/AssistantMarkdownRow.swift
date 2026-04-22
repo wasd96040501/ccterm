@@ -58,10 +58,10 @@ final class AssistantMarkdownRow: TranscriptRow {
         self.stable = stable
         self.parsedDocument = MarkdownDocument(parsing: source)
         super.init()
-        self.prebuilt = Self.buildPrebuilt(
+        self.prebuilt = MarkdownRowPrebuilder.build(
             document: parsedDocument,
             theme: theme,
-            codeTokens: [:])
+            codeTokens:[:])
     }
 
     override var stableId: AnyHashable { stable }
@@ -78,10 +78,10 @@ final class AssistantMarkdownRow: TranscriptRow {
     /// `TranscriptPreprocessor` 在 `setEntries` 的 Task 里 batch await highlight
     /// 完成后调这里。重 build 一次 prebuilt，清 layout cache。主线程调用。
     func apply(codeTokens: [Int: [SyntaxToken]]) {
-        prebuilt = Self.buildPrebuilt(
+        prebuilt = MarkdownRowPrebuilder.build(
             document: parsedDocument,
             theme: theme,
-            codeTokens: codeTokens)
+            codeTokens:codeTokens)
         cachedWidth = 0
         rendered = []
         attributedOrigins = [:]
@@ -562,127 +562,6 @@ final class AssistantMarkdownRow: TranscriptRow {
         case attributed(TranscriptTextLayout, kind: SegmentKind, layoutOrigin: CGPoint)
         case table(TranscriptTableLayout, origin: CGPoint)
         case thematicBreak(y: CGFloat)
-    }
-
-    // MARK: - Prebuild pipeline
-
-    private static func buildPrebuilt(
-        document: MarkdownDocument,
-        theme: TranscriptTheme,
-        codeTokens: [Int: [SyntaxToken]]
-    ) -> [PrebuiltSegment] {
-        let builder = MarkdownAttributedBuilder(theme: theme.markdown)
-        var out: [PrebuiltSegment] = []
-        out.reserveCapacity(document.segments.count)
-
-        for (idx, seg) in document.segments.enumerated() {
-            let gap = gapBefore(idx: idx, segment: seg, theme: theme.markdown)
-
-            switch seg {
-            case .markdown(let blocks):
-                out.append(.attributed(builder.build(blocks: blocks), kind: .text, topPadding: gap))
-            case .heading(let level, let inlines):
-                out.append(.attributed(builder.buildHeading(level: level, inlines: inlines), kind: .heading, topPadding: gap))
-            case .blockquote(let blocks):
-                out.append(.attributed(builder.buildBlockquote(blocks: blocks), kind: .blockquote, topPadding: gap))
-            case .codeBlock(let block):
-                let attr = buildCodeBlockAttributed(
-                    block: block,
-                    tokens: codeTokens[idx],
-                    theme: theme)
-                let header = buildCodeBlockHeader(block: block, theme: theme)
-                out.append(.attributed(attr, kind: .codeBlock(header), topPadding: gap))
-            case .table(let table):
-                let contents = TranscriptTableCellContents.make(table: table, builder: builder)
-                out.append(.table(contents, topPadding: gap))
-            case .mathBlock(let raw):
-                let attr = NSAttributedString(
-                    string: raw,
-                    attributes: [
-                        .font: NSFont.monospacedSystemFont(
-                            ofSize: theme.markdown.codeFontSize, weight: .regular),
-                        .foregroundColor: theme.markdown.primaryColor,
-                    ])
-                out.append(.attributed(attr, kind: .text, topPadding: gap))
-            case .thematicBreak:
-                out.append(.thematicBreak(topPadding: gap))
-            }
-        }
-        return out
-    }
-
-    private static func buildCodeBlockAttributed(
-        block: MarkdownCodeBlock,
-        tokens: [SyntaxToken]?,
-        theme: TranscriptTheme
-    ) -> NSAttributedString {
-        let font = NSFont.monospacedSystemFont(
-            ofSize: theme.markdown.codeFontSize, weight: .regular)
-        if let tokens, !tokens.isEmpty {
-            // Build with dynamic NSColors — the attributed string outlives the
-            // current appearance (it's cached in the layout). Each token's
-            // color resolves at draw time via
-            // `NSAppearance.performAsCurrentDrawingAppearance` in the row view,
-            // so switching system appearance doesn't need a token rebuild.
-            let result = NSMutableAttributedString()
-            for token in tokens {
-                let scope = token.scope
-                let color = NSColor(name: nil) { appearance in
-                    let match = appearance.bestMatch(from: [.darkAqua, .aqua])
-                    let scheme: ColorScheme = match == .darkAqua ? .dark : .light
-                    return NSColor(SyntaxTheme.color(for: scope, scheme: scheme))
-                }
-                result.append(NSAttributedString(string: token.text, attributes: [
-                    .font: font,
-                    .foregroundColor: color,
-                ]))
-            }
-            return result
-        }
-        return NSAttributedString(
-            string: block.code,
-            attributes: [
-                .font: font,
-                .foregroundColor: theme.markdown.primaryColor,
-            ])
-    }
-
-    /// Pre-lays out the language label CTLine. Done once at prebuild time
-    /// so `draw()` only has to call `CTLineDraw`. Fences without a language
-    /// get a `nil` line — the header still renders, but only the copy icon.
-    private static func buildCodeBlockHeader(
-        block: MarkdownCodeBlock,
-        theme: TranscriptTheme
-    ) -> CodeBlockHeader {
-        let raw = (block.language ?? "")
-            .trimmingCharacters(in: .whitespaces)
-            .lowercased()
-        guard !raw.isEmpty else {
-            return CodeBlockHeader(code: block.code, line: nil, ascent: 0, descent: 0)
-        }
-        let font = NSFont.systemFont(
-            ofSize: theme.codeBlockHeaderFontSize,
-            weight: .medium)
-        let attr = NSAttributedString(
-            string: raw,
-            attributes: [
-                .font: font,
-                .foregroundColor: theme.codeBlockHeaderForeground,
-            ])
-        let line = CTLineCreateWithAttributedString(attr)
-        var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
-        _ = CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
-        return CodeBlockHeader(
-            code: block.code,
-            line: line,
-            ascent: ascent,
-            descent: descent)
-    }
-
-    private static func gapBefore(idx: Int, segment: MarkdownSegment, theme: MarkdownTheme) -> CGFloat {
-        if idx == 0 { return 0 }
-        if case .heading = segment { return theme.l1 }
-        return theme.l2
     }
 
 }

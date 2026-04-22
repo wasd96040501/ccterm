@@ -103,10 +103,46 @@ struct TranscriptTableLayout {
             theme: theme)
     }
 
+    /// Table cell 在 table 自身坐标系里的 frame（左上为原点）。用于 hit-test /
+    /// region frame 构造。`cellContentFrames[r][c]` = 第 r 行第 c 列 cell 里
+    /// *layout 可画区域*（已扣除 hPad / vPad）。
+    var cellContentFrames: [[CGRect]] {
+        var rows: [[CGRect]] = []
+        let hPad: CGFloat = 8
+        let vPad: CGFloat = theme.markdown.blockPadding
+        var curY: CGFloat = 0
+        for (r, rowH) in rowHeights.enumerated() {
+            var cols: [CGRect] = []
+            var curX: CGFloat = 0
+            for (c, colW) in columnWidths.enumerated() {
+                let cellLayout = cells[r][c]
+                let align = alignment(for: c)
+                let xOrigin: CGFloat
+                switch align {
+                case .center:
+                    xOrigin = curX + max(0, (colW - cellLayout.measuredWidth) / 2)
+                case .right:
+                    xOrigin = curX + max(hPad, colW - hPad - cellLayout.measuredWidth)
+                case .left, .none:
+                    xOrigin = curX + hPad
+                }
+                let yOrigin = curY + vPad
+                let w = max(1, cellLayout.measuredWidth)
+                let h = max(1, cellLayout.totalHeight)
+                cols.append(CGRect(x: xOrigin, y: yOrigin, width: w, height: h))
+                curX += colW
+            }
+            rows.append(cols)
+            curY += rowH
+        }
+        return rows
+    }
+
     // MARK: - Draw
 
     /// 在 `origin`(flipped,左上角)画整个 table 到 `ctx`。
-    func draw(origin: CGPoint, in ctx: CGContext) {
+    /// `selections[r][c]` 若非空且 location != NSNotFound → 画高亮底色。
+    func draw(origin: CGPoint, selections: [[NSRange]]? = nil, in ctx: CGContext) {
         guard !rowHeights.isEmpty, !columnWidths.isEmpty else { return }
         let hPad: CGFloat = 8
         let vPad: CGFloat = theme.markdown.blockPadding
@@ -180,8 +216,17 @@ struct TranscriptTableLayout {
                 }
                 let yOrigin = curY + vPad
 
+                let sel: NSRange? = {
+                    guard let selections,
+                          rowIndex < selections.count,
+                          colIndex < selections[rowIndex].count else { return nil }
+                    let r = selections[rowIndex][colIndex]
+                    return (r.location != NSNotFound && r.length > 0) ? r : nil
+                }()
+
                 cellLayout.draw(
                     origin: CGPoint(x: xOrigin, y: yOrigin),
+                    selection: sel,
                     in: ctx)
                 curX += cellW
             }

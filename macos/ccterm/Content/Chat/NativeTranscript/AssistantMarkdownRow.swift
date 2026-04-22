@@ -35,6 +35,11 @@ final class AssistantMarkdownRow: TranscriptRow {
     /// 每段 attributed segment 当前的选中 range。`NSNotFound` = 未选。
     private var selections: [Int: NSRange] = [:]
 
+    /// 每个 table segment 的 per-cell 选中 range。`tableSelections[segIdx][row][col]`。
+    /// 未选元素存 `NSRange(NSNotFound, 0)`。selectionRegions 按 cell 展开成独立
+    /// region，每 cell 用 closure 写入这里。
+    private var tableSelections: [Int: [[NSRange]]] = [:]
+
     init(source: String, theme: TranscriptTheme, stable: AnyHashable) {
         self.source = source
         self.theme = theme
@@ -68,6 +73,7 @@ final class AssistantMarkdownRow: TranscriptRow {
         cachedWidth = 0
         rendered = []
         attributedOrigins = [:]
+        tableSelections = [:]
     }
 
     /// 暴露给 preprocessor 的请求列表：`(segmentIndex, code, language)`。
@@ -90,6 +96,7 @@ final class AssistantMarkdownRow: TranscriptRow {
         let contentWidth = max(40, width - 2 * theme.rowHorizontalPadding)
         var segments: [RenderedSegment] = []
         var origins: [Int: CGPoint] = [:]
+        var newTableSelections: [Int: [[NSRange]]] = [:]
         var y: CGFloat = theme.rowVerticalPadding
 
         for (idx, prebuiltSeg) in prebuilt.enumerated() {
@@ -138,6 +145,23 @@ final class AssistantMarkdownRow: TranscriptRow {
                 segments.append(.table(
                     tableLayout,
                     origin: CGPoint(x: theme.rowHorizontalPadding, y: y)))
+                // 初始化 selection 矩阵：保留已有选中（contentHash 不变时 makeSize
+                // 会被 resize 触发重入），未命中 row/col 的 slot 填 NSNotFound。
+                let rowCount = tableLayout.rowHeights.count
+                let colCount = tableLayout.columnWidths.count
+                var matrix = [[NSRange]](
+                    repeating: [NSRange](
+                        repeating: NSRange(location: NSNotFound, length: 0),
+                        count: colCount),
+                    count: rowCount)
+                if let existing = tableSelections[idx] {
+                    for r in 0..<min(rowCount, existing.count) {
+                        for c in 0..<min(colCount, existing[r].count) {
+                            matrix[r][c] = existing[r][c]
+                        }
+                    }
+                }
+                newTableSelections[idx] = matrix
                 y += tableLayout.totalHeight
 
             case .thematicBreak:
@@ -149,6 +173,7 @@ final class AssistantMarkdownRow: TranscriptRow {
         y += theme.rowVerticalPadding
         rendered = segments
         attributedOrigins = origins
+        tableSelections = newTableSelections
         cachedHeight = y
     }
 
@@ -177,7 +202,10 @@ final class AssistantMarkdownRow: TranscriptRow {
                 }
 
             case .table(let tableLayout, let origin):
-                tableLayout.draw(origin: origin, in: ctx)
+                tableLayout.draw(
+                    origin: origin,
+                    selections: tableSelections[idx],
+                    in: ctx)
 
             case .thematicBreak(let y):
                 drawThematicBreak(y: y, width: bounds.width, in: ctx)
@@ -354,21 +382,55 @@ extension AssistantMarkdownRow: TextSelectable {
     var selectableRegions: [SelectableTextRegion] {
         var regions: [SelectableTextRegion] = []
         for (idx, seg) in rendered.enumerated() {
-            guard case .attributed(let layout, _, let origin) = seg,
-                  !layout.lines.isEmpty else { continue }
-            let region = SelectableTextRegion(
-                rowStableId: stableId,
-                regionIndex: idx,
-                frameInRow: CGRect(
-                    x: origin.x,
-                    y: origin.y,
-                    width: max(layout.measuredWidth, 1),
-                    height: max(layout.totalHeight, 1)),
-                layout: layout,
-                setSelection: { [weak self] range in
-                    self?.selections[idx] = range
-                })
-            regions.append(region)
+            switch seg {
+            case .attributed(let layout, _, let origin):
+                guard !layout.lines.isEmpty else { continue }
+                let region = SelectableTextRegion(
+                    rowStableId: stableId,
+                    regionIndex: Self.regionIndex(segment: idx),
+                    frameInRow: CGRect(
+                        x: origin.x,
+                        y: origin.y,
+                        width: max(layout.measuredWidth, 1),
+                        height: max(layout.totalHeight, 1)),
+                    layout: layout,
+                    setSelection: { [weak self] range in
+                        self?.selections[idx] = range
+                    })
+                regions.append(region)
+
+            case .table(let tableLayout, let origin):
+                // 每 cell 独立 region：frame = table-local cellContentFrame offset 到 row 坐标系。
+                // regionIndex 编码 (segIdx, cellRow, cellCol) 保证跨 cell 在行内自然排序。
+                let frames = tableLayout.cellContentFrames
+                for (r, rowFrames) in frames.enumerated() {
+                    for (c, cellFrame) in rowFrames.enumerated() {
+                        let cellLayout = tableLayout.cells[r][c]
+                        guard !cellLayout.lines.isEmpty else { continue }
+                        let regionFrame = CGRect(
+                            x: origin.x + cellFrame.origin.x,
+                            y: origin.y + cellFrame.origin.y,
+                            width: cellFrame.width,
+                            height: cellFrame.height)
+                        let region = SelectableTextRegion(
+                            rowStableId: stableId,
+                            regionIndex: Self.regionIndex(segment: idx, tableRow: r, tableCol: c),
+                            frameInRow: regionFrame,
+                            layout: cellLayout,
+                            setSelection: { [weak self] range in
+                                guard let self else { return }
+                                var matrix = self.tableSelections[idx] ?? []
+                                guard r < matrix.count, c < matrix[r].count else { return }
+                                matrix[r][c] = range
+                                self.tableSelections[idx] = matrix
+                            })
+                        regions.append(region)
+                    }
+                }
+
+            case .thematicBreak:
+                continue
+            }
         }
         return regions
     }
@@ -377,5 +439,20 @@ extension AssistantMarkdownRow: TextSelectable {
 
     func clearSelection() {
         selections.removeAll()
+        // 把 table 选中矩阵也清掉；下一次 makeSize 会按需重建。
+        for (idx, matrix) in tableSelections {
+            let empty = [[NSRange]](
+                repeating: [NSRange](
+                    repeating: NSRange(location: NSNotFound, length: 0),
+                    count: matrix.first?.count ?? 0),
+                count: matrix.count)
+            tableSelections[idx] = empty
+        }
+    }
+
+    /// 把 (segIdx, row, col) 编码成单调递增的 regionIndex：
+    /// table 最多 1000 行 1000 列 → 6 位足够；segment 不会爆 1000 个。
+    private static func regionIndex(segment: Int, tableRow: Int = 0, tableCol: Int = 0) -> Int {
+        segment * 1_000_000 + tableRow * 1_000 + tableCol
     }
 }

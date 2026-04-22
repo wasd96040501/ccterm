@@ -383,4 +383,36 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
         let w = tableView?.bounds.width ?? 0
         return w > 0 ? w : 760
     }
+
+    // MARK: - Link hit-test
+
+    /// 命中 point 处的 `.link` 属性。链接存放格式沿用
+    /// `MarkdownAttributedBuilder`：`.link` 挂 `String`(markdown destination)。
+    /// 这里转成 URL；不合法的 URL 不返回。
+    func linkURL(atDocumentPoint documentPoint: CGPoint) -> URL? {
+        guard let tableView else { return nil }
+        let rowIdx = tableView.row(at: documentPoint)
+        guard rowIdx >= 0, rowIdx < rows.count else { return nil }
+        guard let selectable = rows[rowIdx] as? TextSelectable else { return nil }
+        let regions = selectable.selectableRegions
+        guard !regions.isEmpty else { return nil }
+        let rowRect = tableView.rect(ofRow: rowIdx)
+        let pointInRow = CGPoint(
+            x: documentPoint.x - rowRect.origin.x,
+            y: documentPoint.y - rowRect.origin.y)
+
+        for region in regions where region.frameInRow.contains(pointInRow) {
+            let local = CGPoint(
+                x: pointInRow.x - region.frameInRow.origin.x,
+                y: pointInRow.y - region.frameInRow.origin.y)
+            guard let ci = region.layout.characterIndex(at: local) else { continue }
+            let attr = region.layout.attributed
+            let idx = max(0, min(Int(ci), attr.length - 1))
+            guard idx >= 0, idx < attr.length else { continue }
+            let value = attr.attribute(.link, at: idx, effectiveRange: nil)
+            if let url = value as? URL { return url }
+            if let s = value as? String, let url = URL(string: s) { return url }
+        }
+        return nil
+    }
 }

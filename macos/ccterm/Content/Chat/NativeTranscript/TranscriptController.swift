@@ -277,11 +277,24 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
 
     /// 宽度变化入口。live resize 期间只重排可见行，非 live 走全量 + anchor。
     /// 对齐 Telegram `TableView.swift:3753-3771` 的 live/非 live 分支。
+    ///
+    /// 关键：即使 clamped width 没变（例如 window 在 > maxContentWidth 区间内
+    /// 拖动，rowLayoutWidth 恒等于 820），也必须 `setNeedsDisplay` 可见 rowView
+    /// ——`TranscriptRowView.draw` 里的 CTM inset 依赖 rowView.bounds.width，
+    /// 不重绘的话居中 offset 会滞留到 `viewDidEndLiveResize` 才跳。代价：仅
+    /// 可见行 layer 重 rasterize（CTLine 已缓存），无 Core Text 重排。
     func tableWidthChanged(_ rawNewWidth: CGFloat) {
         guard let tableView else { return }
         guard rawNewWidth > 0 else { return }
         let newWidth = clampedRowLayoutWidth(from: rawNewWidth)
-        guard abs(newWidth - lastLayoutWidth) > 0.5 else { return }
+        let layoutChanged = abs(newWidth - lastLayoutWidth) > 0.5
+
+        if !layoutChanged {
+            // clamped 没动（典型：两个宽度都 > maxContentWidth），
+            // 但 rowView bounds 变了 → 刷 inset 重绘，别的不动。
+            redrawVisibleRows()
+            return
+        }
 
         let oldWidth = lastLayoutWidth
         lastLayoutWidth = newWidth
@@ -296,6 +309,22 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
             let anchor = captureScrollAnchor()
             relayoutAllRows(width: newWidth)
             restoreScrollAnchor(anchor)
+        }
+    }
+
+    /// 只刷新可见 rowView 的 layer，不动 layout / cachedWidth / scroll anchor。
+    /// 用于 "rowView.bounds.width 变了但 row 排版宽度没变" 的场景，让 CTM
+    /// 基于新 bounds 重算居中 inset。
+    private func redrawVisibleRows() {
+        guard let tableView,
+              let clip = tableView.enclosingScrollView?.contentView else { return }
+        let visible = tableView.rows(in: clip.bounds)
+        guard visible.length > 0, visible.location >= 0 else { return }
+        let end = min(visible.location + visible.length, rows.count)
+        for i in max(0, visible.location)..<end {
+            if let rv = tableView.rowView(atRow: i, makeIfNecessary: false) as? TranscriptRowView {
+                rv.layer?.setNeedsDisplay()
+            }
         }
     }
 

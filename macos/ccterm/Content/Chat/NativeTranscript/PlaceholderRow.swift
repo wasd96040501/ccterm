@@ -19,6 +19,32 @@ final class PlaceholderRow: TranscriptRow {
         super.init()
     }
 
+    /// Adopts a precomputed `PlaceholderPrepared`. Layout is width-independent
+    /// and trivial, so the caller may follow up with `applyLayout(_:)`
+    /// directly from prepare output without re-typesetting on main.
+    init(prepared: PlaceholderPrepared, theme: TranscriptTheme) {
+        self.label = prepared.label
+        self.theme = theme
+        self.stable = prepared.stable
+        super.init()
+    }
+
+    /// 显式标注：Swift 6 子类 deinit 不自动继承父类 nonisolated 属性，
+    /// 需要逐层声明才能真正跳过 executor-hop。见 `TranscriptRow.deinit`。
+    nonisolated deinit { }
+
+    /// Adopts a precomputed `PlaceholderLayoutData` — CTLine already built
+    /// off-main by `TranscriptPrepare.layoutPlaceholder`.
+    func applyLayout(_ layout: PlaceholderLayoutData) {
+        self.labelLine = layout.labelLine
+        self.labelAscent = layout.labelAscent
+        self.labelDescent = layout.labelDescent
+        self.cachedHeight = layout.cachedHeight
+        // Width-independent layout: cachedWidth is inherited from whatever
+        // width was last requested (or 0). Not semantically meaningful here,
+        // but leave the field untouched to match legacy behavior.
+    }
+
     override var stableId: AnyHashable { stable }
 
     override var contentHash: Int {

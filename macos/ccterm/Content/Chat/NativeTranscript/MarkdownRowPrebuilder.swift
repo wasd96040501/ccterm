@@ -13,7 +13,7 @@ import SwiftUI
 /// 2. `TranscriptPreprocessor` 的 syntax highlight Task 完成后由
 ///    `AssistantMarkdownRow.apply(codeTokens:)` 再跑一次，用回灌的 tokens
 ///    重新生成彩色的 code block attributed string。
-enum MarkdownRowPrebuilder {
+nonisolated enum MarkdownRowPrebuilder {
 
     /// 主入口：遍历 segments，按类型分派到具体 builder。
     static func build(

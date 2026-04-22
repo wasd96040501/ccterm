@@ -28,6 +28,10 @@ final class TranscriptScrollView: NSScrollView {
         verticalScrollElasticity = .allowed
         horizontalScrollElasticity = .none
         autohidesScrollers = true
+        // Overlay 风格：滚动条只在滚动时短暂显现；Phase 2 追加内容时 thumb
+        // 大小变化对用户不可见（用户不在滚动）。忽略系统偏好"Always show
+        // scroll bars"——这是有意的权衡（换 viewport-first TTFP）。
+        scrollerStyle = .overlay
 
         automaticallyAdjustsContentInsets = false
         contentInsets = NSEdgeInsets(top: 12, left: 0, bottom: 12, right: 0)

@@ -64,6 +64,49 @@ final class AssistantMarkdownRow: TranscriptRow {
             codeTokens:[:])
     }
 
+    /// Adopts a precomputed `AssistantPrepared` — parse + prebuild already done
+    /// off-main by `TranscriptPrepare.assistant`. Cheap O(1) alternative to
+    /// the synchronous `init(source:theme:stable:)`.
+    init(prepared: AssistantPrepared, theme: TranscriptTheme) {
+        self.source = prepared.source
+        self.theme = theme
+        self.stable = prepared.stable
+        self.parsedDocument = prepared.parsedDocument
+        super.init()
+        self.prebuilt = prepared.prebuilt
+    }
+
+    /// 显式标注：Swift 6 子类 deinit 不自动继承父类 nonisolated 属性，
+    /// 需要逐层声明才能真正跳过 executor-hop。见 `TranscriptRow.deinit`。
+    nonisolated deinit { }
+
+    /// Adopts a precomputed `AssistantLayoutData` — CoreText already run
+    /// off-main by `TranscriptPrepare.layoutAssistant`. Existing table
+    /// selections are preserved; other state (origins / header rects / sizing)
+    /// is replaced wholesale.
+    func applyLayout(_ layout: AssistantLayoutData) {
+        self.rendered = layout.rendered
+        self.attributedOrigins = layout.attributedOrigins
+        self.codeBlockHeaderRects = layout.codeBlockHeaderRects
+        self.cachedWidth = layout.cachedWidth
+        self.cachedHeight = layout.cachedHeight
+
+        // Merge existing per-cell selection ranges into the new (sized but
+        // empty) skeleton. Mirrors the "preserve selection across resize" logic
+        // in `makeSize` at `TranscriptController.swift` call sites.
+        var merged = layout.tableSelectionsSkeleton
+        for (idx, existing) in tableSelections {
+            guard var matrix = merged[idx] else { continue }
+            for r in 0..<min(matrix.count, existing.count) {
+                for c in 0..<min(matrix[r].count, existing[r].count) {
+                    matrix[r][c] = existing[r][c]
+                }
+            }
+            merged[idx] = matrix
+        }
+        self.tableSelections = merged
+    }
+
     override var stableId: AnyHashable { stable }
 
     override var contentHash: Int {

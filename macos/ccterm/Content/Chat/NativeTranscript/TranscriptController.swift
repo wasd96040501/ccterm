@@ -61,13 +61,21 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
 
     // MARK: - setEntries
 
-    /// 新 entries 进来——diff、preprocess（async）、统一 apply。
+    /// Viewport-first 两阶段：
+    /// - **Phase 1**（主线程同步）：prepare + layout 能填满 viewport 的前 N 条
+    ///   entries，立即 merge → 用户看到首屏（未高亮）。
+    /// - **Phase 2**（后台 Task）：prepare + layout 剩余 entries，并 highlight
+    ///   所有 code block。回主线程：对 Phase 1 rows apply tokens（回填上色），对
+    ///   Phase 2 rows 走 diff + insert（一般在尾部）。
+    ///
+    /// Overlay scroller（见 `TranscriptScrollView`）让 Phase 2 插入时的 thumb
+    /// 大小变化不可见——Phase 2 窗口期内用户不在滚动，thumb 不显示。
     ///
     /// Short-circuit：entries id 列表 + theme 指纹都等价 → 立即返回。
     func setEntries(_ entries: [MessageEntry], themeChanged: Bool) {
         guard let tableView else { return }
-        let themeToUse = theme ?? .default
-        let themeFingerprint = themeToUse.fingerprint
+        let mdTheme = theme ?? .default
+        let themeFingerprint = mdTheme.fingerprint
         let signature = entries.map { $0.id }
 
         if signature == lastEntriesSignature, lastThemeFingerprint == themeFingerprint {
@@ -79,84 +87,351 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
         activePreprocessTask?.cancel()
 
         let t0 = CFAbsoluteTimeGetCurrent()
-        let newRows = TranscriptRowBuilder.build(
-            entries: entries,
-            theme: themeToUse,
-            expandedUserBubbles: expandedUserBubbles)
-        let tBuild = CFAbsoluteTimeGetCurrent()
-
-        let transition = TranscriptDiff.compute(
-            old: rows,
-            new: newRows,
-            animated: false)
-
-        // 收集新 / 更新的 assistant row——它们的 code blocks 需要 highlight。
-        // carry-over 的 row 不进——它们的 tokens 上轮已经贴好。
-        var assistantRows: [AssistantMarkdownRow] = []
-        for (_, row) in transition.inserted { if let a = row as? AssistantMarkdownRow { assistantRows.append(a) } }
-        for (_, row) in transition.updated { if let a = row as? AssistantMarkdownRow { assistantRows.append(a) } }
-
         let width = effectiveWidth()
+        let expandedSnapshot = expandedUserBubbles
+        let engine = syntaxEngine
+        let transcriptTheme = TranscriptTheme(markdown: mdTheme)
+
+        // Let hover-prewarm read the actual width used by a live controller
+        // instead of guessing a theme-level max.
+        TranscriptPrepareCache.shared.recordObservedWidth(width)
+
+        // Fast-path: pure tail append. 在 themeFingerprint 未变的前提下,
+        // 如果旧 entries 的 IDs 是新 entries 的严格前缀,只对追加部分做 prepare
+        // + highlight + insert-at-tail,跳过全量 Phase 1/2。
+        // 流式场景 99% 命中(新 assistant frame 都是新 UUID,整体追加)。
+        if !themeChanged,
+           lastThemeFingerprint == themeFingerprint,
+           detectPureAppend(newIDs: signature) != nil
+        {
+            let appendedEntries = Array(entries.suffix(from: lastEntriesSignature.count))
+            lastLayoutWidth = width
+            lastEntriesSignature = signature
+            fastPathAppend(
+                appendedEntries: appendedEntries,
+                theme: transcriptTheme,
+                width: width,
+                expandedSnapshot: expandedSnapshot,
+                engine: engine,
+                generation: generation,
+                t0: t0)
+            return
+        }
 
         lastLayoutWidth = width
         lastEntriesSignature = signature
         lastThemeFingerprint = themeFingerprint
 
-        // Async preprocess + apply。
-        let engine = syntaxEngine
-        let reusedCount = transition.finalRows.count
-            - transition.inserted.count - transition.updated.count
-        let deletedCount = transition.deleted.count
+        // ── Phase 1：主线程同步，viewport-fitting ────────────────────────
+        // viewportH == 0 的场景（首次 mount、测试环境）phase1 consume 0 条，
+        // 全部下沉到 Phase 2，等价 background-only 行为。
+        let viewportH = max(0, tableView.enclosingScrollView?.contentView.bounds.height ?? 0)
+        let phase1Budget = viewportH * 1.2 // 20% 余量，边缘 row 露半行时 phase 1 已填满。
+        let phase1Walk = TranscriptRowBuilder.prepareBounded(
+            entries: entries,
+            theme: transcriptTheme,
+            width: width,
+            expandedUserBubbles: expandedSnapshot,
+            minAccumulatedHeight: phase1Budget)
+        let phase1EntryCount = phase1Walk.consumedEntryCount
+        let phase1Rows = phase1Walk.items.map { self.row(from: $0, theme: transcriptTheme) }
 
-        activePreprocessTask = Task { [weak self] in
-            let tPre0 = CFAbsoluteTimeGetCurrent()
-            let timing = await TranscriptPreprocessor.run(
-                rows: assistantRows,
-                engine: engine)
-            let tPre1 = CFAbsoluteTimeGetCurrent()
+        let phase1Transition = TranscriptDiff.compute(
+            old: rows, new: phase1Rows, animated: false)
+        for row in phase1Transition.finalRows {
+            if let u = row as? UserBubbleRow {
+                u.isExpanded = self.expandedUserBubbles.contains(u.stableId)
+            }
+            row.makeSize(width: width)
+        }
+        self.merge(with: phase1Transition)
+        let tPhase1Done = CFAbsoluteTimeGetCurrent()
+        let phase1Ms = Int((tPhase1Done - t0) * 1000)
+
+        // ── Phase 2：后台 prepare 余下 + highlight 全部；主线程回填 tokens + 尾插 ──
+        let phase1Items = phase1Walk.items
+        let remainingEntries = Array(entries.suffix(from: phase1EntryCount))
+
+        activePreprocessTask = Task.detached(priority: .userInitiated) { [weak self] in
+            let tPrepStart = CFAbsoluteTimeGetCurrent()
+            let phase2PreparedOnly = TranscriptRowBuilder.prepareAll(
+                entries: remainingEntries,
+                theme: transcriptTheme,
+                width: width,
+                expandedUserBubbles: expandedSnapshot)
+            let tPrepDone = CFAbsoluteTimeGetCurrent()
+            if Task.isCancelled { return }
+
+            // Phase 1 items + Phase 2 items 合并进一次 highlightBatch。
+            // Phase 1 entries 的 code block 拿到 tokens 后通过主线程回填。
+            var combinedItems = phase1Items + phase2PreparedOnly
+            let (hlMs, codeBlockCount, tokensByStableId) =
+                await Self.applyHighlightTokens(
+                    to: &combinedItems,
+                    theme: transcriptTheme,
+                    width: width,
+                    engine: engine)
+            if Task.isCancelled { return }
+            let tHlDone = CFAbsoluteTimeGetCurrent()
+
+            // 只取 Phase 2 colored items — Phase 1 rows 已在主线程，单独回填。
+            let updatedPhase2 = Array(combinedItems.suffix(from: phase1Items.count))
 
             await MainActor.run {
                 guard let self, self.setEntriesGeneration == generation else { return }
-                let tApply0 = CFAbsoluteTimeGetCurrent()
-                // Sync collapse state to finalRows **before** layout. insert/update
-                // row 已由 builder 传对；carry-over row 的 cachedWidth 可能已对齐，
-                // 但两次 setEntries 之间 set 可能被 toggle 过，这里统一回填。
-                for row in transition.finalRows {
+                let tMergeStart = CFAbsoluteTimeGetCurrent()
+
+                // 1. 给已挂载的 Phase 1 assistant rows 回填 tokens。
+                var changedPhase1: IndexSet = []
+                for (idx, row) in self.rows.enumerated() {
+                    guard let a = row as? AssistantMarkdownRow,
+                          let tokens = tokensByStableId[a.stableId] else { continue }
+                    a.apply(codeTokens: tokens)
+                    a.makeSize(width: width)
+                    changedPhase1.insert(idx)
+                }
+                if !changedPhase1.isEmpty {
+                    self.tableView?.noteHeightOfRows(withIndexesChanged: changedPhase1)
+                    // rowView 缓存的 plain 版本要让它刷 — 否则会继续绘制旧内容。
+                    for idx in changedPhase1 {
+                        if let rv = self.tableView?.rowView(atRow: idx, makeIfNecessary: false)
+                            as? TranscriptRowView {
+                            rv.set(row: self.rows[idx])
+                        }
+                    }
+                }
+
+                // 2. 尾部增量：Phase 2 新行。走 TranscriptDiff 正常 insert/update
+                //    路径——兼容"中间 entry 变了"的场景（streaming，也会通过
+                //    updated 做 reloadRow）。
+                let phase2Rows = updatedPhase2.map { self.row(from: $0, theme: transcriptTheme) }
+                let newFullRows = self.rows + phase2Rows
+                let phase2Transition = TranscriptDiff.compute(
+                    old: self.rows, new: newFullRows, animated: false)
+                for row in phase2Transition.finalRows {
                     if let u = row as? UserBubbleRow {
                         u.isExpanded = self.expandedUserBubbles.contains(u.stableId)
                     }
-                }
-                // Layout——逐行 makeSize。makeSize 内部 `widthChanged || stateChanged`
-                // guard 负责 O(1) early-return；不要在外部加 `where cachedWidth != width`
-                // 过滤，否则 state sync 后 cachedWidth 对齐的 carry-over row 会 skip，
-                // 几何漏算。
-                for row in transition.finalRows {
                     row.makeSize(width: width)
                 }
-                let tApply1 = CFAbsoluteTimeGetCurrent()
-                self.merge(with: transition)
-                // Prune：从 set 里摘掉被删的 user bubble 的 stableId。
-                // deleted 存的是 index；用 `rows` 快照前的索引不安全，改走「diff
-                // finalRows 之外的老 row」路径：merge 之后 rows 已 == finalRows，
-                // expandedUserBubbles 里不在 rows 中的 stableId 全部摘掉。
+                self.merge(with: phase2Transition)
+
                 let liveIds = Set(self.rows.map { $0.stableId })
                 self.expandedUserBubbles.formIntersection(liveIds)
-                let tApply2 = CFAbsoluteTimeGetCurrent()
+                let tMergeDone = CFAbsoluteTimeGetCurrent()
 
-                let parseBuildMs = Int((tBuild - t0) * 1000)
-                let diffMs = Int((tPre0 - tBuild) * 1000)
-                let preMs = Int((tPre1 - tPre0) * 1000)
-                let layoutMs = Int((tApply1 - tApply0) * 1000)
-                let mergeMs = Int((tApply2 - tApply1) * 1000)
-                let totalMs = Int((tApply2 - t0) * 1000)
+                let prepMs = Int((tPrepDone - tPrepStart) * 1000)
+                let bgMs = Int((tHlDone - tPrepStart) * 1000)
+                let mergeMs = Int((tMergeDone - tMergeStart) * 1000)
+                let totalMs = Int((tMergeDone - t0) * 1000)
+                let reusedCount = phase2Transition.finalRows.count
+                    - phase2Transition.inserted.count - phase2Transition.updated.count
                 appLog(.info, "TranscriptController",
-                    "setEntries total=\(totalMs)ms "
-                    + "(+\(transition.inserted.count) / ~\(transition.updated.count) / -\(deletedCount) / reused=\(reusedCount)) "
-                    + "parseBuild=\(parseBuildMs) diff=\(diffMs) preprocess=\(preMs)"
-                    + " (hl=\(timing.highlightMs)ms code=\(timing.codeBlockCount)) "
-                    + "layout=\(layoutMs) merge=\(mergeMs) width=\(Int(width))")
+                    "setEntries TTFP=\(phase1Ms)ms full=\(totalMs)ms "
+                    + "phase1=\(phase1EntryCount)(rows=\(phase1Rows.count)) "
+                    + "phase2=\(remainingEntries.count) "
+                    + "(+\(phase2Transition.inserted.count) / ~\(phase2Transition.updated.count) / -\(phase2Transition.deleted.count) / reused=\(reusedCount)) "
+                    + "prepare=\(prepMs) bg=\(bgMs)(hl=\(hlMs)ms code=\(codeBlockCount)) "
+                    + "merge=\(mergeMs) width=\(Int(width))")
             }
         }
+    }
+
+    // MARK: - Fast-path: pure append
+
+    #if DEBUG
+    /// Test hooks — let `FastPathDetectionTests` reach internal state without
+    /// exposing it module-wide.
+    func _testHook_setLastEntriesSignature(_ ids: [UUID]) {
+        self.lastEntriesSignature = ids
+    }
+    func _testHook_detectPureAppend(newIDs: [UUID]) -> [UUID]? {
+        detectPureAppend(newIDs: newIDs)
+    }
+    #endif
+
+    /// 如果 `lastEntriesSignature` 是 `newIDs` 的**严格前缀**,返回尾部新增的
+    /// 原始 IDs(caller 再从 entries 里截取同样位置的 MessageEntry)。
+    /// 否则返回 nil(走 slow path)。
+    ///
+    /// - 前缀必须 **完全相等**(包括顺序),长度 N 严格小于新 IDs 长度
+    /// - 任何中间插入、删除、重排、唯一性改变都会导致 nil
+    /// - theme 改动由调用点外层 gate 隔离,这里只看 IDs
+    private func detectPureAppend(newIDs: [UUID]) -> [UUID]? {
+        guard newIDs.count > lastEntriesSignature.count else { return nil }
+        for (i, oldID) in lastEntriesSignature.enumerated() where newIDs[i] != oldID {
+            return nil
+        }
+        return Array(newIDs.suffix(from: lastEntriesSignature.count))
+    }
+
+    /// Fast-path: 只对追加的 entries 做 prepare + highlight + tail insert。
+    /// 完全不动已挂载的 rows;diff 仅涉及尾部 k 行,极快。
+    private func fastPathAppend(
+        appendedEntries: [MessageEntry],
+        theme transcriptTheme: TranscriptTheme,
+        width: CGFloat,
+        expandedSnapshot: Set<AnyHashable>,
+        engine: SyntaxHighlightEngine?,
+        generation: Int,
+        t0: CFAbsoluteTime
+    ) {
+        activePreprocessTask = Task.detached(priority: .userInitiated) { [weak self] in
+            // Prepare + layout(cached 路径,非常快)。
+            var items = TranscriptRowBuilder.prepareAll(
+                entries: appendedEntries,
+                theme: transcriptTheme,
+                width: width,
+                expandedUserBubbles: expandedSnapshot)
+            if Task.isCancelled { return }
+
+            let (hlMs, codeBlockCount, _) = await Self.applyHighlightTokens(
+                to: &items, theme: transcriptTheme, width: width, engine: engine)
+            if Task.isCancelled { return }
+
+            await MainActor.run {
+                guard let self, self.setEntriesGeneration == generation else { return }
+                let tMergeStart = CFAbsoluteTimeGetCurrent()
+                let appendedRows = items.map { self.row(from: $0, theme: transcriptTheme) }
+
+                // Sync expand for 新 user rows(应已由 prepareAll 设置,但幂等 OK)。
+                for row in appendedRows {
+                    if let u = row as? UserBubbleRow {
+                        u.isExpanded = self.expandedUserBubbles.contains(u.stableId)
+                    }
+                    row.makeSize(width: width)
+                }
+
+                // 直接构造 insert-only transition,跳过 TranscriptDiff(无需 diff)。
+                let insertions = appendedRows.enumerated().map {
+                    (self.rows.count + $0.offset, $0.element)
+                }
+                let transition = TranscriptUpdateTransition(
+                    deleted: [],
+                    inserted: insertions,
+                    updated: [],
+                    finalRows: self.rows + appendedRows,
+                    animated: false)
+                self.merge(with: transition)
+
+                let totalMs = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+                let mergeMs = Int((CFAbsoluteTimeGetCurrent() - tMergeStart) * 1000)
+                appLog(.info, "TranscriptController",
+                    "setEntries fast-path append=\(appendedEntries.count) rows=\(appendedRows.count) "
+                    + "total=\(totalMs)ms hl=\(hlMs)ms(code=\(codeBlockCount)) "
+                    + "merge=\(mergeMs) width=\(Int(width))")
+            }
+        }
+    }
+
+    // MARK: - Prepared → Row
+
+    /// 把 `TranscriptPreparedItem`(Sendable,off-main 构造)包成 `TranscriptRow`
+    /// 实例(@MainActor)。O(1)——只是属性赋值,不做 CoreText。
+    private func row(from item: TranscriptPreparedItem, theme: TranscriptTheme) -> TranscriptRow {
+        switch item {
+        case .assistant(let prepared, let layout):
+            let r = AssistantMarkdownRow(prepared: prepared, theme: theme)
+            r.applyLayout(layout)
+            return r
+        case .user(let prepared, let layout, let isExpanded):
+            let r = UserBubbleRow(prepared: prepared, theme: theme)
+            r.isExpanded = isExpanded
+            r.applyLayout(layout)
+            return r
+        case .placeholder(let prepared, let layout):
+            let r = PlaceholderRow(prepared: prepared, theme: theme)
+            r.applyLayout(layout)
+            return r
+        }
+    }
+
+    // MARK: - Highlight pipeline (nonisolated)
+
+    /// 收集 `items` 中所有 assistant 的 code block → 一次 highlightBatch →
+    /// 对命中 token 的 item 重建 prebuilt(用彩色 attr)+ 再排版。修改 `items`
+    /// in-place。
+    ///
+    /// 返回：
+    /// - `hlMs`:纯 highlightBatch 耗时
+    /// - `codeBlockCount`:本批次 code block 总数
+    /// - `tokensByStableId`:stableId → (segIndex → tokens),给主线程回填已挂载
+    ///   的 Phase 1 row 用。
+    ///
+    /// 完全 nonisolated——engine.load / highlightBatch 内部自己处理线程切换。
+    nonisolated private static func applyHighlightTokens(
+        to items: inout [TranscriptPreparedItem],
+        theme: TranscriptTheme,
+        width: CGFloat,
+        engine: SyntaxHighlightEngine?
+    ) async -> (hlMs: Int, codeBlockCount: Int, tokensByStableId: [AnyHashable: [Int: [SyntaxToken]]]) {
+        // 收集请求 + 记 (itemIndex, segmentIndex) → batch 位置。跳过
+        // 已高亮过的 item(通常来自 cache hit) — 避免重复 highlight。
+        var requests: [(code: String, language: String?)] = []
+        var routing: [(itemIndex: Int, segmentIndex: Int)] = []
+        for (itemIdx, item) in items.enumerated() {
+            guard case let .assistant(prepared, _) = item,
+                  !prepared.hasHighlight else { continue }
+            for (segIdx, seg) in prepared.parsedDocument.segments.enumerated() {
+                if case .codeBlock(let block) = seg {
+                    requests.append((block.code, block.language))
+                    routing.append((itemIdx, segIdx))
+                }
+            }
+        }
+        guard !requests.isEmpty, let engine else {
+            return (0, requests.count, [:])
+        }
+        if Task.isCancelled { return (0, requests.count, [:]) }
+
+        await engine.load()
+        if Task.isCancelled { return (0, requests.count, [:]) }
+
+        let t0 = CFAbsoluteTimeGetCurrent()
+        let batch = await engine.highlightBatch(requests)
+        let hlMs = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+        guard batch.count == routing.count else {
+            appLog(.warning, "TranscriptController",
+                "highlight batch size mismatch: got \(batch.count) expected \(routing.count)")
+            return (hlMs, requests.count, [:])
+        }
+
+        // 按 itemIndex 聚合:itemIndex → (segIndex → tokens)。
+        var byItem: [Int: [Int: [SyntaxToken]]] = [:]
+        for (i, route) in routing.enumerated() {
+            byItem[route.itemIndex, default: [:]][route.segmentIndex] = batch[i]
+        }
+
+        // 对每个 assistant item:用 tokens 重建 prebuilt + 再 layout,in-place 替换。
+        // 同时 collect stableId → tokens map 给主线程用。
+        var tokensByStableId: [AnyHashable: [Int: [SyntaxToken]]] = [:]
+        for (itemIdx, segTokens) in byItem {
+            guard case let .assistant(prepared, _) = items[itemIdx] else { continue }
+            let newPrebuilt = MarkdownRowPrebuilder.build(
+                document: prepared.parsedDocument,
+                theme: theme,
+                codeTokens: segTokens)
+            let newPrepared = AssistantPrepared(
+                source: prepared.source,
+                parsedDocument: prepared.parsedDocument,
+                prebuilt: newPrebuilt,
+                stable: prepared.stable,
+                contentHash: prepared.contentHash,
+                hasHighlight: true)
+            let newLayout = TranscriptPrepare.layoutAssistant(
+                prebuilt: newPrebuilt, theme: theme, width: width)
+            let newItem: TranscriptPreparedItem = .assistant(newPrepared, newLayout)
+            items[itemIdx] = newItem
+            tokensByStableId[prepared.stable] = segTokens
+
+            // Write back to the shared cache as a colored entry. Subsequent
+            // `prepareAll` walks on the same (contentHash, widthBucket) key
+            // will hit this colored version and skip both prepare and
+            // highlight.
+            TranscriptPrepareCache.shared.put(
+                newItem.cacheKey(width: width), newItem)
+        }
+        return (hlMs, requests.count, tokensByStableId)
     }
 
     // MARK: - merge

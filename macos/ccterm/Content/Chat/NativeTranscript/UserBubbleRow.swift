@@ -42,6 +42,29 @@ final class UserBubbleRow: TranscriptRow {
         super.init()
     }
 
+    /// Adopts a precomputed `UserPrepared`. Layout is width-dependent, so the
+    /// caller follows up with `applyLayout(_:)` once a concrete width is
+    /// known.
+    init(prepared: UserPrepared, theme: TranscriptTheme) {
+        self.text = prepared.text
+        self.theme = theme
+        self.stable = prepared.stable
+        super.init()
+    }
+
+    /// Adopts a precomputed `UserLayoutData` — text layout + bubble geometry
+    /// already computed off-main by `TranscriptPrepare.layoutUser`.
+    func applyLayout(_ layout: UserLayoutData) {
+        self.textLayout = layout.textLayout
+        self.bubbleRect = layout.bubbleRect
+        self.textOriginInRow = layout.textOriginInRow
+        self.bubbleWidth = layout.bubbleWidth
+        self.bubbleX = layout.bubbleX
+        self.cachedHeight = layout.cachedHeight
+        self.cachedWidth = layout.cachedWidth
+        self.lastLayoutExpanded = layout.lastLayoutExpanded
+    }
+
     /// 显式标注：Swift 6 子类 deinit 不自动继承父类 nonisolated 属性，
     /// 需要逐层声明才能真正跳过 executor-hop。见 `TranscriptRow.deinit`。
     nonisolated deinit { }

@@ -1,0 +1,174 @@
+import AgentSDK
+import AppKit
+import XCTest
+@testable import ccterm
+
+/// 验证内容寻址缓存的 get/put/LRU/invalidate 行为，以及 `withStableId`
+/// 在 cache hit 时正确替换 stableId。
+@MainActor
+final class TranscriptPrepareCacheTests: XCTestCase {
+
+    private let theme = TranscriptTheme.default
+    private let width: CGFloat = 720
+
+    // MARK: - Basic get / put / miss
+
+    func testMissThenPutThenHit() {
+        let cache = TranscriptPrepareCache(capacity: 10)
+        let item = makeUserItem(text: "hello", stable: "id-1")
+        let key = item.cacheKey(width: width)
+
+        XCTAssertNil(cache.get(key))
+        cache.put(key, item)
+
+        let got = cache.get(key)
+        XCTAssertNotNil(got)
+        if case .user(let p, _, _) = got {
+            XCTAssertEqual(p.text, "hello")
+        } else {
+            XCTFail("expected user variant")
+        }
+    }
+
+    // MARK: - LRU eviction
+
+    func testLRUEvictsOldestWhenCapacityExceeded() {
+        let cache = TranscriptPrepareCache(capacity: 3)
+        let k1 = putUser(cache, text: "1", stable: "s1")
+        let k2 = putUser(cache, text: "2", stable: "s2")
+        let k3 = putUser(cache, text: "3", stable: "s3")
+        XCTAssertEqual(cache.count, 3)
+
+        // Touch k1 → becomes most-recently-used.
+        _ = cache.get(k1)
+
+        // Add a 4th → evicts LRU (k2).
+        _ = putUser(cache, text: "4", stable: "s4")
+
+        XCTAssertNotNil(cache.get(k1), "k1 recently touched → still present")
+        XCTAssertNil(cache.get(k2), "k2 LRU → evicted")
+        XCTAssertNotNil(cache.get(k3))
+    }
+
+    // MARK: - withStableId semantics
+
+    /// Cache hits return items with the cached-era stableId; `withStableId`
+    /// rewrites it so TranscriptDiff can match the current entry. contentHash
+    /// and layout must be preserved.
+    func testWithStableIdPreservesContentAndLayout() {
+        let item = makeUserItem(text: "shared text", stable: "original-id")
+        let rewritten = item.withStableId("new-id" as AnyHashable)
+
+        switch rewritten {
+        case .user(let p, let l, let isExp):
+            XCTAssertEqual(p.text, "shared text")
+            XCTAssertEqual(p.stable, AnyHashable("new-id"))
+            XCTAssertFalse(isExp)
+            XCTAssertGreaterThan(l.cachedHeight, 0)
+            // contentHash must be stable-id-independent — it hashes text+theme.
+            guard case let .user(orig, _, _) = item else {
+                return XCTFail("expected user")
+            }
+            XCTAssertEqual(p.contentHash, orig.contentHash)
+        default:
+            XCTFail("expected user variant")
+        }
+    }
+
+    // MARK: - Width bucketing
+
+    /// 两个 width 落在同一 32px 桶 → 同一 key → cache hit。
+    /// 换到不同桶 → miss。
+    func testWidthBucketing() {
+        XCTAssertEqual(TranscriptPrepareCache.widthBucket(720), TranscriptPrepareCache.widthBucket(735))
+        XCTAssertNotEqual(
+            TranscriptPrepareCache.widthBucket(720),
+            TranscriptPrepareCache.widthBucket(800))
+    }
+
+    // MARK: - Invalidate
+
+    func testInvalidateAllClearsEverything() {
+        let cache = TranscriptPrepareCache(capacity: 10)
+        _ = putUser(cache, text: "a", stable: "1")
+        _ = putUser(cache, text: "b", stable: "2")
+        XCTAssertEqual(cache.count, 2)
+
+        cache.invalidateAll()
+        XCTAssertEqual(cache.count, 0)
+    }
+
+    // MARK: - End-to-end: shared cache speeds up second prepareAll
+
+    /// 第一次 prepareAll 全 miss,put 到 shared cache;第二次 prepareAll
+    /// 同内容应该全 hit,返回相同的 layout(cached 版本，只替换 stableId)。
+    func testSharedCacheServesSecondPrepareAll() async {
+        TranscriptPrepareCache.shared.invalidateAll()
+
+        let entries: [MessageEntry] = [
+            makeLocalUserEntry(text: "hello"),
+            makeLocalUserEntry(text: "world"),
+        ]
+
+        let first = await Task.detached { [theme = theme, width = width] in
+            TranscriptRowBuilder.prepareAll(
+                entries: entries, theme: theme, width: width)
+        }.value
+
+        let firstHits = TranscriptPrepareCache.shared.hitCount
+        let firstMisses = TranscriptPrepareCache.shared.missCount
+
+        let second = await Task.detached { [theme = theme, width = width] in
+            TranscriptRowBuilder.prepareAll(
+                entries: entries, theme: theme, width: width)
+        }.value
+
+        let totalHits = TranscriptPrepareCache.shared.hitCount
+        let totalMisses = TranscriptPrepareCache.shared.missCount
+
+        XCTAssertEqual(first.count, 2)
+        XCTAssertEqual(second.count, 2)
+        XCTAssertEqual(totalHits - firstHits, 2,
+            "second prepareAll should hit cache for both entries")
+        XCTAssertEqual(totalMisses, firstMisses,
+            "no new misses on second prepareAll")
+
+        // Identity: cachedHeight matches.
+        for (f, s) in zip(first, second) {
+            if case .user(_, let fl, _) = f, case .user(_, let sl, _) = s {
+                XCTAssertEqual(fl.cachedHeight, sl.cachedHeight, accuracy: 0.01)
+            }
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func makeUserItem(text: String, stable: AnyHashable) -> TranscriptPreparedItem {
+        let prepared = TranscriptPrepare.user(
+            text: text, theme: theme, stable: stable)
+        let layout = TranscriptPrepare.layoutUser(
+            text: text, theme: theme, width: width, isExpanded: false)
+        return .user(prepared, layout, isExpanded: false)
+    }
+
+    @discardableResult
+    private func putUser(
+        _ cache: TranscriptPrepareCache,
+        text: String,
+        stable: AnyHashable
+    ) -> TranscriptPrepareCache.Key {
+        let item = makeUserItem(text: text, stable: stable)
+        let key = item.cacheKey(width: width)
+        cache.put(key, item)
+        return key
+    }
+
+    private func makeLocalUserEntry(text: String) -> MessageEntry {
+        let input = LocalUserInput(text: text, image: nil, planContent: nil)
+        return .single(SingleEntry(
+            id: UUID(),
+            payload: .localUser(input),
+            delivery: nil,
+            toolResults: [:]))
+    }
+}

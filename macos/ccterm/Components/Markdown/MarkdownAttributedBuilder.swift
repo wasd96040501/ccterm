@@ -4,9 +4,13 @@ import SwiftMath
 /// Builds `NSAttributedString` output for `.markdown` segments and table cells.
 ///
 /// Pure function over `(blocks, theme)` — no side effects, no UI state.
-/// Main-actor only because it touches `NSFont` / `NSColor` / `NSFontManager`.
-@MainActor
-struct MarkdownAttributedBuilder {
+/// Thread-safe: reachable types (`NSFont`, `NSColor`, `NSAttributedString`) are
+/// documented thread-safe; `NSFontManager` is deliberately avoided (use
+/// `NSFontDescriptor.withSymbolicTraits` via the `NSFont.addingTraits` helper
+/// below). `MathImage.asImage` is lazy — it captures a display list into an
+/// `NSImage(size:flipped:drawingHandler:)` whose handler defers all CG drawing
+/// to the future paint, so `asImage` itself is safe to call off-main.
+nonisolated struct MarkdownAttributedBuilder {
     let theme: MarkdownTheme
 
     // MARK: - Public
@@ -65,7 +69,7 @@ struct MarkdownAttributedBuilder {
     /// Render a flat list of inlines — used for table cells.
     func buildInline(_ inlines: [MarkdownInline], bold: Bool = false) -> NSAttributedString {
         let base: NSFont = bold
-            ? NSFontManager.shared.convert(theme.bodyFont, toHaveTrait: .boldFontMask)
+            ? theme.bodyFont.addingTraits(.bold)
             : theme.bodyFont
         return renderInlines(inlines, baseFont: base, color: theme.primaryColor)
     }
@@ -439,8 +443,8 @@ struct MarkdownAttributedBuilder {
         strike: Bool
     ) -> NSAttributedString {
         var font = baseFont
-        if bold { font = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask) }
-        if italic { font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask) }
+        if bold { font = font.addingTraits(.bold) }
+        if italic { font = font.addingTraits(.italic) }
 
         var attrs: [NSAttributedString.Key: Any] = [
             .font: font,
@@ -472,5 +476,21 @@ struct MarkdownAttributedBuilder {
             .paragraphStyle,
             value: style,
             range: NSRange(location: 0, length: attr.length))
+    }
+}
+
+// MARK: - NSFont trait synthesis
+
+extension NSFont {
+    /// Returns a font derived from `self` with additional symbolic traits
+    /// (bold / italic) applied. Replaces `NSFontManager.shared.convert(_:toHaveTrait:)`
+    /// — `NSFontManager` is not thread-safe, `NSFontDescriptor` is.
+    ///
+    /// Falls back to `self` if the descriptor can't resolve a concrete font
+    /// for the requested trait combination.
+    func addingTraits(_ traits: NSFontDescriptor.SymbolicTraits) -> NSFont {
+        let combined = fontDescriptor.symbolicTraits.union(traits)
+        let descriptor = fontDescriptor.withSymbolicTraits(combined)
+        return NSFont(descriptor: descriptor, size: pointSize) ?? self
     }
 }

@@ -6,6 +6,9 @@ struct SidebarSessionRow: View {
     let style: SessionRowStyle
     let viewModel: SidebarViewModel
 
+    @Environment(SessionManager2.self) private var manager
+    @Environment(\.markdownTheme) private var markdownTheme
+
     @State private var isHovered = false
 
     var body: some View {
@@ -19,8 +22,40 @@ struct SidebarSessionRow: View {
             .opacity(isHovered ? 1 : 0)
             .frame(width: isHovered ? nil : 0)
         }
-        .onHover { isHovered = $0 }
+        .onHover { hovering in
+            isHovered = hovering
+            if hovering {
+                prewarm()
+            }
+        }
         .contextMenu { contextMenuItems }
+    }
+
+    /// Hover prewarm — 把目标 session 已加载过的 messages 喂给
+    /// `TranscriptRowBuilder.prepareAll`,让 `TranscriptPrepareCache.shared`
+    /// 预先填充 prepared+highlight 产出。用户真点进去时命中热路径。
+    ///
+    /// 严格 best-effort：
+    /// - 只 prewarm 已缓存的 handle(`existingSession`)——不触发 loadHistory,
+    ///   避免 hover 一个从未打开过的会话凭空做重 I/O。
+    /// - Width:优先用 cache 记录的 `lastObservedWidth`(= 上次真 setEntries
+    ///   用的 clamp 后 width),fallback 到当前 theme 的 `maxContentWidth`
+    ///   (该值决定 effectiveWidth 的上界)。32px bucket 保证小幅 resize 仍命中。
+    /// - Theme:从环境拿当前 markdown theme,不硬编码 `.default`。
+    private func prewarm() {
+        guard let handle = manager.existingSession(session.id) else { return }
+        let entries = handle.messages
+        guard !entries.isEmpty else { return }
+        let transcriptTheme = TranscriptTheme(markdown: markdownTheme)
+        let width = TranscriptPrepareCache.shared.lastObservedWidth
+            ?? transcriptTheme.maxContentWidth
+        Task.detached(priority: .utility) {
+            _ = TranscriptRowBuilder.prepareAll(
+                entries: entries,
+                theme: transcriptTheme,
+                width: width,
+                expandedUserBubbles: [])
+        }
     }
 
     // MARK: - Subviews

@@ -28,6 +28,13 @@ final class SessionManager2 {
         return handle
     }
 
+    /// 返回已缓存的 handle，否则 nil —— 不触发懒创建。
+    /// 用于 hover prewarm 等路径：hover 不应凭空创建 handle，
+    /// 只复用已被业务流程创建过的实例。
+    func existingSession(_ sessionId: String) -> SessionHandle2? {
+        handles[sessionId]
+    }
+
     /// 所有未归档的会话记录，按 `lastActiveAt` 降序。Sidebar v2 用。
     func allRecords() -> [SessionRecord] {
         repository.findAll()

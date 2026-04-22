@@ -93,8 +93,8 @@ struct MarkdownTheme {
         NSColor(name: nil) { appearance in
             let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             return isDark
-                ? NSColor(white: 1, alpha: 0.17)
-                : NSColor(white: 0, alpha: 0.10)
+                ? NSColor(white: 1, alpha: 0.14)
+                : NSColor(white: 0, alpha: 0.08)
         }
     }
 

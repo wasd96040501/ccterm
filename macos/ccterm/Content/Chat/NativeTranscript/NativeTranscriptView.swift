@@ -147,6 +147,43 @@ private enum PreviewFactory {
     .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }
 
+#Preview("Links — across contexts") {
+    NativeTranscriptView(entries: [
+        PreviewFactory.user(
+            "See [the swift.org guide](https://swift.org/documentation/) — bare URL too: https://developer.apple.com"),
+        PreviewFactory.assistant("""
+        Inline forms:
+
+        - Markdown link: [Apple developer](https://developer.apple.com)
+        - Bare URL: https://www.swift.org
+        - Link with `code` inside: [the `URLSession` docs](https://developer.apple.com/documentation/foundation/urlsession)
+        - Image syntax: ![Swift logo](https://swift.org/assets/images/swift.svg)
+
+        Inside a blockquote:
+
+        > Reference: [SE-0258 Property Wrappers](https://github.com/apple/swift-evolution/blob/main/proposals/0258-property-wrappers.md)
+        > and a bare URL https://forums.swift.org for discussion.
+
+        Inside a table:
+
+        | Resource | URL |
+        | -------- | --- |
+        | Docs     | [developer.apple.com](https://developer.apple.com) |
+        | Forums   | https://forums.swift.org |
+        | Source   | [github.com/apple/swift](https://github.com/apple/swift) |
+
+        Nested in a list with other inline styles:
+
+        1. **Bold** then a [link](https://swift.org), then *italic*.
+        2. A long line with multiple links: [one](https://example.com/one),
+           [two](https://example.com/two), and [three](https://example.com/three)
+           — all should be individually clickable without overlapping.
+        """),
+    ])
+    .frame(width: 720, height: 560)
+    .environment(\.syntaxEngine, SyntaxHighlightEngine())
+}
+
 #Preview("Lists — ordered / unordered / nested") {
     NativeTranscriptView(entries: [
         PreviewFactory.assistant("""

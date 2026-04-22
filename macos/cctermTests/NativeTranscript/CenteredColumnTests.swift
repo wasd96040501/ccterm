@@ -4,8 +4,8 @@ import XCTest
 @testable import ccterm
 
 /// 覆盖 2026-04 居中内容列改动：
-/// 1. `TranscriptTheme.maxContentWidth` 默认 820pt。
-/// 2. window 宽 > 820 时 row 排版宽度被 clamp 到 820；窄时占满。
+/// 1. `TranscriptTheme.maxContentWidth` 默认 720pt。
+/// 2. window 宽 > 720 时 row 排版宽度被 clamp 到 720；窄时占满。
 /// 3. `TranscriptController.contentInset(forRow:rowRect:)` 正确反映居中留白。
 ///
 /// 不覆盖 live resize 分支（依赖 `NSView.inLiveResize`，测试里触发不到）和
@@ -14,12 +14,14 @@ import XCTest
 final class CenteredColumnTests: XCTestCase {
 
     func testMaxContentWidthDefault() {
-        let theme = TranscriptTheme(markdown: .default)
-        XCTAssertEqual(theme.maxContentWidth, 820)
+        // 这是唯一一个硬编码期望值的 test —— 它测的就是"默认值是多少"。
+        // 其它 test 应通过 `TranscriptTheme.default.maxContentWidth` 引用。
+        XCTAssertEqual(TranscriptTheme.default.maxContentWidth, 720)
     }
 
     func testRowLayoutClampsAndContentInsetPositiveWhenWide() {
-        let width: CGFloat = 1200
+        let maxW = TranscriptTheme.default.maxContentWidth
+        let width: CGFloat = maxW + 480
         let sv = TranscriptScrollView(frame: NSRect(x: 0, y: 0, width: width, height: 600))
         sv.layoutSubtreeIfNeeded()
         let ctrl = sv.controller
@@ -29,15 +31,16 @@ final class CenteredColumnTests: XCTestCase {
         waitUntil { !ctrl.rows.isEmpty && ctrl.rows[0].cachedWidth > 0 }
 
         XCTAssertEqual(ctrl.rows.count, 1)
-        XCTAssertEqual(ctrl.rows[0].cachedWidth, 820, accuracy: 1)
+        XCTAssertEqual(ctrl.rows[0].cachedWidth, maxW, accuracy: 1)
 
         let rowRect = CGRect(x: 0, y: 0, width: width, height: ctrl.rows[0].cachedHeight)
         let inset = ctrl.contentInset(forRow: 0, rowRect: rowRect)
-        XCTAssertEqual(inset, (width - 820) / 2, accuracy: 1)
+        XCTAssertEqual(inset, (width - maxW) / 2, accuracy: 1)
     }
 
     func testRowLayoutFullWidthAndNoInsetWhenNarrow() {
-        let width: CGFloat = 600
+        let maxW = TranscriptTheme.default.maxContentWidth
+        let width: CGFloat = maxW - 120
         let sv = TranscriptScrollView(frame: NSRect(x: 0, y: 0, width: width, height: 600))
         sv.layoutSubtreeIfNeeded()
         let ctrl = sv.controller

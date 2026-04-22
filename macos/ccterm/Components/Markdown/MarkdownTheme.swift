@@ -9,23 +9,26 @@ struct MarkdownTheme {
 
     // MARK: - Typography
 
-    var bodyFontSize: CGFloat = 13
-    var codeFontSize: CGFloat = 12
+    var bodyFontSize: CGFloat = 14
+    var codeFontSize: CGFloat = 13
 
-    /// h1-h6 font sizes. h4-h6 collapse to h3's size — distinguish by weight only,
+    /// h1-h6 font sizes. Scale follows a Minor Third modular ratio (~1.2):
+    /// 14 → 17 → 20 → 24. h4-h6 collapse to body size — distinguish by weight only,
     /// matching GitHub / Apple HIG convention where deeper headings stop scaling.
-    var headingSizes: [CGFloat] = [22, 19, 16, 16, 16, 16]
+    var headingSizes: [CGFloat] = [24, 20, 17, 14, 14, 14]
 
     // MARK: - Spacing (three semantic layers)
 
-    /// Section break — extra space above a heading (added on top of l2 segment gap).
-    var l1: CGFloat = 16
+    /// Section break — extra space above a heading (replaces, not adds to, l2).
+    var l1: CGFloat = 20
     /// Block-level — between adjacent segments and between blocks inside a markdown segment.
-    var l2: CGFloat = 8
-    /// Item-level — between list items.
-    var l3Item: CGFloat = 4
-    /// Line-level — intra-paragraph line spacing.
-    var l3Line: CGFloat = 2
+    var l2: CGFloat = 10
+    /// Item-level — between list items. Must stay > l3Line so item breaks read
+    /// distinctly from intra-paragraph line wraps (Gestalt proximity).
+    var l3Item: CGFloat = 6
+    /// Line-level — intra-paragraph line spacing. Sized so total baseline-to-
+    /// baseline ≈ 1.5× font size (WCAG 1.4.8, Bringhurst screen reading range).
+    var l3Line: CGFloat = 4
 
     // MARK: - Layout
 
@@ -36,7 +39,7 @@ struct MarkdownTheme {
     /// Gap between the blockquote bar and its content.
     var blockquoteBarGap: CGFloat = 12
     /// Vertical inset inside code/table/math blocks.
-    var blockPadding: CGFloat = 8
+    var blockPadding: CGFloat = 10
 
     /// Corner radius shared by all block-level containers (code, math, table).
     /// Picked so radius/height ≈ 0.05-0.08 — soft-square "information

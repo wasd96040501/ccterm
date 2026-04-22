@@ -56,7 +56,7 @@ final class TranscriptLinkAndTableCopyTests: XCTestCase {
         }
         guard let table else { return XCTFail("no table segment parsed") }
 
-        let theme = TranscriptTheme(markdown: .default)
+        let theme = TranscriptTheme.default
         let builder = MarkdownAttributedBuilder(theme: theme.markdown)
         let layout = TranscriptTableLayout.make(
             table: table, builder: builder, theme: theme, maxWidth: 400)
@@ -83,7 +83,7 @@ final class TranscriptLinkAndTableCopyTests: XCTestCase {
 
     /// cellContentFrames 是空表时的 no-crash 保证——零列零行时 iteration 安全。
     func testTableLayout_emptyTableYieldsEmptyFrames() {
-        let theme = TranscriptTheme(markdown: .default)
+        let theme = TranscriptTheme.default
         let builder = MarkdownAttributedBuilder(theme: theme.markdown)
         let empty = MarkdownTable(header: [], alignments: [], rows: [])
         let layout = TranscriptTableLayout.make(

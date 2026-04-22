@@ -53,14 +53,11 @@ struct MarkdownTheme {
     var inlineCodeVPadding: CGFloat = 0
     /// Inline code chip: corner radius (≈ 0.21 of chip height — moderate).
     var inlineCodeCornerRadius: CGFloat = 3
-    /// Spacing pushed onto the characters immediately before and after an
-    /// inline code run (via NSAttributedString `.kern`) so the chip never
-    /// visually overlaps neighbouring glyphs. Must exceed `inlineCodeHPadding`
-    /// by enough to absorb the neighbour glyph's LSB — punctuation like `.` and
-    /// `,` has a small LSB, so a 1pt gap (kern=padding+1) still reads as the
-    /// dot touching the chip. Effective external gap = `kern - inlineCodeHPadding`
-    /// (currently 10 - 4 = 6pt).
-    var inlineCodeSideKern: CGFloat = 10
+    /// Horizontal gap between the chip's outer (rounded-rect) edge and the
+    /// surrounding text on each side. Inserted as a fixed-width invisible run
+    /// (`InlineSpacer`, CTRunDelegate over U+2060) — the value here IS the
+    /// rendered gap, no offset arithmetic against `inlineCodeHPadding`.
+    var inlineCodeOuterGap: CGFloat = 6
 
     // MARK: - Derived fonts
 

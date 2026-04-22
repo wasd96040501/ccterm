@@ -61,28 +61,43 @@ final class MarkdownAttributedBuilderTests: XCTestCase {
         XCTAssertLessThan(w99, w100, "4-char marker must be wider than 3-char")
     }
 
-    // MARK: - Inline code: joiner symmetry
+    // MARK: - Inline code: spacer symmetry
 
-    func testInlineCodeHasBalancedWordJoiners() {
-        // LEFT 和 RIGHT 两侧都应插入 U+2060 + kern，而不是只在 RIGHT 一侧。
+    func testInlineCodeHasBalancedRunDelegateSpacers() {
+        // LEFT 和 RIGHT 两侧都应插入 `InlineSpacer`（U+2060 + CTRunDelegate），
+        // 不再用 `.kern` hack。要求：
+        // - 字串里有两个 U+2060
+        // - 两个 U+2060 都带 CTRunDelegate attribute（独立 CTRun）
+        // - 两个 spacer 的 advance 必须一致——验 CTRunDelegate.getWidth 回调
+        //   返回相同的 CGFloat。
         let out = build("a `c` b")
         let s = out.string
         let joinerCount = s.filter { $0 == "\u{2060}" }.count
-        XCTAssertEqual(joinerCount, 2, "inline code must have joiner on both sides")
-        // 两个 joiner 都必须带相同的 kern。
+        XCTAssertEqual(joinerCount, 2, "inline code must have spacer on both sides")
+
+        // 在原 NSAttributedString 上枚举 CTRunDelegate attribute——不依赖
+        // CTLine 排版后的 run 划分（CoreText 不会把 delegate 透出到
+        // CTRunGetAttributes，但 attribute 本来就在 source 上）。InlineSpacer
+        // 把宽度存在 CTRunDelegate 的 refCon 里，验证它能取回且左右一致。
+        let delegateKey = NSAttributedString.Key(kCTRunDelegateAttributeName as String)
         let ns = out.string as NSString
-        var kerns: [CGFloat] = []
-        out.enumerateAttribute(.kern, in: NSRange(location: 0, length: out.length),
+        var spacerWidths: [CGFloat] = []
+        out.enumerateAttribute(delegateKey,
+                               in: NSRange(location: 0, length: out.length),
                                options: []) { value, range, _ in
-            let sub = ns.substring(with: range)
-            guard sub.contains("\u{2060}") else { return }
-            if let k = value as? NSNumber {
-                kerns.append(CGFloat(truncating: k))
-            }
+            guard let v = value else { return }
+            // 只看 U+2060——把 attachment 之类其它 delegate 用法排除掉。
+            guard ns.substring(with: range).contains("\u{2060}") else { return }
+            let delegate = v as! CTRunDelegate
+            let refCon = CTRunDelegateGetRefCon(delegate)
+            spacerWidths.append(refCon.assumingMemoryBound(to: CGFloat.self).pointee)
         }
-        XCTAssertGreaterThanOrEqual(kerns.count, 2)
-        if kerns.count >= 2 {
-            XCTAssertEqual(kerns[0], kerns[1], "left and right joiners must share kern value")
+        XCTAssertEqual(spacerWidths.count, 2,
+                       "both spacers must carry CTRunDelegate on U+2060")
+        if spacerWidths.count >= 2 {
+            XCTAssertEqual(spacerWidths[0], spacerWidths[1], accuracy: 0.01,
+                           "left and right spacers must share advance width")
+            XCTAssertGreaterThan(spacerWidths[0], 0, "spacer advance must be positive")
         }
     }
 

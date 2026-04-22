@@ -366,29 +366,23 @@ struct MarkdownAttributedBuilder {
             ]
             let chip = NSAttributedString(string: s, attributes: chipAttrs)
 
-            // External gap: BOTH sides insert an invisible U+2060 word joiner
-            // carrying the same `.kern`. The joiner is 0-advance and carries
-            // no ink, so it lives OUTSIDE the chip's CTRun — only its kern
-            // shifts the next glyph past the chip's drawn edge.
-            //
-            // Earlier we kerned the character immediately before the chip,
-            // but `.kern` stacks on top of that character's intrinsic advance.
-            // When the preceding char was a space (" `code`") the space's own
-            // 3-4pt width plus our kern showed up as a double-wide gap on the
-            // left side, while the right side still read as a single gap.
-            // Using a joiner on both sides makes the mechanism — and the
-            // resulting gap — perfectly symmetric regardless of the neighbour
-            // glyph.
-            let joinerAttrs: [NSAttributedString.Key: Any] = [
-                .font: font,
-                .kern: theme.inlineCodeSideKern,
-            ]
-            let joiner = NSAttributedString(string: "\u{2060}", attributes: joinerAttrs)
+            // External gap on each side via `InlineSpacer` (CTRunDelegate over
+            // U+2060). Replaces the previous `.kern`-based hack:
+            // - kern stacks on top of the carrying char's intrinsic advance,
+            //   so the visible gap depended on what character carried the kern
+            //   (a space-prev produced double the gap of a letter-prev).
+            // - kern requires `kern > inlineCodeHPadding` so the chip's drawn
+            //   edge sits inside the pushed neighbour — the actual external
+            //   gap was `kern - chipHPadding`, an indirect derivation.
+            // RunDelegate spacers fix the gap to exactly `inlineCodeOuterGap`
+            // points, regardless of neighbour glyph metrics, and live in their
+            // own CTRun so the chip's typographic bounds stay clean.
+            let gap = theme.inlineCodeOuterGap
             if out.length > 0 {
-                out.append(joiner)
+                out.append(InlineSpacer.attributedString(width: gap))
             }
             out.append(chip)
-            out.append(joiner)
+            out.append(InlineSpacer.attributedString(width: gap))
 
         case .link(let destination, let children):
             let before = out.length

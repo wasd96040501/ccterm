@@ -52,6 +52,11 @@ final class AssistantMarkdownRow: TranscriptRow {
     /// region，每 cell 用 closure 写入这里。
     private var tableSelections: [Int: [[NSRange]]] = [:]
 
+    /// 每个 list segment 的 per-text 选中 range。key = list 里的文本
+    /// DFS 线性 index（与 `TranscriptListLayout.flattenedTexts` 对齐）。
+    /// marker 不可选，所以这里的 key 只索引到正文子 layout。
+    private var listSelections: [Int: [Int: NSRange]] = [:]
+
     init(source: String, theme: TranscriptTheme, stable: AnyHashable) {
         self.source = source
         self.theme = theme
@@ -133,6 +138,7 @@ final class AssistantMarkdownRow: TranscriptRow {
         copiedResetWork = nil
         copiedSegmentIndex = nil
         tableSelections = [:]
+        listSelections = [:]
     }
 
     /// 暴露给 preprocessor 的请求列表：`(segmentIndex, code, language)`。
@@ -245,6 +251,15 @@ final class AssistantMarkdownRow: TranscriptRow {
                     y += layout.totalHeight
                 }
 
+            case .list(let contents, _):
+                let layout = TranscriptListLayout.make(
+                    contents: contents,
+                    theme: theme,
+                    maxWidth: contentWidth)
+                let origin = CGPoint(x: theme.rowHorizontalPadding, y: y)
+                segments.append(.list(layout, origin: origin))
+                y += layout.totalHeight
+
             case .table(let contents, _):
                 let tableLayout = TranscriptTableLayout.make(
                     contents: contents,
@@ -311,6 +326,16 @@ final class AssistantMarkdownRow: TranscriptRow {
                         in: ctx)
                     layout.draw(origin: origin, selection: selectionForDraw, in: ctx)
                 }
+
+            case .list(let listLayout, let origin):
+                let perText = listSelections[idx] ?? [:]
+                listLayout.draw(
+                    origin: origin,
+                    selectionResolver: { textIdx in
+                        guard let r = perText[textIdx] else { return nil }
+                        return (r.location != NSNotFound && r.length > 0) ? r : nil
+                    },
+                    in: ctx)
 
             case .table(let tableLayout, let origin):
                 tableLayout.draw(
@@ -590,12 +615,16 @@ final class AssistantMarkdownRow: TranscriptRow {
 
     enum PrebuiltSegment {
         case attributed(NSAttributedString, kind: SegmentKind, topPadding: CGFloat)
+        case list(TranscriptListContents, topPadding: CGFloat)
         case table(TranscriptTableCellContents, topPadding: CGFloat)
         case thematicBreak(topPadding: CGFloat)
 
         var topPadding: CGFloat {
             switch self {
-            case .attributed(_, _, let p), .table(_, let p), .thematicBreak(let p):
+            case .attributed(_, _, let p),
+                 .list(_, let p),
+                 .table(_, let p),
+                 .thematicBreak(let p):
                 return p
             }
         }
@@ -603,6 +632,7 @@ final class AssistantMarkdownRow: TranscriptRow {
 
     enum RenderedSegment {
         case attributed(TranscriptTextLayout, kind: SegmentKind, layoutOrigin: CGPoint)
+        case list(TranscriptListLayout, origin: CGPoint)
         case table(TranscriptTableLayout, origin: CGPoint)
         case thematicBreak(y: CGFloat)
     }
@@ -631,6 +661,31 @@ extension AssistantMarkdownRow: TextSelectable {
                         self?.selections[idx] = range
                     })
                 regions.append(region)
+
+            case .list(let listLayout, let origin):
+                // 每个正文子 layout 独立 region。marker 不在可选文本流里，
+                // 所以跨 item 的选中自动只覆盖正文 —— 复制出来没有 marker
+                // 也没有"前导 indent"字符。
+                for (textIdx, textLayout, originInList) in listLayout.flattenedTexts() {
+                    guard !textLayout.lines.isEmpty else { continue }
+                    let regionFrame = CGRect(
+                        x: origin.x + originInList.x,
+                        y: origin.y + originInList.y,
+                        width: max(textLayout.measuredWidth, 1),
+                        height: max(textLayout.totalHeight, 1))
+                    let region = SelectableTextRegion(
+                        rowStableId: stableId,
+                        regionIndex: Self.regionIndex(segment: idx, listTextIndex: textIdx),
+                        frameInRow: regionFrame,
+                        layout: textLayout,
+                        setSelection: { [weak self] range in
+                            guard let self else { return }
+                            var m = self.listSelections[idx] ?? [:]
+                            m[textIdx] = range
+                            self.listSelections[idx] = m
+                        })
+                    regions.append(region)
+                }
 
             case .table(let tableLayout, let origin):
                 // 每 cell 独立 region：frame = table-local cellContentFrame offset 到 row 坐标系。
@@ -681,11 +736,19 @@ extension AssistantMarkdownRow: TextSelectable {
                 count: matrix.count)
             tableSelections[idx] = empty
         }
+        listSelections.removeAll()
     }
 
     /// 把 (segIdx, row, col) 编码成单调递增的 regionIndex：
     /// table 最多 1000 行 1000 列 → 6 位足够；segment 不会爆 1000 个。
     private static func regionIndex(segment: Int, tableRow: Int = 0, tableCol: Int = 0) -> Int {
         segment * 1_000_000 + tableRow * 1_000 + tableCol
+    }
+
+    /// List 正文 text 的 regionIndex：`segment * 1_000_000 + listTextIndex`。
+    /// 和 table 的编码共用同一块空间（table 单 segment 里行列乘积也不会爆
+    /// 1_000_000），一个 segment 不会同时是 list 和 table，所以不会撞。
+    private static func regionIndex(segment: Int, listTextIndex: Int) -> Int {
+        segment * 1_000_000 + listTextIndex
     }
 }

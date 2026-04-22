@@ -109,6 +109,8 @@ struct MarkdownView: View {
             if let prebuilt {
                 MarkdownBlockquoteView(attributed: prebuilt)
             }
+        case .list(let list):
+            MarkdownListView(list: list)
         case .codeBlock(let block):
             MarkdownCodeBlockView(block: block, tokens: tokens)
         case .table(let table):

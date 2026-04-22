@@ -32,7 +32,6 @@ struct MarkdownTheme {
 
     // MARK: - Layout
 
-    var listIndent: CGFloat = 18
     var blockquoteIndent: CGFloat = 14
     /// Width of the vertical bar in the blockquote SwiftUI segment.
     var blockquoteBarWidth: CGFloat = 4
@@ -161,7 +160,6 @@ struct MarkdownTheme {
         let l2: CGFloat
         let l3Item: CGFloat
         let l3Line: CGFloat
-        let listIndent: CGFloat
         let blockquoteIndent: CGFloat
         let blockPadding: CGFloat
     }
@@ -175,7 +173,6 @@ struct MarkdownTheme {
             l2: l2,
             l3Item: l3Item,
             l3Line: l3Line,
-            listIndent: listIndent,
             blockquoteIndent: blockquoteIndent,
             blockPadding: blockPadding)
     }

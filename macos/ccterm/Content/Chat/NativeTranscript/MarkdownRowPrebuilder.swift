@@ -42,6 +42,10 @@ nonisolated enum MarkdownRowPrebuilder {
                     theme: theme)
                 let header = buildCodeBlockHeader(block: block, theme: theme)
                 out.append(.attributed(attr, kind: .codeBlock(header), topPadding: gap))
+            case .list(let list):
+                let contents = TranscriptListContents.make(
+                    list: list, theme: theme.markdown, builder: builder)
+                out.append(.list(contents, topPadding: gap))
             case .table(let table):
                 let contents = TranscriptTableCellContents.make(table: table, builder: builder)
                 out.append(.table(contents, topPadding: gap))

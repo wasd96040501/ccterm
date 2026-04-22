@@ -183,8 +183,9 @@ final class TranscriptTableView: NSTableView {
             return false
         }
         let rowRect = rect(ofRow: rowIdx)
+        let inset = controller.contentInset(forRow: rowIdx, rowRect: rowRect)
         let pointInRow = CGPoint(
-            x: documentPoint.x - rowRect.origin.x,
+            x: documentPoint.x - rowRect.origin.x - inset,
             y: documentPoint.y - rowRect.origin.y)
         return selectable.selectableRegions.contains { $0.frameInRow.contains(pointInRow) }
     }

@@ -24,6 +24,11 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
     /// 上次排版时使用的宽度。宽度真正变化才重算。
     private var lastLayoutWidth: CGFloat = 0
 
+    /// viewWillStartLiveResize 时抓取的 scroll anchor，在 viewDidEndLiveResize
+    /// 统一恢复——对齐 Telegram `TableView.swift` 的 `saveScrollState` 只在
+    /// `!inLiveResize` 时跑（live 期间每帧 anchor 抖动没意义）。
+    private var liveResizeAnchor: ScrollAnchor?
+
     /// 上一次消费的 entries 的 id 顺序 + theme 指纹。用于 `setEntries` short-circuit
     /// —— SwiftUI reconcile 可能每帧调 updateNSView,若 entries 与 theme 都等价,
     /// 立即返回,不做任何 layout 工作。
@@ -270,44 +275,126 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
 
     // MARK: - Resize
 
-    func tableWidthChanged(_ newWidth: CGFloat) {
+    /// 宽度变化入口。live resize 期间只重排可见行，非 live 走全量 + anchor。
+    /// 对齐 Telegram `TableView.swift:3753-3771` 的 live/非 live 分支。
+    func tableWidthChanged(_ rawNewWidth: CGFloat) {
         guard let tableView else { return }
-        guard newWidth > 0, abs(newWidth - lastLayoutWidth) > 0.5 else { return }
+        guard rawNewWidth > 0 else { return }
+        let newWidth = clampedRowLayoutWidth(from: rawNewWidth)
+        guard abs(newWidth - lastLayoutWidth) > 0.5 else { return }
+
         let oldWidth = lastLayoutWidth
         lastLayoutWidth = newWidth
         appLog(.info, "TranscriptController",
-            "resize \(Int(oldWidth))→\(Int(newWidth)) rows=\(rows.count)")
+            "resize \(Int(oldWidth))→\(Int(newWidth)) rows=\(rows.count) live=\(tableView.inLiveResize)")
 
         guard !rows.isEmpty else { return }
 
-        let anchor = captureScrollAnchor()
+        if tableView.inLiveResize {
+            relayoutVisibleRows(width: newWidth)
+        } else {
+            let anchor = captureScrollAnchor()
+            relayoutAllRows(width: newWidth)
+            restoreScrollAnchor(anchor)
+        }
+    }
+
+    /// viewWillStartLiveResize 钩子：抓 scroll anchor 备用。
+    func beginLiveResize() {
+        liveResizeAnchor = captureScrollAnchor()
+    }
+
+    /// viewDidEndLiveResize 钩子：补跑所有 cachedWidth != finalWidth 的行
+    /// （通常是不可见行——可见行已在 live 期间逐帧 relayoutVisibleRows 刷过），
+    /// 然后恢复 beginLiveResize 时保存的 anchor。
+    func endLiveResize(finalWidth rawWidth: CGFloat) {
+        guard let tableView else { liveResizeAnchor = nil; return }
+        let width = clampedRowLayoutWidth(from: rawWidth)
 
         let t0 = CFAbsoluteTimeGetCurrent()
         tableView.beginUpdates()
+        NSAnimationContext.current.duration = 0
         var changed = IndexSet()
-        for (i, row) in rows.enumerated() {
+        for (i, row) in rows.enumerated() where row.cachedWidth != width {
             let before = row.cachedHeight
-            row.makeSize(width: newWidth)
-            if row.cachedHeight != before {
-                changed.insert(i)
-            }
+            row.makeSize(width: width)
+            if row.cachedHeight != before { changed.insert(i) }
         }
         if !changed.isEmpty {
-            NSAnimationContext.current.duration = 0
             tableView.noteHeightOfRows(withIndexesChanged: changed)
         }
         tableView.endUpdates()
-        let layoutMs = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+        lastLayoutWidth = width
 
         tableView.enumerateAvailableRowViews { view, index in
             guard index >= 0, index < self.rows.count else { return }
             (view as? TranscriptRowView)?.set(row: self.rows[index])
         }
 
-        restoreScrollAnchor(anchor)
+        restoreScrollAnchor(liveResizeAnchor)
+        liveResizeAnchor = nil
 
+        let layoutMs = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
         appLog(.debug, "TranscriptController",
-            "resize done layout=\(layoutMs)ms changed=\(changed.count)")
+            "resize end layout=\(layoutMs)ms changed=\(changed.count)")
+    }
+
+    private func relayoutVisibleRows(width: CGFloat) {
+        guard let tableView,
+              let clip = tableView.enclosingScrollView?.contentView else { return }
+        let t0 = CFAbsoluteTimeGetCurrent()
+        let visible = tableView.rows(in: clip.bounds)
+        guard visible.length > 0, visible.location >= 0 else { return }
+
+        tableView.beginUpdates()
+        NSAnimationContext.current.duration = 0
+        var changed = IndexSet()
+        let end = min(visible.location + visible.length, rows.count)
+        for i in max(0, visible.location)..<end {
+            let row = rows[i]
+            let before = row.cachedHeight
+            row.makeSize(width: width)
+            if row.cachedHeight != before { changed.insert(i) }
+        }
+        if !changed.isEmpty {
+            tableView.noteHeightOfRows(withIndexesChanged: changed)
+        }
+        tableView.endUpdates()
+
+        tableView.enumerateAvailableRowViews { view, index in
+            guard index >= 0, index < self.rows.count else { return }
+            (view as? TranscriptRowView)?.set(row: self.rows[index])
+        }
+
+        let layoutMs = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+        appLog(.debug, "TranscriptController",
+            "resize live visible=\(visible.length) layout=\(layoutMs)ms changed=\(changed.count)")
+    }
+
+    private func relayoutAllRows(width: CGFloat) {
+        guard let tableView else { return }
+        let t0 = CFAbsoluteTimeGetCurrent()
+        tableView.beginUpdates()
+        var changed = IndexSet()
+        for (i, row) in rows.enumerated() {
+            let before = row.cachedHeight
+            row.makeSize(width: width)
+            if row.cachedHeight != before { changed.insert(i) }
+        }
+        if !changed.isEmpty {
+            NSAnimationContext.current.duration = 0
+            tableView.noteHeightOfRows(withIndexesChanged: changed)
+        }
+        tableView.endUpdates()
+
+        tableView.enumerateAvailableRowViews { view, index in
+            guard index >= 0, index < self.rows.count else { return }
+            (view as? TranscriptRowView)?.set(row: self.rows[index])
+        }
+
+        let layoutMs = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
+        appLog(.debug, "TranscriptController",
+            "resize full layout=\(layoutMs)ms changed=\(changed.count)")
     }
 
     // MARK: - Scroll anchor
@@ -377,11 +464,29 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
     // MARK: - Helpers
 
     private func effectiveWidth() -> CGFloat {
+        let raw: CGFloat
         if let clip = tableView?.enclosingScrollView?.contentView.bounds.width, clip > 0 {
-            return clip
+            raw = clip
+        } else {
+            let w = tableView?.bounds.width ?? 0
+            raw = w > 0 ? w : 760
         }
-        let w = tableView?.bounds.width ?? 0
-        return w > 0 ? w : 760
+        return clampedRowLayoutWidth(from: raw)
+    }
+
+    /// clip 宽度 → 行排版宽度：上限 `TranscriptTheme.maxContentWidth`，
+    /// 窄于上限时原样返回（= 贴边占满），宽于上限时夹到上限（= 居中列）。
+    private func clampedRowLayoutWidth(from rawClipWidth: CGFloat) -> CGFloat {
+        let maxW = TranscriptTheme(markdown: theme ?? .default).maxContentWidth
+        return min(rawClipWidth, maxW)
+    }
+
+    /// row 内容居中的左 inset：`(rowRect.width - row.cachedWidth) / 2`。
+    /// TranscriptRowView.draw 用它做 CTM 平移；hit-test 路径用它把 documentPoint
+    /// 归一到 row 的 layout 坐标系（0 = 内容列左边，而非 rowRect 左边）。
+    func contentInset(forRow idx: Int, rowRect: CGRect) -> CGFloat {
+        guard idx >= 0, idx < rows.count else { return 0 }
+        return max(0, (rowRect.width - rows[idx].cachedWidth) / 2)
     }
 
     // MARK: - Link hit-test
@@ -397,8 +502,9 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
         let regions = selectable.selectableRegions
         guard !regions.isEmpty else { return nil }
         let rowRect = tableView.rect(ofRow: rowIdx)
+        let inset = contentInset(forRow: rowIdx, rowRect: rowRect)
         let pointInRow = CGPoint(
-            x: documentPoint.x - rowRect.origin.x,
+            x: documentPoint.x - rowRect.origin.x - inset,
             y: documentPoint.y - rowRect.origin.y)
 
         for region in regions where region.frameInRow.contains(pointInRow) {

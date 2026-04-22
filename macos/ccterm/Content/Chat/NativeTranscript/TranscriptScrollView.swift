@@ -55,6 +55,21 @@ final class TranscriptScrollView: NSScrollView {
             tableView.setFrameSize(NSSize(width: target, height: tableView.frame.height))
         }
     }
+
+    // MARK: - Live resize two-phase
+
+    /// 对齐 Telegram `TableView.swift:684-697`：live 期间只排可见行，结束时
+    /// 一次性补跑 off-screen 行 + 恢复 scroll anchor。TranscriptController
+    /// 负责具体策略；这里只搬钩子。
+    override func viewWillStartLiveResize() {
+        super.viewWillStartLiveResize()
+        controller.beginLiveResize()
+    }
+
+    override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        controller.endLiveResize(finalWidth: contentView.bounds.width)
+    }
 }
 
 // MARK: - ClipView

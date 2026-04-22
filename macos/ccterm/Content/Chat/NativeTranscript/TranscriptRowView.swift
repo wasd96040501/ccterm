@@ -44,6 +44,11 @@ class TranscriptRowView: NSTableRowView, CALayerDelegate {
     /// 不需要再做坐标翻转。文字层面由 `ctx.textMatrix = (1, -1)` 翻 glyph 即可
     /// （跟 Telegram 的做法一致）。
     ///
+    /// 居中内容列：当 `row.cachedWidth < bounds.width`（window 宽于
+    /// `TranscriptTheme.maxContentWidth`），CTM 向右平移 `inset`，让 row 在
+    /// `0..cachedWidth` 坐标系内画出的内容落到屏幕的 `inset..inset+cachedWidth`，
+    /// 两侧对称留白。row 实现无需感知 inset。
+    ///
     /// 绑定 **当前视图的 effectiveAppearance** 为 drawing appearance：
     /// CALayerDelegate.draw 没有 AppKit 的 NSGraphicsContext，dynamic NSColor
     /// （例如 `.labelColor` / 主题的 `NSColor(name:nil){appearance in ...}` 动态
@@ -53,8 +58,16 @@ class TranscriptRowView: NSTableRowView, CALayerDelegate {
     /// `viewDidChangeEffectiveAppearance` 触发重绘即可。
     func draw(_ layer: CALayer, in ctx: CGContext) {
         guard let row else { return }
+        let contentW = row.cachedWidth > 0 ? row.cachedWidth : bounds.width
+        let inset = max(0, (bounds.width - contentW) / 2)
+        let contentBounds = CGRect(x: 0, y: 0, width: contentW, height: bounds.height)
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            row.draw(in: ctx, bounds: bounds)
+            ctx.saveGState()
+            if inset > 0 {
+                ctx.translateBy(x: inset, y: 0)
+            }
+            row.draw(in: ctx, bounds: contentBounds)
+            ctx.restoreGState()
         }
     }
 

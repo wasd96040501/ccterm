@@ -16,6 +16,9 @@ struct TranscriptTheme {
     /// Vertical space reserved above/below content inside each row. Two
     /// adjacent rows' v-paddings sum to the visible gap between them.
     var rowVerticalPadding: CGFloat = 8
+    /// Upper bound for the row's layout width. Window 比这个宽时内容列固定该值
+    /// 并居中，留白分到两侧；窄于该值时内容占满。
+    var maxContentWidth: CGFloat = 820
 
     // MARK: - User bubble
 

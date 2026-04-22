@@ -305,14 +305,14 @@ struct TranscriptTextLayout {
     struct InlineCodeChipStyle {
         var horizontalPadding: CGFloat
         /// 相对 CTLine ascent/descent 的纯视觉 overflow——不影响布局。>0 时 chip
-        /// 顶/底凸到行缝里;同一段内 inline code 跨行时两侧 chip 会在行缝相遇
-        /// 叠加加深(半透明 background 自乘)。默认 0 = 严格贴齐整行高度,防叠加深。
+        /// 顶/底凸出整行高度。相邻/跨行 chip 重叠区域不会加深，因为同色 chip
+        /// 在单次 fillPath() 里合并成一个 path 的并集。
         var verticalOverflow: CGFloat
         var cornerRadius: CGFloat
 
         static let `default` = InlineCodeChipStyle(
             horizontalPadding: 4,
-            verticalOverflow: 0,
+            verticalOverflow: 1,
             cornerRadius: 3)
     }
 
@@ -335,11 +335,28 @@ struct TranscriptTextLayout {
         }
 
         if let style = inlineCodeChip {
+            // 跨所有行收集 chip rects 后按颜色分组，每组一次 fillPath()。
+            // 单次 fill 内 path 的内部区域只光栅化一次，因此半透明重叠不加深。
+            var chipsByColor: [(color: NSColor, rects: [CGRect])] = []
             for (line, p) in zip(lines, lineOrigins) {
                 let baseline = CGPoint(x: origin.x + p.x, y: origin.y + p.y)
-                Self.drawInlineCodeChips(
+                Self.collectInlineCodeChips(
                     line: line, baseline: baseline,
-                    style: style, in: ctx)
+                    style: style, into: &chipsByColor)
+            }
+            for (color, rects) in chipsByColor {
+                ctx.saveGState()
+                ctx.setFillColor(color.cgColor)
+                ctx.beginPath()
+                for rect in rects {
+                    ctx.addPath(CGPath(
+                        roundedRect: rect,
+                        cornerWidth: style.cornerRadius,
+                        cornerHeight: style.cornerRadius,
+                        transform: nil))
+                }
+                ctx.fillPath()
+                ctx.restoreGState()
             }
         }
 
@@ -356,11 +373,11 @@ struct TranscriptTextLayout {
         NSColor.selectedTextBackgroundColor.withAlphaComponent(0.35)
     }
 
-    private static func drawInlineCodeChips(
+    private static func collectInlineCodeChips(
         line: CTLine,
         baseline: CGPoint,
         style: InlineCodeChipStyle,
-        in ctx: CGContext
+        into chipsByColor: inout [(color: NSColor, rects: [CGRect])]
     ) {
         guard let runs = CTLineGetGlyphRuns(line) as? [CTRun] else { return }
 
@@ -394,16 +411,11 @@ struct TranscriptTextLayout {
                 width: width + 2 * style.horizontalPadding,
                 height: chipHeight)
 
-            ctx.saveGState()
-            ctx.setFillColor(color.cgColor)
-            let path = CGPath(
-                roundedRect: chipRect,
-                cornerWidth: style.cornerRadius,
-                cornerHeight: style.cornerRadius,
-                transform: nil)
-            ctx.addPath(path)
-            ctx.fillPath()
-            ctx.restoreGState()
+            if let idx = chipsByColor.firstIndex(where: { $0.color == color }) {
+                chipsByColor[idx].rects.append(chipRect)
+            } else {
+                chipsByColor.append((color, [chipRect]))
+            }
         }
     }
 }

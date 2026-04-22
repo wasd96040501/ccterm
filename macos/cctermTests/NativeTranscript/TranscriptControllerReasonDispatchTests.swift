@@ -233,4 +233,48 @@ final class TranscriptControllerReasonDispatchTests: XCTestCase {
         }
         XCTAssertTrue(found, "hint.entryId 必须能反查到 rows 里的一行")
     }
+
+    // MARK: - Pending / flush path (layout-not-ready)
+
+    /// SwiftUI `.id(sessionId)` 重建 NSView 时，updateNSView 先于第一次 layout
+    /// 触发——此时 clipView.bounds.height = 0。setEntries 必须**不跑 pipeline**，
+    /// 而是把 args 存到 `pendingSetEntries`；等 AppKit layout 走完调
+    /// `tableWidthChanged` 时 flush 出来，保证走 `budget=ok` 路径。
+    func testLayoutNotReadyStashesPending() throws {
+        // 不走 harness 的 layoutIfNeeded——直接造一个裸 scrollView 模拟刚 makeNSView
+        // 还没 insert 进 window 的状态。
+        let sv = TranscriptScrollView(frame: .zero)
+        sv.controller.theme = .default
+
+        XCTAssertEqual(sv.contentView.bounds.height, 0,
+            "裸 scrollView 的 clipView 高度应为 0")
+
+        let entries = TranscriptTestEntries.manyUsers(20)
+        sv.controller.setEntries(entries, reason: .initialPaint, themeChanged: false)
+
+        // pipeline 未跑，rows 应为空。
+        XCTAssertEqual(sv.controller.rows.count, 0,
+            "layout 未就绪时 setEntries 必须停在 pending，不跑 pipeline")
+
+        // 模拟 layout：给 scrollView 一个真实 frame，AppKit tile → tableView
+        // setFrameSize → controller.tableWidthChanged(width) → flush pending
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: NSSize(width: 800, height: 600)),
+            styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = sv
+        sv.frame = NSRect(origin: .zero, size: NSSize(width: 800, height: 600))
+        sv.tile()
+        window.layoutIfNeeded()
+        window.displayIfNeeded()
+
+        // 跑一下 run loop 让 Phase 2 Task 回到主线程合并完成
+        for _ in 0..<6 {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+
+        XCTAssertGreaterThan(sv.controller.rows.count, 0,
+            "tableWidthChanged 应当 flush pending setEntries，rows 非空")
+        Task { @MainActor [window] in window.close() }
+    }
 }

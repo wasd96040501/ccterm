@@ -67,6 +67,26 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
     /// ——controller 在每次 layout pass 之前把 row.isExpanded sync 回来。
     private var expandedUserBubbles: Set<AnyHashable> = []
 
+    /// SwiftUI 在 per-session `.id(sessionId)` 的 NSView 刚 `makeNSView` 出来、
+    /// AppKit 还没 layout 之前就会调 `updateNSView`——此时 `clipView.bounds` /
+    /// `tableView.bounds` 都是 0。如果直接跑 pipeline，`effectiveWidth` 走到最末
+    /// const 760 fallback，`phase1Budget` 得 `fallback-zero`，phase1 只挂 1 行、
+    /// 宽度 bucket 也错（cache 大概率 miss）。
+    ///
+    /// 解法：`setEntries` 检测到 dims 全零 → 把 args 存这里，不跑 pipeline。
+    /// AppKit 后续 layout 会触发 `setFrameSize` → `tableWidthChanged`（已经是
+    /// layout-ready 的信号），在那里 flush 一次即可。
+    ///
+    /// 没有 DispatchQueue.main.async —— 纯 AppKit 事件驱动，对齐 Telegram
+    /// `TableView` 里 "等 view 有 window + frame 再跑首帧" 的语义。
+    private struct PendingSetEntries {
+        let entries: [MessageEntry]
+        let reason: TranscriptUpdateReason
+        let themeChanged: Bool
+        let scrollHint: SavedScrollAnchor?
+    }
+    private var pendingSetEntries: PendingSetEntries?
+
     init(tableView: TranscriptTableView) {
         self.tableView = tableView
         super.init()
@@ -87,6 +107,16 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
     ) {
         guard tableView != nil else { return }
         if case .idle = reason { return }
+
+        // Layout not ready yet (刚 makeNSView + updateNSView 先于第一次 layout)。
+        // 不跑 pipeline —— 缓存到 pending，由 `tableWidthChanged` 在真实 frame
+        // 到手后 flush。每次 stash 覆盖旧 pending，天然采用最新 snapshot。
+        if !isLayoutReady() {
+            pendingSetEntries = PendingSetEntries(
+                entries: entries, reason: reason,
+                themeChanged: themeChanged, scrollHint: scrollHint)
+            return
+        }
 
         let mdTheme = theme ?? .default
         let themeFingerprint = mdTheme.fingerprint
@@ -682,9 +712,10 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
 
     private struct Phase1Budget {
         let height: CGFloat
-        /// `"ok"` / `"fallback-table"` —— 进日志帮助线上回归判断 Phase 1 的
-        /// height 是来自真实 viewport 还是兜底。caller 已经确保只在 layout 后
-        /// emit `.initialPaint`，不再有 `fallback-const`。
+        /// 保留 tag 给日志：调用点上游已经 `isLayoutReady()` 保证 clip > 0，
+        /// 正常路径永远是 `"ok"`。出现其它值（目前只有 `"fallback-table"`）
+        /// 代表 `isLayoutReady` 和 `phase1Budget` 之间出现了异常——属于
+        /// 调用时序 bug 需排查，不是预期状态。
         let tag: String
     }
 
@@ -693,13 +724,11 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
         if clip > 0 {
             return Phase1Budget(height: clip * 1.2, tag: "ok")
         }
+        // isLayoutReady 把关后不应走到这里。兜一下防御，带异常 tag 报信号。
         let tableH = tableView?.bounds.height ?? 0
-        if tableH > 0 {
-            return Phase1Budget(height: tableH * 1.2, tag: "fallback-table")
-        }
-        // 两级都是 0：view 尚未 layout。直接 0 —— prepareBoundedTail 会挂末尾 1
-        // 条(最小单位)。这种情况是调用时序 bug,不应在生产触发。
-        return Phase1Budget(height: 0, tag: "fallback-zero")
+        appLog(.warning, "TranscriptController",
+            "phase1Budget called with clip=0; isLayoutReady gate bypassed? tableH=\(tableH)")
+        return Phase1Budget(height: max(tableH, 1) * 1.2, tag: "fallback-table")
     }
 
     /// 把 Phase 2 highlight 完成后 tokens 回写到已挂载的 rows。
@@ -995,10 +1024,38 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
 
     // MARK: - Resize
 
+    /// `clipView` 拿到了真实高度 → viewport-first pipeline 可以安全跑
+    /// （`phase1Budget` 会命中 `"ok"` 分支，不再走 fallback）。
+    ///
+    /// 只看 `clip.height` —— tableView 自己可能短暂是 1×1 或其他 degenerate 值，
+    /// 但只有 clipView 代表真实 viewport；clipView=0 时任何 `phase1Budget` 都
+    /// 不可靠。
+    private func isLayoutReady() -> Bool {
+        return (tableView?.enclosingScrollView?.contentView.bounds.height ?? 0) > 0
+    }
+
     /// 宽度变化入口。live resize 期间只重排可见行，非 live 走全量 + anchor。
+    ///
+    /// 同时承担 pending setEntries 的 flush：SwiftUI 在 layout 完成前已经把
+    /// 最新 entries 存到 `pendingSetEntries`，此时 AppKit 刚跑完 layout 把真实
+    /// frame 传下来——正好喂 pending 一次，走完整 pipeline。
     func tableWidthChanged(_ rawNewWidth: CGFloat) {
         guard let tableView else { return }
         guard rawNewWidth > 0 else { return }
+
+        // Flush pending —— 在 resize 本身的 layout 逻辑之前：pending 要走完整
+        // setEntries（含 Phase 1 + Phase 2），而不是 relayoutAllRows 的 in-place
+        // makeSize 路径（rows 可能还空）。
+        if let pending = pendingSetEntries, isLayoutReady() {
+            pendingSetEntries = nil
+            setEntries(
+                pending.entries, reason: pending.reason,
+                themeChanged: pending.themeChanged,
+                scrollHint: pending.scrollHint)
+            // setEntries 自己会更新 lastLayoutWidth；后面的 resize 早退即可。
+            return
+        }
+
         let newWidth = clampedRowLayoutWidth(from: rawNewWidth)
         let layoutChanged = abs(newWidth - lastLayoutWidth) > 0.5
 

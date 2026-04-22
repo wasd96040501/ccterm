@@ -4,8 +4,8 @@ import XCTest
 @testable import ccterm
 
 /// 覆盖 2026-04 居中内容列改动：
-/// 1. `TranscriptTheme.maxContentWidth` 默认 720pt。
-/// 2. window 宽 > 720 时 row 排版宽度被 clamp 到 720；窄时占满。
+/// 1. `TranscriptTheme.maxContentWidth` 默认 780pt。
+/// 2. window 宽 > 780 时 row 排版宽度被 clamp 到 780；窄时占满。
 /// 3. `TranscriptController.contentInset(forRow:rowRect:)` 正确反映居中留白。
 ///
 /// 不覆盖 live resize 分支（依赖 `NSView.inLiveResize`，测试里触发不到）和
@@ -16,7 +16,7 @@ final class CenteredColumnTests: XCTestCase {
     func testMaxContentWidthDefault() {
         // 这是唯一一个硬编码期望值的 test —— 它测的就是"默认值是多少"。
         // 其它 test 应通过 `TranscriptTheme.default.maxContentWidth` 引用。
-        XCTAssertEqual(TranscriptTheme.default.maxContentWidth, 720)
+        XCTAssertEqual(TranscriptTheme.default.maxContentWidth, 780)
     }
 
     func testRowLayoutClampsAndContentInsetPositiveWhenWide() {

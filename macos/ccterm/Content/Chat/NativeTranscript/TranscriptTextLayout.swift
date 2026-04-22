@@ -304,14 +304,15 @@ struct TranscriptTextLayout {
 
     struct InlineCodeChipStyle {
         var horizontalPadding: CGFloat
-        /// 上下方向纯视觉 overflow。不影响 CTLine 布局——chip 画到 ascent/descent
-        /// 之外，吃掉一部分行间 spacing。用于让 chip 看起来比字形稍大一圈。
+        /// 相对 CTLine ascent/descent 的纯视觉 overflow——不影响布局。>0 时 chip
+        /// 顶/底凸到行缝里;同一段内 inline code 跨行时两侧 chip 会在行缝相遇
+        /// 叠加加深(半透明 background 自乘)。默认 0 = 严格贴齐整行高度,防叠加深。
         var verticalOverflow: CGFloat
         var cornerRadius: CGFloat
 
         static let `default` = InlineCodeChipStyle(
             horizontalPadding: 4,
-            verticalOverflow: 1,
+            verticalOverflow: 0,
             cornerRadius: 3)
     }
 

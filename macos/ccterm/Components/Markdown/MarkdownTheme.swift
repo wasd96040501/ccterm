@@ -58,8 +58,9 @@ struct MarkdownTheme {
     /// visually overlaps neighbouring glyphs. Must exceed `inlineCodeHPadding`
     /// by enough to absorb the neighbour glyph's LSB — punctuation like `.` and
     /// `,` has a small LSB, so a 1pt gap (kern=padding+1) still reads as the
-    /// dot touching the chip. Use +4pt of visual breathing room.
-    var inlineCodeSideKern: CGFloat = 8
+    /// dot touching the chip. Effective external gap = `kern - inlineCodeHPadding`
+    /// (currently 10 - 4 = 6pt).
+    var inlineCodeSideKern: CGFloat = 10
 
     // MARK: - Derived fonts
 

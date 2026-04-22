@@ -12,8 +12,8 @@ build: ## Build ccterm (Debug)
 release: ## Build ccterm (Release)
 	./macos/scripts/build.sh release
 
-test: ## Run unit tests
-	./macos/scripts/run-tests.sh
+test: ## Run unit tests (all). Pass TEST=<target> to scope, e.g. `make test TEST=cctermTests/TranscriptDiffTests`
+	./macos/scripts/run-tests.sh $(TEST)
 
 web: ## Build web frontend only
 	cd web && bun install && bun run build

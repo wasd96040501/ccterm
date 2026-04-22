@@ -35,6 +35,27 @@ struct TranscriptTheme {
         NSColor.controlAccentColor.withAlphaComponent(0.15)
     }
 
+    // MARK: - User bubble collapse
+
+    /// 行数 >= threshold + minHiddenLines 才折叠。
+    var userBubbleCollapseThreshold: Int = 12
+    /// 只隐 1~2 行体验差于直接全显，所以要满足 `lines.count > threshold + minHiddenLines - 1`
+    /// = `lines.count >= threshold + minHiddenLines` 才折叠。
+    var userBubbleMinHiddenLines: Int = 3
+    /// Chevron glyph 绘制尺寸（边长）。
+    var chevronSize: CGFloat = 10
+    /// Chevron 点击命中区边长。mouseUp 分派优先走这个。
+    var chevronHitSize: CGFloat = 20
+    /// Chevron 右下 inset。Telegram `FoldingTextView` 的规则：inset 大于
+    /// `cornerRadius` 让 chevron 的 bounding box 落在圆角之外的平面区。
+    /// 我们 `bubbleCornerRadius=14` + `bubbleVerticalPadding=12` 决定了
+    /// "inset > cornerRadius" 不可行（chevron 会撞到 text 底），取 10 作为
+    /// 折中——距圆角 center 约 5.7pt，离弧 8pt，不压圆角；对 text 的视觉侵入
+    /// 仅右下角 ~4pt（expanded 态少数行的 trailing 位置）。
+    var chevronInset: CGFloat = 10
+    /// 折叠态底部 gradient fade 的高度。
+    var collapseFadeHeight: CGFloat = 20
+
     // MARK: - Placeholder (tool / group / thinking)
 
     var placeholderHeight: CGFloat = 36

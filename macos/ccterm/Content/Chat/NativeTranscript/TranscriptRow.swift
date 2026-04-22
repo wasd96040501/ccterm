@@ -20,6 +20,13 @@ import AppKit
 class TranscriptRow {
     init() {}
 
+    /// Workaround: macOS 26 SDK 的 `swift_task_deinitOnExecutorImpl` 在 isolated
+    /// deinit 链中命中 libmalloc pointer-freed-but-not-allocated 崩溃（尤其在
+    /// XCTest 的 autoreleasepool drain 路径上）。显式 nonisolated deinit 跳过
+    /// executor-hop。Row 的 stored property 释放（CTLine / NSAttributedString /
+    /// 值类型）都是线程安全的。
+    nonisolated deinit { }
+
     /// 逻辑稳定 id。diff 时按此比较新旧列表中的同一条消息。
     var stableId: AnyHashable { ObjectIdentifier(self) }
 

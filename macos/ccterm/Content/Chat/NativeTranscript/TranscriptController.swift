@@ -46,6 +46,13 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
     /// 文本选中协调器。Controller 持有；`TranscriptTableView` 的鼠标事件直接转给它。
     let selectionController = TranscriptSelectionController()
 
+    /// 用户手动展开过的 UserBubble 的 stableId 集合。
+    ///
+    /// Sticky：toggle 过就进 set，再 toggle 出 set。resize 换宽度不动这里。
+    /// Row 上的 `isExpanded` 只是 render-time cache，source of truth 是这个 set
+    /// ——controller 在每次 layout pass 之前把 row.isExpanded sync 回来。
+    private var expandedUserBubbles: Set<AnyHashable> = []
+
     init(tableView: TranscriptTableView) {
         self.tableView = tableView
         super.init()
@@ -72,7 +79,10 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
         activePreprocessTask?.cancel()
 
         let t0 = CFAbsoluteTimeGetCurrent()
-        let newRows = TranscriptRowBuilder.build(entries: entries, theme: themeToUse)
+        let newRows = TranscriptRowBuilder.build(
+            entries: entries,
+            theme: themeToUse,
+            expandedUserBubbles: expandedUserBubbles)
         let tBuild = CFAbsoluteTimeGetCurrent()
 
         let transition = TranscriptDiff.compute(
@@ -108,13 +118,29 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
             await MainActor.run {
                 guard let self, self.setEntriesGeneration == generation else { return }
                 let tApply0 = CFAbsoluteTimeGetCurrent()
-                // Layout（受 width 影响的那一段）——每行按当前 width 排版。
-                // carry-over row 若 cachedWidth 一致则 O(1) 早退。
-                for row in transition.finalRows where row.cachedWidth != width {
+                // Sync collapse state to finalRows **before** layout. insert/update
+                // row 已由 builder 传对；carry-over row 的 cachedWidth 可能已对齐，
+                // 但两次 setEntries 之间 set 可能被 toggle 过，这里统一回填。
+                for row in transition.finalRows {
+                    if let u = row as? UserBubbleRow {
+                        u.isExpanded = self.expandedUserBubbles.contains(u.stableId)
+                    }
+                }
+                // Layout——逐行 makeSize。makeSize 内部 `widthChanged || stateChanged`
+                // guard 负责 O(1) early-return；不要在外部加 `where cachedWidth != width`
+                // 过滤，否则 state sync 后 cachedWidth 对齐的 carry-over row 会 skip，
+                // 几何漏算。
+                for row in transition.finalRows {
                     row.makeSize(width: width)
                 }
                 let tApply1 = CFAbsoluteTimeGetCurrent()
                 self.merge(with: transition)
+                // Prune：从 set 里摘掉被删的 user bubble 的 stableId。
+                // deleted 存的是 index；用 `rows` 快照前的索引不安全，改走「diff
+                // finalRows 之外的老 row」路径：merge 之后 rows 已 == finalRows，
+                // expandedUserBubbles 里不在 rows 中的 stableId 全部摘掉。
+                let liveIds = Set(self.rows.map { $0.stableId })
+                self.expandedUserBubbles.formIntersection(liveIds)
                 let tApply2 = CFAbsoluteTimeGetCurrent()
 
                 let parseBuildMs = Int((tBuild - t0) * 1000)
@@ -549,5 +575,56 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
             if let s = value as? String, let url = URL(string: s) { return url }
         }
         return nil
+    }
+
+    // MARK: - User bubble collapse toggle
+
+    /// 只读命中测试：point 是否在某个 UserBubbleRow 的 chevron 上。
+    /// cursorUpdate 用——优先级高于 `linkURL`（chevron 叠 URL 时显示 pointingHand
+    /// 但语义是 toggle，不是 open URL——cursor 上只要表达"可点击"即可）。
+    func isOverUserBubbleChevron(atDocumentPoint documentPoint: CGPoint) -> Bool {
+        guard let tableView else { return false }
+        let rowIdx = tableView.row(at: documentPoint)
+        guard rowIdx >= 0, rowIdx < rows.count else { return false }
+        guard let row = rows[rowIdx] as? UserBubbleRow else { return false }
+        let rowRect = tableView.rect(ofRow: rowIdx)
+        let inset = contentInset(forRow: rowIdx, rowRect: rowRect)
+        let pointInRow = CGPoint(
+            x: documentPoint.x - rowRect.origin.x - inset,
+            y: documentPoint.y - rowRect.origin.y)
+        return row.chevronHitRectInRow()?.contains(pointInRow) == true
+    }
+
+    /// 命中 UserBubbleRow 右下 chevron → 翻转折叠状态，刷新行高。
+    /// 返回 true 表示本次 click 已被消费；调用方应跳过 linkURL 分支。
+    ///
+    /// 关键：不走 `setEntries` / rebuild——只改 set + row 字段 + `makeSize` +
+    /// `noteHeightOfRow`。`makeSize` 两阶段实现让 state-only 变更不重跑 CT。
+    func toggleUserBubble(atDocumentPoint documentPoint: CGPoint) -> Bool {
+        guard let tableView else { return false }
+        guard lastLayoutWidth > 0 else { return false }
+        let rowIdx = tableView.row(at: documentPoint)
+        guard rowIdx >= 0, rowIdx < rows.count else { return false }
+        guard let row = rows[rowIdx] as? UserBubbleRow else { return false }
+        let rowRect = tableView.rect(ofRow: rowIdx)
+        let inset = contentInset(forRow: rowIdx, rowRect: rowRect)
+        let pointInRow = CGPoint(
+            x: documentPoint.x - rowRect.origin.x - inset,
+            y: documentPoint.y - rowRect.origin.y)
+        guard let hit = row.chevronHitRectInRow(), hit.contains(pointInRow) else {
+            return false
+        }
+
+        let id = row.stableId
+        if expandedUserBubbles.contains(id) {
+            expandedUserBubbles.remove(id)
+            row.isExpanded = false
+        } else {
+            expandedUserBubbles.insert(id)
+            row.isExpanded = true
+        }
+        row.makeSize(width: lastLayoutWidth)
+        noteHeightOfRow(rowIdx)
+        return true
     }
 }

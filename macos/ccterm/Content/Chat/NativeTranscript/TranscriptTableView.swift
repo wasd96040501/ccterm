@@ -105,18 +105,26 @@ final class TranscriptTableView: NSTableView {
     override func mouseUp(with event: NSEvent) {
         guard event.clickCount == 1 else { return }
         let point = convert(event.locationInWindow, from: nil)
-        // 无 drag（鼠标位移 < 3pt） + 命中 link → 打开并清 selection。
+        // 无 drag（鼠标位移 < 3pt）时分派：chevron > link > drag-select end。
         if let start = mouseDownPoint {
             mouseDownPoint = nil
             let dx = point.x - start.x
             let dy = point.y - start.y
             let draggedSquared = dx * dx + dy * dy
-            if draggedSquared <= 9,
-               let url = controller?.linkURL(atDocumentPoint: point) {
-                controller?.selectionController.clear()
-                controller?.redrawAllVisibleRows()
-                NSWorkspace.shared.open(url)
-                return
+            if draggedSquared <= 9 {
+                // chevron 优先：user bubble 最后一行 URL 叠在 chevron 上时
+                // 应 toggle 折叠而非打开 URL。
+                if controller?.toggleUserBubble(atDocumentPoint: point) == true {
+                    controller?.selectionController.clear()
+                    controller?.redrawAllVisibleRows()
+                    return
+                }
+                if let url = controller?.linkURL(atDocumentPoint: point) {
+                    controller?.selectionController.clear()
+                    controller?.redrawAllVisibleRows()
+                    NSWorkspace.shared.open(url)
+                    return
+                }
             }
         }
         controller?.selectionController.endDrag(at: point)
@@ -166,7 +174,11 @@ final class TranscriptTableView: NSTableView {
     }
 
     private func checkCursor(at documentPoint: CGPoint) {
-        if controller?.linkURL(atDocumentPoint: documentPoint) != nil {
+        // Chevron > link > selectable text > default。chevron 叠 URL 时仍显示
+        // pointingHand（语义一致：可点击），但点击时 mouseUp 走 toggle 分支。
+        if controller?.isOverUserBubbleChevron(atDocumentPoint: documentPoint) == true {
+            NSCursor.pointingHand.set()
+        } else if controller?.linkURL(atDocumentPoint: documentPoint) != nil {
             NSCursor.pointingHand.set()
         } else if isPointOverSelectableText(documentPoint) {
             NSCursor.iBeam.set()

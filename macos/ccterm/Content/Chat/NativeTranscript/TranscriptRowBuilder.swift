@@ -13,14 +13,22 @@ import Foundation
 /// - `.group` → 单条 `PlaceholderRow("[Tools × N]")`
 enum TranscriptRowBuilder {
 
-    static func build(entries: [MessageEntry], theme: MarkdownTheme) -> [TranscriptRow] {
+    static func build(
+        entries: [MessageEntry],
+        theme: MarkdownTheme,
+        expandedUserBubbles: Set<AnyHashable> = []
+    ) -> [TranscriptRow] {
         let transcriptTheme = TranscriptTheme(markdown: theme)
         var out: [TranscriptRow] = []
 
         for entry in entries {
             switch entry {
             case .single(let single):
-                append(from: single, theme: transcriptTheme, into: &out)
+                append(
+                    from: single,
+                    theme: transcriptTheme,
+                    expandedUserBubbles: expandedUserBubbles,
+                    into: &out)
             case .group(let group):
                 let label = "[Tools × \(group.items.count)]"
                 out.append(PlaceholderRow(
@@ -37,13 +45,15 @@ enum TranscriptRowBuilder {
     private static func append(
         from single: SingleEntry,
         theme: TranscriptTheme,
+        expandedUserBubbles: Set<AnyHashable>,
         into out: inout [TranscriptRow]
     ) {
         switch single.payload {
         case .localUser(let input):
             if let text = input.text, !text.isEmpty {
-                out.append(UserBubbleRow(
-                    text: text, theme: theme, stable: single.id))
+                let row = UserBubbleRow(text: text, theme: theme, stable: single.id)
+                row.isExpanded = expandedUserBubbles.contains(single.id)
+                out.append(row)
             }
             return
 
@@ -51,8 +61,9 @@ enum TranscriptRowBuilder {
             switch message {
             case .user(let u):
                 if let text = userPlainText(u), !text.isEmpty {
-                    out.append(UserBubbleRow(
-                        text: text, theme: theme, stable: single.id))
+                    let row = UserBubbleRow(text: text, theme: theme, stable: single.id)
+                    row.isExpanded = expandedUserBubbles.contains(single.id)
+                    out.append(row)
                 }
                 // tool_result / image-only / empty → skip
             case .assistant(let a):

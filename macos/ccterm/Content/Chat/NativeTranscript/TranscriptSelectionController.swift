@@ -317,7 +317,11 @@ final class TranscriptSelectionController: NSResponder {
     }
 
     private func regionEnd(_ region: SelectableTextRegion) -> CGPoint {
-        CGPoint(x: region.layout.measuredWidth, y: region.layout.totalHeight + 1)
+        // `frameInRow.height` 可能比 `layout.totalHeight` 小（UserBubbleRow 折叠
+        // 态会截断 region 高度）。用 min 保证 selection 不越过可见区，避免折叠态
+        // 从气泡内向下拖时 selection range 扫到隐藏行的字符。
+        let y = min(region.layout.totalHeight, region.frameInRow.height) + 1
+        return CGPoint(x: region.layout.measuredWidth, y: y)
     }
 
     /// row 内 point → region 下标。先 frame contains，不中取 y-center 最近。

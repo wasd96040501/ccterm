@@ -40,6 +40,12 @@ final class MarkdownAttributedBuilderTests: XCTestCase {
 
     // MARK: - Ordered list markers have equal visual widths
 
+    /// Convenience: 拿到 text marker 的排版宽度。checkbox 走固定边长不在这里。
+    private func textMarkerWidth(_ m: MarkdownListMarker?) -> CGFloat {
+        guard case .text(let attr) = m else { return 0 }
+        return ceil(attr.size().width)
+    }
+
     func testOrderedListSingleDigitMarkersShareWidth() {
         // "1." / "2." / "3." —— SF Mono 下三者宽度必须相同，不再受数字→dot
         // pair kerning 的影响。
@@ -48,7 +54,7 @@ final class MarkdownAttributedBuilderTests: XCTestCase {
         2. two
         3. three
         """)
-        let widths = contents.items.map { $0.markerWidth }
+        let widths = contents.items.map { textMarkerWidth($0.marker) }
         XCTAssertEqual(widths.count, 3)
         let first = widths[0]
         for (i, w) in widths.enumerated() {
@@ -67,8 +73,8 @@ final class MarkdownAttributedBuilderTests: XCTestCase {
         100. b
         """)
         XCTAssertEqual(contents.items.count, 2)
-        let w99 = contents.items[0].markerWidth
-        let w100 = contents.items[1].markerWidth
+        let w99 = textMarkerWidth(contents.items[0].marker)
+        let w100 = textMarkerWidth(contents.items[1].marker)
         XCTAssertLessThan(w99, w100, "4-char marker must be wider than 3-char")
         XCTAssertEqual(
             contents.markerColumnWidth, w100, accuracy: 0.01,
@@ -216,22 +222,24 @@ final class MarkdownAttributedBuilderTests: XCTestCase {
         XCTAssertFalse(innerAttr.string.contains("•"))
     }
 
-    // MARK: - Task list: Unicode checkbox
+    // MARK: - Task list: checkbox marker
 
-    func testTaskListRendersUnicodeCheckboxes() {
+    func testTaskListMarkersAreCheckboxVariant() {
+        // Checkbox 走独立 marker 类型（不是 `.text` 带 "☑"/"☐" 字形）——CoreText
+        // 侧 CGPath 自绘、SwiftUI 侧 SF Symbol。绕开 SF Pro 里 U+2611 和
+        // U+2610 glyph 设计不对称（checked 方框更粗更大）的问题。
         let contents = buildList("""
         - [x] done
         - [ ] pending
         """)
         XCTAssertEqual(contents.items.count, 2)
-        // Checked 用 U+2611 "☑"，unchecked 用 U+2610 "☐"。NSTextAttachment
-        // 的 U+FFFC 在 CoreText 下无 substitution pass，所以不应出现。
-        XCTAssertEqual(contents.items[0].marker?.string, "☑")
-        XCTAssertEqual(contents.items[1].marker?.string, "☐")
-        for item in contents.items {
-            XCTAssertFalse(
-                (item.marker?.string ?? "").contains("\u{FFFC}"),
-                "NSTextAttachment path is invalid under CoreText — must not emit U+FFFC")
+        guard case .checkbox(let c0) = contents.items[0].marker else {
+            return XCTFail("expected .checkbox marker for first item")
         }
+        guard case .checkbox(let c1) = contents.items[1].marker else {
+            return XCTFail("expected .checkbox marker for second item")
+        }
+        XCTAssertTrue(c0, "[x] item must be checked")
+        XCTAssertFalse(c1, "[ ] item must be unchecked")
     }
 }

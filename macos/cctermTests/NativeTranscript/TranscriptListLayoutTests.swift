@@ -89,21 +89,22 @@ final class TranscriptListLayoutTests: XCTestCase {
             "totalHeight must reach the bottom of the last item")
     }
 
-    func testMarkerBaselineAlignsToFirstTextBaseline() {
-        // 正文 TranscriptTextLayout 的第一行 baseline 应与 marker baseline 一致——
-        // marker 和首行字在视觉上同一行。
+    func testMarkerCenterAlignsToFirstLineMidY() {
+        // Marker 几何中心对齐正文首行 midY（midY-to-midY）——对 bullet / 数字 /
+        // checkbox 三种 marker 一致，不再依赖 baseline-to-baseline（后者在
+        // checkbox 场景下会让方框视觉偏上）。
         let layout = makeLayout("- single-line item")
         guard let item = layout.items.first,
               case .text(let textLayout, let origin) = item.contents.first,
-              let firstLineOrigin = textLayout.lineOrigins.first else {
+              let firstLineRect = textLayout.lineRects.first else {
             return XCTFail("expected text content with at least one line")
         }
-        // textLayout 坐标系内 line baseline 相对 layout 原点 = lineOrigins[0].y。
-        // 加 origin.y（textLayout 在 list 坐标里的原点）→ list 坐标下的 baseline。
-        let expectedBaseline = origin.y + firstLineOrigin.y
+        // textLayout 坐标系内首行 midY = lineRects[0].midY。加 origin.y 得 list
+        // 坐标下的 midY。
+        let expectedMidY = origin.y + firstLineRect.midY
         XCTAssertEqual(
-            item.markerBaselineY, expectedBaseline, accuracy: 0.01,
-            "marker baseline must align with first line baseline of item text")
+            item.markerCenterY, expectedMidY, accuracy: 0.01,
+            "marker centerY must align with first line midY of item text")
     }
 
     // MARK: - Nested
@@ -149,10 +150,10 @@ final class TranscriptListLayoutTests: XCTestCase {
             "outer item height must sum text + intra-item gap + nested height")
     }
 
-    func testMarkerBaselineAlignsToNestedFirstWhenNoText() {
-        // 如果 item 的第一个 content 不是正文而是 nested list（罕见），
-        // 外层 marker baseline 应对齐到 nested 的第一个 marker baseline——
-        // 而不是退化到 item top。
+    func testMarkerCenterAlignsToNestedFirstWhenNoText() {
+        // 如果 item 的第一个 content 不是正文而是 nested list（罕见），外层
+        // marker 几何中心应对齐到 nested 第一个 marker 的几何中心——midY 沿
+        // 嵌套递归传递，保证所有层级视觉对齐一致。
         //
         // 构造这种形态需要手搓 MarkdownList（直接 parse 很难生成一个 item
         // 的首 content 就是 list，因为 list item 通常至少有一段 paragraph）。
@@ -178,14 +179,13 @@ final class TranscriptListLayoutTests: XCTestCase {
               let innerItem = nestedLayout.items.first else {
             return XCTFail("expected outer item with nested list")
         }
-        // inner.markerBaselineY 是 list 坐标（nested layout 自身坐标系）。
-        // 外层 marker 对齐的是 "innerItem.markerBaselineY offset 到外层坐标"，
-        // 即 nestedOrigin.y + innerItem.markerBaselineY。
-        let expected = nestedOrigin.y + innerItem.markerBaselineY
+        // innerItem.markerCenterY 是 nested layout 坐标系里的 y。offset 到外层
+        // 坐标：nestedOrigin.y + innerItem.markerCenterY。
+        let expected = nestedOrigin.y + innerItem.markerCenterY
         XCTAssertEqual(
-            outerItem.markerBaselineY, expected, accuracy: 0.01,
-            "when item's first content is a nested list, outer marker baseline "
-            + "must align with the nested list's first marker baseline")
+            outerItem.markerCenterY, expected, accuracy: 0.01,
+            "when item's first content is a nested list, outer marker center "
+            + "must align with the nested list's first marker center")
     }
 
     // MARK: - flattenedTexts DFS order

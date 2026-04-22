@@ -161,6 +161,23 @@ final class SessionHandle2HistoryTailTests: XCTestCase {
 
     // MARK: - Snapshot reason 序列
 
+    /// 对 `.loaded` session 再调 `loadHistory()` —— 触发点：用户切走后切回。
+    /// 必须重新 emit `.initialPaint`（即使 messages 没变），让 view 按首次打开
+    /// 语义 re-paint（viewport-first + 贴底），否则 controller 残留旧 session
+    /// 的 rows + 旧 reason 会出现「切回来停在上次 scroll 位置」的 bug。
+    func test_loaded_reentry_emits_initialPaint() async throws {
+        let h = makeHandle(id: "hist-reentry")
+        h.loadHistory(overrideURL: Self.fixtureURL(), tailTarget: 20)
+        try await waitForTerminal(h)
+        XCTAssertEqual(h.historyLoadState, .loaded)
+
+        let revBefore = h.snapshot.revision
+        h.loadHistory(overrideURL: Self.fixtureURL(), tailTarget: 20)
+        XCTAssertEqual(h.snapshot.reason, .initialPaint,
+            "已 loaded 的 session 再次 loadHistory 必须 re-emit .initialPaint")
+        XCTAssertGreaterThan(h.snapshot.revision, revBefore)
+    }
+
     /// 两段式 loadHistory 应当依次 emit `.initialPaint`（Phase A 结束）和
     /// `.prependHistory`（Phase B 结束且 prefix 非空）。Revision 严格递增。
     func test_snapshot_emits_initialPaint_then_prependHistory() async throws {

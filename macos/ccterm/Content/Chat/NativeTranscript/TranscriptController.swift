@@ -577,6 +577,65 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
         return nil
     }
 
+    // MARK: - Code block click-to-copy
+
+    /// 只读命中测试——cursor 判定用。返回 true 表示 point 下方有 code block
+    /// header，cursor 要变 pointingHand。
+    func codeBlockHit(atDocumentPoint documentPoint: CGPoint) -> Bool {
+        return resolveCodeBlockHit(atDocumentPoint: documentPoint) != nil
+    }
+
+    /// mouseUp 一站式处理：命中 header 就写 pasteboard + 触发 icon checkmark
+    /// 闪烁。返回 true 表示 click 已被消费。
+    func performCodeBlockCopy(atDocumentPoint documentPoint: CGPoint) -> Bool {
+        guard let resolved = resolveCodeBlockHit(atDocumentPoint: documentPoint) else {
+            return false
+        }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(resolved.hit.code, forType: .string)
+        let rowIndex = resolved.rowIndex
+        resolved.row.markCodeBlockCopied(
+            segmentIndex: resolved.hit.segmentIndex
+        ) { [weak self] in
+            self?.redrawRow(at: rowIndex)
+        }
+        return true
+    }
+
+    private struct CodeBlockResolved {
+        let row: AssistantMarkdownRow
+        let rowIndex: Int
+        let hit: AssistantMarkdownRow.CodeBlockHitInfo
+    }
+
+    private func resolveCodeBlockHit(atDocumentPoint documentPoint: CGPoint)
+        -> CodeBlockResolved?
+    {
+        guard let tableView else { return nil }
+        let rowIdx = tableView.row(at: documentPoint)
+        guard rowIdx >= 0, rowIdx < rows.count else { return nil }
+        guard let row = rows[rowIdx] as? AssistantMarkdownRow else { return nil }
+        let rowRect = tableView.rect(ofRow: rowIdx)
+        let inset = contentInset(forRow: rowIdx, rowRect: rowRect)
+        let pointInRow = CGPoint(
+            x: documentPoint.x - rowRect.origin.x - inset,
+            y: documentPoint.y - rowRect.origin.y)
+        guard let hit = row.codeBlockHit(atRowPoint: pointInRow) else { return nil }
+        return CodeBlockResolved(row: row, rowIndex: rowIdx, hit: hit)
+    }
+
+    private func redrawRow(at index: Int) {
+        guard let tableView else { return }
+        guard index >= 0, index < rows.count else { return }
+        guard let rowView = tableView.rowView(atRow: index, makeIfNecessary: false)
+            as? TranscriptRowView else { return }
+        // Same path as redrawAllVisibleRows — hands the row back to its view,
+        // which triggers `layer.setNeedsDisplay()`. We don't re-run makeSize
+        // because the checkmark flip is a pure state change.
+        rowView.set(row: rows[index])
+    }
+
     // MARK: - User bubble collapse toggle
 
     /// 只读命中测试：point 是否在某个 UserBubbleRow 的 chevron 上。

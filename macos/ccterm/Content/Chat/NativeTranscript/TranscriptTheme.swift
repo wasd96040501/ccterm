@@ -75,5 +75,33 @@ struct TranscriptTheme {
     var codeBlockVerticalPadding: CGFloat { markdown.blockPadding }
     var codeBlockCornerRadius: CGFloat { markdown.blockCornerRadius }
 
+    // MARK: - Code block header (language label + click-to-copy)
+
+    /// Height of the header bar drawn above each fenced code block.
+    var codeBlockHeaderHeight: CGFloat = 24
+    /// Left padding of the language label inside the header. Derived from
+    /// the body padding so the label's first glyph sits on the same vertical
+    /// line as the code underneath.
+    var codeBlockHeaderLabelInsetX: CGFloat { codeBlockHorizontalPadding }
+    /// Right padding of the copy icon inside the header.
+    var codeBlockHeaderIconInsetX: CGFloat = 8
+    /// Rendered side length of the copy icon (square glyph bounds).
+    var codeBlockHeaderIconSize: CGFloat = 13
+    var codeBlockHeaderFontSize: CGFloat = 11
+
+    /// Header bar tint — a touch darker than the body so the split reads
+    /// clearly in both schemes. Mirrors Telegram's `main.alpha(0.2)` trick
+    /// but layered on top of the same body swatch.
+    var codeBlockHeaderBackground: NSColor {
+        NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            return isDark
+                ? NSColor(white: 1, alpha: 0.06)
+                : NSColor(white: 0, alpha: 0.05)
+        }
+    }
+
+    var codeBlockHeaderForeground: NSColor { .secondaryLabelColor }
+
     static let `default` = TranscriptTheme(markdown: .default)
 }

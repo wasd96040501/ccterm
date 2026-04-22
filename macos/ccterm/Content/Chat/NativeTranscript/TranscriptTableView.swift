@@ -119,6 +119,12 @@ final class TranscriptTableView: NSTableView {
                     controller?.redrawAllVisibleRows()
                     return
                 }
+                // Code block header 在 link 前判——header bar 永远不会叠到行内
+                // 文本上，不会冲突，但放前面让优先级清晰（和 chevron 同层）。
+                if controller?.performCodeBlockCopy(atDocumentPoint: point) == true {
+                    controller?.selectionController.clear()
+                    return
+                }
                 if let url = controller?.linkURL(atDocumentPoint: point) {
                     controller?.selectionController.clear()
                     controller?.redrawAllVisibleRows()
@@ -174,9 +180,11 @@ final class TranscriptTableView: NSTableView {
     }
 
     private func checkCursor(at documentPoint: CGPoint) {
-        // Chevron > link > selectable text > default。chevron 叠 URL 时仍显示
-        // pointingHand（语义一致：可点击），但点击时 mouseUp 走 toggle 分支。
+        // Chevron > code-block header > link > selectable text > default。
+        // 前三者都是"可点击"语义，统一 pointingHand；点击分派在 mouseUp。
         if controller?.isOverUserBubbleChevron(atDocumentPoint: documentPoint) == true {
+            NSCursor.pointingHand.set()
+        } else if controller?.codeBlockHit(atDocumentPoint: documentPoint) == true {
             NSCursor.pointingHand.set()
         } else if controller?.linkURL(atDocumentPoint: documentPoint) != nil {
             NSCursor.pointingHand.set()

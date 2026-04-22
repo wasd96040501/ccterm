@@ -103,7 +103,6 @@ enum MarkdownListMarker: Equatable {
 /// 集中管理 marker 构造 + marker column 宽度——``MarkdownListView`` 和
 /// ``TranscriptListContents`` 各有自己的路径，marker 外观逻辑通过这里
 /// （实际是纯数据转换函数）保持一致。
-@MainActor
 enum MarkdownListMetrics {
     struct Result {
         let markers: [MarkdownListMarker?]

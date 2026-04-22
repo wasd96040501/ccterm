@@ -143,6 +143,15 @@ nonisolated enum TranscriptPrepare {
                     y += layout.totalHeight
                 }
 
+            case .list(let contents, _):
+                let listLayout = TranscriptListLayout.make(
+                    contents: contents,
+                    theme: theme,
+                    maxWidth: contentWidth)
+                let origin = CGPoint(x: theme.rowHorizontalPadding, y: y)
+                segments.append(.list(listLayout, origin: origin))
+                y += listLayout.totalHeight
+
             case .table(let contents, _):
                 let tableLayout = TranscriptTableLayout.make(
                     contents: contents,

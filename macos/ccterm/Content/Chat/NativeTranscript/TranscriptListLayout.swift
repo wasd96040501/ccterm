@@ -35,7 +35,6 @@ struct TranscriptListContents {
     /// `builder.build(blocks:)` 合成为单段 attributed string——丢弃块级视觉
     /// 特化（例如 blockquote 的左竖条），但保留文本内容。主流 markdown
     /// （GFM）在 list item 里极少出现这类 block，先兜底不做专门渲染。
-    @MainActor
     static func make(
         list: MarkdownList,
         theme: MarkdownTheme,
@@ -157,7 +156,6 @@ struct TranscriptListLayout {
 
     // MARK: - Build
 
-    @MainActor
     static func make(
         contents: TranscriptListContents,
         theme: TranscriptTheme,

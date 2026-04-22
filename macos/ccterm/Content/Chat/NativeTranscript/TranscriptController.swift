@@ -46,6 +46,16 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
     /// 文本选中协调器。Controller 持有；`TranscriptTableView` 的鼠标事件直接转给它。
     let selectionController = TranscriptSelectionController()
 
+    /// 用户点 sidebar → `ChatHistoryView.task` 入口记录的时间戳。controller 在
+    /// 首个 session-open 的 Phase 1 merge 完成时读这个值算 TTFP，emit 后清零
+    /// —— 一次性指标，不会重复打印。
+    var openStartedAt: CFAbsoluteTime?
+
+    /// session-open 的 cache delta baseline。当 `openStartedAt` 被设置后首次
+    /// setEntries 入口记录；Phase 2 merge 出口做 delta 算 hit/miss。
+    private var openCacheHitBaseline: Int = 0
+    private var openCacheMissBaseline: Int = 0
+
     /// 用户手动展开过的 UserBubble 的 stableId 集合。
     ///
     /// Sticky：toggle 过就进 set，再 toggle 出 set。resize 换宽度不动这里。
@@ -61,19 +71,20 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
 
     // MARK: - setEntries
 
-    /// Viewport-first 两阶段：
-    /// - **Phase 1**（主线程同步）：prepare + layout 能填满 viewport 的前 N 条
-    ///   entries，立即 merge → 用户看到首屏（未高亮）。
+    /// Viewport-first 两阶段，对齐 Telegram `TableUpdateTransition`：
+    /// - **Phase 1**（主线程同步）：prepare + layout 能填满 viewport 的 N 条
+    ///   entries，立即 merge → 用户看到首屏（未高亮）。从哪一端走取决于 scroll
+    ///   intent：`.bottom` 走末尾，否则走开头。
     /// - **Phase 2**（后台 Task）：prepare + layout 剩余 entries，并 highlight
-    ///   所有 code block。回主线程：对 Phase 1 rows apply tokens（回填上色），对
-    ///   Phase 2 rows 走 diff + insert（一般在尾部）。
+    ///   所有 code block。回主线程：对 Phase 1 rows apply tokens（回填上色），
+    ///   Phase 2 rows 走 diff（尾插 / 前插由 delta 形状决定）。
     ///
-    /// Overlay scroller（见 `TranscriptScrollView`）让 Phase 2 插入时的 thumb
-    /// 大小变化不可见——Phase 2 窗口期内用户不在滚动，thumb 不显示。
+    /// Scroll intent 由 `computeScrollIntent` 依据 old↔new IDs delta 形状派生，
+    /// 不进 `setEntries` 签名：外部调用点零改动。
     ///
     /// Short-circuit：entries id 列表 + theme 指纹都等价 → 立即返回。
     func setEntries(_ entries: [MessageEntry], themeChanged: Bool) {
-        guard let tableView else { return }
+        guard tableView != nil else { return }
         let mdTheme = theme ?? .default
         let themeFingerprint = mdTheme.fingerprint
         let signature = entries.map { $0.id }
@@ -96,15 +107,22 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
         // instead of guessing a theme-level max.
         TranscriptPrepareCache.shared.recordObservedWidth(width)
 
-        // Fast-path: pure tail append. 在 themeFingerprint 未变的前提下,
-        // 如果旧 entries 的 IDs 是新 entries 的严格前缀,只对追加部分做 prepare
-        // + highlight + insert-at-tail,跳过全量 Phase 1/2。
-        // 流式场景 99% 命中(新 assistant frame 都是新 UUID,整体追加)。
+        // Snapshot cache baseline for session-open metric (consumed by
+        // `.bottom` path only; other intents don't correspond to "session open").
+        if openStartedAt != nil {
+            openCacheHitBaseline = TranscriptPrepareCache.shared.hitCount
+            openCacheMissBaseline = TranscriptPrepareCache.shared.missCount
+        }
+
+        let oldSig = lastEntriesSignature
+
+        // Fast-path: pure tail append. Theme unchanged + strict prefix.
+        // Streaming 场景 99% 命中(新 assistant frame 都是新 UUID,整体追加)。
         if !themeChanged,
            lastThemeFingerprint == themeFingerprint,
            detectPureAppend(newIDs: signature) != nil
         {
-            let appendedEntries = Array(entries.suffix(from: lastEntriesSignature.count))
+            let appendedEntries = Array(entries.suffix(from: oldSig.count))
             lastLayoutWidth = width
             lastEntriesSignature = signature
             fastPathAppend(
@@ -118,21 +136,168 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
             return
         }
 
+        // Decide scroll intent from delta shape **before** mutating
+        // `lastEntriesSignature` —— `detectPurePrepend` 读 self.lastEntriesSignature，
+        // 必须看到 old 值。
+        let intent = computeScrollIntent(oldSig: oldSig, newSig: signature)
+
         lastLayoutWidth = width
         lastEntriesSignature = signature
         lastThemeFingerprint = themeFingerprint
 
-        // ── Phase 1：主线程同步，viewport-fitting ────────────────────────
-        // viewportH == 0 的场景（首次 mount、测试环境）phase1 consume 0 条，
-        // 全部下沉到 Phase 2，等价 background-only 行为。
-        let viewportH = max(0, tableView.enclosingScrollView?.contentView.bounds.height ?? 0)
-        let phase1Budget = viewportH * 1.2 // 20% 余量，边缘 row 露半行时 phase 1 已填满。
+        switch intent {
+        case .bottom:
+            runViewportFirstBottom(
+                entries: entries,
+                theme: transcriptTheme, width: width,
+                expandedSnapshot: expandedSnapshot, engine: engine,
+                generation: generation, t0: t0)
+
+        case .anchor:
+            // Prepend / 整体重排：tail 已在 self.rows，做 Phase 1 头部 walk 会把 tail
+            // 误判成 delete。直接走一次 full-diff（bg prepare + 主线程 merge + 应用
+            // anchor scroll），让 TranscriptDiff 一次性处理 insert/update/carry-over。
+            runFullDiffMerge(
+                entries: entries,
+                theme: transcriptTheme, width: width,
+                expandedSnapshot: expandedSnapshot, engine: engine,
+                generation: generation, t0: t0,
+                scroll: intent)
+
+        case .preserve:
+            // 典型场景：theme change / mid-array tool_result 更新。Phase 1 head walk
+            // 对这些情况仍有价值（viewport-worth 先上屏），其余走 Phase 2。
+            runViewportFirstHead(
+                entries: entries,
+                theme: transcriptTheme, width: width,
+                expandedSnapshot: expandedSnapshot, engine: engine,
+                generation: generation, t0: t0,
+                scroll: intent)
+        }
+    }
+
+    /// `.anchor` / 通用 full-diff 路径：后台 prepare 全量 + highlight，主线程做一
+    /// 次性 `TranscriptDiff.compute` 合并，应用 scroll intent。**不做 Phase 1
+    /// 拆分**——对 prepend 场景而言，tail 已在 self.rows，一次性 diff 更干净。
+    private func runFullDiffMerge(
+        entries: [MessageEntry],
+        theme transcriptTheme: TranscriptTheme,
+        width: CGFloat,
+        expandedSnapshot: Set<AnyHashable>,
+        engine: SyntaxHighlightEngine?,
+        generation: Int,
+        t0: CFAbsoluteTime,
+        scroll: TranscriptScrollIntent
+    ) {
+        activePreprocessTask = Task.detached(priority: .userInitiated) { [weak self] in
+            let tPrepStart = CFAbsoluteTimeGetCurrent()
+            var items = TranscriptRowBuilder.prepareAll(
+                entries: entries,
+                theme: transcriptTheme,
+                width: width,
+                expandedUserBubbles: expandedSnapshot)
+            let tPrepDone = CFAbsoluteTimeGetCurrent()
+            if Task.isCancelled { return }
+
+            let (hlMs, codeBlockCount, _) = await Self.applyHighlightTokens(
+                to: &items, theme: transcriptTheme, width: width, engine: engine)
+            if Task.isCancelled { return }
+            let tHlDone = CFAbsoluteTimeGetCurrent()
+
+            await MainActor.run {
+                guard let self, self.setEntriesGeneration == generation else { return }
+                let tMergeStart = CFAbsoluteTimeGetCurrent()
+
+                let newRows = items.map { self.row(from: $0, theme: transcriptTheme) }
+                let transition = TranscriptDiff.compute(
+                    old: self.rows, new: newRows, animated: false)
+                for row in transition.finalRows {
+                    if let u = row as? UserBubbleRow {
+                        u.isExpanded = self.expandedUserBubbles.contains(u.stableId)
+                    }
+                    row.makeSize(width: width)
+                }
+                self.merge(with: transition, scroll: scroll)
+
+                let liveIds = Set(self.rows.map { $0.stableId })
+                self.expandedUserBubbles.formIntersection(liveIds)
+                let tMergeDone = CFAbsoluteTimeGetCurrent()
+
+                let prepMs = Int((tPrepDone - tPrepStart) * 1000)
+                let bgMs = Int((tHlDone - tPrepStart) * 1000)
+                let mergeMs = Int((tMergeDone - tMergeStart) * 1000)
+                let totalMs = Int((tMergeDone - t0) * 1000)
+                appLog(.info, "TranscriptController",
+                    "setEntries full-diff entries=\(entries.count) rows=\(newRows.count) "
+                    + "(+\(transition.inserted.count) / ~\(transition.updated.count) / -\(transition.deleted.count)) "
+                    + "prepare=\(prepMs) bg=\(bgMs)(hl=\(hlMs)ms code=\(codeBlockCount)) "
+                    + "merge=\(mergeMs) total=\(totalMs)ms width=\(Int(width)) "
+                    + "scroll=\(scroll.logTag)")
+            }
+        }
+    }
+
+    // MARK: - Scroll intent derivation
+
+    /// 根据 old↔new IDs delta 形状派生 scroll intent。
+    ///
+    /// | 形状                              | intent        |
+    /// | --------------------------------- | ------------- |
+    /// | old 空, new 非空                  | `.bottom`     |
+    /// | old 是 new 的严格后缀 (pure prepend) | `.anchor(...)` |
+    /// | 其它 (theme 变 / tool_result 更新)  | `.preserve`   |
+    ///
+    /// 说明：pure append 已在 fast-path 消化，此处不再涉及。
+    private func computeScrollIntent(
+        oldSig: [UUID], newSig: [UUID]
+    ) -> TranscriptScrollIntent {
+        // 首次打开 session。
+        if oldSig.isEmpty, !newSig.isEmpty {
+            return .bottom
+        }
+        // pure prepend：old 是 new 的严格后缀。
+        if !oldSig.isEmpty,
+           detectPurePrepend(newIDs: newSig) != nil,
+           let anchor = captureTopVisibleAnchor()
+        {
+            return .anchor(stableId: anchor.stableId, topOffset: anchor.topOffset)
+        }
+        return .preserve
+    }
+
+    /// 取 rows[0] 的 (stableId, topOffset)—— Phase B prepend / loaded 合并前
+    /// capture。容错：rows 空 / clipView 缺失 → nil（调用点降级为 `.preserve`）。
+    private func captureTopVisibleAnchor() -> (stableId: AnyHashable, topOffset: CGFloat)? {
+        guard let tv = tableView, !rows.isEmpty,
+              let clip = tv.enclosingScrollView?.contentView else { return nil }
+        let rect = tv.rect(ofRow: 0)
+        return (rows[0].stableId, rect.minY - clip.bounds.minY)
+    }
+
+    // MARK: - Viewport-first pipelines
+
+    /// Viewport-first head pipeline：Phase 1 从 entries[0] 向后走至填满 viewport，
+    /// Phase 2 追加剩余 + highlight 全部。`.preserve` / `.anchor(...)` 两种 scroll
+    /// intent 复用此路径（Phase 2 merge 结束时应用 scroll）。
+    private func runViewportFirstHead(
+        entries: [MessageEntry],
+        theme transcriptTheme: TranscriptTheme,
+        width: CGFloat,
+        expandedSnapshot: Set<AnyHashable>,
+        engine: SyntaxHighlightEngine?,
+        generation: Int,
+        t0: CFAbsoluteTime,
+        scroll: TranscriptScrollIntent
+    ) {
+        let budget = phase1Budget()
+
+        // ── Phase 1：head，主线程同步 ──────────────────────────────────────
         let phase1Walk = TranscriptRowBuilder.prepareBounded(
             entries: entries,
             theme: transcriptTheme,
             width: width,
             expandedUserBubbles: expandedSnapshot,
-            minAccumulatedHeight: phase1Budget)
+            minAccumulatedHeight: budget.height)
         let phase1EntryCount = phase1Walk.consumedEntryCount
         let phase1Rows = phase1Walk.items.map { self.row(from: $0, theme: transcriptTheme) }
 
@@ -144,11 +309,11 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
             }
             row.makeSize(width: width)
         }
-        self.merge(with: phase1Transition)
+        // Phase 1 本身不做 scroll —— `.anchor` 的位置感觉要等 Phase 2 合并完整才对。
+        self.merge(with: phase1Transition, scroll: .preserve)
         let tPhase1Done = CFAbsoluteTimeGetCurrent()
         let phase1Ms = Int((tPhase1Done - t0) * 1000)
 
-        // ── Phase 2：后台 prepare 余下 + highlight 全部；主线程回填 tokens + 尾插 ──
         let phase1Items = phase1Walk.items
         let remainingEntries = Array(entries.suffix(from: phase1EntryCount))
 
@@ -162,8 +327,6 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
             let tPrepDone = CFAbsoluteTimeGetCurrent()
             if Task.isCancelled { return }
 
-            // Phase 1 items + Phase 2 items 合并进一次 highlightBatch。
-            // Phase 1 entries 的 code block 拿到 tokens 后通过主线程回填。
             var combinedItems = phase1Items + phase2PreparedOnly
             let (hlMs, codeBlockCount, tokensByStableId) =
                 await Self.applyHighlightTokens(
@@ -174,36 +337,16 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
             if Task.isCancelled { return }
             let tHlDone = CFAbsoluteTimeGetCurrent()
 
-            // 只取 Phase 2 colored items — Phase 1 rows 已在主线程，单独回填。
             let updatedPhase2 = Array(combinedItems.suffix(from: phase1Items.count))
 
             await MainActor.run {
                 guard let self, self.setEntriesGeneration == generation else { return }
                 let tMergeStart = CFAbsoluteTimeGetCurrent()
 
-                // 1. 给已挂载的 Phase 1 assistant rows 回填 tokens。
-                var changedPhase1: IndexSet = []
-                for (idx, row) in self.rows.enumerated() {
-                    guard let a = row as? AssistantMarkdownRow,
-                          let tokens = tokensByStableId[a.stableId] else { continue }
-                    a.apply(codeTokens: tokens)
-                    a.makeSize(width: width)
-                    changedPhase1.insert(idx)
-                }
-                if !changedPhase1.isEmpty {
-                    self.tableView?.noteHeightOfRows(withIndexesChanged: changedPhase1)
-                    // rowView 缓存的 plain 版本要让它刷 — 否则会继续绘制旧内容。
-                    for idx in changedPhase1 {
-                        if let rv = self.tableView?.rowView(atRow: idx, makeIfNecessary: false)
-                            as? TranscriptRowView {
-                            rv.set(row: self.rows[idx])
-                        }
-                    }
-                }
+                self.backfillHighlightTokens(
+                    tokensByStableId: tokensByStableId, width: width)
 
-                // 2. 尾部增量：Phase 2 新行。走 TranscriptDiff 正常 insert/update
-                //    路径——兼容"中间 entry 变了"的场景（streaming，也会通过
-                //    updated 做 reloadRow）。
+                // Phase 2 rows：走 diff 正常 insert/update 路径。
                 let phase2Rows = updatedPhase2.map { self.row(from: $0, theme: transcriptTheme) }
                 let newFullRows = self.rows + phase2Rows
                 let phase2Transition = TranscriptDiff.compute(
@@ -214,7 +357,7 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
                     }
                     row.makeSize(width: width)
                 }
-                self.merge(with: phase2Transition)
+                self.merge(with: phase2Transition, scroll: scroll)
 
                 let liveIds = Set(self.rows.map { $0.stableId })
                 self.expandedUserBubbles.formIntersection(liveIds)
@@ -227,14 +370,210 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
                 let reusedCount = phase2Transition.finalRows.count
                     - phase2Transition.inserted.count - phase2Transition.updated.count
                 appLog(.info, "TranscriptController",
-                    "setEntries TTFP=\(phase1Ms)ms full=\(totalMs)ms "
+                    "setEntries head "
+                    + "TTFP=\(phase1Ms)ms full=\(totalMs)ms "
                     + "phase1=\(phase1EntryCount)(rows=\(phase1Rows.count)) "
                     + "phase2=\(remainingEntries.count) "
                     + "(+\(phase2Transition.inserted.count) / ~\(phase2Transition.updated.count) / -\(phase2Transition.deleted.count) / reused=\(reusedCount)) "
                     + "prepare=\(prepMs) bg=\(bgMs)(hl=\(hlMs)ms code=\(codeBlockCount)) "
-                    + "merge=\(mergeMs) width=\(Int(width))")
+                    + "merge=\(mergeMs) width=\(Int(width)) "
+                    + "scroll=\(scroll.logTag) budget=\(budget.tag)")
             }
         }
+    }
+
+    /// Viewport-first bottom pipeline：Phase 1 从 entries 尾部反向走至填满
+    /// viewport，立即挂载末尾 N 条并 scroll 到底部。Phase 2 前插前缀 entries，
+    /// scroll 切到 `.anchor(rows[0])` 保住首屏视觉位置。
+    private func runViewportFirstBottom(
+        entries: [MessageEntry],
+        theme transcriptTheme: TranscriptTheme,
+        width: CGFloat,
+        expandedSnapshot: Set<AnyHashable>,
+        engine: SyntaxHighlightEngine?,
+        generation: Int,
+        t0: CFAbsoluteTime
+    ) {
+        let budget = phase1Budget()
+
+        // ── Phase 1：tail，主线程同步 ──────────────────────────────────────
+        let phase1Walk = TranscriptRowBuilder.prepareBoundedTail(
+            entries: entries,
+            theme: transcriptTheme,
+            width: width,
+            expandedUserBubbles: expandedSnapshot,
+            minAccumulatedHeight: budget.height)
+        let phase1StartIndex = phase1Walk.phase1StartIndex
+        let phase1Rows = phase1Walk.items.map { self.row(from: $0, theme: transcriptTheme) }
+
+        // Phase 1 是末尾段，但挂载时我们还没有 prefix 行——rows 在 Phase 1
+        // 结束时视作完整"entries[phase1StartIndex...]"；到 Phase 2 再前插。
+        let phase1Transition = TranscriptDiff.compute(
+            old: rows, new: phase1Rows, animated: false)
+        for row in phase1Transition.finalRows {
+            if let u = row as? UserBubbleRow {
+                u.isExpanded = self.expandedUserBubbles.contains(u.stableId)
+            }
+            row.makeSize(width: width)
+        }
+        self.merge(with: phase1Transition, scroll: .bottom)
+        let tPhase1Done = CFAbsoluteTimeGetCurrent()
+        let phase1Ms = Int((tPhase1Done - t0) * 1000)
+        let openStart = self.openStartedAt    // 可能 nil (非 session-open 首次打开)
+        let openCacheHitBase = self.openCacheHitBaseline
+        let openCacheMissBase = self.openCacheMissBaseline
+        let openEntryCount = entries.count
+        let openPhase1Rows = phase1Rows.count
+        let openBudgetTag = budget.tag
+        let openWidth = Int(width)
+
+        let phase1Items = phase1Walk.items
+        let prefixEntries = Array(entries.prefix(phase1StartIndex))
+
+        // 若 prefix 为空（entries 整体都够塞进 viewport）Phase 2 仍跑是为了
+        // 对 Phase 1 rows 做 highlight backfill。保持管线一致。
+        activePreprocessTask = Task.detached(priority: .userInitiated) { [weak self] in
+            let tPrepStart = CFAbsoluteTimeGetCurrent()
+            let prefixPreparedOnly = TranscriptRowBuilder.prepareAll(
+                entries: prefixEntries,
+                theme: transcriptTheme,
+                width: width,
+                expandedUserBubbles: expandedSnapshot)
+            let tPrepDone = CFAbsoluteTimeGetCurrent()
+            if Task.isCancelled { return }
+
+            // 合并进一次 highlightBatch。顺序：prefix + phase1（forward-order 合并）。
+            var combinedItems = prefixPreparedOnly + phase1Items
+            let (hlMs, codeBlockCount, tokensByStableId) =
+                await Self.applyHighlightTokens(
+                    to: &combinedItems,
+                    theme: transcriptTheme,
+                    width: width,
+                    engine: engine)
+            if Task.isCancelled { return }
+            let tHlDone = CFAbsoluteTimeGetCurrent()
+
+            // colored prefix 在 combinedItems 的前部。
+            let coloredPrefix = Array(combinedItems.prefix(prefixPreparedOnly.count))
+
+            await MainActor.run {
+                guard let self, self.setEntriesGeneration == generation else { return }
+                let tMergeStart = CFAbsoluteTimeGetCurrent()
+
+                self.backfillHighlightTokens(
+                    tokensByStableId: tokensByStableId, width: width)
+
+                // prefix 前插 scroll intent：anchor 到当前 rows[0]（末尾首行）
+                let anchor = self.captureTopVisibleAnchor()
+                let scroll: TranscriptScrollIntent = anchor.map {
+                    .anchor(stableId: $0.stableId, topOffset: $0.topOffset)
+                } ?? .preserve
+
+                let prefixRows = coloredPrefix.map {
+                    self.row(from: $0, theme: transcriptTheme)
+                }
+                let newFullRows = prefixRows + self.rows
+                let phase2Transition = TranscriptDiff.compute(
+                    old: self.rows, new: newFullRows, animated: false)
+                for row in phase2Transition.finalRows {
+                    if let u = row as? UserBubbleRow {
+                        u.isExpanded = self.expandedUserBubbles.contains(u.stableId)
+                    }
+                    row.makeSize(width: width)
+                }
+                self.merge(with: phase2Transition, scroll: scroll)
+
+                let liveIds = Set(self.rows.map { $0.stableId })
+                self.expandedUserBubbles.formIntersection(liveIds)
+                let tMergeDone = CFAbsoluteTimeGetCurrent()
+
+                let prepMs = Int((tPrepDone - tPrepStart) * 1000)
+                let bgMs = Int((tHlDone - tPrepStart) * 1000)
+                let mergeMs = Int((tMergeDone - tMergeStart) * 1000)
+                let totalMs = Int((tMergeDone - t0) * 1000)
+                let reusedCount = phase2Transition.finalRows.count
+                    - phase2Transition.inserted.count - phase2Transition.updated.count
+                appLog(.info, "TranscriptController",
+                    "setEntries bottom "
+                    + "TTFP=\(phase1Ms)ms full=\(totalMs)ms "
+                    + "phase1=\(entries.count - phase1StartIndex)(rows=\(phase1Rows.count)) "
+                    + "phase2=\(prefixEntries.count) "
+                    + "(+\(phase2Transition.inserted.count) / ~\(phase2Transition.updated.count) / -\(phase2Transition.deleted.count) / reused=\(reusedCount)) "
+                    + "prepare=\(prepMs) bg=\(bgMs)(hl=\(hlMs)ms code=\(codeBlockCount)) "
+                    + "merge=\(mergeMs) width=\(Int(width)) "
+                    + "scroll=\(scroll.logTag) budget=\(budget.tag)")
+
+                // session-open 一次性 metric（TTFP 从用户点击 sidebar 起计，
+                // 而非 setEntries 入口；包含 loadHistory 的 I/O）。
+                if let openStart {
+                    let ttfpMs = Int((tPhase1Done - openStart) * 1000)
+                    let fullMs = Int((tMergeDone - openStart) * 1000)
+                    let snapshot = OpenMetrics.Snapshot(
+                        ttfpMs: ttfpMs,
+                        fullMs: fullMs,
+                        entryCount: openEntryCount,
+                        phase1Rows: openPhase1Rows,
+                        cacheHit: TranscriptPrepareCache.shared.hitCount - openCacheHitBase,
+                        cacheMiss: TranscriptPrepareCache.shared.missCount - openCacheMissBase,
+                        width: openWidth,
+                        viewportTag: openBudgetTag,
+                        scrollTag: "bottom")
+                    appLog(.info, "TranscriptController", OpenMetrics.format(snapshot))
+                    self.openStartedAt = nil
+                }
+            }
+        }
+    }
+
+    /// 把 Phase 2 highlight 完成后 tokens 回写到已挂载的 rows。
+    ///
+    /// 主线程专属。逻辑：走 self.rows，对 stableId 能在 `tokensByStableId`
+    /// 找到的 assistant row `apply(codeTokens:)` + makeSize + 刷 rowView。
+    private func backfillHighlightTokens(
+        tokensByStableId: [AnyHashable: [Int: [SyntaxToken]]],
+        width: CGFloat
+    ) {
+        var changed: IndexSet = []
+        for (idx, row) in self.rows.enumerated() {
+            guard let a = row as? AssistantMarkdownRow,
+                  let tokens = tokensByStableId[a.stableId] else { continue }
+            a.apply(codeTokens: tokens)
+            a.makeSize(width: width)
+            changed.insert(idx)
+        }
+        guard !changed.isEmpty else { return }
+        self.tableView?.noteHeightOfRows(withIndexesChanged: changed)
+        for idx in changed {
+            if let rv = self.tableView?.rowView(atRow: idx, makeIfNecessary: false)
+                as? TranscriptRowView {
+                rv.set(row: self.rows[idx])
+            }
+        }
+    }
+
+    // MARK: - Phase 1 budget
+
+    private struct Phase1Budget {
+        let height: CGFloat
+        /// `"ok"` / `"fallback-clip"` / `"fallback-table"` / `"fallback-const"` —
+        /// 进入日志帮助线上回归判断 Phase 1 的 height 是来自真实 viewport 还是兜底。
+        let tag: String
+    }
+
+    /// viewport height 兜底。首次 `updateNSView` 时 clipView 可能尚未 tile 稳定，
+    /// `bounds.height` 读到 0 会让 `prepareBounded(Tail)` 第一条就满足阈值立即返回，
+    /// 只渲出 1 条。不同 fallback source 打 tag 以便观察。
+    private func phase1Budget() -> Phase1Budget {
+        let clip = tableView?.enclosingScrollView?.contentView.bounds.height ?? 0
+        if clip > 0 {
+            return Phase1Budget(height: clip * 1.2, tag: "ok")
+        }
+        let tableH = tableView?.bounds.height ?? 0
+        if tableH > 0 {
+            return Phase1Budget(height: tableH * 1.2, tag: "fallback-table")
+        }
+        // 最终 fallback：400pt ≈ 可视 6-8 行，够打满一个标准 message。
+        return Phase1Budget(height: 400, tag: "fallback-const")
     }
 
     // MARK: - Fast-path: pure append
@@ -263,6 +602,25 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
             return nil
         }
         return Array(newIDs.suffix(from: lastEntriesSignature.count))
+    }
+
+    #if DEBUG
+    func _testHook_detectPurePrepend(newIDs: [UUID]) -> [UUID]? {
+        detectPurePrepend(newIDs: newIDs)
+    }
+    #endif
+
+    /// `detectPureAppend` 的对称版。如果 `lastEntriesSignature` 是 `newIDs` 的
+    /// **严格后缀**(中间没插入、没重排、仅头部追加),返回头部新增的 IDs。
+    /// 否则 nil。Phase B loaded merge 时用来驱动 `.anchor` scroll intent。
+    private func detectPurePrepend(newIDs: [UUID]) -> [UUID]? {
+        guard newIDs.count > lastEntriesSignature.count else { return nil }
+        let prefixCount = newIDs.count - lastEntriesSignature.count
+        for (i, oldID) in lastEntriesSignature.enumerated()
+            where newIDs[prefixCount + i] != oldID {
+            return nil
+        }
+        return Array(newIDs.prefix(prefixCount))
     }
 
     /// Fast-path: 只对追加的 entries 做 prepare + highlight + tail insert。
@@ -312,7 +670,7 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
                     updated: [],
                     finalRows: self.rows + appendedRows,
                     animated: false)
-                self.merge(with: transition)
+                self.merge(with: transition, scroll: .preserve)
 
                 let totalMs = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
                 let mergeMs = Int((CFAbsoluteTimeGetCurrent() - tMergeStart) * 1000)
@@ -437,7 +795,15 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
     // MARK: - merge
 
     /// 把 transition 应用到 tableView。主线程。
-    private func merge(with transition: TranscriptUpdateTransition) {
+    ///
+    /// `scroll` 在 `beginUpdates`/`endUpdates` **之外** 应用——AppKit 的 batch
+    /// updates 是 animation transaction，不是 geometry transaction；期间读
+    /// `rect(ofRow:)` 会拿到陈旧值。Telegram macOS 的 `saveScrollState` 同理也
+    /// 在 non-live 路径上外部执行。
+    private func merge(
+        with transition: TranscriptUpdateTransition,
+        scroll: TranscriptScrollIntent
+    ) {
         guard let tableView else { return }
 
         let anim: NSTableView.AnimationOptions = transition.animated ? .effectFade : []
@@ -445,9 +811,10 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
             NSAnimationContext.current.duration = 0
         }
 
-        // 空 transition 保护。
+        // 空 transition 保护——但 scroll 仍可能要应用（纯 scroll 请求的场景）。
         if transition.isEmpty, rows.count == transition.finalRows.count,
            zip(rows, transition.finalRows).allSatisfy({ $0 === $1 }) {
+            applyScrollIntent(scroll)
             return
         }
 
@@ -493,6 +860,35 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
 
         for (i, _) in transition.updated where i >= 0 && i < rows.count {
             reloadRowView(at: i, animated: transition.animated)
+        }
+
+        applyScrollIntent(scroll)
+    }
+
+    /// 依据 intent 设置 clipView origin。在 `endUpdates` 之后调用——此时 rows
+    /// 与 tableView geometry 都已落定，`rect(ofRow:)` 是最新值。
+    private func applyScrollIntent(_ intent: TranscriptScrollIntent) {
+        guard let tableView,
+              let clip = tableView.enclosingScrollView?.contentView else { return }
+        switch intent {
+        case .preserve:
+            return
+        case .bottom:
+            let maxY = max(0, tableView.bounds.height - clip.bounds.height)
+            guard abs(maxY - clip.bounds.minY) > 0.5 else { return }
+            clip.setBoundsOrigin(NSPoint(x: clip.bounds.minX, y: maxY))
+            tableView.enclosingScrollView?.reflectScrolledClipView(clip)
+        case let .anchor(stableId, topOffset):
+            guard let idx = rows.firstIndex(where: { $0.stableId == stableId }) else {
+                return
+            }
+            let newRect = tableView.rect(ofRow: idx)
+            let newY = newRect.minY - topOffset
+            let maxY = max(0, tableView.bounds.height - clip.bounds.height)
+            let clamped = max(0, min(newY, maxY))
+            guard abs(clamped - clip.bounds.minY) > 0.5 else { return }
+            clip.setBoundsOrigin(NSPoint(x: clip.bounds.minX, y: clamped))
+            tableView.enclosingScrollView?.reflectScrolledClipView(clip)
         }
     }
 

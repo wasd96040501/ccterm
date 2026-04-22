@@ -98,5 +98,64 @@ final class FastPathDetectionTests: XCTestCase {
         controller._testHook_setLastEntriesSignature([])
         XCTAssertNil(controller._testHook_detectPureAppend(newIDs: []))
     }
+
+    // MARK: - Pure prepend (对称版)
+
+    /// old=[B,C] new=[A,B,C] → 命中，返回 [A]。Phase B loaded merge 典型形状。
+    func testPrependOfOneHead() {
+        let controller = makeController()
+        let old = ids(3)  // [0,1,2]
+        controller._testHook_setLastEntriesSignature(old)
+        let x = UUID()
+        let new = [x] + old
+        let prepended = controller._testHook_detectPurePrepend(newIDs: new)
+        XCTAssertEqual(prepended, [x])
+    }
+
+    /// old=[C,D] new=[A,B,C,D] → 命中，返回 [A,B]。
+    func testPrependOfMultipleHeads() {
+        let controller = makeController()
+        let old = ids(2)
+        controller._testHook_setLastEntriesSignature(old)
+        let a = UUID(), b = UUID()
+        let new = [a, b] + old
+        let prepended = controller._testHook_detectPurePrepend(newIDs: new)
+        XCTAssertEqual(prepended, [a, b])
+    }
+
+    /// 尾部追加 → 不命中 prepend（虽然 detectPureAppend 会命中）。
+    func testPurePrependRejectsAppend() {
+        let controller = makeController()
+        let old = ids(3)
+        controller._testHook_setLastEntriesSignature(old)
+        let new = old + [UUID()]
+        XCTAssertNil(controller._testHook_detectPurePrepend(newIDs: new))
+    }
+
+    /// 中间插入 → 不命中。old=[A,B,C] new=[X,A,Y,B,C] 后缀 [A,Y,B,C] ≠ old。
+    func testPurePrependRejectsMiddleInsertion() {
+        let controller = makeController()
+        let a = UUID(), b = UUID(), c = UUID(), x = UUID(), y = UUID()
+        controller._testHook_setLastEntriesSignature([a, b, c])
+        XCTAssertNil(controller._testHook_detectPurePrepend(newIDs: [x, a, y, b, c]))
+    }
+
+    /// 同长度 → 不命中（prefixCount = 0，严格大于 0 才算 prepend）。
+    func testPurePrependRejectsSameLength() {
+        let controller = makeController()
+        let old = ids(3)
+        controller._testHook_setLastEntriesSignature(old)
+        XCTAssertNil(controller._testHook_detectPurePrepend(newIDs: old))
+    }
+
+    /// 空旧 + 非空新 → 作为 prepend 也命中（前缀就是全部）。
+    /// 注意调用点已经把这种情况视作 `.bottom`（first paint），不会进 prepend 分支。
+    /// 此处仅校验底层函数行为。
+    func testPurePrependEmptyPreviousWithNewReturnsAll() {
+        let controller = makeController()
+        controller._testHook_setLastEntriesSignature([])
+        let new = ids(3)
+        XCTAssertEqual(controller._testHook_detectPurePrepend(newIDs: new), new)
+    }
 }
 

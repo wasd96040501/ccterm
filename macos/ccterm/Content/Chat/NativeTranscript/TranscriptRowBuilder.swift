@@ -109,6 +109,62 @@ enum TranscriptRowBuilder {
             items: items, consumedEntryCount: entries.count)
     }
 
+    /// Result of a tail-bounded prepare walk.
+    struct TailBoundedPrepareResult {
+        /// Prepared items in **forward** order (oldest→newest) — ready to feed
+        /// diff / row factories without reversal.
+        let items: [TranscriptPreparedItem]
+        /// Index into `entries` where this tail starts. Phase 2 prepends
+        /// `entries[..<phase1StartIndex]`.
+        let phase1StartIndex: Int
+    }
+
+    /// Telegram `.down` 语义下的 Phase 1 walk：从末尾往前累积 entries' cached
+    /// height，直到 `>= minAccumulatedHeight` 为止。挂载的永远是「最新」那段。
+    ///
+    /// 输出 items 是 **forward** 顺序（内部倒序走完再翻转），消费方可以直接当
+    /// `entries[phase1StartIndex...]` 对应的 Sendable 版 items 用。
+    ///
+    /// - Note: 一个 entry 可能展开成多条 item（assistant 混 tool_use）。walk
+    ///   总是以 entry 为粒度（产完才检查累加），不会把同一 entry 的 items 拆开。
+    nonisolated static func prepareBoundedTail(
+        entries: [MessageEntry],
+        theme: TranscriptTheme,
+        width: CGFloat,
+        expandedUserBubbles: Set<AnyHashable>,
+        minAccumulatedHeight: CGFloat
+    ) -> TailBoundedPrepareResult {
+        // reverse 顺序累积到 items 里，最后翻转 + 算 startIndex。
+        var reversedGroups: [[TranscriptPreparedItem]] = []
+        var accumulated: CGFloat = 0
+        var phase1StartIndex = entries.count
+
+        for i in stride(from: entries.count - 1, through: 0, by: -1) {
+            var group: [TranscriptPreparedItem] = []
+            appendPrepared(
+                entry: entries[i], theme: theme, width: width,
+                expandedUserBubbles: expandedUserBubbles, into: &group)
+            for item in group { accumulated += heightOf(item) }
+            reversedGroups.append(group)
+            phase1StartIndex = i
+
+            if accumulated >= minAccumulatedHeight { break }
+        }
+
+        // reversedGroups 是 [最新 entry 组, ..., 最老 entry 组]，
+        // 每组内部仍是 forward 顺序（appendPrepared 按顺序 push）。
+        // 翻转组顺序后 flatten 即得全局 forward 顺序。
+        var forward: [TranscriptPreparedItem] = []
+        forward.reserveCapacity(reversedGroups.reduce(0) { $0 + $1.count })
+        for group in reversedGroups.reversed() {
+            forward.append(contentsOf: group)
+        }
+
+        return TailBoundedPrepareResult(
+            items: forward,
+            phase1StartIndex: phase1StartIndex)
+    }
+
     nonisolated private static func appendPrepared(
         entry: MessageEntry,
         theme: TranscriptTheme,

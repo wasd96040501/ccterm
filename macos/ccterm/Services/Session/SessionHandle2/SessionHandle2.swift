@@ -15,10 +15,19 @@ class SessionHandle2 {
         case stopped
     }
 
-    enum HistoryLoadState {
+    enum HistoryLoadState: Equatable {
+        /// 从未触发 loadHistory。
         case notLoaded
-        case loading
+        /// Phase A 字节级 tail 读取中。此时 UI 渲染 empty NativeTranscriptView
+        /// （ProgressView 已移除——tail 一般 < 50 ms，闪一下 spinner 反而差）。
+        case loadingTail
+        /// Phase A 结束，tail 已 append 到 messages 并可渲染；Phase B 全量 parse
+        /// 在后台继续。此 state 期间 `messages` 可能继续增长（live 追加不阻塞）。
+        case tailLoaded(count: Int)
+        /// 完成：Phase B 合并完成，messages 含全量历史。
         case loaded
+        /// 失败：仅在 Phase A 阶段触发（tail 读不了）。Phase B 失败只记 warning
+        /// 日志，state 留在 `.tailLoaded`——用户已看到尾部，不反悔。
         case failed(String)
     }
 
@@ -154,10 +163,10 @@ class SessionHandle2 {
 
     /// 后台加载历史消息到 `messages`。幂等，按 `historyLoadState` 分派。
     ///
-    /// - `.notLoaded`：`historyLoadState` → `.loading`，dispatch 后台 queue 读 JSONL 并解析；
-    ///   完成后在主线程 append 到 `messages`，`historyLoadState` → `.loaded`。
+    /// - `.notLoaded`：两段式读取。`historyLoadState` → `.loadingTail` →
+    ///   `.tailLoaded(count)` → `.loaded`；tail 先上屏，prefix 后台继续合并。
     ///   解析失败 → `.failed(reason)`。
-    /// - `.loading`：no-op（防重复调用）。
+    /// - `.loadingTail` / `.tailLoaded`：no-op（防重复调用 / 正在 Phase B）。
     /// - `.loaded`：no-op。
     /// - `.failed`：重试——切回 `.notLoaded` 并重新触发加载。
     ///

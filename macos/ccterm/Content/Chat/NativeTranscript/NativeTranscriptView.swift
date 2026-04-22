@@ -10,6 +10,11 @@ import SwiftUI
 /// 入口是 `NSViewRepresentable`，SwiftUI 侧可无感替换旧 `ChatTranscriptView`。
 struct NativeTranscriptView: NSViewRepresentable {
     let entries: [MessageEntry]
+    /// 用户点击 sidebar 的时刻（从 `ChatHistoryView.task` 传入）。non-nil 时
+    /// controller 会在首次 `.bottom` setEntries 完成后 emit 一条 OpenMetrics
+    /// 日志，包含真实 TTFP（含 loadHistory I/O）+ cache 命中率。
+    var openT0: CFAbsoluteTime? = nil
+
     @Environment(\.markdownTheme) private var theme
     @Environment(\.syntaxEngine) private var syntaxEngine
 
@@ -28,6 +33,11 @@ struct NativeTranscriptView: NSViewRepresentable {
         let themeChanged = ctrl.theme?.fingerprint != theme.fingerprint
         ctrl.theme = theme
         ctrl.syntaxEngine = syntaxEngine
+        // openT0 只在 controller 还没领到值 / 新的 session-open 起点时覆盖，
+        // 避免重复赋值把同一 session 的 metric 重置。
+        if let t0 = openT0, ctrl.openStartedAt == nil {
+            ctrl.openStartedAt = t0
+        }
         ctrl.setEntries(entries, themeChanged: themeChanged)
     }
 }

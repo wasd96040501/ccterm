@@ -56,10 +56,11 @@ extension SessionHandle2 {
             return
         case .loaded:
             // 已加载过（用户切走后再切回）—— 重新 emit `.initialPaint`，view 层按
-            // 首次打开语义 re-paint：viewport-first tail + 贴底。否则 controller
-            // 会残留上一个 session 的 rows，且 snapshot.reason 滞留在
-            // `.prependHistory`，导致 scroll 锚到跨-session 的 stableId 定位失败。
-            emitSnapshot(.initialPaint)
+            // 首次打开语义 re-paint。带上 `savedScrollAnchor`：view 若能找到
+            // 匹配 stableId 则围绕 anchor 展开并恢复位置（对齐 Telegram
+            // `ChatInterfaceHistoryScrollState` + `.positionRestoration`）；
+            // 找不到则自然 fallback 到 tail + `.bottom`。
+            emitSnapshot(.initialPaint, scrollHint: savedScrollAnchor)
             return
         case .failed:
             historyLoadState = .notLoaded

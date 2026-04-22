@@ -152,4 +152,85 @@ final class TranscriptControllerReasonDispatchTests: XCTestCase {
         XCTAssertEqual(h.controller.rows.count, rowsAfterPaint,
             "signature+theme 等价必须短路")
     }
+
+    // MARK: - .initialPaint with scrollHint
+
+    /// 首次打开时 hint 对齐某个已存在的 entry id → Phase 1 围绕该 anchor 展开，
+    /// scroll 锚到 (stableId, topOffset)。验证：anchor 在可视范围内，且相对 clip
+    /// 顶部的偏移 ≈ 传入的 topOffset。
+    func testInitialPaintWithScrollHintAnchors() throws {
+        let h = TranscriptTestHarness(size: NSSize(width: 800, height: 600))
+        let entries = TranscriptTestEntries.manyUsers(50)
+        // 选一个中间偏后的 anchor
+        let anchorEntry = entries[35]
+        let hint = SavedScrollAnchor(entryId: anchorEntry.id, topOffset: 100)
+
+        h.controller.setEntries(
+            entries, reason: .initialPaint, themeChanged: false,
+            scrollHint: hint)
+        h.pumpLayout()
+        h.flushRunLoop()
+
+        // Anchor row 应该在 rows 里（Phase 1 + Phase 2 都挂了）
+        guard let anchorY = h.documentY(of: anchorEntry.id) else {
+            XCTFail("anchor row 丢失")
+            return
+        }
+        // anchorY - clip.origin.y ≈ topOffset
+        let observedOffset = anchorY - h.clipOriginY
+        XCTAssertEqual(observedOffset, 100, accuracy: 2.0,
+            "anchor 行应保持 topOffset=100，实际=\(observedOffset)")
+    }
+
+    /// hint 的 stableId 不在 entries 里（跨-session 切换场景）→ fallback 到
+    /// `.bottom` 行为。末行可见、clipOriginY 显著 > 0。
+    func testInitialPaintWithStaleHintFallsBackToBottom() throws {
+        let h = TranscriptTestHarness(size: NSSize(width: 800, height: 600))
+        let entries = TranscriptTestEntries.manyUsers(50)
+        let staleHint = SavedScrollAnchor(entryId: UUID(), topOffset: 100)
+
+        h.controller.setEntries(
+            entries, reason: .initialPaint, themeChanged: false,
+            scrollHint: staleHint)
+        h.pumpLayout()
+        h.flushRunLoop()
+
+        let lastIdx = h.controller.rows.count - 1
+        let visible = h.visibleRowRange()
+        XCTAssertTrue(
+            visible.location <= lastIdx && (visible.location + visible.length) > lastIdx,
+            "stale hint 必须 fallback 到 .bottom（末行可视）")
+        XCTAssertGreaterThan(h.clipOriginY, 10,
+            "stale hint fallback 后 clipOriginY 应落在底部附近")
+    }
+
+    // MARK: - captureScrollHint
+
+    /// 滚到中部 → captureScrollHint 返回非 nil，stableId 是当前顶可视 row。
+    /// 贴底 → 返回 nil（避免强制恢复覆盖自然贴底行为）。
+    func testCaptureScrollHintMiddleVsBottom() throws {
+        let h = TranscriptTestHarness(size: NSSize(width: 800, height: 600))
+        let entries = TranscriptTestEntries.manyUsers(30)
+        h.controller.setEntries(entries, reason: .initialPaint, themeChanged: false)
+        h.pumpLayout()
+        h.flushRunLoop()
+
+        // 贴底（.bottom 已是末位）→ captureScrollHint 应返回 nil
+        XCTAssertNil(h.controller.captureScrollHint(),
+            "贴底时 captureScrollHint 必须返回 nil (让下次贴底)")
+
+        // 滚到中部
+        h.clipView.setBoundsOrigin(NSPoint(x: 0, y: 200))
+        h.pumpLayout()
+
+        guard let hint = h.controller.captureScrollHint() else {
+            XCTFail("中部 captureScrollHint 必须返回非 nil")
+            return
+        }
+        // entryId 必须能在 rows 里找到对应 source entry
+        let found = h.controller.rows.contains { row in
+            TranscriptController.entryId(fromRowStableId: row.stableId) == hint.entryId
+        }
+        XCTAssertTrue(found, "hint.entryId 必须能反查到 rows 里的一行")
+    }
 }

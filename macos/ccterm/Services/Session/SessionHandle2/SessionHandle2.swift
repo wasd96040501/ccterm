@@ -80,6 +80,14 @@ class SessionHandle2 {
     /// `snapshot.revision` 的自增计数。每次 emit 前 +1。
     @ObservationIgnored private var snapshotRevision: UInt64 = 0
 
+    /// 用户离开此 session 时保存的 scroll 锚。下次切回时消费一次（`.loaded`
+    /// 分支 re-emit `.initialPaint` 带上），让 view 层恢复到离开时的位置。
+    /// nil = 离开时在 bottom（下次贴底即可，无需锚）。
+    ///
+    /// 不持久化到 db（只在 app 运行期内跨 view recreate 保留）—— handle 比 view
+    /// 活得长，这个字段随 handle 生命周期存在。
+    @ObservationIgnored var savedScrollAnchor: SavedScrollAnchor?
+
     internal(set) var pendingPermissions: [PendingPermission] = []
     internal(set) var contextUsedTokens: Int = 0
     internal(set) var contextWindowTokens: Int = 0
@@ -183,11 +191,15 @@ class SessionHandle2 {
     ///   emit `.initialPaint` / `.prependHistory`。
     /// - `skipBootstrapForTesting = true` 的临时 handle（例如 Phase B `buildEntries`
     ///   的影子 handle）也不应调此方法——调用点自行把 replay 分支走完即可。
-    internal func emitSnapshot(_ reason: TranscriptUpdateReason) {
+    internal func emitSnapshot(
+        _ reason: TranscriptUpdateReason,
+        scrollHint: SavedScrollAnchor? = nil
+    ) {
         snapshotRevision &+= 1
         snapshot = TranscriptSnapshot(
             messages: messages,
             reason: reason,
+            scrollHint: scrollHint,
             revision: snapshotRevision)
     }
 

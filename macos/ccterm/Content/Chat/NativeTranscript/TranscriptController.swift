@@ -82,7 +82,8 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
     func setEntries(
         _ entries: [MessageEntry],
         reason: TranscriptUpdateReason,
-        themeChanged: Bool
+        themeChanged: Bool,
+        scrollHint: SavedScrollAnchor? = nil
     ) {
         guard tableView != nil else { return }
         if case .idle = reason { return }
@@ -127,11 +128,26 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
             return  // already short-circuited above
 
         case .initialPaint:
-            runViewportFirstBottom(
-                entries: entries,
-                theme: transcriptTheme, width: width,
-                expandedSnapshot: expandedSnapshot, engine: engine,
-                generation: generation, t0: t0)
+            // 有 hint + 能在 entries 中找到 anchor entry → 围绕 anchor 展开；
+            // 否则 fallback 到 tail + `.bottom`（首次打开 / 锚点已被删 /
+            // entries 变化后 anchor 不在里面）。
+            if let hint = scrollHint,
+               let anchorIdx = entries.firstIndex(where: { $0.id == hint.entryId })
+            {
+                runViewportFirstAroundAnchor(
+                    entries: entries,
+                    anchorEntryIndex: anchorIdx,
+                    anchorTopOffset: hint.topOffset,
+                    theme: transcriptTheme, width: width,
+                    expandedSnapshot: expandedSnapshot, engine: engine,
+                    generation: generation, t0: t0)
+            } else {
+                runViewportFirstBottom(
+                    entries: entries,
+                    theme: transcriptTheme, width: width,
+                    expandedSnapshot: expandedSnapshot, engine: engine,
+                    generation: generation, t0: t0)
+            }
 
         case .prependHistory:
             runFullDiffMerge(
@@ -170,6 +186,55 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
         let rect = tv.rect(ofRow: 0)
         return .anchor(stableId: rows[0].stableId,
                        topOffset: rect.minY - clip.bounds.minY)
+    }
+
+    /// 给 view 层（SwiftUI `.onDisappear`）调：把当前 scroll 位置打包成
+    /// `SavedScrollAnchor`，调用方写回 `SessionHandle2.savedScrollAnchor`。
+    ///
+    /// 返回 nil 有两种语义：
+    /// 1. 用户在内容底部 → 下次打开直接贴底即可，无需锚
+    /// 2. rows 空 / clipView 不可用 → 没得捕
+    ///
+    /// 两种都让 `.loaded` re-entry 走 fallback 到 `.bottom`，都是预期行为。
+    func captureScrollHint() -> SavedScrollAnchor? {
+        guard let tv = tableView, !rows.isEmpty,
+              let clip = tv.enclosingScrollView?.contentView else { return nil }
+
+        // 贴底特判：clip 已经滚到内容底部（或更往下）→ nil。阈值 2pt 容错。
+        let maxY = max(0, tv.bounds.height - clip.bounds.height)
+        if clip.bounds.minY >= maxY - 2 { return nil }
+
+        // 找到当前可视范围里最顶的 row。
+        let visible = tv.rows(in: clip.bounds)
+        guard visible.length > 0, visible.location >= 0,
+              visible.location < rows.count else { return nil }
+        let idx = visible.location
+        guard let entryId = Self.entryId(fromRowStableId: rows[idx].stableId) else {
+            return nil
+        }
+        let rect = tv.rect(ofRow: idx)
+        return SavedScrollAnchor(
+            entryId: entryId,
+            topOffset: rect.minY - clip.bounds.minY)
+    }
+
+    /// 从 `TranscriptRow.stableId` 反查源 `MessageEntry.id`。
+    ///
+    /// 规则见 `TranscriptRowBuilder`：
+    /// - user / placeholder: `stableId` 直接就是 entry.id (UUID)
+    /// - assistant: `stableId` 形如 `"<uuid>-md-N"` / `"<uuid>-tool-N"` (String)，
+    ///   前五段组成 entry 的 UUID
+    /// - group entry: `stableId` 是 group.id (UUID)
+    static func entryId(fromRowStableId stableId: AnyHashable) -> UUID? {
+        if let uuid = stableId.base as? UUID { return uuid }
+        if let s = stableId.base as? String {
+            // UUID is 8-4-4-4-12 = 5 dash-separated hex groups
+            let parts = s.split(separator: "-")
+            guard parts.count >= 5 else { return nil }
+            let uuidStr = parts.prefix(5).joined(separator: "-")
+            return UUID(uuidString: uuidStr)
+        }
+        return nil
     }
 
     // MARK: - Pipelines
@@ -365,6 +430,177 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
                         width: openWidth,
                         viewportTag: openBudgetTag,
                         scrollTag: "bottom")
+                    appLog(.info, "TranscriptController", OpenMetrics.format(snapshot))
+                    self.openStartedAt = nil
+                }
+            }
+        }
+    }
+
+    /// `.initialPaint` with scroll hint：围绕 anchor entry 展开 Phase 1，scroll
+    /// 锚到 `hint.stableId + hint.topOffset` 保住离开时的视觉位置。Phase 2 补齐
+    /// 左右两侧 entries + highlight backfill，再 anchor 一次保住位置。
+    ///
+    /// 对齐 Telegram macOS `prepareEntries` 里 `scrollToItem == .top(id:...)` +
+    /// `firstTransition` + `.saveVisible(.upper, false)` 的两段式。
+    private func runViewportFirstAroundAnchor(
+        entries: [MessageEntry],
+        anchorEntryIndex: Int,
+        anchorTopOffset: CGFloat,
+        theme transcriptTheme: TranscriptTheme,
+        width: CGFloat,
+        expandedSnapshot: Set<AnyHashable>,
+        engine: SyntaxHighlightEngine?,
+        generation: Int,
+        t0: CFAbsoluteTime
+    ) {
+        let budget = phase1Budget()
+
+        let phase1Walk = TranscriptRowBuilder.prepareBoundedAround(
+            entries: entries,
+            anchorEntryIndex: anchorEntryIndex,
+            theme: transcriptTheme,
+            width: width,
+            expandedUserBubbles: expandedSnapshot,
+            minAccumulatedHeight: budget.height)
+        let phase1Rows = phase1Walk.items.map { self.row(from: $0, theme: transcriptTheme) }
+
+        // Phase 1 merge：把 anchor 区段挂上去。stableId 还是原 entry.id，
+        // 和 hint.stableId 对得上 → applyScrollIntent 能找到该行并对齐 topOffset。
+        let phase1Transition = TranscriptDiff.compute(
+            old: rows, new: phase1Rows, animated: false)
+        for row in phase1Transition.finalRows {
+            if let u = row as? UserBubbleRow {
+                u.isExpanded = self.expandedUserBubbles.contains(u.stableId)
+            }
+            row.makeSize(width: width)
+        }
+        // 用 phase1 items 里 anchor 对应那条 item 的 stableId 作 scroll 锚。
+        // Fallback：rows 为空则无锚可用（不应发生，entries 非空 walk 至少 1 行）。
+        guard let phase1AnchorStableId: AnyHashable = {
+            let idx = phase1Walk.anchorItemIndex
+            if idx >= 0, idx < phase1Rows.count { return phase1Rows[idx].stableId }
+            return phase1Rows.first?.stableId
+        }() else {
+            appLog(.warning, "TranscriptController",
+                "runViewportFirstAroundAnchor: empty phase1Rows; falling back to bottom")
+            runViewportFirstBottom(
+                entries: entries, theme: transcriptTheme, width: width,
+                expandedSnapshot: expandedSnapshot, engine: engine,
+                generation: generation, t0: t0)
+            return
+        }
+        self.merge(
+            with: phase1Transition,
+            scroll: .anchor(stableId: phase1AnchorStableId, topOffset: anchorTopOffset))
+        let tPhase1Done = CFAbsoluteTimeGetCurrent()
+        let phase1Ms = Int((tPhase1Done - t0) * 1000)
+        let openStart = self.openStartedAt
+        let openCacheHitBase = self.openCacheHitBaseline
+        let openCacheMissBase = self.openCacheMissBaseline
+        let openEntryCount = entries.count
+        let openPhase1Rows = phase1Rows.count
+        let openBudgetTag = budget.tag
+        let openWidth = Int(width)
+
+        let phase1Items = phase1Walk.items
+        let leftEntries = Array(entries.prefix(phase1Walk.startEntryIndex))
+        let rightEntries = Array(entries.suffix(from: phase1Walk.endEntryIndex + 1))
+
+        activePreprocessTask = Task.detached(priority: .userInitiated) { [weak self] in
+            let tPrepStart = CFAbsoluteTimeGetCurrent()
+            let leftPrepared = TranscriptRowBuilder.prepareAll(
+                entries: leftEntries,
+                theme: transcriptTheme,
+                width: width,
+                expandedUserBubbles: expandedSnapshot)
+            let rightPrepared = TranscriptRowBuilder.prepareAll(
+                entries: rightEntries,
+                theme: transcriptTheme,
+                width: width,
+                expandedUserBubbles: expandedSnapshot)
+            let tPrepDone = CFAbsoluteTimeGetCurrent()
+            if Task.isCancelled { return }
+
+            var combinedItems = leftPrepared + phase1Items + rightPrepared
+            let (hlMs, codeBlockCount, tokensByStableId) =
+                await Self.applyHighlightTokens(
+                    to: &combinedItems,
+                    theme: transcriptTheme,
+                    width: width,
+                    engine: engine)
+            if Task.isCancelled { return }
+            let tHlDone = CFAbsoluteTimeGetCurrent()
+
+            let coloredLeft = Array(combinedItems.prefix(leftPrepared.count))
+            let coloredRight = Array(combinedItems.suffix(rightPrepared.count))
+
+            await MainActor.run {
+                guard let self, self.setEntriesGeneration == generation else { return }
+                let tMergeStart = CFAbsoluteTimeGetCurrent()
+
+                self.backfillHighlightTokens(
+                    tokensByStableId: tokensByStableId, width: width)
+
+                // Phase 2 把 leftEntries 前插 + rightEntries 尾插。rows 现有
+                // Phase 1 那段。全量 newRows = left + phase1 + right，走 diff。
+                let leftRows = coloredLeft.map {
+                    self.row(from: $0, theme: transcriptTheme)
+                }
+                let rightRows = coloredRight.map {
+                    self.row(from: $0, theme: transcriptTheme)
+                }
+                let newFullRows = leftRows + self.rows + rightRows
+                let phase2Transition = TranscriptDiff.compute(
+                    old: self.rows, new: newFullRows, animated: false)
+                for row in phase2Transition.finalRows {
+                    if let u = row as? UserBubbleRow {
+                        u.isExpanded = self.expandedUserBubbles.contains(u.stableId)
+                    }
+                    row.makeSize(width: width)
+                }
+
+                // 继续用 anchor row 的 topOffset 钉住 —— left 前插会把 anchor
+                // 往下挤，`.anchor` 会把 clipView 往下 scroll 同样多来抵消。
+                self.merge(
+                    with: phase2Transition,
+                    scroll: .anchor(
+                        stableId: phase1AnchorStableId,
+                        topOffset: anchorTopOffset))
+
+                let liveIds = Set(self.rows.map { $0.stableId })
+                self.expandedUserBubbles.formIntersection(liveIds)
+                let tMergeDone = CFAbsoluteTimeGetCurrent()
+
+                let prepMs = Int((tPrepDone - tPrepStart) * 1000)
+                let bgMs = Int((tHlDone - tPrepStart) * 1000)
+                let mergeMs = Int((tMergeDone - tMergeStart) * 1000)
+                let totalMs = Int((tMergeDone - t0) * 1000)
+                let reusedCount = phase2Transition.finalRows.count
+                    - phase2Transition.inserted.count - phase2Transition.updated.count
+                appLog(.info, "TranscriptController",
+                    "setEntries initialPaint(anchored) "
+                    + "TTFP=\(phase1Ms)ms full=\(totalMs)ms "
+                    + "phase1=\(phase1Walk.endEntryIndex - phase1Walk.startEntryIndex + 1)(rows=\(phase1Rows.count)) "
+                    + "phase2=\(leftEntries.count + rightEntries.count) "
+                    + "(+\(phase2Transition.inserted.count) / ~\(phase2Transition.updated.count) / -\(phase2Transition.deleted.count) / reused=\(reusedCount)) "
+                    + "prepare=\(prepMs) bg=\(bgMs)(hl=\(hlMs)ms code=\(codeBlockCount)) "
+                    + "merge=\(mergeMs) width=\(Int(width)) "
+                    + "scroll=anchor budget=\(budget.tag)")
+
+                if let openStart {
+                    let ttfpMs = Int((tPhase1Done - openStart) * 1000)
+                    let fullMs = Int((tMergeDone - openStart) * 1000)
+                    let snapshot = OpenMetrics.Snapshot(
+                        ttfpMs: ttfpMs,
+                        fullMs: fullMs,
+                        entryCount: openEntryCount,
+                        phase1Rows: openPhase1Rows,
+                        cacheHit: TranscriptPrepareCache.shared.hitCount - openCacheHitBase,
+                        cacheMiss: TranscriptPrepareCache.shared.missCount - openCacheMissBase,
+                        width: openWidth,
+                        viewportTag: openBudgetTag,
+                        scrollTag: "anchor")
                     appLog(.info, "TranscriptController", OpenMetrics.format(snapshot))
                     self.openStartedAt = nil
                 }

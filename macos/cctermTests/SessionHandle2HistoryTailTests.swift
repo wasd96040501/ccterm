@@ -178,6 +178,28 @@ final class SessionHandle2HistoryTailTests: XCTestCase {
         XCTAssertGreaterThan(h.snapshot.revision, revBefore)
     }
 
+    /// re-entry 时如果 `savedScrollAnchor` 非 nil（view 层切走前写过），
+    /// emit 出来的 snapshot 必须带上 scrollHint；caller 才能用它恢复位置。
+    /// nil 场景（未捕获 / 贴底）→ hint 也是 nil，view 自然 fallback 到 bottom。
+    func test_loaded_reentry_passes_saved_scroll_anchor_as_hint() async throws {
+        let h = makeHandle(id: "hist-reentry-hint")
+        h.loadHistory(overrideURL: Self.fixtureURL(), tailTarget: 20)
+        try await waitForTerminal(h)
+
+        // 无 anchor（首次贴底）→ hint nil
+        h.loadHistory(overrideURL: Self.fixtureURL())
+        XCTAssertNil(h.snapshot.scrollHint, "未存 anchor 时 hint 应为 nil")
+
+        // 模拟 view 离开时写入
+        let sampleEntryId = h.messages.first!.id
+        h.savedScrollAnchor = SavedScrollAnchor(entryId: sampleEntryId, topOffset: 123)
+
+        h.loadHistory(overrideURL: Self.fixtureURL())
+        XCTAssertEqual(h.snapshot.scrollHint?.entryId, sampleEntryId,
+            "savedScrollAnchor 必须透传到 snapshot.scrollHint")
+        XCTAssertEqual(h.snapshot.scrollHint?.topOffset, 123)
+    }
+
     /// 两段式 loadHistory 应当依次 emit `.initialPaint`（Phase A 结束）和
     /// `.prependHistory`（Phase B 结束且 prefix 非空）。Revision 严格递增。
     func test_snapshot_emits_initialPaint_then_prependHistory() async throws {

@@ -1,4 +1,24 @@
+import AppKit
 import Foundation
+
+/// session 切走又切回来时恢复 scroll 的锚点。保存的是「离开时顶部可见 row 对应
+/// 的 MessageEntry.id + 该 row 相对 viewport 顶端的 y 偏移」。
+///
+/// 粒度是 **entry 级**（不是 row 级）：一条 assistant 消息可能展开成多条 row
+/// （md / tool / md 交替），这里只记录它们的源 entry——足够还原「我之前看到哪条
+/// 消息在屏幕上方」，且避免 assistant 的合成 stableId（`"uuid-md-N"`）跨 session
+/// 重建时匹配困难。
+///
+/// 对齐 Telegram macOS `ChatInterfaceHistoryScrollState`（`messageIndex` +
+/// `relativeOffset`）：storage 层持有，view 层捕获/恢复。
+///
+/// `nil` 语义：用户离开时正好在内容末尾（bottom），下次回来直接 `.bottom`
+/// 贴底即可——不用锚。Telegram 的 `immediateScrollState` 里 `.isDownOfHistory`
+/// 特判返回 nil 同理。
+struct SavedScrollAnchor: Equatable {
+    let entryId: UUID
+    let topOffset: CGFloat
+}
 
 /// 视图层意图枚举。每次 `SessionHandle2.snapshot` 更新携带一个 reason，告诉
 /// transcript controller 这次变更是什么性质——controller 据此决定 viewport-first
@@ -39,10 +59,15 @@ enum TranscriptUpdateReason: Equatable {
 struct TranscriptSnapshot: Equatable {
     let messages: [MessageEntry]
     let reason: TranscriptUpdateReason
+    /// 仅 `.initialPaint` 消费：若 stableId 在当前 entries 内，则 viewport-first
+    /// 围绕 anchor 展开并 scroll `.anchor(hint)`；若不在（entries 变化 / 首次
+    /// 打开 / session 刚 load）则 fallback 到 tail + `.bottom`。其他 reason
+    /// 忽略此字段。
+    let scrollHint: SavedScrollAnchor?
     let revision: UInt64
 
     static let initial = TranscriptSnapshot(
-        messages: [], reason: .idle, revision: 0)
+        messages: [], reason: .idle, scrollHint: nil, revision: 0)
 
     // Equatable 对 MessageEntry 的 deep-compare 在 live 场景开销过大。
     // snapshot 比较语义用 revision 足矣—— revision 唯一标识一次 emit。

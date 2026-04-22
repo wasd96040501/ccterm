@@ -165,6 +165,106 @@ enum TranscriptRowBuilder {
             phase1StartIndex: phase1StartIndex)
     }
 
+    /// Anchor-centric viewport walk 的结果。
+    ///
+    /// `items` 保持 **forward** 顺序（entries 原序），其中 `anchorItemIndex`
+    /// 指向 anchor entry 映射到 items 的**第一个** item（有的 entry 会展开成
+    /// 多条 item，取第一条作为锚挂点）。
+    struct AroundBoundedPrepareResult {
+        let items: [TranscriptPreparedItem]
+        /// `items` 里 anchor entry 的起始下标（不是 `entries` 的下标）。
+        let anchorItemIndex: Int
+        /// Phase 1 起止在 `entries` 的左右边界（闭区间 `[startIndex, endIndex]`）。
+        /// Phase 2 需要补 `entries[..<startIndex]` 和 `entries[endIndex+1...]`。
+        let startEntryIndex: Int
+        let endEntryIndex: Int
+    }
+
+    /// Telegram `.top(id:)` + Phase 1 `.center` 展开的 ccterm 版本：以
+    /// `entries[anchorEntryIndex]` 为中心，向**上下两侧**交替推进 entries，累加
+    /// item.cachedHeight，直到总高度 >= `minAccumulatedHeight` 或两侧都耗尽。
+    ///
+    /// 规则：
+    /// - anchor entry 自己永远入 Phase 1（作为视觉锚点），不论它自己有多高。
+    /// - 两侧轮流推进，保证 Phase 1 区间大致对称覆盖 viewport。
+    /// - 输出 items 是 **forward** 顺序（entries 原顺序拼接），与
+    ///   `prepareBounded(Tail)` 一致。
+    ///
+    /// 越界保护：`anchorEntryIndex` clamp 到 `[0, entries.count-1]`；entries 空
+    /// → 空 result。
+    nonisolated static func prepareBoundedAround(
+        entries: [MessageEntry],
+        anchorEntryIndex: Int,
+        theme: TranscriptTheme,
+        width: CGFloat,
+        expandedUserBubbles: Set<AnyHashable>,
+        minAccumulatedHeight: CGFloat
+    ) -> AroundBoundedPrepareResult {
+        guard !entries.isEmpty else {
+            return AroundBoundedPrepareResult(
+                items: [], anchorItemIndex: 0,
+                startEntryIndex: 0, endEntryIndex: -1)
+        }
+        let anchor = max(0, min(anchorEntryIndex, entries.count - 1))
+
+        // Prep anchor entry first — 一定入 Phase 1。
+        var anchorGroup: [TranscriptPreparedItem] = []
+        appendPrepared(
+            entry: entries[anchor], theme: theme, width: width,
+            expandedUserBubbles: expandedUserBubbles, into: &anchorGroup)
+        var accumulated: CGFloat = anchorGroup.reduce(0) { $0 + heightOf($1) }
+
+        var leftGroups: [[TranscriptPreparedItem]] = []   // 越上层顺序越后入，出时要 reverse
+        var rightGroups: [[TranscriptPreparedItem]] = []  // 顺序与 entries 一致
+        var leftIdx = anchor - 1
+        var rightIdx = anchor + 1
+        var startIdx = anchor
+        var endIdx = anchor
+
+        // 两侧交替推进：每轮先上再下。避免某一侧很矮把预算跑完时另一侧完全没上。
+        while accumulated < minAccumulatedHeight, leftIdx >= 0 || rightIdx < entries.count {
+            if leftIdx >= 0 {
+                var group: [TranscriptPreparedItem] = []
+                appendPrepared(
+                    entry: entries[leftIdx], theme: theme, width: width,
+                    expandedUserBubbles: expandedUserBubbles, into: &group)
+                for item in group { accumulated += heightOf(item) }
+                leftGroups.append(group)
+                startIdx = leftIdx
+                leftIdx -= 1
+                if accumulated >= minAccumulatedHeight { break }
+            }
+            if rightIdx < entries.count {
+                var group: [TranscriptPreparedItem] = []
+                appendPrepared(
+                    entry: entries[rightIdx], theme: theme, width: width,
+                    expandedUserBubbles: expandedUserBubbles, into: &group)
+                for item in group { accumulated += heightOf(item) }
+                rightGroups.append(group)
+                endIdx = rightIdx
+                rightIdx += 1
+                if accumulated >= minAccumulatedHeight { break }
+            }
+        }
+
+        // 拼接：leftGroups 反转后 + anchorGroup + rightGroups。
+        var forward: [TranscriptPreparedItem] = []
+        forward.reserveCapacity(
+            anchorGroup.count
+            + leftGroups.reduce(0) { $0 + $1.count }
+            + rightGroups.reduce(0) { $0 + $1.count })
+        for group in leftGroups.reversed() { forward.append(contentsOf: group) }
+        let anchorItemIdx = forward.count
+        forward.append(contentsOf: anchorGroup)
+        for group in rightGroups { forward.append(contentsOf: group) }
+
+        return AroundBoundedPrepareResult(
+            items: forward,
+            anchorItemIndex: anchorItemIdx,
+            startEntryIndex: startIdx,
+            endEntryIndex: endIdx)
+    }
+
     nonisolated private static func appendPrepared(
         entry: MessageEntry,
         theme: TranscriptTheme,

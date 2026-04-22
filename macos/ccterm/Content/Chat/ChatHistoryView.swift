@@ -22,8 +22,14 @@ enum ChatHistoryRenderCase: Equatable {
 /// 从环境拿 `SessionManager2` 懒取 `SessionHandle2`，触发 `loadHistory()`。
 ///
 /// 消费契约：绑定 `handle.snapshot`（而非 `handle.messages`）—— snapshot 含
-/// `TranscriptUpdateReason`，下传给 `NativeTranscriptView` 让 controller 按意图
-/// dispatch scroll 语义。
+/// `TranscriptUpdateReason` + `scrollHint`，下传给 `NativeTranscriptView` 让
+/// controller 按意图 dispatch scroll 语义。
+///
+/// **每个 sessionId 独立 NSView 生命周期**：外层 `.id(sessionId)` 让 SwiftUI
+/// 在切换 session 时 destroy 旧 ChatHistoryView + create 新的 —— controller
+/// 天然 fresh，无跨 session 状态污染。离开时 `onDismantle` 回调把 scroll 位置
+/// 写回 `SessionHandle2.savedScrollAnchor`，下次 `.loaded` re-entry 自动带上
+/// 为 `scrollHint` 恢复位置（对齐 Telegram `ChatInterfaceHistoryScrollState`）。
 struct ChatHistoryView: View {
     let sessionId: String
     @Environment(SessionManager2.self) private var manager
@@ -47,12 +53,17 @@ struct ChatHistoryView: View {
                     NativeTranscriptView(
                         entries: handle.snapshot.messages,
                         reason: handle.snapshot.reason,
-                        openT0: openT0)
+                        scrollHint: handle.snapshot.scrollHint,
+                        openT0: openT0,
+                        onDismantle: { [weak handle] hint in
+                            handle?.savedScrollAnchor = hint
+                        })
                 }
             } else {
                 Color.clear
             }
         }
+        .id(sessionId)
         .task(id: sessionId) {
             openT0 = CFAbsoluteTimeGetCurrent()
             let h = manager.session(sessionId)

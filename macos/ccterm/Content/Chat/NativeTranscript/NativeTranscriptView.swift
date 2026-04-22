@@ -17,26 +17,49 @@ import SwiftUI
 struct NativeTranscriptView: NSViewRepresentable {
     let entries: [MessageEntry]
     let reason: TranscriptUpdateReason
+    /// 仅 `.initialPaint` 消费：caller 在外层（session 切回来时）从
+    /// `SessionHandle2.savedScrollAnchor` 读出并传入，让 controller 首帧围绕
+    /// anchor 展开并恢复离开时的位置。其他 reason 忽略。
+    var scrollHint: SavedScrollAnchor?
     /// 用户点击 sidebar 的时刻（从 `ChatHistoryView.task` 传入）。non-nil 时
     /// controller 会在首次 `.initialPaint` 的 Phase 2 merge 完成后 emit 一条
     /// OpenMetrics 日志，包含真实 TTFP（含 loadHistory I/O）+ cache 命中率。
     var openT0: CFAbsoluteTime? = nil
+    /// SwiftUI 拆除本 NSView 时（`.id(sessionId)` 触发）调用一次，传入当前
+    /// 顶部可见 row 的 anchor。caller 写回 `SessionHandle2.savedScrollAnchor`，
+    /// 下次切回同 session 时恢复位置。nil = 离开时在 bottom / 无可捕。
+    var onDismantle: ((SavedScrollAnchor?) -> Void)?
 
     @Environment(\.markdownTheme) private var theme
     @Environment(\.syntaxEngine) private var syntaxEngine
 
     init(entries: [MessageEntry],
          reason: TranscriptUpdateReason = .initialPaint,
-         openT0: CFAbsoluteTime? = nil) {
+         scrollHint: SavedScrollAnchor? = nil,
+         openT0: CFAbsoluteTime? = nil,
+         onDismantle: ((SavedScrollAnchor?) -> Void)? = nil) {
         self.entries = entries
         self.reason = reason
+        self.scrollHint = scrollHint
         self.openT0 = openT0
+        self.onDismantle = onDismantle
     }
+
+    /// 桥接 SwiftUI `dismantleNSView`（static）与 instance 闭包。`updateNSView`
+    /// 把当前 `onDismantle` 存到 coordinator；`dismantleNSView` 从 coordinator
+    /// 读出来调用。
+    final class Coordinator {
+        weak var scrollView: TranscriptScrollView?
+        var onDismantle: ((SavedScrollAnchor?) -> Void)?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> TranscriptScrollView {
         let sv = TranscriptScrollView()
         sv.controller.theme = theme
         sv.controller.syntaxEngine = syntaxEngine
+        context.coordinator.scrollView = sv
         // Defer the first `setEntries` to `updateNSView` so we can lay out
         // against the real tableView width (SwiftUI inserts the view into the
         // hierarchy before updateNSView runs).
@@ -48,12 +71,24 @@ struct NativeTranscriptView: NSViewRepresentable {
         let themeChanged = ctrl.theme?.fingerprint != theme.fingerprint
         ctrl.theme = theme
         ctrl.syntaxEngine = syntaxEngine
+        context.coordinator.onDismantle = onDismantle
         // openT0 只在 controller 还没领到值 / 新的 session-open 起点时覆盖，
         // 避免重复赋值把同一 session 的 metric 重置。
         if let t0 = openT0, ctrl.openStartedAt == nil {
             ctrl.openStartedAt = t0
         }
-        ctrl.setEntries(entries, reason: reason, themeChanged: themeChanged)
+        ctrl.setEntries(
+            entries, reason: reason, themeChanged: themeChanged,
+            scrollHint: scrollHint)
+    }
+
+    static func dismantleNSView(
+        _ nsView: TranscriptScrollView,
+        coordinator: Coordinator
+    ) {
+        guard let onDismantle = coordinator.onDismantle else { return }
+        let hint = coordinator.scrollView?.controller.captureScrollHint()
+        onDismantle(hint)
     }
 }
 

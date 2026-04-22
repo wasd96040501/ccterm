@@ -113,130 +113,14 @@ struct MarkdownAttributedBuilder {
             inner.addAttribute(.foregroundColor, value: theme.blockquoteTextColor, range: range)
             out.append(inner)
 
-        case .list(let list):
-            renderList(list, indent: indent, trailingSpacing: trailingSpacing, into: out)
+        case .list:
+            // List 不走 attributed-string 路径——它被分派到 ``MarkdownListView``
+            // （SwiftUI 路径）和 ``TranscriptListLayout``（CoreText 路径），
+            // 那里 marker 是独立的、不可选的视觉元素。这里静默跳过：builder
+            // 只会在 fallback（list item 内部的 heading / blockquote）时收到
+            // 非 list 的 block，不会有人显式让它渲染 list。
+            break
         }
-    }
-
-    private func renderList(
-        _ list: MarkdownList,
-        indent: CGFloat,
-        trailingSpacing: CGFloat,
-        into out: NSMutableAttributedString
-    ) {
-        // Marker font: fully monospaced (SF Mono) for ordered lists. Previously
-        // used `monospacedDigitSystemFont`, which only gives tabular digit
-        // advances — the digit→`.` pair kerning still varies by digit in SF Pro,
-        // so "1." / "2." / "3." widths were subtly unequal and visually drifted
-        // under the right-aligned tab stop. SF Mono has no context-dependent
-        // kerning, so every marker lines up exactly at both the dot and the
-        // digits above it.
-        let markerFont: NSFont = list.ordered
-            ? NSFont.monospacedSystemFont(ofSize: theme.bodyFontSize, weight: .regular)
-            : theme.bodyFont
-
-        // Pre-pass: compute the widest marker across this list so every item
-        // shares one right-aligned tab stop.
-        var maxMarkerWidth: CGFloat = 0
-        for (idx, item) in list.items.enumerated() {
-            let m = makeMarker(item: item, idx: idx, list: list, markerFont: markerFont)
-            maxMarkerWidth = max(maxMarkerWidth, m.size().width)
-        }
-        let markerRightX = indent + maxMarkerWidth
-        // Half-em gap between marker and content.
-        let contentX = markerRightX + theme.bodyFontSize * 0.5
-        let tabStops = [
-            NSTextTab(textAlignment: .right, location: markerRightX),
-            NSTextTab(textAlignment: .left, location: contentX),
-        ]
-
-        func listLineStyle(trailing: CGFloat) -> NSParagraphStyle {
-            let style = NSMutableParagraphStyle()
-            style.lineSpacing = theme.l3Line
-            style.paragraphSpacing = trailing
-            style.firstLineHeadIndent = indent
-            style.headIndent = contentX
-            style.tabStops = tabStops
-            return style
-        }
-
-        for (idx, item) in list.items.enumerated() {
-            let isLast = idx == list.items.count - 1
-            let itemTrailing = isLast ? trailingSpacing : theme.l3Item
-            let marker = makeMarker(item: item, idx: idx, list: list, markerFont: markerFont)
-
-            if item.content.isEmpty {
-                let line = NSMutableAttributedString(string: "\t")
-                line.append(marker)
-                line.append(NSAttributedString(string: "\t"))
-                apply(listLineStyle(trailing: itemTrailing), to: line)
-                out.append(line)
-            } else {
-                for (bi, block) in item.content.enumerated() {
-                    let isFirst = bi == 0
-                    let isLastInItem = bi == item.content.count - 1
-                    // Use l3Item (not l2) between blocks WITHIN one list item:
-                    // a list item is a single semantic unit, so its internal
-                    // blocks (paragraph + nested list, or multi-paragraph
-                    // content) should sit tighter than top-level paragraphs.
-                    // Mirrors the same convention used for blockquote inner
-                    // blocks in `buildBlockquote`.
-                    let blockTrailing = isLastInItem ? itemTrailing : theme.l3Item
-
-                    if isFirst, case .paragraph(let inlines) = block {
-                        let line = NSMutableAttributedString(string: "\t")
-                        line.append(marker)
-                        line.append(NSAttributedString(string: "\t"))
-                        // Trim leading whitespace from the first text run —
-                        // nested-list content sometimes carries over indentation
-                        // from the source (` - inner` yields `" inner"`), which
-                        // reads as an unwanted tab/space right after the marker.
-                        line.append(renderInlines(
-                            Self.trimLeadingWhitespace(inlines),
-                            baseFont: theme.bodyFont,
-                            color: theme.primaryColor))
-                        apply(listLineStyle(trailing: blockTrailing), to: line)
-                        out.append(line)
-                    } else {
-                        renderBlock(
-                            block,
-                            indent: contentX,
-                            trailingSpacing: blockTrailing,
-                            into: out)
-                    }
-
-                    if !isLastInItem {
-                        out.append(NSAttributedString(string: "\n"))
-                    }
-                }
-            }
-
-            if !isLast {
-                out.append(NSAttributedString(string: "\n"))
-            }
-        }
-    }
-
-    private func makeMarker(
-        item: MarkdownListItem,
-        idx: Int,
-        list: MarkdownList,
-        markerFont: NSFont
-    ) -> NSAttributedString {
-        if let checkbox = item.checkbox {
-            return checkboxAttachment(checked: checkbox == .checked)
-        }
-        if list.ordered {
-            let n = (list.startIndex ?? 1) + idx
-            return NSAttributedString(string: "\(n).", attributes: [
-                .font: markerFont,
-                .foregroundColor: theme.secondaryColor,
-            ])
-        }
-        return NSAttributedString(string: "•", attributes: [
-            .font: markerFont,
-            .foregroundColor: theme.secondaryColor,
-        ])
     }
 
     /// Render an inline `$..$` math run via SwiftMath as an `NSTextAttachment`,
@@ -267,42 +151,6 @@ struct MarkdownAttributedBuilder {
             width: image.size.width,
             height: image.size.height)
         return NSAttributedString(attachment: attachment)
-    }
-
-    /// Trim leading ASCII whitespace from the first text inline of a sequence.
-    /// Used when rendering a list item's first paragraph — see the caller for
-    /// the "nested list bleeds an indent" rationale. Newlines are preserved;
-    /// we only strip spaces/tabs that would render as leading gutter whitespace.
-    static func trimLeadingWhitespace(_ inlines: [MarkdownInline]) -> [MarkdownInline] {
-        guard case let .text(s)? = inlines.first else { return inlines }
-        let trimmed = s.drop(while: { $0 == " " || $0 == "\t" })
-        if trimmed.count == s.count { return inlines }
-        var result = Array(inlines.dropFirst())
-        if !trimmed.isEmpty {
-            result.insert(.text(String(trimmed)), at: 0)
-        }
-        return result
-    }
-
-    /// Task list checkbox rendered as Unicode glyphs (☐ / ☑).
-    ///
-    /// Historically we used an `NSTextAttachment` wrapping an SF Symbol image,
-    /// but CoreText (which the NativeTranscript renderer uses) does NOT run
-    /// the TextKit attachment substitution pass — attachment characters are
-    /// typeset as zero-width (or the object-replacement-glyph) with no image
-    /// drawn. Unicode BALLOT BOX / BALLOT BOX WITH CHECK ship in SF Pro and
-    /// render cleanly through the standard glyph pipeline.
-    ///
-    /// Size bumped slightly (1.05× body) so the box reads at similar visual
-    /// weight to surrounding text. Checked box uses `primaryColor` so the
-    /// tick stands out; unchecked uses `secondaryColor` for a softer empty
-    /// box.
-    private func checkboxAttachment(checked: Bool) -> NSAttributedString {
-        let font = NSFont.systemFont(ofSize: theme.bodyFontSize * 1.05, weight: .regular)
-        return NSAttributedString(string: checked ? "☑" : "☐", attributes: [
-            .font: font,
-            .foregroundColor: checked ? theme.primaryColor : theme.secondaryColor,
-        ])
     }
 
     // MARK: - Inline rendering

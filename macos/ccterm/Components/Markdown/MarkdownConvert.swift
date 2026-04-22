@@ -30,7 +30,7 @@ nonisolated enum MarkdownConvert {
         markups.compactMap(block)
     }
 
-    private static func item(for listItem: Markdown.ListItem) -> MarkdownListItem {
+    static func item(for listItem: Markdown.ListItem) -> MarkdownListItem {
         let cb: MarkdownListItem.Checkbox?
         switch listItem.checkbox {
         case .some(.checked): cb = .checked

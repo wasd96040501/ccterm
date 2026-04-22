@@ -58,8 +58,9 @@ final class TranscriptLinkAndTableCopyTests: XCTestCase {
 
         let theme = TranscriptTheme.default
         let builder = MarkdownAttributedBuilder(theme: theme.markdown)
+        let contents = TranscriptTableCellContents.make(table: table, builder: builder)
         let layout = TranscriptTableLayout.make(
-            table: table, builder: builder, theme: theme, maxWidth: 400)
+            contents: contents, theme: theme, maxWidth: 400)
 
         // header + 2 body rows × 2 cols = 6 cells
         XCTAssertEqual(layout.cells.count, 3)
@@ -86,8 +87,9 @@ final class TranscriptLinkAndTableCopyTests: XCTestCase {
         let theme = TranscriptTheme.default
         let builder = MarkdownAttributedBuilder(theme: theme.markdown)
         let empty = MarkdownTable(header: [], alignments: [], rows: [])
+        let contents = TranscriptTableCellContents.make(table: empty, builder: builder)
         let layout = TranscriptTableLayout.make(
-            table: empty, builder: builder, theme: theme, maxWidth: 400)
+            contents: contents, theme: theme, maxWidth: 400)
         XCTAssertTrue(layout.cellContentFrames.isEmpty)
         XCTAssertEqual(layout.totalWidth, 0)
         XCTAssertEqual(layout.totalHeight, 0)

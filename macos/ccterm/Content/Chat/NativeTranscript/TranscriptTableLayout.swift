@@ -1,5 +1,78 @@
 import AppKit
 
+/// 表格的「宽度无关」预构造物。`AssistantMarkdownRow.prebuilt` 在 width 未知时
+/// 算好，resize 时不重算；`TranscriptTableLayout.make(contents:)` 吃它。
+///
+/// 每个 cell 的 `minWidth` = Core Text 在极窄 boundingWidth 下排版得到的最大 line 宽度
+/// (CJK 按字断、拉丁按词断的自然结果，等价于 CSS `min-content`)。
+/// `maxWidth` = 单行不换行的宽度，等价于 CSS `max-content`。
+/// 两者都已包含 cell 水平 padding。
+struct TranscriptTableCellContents {
+    let columnCount: Int
+    /// `cells[row][col]`。row 0 = header。
+    let cells: [[NSAttributedString]]
+    /// 每 cell 的 min / max 宽度 (含 2*hPad)。形状与 `cells` 一致。
+    let cellMinWidths: [[CGFloat]]
+    let cellMaxWidths: [[CGFloat]]
+    let alignments: [MarkdownTable.Alignment]
+    /// cell 水平内边距，make 时会复用。
+    let horizontalPadding: CGFloat
+
+    static let horizontalPadding: CGFloat = 8
+
+    static func make(
+        table: MarkdownTable,
+        builder: MarkdownAttributedBuilder
+    ) -> TranscriptTableCellContents {
+        let columnCount = max(table.header.count, table.rows.map(\.count).max() ?? 0)
+        guard columnCount > 0 else {
+            return TranscriptTableCellContents(
+                columnCount: 0,
+                cells: [],
+                cellMinWidths: [],
+                cellMaxWidths: [],
+                alignments: [],
+                horizontalPadding: Self.horizontalPadding)
+        }
+
+        let hPad = Self.horizontalPadding
+        let headerCells: [NSAttributedString] = (0..<columnCount).map { col in
+            builder.buildInline(col < table.header.count ? table.header[col] : [], bold: true)
+        }
+        let bodyCells: [[NSAttributedString]] = table.rows.map { row in
+            (0..<columnCount).map { col in
+                builder.buildInline(col < row.count ? row[col] : [], bold: false)
+            }
+        }
+        let allRows: [[NSAttributedString]] = [headerCells] + bodyCells
+
+        var minWidths: [[CGFloat]] = []
+        var maxWidths: [[CGFloat]] = []
+        for row in allRows {
+            var rowMin: [CGFloat] = []
+            var rowMax: [CGFloat] = []
+            for cell in row {
+                let maxW = ceil(cell.size().width) + 2 * hPad
+                let minLayout = TranscriptTextLayout.make(attributed: cell, maxWidth: 1)
+                let minW = ceil(minLayout.measuredWidth) + 2 * hPad
+                rowMax.append(maxW)
+                // min 不应超过 max (空 cell 场景下 measuredWidth=0)
+                rowMin.append(min(minW, maxW))
+            }
+            minWidths.append(rowMin)
+            maxWidths.append(rowMax)
+        }
+
+        return TranscriptTableCellContents(
+            columnCount: columnCount,
+            cells: allRows,
+            cellMinWidths: minWidths,
+            cellMaxWidths: maxWidths,
+            alignments: table.alignments,
+            horizontalPadding: hPad)
+    }
+}
+
 /// Core Text 版的 markdown table layout。视觉参照老 `MarkdownTableView`:
 /// - header 行有独立背景色
 /// - header 与 body 之间一条分隔线(`tableBorderColor`)
@@ -22,14 +95,17 @@ struct TranscriptTableLayout {
 
     // MARK: - Build
 
+    /// 列宽分配采用 CSS-like min/max 模型:
+    /// 1. 若 `sum(maxCol) <= maxWidth`:每列给 max,富余全塞给最后一列。
+    /// 2. 若 `sum(minCol) <= maxWidth`:每列从 min 起步,剩余空间按 max 权重分配
+    ///    (max 大的列拿得多,max 小的列几乎不被压)。
+    /// 3. 极端情况 min 都装不下:等比缩 min,不让表格溢出。
     static func make(
-        table: MarkdownTable,
-        builder: MarkdownAttributedBuilder,
+        contents: TranscriptTableCellContents,
         theme: TranscriptTheme,
         maxWidth: CGFloat
     ) -> TranscriptTableLayout {
-        let columnCount = max(table.header.count, table.rows.map(\.count).max() ?? 0)
-        guard columnCount > 0 else {
+        guard contents.columnCount > 0 else {
             return TranscriptTableLayout(
                 columnWidths: [],
                 rowHeights: [],
@@ -38,49 +114,49 @@ struct TranscriptTableLayout {
                 theme: theme)
         }
 
-        // Pre-build attributed cells (header = bold)
-        let headerCells: [NSAttributedString] = (0..<columnCount).map { col in
-            builder.buildInline(col < table.header.count ? table.header[col] : [], bold: true)
-        }
-        let bodyCells: [[NSAttributedString]] = table.rows.map { row in
-            (0..<columnCount).map { col in
-                builder.buildInline(col < row.count ? row[col] : [], bold: false)
-            }
-        }
-        let allRows: [[NSAttributedString]] = [headerCells] + bodyCells
-
-        // 列理想宽度 = 单行 max + 2*hPad。之后若超过 maxWidth 按比例缩放。
-        let hPad: CGFloat = 8
+        let hPad = contents.horizontalPadding
         let vPad: CGFloat = theme.markdown.blockPadding
+        let columnCount = contents.columnCount
 
-        var idealColumnWidths = [CGFloat](repeating: 0, count: columnCount)
-        for row in allRows {
-            for (c, cell) in row.enumerated() {
-                idealColumnWidths[c] = max(idealColumnWidths[c], ceil(cell.size().width) + 2 * hPad)
+        // 每列 min/max = 该列所有 cell 的 max。min 再兜底 40(防止空列细成针)。
+        var columnMins = [CGFloat](repeating: 0, count: columnCount)
+        var columnMaxs = [CGFloat](repeating: 0, count: columnCount)
+        for r in 0..<contents.cells.count {
+            for c in 0..<columnCount {
+                columnMins[c] = max(columnMins[c], contents.cellMinWidths[r][c])
+                columnMaxs[c] = max(columnMaxs[c], contents.cellMaxWidths[r][c])
             }
         }
-        // 最小列宽(防止极小):3 个字的宽度
         for c in 0..<columnCount {
-            idealColumnWidths[c] = max(idealColumnWidths[c], 40)
+            columnMins[c] = max(columnMins[c], 40)
+            columnMaxs[c] = max(columnMaxs[c], columnMins[c])
         }
 
-        let idealSum = idealColumnWidths.reduce(0, +)
+        let minSum = columnMins.reduce(0, +)
+        let maxSum = columnMaxs.reduce(0, +)
         let columnWidths: [CGFloat]
-        if idealSum <= maxWidth {
-            // 多的空间全给最后一列,让表格铺满;否则很窄的表格会留白
-            var ws = idealColumnWidths
-            if !ws.isEmpty { ws[ws.count - 1] += (maxWidth - idealSum) }
+        if maxSum <= maxWidth {
+            // 富余:全给最后一列,维持原有「铺满气泡宽度」的视觉。
+            var ws = columnMaxs
+            ws[ws.count - 1] += (maxWidth - maxSum)
             columnWidths = ws
+        } else if minSum < maxWidth {
+            // 常规:min 起步 + 按 max 权重分剩余空间。
+            let slack = maxWidth - minSum
+            let totalMax = max(maxSum, 1)
+            columnWidths = zip(columnMins, columnMaxs).map { (mn, mx) in
+                mn + slack * (mx / totalMax)
+            }
         } else {
-            // 等比缩放塞进 maxWidth
-            let scale = maxWidth / idealSum
-            columnWidths = idealColumnWidths.map { floor($0 * scale) }
+            // min 都超宽:等比压 min,避免横向溢出气泡。
+            let scale = maxWidth / max(minSum, 1)
+            columnWidths = columnMins.map { max(1, floor($0 * scale)) }
         }
 
         // 每行每列排版 cell
         var cells: [[TranscriptTextLayout]] = []
         var rowHeights: [CGFloat] = []
-        for row in allRows {
+        for row in contents.cells {
             var laid: [TranscriptTextLayout] = []
             var maxCellH: CGFloat = 0
             for (c, attr) in row.enumerated() {
@@ -99,7 +175,7 @@ struct TranscriptTableLayout {
             columnWidths: columnWidths,
             rowHeights: rowHeights,
             cells: cells,
-            alignments: table.alignments,
+            alignments: contents.alignments,
             theme: theme)
     }
 
@@ -108,7 +184,7 @@ struct TranscriptTableLayout {
     /// *layout 可画区域*（已扣除 hPad / vPad）。
     var cellContentFrames: [[CGRect]] {
         var rows: [[CGRect]] = []
-        let hPad: CGFloat = 8
+        let hPad: CGFloat = TranscriptTableCellContents.horizontalPadding
         let vPad: CGFloat = theme.markdown.blockPadding
         var curY: CGFloat = 0
         for (r, rowH) in rowHeights.enumerated() {
@@ -144,7 +220,7 @@ struct TranscriptTableLayout {
     /// `selections[r][c]` 若非空且 location != NSNotFound → 画高亮底色。
     func draw(origin: CGPoint, selections: [[NSRange]]? = nil, in ctx: CGContext) {
         guard !rowHeights.isEmpty, !columnWidths.isEmpty else { return }
-        let hPad: CGFloat = 8
+        let hPad: CGFloat = TranscriptTableCellContents.horizontalPadding
         let vPad: CGFloat = theme.markdown.blockPadding
         let radius = theme.markdown.blockCornerRadius
         let tableRect = CGRect(

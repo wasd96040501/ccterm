@@ -135,11 +135,9 @@ final class AssistantMarkdownRow: TranscriptRow {
                     y += layout.totalHeight
                 }
 
-            case .table(let table, _):
-                let builder = MarkdownAttributedBuilder(theme: theme.markdown)
+            case .table(let contents, _):
                 let tableLayout = TranscriptTableLayout.make(
-                    table: table,
-                    builder: builder,
+                    contents: contents,
                     theme: theme,
                     maxWidth: contentWidth)
                 segments.append(.table(
@@ -270,7 +268,7 @@ final class AssistantMarkdownRow: TranscriptRow {
 
     enum PrebuiltSegment {
         case attributed(NSAttributedString, kind: SegmentKind, topPadding: CGFloat)
-        case table(MarkdownTable, topPadding: CGFloat)
+        case table(TranscriptTableCellContents, topPadding: CGFloat)
         case thematicBreak(topPadding: CGFloat)
 
         var topPadding: CGFloat {
@@ -315,7 +313,8 @@ final class AssistantMarkdownRow: TranscriptRow {
                     theme: theme)
                 out.append(.attributed(attr, kind: .codeBlock, topPadding: gap))
             case .table(let table):
-                out.append(.table(table, topPadding: gap))
+                let contents = TranscriptTableCellContents.make(table: table, builder: builder)
+                out.append(.table(contents, topPadding: gap))
             case .mathBlock(let raw):
                 let attr = NSAttributedString(
                     string: raw,

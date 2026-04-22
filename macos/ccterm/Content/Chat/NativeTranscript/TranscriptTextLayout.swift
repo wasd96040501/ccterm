@@ -311,7 +311,7 @@ struct TranscriptTextLayout {
 
         static let `default` = InlineCodeChipStyle(
             horizontalPadding: 4,
-            verticalOverflow: 2,
+            verticalOverflow: 1,
             cornerRadius: 3)
     }
 
@@ -362,6 +362,15 @@ struct TranscriptTextLayout {
         in ctx: CGContext
     ) {
         guard let runs = CTLineGetGlyphRuns(line) as? [CTRun] else { return }
+
+        // Chip 的 y / height 基于整行 metrics,不是 inline code run 自己的。
+        // 否则 chip 会跟随 monospace × 0.92 字体的紧凑 ascent/descent,明显比正文
+        // glyph 矮一截——视觉上 chip "下沉"、跟同行字顶不齐。
+        var lineAscent: CGFloat = 0, lineDescent: CGFloat = 0, lineLeading: CGFloat = 0
+        _ = CTLineGetTypographicBounds(line, &lineAscent, &lineDescent, &lineLeading)
+        let chipY = baseline.y - lineAscent - style.verticalOverflow
+        let chipHeight = lineAscent + lineDescent + 2 * style.verticalOverflow
+
         for run in runs {
             let attrs = CTRunGetAttributes(run) as NSDictionary
             guard let color = attrs[NSAttributedString.Key.inlineCodeBackground] as? NSColor else {
@@ -373,17 +382,16 @@ struct TranscriptTextLayout {
             var firstPos = CGPoint.zero
             CTRunGetPositions(run, CFRange(location: 0, length: 1), &firstPos)
 
-            var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
             let width = CGFloat(CTRunGetTypographicBounds(
                 run,
                 CFRange(location: 0, length: 0),
-                &ascent, &descent, &leading))
+                nil, nil, nil))
 
             let chipRect = CGRect(
                 x: baseline.x + firstPos.x - style.horizontalPadding,
-                y: baseline.y - ascent - style.verticalOverflow,
+                y: chipY,
                 width: width + 2 * style.horizontalPadding,
-                height: ascent + descent + 2 * style.verticalOverflow)
+                height: chipHeight)
 
             ctx.saveGState()
             ctx.setFillColor(color.cgColor)

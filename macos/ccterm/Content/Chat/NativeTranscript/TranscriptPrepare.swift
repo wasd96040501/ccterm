@@ -187,16 +187,24 @@ nonisolated enum TranscriptPrepare {
             cachedWidth: width)
     }
 
-    /// Lays out a user bubble for a given width and collapse state. Fuses the
-    /// `textLayout` (width-dependent, CT-heavy) and the geometry (bubble frame,
-    /// collapse height) into a single snapshot.
-    nonisolated static func layoutUser(
+    /// User bubble 排版的 CT 阶段产物。只依赖 `(text, width, theme)`，
+    /// 与 `isExpanded` 无关，可在 toggle 时复用。
+    struct UserBubbleCT: @unchecked Sendable {
+        let textLayout: TranscriptTextLayout
+        let bubbleWidth: CGFloat
+        let bubbleX: CGFloat
+    }
+
+    /// CT 阶段：跑 CoreText 排版，算出 textLayout / bubbleWidth / bubbleX。
+    /// 重活集中在 `TranscriptTextLayout.make`。
+    nonisolated static func userBubbleCT(
         text: String,
         theme: TranscriptTheme,
-        width: CGFloat,
-        isExpanded: Bool
-    ) -> UserLayoutData {
-        let maxBubbleWidth = max(120, width - theme.bubbleMinLeftGutter - theme.bubbleRightInset)
+        width: CGFloat
+    ) -> UserBubbleCT {
+        let maxBubbleWidth = max(120, min(
+            theme.userBubbleMaxWidth,
+            width - theme.bubbleMinLeftGutter - theme.bubbleRightInset))
         let contentMaxWidth = max(40, maxBubbleWidth - 2 * theme.bubbleHorizontalPadding)
 
         let attrs: [NSAttributedString.Key: Any] = [
@@ -213,21 +221,32 @@ nonisolated enum TranscriptPrepare {
             textLayout.measuredWidth + 2 * theme.bubbleHorizontalPadding)
         let bubbleX = width - theme.bubbleRightInset - bubbleWidth
 
-        let canCollapse = textLayout.lines.count
+        return UserBubbleCT(textLayout: textLayout, bubbleWidth: bubbleWidth, bubbleX: bubbleX)
+    }
+
+    /// 几何阶段：基于已有 CT 结果拼装 bubbleRect / textOrigin / cachedHeight。
+    /// 唯一依赖 `isExpanded` 的部分——toggle 时只需要重跑这一阶段。
+    nonisolated static func userBubbleGeometry(
+        ct: UserBubbleCT,
+        theme: TranscriptTheme,
+        width: CGFloat,
+        isExpanded: Bool
+    ) -> UserLayoutData {
+        let canCollapse = ct.textLayout.lines.count
             >= theme.userBubbleCollapseThreshold + theme.userBubbleMinHiddenLines
         let shouldCollapse = canCollapse && !isExpanded
         let bubbleHeight: CGFloat
         if shouldCollapse,
-           textLayout.lineRects.indices.contains(theme.userBubbleCollapseThreshold - 1) {
-            let visibleHeight = textLayout.lineRects[theme.userBubbleCollapseThreshold - 1].maxY
+           ct.textLayout.lineRects.indices.contains(theme.userBubbleCollapseThreshold - 1) {
+            let visibleHeight = ct.textLayout.lineRects[theme.userBubbleCollapseThreshold - 1].maxY
             bubbleHeight = visibleHeight + 2 * theme.bubbleVerticalPadding
         } else {
-            bubbleHeight = textLayout.totalHeight + 2 * theme.bubbleVerticalPadding
+            bubbleHeight = ct.textLayout.totalHeight + 2 * theme.bubbleVerticalPadding
         }
         let bubbleRect = CGRect(
-            x: bubbleX,
+            x: ct.bubbleX,
             y: theme.rowVerticalPadding,
-            width: bubbleWidth,
+            width: ct.bubbleWidth,
             height: bubbleHeight)
         let textOriginInRow = CGPoint(
             x: bubbleRect.minX + theme.bubbleHorizontalPadding,
@@ -235,14 +254,25 @@ nonisolated enum TranscriptPrepare {
         let cachedHeight = bubbleHeight + 2 * theme.rowVerticalPadding
 
         return UserLayoutData(
-            textLayout: textLayout,
+            textLayout: ct.textLayout,
             bubbleRect: bubbleRect,
             textOriginInRow: textOriginInRow,
-            bubbleWidth: bubbleWidth,
-            bubbleX: bubbleX,
+            bubbleWidth: ct.bubbleWidth,
+            bubbleX: ct.bubbleX,
             cachedHeight: cachedHeight,
             cachedWidth: width,
             lastLayoutExpanded: isExpanded)
+    }
+
+    /// 一站式：CT + 几何，prepare 阶段和 row 的 width-changed 路径都走这里。
+    nonisolated static func layoutUser(
+        text: String,
+        theme: TranscriptTheme,
+        width: CGFloat,
+        isExpanded: Bool
+    ) -> UserLayoutData {
+        let ct = userBubbleCT(text: text, theme: theme, width: width)
+        return userBubbleGeometry(ct: ct, theme: theme, width: width, isExpanded: isExpanded)
     }
 
     /// Lays out a placeholder row. Width-independent typesetting, fixed height.

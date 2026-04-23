@@ -27,6 +27,9 @@ struct TranscriptTheme {
     var bubbleMinLeftGutter: CGFloat = 60
     /// Right-edge inset of the bubble from the frame's right edge.
     var bubbleRightInset: CGFloat = 20
+    /// 气泡最大宽度上限。content 列上限 780，这里 560 ≈ 60ch @ body 14pt，
+    /// 保留右侧视觉重心，避免长段落贴到左 gutter。
+    var userBubbleMaxWidth: CGFloat = 560
     var bubbleHorizontalPadding: CGFloat = 16
     var bubbleVerticalPadding: CGFloat = 12
     var bubbleCornerRadius: CGFloat = 14

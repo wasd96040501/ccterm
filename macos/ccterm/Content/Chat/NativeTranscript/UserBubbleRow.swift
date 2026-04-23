@@ -93,49 +93,26 @@ final class UserBubbleRow: TranscriptRow {
         let stateChanged = lastLayoutExpanded != isExpanded
         guard widthChanged || stateChanged else { return }
 
-        // 排版阶段：仅 widthChanged 时跑 CT。textLayout / bubbleWidth / bubbleX
-        // 都只依赖 (text, width)，toggle 不影响。
+        // width 变 → 走完整 layoutUser（CT + 几何）。toggle-only → 复用缓存的
+        // CT 结果（textLayout/bubbleWidth/bubbleX），只重跑几何阶段。
+        // 两条路径共享同一个几何函数，无重复算法。
         if widthChanged {
-            cachedWidth = width
-            let maxBubbleWidth = max(120, width - theme.bubbleMinLeftGutter - theme.bubbleRightInset)
-            let contentMaxWidth = max(40, maxBubbleWidth - 2 * theme.bubbleHorizontalPadding)
-
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: theme.markdown.bodyFont,
-                .foregroundColor: theme.markdown.primaryColor,
-            ]
-            let attr = NSAttributedString(string: text, attributes: attrs)
-            textLayout = TranscriptTextLayout.make(
-                attributed: attr,
-                maxWidth: contentMaxWidth)
-
-            bubbleWidth = min(
-                maxBubbleWidth,
-                textLayout.measuredWidth + 2 * theme.bubbleHorizontalPadding)
-            bubbleX = width - theme.bubbleRightInset - bubbleWidth
+            applyLayout(TranscriptPrepare.layoutUser(
+                text: text,
+                theme: theme,
+                width: width,
+                isExpanded: isExpanded))
+        } else {
+            let ct = TranscriptPrepare.UserBubbleCT(
+                textLayout: textLayout,
+                bubbleWidth: bubbleWidth,
+                bubbleX: bubbleX)
+            applyLayout(TranscriptPrepare.userBubbleGeometry(
+                ct: ct,
+                theme: theme,
+                width: cachedWidth,
+                isExpanded: isExpanded))
         }
-
-        // 几何阶段：widthChanged 或 stateChanged 都走。
-        let bubbleHeight = computeBubbleHeight()
-        bubbleRect = CGRect(
-            x: bubbleX,
-            y: theme.rowVerticalPadding,
-            width: bubbleWidth,
-            height: bubbleHeight)
-        textOriginInRow = CGPoint(
-            x: bubbleRect.minX + theme.bubbleHorizontalPadding,
-            y: bubbleRect.minY + theme.bubbleVerticalPadding)
-        cachedHeight = bubbleHeight + 2 * theme.rowVerticalPadding
-        lastLayoutExpanded = isExpanded
-    }
-
-    private func computeBubbleHeight() -> CGFloat {
-        guard shouldCollapse,
-              textLayout.lineRects.indices.contains(theme.userBubbleCollapseThreshold - 1) else {
-            return textLayout.totalHeight + 2 * theme.bubbleVerticalPadding
-        }
-        let visibleHeight = textLayout.lineRects[theme.userBubbleCollapseThreshold - 1].maxY
-        return visibleHeight + 2 * theme.bubbleVerticalPadding
     }
 
     override func draw(in ctx: CGContext, bounds: CGRect) {

@@ -486,13 +486,26 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
     ) {
         let budget = phase1Budget()
 
+        // Phase 1 的双侧 budget 必须支撑 `.anchor(topOffset)` 的 scroll 目标：
+        // clipY = Y_a - topOffset 必须落在 [0, tableH - clipH] 内。
+        // - 上方需要 `max(0, topOffset)`：anchor 在 viewport 内正向偏下时，需要
+        //   anchor 上方对应高度的 entries 支撑（否则 clipY < 0 被 clamp）。
+        // - 下方需要 `max(0, clipH - topOffset)`：anchor 起到 viewport 底的部分
+        //   （含 anchor 自身），不够就 maxY 太小、clipY 被 clamp 到底。
+        // 两侧各加 `budget.height - clipH`（默认 20% clipH）做 elastic/paging 余量。
+        let clipH = tableView?.enclosingScrollView?.contentView.bounds.height ?? 0
+        let margin = max(0, budget.height - clipH)
+        let aboveBudget = max(0, anchorTopOffset) + margin
+        let belowBudget = max(0, clipH - anchorTopOffset) + margin
+
         let phase1Walk = TranscriptRowBuilder.prepareBoundedAround(
             entries: entries,
             anchorEntryIndex: anchorEntryIndex,
             theme: transcriptTheme,
             width: width,
             expandedUserBubbles: expandedSnapshot,
-            minAccumulatedHeight: budget.height)
+            aboveMinHeight: aboveBudget,
+            belowMinHeight: belowBudget)
         let phase1Rows = phase1Walk.items.map { self.row(from: $0, theme: transcriptTheme) }
 
         // Phase 1 merge：把 anchor 区段挂上去。stableId 还是原 entry.id，

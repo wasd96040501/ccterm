@@ -181,14 +181,26 @@ enum TranscriptRowBuilder {
     }
 
     /// Telegram `.top(id:)` + Phase 1 `.center` 展开的 ccterm 版本：以
-    /// `entries[anchorEntryIndex]` 为中心，向**上下两侧**交替推进 entries，累加
-    /// item.cachedHeight，直到总高度 >= `minAccumulatedHeight` 或两侧都耗尽。
+    /// `entries[anchorEntryIndex]` 为中心，向**上下两侧**分别累加 entries 的
+    /// item.cachedHeight，直到**双侧都**满足各自 budget 或两侧都耗尽。
+    ///
+    /// 双侧 budget 由 caller 依据 scroll anchor 的 `topOffset` 计算：要把 anchor
+    /// 行放到 viewport 的 `topOffset` 位置，clip.minY 必须能到达 `Y_a - topOffset`。
+    /// 可达性由 `tableH` 决定——Phase 1 的 tableH = aboveAccum + anchorH + belowAccum，
+    /// 必须让:
+    /// - `aboveAccum ≥ max(0, topOffset)` —— anchor 上方在 viewport 可见的部分
+    /// - `belowAccum ≥ max(0, clipH - topOffset)` —— anchor 起至 viewport 底的部分
+    ///   （含 anchor 自身高度，walker 把 anchor 计入 `belowAccum`）
+    ///
+    /// 否则 `applyScrollIntent .anchor` 会 clamp，Phase 1 渲染出错位帧；等 Phase 2
+    /// 把 prefix/suffix 补齐才能跳到正确位置。这一个"先错后对"的视觉跳正是
+    /// 用户感知到的"切 sidebar 时第一帧不对"。
     ///
     /// 规则：
-    /// - anchor entry 自己永远入 Phase 1（作为视觉锚点），不论它自己有多高。
-    /// - 两侧轮流推进，保证 Phase 1 区间大致对称覆盖 viewport。
-    /// - 输出 items 是 **forward** 顺序（entries 原顺序拼接），与
-    ///   `prepareBounded(Tail)` 一致。
+    /// - anchor entry 一定入 Phase 1（算进 `belowAccum` 供 budget 判定）。
+    /// - 左右两侧各自独立判定是否达标；一侧达标后只继续走另一侧。
+    /// - 某一侧耗尽不阻塞另一侧继续走。
+    /// - 输出 items 是 **forward** 顺序，`anchorItemIndex` 指向 anchor 的起始 item。
     ///
     /// 越界保护：`anchorEntryIndex` clamp 到 `[0, entries.count-1]`；entries 空
     /// → 空 result。
@@ -198,7 +210,8 @@ enum TranscriptRowBuilder {
         theme: TranscriptTheme,
         width: CGFloat,
         expandedUserBubbles: Set<AnyHashable>,
-        minAccumulatedHeight: CGFloat
+        aboveMinHeight: CGFloat,
+        belowMinHeight: CGFloat
     ) -> AroundBoundedPrepareResult {
         guard !entries.isEmpty else {
             return AroundBoundedPrepareResult(
@@ -207,12 +220,15 @@ enum TranscriptRowBuilder {
         }
         let anchor = max(0, min(anchorEntryIndex, entries.count - 1))
 
-        // Prep anchor entry first — 一定入 Phase 1。
+        // Prep anchor entry first —— anchor 自身高度计入 belowAccum（anchor 的
+        // 可见部分位于 viewport 的 [topOffset, topOffset+anchorH] 区间，属于
+        // "anchor 起至 viewport 底"的需求）。
         var anchorGroup: [TranscriptPreparedItem] = []
         appendPrepared(
             entry: entries[anchor], theme: theme, width: width,
             expandedUserBubbles: expandedUserBubbles, into: &anchorGroup)
-        var accumulated: CGFloat = anchorGroup.reduce(0) { $0 + heightOf($1) }
+        var belowAccumulated: CGFloat = anchorGroup.reduce(0) { $0 + heightOf($1) }
+        var aboveAccumulated: CGFloat = 0
 
         var leftGroups: [[TranscriptPreparedItem]] = []   // 越上层顺序越后入，出时要 reverse
         var rightGroups: [[TranscriptPreparedItem]] = []  // 顺序与 entries 一致
@@ -221,29 +237,28 @@ enum TranscriptRowBuilder {
         var startIdx = anchor
         var endIdx = anchor
 
-        // 两侧交替推进：每轮先上再下。避免某一侧很矮把预算跑完时另一侧完全没上。
-        while accumulated < minAccumulatedHeight, leftIdx >= 0 || rightIdx < entries.count {
-            if leftIdx >= 0 {
+        // 两侧独立判定：每轮分别 check 是否还需要扩。某一侧达标或耗尽就不再走。
+        while (aboveAccumulated < aboveMinHeight && leftIdx >= 0)
+            || (belowAccumulated < belowMinHeight && rightIdx < entries.count) {
+            if aboveAccumulated < aboveMinHeight, leftIdx >= 0 {
                 var group: [TranscriptPreparedItem] = []
                 appendPrepared(
                     entry: entries[leftIdx], theme: theme, width: width,
                     expandedUserBubbles: expandedUserBubbles, into: &group)
-                for item in group { accumulated += heightOf(item) }
+                for item in group { aboveAccumulated += heightOf(item) }
                 leftGroups.append(group)
                 startIdx = leftIdx
                 leftIdx -= 1
-                if accumulated >= minAccumulatedHeight { break }
             }
-            if rightIdx < entries.count {
+            if belowAccumulated < belowMinHeight, rightIdx < entries.count {
                 var group: [TranscriptPreparedItem] = []
                 appendPrepared(
                     entry: entries[rightIdx], theme: theme, width: width,
                     expandedUserBubbles: expandedUserBubbles, into: &group)
-                for item in group { accumulated += heightOf(item) }
+                for item in group { belowAccumulated += heightOf(item) }
                 rightGroups.append(group)
                 endIdx = rightIdx
                 rightIdx += 1
-                if accumulated >= minAccumulatedHeight { break }
             }
         }
 

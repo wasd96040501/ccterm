@@ -182,6 +182,38 @@ final class TranscriptControllerReasonDispatchTests: XCTestCase {
             "anchor 行应保持 topOffset=100，实际=\(observedOffset)")
     }
 
+    /// 回归：Phase 1 必须走够下方 entries 让 `.anchor(topOffset)` scroll 可达，
+    /// **Phase 2 跑之前就要到位**。否则 Phase 1 的 applyScrollIntent 被 clamp，
+    /// 渲染一帧"anchor 被挤到 viewport 靠下"的错位，等 Phase 2 把 prefix 装入才
+    /// 跳到正确位置——用户感知为"切 sidebar 时第一帧不对"。
+    ///
+    /// 对应 bug：`runViewportFirstAroundAnchor` 原来只给 `prepareBoundedAround`
+    /// 一个 `minAccumulatedHeight = clipH * 1.2` 对称 budget，忽略了 `topOffset`
+    /// 对两侧 budget 的非对称要求。修法：上/下 budget 分别派发 `max(0, topOffset)`
+    /// 与 `max(0, clipH - topOffset)` + margin。
+    func testInitialPaintWithHintReachesAnchorBeforePhase2() throws {
+        let h = TranscriptTestHarness(size: NSSize(width: 800, height: 600))
+        let entries = TranscriptTestEntries.manyUsers(100)
+        // anchor 在序列中部；topOffset=-20 表示 anchor 顶被滚到 viewport 顶上方
+        // 20pt —— Phase 1 下方必须有 `clipH - (-20) - anchorH` 的内容才能达位。
+        let anchorEntry = entries[50]
+        let hint = SavedScrollAnchor(entryId: anchorEntry.id, topOffset: -20)
+
+        h.controller.setEntries(
+            entries, reason: .initialPaint, themeChanged: false,
+            scrollHint: hint)
+        h.pumpLayout()
+        // 故意**不** flushRunLoop：只验证 Phase 1 的同步效果，Phase 2 还没跑。
+
+        guard let anchorY = h.documentY(of: anchorEntry.id) else {
+            XCTFail("anchor row 缺席 Phase 1")
+            return
+        }
+        let observedOffset = anchorY - h.clipOriginY
+        XCTAssertEqual(observedOffset, -20, accuracy: 2.0,
+            "Phase 1 必须把 anchor 放到 topOffset=-20（Phase 2 未跑），实际=\(observedOffset)")
+    }
+
     /// hint 的 stableId 不在 entries 里（跨-session 切换场景）→ fallback 到
     /// `.bottom` 行为。末行可见、clipOriginY 显著 > 0。
     func testInitialPaintWithStaleHintFallsBackToBottom() throws {

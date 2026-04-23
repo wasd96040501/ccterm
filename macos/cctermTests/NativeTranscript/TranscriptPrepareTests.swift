@@ -184,12 +184,15 @@ final class TranscriptPrepareTests: XCTestCase {
 
         XCTAssertEqual(rows.count, items.count)
         for (row, item) in zip(rows, items) {
-            switch (row, item) {
-            case (is UserBubbleRow, .user): break
-            case (is AssistantMarkdownRow, .assistant): break
-            case (is PlaceholderRow, .placeholder): break
-            default:
-                XCTFail("row/item type mismatch: row=\(type(of: row)) item=\(item)")
+            let rowTypeOK: Bool
+            switch item {
+            case is UserPreparedItem: rowTypeOK = row is UserBubbleRow
+            case is AssistantPreparedItem: rowTypeOK = row is AssistantMarkdownRow
+            case is PlaceholderPreparedItem: rowTypeOK = row is PlaceholderRow
+            default: rowTypeOK = false
+            }
+            if !rowTypeOK {
+                XCTFail("row/item type mismatch: row=\(type(of: row)) item=\(type(of: item))")
             }
             XCTAssertEqual(row.stableId, stableId(from: item))
         }
@@ -220,11 +223,7 @@ final class TranscriptPrepareTests: XCTestCase {
             "bounded walk should stop before exhausting entries for this viewport")
 
         let accumulatedHeight = result.items.reduce(CGFloat(0)) { acc, item in
-            switch item {
-            case .assistant(_, let l): return acc + l.cachedHeight
-            case .user(_, let l, _): return acc + l.cachedHeight
-            case .placeholder(_, let l): return acc + l.cachedHeight
-            }
+            acc + item.cachedHeight
         }
         XCTAssertGreaterThanOrEqual(accumulatedHeight, viewportH,
             "walk should only stop once viewport budget is met")
@@ -328,11 +327,7 @@ extension TranscriptPrepareTests {
             toolResults: [:]))
     }
 
-    fileprivate func stableId(from item: TranscriptPreparedItem) -> AnyHashable {
-        switch item {
-        case .assistant(let p, _): return p.stable
-        case .user(let p, _, _): return p.stable
-        case .placeholder(let p, _): return p.stable
-        }
+    fileprivate func stableId(from item: any TranscriptPreparedItem) -> AnyHashable {
+        item.stableId
     }
 }

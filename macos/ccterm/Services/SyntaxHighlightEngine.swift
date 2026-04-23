@@ -49,7 +49,32 @@ actor SyntaxHighlightEngine {
         }
     }
 
-    func highlight(code: String, language: String?) -> [SyntaxToken] {
+    /// External single-request API. **自动聚合**：同一个 event-loop tick 内
+    /// 到达的多个 `highlight(...)` 调用会合并成一次 `highlightBatch` 内部调用,
+    /// 只跨一次 JSCore 边界。caller 不感知——每人拿到自己那份 tokens 就行。
+    ///
+    /// 实现：cache miss → 排入 `pendingCoalesce`，第一个 miss 调度 flush task；
+    /// flush task 做一次 `Task.yield()` 让同 tick 排队的 caller 进入 actor 追加,
+    /// yield 返回后拿完整 batch 去 JSCore。
+    func highlight(code: String, language: String?) async -> [SyntaxToken] {
+        let key = CacheKey(code: code, language: language)
+        if let cached = cache[key] {
+            touch(key)
+            return cached
+        }
+        return await withCheckedContinuation { cont in
+            pendingCoalesce.append(PendingEntry(code: code, language: language, cont: cont))
+            if !flushScheduled {
+                flushScheduled = true
+                Task { [weak self] in await self?.flushCoalesced() }
+            }
+        }
+    }
+
+    /// Private synchronous path: 直接跑 JSCore 单请求 + 更新 cache。
+    /// 给 `highlightBatch` 的 fallback 用（当 tokenizeBatchFn 缺失时）和
+    /// `flushCoalesced` 的内部 batch 调用。
+    private func highlightDirect(code: String, language: String?) -> [SyntaxToken] {
         let key = CacheKey(code: code, language: language)
         if let cached = cache[key] {
             touch(key)
@@ -77,6 +102,50 @@ actor SyntaxHighlightEngine {
 
         insert(key: key, tokens: tokens)
         return tokens
+    }
+
+    // MARK: - Coalescing
+
+    private struct PendingEntry {
+        let code: String
+        let language: String?
+        let cont: CheckedContinuation<[SyntaxToken], Never>
+    }
+    private var pendingCoalesce: [PendingEntry] = []
+    private var flushScheduled = false
+
+    /// Coalescing flush——actor 内部执行。`await Task.yield()` 是关键：它让出
+    /// actor，给同 tick 排在后面等入 actor 的 `highlight(...)` 机会入队，
+    /// yield 返回后拿到完整 batch 一次性批量处理。
+    private func flushCoalesced() async {
+        await Task.yield()
+
+        let batch = pendingCoalesce
+        pendingCoalesce = []
+        flushScheduled = false
+        guard !batch.isEmpty else { return }
+
+        // 同 tick 里可能多 caller 请求相同 (code, lang)——batch 内去重，只
+        // 发一个 JS 请求给它们共用结果。
+        var unique: [(code: String, language: String?)] = []
+        var keyToUniqueIdx: [CacheKey: Int] = [:]
+        var entryToUniqueIdx = [Int](repeating: 0, count: batch.count)
+        for (i, entry) in batch.enumerated() {
+            let key = CacheKey(code: entry.code, language: entry.language)
+            if let ui = keyToUniqueIdx[key] {
+                entryToUniqueIdx[i] = ui
+            } else {
+                let ui = unique.count
+                unique.append((entry.code, entry.language))
+                keyToUniqueIdx[key] = ui
+                entryToUniqueIdx[i] = ui
+            }
+        }
+
+        let uniqueResults = highlightBatch(unique)
+        for (i, entry) in batch.enumerated() {
+            entry.cont.resume(returning: uniqueResults[entryToUniqueIdx[i]])
+        }
     }
 
     /// 批量高亮。对一条 assistant 消息里的多段代码块来说，一次 JSCore call
@@ -134,7 +203,7 @@ actor SyntaxHighlightEngine {
 
         for origIndex in missIndices {
             let req = requests[origIndex]
-            let tokens = highlight(code: req.code, language: req.language)
+            let tokens = highlightDirect(code: req.code, language: req.language)
             results[origIndex] = tokens
         }
         return results.map { $0 ?? [] }

@@ -51,6 +51,11 @@ final class AssistantMarkdownRow: TranscriptRow {
     private var copiedSegmentIndex: Int?
     private var copiedResetWork: DispatchWorkItem?
 
+    /// Refinement scheduler 读这个决定要不要 emit `HighlightWork`。init 时
+    /// 从 `AssistantPrepared.hasHighlight` 吃进来（cache 命中的已 highlight
+    /// 过的 item），或 `applyTokens` 后置 true。
+    fileprivate var hasHighlight: Bool = false
+
     init(source: String, theme: TranscriptTheme, stable: AnyHashable) {
         self.source = source
         self.theme = theme
@@ -71,6 +76,7 @@ final class AssistantMarkdownRow: TranscriptRow {
         self.theme = theme
         self.stable = prepared.stable
         self.parsedDocument = prepared.parsedDocument
+        self.hasHighlight = prepared.hasHighlight
         super.init()
         self.prebuilt = prepared.prebuilt
     }
@@ -130,6 +136,7 @@ final class AssistantMarkdownRow: TranscriptRow {
         copiedResetWork = nil
         copiedSegmentIndex = nil
         selections.removeAll()
+        hasHighlight = true
     }
 
     // MARK: - Click-to-copy
@@ -664,5 +671,31 @@ extension AssistantMarkdownRow: InteractiveRow {
                 }))
         }
         return regions
+    }
+}
+
+// MARK: - RowRefinement (syntax highlight)
+
+extension AssistantMarkdownRow: RowRefinement {
+    /// 扫 parsed markdown 里所有 code block——未着色 row 时吐一个包含全部
+    /// segment 的 `HighlightWork`。已着色（`hasHighlight` flag：init from
+    /// highlighted prepared / applyTokens 跑过）或没有 engine → 空 array。
+    func pendingRefinements() -> [any RowRefinementWork] {
+        guard !hasHighlight else { return [] }
+        guard let engine = table?.syntaxEngine else { return [] }
+        var segments: [HighlightWork.Segment] = []
+        for (idx, seg) in parsedDocument.segments.enumerated() {
+            if case .codeBlock(let block) = seg {
+                segments.append(HighlightWork.Segment(
+                    segmentIndex: idx,
+                    code: block.code,
+                    language: block.language))
+            }
+        }
+        guard !segments.isEmpty else { return [] }
+        return [HighlightWork(
+            row: .init(row: self),
+            segments: segments,
+            engine: engine)]
     }
 }

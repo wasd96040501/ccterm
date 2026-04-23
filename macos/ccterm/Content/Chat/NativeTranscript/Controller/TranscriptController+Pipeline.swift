@@ -31,7 +31,7 @@ extension TranscriptController {
             let tPrepDone = CFAbsoluteTimeGetCurrent()
             if Task.isCancelled { return }
 
-            let (hlMs, codeBlockCount, _) = await Self.applyHighlightTokens(
+            let (hlMs, codeBlockCount) = await Self.applyHighlightTokens(
                 to: &items, theme: transcriptTheme, width: width, engine: engine)
             if Task.isCancelled { return }
             let tHlDone = CFAbsoluteTimeGetCurrent()
@@ -65,6 +65,7 @@ extension TranscriptController {
                     + "merge=\(mergeMs) total=\(totalMs)ms width=\(Int(width)) "
                     + "scroll=\(scroll.logTag)")
             }
+            await self?.runPendingRowRefinements(width: width)
         }
     }
 
@@ -125,7 +126,7 @@ extension TranscriptController {
             if Task.isCancelled { return }
 
             var combinedItems = prefixPreparedOnly + phase1Items
-            let (hlMs, codeBlockCount, tokensByStableId) =
+            let (hlMs, codeBlockCount) =
                 await Self.applyHighlightTokens(
                     to: &combinedItems,
                     theme: transcriptTheme,
@@ -139,13 +140,6 @@ extension TranscriptController {
             await MainActor.run {
                 guard let self, self.setEntriesGeneration == generation else { return }
                 let tMergeStart = CFAbsoluteTimeGetCurrent()
-
-                self.backfillHighlightTokens(
-                    tokensByStableId: tokensByStableId, width: width)
-                self.logVisualSnapshot(
-                    tag: "bottom-post-backfill",
-                    expectedAnchorStableId: nil,
-                    expectedTopOffset: nil)
 
                 // prefix 前插 → anchor 到当前 rows[0]（末尾首行），保住 Phase 1
                 // 建立的视觉位置。Telegram `saveVisible(.upper, false)` 等价。
@@ -204,6 +198,9 @@ extension TranscriptController {
                     self.openStartedAt = nil
                 }
             }
+            // Merge 后给 phase1 carry-over rows 喂 highlight（engine 缓存命中,
+            // 走 RowRefinement 通用通道,不认 row 具体类型）。
+            await self?.runPendingRowRefinements(width: width)
         }
     }
 
@@ -305,7 +302,7 @@ extension TranscriptController {
             if Task.isCancelled { return }
 
             var combinedItems = leftPrepared + phase1Items + rightPrepared
-            let (hlMs, codeBlockCount, tokensByStableId) =
+            let (hlMs, codeBlockCount) =
                 await Self.applyHighlightTokens(
                     to: &combinedItems,
                     theme: transcriptTheme,
@@ -320,13 +317,6 @@ extension TranscriptController {
             await MainActor.run {
                 guard let self, self.setEntriesGeneration == generation else { return }
                 let tMergeStart = CFAbsoluteTimeGetCurrent()
-
-                self.backfillHighlightTokens(
-                    tokensByStableId: tokensByStableId, width: width)
-                self.logVisualSnapshot(
-                    tag: "phase2-post-backfill",
-                    expectedAnchorStableId: phase1AnchorStableId,
-                    expectedTopOffset: anchorTopOffset)
 
                 // Phase 2 把 leftEntries 前插 + rightEntries 尾插。rows 现有
                 // Phase 1 那段。全量 newRows = left + phase1 + right，走 diff。
@@ -390,6 +380,7 @@ extension TranscriptController {
                     self.openStartedAt = nil
                 }
             }
+            await self?.runPendingRowRefinements(width: width)
         }
     }
 
@@ -426,7 +417,7 @@ extension TranscriptController {
                 expandedUserBubbles: expandedSnapshot)
             if Task.isCancelled { return }
 
-            let (hlMs, codeBlockCount, _) = await Self.applyHighlightTokens(
+            let (hlMs, codeBlockCount) = await Self.applyHighlightTokens(
                 to: &items, theme: transcriptTheme, width: width, engine: engine)
             if Task.isCancelled { return }
 
@@ -455,6 +446,7 @@ extension TranscriptController {
                     + "total=\(totalMs)ms hl=\(hlMs)ms(code=\(codeBlockCount)) "
                     + "merge=\(mergeMs) width=\(Int(width))")
             }
+            await self?.runPendingRowRefinements(width: width)
         }
     }
 
@@ -493,31 +485,41 @@ extension TranscriptController {
         return Phase1Budget(height: max(tableH, 1) * 1.2, tag: "fallback-table")
     }
 
-    /// 把 Phase 2 highlight 完成后 tokens 回写到已挂载的 rows。
-    /// 主线程回灌：按 stableId 匹配到具体 row，调 `applyTokens` 把批量
-    /// highlight 产出的 tokens 喂进去。今天 token 的唯一消费者是
-    /// `AssistantMarkdownRow`——直接 cast，新增类型时再改成协议。
-    fileprivate func backfillHighlightTokens(
-        tokensByStableId: [AnyHashable: [AnyHashable: [SyntaxToken]]],
-        width: CGFloat
-    ) {
-        var changed: IndexSet = []
+    /// 通用 refinement scheduler——扫所有 mounted rows 的 `pendingRefinements()`，
+    /// 把每 row 自报的 work 并发 run，结果 applier 回主线程依次执行，最后通用
+    /// re-measure + `noteHeightOfRows`。
+    ///
+    /// Controller 不知道 work 是 highlight / image / lsp 还是别的——它只是
+    /// 调度器。加新 refinement kind = 加 row / item 的 `pendingRefinements()`
+    /// 返回对应 work struct，此方法零改动。
+    func runPendingRowRefinements(width: CGFloat) async {
+        let works = self.rows.flatMap { ($0 as? RowRefinement)?.pendingRefinements() ?? [] }
+        guard !works.isEmpty else { return }
+
+        var appliers: [@MainActor @Sendable () -> Void] = []
+        await withTaskGroup(of: (@MainActor @Sendable () -> Void).self) { group in
+            for work in works { group.addTask { await work.run() } }
+            for await applier in group { appliers.append(applier) }
+        }
+
         let visibleRange: NSRange
         if let tv = tableView, let clip = tv.enclosingScrollView?.contentView {
             visibleRange = tv.rows(in: clip.bounds)
         } else {
             visibleRange = NSRange(location: 0, length: 0)
         }
+
+        let preHeights = self.rows.map { $0.cachedHeight }
+        for apply in appliers { apply() }
+
+        var changed: IndexSet = []
         var totalΔ: CGFloat = 0
         var visibleChanged = 0
         var visibleΔ: CGFloat = 0
         for (idx, row) in self.rows.enumerated() {
-            guard let tokens = tokensByStableId[row.stableId],
-                  let md = row as? AssistantMarkdownRow else { continue }
-            let pre = row.cachedHeight
-            md.applyTokens(tokens)
             row.makeSize(width: width)
-            let delta = row.cachedHeight - pre
+            let delta = row.cachedHeight - preHeights[idx]
+            guard delta != 0 else { continue }
             totalΔ += delta
             if NSLocationInRange(idx, visibleRange) {
                 visibleChanged += 1
@@ -527,11 +529,11 @@ extension TranscriptController {
         }
         guard !changed.isEmpty else {
             appLog(.info, "TranscriptController",
-                "[backfill] changed=0 (no mounted rows matched tokens)")
+                "[refine] changed=0 (no mounted rows affected)")
             return
         }
         appLog(.info, "TranscriptController",
-            "[backfill] changed=\(changed.count) "
+            "[refine] changed=\(changed.count) "
             + "visibleChanged=\(visibleChanged) "
             + "ΣΔ=\(String(format: "%.1f", totalΔ))pt "
             + "visibleΣΔ=\(String(format: "%.1f", visibleΔ))pt "
@@ -548,21 +550,19 @@ extension TranscriptController {
     // MARK: - Highlight pipeline (nonisolated)
 
     /// 收集 items 的 highlight 请求 → 一次 engine.highlightBatch → 把 tokens 折回
-    /// items（通过协议方法 `applyingTokens`）→ 同时回传 `tokensByStableId` 供主线程
-    /// `backfillHighlightTokens` 喂给已挂载的 rows。
+    /// items（协议方法 `applyingTokens`）+ 写 cache。controller 侧完全泛型——
+    /// 对具体是 assistant / tool block / 任何未来类型不 care，全部走
+    /// `TranscriptPreparedItem.highlightRequests()` + `applyingTokens(...)`。
     ///
-    /// controller 侧完全泛型——对具体是 assistant / tool block / 任何未来类型
-    /// 不 care，全部走 `TranscriptPreparedItem.highlightRequests()` +
-    /// `applyingTokens(...)` 协议方法。
-    ///
-    /// tokensByStableId 的 inner key 由 row 自己选（Assistant 今天用
-    /// `Int`=segmentIndex），controller 只当黑盒 `AnyHashable` 透传。
+    /// On-main 挂载 row 的回灌走另一条路：`runPendingRowRefinements` 基于
+    /// `RowRefinement` 协议泛型调度（engine 缓存命中，共享这里已经 populate
+    /// 过的 tokens）。
     nonisolated fileprivate static func applyHighlightTokens(
         to items: inout [any TranscriptPreparedItem],
         theme: TranscriptTheme,
         width: CGFloat,
         engine: SyntaxHighlightEngine?
-    ) async -> (hlMs: Int, codeBlockCount: Int, tokensByStableId: [AnyHashable: [AnyHashable: [SyntaxToken]]]) {
+    ) async -> (hlMs: Int, codeBlockCount: Int) {
         var requests: [(code: String, language: String?)] = []
         var routing: [(itemIndex: Int, innerKey: AnyHashable)] = []
 
@@ -575,12 +575,12 @@ extension TranscriptController {
 
         let totalCount = requests.count
         guard !requests.isEmpty, let engine else {
-            return (0, totalCount, [:])
+            return (0, totalCount)
         }
-        if Task.isCancelled { return (0, totalCount, [:]) }
+        if Task.isCancelled { return (0, totalCount) }
 
         await engine.load()
-        if Task.isCancelled { return (0, totalCount, [:]) }
+        if Task.isCancelled { return (0, totalCount) }
 
         let t0 = CFAbsoluteTimeGetCurrent()
         let batch = await engine.highlightBatch(requests)
@@ -588,29 +588,22 @@ extension TranscriptController {
         guard batch.count == routing.count else {
             appLog(.warning, "TranscriptController",
                 "highlight batch size mismatch: got \(batch.count) expected \(routing.count)")
-            return (hlMs, totalCount, [:])
+            return (hlMs, totalCount)
         }
 
-        // Group tokens by itemIdx (inner key remains AnyHashable).
         var byItem: [Int: [AnyHashable: [SyntaxToken]]] = [:]
         for (i, route) in routing.enumerated() {
             byItem[route.itemIndex, default: [:]][route.innerKey] = batch[i]
         }
 
-        // Fold back into each item; write to cache for re-entry reuse.
-        var tokensByStableId: [AnyHashable: [AnyHashable: [SyntaxToken]]] = [:]
         for (itemIdx, innerTokens) in byItem {
             let oldItem = items[itemIdx]
             let newItem = oldItem.applyingTokens(
                 innerTokens, theme: theme, width: width)
             items[itemIdx] = newItem
-            tokensByStableId[newItem.stableId] = innerTokens
-            // Cache the stripped version — the highlight-enriched content
-            // replaces the plain entry at the same content-hash key
-            // (hasHighlight doesn't participate in contentHash).
             TranscriptPrepareCache.shared.put(
                 newItem.cacheKey, newItem.strippingLayout())
         }
-        return (hlMs, totalCount, tokensByStableId)
+        return (hlMs, totalCount)
     }
 }

@@ -18,19 +18,18 @@ final class TranscriptPrepareCacheTests: XCTestCase {
 
     func testMissThenPutThenHit() {
         let cache = TranscriptPrepareCache(capacity: 10)
-        let prepared = makeUserPrepared(text: "hello", stable: "id-1")
-        let key = prepared.cacheKey
+        let item = makeUserItem(text: "hello", stable: "id-1")
+        let key = item.cacheKey
 
         XCTAssertNil(cache.get(key))
-        cache.put(key, prepared)
+        cache.put(key, item)
 
         let got = cache.get(key)
         XCTAssertNotNil(got)
-        if case .user(let p) = got {
-            XCTAssertEqual(p.text, "hello")
-        } else {
-            XCTFail("expected user variant")
+        guard let userItem = got as? UserPreparedItem else {
+            return XCTFail("expected UserPreparedItem")
         }
+        XCTAssertEqual(userItem.prepared.text, "hello")
     }
 
     // MARK: - LRU eviction
@@ -59,20 +58,15 @@ final class TranscriptPrepareCacheTests: XCTestCase {
     /// rewrites it so TranscriptDiff can match the current entry. contentHash
     /// must be preserved (stable-id-independent).
     func testWithStableIdPreservesContentHash() {
-        let prepared = makeUserPrepared(text: "shared text", stable: "original-id")
-        let rewritten = prepared.withStableId("new-id" as AnyHashable)
+        let item = makeUserItem(text: "shared text", stable: "original-id")
+        let rewritten = item.withStableId("new-id" as AnyHashable)
 
-        switch rewritten {
-        case .user(let p):
-            XCTAssertEqual(p.text, "shared text")
-            XCTAssertEqual(p.stable, AnyHashable("new-id"))
-            guard case let .user(orig) = prepared else {
-                return XCTFail("expected user")
-            }
-            XCTAssertEqual(p.contentHash, orig.contentHash)
-        default:
-            XCTFail("expected user variant")
+        guard let rewrittenUser = rewritten as? UserPreparedItem else {
+            return XCTFail("expected UserPreparedItem")
         }
+        XCTAssertEqual(rewrittenUser.prepared.text, "shared text")
+        XCTAssertEqual(rewrittenUser.prepared.stable, AnyHashable("new-id"))
+        XCTAssertEqual(rewrittenUser.prepared.contentHash, item.prepared.contentHash)
     }
 
     // MARK: - No drift across widths
@@ -107,9 +101,11 @@ final class TranscriptPrepareCacheTests: XCTestCase {
                 entries: entries, theme: theme, width: widthB)
         }.value
 
-        guard case .user(_, let layoutA, _) = itemsA.first,
-              case .user(_, let layoutB, _) = itemsB.first else {
-            return XCTFail("expected user items")
+        guard let userA = itemsA.first as? UserPreparedItem,
+              let userB = itemsB.first as? UserPreparedItem,
+              let layoutA = userA.layout,
+              let layoutB = userB.layout else {
+            return XCTFail("expected user items with layout")
         }
 
         // Layout 必须按 caller 传入的 width 算出来。
@@ -185,16 +181,18 @@ final class TranscriptPrepareCacheTests: XCTestCase {
 
         // Identity: layout heights match (same width, same text → same layout).
         for (f, s) in zip(first, second) {
-            if case .user(_, let fl, _) = f, case .user(_, let sl, _) = s {
-                XCTAssertEqual(fl.cachedHeight, sl.cachedHeight, accuracy: 0.01)
+            if let fu = f as? UserPreparedItem, let su = s as? UserPreparedItem {
+                XCTAssertEqual(fu.cachedHeight, su.cachedHeight, accuracy: 0.01)
             }
         }
     }
 
     // MARK: - Helpers
 
-    private func makeUserPrepared(text: String, stable: AnyHashable) -> CachedPrepared {
-        .user(TranscriptPrepare.user(text: text, theme: theme, stable: stable))
+    private func makeUserItem(text: String, stable: AnyHashable) -> UserPreparedItem {
+        UserPreparedItem(
+            prepared: TranscriptPrepare.user(text: text, theme: theme, stable: stable),
+            layout: nil)
     }
 
     @discardableResult
@@ -203,9 +201,9 @@ final class TranscriptPrepareCacheTests: XCTestCase {
         text: String,
         stable: AnyHashable
     ) -> TranscriptPrepareCache.Key {
-        let prepared = makeUserPrepared(text: text, stable: stable)
-        let key = prepared.cacheKey
-        cache.put(key, prepared)
+        let item = makeUserItem(text: text, stable: stable)
+        let key = item.cacheKey
+        cache.put(key, item)
         return key
     }
 

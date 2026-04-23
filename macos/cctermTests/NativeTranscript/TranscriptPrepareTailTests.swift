@@ -132,10 +132,10 @@ final class TranscriptPrepareTailTests: XCTestCase {
         let entryIds = entries.map { $0.id }
         var itemStables: [AnyHashable] = []
         for item in r.items {
-            switch item {
-            case .user(let p, _, _): itemStables.append(p.stable)
-            default: XCTFail("expected user item")
+            guard item is UserPreparedItem else {
+                XCTFail("expected UserPreparedItem"); continue
             }
+            itemStables.append(item.stableId)
         }
         let expectedStables = entryIds.map { AnyHashable($0) }
         XCTAssertEqual(itemStables, expectedStables, "items 顺序必须等于 entries 的顺序")

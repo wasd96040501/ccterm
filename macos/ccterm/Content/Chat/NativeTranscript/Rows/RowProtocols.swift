@@ -31,3 +31,4 @@ protocol ExpandableRow: AnyObject {
     /// row 自己决定哪个 key 命中自己（默认就是 `stableId`）。
     func applyExpansion(_ expanded: Set<AnyHashable>)
 }
+

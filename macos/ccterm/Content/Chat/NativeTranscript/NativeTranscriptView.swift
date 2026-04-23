@@ -118,6 +118,58 @@ private enum PreviewFactory {
         return parseOrUnknown(json, name: "assistant")
     }
 
+    /// Build an assistant message whose `content` is a caller-provided list of
+    /// blocks (text / tool_use). Used by diff previews to co-locate a lead-in
+    /// paragraph with an Edit / Write tool_use in a single message.
+    static func assistantBlocks(_ blocks: [[String: Any]]) -> Message2 {
+        let json: [String: Any] = [
+            "type": "assistant",
+            "message": [
+                "role": "assistant",
+                "content": blocks,
+            ],
+        ]
+        return parseOrUnknown(json, name: "assistant")
+    }
+
+    static func editBlock(
+        id: String = UUID().uuidString,
+        filePath: String,
+        oldString: String,
+        newString: String
+    ) -> [String: Any] {
+        [
+            "type": "tool_use",
+            "name": "Edit",
+            "id": id,
+            "input": [
+                "file_path": filePath,
+                "old_string": oldString,
+                "new_string": newString,
+            ],
+        ]
+    }
+
+    static func writeBlock(
+        id: String = UUID().uuidString,
+        filePath: String,
+        content: String
+    ) -> [String: Any] {
+        [
+            "type": "tool_use",
+            "name": "Write",
+            "id": id,
+            "input": [
+                "file_path": filePath,
+                "content": content,
+            ],
+        ]
+    }
+
+    static func textBlock(_ text: String) -> [String: Any] {
+        ["type": "text", "text": text]
+    }
+
     static func single(_ message: Message2) -> MessageEntry {
         .single(SingleEntry(
             id: UUID(),
@@ -132,6 +184,10 @@ private enum PreviewFactory {
 
     static func assistant(_ markdown: String) -> MessageEntry {
         single(assistantText(markdown))
+    }
+
+    static func assistantWithBlocks(_ blocks: [[String: Any]]) -> MessageEntry {
+        single(assistantBlocks(blocks))
     }
 
     private static func parseOrUnknown(_ json: [String: Any], name: String) -> Message2 {
@@ -390,6 +446,115 @@ private enum PreviewFactory {
         """),
     ])
     .frame(width: 640, height: 380)
+    .environment(\.syntaxEngine, SyntaxHighlightEngine())
+}
+
+#Preview("Diff — Edit single hunk") {
+    NativeTranscriptView(entries: [
+        PreviewFactory.user("Rename `greet` to `sayHello` and update the salutation."),
+        PreviewFactory.assistantWithBlocks([
+            PreviewFactory.textBlock("I'll update the function name and the string it returns."),
+            PreviewFactory.editBlock(
+                filePath: "/Users/demo/app/Sources/Greeting.swift",
+                oldString: """
+                func greet(_ name: String) -> String {
+                    let salutation = "Hello"
+                    return "\\(salutation), \\(name)!"
+                }
+                """,
+                newString: """
+                func sayHello(_ name: String) -> String {
+                    let salutation = "Hi"
+                    return "\\(salutation), \\(name)!"
+                }
+                """),
+        ]),
+    ])
+    .frame(width: 760, height: 420)
+    .environment(\.syntaxEngine, SyntaxHighlightEngine())
+}
+
+#Preview("Diff — Edit multi-hunk with context") {
+    NativeTranscriptView(entries: [
+        PreviewFactory.assistantWithBlocks([
+            PreviewFactory.textBlock(
+                "Extract the common prefix into a constant and tighten the guard."),
+            PreviewFactory.editBlock(
+                filePath: "macos/ccterm/Services/Logger.swift",
+                oldString: """
+                func log(_ level: Level, _ category: String, _ message: String) {
+                    guard level.rawValue >= threshold.rawValue else { return }
+                    let prefix = "[ccterm]"
+                    let line = "\\(prefix) [\\(category)] \\(message)"
+                    writer.write(line)
+                }
+
+                func logError(_ category: String, _ message: String) {
+                    let prefix = "[ccterm]"
+                    let line = "\\(prefix) [ERROR] [\\(category)] \\(message)"
+                    writer.write(line)
+                }
+                """,
+                newString: """
+                private let logPrefix = "[ccterm]"
+
+                func log(_ level: Level, _ category: String, _ message: String) {
+                    guard level >= threshold else { return }
+                    let line = "\\(logPrefix) [\\(category)] \\(message)"
+                    writer.write(line)
+                }
+
+                func logError(_ category: String, _ message: String) {
+                    let line = "\\(logPrefix) [ERROR] [\\(category)] \\(message)"
+                    writer.write(line)
+                }
+                """),
+        ]),
+    ])
+    .frame(width: 820, height: 620)
+    .environment(\.syntaxEngine, SyntaxHighlightEngine())
+}
+
+#Preview("Diff — Write new file") {
+    NativeTranscriptView(entries: [
+        PreviewFactory.user("Create a small JSON config for the ingester."),
+        PreviewFactory.assistantWithBlocks([
+            PreviewFactory.textBlock("Writing a minimal config with sensible defaults."),
+            PreviewFactory.writeBlock(
+                filePath: "config/ingester.json",
+                content: """
+                {
+                  "source": "s3://ingest-prod/events",
+                  "batchSize": 500,
+                  "parallelism": 4,
+                  "retries": {
+                    "max": 5,
+                    "backoffMs": 250
+                  }
+                }
+                """),
+        ]),
+    ])
+    .frame(width: 760, height: 460)
+    .environment(\.syntaxEngine, SyntaxHighlightEngine())
+}
+
+#Preview("Diff — long lines wrap") {
+    NativeTranscriptView(entries: [
+        PreviewFactory.assistantWithBlocks([
+            PreviewFactory.textBlock(
+                "Reformat the error message to include more context — note the lines are long enough to force wrapping inside the diff gutter."),
+            PreviewFactory.editBlock(
+                filePath: "macos/ccterm/Services/Session/SessionHandle.swift",
+                oldString: """
+                throw SessionError.invalidState("session is not running")
+                """,
+                newString: """
+                throw SessionError.invalidState("session \\(id) is not running — current status=\\(status), last transition at \\(lastTransitionAt), pending permissions=\\(pendingPermissions.count); call start() before sending messages, or resume via SessionService.resume(id:) if the underlying process has exited")
+                """),
+        ]),
+    ])
+    .frame(width: 700, height: 420)
     .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }
 

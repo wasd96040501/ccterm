@@ -47,13 +47,11 @@ class TranscriptRow {
     /// 都读这里，绝不重建。非 FragmentRow 的 row 此数组恒为空。
     var cachedFragments: [Fragment] = []
 
-    /// Fragment 路径下的选中状态（keyed by fragment 的 `selectionTag`）。
-    /// 文本 fragment 的 setSelection 闭包 / `clearFragmentSelections` /
-    /// `FragmentPainter.paintText` 都从这里读写。
-    /// 命名带 `fragment` 前缀避免与旧 row 的 private storage 冲突（迁移期间共存）。
-    var fragmentTextSelections: [Int: NSRange] = [:]
-    var fragmentTableSelections: [Int: [[NSRange]]] = [:]
-    var fragmentListSelections: [Int: [Int: NSRange]] = [:]
+    /// Row-owned 选中存储。Fragment 的 setSelection 闭包写这里，painter 的
+    /// `fragment.selectionRange(from:)` / `selectionMatrix(from:)` 等方法读这里。
+    /// Key 形状由 fragment 自己决定（`TableCellKey`、`ListTextKey`、Int、String
+    /// 等），基类只做黑盒透传。
+    fileprivate var selections: [AnyHashable: NSRange] = [:]
 
     /// 宿主 controller（= Telegram 的 `table` 字段）。`merge` / `replace` 后由
     /// controller 负责维护，row 侧只读。
@@ -108,95 +106,24 @@ class TranscriptRow {
         return nil
     }
 
-    /// Fragment 路径下自动生成 `SelectableTextRegion` 列表。
+    /// Fragment 自报的 selectable regions 汇总。每个 fragment 按自己的
+    /// sub-region 规则产出，基类只负责 `flatMap + fragmentOrdinal` 编号。
     /// 迁移后的 row 的 `TextSelectable.selectableRegions` 直接返回这个。
-    /// regionIndex 编码：
-    /// - `.text` fragment：`selectionTag`
-    /// - `.table` fragment：`selectionTag * 1_000_000 + row * 1_000 + col`
-    /// - `.list` fragment：`selectionTag * 1_000_000 + textIdx`
     func fragmentSelectableRegions() -> [SelectableTextRegion] {
-        var regions: [SelectableTextRegion] = []
         let rowId = stableId
-        for frag in cachedFragments {
-            switch frag {
-            case .text(let f):
-                guard let tag = f.selectionTag, !f.layout.lines.isEmpty else { continue }
-                regions.append(SelectableTextRegion(
-                    rowStableId: rowId,
-                    regionIndex: tag,
-                    frameInRow: f.frame,
-                    layout: f.layout,
-                    setSelection: { [weak self] range in
-                        self?.fragmentTextSelections[tag] = range
-                    }))
-            case .table(let f):
-                guard let tag = f.selectionTag else { continue }
-                let cellFrames = f.layout.cellContentFrames
-                for (r, rowFrames) in cellFrames.enumerated() {
-                    for (c, cellFrame) in rowFrames.enumerated() {
-                        let cellLayout = f.layout.cells[r][c]
-                        guard !cellLayout.lines.isEmpty else { continue }
-                        let rIdx = tag * 1_000_000 + r * 1_000 + c
-                        regions.append(SelectableTextRegion(
-                            rowStableId: rowId,
-                            regionIndex: rIdx,
-                            frameInRow: CGRect(
-                                x: f.origin.x + cellFrame.origin.x,
-                                y: f.origin.y + cellFrame.origin.y,
-                                width: cellFrame.width,
-                                height: cellFrame.height),
-                            layout: cellLayout,
-                            setSelection: { [weak self] range in
-                                guard let self else { return }
-                                var matrix = self.fragmentTableSelections[tag] ?? []
-                                guard r < matrix.count, c < matrix[r].count else { return }
-                                matrix[r][c] = range
-                                self.fragmentTableSelections[tag] = matrix
-                            }))
-                    }
-                }
-            case .list(let f):
-                guard let tag = f.selectionTag else { continue }
-                for (textIdx, textLayout, originInList) in f.layout.flattenedTexts() {
-                    guard !textLayout.lines.isEmpty else { continue }
-                    let rIdx = tag * 1_000_000 + textIdx
-                    regions.append(SelectableTextRegion(
-                        rowStableId: rowId,
-                        regionIndex: rIdx,
-                        frameInRow: CGRect(
-                            x: f.origin.x + originInList.x,
-                            y: f.origin.y + originInList.y,
-                            width: max(textLayout.measuredWidth, 1),
-                            height: max(textLayout.totalHeight, 1)),
-                        layout: textLayout,
-                        setSelection: { [weak self] range in
-                            guard let self else { return }
-                            var m = self.fragmentListSelections[tag] ?? [:]
-                            m[textIdx] = range
-                            self.fragmentListSelections[tag] = m
-                        }))
-                }
-            case .rect, .line, .custom:
-                continue
-            }
+        var out: [SelectableTextRegion] = []
+        for (ordinal, frag) in cachedFragments.enumerated() {
+            out.append(contentsOf: frag.selectableRegions(
+                rowStableId: rowId,
+                fragmentOrdinal: ordinal,
+                store: self))
         }
-        return regions
+        return out
     }
 
-    /// Fragment 路径下的统一清选：清三类选中存储。迁移后的 row 的
-    /// `TextSelectable.clearSelection` 直接调它。
+    /// Fragment 路径下的统一清选：清掉选中字典。
     func clearFragmentSelections() {
-        fragmentTextSelections.removeAll()
-        // table：保留矩阵形状（行列数），把每格 range 置 NSNotFound。
-        for (tag, matrix) in fragmentTableSelections {
-            let empty = [[NSRange]](
-                repeating: [NSRange](
-                    repeating: NSRange(location: NSNotFound, length: 0),
-                    count: matrix.first?.count ?? 0),
-                count: matrix.count)
-            fragmentTableSelections[tag] = empty
-        }
-        fragmentListSelections.removeAll()
+        selections.removeAll()
     }
 
     // MARK: - Row-level table ops (对齐 Telegram TableRowItem.redraw / noteHeightOfRow)
@@ -215,4 +142,31 @@ class TranscriptRow {
         guard index >= 0 else { return }
         table?.reloadRow(index, animated: animated)
     }
+
+    // MARK: - 默认 TextSelectable 实现（在 class body 以便子类 override）
+    //
+    // 所有走 fragment 路径的 row 自动获得选中能力，无需逐个 row 写 extension。
+    // 非 fragment 路径的 row（当前只有 UserBubbleRow）override 下面这三个成员。
+    // 放在 class body 而非 extension——Swift 要求可 override 的成员必须声明在
+    // class body 里，extension 里的 final-by-default 成员不能被子类 override。
+
+    var selectableRegions: [SelectableTextRegion] {
+        fragmentSelectableRegions()
+    }
+    var selectionHeader: String? { nil }
+    func clearSelection() {
+        clearFragmentSelections()
+    }
+}
+
+// MARK: - Protocol conformances
+
+// TextSelectable 的三个成员在 class body 里已经实现，extension 只负责声明协议身份。
+extension TranscriptRow: TextSelectable {}
+
+// SelectionStore：fragment 读写选中的黑盒接口。
+extension TranscriptRow: SelectionStore {
+    func range(for key: AnyHashable) -> NSRange? { selections[key] }
+    func setRange(_ r: NSRange, for key: AnyHashable) { selections[key] = r }
+    func clearAll() { selections.removeAll() }
 }

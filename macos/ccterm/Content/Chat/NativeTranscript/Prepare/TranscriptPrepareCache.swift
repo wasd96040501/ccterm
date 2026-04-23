@@ -4,7 +4,7 @@ import Foundation
 /// Content-addressed LRU cache for **width-independent** prepared data only.
 ///
 /// Scope deliberately narrow: the cache stores the output of Markdown parse /
-/// prebuild / diff hunk computation / syntax highlight enrichment — i.e. the
+/// prebuild / syntax highlight enrichment — i.e. the
 /// `Prepared` half of `TranscriptPreparedItem`. `Layout` (CoreText typesetting,
 /// `cachedHeight`) is **not** cached — it is always recomputed at the exact
 /// current width.
@@ -12,7 +12,7 @@ import Foundation
 /// Why: a previous design cached layouts bucketed by `floor(width / 32)`. That
 /// made heights drift between same-bucket widths, causing Phase 1's budget math
 /// (which accumulated cached heights) to disagree with the row's actual
-/// `cachedHeight` after `makeSize(width:)`. On DiffRow / wrap-heavy content the
+/// `cachedHeight` after `makeSize(width:)`. On wrap-heavy content the
 /// drift accumulates to visible scroll-anchor misalignment ("切 sidebar 第一帧
 /// 不对"). Stripping layout from the cache makes `heightOf(item)` exactly equal
 /// to `row.cachedHeight` by construction.
@@ -21,7 +21,7 @@ import Foundation
 /// - **Key**: `(contentHash, variant)`. `contentHash` encodes source + theme
 ///   fingerprint on the prepared side — a theme change naturally yields
 ///   different keys. No width component.
-/// - **Variant**: assistant / user / placeholder / diff. Prevents hash
+/// - **Variant**: assistant / user / placeholder. Prevents hash
 ///   collisions between unrelated content types. User's `isExpanded` does not
 ///   participate — `UserPrepared` is expand-independent (it carries only text
 ///   + hash); expand state is applied at layout time.
@@ -50,7 +50,6 @@ final class TranscriptPrepareCache: @unchecked Sendable {
         case assistant
         case user
         case placeholder
-        case diff
     }
 
     private let lock = NSLock()
@@ -132,7 +131,6 @@ enum CachedPrepared: @unchecked Sendable {
     case assistant(AssistantPrepared)
     case user(UserPrepared)
     case placeholder(PlaceholderPrepared)
-    case diff(DiffPrepared)
 }
 
 extension CachedPrepared {
@@ -160,16 +158,6 @@ extension CachedPrepared {
                 label: p.label,
                 stable: newId,
                 contentHash: p.contentHash))
-        case .diff(let p):
-            return .diff(DiffPrepared(
-                filePath: p.filePath,
-                hunks: p.hunks,
-                language: p.language,
-                suppressInsertionStyle: p.suppressInsertionStyle,
-                stable: newId,
-                contentHash: p.contentHash,
-                lineHighlights: p.lineHighlights,
-                hasHighlight: p.hasHighlight))
         }
     }
 
@@ -185,9 +173,6 @@ extension CachedPrepared {
         case .placeholder(let p):
             return TranscriptPrepareCache.Key(
                 contentHash: p.contentHash, variant: .placeholder)
-        case .diff(let p):
-            return TranscriptPrepareCache.Key(
-                contentHash: p.contentHash, variant: .diff)
         }
     }
 }
@@ -202,7 +187,6 @@ extension TranscriptPreparedItem {
         case .assistant(let p, _): return .assistant(p)
         case .user(let p, _, _): return .user(p)
         case .placeholder(let p, _): return .placeholder(p)
-        case .diff(let p, _): return .diff(p)
         }
     }
 

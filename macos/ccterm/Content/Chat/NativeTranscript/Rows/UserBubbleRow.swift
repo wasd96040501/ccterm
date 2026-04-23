@@ -233,12 +233,16 @@ final class UserBubbleRow: TranscriptRow {
         let expand = (theme.chevronHitSize - theme.chevronSize) / 2
         return glyph.insetBy(dx: -expand, dy: -expand)
     }
-}
 
-// MARK: - TextSelectable
+    // MARK: - Selection override
+    //
+    // UserBubbleRow 还没迁成 FragmentRow（自己 override draw），所以覆盖基类
+    // 默认实现、用自己的 `currentSelection` 单 region 管。迁到 fragments 之后
+    // 这两个 override 就可以删掉，由基类默认实现接管。
+    // Override 必须写在 class body（Swift 不支持 extension override class-body
+    // 成员）。
 
-extension UserBubbleRow: TextSelectable {
-    var selectableRegions: [SelectableTextRegion] {
+    override var selectableRegions: [SelectableTextRegion] {
         guard !textLayout.lines.isEmpty else { return [] }
         // 折叠态时把 region height 截到可见文字区域——防止 drag 起点落到隐藏行。
         // regionEnd clamp 是第二道保险；这里是第一道。
@@ -250,7 +254,8 @@ extension UserBubbleRow: TextSelectable {
         }
         let region = SelectableTextRegion(
             rowStableId: stableId,
-            regionIndex: 0,
+            ordering: Ordering(fragmentOrdinal: 0, subIndex: 0),
+            mode: .flow,
             frameInRow: CGRect(
                 x: textOriginInRow.x,
                 y: textOriginInRow.y,
@@ -263,9 +268,7 @@ extension UserBubbleRow: TextSelectable {
         return [region]
     }
 
-    var selectionHeader: String? { nil }
-
-    func clearSelection() {
+    override func clearSelection() {
         currentSelection = NSRange(location: NSNotFound, length: 0)
     }
 }

@@ -6,19 +6,25 @@ import AppKit
 /// 所有 public 入口用 **documentView 坐标系**（= tableView bounds）。
 /// `NSResponder` 身份让 Cmd-C 走标准 responder chain。
 ///
-/// 选中算法（upper/lower 模型）：
+/// 选中算法（y-interval 模型 + cell 模式 x 过滤）：
 /// 1. anchor = mouseDown 点，focus = 当前点。按 y 分成 upper / lower。
-/// 2. upperRow / lowerRow 覆盖的 row 区间里，每 row 的每个 selectable region
+/// 2. dragXRange = [min(anchor.x, focus.x), max(anchor.x, focus.x)]——仅对
+///    `.cell` 模式 region 生效的列过滤。`.flow` 模式（文本段、list item）
+///    天然占满 row 宽，x 过滤不 applicable。
+/// 3. upperRow / lowerRow 覆盖的 row 区间里，每 row 的每个 selectable region
 ///    独立决定是否参与 + 起止点——
-///    - 单 row：region 要在 [upperRegion, lowerRegion] 范围内才选；边界 region
-///      用 upper/lower 的 local 点切，中间 region 整段
-///    - 跨 row 的头 row：upperRegion 起，其后的全部整段；之前的 region 不选
-///    - 跨 row 的尾 row：lowerRegion 止，之前的全部整段；之后的 region 不选
-///    - 中间 row：所有 region 整段
-/// 3. 对不参与的 region 显式 setSelection(NSNotFound)，避免残影。
-///
-/// 这一步对齐了 Telegram 的 `ChatSelectText.runSelector` 里 `start_j / end_j`
-/// 语义——只选中 drag 触达的 region，不让 code block 外的 segment 被带选。
+///    - `.cell` region：先 x 过滤；若通过，按几何规则裁（y 含 upper → 起点在
+///      upper.y 截半，否则整 cell 起；y 含 lower → 终点在 lower.y 截半，
+///      否则整 cell 止）。这样 table 的选中是 Excel 式：drag 横向只覆盖
+///      某列 → 只有该列的 cell 被选。
+///    - `.flow` region：以 row-local 下的 drag 覆盖 y 区间 ∩ region 的
+///      row-local y 范围判定。不相交 → 跳过；相交 → 起止按 upper/lower
+///      是否落在 region 的 y 范围内来切（边界 region 用 upper/lower 的 local
+///      点，内部 region 整段；单 region 同时含 upper/lower 时用 raw anchor/focus
+///      以保留反向拖动语义）。这样 drag 整段落在 table cell 里时，cell 的 y
+///      区间内没有任何 flow，flow 自然全部跳过——不会把 table 上/下的段落
+///      误带上。
+/// 4. 对不参与的 region 显式 setSelection(NSNotFound)，避免残影。
 @MainActor
 final class TranscriptSelectionController: NSResponder {
 
@@ -27,20 +33,20 @@ final class TranscriptSelectionController: NSResponder {
     private var anchorPoint: CGPoint?
     private var focusPoint: CGPoint?
 
-    /// 排序后的选中记账条目——rowIndex 升序、regionIndex 升序。Cmd-C 时按此拼接。
+    /// 排序后的选中记账条目——(rowIndex, ordering) 字典序升序。Cmd-C 时按此拼接。
     private struct Entry {
         let rowStableId: AnyHashable
         let rowIndex: Int
-        let regionIndex: Int
+        let ordering: Ordering
         let substring: NSAttributedString
     }
     private var entries: [Entry] = []
 
-    /// 上一轮参与选中的 (rowIndex, regionIndex) 集合——用于清掉不再参与的残影。
+    /// 上一轮参与选中的 (rowId, ordering) 集合——用于清掉不再参与的残影。
     private var lastSelectedKeys: Set<SelectionKey> = []
     private struct SelectionKey: Hashable {
         let rowStableId: AnyHashable
-        let regionIndex: Int
+        let ordering: Ordering
     }
 
     override init() { super.init() }
@@ -129,11 +135,11 @@ final class TranscriptSelectionController: NSResponder {
         entries = [Entry(
             rowStableId: region.rowStableId,
             rowIndex: ctx.rowIndex,
-            regionIndex: region.regionIndex,
+            ordering: region.ordering,
             substring: sub)]
         lastSelectedKeys = [SelectionKey(
             rowStableId: region.rowStableId,
-            regionIndex: region.regionIndex)]
+            ordering: region.ordering)]
         controller.notifyRowSelectionChanged(index: ctx.rowIndex)
     }
 
@@ -147,6 +153,10 @@ final class TranscriptSelectionController: NSResponder {
         //    的 x 顺序，但 row 级头/尾判定必须用 y。
         let upper = anchor.y <= focus.y ? anchor : focus
         let lower = anchor.y <= focus.y ? focus : anchor
+
+        // Cell 模式的 x 过滤范围——drag 包围框的 x 区间。flow 模式不看这个。
+        let dragXMin = min(anchor.x, focus.x)
+        let dragXMax = max(anchor.x, focus.x)
 
         var upperRow = clampedRow(at: upper, tableView: tableView)
         var lowerRow = clampedRow(at: lower, tableView: tableView)
@@ -167,105 +177,50 @@ final class TranscriptSelectionController: NSResponder {
         for rowIdx in upperRow...lowerRow {
             visitedRowIdxs.insert(rowIdx)
             let row = controller.rows[rowIdx]
-            guard let selectable = row as? TextSelectable else { continue }
-            let regions = selectable.selectableRegions
+            let regions = row.selectableRegions
             guard !regions.isEmpty else { continue }
             guard let ctx = controller.rowLocalContext(forRow: rowIdx) else { continue }
 
-            // 点在 row 坐标系内的位置——用于匹配 region
-            let upperInRow = ctx.toRowLocal(upper)
-            let lowerInRow = ctx.toRowLocal(lower)
+            // drag 的 x 区间翻到 row-local，用于 cell 模式的横向过滤
+            let dragXMinInRow = ctx.toRowLocal(CGPoint(x: dragXMin, y: 0)).x
+            let dragXMaxInRow = ctx.toRowLocal(CGPoint(x: dragXMax, y: 0)).x
 
-            // row 在 upperRow / lowerRow 时才需要「哪个 region 被点命中」
-            let upperRegionIdx = rowIdx == upperRow
-                ? findRegionIndex(for: upperInRow, regions: regions) : 0
-            let lowerRegionIdx = rowIdx == lowerRow
-                ? findRegionIndex(for: lowerInRow, regions: regions) : regions.count - 1
+            for region in regions {
+                let range: NSRange
 
-            for (idx, region) in regions.enumerated() {
-                // 决定本 region 是否参与 + 起止点（在 region layout 自己的坐标系）
-                let participates: Bool
-                let startLocal: CGPoint
-                let endLocal: CGPoint
-
-                if upperRow == lowerRow {
-                    // 单 row
-                    let loReg = min(upperRegionIdx, lowerRegionIdx)
-                    let hiReg = max(upperRegionIdx, lowerRegionIdx)
-                    if idx < loReg || idx > hiReg {
-                        participates = false
-                        startLocal = .zero
-                        endLocal = .zero
-                    } else if idx == upperRegionIdx && idx == lowerRegionIdx {
-                        // 两端同 region：直接 anchor→focus 喂给 layout；
-                        // layout.selectionRange 内部会 swap reversed 的 x
-                        participates = true
-                        startLocal = toLocal(anchor, ctx: ctx, region: region)
-                        endLocal = toLocal(focus, ctx: ctx, region: region)
-                    } else if idx == upperRegionIdx {
-                        participates = true
-                        startLocal = toLocal(upper, ctx: ctx, region: region)
-                        endLocal = regionEnd(region)
-                    } else if idx == lowerRegionIdx {
-                        participates = true
-                        startLocal = .zero
-                        endLocal = toLocal(lower, ctx: ctx, region: region)
-                    } else {
-                        participates = true
-                        startLocal = .zero
-                        endLocal = regionEnd(region)
-                    }
-                } else if rowIdx == upperRow {
-                    // 头 row: upperRegion 起
-                    if idx < upperRegionIdx {
-                        participates = false
-                        startLocal = .zero
-                        endLocal = .zero
-                    } else if idx == upperRegionIdx {
-                        participates = true
-                        startLocal = toLocal(upper, ctx: ctx, region: region)
-                        endLocal = regionEnd(region)
-                    } else {
-                        participates = true
-                        startLocal = .zero
-                        endLocal = regionEnd(region)
-                    }
-                } else if rowIdx == lowerRow {
-                    // 尾 row: lowerRegion 止
-                    if idx > lowerRegionIdx {
-                        participates = false
-                        startLocal = .zero
-                        endLocal = .zero
-                    } else if idx == lowerRegionIdx {
-                        participates = true
-                        startLocal = .zero
-                        endLocal = toLocal(lower, ctx: ctx, region: region)
-                    } else {
-                        participates = true
-                        startLocal = .zero
-                        endLocal = regionEnd(region)
-                    }
-                } else {
-                    // 中间 row: 全选
-                    participates = true
-                    startLocal = .zero
-                    endLocal = regionEnd(region)
+                switch region.mode {
+                case .cell:
+                    range = cellSelectionRange(
+                        region: region,
+                        ctx: ctx,
+                        upper: upper,
+                        lower: lower,
+                        dragXMinInRow: dragXMinInRow,
+                        dragXMaxInRow: dragXMaxInRow,
+                        rowIdx: rowIdx,
+                        upperRow: upperRow,
+                        lowerRow: lowerRow)
+                case .flow:
+                    range = flowSelectionRange(
+                        region: region,
+                        ctx: ctx,
+                        anchor: anchor, focus: focus, upper: upper, lower: lower,
+                        rowIdx: rowIdx,
+                        upperRow: upperRow,
+                        lowerRow: lowerRow)
                 }
 
-                if participates {
-                    let range = region.layout.selectionRange(from: startLocal, to: endLocal)
+                if range.location != NSNotFound, range.length > 0 {
                     region.setSelection(range)
-                    if range.location != NSNotFound, range.length > 0 {
-                        let sub = region.layout.attributed.attributedSubstring(from: range)
-                        nextEntries.append(Entry(
-                            rowStableId: region.rowStableId,
-                            rowIndex: rowIdx,
-                            regionIndex: region.regionIndex,
-                            substring: sub))
-                        nextKeys.insert(SelectionKey(
-                            rowStableId: region.rowStableId,
-                            regionIndex: region.regionIndex))
-                    }
+                    let sub = region.layout.attributed.attributedSubstring(from: range)
+                    nextEntries.append(Entry(
+                        rowStableId: region.rowStableId,
+                        rowIndex: rowIdx,
+                        ordering: region.ordering,
+                        substring: sub))
+                    nextKeys.insert(SelectionKey(
+                        rowStableId: region.rowStableId,
+                        ordering: region.ordering))
                 } else {
                     region.setSelection(NSRange(location: NSNotFound, length: 0))
                 }
@@ -287,10 +242,123 @@ final class TranscriptSelectionController: NSResponder {
 
         nextEntries.sort { lhs, rhs in
             if lhs.rowIndex != rhs.rowIndex { return lhs.rowIndex < rhs.rowIndex }
-            return lhs.regionIndex < rhs.regionIndex
+            return lhs.ordering < rhs.ordering
         }
         entries = nextEntries
         lastSelectedKeys = nextKeys
+    }
+
+    // MARK: - Per-region rules
+
+    /// `.cell` 模式：drag 矩形 ∩ region frame。x 完全不重叠 → 跳过；y 裁切规则
+    /// = 含 upper.y / lower.y 的 cell 对应半边裁，否则全量。x 内部不裁，cell
+    /// 过滤了 x 过后内部总是整列宽度——这就是「落在哪些列就复制哪些列」的
+    /// 语义，用户体感近 Excel rect 选择。
+    private func cellSelectionRange(
+        region: SelectableTextRegion,
+        ctx: TranscriptController.RowLocalContext,
+        upper: CGPoint, lower: CGPoint,
+        dragXMinInRow: CGFloat, dragXMaxInRow: CGFloat,
+        rowIdx: Int, upperRow: Int, lowerRow: Int
+    ) -> NSRange {
+        let f = region.frameInRow
+        // X 过滤
+        if f.maxX < dragXMinInRow || f.minX > dragXMaxInRow {
+            return NSRange(location: NSNotFound, length: 0)
+        }
+        // Y 过滤（应对：cell 比 transcript row 高度更细粒度的场景，目前 table cell 也是如此）
+        let upperInRow = ctx.toRowLocal(upper)
+        let lowerInRow = ctx.toRowLocal(lower)
+        // rowIdx == upperRow 但 cell 整个在 upper 之上 → 跳过
+        if rowIdx == upperRow, f.maxY <= upperInRow.y {
+            return NSRange(location: NSNotFound, length: 0)
+        }
+        // rowIdx == lowerRow 但 cell 整个在 lower 之下 → 跳过
+        if rowIdx == lowerRow, f.minY >= lowerInRow.y {
+            return NSRange(location: NSNotFound, length: 0)
+        }
+        // 计算 cell-local 的 y 起止（x 始终从 0 到 cell 宽——「整列」语义）
+        let startY: CGFloat
+        if rowIdx == upperRow, f.minY < upperInRow.y, upperInRow.y < f.maxY {
+            startY = upperInRow.y - f.minY
+        } else {
+            startY = 0
+        }
+        let endY: CGFloat
+        if rowIdx == lowerRow, f.minY < lowerInRow.y, lowerInRow.y < f.maxY {
+            endY = lowerInRow.y - f.minY
+        } else {
+            endY = min(region.layout.totalHeight, f.height) + 1
+        }
+        let startLocal = CGPoint(x: 0, y: startY)
+        let endLocal = CGPoint(x: region.layout.measuredWidth, y: endY)
+        return region.layout.selectionRange(from: startLocal, to: endLocal)
+    }
+
+    /// `.flow` 模式：以 drag 覆盖的 row-local y 区间 ∩ region 的 y 范围做判定。
+    /// 不相交 → 跳过；相交 → 起止按 upper/lower 是否落在 region 的 y 范围内来切。
+    ///
+    /// 换掉的旧 upper/lower region-index 模型在 anchor/focus 同时落在 `.cell`
+    /// region 里时会 fallback 到"最近的 flow"，把 table 上/下的段落误带进选中。
+    /// y-interval 模型天然避开——cell 的 y 区间不含任何 flow，不相交的 flow
+    /// 直接跳过。
+    private func flowSelectionRange(
+        region: SelectableTextRegion,
+        ctx: TranscriptController.RowLocalContext,
+        anchor: CGPoint, focus: CGPoint, upper: CGPoint, lower: CGPoint,
+        rowIdx: Int, upperRow: Int, lowerRow: Int
+    ) -> NSRange {
+        let regionMinY = region.frameInRow.minY
+        let regionMaxY = region.frameInRow.maxY
+
+        let upperInRow = ctx.toRowLocal(upper)
+        let lowerInRow = ctx.toRowLocal(lower)
+
+        // Row-local 下 drag 覆盖的 y 区间。中间 row（非 upperRow 非 lowerRow）
+        // 代表整 row 都在 drag 区间内，用 ±∞ 模拟"整段"。
+        let intervalMinY: CGFloat
+        let intervalMaxY: CGFloat
+        if rowIdx == upperRow && rowIdx == lowerRow {
+            intervalMinY = upperInRow.y
+            intervalMaxY = lowerInRow.y
+        } else if rowIdx == upperRow {
+            intervalMinY = upperInRow.y
+            intervalMaxY = .greatestFiniteMagnitude
+        } else if rowIdx == lowerRow {
+            intervalMinY = -.greatestFiniteMagnitude
+            intervalMaxY = lowerInRow.y
+        } else {
+            intervalMinY = -.greatestFiniteMagnitude
+            intervalMaxY = .greatestFiniteMagnitude
+        }
+
+        // [intervalMinY, intervalMaxY] ∩ [regionMinY, regionMaxY] = ∅ → 跳过
+        if intervalMaxY < regionMinY || intervalMinY > regionMaxY {
+            return NSRange(location: NSNotFound, length: 0)
+        }
+
+        let upperInsideRegion = rowIdx == upperRow
+            && regionMinY <= upperInRow.y && upperInRow.y <= regionMaxY
+        let lowerInsideRegion = rowIdx == lowerRow
+            && regionMinY <= lowerInRow.y && lowerInRow.y <= regionMaxY
+
+        let startLocal: CGPoint
+        let endLocal: CGPoint
+
+        // 单 region 同时含 upper & lower → 用 raw anchor/focus 保留反向拖动的 x 语义
+        if upperInsideRegion && lowerInsideRegion {
+            startLocal = toLocal(anchor, ctx: ctx, region: region)
+            endLocal = toLocal(focus, ctx: ctx, region: region)
+        } else {
+            startLocal = upperInsideRegion
+                ? toLocal(upper, ctx: ctx, region: region)
+                : .zero
+            endLocal = lowerInsideRegion
+                ? toLocal(lower, ctx: ctx, region: region)
+                : regionEnd(region)
+        }
+
+        return region.layout.selectionRange(from: startLocal, to: endLocal)
     }
 
     // MARK: - Geometry helpers

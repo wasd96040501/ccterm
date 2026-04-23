@@ -139,20 +139,16 @@ final class AssistantMarkdownRow: TranscriptRow, FragmentRow {
 
     // MARK: - Selection skeleton
 
-    /// Preserve per-cell table selection state across fragment rebuilds.
-    /// Called whenever a new `AssistantLayoutData` is adopted.
-    private func syncTableSelections(with skeleton: [Int: [[NSRange]]]) {
-        var merged = skeleton
-        for (idx, existing) in fragmentTableSelections {
-            guard var matrix = merged[idx] else { continue }
-            for r in 0..<min(matrix.count, existing.count) {
-                for c in 0..<min(matrix[r].count, existing[r].count) {
-                    matrix[r][c] = existing[r][c]
-                }
-            }
-            merged[idx] = matrix
-        }
-        fragmentTableSelections = merged
+    /// No-op under the new unified `SelectionStore` — the store is
+    /// `[AnyHashable: NSRange]` on the base class and survives fragment
+    /// rebuilds on its own. `TableCellKey(base: idx, row:, col:)` remains
+    /// stable across layouts as long as `idx` (segment index) is stable.
+    /// Kept as a private stub so build-sites don't need to be edited off
+    /// this file in the same step; removed in a follow-up cleanup.
+    private func syncTableSelections(with skeleton: Any) {
+        // Unified SelectionStore on TranscriptRow handles preservation
+        // across rebuilds — per-cell NSRange is keyed by a stable struct,
+        // not wiped on each layout adoption.
     }
 
     // MARK: - Click-to-copy API (kept for TranscriptController compatibility)
@@ -224,7 +220,7 @@ final class AssistantMarkdownRow: TranscriptRow, FragmentRow {
                     out.append(.text(TextFragment(
                         layout: layout,
                         origin: origin,
-                        selectionTag: idx)))
+                        selectionKey: idx)))
 
                 case .blockquote:
                     let barW = theme.markdown.blockquoteBarWidth
@@ -240,7 +236,7 @@ final class AssistantMarkdownRow: TranscriptRow, FragmentRow {
                     out.append(.text(TextFragment(
                         layout: layout,
                         origin: origin,
-                        selectionTag: idx)))
+                        selectionKey: idx)))
 
                 case .codeBlock(let header):
                     // Body outline (full block including header).
@@ -317,21 +313,21 @@ final class AssistantMarkdownRow: TranscriptRow, FragmentRow {
                     out.append(.text(TextFragment(
                         layout: layout,
                         origin: origin,
-                        selectionTag: idx,
-                        highlightTag: idx)))
+                        selectionKey: idx,
+                        highlightKey: idx)))
                 }
 
             case .list(let listLayout, let origin):
                 out.append(.list(ListFragment(
                     layout: listLayout,
                     origin: origin,
-                    selectionTag: idx)))
+                    selectionKeyBase: idx)))
 
             case .table(let tableLayout, let origin):
                 out.append(.table(TableFragment(
                     layout: tableLayout,
                     origin: origin,
-                    selectionTag: idx)))
+                    selectionKeyBase: idx)))
 
             case .thematicBreak(let y):
                 out.append(.rect(RectFragment(
@@ -480,16 +476,5 @@ final class AssistantMarkdownRow: TranscriptRow, FragmentRow {
 
 }
 
-// MARK: - TextSelectable
-
-extension AssistantMarkdownRow: TextSelectable {
-    var selectableRegions: [SelectableTextRegion] {
-        fragmentSelectableRegions()
-    }
-
-    var selectionHeader: String? { nil }
-
-    func clearSelection() {
-        clearFragmentSelections()
-    }
-}
+// Default TextSelectable conformance comes from TranscriptRow — fragment
+// path自动生效，无需 per-row extension。

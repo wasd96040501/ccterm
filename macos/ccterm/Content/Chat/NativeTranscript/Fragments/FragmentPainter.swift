@@ -83,11 +83,7 @@ enum FragmentPainter {
     // MARK: - Text
 
     private static func paintText(_ f: TextFragment, row: TranscriptRow, in ctx: CGContext) {
-        let sel: NSRange? = f.selectionTag.flatMap { tag in
-            let r = row.fragmentTextSelections[tag]
-            if let r, r.location != NSNotFound, r.length > 0 { return r }
-            return nil
-        }
+        let sel = f.selectionRange(from: row)
         f.layout.draw(origin: f.origin, selection: sel, in: ctx)
     }
 
@@ -104,24 +100,16 @@ enum FragmentPainter {
     // MARK: - Table
 
     private static func paintTable(_ f: TableFragment, row: TranscriptRow, in ctx: CGContext) {
-        let sels: [[NSRange]]? = f.selectionTag.flatMap { row.fragmentTableSelections[$0] }
+        let sels = f.selectionMatrix(from: row)
         f.layout.draw(origin: f.origin, selections: sels, in: ctx)
     }
 
     // MARK: - List
 
     private static func paintList(_ f: ListFragment, row: TranscriptRow, in ctx: CGContext) {
-        let tag = f.selectionTag
         f.layout.draw(
             origin: f.origin,
-            selectionResolver: { textIdx in
-                guard let tag,
-                      let map = row.fragmentListSelections[tag],
-                      let r = map[textIdx],
-                      r.location != NSNotFound, r.length > 0
-                else { return nil }
-                return r
-            },
+            selectionResolver: f.selectionResolver(from: row),
             in: ctx)
     }
 

@@ -581,10 +581,6 @@ extension TranscriptController {
             let r = PlaceholderRow(prepared: prepared, theme: theme)
             r.applyLayout(layout)
             return r
-        case .diff(let prepared, let layout):
-            let r = DiffRow(prepared: prepared, theme: theme)
-            r.applyLayout(layout)
-            return r
         }
     }
 
@@ -616,18 +612,6 @@ extension TranscriptController {
                     if case .codeBlock(let block) = seg {
                         requests.append((block.code, block.language))
                         routing.append((itemIdx, AnyHashable(segIdx)))
-                    }
-                }
-            case .diff(let prepared, _):
-                guard !prepared.hasHighlight else { continue }
-                var seen: Set<String> = []
-                for hunk in prepared.hunks {
-                    for line in hunk.lines {
-                        let content = line.content
-                        if content.isEmpty || seen.contains(content) { continue }
-                        seen.insert(content)
-                        requests.append((content, prepared.language))
-                        routing.append((itemIdx, AnyHashable(content)))
                     }
                 }
             case .user, .placeholder:
@@ -687,28 +671,6 @@ extension TranscriptController {
                 // Cache Prepared only — Layout is width-dependent and always
                 // recomputed. This overwrite flips `hasHighlight` false→true
                 // at the same key (contentHash excludes hasHighlight).
-                TranscriptPrepareCache.shared.put(
-                    newItem.cacheKey, newItem.preparedOnly)
-
-            case .diff(let prepared, _):
-                var lineHighlights = prepared.lineHighlights
-                for (k, v) in innerTokens {
-                    if let s = k.base as? String { lineHighlights[s] = v }
-                }
-                let newPrepared = DiffPrepared(
-                    filePath: prepared.filePath,
-                    hunks: prepared.hunks,
-                    language: prepared.language,
-                    suppressInsertionStyle: prepared.suppressInsertionStyle,
-                    stable: prepared.stable,
-                    contentHash: prepared.contentHash,
-                    lineHighlights: lineHighlights,
-                    hasHighlight: true)
-                let newLayout = TranscriptPrepare.layoutDiff(
-                    prepared: newPrepared, theme: theme, width: width)
-                let newItem: TranscriptPreparedItem = .diff(newPrepared, newLayout)
-                items[itemIdx] = newItem
-                tokensByStableId[prepared.stable] = innerTokens
                 TranscriptPrepareCache.shared.put(
                     newItem.cacheKey, newItem.preparedOnly)
 

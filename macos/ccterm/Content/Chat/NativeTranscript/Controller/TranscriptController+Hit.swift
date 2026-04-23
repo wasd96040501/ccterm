@@ -1,9 +1,8 @@
 import AppKit
 
-/// 鼠标点击 → row-local 坐标 → 派发到具体可交互区域(link / code block copy /
-/// user bubble chevron)。entry point 由 `TranscriptTableView` 的 mouseDown /
-/// mouseMoved 调入,返回 bool 让 table view 决定是否 fallthrough 给 selection
-/// controller。
+/// 鼠标点击 → row-local 坐标 → 派发到 row 自报的 `RowHitRegion`。entry point
+/// 由 `TranscriptTableView` 的 mouseDown / mouseMoved 调入。controller 只认
+/// `InteractiveRow` 协议，不 `as?` 任何具体 row 类型。
 extension TranscriptController {
     // MARK: - Row-local point conversion
 
@@ -55,80 +54,45 @@ extension TranscriptController {
         return nil
     }
 
-    // MARK: - Code block click-to-copy
+    // MARK: - Interactive hit regions (protocol-dispatched)
 
-    func codeBlockHit(atDocumentPoint documentPoint: CGPoint) -> Bool {
-        return resolveCodeBlockHit(atDocumentPoint: documentPoint) != nil
+    /// 通用命中查询：遍历 row 自报的 `hitRegions`，返回命中的 region。
+    /// 命中遍历顺序按 row 内部声明；`InteractiveRow.hitRegions` 的 getter 自己
+    /// 决定是否要逆序（通常后画的在上）。
+    private func hitRegion(atDocumentPoint documentPoint: CGPoint)
+        -> (region: RowHitRegion, rowIndex: Int)?
+    {
+        guard let ctx = rowLocalContext(at: documentPoint) else { return nil }
+        guard let interactive = rows[ctx.rowIndex] as? InteractiveRow else { return nil }
+        let pointInRow = ctx.toRowLocal(documentPoint)
+        for region in interactive.hitRegions where region.rectInRow.contains(pointInRow) {
+            return (region, ctx.rowIndex)
+        }
+        return nil
     }
 
-    func performCodeBlockCopy(atDocumentPoint documentPoint: CGPoint) -> Bool {
-        guard let resolved = resolveCodeBlockHit(atDocumentPoint: documentPoint) else {
-            return false
-        }
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        pb.setString(resolved.hit.code, forType: .string)
-        let rowIndex = resolved.rowIndex
-        resolved.row.markCodeBlockCopied(
-            segmentIndex: resolved.hit.segmentIndex
-        ) { [weak self] in
-            self?.redrawRow(at: rowIndex)
-        }
+    /// 返回命中 region 的 cursor——`TranscriptTableView.checkCursor` 读这个决定
+    /// hover 时设 pointingHand / iBeam / arrow。
+    func cursorOverHit(atDocumentPoint documentPoint: CGPoint) -> NSCursor? {
+        hitRegion(atDocumentPoint: documentPoint)?.region.cursor
+    }
+
+    /// 点击分派。命中 → 调 region 的 perform 闭包（row 自己决定剪贴板 / toggle
+    /// / redraw 等副作用）→ 返回 true。未命中 → false，调用方继续往下 fallthrough
+    /// 到 link / selection。
+    func performHit(atDocumentPoint documentPoint: CGPoint) -> Bool {
+        guard let hit = hitRegion(atDocumentPoint: documentPoint) else { return false }
+        hit.region.perform(self)
         return true
     }
 
-    fileprivate struct CodeBlockResolved {
-        let row: AssistantMarkdownRow
-        let rowIndex: Int
-        let hit: AssistantMarkdownRow.CodeBlockHitInfo
-    }
-
-    fileprivate func resolveCodeBlockHit(atDocumentPoint documentPoint: CGPoint)
-        -> CodeBlockResolved?
-    {
-        guard let ctx = rowLocalContext(at: documentPoint) else { return nil }
-        guard let row = rows[ctx.rowIndex] as? AssistantMarkdownRow else { return nil }
-        let pointInRow = ctx.toRowLocal(documentPoint)
-        guard let hit = row.codeBlockHit(atRowPoint: pointInRow) else { return nil }
-        return CodeBlockResolved(row: row, rowIndex: ctx.rowIndex, hit: hit)
-    }
-
-    fileprivate func redrawRow(at index: Int) {
+    /// 单行重绘。命中 region 的 perform 闭包可能要求只刷新自己这一行
+    /// （如 code block copy 的 checkmark 反馈）。
+    func redrawRow(at index: Int) {
         guard let tableView else { return }
         guard index >= 0, index < rows.count else { return }
         guard let rowView = tableView.rowView(atRow: index, makeIfNecessary: false)
             as? TranscriptRowView else { return }
         rowView.set(row: rows[index])
-    }
-
-    // MARK: - User bubble collapse toggle
-
-    func isOverUserBubbleChevron(atDocumentPoint documentPoint: CGPoint) -> Bool {
-        guard let ctx = rowLocalContext(at: documentPoint) else { return false }
-        guard let row = rows[ctx.rowIndex] as? UserBubbleRow else { return false }
-        let pointInRow = ctx.toRowLocal(documentPoint)
-        return row.chevronHitRectInRow()?.contains(pointInRow) == true
-    }
-
-    func toggleUserBubble(atDocumentPoint documentPoint: CGPoint) -> Bool {
-        guard lastLayoutWidth > 0 else { return false }
-        guard let ctx = rowLocalContext(at: documentPoint) else { return false }
-        guard let row = rows[ctx.rowIndex] as? UserBubbleRow else { return false }
-        let pointInRow = ctx.toRowLocal(documentPoint)
-        guard let hit = row.chevronHitRectInRow(), hit.contains(pointInRow) else {
-            return false
-        }
-
-        let id = row.stableId
-        if expandedUserBubbles.contains(id) {
-            expandedUserBubbles.remove(id)
-            row.isExpanded = false
-        } else {
-            expandedUserBubbles.insert(id)
-            row.isExpanded = true
-        }
-        row.makeSize(width: lastLayoutWidth)
-        noteHeightOfRow(ctx.rowIndex)
-        return true
     }
 }

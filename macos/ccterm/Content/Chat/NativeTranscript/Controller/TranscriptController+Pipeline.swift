@@ -43,12 +43,7 @@ extension TranscriptController {
                 let newRows = items.map { self.row(from: $0, theme: transcriptTheme) }
                 let transition = TranscriptDiff.compute(
                     old: self.rows, new: newRows, animated: false)
-                for row in transition.finalRows {
-                    if let u = row as? UserBubbleRow {
-                        u.isExpanded = self.expandedUserBubbles.contains(u.stableId)
-                    }
-                    row.makeSize(width: width)
-                }
+                self.syncExpansionAndSize(transition.finalRows, width: width)
                 self.merge(with: transition, scroll: scroll)
                 self.logVisualSnapshot(
                     tag: "\(tag)-merged",
@@ -98,12 +93,7 @@ extension TranscriptController {
 
         let phase1Transition = TranscriptDiff.compute(
             old: rows, new: phase1Rows, animated: false)
-        for row in phase1Transition.finalRows {
-            if let u = row as? UserBubbleRow {
-                u.isExpanded = self.expandedUserBubbles.contains(u.stableId)
-            }
-            row.makeSize(width: width)
-        }
+        self.syncExpansionAndSize(phase1Transition.finalRows, width: width)
         self.merge(with: phase1Transition, scroll: .bottom)
         self.logVisualSnapshot(
             tag: "bottom-phase1-merged",
@@ -168,12 +158,7 @@ extension TranscriptController {
                 let newFullRows = prefixRows + self.rows
                 let phase2Transition = TranscriptDiff.compute(
                     old: self.rows, new: newFullRows, animated: false)
-                for row in phase2Transition.finalRows {
-                    if let u = row as? UserBubbleRow {
-                        u.isExpanded = self.expandedUserBubbles.contains(u.stableId)
-                    }
-                    row.makeSize(width: width)
-                }
+                self.syncExpansionAndSize(phase2Transition.finalRows, width: width)
                 self.merge(with: phase2Transition, scroll: scroll)
                 self.logVisualSnapshot(
                     tag: "bottom-phase2-merged",
@@ -267,12 +252,7 @@ extension TranscriptController {
         // 和 hint.stableId 对得上 → applyScrollIntent 能找到该行并对齐 topOffset。
         let phase1Transition = TranscriptDiff.compute(
             old: rows, new: phase1Rows, animated: false)
-        for row in phase1Transition.finalRows {
-            if let u = row as? UserBubbleRow {
-                u.isExpanded = self.expandedUserBubbles.contains(u.stableId)
-            }
-            row.makeSize(width: width)
-        }
+        self.syncExpansionAndSize(phase1Transition.finalRows, width: width)
         // 用 phase1 items 里 anchor 对应那条 item 的 stableId 作 scroll 锚。
         // Fallback：rows 为空则无锚可用（不应发生，entries 非空 walk 至少 1 行）。
         guard let phase1AnchorStableId: AnyHashable = {
@@ -359,12 +339,7 @@ extension TranscriptController {
                 let newFullRows = leftRows + self.rows + rightRows
                 let phase2Transition = TranscriptDiff.compute(
                     old: self.rows, new: newFullRows, animated: false)
-                for row in phase2Transition.finalRows {
-                    if let u = row as? UserBubbleRow {
-                        u.isExpanded = self.expandedUserBubbles.contains(u.stableId)
-                    }
-                    row.makeSize(width: width)
-                }
+                self.syncExpansionAndSize(phase2Transition.finalRows, width: width)
 
                 // 继续用 anchor row 的 topOffset 钉住 —— left 前插会把 anchor
                 // 往下挤，`.anchor` 会把 clipView 往下 scroll 同样多来抵消。
@@ -460,12 +435,7 @@ extension TranscriptController {
                 let tMergeStart = CFAbsoluteTimeGetCurrent()
                 let appendedRows = items.map { self.row(from: $0, theme: transcriptTheme) }
 
-                for row in appendedRows {
-                    if let u = row as? UserBubbleRow {
-                        u.isExpanded = self.expandedUserBubbles.contains(u.stableId)
-                    }
-                    row.makeSize(width: width)
-                }
+                self.syncExpansionAndSize(appendedRows, width: width)
 
                 let insertions = appendedRows.enumerated().map {
                     (self.rows.count + $0.offset, $0.element)
@@ -485,6 +455,18 @@ extension TranscriptController {
                     + "total=\(totalMs)ms hl=\(hlMs)ms(code=\(codeBlockCount)) "
                     + "merge=\(mergeMs) width=\(Int(width))")
             }
+        }
+    }
+
+    // MARK: - Expansion sync helper
+
+    /// 把 controller 持有的「展开 id 集」反向同步给所有支持的 row，然后统一
+    /// `makeSize`。merge 前的标准化步骤——ExpandableRow 的 row 读自身 stableId
+    /// 是否在集合里决定状态；其他 row 此调用为空操作。
+    fileprivate func syncExpansionAndSize(_ rows: [TranscriptRow], width: CGFloat) {
+        for row in rows {
+            (row as? ExpandableRow)?.applyExpansion(self.expandedUserBubbles)
+            row.makeSize(width: width)
         }
     }
 

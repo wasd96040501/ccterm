@@ -105,24 +105,18 @@ final class TranscriptTableView: NSTableView {
     override func mouseUp(with event: NSEvent) {
         guard event.clickCount == 1 else { return }
         let point = convert(event.locationInWindow, from: nil)
-        // 无 drag（鼠标位移 < 3pt）时分派：chevron > link > drag-select end。
+        // 无 drag（鼠标位移 < 3pt）时分派：row hit region > link > drag-select end。
         if let start = mouseDownPoint {
             mouseDownPoint = nil
             let dx = point.x - start.x
             let dy = point.y - start.y
             let draggedSquared = dx * dx + dy * dy
             if draggedSquared <= 9 {
-                // chevron 优先：user bubble 最后一行 URL 叠在 chevron 上时
-                // 应 toggle 折叠而非打开 URL。
-                if controller?.toggleUserBubble(atDocumentPoint: point) == true {
-                    controller?.selectionController.clear()
-                    controller?.redrawAllVisibleRows()
-                    return
-                }
-                // Code block header 在 link 前判——header bar 永远不会叠到行内
-                // 文本上，不会冲突，但放前面让优先级清晰（和 chevron 同层）。
-                if controller?.performCodeBlockCopy(atDocumentPoint: point) == true {
-                    controller?.selectionController.clear()
+                // Row hit region 优先：chevron / code block header 等都由 row
+                // 自报的 `hitRegions` 统一承接，perform 闭包里自己处理 clear
+                // selection / redraw。URL 叠在 chevron 上时应 toggle 而非打开
+                // URL，这个优先级由 row 自己的 region 排在前面保证。
+                if controller?.performHit(atDocumentPoint: point) == true {
                     return
                 }
                 if let url = controller?.linkURL(atDocumentPoint: point) {
@@ -180,12 +174,11 @@ final class TranscriptTableView: NSTableView {
     }
 
     private func checkCursor(at documentPoint: CGPoint) {
-        // Chevron > code-block header > link > selectable text > default。
-        // 前三者都是"可点击"语义，统一 pointingHand；点击分派在 mouseUp。
-        if controller?.isOverUserBubbleChevron(atDocumentPoint: documentPoint) == true {
-            NSCursor.pointingHand.set()
-        } else if controller?.codeBlockHit(atDocumentPoint: documentPoint) == true {
-            NSCursor.pointingHand.set()
+        // Row hit region > link > selectable text > default。
+        // hit region 的 cursor 由 row 自报（通常是 pointingHand）；link 也是
+        // pointingHand。点击分派在 mouseUp。
+        if let cursor = controller?.cursorOverHit(atDocumentPoint: documentPoint) {
+            cursor.set()
         } else if controller?.linkURL(atDocumentPoint: documentPoint) != nil {
             NSCursor.pointingHand.set()
         } else if isPointOverSelectableText(documentPoint) {

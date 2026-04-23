@@ -10,9 +10,8 @@ import SwiftUI
 /// 调用时机：
 /// 1. `AssistantMarkdownRow.init` 时同步跑一次（`codeTokens = [:]`，code block
 ///    用 plain monospaced 字体）。
-/// 2. `TranscriptPreprocessor` 的 syntax highlight Task 完成后由
-///    `AssistantMarkdownRow.applyTokens(_:)` 再跑一次，用回灌的 tokens
-///    重新生成彩色的 code block attributed string。
+/// 2. Highlight 后台 Task 完成后由 `AssistantMarkdownRow.applyTokens(_:)`
+///    再跑一次，用回灌的 tokens 重新生成彩色的 code block attributed string。
 nonisolated enum MarkdownRowPrebuilder {
 
     /// 主入口：遍历 segments，按类型分派到具体 builder。

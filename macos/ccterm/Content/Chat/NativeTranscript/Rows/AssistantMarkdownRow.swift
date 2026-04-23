@@ -126,17 +126,6 @@ final class AssistantMarkdownRow: TranscriptRow, FragmentRow {
         clearFragmentSelections()
     }
 
-    /// 暴露给 preprocessor 的请求列表：`(segmentIndex, code, language)`。
-    var codeBlockRequests: [(segmentIndex: Int, code: String, language: String?)] {
-        var out: [(Int, String, String?)] = []
-        for (i, seg) in parsedDocument.segments.enumerated() {
-            if case .codeBlock(let block) = seg {
-                out.append((i, block.code, block.language))
-            }
-        }
-        return out
-    }
-
     // MARK: - Selection skeleton
 
     /// No-op under the new unified `SelectionStore` — the store is
@@ -151,24 +140,7 @@ final class AssistantMarkdownRow: TranscriptRow, FragmentRow {
         // not wiped on each layout adoption.
     }
 
-    // MARK: - Click-to-copy API (kept for TranscriptController compatibility)
-
-    /// Code block header hit info — segmentIndex lets callers flip the icon
-    /// to a transient checkmark on the exact header that was clicked.
-    struct CodeBlockHitInfo {
-        let segmentIndex: Int
-        let code: String
-    }
-
-    /// Thin adapter over the base class `hit(at:)`. Controller still calls
-    /// this by name; we just unwrap the generic `HitAction.copyCode` back
-    /// into the row-specific `CodeBlockHitInfo` contract.
-    func codeBlockHit(atRowPoint pointInRow: CGPoint) -> CodeBlockHitInfo? {
-        guard case let .copyCode(code, tag)? = hit(at: pointInRow) else {
-            return nil
-        }
-        return CodeBlockHitInfo(segmentIndex: tag, code: code)
-    }
+    // MARK: - Click-to-copy
 
     /// Flips the target code block's icon to a checkmark for `dwell` seconds,
     /// then reverts. Caller passes a `redraw` closure to force a repaint on
@@ -478,3 +450,30 @@ final class AssistantMarkdownRow: TranscriptRow, FragmentRow {
 
 // Default TextSelectable conformance comes from TranscriptRow — fragment
 // path自动生效，无需 per-row extension。
+
+// MARK: - InteractiveRow
+
+extension AssistantMarkdownRow: InteractiveRow {
+    var hitRegions: [RowHitRegion] {
+        var regions: [RowHitRegion] = []
+        for fragment in cachedFragments {
+            guard case let .custom(cf) = fragment,
+                  case let .copyCode(code, tag)? = cf.hit else { continue }
+            regions.append(RowHitRegion(
+                rectInRow: cf.frame,
+                cursor: .pointingHand,
+                perform: { [weak self] controller in
+                    guard let self else { return }
+                    let pb = NSPasteboard.general
+                    pb.clearContents()
+                    pb.setString(code, forType: .string)
+                    let rowIndex = self.index
+                    self.markCodeBlockCopied(segmentIndex: tag) { [weak controller] in
+                        controller?.redrawRow(at: rowIndex)
+                    }
+                    controller.selectionController.clear()
+                }))
+        }
+        return regions
+    }
+}

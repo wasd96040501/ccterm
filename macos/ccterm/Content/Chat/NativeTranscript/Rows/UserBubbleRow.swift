@@ -225,9 +225,8 @@ final class UserBubbleRow: TranscriptRow {
             height: theme.chevronSize)
     }
 
-    /// Chevron 点击命中区（row 本地坐标）。`!canCollapse` 时返回 nil，
-    /// mouseUp 分派据此判断是否 toggle。
-    func chevronHitRectInRow() -> CGRect? {
+    /// Chevron 点击命中区（row 本地坐标）。`!canCollapse` 时返回 nil。
+    fileprivate func chevronHitRectInRow() -> CGRect? {
         guard canCollapse else { return nil }
         let glyph = chevronDrawRect()
         let expand = (theme.chevronHitSize - theme.chevronSize) / 2
@@ -270,5 +269,39 @@ final class UserBubbleRow: TranscriptRow {
 
     override func clearSelection() {
         currentSelection = NSRange(location: NSNotFound, length: 0)
+    }
+}
+
+// MARK: - InteractiveRow / ExpandableRow
+
+extension UserBubbleRow: InteractiveRow {
+    var hitRegions: [RowHitRegion] {
+        guard let rect = chevronHitRectInRow() else { return [] }
+        return [RowHitRegion(
+            rectInRow: rect,
+            cursor: .pointingHand,
+            perform: { [weak self] controller in
+                guard let self else { return }
+                let id = self.stableId
+                if controller.expandedUserBubbles.contains(id) {
+                    controller.expandedUserBubbles.remove(id)
+                    self.isExpanded = false
+                } else {
+                    controller.expandedUserBubbles.insert(id)
+                    self.isExpanded = true
+                }
+                self.makeSize(width: controller.lastLayoutWidth)
+                if self.index >= 0 {
+                    controller.noteHeightOfRow(self.index)
+                }
+                controller.selectionController.clear()
+                controller.redrawAllVisibleRows()
+            })]
+    }
+}
+
+extension UserBubbleRow: ExpandableRow {
+    func applyExpansion(_ expanded: Set<AnyHashable>) {
+        isExpanded = expanded.contains(stableId)
     }
 }

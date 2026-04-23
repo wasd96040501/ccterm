@@ -494,10 +494,9 @@ extension TranscriptController {
     }
 
     /// 把 Phase 2 highlight 完成后 tokens 回写到已挂载的 rows。
-    /// 主线程回灌：把批量 highlight 产出的 tokens 喂给已挂载的 rows。
-    /// Row-type-agnostic：走 `FragmentRow.applyTokens` 协议，按 stableId
-    /// 找到对应 row 后 dispatch——assistant 的 `[Int: tokens]` 和 diff 的
-    /// `[String: tokens]` 共用同一个 AnyHashable-keyed 通道。
+    /// 主线程回灌：按 stableId 匹配到具体 row，调 `applyTokens` 把批量
+    /// highlight 产出的 tokens 喂进去。今天 token 的唯一消费者是
+    /// `AssistantMarkdownRow`——直接 cast，新增类型时再改成协议。
     fileprivate func backfillHighlightTokens(
         tokensByStableId: [AnyHashable: [AnyHashable: [SyntaxToken]]],
         width: CGFloat
@@ -514,9 +513,9 @@ extension TranscriptController {
         var visibleΔ: CGFloat = 0
         for (idx, row) in self.rows.enumerated() {
             guard let tokens = tokensByStableId[row.stableId],
-                  let fr = row as? FragmentRow else { continue }
+                  let md = row as? AssistantMarkdownRow else { continue }
             let pre = row.cachedHeight
-            fr.applyTokens(tokens)
+            md.applyTokens(tokens)
             row.makeSize(width: width)
             let delta = row.cachedHeight - pre
             totalΔ += delta
@@ -576,7 +575,8 @@ extension TranscriptController {
     /// tokensByStableId 的 inner key 是 `AnyHashable`：
     /// - Assistant: `Int`（segmentIndex）
     /// - Diff:      `String`（行内容）
-    /// 两边共用同一条 FragmentRow.applyTokens 通道。
+    /// 两边共用同一条 `AssistantMarkdownRow.applyTokens` 通道（diff 消费者
+    /// 之前存在过，现不在；接口仍保留 AnyHashable 以防后续再引入）。
     nonisolated fileprivate static func applyHighlightTokens(
         to items: inout [TranscriptPreparedItem],
         theme: TranscriptTheme,

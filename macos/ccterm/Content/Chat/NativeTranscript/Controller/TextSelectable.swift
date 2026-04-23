@@ -1,10 +1,11 @@
 import AppKit
 
-/// Row 内跨 fragment 的稳定排序键。
+/// Row 内跨 segment 的稳定排序键。
 ///
-/// `fragmentOrdinal` = fragment 在 row `cachedFragments` 数组里的下标；
-/// `subIndex` = fragment 内的 sub-region 序号（例如 table 第几个 cell、list
-/// 第几段文本）。Cmd-C 拼接按 `(rowIndex, ordering)` 字典序。
+/// `fragmentOrdinal` = row 里第几个可选中 segment（assistant markdown 的
+/// 段落下标、user bubble 恒为 0）；`subIndex` = 该 segment 内的 sub-region
+/// 序号（例如 table 第几个 cell、list 第几段文本）。Cmd-C 拼接按
+/// `(rowIndex, ordering)` 字典序。
 ///
 /// 用 struct + Comparable + Hashable 取代裸元组——元组不能 Hashable、不能
 /// 进 Set / Dictionary 键位，且 `<` 语义要手写。之前 `tag * 1_000_000 +

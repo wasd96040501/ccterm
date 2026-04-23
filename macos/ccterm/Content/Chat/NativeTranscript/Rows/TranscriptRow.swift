@@ -6,16 +6,18 @@ import AppKit
 /// 全权负责绘制，没有 cell view。reuse 以 `identifier` 分桶——子类默认返回
 /// 类名即可让同类 row 复用同一个 view pool。
 ///
+/// 基类只管生命周期与 table 间的桥接：
+/// - 身份：`stableId` / `contentHash` / `identifier`
+/// - 尺寸缓存：`cachedWidth` / `cachedHeight`
+/// - table 反向调用：`table` + `index` + `noteHeightOfRow` / `redraw`
+/// - 绘制 / 命中 / 选中的**抽象方法**（各子类按自己的需要 override）
+///
 /// 子类必须 override：
 /// - ``stableId``：diff / reload 用
 /// - ``contentHash``：同 stableId 下检测内容变化的指纹
 /// - ``makeSize(width:)``：按 width 计算 `cachedHeight` + 内部 layout
 /// - ``draw(in:bounds:)``：绘制内容到当前 flipped CGContext
 /// - ``viewClass()``：若需要自定义 row view 子类
-///
-/// 对齐 Telegram `TableRowItem`：持 `weak var table` + `index`，row 可以反向
-/// 调用 `table.noteHeightOfRow(_:)` 让表只刷新自己这一行——这是 tool block
-/// 动态展开 / 收起的基础设施。
 @MainActor
 class TranscriptRow {
     init() {}
@@ -42,40 +44,18 @@ class TranscriptRow {
     var cachedHeight: CGFloat = 0
     var cachedWidth: CGFloat = 0
 
-    /// Fragment 缓存（性能守则 #1）：`FragmentRow` 实现的 row 每次 width 变化
-    /// 时调 `fragments(width:)` 填一次；`draw` / `hit` / `selectableRegions`
-    /// 都读这里，绝不重建。非 FragmentRow 的 row 此数组恒为空。
-    var cachedFragments: [Fragment] = []
-
-    /// Row-owned 选中存储。Fragment 的 setSelection 闭包写这里，painter 的
-    /// `fragment.selectionRange(from:)` / `selectionMatrix(from:)` 等方法读这里。
-    /// Key 形状由 fragment 自己决定（`TableCellKey`、`ListTextKey`、Int、String
-    /// 等），基类只做黑盒透传。
-    fileprivate var selections: [AnyHashable: NSRange] = [:]
-
     /// 宿主 controller（= Telegram 的 `table` 字段）。`merge` / `replace` 后由
     /// controller 负责维护，row 侧只读。
     weak var table: TranscriptController?
 
     /// row 在 controller.rows 中的当前下标。未挂载时为 -1。
-    /// controller 每次改动 `rows` 后会重算一次，row 侧只读。
+    /// controller 每次改动 `rows` 后会重算一次,row 侧只读。
     var index: Int = -1
 
-    /// 按当前宽度计算 layout / 尺寸。子类可 override；默认实现走 `FragmentRow`
-    /// 路径——若 self 是 FragmentRow 且 width 真变了，调 `fragments(width:)`
-    /// 把返回的 `FragmentLayout` 拆到 `cachedFragments` 和 `cachedHeight`。
-    /// 非 FragmentRow 且未 override 的 row 退化为高度 0（旧基类行为）。
-    func makeSize(width: CGFloat) {
-        guard width != cachedWidth else { return }
-        cachedWidth = width
-        if let fr = self as? FragmentRow {
-            let layout = fr.fragments(width: width)
-            cachedFragments = layout.fragments
-            cachedHeight = layout.height
-        } else {
-            cachedHeight = 0
-        }
-    }
+    /// 按当前宽度计算 layout / 尺寸。基类是空实现（保留当前 cache），子类
+    /// 按自己的排版模型 override —— 一般先 guard `width != cachedWidth`
+    /// 跳掉无效调用,再重新排版 + 刷新 `cachedWidth` / `cachedHeight`。
+    func makeSize(width: CGFloat) {}
 
     /// rowView 类。默认 `TranscriptRowView`——仅负责把绘制委派回 row。
     /// 若需要 hover / track events 等 per-row 行为，再 override。
@@ -84,47 +64,8 @@ class TranscriptRow {
     }
 
     /// 绘制入口。`bounds` 是 rowView 的 bounds（已是 flipped 坐标：y 向下递增）。
-    /// 默认实现：遍历 `cachedFragments` 走 ``FragmentPainter``。未迁移的
-    /// 子类 override 这个方法，默认实现不会执行。
-    func draw(in ctx: CGContext, bounds: CGRect) {
-        guard !cachedFragments.isEmpty else { return }
-        for frag in cachedFragments {
-            FragmentPainter.paint(frag, row: self, in: ctx, bounds: bounds)
-        }
-    }
-
-    /// 点击命中测试：row-local 坐标 → 需要 controller 响应的动作。
-    /// Fragment 路径下遍历 `.custom` fragment 的 `hit`；逆序（后画的在上）
-    /// 取第一个命中。未迁移的 row 可 override 返回自己的 action。
-    func hit(at point: CGPoint) -> HitAction? {
-        guard !cachedFragments.isEmpty else { return nil }
-        for frag in cachedFragments.reversed() {
-            if case .custom(let c) = frag, let action = c.hit, c.frame.contains(point) {
-                return action
-            }
-        }
-        return nil
-    }
-
-    /// Fragment 自报的 selectable regions 汇总。每个 fragment 按自己的
-    /// sub-region 规则产出，基类只负责 `flatMap + fragmentOrdinal` 编号。
-    /// 迁移后的 row 的 `TextSelectable.selectableRegions` 直接返回这个。
-    func fragmentSelectableRegions() -> [SelectableTextRegion] {
-        let rowId = stableId
-        var out: [SelectableTextRegion] = []
-        for (ordinal, frag) in cachedFragments.enumerated() {
-            out.append(contentsOf: frag.selectableRegions(
-                rowStableId: rowId,
-                fragmentOrdinal: ordinal,
-                store: self))
-        }
-        return out
-    }
-
-    /// Fragment 路径下的统一清选：清掉选中字典。
-    func clearFragmentSelections() {
-        selections.removeAll()
-    }
+    /// 基类空实现；每个具体 row 子类自己 override 画。
+    func draw(in ctx: CGContext, bounds: CGRect) {}
 
     // MARK: - Row-level table ops (对齐 Telegram TableRowItem.redraw / noteHeightOfRow)
 
@@ -143,30 +84,19 @@ class TranscriptRow {
         table?.reloadRow(index, animated: animated)
     }
 
-    // MARK: - 默认 TextSelectable 实现（在 class body 以便子类 override）
+    // MARK: - TextSelectable defaults
     //
-    // 所有走 fragment 路径的 row 自动获得选中能力，无需逐个 row 写 extension。
-    // 非 fragment 路径的 row（当前只有 UserBubbleRow）override 下面这三个成员。
     // 放在 class body 而非 extension——Swift 要求可 override 的成员必须声明在
     // class body 里，extension 里的 final-by-default 成员不能被子类 override。
+    // 需要选中能力的 row（AssistantMarkdownRow、UserBubbleRow）override 这三个；
+    // 不支持选中的 row（PlaceholderRow）用基类的空默认即可。
 
-    var selectableRegions: [SelectableTextRegion] {
-        fragmentSelectableRegions()
-    }
+    var selectableRegions: [SelectableTextRegion] { [] }
     var selectionHeader: String? { nil }
-    func clearSelection() {
-        clearFragmentSelections()
-    }
+    func clearSelection() {}
 }
 
 // MARK: - Protocol conformances
 
 // TextSelectable 的三个成员在 class body 里已经实现，extension 只负责声明协议身份。
 extension TranscriptRow: TextSelectable {}
-
-// SelectionStore：fragment 读写选中的黑盒接口。
-extension TranscriptRow: SelectionStore {
-    func range(for key: AnyHashable) -> NSRange? { selections[key] }
-    func setRange(_ r: NSRange, for key: AnyHashable) { selections[key] = r }
-    func clearAll() { selections.removeAll() }
-}

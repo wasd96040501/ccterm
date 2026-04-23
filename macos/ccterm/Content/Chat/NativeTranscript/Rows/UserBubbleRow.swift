@@ -226,7 +226,7 @@ final class UserBubbleRow: TranscriptRow {
     }
 
     /// Chevron 点击命中区（row 本地坐标）。`!canCollapse` 时返回 nil。
-    fileprivate func chevronHitRectInRow() -> CGRect? {
+    func chevronHitRectInRow() -> CGRect? {
         guard canCollapse else { return nil }
         let glyph = chevronDrawRect()
         let expand = (theme.chevronHitSize - theme.chevronSize) / 2
@@ -235,9 +235,9 @@ final class UserBubbleRow: TranscriptRow {
 
     // MARK: - Selection override
     //
-    // UserBubbleRow 还没迁成 FragmentRow（自己 override draw），所以覆盖基类
-    // 默认实现、用自己的 `currentSelection` 单 region 管。迁到 fragments 之后
-    // 这两个 override 就可以删掉，由基类默认实现接管。
+    // UserBubble 自己 override draw（气泡 + 文字 + chevron + transparency layer
+    // fade mask），选中就只有一个 region（整段文字）。和 AssistantMarkdownRow
+    // 的多段选中模型是两个独立实现，不共享基类默认。
     // Override 必须写在 class body（Swift 不支持 extension override class-body
     // 成员）。
 

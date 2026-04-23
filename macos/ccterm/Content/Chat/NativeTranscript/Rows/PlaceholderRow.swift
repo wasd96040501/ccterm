@@ -2,15 +2,13 @@ import AppKit
 import CoreText
 
 /// 工具调用 / thinking / group 的占位 row。
-/// 灰色虚线边框 + 中心 label 文本，固定高度约 36pt。
-///
-/// Fragment 化实现：`.rect(stroke dashed)` + `.line(label)`。
-final class PlaceholderRow: TranscriptRow, FragmentRow {
+/// 灰色虚线边框 + 中心 label 文本，固定高度。
+final class PlaceholderRow: TranscriptRow {
     let label: String
     let theme: TranscriptTheme
     private let stable: AnyHashable
 
-    /// 宽度无关：init / applyLayout 时 CT 排好，`fragments(width:)` 只拼几何。
+    /// 宽度无关：init / applyLayout 时 CT 排好，draw 路径只读。
     private var labelLine: CTLine?
     private var labelAscent: CGFloat = 0
     private var labelDescent: CGFloat = 0
@@ -24,9 +22,9 @@ final class PlaceholderRow: TranscriptRow, FragmentRow {
         buildLabelLine()
     }
 
-    /// Adopts a precomputed `PlaceholderPrepared`. Layout is width-independent
-    /// and trivial, so the caller may follow up with `applyLayout(_:)`
-    /// directly from prepare output without re-typesetting on main.
+    /// Adopts a precomputed `PlaceholderPrepared`. Layout 是宽度无关的，
+    /// 调用方紧跟着 `applyLayout(_:)` 喂 prepare 阶段的 CT 结果就能
+    /// 完全避开 main-thread 排版。
     init(prepared: PlaceholderPrepared, theme: TranscriptTheme) {
         self.label = prepared.label
         self.theme = theme
@@ -40,10 +38,7 @@ final class PlaceholderRow: TranscriptRow, FragmentRow {
     nonisolated deinit { }
 
     /// Adopts a precomputed `PlaceholderLayoutData` — CTLine already built
-    /// off-main by `TranscriptPrepare.layoutPlaceholder`. 高度宽度无关，
-    /// 直接采纳；fragments 留到首次 `makeSize(width:)` 惰性构造（cachedWidth
-    /// 保持 0 强制触发），`cachedHeight` 先吃 layout 的值保证 heightOfRow
-    /// 在 fragments 构造前就有正确值。
+    /// off-main by `TranscriptPrepare.layoutPlaceholder`.
     func applyLayout(_ layout: PlaceholderLayoutData) {
         self.labelLine = layout.labelLine
         self.labelAscent = layout.labelAscent
@@ -62,41 +57,54 @@ final class PlaceholderRow: TranscriptRow, FragmentRow {
         return h.finalize()
     }
 
-    // MARK: - FragmentRow
+    // MARK: - Layout
 
-    func fragments(width: CGFloat) -> FragmentLayout {
+    /// 高度宽度无关（固定 `placeholderHeight`）；这里只记 `cachedWidth`，
+    /// 不动 `cachedHeight`（由 `applyLayout` 或 `init` 设好）。
+    override func makeSize(width: CGFloat) {
+        guard width != cachedWidth else { return }
+        cachedWidth = width
+        if cachedHeight == 0 {
+            cachedHeight = theme.placeholderHeight + 2 * theme.rowVerticalPadding
+        }
+    }
+
+    // MARK: - Draw
+
+    override func draw(in ctx: CGContext, bounds: CGRect) {
         if labelLine == nil { buildLabelLine() }
 
         let rect = CGRect(
             x: theme.placeholderHorizontalInset,
             y: theme.rowVerticalPadding + theme.placeholderVerticalInset,
-            width: max(0, width - 2 * theme.placeholderHorizontalInset),
+            width: max(0, cachedWidth - 2 * theme.placeholderHorizontalInset),
             height: theme.placeholderHeight - 2 * theme.placeholderVerticalInset)
 
-        var out: [Fragment] = []
-        out.append(.rect(RectFragment(
-            frame: rect,
-            style: .stroke(
-                NSColor.tertiaryLabelColor,
-                lineWidth: 1,
-                dash: theme.placeholderLineDashPattern,
-                cornerRadius: theme.placeholderCornerRadius))))
+        ctx.saveGState()
+        ctx.setStrokeColor(NSColor.tertiaryLabelColor.cgColor)
+        ctx.setLineWidth(1)
+        ctx.setLineDash(phase: 0, lengths: theme.placeholderLineDashPattern)
+        let path = CGPath(
+            roundedRect: rect,
+            cornerWidth: theme.placeholderCornerRadius,
+            cornerHeight: theme.placeholderCornerRadius,
+            transform: nil)
+        ctx.addPath(path)
+        ctx.strokePath()
+        ctx.restoreGState()
 
         if let line = labelLine {
             // Vertically center the label on the rect's midline.
-            // `TranscriptRowView` 的 `draw(_:in:)` 会把 textMatrix flip，
-            // 这里的 origin.y 是 row-local top，baseline = origin.y + ascent。
+            // Context is flipped; textMatrix flip maps glyphs correctly.
             let baselineY = rect.midY + (labelAscent - labelDescent) / 2
-            out.append(.line(LineFragment(
-                line: line,
-                origin: CGPoint(x: rect.minX + 12, y: baselineY - labelAscent),
-                ascent: labelAscent,
-                descent: labelDescent,
-                width: labelWidth)))
+            ctx.saveGState()
+            ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
+            ctx.textPosition = CGPoint(
+                x: rect.minX + 12,
+                y: baselineY)
+            CTLineDraw(line, ctx)
+            ctx.restoreGState()
         }
-
-        let totalHeight = theme.placeholderHeight + 2 * theme.rowVerticalPadding
-        return FragmentLayout(fragments: out, height: totalHeight)
     }
 
     // MARK: - Private

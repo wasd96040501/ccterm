@@ -224,7 +224,6 @@ final class TranscriptPrepareTests: XCTestCase {
             case .assistant(_, let l): return acc + l.cachedHeight
             case .user(_, let l, _): return acc + l.cachedHeight
             case .placeholder(_, let l): return acc + l.cachedHeight
-            case .diff(_, let l): return acc + l.cachedHeight
             }
         }
         XCTAssertGreaterThanOrEqual(accumulatedHeight, viewportH,
@@ -334,7 +333,6 @@ extension TranscriptPrepareTests {
         case .assistant(let p, _): return p.stable
         case .user(let p, _, _): return p.stable
         case .placeholder(let p, _): return p.stable
-        case .diff(let p, _): return p.stable
         }
     }
 }

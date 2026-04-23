@@ -83,7 +83,7 @@ final class TranscriptTableLayoutTests: XCTestCase {
         let layout = TranscriptTableLayout.make(contents: contents, theme: theme, maxWidth: 400)
         XCTAssertTrue(layout.columnWidths.isEmpty)
         XCTAssertTrue(layout.rowHeights.isEmpty)
-        XCTAssertEqual(layout.totalWidth, 0)
+        XCTAssertEqual(layout.measuredWidth, 0)
         XCTAssertEqual(layout.totalHeight, 0)
     }
 

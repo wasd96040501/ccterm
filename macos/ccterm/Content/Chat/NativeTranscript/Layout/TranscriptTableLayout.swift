@@ -90,7 +90,7 @@ struct TranscriptTableLayout {
     let alignments: [MarkdownTable.Alignment]
     let theme: TranscriptTheme
 
-    var totalWidth: CGFloat { columnWidths.reduce(0, +) }
+    var measuredWidth: CGFloat { columnWidths.reduce(0, +) }
     var totalHeight: CGFloat { rowHeights.reduce(0, +) }
 
     // MARK: - Build
@@ -226,7 +226,7 @@ struct TranscriptTableLayout {
         let tableRect = CGRect(
             x: origin.x,
             y: origin.y,
-            width: totalWidth,
+            width: measuredWidth,
             height: totalHeight)
 
         ctx.saveGState()

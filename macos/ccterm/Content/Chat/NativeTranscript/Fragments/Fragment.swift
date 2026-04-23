@@ -130,7 +130,7 @@ struct TableFragment {
 
     var frame: CGRect {
         CGRect(x: origin.x, y: origin.y,
-               width: max(layout.totalWidth, 1),
+               width: max(layout.measuredWidth, 1),
                height: max(layout.totalHeight, 1))
     }
 }

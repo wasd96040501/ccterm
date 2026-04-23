@@ -2,21 +2,26 @@ import AppKit
 import CoreText
 
 /// 工具调用 / thinking / group 的占位 row。
-/// 灰色虚线边框 + label 文本，固定高度约 36pt。
-final class PlaceholderRow: TranscriptRow {
+/// 灰色虚线边框 + 中心 label 文本，固定高度约 36pt。
+///
+/// Fragment 化实现：`.rect(stroke dashed)` + `.line(label)`。
+final class PlaceholderRow: TranscriptRow, FragmentRow {
     let label: String
     let theme: TranscriptTheme
     private let stable: AnyHashable
 
+    /// 宽度无关：init / applyLayout 时 CT 排好，`fragments(width:)` 只拼几何。
     private var labelLine: CTLine?
     private var labelAscent: CGFloat = 0
     private var labelDescent: CGFloat = 0
+    private var labelWidth: CGFloat = 0
 
     init(label: String, theme: TranscriptTheme, stable: AnyHashable) {
         self.label = label
         self.theme = theme
         self.stable = stable
         super.init()
+        buildLabelLine()
     }
 
     /// Adopts a precomputed `PlaceholderPrepared`. Layout is width-independent
@@ -27,6 +32,7 @@ final class PlaceholderRow: TranscriptRow {
         self.theme = theme
         self.stable = prepared.stable
         super.init()
+        buildLabelLine()
     }
 
     /// 显式标注：Swift 6 子类 deinit 不自动继承父类 nonisolated 属性，
@@ -34,15 +40,17 @@ final class PlaceholderRow: TranscriptRow {
     nonisolated deinit { }
 
     /// Adopts a precomputed `PlaceholderLayoutData` — CTLine already built
-    /// off-main by `TranscriptPrepare.layoutPlaceholder`.
+    /// off-main by `TranscriptPrepare.layoutPlaceholder`. 高度宽度无关，
+    /// 直接采纳；fragments 留到首次 `makeSize(width:)` 惰性构造（cachedWidth
+    /// 保持 0 强制触发），`cachedHeight` 先吃 layout 的值保证 heightOfRow
+    /// 在 fragments 构造前就有正确值。
     func applyLayout(_ layout: PlaceholderLayoutData) {
         self.labelLine = layout.labelLine
         self.labelAscent = layout.labelAscent
         self.labelDescent = layout.labelDescent
+        self.labelWidth = CGFloat(CTLineGetTypographicBounds(
+            layout.labelLine, nil, nil, nil))
         self.cachedHeight = layout.cachedHeight
-        // Width-independent layout: cachedWidth is inherited from whatever
-        // width was last requested (or 0). Not semantically meaningful here,
-        // but leave the field untouched to match legacy behavior.
     }
 
     override var stableId: AnyHashable { stable }
@@ -54,10 +62,46 @@ final class PlaceholderRow: TranscriptRow {
         return h.finalize()
     }
 
-    override func makeSize(width: CGFloat) {
-        guard width != cachedWidth else { return }
-        cachedWidth = width
+    // MARK: - FragmentRow
 
+    func fragments(width: CGFloat) -> FragmentLayout {
+        if labelLine == nil { buildLabelLine() }
+
+        let rect = CGRect(
+            x: theme.placeholderHorizontalInset,
+            y: theme.rowVerticalPadding + theme.placeholderVerticalInset,
+            width: max(0, width - 2 * theme.placeholderHorizontalInset),
+            height: theme.placeholderHeight - 2 * theme.placeholderVerticalInset)
+
+        var out: [Fragment] = []
+        out.append(.rect(RectFragment(
+            frame: rect,
+            style: .stroke(
+                NSColor.tertiaryLabelColor,
+                lineWidth: 1,
+                dash: theme.placeholderLineDashPattern,
+                cornerRadius: theme.placeholderCornerRadius))))
+
+        if let line = labelLine {
+            // Vertically center the label on the rect's midline.
+            // `TranscriptRowView` 的 `draw(_:in:)` 会把 textMatrix flip，
+            // 这里的 origin.y 是 row-local top，baseline = origin.y + ascent。
+            let baselineY = rect.midY + (labelAscent - labelDescent) / 2
+            out.append(.line(LineFragment(
+                line: line,
+                origin: CGPoint(x: rect.minX + 12, y: baselineY - labelAscent),
+                ascent: labelAscent,
+                descent: labelDescent,
+                width: labelWidth)))
+        }
+
+        let totalHeight = theme.placeholderHeight + 2 * theme.rowVerticalPadding
+        return FragmentLayout(fragments: out, height: totalHeight)
+    }
+
+    // MARK: - Private
+
+    private func buildLabelLine() {
         let attrs: [NSAttributedString.Key: Any] = [
             .font: theme.placeholderTextFont,
             .foregroundColor: NSColor.secondaryLabelColor,
@@ -65,40 +109,10 @@ final class PlaceholderRow: TranscriptRow {
         let str = NSAttributedString(string: label, attributes: attrs)
         let line = CTLineCreateWithAttributedString(str)
         var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
-        _ = CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
+        let width = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
         labelLine = line
         labelAscent = ascent
         labelDescent = descent
-
-        cachedHeight = theme.placeholderHeight + 2 * theme.rowVerticalPadding
-    }
-
-    override func draw(in ctx: CGContext, bounds: CGRect) {
-        let rect = CGRect(
-            x: theme.placeholderHorizontalInset,
-            y: theme.rowVerticalPadding + theme.placeholderVerticalInset,
-            width: bounds.width - 2 * theme.placeholderHorizontalInset,
-            height: theme.placeholderHeight - 2 * theme.placeholderVerticalInset)
-
-        ctx.saveGState()
-        ctx.setStrokeColor(NSColor.tertiaryLabelColor.cgColor)
-        ctx.setLineDash(phase: 0, lengths: theme.placeholderLineDashPattern)
-        ctx.setLineWidth(1)
-        let path = CGPath(
-            roundedRect: rect,
-            cornerWidth: theme.placeholderCornerRadius,
-            cornerHeight: theme.placeholderCornerRadius,
-            transform: nil)
-        ctx.addPath(path)
-        ctx.strokePath()
-        ctx.restoreGState()
-
-        guard let labelLine else { return }
-        let baselineY = rect.midY + (labelAscent - labelDescent) / 2
-        ctx.saveGState()
-        ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
-        ctx.textPosition = CGPoint(x: rect.minX + 12, y: baselineY)
-        CTLineDraw(labelLine, ctx)
-        ctx.restoreGState()
+        labelWidth = width
     }
 }

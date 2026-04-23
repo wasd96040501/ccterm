@@ -73,7 +73,9 @@ enum TranscriptPreprocessor {
         await MainActor.run {
             for (rowIdx, tokens) in byRow {
                 if rowIdx < rows.count {
-                    rows[rowIdx].apply(codeTokens: tokens)
+                    var anyKeyed: [AnyHashable: [SyntaxToken]] = [:]
+                    for (k, v) in tokens { anyKeyed[AnyHashable(k)] = v }
+                    rows[rowIdx].applyTokens(anyKeyed)
                 }
             }
         }

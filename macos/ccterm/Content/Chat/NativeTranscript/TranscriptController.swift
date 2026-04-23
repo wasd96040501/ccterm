@@ -745,16 +745,20 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
     }
 
     /// 把 Phase 2 highlight 完成后 tokens 回写到已挂载的 rows。
+    /// 主线程回灌：把批量 highlight 产出的 tokens 喂给已挂载的 rows。
+    /// Row-type-agnostic：走 `FragmentRow.applyTokens` 协议，按 stableId
+    /// 找到对应 row 后 dispatch——assistant 的 `[Int: tokens]` 和 diff 的
+    /// `[String: tokens]` 共用同一个 AnyHashable-keyed 通道。
     private func backfillHighlightTokens(
-        tokensByStableId: [AnyHashable: [Int: [SyntaxToken]]],
+        tokensByStableId: [AnyHashable: [AnyHashable: [SyntaxToken]]],
         width: CGFloat
     ) {
         var changed: IndexSet = []
         for (idx, row) in self.rows.enumerated() {
-            guard let a = row as? AssistantMarkdownRow,
-                  let tokens = tokensByStableId[a.stableId] else { continue }
-            a.apply(codeTokens: tokens)
-            a.makeSize(width: width)
+            guard let tokens = tokensByStableId[row.stableId],
+                  let fr = row as? FragmentRow else { continue }
+            fr.applyTokens(tokens)
+            row.makeSize(width: width)
             changed.insert(idx)
         }
         guard !changed.isEmpty else { return }
@@ -784,39 +788,68 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
             let r = PlaceholderRow(prepared: prepared, theme: theme)
             r.applyLayout(layout)
             return r
+        case .diff(let prepared, let layout):
+            let r = DiffRow(prepared: prepared, theme: theme)
+            r.applyLayout(layout)
+            return r
         }
     }
 
     // MARK: - Highlight pipeline (nonisolated)
 
-    /// 收集 `items` 中所有 assistant 的 code block → 一次 highlightBatch →
-    /// 对命中 token 的 item 重建 prebuilt(用彩色 attr)+ 再排版。修改 `items`
-    /// in-place。
+    /// 收集 `items` 中 assistant 的 code block + diff 的 unique 行内容
+    /// → 一次 highlightBatch → 把 tokens 折回对应 prepared / layout → 在
+    /// `items` 上 in-place 替换；同时回传 `tokensByStableId` 供主线程
+    /// `backfillHighlightTokens` 喂给已挂载的 rows。
+    ///
+    /// tokensByStableId 的 inner key 是 `AnyHashable`：
+    /// - Assistant: `Int`（segmentIndex）
+    /// - Diff:      `String`（行内容）
+    /// 两边共用同一条 FragmentRow.applyTokens 通道。
     nonisolated private static func applyHighlightTokens(
         to items: inout [TranscriptPreparedItem],
         theme: TranscriptTheme,
         width: CGFloat,
         engine: SyntaxHighlightEngine?
-    ) async -> (hlMs: Int, codeBlockCount: Int, tokensByStableId: [AnyHashable: [Int: [SyntaxToken]]]) {
+    ) async -> (hlMs: Int, codeBlockCount: Int, tokensByStableId: [AnyHashable: [AnyHashable: [SyntaxToken]]]) {
         var requests: [(code: String, language: String?)] = []
-        var routing: [(itemIndex: Int, segmentIndex: Int)] = []
+        var routing: [(itemIndex: Int, innerKey: AnyHashable)] = []
+
         for (itemIdx, item) in items.enumerated() {
-            guard case let .assistant(prepared, _) = item,
-                  !prepared.hasHighlight else { continue }
-            for (segIdx, seg) in prepared.parsedDocument.segments.enumerated() {
-                if case .codeBlock(let block) = seg {
-                    requests.append((block.code, block.language))
-                    routing.append((itemIdx, segIdx))
+            switch item {
+            case .assistant(let prepared, _):
+                guard !prepared.hasHighlight else { continue }
+                for (segIdx, seg) in prepared.parsedDocument.segments.enumerated() {
+                    if case .codeBlock(let block) = seg {
+                        requests.append((block.code, block.language))
+                        routing.append((itemIdx, AnyHashable(segIdx)))
+                    }
                 }
+            case .diff(let prepared, _):
+                guard !prepared.hasHighlight else { continue }
+                var seen: Set<String> = []
+                for hunk in prepared.hunks {
+                    for line in hunk.lines {
+                        let content = line.content
+                        if content.isEmpty || seen.contains(content) { continue }
+                        seen.insert(content)
+                        requests.append((content, prepared.language))
+                        routing.append((itemIdx, AnyHashable(content)))
+                    }
+                }
+            case .user, .placeholder:
+                continue
             }
         }
+
+        let totalCount = requests.count
         guard !requests.isEmpty, let engine else {
-            return (0, requests.count, [:])
+            return (0, totalCount, [:])
         }
-        if Task.isCancelled { return (0, requests.count, [:]) }
+        if Task.isCancelled { return (0, totalCount, [:]) }
 
         await engine.load()
-        if Task.isCancelled { return (0, requests.count, [:]) }
+        if Task.isCancelled { return (0, totalCount, [:]) }
 
         let t0 = CFAbsoluteTimeGetCurrent()
         let batch = await engine.highlightBatch(requests)
@@ -824,38 +857,70 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
         guard batch.count == routing.count else {
             appLog(.warning, "TranscriptController",
                 "highlight batch size mismatch: got \(batch.count) expected \(routing.count)")
-            return (hlMs, requests.count, [:])
+            return (hlMs, totalCount, [:])
         }
 
-        var byItem: [Int: [Int: [SyntaxToken]]] = [:]
+        // Group tokens by itemIdx (inner key remains AnyHashable).
+        var byItem: [Int: [AnyHashable: [SyntaxToken]]] = [:]
         for (i, route) in routing.enumerated() {
-            byItem[route.itemIndex, default: [:]][route.segmentIndex] = batch[i]
+            byItem[route.itemIndex, default: [:]][route.innerKey] = batch[i]
         }
 
-        var tokensByStableId: [AnyHashable: [Int: [SyntaxToken]]] = [:]
-        for (itemIdx, segTokens) in byItem {
-            guard case let .assistant(prepared, _) = items[itemIdx] else { continue }
-            let newPrebuilt = MarkdownRowPrebuilder.build(
-                document: prepared.parsedDocument,
-                theme: theme,
-                codeTokens: segTokens)
-            let newPrepared = AssistantPrepared(
-                source: prepared.source,
-                parsedDocument: prepared.parsedDocument,
-                prebuilt: newPrebuilt,
-                stable: prepared.stable,
-                contentHash: prepared.contentHash,
-                hasHighlight: true)
-            let newLayout = TranscriptPrepare.layoutAssistant(
-                prebuilt: newPrebuilt, theme: theme, width: width)
-            let newItem: TranscriptPreparedItem = .assistant(newPrepared, newLayout)
-            items[itemIdx] = newItem
-            tokensByStableId[prepared.stable] = segTokens
+        // Fold back into each item; write to cache for re-entry reuse.
+        var tokensByStableId: [AnyHashable: [AnyHashable: [SyntaxToken]]] = [:]
+        for (itemIdx, innerTokens) in byItem {
+            switch items[itemIdx] {
+            case .assistant(let prepared, _):
+                var segTokens: [Int: [SyntaxToken]] = [:]
+                for (k, v) in innerTokens {
+                    if let i = k.base as? Int { segTokens[i] = v }
+                }
+                let newPrebuilt = MarkdownRowPrebuilder.build(
+                    document: prepared.parsedDocument,
+                    theme: theme,
+                    codeTokens: segTokens)
+                let newPrepared = AssistantPrepared(
+                    source: prepared.source,
+                    parsedDocument: prepared.parsedDocument,
+                    prebuilt: newPrebuilt,
+                    stable: prepared.stable,
+                    contentHash: prepared.contentHash,
+                    hasHighlight: true)
+                let newLayout = TranscriptPrepare.layoutAssistant(
+                    prebuilt: newPrebuilt, theme: theme, width: width)
+                let newItem: TranscriptPreparedItem = .assistant(newPrepared, newLayout)
+                items[itemIdx] = newItem
+                tokensByStableId[prepared.stable] = innerTokens
+                TranscriptPrepareCache.shared.put(
+                    newItem.cacheKey(width: width), newItem)
 
-            TranscriptPrepareCache.shared.put(
-                newItem.cacheKey(width: width), newItem)
+            case .diff(let prepared, _):
+                var lineHighlights = prepared.lineHighlights
+                for (k, v) in innerTokens {
+                    if let s = k.base as? String { lineHighlights[s] = v }
+                }
+                let newPrepared = DiffPrepared(
+                    filePath: prepared.filePath,
+                    hunks: prepared.hunks,
+                    language: prepared.language,
+                    suppressInsertionStyle: prepared.suppressInsertionStyle,
+                    stable: prepared.stable,
+                    contentHash: prepared.contentHash,
+                    lineHighlights: lineHighlights,
+                    hasHighlight: true)
+                let newLayout = TranscriptPrepare.layoutDiff(
+                    prepared: newPrepared, theme: theme, width: width)
+                let newItem: TranscriptPreparedItem = .diff(newPrepared, newLayout)
+                items[itemIdx] = newItem
+                tokensByStableId[prepared.stable] = innerTokens
+                TranscriptPrepareCache.shared.put(
+                    newItem.cacheKey(width: width), newItem)
+
+            case .user, .placeholder:
+                continue
+            }
         }
-        return (hlMs, requests.count, tokensByStableId)
+        return (hlMs, totalCount, tokensByStableId)
     }
 
     // MARK: - merge

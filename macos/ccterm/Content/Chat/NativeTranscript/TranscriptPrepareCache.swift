@@ -46,6 +46,7 @@ final class TranscriptPrepareCache: @unchecked Sendable {
         case assistant
         case user(isExpanded: Bool)
         case placeholder
+        case diff
     }
 
     private let lock = NSLock()
@@ -175,6 +176,17 @@ extension TranscriptPreparedItem {
                 stable: newId,
                 contentHash: p.contentHash)
             return .placeholder(newP, l)
+        case .diff(let p, let l):
+            let newP = DiffPrepared(
+                filePath: p.filePath,
+                hunks: p.hunks,
+                language: p.language,
+                suppressInsertionStyle: p.suppressInsertionStyle,
+                stable: newId,
+                contentHash: p.contentHash,
+                lineHighlights: p.lineHighlights,
+                hasHighlight: p.hasHighlight)
+            return .diff(newP, l)
         }
     }
 
@@ -198,6 +210,11 @@ extension TranscriptPreparedItem {
                 contentHash: p.contentHash,
                 widthBucket: TranscriptPrepareCache.widthBucket(width),
                 variant: .placeholder)
+        case .diff(let p, _):
+            return TranscriptPrepareCache.Key(
+                contentHash: p.contentHash,
+                widthBucket: TranscriptPrepareCache.widthBucket(width),
+                variant: .diff)
         }
     }
 }

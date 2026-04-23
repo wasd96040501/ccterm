@@ -307,6 +307,7 @@ enum TranscriptRowBuilder {
         case .assistant(_, let layout): return layout.cachedHeight
         case .user(_, let layout, _): return layout.cachedHeight
         case .placeholder(_, let layout): return layout.cachedHeight
+        case .diff(_, let layout): return layout.cachedHeight
         }
     }
 
@@ -460,6 +461,65 @@ enum TranscriptRowBuilder {
         return item
     }
 
+    nonisolated private static func cachedOrBuildDiff(
+        filePath: String,
+        oldString: String,
+        newString: String,
+        suppressInsertionStyle: Bool,
+        theme: TranscriptTheme,
+        width: CGFloat,
+        stable: AnyHashable
+    ) -> TranscriptPreparedItem {
+        var hasher = Hasher()
+        hasher.combine(filePath)
+        hasher.combine(oldString)
+        hasher.combine(newString)
+        hasher.combine(suppressInsertionStyle)
+        hasher.combine(theme.markdown.fingerprint)
+        let contentHash = hasher.finalize()
+        let key = TranscriptPrepareCache.Key(
+            contentHash: contentHash,
+            widthBucket: TranscriptPrepareCache.widthBucket(width),
+            variant: .diff)
+        if let cached = TranscriptPrepareCache.shared.get(key) {
+            return cached.withStableId(stable)
+        }
+        let prepared = TranscriptPrepare.diff(
+            filePath: filePath,
+            oldString: oldString,
+            newString: newString,
+            suppressInsertionStyle: suppressInsertionStyle,
+            theme: theme,
+            stable: stable)
+        let layout = TranscriptPrepare.layoutDiff(
+            prepared: prepared, theme: theme, width: width)
+        let item: TranscriptPreparedItem = .diff(prepared, layout)
+        TranscriptPrepareCache.shared.put(key, item)
+        return item
+    }
+
+    /// Edit 的 input 是否够构造 diff：至少要有 `filePath` + 非空 old 或 new。
+    nonisolated private static func editDiffArgs(
+        _ edit: ToolUseEdit
+    ) -> (filePath: String, oldString: String, newString: String)? {
+        guard let input = edit.input,
+              let filePath = input.filePath, !filePath.isEmpty else { return nil }
+        let oldS = input.oldString ?? ""
+        let newS = input.newString ?? ""
+        guard !(oldS.isEmpty && newS.isEmpty) else { return nil }
+        return (filePath, oldS, newS)
+    }
+
+    /// Write 的 input 是否够构造 diff：至少要有 `filePath` + 非空 `content`。
+    nonisolated private static func writeDiffArgs(
+        _ write: ToolUseWrite
+    ) -> (filePath: String, content: String)? {
+        guard let input = write.input,
+              let filePath = input.filePath, !filePath.isEmpty,
+              let content = input.content, !content.isEmpty else { return nil }
+        return (filePath, content)
+    }
+
     nonisolated private static func prepareAppendAssistant(
         blocks: [Message2AssistantMessageContent],
         entryId: UUID,
@@ -490,13 +550,50 @@ enum TranscriptRowBuilder {
             case .toolUse(let u):
                 flushText(endIndex: idx)
                 let stableId: AnyHashable = "\(entryId.uuidString)-tool-\(idx)" as String
-                out.append(cachedOrBuildPlaceholder(
-                    label: "[Tool: \(u.caseName)]", theme: theme, stable: stableId))
+                if let item = toolUseDiffItem(
+                    u, theme: theme, width: width, stable: stableId)
+                {
+                    out.append(item)
+                } else {
+                    out.append(cachedOrBuildPlaceholder(
+                        label: "[Tool: \(u.caseName)]", theme: theme, stable: stableId))
+                }
             case .thinking, .unknown:
                 continue
             }
         }
         flushText(endIndex: blocks.count)
+    }
+
+    /// Edit / Write 路由：有完整 input 时返回 `.diff` prepared；否则 nil，
+    /// caller 退回 placeholder（流式态下 input 尚未到齐，stableId 不变
+    /// contentHash 变 → 下轮 diff 自动替换）。
+    nonisolated private static func toolUseDiffItem(
+        _ u: ToolUse,
+        theme: TranscriptTheme,
+        width: CGFloat,
+        stable: AnyHashable
+    ) -> TranscriptPreparedItem? {
+        switch u {
+        case .Edit(let edit):
+            guard let args = editDiffArgs(edit) else { return nil }
+            return cachedOrBuildDiff(
+                filePath: args.filePath,
+                oldString: args.oldString,
+                newString: args.newString,
+                suppressInsertionStyle: false,
+                theme: theme, width: width, stable: stable)
+        case .Write(let write):
+            guard let args = writeDiffArgs(write) else { return nil }
+            return cachedOrBuildDiff(
+                filePath: args.filePath,
+                oldString: "",
+                newString: args.content,
+                suppressInsertionStyle: true,
+                theme: theme, width: width, stable: stable)
+        default:
+            return nil
+        }
     }
 
     // MARK: - Single
@@ -571,15 +668,55 @@ enum TranscriptRowBuilder {
                 }
             case .toolUse(let u):
                 flushText(endIndex: idx)
-                out.append(PlaceholderRow(
-                    label: "[Tool: \(u.caseName)]",
-                    theme: theme,
-                    stable: "\(entryId.uuidString)-tool-\(idx)" as String))
+                let stableId: AnyHashable = "\(entryId.uuidString)-tool-\(idx)" as String
+                if let row = toolUseDiffRow(u, theme: theme, stable: stableId) {
+                    out.append(row)
+                } else {
+                    out.append(PlaceholderRow(
+                        label: "[Tool: \(u.caseName)]",
+                        theme: theme,
+                        stable: stableId))
+                }
             case .thinking, .unknown:
                 continue
             }
         }
         flushText(endIndex: blocks.count)
+    }
+
+    /// @MainActor 对应的 Edit / Write 路由。同 `toolUseDiffItem` 但直接返回
+    /// `DiffRow`（layout 延后到 makeSize 第一次被调）；input 不完整时回 nil，
+    /// caller 退回 PlaceholderRow。
+    @MainActor
+    private static func toolUseDiffRow(
+        _ u: ToolUse,
+        theme: TranscriptTheme,
+        stable: AnyHashable
+    ) -> TranscriptRow? {
+        switch u {
+        case .Edit(let edit):
+            guard let args = editDiffArgs(edit) else { return nil }
+            let prepared = TranscriptPrepare.diff(
+                filePath: args.filePath,
+                oldString: args.oldString,
+                newString: args.newString,
+                suppressInsertionStyle: false,
+                theme: theme,
+                stable: stable)
+            return DiffRow(prepared: prepared, theme: theme)
+        case .Write(let write):
+            guard let args = writeDiffArgs(write) else { return nil }
+            let prepared = TranscriptPrepare.diff(
+                filePath: args.filePath,
+                oldString: "",
+                newString: args.content,
+                suppressInsertionStyle: true,
+                theme: theme,
+                stable: stable)
+            return DiffRow(prepared: prepared, theme: theme)
+        default:
+            return nil
+        }
     }
 
     // MARK: - User plaintext

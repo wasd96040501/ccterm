@@ -534,6 +534,10 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
         self.merge(
             with: phase1Transition,
             scroll: .anchor(stableId: phase1AnchorStableId, topOffset: anchorTopOffset))
+        self.logVisualSnapshot(
+            tag: "phase1-merged",
+            expectedAnchorStableId: phase1AnchorStableId,
+            expectedTopOffset: anchorTopOffset)
         let tPhase1Done = CFAbsoluteTimeGetCurrent()
         let phase1Ms = Int((tPhase1Done - t0) * 1000)
         let openStart = self.openStartedAt
@@ -582,6 +586,10 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
 
                 self.backfillHighlightTokens(
                     tokensByStableId: tokensByStableId, width: width)
+                self.logVisualSnapshot(
+                    tag: "phase2-post-backfill",
+                    expectedAnchorStableId: phase1AnchorStableId,
+                    expectedTopOffset: anchorTopOffset)
 
                 // Phase 2 把 leftEntries 前插 + rightEntries 尾插。rows 现有
                 // Phase 1 那段。全量 newRows = left + phase1 + right，走 diff。
@@ -608,6 +616,10 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
                     scroll: .anchor(
                         stableId: phase1AnchorStableId,
                         topOffset: anchorTopOffset))
+                self.logVisualSnapshot(
+                    tag: "phase2-merged",
+                    expectedAnchorStableId: phase1AnchorStableId,
+                    expectedTopOffset: anchorTopOffset)
 
                 let liveIds = Set(self.rows.map { $0.stableId })
                 self.expandedUserBubbles.formIntersection(liveIds)
@@ -752,14 +764,40 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
         width: CGFloat
     ) {
         var changed: IndexSet = []
+        let visibleRange: NSRange
+        if let tv = tableView, let clip = tv.enclosingScrollView?.contentView {
+            visibleRange = tv.rows(in: clip.bounds)
+        } else {
+            visibleRange = NSRange(location: 0, length: 0)
+        }
+        var totalΔ: CGFloat = 0
+        var visibleChanged = 0
+        var visibleΔ: CGFloat = 0
         for (idx, row) in self.rows.enumerated() {
             guard let tokens = tokensByStableId[row.stableId],
                   let fr = row as? FragmentRow else { continue }
+            let pre = row.cachedHeight
             fr.applyTokens(tokens)
             row.makeSize(width: width)
+            let delta = row.cachedHeight - pre
+            totalΔ += delta
+            if NSLocationInRange(idx, visibleRange) {
+                visibleChanged += 1
+                visibleΔ += delta
+            }
             changed.insert(idx)
         }
-        guard !changed.isEmpty else { return }
+        guard !changed.isEmpty else {
+            appLog(.info, "TranscriptController",
+                "[backfill] changed=0 (no mounted rows matched tokens)")
+            return
+        }
+        appLog(.info, "TranscriptController",
+            "[backfill] changed=\(changed.count) "
+            + "visibleChanged=\(visibleChanged) "
+            + "ΣΔ=\(String(format: "%.1f", totalΔ))pt "
+            + "visibleΣΔ=\(String(format: "%.1f", visibleΔ))pt "
+            + "visibleRange=\(visibleRange.location)..<\(visibleRange.location + visibleRange.length)")
         self.tableView?.noteHeightOfRows(withIndexesChanged: changed)
         for idx in changed {
             if let rv = self.tableView?.rowView(atRow: idx, makeIfNecessary: false)
@@ -1011,16 +1049,76 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
             tableView.enclosingScrollView?.reflectScrolledClipView(clip)
         case let .anchor(stableId, topOffset):
             guard let idx = rows.firstIndex(where: { $0.stableId == stableId }) else {
+                appLog(.warning, "TranscriptController",
+                    "[scroll] .anchor stableId not found in rows (\(rows.count) rows)")
                 return
             }
             let newRect = tableView.rect(ofRow: idx)
             let newY = newRect.minY - topOffset
             let maxY = max(0, tableView.bounds.height - clip.bounds.height)
             let clamped = max(0, min(newY, maxY))
+            let clampTag: String
+            if newY < 0 { clampTag = "clamp→0(over \(String(format: "%.1f", -newY))pt)" }
+            else if newY > maxY { clampTag = "clamp→maxY(over \(String(format: "%.1f", newY - maxY))pt)" }
+            else { clampTag = "ok" }
+            appLog(.info, "TranscriptController",
+                "[scroll] .anchor idx=\(idx) rowY=\(Int(newRect.minY)) "
+                + "topOffset=\(String(format: "%.1f", topOffset)) "
+                + "newY=\(String(format: "%.1f", newY)) maxY=\(Int(maxY)) "
+                + "clipY=\(Int(clip.bounds.minY))→\(String(format: "%.1f", clamped)) "
+                + "tableH=\(Int(tableView.bounds.height)) "
+                + "clipH=\(Int(clip.bounds.height)) [\(clampTag)]")
             guard abs(clamped - clip.bounds.minY) > 0.5 else { return }
             clip.setBoundsOrigin(NSPoint(x: clip.bounds.minX, y: clamped))
             tableView.enclosingScrollView?.reflectScrolledClipView(clip)
         }
+    }
+
+    /// Diagnostic snapshot of the current scroll state vs. what an anchor
+    /// target implies. Written at the four critical points of
+    /// `runViewportFirstAroundAnchor` so we can tell **which step introduces
+    /// drift**:
+    /// - `phase1-merged`: 第一帧是否已对齐 `(stableId, topOffset)`
+    /// - `phase2-post-backfill`: highlight 回灌 + noteHeightOfRows 是否扰动了
+    ///   clipY / anchor rowY 的相对关系
+    /// - `phase2-merged`: Phase 2 前插 + re-anchor 后是否仍对齐
+    /// Δ = actualTopOffset - expectedTopOffset; >1pt 代表视觉已错位。
+    private func logVisualSnapshot(
+        tag: String,
+        expectedAnchorStableId: AnyHashable?,
+        expectedTopOffset: CGFloat?
+    ) {
+        guard let tableView,
+              let clip = tableView.enclosingScrollView?.contentView else {
+            appLog(.info, "TranscriptController",
+                "[snap] \(tag): no tableView/clipView")
+            return
+        }
+        let tableH = tableView.bounds.height
+        let clipH = clip.bounds.height
+        let clipY = clip.bounds.minY
+        let maxY = max(0, tableH - clipH)
+
+        var anchorInfo = "anchor=none"
+        if let stableId = expectedAnchorStableId,
+           let idx = rows.firstIndex(where: { $0.stableId == stableId })
+        {
+            let rect = tableView.rect(ofRow: idx)
+            let actual = rect.minY - clipY
+            let expected = expectedTopOffset ?? 0
+            let delta = actual - expected
+            anchorInfo = "anchorIdx=\(idx) rowY=\(Int(rect.minY)) "
+                + "actualTopOffset=\(String(format: "%.1f", actual)) "
+                + "expected=\(String(format: "%.1f", expected)) "
+                + "Δ=\(String(format: "%.2f", delta))pt"
+        } else if expectedAnchorStableId != nil {
+            anchorInfo = "anchor=stableId-not-in-rows"
+        }
+
+        appLog(.info, "TranscriptController",
+            "[snap] \(tag) clipY=\(Int(clipY)) maxY=\(Int(maxY)) "
+            + "tableH=\(Int(tableH)) clipH=\(Int(clipH)) "
+            + "rows=\(rows.count) \(anchorInfo)")
     }
 
     private func rowsMatchFinal(_ final: [TranscriptRow]) -> Bool {

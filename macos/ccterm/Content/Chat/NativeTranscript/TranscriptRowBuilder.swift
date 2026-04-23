@@ -388,6 +388,9 @@ enum TranscriptRowBuilder {
         return h.finalize()
     }
 
+    /// 两步：cache lookup Prepared（parse + prebuild 结果，width 无关）→
+    /// **无条件** 按当前精确 width 跑 `layoutUser`。这样 `heightOf(item)`
+    /// 永远等于后续 `row.makeSize(width: width).cachedHeight`，不存在 drift。
     nonisolated private static func cachedOrBuildUser(
         text: String,
         theme: TranscriptTheme,
@@ -397,19 +400,20 @@ enum TranscriptRowBuilder {
     ) -> TranscriptPreparedItem {
         let contentHash = userContentHash(text: text, theme: theme)
         let key = TranscriptPrepareCache.Key(
-            contentHash: contentHash,
-            widthBucket: TranscriptPrepareCache.widthBucket(width),
-            variant: .user(isExpanded: isExpanded))
-        if let cached = TranscriptPrepareCache.shared.get(key) {
-            return cached.withStableId(stable)
+            contentHash: contentHash, variant: .user)
+        let prepared: UserPrepared
+        if case .user(let p)? = TranscriptPrepareCache.shared.get(key)?
+            .withStableId(stable)
+        {
+            prepared = p
+        } else {
+            prepared = TranscriptPrepare.user(text: text, theme: theme, stable: stable)
+            TranscriptPrepareCache.shared.put(key, .user(prepared))
         }
-        let prepared = TranscriptPrepare.user(text: text, theme: theme, stable: stable)
         let layout = TranscriptPrepare.layoutUser(
             text: prepared.text, theme: theme,
             width: width, isExpanded: isExpanded)
-        let item: TranscriptPreparedItem = .user(prepared, layout, isExpanded: isExpanded)
-        TranscriptPrepareCache.shared.put(key, item)
-        return item
+        return .user(prepared, layout, isExpanded: isExpanded)
     }
 
     nonisolated private static func cachedOrBuildAssistant(
@@ -420,21 +424,23 @@ enum TranscriptRowBuilder {
     ) -> TranscriptPreparedItem {
         let contentHash = assistantContentHash(source: source, theme: theme)
         let key = TranscriptPrepareCache.Key(
-            contentHash: contentHash,
-            widthBucket: TranscriptPrepareCache.widthBucket(width),
-            variant: .assistant)
-        if let cached = TranscriptPrepareCache.shared.get(key) {
-            return cached.withStableId(stable)
+            contentHash: contentHash, variant: .assistant)
+        let prepared: AssistantPrepared
+        if case .assistant(let p)? = TranscriptPrepareCache.shared.get(key)?
+            .withStableId(stable)
+        {
+            prepared = p
+        } else {
+            prepared = TranscriptPrepare.assistant(
+                source: source, theme: theme, stable: stable)
+            // Plain prepared cached here; the highlight pass overwrites with
+            // a token-enriched prepared once available (same key, contentHash
+            // doesn't include hasHighlight).
+            TranscriptPrepareCache.shared.put(key, .assistant(prepared))
         }
-        let prepared = TranscriptPrepare.assistant(
-            source: source, theme: theme, stable: stable)
         let layout = TranscriptPrepare.layoutAssistant(
             prebuilt: prepared.prebuilt, theme: theme, width: width)
-        let item: TranscriptPreparedItem = .assistant(prepared, layout)
-        // Plain item cached here; the highlight pass will overwrite with a
-        // colored version once tokens are available.
-        TranscriptPrepareCache.shared.put(key, item)
-        return item
+        return .assistant(prepared, layout)
     }
 
     nonisolated private static func cachedOrBuildPlaceholder(
@@ -442,23 +448,22 @@ enum TranscriptRowBuilder {
         theme: TranscriptTheme,
         stable: AnyHashable
     ) -> TranscriptPreparedItem {
-        // Placeholder layout is width-independent — use a sentinel width
-        // bucket so all widths share the same cache slot.
         let contentHash = placeholderContentHash(label: label, theme: theme)
         let key = TranscriptPrepareCache.Key(
-            contentHash: contentHash,
-            widthBucket: 0,
-            variant: .placeholder)
-        if let cached = TranscriptPrepareCache.shared.get(key) {
-            return cached.withStableId(stable)
+            contentHash: contentHash, variant: .placeholder)
+        let prepared: PlaceholderPrepared
+        if case .placeholder(let p)? = TranscriptPrepareCache.shared.get(key)?
+            .withStableId(stable)
+        {
+            prepared = p
+        } else {
+            prepared = TranscriptPrepare.placeholder(
+                label: label, theme: theme, stable: stable)
+            TranscriptPrepareCache.shared.put(key, .placeholder(prepared))
         }
-        let prepared = TranscriptPrepare.placeholder(
-            label: label, theme: theme, stable: stable)
         let layout = TranscriptPrepare.layoutPlaceholder(
             label: prepared.label, theme: theme)
-        let item: TranscriptPreparedItem = .placeholder(prepared, layout)
-        TranscriptPrepareCache.shared.put(key, item)
-        return item
+        return .placeholder(prepared, layout)
     }
 
     nonisolated private static func cachedOrBuildDiff(
@@ -478,24 +483,25 @@ enum TranscriptRowBuilder {
         hasher.combine(theme.markdown.fingerprint)
         let contentHash = hasher.finalize()
         let key = TranscriptPrepareCache.Key(
-            contentHash: contentHash,
-            widthBucket: TranscriptPrepareCache.widthBucket(width),
-            variant: .diff)
-        if let cached = TranscriptPrepareCache.shared.get(key) {
-            return cached.withStableId(stable)
+            contentHash: contentHash, variant: .diff)
+        let prepared: DiffPrepared
+        if case .diff(let p)? = TranscriptPrepareCache.shared.get(key)?
+            .withStableId(stable)
+        {
+            prepared = p
+        } else {
+            prepared = TranscriptPrepare.diff(
+                filePath: filePath,
+                oldString: oldString,
+                newString: newString,
+                suppressInsertionStyle: suppressInsertionStyle,
+                theme: theme,
+                stable: stable)
+            TranscriptPrepareCache.shared.put(key, .diff(prepared))
         }
-        let prepared = TranscriptPrepare.diff(
-            filePath: filePath,
-            oldString: oldString,
-            newString: newString,
-            suppressInsertionStyle: suppressInsertionStyle,
-            theme: theme,
-            stable: stable)
         let layout = TranscriptPrepare.layoutDiff(
             prepared: prepared, theme: theme, width: width)
-        let item: TranscriptPreparedItem = .diff(prepared, layout)
-        TranscriptPrepareCache.shared.put(key, item)
-        return item
+        return .diff(prepared, layout)
     }
 
     /// Edit 的 input 是否够构造 diff：至少要有 `filePath` + 非空 old 或 new。

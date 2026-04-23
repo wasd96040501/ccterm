@@ -5,6 +5,9 @@ import XCTest
 
 /// 验证内容寻址缓存的 get/put/LRU/invalidate 行为，以及 `withStableId`
 /// 在 cache hit 时正确替换 stableId。
+///
+/// Cache 现在只存 Prepared（width 无关），Layout 每次按当前 width 重算——
+/// 相关的 drift 回归测试见 `testNoDriftAcrossWidths`。
 @MainActor
 final class TranscriptPrepareCacheTests: XCTestCase {
 
@@ -15,15 +18,15 @@ final class TranscriptPrepareCacheTests: XCTestCase {
 
     func testMissThenPutThenHit() {
         let cache = TranscriptPrepareCache(capacity: 10)
-        let item = makeUserItem(text: "hello", stable: "id-1")
-        let key = item.cacheKey(width: width)
+        let prepared = makeUserPrepared(text: "hello", stable: "id-1")
+        let key = prepared.cacheKey
 
         XCTAssertNil(cache.get(key))
-        cache.put(key, item)
+        cache.put(key, prepared)
 
         let got = cache.get(key)
         XCTAssertNotNil(got)
-        if case .user(let p, _, _) = got {
+        if case .user(let p) = got {
             XCTAssertEqual(p.text, "hello")
         } else {
             XCTFail("expected user variant")
@@ -52,21 +55,18 @@ final class TranscriptPrepareCacheTests: XCTestCase {
 
     // MARK: - withStableId semantics
 
-    /// Cache hits return items with the cached-era stableId; `withStableId`
+    /// Cache hits return Prepared with the cached-era stableId; `withStableId`
     /// rewrites it so TranscriptDiff can match the current entry. contentHash
-    /// and layout must be preserved.
-    func testWithStableIdPreservesContentAndLayout() {
-        let item = makeUserItem(text: "shared text", stable: "original-id")
-        let rewritten = item.withStableId("new-id" as AnyHashable)
+    /// must be preserved (stable-id-independent).
+    func testWithStableIdPreservesContentHash() {
+        let prepared = makeUserPrepared(text: "shared text", stable: "original-id")
+        let rewritten = prepared.withStableId("new-id" as AnyHashable)
 
         switch rewritten {
-        case .user(let p, let l, let isExp):
+        case .user(let p):
             XCTAssertEqual(p.text, "shared text")
             XCTAssertEqual(p.stable, AnyHashable("new-id"))
-            XCTAssertFalse(isExp)
-            XCTAssertGreaterThan(l.cachedHeight, 0)
-            // contentHash must be stable-id-independent — it hashes text+theme.
-            guard case let .user(orig, _, _) = item else {
+            guard case let .user(orig) = prepared else {
                 return XCTFail("expected user")
             }
             XCTAssertEqual(p.contentHash, orig.contentHash)
@@ -75,15 +75,65 @@ final class TranscriptPrepareCacheTests: XCTestCase {
         }
     }
 
-    // MARK: - Width bucketing
+    // MARK: - No drift across widths
 
-    /// 两个 width 落在同一 32px 桶 → 同一 key → cache hit。
-    /// 换到不同桶 → miss。
-    func testWidthBucketing() {
-        XCTAssertEqual(TranscriptPrepareCache.widthBucket(720), TranscriptPrepareCache.widthBucket(735))
+    /// 回归测试：同 contentHash 在两个不同 width 下跑 prepareAll，cache 命中
+    /// Prepared 但 **Layout 必按新 width 算**——每个 item 的 `layout.cachedHeight`
+    /// 必须等于同 width 下独立跑 `layoutX` 的结果，且 **两个 width 下高度不相等**
+    /// （证明 layout 没有复用旧值）。
+    ///
+    /// 这是 501976c 之后 sidebar 切换 "第一帧错位" 的根因：bucket-cached layout
+    /// 让 `heightOf(item)` 和 `row.cachedHeight` 跨 width 产生 drift。现在 layout
+    /// 不缓存，drift 构造上不可能。
+    func testNoDriftAcrossWidths() async {
+        TranscriptPrepareCache.shared.invalidateAll()
+
+        // 一条会 wrap 的长文本 user bubble。两个 width 落差大到 wrap 行数不同。
+        let longText = String(
+            repeating: "The quick brown fox jumps over the lazy dog. ",
+            count: 8)
+        let entries = [makeLocalUserEntry(text: longText)]
+
+        let widthA: CGFloat = 400
+        let widthB: CGFloat = 780
+
+        let itemsA = await Task.detached { [theme = theme] in
+            TranscriptRowBuilder.prepareAll(
+                entries: entries, theme: theme, width: widthA)
+        }.value
+
+        let itemsB = await Task.detached { [theme = theme] in
+            TranscriptRowBuilder.prepareAll(
+                entries: entries, theme: theme, width: widthB)
+        }.value
+
+        guard case .user(_, let layoutA, _) = itemsA.first,
+              case .user(_, let layoutB, _) = itemsB.first else {
+            return XCTFail("expected user items")
+        }
+
+        // Layout 必须按 caller 传入的 width 算出来。
+        XCTAssertEqual(layoutA.cachedWidth, widthA, accuracy: 0.01)
+        XCTAssertEqual(layoutB.cachedWidth, widthB, accuracy: 0.01)
+
+        // 两个 width 下高度应该不同（证明 B 没复用 A 的 cached layout）。
         XCTAssertNotEqual(
-            TranscriptPrepareCache.widthBucket(720),
-            TranscriptPrepareCache.widthBucket(800))
+            layoutA.cachedHeight, layoutB.cachedHeight,
+            "layout must be recomputed per width; got identical heights \(layoutA.cachedHeight)")
+
+        // 独立跑 `layoutUser(width: widthA)` 应该和 itemsA 的 layout 一致——
+        // 这是 "heightOf(item) == row.cachedHeight" 等式的双端。
+        let refA = TranscriptPrepare.layoutUser(
+            text: longText, theme: theme, width: widthA, isExpanded: false)
+        XCTAssertEqual(layoutA.cachedHeight, refA.cachedHeight, accuracy: 0.01)
+
+        let refB = TranscriptPrepare.layoutUser(
+            text: longText, theme: theme, width: widthB, isExpanded: false)
+        XCTAssertEqual(layoutB.cachedHeight, refB.cachedHeight, accuracy: 0.01)
+
+        // Cache 只存 Prepared（size == 1），不会因为两个 width 而膨胀。
+        XCTAssertEqual(TranscriptPrepareCache.shared.count, 1,
+            "cache stores Prepared only; two widths must share one slot")
     }
 
     // MARK: - Invalidate
@@ -101,7 +151,7 @@ final class TranscriptPrepareCacheTests: XCTestCase {
     // MARK: - End-to-end: shared cache speeds up second prepareAll
 
     /// 第一次 prepareAll 全 miss,put 到 shared cache;第二次 prepareAll
-    /// 同内容应该全 hit,返回相同的 layout(cached 版本，只替换 stableId)。
+    /// 同内容应该全 hit(Prepared 命中)。Layout 每次都重算,但 Prepared 复用。
     func testSharedCacheServesSecondPrepareAll() async {
         TranscriptPrepareCache.shared.invalidateAll()
 
@@ -133,7 +183,7 @@ final class TranscriptPrepareCacheTests: XCTestCase {
         XCTAssertEqual(totalMisses, firstMisses,
             "no new misses on second prepareAll")
 
-        // Identity: cachedHeight matches.
+        // Identity: layout heights match (same width, same text → same layout).
         for (f, s) in zip(first, second) {
             if case .user(_, let fl, _) = f, case .user(_, let sl, _) = s {
                 XCTAssertEqual(fl.cachedHeight, sl.cachedHeight, accuracy: 0.01)
@@ -143,12 +193,8 @@ final class TranscriptPrepareCacheTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func makeUserItem(text: String, stable: AnyHashable) -> TranscriptPreparedItem {
-        let prepared = TranscriptPrepare.user(
-            text: text, theme: theme, stable: stable)
-        let layout = TranscriptPrepare.layoutUser(
-            text: text, theme: theme, width: width, isExpanded: false)
-        return .user(prepared, layout, isExpanded: false)
+    private func makeUserPrepared(text: String, stable: AnyHashable) -> CachedPrepared {
+        .user(TranscriptPrepare.user(text: text, theme: theme, stable: stable))
     }
 
     @discardableResult
@@ -157,9 +203,9 @@ final class TranscriptPrepareCacheTests: XCTestCase {
         text: String,
         stable: AnyHashable
     ) -> TranscriptPrepareCache.Key {
-        let item = makeUserItem(text: text, stable: stable)
-        let key = item.cacheKey(width: width)
-        cache.put(key, item)
+        let prepared = makeUserPrepared(text: text, stable: stable)
+        let key = prepared.cacheKey
+        cache.put(key, prepared)
         return key
     }
 

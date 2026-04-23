@@ -1,31 +1,36 @@
 import AppKit
 import Foundation
 
-/// Content-addressed LRU cache for `TranscriptPreparedItem`.
+/// Content-addressed LRU cache for **width-independent** prepared data only.
 ///
-/// Purpose: on session switch / theme change / re-entry into the same view,
-/// avoid re-parsing Markdown, re-typesetting CoreText, and re-highlighting
-/// code blocks for content that was already processed in an earlier pass.
+/// Scope deliberately narrow: the cache stores the output of Markdown parse /
+/// prebuild / diff hunk computation / syntax highlight enrichment — i.e. the
+/// `Prepared` half of `TranscriptPreparedItem`. `Layout` (CoreText typesetting,
+/// `cachedHeight`) is **not** cached — it is always recomputed at the exact
+/// current width.
+///
+/// Why: a previous design cached layouts bucketed by `floor(width / 32)`. That
+/// made heights drift between same-bucket widths, causing Phase 1's budget math
+/// (which accumulated cached heights) to disagree with the row's actual
+/// `cachedHeight` after `makeSize(width:)`. On DiffRow / wrap-heavy content the
+/// drift accumulates to visible scroll-anchor misalignment ("切 sidebar 第一帧
+/// 不对"). Stripping layout from the cache makes `heightOf(item)` exactly equal
+/// to `row.cachedHeight` by construction.
 ///
 /// Design:
-/// - **Key**: `(contentHash, widthBucket, variant)`. `contentHash` already
-///   encodes source + theme fingerprint (via `AssistantPrepared.contentHash`
-///   / `UserPrepared.contentHash` / `PlaceholderPrepared.contentHash`), so a
-///   theme change yields different keys naturally.
-/// - **Width bucketing**: `floor(width / 32)` — same bucket shares layout,
-///   avoiding misses on sub-pixel resizes. A real window resize to a
-///   different bucket misses and re-layouts.
-/// - **Variant**: distinguishes assistant / user (+ expanded state) /
-///   placeholder. Prevents hash collisions between unrelated content types.
-///
-/// Value storage: the cache keeps the entire `TranscriptPreparedItem`
-/// including layout data. On hit, callers swap in the **current** stableId
-/// via `withStableId(_:)` — stableId is external (per entry UUID), not part
-/// of the cacheable content.
+/// - **Key**: `(contentHash, variant)`. `contentHash` encodes source + theme
+///   fingerprint on the prepared side — a theme change naturally yields
+///   different keys. No width component.
+/// - **Variant**: assistant / user / placeholder / diff. Prevents hash
+///   collisions between unrelated content types. User's `isExpanded` does not
+///   participate — `UserPrepared` is expand-independent (it carries only text
+///   + hash); expand state is applied at layout time.
+/// - **Value**: `CachedPrepared` — the Prepared half only. Layout is produced
+///   on-demand by callers via `TranscriptPrepare.layoutX(..., width: width)`.
 ///
 /// Thread safety: plain `NSLock` around all mutations. Reader locks are the
 /// same; contention is negligible compared to the work being cached (tens of
-/// milliseconds of Markdown parse + layout vs. microseconds of lock).
+/// milliseconds of Markdown parse + prebuild vs. microseconds of lock).
 ///
 /// Scope: shared singleton (`TranscriptPrepareCache.shared`). Multiple
 /// `TranscriptController` instances (e.g., multiple chat windows) share the
@@ -38,41 +43,24 @@ final class TranscriptPrepareCache: @unchecked Sendable {
 
     struct Key: Hashable {
         let contentHash: Int
-        let widthBucket: Int
         let variant: Variant
     }
 
     enum Variant: Hashable {
         case assistant
-        case user(isExpanded: Bool)
+        case user
         case placeholder
         case diff
     }
 
     private let lock = NSLock()
-    private var store: [Key: TranscriptPreparedItem] = [:]
+    private var store: [Key: CachedPrepared] = [:]
     private var order: [Key] = []
     private let capacity: Int
 
     /// For tests/instrumentation.
     private(set) var hitCount: Int = 0
     private(set) var missCount: Int = 0
-
-    /// Width most recently observed by a real `TranscriptController.setEntries`
-    /// invocation. Hover-prewarm reads this to choose a bucket matching the
-    /// user's actual window geometry instead of guessing a theme-defined max.
-    /// `nil` until the first setEntries runs.
-    private var _lastObservedWidth: CGFloat?
-    var lastObservedWidth: CGFloat? {
-        lock.lock()
-        defer { lock.unlock() }
-        return _lastObservedWidth
-    }
-    func recordObservedWidth(_ width: CGFloat) {
-        lock.lock()
-        defer { lock.unlock() }
-        _lastObservedWidth = width
-    }
 
     init(capacity: Int) {
         self.capacity = capacity
@@ -83,9 +71,9 @@ final class TranscriptPrepareCache: @unchecked Sendable {
     /// 线程安全，跳过 executor-hop 是安全的。
     nonisolated deinit { }
 
-    /// Look up a prepared item. Returns the cached value with its original
-    /// stableId — caller rewrites stableId via `TranscriptPreparedItem.withStableId(_:)`.
-    func get(_ key: Key) -> TranscriptPreparedItem? {
+    /// Look up a cached Prepared. Returns the value with its original
+    /// stableId — caller rewrites stableId via `CachedPrepared.withStableId(_:)`.
+    func get(_ key: Key) -> CachedPrepared? {
         lock.lock()
         defer { lock.unlock() }
         guard let item = store[key] else {
@@ -100,16 +88,16 @@ final class TranscriptPrepareCache: @unchecked Sendable {
     }
 
     /// Insert or update. Evicts oldest entries when `capacity` is exceeded.
-    func put(_ key: Key, _ item: TranscriptPreparedItem) {
+    func put(_ key: Key, _ prepared: CachedPrepared) {
         lock.lock()
         defer { lock.unlock() }
         if store[key] != nil {
-            store[key] = item
+            store[key] = prepared
             if let idx = order.firstIndex(of: key) { order.remove(at: idx) }
             order.append(key)
             return
         }
-        store[key] = item
+        store[key] = prepared
         order.append(key)
         while order.count > capacity {
             let oldest = order.removeFirst()
@@ -135,49 +123,45 @@ final class TranscriptPrepareCache: @unchecked Sendable {
     }
 }
 
-// MARK: - Key helpers
+// MARK: - Cached value type
 
-extension TranscriptPrepareCache {
-    /// Bucket a width into a cache-friendly discrete value. 32-pt granularity
-    /// means sub-pixel resizes stay in the same bucket; moving to a different
-    /// window column (or split-view half) misses.
-    static func widthBucket(_ width: CGFloat) -> Int {
-        Int((width / 32).rounded(.down))
-    }
+/// What the cache actually stores: the `Prepared` half of a prepared item.
+/// `Layout` is intentionally absent — width-dependent work is recomputed every
+/// time by `TranscriptRowBuilder.cachedOrBuildX` / `applyHighlightTokens`.
+enum CachedPrepared: @unchecked Sendable {
+    case assistant(AssistantPrepared)
+    case user(UserPrepared)
+    case placeholder(PlaceholderPrepared)
+    case diff(DiffPrepared)
 }
 
-// MARK: - stableId rewriting on cache hit
-
-extension TranscriptPreparedItem {
-    /// Returns a copy of this item with `stableId` swapped to `newId`.
-    /// Cached items lose their original session-bound stableId on retrieval;
-    /// the caller must attach the current entry's stableId so downstream
-    /// `TranscriptDiff.compute` can match / carry-over correctly.
-    func withStableId(_ newId: AnyHashable) -> TranscriptPreparedItem {
+extension CachedPrepared {
+    /// Returns a copy with the embedded prepared's `stable` replaced by `newId`.
+    /// Cache hits carry the original session's stableId; the caller must swap
+    /// to the current entry's stableId so downstream `TranscriptDiff.compute`
+    /// can match / carry-over correctly.
+    func withStableId(_ newId: AnyHashable) -> CachedPrepared {
         switch self {
-        case .assistant(let p, let l):
-            let newP = AssistantPrepared(
+        case .assistant(let p):
+            return .assistant(AssistantPrepared(
                 source: p.source,
                 parsedDocument: p.parsedDocument,
                 prebuilt: p.prebuilt,
                 stable: newId,
                 contentHash: p.contentHash,
-                hasHighlight: p.hasHighlight)
-            return .assistant(newP, l)
-        case .user(let p, let l, let isExp):
-            let newP = UserPrepared(
+                hasHighlight: p.hasHighlight))
+        case .user(let p):
+            return .user(UserPrepared(
                 text: p.text,
                 stable: newId,
-                contentHash: p.contentHash)
-            return .user(newP, l, isExpanded: isExp)
-        case .placeholder(let p, let l):
-            let newP = PlaceholderPrepared(
+                contentHash: p.contentHash))
+        case .placeholder(let p):
+            return .placeholder(PlaceholderPrepared(
                 label: p.label,
                 stable: newId,
-                contentHash: p.contentHash)
-            return .placeholder(newP, l)
-        case .diff(let p, let l):
-            let newP = DiffPrepared(
+                contentHash: p.contentHash))
+        case .diff(let p):
+            return .diff(DiffPrepared(
                 filePath: p.filePath,
                 hunks: p.hunks,
                 language: p.language,
@@ -185,36 +169,46 @@ extension TranscriptPreparedItem {
                 stable: newId,
                 contentHash: p.contentHash,
                 lineHighlights: p.lineHighlights,
-                hasHighlight: p.hasHighlight)
-            return .diff(newP, l)
+                hasHighlight: p.hasHighlight))
         }
     }
 
-    /// Extract the cache key components for a fully-prepared item. The
-    /// `widthBucket` is implicit — caller supplies it (from the current
-    /// `width` used to produce the layout).
-    func cacheKey(width: CGFloat) -> TranscriptPrepareCache.Key {
+    /// Content-only cache key. No width component — Layout is never cached.
+    var cacheKey: TranscriptPrepareCache.Key {
         switch self {
-        case .assistant(let p, _):
+        case .assistant(let p):
             return TranscriptPrepareCache.Key(
-                contentHash: p.contentHash,
-                widthBucket: TranscriptPrepareCache.widthBucket(width),
-                variant: .assistant)
-        case .user(let p, _, let isExp):
+                contentHash: p.contentHash, variant: .assistant)
+        case .user(let p):
             return TranscriptPrepareCache.Key(
-                contentHash: p.contentHash,
-                widthBucket: TranscriptPrepareCache.widthBucket(width),
-                variant: .user(isExpanded: isExp))
-        case .placeholder(let p, _):
+                contentHash: p.contentHash, variant: .user)
+        case .placeholder(let p):
             return TranscriptPrepareCache.Key(
-                contentHash: p.contentHash,
-                widthBucket: TranscriptPrepareCache.widthBucket(width),
-                variant: .placeholder)
-        case .diff(let p, _):
+                contentHash: p.contentHash, variant: .placeholder)
+        case .diff(let p):
             return TranscriptPrepareCache.Key(
-                contentHash: p.contentHash,
-                widthBucket: TranscriptPrepareCache.widthBucket(width),
-                variant: .diff)
+                contentHash: p.contentHash, variant: .diff)
         }
+    }
+}
+
+// MARK: - TranscriptPreparedItem helpers
+
+extension TranscriptPreparedItem {
+    /// Strip the Layout half and return the Prepared half — what the cache
+    /// stores. Paired with `cacheKey` at the call site.
+    var preparedOnly: CachedPrepared {
+        switch self {
+        case .assistant(let p, _): return .assistant(p)
+        case .user(let p, _, _): return .user(p)
+        case .placeholder(let p, _): return .placeholder(p)
+        case .diff(let p, _): return .diff(p)
+        }
+    }
+
+    /// Content-only cache key derived from the embedded prepared — mirrors
+    /// `CachedPrepared.cacheKey` so callers can go straight from item to key.
+    var cacheKey: TranscriptPrepareCache.Key {
+        preparedOnly.cacheKey
     }
 }

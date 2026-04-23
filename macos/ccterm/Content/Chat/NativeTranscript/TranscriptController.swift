@@ -138,8 +138,6 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
         let engine = syntaxEngine
         let transcriptTheme = TranscriptTheme(markdown: mdTheme)
 
-        TranscriptPrepareCache.shared.recordObservedWidth(width)
-
         // Snapshot cache baseline 只对 `.initialPaint` 有语义（= session-open）。
         if case .initialPaint = reason, openStartedAt != nil {
             openCacheHitBaseline = TranscriptPrepareCache.shared.hitCount
@@ -891,8 +889,11 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
                 let newItem: TranscriptPreparedItem = .assistant(newPrepared, newLayout)
                 items[itemIdx] = newItem
                 tokensByStableId[prepared.stable] = innerTokens
+                // Cache Prepared only — Layout is width-dependent and always
+                // recomputed. This overwrite flips `hasHighlight` false→true
+                // at the same key (contentHash excludes hasHighlight).
                 TranscriptPrepareCache.shared.put(
-                    newItem.cacheKey(width: width), newItem)
+                    newItem.cacheKey, newItem.preparedOnly)
 
             case .diff(let prepared, _):
                 var lineHighlights = prepared.lineHighlights
@@ -914,7 +915,7 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
                 items[itemIdx] = newItem
                 tokensByStableId[prepared.stable] = innerTokens
                 TranscriptPrepareCache.shared.put(
-                    newItem.cacheKey(width: width), newItem)
+                    newItem.cacheKey, newItem.preparedOnly)
 
             case .user, .placeholder:
                 continue

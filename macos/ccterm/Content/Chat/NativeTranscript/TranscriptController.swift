@@ -106,12 +106,31 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
         scrollHint: SavedScrollAnchor? = nil
     ) {
         guard tableView != nil else { return }
+        let hintTag: String
+        if let h = scrollHint {
+            hintTag = "hint(entry=\(h.entryId.uuidString.prefix(8))…,top=\(String(format: "%.1f", h.topOffset)))"
+        } else {
+            hintTag = "hint=nil"
+        }
+        appLog(.info, "TranscriptController",
+            "[setEntries] enter reason=\(reason.logTag) entries=\(entries.count) "
+            + "layoutReady=\(isLayoutReady()) rows=\(rows.count) "
+            + "lastSigCount=\(lastEntriesSignature.count) \(hintTag)")
         if case .idle = reason { return }
 
         // Layout not ready yet (刚 makeNSView + updateNSView 先于第一次 layout)。
         // 不跑 pipeline —— 缓存到 pending，由 `tableWidthChanged` 在真实 frame
         // 到手后 flush。每次 stash 覆盖旧 pending，天然采用最新 snapshot。
         if !isLayoutReady() {
+            if let prev = pendingSetEntries {
+                appLog(.info, "TranscriptController",
+                    "[setEntries] stash-overwrite prev=\(prev.reason.logTag)"
+                    + "(entries=\(prev.entries.count)) → new=\(reason.logTag)"
+                    + "(entries=\(entries.count))")
+            } else {
+                appLog(.info, "TranscriptController",
+                    "[setEntries] stash-new reason=\(reason.logTag) entries=\(entries.count)")
+            }
             pendingSetEntries = PendingSetEntries(
                 entries: entries, reason: reason,
                 themeChanged: themeChanged, scrollHint: scrollHint)
@@ -309,6 +328,10 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
                     row.makeSize(width: width)
                 }
                 self.merge(with: transition, scroll: scroll)
+                self.logVisualSnapshot(
+                    tag: "\(tag)-merged",
+                    expectedAnchorStableId: scroll.anchorStableId,
+                    expectedTopOffset: scroll.anchorTopOffset)
 
                 let liveIds = Set(self.rows.map { $0.stableId })
                 self.expandedUserBubbles.formIntersection(liveIds)
@@ -360,6 +383,10 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
             row.makeSize(width: width)
         }
         self.merge(with: phase1Transition, scroll: .bottom)
+        self.logVisualSnapshot(
+            tag: "bottom-phase1-merged",
+            expectedAnchorStableId: nil,
+            expectedTopOffset: nil)
         let tPhase1Done = CFAbsoluteTimeGetCurrent()
         let phase1Ms = Int((tPhase1Done - t0) * 1000)
         let openStart = self.openStartedAt
@@ -403,6 +430,10 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
 
                 self.backfillHighlightTokens(
                     tokensByStableId: tokensByStableId, width: width)
+                self.logVisualSnapshot(
+                    tag: "bottom-post-backfill",
+                    expectedAnchorStableId: nil,
+                    expectedTopOffset: nil)
 
                 // prefix 前插 → anchor 到当前 rows[0]（末尾首行），保住 Phase 1
                 // 建立的视觉位置。Telegram `saveVisible(.upper, false)` 等价。
@@ -422,6 +453,10 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
                     row.makeSize(width: width)
                 }
                 self.merge(with: phase2Transition, scroll: scroll)
+                self.logVisualSnapshot(
+                    tag: "bottom-phase2-merged",
+                    expectedAnchorStableId: scroll.anchorStableId,
+                    expectedTopOffset: scroll.anchorTopOffset)
 
                 let liveIds = Set(self.rows.map { $0.stableId })
                 self.expandedUserBubbles.formIntersection(liveIds)
@@ -1224,6 +1259,10 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
         // setEntries（含 Phase 1 + Phase 2），而不是 relayoutAllRows 的 in-place
         // makeSize 路径（rows 可能还空）。
         if let pending = pendingSetEntries, isLayoutReady() {
+            appLog(.info, "TranscriptController",
+                "[setEntries] flush-pending reason=\(pending.reason.logTag) "
+                + "entries=\(pending.entries.count) "
+                + "hasHint=\(pending.scrollHint != nil)")
             pendingSetEntries = nil
             setEntries(
                 pending.entries, reason: pending.reason,
@@ -1579,5 +1618,34 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
         row.makeSize(width: lastLayoutWidth)
         noteHeightOfRow(ctx.rowIndex)
         return true
+    }
+}
+
+// MARK: - Diag helpers
+
+extension TranscriptUpdateReason {
+    /// Short tag for log lines. Mirrors `.logTag` on `TranscriptScrollIntent`.
+    var logTag: String {
+        switch self {
+        case .idle: return "idle"
+        case .initialPaint: return "initialPaint"
+        case .prependHistory: return "prependHistory"
+        case .liveAppend: return "liveAppend"
+        case .update: return "update"
+        }
+    }
+}
+
+extension TranscriptScrollIntent {
+    /// Nil for non-anchor intents; the payload for `.anchor`. Used by the
+    /// diag `logVisualSnapshot` to compute actual-vs-expected top offset.
+    var anchorStableId: AnyHashable? {
+        if case .anchor(let sid, _) = self { return sid }
+        return nil
+    }
+
+    var anchorTopOffset: CGFloat? {
+        if case .anchor(_, let top) = self { return top }
+        return nil
     }
 }

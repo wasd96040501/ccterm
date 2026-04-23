@@ -77,6 +77,10 @@ struct NativeTranscriptView: NSViewRepresentable {
         if let t0 = openT0, ctrl.openStartedAt == nil {
             ctrl.openStartedAt = t0
         }
+        appLog(.info, "NativeTranscriptView",
+            "[update] updateNSView reason=\(reason.logTag) entries=\(entries.count) "
+            + "themeChanged=\(themeChanged) hasHint=\(scrollHint != nil) "
+            + "openT0Set=\(ctrl.openStartedAt != nil)")
         ctrl.setEntries(
             entries, reason: reason, themeChanged: themeChanged,
             scrollHint: scrollHint)

@@ -65,9 +65,22 @@ struct ChatHistoryView: View {
         }
         .id(sessionId)
         .task(id: sessionId) {
-            openT0 = CFAbsoluteTimeGetCurrent()
+            let t0 = CFAbsoluteTimeGetCurrent()
+            openT0 = t0
             let h = manager.session(sessionId)
             handle = h
+            if let h {
+                appLog(.info, "ChatHistoryView",
+                    "[history] task-inject session=\(sessionId.prefix(8))… "
+                    + "loadState=\(String(describing: h.historyLoadState)) "
+                    + "msgCount=\(h.messages.count) "
+                    + "snapReason=\(h.snapshot.reason.logTag) "
+                    + "snapRev=\(h.snapshot.revision) "
+                    + "savedAnchor=\(h.savedScrollAnchor != nil)")
+            } else {
+                appLog(.warning, "ChatHistoryView",
+                    "[history] task-inject session=\(sessionId.prefix(8))… handle=nil")
+            }
             h?.loadHistory()
         }
     }

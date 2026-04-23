@@ -25,11 +25,16 @@ enum ChatHistoryRenderCase: Equatable {
 /// `TranscriptUpdateReason` + `scrollHint`，下传给 `NativeTranscriptView` 让
 /// controller 按意图 dispatch scroll 语义。
 ///
-/// **每个 sessionId 独立 NSView 生命周期**：外层 `.id(sessionId)` 让 SwiftUI
-/// 在切换 session 时 destroy 旧 ChatHistoryView + create 新的 —— controller
-/// 天然 fresh，无跨 session 状态污染。离开时 `onDismantle` 回调把 scroll 位置
-/// 写回 `SessionHandle2.savedScrollAnchor`，下次 `.loaded` re-entry 自动带上
-/// 为 `scrollHint` 恢复位置（对齐 Telegram `ChatInterfaceHistoryScrollState`）。
+/// **每个 sessionId 独立 NSView 生命周期**：调用点（RootView2）对 ChatHistoryView
+/// 加 `.id(sessionId)`,让整个 struct 随 sessionId 重建、`@State handle` 重置
+/// 为 nil,避免新 session 的首帧用旧 session 的 snapshot。离开时 `onDismantle`
+/// 回调把 scroll 位置写回 `SessionHandle2.savedScrollAnchor`，下次 `.loaded`
+/// re-entry 自动带上为 `scrollHint` 恢复位置（对齐 Telegram
+/// `ChatInterfaceHistoryScrollState`）。
+///
+/// - Warning: 不要把 `.id(sessionId)` 加到 body 内部（例如 Group 上）——那样
+///   只换子树 View,`@State` 属于 struct 本身不跨 id 边界,handle 会被 carry
+///   over,新 session 首帧会短暂显示旧 session 的 entries + scroll state。
 struct ChatHistoryView: View {
     let sessionId: String
     @Environment(SessionManager2.self) private var manager
@@ -63,7 +68,6 @@ struct ChatHistoryView: View {
                 Color.clear
             }
         }
-        .id(sessionId)
         .task(id: sessionId) {
             let t0 = CFAbsoluteTimeGetCurrent()
             openT0 = t0

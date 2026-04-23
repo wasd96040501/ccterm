@@ -40,7 +40,7 @@ extension TranscriptController {
                 guard let self, self.setEntriesGeneration == generation else { return }
                 let tMergeStart = CFAbsoluteTimeGetCurrent()
 
-                let newRows = items.map { self.row(from: $0, theme: transcriptTheme) }
+                let newRows = items.map { $0.makeRow(theme: transcriptTheme) }
                 let transition = TranscriptDiff.compute(
                     old: self.rows, new: newRows, animated: false)
                 self.syncExpansionAndSize(transition.finalRows, width: width)
@@ -89,7 +89,7 @@ extension TranscriptController {
             expandedUserBubbles: expandedSnapshot,
             minAccumulatedHeight: budget.height)
         let phase1StartIndex = phase1Walk.phase1StartIndex
-        let phase1Rows = phase1Walk.items.map { self.row(from: $0, theme: transcriptTheme) }
+        let phase1Rows = phase1Walk.items.map { $0.makeRow(theme: transcriptTheme) }
 
         let phase1Transition = TranscriptDiff.compute(
             old: rows, new: phase1Rows, animated: false)
@@ -153,7 +153,7 @@ extension TranscriptController {
                     self.anchorToCurrentTop() ?? .preserve
 
                 let prefixRows = coloredPrefix.map {
-                    self.row(from: $0, theme: transcriptTheme)
+                    $0.makeRow(theme: transcriptTheme)
                 }
                 let newFullRows = prefixRows + self.rows
                 let phase2Transition = TranscriptDiff.compute(
@@ -246,7 +246,7 @@ extension TranscriptController {
             expandedUserBubbles: expandedSnapshot,
             aboveMinHeight: aboveBudget,
             belowMinHeight: belowBudget)
-        let phase1Rows = phase1Walk.items.map { self.row(from: $0, theme: transcriptTheme) }
+        let phase1Rows = phase1Walk.items.map { $0.makeRow(theme: transcriptTheme) }
 
         // Phase 1 merge：把 anchor 区段挂上去。stableId 还是原 entry.id，
         // 和 hint.stableId 对得上 → applyScrollIntent 能找到该行并对齐 topOffset。
@@ -331,10 +331,10 @@ extension TranscriptController {
                 // Phase 2 把 leftEntries 前插 + rightEntries 尾插。rows 现有
                 // Phase 1 那段。全量 newRows = left + phase1 + right，走 diff。
                 let leftRows = coloredLeft.map {
-                    self.row(from: $0, theme: transcriptTheme)
+                    $0.makeRow(theme: transcriptTheme)
                 }
                 let rightRows = coloredRight.map {
-                    self.row(from: $0, theme: transcriptTheme)
+                    $0.makeRow(theme: transcriptTheme)
                 }
                 let newFullRows = leftRows + self.rows + rightRows
                 let phase2Transition = TranscriptDiff.compute(
@@ -433,7 +433,7 @@ extension TranscriptController {
             await MainActor.run {
                 guard let self, self.setEntriesGeneration == generation else { return }
                 let tMergeStart = CFAbsoluteTimeGetCurrent()
-                let appendedRows = items.map { self.row(from: $0, theme: transcriptTheme) }
+                let appendedRows = items.map { $0.makeRow(theme: transcriptTheme) }
 
                 self.syncExpansionAndSize(appendedRows, width: width)
 
@@ -545,40 +545,20 @@ extension TranscriptController {
         }
     }
 
-    // MARK: - Prepared → Row
-
-    fileprivate func row(from item: TranscriptPreparedItem, theme: TranscriptTheme) -> TranscriptRow {
-        switch item {
-        case .assistant(let prepared, let layout):
-            let r = AssistantMarkdownRow(prepared: prepared, theme: theme)
-            r.applyLayout(layout)
-            return r
-        case .user(let prepared, let layout, let isExpanded):
-            let r = UserBubbleRow(prepared: prepared, theme: theme)
-            r.isExpanded = isExpanded
-            r.applyLayout(layout)
-            return r
-        case .placeholder(let prepared, let layout):
-            let r = PlaceholderRow(prepared: prepared, theme: theme)
-            r.applyLayout(layout)
-            return r
-        }
-    }
-
     // MARK: - Highlight pipeline (nonisolated)
 
-    /// 收集 `items` 中 assistant 的 code block + diff 的 unique 行内容
-    /// → 一次 highlightBatch → 把 tokens 折回对应 prepared / layout → 在
-    /// `items` 上 in-place 替换；同时回传 `tokensByStableId` 供主线程
+    /// 收集 items 的 highlight 请求 → 一次 engine.highlightBatch → 把 tokens 折回
+    /// items（通过协议方法 `applyingTokens`）→ 同时回传 `tokensByStableId` 供主线程
     /// `backfillHighlightTokens` 喂给已挂载的 rows。
     ///
-    /// tokensByStableId 的 inner key 是 `AnyHashable`：
-    /// - Assistant: `Int`（segmentIndex）
-    /// - Diff:      `String`（行内容）
-    /// 两边共用同一条 `AssistantMarkdownRow.applyTokens` 通道（diff 消费者
-    /// 之前存在过，现不在；接口仍保留 AnyHashable 以防后续再引入）。
+    /// controller 侧完全泛型——对具体是 assistant / tool block / 任何未来类型
+    /// 不 care，全部走 `TranscriptPreparedItem.highlightRequests()` +
+    /// `applyingTokens(...)` 协议方法。
+    ///
+    /// tokensByStableId 的 inner key 由 row 自己选（Assistant 今天用
+    /// `Int`=segmentIndex），controller 只当黑盒 `AnyHashable` 透传。
     nonisolated fileprivate static func applyHighlightTokens(
-        to items: inout [TranscriptPreparedItem],
+        to items: inout [any TranscriptPreparedItem],
         theme: TranscriptTheme,
         width: CGFloat,
         engine: SyntaxHighlightEngine?
@@ -587,17 +567,9 @@ extension TranscriptController {
         var routing: [(itemIndex: Int, innerKey: AnyHashable)] = []
 
         for (itemIdx, item) in items.enumerated() {
-            switch item {
-            case .assistant(let prepared, _):
-                guard !prepared.hasHighlight else { continue }
-                for (segIdx, seg) in prepared.parsedDocument.segments.enumerated() {
-                    if case .codeBlock(let block) = seg {
-                        requests.append((block.code, block.language))
-                        routing.append((itemIdx, AnyHashable(segIdx)))
-                    }
-                }
-            case .user, .placeholder:
-                continue
+            for req in item.highlightRequests() {
+                requests.append((req.code, req.language))
+                routing.append((itemIdx, req.innerKey))
             }
         }
 
@@ -628,37 +600,16 @@ extension TranscriptController {
         // Fold back into each item; write to cache for re-entry reuse.
         var tokensByStableId: [AnyHashable: [AnyHashable: [SyntaxToken]]] = [:]
         for (itemIdx, innerTokens) in byItem {
-            switch items[itemIdx] {
-            case .assistant(let prepared, _):
-                var segTokens: [Int: [SyntaxToken]] = [:]
-                for (k, v) in innerTokens {
-                    if let i = k.base as? Int { segTokens[i] = v }
-                }
-                let newPrebuilt = MarkdownRowPrebuilder.build(
-                    document: prepared.parsedDocument,
-                    theme: theme,
-                    codeTokens: segTokens)
-                let newPrepared = AssistantPrepared(
-                    source: prepared.source,
-                    parsedDocument: prepared.parsedDocument,
-                    prebuilt: newPrebuilt,
-                    stable: prepared.stable,
-                    contentHash: prepared.contentHash,
-                    hasHighlight: true)
-                let newLayout = TranscriptPrepare.layoutAssistant(
-                    prebuilt: newPrebuilt, theme: theme, width: width)
-                let newItem: TranscriptPreparedItem = .assistant(newPrepared, newLayout)
-                items[itemIdx] = newItem
-                tokensByStableId[prepared.stable] = innerTokens
-                // Cache Prepared only — Layout is width-dependent and always
-                // recomputed. This overwrite flips `hasHighlight` false→true
-                // at the same key (contentHash excludes hasHighlight).
-                TranscriptPrepareCache.shared.put(
-                    newItem.cacheKey, newItem.preparedOnly)
-
-            case .user, .placeholder:
-                continue
-            }
+            let oldItem = items[itemIdx]
+            let newItem = oldItem.applyingTokens(
+                innerTokens, theme: theme, width: width)
+            items[itemIdx] = newItem
+            tokensByStableId[newItem.stableId] = innerTokens
+            // Cache the stripped version — the highlight-enriched content
+            // replaces the plain entry at the same content-hash key
+            // (hasHighlight doesn't participate in contentHash).
+            TranscriptPrepareCache.shared.put(
+                newItem.cacheKey, newItem.strippingLayout())
         }
         return (hlMs, totalCount, tokensByStableId)
     }

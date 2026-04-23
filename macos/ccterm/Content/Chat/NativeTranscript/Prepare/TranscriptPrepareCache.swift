@@ -4,8 +4,8 @@ import Foundation
 /// Content-addressed LRU cache for **width-independent** prepared data only.
 ///
 /// Scope deliberately narrow: the cache stores the output of Markdown parse /
-/// prebuild / syntax highlight enrichment — i.e. the
-/// `Prepared` half of `TranscriptPreparedItem`. `Layout` (CoreText typesetting,
+/// prebuild / syntax highlight enrichment — i.e. a `TranscriptPreparedItem`
+/// with `layout` stripped (nil). `Layout` (CoreText typesetting,
 /// `cachedHeight`) is **not** cached — it is always recomputed at the exact
 /// current width.
 ///
@@ -22,11 +22,10 @@ import Foundation
 ///   fingerprint on the prepared side — a theme change naturally yields
 ///   different keys. No width component.
 /// - **Variant**: assistant / user / placeholder. Prevents hash
-///   collisions between unrelated content types. User's `isExpanded` does not
-///   participate — `UserPrepared` is expand-independent (it carries only text
-///   + hash); expand state is applied at layout time.
-/// - **Value**: `CachedPrepared` — the Prepared half only. Layout is produced
-///   on-demand by callers via `TranscriptPrepare.layoutX(..., width: width)`.
+///   collisions between unrelated content types.
+/// - **Value**: `any TranscriptPreparedItem` with `layout == nil`
+///   (produced by `strippingLayout()`). Layout is produced on-demand by
+///   callers via `TranscriptPrepare.layoutX(..., width: width)`.
 ///
 /// Thread safety: plain `NSLock` around all mutations. Reader locks are the
 /// same; contention is negligible compared to the work being cached (tens of
@@ -53,7 +52,7 @@ final class TranscriptPrepareCache: @unchecked Sendable {
     }
 
     private let lock = NSLock()
-    private var store: [Key: CachedPrepared] = [:]
+    private var store: [Key: any TranscriptPreparedItem] = [:]
     private var order: [Key] = []
     private let capacity: Int
 
@@ -70,9 +69,9 @@ final class TranscriptPrepareCache: @unchecked Sendable {
     /// 线程安全，跳过 executor-hop 是安全的。
     nonisolated deinit { }
 
-    /// Look up a cached Prepared. Returns the value with its original
-    /// stableId — caller rewrites stableId via `CachedPrepared.withStableId(_:)`.
-    func get(_ key: Key) -> CachedPrepared? {
+    /// Look up a cached prepared item. Returns the stored value with its
+    /// **original** stableId — caller must `.withStableId(_:)` to rewrite.
+    func get(_ key: Key) -> (any TranscriptPreparedItem)? {
         lock.lock()
         defer { lock.unlock() }
         guard let item = store[key] else {
@@ -87,16 +86,19 @@ final class TranscriptPrepareCache: @unchecked Sendable {
     }
 
     /// Insert or update. Evicts oldest entries when `capacity` is exceeded.
-    func put(_ key: Key, _ prepared: CachedPrepared) {
+    /// Callers are expected to pass `item.strippingLayout()`; this isn't
+    /// enforced structurally—storing an item with a layout wastes memory but
+    /// is otherwise harmless.
+    func put(_ key: Key, _ item: any TranscriptPreparedItem) {
         lock.lock()
         defer { lock.unlock() }
         if store[key] != nil {
-            store[key] = prepared
+            store[key] = item
             if let idx = order.firstIndex(of: key) { order.remove(at: idx) }
             order.append(key)
             return
         }
-        store[key] = prepared
+        store[key] = item
         order.append(key)
         while order.count > capacity {
             let oldest = order.removeFirst()
@@ -119,80 +121,5 @@ final class TranscriptPrepareCache: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return store.count
-    }
-}
-
-// MARK: - Cached value type
-
-/// What the cache actually stores: the `Prepared` half of a prepared item.
-/// `Layout` is intentionally absent — width-dependent work is recomputed every
-/// time by `TranscriptRowBuilder.cachedOrBuildX` / `applyHighlightTokens`.
-enum CachedPrepared: @unchecked Sendable {
-    case assistant(AssistantPrepared)
-    case user(UserPrepared)
-    case placeholder(PlaceholderPrepared)
-}
-
-extension CachedPrepared {
-    /// Returns a copy with the embedded prepared's `stable` replaced by `newId`.
-    /// Cache hits carry the original session's stableId; the caller must swap
-    /// to the current entry's stableId so downstream `TranscriptDiff.compute`
-    /// can match / carry-over correctly.
-    func withStableId(_ newId: AnyHashable) -> CachedPrepared {
-        switch self {
-        case .assistant(let p):
-            return .assistant(AssistantPrepared(
-                source: p.source,
-                parsedDocument: p.parsedDocument,
-                prebuilt: p.prebuilt,
-                stable: newId,
-                contentHash: p.contentHash,
-                hasHighlight: p.hasHighlight))
-        case .user(let p):
-            return .user(UserPrepared(
-                text: p.text,
-                stable: newId,
-                contentHash: p.contentHash))
-        case .placeholder(let p):
-            return .placeholder(PlaceholderPrepared(
-                label: p.label,
-                stable: newId,
-                contentHash: p.contentHash))
-        }
-    }
-
-    /// Content-only cache key. No width component — Layout is never cached.
-    var cacheKey: TranscriptPrepareCache.Key {
-        switch self {
-        case .assistant(let p):
-            return TranscriptPrepareCache.Key(
-                contentHash: p.contentHash, variant: .assistant)
-        case .user(let p):
-            return TranscriptPrepareCache.Key(
-                contentHash: p.contentHash, variant: .user)
-        case .placeholder(let p):
-            return TranscriptPrepareCache.Key(
-                contentHash: p.contentHash, variant: .placeholder)
-        }
-    }
-}
-
-// MARK: - TranscriptPreparedItem helpers
-
-extension TranscriptPreparedItem {
-    /// Strip the Layout half and return the Prepared half — what the cache
-    /// stores. Paired with `cacheKey` at the call site.
-    var preparedOnly: CachedPrepared {
-        switch self {
-        case .assistant(let p, _): return .assistant(p)
-        case .user(let p, _, _): return .user(p)
-        case .placeholder(let p, _): return .placeholder(p)
-        }
-    }
-
-    /// Content-only cache key derived from the embedded prepared — mirrors
-    /// `CachedPrepared.cacheKey` so callers can go straight from item to key.
-    var cacheKey: TranscriptPrepareCache.Key {
-        preparedOnly.cacheKey
     }
 }

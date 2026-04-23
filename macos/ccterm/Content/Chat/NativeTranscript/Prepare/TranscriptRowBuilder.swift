@@ -45,7 +45,7 @@ enum TranscriptRowBuilder {
     /// Runs parse + prebuild + width-aware layout on whatever thread the
     /// caller picks (typically `Task.detached`). Output is a list of Sendable
     /// prepared items; the main thread wraps them into `TranscriptRow`
-    /// instances via `TranscriptController.row(from:theme:)`.
+    /// instances via `item.makeRow(theme:)`.
     ///
     /// Does **not** perform syntax highlighting — callers schedule
     /// highlighting separately (see `TranscriptController.applyHighlightTokens`)
@@ -55,8 +55,8 @@ enum TranscriptRowBuilder {
         theme: TranscriptTheme,
         width: CGFloat,
         expandedUserBubbles: Set<AnyHashable> = []
-    ) -> [TranscriptPreparedItem] {
-        var out: [TranscriptPreparedItem] = []
+    ) -> [any TranscriptPreparedItem] {
+        var out: [any TranscriptPreparedItem] = []
         out.reserveCapacity(entries.count)
 
         for entry in entries {
@@ -69,7 +69,7 @@ enum TranscriptRowBuilder {
 
     /// Result of a height-bounded prepare walk.
     struct BoundedPrepareResult {
-        let items: [TranscriptPreparedItem]
+        let items: [any TranscriptPreparedItem]
         /// Number of source `entries` consumed. Phase 2 continues from
         /// `entries[consumedEntryCount...]`.
         let consumedEntryCount: Int
@@ -89,7 +89,7 @@ enum TranscriptRowBuilder {
         expandedUserBubbles: Set<AnyHashable>,
         minAccumulatedHeight: CGFloat
     ) -> BoundedPrepareResult {
-        var items: [TranscriptPreparedItem] = []
+        var items: [any TranscriptPreparedItem] = []
         var accumulated: CGFloat = 0
 
         for (idx, entry) in entries.enumerated() {
@@ -98,7 +98,7 @@ enum TranscriptRowBuilder {
                 entry: entry, theme: theme, width: width,
                 expandedUserBubbles: expandedUserBubbles, into: &items)
             for i in beforeCount..<items.count {
-                accumulated += heightOf(items[i])
+                accumulated += items[i].cachedHeight
             }
             if accumulated >= minAccumulatedHeight {
                 return BoundedPrepareResult(
@@ -113,7 +113,7 @@ enum TranscriptRowBuilder {
     struct TailBoundedPrepareResult {
         /// Prepared items in **forward** order (oldest→newest) — ready to feed
         /// diff / row factories without reversal.
-        let items: [TranscriptPreparedItem]
+        let items: [any TranscriptPreparedItem]
         /// Index into `entries` where this tail starts. Phase 2 prepends
         /// `entries[..<phase1StartIndex]`.
         let phase1StartIndex: Int
@@ -135,16 +135,16 @@ enum TranscriptRowBuilder {
         minAccumulatedHeight: CGFloat
     ) -> TailBoundedPrepareResult {
         // reverse 顺序累积到 items 里，最后翻转 + 算 startIndex。
-        var reversedGroups: [[TranscriptPreparedItem]] = []
+        var reversedGroups: [[any TranscriptPreparedItem]] = []
         var accumulated: CGFloat = 0
         var phase1StartIndex = entries.count
 
         for i in stride(from: entries.count - 1, through: 0, by: -1) {
-            var group: [TranscriptPreparedItem] = []
+            var group: [any TranscriptPreparedItem] = []
             appendPrepared(
                 entry: entries[i], theme: theme, width: width,
                 expandedUserBubbles: expandedUserBubbles, into: &group)
-            for item in group { accumulated += heightOf(item) }
+            for item in group { accumulated += item.cachedHeight }
             reversedGroups.append(group)
             phase1StartIndex = i
 
@@ -154,7 +154,7 @@ enum TranscriptRowBuilder {
         // reversedGroups 是 [最新 entry 组, ..., 最老 entry 组]，
         // 每组内部仍是 forward 顺序（appendPrepared 按顺序 push）。
         // 翻转组顺序后 flatten 即得全局 forward 顺序。
-        var forward: [TranscriptPreparedItem] = []
+        var forward: [any TranscriptPreparedItem] = []
         forward.reserveCapacity(reversedGroups.reduce(0) { $0 + $1.count })
         for group in reversedGroups.reversed() {
             forward.append(contentsOf: group)
@@ -171,7 +171,7 @@ enum TranscriptRowBuilder {
     /// 指向 anchor entry 映射到 items 的**第一个** item（有的 entry 会展开成
     /// 多条 item，取第一条作为锚挂点）。
     struct AroundBoundedPrepareResult {
-        let items: [TranscriptPreparedItem]
+        let items: [any TranscriptPreparedItem]
         /// `items` 里 anchor entry 的起始下标（不是 `entries` 的下标）。
         let anchorItemIndex: Int
         /// Phase 1 起止在 `entries` 的左右边界（闭区间 `[startIndex, endIndex]`）。
@@ -223,15 +223,15 @@ enum TranscriptRowBuilder {
         // Prep anchor entry first —— anchor 自身高度计入 belowAccum（anchor 的
         // 可见部分位于 viewport 的 [topOffset, topOffset+anchorH] 区间，属于
         // "anchor 起至 viewport 底"的需求）。
-        var anchorGroup: [TranscriptPreparedItem] = []
+        var anchorGroup: [any TranscriptPreparedItem] = []
         appendPrepared(
             entry: entries[anchor], theme: theme, width: width,
             expandedUserBubbles: expandedUserBubbles, into: &anchorGroup)
-        var belowAccumulated: CGFloat = anchorGroup.reduce(0) { $0 + heightOf($1) }
+        var belowAccumulated: CGFloat = anchorGroup.reduce(0) { $0 + $1.cachedHeight }
         var aboveAccumulated: CGFloat = 0
 
-        var leftGroups: [[TranscriptPreparedItem]] = []   // 越上层顺序越后入，出时要 reverse
-        var rightGroups: [[TranscriptPreparedItem]] = []  // 顺序与 entries 一致
+        var leftGroups: [[any TranscriptPreparedItem]] = []   // 越上层顺序越后入，出时要 reverse
+        var rightGroups: [[any TranscriptPreparedItem]] = []  // 顺序与 entries 一致
         var leftIdx = anchor - 1
         var rightIdx = anchor + 1
         var startIdx = anchor
@@ -241,21 +241,21 @@ enum TranscriptRowBuilder {
         while (aboveAccumulated < aboveMinHeight && leftIdx >= 0)
             || (belowAccumulated < belowMinHeight && rightIdx < entries.count) {
             if aboveAccumulated < aboveMinHeight, leftIdx >= 0 {
-                var group: [TranscriptPreparedItem] = []
+                var group: [any TranscriptPreparedItem] = []
                 appendPrepared(
                     entry: entries[leftIdx], theme: theme, width: width,
                     expandedUserBubbles: expandedUserBubbles, into: &group)
-                for item in group { aboveAccumulated += heightOf(item) }
+                for item in group { aboveAccumulated += item.cachedHeight }
                 leftGroups.append(group)
                 startIdx = leftIdx
                 leftIdx -= 1
             }
             if belowAccumulated < belowMinHeight, rightIdx < entries.count {
-                var group: [TranscriptPreparedItem] = []
+                var group: [any TranscriptPreparedItem] = []
                 appendPrepared(
                     entry: entries[rightIdx], theme: theme, width: width,
                     expandedUserBubbles: expandedUserBubbles, into: &group)
-                for item in group { belowAccumulated += heightOf(item) }
+                for item in group { belowAccumulated += item.cachedHeight }
                 rightGroups.append(group)
                 endIdx = rightIdx
                 rightIdx += 1
@@ -263,7 +263,7 @@ enum TranscriptRowBuilder {
         }
 
         // 拼接：leftGroups 反转后 + anchorGroup + rightGroups。
-        var forward: [TranscriptPreparedItem] = []
+        var forward: [any TranscriptPreparedItem] = []
         forward.reserveCapacity(
             anchorGroup.count
             + leftGroups.reduce(0) { $0 + $1.count }
@@ -285,7 +285,7 @@ enum TranscriptRowBuilder {
         theme: TranscriptTheme,
         width: CGFloat,
         expandedUserBubbles: Set<AnyHashable>,
-        into out: inout [TranscriptPreparedItem]
+        into out: inout [any TranscriptPreparedItem]
     ) {
         switch entry {
         case .single(let single):
@@ -302,14 +302,6 @@ enum TranscriptRowBuilder {
         }
     }
 
-    nonisolated private static func heightOf(_ item: TranscriptPreparedItem) -> CGFloat {
-        switch item {
-        case .assistant(_, let layout): return layout.cachedHeight
-        case .user(_, let layout, _): return layout.cachedHeight
-        case .placeholder(_, let layout): return layout.cachedHeight
-        }
-    }
-
     // MARK: - prepareAppend (nonisolated, mirrors `append(from:…)`)
 
     nonisolated private static func prepareAppend(
@@ -317,7 +309,7 @@ enum TranscriptRowBuilder {
         theme: TranscriptTheme,
         expandedUserBubbles: Set<AnyHashable>,
         width: CGFloat,
-        into out: inout [TranscriptPreparedItem]
+        into out: inout [any TranscriptPreparedItem]
     ) {
         switch single.payload {
         case .localUser(let input):
@@ -388,7 +380,7 @@ enum TranscriptRowBuilder {
     }
 
     /// 两步：cache lookup Prepared（parse + prebuild 结果，width 无关）→
-    /// **无条件** 按当前精确 width 跑 `layoutUser`。这样 `heightOf(item)`
+    /// **无条件** 按当前精确 width 跑 `layoutUser`。这样 `item.cachedHeight`
     /// 永远等于后续 `row.makeSize(width: width).cachedHeight`，不存在 drift。
     nonisolated private static func cachedOrBuildUser(
         text: String,
@@ -396,23 +388,23 @@ enum TranscriptRowBuilder {
         width: CGFloat,
         isExpanded: Bool,
         stable: AnyHashable
-    ) -> TranscriptPreparedItem {
+    ) -> any TranscriptPreparedItem {
         let contentHash = userContentHash(text: text, theme: theme)
         let key = TranscriptPrepareCache.Key(
             contentHash: contentHash, variant: .user)
         let prepared: UserPrepared
-        if case .user(let p)? = TranscriptPrepareCache.shared.get(key)?
-            .withStableId(stable)
-        {
-            prepared = p
+        if let cached = TranscriptPrepareCache.shared.get(key),
+           let userItem = cached.withStableId(stable) as? UserPreparedItem {
+            prepared = userItem.prepared
         } else {
             prepared = TranscriptPrepare.user(text: text, theme: theme, stable: stable)
-            TranscriptPrepareCache.shared.put(key, .user(prepared))
+            let stripped = UserPreparedItem(prepared: prepared, layout: nil)
+            TranscriptPrepareCache.shared.put(key, stripped)
         }
         let layout = TranscriptPrepare.layoutUser(
             text: prepared.text, theme: theme,
             width: width, isExpanded: isExpanded)
-        return .user(prepared, layout, isExpanded: isExpanded)
+        return UserPreparedItem(prepared: prepared, layout: layout)
     }
 
     nonisolated private static func cachedOrBuildAssistant(
@@ -420,49 +412,49 @@ enum TranscriptRowBuilder {
         theme: TranscriptTheme,
         width: CGFloat,
         stable: AnyHashable
-    ) -> TranscriptPreparedItem {
+    ) -> any TranscriptPreparedItem {
         let contentHash = assistantContentHash(source: source, theme: theme)
         let key = TranscriptPrepareCache.Key(
             contentHash: contentHash, variant: .assistant)
         let prepared: AssistantPrepared
-        if case .assistant(let p)? = TranscriptPrepareCache.shared.get(key)?
-            .withStableId(stable)
-        {
-            prepared = p
+        if let cached = TranscriptPrepareCache.shared.get(key),
+           let assistantItem = cached.withStableId(stable) as? AssistantPreparedItem {
+            prepared = assistantItem.prepared
         } else {
             prepared = TranscriptPrepare.assistant(
                 source: source, theme: theme, stable: stable)
             // Plain prepared cached here; the highlight pass overwrites with
             // a token-enriched prepared once available (same key, contentHash
             // doesn't include hasHighlight).
-            TranscriptPrepareCache.shared.put(key, .assistant(prepared))
+            let stripped = AssistantPreparedItem(prepared: prepared, layout: nil)
+            TranscriptPrepareCache.shared.put(key, stripped)
         }
         let layout = TranscriptPrepare.layoutAssistant(
             prebuilt: prepared.prebuilt, theme: theme, width: width)
-        return .assistant(prepared, layout)
+        return AssistantPreparedItem(prepared: prepared, layout: layout)
     }
 
     nonisolated private static func cachedOrBuildPlaceholder(
         label: String,
         theme: TranscriptTheme,
         stable: AnyHashable
-    ) -> TranscriptPreparedItem {
+    ) -> any TranscriptPreparedItem {
         let contentHash = placeholderContentHash(label: label, theme: theme)
         let key = TranscriptPrepareCache.Key(
             contentHash: contentHash, variant: .placeholder)
         let prepared: PlaceholderPrepared
-        if case .placeholder(let p)? = TranscriptPrepareCache.shared.get(key)?
-            .withStableId(stable)
-        {
-            prepared = p
+        if let cached = TranscriptPrepareCache.shared.get(key),
+           let placeholderItem = cached.withStableId(stable) as? PlaceholderPreparedItem {
+            prepared = placeholderItem.prepared
         } else {
             prepared = TranscriptPrepare.placeholder(
                 label: label, theme: theme, stable: stable)
-            TranscriptPrepareCache.shared.put(key, .placeholder(prepared))
+            let stripped = PlaceholderPreparedItem(prepared: prepared, layout: nil)
+            TranscriptPrepareCache.shared.put(key, stripped)
         }
         let layout = TranscriptPrepare.layoutPlaceholder(
             label: prepared.label, theme: theme)
-        return .placeholder(prepared, layout)
+        return PlaceholderPreparedItem(prepared: prepared, layout: layout)
     }
 
     nonisolated private static func prepareAppendAssistant(
@@ -470,7 +462,7 @@ enum TranscriptRowBuilder {
         entryId: UUID,
         theme: TranscriptTheme,
         width: CGFloat,
-        into out: inout [TranscriptPreparedItem]
+        into out: inout [any TranscriptPreparedItem]
     ) {
         var textBuffer: [String] = []
         var textStartIndex = 0

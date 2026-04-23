@@ -353,18 +353,6 @@ struct PlaceholderLayoutData: @unchecked Sendable {
     let cachedHeight: CGFloat
 }
 
-// MARK: - Heterogeneous item bundle
-
-/// A prepared row-worth of data: one enum case per concrete row type.
-/// Produced by `TranscriptRowBuilder.prepareAll` off-main; consumed on main
-/// by `TranscriptController.row(from:theme:)` which wraps it into a
-/// `TranscriptRow` instance.
-enum TranscriptPreparedItem: @unchecked Sendable {
-    case assistant(AssistantPrepared, AssistantLayoutData)
-    case user(UserPrepared, UserLayoutData, isExpanded: Bool)
-    case placeholder(PlaceholderPrepared, PlaceholderLayoutData)
-}
-
 // MARK: - Theme Sendable conformance
 
 /// `TranscriptTheme` / `MarkdownTheme` are immutable value types wrapping

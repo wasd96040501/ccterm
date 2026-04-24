@@ -41,6 +41,7 @@ docs/
 *.swp
 *.swo
 *~
+buildServer.json
 
 # Generated web bundles (built from web/)
 macos/ccterm/Resources/*.js

@@ -172,7 +172,7 @@ final class TranscriptControllerReasonDispatchTests: XCTestCase {
         h.flushRunLoop()
 
         // Anchor row 应该在 rows 里（Phase 1 + Phase 2 都挂了）
-        guard let anchorY = h.documentY(of: anchorEntry.id) else {
+        guard let anchorY = h.documentY(ofEntry: anchorEntry.id) else {
             XCTFail("anchor row 丢失")
             return
         }
@@ -205,7 +205,7 @@ final class TranscriptControllerReasonDispatchTests: XCTestCase {
         h.pumpLayout()
         // 故意**不** flushRunLoop：只验证 Phase 1 的同步效果，Phase 2 还没跑。
 
-        guard let anchorY = h.documentY(of: anchorEntry.id) else {
+        guard let anchorY = h.documentY(ofEntry: anchorEntry.id) else {
             XCTFail("anchor row 缺席 Phase 1")
             return
         }
@@ -261,7 +261,7 @@ final class TranscriptControllerReasonDispatchTests: XCTestCase {
         }
         // entryId 必须能在 rows 里找到对应 source entry
         let found = h.controller.rows.contains { row in
-            TranscriptController.entryId(fromRowStableId: row.stableId) == hint.entryId
+            row.stableId.entryId == hint.entryId
         }
         XCTAssertTrue(found, "hint.entryId 必须能反查到 rows 里的一行")
     }

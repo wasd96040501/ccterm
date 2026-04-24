@@ -4,204 +4,100 @@ import CoreText
 import XCTest
 @testable import ccterm
 
-/// 验证 nonisolated `TranscriptPrepare` 的输出与原同步路径
-/// (`AssistantMarkdownRow.init(source:…)` + `makeSize`、等)语义等价。
+/// 验证 component-level prepare/layout 流程的语义。
 ///
-/// 重点：
-/// - `assistant` 的 prebuilt 与 `AssistantMarkdownRow.init` 内部产出一致
-/// - `layoutAssistant` 输出的 cachedHeight / origins / headerRects 与 `makeSize` 一致
-/// - `layoutUser` 输出与 `UserBubbleRow.makeSize` 一致（等效构造 + applyLayout）
-/// - `layoutPlaceholder` 输出与 `PlaceholderRow.makeSize` 一致
-/// - prepare / layout 可在 Task.detached 跨 actor 边界执行（Sendable 检查）
+/// 重点:
+/// - 每个 component 的 `prepare → layout → cachedHeight` 链路自洽
+/// - prepare/layout 跨 actor 边界(Sendable 保证)
+/// - `prepareAll` / `prepareBounded` 的 viewport-first 契约
 @MainActor
 final class TranscriptPrepareTests: XCTestCase {
 
     private let theme = TranscriptTheme.default
     private let width: CGFloat = 720
 
-    // MARK: - Assistant round trip
+    // MARK: - Component round-trip
 
-    /// 通过 `init(prepared:)` + `applyLayout` 构造的 row，和 `init(source:)` +
-    /// `makeSize` 构造的 row，在关键 layout 字段上必须等值。
-    func testAssistantPreparedRoundTripMatchesSync() {
+    func testAssistantContentLayoutHasContentSizes() {
         let source = """
         # Heading
 
-        Some **bold** text with `inline code`, followed by a paragraph that
-        should wrap to at least two lines across a reasonable column width.
+        Some **bold** text with `inline code`.
 
         ```swift
         func hello() {
             print("world")
         }
         ```
-
-        - list item one
-        - list item two
-
-        | Col A | Col B |
-        | ----- | ----- |
-        | 1     | 2     |
         """
-        let stableId: AnyHashable = "t-1"
+        let stableId = StableId(entryId: UUID(), locator: .whole)
+        let input = AssistantMarkdownComponent.Input(stableId: stableId, source: source)
+        let content = AssistantMarkdownComponent.prepare(input, theme: theme)
+        let layout = AssistantMarkdownComponent.layout(
+            content, theme: theme, width: width, state: .default)
 
-        // Sync path.
-        let syncRow = AssistantMarkdownRow(source: source, theme: theme, stable: stableId)
-        syncRow.makeSize(width: width)
-
-        // Prepared path.
-        let prepared = TranscriptPrepare.assistant(source: source, theme: theme, stable: stableId)
-        let layout = TranscriptPrepare.layoutAssistant(
-            prebuilt: prepared.prebuilt, theme: theme, width: width)
-        let asyncRow = AssistantMarkdownRow(prepared: prepared, theme: theme)
-        asyncRow.applyLayout(layout)
-
-        XCTAssertEqual(syncRow.source, asyncRow.source)
-        XCTAssertEqual(syncRow.stableId, asyncRow.stableId)
-        XCTAssertEqual(syncRow.contentHash, asyncRow.contentHash)
-        XCTAssertEqual(syncRow.contentHash, prepared.contentHash)
-
-        XCTAssertEqual(syncRow.cachedWidth, asyncRow.cachedWidth, accuracy: 0.01)
-        XCTAssertEqual(syncRow.cachedHeight, asyncRow.cachedHeight, accuracy: 0.01)
-
-        // codeBlockHit same header rect → click-to-copy still works.
-        let headerY = theme.rowVerticalPadding + (asyncRow.prebuiltForTesting.first?.topPadding ?? 0)
-        // 取 layout 里第一个 codeBlock header 的 rect —— 不依赖于 row 的内部
-        // codeBlockHeaderRects 具体结构，只比对都存在。
-        XCTAssertFalse(layout.codeBlockHeaderRects.isEmpty, "sample has a code block")
-        _ = headerY  // silenced; kept as doc
+        XCTAssertGreaterThan(layout.cachedHeight, 0)
+        XCTAssertEqual(layout.cachedWidth, width, accuracy: 0.01)
+        XCTAssertFalse(layout.codeBlockHeaderRects.isEmpty,
+            "sample has a code block")
     }
 
-    /// layoutAssistant 对 pure text 输入应产生与 `makeSize` byte-equal 的
-    /// cachedHeight / origins。
-    func testAssistantLayoutMatchesSyncForPlainMarkdown() {
-        let source = "plain paragraph\n\nsecond paragraph"
-        let syncRow = AssistantMarkdownRow(source: source, theme: theme, stable: "p")
-        syncRow.makeSize(width: width)
-
-        let prepared = TranscriptPrepare.assistant(source: source, theme: theme, stable: "p")
-        let layout = TranscriptPrepare.layoutAssistant(
-            prebuilt: prepared.prebuilt, theme: theme, width: width)
-
-        XCTAssertEqual(syncRow.cachedHeight, layout.cachedHeight, accuracy: 0.01)
-        XCTAssertEqual(syncRow.cachedWidth, layout.cachedWidth, accuracy: 0.01)
-    }
-
-    // MARK: - User round trip
-
-    func testUserPreparedRoundTripMatchesSync() {
-        let text = "Hello world — this should sit in a user bubble on the right side."
-        let stable: AnyHashable = "u-1"
-
-        let syncRow = UserBubbleRow(text: text, theme: theme, stable: stable)
-        syncRow.makeSize(width: width)
-
-        let prepared = TranscriptPrepare.user(text: text, theme: theme, stable: stable)
-        let layout = TranscriptPrepare.layoutUser(
-            text: prepared.text, theme: theme, width: width, isExpanded: false)
-        let asyncRow = UserBubbleRow(prepared: prepared, theme: theme)
-        asyncRow.applyLayout(layout)
-
-        XCTAssertEqual(syncRow.text, asyncRow.text)
-        XCTAssertEqual(syncRow.stableId, asyncRow.stableId)
-        XCTAssertEqual(syncRow.contentHash, asyncRow.contentHash)
-        XCTAssertEqual(syncRow.contentHash, prepared.contentHash)
-        XCTAssertEqual(syncRow.cachedWidth, asyncRow.cachedWidth, accuracy: 0.01)
-        XCTAssertEqual(syncRow.cachedHeight, asyncRow.cachedHeight, accuracy: 0.01)
-    }
-
-    /// 折叠态（长文本 + isExpanded=false）下 prepared 高度应匹配 sync。
-    func testUserLayoutMatchesSyncInCollapsedState() {
+    func testUserBubbleLayoutMatchesCollapsedVsExpanded() {
         let longText = (0..<20).map { "line \($0)" }.joined(separator: "\n")
-        let stable: AnyHashable = "u-long"
+        let stableId = StableId(entryId: UUID(), locator: .whole)
+        let input = UserBubbleComponent.Input(stableId: stableId, text: longText)
+        let content = UserBubbleComponent.prepare(input, theme: theme)
 
-        let syncRow = UserBubbleRow(text: longText, theme: theme, stable: stable)
-        syncRow.isExpanded = false
-        syncRow.makeSize(width: width)
+        var collapsedState = UserBubbleComponent.State()
+        collapsedState.isExpanded = false
+        let collapsed = UserBubbleComponent.layout(
+            content, theme: theme, width: width, state: collapsedState)
 
-        let layout = TranscriptPrepare.layoutUser(
-            text: longText, theme: theme, width: width, isExpanded: false)
+        var expandedState = UserBubbleComponent.State()
+        expandedState.isExpanded = true
+        let expanded = UserBubbleComponent.layout(
+            content, theme: theme, width: width, state: expandedState)
 
-        XCTAssertEqual(syncRow.cachedHeight, layout.cachedHeight, accuracy: 0.01)
+        XCTAssertLessThan(collapsed.cachedHeight, expanded.cachedHeight,
+            "collapsed bubble must be shorter than expanded")
     }
 
-    func testUserLayoutMatchesSyncInExpandedState() {
-        let longText = (0..<20).map { "line \($0)" }.joined(separator: "\n")
-        let syncRow = UserBubbleRow(text: longText, theme: theme, stable: "u")
-        syncRow.isExpanded = true
-        syncRow.makeSize(width: width)
-
-        let layout = TranscriptPrepare.layoutUser(
-            text: longText, theme: theme, width: width, isExpanded: true)
-
-        XCTAssertEqual(syncRow.cachedHeight, layout.cachedHeight, accuracy: 0.01)
+    func testPlaceholderLayoutFixedHeight() {
+        let stableId = StableId(entryId: UUID(), locator: .whole)
+        let input = PlaceholderComponent.Input(stableId: stableId, label: "[Tool: Bash]")
+        let content = PlaceholderComponent.prepare(input, theme: theme)
+        let l1 = PlaceholderComponent.layout(content, theme: theme, width: 400, state: ())
+        let l2 = PlaceholderComponent.layout(content, theme: theme, width: 800, state: ())
+        XCTAssertEqual(l1.cachedHeight, l2.cachedHeight,
+            "placeholder height is width-independent")
+        XCTAssertEqual(l1.cachedHeight,
+            theme.placeholderHeight + 2 * theme.rowVerticalPadding,
+            accuracy: 0.01)
     }
 
-    // MARK: - Placeholder round trip
+    // MARK: - prepareAll
 
-    func testPlaceholderPreparedRoundTripMatchesSync() {
-        let label = "[Tool: Bash]"
-        let stable: AnyHashable = "pl-1"
-
-        let syncRow = PlaceholderRow(label: label, theme: theme, stable: stable)
-        syncRow.makeSize(width: width)
-
-        let prepared = TranscriptPrepare.placeholder(label: label, theme: theme, stable: stable)
-        let layout = TranscriptPrepare.layoutPlaceholder(label: prepared.label, theme: theme)
-        let asyncRow = PlaceholderRow(prepared: prepared, theme: theme)
-        asyncRow.applyLayout(layout)
-
-        XCTAssertEqual(syncRow.label, asyncRow.label)
-        XCTAssertEqual(syncRow.stableId, asyncRow.stableId)
-        XCTAssertEqual(syncRow.contentHash, asyncRow.contentHash)
-        XCTAssertEqual(syncRow.contentHash, prepared.contentHash)
-        XCTAssertEqual(syncRow.cachedHeight, asyncRow.cachedHeight, accuracy: 0.01)
-    }
-
-    // MARK: - Off-main execution
-
-    // MARK: - prepareAll — multi-entry mirror of build()
-
-    /// `prepareAll` 走完整 entry walk,对混合 user/assistant/group 输入应生成
-    /// 与 `TranscriptRowBuilder.build` 等价的 item 序列(1:1 位置对应)。
-    func testPrepareAllProducesItemsMatchingBuild() async {
+    /// `prepareAll` 把 entries dispatch 到对应 component。
+    func testPrepareAllProducesItemsByComponentTag() async {
         let entries: [MessageEntry] = [
             makeLocalUserEntry(text: "hello"),
-            makeAssistantEntry(text: "a paragraph\n\n```swift\nlet x = 1\n```"),
-            makeLocalUserEntry(text: "another message"),
+            makeAssistantEntry(text: "a paragraph"),
+            makeLocalUserEntry(text: "another"),
         ]
 
-        // Sync build (main-actor) for baseline.
-        let rows = await MainActor.run {
-            TranscriptRowBuilder.build(
-                entries: entries, theme: theme.markdown, expandedUserBubbles: [])
-        }
-        // Prepared build (off-main).
         let items = await Task.detached { [theme = theme, width = width] in
             TranscriptRowBuilder.prepareAll(
                 entries: entries, theme: theme, width: width)
         }.value
 
-        XCTAssertEqual(rows.count, items.count)
-        for (row, item) in zip(rows, items) {
-            let rowTypeOK: Bool
-            switch item {
-            case is UserPreparedItem: rowTypeOK = row is UserBubbleRow
-            case is AssistantPreparedItem: rowTypeOK = row is AssistantMarkdownRow
-            case is PlaceholderPreparedItem: rowTypeOK = row is PlaceholderRow
-            default: rowTypeOK = false
-            }
-            if !rowTypeOK {
-                XCTFail("row/item type mismatch: row=\(type(of: row)) item=\(type(of: item))")
-            }
-            XCTAssertEqual(row.stableId, stableId(from: item))
-        }
+        XCTAssertEqual(items.count, 3)
+        XCTAssertEqual(items[0].tag, UserBubbleComponent.tag)
+        XCTAssertEqual(items[1].tag, AssistantMarkdownComponent.tag)
+        XCTAssertEqual(items[2].tag, UserBubbleComponent.tag)
     }
 
-    // MARK: - prepareBounded — viewport-first Phase 1 primitive
+    // MARK: - prepareBounded
 
-    /// Phase 1 的核心契约：按 entries 顺序 prepare+layout，直到累计高度
-    /// >= minHeight 就停止，返回"已消费"的 entries 数量 + 这部分的 items。
     func testPrepareBoundedStopsAtViewportBudget() async {
         let entries: [MessageEntry] = (0..<20).map { i in
             makeLocalUserEntry(text: "entry \(i) with enough text to make a row")
@@ -210,14 +106,11 @@ final class TranscriptPrepareTests: XCTestCase {
 
         let result = await Task.detached { [theme = theme, width = width] in
             TranscriptRowBuilder.prepareBounded(
-                entries: entries,
-                theme: theme,
-                width: width,
-                expandedUserBubbles: [],
+                entries: entries, theme: theme, width: width,
+                stickyStates: [:],
                 minAccumulatedHeight: viewportH)
         }.value
 
-        // 消费了部分 entries，不是全部（否则视口就白填了）。
         XCTAssertGreaterThan(result.consumedEntryCount, 0)
         XCTAssertLessThan(result.consumedEntryCount, entries.count,
             "bounded walk should stop before exhausting entries for this viewport")
@@ -229,7 +122,6 @@ final class TranscriptPrepareTests: XCTestCase {
             "walk should only stop once viewport budget is met")
     }
 
-    /// minHeight 很大 → consume 全部 entries，不超额停止。
     func testPrepareBoundedHandlesUnderflow() async {
         let entries = [
             makeLocalUserEntry(text: "short"),
@@ -238,64 +130,39 @@ final class TranscriptPrepareTests: XCTestCase {
         let result = await Task.detached { [theme = theme, width = width] in
             TranscriptRowBuilder.prepareBounded(
                 entries: entries, theme: theme, width: width,
-                expandedUserBubbles: [], minAccumulatedHeight: .greatestFiniteMagnitude)
+                stickyStates: [:],
+                minAccumulatedHeight: .greatestFiniteMagnitude)
         }.value
 
         XCTAssertEqual(result.consumedEntryCount, entries.count)
     }
 
-    /// minHeight == 0 → 仍然至少吃完第一条（按"consume full entry before check"语义）。
     func testPrepareBoundedWithZeroBudgetConsumesOneEntry() async {
         let entries = (0..<5).map { makeLocalUserEntry(text: "msg \($0)") }
         let result = await Task.detached { [theme = theme, width = width] in
             TranscriptRowBuilder.prepareBounded(
                 entries: entries, theme: theme, width: width,
-                expandedUserBubbles: [], minAccumulatedHeight: 0)
+                stickyStates: [:],
+                minAccumulatedHeight: 0)
         }.value
         XCTAssertEqual(result.consumedEntryCount, 1,
             "zero budget → consume exactly one entry")
     }
 
-    /// Smoke-test that prepare + layout can actually run off-main. If any
-    /// reachable state accidentally requires `@MainActor`, Swift concurrency
-    /// checks will fire at compile time inside the detached Task.
     func testPrepareAndLayoutRunFromDetachedTask() async {
         let theme = self.theme
         let width = self.width
-        let source = """
-        Paragraph.
+        let source = "Paragraph.\n\n```swift\nlet x = 1\n```"
+        let stableId = StableId(entryId: UUID(), locator: .whole)
 
-        ```swift
-        let x = 1
-        ```
-        """
-
-        let (prepared, layout) = await Task.detached {
-            let prepared = TranscriptPrepare.assistant(
-                source: source, theme: theme, stable: "off")
-            let layout = TranscriptPrepare.layoutAssistant(
-                prebuilt: prepared.prebuilt, theme: theme, width: width)
-            return (prepared, layout)
+        let layout = await Task.detached {
+            let input = AssistantMarkdownComponent.Input(stableId: stableId, source: source)
+            let content = AssistantMarkdownComponent.prepare(input, theme: theme)
+            return AssistantMarkdownComponent.layout(
+                content, theme: theme, width: width, state: .default)
         }.value
 
         XCTAssertGreaterThan(layout.cachedHeight, 0)
-        XCTAssertEqual(prepared.source, source)
-    }
-}
-
-// MARK: - Test helpers
-
-extension AssistantMarkdownRow {
-    /// Expose prebuilt for prepared-path assertions.
-    var prebuiltForTesting: [AssistantMarkdownRow.PrebuiltSegment] {
-        let mirror = Mirror(reflecting: self)
-        for child in mirror.children {
-            if child.label == "prebuilt",
-               let p = child.value as? [AssistantMarkdownRow.PrebuiltSegment] {
-                return p
-            }
-        }
-        return []
     }
 }
 
@@ -325,9 +192,5 @@ extension TranscriptPrepareTests {
             payload: .remote(msg),
             delivery: nil,
             toolResults: [:]))
-    }
-
-    fileprivate func stableId(from item: any TranscriptPreparedItem) -> AnyHashable {
-        item.stableId
     }
 }

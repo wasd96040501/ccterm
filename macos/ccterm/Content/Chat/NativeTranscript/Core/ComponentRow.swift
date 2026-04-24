@@ -48,8 +48,10 @@ struct PreparedItem<C: TranscriptComponent>: Sendable {
     /// MainActor 边界 —— type-erase 到 framework 内部 `ComponentRow`。
     /// Precondition:`layout != nil`(caller 先 `C.layout(...)` 或 cache 命中
     /// 后 `withLayout(...)` 补齐)。
+    ///
+    /// `cachedSize.width` 由 caller 提供 —— builder 知道当前 layout 跑的 width。
     @MainActor
-    func makeRow(theme: TranscriptTheme) -> ComponentRow {
+    func makeRow(theme: TranscriptTheme, layoutWidth: CGFloat) -> ComponentRow {
         precondition(layout != nil,
             "PreparedItem<\(C.tag)>.makeRow: layout 必须在主线程挂载前就算好")
         let sideCar = C.makeSideCar(for: content)
@@ -57,7 +59,7 @@ struct PreparedItem<C: TranscriptComponent>: Sendable {
             stableId: stableId,
             identifier: C.tag,
             contentHash: contentHash,
-            cachedSize: CGSize(width: 0, height: layout!.cachedHeight),
+            cachedSize: CGSize(width: layoutWidth, height: layout!.cachedHeight),
             state: state,
             content: content,
             layout: layout!,
@@ -108,6 +110,9 @@ struct ComponentRow {
     /// Type-erased dispatch bundle —— `ComponentCallbacks.make(for: C.self)`
     /// 一次性 curry 出所有 static method 调用,绑定在 row 的生命周期上。
     let callbacks: ComponentCallbacks
+
+    var cachedHeight: CGFloat { cachedSize.height }
+    var cachedWidth: CGFloat { cachedSize.width }
 }
 
 // MARK: - ComponentCallbacks (type-erased dispatch)
@@ -123,6 +128,9 @@ struct ComponentRow {
 /// 闭包可以安全 capture 它。MainActor 闭包(render/interactions/selectables)
 /// 额外标 `@MainActor @Sendable` 保留隔离语义。
 struct ComponentCallbacks: Sendable {
+    /// `C.tag` —— row 的 identifier / cache key tag。
+    let tag: String
+
     /// `C.render(layout, state:, theme:, in ctx:, bounds:)`。
     let render: @MainActor @Sendable (_ row: ComponentRow, _ ctx: CGContext,
                                       _ bounds: CGRect, _ theme: TranscriptTheme) -> Void
@@ -132,6 +140,18 @@ struct ComponentCallbacks: Sendable {
 
     /// `C.selectables(layout, state:)`。
     let selectables: @MainActor @Sendable (_ row: ComponentRow) -> [SelectableSlot]
+
+    /// `C.applySelection(key:, range:, to:)` —— framework 拿 slot 的 key + range,
+    /// 请 component 把新 selection 折进 state。返回新 state(type-erased)。
+    let applySelection: @MainActor @Sendable (
+        _ currentState: any Sendable, _ key: AnyHashable, _ range: NSRange
+    ) -> any Sendable
+
+    /// `C.clearingSelection(state:)` —— 清空全部 selection。
+    let clearingSelection: @MainActor @Sendable (_ currentState: any Sendable) -> any Sendable
+
+    /// `C.selectedFragments(layout, state:)` —— 当前 state 下所有 slot 的选中文本。
+    let selectedFragments: @MainActor @Sendable (_ row: ComponentRow) -> [CopyFragment]
 
     /// Off-main 快路径 —— `C.relayouted(layout, theme:, state:)`。
     /// `nil` 表示 component 没实现 fast path,framework 走 `layoutFull`。
@@ -149,15 +169,19 @@ struct ComponentCallbacks: Sendable {
         _ width: CGFloat
     ) -> any HasHeight
 
-    /// Off-main content hash。
+    /// Off-main content hash —— 对 Input 算指纹,不含 state。
     let contentHash: @Sendable (
         _ input: any Sendable,
         _ theme: TranscriptTheme
     ) -> Int
 
-    /// Off-main refinement 声明。
+    /// Off-main default initial state —— 给 builder 构造初始 state 用。
+    let initialState: @Sendable (_ input: any Sendable) -> any Sendable
+
+    /// Off-main refinement 声明。`context` 由 framework 在调用前构造好。
     let refinements: @Sendable (
-        _ content: any Sendable
+        _ content: any Sendable,
+        _ context: RefinementContext
     ) -> [AnyRefinement]
 
     // MARK: - Factory
@@ -166,6 +190,7 @@ struct ComponentCallbacks: Sendable {
     /// 还原到 `C.X`,然后调 `C` 的 static method。
     static func make<C: TranscriptComponent>(for _: C.Type) -> ComponentCallbacks {
         ComponentCallbacks(
+            tag: C.tag,
             render: { @MainActor @Sendable row, ctx, bounds, theme in
                 let layout = row.layout as! C.Layout
                 let state = row.state as! C.State
@@ -181,6 +206,17 @@ struct ComponentCallbacks: Sendable {
                 let state = row.state as! C.State
                 return C.selectables(layout, state: state)
             },
+            applySelection: { @MainActor @Sendable state, key, range in
+                C.applySelection(key: key, range: range, to: state as! C.State)
+            },
+            clearingSelection: { @MainActor @Sendable state in
+                C.clearingSelection(state as! C.State)
+            },
+            selectedFragments: { @MainActor @Sendable row in
+                let layout = row.layout as! C.Layout
+                let state = row.state as! C.State
+                return C.selectedFragments(layout, state: state)
+            },
             relayouted: { @Sendable layout, state, theme in
                 C.relayouted(layout as! C.Layout, theme: theme, state: state as! C.State)
             },
@@ -190,8 +226,11 @@ struct ComponentCallbacks: Sendable {
             contentHash: { @Sendable input, theme in
                 C.contentHash(input as! C.Input, theme: theme)
             },
-            refinements: { @Sendable content in
-                C.refinements(content as! C.Content).map(AnyRefinement.erase)
+            initialState: { @Sendable input in
+                C.initialState(for: input as! C.Input)
+            },
+            refinements: { @Sendable content, ctx in
+                C.refinements(content as! C.Content, context: ctx).map(AnyRefinement.erase)
             }
         )
     }
@@ -247,6 +286,7 @@ struct AnyRowContext {
     let stableId: StableId
     let cachedWidth: CGFloat
     let theme: TranscriptTheme
+    let currentStateErased: () -> any Sendable
     let applyStateErased: (any Sendable) -> Void
     let noteHeightOfRow: () -> Void
     let redraw: () -> Void
@@ -260,6 +300,7 @@ struct AnyRowContext {
             stableId: stableId,
             cachedWidth: cachedWidth,
             theme: theme,
+            currentState: { currentStateErased() as! C.State },
             applyState: { newState in applyStateErased(newState) },
             noteHeightOfRow: noteHeightOfRow,
             redraw: redraw,

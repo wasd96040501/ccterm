@@ -191,10 +191,9 @@ final class TranscriptTableView: NSTableView {
     private func isPointOverSelectableText(_ documentPoint: CGPoint) -> Bool {
         guard let controller else { return false }
         guard let ctx = controller.rowLocalContext(at: documentPoint) else { return false }
-        guard let selectable = controller.rows[ctx.rowIndex] as? TextSelectable else {
-            return false
-        }
+        let row = controller.rows[ctx.rowIndex]
         let pointInRow = ctx.toRowLocal(documentPoint)
-        return selectable.selectableRegions.contains { $0.frameInRow.contains(pointInRow) }
+        let slots = row.callbacks.selectables(row)
+        return slots.contains { $0.frameInRow.contains(pointInRow) }
     }
 }

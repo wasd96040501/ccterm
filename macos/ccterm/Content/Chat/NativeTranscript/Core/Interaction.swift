@@ -58,6 +58,11 @@ struct RowContext<C: TranscriptComponent> {
     let cachedWidth: CGFloat
     let theme: TranscriptTheme
 
+    /// 读取本 row 的当前 state —— `applyState` 的并发安全 `get` 对应。
+    /// handler 可以用 `var s = ctx.currentState(); s.x = ...; ctx.applyState(s)`
+    /// 做 in-place 字段更新而不丢其他字段。
+    let currentState: () -> C.State
+
     /// 把新 state apply 到自己。走 `StatefulComponent` fast path(`relayouted`)
     /// 如果 component 实现了;否则走 full `layout(...)` 重算(仍仅影响本 row)。
     let applyState: (C.State) -> Void

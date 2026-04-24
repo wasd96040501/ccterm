@@ -1,8 +1,6 @@
 import AppKit
 
-/// 鼠标点击 → row-local 坐标 → 派发到 row 自报的 `RowHitRegion`。entry point
-/// 由 `TranscriptTableView` 的 mouseDown / mouseMoved 调入。controller 只认
-/// `InteractiveRow` 协议，不 `as?` 任何具体 row 类型。
+/// 鼠标点击 → row-local 坐标 → 派发到 row 的 component callbacks。
 extension TranscriptController {
     // MARK: - Row-local point conversion
 
@@ -34,17 +32,17 @@ extension TranscriptController {
 
     func linkURL(atDocumentPoint documentPoint: CGPoint) -> URL? {
         guard let ctx = rowLocalContext(at: documentPoint) else { return nil }
-        guard let selectable = rows[ctx.rowIndex] as? TextSelectable else { return nil }
-        let regions = selectable.selectableRegions
-        guard !regions.isEmpty else { return nil }
+        let row = rows[ctx.rowIndex]
+        let slots = row.callbacks.selectables(row)
+        guard !slots.isEmpty else { return nil }
         let pointInRow = ctx.toRowLocal(documentPoint)
 
-        for region in regions where region.frameInRow.contains(pointInRow) {
+        for slot in slots where slot.frameInRow.contains(pointInRow) {
             let local = CGPoint(
-                x: pointInRow.x - region.frameInRow.origin.x,
-                y: pointInRow.y - region.frameInRow.origin.y)
-            guard let ci = region.layout.characterIndex(at: local) else { continue }
-            let attr = region.layout.attributed
+                x: pointInRow.x - slot.frameInRow.origin.x,
+                y: pointInRow.y - slot.frameInRow.origin.y)
+            guard let ci = slot.layout.characterIndex(at: local) else { continue }
+            let attr = slot.layout.attributed
             let idx = max(0, min(Int(ci), attr.length - 1))
             guard idx >= 0, idx < attr.length else { continue }
             let value = attr.attribute(.link, at: idx, effectiveRange: nil)
@@ -54,40 +52,47 @@ extension TranscriptController {
         return nil
     }
 
-    // MARK: - Interactive hit regions (protocol-dispatched)
+    // MARK: - Interactive hit (callbacks-dispatched)
 
-    /// 通用命中查询：遍历 row 自报的 `hitRegions`，返回命中的 region。
-    /// 命中遍历顺序按 row 内部声明；`InteractiveRow.hitRegions` 的 getter 自己
-    /// 决定是否要逆序（通常后画的在上）。
-    private func hitRegion(atDocumentPoint documentPoint: CGPoint)
-        -> (region: RowHitRegion, rowIndex: Int)?
+    private func hitInteraction(atDocumentPoint documentPoint: CGPoint)
+        -> (interaction: AnyInteraction, rowIndex: Int)?
     {
         guard let ctx = rowLocalContext(at: documentPoint) else { return nil }
-        guard let interactive = rows[ctx.rowIndex] as? InteractiveRow else { return nil }
+        let row = rows[ctx.rowIndex]
+        let interactions = row.callbacks.interactions(row)
         let pointInRow = ctx.toRowLocal(documentPoint)
-        for region in interactive.hitRegions where region.rectInRow.contains(pointInRow) {
-            return (region, ctx.rowIndex)
+        for interaction in interactions where interaction.rect.contains(pointInRow) {
+            return (interaction, ctx.rowIndex)
         }
         return nil
     }
 
-    /// 返回命中 region 的 cursor——`TranscriptTableView.checkCursor` 读这个决定
-    /// hover 时设 pointingHand / iBeam / arrow。
     func cursorOverHit(atDocumentPoint documentPoint: CGPoint) -> NSCursor? {
-        hitRegion(atDocumentPoint: documentPoint)?.region.cursor
+        hitInteraction(atDocumentPoint: documentPoint)?.interaction.cursor
     }
 
-    /// 点击分派。命中 → 调 region 的 perform 闭包（row 自己决定剪贴板 / toggle
-    /// / redraw 等副作用）→ 返回 true。未命中 → false，调用方继续往下 fallthrough
-    /// 到 link / selection。
+    /// 命中 → 按 interaction kind 调框架标准副作用。返回 true = 已消化点击。
     func performHit(atDocumentPoint documentPoint: CGPoint) -> Bool {
-        guard let hit = hitRegion(atDocumentPoint: documentPoint) else { return false }
-        hit.region.perform(self)
+        guard let hit = hitInteraction(atDocumentPoint: documentPoint) else { return false }
+        let stableId = rows[hit.rowIndex].stableId
+        switch hit.interaction.kind {
+        case .invoke(let handler):
+            let anyCtx = makeRowContext(stableId: stableId)
+            handler(anyCtx)
+        case .copy(let text):
+            let pb = NSPasteboard.general
+            pb.clearContents()
+            pb.setString(text, forType: .string)
+            selectionController.clear()
+            redrawAllVisibleRows()
+        case .openURL(let url):
+            selectionController.clear()
+            redrawAllVisibleRows()
+            NSWorkspace.shared.open(url)
+        }
         return true
     }
 
-    /// 单行重绘。命中 region 的 perform 闭包可能要求只刷新自己这一行
-    /// （如 code block copy 的 checkmark 反馈）。
     func redrawRow(at index: Int) {
         guard let tableView else { return }
         guard index >= 0, index < rows.count else { return }

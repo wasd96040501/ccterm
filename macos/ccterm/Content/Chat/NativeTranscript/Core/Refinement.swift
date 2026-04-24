@@ -9,13 +9,8 @@
 /// | Image fetch | URL → `NSImage` | 折进 `ImageContent.image` |
 /// | LSP diagnostics | 跨 LSP 拿 diagnostics | 折进 `DiagnosticContent.annotations` |
 ///
-/// ## 和老 `RowRefinement` + `RowRefinementWork` 协议对比
-///
-/// - 老:row(class)侧 adopt 协议 `pendingRefinements()`,work 内部 `[weak row]`
-///   持 row 引用,applier 在主线程直接 `row.apply(tokens)` mutate row 字段
-/// - 新:component(enum)在 `refinements(content:)` 声明活儿,work 跑完返回
-///   **纯数据 `ContentPatch`**,framework 自己 "把新 content 替回 row,
-///   重跑 layout,reload row"。Refinement 不持有 row 引用,不 mutate 任何东西
+/// Refinement 由 component 在 `refinements(content:context:)` 声明,可以 capture
+/// `RefinementContext` 里的 `syntaxEngine` 等共享资源。
 ///
 /// 结果:
 /// 1. Refinement 变纯函数(input: () → output: ContentPatch),好写好测
@@ -35,4 +30,16 @@ struct Refinement<C: TranscriptComponent>: Sendable {
 /// 在 cache 热命中 / pipeline 重入场景可能多次 apply 同一 patch。
 struct ContentPatch<C: TranscriptComponent>: Sendable {
     let apply: @Sendable (C.Content) -> C.Content
+}
+
+/// Framework 注入的 refinement 共享资源。新增类型(LSP / image fetcher 等)直接
+/// 加字段,Sendable 由调用方保证。
+struct RefinementContext: @unchecked Sendable {
+    let theme: TranscriptTheme
+    let syntaxEngine: SyntaxHighlightEngine?
+
+    init(theme: TranscriptTheme, syntaxEngine: SyntaxHighlightEngine? = nil) {
+        self.theme = theme
+        self.syntaxEngine = syntaxEngine
+    }
 }

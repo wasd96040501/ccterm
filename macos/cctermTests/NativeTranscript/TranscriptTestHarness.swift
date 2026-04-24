@@ -86,8 +86,16 @@ final class TranscriptTestHarness {
     var documentHeight: CGFloat { tableView.bounds.height }
 
     /// 某条 stableId 对应 row 的 documentY（minY）。找不到 → nil。
-    func documentY(of stableId: AnyHashable) -> CGFloat? {
+    func documentY(of stableId: StableId) -> CGFloat? {
         for i in 0..<controller.rows.count where controller.rows[i].stableId == stableId {
+            return tableView.rect(ofRow: i).minY
+        }
+        return nil
+    }
+
+    /// 便利:按 entryId 查 row(单 entry → 单 row 的常见情况)。
+    func documentY(ofEntry entryId: UUID) -> CGFloat? {
+        for i in 0..<controller.rows.count where controller.rows[i].stableId.entryId == entryId {
             return tableView.rect(ofRow: i).minY
         }
         return nil
@@ -99,7 +107,7 @@ final class TranscriptTestHarness {
     }
 
     /// 末行 stableId（rows 非空时）。
-    var lastRowStableId: AnyHashable? {
+    var lastRowStableId: StableId? {
         controller.rows.last?.stableId
     }
 }

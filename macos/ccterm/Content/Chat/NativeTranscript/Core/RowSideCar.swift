@@ -37,4 +37,7 @@ protocol RowSideCar: AnyObject {}
 /// 用这个(framework 的 default impl 自动生成)。
 final class EmptyRowSideCar: RowSideCar {
     init() {}
+    /// 绕过 macOS 26 SDK `swift_task_deinitOnExecutorImpl` 的 libmalloc 崩溃,
+    /// 同 `TranscriptPrepareCache.deinit` 的处理。SideCar 释放无需 actor hop。
+    nonisolated deinit { }
 }

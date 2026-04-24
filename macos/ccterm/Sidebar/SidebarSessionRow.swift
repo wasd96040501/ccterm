@@ -52,8 +52,7 @@ struct SidebarSessionRow: View {
             _ = TranscriptRowBuilder.prepareAll(
                 entries: entries,
                 theme: transcriptTheme,
-                width: width,
-                expandedUserBubbles: [])
+                width: width)
         }
     }
 

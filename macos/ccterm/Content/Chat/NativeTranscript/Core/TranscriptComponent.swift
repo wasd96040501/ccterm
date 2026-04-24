@@ -160,10 +160,39 @@ protocol TranscriptComponent: Sendable {
         state: State
     ) -> [SelectableSlot]
 
+    /// 把某个 slot 的 selection range 折进 state。默认返回原 state(stateless /
+    /// 不支持 selection 的 component)。支持 selection 的 component 按 `selectionKey`
+    /// dispatch 到自己的 state 字段。
+    ///
+    /// Range 语义:`location == NSNotFound || length == 0` 代表"清空这个 slot 的
+    /// selection";其他值代表激活的 range。
+    @MainActor
+    static func applySelection(
+        key: AnyHashable,
+        range: NSRange,
+        to state: State
+    ) -> State
+
+    /// 清空全部 selection。默认返回原 state。
+    @MainActor
+    static func clearingSelection(_ state: State) -> State
+
+    /// 根据 selection state + layout 导出当前可复制文本 —— Cmd-C 按
+    /// (rowIndex, slot.ordering) 升序拼接时用。默认空数组。
+    ///
+    /// 每条返回的 fragment 代表一个 slot 的选中 substring;framework 在跨 row 拼接
+    /// 时把多 fragment 用 `\n` 间隔(同 row)或 `\n\n` 间隔(跨 row)。
+    @MainActor
+    static func selectedFragments(
+        _ layout: Layout,
+        state: State
+    ) -> [CopyFragment]
+
     /// 异步补齐活儿声明(syntax highlight / image fetch / lsp diagnostics)。
-    /// 默认空。
+    /// 默认空。`context` 提供 framework 注入的共享资源(theme + engine)。
     nonisolated static func refinements(
-        _ content: Content
+        _ content: Content,
+        context: RefinementContext
     ) -> [Refinement<Self>]
 
     // MARK: - SideCar factory (MainActor)
@@ -210,8 +239,35 @@ extension TranscriptComponent {
         state: State
     ) -> [SelectableSlot] { [] }
 
+    /// 默认不 merge,保持原 state。
+    @MainActor
+    static func applySelection(
+        key: AnyHashable,
+        range: NSRange,
+        to state: State
+    ) -> State { state }
+
+    /// 默认无 selection 要清。
+    @MainActor
+    static func clearingSelection(_ state: State) -> State { state }
+
+    /// 默认无可复制 fragment(stateless / 不支持 selection)。
+    @MainActor
+    static func selectedFragments(
+        _ layout: Layout,
+        state: State
+    ) -> [CopyFragment] { [] }
+
     /// 默认无异步补齐。
     nonisolated static func refinements(
-        _ content: Content
+        _ content: Content,
+        context: RefinementContext
     ) -> [Refinement<Self>] { [] }
+}
+
+/// Cmd-C 时 component 产出的一段 copy 文本 + 它在 row 内的 ordering。
+/// framework 按 `(rowIndex, ordering)` 做最终拼接。
+struct CopyFragment: Sendable {
+    let ordering: SlotOrdering
+    let text: String
 }

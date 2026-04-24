@@ -108,3 +108,11 @@ struct TranscriptTheme {
 
     static let `default` = TranscriptTheme(markdown: .default)
 }
+
+// MARK: - Sendable conformance
+
+/// `TranscriptTheme` / `MarkdownTheme` 是包 `NSFont` / `NSColor` 的不可变值类型,
+/// font/color 实例本身线程安全可读。`@unchecked` 让 theme 跨 `Task` 边界传递
+/// 无需 boxing。
+extension TranscriptTheme: @unchecked Sendable {}
+extension MarkdownTheme: @unchecked Sendable {}

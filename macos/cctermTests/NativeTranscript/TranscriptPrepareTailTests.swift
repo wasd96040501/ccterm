@@ -44,7 +44,7 @@ final class TranscriptPrepareTailTests: XCTestCase {
         let r = TranscriptRowBuilder.prepareBoundedTail(
             entries: [],
             theme: theme, width: width,
-            expandedUserBubbles: [],
+            stickyStates: [:],
             minAccumulatedHeight: 600)
         XCTAssertTrue(r.items.isEmpty)
         XCTAssertEqual(r.phase1StartIndex, 0)
@@ -58,7 +58,7 @@ final class TranscriptPrepareTailTests: XCTestCase {
         let r = TranscriptRowBuilder.prepareBoundedTail(
             entries: entries,
             theme: theme, width: width,
-            expandedUserBubbles: [],
+            stickyStates: [:],
             minAccumulatedHeight: 0)
         XCTAssertEqual(r.phase1StartIndex, entries.count - 1)
         XCTAssertEqual(r.items.count, 1)
@@ -80,7 +80,7 @@ final class TranscriptPrepareTailTests: XCTestCase {
         let r = TranscriptRowBuilder.prepareBoundedTail(
             entries: entries,
             theme: theme, width: width,
-            expandedUserBubbles: [],
+            stickyStates: [:],
             minAccumulatedHeight: 10)
         XCTAssertEqual(r.phase1StartIndex, 1, "应停在最后一条（index=1）")
         XCTAssertGreaterThanOrEqual(r.items.count, 1)
@@ -92,7 +92,7 @@ final class TranscriptPrepareTailTests: XCTestCase {
         let r = TranscriptRowBuilder.prepareBoundedTail(
             entries: entries,
             theme: theme, width: width,
-            expandedUserBubbles: [],
+            stickyStates: [:],
             minAccumulatedHeight: 100_000)  // 10 万 pt，永远填不满
         XCTAssertEqual(r.phase1StartIndex, 0)
         XCTAssertGreaterThanOrEqual(r.items.count, entries.count)
@@ -106,7 +106,7 @@ final class TranscriptPrepareTailTests: XCTestCase {
         let r = TranscriptRowBuilder.prepareBoundedTail(
             entries: entries,
             theme: theme, width: width,
-            expandedUserBubbles: [],
+            stickyStates: [:],
             minAccumulatedHeight: 300)
         // 挂载的应当是末尾一段，非全量、非单条。
         XCTAssertGreaterThan(r.phase1StartIndex, 0)
@@ -125,19 +125,17 @@ final class TranscriptPrepareTailTests: XCTestCase {
         let r = TranscriptRowBuilder.prepareBoundedTail(
             entries: entries,
             theme: theme, width: width,
-            expandedUserBubbles: [],
+            stickyStates: [:],
             minAccumulatedHeight: 100_000)  // 全量
         XCTAssertEqual(r.items.count, entries.count)
 
         let entryIds = entries.map { $0.id }
-        var itemStables: [AnyHashable] = []
+        var itemEntryIds: [UUID] = []
         for item in r.items {
-            guard item is UserPreparedItem else {
-                XCTFail("expected UserPreparedItem"); continue
-            }
-            itemStables.append(item.stableId)
+            XCTAssertEqual(item.tag, UserBubbleComponent.tag,
+                "expected UserBubble item")
+            itemEntryIds.append(item.stableId.entryId)
         }
-        let expectedStables = entryIds.map { AnyHashable($0) }
-        XCTAssertEqual(itemStables, expectedStables, "items 顺序必须等于 entries 的顺序")
+        XCTAssertEqual(itemEntryIds, entryIds, "items 顺序必须等于 entries 的顺序")
     }
 }

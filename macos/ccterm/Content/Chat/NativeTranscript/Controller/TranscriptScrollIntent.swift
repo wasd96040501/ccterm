@@ -20,7 +20,7 @@ enum TranscriptScrollIntent: Equatable {
     /// - `stableId`: capture 时刻某一 row 的 stableId（通常是 rows[0]，即将被
     ///   prepend 的锚）
     /// - `topOffset`: capture 时该行 `rect.minY - clip.bounds.minY`
-    case anchor(stableId: AnyHashable, topOffset: CGFloat)
+    case anchor(stableId: StableId, topOffset: CGFloat)
 
     /// 精简 tag 给日志用（`preserve` / `bottom` / `anchor`）——日志别带 stableId
     /// 避免 PII 和字符串爆炸。

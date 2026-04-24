@@ -1,25 +1,18 @@
 import AppKit
 import QuartzCore
 
-/// Transcript 每一行的容器 view，走 Telegram `TableRowView` 的 CALayerDelegate 路线：
-/// - `wantsLayer = true` + `layerContentsRedrawPolicy = .never`：滚动期 0 draw，GPU composite
-/// - `layer.delegate = self` + 实现 `CALayerDelegate.draw(_:in:)`：CA 在每次
-///   `layer.setNeedsDisplay()` 后会**先清 backing store**，再调 delegate.draw。
-///   这是 Telegram 能干净地复用 rowView 而不出现“旧 row 像素残留”的关键——
-///   NSView 的 `draw(_:)` 路径下 `.never` 模式是否清 backing 没有明确保证。
-/// - `override func draw(_ dirtyRect:)` 留空：阻断 NSView 的默认 draw 路径,
-///   所有绘制都通过 CALayerDelegate 方法走。
+/// Transcript 每一行的容器 view。绘制走 `ComponentRow.callbacks.render` —
+/// 不再认识具体 row 子类。Theme 通过 weak controller 读取(避免每次 set(row:)
+/// 都强制传 theme)。
 class TranscriptRowView: NSTableRowView, CALayerDelegate {
-    private(set) var row: TranscriptRow?
+    private(set) var row: ComponentRow?
+    weak var controller: TranscriptController?
 
     required override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
         layerContentsRedrawPolicy = .never
-        // AppKit 对 layer-backed NSView 通常会把 layer.delegate 自动设为 self，
-        // 但在某些 reuse 路径下会被重置。显式赋值，防御。
         layer?.delegate = self
-        // 明确透明底，让 CA 在 composite 阶段有一致的背景基准。
         layer?.backgroundColor = NSColor.clear.cgColor
     }
 
@@ -28,37 +21,17 @@ class TranscriptRowView: NSTableRowView, CALayerDelegate {
     override var isFlipped: Bool { true }
     override var isOpaque: Bool { false }
 
-    /// 绑定新 row 到 view。用 `layer.setNeedsDisplay()`——CA 会先清 backing
-    /// 再调 `draw(_:in:)`，天然消除新旧 row 像素叠加。
-    func set(row: TranscriptRow?) {
+    func set(row: ComponentRow?) {
         self.row = row
         layer?.setNeedsDisplay()
     }
 
-    /// 空 override，阻断 NSView 的默认绘制路径。绘制走 CALayerDelegate。
     override func draw(_ dirtyRect: NSRect) {}
 
-    /// CALayerDelegate.draw(_:in:)。
-    /// NSView 的 `isFlipped = true` 使 AppKit 同时把 `layer.isGeometryFlipped`
-    /// 也设上，CA 传进来的 `ctx` 已经是 y 向下（原点左上）——直接喂给 `row.draw`
-    /// 不需要再做坐标翻转。文字层面由 `ctx.textMatrix = (1, -1)` 翻 glyph 即可
-    /// （跟 Telegram 的做法一致）。
-    ///
-    /// 居中内容列：当 `row.cachedWidth < bounds.width`（window 宽于
-    /// `TranscriptTheme.maxContentWidth`），CTM 向右平移 `inset`，让 row 在
-    /// `0..cachedWidth` 坐标系内画出的内容落到屏幕的 `inset..inset+cachedWidth`，
-    /// 两侧对称留白。row 实现无需感知 inset。
-    ///
-    /// 绑定 **当前视图的 effectiveAppearance** 为 drawing appearance：
-    /// CALayerDelegate.draw 没有 AppKit 的 NSGraphicsContext，dynamic NSColor
-    /// （例如 `.labelColor` / 主题的 `NSColor(name:nil){appearance in ...}` 动态
-    /// 色）默认会 fall back 到应用默认外观，不跟随 system dark/light。
-    /// `performAsCurrentDrawingAppearance` 把 view 的 `effectiveAppearance` 装
-    /// 到线程局部，`.cgColor` 解析时命中正确的分支——系统 appearance 切换后配合
-    /// `viewDidChangeEffectiveAppearance` 触发重绘即可。
     func draw(_ layer: CALayer, in ctx: CGContext) {
         guard let row else { return }
-        let contentW = row.cachedWidth > 0 ? row.cachedWidth : bounds.width
+        let theme = TranscriptTheme(markdown: controller?.theme ?? .default)
+        let contentW = row.cachedSize.width > 0 ? row.cachedSize.width : bounds.width
         let inset = max(0, (bounds.width - contentW) / 2)
         let contentBounds = CGRect(x: 0, y: 0, width: contentW, height: bounds.height)
         effectiveAppearance.performAsCurrentDrawingAppearance {
@@ -66,20 +39,16 @@ class TranscriptRowView: NSTableRowView, CALayerDelegate {
             if inset > 0 {
                 ctx.translateBy(x: inset, y: 0)
             }
-            row.draw(in: ctx, bounds: contentBounds)
+            row.callbacks.render(row, ctx, contentBounds, theme)
             ctx.restoreGState()
         }
     }
 
-    /// 系统 light/dark 切换时，AppKit 先更新 `effectiveAppearance`，再调用
-    /// 所有 view 的这个 hook。dynamic NSColors 的解析会在下一次 draw 命中
-    /// 新外观，但 CA 的 backing bitmap 仍是旧像素——必须显式触发重绘。
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         layer?.setNeedsDisplay()
     }
 
-    // NSTableRowView 默认还会画 selection / hover / separator——transcript 纯只读，全关。
     override func drawSelection(in dirtyRect: NSRect) {}
     override func drawBackground(in dirtyRect: NSRect) {}
     override func drawSeparator(in dirtyRect: NSRect) {}

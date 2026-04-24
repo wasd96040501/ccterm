@@ -1,248 +1,201 @@
-# NativeTranscript `Core/` — 组件协议重构接力文档
+# NativeTranscript `Core/` — 组件协议
 
-**分支:** `feat/sessionhandle2-migration`
-**上下文:** NativeTranscript 模块(`macos/ccterm/Content/Chat/NativeTranscript/`) 的 component 体系重构。
-**状态:** 协议骨架已落地(本目录),老代码未动,迁移未开始。
-**受众:** 接手这件事的下一个人。
-
----
-
-## 1 为什么做这件事
-
-### 今天的痛
-
-一个作者想在 transcript 里加一种新的 row(比如 `ToolBlockRow` / `ImageBubbleRow` / `ThinkingBlockRow`)要**同时**面对 6-8 个散落概念:
-
-| 概念 | 类型 | 职责 |
-|---|---|---|
-| `TranscriptRow` | class 基类 | 数据 + 绘制 + table 反向操作 + selection 默认实现 5 职责混在一起 |
-| `InteractiveRow` | protocol | 点击区域声明,perform 闭包可直接 poke controller 全局状态 |
-| `ExpandableRow` | protocol | 展开状态 sync(只对 isExpanded 特化) |
-| `RowRefinement` + `RowRefinementWork` | 2 个 protocol | 异步补齐声明 |
-| `TextSelectable` | protocol | 选中区域 + selectionHeader + clearSelection |
-| `*PreparedItem` struct | per-component | off-main Sendable 包装;每种 row 一份几乎同构的 struct |
-| `TranscriptPrepare.<type>` | 集中静态函数 | prepare/layout 函数堆一个 enum |
-| `TranscriptPrepareCache.Variant` | enum | 老三 case `.user / .assistant / .placeholder`,加 row 要改 |
-| `TranscriptRowBuilder` | 集中 dispatch | 硬编码 entry → component 的 switch + 3 套 `cachedOrBuild*` 模板函数 |
-
-每加一种 row 要**改 3-4 个集中文件** + **继承 + adopt 若干协议**。框架内部流水线的切分(off-main prepare / width-aware layout / MainActor mount)直接泄露给作者。
-
-### 重构的核心目的
-
-**压缩作者面对的认知维度到 4 轴 + 1 可选(状态)。** 一个 component 的定义 = 一个 `enum MyComponent: TranscriptComponent` 文件,没有 class 继承、没有多协议 adopt、没有集中文件修改。
+**状态:** 协议落地 + 全量迁移完成。3 个老 Row 子类已替换为 3 个 Component enum
+(`Placeholder` / `UserBubble` / `AssistantMarkdown`)。老 `Rows/` `Refinements/`
+`Controller/TextSelectable.swift` 与 3 个 `*PreparedItem.swift` 已删除。
 
 ---
 
-## 2 目标形态:作者视角
+## 1 设计目的
+
+老代码每加一种 row 要面对 6-8 个散落概念(`TranscriptRow` / `InteractiveRow` /
+`ExpandableRow` / `RowRefinement` / `TextSelectable` / `*PreparedItem` / 集中
+`TranscriptPrepare` switch / `TranscriptPrepareCache.Variant`),且要改 3-4 个
+集中文件。
+
+新模型把作者面对的认知维度压到 **4 轴 + 1 可选(状态)** —— 一个 `enum
+MyComponent: TranscriptComponent` 的单文件定义就能扩展,不动任何 framework
+代码。
+
+---
+
+## 2 作者视角
 
 ```swift
-// Components/MyThing.swift — 一个文件,不改任何 framework 代码
 enum MyThingComponent: TranscriptComponent {
     static let tag = "MyThing"
 
     // 4 个正交轴
     struct Input: Sendable { ... }                    // entry 里我关心的字段
     struct Content: Sendable { ... }                  // parse 结果,宽度无关
-    struct Layout: HasHeight { ... }                  // width×state 排版结果
-    typealias State = Void                            // 默认 stateless;需要时换别的 Sendable
+    struct Layout: HasHeight { ... }                  // width × state 排版结果
+    typealias State = Void                            // 默认 stateless
 
     // 从 entry 挑出我的 inputs(只挑自己关心的 block,不排他)
-    static func inputs(from entry: MessageEntry, entryIndex: Int) -> [IdentifiedInput<Input>] { ... }
+    static func inputs(from: MessageEntry, entryIndex: Int) -> [IdentifiedInput<Input>]
 
-    // off-main parse/hash/layout
-    static func prepare(_: Input, theme: TranscriptTheme) -> Content { ... }
-    static func contentHash(_: Input, theme: TranscriptTheme) -> Int { ... }
-    static func layout(_: Content, theme: TranscriptTheme, width: CGFloat, state: State) -> Layout { ... }
+    // off-main parse / hash / layout
+    static func prepare(_: Input, theme:) -> Content
+    static func contentHash(_: Input, theme:) -> Int
+    static func layout(_: Content, theme:, width:, state:) -> Layout
 
     // MainActor 绘制
-    @MainActor
-    static func render(_: Layout, state: State, theme: TranscriptTheme,
-                       in ctx: CGContext, bounds: CGRect) { ... }
+    @MainActor static func render(_: Layout, state:, theme:, in ctx:, bounds:)
 
-    // 可选(有默认空实现): interactions / selectables / refinements / makeSideCar /
-    // relayouted (StatefulComponent 快路径)
+    // 可选 override:interactions / selectables / applySelection / clearingSelection /
+    //   selectedFragments / refinements / makeSideCar / relayouted
 }
 ```
 
-**没有 class,没有继承,没有 adopt 多个 Row 协议**。Component 是一个 enum(或 struct) + 静态方法集合。
+**新增 component:** 在 `Components/MyComponent.swift` 写一个 enum +
+在 `TranscriptComponentRegistry.inputsAndItems(...)` 里加一行 dispatch。
+不改 controller / cache / builder / pipeline。
 
 ---
 
-## 3 当前 `Core/` 目录落地内容
-
-本次 commit 仅**新增**以下文件,绝未动老代码:
+## 3 模块布局
 
 ```
-Core/
-├── StableId.swift            结构化 stableId + IdentifiedInput<Input>
-├── SelectableSlot.swift      选中区域声明(取代 TextSelectable.selectableRegions)
-├── Interaction.swift         Interaction<C> enum + RowContext<C>(受限视图)
-├── Refinement.swift          Refinement<C> + ContentPatch<C>(纯数据)
-├── RowSideCar.swift          GPU/CALayer 逃生门协议
-├── TranscriptComponent.swift 主协议(HasHeight + 4 associated types + default impls)
-├── ComponentRow.swift        framework 内部:PreparedItem<C> + ComponentRow (struct) + 
-│                             ComponentCallbacks type-erased dispatch
-└── README.md                 本文件
-```
+Core/                              # 协议骨架(本目录)
+├── TranscriptComponent.swift      # 主协议 + 默认实现
+├── ComponentRow.swift             # PreparedItem<C> + ComponentRow + ComponentCallbacks
+├── AnyPreparedItem.swift          # Builder/cache/pipeline 持有的 type-erased 容器
+├── StableId.swift                 # 结构化 row id + IdentifiedInput<Input>
+├── SelectableSlot.swift           # 选中 slot 声明(纯数据)
+├── Interaction.swift              # Interaction<C> + RowContext<C>(受限视图)
+├── Refinement.swift               # Refinement<C> + ContentPatch<C> + RefinementContext
+└── RowSideCar.swift               # 逃生门协议(GPU/CALayer)
 
-这些文件**独立编译通过**,但尚未被任何代码使用(`grep -r 'TranscriptComponent' macos/ccterm/Content/Chat/NativeTranscript/Controller/` 为空)。
+Components/
+├── PlaceholderComponent.swift     # Tool / Group / 占位虚线框
+├── UserBubbleComponent.swift      # User 气泡 + chevron 折叠 (State = (isExpanded, selection))
+├── AssistantMarkdownComponent.swift  # Markdown(text/heading/list/table/codeBlock/quote/break)
+├── AssistantMarkdownPrebuilder.swift # MarkdownDocument → PrebuiltSegment(per-Assistant 用)
+└── TranscriptComponentRegistry.swift # entry → inputs walker
+
+Prepare/
+├── TranscriptRowBuilder.swift     # prepareAll / prepareBoundedTail / prepareBoundedAround
+└── TranscriptPrepareCache.swift   # (contentHash, tag) → CachedContent LRU
+
+Controller/                        # framework 端 — 用户无需改
+├── TranscriptController.swift     # rows: [ComponentRow], state-apply / hit / scroll
+├── TranscriptController+Pipeline.swift  # 4 reason → 4 pipeline 调度
+├── TranscriptController+Merge.swift     # transition → NSTableView 原子应用
+├── TranscriptController+Hit.swift       # 点击/光标 → callbacks 分派
+├── TranscriptRowView.swift              # CALayerDelegate.draw → callbacks.render
+├── TranscriptSelectionController.swift  # drag → slot.selectionKey → callbacks.applySelection
+├── TranscriptTableView.swift, TranscriptScrollView.swift, ...
+```
 
 ---
 
-## 4 关键决策的理由备忘
+## 4 关键决策
 
 ### 4.1 Row 从 class 降级为 struct
 
-| 关心 | 答 |
+`ComponentRow` 是 struct;`controller.rows: [ComponentRow]` 直接持有 value。
+GPU/CALayer 资源走 `SideCar: RowSideCar` 关联类型逃生门。Selection / 展开等
+状态进 `C.State`(Sendable 值类型)。
+
+### 4.2 Selection 通过 `applySelection` 路由
+
+`SelectableSlot` 不带 `setSelection` 闭包(避免回引 row class)。每个 slot
+带一个 `selectionKey: AnyHashable`,framework 拖动结算后调
+`C.applySelection(key:, range:, to:)` 让 component 把 range 折进 state。
+对应 `clearingSelection(state:)` 与 `selectedFragments(layout:, state:)`
+覆盖 Cmd-C 拼接。
+
+### 4.3 Interaction 是意图 enum 不是闭包
+
+老 `InteractiveRow.hitRegions` 的 `perform: (TranscriptController) -> Void`
+让 row 任意 poke controller 全局。新 `Interaction<C>`:
+
+| case | framework 标准副作用 |
 |---|---|
-| 性能? | struct inline 存储,cache locality 略升;vtable 换成 @Sendable 闭包 indirect call,等价 |
-| CALayer / GPU 资源怎么办? | `SideCar: RowSideCar` 关联类型逃生门,per-row 持有作者定义的 class |
-| UserBubble 的 `currentSelection` 字段怎么办? | 进 `State`(stateful component 把 selection 作为 row-local state 一部分) |
+| `.toggleState(rect, newState, cursor)` | 自动 `applyState(newState)` + relayout + redraw |
+| `.copy(rect, text, cursor)` | 写剪贴板 + clearSelection + redraw |
+| `.openURL(rect, url, cursor)` | NSWorkspace open + clearSelection |
+| `.custom(rect, cursor, handler)` | 给 handler 一个 `RowContext<C>`(无 controller),其余应用层 ownership 链 |
 
-### 4.2 State 作为一等第三轴
+`RowContext<C>` 提供 `currentState()` + `applyState(_:)` + `noteHeightOfRow()` +
+`redraw()` + `clearSelection()` + `sideCar()`,实现"row 知道自己能做什么但
+不能越权"。
 
-`layout(content, theme, width, state)` 签名。width 和 state **都是** layout 的输入,不是老设计里"state 变触发 class 字段分叉"的隐性方式。
+### 4.4 Sticky state(跨 row rebuild 持久化)
 
-`relayouted(layout, state)` 快路径 opt-in:作者把 width-dependent 但 state-independent 的 intermediate(如 UserBubble 的 CT `textLayout`)存在 Layout 字段里,state 变时只重跑几何(跳过 CT)。返回 `nil` = 没有快路径,framework fall back 到 `layout(...)` full。
+控制器 `stickyStates: [StableId: any Sendable]` 存所有 component 的 sticky
+state(主要服务 UserBubble 的 expanded 折叠态)。`Interaction.toggleState`
+框架自动写入。Builder 接受 `stickyStates: [StableId: any Sendable]` 参数
+(便利构造器 `[StableId: any Sendable].expandedUserBubbles(_:)`),为新 row
+按 stableId 查 sticky 作初始 state。
 
-### 4.3 `Interaction` 是 enum 不是闭包
+### 4.5 Refinement 是纯数据
 
-老 `InteractiveRow.hitRegions` 的 `perform: (TranscriptController) -> Void` 闭包把整个 controller 暴露给 row,副作用不可见。
+`Refinement<C>.run() -> ContentPatch<C>`(纯闭包)。framework 调 `.run()`,
+拿 patch,`patch.apply(oldContent)` 得到新 content,重跑 layout,reload row。
+Refinement 不持 row 引用、不 mutate 任何东西、`Sendable` 天然。
 
-新 `Interaction<C>` 是**意图枚举**:
-- `.toggleState` — framework 自动 apply state + noteHeightOfRow + clearSelection + redraw
-- `.copy` — framework 放剪贴板 + 反馈
-- `.openURL` — framework 走 NSWorkspace
-- `.custom(handler:)` — 逃生门。handler 拿 `RowContext<C>`(受限视图,**不含 controller**),真需要跨界副作用(开 sheet / 导航)通过应用层 ownership chain。
+`refinements(_ content:, context:)` 接收 `RefinementContext`,framework 注入
+`theme + syntaxEngine` 等共享资源 —— refinement 不直接抓 controller。
 
-### 4.4 `Refinement` 是纯数据不是 row mutation
+### 4.6 双路 highlight
 
-老 `RowRefinementWork.run()` 返回 `@MainActor () -> Void` applier,applier 直接 `row.apply(...)` mutate class 字段。
+- **off-main batch path**(pipeline 内):`AssistantMarkdownComponent.highlightRequests(item)`
+  + `applyTokens(item, tokens, theme, width)` —— pipeline 收集所有 row 的 code
+  block 请求,一次 `engine.highlightBatch(...)` JSCore 调用,把 tokens 折回 items
+  再 makeRow。这是首屏 TTFP 的关键路径。
+- **on-main refinement path**(merge 后兜底):`refinements(_ content:, context:)`
+  + `Refinement.run() -> ContentPatch` —— 走通用 refinement scheduler。捕获
+  carry-over rows / cache 命中但未 highlight 的 row。
 
-新 `Refinement<C>.run()` 返回 `ContentPatch<C>`(纯数据闭包),framework 自己把 new content 替回 row → 重跑 layout → reload row。Refinement 不持有 row 引用、不 mutate,`Sendable` 天然。
+两路共享 engine 的同 tick coalescing,实际 JSCore 跨界次数仍接近 1。
 
-### 4.5 `StableId` 结构化
+### 4.7 StableId 结构化
 
-老 `AnyHashable` 约定(assistant 用 `"<uuid>-md-N"` 字符串,controller 靠 split-dash 反查 entryId)。
+`struct StableId { entryId: UUID; locator: Locator }`。`locator` 区分
+`whole / block(Int) / custom(String)`,匹配多 component 同 entry 的场景
+(assistant entry 里 text → `.block(textStartIdx)`, tool_use → `.block(idx)`)。
+`SavedScrollAnchor` 等外部接口直接读 `stableId.entryId`,不再做字符串解析。
 
-新 `struct StableId { entryId: UUID; locator: Locator }` 结构化。`Controller.entryId(fromRowStableId:)` 字符串解析可以删(迁移阶段)。
+### 4.8 一个 entry 多 component 共享
 
-### 4.6 `C.Type` Sendable
-
-让 `TranscriptComponent: Sendable` —— component 作为 enum/struct with static methods 天然无状态,Sendable 合理。`C.Type` 因而 Sendable,`@Sendable` 闭包安全 capture。
-
-### 4.7 一个命名冲突
-
-新 `SelectableSlot.ordering: SlotOrdering`(不叫 `Ordering`)是因为老 `Controller/TextSelectable.swift:14` 有 `struct Ordering`,同名冲突。老代码删除后可以 flatten rename。
-
----
-
-## 5 接下来的迁移计划
-
-按**独立可审 commit** 分步:
-
-### Step 2:迁移 `PlaceholderComponent`(最简单,验证 pipeline)
-
-- 建 `Components/Placeholder/PlaceholderComponent.swift` 实现 `TranscriptComponent`
-- 写 `TranscriptComponentRegistry`(或直接 `TranscriptComponents.all`) 的注册表
-- 让 `TranscriptRowBuilder` **并行**支持 "新协议路径(registry)" 和 "老路径(switch)",新老共存一次 pipeline
-- 让 `TranscriptController` / `merge` / pipeline 接受异构 `[ComponentRow] ∪ [老 TranscriptRow class]` —— 这里最难,可能需要一个 adapter 让老 row 暂时假装是 ComponentRow
-- **或者**:直接一次砍倒,不做并行,承受短暂 broken state
-
-**建议**:直接砍倒。当前分支是 migration 分支,不需要中间点功能完整。
-
-### Step 3:迁移 `UserBubbleComponent`(验证 Stateful)
-
-- `State = Bool`(isExpanded)
-- Layout 内存 `UserBubbleCT` intermediate,`relayouted` 只跑几何
-- Interaction:chevron 点击 = `.toggleState(newState: !expanded)`
-- Selectable:一个 slot 覆盖文字区
-
-### Step 4:迁移 `AssistantMarkdownComponent`(最复杂)
-
-- Content 大(MarkdownDocument + prebuilt segments)
-- Selectable:多 slot(per segment,包括 table selection)
-- Refinement:syntax highlight(per code block,`ContentPatch` 折 tokens 回 prebuilt)
-- State 可能非 Void(若 per-segment selection 进 state)
-
-### Step 5:删老代码
-
-- `Rows/TranscriptRow.swift` 老 class
-- `Rows/*Row.swift`(已经被 Components/ 替代)
-- `Prepare/*PreparedItem.swift` 三个
-- `Prepare/TranscriptPrepare.swift` 集中函数
-- `Prepare/TranscriptRowBuilder.swift` 老 dispatch + cachedOrBuild 模板
-- `Controller/TextSelectable.swift` 老协议 + `Ordering`
-- `Rows/RowProtocols.swift`(`InteractiveRow` / `ExpandableRow`)
-- `Rows/MarkdownRowPrebuilder.swift`(可能整合到 `AssistantMarkdownComponent`)
-- `Refinements/RowRefinement.swift` 老协议
-
-### Step 6:整理 `Core/`
-
-- 如果 `SlotOrdering` 可以 rename 回 `Ordering` 就 rename
-- `Controller.entryId(fromRowStableId:)` 字符串解析删,改用 `StableId.entryId` 直读
-- `TranscriptController.rows: [ComponentRow]`
+`entry → component.inputs(from:)` 不排他。assistant entry 里 text block 归
+`AssistantMarkdownComponent`,tool_use block 归 `PlaceholderComponent`。
+`TranscriptComponentRegistry.inputsAndItems(...)` 各 component 走一遍并
+按 `(entryIndex, blockIndex)` merge-sort 出最终行序。
 
 ---
 
-## 6 需要接力者留神的地方
+## 5 使用规范(给后续 component 作者)
 
-### 6.1 一个 entry 被多 component 消费
-
-`assistant entry` 里 text / tool_use / thinking block 将来归 **不同 component** 各挑各的。不要把 "一个 entry → 一个 component" 的旧假设搬进 builder —— 新 builder 是:
-
-```
-for each entry:
-    for each component in registry:
-        inputs += component.inputs(from: entry, entryIndex: i)
-sort inputs by (entryIndex, blockIndex)
-```
-
-### 6.2 `C.Type` existential 的使用
-
-`any TranscriptComponent.Type`(metatype existential)可以放进异构数组;但 `any TranscriptComponent`(instance existential)**不能直接用访问 associated types**。Swift 5.9 primary associated types 语法 `any TranscriptComponent<Content == X>` 解决部分问题,但 registry 层大概率还是要显式 type-erase —— 参考 `ComponentRow.swift` 里 `ComponentCallbacks.make<C>(for:)` 的做法。
-
-### 6.3 为什么 `ComponentRow` 字段是 `any Sendable`,不是 `any TranscriptComponent.Input`?
-
-Protocol 的 associated type 在 existential context 下无法用作字段类型约束(Swift 限制)。所以 framework 内部 row 存 `state: any Sendable`,在 callbacks 里 `as! C.State` 还原。force-cast 配对由 `make(for:)` 保证类型永远一致,不会失败。开销 ~ns 级,非热点。
-
-### 6.4 `width × state` 共同影响 layout
-
-老 UserBubble 里 `makeSize(width:)` 的 if-else 分叉(widthChanged vs stateChanged)是**实现细节**。新协议里:
-- `layout(content, theme, width, state)` 是**唯一 full 入口**,width + state 都是输入
-- `relayouted(layout, theme, state)` 是**快路径入口**,调用方保证 width 未变
-- Framework 的 state-apply 路径先试 `relayouted` → nil 就 fall back 到 `layout(...)` 用当前 cached width 重跑
-
-### 6.5 老 enum `TranscriptPrepareCache.Variant` 已经删
-
-上一 commit(`99dd7d2`)已经把 `Variant` enum 换成 `Key = (contentHash: Int, tag: String)`,老 `*PreparedItem.cacheKey` 表达式用字面量 tag(`"User"` / `"Assistant"` / `"Placeholder"`)过渡。**迁移新 component 时这些字面量会被 `C.tag` 取代,无需额外处理**。
-
-### 6.6 不要在协议阶段写 mock 单测
-
-协议的正确性要由**真实 component 实现 + 集成**证明,不是靠 `MockComponent` / `StatefulMock` 之类的 mock。上一次反思已存 memory(`feedback_no_mock_tests_for_unimplemented_protocols.md`)。
+1. 一个 component 文件 = 一个 `enum FooComponent: TranscriptComponent`
+2. 不引用 `TranscriptController` / 任何 controller 类型
+3. 通过 `RowContext<Self>` 完成所有 "告诉 framework 我变了" 的副作用
+4. State 设计:
+   - 单字段 → `typealias State = Bool` / `Int` / 等 Sendable 类型
+   - 多字段 → `struct State: Sendable { ... }`
+   - Stateless → `typealias State = Void`(继承默认 `initialState`)
+5. Refinement 不持 self / row 引用,要靠 `RefinementContext` 注入 engine
+6. 注册:`TranscriptComponentRegistry.inputsAndItems(...)` 加一行 walker
+   (Assistant 类有 highlight,需要走 `prepareAndAssistant` 专用入口注入
+   `highlightProvider` / `tokenApplier`)
 
 ---
 
-## 7 编译验证
-
-本 commit 编译通过:
+## 6 编译验证
 
 ```bash
 make build
+make test TEST=cctermTests/UserBubbleCollapseTests
+make test TEST=cctermTests/TranscriptDiffTests
+make test TEST=cctermTests/TranscriptPrepareCacheTests
+make test TEST=cctermTests/TranscriptPrepareTests
+make test TEST=cctermTests/TranscriptPrepareTailTests
+make test TEST=cctermTests/TranscriptControllerReasonDispatchTests
 ```
 
-**没有新增测试**(协议骨架阶段不写测试,迁移阶段做真实集成测试)。
+全部 ✅。
 
 ---
 
-## 8 参考
-
-- 新协议 doc-comment 里每个类型都说了"和老 X 对比"的段落,可以对应 `Rows/`、`Prepare/`、`Refinements/`、`Controller/TextSelectable.swift` 对读
-- 性能/灵活性审计(不在本 doc,在上一轮对话记录):
-  - 性能:无牺牲,stableId hash 和 cache locality 略升
-  - 灵活性:无牺牲,自定义 CGContext 绘制 + CALayer 持有 + 复杂交互 + 多阶段 layout 都有一等通道或逃生门
-  - 唯一显性收紧:component 不再直接 poke controller 全局 —— 这是健康的结构化约束,不是能力损失
-
----
-
-*本文件由 `feat/sessionhandle2-migration` 分支于 2026-04-24 生成。接手后用 `git log --oneline Core/` 看演进,用 `git blame Core/*.swift` 看具体决策出处。*
+*本目录文件由 `feat/sessionhandle2-migration` 分支于 2026-04-24 完成全量迁移。*

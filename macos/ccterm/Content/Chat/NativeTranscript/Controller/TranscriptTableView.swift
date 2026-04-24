@@ -129,8 +129,6 @@ final class TranscriptTableView: NSTableView {
             let dx = point.x - start.x
             let dy = point.y - start.y
             let draggedSquared = dx * dx + dy * dy
-            appLog(.debug, "TranscriptTableView",
-                "mouseUp start=\(start) up=\(point) dragSq=\(draggedSquared) passThreshold=\(draggedSquared <= 9)")
             if draggedSquared <= 9 {
                 // Row hit region 优先：chevron / code block header 等都由 row
                 // 自报的 `hitRegions` 统一承接，perform 闭包里自己处理 clear

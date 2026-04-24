@@ -104,11 +104,15 @@ extension TranscriptController {
 
         activePreprocessTask = Task.detached(priority: .userInitiated) { [weak self] in
             let tPrepStart = CFAbsoluteTimeGetCurrent()
+            // entryCount 必须是全局 entries 的长度:GroupComponent 用
+            // `entryIndex == entryCount - 1` 判 isActive,只传 prefix 长度
+            // 会让 prefix 末尾 entry 被误判为全局最后一条。
             let prefixPreparedOnly = TranscriptRowBuilder.prepareAll(
                 entries: prefixEntries,
                 theme: transcriptTheme,
                 width: width,
-                stickyStates: stickyStates)
+                stickyStates: stickyStates,
+                entryCount: entries.count)
             let tPrepDone = CFAbsoluteTimeGetCurrent()
             if Task.isCancelled { return }
 
@@ -250,16 +254,19 @@ extension TranscriptController {
 
         activePreprocessTask = Task.detached(priority: .userInitiated) { [weak self] in
             let tPrepStart = CFAbsoluteTimeGetCurrent()
+            // entryCount 必须是全局 entries 的长度 —— 原因见 runViewportFirstBottom 注释。
             let leftPrepared = TranscriptRowBuilder.prepareAll(
                 entries: leftEntries,
                 theme: transcriptTheme,
                 width: width,
-                stickyStates: stickyStates)
+                stickyStates: stickyStates,
+                entryCount: entries.count)
             let rightPrepared = TranscriptRowBuilder.prepareAll(
                 entries: rightEntries,
                 theme: transcriptTheme,
                 width: width,
-                stickyStates: stickyStates)
+                stickyStates: stickyStates,
+                entryCount: entries.count)
             let tPrepDone = CFAbsoluteTimeGetCurrent()
             if Task.isCancelled { return }
 

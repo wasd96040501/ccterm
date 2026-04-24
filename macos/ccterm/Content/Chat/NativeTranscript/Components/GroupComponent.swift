@@ -292,10 +292,7 @@ enum GroupComponent: TranscriptComponent {
                 cursor: .pointingHand,
                 handler: { ctx in
                     var newState = ctx.currentState()
-                    let oldExpanded = newState.isExpanded
                     newState.isExpanded.toggle()
-                    appLog(.debug, "GroupComponent",
-                        "click toggle old=\(oldExpanded) new=\(newState.isExpanded)")
                     ctx.applyState(newState)
                 }),
             .hover(
@@ -432,16 +429,11 @@ final class GroupSideCar: RowSideCar {
         let modelRotBefore = (chevronLayer.value(forKeyPath: "transform.rotation.z") as? CGFloat) ?? 0
         let presRotBefore = chevronLayer.presentation()?
             .value(forKeyPath: "transform.rotation.z") as? CGFloat
-        let existingKeys = chevronLayer.animationKeys() ?? []
         let rotationFrom: CGFloat? = {
             guard expanded != isExpanded else { return nil }
             if let pres = presRotBefore { return pres }
             return modelRotBefore
         }()
-        appLog(.debug, "GroupSideCar",
-            "sync expected=\(expanded) current=\(isExpanded) model=\(modelRotBefore) "
-            + "pres=\(presRotBefore.map(String.init(describing:)) ?? "nil") "
-            + "animKeys=\(existingKeys) rotFrom=\(rotationFrom.map(String.init(describing:)) ?? "nil")")
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -527,7 +519,6 @@ final class GroupSideCar: RowSideCar {
             anim.fromValue = r.from
             anim.toValue = r.to
             chevronLayer.add(anim, forKey: "rotate")
-            appLog(.debug, "GroupSideCar", "rotate anim from=\(r.from) to=\(r.to)")
         }
     }
 

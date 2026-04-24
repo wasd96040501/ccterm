@@ -57,19 +57,10 @@ extension TranscriptController {
     private func hitInteraction(atDocumentPoint documentPoint: CGPoint)
         -> (interaction: AnyInteraction, rowIndex: Int)?
     {
-        guard let ctx = rowLocalContext(at: documentPoint) else {
-            appLog(.debug, "TranscriptHit",
-                "hit doc=\(documentPoint) rowCtx=nil(rowIndex<0 or tableView nil)")
-            return nil
-        }
+        guard let ctx = rowLocalContext(at: documentPoint) else { return nil }
         let row = rows[ctx.rowIndex]
         let interactions = row.callbacks.interactions(row)
         let pointInRow = ctx.toRowLocal(documentPoint)
-        let rectsDump = interactions.map { r in
-            "[\(r.rect.origin.x),\(r.rect.origin.y),\(r.rect.size.width),\(r.rect.size.height)]\(r.rect.contains(pointInRow) ? "✓" : "✗")"
-        }.joined(separator: " ")
-        appLog(.debug, "TranscriptHit",
-            "hit doc=\(documentPoint) row=\(ctx.rowIndex) rowRect=\(ctx.rowRect) inset=\(ctx.inset) pointInRow=\(pointInRow) tag=\(row.callbacks.tag) nInter=\(interactions.count) rects=\(rectsDump)")
         for interaction in interactions where interaction.rect.contains(pointInRow) {
             return (interaction, ctx.rowIndex)
         }

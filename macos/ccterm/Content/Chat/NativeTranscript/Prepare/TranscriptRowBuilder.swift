@@ -14,13 +14,15 @@ nonisolated enum TranscriptRowBuilder {
         entries: [MessageEntry],
         theme: TranscriptTheme,
         width: CGFloat,
-        stickyStates: [StableId: any Sendable] = [:]
+        stickyStates: [StableId: any Sendable] = [:],
+        entryCount: Int? = nil
     ) -> [AnyPreparedItem] {
         var out: [AnyPreparedItem] = []
         out.reserveCapacity(entries.count)
+        let totalCount = entryCount ?? entries.count
         for (i, entry) in entries.enumerated() {
             out.append(contentsOf: TranscriptComponentRegistry.itemsForEntry(
-                entry, entryIndex: i,
+                entry, entryIndex: i, entryCount: totalCount,
                 theme: theme, width: width,
                 stickyStates: stickyStates))
         }
@@ -43,10 +45,12 @@ nonisolated enum TranscriptRowBuilder {
     ) -> BoundedPrepareResult {
         var items: [AnyPreparedItem] = []
         var accumulated: CGFloat = 0
+        let total = entries.count
         for (idx, entry) in entries.enumerated() {
             let beforeCount = items.count
             items.append(contentsOf: TranscriptComponentRegistry.itemsForEntry(
-                entry, entryIndex: idx, theme: theme, width: width,
+                entry, entryIndex: idx, entryCount: total,
+                theme: theme, width: width,
                 stickyStates: stickyStates))
             for i in beforeCount..<items.count { accumulated += items[i].cachedHeight }
             if accumulated >= minAccumulatedHeight {
@@ -71,10 +75,12 @@ nonisolated enum TranscriptRowBuilder {
         var reversedGroups: [[AnyPreparedItem]] = []
         var accumulated: CGFloat = 0
         var phase1StartIndex = entries.count
+        let total = entries.count
 
         for i in stride(from: entries.count - 1, through: 0, by: -1) {
             let group = TranscriptComponentRegistry.itemsForEntry(
-                entries[i], entryIndex: i, theme: theme, width: width,
+                entries[i], entryIndex: i, entryCount: total,
+                theme: theme, width: width,
                 stickyStates: stickyStates)
             for item in group { accumulated += item.cachedHeight }
             reversedGroups.append(group)
@@ -110,9 +116,11 @@ nonisolated enum TranscriptRowBuilder {
                 startEntryIndex: 0, endEntryIndex: -1)
         }
         let anchor = max(0, min(anchorEntryIndex, entries.count - 1))
+        let total = entries.count
 
         let anchorGroup = TranscriptComponentRegistry.itemsForEntry(
-            entries[anchor], entryIndex: anchor, theme: theme, width: width,
+            entries[anchor], entryIndex: anchor, entryCount: total,
+            theme: theme, width: width,
             stickyStates: stickyStates)
         var belowAccumulated: CGFloat = anchorGroup.reduce(0) { $0 + $1.cachedHeight }
         var aboveAccumulated: CGFloat = 0
@@ -128,7 +136,7 @@ nonisolated enum TranscriptRowBuilder {
             || (belowAccumulated < belowMinHeight && rightIdx < entries.count) {
             if aboveAccumulated < aboveMinHeight, leftIdx >= 0 {
                 let group = TranscriptComponentRegistry.itemsForEntry(
-                    entries[leftIdx], entryIndex: leftIdx,
+                    entries[leftIdx], entryIndex: leftIdx, entryCount: total,
                     theme: theme, width: width, stickyStates: stickyStates)
                 for item in group { aboveAccumulated += item.cachedHeight }
                 leftGroups.append(group)
@@ -137,7 +145,7 @@ nonisolated enum TranscriptRowBuilder {
             }
             if belowAccumulated < belowMinHeight, rightIdx < entries.count {
                 let group = TranscriptComponentRegistry.itemsForEntry(
-                    entries[rightIdx], entryIndex: rightIdx,
+                    entries[rightIdx], entryIndex: rightIdx, entryCount: total,
                     theme: theme, width: width, stickyStates: stickyStates)
                 for item in group { belowAccumulated += item.cachedHeight }
                 rightGroups.append(group)

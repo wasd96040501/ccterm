@@ -45,6 +45,15 @@ enum Interaction<C: TranscriptComponent>: Sendable {
         rect: CGRect,
         cursor: NSCursor,
         handler: @MainActor @Sendable (RowContext<C>) -> Void)
+
+    /// Mouse enter / exit on a region inside the row。**不** apply state、**不**
+    /// 重 layout,handler 直接在 `RowContext` 上副作用(典型:改 SideCar 的 CA
+    /// 动画 alpha)。framework 跟踪"当前悬停的 (row, rect)",进出时各触发一次。
+    case hover(
+        rect: CGRect,
+        cursor: NSCursor,
+        onEnter: @MainActor @Sendable (RowContext<C>) -> Void,
+        onExit: @MainActor @Sendable (RowContext<C>) -> Void)
 }
 
 /// 受限视图 —— 传给 `Interaction.custom` 的 handler 和 `Refinement` 的 applier。

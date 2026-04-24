@@ -80,6 +80,20 @@ final class TranscriptTableView: NSTableView {
         guard let selection = controller?.selectionController else { return }
         window?.makeFirstResponder(selection)
 
+        // Routing 分两类语义,**不要**让 clickCount 无差别穿透:
+        //   1) Hit region(chevron / code header 等 `.custom` / `.invoke` 按钮语义)
+        //      —— 所有 clickCount 都退化成"单击",mouseUp 走 performHit。否则
+        //      快速连点会被识别成双击(clickCount=2)→ selectWord 分支把
+        //      mouseDownPoint 擦成 nil,mouseUp 的 `clickCount == 1` guard
+        //      直接 return,点击完全消失。按钮不该被双击语义劫持。
+        //   2) 文本 slot —— 按 clickCount 分派 drag / word / paragraph。
+        if controller?.cursorOverHit(atDocumentPoint: point) != nil {
+            mouseDownPoint = point
+            selection.beginDrag(at: point)
+            controller?.redrawAllVisibleRows()
+            return
+        }
+
         switch event.clickCount {
         case 3:
             mouseDownPoint = nil
@@ -103,14 +117,20 @@ final class TranscriptTableView: NSTableView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard event.clickCount == 1 else { return }
         let point = convert(event.locationInWindow, from: nil)
+        // clickCount != 1 时 mouseDown 的 case 2/3 已经处理了文本选中语义,
+        // 这里只看 mouseDownPoint 是否被设置 —— 设了就意味着 mouseDown 走的是
+        // "单击 / hit-region" 分支(mouseDown 里 hit region 早退也设了 point),
+        // mouseUp 应该尝试 performHit,不该被 clickCount guard 吃掉。
+        guard event.clickCount == 1 || mouseDownPoint != nil else { return }
         // 无 drag（鼠标位移 < 3pt）时分派：row hit region > link > drag-select end。
         if let start = mouseDownPoint {
             mouseDownPoint = nil
             let dx = point.x - start.x
             let dy = point.y - start.y
             let draggedSquared = dx * dx + dy * dy
+            appLog(.debug, "TranscriptTableView",
+                "mouseUp start=\(start) up=\(point) dragSq=\(draggedSquared) passThreshold=\(draggedSquared <= 9)")
             if draggedSquared <= 9 {
                 // Row hit region 优先：chevron / code block header 等都由 row
                 // 自报的 `hitRegions` 统一承接，perform 闭包里自己处理 clear
@@ -158,19 +178,26 @@ final class TranscriptTableView: NSTableView {
     }
 
     override func cursorUpdate(with event: NSEvent) {
-        checkCursor(at: convert(event.locationInWindow, from: nil))
+        let p = convert(event.locationInWindow, from: nil)
+        checkCursor(at: p)
+        controller?.updateHover(atDocumentPoint: p)
     }
 
     override func mouseEntered(with event: NSEvent) {
-        checkCursor(at: convert(event.locationInWindow, from: nil))
+        let p = convert(event.locationInWindow, from: nil)
+        checkCursor(at: p)
+        controller?.updateHover(atDocumentPoint: p)
     }
 
     override func mouseMoved(with event: NSEvent) {
-        checkCursor(at: convert(event.locationInWindow, from: nil))
+        let p = convert(event.locationInWindow, from: nil)
+        checkCursor(at: p)
+        controller?.updateHover(atDocumentPoint: p)
     }
 
     override func mouseExited(with event: NSEvent) {
         NSCursor.arrow.set()
+        controller?.updateHover(atDocumentPoint: nil)
     }
 
     private func checkCursor(at documentPoint: CGPoint) {

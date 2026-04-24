@@ -56,7 +56,8 @@ enum AssistantMarkdownComponent: TranscriptComponent {
 
     nonisolated static func inputs(
         from entry: MessageEntry,
-        entryIndex: Int
+        entryIndex: Int,
+        entryCount: Int
     ) -> [IdentifiedInput<Input>] {
         guard case .single(let single) = entry,
               case .remote(let message) = single.payload,
@@ -225,6 +226,7 @@ enum AssistantMarkdownComponent: TranscriptComponent {
         _ layout: Layout,
         state: State,
         theme: TranscriptTheme,
+        sideCar: SideCar,
         in ctx: CGContext,
         bounds: CGRect
     ) {

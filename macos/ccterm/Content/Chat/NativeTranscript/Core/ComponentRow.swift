@@ -194,7 +194,8 @@ struct ComponentCallbacks: Sendable {
             render: { @MainActor @Sendable row, ctx, bounds, theme in
                 let layout = row.layout as! C.Layout
                 let state = row.state as! C.State
-                C.render(layout, state: state, theme: theme, in: ctx, bounds: bounds)
+                let sideCar = row.sideCar as! C.SideCar
+                C.render(layout, state: state, theme: theme, sideCar: sideCar, in: ctx, bounds: bounds)
             },
             interactions: { @MainActor @Sendable row in
                 let layout = row.layout as! C.Layout
@@ -254,6 +255,11 @@ struct AnyInteraction {
         case copy(text: String)
         /// openURL 的 payload —— framework 自己 NSWorkspace open。
         case openURL(URL)
+        /// Hover enter/exit。framework 跟踪"当前悬停的 (rowIdx, rect)",
+        /// 进时调 `onEnter`,出时调 `onExit`,都拿 `AnyRowContext`。
+        case hover(
+            onEnter: @MainActor @Sendable (AnyRowContext) -> Void,
+            onExit: @MainActor @Sendable (AnyRowContext) -> Void)
     }
 
     static func erase<C: TranscriptComponent>(_ i: Interaction<C>) -> AnyInteraction {
@@ -275,6 +281,12 @@ struct AnyInteraction {
                 kind: .invoke { ctx in
                     handler(ctx.specialize(to: C.self))
                 })
+        case let .hover(rect, cursor, onEnter, onExit):
+            return AnyInteraction(
+                rect: rect, cursor: cursor,
+                kind: .hover(
+                    onEnter: { ctx in onEnter(ctx.specialize(to: C.self)) },
+                    onExit:  { ctx in onExit(ctx.specialize(to: C.self))  }))
         }
     }
 }

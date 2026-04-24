@@ -10,6 +10,7 @@ nonisolated enum TranscriptComponentRegistry {
     static func inputsAndItems(
         from entry: MessageEntry,
         entryIndex: Int,
+        entryCount: Int,
         theme: TranscriptTheme,
         width: CGFloat,
         stickyStates: [StableId: any Sendable]
@@ -18,19 +19,33 @@ nonisolated enum TranscriptComponentRegistry {
 
         // Each component picks its own inputs from the entry. inputs() returns []
         // when the entry doesn't concern that component (no exclusivity).
-        for input in PlaceholderComponent.inputs(from: entry, entryIndex: entryIndex) {
+        for input in GroupComponent.inputs(
+            from: entry, entryIndex: entryIndex, entryCount: entryCount
+        ) {
+            out.append(prepareAndLayout(
+                GroupComponent.self, identified: input,
+                theme: theme, width: width,
+                stickyStates: stickyStates))
+        }
+        for input in PlaceholderComponent.inputs(
+            from: entry, entryIndex: entryIndex, entryCount: entryCount
+        ) {
             out.append(prepareAndLayout(
                 PlaceholderComponent.self, identified: input,
                 theme: theme, width: width,
                 stickyStates: stickyStates))
         }
-        for input in UserBubbleComponent.inputs(from: entry, entryIndex: entryIndex) {
+        for input in UserBubbleComponent.inputs(
+            from: entry, entryIndex: entryIndex, entryCount: entryCount
+        ) {
             out.append(prepareAndLayout(
                 UserBubbleComponent.self, identified: input,
                 theme: theme, width: width,
                 stickyStates: stickyStates))
         }
-        for input in AssistantMarkdownComponent.inputs(from: entry, entryIndex: entryIndex) {
+        for input in AssistantMarkdownComponent.inputs(
+            from: entry, entryIndex: entryIndex, entryCount: entryCount
+        ) {
             out.append(prepareAndAssistant(
                 identified: input,
                 theme: theme, width: width,
@@ -46,12 +61,13 @@ nonisolated enum TranscriptComponentRegistry {
     static func itemsForEntry(
         _ entry: MessageEntry,
         entryIndex: Int,
+        entryCount: Int,
         theme: TranscriptTheme,
         width: CGFloat,
         stickyStates: [StableId: any Sendable]
     ) -> [AnyPreparedItem] {
         inputsAndItems(
-            from: entry, entryIndex: entryIndex,
+            from: entry, entryIndex: entryIndex, entryCount: entryCount,
             theme: theme, width: width, stickyStates: stickyStates)
     }
 

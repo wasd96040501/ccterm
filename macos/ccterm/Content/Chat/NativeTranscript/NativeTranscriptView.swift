@@ -100,52 +100,37 @@ struct NativeTranscriptView: NSViewRepresentable {
 
 private enum PreviewFactory {
     static func userMessage(_ text: String) -> Message2 {
-        let json: [String: Any] = [
+        parseOrUnknown([
             "type": "user",
             "uuid": UUID().uuidString,
-            "message": [
-                "role": "user",
-                "content": text,
-            ],
-        ]
-        return parseOrUnknown(json, name: "user")
+            "message": ["role": "user", "content": text],
+        ], name: "user")
     }
 
     static func assistantText(_ text: String) -> Message2 {
-        let json: [String: Any] = [
+        parseOrUnknown([
             "type": "assistant",
             "message": [
                 "role": "assistant",
                 "content": [["type": "text", "text": text]],
             ],
-        ]
-        return parseOrUnknown(json, name: "assistant")
+        ], name: "assistant")
     }
 
-    /// Build an assistant message whose `content` is a caller-provided list of
-    /// blocks (text / tool_use). Used by diff previews to co-locate a lead-in
-    /// paragraph with an Edit / Write tool_use in a single message.
     static func assistantBlocks(_ blocks: [[String: Any]]) -> Message2 {
-        let json: [String: Any] = [
+        parseOrUnknown([
             "type": "assistant",
-            "message": [
-                "role": "assistant",
-                "content": blocks,
-            ],
-        ]
-        return parseOrUnknown(json, name: "assistant")
+            "message": ["role": "assistant", "content": blocks],
+        ], name: "assistant")
     }
 
-    static func editBlock(
-        id: String = UUID().uuidString,
-        filePath: String,
-        oldString: String,
-        newString: String
-    ) -> [String: Any] {
+    static func textBlock(_ text: String) -> [String: Any] {
+        ["type": "text", "text": text]
+    }
+
+    static func editBlock(filePath: String, oldString: String, newString: String) -> [String: Any] {
         [
-            "type": "tool_use",
-            "name": "Edit",
-            "id": id,
+            "type": "tool_use", "name": "Edit", "id": UUID().uuidString,
             "input": [
                 "file_path": filePath,
                 "old_string": oldString,
@@ -154,44 +139,65 @@ private enum PreviewFactory {
         ]
     }
 
-    static func writeBlock(
-        id: String = UUID().uuidString,
-        filePath: String,
-        content: String
-    ) -> [String: Any] {
+    static func writeBlock(filePath: String, content: String) -> [String: Any] {
         [
-            "type": "tool_use",
-            "name": "Write",
-            "id": id,
-            "input": [
-                "file_path": filePath,
-                "content": content,
-            ],
+            "type": "tool_use", "name": "Write", "id": UUID().uuidString,
+            "input": ["file_path": filePath, "content": content],
         ]
     }
 
-    static func textBlock(_ text: String) -> [String: Any] {
-        ["type": "text", "text": text]
+    static func readToolUse(filePath: String) -> [String: Any] {
+        [
+            "type": "tool_use", "name": "Read", "id": UUID().uuidString,
+            "input": ["file_path": filePath],
+        ]
     }
 
-    static func single(_ message: Message2) -> MessageEntry {
-        .single(SingleEntry(
-            id: UUID(),
-            payload: .remote(message),
-            delivery: nil,
-            toolResults: [:]))
+    static func grepToolUse(pattern: String) -> [String: Any] {
+        [
+            "type": "tool_use", "name": "Grep", "id": UUID().uuidString,
+            "input": ["pattern": pattern],
+        ]
+    }
+
+    static func bashToolUse(command: String, description: String? = nil) -> [String: Any] {
+        var input: [String: Any] = ["command": command]
+        if let description { input["description"] = description }
+        return [
+            "type": "tool_use", "name": "Bash", "id": UUID().uuidString,
+            "input": input,
+        ]
     }
 
     static func user(_ text: String) -> MessageEntry {
-        single(userMessage(text))
+        .single(SingleEntry(
+            id: UUID(), payload: .remote(userMessage(text)),
+            delivery: nil, toolResults: [:]))
     }
 
     static func assistant(_ markdown: String) -> MessageEntry {
-        single(assistantText(markdown))
+        .single(SingleEntry(
+            id: UUID(), payload: .remote(assistantText(markdown)),
+            delivery: nil, toolResults: [:]))
     }
 
     static func assistantWithBlocks(_ blocks: [[String: Any]]) -> MessageEntry {
-        single(assistantBlocks(blocks))
+        .single(SingleEntry(
+            id: UUID(), payload: .remote(assistantBlocks(blocks)),
+            delivery: nil, toolResults: [:]))
+    }
+
+    /// Wrap N tool_use blocks into a GroupEntry — each block becomes its own
+    /// SingleEntry (assistant with that one tool_use).
+    static func group(toolUses: [[String: Any]]) -> MessageEntry {
+        let items = toolUses.map { use -> SingleEntry in
+            SingleEntry(
+                id: UUID(),
+                payload: .remote(assistantBlocks([use])),
+                delivery: nil,
+                toolResults: [:])
+        }
+        return .group(GroupEntry(id: UUID(), items: items))
     }
 
     private static func parseOrUnknown(_ json: [String: Any], name: String) -> Message2 {
@@ -201,370 +207,13 @@ private enum PreviewFactory {
 
 // MARK: - Previews
 
-#Preview("Empty") {
-    NativeTranscriptView(entries: [])
-        .frame(width: 480, height: 240)
-}
+/// Fixed frame across previews —— 足够看清 layout、不至于超出 Xcode 画板。
+private let kPreviewWidth: CGFloat = 760
+private let kPreviewHeight: CGFloat = 620
 
-#Preview("User only — short / long wrap") {
+#Preview("Conversation — markdown + code + tables") {
     NativeTranscriptView(entries: [
-        PreviewFactory.user("Hi"),
-        PreviewFactory.user(
-            "Just checking that short bubbles hug their text and don't stretch."),
-        PreviewFactory.user(
-            "And that a much longer message also wraps cleanly without running into the left edge — the bubble should keep a comfortable gutter on the left while the right edge stays aligned with the content area."),
-        PreviewFactory.user("OK, thanks!"),
-    ])
-    .frame(width: 640, height: 360)
-}
-
-#Preview("Headings & paragraphs") {
-    NativeTranscriptView(entries: [
-        PreviewFactory.assistant("""
-        # Heading 1 — project overview
-
-        A paragraph immediately after the H1 so we see the l1 gap.
-
-        ## Heading 2 — goals
-
-        This section describes goals. The paragraph should wrap cleanly across
-        multiple lines, staying inside the content gutter, without overlapping
-        either the H2 above or the H3 below.
-
-        ### Heading 3 — nested details
-
-        Another paragraph under H3, keeping consistent vertical rhythm.
-
-        #### Heading 4
-        ##### Heading 5
-        ###### Heading 6
-
-        Trailing paragraph to confirm the last heading has a body beneath it.
-        """),
-    ])
-    .frame(width: 680, height: 600)
-    .environment(\.syntaxEngine, SyntaxHighlightEngine())
-}
-
-#Preview("Inline styles") {
-    NativeTranscriptView(entries: [
-        PreviewFactory.assistant("""
-        Text can be **bold**, *italic*, or ***both***. Inline code like
-        `let x = 42` renders inside a chip, even when it spans more than one
-        token: `UIViewController.viewDidLoad()`.
-
-        Mixed: the function `greet(name:)` is **not** *yet* implemented — it
-        should return a `String` built from `"Hello, \\(name)"`.
-
-        A [link to swift.org](https://swift.org) is styled with the link color;
-        bare URLs like https://developer.apple.com are auto-linkified when the
-        parser supports it.
-
-        Strikethrough uses ~~two tildes~~ around the span.
-        """),
-    ])
-    .frame(width: 680, height: 400)
-    .environment(\.syntaxEngine, SyntaxHighlightEngine())
-}
-
-#Preview("Links — across contexts") {
-    NativeTranscriptView(entries: [
-        PreviewFactory.user(
-            "See [the swift.org guide](https://swift.org/documentation/) — bare URL too: https://developer.apple.com"),
-        PreviewFactory.assistant("""
-        Inline forms:
-
-        - Markdown link: [Apple developer](https://developer.apple.com)
-        - Bare URL: https://www.swift.org
-        - Link with `code` inside: [the `URLSession` docs](https://developer.apple.com/documentation/foundation/urlsession)
-        - Image syntax: ![Swift logo](https://swift.org/assets/images/swift.svg)
-
-        Inside a blockquote:
-
-        > Reference: [SE-0258 Property Wrappers](https://github.com/apple/swift-evolution/blob/main/proposals/0258-property-wrappers.md)
-        > and a bare URL https://forums.swift.org for discussion.
-
-        Inside a table:
-
-        | Resource | URL |
-        | -------- | --- |
-        | Docs     | [developer.apple.com](https://developer.apple.com) |
-        | Forums   | https://forums.swift.org |
-        | Source   | [github.com/apple/swift](https://github.com/apple/swift) |
-
-        Nested in a list with other inline styles:
-
-        1. **Bold** then a [link](https://swift.org), then *italic*.
-        2. A long line with multiple links: [one](https://example.com/one),
-           [two](https://example.com/two), and [three](https://example.com/three)
-           — all should be individually clickable without overlapping.
-        """),
-    ])
-    .frame(width: 720, height: 560)
-    .environment(\.syntaxEngine, SyntaxHighlightEngine())
-}
-
-#Preview("Lists — ordered / unordered / nested") {
-    NativeTranscriptView(entries: [
-        PreviewFactory.assistant("""
-        Unordered:
-
-        - First item
-        - Second item with a longer description that wraps to the next line to
-          confirm the hanging indent lines up with the bullet above
-        - Third item
-          - Nested A
-          - Nested B with `inline code`
-            - Deeply nested
-        - Fourth item
-
-        Ordered:
-
-        1. Read the existing file
-        2. Apply a small edit
-        3. Run the tests
-           1. Unit tests
-           2. Integration tests
-        4. Commit and push
-
-        Mixed / task list:
-
-        - [x] Checked item
-        - [ ] Unchecked item
-        - [ ] Another pending item with **bold** and *italic*
-        """),
-    ])
-    .frame(width: 680, height: 620)
-    .environment(\.syntaxEngine, SyntaxHighlightEngine())
-}
-
-#Preview("Blockquotes") {
-    NativeTranscriptView(entries: [
-        PreviewFactory.assistant("""
-        Short blockquote:
-
-        > This is a single-paragraph quote. It should render with the left bar
-        > and a small gap before the text.
-
-        Multi-paragraph:
-
-        > First paragraph of a quote. It covers the setup of the argument.
-        >
-        > Second paragraph continues the thought and should keep the same bar
-        > running down the full height of the block.
-
-        Quote with inline styles:
-
-        > **Note:** this is a quick prototype — we'll harden it later. Use
-        > `force: true` only in tests, and ~~never~~ in production.
-        """),
-    ])
-    .frame(width: 680, height: 520)
-    .environment(\.syntaxEngine, SyntaxHighlightEngine())
-}
-
-#Preview("Code blocks — multiple languages") {
-    NativeTranscriptView(entries: [
-        PreviewFactory.assistant("""
-        Swift:
-
-        ```swift
-        func greet(_ name: String) -> String {
-            let salutation = "Hello"
-            return "\\(salutation), \\(name)!"
-        }
-        ```
-
-        Bash:
-
-        ```bash
-        #!/usr/bin/env bash
-        set -euo pipefail
-
-        for f in *.swift; do
-          echo "Compiling $f"
-        done
-        ```
-
-        JSON:
-
-        ```json
-        {
-          "name": "ccterm",
-          "version": "0.1.0",
-          "deps": ["SwiftUI", "AppKit"]
-        }
-        ```
-
-        Plain fenced (no language):
-
-        ```
-        plain preformatted
-        block with   spaces
-        preserved as-is
-        ```
-        """),
-    ])
-    .frame(width: 720, height: 720)
-    .environment(\.syntaxEngine, SyntaxHighlightEngine())
-}
-
-#Preview("Tables") {
-    NativeTranscriptView(entries: [
-        PreviewFactory.assistant("""
-        A small table with alignments:
-
-        | Name  | Role           | Count |
-        | :---- | :------------: | ----: |
-        | Alice | Designer       |     3 |
-        | Bob   | Engineer       |    12 |
-        | Carol | Product Lead   |     7 |
-
-        A wider table that should distribute column widths sensibly:
-
-        | Feature      | Status         | Notes                                  |
-        | ------------ | -------------- | -------------------------------------- |
-        | Streaming    | Done           | Backpressure handled via AsyncStream   |
-        | Cancellation | In progress    | Needs cooperative cancel points        |
-        | Retries      | Not started    | Waiting on error taxonomy to stabilize |
-        """),
-    ])
-    .frame(width: 760, height: 440)
-    .environment(\.syntaxEngine, SyntaxHighlightEngine())
-}
-
-#Preview("Thematic break + mixed") {
-    NativeTranscriptView(entries: [
-        PreviewFactory.assistant("""
-        Part one — a short intro.
-
-        ---
-
-        Part two — after a horizontal rule.
-
-        ***
-
-        Part three — a third rule with asterisks.
-
-        And a final paragraph to close things out.
-        """),
-    ])
-    .frame(width: 640, height: 380)
-    .environment(\.syntaxEngine, SyntaxHighlightEngine())
-}
-
-#Preview("Diff — Edit single hunk") {
-    NativeTranscriptView(entries: [
-        PreviewFactory.user("Rename `greet` to `sayHello` and update the salutation."),
-        PreviewFactory.assistantWithBlocks([
-            PreviewFactory.textBlock("I'll update the function name and the string it returns."),
-            PreviewFactory.editBlock(
-                filePath: "/Users/demo/app/Sources/Greeting.swift",
-                oldString: """
-                func greet(_ name: String) -> String {
-                    let salutation = "Hello"
-                    return "\\(salutation), \\(name)!"
-                }
-                """,
-                newString: """
-                func sayHello(_ name: String) -> String {
-                    let salutation = "Hi"
-                    return "\\(salutation), \\(name)!"
-                }
-                """),
-        ]),
-    ])
-    .frame(width: 760, height: 420)
-    .environment(\.syntaxEngine, SyntaxHighlightEngine())
-}
-
-#Preview("Diff — Edit multi-hunk with context") {
-    NativeTranscriptView(entries: [
-        PreviewFactory.assistantWithBlocks([
-            PreviewFactory.textBlock(
-                "Extract the common prefix into a constant and tighten the guard."),
-            PreviewFactory.editBlock(
-                filePath: "macos/ccterm/Services/Logger.swift",
-                oldString: """
-                func log(_ level: Level, _ category: String, _ message: String) {
-                    guard level.rawValue >= threshold.rawValue else { return }
-                    let prefix = "[ccterm]"
-                    let line = "\\(prefix) [\\(category)] \\(message)"
-                    writer.write(line)
-                }
-
-                func logError(_ category: String, _ message: String) {
-                    let prefix = "[ccterm]"
-                    let line = "\\(prefix) [ERROR] [\\(category)] \\(message)"
-                    writer.write(line)
-                }
-                """,
-                newString: """
-                private let logPrefix = "[ccterm]"
-
-                func log(_ level: Level, _ category: String, _ message: String) {
-                    guard level >= threshold else { return }
-                    let line = "\\(logPrefix) [\\(category)] \\(message)"
-                    writer.write(line)
-                }
-
-                func logError(_ category: String, _ message: String) {
-                    let line = "\\(logPrefix) [ERROR] [\\(category)] \\(message)"
-                    writer.write(line)
-                }
-                """),
-        ]),
-    ])
-    .frame(width: 820, height: 620)
-    .environment(\.syntaxEngine, SyntaxHighlightEngine())
-}
-
-#Preview("Diff — Write new file") {
-    NativeTranscriptView(entries: [
-        PreviewFactory.user("Create a small JSON config for the ingester."),
-        PreviewFactory.assistantWithBlocks([
-            PreviewFactory.textBlock("Writing a minimal config with sensible defaults."),
-            PreviewFactory.writeBlock(
-                filePath: "config/ingester.json",
-                content: """
-                {
-                  "source": "s3://ingest-prod/events",
-                  "batchSize": 500,
-                  "parallelism": 4,
-                  "retries": {
-                    "max": 5,
-                    "backoffMs": 250
-                  }
-                }
-                """),
-        ]),
-    ])
-    .frame(width: 760, height: 460)
-    .environment(\.syntaxEngine, SyntaxHighlightEngine())
-}
-
-#Preview("Diff — long lines wrap") {
-    NativeTranscriptView(entries: [
-        PreviewFactory.assistantWithBlocks([
-            PreviewFactory.textBlock(
-                "Reformat the error message to include more context — note the lines are long enough to force wrapping inside the diff gutter."),
-            PreviewFactory.editBlock(
-                filePath: "macos/ccterm/Services/Session/SessionHandle.swift",
-                oldString: """
-                throw SessionError.invalidState("session is not running")
-                """,
-                newString: """
-                throw SessionError.invalidState("session \\(id) is not running — current status=\\(status), last transition at \\(lastTransitionAt), pending permissions=\\(pendingPermissions.count); call start() before sending messages, or resume via SessionService.resume(id:) if the underlying process has exited")
-                """),
-        ]),
-    ])
-    .frame(width: 700, height: 420)
-    .environment(\.syntaxEngine, SyntaxHighlightEngine())
-}
-
-#Preview("Full conversation — kitchen sink") {
-    NativeTranscriptView(entries: [
-        PreviewFactory.user("Plan out the refactor and explain the tradeoffs."),
+        PreviewFactory.user("Plan the refactor and explain the tradeoffs."),
         PreviewFactory.assistant("""
         # Refactor plan
 
@@ -574,7 +223,7 @@ private enum PreviewFactory {
         2. Merge *renderer* and *layout* into a single value.
         3. Keep the `Controller` purely as a data source.
 
-        > Caveat: step 2 changes the public API of the layout module — any
+        > **Note:** step 2 changes the public API of the layout module — any
         > callers outside `NativeTranscript` would need to migrate.
 
         ## Code sketch
@@ -588,32 +237,79 @@ private enum PreviewFactory {
 
         ## Tradeoffs
 
-        | Option         | Pros                | Cons                      |
-        | -------------- | ------------------- | ------------------------- |
-        | Merge          | Fewer files         | Bigger single file        |
-        | Keep separate  | Clear responsibility| More import surface       |
+        | Option         | Pros                 | Cons                    |
+        | -------------- | -------------------- | ----------------------- |
+        | Merge          | Fewer files          | Bigger single file      |
+        | Keep separate  | Clear responsibility | More import surface     |
 
-        ---
-
-        Let me know which option you prefer and I'll start executing.
+        See [the swift.org guide](https://swift.org/documentation/) for more.
         """),
-        PreviewFactory.user(
-            "Option one. And please update the comments to match the new layout."),
-        PreviewFactory.assistant("""
-        Got it — proceeding with **Option 1**. I'll:
-
-        - Merge `TranscriptTextRenderer` into `TranscriptTextLayout`
-        - Update doc comments in `AssistantMarkdownRow` and `UserBubbleRow`
-        - Re-run `make build` to confirm
-
-        ```bash
-        make build
-        ```
-
-        Will report back with a diff summary.
-        """),
-        PreviewFactory.user("Thanks!"),
+        PreviewFactory.user("Option one — and update the comments."),
     ])
-    .frame(width: 760, height: 820)
+    .frame(width: kPreviewWidth, height: kPreviewHeight)
+    .environment(\.syntaxEngine, SyntaxHighlightEngine())
+}
+
+#Preview("Tools — single-use + diffs") {
+    NativeTranscriptView(entries: [
+        PreviewFactory.user("Rename `greet` to `sayHello` and add a config file."),
+        PreviewFactory.assistantWithBlocks([
+            PreviewFactory.textBlock("I'll update the function name, then write the config."),
+            PreviewFactory.editBlock(
+                filePath: "Sources/Greeting.swift",
+                oldString: """
+                func greet(_ name: String) -> String {
+                    return "Hello, \\(name)!"
+                }
+                """,
+                newString: """
+                func sayHello(_ name: String) -> String {
+                    return "Hi, \\(name)!"
+                }
+                """),
+            PreviewFactory.writeBlock(
+                filePath: "config/app.json",
+                content: """
+                {
+                  "name": "ccterm",
+                  "version": "0.1.0"
+                }
+                """),
+        ]),
+    ])
+    .frame(width: kPreviewWidth, height: kPreviewHeight)
+    .environment(\.syntaxEngine, SyntaxHighlightEngine())
+}
+
+/// Groups cover: completed(collapsed)、completed(with different tool kinds),
+/// 最后一条 **active group 带 shimmer**（isLastEntry == true）。
+#Preview("Groups — completed + active shimmer") {
+    NativeTranscriptView(entries: [
+        PreviewFactory.user("Look through the repo for TODOs and summarize."),
+        // Completed group —— 过往 turn,不是最后一条 → 显示 "Read 2 files · Searched 1 patterns"
+        PreviewFactory.group(toolUses: [
+            PreviewFactory.readToolUse(filePath: "src/alpha.swift"),
+            PreviewFactory.readToolUse(filePath: "src/beta.swift"),
+            PreviewFactory.grepToolUse(pattern: "TODO"),
+        ]),
+        PreviewFactory.assistant("""
+        Found 2 occurrences — let me patch the first one and run the tests.
+        """),
+        // 另一条 completed group —— mixed edits + bash
+        PreviewFactory.group(toolUses: [
+            PreviewFactory.editBlock(
+                filePath: "Sources/Foo.swift",
+                oldString: "// TODO: x",
+                newString: "// done"),
+            PreviewFactory.bashToolUse(command: "swift test", description: "run tests"),
+        ]),
+        PreviewFactory.user("Now search for unused imports."),
+        // Active group —— entries.last,isActive=true,shimmer + active title
+        // "Searching \"unused import\"" 形式。
+        PreviewFactory.group(toolUses: [
+            PreviewFactory.grepToolUse(pattern: "unused import"),
+        ]),
+    ])
+    .frame(width: kPreviewWidth, height: kPreviewHeight)
     .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }

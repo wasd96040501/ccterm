@@ -29,39 +29,30 @@ enum PlaceholderComponent: TranscriptComponent {
 
     // MARK: - Inputs
 
-    /// group entry 或 assistant entry 的 tool_use block → 一条 placeholder input。
-    /// assistant 其他 block(text / thinking)不关我的事。
+    /// Assistant entry 的 tool_use block → 一条 placeholder input。
+    /// `.group` 由 `GroupComponent` 接管,这里不处理。
     nonisolated static func inputs(
         from entry: MessageEntry,
-        entryIndex: Int
+        entryIndex: Int,
+        entryCount: Int
     ) -> [IdentifiedInput<Input>] {
-        switch entry {
-        case .group(let group):
-            let label = "[Tools × \(group.items.count)]"
-            let stableId = StableId(entryId: group.id, locator: .whole)
-            return [IdentifiedInput(
-                stableId: stableId,
-                entryIndex: entryIndex,
-                blockIndex: 0,
-                input: Input(stableId: stableId, label: label))]
-        case .single(let single):
-            guard case .remote(let message) = single.payload,
-                  case .assistant(let assistant) = message else { return [] }
-            let blocks = assistant.message?.content ?? []
-            var out: [IdentifiedInput<Input>] = []
-            for (idx, block) in blocks.enumerated() {
-                if case .toolUse(let u) = block {
-                    let stableId = StableId(entryId: single.id, locator: .block(idx))
-                    let label = "[Tool: \(u.caseName)]"
-                    out.append(IdentifiedInput(
-                        stableId: stableId,
-                        entryIndex: entryIndex,
-                        blockIndex: idx,
-                        input: Input(stableId: stableId, label: label)))
-                }
+        guard case .single(let single) = entry,
+              case .remote(let message) = single.payload,
+              case .assistant(let assistant) = message else { return [] }
+        let blocks = assistant.message?.content ?? []
+        var out: [IdentifiedInput<Input>] = []
+        for (idx, block) in blocks.enumerated() {
+            if case .toolUse(let u) = block {
+                let stableId = StableId(entryId: single.id, locator: .block(idx))
+                let label = "[Tool: \(u.caseName)]"
+                out.append(IdentifiedInput(
+                    stableId: stableId,
+                    entryIndex: entryIndex,
+                    blockIndex: idx,
+                    input: Input(stableId: stableId, label: label)))
             }
-            return out
         }
+        return out
     }
 
     // MARK: - Prepare
@@ -115,6 +106,7 @@ enum PlaceholderComponent: TranscriptComponent {
         _ layout: Layout,
         state: State,
         theme: TranscriptTheme,
+        sideCar: SideCar,
         in ctx: CGContext,
         bounds: CGRect
     ) {

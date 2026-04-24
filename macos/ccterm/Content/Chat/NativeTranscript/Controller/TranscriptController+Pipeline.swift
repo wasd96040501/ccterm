@@ -352,21 +352,37 @@ extension TranscriptController {
                 "liveAppend contract violation: old=\(oldSigCount) new=\(entries.count); skipping")
             return
         }
-        let appendedEntries = Array(entries.suffix(from: oldSigCount))
-        guard !appendedEntries.isEmpty else {
+        let appendedCount = entries.count - oldSigCount
+        guard appendedCount > 0 else {
             appLog(.debug, "TranscriptController",
                 "setEntries liveAppend appended=0 (no-op)")
             return
         }
 
+        // Rebuild window = 前一条 oldLast + 新增 entries。
+        // 前一条的 entryCount 从 oldSigCount → entries.count,isLastEntry 从 true
+        // 翻 false → GroupComponent 的 contentHash 会变 → diff 判 updated
+        // → reloadRowView → render 同步 sideCar.setActive(false)。
+        // 其他不吃 isLastEntry 的 component(Assistant / User / Placeholder)
+        // contentHash 不变 → carry-over 原 row,0 开销。
+        let windowStartIdx = max(0, oldSigCount - 1)
+        let windowEntries = Array(entries[windowStartIdx..<entries.count])
+        let totalCount = entries.count
+
         activePreprocessTask = Task.detached(priority: .userInitiated) { [weak self] in
-            // appendedEntries 在原 entries 里的起始下标。entryIndex 在新 builder
-            // 输出里仅用于内部 sort,在主线程 merge 时不复用,这里直接重头算即可。
-            var items = TranscriptRowBuilder.prepareAll(
-                entries: appendedEntries,
-                theme: transcriptTheme,
-                width: width,
-                stickyStates: stickyStates)
+            // entryIndex 对齐原 entries 的全局下标 —— 通过 windowStartIdx 偏移。
+            var items: [AnyPreparedItem] = []
+            items.reserveCapacity(windowEntries.count)
+            for (offset, entry) in windowEntries.enumerated() {
+                let globalIdx = windowStartIdx + offset
+                items.append(contentsOf: TranscriptComponentRegistry.itemsForEntry(
+                    entry,
+                    entryIndex: globalIdx,
+                    entryCount: totalCount,
+                    theme: transcriptTheme,
+                    width: width,
+                    stickyStates: stickyStates))
+            }
             if Task.isCancelled { return }
 
             let (hlMs, codeBlockCount) = await Self.applyHighlightTokens(
@@ -376,24 +392,35 @@ extension TranscriptController {
             await MainActor.run {
                 guard let self, self.setEntriesGeneration == generation else { return }
                 let tMergeStart = CFAbsoluteTimeGetCurrent()
-                let appendedRows = items.map { $0.makeRow(theme: transcriptTheme) }
 
-
-                let insertions = appendedRows.enumerated().map {
-                    (self.rows.count + $0.offset, $0.element)
+                // 找到 oldLast(entries[oldSigCount - 1])在 self.rows 里的起始下标。
+                // oldSigCount == 0 时 splitIdx = 0(no oldLast)。
+                let splitIdx: Int
+                if oldSigCount > 0 {
+                    let oldLastEntryId = entries[oldSigCount - 1].id
+                    splitIdx = self.rows.firstIndex { $0.stableId.entryId == oldLastEntryId }
+                        ?? self.rows.count
+                } else {
+                    splitIdx = 0
                 }
-                let transition = TranscriptUpdateTransition(
-                    deleted: [],
-                    inserted: insertions,
-                    updated: [],
-                    finalRows: self.rows + appendedRows,
-                    animated: false)
+
+                let prefixRows = Array(self.rows[0..<splitIdx])
+                let windowRows = items.map { $0.makeRow(theme: transcriptTheme) }
+                let newRows = prefixRows + windowRows
+
+                let transition = TranscriptDiff.compute(
+                    old: self.rows, new: newRows, animated: false)
                 self.merge(with: transition, scroll: .preserve)
+
+                let liveIds = Set(self.rows.map { $0.stableId })
+                self.stickyStates = self.stickyStates.filter { liveIds.contains($0.key) }
 
                 let totalMs = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
                 let mergeMs = Int((CFAbsoluteTimeGetCurrent() - tMergeStart) * 1000)
                 appLog(.info, "TranscriptController",
-                    "setEntries liveAppend appended=\(appendedEntries.count) rows=\(appendedRows.count) "
+                    "setEntries liveAppend appended=\(appendedCount) "
+                    + "windowRows=\(windowRows.count) "
+                    + "(+\(transition.inserted.count) / ~\(transition.updated.count) / -\(transition.deleted.count)) "
                     + "total=\(totalMs)ms hl=\(hlMs)ms(code=\(codeBlockCount)) "
                     + "merge=\(mergeMs) width=\(Int(width))")
             }

@@ -18,7 +18,7 @@ protocol HasHeight: Sendable {
 ///
 /// | 我要回答的问题 | 对应类型 / 方法 |
 /// |---|---|
-/// | 我从哪儿来? | `Input` + `inputs(from:entryIndex:)` |
+/// | 我从哪儿来? | `Input` + `inputs(from:entryIndex:entryCount:)` |
 /// | 内容长啥样?指纹怎么算? | `Content` + `prepare(_:theme:)` + `contentHash(_:theme:)` |
 /// | 给我宽度 + state,能算什么 layout? | `Layout: HasHeight` + `layout(_:theme:width:state:)` |
 /// | Row-local 状态是什么? | `State` + `initialState(for:)` (默认 `Void`,即无 state) |
@@ -82,10 +82,12 @@ protocol TranscriptComponent: Sendable {
     /// 从一条 entry 挑出属于我的 inputs。空 = 不归我管。
     ///
     /// `entryIndex` + 每个 `IdentifiedInput.blockIndex` 用于 builder 把多 component
-    /// 的 inputs 做全局 merge-sort。
+    /// 的 inputs 做全局 merge-sort。`entryCount` 是 entries 总数,想判断
+    /// "我是不是最后一条"(Group active shimmer 等)直接 `entryIndex == entryCount - 1`。
     nonisolated static func inputs(
         from entry: MessageEntry,
-        entryIndex: Int
+        entryIndex: Int,
+        entryCount: Int
     ) -> [IdentifiedInput<Input>]
 
     // MARK: - Prepare (nonisolated, off-main)
@@ -137,11 +139,15 @@ protocol TranscriptComponent: Sendable {
     // MARK: - Render + declarative metadata (MainActor)
 
     /// 核心绘制。`bounds` 是 row 的 bounds(flipped:y 向下)。
+    /// `sideCar` 是 per-row GPU 侧对象 —— render 里可同步 CALayer 状态
+    /// (`sideCar.updateGeometry(...)` / `setActive(...)` 等)。多数 component
+    /// 用 `EmptyRowSideCar` 忽略该参数。
     @MainActor
     static func render(
         _ layout: Layout,
         state: State,
         theme: TranscriptTheme,
+        sideCar: SideCar,
         in ctx: CGContext,
         bounds: CGRect
     )

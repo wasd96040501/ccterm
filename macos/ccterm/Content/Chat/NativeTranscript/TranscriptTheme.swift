@@ -59,6 +59,54 @@ struct TranscriptTheme {
     /// 折叠态底部 gradient fade 的高度。
     var collapseFadeHeight: CGFloat = 20
 
+    // MARK: - Group (Active/Completed header + children placeholders)
+
+    /// Group header row 总高(title + chevron 占位,不含上下 rowVerticalPadding)。
+    var groupHeaderHeight: CGFloat = 24
+    /// Title 与 chevron 之间的间距。
+    var groupChevronGap: CGFloat = 6
+    /// Hit rect 相对 [title.minX, chevron.maxX] 向两侧外扩的 padding ——
+    /// 让点击区域比紧贴文字更友好。
+    var groupHitPadding: CGFloat = 6
+    var groupTitleFont: NSFont { .systemFont(ofSize: 12, weight: .medium) }
+    var groupTitleColor: NSColor { .secondaryLabelColor }
+
+    /// 展开态子行高 + 垂直间距 —— 样式和 tool placeholder 对齐。
+    var groupChildRowHeight: CGFloat { placeholderHeight }
+    var groupChildRowSpacing: CGFloat = 4
+    /// 展开态 header 到首个子行的间距。
+    var groupChildrenTopSpacing: CGFloat = 6
+    /// 展开态底部的内边距。
+    var groupChildrenBottomPadding: CGFloat = 2
+
+    // MARK: - Group shimmer (CA 合成,仅 active 态;mask = title 字形)
+
+    /// Shimmer 光带宽度占 title 宽度的比例 —— 0.4 = 40% width。
+    var groupShimmerBandRatio: CGFloat = 0.4
+    /// 一个循环的时长(从左扫到右)。
+    var groupShimmerDuration: CFTimeInterval = 1.6
+    /// Shimmer 光带高亮色(浅 / 深模式自适应,render 时读 cgColor 解析)。
+    var groupShimmerHighlight: NSColor {
+        NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            // 深色: 白色高光亮一点;浅色: 黑色高光低饱和。
+            return isDark
+                ? NSColor(white: 1, alpha: 0.85)
+                : NSColor(white: 0, alpha: 0.35)
+        }
+    }
+
+    // MARK: - Group chevron (SideCar CAShapeLayer)
+
+    /// Chevron glyph 绘制边长。
+    var groupChevronDrawSize: CGFloat = 8
+    /// Chevron 闲置 / hover alpha —— CA 动画目标值。
+    var groupChevronIdleAlpha: CGFloat = 0.35
+    var groupChevronHoverAlpha: CGFloat = 0.85
+    /// Chevron alpha / rotation CA 动画时长。
+    var groupChevronFadeDuration: CFTimeInterval = 0.15
+    var groupChevronRotateDuration: CFTimeInterval = 0.18
+
     // MARK: - Placeholder (tool / group / thinking)
 
     var placeholderHeight: CGFloat = 36

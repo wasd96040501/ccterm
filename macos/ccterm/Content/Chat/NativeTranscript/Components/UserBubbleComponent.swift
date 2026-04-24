@@ -47,7 +47,8 @@ enum UserBubbleComponent: TranscriptComponent {
 
     nonisolated static func inputs(
         from entry: MessageEntry,
-        entryIndex: Int
+        entryIndex: Int,
+        entryCount: Int
     ) -> [IdentifiedInput<Input>] {
         guard case .single(let single) = entry else { return [] }
 
@@ -230,6 +231,7 @@ enum UserBubbleComponent: TranscriptComponent {
         _ layout: Layout,
         state: State,
         theme: TranscriptTheme,
+        sideCar: SideCar,
         in ctx: CGContext,
         bounds: CGRect
     ) {

@@ -51,6 +51,10 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
     /// `Interaction.toggleState` 写入 + builder 读出 → 用户 toggle 跨内容更新仍保留。
     var stickyStates: [StableId: any Sendable] = [:]
 
+    /// 当前悬停的 hover region —— 鼠标离开或进入新 region 时触发 onEnter/onExit。
+    /// 见 `TranscriptController+Hit.updateHover(atDocumentPoint:)`。
+    var currentHover: (key: HoverKey, exitHandler: @MainActor @Sendable (AnyRowContext) -> Void)?
+
     private struct PendingSetEntries {
         let entries: [MessageEntry]
         let reason: TranscriptUpdateReason

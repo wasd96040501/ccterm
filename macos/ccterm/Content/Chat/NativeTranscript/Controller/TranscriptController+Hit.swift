@@ -57,10 +57,19 @@ extension TranscriptController {
     private func hitInteraction(atDocumentPoint documentPoint: CGPoint)
         -> (interaction: AnyInteraction, rowIndex: Int)?
     {
-        guard let ctx = rowLocalContext(at: documentPoint) else { return nil }
+        guard let ctx = rowLocalContext(at: documentPoint) else {
+            appLog(.debug, "TranscriptHit",
+                "hit doc=\(documentPoint) rowCtx=nil(rowIndex<0 or tableView nil)")
+            return nil
+        }
         let row = rows[ctx.rowIndex]
         let interactions = row.callbacks.interactions(row)
         let pointInRow = ctx.toRowLocal(documentPoint)
+        let rectsDump = interactions.map { r in
+            "[\(r.rect.origin.x),\(r.rect.origin.y),\(r.rect.size.width),\(r.rect.size.height)]\(r.rect.contains(pointInRow) ? "✓" : "✗")"
+        }.joined(separator: " ")
+        appLog(.debug, "TranscriptHit",
+            "hit doc=\(documentPoint) row=\(ctx.rowIndex) rowRect=\(ctx.rowRect) inset=\(ctx.inset) pointInRow=\(pointInRow) tag=\(row.callbacks.tag) nInter=\(interactions.count) rects=\(rectsDump)")
         for interaction in interactions where interaction.rect.contains(pointInRow) {
             return (interaction, ctx.rowIndex)
         }
@@ -72,6 +81,7 @@ extension TranscriptController {
     }
 
     /// 命中 → 按 interaction kind 调框架标准副作用。返回 true = 已消化点击。
+    /// `.hover` 不算点击命中,这里跳过(让 mouseUp 继续 drag-select 等)。
     func performHit(atDocumentPoint documentPoint: CGPoint) -> Bool {
         guard let hit = hitInteraction(atDocumentPoint: documentPoint) else { return false }
         let stableId = rows[hit.rowIndex].stableId
@@ -89,8 +99,83 @@ extension TranscriptController {
             selectionController.clear()
             redrawAllVisibleRows()
             NSWorkspace.shared.open(url)
+        case .hover:
+            return false
         }
         return true
+    }
+
+    // MARK: - Hover dispatch
+
+    /// 跟踪当前鼠标悬停到的 (stableId, rect) —— 跨帧比较触发 onEnter / onExit。
+    /// 采用 struct key,避免 row 被 diff 掉后 stableId 还残留。
+    struct HoverKey: Equatable {
+        let stableId: StableId
+        /// 用 rect 的 (x, y, w, h) 做二级 key —— 同 row 多 hover 区时分开跟。
+        let rx: CGFloat
+        let ry: CGFloat
+        let rw: CGFloat
+        let rh: CGFloat
+
+        init(stableId: StableId, rect: CGRect) {
+            self.stableId = stableId
+            self.rx = rect.origin.x
+            self.ry = rect.origin.y
+            self.rw = rect.size.width
+            self.rh = rect.size.height
+        }
+    }
+
+    /// `TranscriptTableView.mouseMoved` / `mouseExited` 调入。分派 hover enter/exit。
+    /// 传 `nil` 代表鼠标离开 tableView,强制 exit 当前 hover。
+    func updateHover(atDocumentPoint documentPoint: CGPoint?) {
+        let found: HoverLookup?
+        if let p = documentPoint {
+            found = findHoverAt(documentPoint: p)
+        } else {
+            found = nil
+        }
+
+        let newKey = found.map { HoverKey(stableId: $0.rowStableId, rect: $0.rect) }
+        if currentHover?.key == newKey { return }
+
+        // Exit previous.
+        if let prev = currentHover {
+            let ctx = makeRowContext(stableId: prev.key.stableId)
+            prev.exitHandler(ctx)
+        }
+        // Enter new.
+        if let hit = found, let key = newKey {
+            let ctx = makeRowContext(stableId: hit.rowStableId)
+            hit.enterHandler(ctx)
+            currentHover = (key: key, exitHandler: hit.exitHandler)
+        } else {
+            currentHover = nil
+        }
+    }
+
+    struct HoverLookup {
+        let rowStableId: StableId
+        let rect: CGRect
+        let enterHandler: @MainActor @Sendable (AnyRowContext) -> Void
+        let exitHandler: @MainActor @Sendable (AnyRowContext) -> Void
+    }
+
+    private func findHoverAt(documentPoint: CGPoint) -> HoverLookup? {
+        guard let ctx = rowLocalContext(at: documentPoint) else { return nil }
+        let row = rows[ctx.rowIndex]
+        let interactions = row.callbacks.interactions(row)
+        let pointInRow = ctx.toRowLocal(documentPoint)
+        for interaction in interactions where interaction.rect.contains(pointInRow) {
+            if case let .hover(onEnter, onExit) = interaction.kind {
+                return HoverLookup(
+                    rowStableId: row.stableId,
+                    rect: interaction.rect,
+                    enterHandler: onEnter,
+                    exitHandler: onExit)
+            }
+        }
+        return nil
     }
 
     func redrawRow(at index: Int) {

@@ -391,7 +391,7 @@ enum TranscriptRowBuilder {
     ) -> any TranscriptPreparedItem {
         let contentHash = userContentHash(text: text, theme: theme)
         let key = TranscriptPrepareCache.Key(
-            contentHash: contentHash, variant: .user)
+            contentHash: contentHash, tag: "User")
         let prepared: UserPrepared
         if let cached = TranscriptPrepareCache.shared.get(key),
            let userItem = cached.withStableId(stable) as? UserPreparedItem {
@@ -415,7 +415,7 @@ enum TranscriptRowBuilder {
     ) -> any TranscriptPreparedItem {
         let contentHash = assistantContentHash(source: source, theme: theme)
         let key = TranscriptPrepareCache.Key(
-            contentHash: contentHash, variant: .assistant)
+            contentHash: contentHash, tag: "Assistant")
         let prepared: AssistantPrepared
         if let cached = TranscriptPrepareCache.shared.get(key),
            let assistantItem = cached.withStableId(stable) as? AssistantPreparedItem {
@@ -441,7 +441,7 @@ enum TranscriptRowBuilder {
     ) -> any TranscriptPreparedItem {
         let contentHash = placeholderContentHash(label: label, theme: theme)
         let key = TranscriptPrepareCache.Key(
-            contentHash: contentHash, variant: .placeholder)
+            contentHash: contentHash, tag: "Placeholder")
         let prepared: PlaceholderPrepared
         if let cached = TranscriptPrepareCache.shared.get(key),
            let placeholderItem = cached.withStableId(stable) as? PlaceholderPreparedItem {

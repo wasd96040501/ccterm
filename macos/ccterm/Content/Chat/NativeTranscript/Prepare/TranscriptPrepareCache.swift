@@ -42,13 +42,9 @@ final class TranscriptPrepareCache: @unchecked Sendable {
 
     struct Key: Hashable {
         let contentHash: Int
-        let variant: Variant
-    }
-
-    enum Variant: Hashable {
-        case assistant
-        case user
-        case placeholder
+        /// Component 唯一标签(= `TranscriptComponent.tag`)。约定:类型名。
+        /// 同 process 内保证独一无二;框架只按 String 比较,零语义。
+        let tag: String
     }
 
     private let lock = NSLock()

@@ -15,7 +15,7 @@ struct UserPreparedItem: TranscriptPreparedItem, @unchecked Sendable {
     var contentHash: Int { prepared.contentHash }
     var cachedHeight: CGFloat { layout?.cachedHeight ?? 0 }
     var cacheKey: TranscriptPrepareCache.Key {
-        TranscriptPrepareCache.Key(contentHash: prepared.contentHash, variant: .user)
+        TranscriptPrepareCache.Key(contentHash: prepared.contentHash, tag: "User")
     }
 
     @MainActor

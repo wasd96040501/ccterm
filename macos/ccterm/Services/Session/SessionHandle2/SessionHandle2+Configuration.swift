@@ -88,6 +88,30 @@ extension SessionHandle2 {
         }
     }
 
+    /// 用户选择的"原始目录"——展示用,不随 worktree provision 变化。**仅 `.notStarted`
+    /// 可改**;一旦 ensureStarted(经过 `.starting`/`.idle`/...)甚至 stopped 之后,
+    /// originPath 已经随 configuration 定型,改之会破坏 resume / worktree 等不变量。
+    /// 不写 db —— `.notStarted` 阶段是 in-memory draft,等 ensureStarted 一次性 save。
+    func setOriginPath(_ path: String?) {
+        guard status == .notStarted else {
+            appLog(.info, "SessionHandle2", "setOriginPath ignored — status=\(status) \(sessionId)")
+            return
+        }
+        self.originPath = path
+    }
+
+    /// 用户在 `.notStarted` 阶段为 worktree 选的 base branch。`ensureStarted` 时
+    /// 作为 `Worktree.create(sourceBranch:)` 传入,provision 成功后被随机名覆盖。
+    /// **仅 `.notStarted` 可改**——已启动后这个字段是 provision 出的实际 branch,
+    /// 让用户改会破坏 worktree 状态。
+    func setWorktreeBranch(_ branch: String?) {
+        guard status == .notStarted else {
+            appLog(.info, "SessionHandle2", "setWorktreeBranch ignored — status=\(status) \(sessionId)")
+            return
+        }
+        self.worktreeBranch = branch
+    }
+
     /// 变更 worktree 开关。路由规则同 `setCwd`（运行时不可改）。
     func setWorktree(_ isWorktree: Bool) {
         guard !isAttached else {

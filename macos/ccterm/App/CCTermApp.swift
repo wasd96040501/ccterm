@@ -61,14 +61,5 @@ struct AppCommands: Commands {
             }
             .keyboardShortcut("L", modifiers: [.command, .shift])
         }
-        CommandGroup(after: .textEditing) {
-            Divider()
-            Button("Find") { appState.searchFocusTrigger = true }
-                .keyboardShortcut("f", modifiers: .command)
-            Button("Find Next") { appState.findNext() }
-                .keyboardShortcut("g", modifiers: .command)
-            Button("Find Previous") { appState.findPrevious() }
-                .keyboardShortcut("g", modifiers: [.command, .shift])
-        }
     }
 }

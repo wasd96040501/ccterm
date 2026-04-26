@@ -207,16 +207,17 @@ final class SessionHandle2ReceiveTests: XCTestCase {
         XCTAssertEqual(g2.items.count, 1)
     }
 
-    func testGrouping_anyToolJoinsGroupRegardlessOfKind() {
+    func testGrouping_nonGroupableToolDoesNotJoinGroup() {
         let handle = makeHandle()
         handle.receive(makeToolUse(name: "Read", id: "t1", input: ["file_path": "/x/a.swift"]), mode: .live)
-        // Even non-rich-rendered kinds (here TodoWrite) participate in grouping.
+        // TodoWrite is not on the whitelist → single, not appended to group.
         handle.receive(makeToolUse(name: "TodoWrite", id: "t2", input: ["todos": []]), mode: .live)
         handle.receive(makeToolUse(name: "Read", id: "t3", input: ["file_path": "/x/b.swift"]), mode: .live)
 
-        XCTAssertEqual(handle.messages.count, 1, "all three tool_use messages must collapse into one group")
-        guard case .group(let g) = handle.messages[0] else { return XCTFail("expected single group") }
-        XCTAssertEqual(g.items.count, 3)
+        XCTAssertEqual(handle.messages.count, 3)
+        guard case .group = handle.messages[0] else { return XCTFail("first must be group") }
+        guard case .single = handle.messages[1] else { return XCTFail("TodoWrite must be single") }
+        guard case .group = handle.messages[2] else { return XCTFail("last must be fresh group") }
     }
 
     func testGrouping_assistantTextBreaksGroup() {

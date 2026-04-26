@@ -72,9 +72,9 @@ struct RowContext<C: TranscriptComponent> {
     /// 做 in-place 字段更新而不丢其他字段。
     let currentState: () -> C.State
 
-    /// 内部走 controller 的闭包 —— 第二参数 = animated。**不要直接调**,
-    /// 请用 ``applyState(_:animated:)`` 方法,默认 animated=false。
-    let _applyState: (C.State, Bool) -> Void
+    /// 把新 state apply 到自己。走 `StatefulComponent` fast path(`relayouted`)
+    /// 如果 component 实现了;否则走 full `layout(...)` 重算(仍仅影响本 row)。
+    let applyState: (C.State) -> Void
 
     /// 请求 framework 刷新本 row 的 height(下一 layout pass 读
     /// `cachedSize.height`)。
@@ -90,15 +90,4 @@ struct RowContext<C: TranscriptComponent> {
     /// 访问 row 的 side-car(持有 `CALayer` / animation timeline 等 GPU
     /// 资源的 opt-in class)。默认 `EmptyRowSideCar` 无副作用。
     let sideCar: () -> C.SideCar
-
-    /// 把新 state apply 到自己。走 `relayouted` 快路径(若 component 实现);
-    /// 否则走 full `layout(...)` 重算(仍仅影响本 row)。
-    ///
-    /// `animated: true` 时,framework 让 NSTableView 用当前 `NSAnimationContext`
-    /// 的 duration 平滑插值 row 高度 —— 调用方需把整段操作包在
-    /// `NSAnimationContext.runAnimationGroup` 里设置 duration / timing。默认 false
-    /// 保持瞬时(老 caller 不变)。
-    func applyState(_ state: C.State, animated: Bool = false) {
-        _applyState(state, animated)
-    }
 }

@@ -71,24 +71,13 @@ struct TranscriptTheme {
     var groupTitleFont: NSFont { .systemFont(ofSize: 12, weight: .medium) }
     var groupTitleColor: NSColor { .secondaryLabelColor }
 
-    /// 展开态非富化 child 的占位虚线框高度 —— 跟独立 tool placeholder 视觉
-    /// 一致(同高、同样式)。
-    var groupChildPlaceholderHeight: CGFloat { placeholderHeight }
-    /// 富化 child(目前仅 Read)的 header-style 行高 —— 与 ``groupHeaderHeight``
-    /// 对齐,让 "Reading foo.swift" 子项的字号 / 行高跟 group header 完全一致。
-    var groupChildHeaderHeight: CGFloat { groupHeaderHeight }
-    /// child ↔ child 间距(l2),同时也是 group header ↔ first child 的间距(l1)
-    /// —— gestalt 接近性下两者都用紧凑的 4pt。
-    var groupChildSpacing: CGFloat = 4
-
-    // MARK: - Group expand / collapse animation
-
-    /// Title 在 (active+collapsed) ↔ (active+expanded) 切换时的 fade transition
-    /// 时长 —— 跟 chevron 旋转节奏对齐。
-    var groupTitleFadeDuration: CFTimeInterval = 0.18
-    /// Group 整体展开 / 折叠动画时长 —— 比 chevron 单独旋转长一点,因为
-    /// row 高度变化幅度更大。
-    var groupExpandDuration: CFTimeInterval = 0.22
+    /// 展开态子行高 + 垂直间距 —— 样式和 tool placeholder 对齐。
+    var groupChildRowHeight: CGFloat { placeholderHeight }
+    var groupChildRowSpacing: CGFloat = 4
+    /// 展开态 header 到首个子行的间距。
+    var groupChildrenTopSpacing: CGFloat = 6
+    /// 展开态底部的内边距。
+    var groupChildrenBottomPadding: CGFloat = 2
 
     // MARK: - Group shimmer (CA 合成,仅 active 态;mask = title 字形)
 

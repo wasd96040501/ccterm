@@ -3,99 +3,57 @@ import AppKit
 import CoreText
 import QuartzCore
 
-/// 连续 tool_use 聚合 row —— 不论 tool kind,所有 assistant 消息只要 content
-/// 全是 tool_use 就归这里。Header(title + chevron + shimmer)+ 展开态内嵌
-/// N 条 child(per-tool dispatch 到 ``GroupChildRenderer``:Read 是 header-style
-/// 文字行,其它是虚线占位框)。
+/// 连续同类 tool_use 聚合 row —— 标题(active/completed 两态)+ 贴在标题后
+/// 居中对齐的 chevron + 运行中 shimmer 光带(仅扫过文字字形)+ 展开态
+/// 内嵌 N 条 placeholder-style 子行。
 ///
-/// `isActive = (entryIndex == entryCount - 1)` —— group 是 `entries.last` 即
-/// 视作运行中。
+/// `isActive = (entryIndex == entryCount - 1)` —— group 是 `entries.last`
+/// 即视作运行中。
 ///
-/// 整 group(header + 所有 child)= **一个 NSTableView row**。toggle 展开
-/// 走 `applyState` 的 `relayouted` 快路径,无 row insert/delete。子项**不**
-/// 实现 `TranscriptComponent`,而是 ``GroupChildRenderer`` plug-in。
+/// 标题 / chevron / shimmer 全部走 `GroupSideCar` 的 CALayer + CABasicAnimation,
+/// CGContext 只画展开态的 N 条虚线框。
 enum GroupComponent: TranscriptComponent {
     static let tag = "Group"
 
-    // MARK: - Input / Content / Layout / State
-
-    struct Input: @unchecked Sendable {
+    struct Input: Sendable {
         let stableId: StableId
-        /// 折叠态 active title —— 最后一条 tool 的进行时短语。
-        let activeBriefTitle: String
-        /// 展开态 active title —— 聚合进行时短语(`Reading 3 files · …`)。
-        let activeAggregatedTitle: String
-        /// 完成态 title —— 聚合过去时短语(`Read 3 files · …`)。
+        let activeTitle: String
         let completedTitle: String
+        let childCount: Int
         let isActive: Bool
-        /// 全部 tool_use,按 group item 顺序展平(单个 item 可能包含多个 tool_use)。
-        let toolUses: [ToolUseEntry]
-
-        struct ToolUseEntry: @unchecked Sendable {
-            let toolUseId: String
-            let tool: ToolUse
-        }
     }
 
     struct Content: @unchecked Sendable {
         let isActive: Bool
-        /// 三套 title 各自 prepare 一次 —— 切换不重 CT measure。
-        let activeBrief: TitleMeasure
-        let activeAggregated: TitleMeasure
-        let completed: TitleMeasure
-        /// per-child parsed payload,顺序 = ``Input.toolUses``。
-        let children: [ChildEntry]
-
-        struct ChildEntry: @unchecked Sendable {
-            let toolUseId: String
-            let content: GroupChildContent
-        }
-
-        struct TitleMeasure: @unchecked Sendable {
-            let text: String
-            let width: CGFloat
-            let ascent: CGFloat
-            let descent: CGFloat
-        }
-
-        /// 当前 (isActive, isExpanded) 下应展示的标题串 + 几何 —— layout 阶段
-        /// 选用,render 阶段 sideCar 直接读。
-        func pickTitle(isExpanded: Bool) -> TitleMeasure {
-            switch (isActive, isExpanded) {
-            case (true, false):  return activeBrief
-            case (true, true):   return activeAggregated
-            case (false, _):     return completed
-            }
-        }
+        let childCount: Int
+        /// 当前 `isActive` 下显示的那条 title —— prepare 时二选一 cache 下来,
+        /// render 时 CATextLayer.string 直接用。
+        let title: String
+        let titleWidth: CGFloat
+        let titleAscent: CGFloat
+        let titleDescent: CGFloat
     }
 
     struct Layout: HasHeight, Sendable {
         let content: Content
-        /// 当前选中的 title,layout 时锁定。
-        let titleText: String
+        /// 标题 bounding box(CATextLayer frame),row-local。
         let titleRect: CGRect
+        /// Chevron bounding box(CAShapeLayer frame),贴 titleRect.maxX 右侧居中对齐。
         let chevronRect: CGRect
+        /// 点击 + hover 命中区 —— title + chevron 的合并 + padding 外扩。
         let hitRect: CGRect
-        /// 展开时各 child 的 frame;折叠时 [].
-        let childFrames: [GroupChildFrame]
+        /// 展开时 N 个子行 rect;折叠时 []。x/width 和 tool placeholder 同形(全宽)。
+        let childRects: [CGRect]
         let cachedHeight: CGFloat
         let cachedWidth: CGFloat
+        /// 本 layout 算于哪个 `isExpanded` 值 —— `relayouted` 快路径用来判断。
         let laidOutExpanded: Bool
     }
 
     struct State: Sendable {
         var isExpanded: Bool = false
-        /// 留给未来富化 child 用 —— 第一步 Read 不带 substate。key = toolUseId,
-        /// sparse map 默认空,绝大多数 child 不写入。
-        var childStates: [String: ChildSubstate] = [:]
 
         static let `default` = State()
-    }
-
-    /// child 的 row-local state(Read 第一步无字段;Edit diff 展开等 future case
-    /// 在这里加 enum case)。
-    enum ChildSubstate: Sendable {
-        case none
     }
 
     typealias SideCar = GroupSideCar
@@ -110,28 +68,16 @@ enum GroupComponent: TranscriptComponent {
         guard case .group(let group) = entry else { return [] }
         let isActive = (entryIndex == entryCount - 1)
         let stableId = StableId(entryId: group.id, locator: .whole)
-
-        // 把整 group 的所有 tool_use 按 (item, blockOrder) 顺序展平。`tool.id` 在
-        // generated 类型里是 `String?` —— 缺失场景(jsonl fixture 偶发) 用 toolUseId
-        // 当兜底,group children 的相对顺序仍由展平顺序决定。
-        var toolUses: [Input.ToolUseEntry] = []
-        for item in group.items {
-            for tool in item.toolUses {
-                toolUses.append(.init(toolUseId: tool.id ?? "", tool: tool))
-            }
-        }
-
         return [IdentifiedInput(
             stableId: stableId,
             entryIndex: entryIndex,
             blockIndex: 0,
             input: Input(
                 stableId: stableId,
-                activeBriefTitle: group.activeTitle,
-                activeAggregatedTitle: group.expandedActiveTitle,
+                activeTitle: group.activeTitle,
                 completedTitle: group.completedTitle,
-                isActive: isActive,
-                toolUses: toolUses))]
+                childCount: group.items.count,
+                isActive: isActive))]
     }
 
     // MARK: - Prepare
@@ -140,35 +86,19 @@ enum GroupComponent: TranscriptComponent {
         _ input: Input,
         theme: TranscriptTheme
     ) -> Content {
-        let active = measure(input.activeBriefTitle, theme: theme)
-        let activeAgg = measure(input.activeAggregatedTitle, theme: theme)
-        let completed = measure(input.completedTitle, theme: theme)
-        let children = input.toolUses.map { entry in
-            Content.ChildEntry(
-                toolUseId: entry.toolUseId,
-                content: GroupChildDispatch.parse(entry.tool, theme: theme))
-        }
-        return Content(
-            isActive: input.isActive,
-            activeBrief: active,
-            activeAggregated: activeAgg,
-            completed: completed,
-            children: children)
-    }
-
-    nonisolated private static func measure(
-        _ text: String, theme: TranscriptTheme
-    ) -> Content.TitleMeasure {
+        let title = input.isActive ? input.activeTitle : input.completedTitle
         let attrs: [NSAttributedString.Key: Any] = [.font: theme.groupTitleFont]
-        let str = NSAttributedString(string: text, attributes: attrs)
+        let str = NSAttributedString(string: title, attributes: attrs)
         let line = CTLineCreateWithAttributedString(str)
         var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
         let width = CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
-        return Content.TitleMeasure(
-            text: text,
-            width: CGFloat(width),
-            ascent: ascent,
-            descent: descent)
+        return Content(
+            isActive: input.isActive,
+            childCount: input.childCount,
+            title: title,
+            titleWidth: CGFloat(width),
+            titleAscent: ascent,
+            titleDescent: descent)
     }
 
     nonisolated static func contentHash(
@@ -176,15 +106,10 @@ enum GroupComponent: TranscriptComponent {
         theme: TranscriptTheme
     ) -> Int {
         var h = Hasher()
-        h.combine(input.activeBriefTitle)
-        h.combine(input.activeAggregatedTitle)
+        h.combine(input.activeTitle)
         h.combine(input.completedTitle)
+        h.combine(input.childCount)
         h.combine(input.isActive)
-        h.combine(input.toolUses.count)
-        for entry in input.toolUses {
-            h.combine(entry.toolUseId)
-            h.combine(GroupChildDispatch.contentHash(entry.tool, theme: theme))
-        }
         h.combine(theme.markdown.fingerprint)
         return h.finalize()
     }
@@ -204,8 +129,8 @@ enum GroupComponent: TranscriptComponent {
         geometry(content: content, theme: theme, width: width, state: state)
     }
 
-    /// 快路径:width + content 未变,只 `isExpanded` 翻转 → 重选 title +
-    /// 重算 childFrames + cachedHeight。
+    /// 快路径:width + content 未变,仅 `isExpanded` 翻转 → 只重算 childRects
+    /// 和 cachedHeight。
     nonisolated static func relayouted(
         _ layout: Layout,
         theme: TranscriptTheme,
@@ -232,14 +157,12 @@ enum GroupComponent: TranscriptComponent {
         let chevronSize = theme.groupChevronDrawSize
         let gap = theme.groupChevronGap
 
-        let title = content.pickTitle(isExpanded: state.isExpanded)
-
         // Title 占据文字宽度,但给 chevron + gap 留空间。
         let reservedForChevron = chevronSize + gap
         let titleMaxWidth = max(0, rowContentWidth - reservedForChevron)
-        let titleWidth = min(title.width, titleMaxWidth)
+        let titleWidth = min(content.titleWidth, titleMaxWidth)
 
-        let titleH = title.ascent + title.descent
+        let titleH = content.titleAscent + content.titleDescent
         let headerMidY = headerTop + headerH / 2
         let titleRect = CGRect(
             x: hPad,
@@ -247,7 +170,10 @@ enum GroupComponent: TranscriptComponent {
             width: titleWidth,
             height: titleH)
 
-        // Chevron 视觉居中补偿 —— 同原实现。
+        // Chevron 垂直视觉居中:文字的几何 midY(ascent/descent 中点)高于
+        // 视觉中心(baseline + x-height/2 附近),chevron 按几何 midY 对齐会
+        // 看起来偏上。加 `(capHeight - xHeight) / 2` 补偿把 chevron 下移到
+        // 字形视觉中心。12pt semibold 约 1pt。
         let font = theme.groupTitleFont
         let visualCompensation = max(0, (font.capHeight - font.xHeight) / 2)
         let chevronRect = CGRect(
@@ -256,6 +182,7 @@ enum GroupComponent: TranscriptComponent {
             width: chevronSize,
             height: chevronSize)
 
+        // Hit rect = title + chevron 的合并 + 外扩 padding,高度撑满 header。
         let hitPad = theme.groupHitPadding
         let hitMinX = max(hPad, titleRect.minX - hitPad)
         let hitMaxX = min(hPad + rowContentWidth, chevronRect.maxX + hitPad)
@@ -265,38 +192,31 @@ enum GroupComponent: TranscriptComponent {
             width: max(0, hitMaxX - hitMinX),
             height: headerH)
 
-        // Children:gestalt 接近性下,header → first child 间距 = child ↔ child
-        // 间距 = 4pt(``groupChildSpacing``)。最后一个 child 后接 row 自身的
-        // bottom rowVerticalPadding,继而和下条 entry 的 top padding 加和成 ≥ 24pt
-        // 视觉分隔(l0)。
-        var childFrames: [GroupChildFrame] = []
+        // Child placeholders:和 tool placeholder 同形(全宽,对齐 rowHorizontalPadding)。
+        var childRects: [CGRect] = []
         var totalHeight = headerTop + headerH
-        if state.isExpanded && !content.children.isEmpty {
-            var y = totalHeight + theme.groupChildSpacing
-            for child in content.children {
-                let frame = GroupChildDispatch.layout(
-                    child.content,
-                    x: hPad,
-                    y: y,
-                    width: rowContentWidth,
-                    theme: theme)
-                let h = GroupChildDispatch.height(frame)
-                childFrames.append(frame)
-                y += h + theme.groupChildSpacing
+        if state.isExpanded && content.childCount > 0 {
+            let childH = theme.groupChildRowHeight
+            let spacing = theme.groupChildRowSpacing
+            let childX = hPad
+            let childW = rowContentWidth
+            var y = totalHeight + theme.groupChildrenTopSpacing
+            for _ in 0..<content.childCount {
+                childRects.append(CGRect(x: childX, y: y, width: childW, height: childH))
+                y += childH + spacing
             }
-            // 移除最后一次多加的 spacing(child 后面紧接 row vertical padding)。
-            y -= theme.groupChildSpacing
+            y -= spacing
+            y += theme.groupChildrenBottomPadding
             totalHeight = y
         }
         totalHeight += theme.rowVerticalPadding
 
         return Layout(
             content: content,
-            titleText: title.text,
             titleRect: titleRect,
             chevronRect: chevronRect,
             hitRect: hitRect,
-            childFrames: childFrames,
+            childRects: childRects,
             cachedHeight: totalHeight,
             cachedWidth: width,
             laidOutExpanded: state.isExpanded)
@@ -313,19 +233,39 @@ enum GroupComponent: TranscriptComponent {
         in ctx: CGContext,
         bounds: CGRect
     ) {
-        // CGContext 路径只画 children;header(title / chevron / shimmer)由
-        // SideCar 的 CALayer 完成。
-        for (frame, child) in zip(layout.childFrames, layout.content.children) {
-            GroupChildDispatch.draw(child.content, frame: frame, theme: theme, in: ctx)
-        }
+        drawChildPlaceholders(layout: layout, theme: theme, in: ctx)
 
+        // 同步 SideCar(title CATextLayer + shimmer + chevron)。每次 render 都调,
+        // 让 liveAppend 翻 isActive / 外观切换 dark-light / 宽度变化等都自动
+        // 反映到 CA 图层。CATransaction 在 SideCar 内部处理,禁掉隐式动画。
         sideCar.sync(
-            title: layout.titleText,
+            title: layout.content.title,
             titleRect: layout.titleRect,
             chevronRect: layout.chevronRect,
             isActive: layout.content.isActive,
             isExpanded: state.isExpanded,
             theme: theme)
+    }
+
+    @MainActor
+    private static func drawChildPlaceholders(
+        layout: Layout, theme: TranscriptTheme, in ctx: CGContext
+    ) {
+        guard !layout.childRects.isEmpty else { return }
+        ctx.saveGState()
+        ctx.setStrokeColor(NSColor.tertiaryLabelColor.cgColor)
+        ctx.setLineWidth(1)
+        ctx.setLineDash(phase: 0, lengths: theme.placeholderLineDashPattern)
+        for r in layout.childRects {
+            let path = CGPath(
+                roundedRect: r,
+                cornerWidth: theme.placeholderCornerRadius,
+                cornerHeight: theme.placeholderCornerRadius,
+                transform: nil)
+            ctx.addPath(path)
+        }
+        ctx.strokePath()
+        ctx.restoreGState()
     }
 
     // MARK: - SideCar factory
@@ -344,21 +284,16 @@ enum GroupComponent: TranscriptComponent {
     ) -> [Interaction<Self>] {
         let hit = layout.hitRect
         return [
+            // 单一驱动:handler 只 toggle state,动画在 render → sync 里按
+            // 新 state 与 sideCar.isExpanded 的差异决定是否起旋转动画。
+            // 避免 handler 与 render 两条路径都操作 CALayer 导致 rapid-click 打架。
             .custom(
                 rect: hit,
                 cursor: .pointingHand,
                 handler: { ctx in
-                    // 把 row-height 平滑插值 + chevron 旋转 + title fade 全部
-                    // 包在同一个 NSAnimationContext 里 —— NSTableView 在
-                    // `noteHeightOfRows` 时按当前 group 的 duration 走 builtin
-                    // CABasicAnimation(高度从旧 cachedHeight 平滑到新值)。
-                    NSAnimationContext.runAnimationGroup { animCtx in
-                        animCtx.duration = ctx.theme.groupExpandDuration
-                        animCtx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                        var newState = ctx.currentState()
-                        newState.isExpanded.toggle()
-                        ctx.applyState(newState, animated: true)
-                    }
+                    var newState = ctx.currentState()
+                    newState.isExpanded.toggle()
+                    ctx.applyState(newState)
                 }),
             .hover(
                 rect: hit,
@@ -367,4 +302,326 @@ enum GroupComponent: TranscriptComponent {
                 onExit:  { ctx in ctx.sideCar().setHovered(false, theme: ctx.theme) }),
         ]
     }
+}
+
+// MARK: - GroupSideCar
+
+/// Group row 的 CA 侧 —— title / shimmer / chevron 三个 CALayer,全挂
+/// `rowView.layer`(AppKit 管 contentsScale,不用手动管 backing scale)。
+///
+/// 层级(从下到上):
+/// - `titleLayer` (CATextLayer):标题底色文字,常驻
+/// - `shimmerLayer` (CAGradientLayer, mask = `shimmerMaskLayer`):仅 active 态可见,
+///   mask 把 gradient 裁到 title 字形内,所以光带只扫文字
+/// - `chevronLayer` (CAShapeLayer):2 段 `>` vector path,strokeColor 切色,
+///   `transform.rotation.z` 旋转,vector 自动按父 layer contentsScale 抗锯齿
+///
+/// ## 居中列 offset
+///
+/// sublayer 的 `titleRect` / `chevronRect` 都是"内容列局部坐标"(由 layout 算),
+/// 但它们挂在全宽 rowView.layer 上,sync 时把 frame.origin.x 统一加 `currentXOffset`
+/// (framework 每 render 前通过 `applyColumnXOffset` 注入)让 CA 路径和 CGContext
+/// 路径看到同一内容列起点。
+///
+/// 所有 model value 写入都包 `CATransaction.setDisableActions(true)`,避免
+/// 隐式动画和显式动画打架(表现为:快速点击卡在展开态不回弹)。
+@MainActor
+final class GroupSideCar: RowSideCar {
+    private let titleLayer = CATextLayer()
+    private let shimmerLayer = CAGradientLayer()
+    private let shimmerMaskLayer = CATextLayer()
+    /// 2 段 `>` vector path。strokeColor 决定颜色,`transform.rotation.z`
+    /// 驱动旋转。vector,不需要 bitmap rasterize,挂 rowView.layer 自动沿用
+    /// AppKit 管的 contentsScale。
+    private let chevronLayer = CAShapeLayer()
+
+    private var currentTitle: String = ""
+    private var currentTitleRect: CGRect = .zero
+    private var currentChevronRect: CGRect = .zero
+    /// Framework 通过 `applyColumnXOffset(_:)` 注入,sync 时加到 sublayer frame.x。
+    private var currentXOffset: CGFloat = 0
+    private var isActive = false
+    private var isExpanded = false
+    private var isHovered = false
+    private var isShimmerAnimating = false
+    /// Sync 内部暂存 —— CATransaction 提交后再在外部 add 显式旋转动画。
+    private var pendingRotation: (from: CGFloat, to: CGFloat)?
+
+    init() {
+        titleLayer.alignmentMode = .left
+        titleLayer.truncationMode = .end
+        titleLayer.isWrapped = false
+
+        shimmerMaskLayer.alignmentMode = .left
+        shimmerMaskLayer.truncationMode = .end
+        shimmerMaskLayer.isWrapped = false
+        // Mask 只取 alpha 通道,foregroundColor 用不透明白色最简单。
+        shimmerMaskLayer.foregroundColor = NSColor.white.cgColor
+
+        shimmerLayer.startPoint = CGPoint(x: -1, y: 0.5)
+        shimmerLayer.endPoint = CGPoint(x: 0, y: 0.5)
+        shimmerLayer.opacity = 0
+        shimmerLayer.mask = shimmerMaskLayer
+
+        chevronLayer.fillColor = nil
+        chevronLayer.lineCap = .round
+        chevronLayer.lineJoin = .round
+        chevronLayer.lineWidth = 1.4
+        // frame resize 不做隐式动画 —— 居中列重定位时避免 chevron 飘移。
+        chevronLayer.actions = ["position": NSNull(), "bounds": NSNull(), "frame": NSNull()]
+    }
+
+    nonisolated deinit {}
+
+    // MARK: - RowSideCar lifecycle
+
+    func sideCarDidMount(in rowLayer: CALayer) {
+        // CATextLayer / CAShapeLayer 的 contentsScale 不继承父 layer,默认 1 —
+        // Retina 必糊。rowLayer 是 NSView 管的主 layer,AppKit 已经把
+        // contentsScale 设成 backingScaleFactor(2 / 3),这里直接跟随。
+        let scale = rowLayer.contentsScale > 0 ? rowLayer.contentsScale : 2
+        titleLayer.contentsScale = scale
+        shimmerMaskLayer.contentsScale = scale
+        chevronLayer.contentsScale = scale
+        rowLayer.addSublayer(titleLayer)
+        rowLayer.addSublayer(shimmerLayer)
+        rowLayer.addSublayer(chevronLayer)
+    }
+
+    func sideCarWillUnmount(from rowLayer: CALayer) {
+        shimmerLayer.removeAllAnimations()
+        chevronLayer.removeAllAnimations()
+        titleLayer.removeFromSuperlayer()
+        shimmerLayer.removeFromSuperlayer()
+        chevronLayer.removeFromSuperlayer()
+        isShimmerAnimating = false
+    }
+
+    func applyColumnXOffset(_ xOffset: CGFloat) {
+        // 值相等不动 sublayer frame —— 避免每帧 render 都重写 frame 造成无谓工作。
+        // 下一次 sync 如果 currentXOffset 变了,会自动 invalidate currentTitleRect /
+        // currentChevronRect 比对路径,触发 frame 重写。
+        guard xOffset != currentXOffset else { return }
+        currentXOffset = xOffset
+        // Offset 变化 → 所有 sublayer frame.x 都要重算 —— 通过重置 currentXxxRect
+        // 触发 sync 里的"frame 变化"分支。
+        currentTitleRect = .zero
+        currentChevronRect = .zero
+    }
+
+    // MARK: - Full sync(render 时一次性)
+
+    /// 单一入口 —— render 把 "一行 row 当前应呈现的视觉状态" 一次性同步给 CA 层。
+    /// 所有 model value 写在一个 CATransaction 禁隐式动画;显式动画(旋转 / hover
+    /// fade)由外部通过 `setExpanded(animated:)` / `setHovered(_:)` 单独触发。
+    func sync(
+        title: String,
+        titleRect: CGRect,
+        chevronRect: CGRect,
+        isActive active: Bool,
+        isExpanded expanded: Bool,
+        theme: TranscriptTheme
+    ) {
+        // Rotation pre-capture:在 setValue 把 model 改掉之前,先读 presentation。
+        // 这是显式动画 `fromValue`,也是 sync 为什么是 rotation 的**唯一驱动**
+        // 的关键 —— handler 只 toggle state,所有 CALayer 写入都在这里按
+        // (expected ≠ current) 差异执行。
+        let modelRotBefore = (chevronLayer.value(forKeyPath: "transform.rotation.z") as? CGFloat) ?? 0
+        let presRotBefore = chevronLayer.presentation()?
+            .value(forKeyPath: "transform.rotation.z") as? CGFloat
+        let rotationFrom: CGFloat? = {
+            guard expanded != isExpanded else { return nil }
+            if let pres = presRotBefore { return pres }
+            return modelRotBefore
+        }()
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+
+        let font = theme.groupTitleFont
+        let fontSize = font.pointSize
+
+        if title != currentTitle {
+            titleLayer.string = title
+            shimmerMaskLayer.string = title
+            currentTitle = title
+        }
+        titleLayer.font = font
+        titleLayer.fontSize = fontSize
+        titleLayer.foregroundColor = titleColorForCurrentState(theme: theme).cgColor
+
+        shimmerMaskLayer.font = font
+        shimmerMaskLayer.fontSize = fontSize
+
+        if titleRect != currentTitleRect {
+            // rowView 坐标 = 内容列局部坐标 + currentXOffset。
+            let titleFrame = titleRect.offsetBy(dx: currentXOffset, dy: 0)
+            titleLayer.frame = titleFrame
+            shimmerLayer.frame = titleFrame
+            shimmerMaskLayer.frame = CGRect(origin: .zero, size: titleRect.size)
+            currentTitleRect = titleRect
+        }
+
+        if chevronRect != currentChevronRect {
+            chevronLayer.frame = chevronRect.offsetBy(dx: currentXOffset, dy: 0)
+            chevronLayer.path = Self.chevronPath(in: CGRect(origin: .zero, size: chevronRect.size))
+            currentChevronRect = chevronRect
+        }
+        chevronLayer.strokeColor = chevronColorForCurrentState(theme: theme).cgColor
+
+        // Shimmer colors always set —— 切深浅色需要刷新 cgColor(NSColor 的 name
+        // 动态色 cgColor 不随 appearance 自更新,得每次重新 resolve)。
+        let hl = theme.groupShimmerHighlight.cgColor
+        let clear = theme.groupShimmerHighlight.withAlphaComponent(0).cgColor
+        shimmerLayer.colors = [clear, hl, clear]
+        shimmerLayer.locations = [0, 0.5, 1]
+
+        // Active → opacity 1 + 启动动画;inactive → opacity 0 + 停动画。
+        if active != isActive {
+            shimmerLayer.opacity = active ? 1 : 0
+            isActive = active
+            if active {
+                startShimmerAnimation(theme: theme)
+            } else {
+                stopShimmerAnimation()
+            }
+        } else if active && !isShimmerAnimating {
+            // 挂载后第一次 sync,active 已经是 true,但动画还没起。
+            shimmerLayer.opacity = 1
+            startShimmerAnimation(theme: theme)
+        }
+
+        // 旋转 —— sync 是唯一驱动。model value 在 disableActions 里写,避免隐式动画。
+        if let from = rotationFrom {
+            let target: CGFloat = expanded ? (.pi / 2) : 0
+            chevronLayer.setValue(target, forKeyPath: "transform.rotation.z")
+            // 显式动画在 CATransaction 提交之后 add —— 不受 disableActions 影响。
+            // 先记录下来,本次 commit 之后再加。
+            pendingRotation = (from: from, to: target)
+            isExpanded = expanded
+        }
+
+        // Chevron alpha 跟随 hover 态。
+        chevronLayer.opacity = Float(isHovered
+            ? theme.groupChevronHoverAlpha
+            : theme.groupChevronIdleAlpha)
+
+        CATransaction.commit()
+
+        // 在 disableActions transaction **外部** add 显式 rotation anim ——
+        // 虽然 CAAnimation 的 add 不受 disableActions 影响,但在外部更清晰,
+        // 也方便未来按需 disable 掉整个 sync 的 action。
+        if let r = pendingRotation {
+            pendingRotation = nil
+            let anim = CABasicAnimation(keyPath: "transform.rotation.z")
+            anim.duration = theme.groupChevronRotateDuration
+            anim.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            anim.fromValue = r.from
+            anim.toValue = r.to
+            chevronLayer.add(anim, forKey: "rotate")
+        }
+    }
+
+    /// Render 外部的 hover 事件 —— 只改本地状态,真正的 CALayer 属性同步由
+    /// 之后的 render → sync 或本方法内的 explicit animation 负责。title 颜色
+    /// 和 chevron alpha 都在 hover 切换时动画过渡。
+    func setHovered(_ hovered: Bool, theme: TranscriptTheme) {
+        guard hovered != isHovered else { return }
+        isHovered = hovered
+
+        // Chevron alpha 动画 ——(fade 0.15s)。
+        let chevronTarget: Float = Float(hovered
+            ? theme.groupChevronHoverAlpha
+            : theme.groupChevronIdleAlpha)
+        let chevronFrom = chevronLayer.presentation()?.opacity ?? chevronLayer.opacity
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        chevronLayer.opacity = chevronTarget
+        CATransaction.commit()
+        let chevronAnim = CABasicAnimation(keyPath: "opacity")
+        chevronAnim.duration = theme.groupChevronFadeDuration
+        chevronAnim.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        chevronAnim.fromValue = chevronFrom
+        chevronAnim.toValue = chevronTarget
+        chevronLayer.add(chevronAnim, forKey: "fade")
+
+        // Title 颜色 ——(secondary ↔ primary)CA 层上靠 foregroundColor
+        // transition 动画,fade 平滑切换。
+        let titleTargetColor = titleColorForCurrentState(theme: theme).cgColor
+        let titleFromColor = titleLayer.presentation()?.foregroundColor
+            ?? titleLayer.foregroundColor
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        titleLayer.foregroundColor = titleTargetColor
+        CATransaction.commit()
+        let titleAnim = CABasicAnimation(keyPath: "foregroundColor")
+        titleAnim.duration = theme.groupChevronFadeDuration
+        titleAnim.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        titleAnim.fromValue = titleFromColor
+        titleAnim.toValue = titleTargetColor
+        titleLayer.add(titleAnim, forKey: "titleFade")
+    }
+
+    /// Hover 态:title 用 primary labelColor;idle:secondary。
+    private func titleColorForCurrentState(theme: TranscriptTheme) -> NSColor {
+        isHovered ? NSColor.labelColor : theme.groupTitleColor
+    }
+
+    /// Chevron 底色 —— 跟随 title 的 hover 态同步(primary / secondary)。
+    /// alpha 差异(idle / hover)由 `chevronLayer.opacity` 另行控制。
+    private func chevronColorForCurrentState(theme: TranscriptTheme) -> NSColor {
+        isHovered ? NSColor.labelColor : theme.groupTitleColor
+    }
+
+    // MARK: - Chevron path
+    //
+    // Base: `>` 右指(折叠态 = 常规 disclosure 起点)。展开态 sync 给
+    // `transform.rotation.z = π/2`,顺时针 90° 变下指 `v`。
+    //
+    // 形状参数按 SF Symbol `chevron.right` 比例调的(宽:高 ≈ 0.56,lineWidth
+    // 对应 semibold 级 ≈ 1.4pt at 8pt glyph):
+    // - halfW = size × 0.22(从中心到右尖水平距离)
+    // - halfH = size × 0.4 (从中心到上下端垂直距离)
+    // - lineCap / lineJoin = .round(init 里设一次)
+
+    private static func chevronPath(in rect: CGRect) -> CGPath {
+        let path = CGMutablePath()
+        let mid = CGPoint(x: rect.midX, y: rect.midY)
+        let halfW = rect.width * 0.22
+        let halfH = rect.height * 0.4
+        path.move(to: CGPoint(x: mid.x - halfW, y: mid.y - halfH))
+        path.addLine(to: CGPoint(x: mid.x + halfW, y: mid.y))
+        path.addLine(to: CGPoint(x: mid.x - halfW, y: mid.y + halfH))
+        return path
+    }
+
+    // MARK: - Shimmer animation
+
+    private func startShimmerAnimation(theme: TranscriptTheme) {
+        if isShimmerAnimating { return }
+        isShimmerAnimating = true
+
+        let band = theme.groupShimmerBandRatio
+        // 光带从左侧完全不可见(startPoint 在左外)扫到右侧完全不可见
+        // (endPoint 在右外)。一个 band 宽度是 (endPoint.x - startPoint.x)。
+        let startAnim = CABasicAnimation(keyPath: "startPoint")
+        startAnim.fromValue = NSValue(point: CGPoint(x: -band, y: 0.5))
+        startAnim.toValue = NSValue(point: CGPoint(x: 1.0, y: 0.5))
+        let endAnim = CABasicAnimation(keyPath: "endPoint")
+        endAnim.fromValue = NSValue(point: CGPoint(x: 0.0, y: 0.5))
+        endAnim.toValue = NSValue(point: CGPoint(x: 1.0 + band, y: 0.5))
+
+        let group = CAAnimationGroup()
+        group.animations = [startAnim, endAnim]
+        group.duration = theme.groupShimmerDuration
+        group.repeatCount = .infinity
+        group.timingFunction = CAMediaTimingFunction(name: .linear)
+        shimmerLayer.add(group, forKey: "shimmer")
+    }
+
+    private func stopShimmerAnimation() {
+        shimmerLayer.removeAnimation(forKey: "shimmer")
+        isShimmerAnimating = false
+    }
+
 }

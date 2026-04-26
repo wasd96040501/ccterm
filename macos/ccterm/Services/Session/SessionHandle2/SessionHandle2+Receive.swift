@@ -240,14 +240,15 @@ private extension Message2Assistant {
 
 private extension Message2 {
 
-    /// 「可分组」：assistant 消息，其所有非空 content block 均为 tool_use（任意 kind）。
-    /// 混合 text / thinking 仍走 `.single`，由 `AssistantMarkdownComponent` 渲染。
+    /// 「可分组」：assistant 消息，其所有非空 content block 均为白名单 tool_use。
+    /// 混合 text / thinking / 非白名单 tool_use 的整条视为不可分组。
     var isGroupableAssistant: Bool {
         guard case .assistant(let a) = self,
               let blocks = a.message?.content,
               !blocks.isEmpty else { return false }
         for block in blocks {
-            guard case .toolUse = block else { return false }
+            guard case .toolUse(let t) = block,
+                  t.groupableKind != nil else { return false }
         }
         return true
     }

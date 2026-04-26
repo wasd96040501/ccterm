@@ -217,10 +217,19 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
 
     func noteHeightOfRow(_ row: Int, animated: Bool = false) {
         guard let tableView, row >= 0, row < rows.count else { return }
-        if !animated {
+        if animated {
+            // 沿用调用方的 `NSAnimationContext`(典型:外层
+            // `NSAnimationContext.runAnimationGroup` 设了 duration / timing),
+            // NSTableView 用其参数走 builtin row-height animation。
+            tableView.noteHeightOfRows(withIndexesChanged: IndexSet(integer: row))
+        } else {
+            // 非动画路径在 nested group 里强制 duration = 0,避免污染外层
+            // `NSAnimationContext`(否则会让外层正在跑的动画被瞬时打断)。
+            NSAnimationContext.beginGrouping()
             NSAnimationContext.current.duration = 0
+            tableView.noteHeightOfRows(withIndexesChanged: IndexSet(integer: row))
+            NSAnimationContext.endGrouping()
         }
-        tableView.noteHeightOfRows(withIndexesChanged: IndexSet(integer: row))
         if let rv = tableView.rowView(atRow: row, makeIfNecessary: false) as? TranscriptRowView {
             rv.set(row: rows[row])
         }
@@ -279,7 +288,10 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
 
     /// 把 row 的 state 替换为 newState,跑 relayouted/full layout,刷新 row 高度 + 重绘。
     /// `Interaction.toggleState` / `.custom` handler 通过 `RowContext.applyState` 调入。
-    func applyState(stableId: StableId, newState: any Sendable) {
+    ///
+    /// `animated: true` 时 `noteHeightOfRow` 透传 animated,NSTableView 会沿用
+    /// 调用方设置的 `NSAnimationContext.runAnimationGroup` duration 平滑过渡 row 高度。
+    func applyState(stableId: StableId, newState: any Sendable, animated: Bool = false) {
         guard let idx = rows.firstIndex(where: { $0.stableId == stableId }) else { return }
         let cb = rows[idx].callbacks
         let theme = TranscriptTheme(markdown: theme ?? .default)
@@ -297,7 +309,7 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
             rows[idx].layout = full
             rows[idx].cachedSize = CGSize(width: width, height: full.cachedHeight)
         }
-        noteHeightOfRow(idx)
+        noteHeightOfRow(idx, animated: animated)
         if let tableView,
            let rv = tableView.rowView(atRow: idx, makeIfNecessary: false) as? TranscriptRowView {
             rv.set(row: rows[idx])
@@ -332,8 +344,8 @@ final class TranscriptController: NSObject, NSTableViewDataSource, NSTableViewDe
             currentStateErased: { [weak self] in
                 self?.currentState(stableId: stableId) ?? ()
             },
-            applyStateErased: { [weak self] newState in
-                self?.applyState(stableId: stableId, newState: newState)
+            applyStateErased: { [weak self] newState, animated in
+                self?.applyState(stableId: stableId, newState: newState, animated: animated)
             },
             noteHeightOfRow: { [weak self] in
                 guard let self,

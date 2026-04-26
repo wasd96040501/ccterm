@@ -130,6 +130,8 @@ struct InputBarView: View {
         }
         .animation(.smooth(duration: animationDuration), value: status)
         .animation(.smooth(duration: animationDuration), value: hasPendingPermission)
+        .animation(.smooth(duration: animationDuration), value: canSend)
+        .animation(.smooth(duration: animationDuration), value: showStartingOverlay)
     }
 
     // MARK: - Overlay (starting only — completion / queued 在 v2 暂未接)

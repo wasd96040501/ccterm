@@ -1,48 +1,64 @@
 import SwiftUI
 
-/// v2 Sidebar:按项目分组的扁平历史会话列表。selection 单向 —— 父传入当前选中
-/// id,user 点击通过 `onSelect` 回调驱动 `SessionManager2.select(_:)`。
-///
-/// 数据源直接来自 `SessionManager2.allRecords()`,按 `groupingFolderName` 分组,
-/// 组内按 `lastActiveAt` 降序。`.notStarted` 的新对话 handle 不在 db 里,
-/// sidebar 也不展示 —— 第一次 send 触发 ensureStarted 写 db 后,reload 才会出现。
+/// v2 Sidebar 选中态。`.newConversation` 高亮顶部"新对话"行,`.session(id)`
+/// 高亮某条历史会话。state 不在此持有 —— 由 `SessionManager2.current` derive。
+enum SidebarSelection2: Hashable {
+    case newConversation
+    case session(String)
+}
+
+/// v2 Sidebar:顶部 action section("新对话")+ 按项目分组的扁平历史会话列表。
+/// selection 单向 —— 父传入当前选中,user 点击通过 onSelect 回调驱动 manager。
 struct SidebarView2: View {
 
-    /// 来自 `manager.current.sessionId`,用作 `List` selection 的可视高亮。
-    /// 用 `Binding` 而非 `let` 是因为 `List(selection:)` 要求 `@Binding<Hashable?>`;
-    /// setter 立即 forward 到 `onSelect`,实现单向流(state 在 manager,view 只渲染)。
-    let selectedSessionId: String
-    let onSelect: (String) -> Void
+    let selection: SidebarSelection2
+    let onSelect: (SidebarSelection2) -> Void
 
     @Environment(SessionManager2.self) private var manager
     @State private var groups: [ProjectGroup2] = []
 
-    private var listSelection: Binding<String?> {
+    private var listSelection: Binding<SidebarSelection2?> {
         Binding(
-            get: { selectedSessionId },
+            get: { selection },
             set: { newValue in
-                guard let id = newValue, id != selectedSessionId else { return }
-                onSelect(id)
+                guard let newValue, newValue != selection else { return }
+                onSelect(newValue)
             }
         )
     }
 
     var body: some View {
         List(selection: listSelection) {
-            ForEach(groups) { group in
-                Section(group.folderName) {
-                    ForEach(group.records) { record in
-                        SidebarRow2(record: record)
-                            .tag(record.sessionId)
-                    }
-                }
-            }
+            actionSection
+            sessionSections
         }
         .listStyle(.sidebar)
         .task { reload() }
         .onChange(of: manager.current.sessionId) { _, _ in
             // current 切换可能因为 send → ensureStarted 写 db,reload 让新 record 出现。
             reload()
+        }
+    }
+
+    // MARK: - Sections
+
+    @ViewBuilder
+    private var actionSection: some View {
+        Section {
+            SidebarNewConversationRow()
+                .tag(SidebarSelection2.newConversation)
+        }
+    }
+
+    @ViewBuilder
+    private var sessionSections: some View {
+        ForEach(groups) { group in
+            Section(group.folderName) {
+                ForEach(group.records) { record in
+                    SidebarRow2(record: record)
+                        .tag(SidebarSelection2.session(record.sessionId))
+                }
+            }
         }
     }
 
@@ -70,7 +86,26 @@ private struct ProjectGroup2: Identifiable {
     let records: [SessionRecord]
 }
 
-// MARK: - Row
+// MARK: - Rows
+
+/// 顶部"新对话"行 —— Label + ⌘N hover hint(对齐老 SidebarActionRow 风格)。
+private struct SidebarNewConversationRow: View {
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack {
+            Label(String(localized: "New Conversation"), systemImage: "square.and.pencil")
+            Spacer()
+            Text("⌘N")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .hoverCapsule(staticFill: Color(nsColor: .labelColor).opacity(0.08))
+                .opacity(isHovered ? 1 : 0)
+                .animation(.easeInOut(duration: 0.15), value: isHovered)
+        }
+        .onHover { isHovered = $0 }
+    }
+}
 
 private struct SidebarRow2: View {
     let record: SessionRecord

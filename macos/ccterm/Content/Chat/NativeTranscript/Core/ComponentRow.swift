@@ -299,13 +299,18 @@ struct AnyRowContext {
     let cachedWidth: CGFloat
     let theme: TranscriptTheme
     let currentStateErased: () -> any Sendable
-    let applyStateErased: (any Sendable) -> Void
+    /// `(state, animated)` —— 第二参数 = NSTableView 是否要 animate row height
+    /// 变更。caller 把整段动画包在 `NSAnimationContext.runAnimationGroup` 里时
+    /// 传 `true`。
+    let applyStateErased: (any Sendable, Bool) -> Void
     let noteHeightOfRow: () -> Void
     let redraw: () -> Void
     let clearSelection: () -> Void
     let sideCarErased: () -> any RowSideCar
 
-    func applyState<T: Sendable>(_ state: T) { applyStateErased(state) }
+    func applyState<T: Sendable>(_ state: T, animated: Bool = false) {
+        applyStateErased(state, animated)
+    }
 
     func specialize<C: TranscriptComponent>(to _: C.Type) -> RowContext<C> {
         RowContext<C>(
@@ -313,7 +318,7 @@ struct AnyRowContext {
             cachedWidth: cachedWidth,
             theme: theme,
             currentState: { currentStateErased() as! C.State },
-            applyState: { newState in applyStateErased(newState) },
+            _applyState: { newState, animated in applyStateErased(newState, animated) },
             noteHeightOfRow: noteHeightOfRow,
             redraw: redraw,
             clearSelection: clearSelection,

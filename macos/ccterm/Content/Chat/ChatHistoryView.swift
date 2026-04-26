@@ -31,13 +31,19 @@ struct ChatHistoryView: View {
     private let inputBarHorizontalPadding: CGFloat = 20
     private let transcriptBottomPadding: CGFloat = 48
 
+    /// InputBar 最大宽度 = transcript 内容列上限 + InputBar 两侧圆角半径 ——
+    /// 让 InputBar 圆角刚好"包住"transcript 的可读列宽,两边对齐看着齐整。
+    private var inputBarMaxWidth: CGFloat {
+        TranscriptTheme(markdown: .default).maxContentWidth + 2 * InputBarView.cornerRadius
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             transcriptArea
                 .padding(.bottom, transcriptBottomPadding)
 
             InputBarView(handle: handle)
-                .frame(minWidth: 400, idealWidth: 860, maxWidth: 860)
+                .frame(minWidth: 400, idealWidth: inputBarMaxWidth, maxWidth: inputBarMaxWidth)
                 .padding(.horizontal, inputBarHorizontalPadding)
                 .padding(.bottom, inputBarBottomPadding)
         }

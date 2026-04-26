@@ -8,7 +8,10 @@ struct InputBarView: View {
 
     @Bindable var handle: SessionHandle2
 
-    private let cornerRadius: CGFloat = 20
+    /// 圆角半径 —— ChatHistoryView 计算 InputBar 最大宽度时也读这个常量
+    /// (`maxWidth = transcript.maxContentWidth + 2 * cornerRadius`),保持 InputBar
+    /// 圆角刚好"包住"transcript 的内容列。
+    static let cornerRadius: CGFloat = 20
     private let buttonSize: CGFloat = 28
     private let animationDuration: TimeInterval = 0.35
 
@@ -20,6 +23,9 @@ struct InputBarView: View {
     @State private var showBranchPicker = false
     @State private var copiedFeedback: CopiedTarget?
     @State private var shimmerPhase: CGFloat = 0
+    /// 用户尝试在没选 path 的情况下 send（点按钮 / cmd+enter），强制弹一次 tooltip 提示。
+    @State private var forceSendTooltip: Bool = false
+    @State private var forceSendTooltipTask: Task<Void, Never>?
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("sendKeyBehavior") private var sendKeyBehaviorRaw: String = SendKeyBehavior.commandEnter.rawValue
 
@@ -116,9 +122,9 @@ struct InputBarView: View {
         }
         .frame(maxWidth: .infinity)
         .background(colorScheme == .dark ? .thickMaterial : .bar)
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+        .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
         .overlay {
-            RoundedRectangle(cornerRadius: cornerRadius)
+            RoundedRectangle(cornerRadius: Self.cornerRadius)
                 .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
         }
         .shadow(color: colorScheme == .light ? .black.opacity(0.1) : .clear,
@@ -192,11 +198,18 @@ struct InputBarView: View {
     }
 
     private var sendButton: some View {
+        // 不用 .disabled —— 不让发也要让点击触发 tooltip 提示，纯 opacity 表示 disabled 观感。
         circleButton(icon: "arrow.up", color: .accentColor, action: send)
             .opacity(canSend ? 1.0 : 0.4)
-            .disabled(!canSend)
             .transition(.scale.combined(with: .opacity))
-            .hoverTooltip(sendKeyBehavior.shortcutHint)
+            .hoverTooltip(sendTooltipText, forceShow: forceSendTooltip)
+    }
+
+    private var sendTooltipText: String {
+        if forceSendTooltip {
+            return String(localized: "Select Working Directory first")
+        }
+        return sendKeyBehavior.shortcutHint
     }
 
     private var interruptButton: some View {
@@ -429,6 +442,12 @@ struct InputBarView: View {
     private func send() {
         let text = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        // 新架构强制要求 .notStarted 阶段必须选目录 —— 没选时不发，闪一次 tooltip
+        // 提示用户(点 send 按钮 / cmd+enter 都走这条路径)。
+        if isPrimaryPathEditable, handle.originPath == nil, handle.cwd == nil {
+            flashSendTooltip()
+            return
+        }
         // 新对话第一条消息触发 title 生成(空 title 时)
         let shouldGenerateTitle = handle.title.isEmpty && handle.status == .notStarted
         handle.send(text: text)
@@ -437,6 +456,17 @@ struct InputBarView: View {
         }
         draftText = ""
         UserDefaults.standard.removeObject(forKey: draftKey)
+    }
+
+    private func flashSendTooltip() {
+        forceSendTooltipTask?.cancel()
+        forceSendTooltip = true
+        forceSendTooltipTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_800_000_000)
+            if !Task.isCancelled {
+                forceSendTooltip = false
+            }
+        }
     }
 
     private func handleEscape() {

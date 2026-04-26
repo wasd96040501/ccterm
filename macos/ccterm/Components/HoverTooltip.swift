@@ -4,8 +4,11 @@ import SwiftUI
 /// Automatically positions above or below based on available space.
 struct HoverTooltip: ViewModifier {
     let text: String
+    let forceShow: Bool
     @State private var isHovering = false
     @State private var showAbove = true
+
+    private var isVisible: Bool { isHovering || forceShow }
 
     func body(content: Content) -> some View {
         content
@@ -13,8 +16,8 @@ struct HoverTooltip: ViewModifier {
             .background {
                 GeometryReader { geo in
                     Color.clear
-                        .onChange(of: isHovering) { _, hovering in
-                            if hovering {
+                        .onChange(of: isVisible) { _, visible in
+                            if visible {
                                 let frameInWindow = geo.frame(in: .global)
                                 showAbove = frameInWindow.minY > 40
                             }
@@ -22,7 +25,7 @@ struct HoverTooltip: ViewModifier {
                 }
             }
             .overlay(alignment: showAbove ? .top : .bottom) {
-                if isHovering {
+                if isVisible {
                     Text(text)
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
                         .padding(.horizontal, 8)
@@ -43,7 +46,7 @@ struct HoverTooltip: ViewModifier {
 }
 
 extension View {
-    func hoverTooltip(_ text: String) -> some View {
-        modifier(HoverTooltip(text: text))
+    func hoverTooltip(_ text: String, forceShow: Bool = false) -> some View {
+        modifier(HoverTooltip(text: text, forceShow: forceShow))
     }
 }

@@ -47,8 +47,13 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                 next.append(makeRowItem(for: block, width: width))
             }
         }
-        applyDiff(old: rows, new: next, in: tableView)
+        // Update the data source FIRST. NSTableView may query
+        // numberOfRows / heightOfRow synchronously inside endUpdates(); if
+        // self.rows is still the old array at that point, NSTableView caches
+        // wrong heights and the layout glitches (huge visual gaps).
+        let old = rows
         rows = next
+        applyDiff(old: old, new: next, in: tableView)
     }
 
     private func makeRowItem(for block: Block, width: CGFloat) -> RowItem {

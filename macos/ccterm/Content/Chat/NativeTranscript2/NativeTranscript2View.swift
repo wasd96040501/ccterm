@@ -68,14 +68,15 @@ struct NativeTranscript2View: NSViewRepresentable {
 
 // MARK: - Preview
 
-#Preview("NativeTranscript2 — heading + paragraph + image") {
+/// Generated once at module load — keeps `Block.id`s and `NSImage` instance
+/// stable across Preview re-renders so the diff sees no churn.
+private let previewBlocks: [Block] = {
     let symbolConfig = NSImage.SymbolConfiguration(pointSize: 96, weight: .regular)
     let demoImage = NSImage(systemSymbolName: "photo.on.rectangle.angled",
                             accessibilityDescription: nil)?
         .withSymbolConfiguration(symbolConfig)
         ?? NSImage(size: NSSize(width: 200, height: 120))
-
-    return NativeTranscript2View(blocks: [
+    return [
         Block(id: UUID(), kind: .heading("Refactor plan")),
         Block(id: UUID(), kind: .paragraph(
             "Replace the existing NativeTranscript module with a smaller, "
@@ -90,6 +91,10 @@ struct NativeTranscript2View: NSViewRepresentable {
             "Adding a new block kind means: extend Block.Kind, add a XxxLayout "
             + "primitive, add a case to RowLayout, add a switch arm in "
             + "Transcript2Coordinator.makeRowItem.")),
-    ])
-    .frame(width: 600, height: 600)
+    ]
+}()
+
+#Preview("NativeTranscript2 — heading + paragraph + image") {
+    NativeTranscript2View(blocks: previewBlocks)
+        .frame(width: 600, height: 600)
 }

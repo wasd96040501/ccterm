@@ -47,3 +47,6 @@ buildServer.json
 macos/ccterm/Resources/*.js
 macos/ccterm/Resources/*.css
 macos/ccterm/Resources/*-react.html
+
+# Stress-test corpus fetch cache (raw Gutenberg downloads)
+macos/scripts/.stress_corpus_cache/

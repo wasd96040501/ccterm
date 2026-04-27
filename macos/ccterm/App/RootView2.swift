@@ -14,6 +14,9 @@ struct RootView2: View {
             if selectedSessionId == SidebarView2.transcriptDemoTag {
                 TranscriptDemoView()
                     .frame(minWidth: 400)
+            } else if selectedSessionId == SidebarView2.transcriptStressTag {
+                TranscriptStressView()
+                    .frame(minWidth: 400)
             } else if let sid = selectedSessionId {
                 // `.id(sid)` 必须在**调用点**: 让 ChatHistoryView 整个 struct
                 // 随 sessionId 重建,`@State handle` 跟着 reset。放在 body 内

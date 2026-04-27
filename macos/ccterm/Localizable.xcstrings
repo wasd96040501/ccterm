@@ -4,6 +4,16 @@
     "": {},
     "%@:": {},
     "%lld": {},
+    "%lld blocks · %lld KB": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 段 · %lld KB"
+          }
+        }
+      }
+    },
     "%lld min ago": {
       "extractionState": "stale",
       "localizations": {
@@ -564,6 +574,16 @@
         }
       }
     },
+    "Corpus missing": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语料缺失"
+          }
+        }
+      }
+    },
     "Create plan before making changes": {
       "localizations": {
         "zh-Hans": {
@@ -1111,6 +1131,16 @@
         }
       }
     },
+    "Loading stress corpus…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加载压测语料…"
+          }
+        }
+      }
+    },
     "Loading…": {
       "localizations": {
         "zh-Hans": {
@@ -1572,6 +1602,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "修改"
+          }
+        }
+      }
+    },
+    "Run `macos/scripts/build-stress-corpus.py` and rebuild.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请运行 `macos/scripts/build-stress-corpus.py` 后重新构建。"
           }
         }
       }
@@ -2056,6 +2096,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "渲染演示"
+          }
+        }
+      }
+    },
+    "Transcript Stress": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "渲染压测"
           }
         }
       }

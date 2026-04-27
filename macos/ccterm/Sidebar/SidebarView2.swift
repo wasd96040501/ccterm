@@ -12,12 +12,16 @@ struct SidebarView2: View {
     /// Sentinel selection value used by the dev-only Transcript Demo tab.
     /// Reserved by the double-underscore prefix; real session IDs are UUIDs.
     static let transcriptDemoTag = "__transcript_demo__"
+    /// Sentinel for the Transcript Stress tab (long-document perf test).
+    static let transcriptStressTag = "__transcript_stress__"
 
     var body: some View {
         List(selection: $selection) {
             Section {
                 Label("Transcript Demo", systemImage: "doc.text.image")
                     .tag(Self.transcriptDemoTag)
+                Label("Transcript Stress", systemImage: "speedometer")
+                    .tag(Self.transcriptStressTag)
             }
             ForEach(groups) { group in
                 Section(group.folderName) {

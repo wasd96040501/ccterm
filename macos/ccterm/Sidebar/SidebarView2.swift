@@ -9,8 +9,16 @@ struct SidebarView2: View {
     @Environment(SessionManager2.self) private var manager
     @State private var groups: [ProjectGroup2] = []
 
+    /// Sentinel selection value used by the dev-only Transcript Demo tab.
+    /// Reserved by the double-underscore prefix; real session IDs are UUIDs.
+    static let transcriptDemoTag = "__transcript_demo__"
+
     var body: some View {
         List(selection: $selection) {
+            Section {
+                Label("Transcript Demo", systemImage: "doc.text.image")
+                    .tag(Self.transcriptDemoTag)
+            }
             ForEach(groups) { group in
                 Section(group.folderName) {
                     ForEach(group.records) { record in

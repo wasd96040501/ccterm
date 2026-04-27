@@ -99,6 +99,16 @@
         }
       }
     },
+    "Add Message": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "增加一条消息"
+          }
+        }
+      }
+    },
     "Add folders": {
       "localizations": {
         "zh-Hans": {
@@ -1505,6 +1515,16 @@
         }
       }
     },
+    "Remove Message": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "减少一条消息"
+          }
+        }
+      }
+    },
     "Remove selected folder": {
       "localizations": {
         "zh-Hans": {
@@ -2026,6 +2046,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "临时会话"
+          }
+        }
+      }
+    },
+    "Transcript Demo": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "渲染演示"
           }
         }
       }

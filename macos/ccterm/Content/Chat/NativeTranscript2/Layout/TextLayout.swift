@@ -5,7 +5,12 @@ import CoreText
 ///
 /// Coordinate system: y grows downward (matches NSTableView's flipped row coords).
 /// `lineOrigins[i].y` is the baseline distance from the top of the layout.
-struct TextLayout {
+///
+/// `@unchecked Sendable`: Swift's type system can't see that `CTLine` is
+/// thread-safe. Apple's Core Text Programming Guide documents `CTLine` as
+/// immutable / safe to share across threads — we promise not to mutate the
+/// `[CTLine]` after construction.
+struct TextLayout: @unchecked Sendable {
     let lines: [CTLine]
     let lineOrigins: [CGPoint]
     let totalHeight: CGFloat

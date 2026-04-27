@@ -2,11 +2,16 @@ import AppKit
 import Foundation
 
 /// Render-ready block. `id` is stable identity for diffing — caller assigns.
-struct Block: Identifiable, Equatable {
+///
+/// `@unchecked Sendable`: `Kind.image` carries `NSImage`, which is mutable
+/// in principle. Caller contract: **do not mutate the `NSImage` after passing
+/// it to a `Block`.** The layout pipeline extracts an immutable `CGImage`
+/// snapshot at `make` time, so internal use is safe regardless.
+struct Block: Identifiable, Equatable, @unchecked Sendable {
     let id: UUID
     let kind: Kind
 
-    enum Kind: Equatable {
+    enum Kind: Equatable, @unchecked Sendable {
         case heading(String)
         case paragraph(String)
         case image(NSImage)

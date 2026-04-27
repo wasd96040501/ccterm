@@ -10,7 +10,7 @@ import AppKit
 ///
 /// Add a new layout primitive: add the case here, extend the three methods.
 /// The cell view is enum-agnostic — it just calls `layout.draw`.
-enum RowLayout {
+enum RowLayout: Sendable {
     case text(TextLayout)
     case image(ImageLayout)
 
@@ -38,7 +38,7 @@ enum RowLayout {
 
 /// One row's prepared state — `Block` (data) + `RowLayout` (geometry at a
 /// specific width). Immutable; diff-friendly.
-struct RowItem: Equatable {
+struct RowItem: Equatable, Sendable {
     let id: UUID
     let block: Block
     let layout: RowLayout

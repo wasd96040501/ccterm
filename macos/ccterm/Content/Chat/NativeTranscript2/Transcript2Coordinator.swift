@@ -15,12 +15,11 @@ import AppKit
 ///   `Transcript2TableView.viewDidEndLiveResize`. Computes the full pass on
 ///   a background actor (`TextLayout` / `ImageLayout` / `RowItem` are all
 ///   `Sendable`), then hops back to main and applies. Result is discarded
-///   if width drifted again or blocks changed mid-flight.
-///
-/// While off-screen rows have stale heights the total content height is
-/// briefly wrong, but the overlay scroll bar (forced in
-/// `Transcript2ScrollView`) stays hidden during live resize so the
-/// inconsistency is invisible.
+///   if width drifted again or blocks changed mid-flight. The apply step
+///   anchors a visible row's `(docY, scrollY)` before invalidating heights
+///   and adjusts `clipView.bounds.origin` afterwards by the anchor's
+///   doc-Y delta — without this, correcting stale off-screen-above heights
+///   would visibly jump the viewport (cf. Telegram's `saveScrollState`).
 @MainActor
 final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     weak var tableView: NSTableView?
@@ -150,14 +149,63 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                 changed.insert(i)
             }
         }
+        guard !changed.isEmpty else {
+            rows = next
+            return
+        }
+
+        // Anchor a visible row before invalidating heights. Rows above the
+        // viewport had stale heights during live resize; correcting them
+        // now shifts every row's Y, so we compensate the scroll offset by
+        // the same delta to keep the anchor visually fixed. Same approach
+        // as Telegram's `saveScrollState` in `TableView.layoutItems()`.
+        let scrollView = tableView.enclosingScrollView
+        let visible = tableView.rows(in: tableView.visibleRect)
+        let anchor: (row: Int, oldDocY: CGFloat, oldScrollY: CGFloat)?
+        if let scrollView, visible.location != NSNotFound, visible.length > 0 {
+            anchor = (
+                row: visible.location,
+                oldDocY: tableView.rect(ofRow: visible.location).origin.y,
+                oldScrollY: scrollView.contentView.bounds.origin.y)
+        } else {
+            anchor = nil
+        }
+
         rows = next
-        guard !changed.isEmpty else { return }
+        // Apply height invalidation + scroll compensation atomically in a
+        // disabled-animation transaction. Without this, two implicit
+        // animations bracket the change and produce a one-frame jitter:
+        //   1. `noteHeightOfRows` animates the row height transition
+        //      (~0.2s default) — visible rows briefly slide before settling.
+        //   2. `Transcript2ClipView` is layer-backed, so the bounds.origin
+        //      change from `scroll(to:)` triggers an implicit CABasicAnimation
+        //      — the scroll itself animates instead of snapping.
+        // duration=0 + setDisableActions kills both, so the apply and the
+        // anchor restore land in the same commit.
+        NSAnimationContext.beginGrouping()
+        NSAnimationContext.current.duration = 0
+        NSAnimationContext.current.allowsImplicitAnimation = false
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
 
         tableView.beginUpdates()
         tableView.reloadData(forRowIndexes: changed,
                              columnIndexes: IndexSet(integer: 0))
         tableView.noteHeightOfRows(withIndexesChanged: changed)
         tableView.endUpdates()
+
+        if let anchor, let scrollView {
+            let newDocY = tableView.rect(ofRow: anchor.row).origin.y
+            let delta = newDocY - anchor.oldDocY
+            if abs(delta) > 0.5 {
+                scrollView.contentView.scroll(
+                    to: NSPoint(x: scrollView.contentView.bounds.origin.x,
+                                y: anchor.oldScrollY + delta))
+            }
+        }
+
+        CATransaction.commit()
+        NSAnimationContext.endGrouping()
     }
 
     /// Pure: builds a `RowItem` for `(block, width)`. `nonisolated static`

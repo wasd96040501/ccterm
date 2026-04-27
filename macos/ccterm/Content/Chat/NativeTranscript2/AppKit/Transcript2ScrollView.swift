@@ -11,12 +11,9 @@ final class Transcript2ScrollView: NSScrollView {
     override class var isCompatibleWithResponsiveScrolling: Bool { true }
 
     /// Force overlay style regardless of the user's "Show scroll bars: Always"
-    /// preference. Overlaid scrollers stay hidden during live resize, which
-    /// hides the temporary content-height drift caused by `rebuildVisible`'s
-    /// stale off-screen rows. Overriding the property (vs. a one-shot
-    /// assignment) defends against the system's
-    /// `NSPreferredScrollerStyleDidChangeNotification` resetting the value
-    /// back to legacy when the user toggles the preference.
+    /// preference. Overriding the property (vs. a one-shot assignment) defends
+    /// against the system's `NSPreferredScrollerStyleDidChangeNotification`
+    /// resetting it back to legacy when the user toggles the preference.
     override var scrollerStyle: NSScroller.Style {
         get { .overlay }
         set { super.scrollerStyle = .overlay }

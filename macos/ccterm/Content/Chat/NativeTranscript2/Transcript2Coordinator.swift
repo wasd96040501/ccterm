@@ -2,10 +2,25 @@ import AppKit
 
 /// `NSTableViewDataSource` + `NSTableViewDelegate` for the transcript table.
 ///
-/// Owns `[RowItem]` (rows, with their layout) and `currentBlocks` (latest
-/// data from SwiftUI). Both `setBlocks(_:)` and the `frameDidChange`
-/// notification feed into a single `rebuild()` that re-runs layout against
-/// the current width and applies a granular diff to the table.
+/// Three rebuild pipelines, all funneling through the same `[RowItem]` state:
+///
+/// - **`rebuildAll` (sync, MainActor)** — triggered by `setBlocks`. Full
+///   pass over `currentBlocks`; reuses rows by `id+width`; applies a
+///   granular diff (insert/remove/reload).
+/// - **`rebuildVisible` (sync, MainActor)** — triggered every frame during
+///   live resize via `tableFrameDidChange`. Only re-lays-out rows currently
+///   on screen; off-screen rows keep their pre-resize (stale) layout so
+///   per-frame work stays bounded regardless of total transcript length.
+/// - **`rebuildAllInBackground` (detached task)** — triggered by
+///   `Transcript2TableView.viewDidEndLiveResize`. Computes the full pass on
+///   a background actor (`TextLayout` / `ImageLayout` / `RowItem` are all
+///   `Sendable`), then hops back to main and applies. Result is discarded
+///   if width drifted again or blocks changed mid-flight.
+///
+/// While off-screen rows have stale heights the total content height is
+/// briefly wrong, but the overlay scroll bar (forced in
+/// `Transcript2ScrollView`) stays hidden during live resize so the
+/// inconsistency is invisible.
 @MainActor
 final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     weak var tableView: NSTableView?
@@ -13,40 +28,76 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     private(set) var rows: [RowItem] = []
     private var currentBlocks: [Block] = []
 
+    /// In-flight background relayout. Cancelled on next resize or on
+    /// `setBlocks` (its result would apply against the wrong row set).
+    private var fullRelayoutTask: Task<Void, Never>?
+
     // MARK: - Triggers
 
     func setBlocks(_ blocks: [Block]) {
+        fullRelayoutTask?.cancel()
+        fullRelayoutTask = nil
         currentBlocks = blocks
-        rebuild()
+        rebuildAll()
     }
 
     @objc func tableFrameDidChange(_ note: Notification) {
-        rebuild()
+        // Visible-only relayout is the live-resize fast path: bounded
+        // per-frame work, off-screen rows stay stale until
+        // `viewDidEndLiveResize` triggers `rebuildAllInBackground`.
+        // Programmatic frame changes (initial layout, SwiftUI re-layout,
+        // window animations) must go through the full path — there is no
+        // "end" event to correct stale off-screen rows afterwards.
+        if tableView?.inLiveResize == true {
+            rebuildVisible()
+        } else {
+            rebuildAll()
+        }
     }
 
-    private func rebuild() {
+    func rebuildAllInBackground() {
         guard let tableView else { return }
         let width = effectiveContentWidth(of: tableView)
         guard width > 0 else { return }
-        applyNewBlocks(currentBlocks, width: width, in: tableView)
+        if rows.allSatisfy({ $0.layout.measuredWidth == width }) { return }
+
+        fullRelayoutTask?.cancel()
+        let snapshot = currentBlocks
+        fullRelayoutTask = Task.detached(priority: .userInitiated) { [weak self] in
+            var next: [RowItem] = []
+            next.reserveCapacity(snapshot.count)
+            for block in snapshot {
+                if Task.isCancelled { return }
+                next.append(Self.makeRowItem(for: block, width: width))
+            }
+            if Task.isCancelled { return }
+            await MainActor.run { [next] in
+                self?.applyBackgroundRelayout(next, width: width)
+            }
+        }
     }
 
-    // MARK: - Layout pipeline
+    // MARK: - Pipelines
 
-    private func applyNewBlocks(_ blocks: [Block], width: CGFloat, in tableView: NSTableView) {
+    private func rebuildAll() {
+        guard let tableView else { return }
+        let width = effectiveContentWidth(of: tableView)
+        guard width > 0 else { return }
+
         let oldById = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
         var next: [RowItem] = []
-        next.reserveCapacity(blocks.count)
-        for block in blocks {
+        next.reserveCapacity(currentBlocks.count)
+        for block in currentBlocks {
             if let old = oldById[block.id],
                old.block == block,
                old.layout.measuredWidth == width
             {
                 next.append(old)
             } else {
-                next.append(makeRowItem(for: block, width: width))
+                next.append(Self.makeRowItem(for: block, width: width))
             }
         }
+
         // Update the data source FIRST. NSTableView may query
         // numberOfRows / heightOfRow synchronously inside endUpdates(); if
         // self.rows is still the old array at that point, NSTableView caches
@@ -56,7 +107,63 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         applyDiff(old: old, new: next, in: tableView)
     }
 
-    private func makeRowItem(for block: Block, width: CGFloat) -> RowItem {
+    private func rebuildVisible() {
+        guard let tableView else { return }
+        let width = effectiveContentWidth(of: tableView)
+        guard width > 0 else { return }
+        let range = tableView.rows(in: tableView.visibleRect)
+        guard range.location != NSNotFound, range.length > 0 else {
+            // No rows visible yet (first layout pass) — fall back to full.
+            rebuildAll()
+            return
+        }
+
+        var changed = IndexSet()
+        for i in range.location ..< range.location + range.length {
+            guard rows.indices.contains(i) else { continue }
+            let cur = rows[i]
+            if cur.layout.measuredWidth == width { continue }
+            rows[i] = Self.makeRowItem(for: cur.block, width: width)
+            changed.insert(i)
+        }
+        guard !changed.isEmpty else { return }
+
+        tableView.beginUpdates()
+        tableView.reloadData(forRowIndexes: changed,
+                             columnIndexes: IndexSet(integer: 0))
+        tableView.noteHeightOfRows(withIndexesChanged: changed)
+        tableView.endUpdates()
+    }
+
+    private func applyBackgroundRelayout(_ next: [RowItem], width: CGFloat) {
+        guard let tableView else { return }
+        // Width drifted again before completion — discard.
+        guard effectiveContentWidth(of: tableView) == width else { return }
+        // Block set diverged (a setBlocks landed in flight) — discard;
+        // setBlocks has already rebuilt against the new data.
+        guard rows.count == next.count else { return }
+        for i in 0 ..< rows.count where rows[i].id != next[i].id { return }
+
+        var changed = IndexSet()
+        for i in 0 ..< rows.count {
+            if rows[i].layout.measuredWidth != next[i].layout.measuredWidth {
+                changed.insert(i)
+            }
+        }
+        rows = next
+        guard !changed.isEmpty else { return }
+
+        tableView.beginUpdates()
+        tableView.reloadData(forRowIndexes: changed,
+                             columnIndexes: IndexSet(integer: 0))
+        tableView.noteHeightOfRows(withIndexesChanged: changed)
+        tableView.endUpdates()
+    }
+
+    /// Pure: builds a `RowItem` for `(block, width)`. `nonisolated static`
+    /// so the background relayout task can call it off-MainActor.
+    /// `TextLayout` / `ImageLayout` are both `Sendable`.
+    nonisolated private static func makeRowItem(for block: Block, width: CGFloat) -> RowItem {
         let contentWidth = max(0, width - 2 * BlockStyle.blockHorizontalPadding)
         let layout: RowLayout
         switch block.kind {
@@ -83,7 +190,6 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let oldIds = old.map(\.id)
         let newIds = new.map(\.id)
 
-        // ids present in both arrays — detect content / width changes.
         let oldById = Dictionary(uniqueKeysWithValues: old.map { ($0.id, $0) })
         var contentChanged = IndexSet()
         for (newIdx, item) in new.enumerated() {

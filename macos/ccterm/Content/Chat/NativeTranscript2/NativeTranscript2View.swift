@@ -52,6 +52,7 @@ struct NativeTranscript2View: NSViewRepresentable {
             name: NSView.frameDidChangeNotification, object: table)
 
         context.coordinator.tableView = table
+        table.coordinator = context.coordinator
         scroll.documentView = table
         return scroll
     }

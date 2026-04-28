@@ -4,9 +4,9 @@ import AppKit
 /// `XxxLayout` value the block kind required, and exposes the three things
 /// downstream code asks for:
 ///
-/// - `totalHeight`(consumed by `NSTableView.heightOfRow`)
-/// - `measuredWidth`(used by the diff to detect width changes)
-/// - `draw(in:origin:)`(invoked by the cell's `draw(_:)`)
+/// - `totalHeight` (consumed by `NSTableView.heightOfRow`)
+/// - `measuredWidth` (used by the layout cache to detect width changes)
+/// - `draw(in:origin:)` (invoked by the cell's `draw(_:)`)
 ///
 /// Add a new layout primitive: add the case here, extend the three methods.
 /// The cell view is enum-agnostic — it just calls `layout.draw`.
@@ -33,20 +33,5 @@ enum RowLayout: Sendable {
         case .text(let l): l.draw(in: ctx, origin: origin)
         case .image(let l): l.draw(in: ctx, origin: origin)
         }
-    }
-}
-
-/// One row's prepared state — `Block` (data) + `RowLayout` (geometry at a
-/// specific width). Immutable; diff-friendly.
-struct RowItem: Equatable, Sendable {
-    let id: UUID
-    let block: Block
-    let layout: RowLayout
-
-    /// Width-aware identity. Same id + same block + same measured width →
-    /// the layout result is reusable (no recompute).
-    static func == (lhs: RowItem, rhs: RowItem) -> Bool {
-        lhs.id == rhs.id && lhs.block == rhs.block
-            && lhs.layout.measuredWidth == rhs.layout.measuredWidth
     }
 }

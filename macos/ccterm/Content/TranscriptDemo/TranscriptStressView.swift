@@ -3,15 +3,16 @@ import SwiftUI
 
 /// Sandbox tab for stress-testing `NativeTranscript2` against ~1000 paragraphs
 /// (~3 MB / ~800K tokens) of real prose. Used to exercise live-resize cost,
-/// height-cache pressure, and the post-resize background relayout's anchor
-/// compensation under a long document.
+/// the lazy layout cache under high row counts, and the post-resize
+/// background prefetch's anchor compensation under a long document.
 ///
 /// Corpus is bundled as `transcript_stress_corpus.txt` (built by
 /// `macos/scripts/build-stress-corpus.py`). Loading + parsing happens on a
-/// background task — `setBlocks` then runs the full layout pass on main, which
-/// is itself part of the workload we're measuring.
+/// background task — `controller.apply(.replaceAll(...))` then triggers the
+/// table reload; layouts compute lazily as `heightOfRow` and `viewFor`
+/// queries arrive, which is itself part of the workload we're measuring.
 struct TranscriptStressView: View {
-    @State private var blocks: [Block] = []
+    @State private var controller = Transcript2Controller()
     @State private var loadStatus: LoadStatus = .loading
 
     enum LoadStatus: Equatable {
@@ -22,10 +23,10 @@ struct TranscriptStressView: View {
 
     var body: some View {
         ZStack {
-            NativeTranscript2View(blocks: blocks)
+            NativeTranscript2View(controller: controller)
                 .frame(minWidth: 320, minHeight: 240)
 
-            if blocks.isEmpty {
+            if controller.blockCount == 0 {
                 placeholder
             }
         }
@@ -81,7 +82,7 @@ struct TranscriptStressView: View {
     }
 
     private func loadIfNeeded() async {
-        guard blocks.isEmpty, case .loading = loadStatus else { return }
+        guard controller.blockCount == 0, case .loading = loadStatus else { return }
         let loaded = await Task.detached(priority: .userInitiated) {
             Self.loadCorpus()
         }.value
@@ -95,7 +96,7 @@ struct TranscriptStressView: View {
             case .image: return acc
             }
         }
-        blocks = loaded
+        controller.apply(.replaceAll(loaded))
         loadStatus = .ready(blockCount: loaded.count, charCount: chars)
     }
 

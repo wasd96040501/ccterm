@@ -2,12 +2,18 @@ import AppKit
 import SwiftUI
 
 /// SwiftUI entry point. Wraps `Transcript2ScrollView` (containing a
-/// `NSTableView` driven by `Transcript2Coordinator`) and forwards `[Block]`
-/// updates from SwiftUI to the coordinator.
+/// `NSTableView` driven by `Transcript2Coordinator`).
+///
+/// The view takes a caller-owned `Transcript2Controller` — there is no
+/// `[Block]` `State` parameter. Callers mutate transcript content
+/// imperatively via `controller.apply(.insert / .append / .remove /
+/// .update / .replaceAll)`. SwiftUI's role is reduced to mounting the
+/// AppKit view and wiring the existing coordinator into it; `updateNSView`
+/// is a no-op.
 struct NativeTranscript2View: NSViewRepresentable {
-    let blocks: [Block]
+    let controller: Transcript2Controller
 
-    func makeCoordinator() -> Transcript2Coordinator { Transcript2Coordinator() }
+    func makeCoordinator() -> Transcript2Coordinator { controller.coordinator }
 
     func makeNSView(context: Context) -> Transcript2ScrollView {
         let scroll = Transcript2ScrollView()
@@ -43,22 +49,24 @@ struct NativeTranscript2View: NSViewRepresentable {
         column.maxWidth = .greatestFiniteMagnitude
         table.addTableColumn(column)
 
-        table.dataSource = context.coordinator
-        table.delegate = context.coordinator
+        let coordinator = context.coordinator
+        table.dataSource = coordinator
+        table.delegate = coordinator
         table.postsFrameChangedNotifications = true
         NotificationCenter.default.addObserver(
-            context.coordinator,
+            coordinator,
             selector: #selector(Transcript2Coordinator.tableFrameDidChange(_:)),
             name: NSView.frameDidChangeNotification, object: table)
 
-        context.coordinator.tableView = table
-        table.coordinator = context.coordinator
+        coordinator.tableView = table
+        table.coordinator = coordinator
         scroll.documentView = table
         return scroll
     }
 
     func updateNSView(_ nsView: Transcript2ScrollView, context: Context) {
-        context.coordinator.setBlocks(blocks)
+        // No-op. Content is pushed via `controller.apply(_:)`, not pulled
+        // from a SwiftUI snapshot.
     }
 
     static func dismantleNSView(_ nsView: Transcript2ScrollView,
@@ -70,7 +78,7 @@ struct NativeTranscript2View: NSViewRepresentable {
 // MARK: - Preview
 
 /// Generated once at module load — keeps `Block.id`s and `NSImage` instance
-/// stable across Preview re-renders so the diff sees no churn.
+/// stable across Preview re-renders.
 private let previewBlocks: [Block] = {
     let symbolConfig = NSImage.SymbolConfiguration(pointSize: 96, weight: .regular)
     let demoImage = NSImage(systemSymbolName: "photo.on.rectangle.angled",
@@ -91,11 +99,24 @@ private let previewBlocks: [Block] = {
         Block(id: UUID(), kind: .paragraph(
             "Adding a new block kind means: extend Block.Kind, add a XxxLayout "
             + "primitive, add a case to RowLayout, add a switch arm in "
-            + "Transcript2Coordinator.makeRowItem.")),
+            + "Transcript2Coordinator.makeLayout.")),
     ]
 }()
 
+private struct PreviewWrapper: View {
+    @State private var controller = Transcript2Controller()
+
+    var body: some View {
+        NativeTranscript2View(controller: controller)
+            .task {
+                if controller.blockCount == 0 {
+                    controller.apply(.replaceAll(previewBlocks))
+                }
+            }
+    }
+}
+
 #Preview("NativeTranscript2 — heading + paragraph + image") {
-    NativeTranscript2View(blocks: previewBlocks)
+    PreviewWrapper()
         .frame(width: 600, height: 600)
 }

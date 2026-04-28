@@ -9,31 +9,50 @@ import SwiftUI
 /// floating control panel at the bottom lets you grow / shrink the block
 /// list to verify diff animations and resize behavior under load.
 struct TranscriptDemoView: View {
-    @State private var blocks: [Block] = TranscriptDemoView.initialBlocks
+    @State private var controller = Transcript2Controller()
+    /// Monotonic counter for extra-pool cycling. Decoupled from
+    /// `blockCount` so deletions don't reset the cycle (which would
+    /// otherwise pin every appended block to `extraPool[0]` once the live
+    /// count dropped below `initialBlocks.count`).
+    @State private var extraAddCount: Int = 0
 
     var body: some View {
-        NativeTranscript2View(blocks: blocks)
+        NativeTranscript2View(controller: controller)
             .frame(minWidth: 320, minHeight: 240)
             .overlay(alignment: .bottom) { controlPanel }
+            .task {
+                // Idempotent: only seed once. Survives Preview re-renders
+                // that would otherwise re-fire a side-effecting `@State`
+                // default closure.
+                if controller.blockCount == 0 {
+                    controller.apply(.replaceAll(Self.initialBlocks))
+                }
+            }
     }
 
     private var controlPanel: some View {
         HStack(spacing: 10) {
             Button {
-                blocks.append(Self.nextExtraBlock(currentCount: blocks.count))
+                let next = Self.extraBlock(at: extraAddCount)
+                controller.apply(.append([next]))
+                extraAddCount += 1
             } label: {
                 Label("Add Message", systemImage: "plus.circle.fill")
             }
             Button {
-                if blocks.count > 1 { blocks.removeLast() }
+                if controller.blockCount > 1,
+                   let lastId = controller.blockIds.last
+                {
+                    controller.apply(.remove(ids: [lastId]))
+                }
             } label: {
                 Label("Remove Message", systemImage: "minus.circle.fill")
             }
-            .disabled(blocks.count <= 1)
+            .disabled(controller.blockCount <= 1)
 
             Divider().frame(height: 16)
 
-            Text("\(blocks.count)")
+            Text("\(controller.blockCount)")
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
                 .font(.callout)
@@ -80,9 +99,8 @@ private extension TranscriptDemoView {
         ),
     ]
 
-    static func nextExtraBlock(currentCount: Int) -> Block {
-        let extraIndex = max(0, currentCount - initialBlocks.count)
-        let kind = extraPool[extraIndex % extraPool.count]
+    static func extraBlock(at addIndex: Int) -> Block {
+        let kind = extraPool[addIndex % extraPool.count]
         return Block(id: UUID(), kind: kind)
     }
 

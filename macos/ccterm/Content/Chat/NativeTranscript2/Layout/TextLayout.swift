@@ -10,6 +10,25 @@ import CoreText
 /// thread-safe. Apple's Core Text Programming Guide documents `CTLine` as
 /// immutable / safe to share across threads — we promise not to mutate the
 /// `[CTLine]` after construction.
+///
+/// Performance (Apple Silicon, system font, width=600, Swift `-O`; see
+/// `cctermTests/NativeTranscript2/TextLayoutBenchmarkTests.swift`):
+///
+/// | text                | make/100ch | draw warm/100ch |
+/// |---------------------|-----------:|----------------:|
+/// | ASCII paragraph 14pt (steady) | ~15–20μs  | ~12μs |
+/// | CJK   paragraph 14pt (steady) | ~100μs    | ~34μs |
+/// | ASCII heading 22pt           | ~15μs     | ~27μs |
+///
+/// Both are O(n). CJK is 5–8× slower than ASCII at every step (heavier shaping).
+/// `make` cost is ≥95% in `CTTypesetterCreateWithAttributedString` + per-line
+/// `CTTypesetterSuggestLineBreak`; the per-line `CTTypesetterCreateLine` +
+/// `CTLineGetTypographicBounds` are <5%. **Don't write a height-only fast path
+/// that drops `CTLine` creation — it saves nothing.** The make/draw split pays
+/// off only for long text + repeat draws (e.g. 10k-char paragraph: draw is
+/// 0.21× of make); short text the split is roughly neutral.
+/// Draw cost is insensitive to layout instance — CG glyph cache is
+/// process-global and warms in <1 frame.
 struct TextLayout: @unchecked Sendable {
     let lines: [CTLine]
     let lineOrigins: [CGPoint]

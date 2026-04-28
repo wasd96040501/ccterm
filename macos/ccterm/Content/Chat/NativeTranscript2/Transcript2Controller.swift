@@ -64,7 +64,7 @@ final class Transcript2Controller {
 
     init() {
         coordinator = Transcript2Coordinator()
-        coordinator.onSnapshotChange = { [weak self] count in
+        coordinator.onBlockCountChanged = { [weak self] count in
             self?.blockCount = count
         }
     }
@@ -142,14 +142,12 @@ final class Transcript2Controller {
             phase2.append(.insert(at: 0, above))
         }
         if !phase2.isEmpty {
-            coordinator.applyAsync(phase2, scroll: .saveVisible(phase2Side))
+            coordinator.applyInBackground(phase2, scroll: .saveVisible(phase2Side))
         }
     }
 
     // MARK: - Query
 
-    func block(at index: Int) -> Block? { coordinator.block(at: index) }
-    func block(id: UUID) -> Block? { coordinator.block(id: id) }
     var blockIds: [UUID] { coordinator.blockIds }
 
     // MARK: - Slicing (private)

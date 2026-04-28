@@ -12,9 +12,9 @@ import AppKit
 /// - **`apply(_:scroll:)`** — sync. Layouts compute lazily on `heightOfRow`
 ///   queries. Used for incremental updates (live messages, single removals,
 ///   tool-result updates).
-/// - **`applyAsync(_:scroll:)`** — layouts for the inserted blocks compute
-///   on a detached `Task`, then a main hop installs them and runs the
-///   structural change in one shot. Used by `Controller.loadInitial`'s
+/// - **`applyInBackground(_:scroll:)`** — layouts for the inserted blocks
+///   compute on a detached `Task`, then a main hop installs them and runs
+///   the structural change in one shot. Used by `Controller.loadInitial`'s
 ///   Phase 2 (large prepend after the viewport batch is already visible).
 ///
 /// Both paths run their structural change inside `withScrollAdjustment`,
@@ -31,9 +31,9 @@ import AppKit
 /// `layoutCache` is keyed by `(id, width)`. When the table width changes,
 /// existing entries become misses and lazy-recompute. `tableFrameDidChange`
 /// invalidates rows; live resize bounds work to visible rows;
-/// `prefetchAllInBackground` (post-resize) reuses the same async pipeline
-/// (`precomputeOffMain` → `install` → `noteHeightOfRows` under
-/// `.saveVisible(.visualTop)`).
+/// `prefetchAll` (post-resize) reuses the same async pipeline
+/// (`precomputeLayoutsInBackground` → `cacheLayouts` → `noteHeightOfRows`
+/// under `.saveVisible(.visualTop)`).
 ///
 /// ### Concurrency
 ///
@@ -55,7 +55,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
 
     /// Notifies the controller after every successful mutation so SwiftUI
     /// observers on `blockCount` see the new value.
-    var onSnapshotChange: ((Int) -> Void)?
+    var onBlockCountChanged: ((Int) -> Void)?
 
     private var blocks: [Block] = []
 
@@ -71,23 +71,14 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let layout: RowLayout
     }
 
-    /// Bumped on every `apply` / `applyAsync`. Detached prefetch tasks
-    /// capture it at start and validate before merging.
+    /// Bumped on every `apply` / `applyInBackground`. Detached prefetch
+    /// tasks capture it at start and validate before merging.
     private var generation: UInt64 = 0
     private var prefetchTask: Task<Void, Never>?
 
     // MARK: - Read-only snapshot
 
-    var blockCount: Int { blocks.count }
     var blockIds: [UUID] { blocks.map(\.id) }
-
-    func block(at index: Int) -> Block? {
-        blocks.indices.contains(index) ? blocks[index] : nil
-    }
-
-    func block(id: UUID) -> Block? {
-        blocks.first { $0.id == id }
-    }
 
     /// Width that rows are laid out at. Driven by the single column's
     /// `.autoresizingMask`. Returns 0 if the table isn't attached.
@@ -126,16 +117,16 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             }
         }
 
-        onSnapshotChange?(blocks.count)
+        onBlockCountChanged?(blocks.count)
     }
 
-    // MARK: - Mutation: async (Phase 2 of loadInitial, future use cases)
+    // MARK: - Mutation: off-main (Phase 2 of loadInitial, future use cases)
 
     /// Layouts for the inserted blocks compute on a detached task; a single
     /// main hop installs them, runs the structural changes, and applies
     /// `scroll`. Drops the result if `(generation, width)` drifted.
-    func applyAsync(_ changes: [Transcript2Controller.Change],
-                    scroll: Transcript2Controller.ScrollState) {
+    func applyInBackground(_ changes: [Transcript2Controller.Change],
+                           scroll: Transcript2Controller.ScrollState) {
         guard tableView != nil else { return }
         let width = layoutWidth
         guard width > 0 else { return }
@@ -152,18 +143,18 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         generation &+= 1
         let snapshotGen = generation
 
-        precomputeOffMain(blocks: toCompute, width: width, snapshotGen: snapshotGen) {
+        precomputeLayoutsInBackground(blocks: toCompute, width: width, snapshotGen: snapshotGen) {
             [weak self] entries in
             guard let self, let table = self.tableView else { return }
             self.withScrollAdjustment(scroll, in: table) {
-                self.install(entries, width: width)
+                self.cacheLayouts(entries, width: width)
                 table.beginUpdates()
                 for change in changes {
                     self.applyStructuralChange(change, in: table)
                 }
                 table.endUpdates()
             }
-            self.onSnapshotChange?(self.blocks.count)
+            self.onBlockCountChanged?(self.blocks.count)
         }
     }
 
@@ -301,13 +292,13 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             to: NSPoint(x: scrollView.contentView.bounds.origin.x, y: target))
     }
 
-    // MARK: - Off-main layout pipeline (shared by applyAsync + resize prefetch)
+    // MARK: - Off-main layout pipeline (shared by applyInBackground + resize prefetch)
 
     /// Computes layouts on a detached task, hops to main, validates
     /// `(generation, width)`, then calls `onMain` with the precomputed
-    /// entries. Caller decides what to do with them (install + insert,
-    /// install + noteHeight, etc).
-    private func precomputeOffMain(
+    /// entries. Caller decides what to do with them (cache + insert,
+    /// cache + noteHeight, etc).
+    private func precomputeLayoutsInBackground(
         blocks: [Block],
         width: CGFloat,
         snapshotGen: UInt64,
@@ -332,7 +323,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         }
     }
 
-    private func install(_ entries: [(UUID, RowLayout)], width: CGFloat) {
+    private func cacheLayouts(_ entries: [(UUID, RowLayout)], width: CGFloat) {
         for (id, layout) in entries {
             layoutCache[id] = CachedLayout(width: width, layout: layout)
         }
@@ -408,7 +399,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
 
     // MARK: - Background prefetch (post-live-resize)
 
-    func prefetchAllInBackground() {
+    func prefetchAll() {
         guard let tableView else { return }
         let width = layoutWidth
         guard width > 0 else { return }
@@ -418,14 +409,14 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
 
         let snapshot = blocks
         let snapshotGen = generation
-        precomputeOffMain(blocks: snapshot, width: width, snapshotGen: snapshotGen) {
+        precomputeLayoutsInBackground(blocks: snapshot, width: width, snapshotGen: snapshotGen) {
             [weak self] entries in
             guard let self, let table = self.tableView else { return }
             // Off-screen rows had stale cached heights during live resize;
             // correcting them now shifts every row's Y, so anchor on the
             // visible top row to keep visible content visually fixed.
             self.withScrollAdjustment(.saveVisible(.visualTop), in: table) {
-                self.install(entries, width: width)
+                self.cacheLayouts(entries, width: width)
                 table.noteHeightOfRows(withIndexesChanged: IndexSet(0 ..< self.blocks.count))
             }
         }

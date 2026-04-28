@@ -31,7 +31,7 @@ final class Transcript2TableView: NSTableView {
     override func viewDidEndLiveResize() {
         super.viewDidEndLiveResize()
         if abs(liveResizeStartWidth - frame.width) > 0.5 {
-            coordinator?.prefetchAllInBackground()
+            coordinator?.prefetchAll()
         }
     }
 }

@@ -16,9 +16,12 @@ import AppKit
 @Observable
 final class Transcript2Controller {
     enum Change: Sendable {
-        /// Insert `blocks` at `index`. Index is clamped to `[0, blockCount]`.
-        /// To append, pass `at: blockCount`.
-        case insert(at: Int, _ blocks: [Block])
+        /// Insert `blocks` after the block with id `after`. `after: nil`
+        /// prepends (index 0). If `after` is non-nil but unknown (e.g. the
+        /// anchor was removed), the change is a no-op — same posture as
+        /// `.update` / `.remove` for unknown ids. To append, pass the
+        /// current last block's id (or `nil` if empty).
+        case insert(after: UUID?, _ blocks: [Block])
         /// Remove every block whose id is in `ids`. Unknown ids are ignored.
         case remove(ids: [UUID])
         /// Replace the kind of an existing block, preserving its id. No-op
@@ -78,10 +81,6 @@ final class Transcript2Controller {
         coordinator.apply(changes, scroll: scroll)
     }
 
-    func apply(_ changes: [Change], scroll: ScrollState = .none) {
-        coordinator.apply(changes, scroll: scroll)
-    }
-
     // MARK: - First-screen load
 
     /// Two-phase initial load. Phase 1 (sync) inserts a viewport-covering
@@ -104,7 +103,7 @@ final class Transcript2Controller {
             // Table not attached or zero-sized. Stash blocks; future attach
             // triggers reloadData. Scroll is meaningless without a table —
             // and so is the scroller-hidden token.
-            coordinator.apply([.insert(at: blockCount, blocks)], scroll: .none)
+            coordinator.apply([.insert(after: coordinator.blockIds.last, blocks)], scroll: .none)
             return
         }
 
@@ -128,7 +127,8 @@ final class Transcript2Controller {
 
         let viewportBatch = Array(blocks[slice.viewportRange])
         let above = Array(blocks[..<slice.viewportRange.lowerBound])
-        let below = slice.viewportRange.upperBound < blocks.count
+        let below =
+            slice.viewportRange.upperBound < blocks.count
             ? Array(blocks[slice.viewportRange.upperBound...])
             : []
 
@@ -137,19 +137,18 @@ final class Transcript2Controller {
         // Phase 1 — viewport batch, sync. heightOfRow lazy-computes layouts
         // for the visible rows; cost is bounded by viewport size.
         coordinator.apply(
-            [.insert(at: blockCount, viewportBatch)],
+            [.insert(after: coordinator.blockIds.last, viewportBatch)],
             scroll: phase1Scroll)
 
-        // Phase 2 — the rest, off-main layout. Order matters: insert
-        // "below" (after viewportBatch) first, then "above" (at index 0),
-        // so the second insert doesn't displace the first.
-        let viewportBatchEnd = blockCount  // captured for the inserts below
+        // Phase 2 — the rest, off-main layout. ID-based anchors mean
+        // ordering between the two inserts no longer matters: each anchor
+        // resolves at apply-time independently of the other change.
         var phase2: [Change] = []
         if !below.isEmpty {
-            phase2.append(.insert(at: viewportBatchEnd, below))
+            phase2.append(.insert(after: viewportBatch.last?.id, below))
         }
         if !above.isEmpty {
-            phase2.append(.insert(at: 0, above))
+            phase2.append(.insert(after: nil, above))
         }
         if phase2.isEmpty {
             coordinator.popScrollerHidden()
@@ -195,7 +194,7 @@ final class Transcript2Controller {
                 first = i
                 if height >= viewportHeight { break }
             }
-            return Slice(viewportRange: first ..< blocks.count)
+            return Slice(viewportRange: first..<blocks.count)
 
         case .top(let id):
             guard let anchorIdx = blocks.firstIndex(where: { $0.id == id }) else {
@@ -205,12 +204,12 @@ final class Transcript2Controller {
             }
             var height: CGFloat = 0
             var last = anchorIdx
-            for i in anchorIdx ..< blocks.count {
+            for i in anchorIdx..<blocks.count {
                 height += rowHeight(blocks[i])
                 last = i
                 if height >= viewportHeight { break }
             }
-            return Slice(viewportRange: anchorIdx ..< last + 1)
+            return Slice(viewportRange: anchorIdx..<last + 1)
 
         case .bottomTo(let id):
             guard let anchorIdx = blocks.firstIndex(where: { $0.id == id }) else {
@@ -225,7 +224,7 @@ final class Transcript2Controller {
                 first = i
                 if height >= viewportHeight { break }
             }
-            return Slice(viewportRange: first ..< anchorIdx + 1)
+            return Slice(viewportRange: first..<anchorIdx + 1)
         }
     }
 }

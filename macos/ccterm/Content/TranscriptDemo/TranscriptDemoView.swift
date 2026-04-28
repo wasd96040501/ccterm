@@ -34,7 +34,7 @@ struct TranscriptDemoView: View {
         HStack(spacing: 10) {
             Button {
                 let next = Self.extraBlock(at: extraAddCount)
-                controller.apply(.insert(at: controller.blockCount, [next]))
+                controller.apply(.insert(after: controller.blockIds.last, [next]))
                 extraAddCount += 1
             } label: {
                 Label("Add Message", systemImage: "plus.circle.fill")

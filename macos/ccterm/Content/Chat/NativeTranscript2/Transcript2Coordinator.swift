@@ -182,9 +182,15 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     private func applyStructuralChange(_ change: Transcript2Controller.Change,
                                        in table: NSTableView?) {
         switch change {
-        case .insert(let at, let new):
+        case .insert(let after, let new):
             guard !new.isEmpty else { return }
-            let idx = max(0, min(at, blocks.count))
+            let idx: Int
+            if let after {
+                guard let i = blocks.firstIndex(where: { $0.id == after }) else { return }
+                idx = i + 1
+            } else {
+                idx = 0
+            }
             blocks.insert(contentsOf: new, at: idx)
             table?.insertRows(at: IndexSet(idx ..< idx + new.count),
                               withAnimation: [.effectFade])

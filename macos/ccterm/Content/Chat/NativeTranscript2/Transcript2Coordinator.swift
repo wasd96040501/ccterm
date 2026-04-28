@@ -203,13 +203,13 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             }
             guard !indexes.isEmpty else { return }
             for i in indexes.reversed() { blocks.remove(at: i) }
-            for id in idSet { layoutCache.removeValue(forKey: id) }
+            for id in idSet { removeCachedLayout(for: id) }
             table?.removeRows(at: indexes, withAnimation: [.effectFade])
 
         case .update(let id, let kind):
             guard let i = blocks.firstIndex(where: { $0.id == id }) else { return }
             blocks[i] = Block(id: id, kind: kind)
-            layoutCache.removeValue(forKey: id)
+            removeCachedLayout(for: id)
             let idx = IndexSet(integer: i)
             table?.reloadData(forRowIndexes: idx,
                               columnIndexes: IndexSet(integer: 0))
@@ -358,17 +358,32 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         }
     }
 
+    // MARK: - Layout cache
+
+    /// All access to `layoutCache` goes through these helpers and the lazy
+    /// `layout(for:width:)` path below. Direct subscripting from elsewhere
+    /// is banned by convention so the width invariant and the "evict on
+    /// input change" discipline have a single audit point.
+
     private func cacheLayouts(_ entries: [(UUID, RowLayout)], width: CGFloat) {
         for (id, layout) in entries {
             layoutCache[id] = CachedLayout(width: width, layout: layout)
         }
     }
 
+    private func removeCachedLayout(for id: UUID) {
+        layoutCache.removeValue(forKey: id)
+    }
+
+    private func indexesNeedingLayoutRefresh(at width: CGFloat) -> [Int] {
+        blocks.indices.filter { layoutCache[blocks[$0].id]?.width != width }
+    }
+
     // MARK: - Lazy layout (heightOfRow / viewFor)
 
     private func layout(for block: Block, width: CGFloat) -> RowLayout {
-        if let cached = layoutCache[block.id], cached.width == width {
-            return cached.layout
+        if let c = layoutCache[block.id], c.width == width {
+            return c.layout
         }
         let layout = Self.makeLayout(for: block, width: width)
         layoutCache[block.id] = CachedLayout(width: width, layout: layout)
@@ -438,12 +453,13 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         guard let tableView else { return }
         let width = layoutWidth
         guard width > 0 else { return }
-        // Skip if every entry is already at this width — common case when
-        // resize ended at the start width with no actual change. No push
+        let staleIdxs = indexesNeedingLayoutRefresh(at: width)
+        // Empty → fully cached at this width. Common case when resize
+        // ended at the start width with no actual change. No push
         // happened, so no pop needed.
-        if blocks.allSatisfy({ layoutCache[$0.id]?.width == width }) { return }
+        guard !staleIdxs.isEmpty else { return }
 
-        let snapshot = blocks
+        let snapshot = staleIdxs.map { blocks[$0] }
         let snapshotGen = generation
         // Push covers the async layout window so the scroller stays hidden
         // through the post-resize relayout. Popped from `completion`, which
@@ -456,10 +472,12 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                 // Off-screen rows had stale cached heights during live
                 // resize; correcting them now shifts every row's Y, so
                 // anchor on the visible top row to keep visible content
-                // visually fixed.
+                // visually fixed. `staleIdxs` stays valid because the
+                // generation check in precomputeLayoutsInBackground guards
+                // against block-mutation drift.
                 self.withScrollAdjustment(.saveVisible(.visualTop), in: table) {
                     self.cacheLayouts(entries, width: width)
-                    table.noteHeightOfRows(withIndexesChanged: IndexSet(0 ..< self.blocks.count))
+                    table.noteHeightOfRows(withIndexesChanged: IndexSet(staleIdxs))
                 }
             },
             completion: { [weak self] in self?.popScrollerHidden() })

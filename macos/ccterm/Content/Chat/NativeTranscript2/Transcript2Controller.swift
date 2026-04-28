@@ -88,6 +88,13 @@ final class Transcript2Controller {
     /// slice so the user sees correct content immediately. Phase 2 (off-main
     /// layout, main-hop insert) installs the rest with `.saveVisible` to
     /// keep Phase 1 visually fixed.
+    ///
+    /// The vertical scroller is push-hidden across both phases — Phase 1's
+    /// scroll-to-anchor and Phase 2's insert+saveVisible both perturb the
+    /// scroll origin, and the overlay scroller's auto-flash on
+    /// `contentSize` change would otherwise paint a bouncing knob across
+    /// the cold-load. Popped after Phase 1 (no-Phase-2 branch) or from
+    /// Phase 2's completion (which `applyInBackground` guarantees to fire).
     func loadInitial(_ blocks: [Block], anchor: InitialAnchor = .bottom) {
         guard !blocks.isEmpty else { return }
 
@@ -95,7 +102,8 @@ final class Transcript2Controller {
         let viewportHeight = coordinator.viewportHeight
         guard width > 0, viewportHeight > 0 else {
             // Table not attached or zero-sized. Stash blocks; future attach
-            // triggers reloadData. Scroll is meaningless without a table.
+            // triggers reloadData. Scroll is meaningless without a table —
+            // and so is the scroller-hidden token.
             coordinator.apply([.insert(at: blockCount, blocks)], scroll: .none)
             return
         }
@@ -124,6 +132,8 @@ final class Transcript2Controller {
             ? Array(blocks[slice.viewportRange.upperBound...])
             : []
 
+        coordinator.pushScrollerHidden()
+
         // Phase 1 — viewport batch, sync. heightOfRow lazy-computes layouts
         // for the visible rows; cost is bounded by viewport size.
         coordinator.apply(
@@ -141,8 +151,12 @@ final class Transcript2Controller {
         if !above.isEmpty {
             phase2.append(.insert(at: 0, above))
         }
-        if !phase2.isEmpty {
-            coordinator.applyInBackground(phase2, scroll: .saveVisible(phase2Side))
+        if phase2.isEmpty {
+            coordinator.popScrollerHidden()
+        } else {
+            coordinator.applyInBackground(phase2, scroll: .saveVisible(phase2Side)) {
+                [weak coordinator] in coordinator?.popScrollerHidden()
+            }
         }
     }
 

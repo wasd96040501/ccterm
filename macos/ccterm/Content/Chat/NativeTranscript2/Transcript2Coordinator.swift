@@ -92,6 +92,16 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         tableView?.enclosingScrollView?.contentView.bounds.height ?? 0
     }
 
+    private var transcriptScrollView: Transcript2ScrollView? {
+        tableView?.enclosingScrollView as? Transcript2ScrollView
+    }
+
+    /// Forwarders for `Transcript2ScrollView`'s scroller-hidden refcount.
+    /// Silently no-op when no scroll view is attached — push/pop balance
+    /// holds because both will no-op together.
+    func pushScrollerHidden() { transcriptScrollView?.pushScrollerHidden() }
+    func popScrollerHidden()  { transcriptScrollView?.popScrollerHidden() }
+
     // MARK: - Mutation: sync
 
     func apply(_ changes: [Transcript2Controller.Change],
@@ -125,11 +135,18 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// Layouts for the inserted blocks compute on a detached task; a single
     /// main hop installs them, runs the structural changes, and applies
     /// `scroll`. Drops the result if `(generation, width)` drifted.
+    ///
+    /// `completion` fires on main exactly once, in every outcome
+    /// (succeeded, superseded, table-detached, zero-width). Callers use it
+    /// to balance scroller push/pop or other paired lifecycle work that
+    /// must survive the async hop. AppKit completion-handler semantics:
+    /// "did terminate", not "did succeed".
     func applyInBackground(_ changes: [Transcript2Controller.Change],
-                           scroll: Transcript2Controller.ScrollState) {
-        guard tableView != nil else { return }
+                           scroll: Transcript2Controller.ScrollState,
+                           completion: @MainActor @escaping () -> Void = {}) {
+        guard tableView != nil else { completion(); return }
         let width = layoutWidth
-        guard width > 0 else { return }
+        guard width > 0 else { completion(); return }
 
         // Collect blocks that need layout — only `.insert` carries new
         // blocks; `.remove` / `.update` either don't add layouts or evict
@@ -143,19 +160,21 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         generation &+= 1
         let snapshotGen = generation
 
-        precomputeLayoutsInBackground(blocks: toCompute, width: width, snapshotGen: snapshotGen) {
-            [weak self] entries in
-            guard let self, let table = self.tableView else { return }
-            self.withScrollAdjustment(scroll, in: table) {
-                self.cacheLayouts(entries, width: width)
-                table.beginUpdates()
-                for change in changes {
-                    self.applyStructuralChange(change, in: table)
+        precomputeLayoutsInBackground(
+            blocks: toCompute, width: width, snapshotGen: snapshotGen,
+            onMain: { [weak self] entries in
+                guard let self, let table = self.tableView else { return }
+                self.withScrollAdjustment(scroll, in: table) {
+                    self.cacheLayouts(entries, width: width)
+                    table.beginUpdates()
+                    for change in changes {
+                        self.applyStructuralChange(change, in: table)
+                    }
+                    table.endUpdates()
                 }
-                table.endUpdates()
-            }
-            self.onBlockCountChanged?(self.blocks.count)
-        }
+                self.onBlockCountChanged?(self.blocks.count)
+            },
+            completion: completion)
     }
 
     // MARK: - Structural change (mechanical, no scroll, no scheduling)
@@ -298,22 +317,32 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// `(generation, width)`, then calls `onMain` with the precomputed
     /// entries. Caller decides what to do with them (cache + insert,
     /// cache + noteHeight, etc).
+    ///
+    /// `completion` fires on main exactly once, regardless of which path
+    /// won (success / cancellation / supersede / detached table). It
+    /// exists so callers can balance lifecycle work (e.g. scroller
+    /// push/pop) that has to survive the async hop. Matches the AppKit
+    /// completion-handler convention (`URLSession`, `NSAnimationContext`):
+    /// "did terminate, possibly with error" — not "did succeed".
     private func precomputeLayoutsInBackground(
         blocks: [Block],
         width: CGFloat,
         snapshotGen: UInt64,
-        onMain: @MainActor @escaping ([(UUID, RowLayout)]) -> Void
+        onMain: @MainActor @escaping ([(UUID, RowLayout)]) -> Void,
+        completion: @MainActor @escaping () -> Void = {}
     ) {
         prefetchTask?.cancel()
         prefetchTask = Task.detached(priority: .userInitiated) { [weak self] in
             var precomputed: [(UUID, RowLayout)] = []
             precomputed.reserveCapacity(blocks.count)
+            var aborted = false
             for block in blocks {
-                if Task.isCancelled { return }
+                if Task.isCancelled { aborted = true; break }
                 precomputed.append((block.id, Self.makeLayout(for: block, width: width)))
             }
-            if Task.isCancelled { return }
             await MainActor.run { [precomputed] in
+                defer { completion() }
+                if aborted { return }
                 guard let self else { return }
                 guard self.generation == snapshotGen else { return }
                 guard let table = self.tableView,
@@ -404,22 +433,30 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let width = layoutWidth
         guard width > 0 else { return }
         // Skip if every entry is already at this width — common case when
-        // resize ended at the start width with no actual change.
+        // resize ended at the start width with no actual change. No push
+        // happened, so no pop needed.
         if blocks.allSatisfy({ layoutCache[$0.id]?.width == width }) { return }
 
         let snapshot = blocks
         let snapshotGen = generation
-        precomputeLayoutsInBackground(blocks: snapshot, width: width, snapshotGen: snapshotGen) {
-            [weak self] entries in
-            guard let self, let table = self.tableView else { return }
-            // Off-screen rows had stale cached heights during live resize;
-            // correcting them now shifts every row's Y, so anchor on the
-            // visible top row to keep visible content visually fixed.
-            self.withScrollAdjustment(.saveVisible(.visualTop), in: table) {
-                self.cacheLayouts(entries, width: width)
-                table.noteHeightOfRows(withIndexesChanged: IndexSet(0 ..< self.blocks.count))
-            }
-        }
+        // Push covers the async layout window so the scroller stays hidden
+        // through the post-resize relayout. Popped from `completion`, which
+        // fires in every outcome.
+        pushScrollerHidden()
+        precomputeLayoutsInBackground(
+            blocks: snapshot, width: width, snapshotGen: snapshotGen,
+            onMain: { [weak self] entries in
+                guard let self, let table = self.tableView else { return }
+                // Off-screen rows had stale cached heights during live
+                // resize; correcting them now shifts every row's Y, so
+                // anchor on the visible top row to keep visible content
+                // visually fixed.
+                self.withScrollAdjustment(.saveVisible(.visualTop), in: table) {
+                    self.cacheLayouts(entries, width: width)
+                    table.noteHeightOfRows(withIndexesChanged: IndexSet(0 ..< self.blocks.count))
+                }
+            },
+            completion: { [weak self] in self?.popScrollerHidden() })
     }
 
     // MARK: - NSTableViewDataSource / Delegate

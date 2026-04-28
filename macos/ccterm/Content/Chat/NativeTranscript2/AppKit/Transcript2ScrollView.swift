@@ -19,6 +19,46 @@ final class Transcript2ScrollView: NSScrollView {
         set { super.scrollerStyle = .overlay }
     }
 
+    /// Push/pop refcount for hiding the vertical scroller while content
+    /// geometry is in flux (initial cold-load, live resize, post-resize
+    /// prefetch). Animates `verticalScroller.alphaValue` on 0↔1 transitions.
+    /// While count > 0, `flashScrollers()` no-ops so AppKit's auto-flash on
+    /// `contentSize` change can't undo our hidden state. Push and pop must
+    /// be balanced; pop without a matching push is a logic error.
+    private var scrollerHiddenCount: Int = 0
+
+    func pushScrollerHidden() {
+        scrollerHiddenCount += 1
+        if scrollerHiddenCount == 1 {
+            // Instant. Any animation here gives a 150ms window during which
+            // the scroller is still partly opaque — and `insertRows` inside
+            // `loadInitial` lands in that window, so the scroller pops up
+            // visibly before alpha finishes draining.
+            verticalScroller?.alphaValue = 0
+        }
+    }
+
+    func popScrollerHidden() {
+        precondition(scrollerHiddenCount > 0,
+                     "popScrollerHidden without matching push")
+        scrollerHiddenCount -= 1
+        if scrollerHiddenCount == 0 {
+            // Animate only the fade-in — feels intentional, and there's no
+            // race with content layout on the show path.
+            guard let scroller = verticalScroller else { return }
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.15
+                ctx.allowsImplicitAnimation = true
+                scroller.animator().alphaValue = 1
+            }
+        }
+    }
+
+    override func flashScrollers() {
+        guard scrollerHiddenCount == 0 else { return }
+        super.flashScrollers()
+    }
+
     override func tile() {
         super.tile()
         guard let table = documentView as? NSTableView else { return }

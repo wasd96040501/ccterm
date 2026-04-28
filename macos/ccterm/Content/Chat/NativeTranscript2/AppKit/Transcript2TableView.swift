@@ -26,12 +26,18 @@ final class Transcript2TableView: NSTableView {
     override func viewWillStartLiveResize() {
         super.viewWillStartLiveResize()
         liveResizeStartWidth = frame.width
+        coordinator?.pushScrollerHidden()
     }
 
     override func viewDidEndLiveResize() {
         super.viewDidEndLiveResize()
+        // Order matters: kick off prefetchAll first (it pushes its own
+        // scroller-hidden token) before popping ours. Otherwise count would
+        // briefly hit zero between the two and the scroller would flicker
+        // visible.
         if abs(liveResizeStartWidth - frame.width) > 0.5 {
             coordinator?.prefetchAll()
         }
+        coordinator?.popScrollerHidden()
     }
 }

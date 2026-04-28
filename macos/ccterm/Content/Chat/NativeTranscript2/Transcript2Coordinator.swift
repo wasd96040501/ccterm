@@ -31,15 +31,37 @@ import AppKit
 /// `layoutCache` is keyed by `(id, width)`. When the table width changes,
 /// existing entries become misses and lazy-recompute. `tableFrameDidChange`
 /// invalidates rows; live resize bounds work to visible rows;
-/// `prefetchAll` (post-resize) reuses the same async pipeline
+/// `refillLayoutCache` (post-resize) reuses the same async pipeline
 /// (`precomputeLayoutsInBackground` → `cacheLayouts` → `noteHeightOfRows`
 /// under `.saveVisible(.visualTop)`).
 ///
 /// ### Concurrency
 ///
-/// Everything is `@MainActor`. Background producers must hop. Detached
-/// layout tasks validate `(generation, width)` before their main-hop
-/// merge — covers all mutation kinds with a single Int+CGFloat check.
+/// Everything is `@MainActor`. Two distinct off-main lifecycles, kept
+/// apart on purpose because their AppKit semantics differ:
+///
+/// - **`cacheRefillTask`** — `tableFrameDidChange` post-resize refill.
+///   `numberOfRows` doesn't change; the only effect is to populate
+///   `layoutCache` at the new width and `noteHeightOfRows` the rows whose
+///   heights moved. Superseded only by the next `refillLayoutCache`. Loss is
+///   CPU only — `heightOfRow` lazy-recomputes.
+///
+/// - **`applyInBackground`'s detached task** — row-mutation precompute.
+///   Fire-and-forget, *not* tracked by a field, *not* cancellable: the
+///   `insertRows` it carries is `dataSource`-changing critical work and
+///   has to land. `Change.insert` resolves its anchor by id at apply-time,
+///   so landing is robust against inflight `apply`s in between.
+///
+/// Cache anti-poison sits inside `cacheLayouts`: a write skips entries
+/// already fresh at the same width, so an inflight task hopping in *after*
+/// `apply .update`/`.remove` evicted and lazy-refilled an entry can't
+/// overwrite the authoritative fresh layout with its older snapshot.
+///
+/// On top of that, a `mutationCounter` snapshot lets the refill task
+/// drop its entire onMain block (including `noteHeightOfRows` and
+/// `saveVisible`) when an `apply` ran during the task — running
+/// `saveVisible` against stale AppKit heights (deferred re-query) would
+/// otherwise jitter the anchor row.
 @MainActor
 final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     weak var tableView: NSTableView? {
@@ -71,10 +93,26 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let layout: RowLayout
     }
 
-    /// Bumped on every `apply` / `applyInBackground`. Detached prefetch
-    /// tasks capture it at start and validate before merging.
-    private var generation: UInt64 = 0
-    private var prefetchTask: Task<Void, Never>?
+    /// Tracks the `tableFrameDidChange` post-resize layout refill task.
+    /// Superseded only by the next `refillLayoutCache`. `applyInBackground`'s
+    /// detached task is intentionally *not* stored here — it's
+    /// fire-and-forget so an in-flight row-mutation can't be interrupted
+    /// by an unrelated cancel path.
+    private var cacheRefillTask: Task<Void, Never>?
+
+    /// Bumped on every `apply`. The refill task captures it at start; if
+    /// it drifts during the task run, the entire onMain block (cache
+    /// writes, `noteHeightOfRows`, `saveVisible`) is dropped. Reason: the
+    /// `saveVisible` anchor math relies on AppKit re-querying heights for
+    /// rows we just `noteHeightOfRows`'d, but that re-query is deferred
+    /// to the next layout pass — so running `applyAnchor` immediately
+    /// after compensates against stale internal heights and the row
+    /// visually jumps when AppKit eventually catches up. Skipping refill
+    /// in this case is harmless: `apply`'s own scroll already settled the
+    /// post-mutation state, and `heightOfRow` lazy-fills missing layouts
+    /// on demand. `applyInBackground` doesn't bump because its own
+    /// row-mutation is the change-event for its own scroll handling.
+    private var mutationCounter: UInt64 = 0
 
     // MARK: - Read-only snapshot
 
@@ -106,9 +144,14 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
 
     func apply(_ changes: [Transcript2Controller.Change],
                scroll: Transcript2Controller.ScrollState = .none) {
-        prefetchTask?.cancel()
-        prefetchTask = nil
-        generation &+= 1
+        // Bump so any inflight `cacheRefillTask` discards its onMain on
+        // hop. We don't cancel here: the counter is the actual guard, and
+        // `cacheRefillTask` polices its own lifetime via the next
+        // `refillLayoutCache`. Discarding refill in this window matters
+        // because its `saveVisible` would compensate against stale AppKit
+        // heights (deferred re-query) — running on top of `apply`'s own
+        // settled scroll would jitter the anchor row.
+        mutationCounter &+= 1
 
         let table = tableView
         if let table {
@@ -133,14 +176,21 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     // MARK: - Mutation: off-main (Phase 2 of loadInitial, future use cases)
 
     /// Layouts for the inserted blocks compute on a detached task; a single
-    /// main hop installs them, runs the structural changes, and applies
-    /// `scroll`. Drops the result if `(generation, width)` drifted.
+    /// main hop installs them and runs the structural changes under
+    /// `scroll`.
+    ///
+    /// **Fire-and-forget.** The task is not tracked and not cancellable:
+    /// row-mutation is `dataSource` critical-path work that must land.
+    /// `Change.insert`'s id-based anchor resolves at apply-time, so
+    /// landing stays correct across any `apply`s that ran in between.
+    /// Layout entries enter the cache only on width match; a drifted
+    /// width keeps the row-mutation but skips the cache write
+    /// (`heightOfRow` lazy-recomputes at the new width).
     ///
     /// `completion` fires on main exactly once, in every outcome
-    /// (succeeded, superseded, table-detached, zero-width). Callers use it
-    /// to balance scroller push/pop or other paired lifecycle work that
-    /// must survive the async hop. AppKit completion-handler semantics:
-    /// "did terminate", not "did succeed".
+    /// (succeeded, table-detached, zero-width). Callers use it to balance
+    /// paired lifecycle work (e.g. scroller push/pop) that must survive
+    /// the async hop.
     func applyInBackground(_ changes: [Transcript2Controller.Change],
                            scroll: Transcript2Controller.ScrollState,
                            completion: @MainActor @escaping () -> Void = {}) {
@@ -148,24 +198,27 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let width = layoutWidth
         guard width > 0 else { completion(); return }
 
-        // Collect blocks that need layout — only `.insert` carries new
-        // blocks; `.remove` / `.update` either don't add layouts or evict
-        // them. `.update`'s replacement layout is computed lazily by the
-        // sync `apply` after main-hop, since it's a single block.
+        // Only `.insert` carries new blocks; `.remove` / `.update` either
+        // don't add layouts or evict them. `.update`'s replacement layout
+        // is computed lazily by `applyStructuralChange` after the main hop.
         let toCompute: [Block] = changes.flatMap { change -> [Block] in
             if case .insert(_, let blocks) = change { return blocks }
             return []
         }
 
-        generation &+= 1
-        let snapshotGen = generation
-
-        precomputeLayoutsInBackground(
-            blocks: toCompute, width: width, snapshotGen: snapshotGen,
-            onMain: { [weak self] entries in
+        Task.detached(priority: .userInitiated) { [weak self] in
+            var entries: [(UUID, RowLayout)] = []
+            entries.reserveCapacity(toCompute.count)
+            for block in toCompute {
+                entries.append((block.id, Self.makeLayout(for: block, width: width)))
+            }
+            await MainActor.run { [entries] in
+                defer { completion() }
                 guard let self, let table = self.tableView else { return }
                 self.withScrollAdjustment(scroll, in: table) {
-                    self.cacheLayouts(entries, width: width)
+                    if self.layoutWidth == width {
+                        self.cacheLayouts(entries, width: width)
+                    }
                     table.beginUpdates()
                     for change in changes {
                         self.applyStructuralChange(change, in: table)
@@ -173,8 +226,8 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                     table.endUpdates()
                 }
                 self.onBlockCountChanged?(self.blocks.count)
-            },
-            completion: completion)
+            }
+        }
     }
 
     // MARK: - Structural change (mechanical, no scroll, no scheduling)
@@ -317,47 +370,6 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             to: NSPoint(x: scrollView.contentView.bounds.origin.x, y: target))
     }
 
-    // MARK: - Off-main layout pipeline (shared by applyInBackground + resize prefetch)
-
-    /// Computes layouts on a detached task, hops to main, validates
-    /// `(generation, width)`, then calls `onMain` with the precomputed
-    /// entries. Caller decides what to do with them (cache + insert,
-    /// cache + noteHeight, etc).
-    ///
-    /// `completion` fires on main exactly once, regardless of which path
-    /// won (success / cancellation / supersede / detached table). It
-    /// exists so callers can balance lifecycle work (e.g. scroller
-    /// push/pop) that has to survive the async hop. Matches the AppKit
-    /// completion-handler convention (`URLSession`, `NSAnimationContext`):
-    /// "did terminate, possibly with error" — not "did succeed".
-    private func precomputeLayoutsInBackground(
-        blocks: [Block],
-        width: CGFloat,
-        snapshotGen: UInt64,
-        onMain: @MainActor @escaping ([(UUID, RowLayout)]) -> Void,
-        completion: @MainActor @escaping () -> Void = {}
-    ) {
-        prefetchTask?.cancel()
-        prefetchTask = Task.detached(priority: .userInitiated) { [weak self] in
-            var precomputed: [(UUID, RowLayout)] = []
-            precomputed.reserveCapacity(blocks.count)
-            var aborted = false
-            for block in blocks {
-                if Task.isCancelled { aborted = true; break }
-                precomputed.append((block.id, Self.makeLayout(for: block, width: width)))
-            }
-            await MainActor.run { [precomputed] in
-                defer { completion() }
-                if aborted { return }
-                guard let self else { return }
-                guard self.generation == snapshotGen else { return }
-                guard let table = self.tableView,
-                      self.layoutWidth == width else { return }
-                onMain(precomputed)
-            }
-        }
-    }
-
     // MARK: - Layout cache
 
     /// All access to `layoutCache` goes through these helpers and the lazy
@@ -365,8 +377,15 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// is banned by convention so the width invariant and the "evict on
     /// input change" discipline have a single audit point.
 
+    /// Writes precomputed layouts into the cache. Skips an entry if a
+    /// fresh layout at the same width is already present —— that means the
+    /// sync `apply` path has run `removeCachedLayout` + a layout pass
+    /// since this batch was computed, and the lazy re-fill it triggered
+    /// is the authoritative entry. Overwriting it with our (older
+    /// snapshot's) layout would poison the cache.
     private func cacheLayouts(_ entries: [(UUID, RowLayout)], width: CGFloat) {
         for (id, layout) in entries {
+            if layoutCache[id]?.width == width { continue }
             layoutCache[id] = CachedLayout(width: width, layout: layout)
         }
     }
@@ -449,7 +468,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
 
     // MARK: - Background prefetch (post-live-resize)
 
-    func prefetchAll() {
+    func refillLayoutCache() {
         guard let tableView else { return }
         let width = layoutWidth
         guard width > 0 else { return }
@@ -460,27 +479,50 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         guard !staleIdxs.isEmpty else { return }
 
         let snapshot = staleIdxs.map { blocks[$0] }
-        let snapshotGen = generation
+        let snapshotCounter = mutationCounter
         // Push covers the async layout window so the scroller stays hidden
-        // through the post-resize relayout. Popped from `completion`, which
-        // fires in every outcome.
+        // through the post-resize relayout. Popped via the task's defer in
+        // every outcome (cancelled, drifted, succeeded).
         pushScrollerHidden()
-        precomputeLayoutsInBackground(
-            blocks: snapshot, width: width, snapshotGen: snapshotGen,
-            onMain: { [weak self] entries in
-                guard let self, let table = self.tableView else { return }
-                // Off-screen rows had stale cached heights during live
-                // resize; correcting them now shifts every row's Y, so
-                // anchor on the visible top row to keep visible content
-                // visually fixed. `staleIdxs` stays valid because the
-                // generation check in precomputeLayoutsInBackground guards
-                // against block-mutation drift.
+
+        cacheRefillTask?.cancel()
+        cacheRefillTask = Task.detached(priority: .userInitiated) { [weak self] in
+            var entries: [(UUID, RowLayout)] = []
+            entries.reserveCapacity(snapshot.count)
+            var aborted = false
+            for block in snapshot {
+                if Task.isCancelled { aborted = true; break }
+                entries.append((block.id, Self.makeLayout(for: block, width: width)))
+            }
+            await MainActor.run { [entries] in
+                defer { self?.popScrollerHidden() }
+                if aborted { return }
+                guard let self, let table = self.tableView,
+                      self.layoutWidth == width else { return }
+                // mutationCounter drift → an `apply` ran during the task.
+                // Skip the entire onMain (cache writes, noteHeightOfRows,
+                // saveVisible). Reason: noteHeightOfRows is deferred to
+                // the next layout pass, so `applyAnchor` would run
+                // against AppKit's still-stale internal heights and
+                // produce a wrong scroll compensation; the row visually
+                // jumps when AppKit eventually re-queries. `apply` has
+                // already settled its own scroll, and `heightOfRow` will
+                // lazy-fill the layouts as needed.
+                guard self.mutationCounter == snapshotCounter else { return }
+                // applyInBackground (fire-and-forget, counter-untracked)
+                // may have shifted indices. Re-resolve via id so
+                // noteHeightOfRows targets the current dataSource state.
+                let idxs = entries.compactMap { (id, _) -> Int? in
+                    self.blocks.firstIndex { $0.id == id }
+                }
                 self.withScrollAdjustment(.saveVisible(.visualTop), in: table) {
                     self.cacheLayouts(entries, width: width)
-                    table.noteHeightOfRows(withIndexesChanged: IndexSet(staleIdxs))
+                    if !idxs.isEmpty {
+                        table.noteHeightOfRows(withIndexesChanged: IndexSet(idxs))
+                    }
                 }
-            },
-            completion: { [weak self] in self?.popScrollerHidden() })
+            }
+        }
     }
 
     // MARK: - NSTableViewDataSource / Delegate

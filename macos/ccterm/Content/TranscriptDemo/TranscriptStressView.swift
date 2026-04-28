@@ -8,9 +8,9 @@ import SwiftUI
 ///
 /// Corpus is bundled as `transcript_stress_corpus.txt` (built by
 /// `macos/scripts/build-stress-corpus.py`). Loading + parsing happens on a
-/// background task — `controller.apply(.replaceAll(...))` then triggers the
-/// table reload; layouts compute lazily as `heightOfRow` and `viewFor`
-/// queries arrive, which is itself part of the workload we're measuring.
+/// background task; `controller.loadInitial(...)` then drives a viewport-
+/// first sync insert + off-main layout for the rest, which is itself part
+/// of the workload we're measuring.
 struct TranscriptStressView: View {
     @State private var controller = Transcript2Controller()
     @State private var loadStatus: LoadStatus = .loading
@@ -96,7 +96,7 @@ struct TranscriptStressView: View {
             case .image: return acc
             }
         }
-        controller.apply(.replaceAll(loaded))
+        controller.loadInitial(loaded)
         loadStatus = .ready(blockCount: loaded.count, charCount: chars)
     }
 

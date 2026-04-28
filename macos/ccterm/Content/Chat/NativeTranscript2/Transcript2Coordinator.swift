@@ -7,34 +7,39 @@ import AppKit
 /// truth. There is no `rows` mirror, no sync invariant between data and
 /// layout, no diff anywhere.
 ///
-/// ### Two orthogonal trigger families
+/// ### Mutation paths
 ///
-/// - **Caller mutation** (`apply(_:)`)
-///   `Change` enum carries intent directly: `insert` / `append` / `remove`
-///   update `blocks` and notify the table granularly via
-///   `insertRows` / `removeRows` / `reloadRows + noteHeightOfRows`.
-///   `update` evicts the affected id's cache entry. `replaceAll` clears the
-///   cache and `reloadData`s — the bad-case escape hatch. Every code path is
-///   O(1) per change in caller-driven structure (cache hits are O(1);
-///   `firstIndex`/`enumerated` lookups are O(n) but only over `blocks`,
-///   never over a separate cache structure).
+/// - **`apply(_:scroll:)`** — sync. Layouts compute lazily on `heightOfRow`
+///   queries. Used for incremental updates (live messages, single removals,
+///   tool-result updates).
+/// - **`applyAsync(_:scroll:)`** — layouts for the inserted blocks compute
+///   on a detached `Task`, then a main hop installs them and runs the
+///   structural change in one shot. Used by `Controller.loadInitial`'s
+///   Phase 2 (large prepend after the viewport batch is already visible).
 ///
-/// - **Width change** (`tableFrameDidChange`)
-///   The cache is keyed by `(id, width)`. When the table's width changes,
-///   subsequent lookups miss and lazy-recompute on demand. The frame-change
-///   handler only calls `noteHeightOfRows` to make AppKit re-query: live
-///   resize bounds it to visible indexes (per-frame work stays bounded
-///   regardless of transcript length); other frame changes invalidate all.
+/// Both paths run their structural change inside `withScrollAdjustment`,
+/// which interprets `ScrollState`:
+/// - `.none` — no scroll work.
+/// - `.top(id)` / `.bottom(id)` — direct scroll-to-position after the change.
+/// - `.saveVisible(side)` — capture an anchor row's screen position before,
+///   compensate scroll origin after so the row stays visually fixed across
+///   the structural change. Same trick as Telegram's `saveScrollState` in
+///   `TableView.layoutItems()`.
+///
+/// ### Width change (resize)
+///
+/// `layoutCache` is keyed by `(id, width)`. When the table width changes,
+/// existing entries become misses and lazy-recompute. `tableFrameDidChange`
+/// invalidates rows; live resize bounds work to visible rows;
+/// `prefetchAllInBackground` (post-resize) reuses the same async pipeline
+/// (`precomputeOffMain` → `install` → `noteHeightOfRows` under
+/// `.saveVisible(.visualTop)`).
 ///
 /// ### Concurrency
 ///
-/// Everything is `@MainActor`. Background producers must hop before calling
-/// `apply`. `prefetchAllInBackground` (run from `viewDidEndLiveResize`)
-/// computes layouts on a detached task, hops back to main, and merges
-/// **only if** the snapshot generation still matches — otherwise drops the
-/// result. The merge itself is a cache-write + `noteHeightOfRows` + scroll
-/// anchor compensation, so a live resize and a background apply can never
-/// observe each other's intermediate state.
+/// Everything is `@MainActor`. Background producers must hop. Detached
+/// layout tasks validate `(generation, width)` before their main-hop
+/// merge — covers all mutation kinds with a single Int+CGFloat check.
 @MainActor
 final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     weak var tableView: NSTableView? {
@@ -66,10 +71,8 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let layout: RowLayout
     }
 
-    /// Bumped on every `apply`. The background prefetch task captures it at
-    /// start and validates against it before merging — covers all mutation
-    /// kinds (insert / remove / update / replaceAll) with a single Int
-    /// equality check.
+    /// Bumped on every `apply` / `applyAsync`. Detached prefetch tasks
+    /// capture it at start and validate before merging.
     private var generation: UInt64 = 0
     private var prefetchTask: Task<Void, Never>?
 
@@ -86,45 +89,93 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         blocks.first { $0.id == id }
     }
 
-    // MARK: - Mutation
+    /// Width that rows are laid out at. Driven by the single column's
+    /// `.autoresizingMask`. Returns 0 if the table isn't attached.
+    var layoutWidth: CGFloat {
+        tableView?.tableColumns.first?.width ?? 0
+    }
 
-    func apply(_ changes: [Transcript2Controller.Change]) {
+    /// Visible-region height of the enclosing scroll view. Returns 0 if
+    /// no scroll view is attached.
+    var viewportHeight: CGFloat {
+        tableView?.enclosingScrollView?.contentView.bounds.height ?? 0
+    }
+
+    // MARK: - Mutation: sync
+
+    func apply(_ changes: [Transcript2Controller.Change],
+               scroll: Transcript2Controller.ScrollState = .none) {
         prefetchTask?.cancel()
         prefetchTask = nil
         generation &+= 1
 
         let table = tableView
-        // Granular changes are wrapped in a single beginUpdates / endUpdates
-        // so AppKit batches animations and height invalidations. `replaceAll`
-        // closes any open transaction and runs as a standalone reload.
-        var inBatch = false
-        for change in changes {
-            switch change {
-            case .replaceAll:
-                if inBatch { table?.endUpdates(); inBatch = false }
-                applyChange(change, in: table)
-            default:
-                if !inBatch, let table { table.beginUpdates(); inBatch = true }
-                applyChange(change, in: table)
+        if let table {
+            withScrollAdjustment(scroll, in: table) {
+                table.beginUpdates()
+                for change in changes {
+                    applyStructuralChange(change, in: table)
+                }
+                table.endUpdates()
+            }
+        } else {
+            // Table not attached. Just mutate `blocks`; future attach will
+            // `reloadData()`. Scroll state is meaningless without a table.
+            for change in changes {
+                applyStructuralChange(change, in: nil)
             }
         }
-        if inBatch { table?.endUpdates() }
 
         onSnapshotChange?(blocks.count)
     }
 
-    private func applyChange(_ change: Transcript2Controller.Change,
-                             in table: NSTableView?) {
+    // MARK: - Mutation: async (Phase 2 of loadInitial, future use cases)
+
+    /// Layouts for the inserted blocks compute on a detached task; a single
+    /// main hop installs them, runs the structural changes, and applies
+    /// `scroll`. Drops the result if `(generation, width)` drifted.
+    func applyAsync(_ changes: [Transcript2Controller.Change],
+                    scroll: Transcript2Controller.ScrollState) {
+        guard tableView != nil else { return }
+        let width = layoutWidth
+        guard width > 0 else { return }
+
+        // Collect blocks that need layout — only `.insert` carries new
+        // blocks; `.remove` / `.update` either don't add layouts or evict
+        // them. `.update`'s replacement layout is computed lazily by the
+        // sync `apply` after main-hop, since it's a single block.
+        let toCompute: [Block] = changes.flatMap { change -> [Block] in
+            if case .insert(_, let blocks) = change { return blocks }
+            return []
+        }
+
+        generation &+= 1
+        let snapshotGen = generation
+
+        precomputeOffMain(blocks: toCompute, width: width, snapshotGen: snapshotGen) {
+            [weak self] entries in
+            guard let self, let table = self.tableView else { return }
+            self.withScrollAdjustment(scroll, in: table) {
+                self.install(entries, width: width)
+                table.beginUpdates()
+                for change in changes {
+                    self.applyStructuralChange(change, in: table)
+                }
+                table.endUpdates()
+            }
+            self.onSnapshotChange?(self.blocks.count)
+        }
+    }
+
+    // MARK: - Structural change (mechanical, no scroll, no scheduling)
+
+    private func applyStructuralChange(_ change: Transcript2Controller.Change,
+                                       in table: NSTableView?) {
         switch change {
         case .insert(let at, let new):
+            guard !new.isEmpty else { return }
             let idx = max(0, min(at, blocks.count))
             blocks.insert(contentsOf: new, at: idx)
-            table?.insertRows(at: IndexSet(idx ..< idx + new.count),
-                              withAnimation: [.effectFade])
-
-        case .append(let new):
-            let idx = blocks.count
-            blocks.append(contentsOf: new)
             table?.insertRows(at: IndexSet(idx ..< idx + new.count),
                               withAnimation: [.effectFade])
 
@@ -147,15 +198,147 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             table?.reloadData(forRowIndexes: idx,
                               columnIndexes: IndexSet(integer: 0))
             table?.noteHeightOfRows(withIndexesChanged: idx)
-
-        case .replaceAll(let next):
-            blocks = next
-            layoutCache.removeAll(keepingCapacity: true)
-            table?.reloadData()
         }
     }
 
-    // MARK: - Lazy layout
+    // MARK: - Scroll adjustment
+
+    /// Wraps a structural-change closure with the requested scroll behavior.
+    /// `.saveVisible` disables implicit animations so the height/insert
+    /// transition doesn't race with the scroll-origin compensation.
+    private func withScrollAdjustment(_ scroll: Transcript2Controller.ScrollState,
+                                      in tableView: NSTableView,
+                                      body: () -> Void) {
+        switch scroll {
+        case .none:
+            body()
+        case .top(let id):
+            body()
+            scrollRowToTop(id: id, in: tableView)
+        case .bottom(let id):
+            body()
+            scrollRowToBottom(id: id, in: tableView)
+        case .saveVisible(let side):
+            let anchor = captureAnchor(side: side, in: tableView)
+            // Disable both NSAnimationContext (row-height transition) and
+            // CATransaction (layer-backed ClipView's bounds.origin animation
+            // from `scroll(to:)`) so they don't race.
+            NSAnimationContext.beginGrouping()
+            NSAnimationContext.current.duration = 0
+            NSAnimationContext.current.allowsImplicitAnimation = false
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            body()
+            if let anchor { applyAnchor(anchor, in: tableView) }
+            CATransaction.commit()
+            NSAnimationContext.endGrouping()
+        }
+    }
+
+    private struct ScrollAnchor {
+        let blockId: UUID
+        /// `rect.origin.y` for `.visualTop`, `rect.maxY` for `.visualBottom`.
+        let oldRefY: CGFloat
+        let oldScrollY: CGFloat
+        let side: Transcript2Controller.ScrollState.Side
+    }
+
+    private func captureAnchor(side: Transcript2Controller.ScrollState.Side,
+                               in tableView: NSTableView) -> ScrollAnchor? {
+        guard let scrollView = tableView.enclosingScrollView else { return nil }
+        let visible = tableView.rows(in: tableView.visibleRect)
+        guard visible.location != NSNotFound, visible.length > 0 else { return nil }
+
+        // NSTableView is flipped (default): smallest visible row index = top
+        // of viewport; largest = bottom.
+        let anchorRow: Int
+        switch side {
+        case .visualTop:
+            anchorRow = visible.location
+        case .visualBottom:
+            anchorRow = visible.location + visible.length - 1
+        }
+        guard blocks.indices.contains(anchorRow) else { return nil }
+        let rect = tableView.rect(ofRow: anchorRow)
+        let refY: CGFloat = (side == .visualTop) ? rect.origin.y : rect.maxY
+        return ScrollAnchor(
+            blockId: blocks[anchorRow].id,
+            oldRefY: refY,
+            oldScrollY: scrollView.contentView.bounds.origin.y,
+            side: side)
+    }
+
+    private func applyAnchor(_ anchor: ScrollAnchor, in tableView: NSTableView) {
+        guard let scrollView = tableView.enclosingScrollView else { return }
+        guard let newRow = blocks.firstIndex(where: { $0.id == anchor.blockId }) else {
+            return
+        }
+        let newRect = tableView.rect(ofRow: newRow)
+        let newRefY: CGFloat = (anchor.side == .visualTop) ? newRect.origin.y : newRect.maxY
+        let delta = newRefY - anchor.oldRefY
+        if abs(delta) > 0.5 {
+            scrollView.contentView.scroll(
+                to: NSPoint(x: scrollView.contentView.bounds.origin.x,
+                            y: anchor.oldScrollY + delta))
+        }
+    }
+
+    private func scrollRowToTop(id: UUID, in tableView: NSTableView) {
+        guard let row = blocks.firstIndex(where: { $0.id == id }),
+              let scrollView = tableView.enclosingScrollView else { return }
+        let target = tableView.rect(ofRow: row).origin.y
+        scrollView.contentView.scroll(
+            to: NSPoint(x: scrollView.contentView.bounds.origin.x, y: target))
+    }
+
+    private func scrollRowToBottom(id: UUID, in tableView: NSTableView) {
+        guard let row = blocks.firstIndex(where: { $0.id == id }),
+              let scrollView = tableView.enclosingScrollView else { return }
+        let rect = tableView.rect(ofRow: row)
+        let viewportH = scrollView.contentView.bounds.height
+        let target = max(0, rect.maxY - viewportH)
+        scrollView.contentView.scroll(
+            to: NSPoint(x: scrollView.contentView.bounds.origin.x, y: target))
+    }
+
+    // MARK: - Off-main layout pipeline (shared by applyAsync + resize prefetch)
+
+    /// Computes layouts on a detached task, hops to main, validates
+    /// `(generation, width)`, then calls `onMain` with the precomputed
+    /// entries. Caller decides what to do with them (install + insert,
+    /// install + noteHeight, etc).
+    private func precomputeOffMain(
+        blocks: [Block],
+        width: CGFloat,
+        snapshotGen: UInt64,
+        onMain: @MainActor @escaping ([(UUID, RowLayout)]) -> Void
+    ) {
+        prefetchTask?.cancel()
+        prefetchTask = Task.detached(priority: .userInitiated) { [weak self] in
+            var precomputed: [(UUID, RowLayout)] = []
+            precomputed.reserveCapacity(blocks.count)
+            for block in blocks {
+                if Task.isCancelled { return }
+                precomputed.append((block.id, Self.makeLayout(for: block, width: width)))
+            }
+            if Task.isCancelled { return }
+            await MainActor.run { [precomputed] in
+                guard let self else { return }
+                guard self.generation == snapshotGen else { return }
+                guard let table = self.tableView,
+                      self.layoutWidth == width else { return }
+                onMain(precomputed)
+            }
+        }
+    }
+
+    private func install(_ entries: [(UUID, RowLayout)], width: CGFloat) {
+        for (id, layout) in entries {
+            layoutCache[id] = CachedLayout(width: width, layout: layout)
+        }
+    }
+
+    // MARK: - Lazy layout (heightOfRow / viewFor)
 
     private func layout(for block: Block, width: CGFloat) -> RowLayout {
         if let cached = layoutCache[block.id], cached.width == width {
@@ -227,88 +410,25 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
 
     func prefetchAllInBackground() {
         guard let tableView else { return }
-        let width = effectiveContentWidth(of: tableView)
+        let width = layoutWidth
         guard width > 0 else { return }
         // Skip if every entry is already at this width — common case when
         // resize ended at the start width with no actual change.
         if blocks.allSatisfy({ layoutCache[$0.id]?.width == width }) { return }
 
-        prefetchTask?.cancel()
         let snapshot = blocks
         let snapshotGen = generation
-        prefetchTask = Task.detached(priority: .userInitiated) { [weak self] in
-            var precomputed: [(UUID, RowLayout)] = []
-            precomputed.reserveCapacity(snapshot.count)
-            for block in snapshot {
-                if Task.isCancelled { return }
-                precomputed.append((block.id, Self.makeLayout(for: block, width: width)))
-            }
-            if Task.isCancelled { return }
-            await MainActor.run { [precomputed] in
-                self?.applyPrefetch(precomputed, width: width, snapshotGen: snapshotGen)
-            }
-        }
-    }
-
-    private func applyPrefetch(_ entries: [(UUID, RowLayout)],
-                               width: CGFloat,
-                               snapshotGen: UInt64) {
-        guard let tableView else { return }
-        // Width drifted again before completion — discard.
-        guard effectiveContentWidth(of: tableView) == width else { return }
-        // Any apply landed in flight — discard. O(1) check covers all
-        // mutation kinds (insert / remove / update / replaceAll).
-        guard generation == snapshotGen else { return }
-
-        // Anchor a visible row before invalidating heights. Off-screen rows
-        // had stale layouts (and therefore stale heights cached by AppKit
-        // from prior `heightOfRow` answers) during live resize; correcting
-        // those heights now shifts every row's Y, so we compensate the
-        // scroll offset by the anchor's doc-Y delta to keep the visible
-        // content visually fixed. Same approach as Telegram's
-        // `saveScrollState` in `TableView.layoutItems()`.
-        let scrollView = tableView.enclosingScrollView
-        let visible = tableView.rows(in: tableView.visibleRect)
-        let anchor: (row: Int, oldDocY: CGFloat, oldScrollY: CGFloat)?
-        if let scrollView, visible.location != NSNotFound, visible.length > 0 {
-            anchor = (
-                row: visible.location,
-                oldDocY: tableView.rect(ofRow: visible.location).origin.y,
-                oldScrollY: scrollView.contentView.bounds.origin.y)
-        } else {
-            anchor = nil
-        }
-
-        // Atomically install prefetched layouts then invalidate AppKit's
-        // height cache. Wrapped in a disabled-animation transaction so the
-        // height correction and the scroll compensation land in the same
-        // commit (without this, two implicit animations would race: the
-        // row-height transition (~0.2s default) and the layer-backed
-        // ClipView's bounds.origin animation from `scroll(to:)`).
-        for (id, layout) in entries {
-            layoutCache[id] = CachedLayout(width: width, layout: layout)
-        }
-
-        NSAnimationContext.beginGrouping()
-        NSAnimationContext.current.duration = 0
-        NSAnimationContext.current.allowsImplicitAnimation = false
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-
-        tableView.noteHeightOfRows(withIndexesChanged: IndexSet(0 ..< blocks.count))
-
-        if let anchor, let scrollView {
-            let newDocY = tableView.rect(ofRow: anchor.row).origin.y
-            let delta = newDocY - anchor.oldDocY
-            if abs(delta) > 0.5 {
-                scrollView.contentView.scroll(
-                    to: NSPoint(x: scrollView.contentView.bounds.origin.x,
-                                y: anchor.oldScrollY + delta))
+        precomputeOffMain(blocks: snapshot, width: width, snapshotGen: snapshotGen) {
+            [weak self] entries in
+            guard let self, let table = self.tableView else { return }
+            // Off-screen rows had stale cached heights during live resize;
+            // correcting them now shifts every row's Y, so anchor on the
+            // visible top row to keep visible content visually fixed.
+            self.withScrollAdjustment(.saveVisible(.visualTop), in: table) {
+                self.install(entries, width: width)
+                table.noteHeightOfRows(withIndexesChanged: IndexSet(0 ..< self.blocks.count))
             }
         }
-
-        CATransaction.commit()
-        NSAnimationContext.endGrouping()
     }
 
     // MARK: - NSTableViewDataSource / Delegate
@@ -317,7 +437,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
 
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
         guard blocks.indices.contains(row) else { return 1 }
-        let width = effectiveContentWidth(of: tableView)
+        let width = layoutWidth
         return layout(for: blocks[row], width: width).totalHeight
             + 2 * BlockStyle.blockVerticalPadding
     }
@@ -326,7 +446,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                    viewFor tableColumn: NSTableColumn?,
                    row: Int) -> NSView? {
         guard blocks.indices.contains(row) else { return nil }
-        let width = effectiveContentWidth(of: tableView)
+        let width = layoutWidth
         let cellLayout = layout(for: blocks[row], width: width)
 
         let id = NSUserInterfaceItemIdentifier("BlockCell")
@@ -341,11 +461,4 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         return cell
     }
 
-    // MARK: - Helpers
-
-    private func effectiveContentWidth(of tableView: NSTableView) -> CGFloat {
-        // The single column has `.autoresizingMask` so NSTableView keeps its
-        // width in sync with available space.
-        tableView.tableColumns.first?.width ?? 0
-    }
 }

@@ -35,10 +35,10 @@ struct TextLayout: @unchecked Sendable {
     let totalHeight: CGFloat
     let measuredWidth: CGFloat
 
-    static let empty = TextLayout(
+    nonisolated static let empty = TextLayout(
         lines: [], lineOrigins: [], totalHeight: 0, measuredWidth: 0)
 
-    static func make(attributed: NSAttributedString, maxWidth: CGFloat) -> TextLayout {
+    nonisolated static func make(attributed: NSAttributedString, maxWidth: CGFloat) -> TextLayout {
         guard attributed.length > 0, maxWidth > 0 else { return .empty }
 
         let typesetter = CTTypesetterCreateWithAttributedString(attributed)

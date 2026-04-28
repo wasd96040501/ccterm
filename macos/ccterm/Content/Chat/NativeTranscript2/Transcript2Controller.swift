@@ -2,39 +2,57 @@ import AppKit
 
 /// Public, imperative API for `NativeTranscript2`. Three orthogonal channels:
 ///
-/// 1. **Mutation** — `apply(_:)` accepts one or more `Change` values and
-///    commits them atomically to the underlying NSTableView. There is no
-///    snapshot diffing: each `Change` describes the structural mutation
-///    directly (insert / append / remove / update / replaceAll).
-/// 2. **Query** — read-only snapshot accessors (`blockCount`, `blockIds`,
-///    `block(at:)`, `block(id:)`).
-/// 3. **Events** — extension point. Empty today; add typed callbacks here
-///    when a real consumer shows up (visible-range, row-click, etc.).
+/// 1. **Mutation** — `apply(_:scroll:)` accepts one or more `Change` values
+///    (insert / remove / update) and a `ScrollState`. Granular only; no
+///    diff, no `reloadData` escape hatch.
+/// 2. **First-screen load** — `loadInitial(_:anchor:)` is the dedicated
+///    cold-load path. Splits into a viewport-covering Phase 1 (sync, main)
+///    and a Phase 2 (off-main layout, main-hop insert) so 10k-row initial
+///    loads don't block the main thread.
+/// 3. **Query** — read-only snapshot accessors.
 ///
-/// The controller is `@MainActor`-isolated. All mutations and table updates
-/// run on the main thread, so a background producer must hop to MainActor
-/// before calling `apply` (e.g. `await MainActor.run { controller.apply(...) }`).
-/// Resize-driven relayout is internal to the coordinator and is also
-/// MainActor-serialized, so a live resize and an `apply` from a background
-/// task can never observe each other's intermediate state.
+/// `@MainActor`-isolated. Background producers must hop before calling.
 @MainActor
 @Observable
 final class Transcript2Controller {
-    /// Atomic, granular mutation. Call `apply` with one or batch many.
     enum Change: Sendable {
         /// Insert `blocks` at `index`. Index is clamped to `[0, blockCount]`.
+        /// To append, pass `at: blockCount`.
         case insert(at: Int, _ blocks: [Block])
-        /// Append at the end. Equivalent to `.insert(at: blockCount, blocks)`.
-        case append([Block])
         /// Remove every block whose id is in `ids`. Unknown ids are ignored.
         case remove(ids: [UUID])
         /// Replace the kind of an existing block, preserving its id. No-op
         /// if the id is unknown.
         case update(id: UUID, kind: Block.Kind)
-        /// Escape hatch: replace the entire content. Triggers a single
-        /// `reloadData` — no per-row animation, no diff. Use for cold loads
-        /// and "I lost track of what changed" recovery paths.
-        case replaceAll([Block])
+    }
+
+    /// What the table should do with scroll position around an `apply`.
+    enum ScrollState: Sendable, Equatable {
+        case none
+        /// After applying, scroll so the row with `id` is at the visual top.
+        case top(id: UUID)
+        /// After applying, scroll so the row with `id` is at the visual bottom.
+        case bottom(id: UUID)
+        /// Capture an anchor row's screen position before the change,
+        /// recompute scroll afterwards so the same row stays visually in
+        /// place. `Side` picks which row in the visible range to anchor on.
+        case saveVisible(Side)
+
+        enum Side: Sendable {
+            case visualTop
+            case visualBottom
+        }
+    }
+
+    /// Where to land scroll on first-screen load.
+    enum InitialAnchor: Sendable, Equatable {
+        /// Default for chat: last block pinned to visual bottom.
+        case bottom
+        /// Pin the block with `id` to the visual top (jump to message /
+        /// unread marker).
+        case top(id: UUID)
+        /// Pin the block with `id` to the visual bottom.
+        case bottomTo(id: UUID)
     }
 
     /// Mirrored from the coordinator after every mutation so SwiftUI can
@@ -42,7 +60,6 @@ final class Transcript2Controller {
     private(set) var blockCount: Int = 0
 
     /// Module-internal: handed to `NativeTranscript2View.makeCoordinator`.
-    /// Treat as opaque from outside this module.
     let coordinator: Transcript2Coordinator
 
     init() {
@@ -54,12 +71,149 @@ final class Transcript2Controller {
 
     // MARK: - Mutation
 
-    func apply(_ changes: Change...) { coordinator.apply(changes) }
-    func apply(_ changes: [Change]) { coordinator.apply(changes) }
+    /// Sync apply: layouts compute lazily on `heightOfRow` queries. Use for
+    /// incremental updates (single message arrives, tool result fills in,
+    /// user deletes one).
+    func apply(_ changes: Change..., scroll: ScrollState = .none) {
+        coordinator.apply(changes, scroll: scroll)
+    }
+
+    func apply(_ changes: [Change], scroll: ScrollState = .none) {
+        coordinator.apply(changes, scroll: scroll)
+    }
+
+    // MARK: - First-screen load
+
+    /// Two-phase initial load. Phase 1 (sync) inserts a viewport-covering
+    /// slice so the user sees correct content immediately. Phase 2 (off-main
+    /// layout, main-hop insert) installs the rest with `.saveVisible` to
+    /// keep Phase 1 visually fixed.
+    func loadInitial(_ blocks: [Block], anchor: InitialAnchor = .bottom) {
+        guard !blocks.isEmpty else { return }
+
+        let width = coordinator.layoutWidth
+        let viewportHeight = coordinator.viewportHeight
+        guard width > 0, viewportHeight > 0 else {
+            // Table not attached or zero-sized. Stash blocks; future attach
+            // triggers reloadData. Scroll is meaningless without a table.
+            coordinator.apply([.insert(at: blockCount, blocks)], scroll: .none)
+            return
+        }
+
+        let slice = Self.sliceForViewport(
+            blocks: blocks, anchor: anchor,
+            width: width, viewportHeight: viewportHeight)
+
+        let phase1Scroll: ScrollState
+        let phase2Side: ScrollState.Side
+        switch anchor {
+        case .bottom:
+            phase1Scroll = .bottom(id: blocks[slice.viewportRange.upperBound - 1].id)
+            phase2Side = .visualBottom
+        case .top(let id):
+            phase1Scroll = .top(id: id)
+            phase2Side = .visualTop
+        case .bottomTo(let id):
+            phase1Scroll = .bottom(id: id)
+            phase2Side = .visualBottom
+        }
+
+        let viewportBatch = Array(blocks[slice.viewportRange])
+        let above = Array(blocks[..<slice.viewportRange.lowerBound])
+        let below = slice.viewportRange.upperBound < blocks.count
+            ? Array(blocks[slice.viewportRange.upperBound...])
+            : []
+
+        // Phase 1 — viewport batch, sync. heightOfRow lazy-computes layouts
+        // for the visible rows; cost is bounded by viewport size.
+        coordinator.apply(
+            [.insert(at: blockCount, viewportBatch)],
+            scroll: phase1Scroll)
+
+        // Phase 2 — the rest, off-main layout. Order matters: insert
+        // "below" (after viewportBatch) first, then "above" (at index 0),
+        // so the second insert doesn't displace the first.
+        let viewportBatchEnd = blockCount  // captured for the inserts below
+        var phase2: [Change] = []
+        if !below.isEmpty {
+            phase2.append(.insert(at: viewportBatchEnd, below))
+        }
+        if !above.isEmpty {
+            phase2.append(.insert(at: 0, above))
+        }
+        if !phase2.isEmpty {
+            coordinator.applyAsync(phase2, scroll: .saveVisible(phase2Side))
+        }
+    }
 
     // MARK: - Query
 
     func block(at index: Int) -> Block? { coordinator.block(at: index) }
     func block(id: UUID) -> Block? { coordinator.block(id: id) }
     var blockIds: [UUID] { coordinator.blockIds }
+
+    // MARK: - Slicing (private)
+
+    private struct Slice {
+        /// Range into the original `blocks` array covering the viewport.
+        let viewportRange: Range<Int>
+    }
+
+    /// Walks `blocks` from the anchor outward, accumulating row heights
+    /// until viewport is covered. Pure: only reads `Coordinator.makeLayout`
+    /// (a `nonisolated static` function); does not mutate cache.
+    private static func sliceForViewport(
+        blocks: [Block],
+        anchor: InitialAnchor,
+        width: CGFloat,
+        viewportHeight: CGFloat
+    ) -> Slice {
+        let pad2 = 2 * BlockStyle.blockVerticalPadding
+
+        func rowHeight(_ block: Block) -> CGFloat {
+            Transcript2Coordinator.makeLayout(for: block, width: width).totalHeight + pad2
+        }
+
+        switch anchor {
+        case .bottom:
+            var height: CGFloat = 0
+            var first = blocks.count
+            for i in stride(from: blocks.count - 1, through: 0, by: -1) {
+                height += rowHeight(blocks[i])
+                first = i
+                if height >= viewportHeight { break }
+            }
+            return Slice(viewportRange: first ..< blocks.count)
+
+        case .top(let id):
+            guard let anchorIdx = blocks.firstIndex(where: { $0.id == id }) else {
+                return sliceForViewport(
+                    blocks: blocks, anchor: .bottom,
+                    width: width, viewportHeight: viewportHeight)
+            }
+            var height: CGFloat = 0
+            var last = anchorIdx
+            for i in anchorIdx ..< blocks.count {
+                height += rowHeight(blocks[i])
+                last = i
+                if height >= viewportHeight { break }
+            }
+            return Slice(viewportRange: anchorIdx ..< last + 1)
+
+        case .bottomTo(let id):
+            guard let anchorIdx = blocks.firstIndex(where: { $0.id == id }) else {
+                return sliceForViewport(
+                    blocks: blocks, anchor: .bottom,
+                    width: width, viewportHeight: viewportHeight)
+            }
+            var height: CGFloat = 0
+            var first = anchorIdx
+            for i in stride(from: anchorIdx, through: 0, by: -1) {
+                height += rowHeight(blocks[i])
+                first = i
+                if height >= viewportHeight { break }
+            }
+            return Slice(viewportRange: first ..< anchorIdx + 1)
+        }
+    }
 }

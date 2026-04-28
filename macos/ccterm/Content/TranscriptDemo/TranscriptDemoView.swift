@@ -25,7 +25,7 @@ struct TranscriptDemoView: View {
                 // that would otherwise re-fire a side-effecting `@State`
                 // default closure.
                 if controller.blockCount == 0 {
-                    controller.apply(.replaceAll(Self.initialBlocks))
+                    controller.loadInitial(Self.initialBlocks)
                 }
             }
     }
@@ -34,7 +34,7 @@ struct TranscriptDemoView: View {
         HStack(spacing: 10) {
             Button {
                 let next = Self.extraBlock(at: extraAddCount)
-                controller.apply(.append([next]))
+                controller.apply(.insert(at: controller.blockCount, [next]))
                 extraAddCount += 1
             } label: {
                 Label("Add Message", systemImage: "plus.circle.fill")

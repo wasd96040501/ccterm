@@ -6,10 +6,10 @@ import SwiftUI
 ///
 /// The view takes a caller-owned `Transcript2Controller` — there is no
 /// `[Block]` `State` parameter. Callers mutate transcript content
-/// imperatively via `controller.apply(.insert / .append / .remove /
-/// .update / .replaceAll)`. SwiftUI's role is reduced to mounting the
-/// AppKit view and wiring the existing coordinator into it; `updateNSView`
-/// is a no-op.
+/// imperatively via `controller.apply(.insert / .remove / .update)` for
+/// incremental changes, or `controller.loadInitial(_:)` for the cold-load
+/// path. SwiftUI's role is reduced to mounting the AppKit view and wiring
+/// the existing coordinator into it; `updateNSView` is a no-op.
 struct NativeTranscript2View: NSViewRepresentable {
     let controller: Transcript2Controller
 
@@ -110,7 +110,7 @@ private struct PreviewWrapper: View {
         NativeTranscript2View(controller: controller)
             .task {
                 if controller.blockCount == 0 {
-                    controller.apply(.replaceAll(previewBlocks))
+                    controller.loadInitial(previewBlocks)
                 }
             }
     }

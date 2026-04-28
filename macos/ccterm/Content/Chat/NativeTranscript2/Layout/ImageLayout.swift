@@ -16,26 +16,32 @@ struct ImageLayout: Sendable {
     let totalHeight: CGFloat
     let measuredWidth: CGFloat
 
-    static func make(image: NSImage,
-                     maxWidth: CGFloat,
-                     maxHeight: CGFloat) -> ImageLayout {
+    nonisolated static func make(
+        image: NSImage,
+        maxWidth: CGFloat,
+        maxHeight: CGFloat
+    ) -> ImageLayout {
         let intrinsic = image.size
         guard maxWidth > 0,
-              intrinsic.width > 0,
-              intrinsic.height > 0
+            intrinsic.width > 0,
+            intrinsic.height > 0
         else {
-            return ImageLayout(cgImage: nil,
-                               displayRect: .zero,
-                               totalHeight: 0,
-                               measuredWidth: max(0, maxWidth))
+            return ImageLayout(
+                cgImage: nil,
+                displayRect: .zero,
+                totalHeight: 0,
+                measuredWidth: max(0, maxWidth))
         }
 
         // Aspect-fit within (maxWidth × maxHeight). Never upscale.
-        let scale = min(1, min(maxWidth / intrinsic.width,
-                               maxHeight / intrinsic.height))
+        let scale = min(
+            1,
+            min(
+                maxWidth / intrinsic.width,
+                maxHeight / intrinsic.height))
         let w = intrinsic.width * scale
         let h = intrinsic.height * scale
-        let originX = (maxWidth - w) / 2     // center horizontally
+        let originX = (maxWidth - w) / 2  // center horizontally
 
         // Extract CGImage once (off-main safe). Subsequent draws reuse it.
         let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
@@ -49,7 +55,8 @@ struct ImageLayout: Sendable {
     /// Draw into a flipped NSView. `origin` is the layout's top-left in view coords.
     func draw(in ctx: CGContext, origin: CGPoint) {
         guard let cgImage,
-              displayRect.width > 0, displayRect.height > 0 else { return }
+            displayRect.width > 0, displayRect.height > 0
+        else { return }
         let target = CGRect(
             x: origin.x + displayRect.minX,
             y: origin.y + displayRect.minY,
@@ -60,9 +67,12 @@ struct ImageLayout: Sendable {
         ctx.saveGState()
         ctx.translateBy(x: target.minX, y: target.maxY)
         ctx.scaleBy(x: 1, y: -1)
-        ctx.draw(cgImage, in: CGRect(x: 0, y: 0,
-                                     width: target.width,
-                                     height: target.height))
+        ctx.draw(
+            cgImage,
+            in: CGRect(
+                x: 0, y: 0,
+                width: target.width,
+                height: target.height))
         ctx.restoreGState()
     }
 }

@@ -90,7 +90,8 @@ SwiftUI: NativeTranscript2View (NSViewRepresentable)
 
 ### 已实现的范例
 
-- `case .heading(String)` / `case .paragraph(String)` → `TextLayout` (`BlockStyle.headingAttributed` / `paragraphAttributed`)
+- `case .heading(level: Int, inlines: [InlineNode])` / `case .paragraph(inlines: [InlineNode])` → `TextLayout`,经 `BlockStyle.headingAttributed(level:inlines:)` / `paragraphAttributed(inlines:)` 把 inline IR 折叠成 `NSAttributedString`。无 `String` 重载——caller 没有 parser 时手动包 `[.text(s)]`
+- `InlineNode` 是递归 inline IR(text / strong / emphasis / code / link / lineBreak),由上游 markdown parser 产出;Block 层只持有,不解析
 - `case .image(NSImage)` → `ImageLayout`(aspect-fit + maxHeight 兜底)
 
 ## 4. 文件结构

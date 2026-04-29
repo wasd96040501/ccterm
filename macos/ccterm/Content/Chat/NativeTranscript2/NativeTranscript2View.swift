@@ -86,20 +86,36 @@ private let previewBlocks: [Block] = {
         .withSymbolConfiguration(symbolConfig)
         ?? NSImage(size: NSSize(width: 200, height: 120))
     return [
-        Block(id: UUID(), kind: .heading("Refactor plan")),
-        Block(id: UUID(), kind: .paragraph(
-            "Replace the existing NativeTranscript module with a smaller, "
-            + "Core Text–based renderer.")),
-        Block(id: UUID(), kind: .heading("Layouts so far")),
-        Block(id: UUID(), kind: .paragraph(
-            "TextLayout handles headings and paragraphs. ImageLayout handles "
-            + "raster / vector images. Both report their own height and draw "
-            + "themselves through the RowLayout enum.")),
+        Block(id: UUID(), kind: .heading(level: 1, inlines: [.text("Refactor plan")])),
+        Block(id: UUID(), kind: .paragraph(inlines: [
+            .text("Replace the existing "),
+            .code("NativeTranscript"),
+            .text(" module with a smaller, "),
+            .strong([.text("Core Text")]),
+            .text("–based renderer."),
+        ])),
+        Block(id: UUID(), kind: .heading(level: 2, inlines: [.text("Layouts so far")])),
+        Block(id: UUID(), kind: .paragraph(inlines: [
+            .strong([.text("TextLayout")]),
+            .text(" handles headings and paragraphs. "),
+            .strong([.text("ImageLayout")]),
+            .text(" handles raster / vector images. Both report their own height and draw themselves through the "),
+            .code("RowLayout"),
+            .text(" enum."),
+        ])),
         Block(id: UUID(), kind: .image(demoImage)),
-        Block(id: UUID(), kind: .paragraph(
-            "Adding a new block kind means: extend Block.Kind, add a XxxLayout "
-            + "primitive, add a case to RowLayout, add a switch arm in "
-            + "Transcript2Coordinator.makeLayout.")),
+        Block(id: UUID(), kind: .paragraph(inlines: [
+            .emphasis([.text("Adding a new block kind")]),
+            .text(" means: extend "),
+            .code("Block.Kind"),
+            .text(", add a "),
+            .code("XxxLayout"),
+            .text(" primitive, add a case to "),
+            .code("RowLayout"),
+            .text(", add a switch arm in "),
+            .code("Transcript2Coordinator.makeLayout"),
+            .text("."),
+        ])),
     ]
 }()
 

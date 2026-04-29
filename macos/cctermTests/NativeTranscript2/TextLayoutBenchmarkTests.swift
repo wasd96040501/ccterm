@@ -89,11 +89,11 @@ final class TextLayoutBenchmarkTests: XCTestCase {
     }
 
     private func paragraph(_ s: String) -> NSAttributedString {
-        BlockStyle.paragraphAttributed(s)
+        BlockStyle.paragraphAttributed(inlines: [.text(s)])
     }
 
     private func heading(_ s: String) -> NSAttributedString {
-        BlockStyle.headingAttributed(s)
+        BlockStyle.headingAttributed(level: 1, inlines: [.text(s)])
     }
 
     // MARK: - Hand-rolled "height-only" alternatives (for comparison)
@@ -209,7 +209,8 @@ final class TextLayoutBenchmarkTests: XCTestCase {
     func testBenchmarkASCIIHeading() {
         for n in [100, 500] {
             let s = makeASCII(chars: n)
-            run(label: "ASCII heading", attr: heading(s), font: BlockStyle.headingFont, width: 600)
+            run(label: "ASCII heading", attr: heading(s),
+                font: BlockStyle.headingFont(level: 1), width: 600)
         }
     }
 

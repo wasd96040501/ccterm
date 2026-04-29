@@ -34,4 +34,13 @@ enum RowLayout: Sendable {
         case .image(let l): l.draw(in: ctx, origin: origin)
         }
     }
+
+    /// Link hit zones in layout-local coords. Empty for non-text rows.
+    /// Cell-side hit-testing offsets these by the cell's draw origin.
+    var links: [TextLayout.LinkHit] {
+        switch self {
+        case .text(let l): return l.links
+        case .image: return []
+        }
+    }
 }

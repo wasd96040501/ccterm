@@ -76,27 +76,27 @@ private extension TranscriptDemoView {
     /// Hardcoded extra entries appended by the "Add Message" button. Cycled
     /// through by `currentCount` so each click visibly adds something new.
     static let extraPool: [Block.Kind] = [
-        .paragraph(
+        .paragraph(inlines: plain(
             "Update — A late-breaking note from one of the framework "
             + "maintainers suggests the Pacific instruction extensions ship "
             + "with two undocumented opcodes used internally for scheduling. "
             + "Apple has not commented on whether these will be exposed to "
             + "third-party developers."
-        ),
-        .heading("更新 · 后续动态"),
-        .paragraph(
+        )),
+        .heading(level: 2, inlines: plain("更新 · 后续动态")),
+        .paragraph(inlines: plain(
             "据多家媒体跟进报道,前述监管新规将在公开征求意见 30 天后正式生效。"
             + "目前已有 7 家企业提交了书面反馈,主要集中在过渡期长度和数据保存格式两个方面。"
             + "监管部门表示会在听证会后整理意见并公布最终版本。"
-        ),
-        .paragraph(
+        )),
+        .paragraph(inlines: plain(
             "Side note — Several open-source projects have begun publishing "
             + "matrix-multiplication kernels tuned for the new memory "
             + "subsystem. Early benchmarks show 1.4x–1.7x improvements on "
             + "INT8 GEMM workloads compared with hand-tuned NEON intrinsics, "
             + "though the gap narrows considerably at larger problem sizes "
             + "where memory-bandwidth ceiling dominates."
-        ),
+        )),
     ]
 
     static func extraBlock(at addIndex: Int) -> Block {
@@ -106,7 +106,7 @@ private extension TranscriptDemoView {
 
     static func makeInitialBlocks() -> [Block] {
         let icons = DemoIcons()
-        return [
+        return markdownShowcase() + [
             heading("Tech News — April 2026"),
             para(
                 "Apple unveiled the next generation of its M-series silicon at a "
@@ -291,16 +291,109 @@ private extension TranscriptDemoView {
         ]
     }
 
-    static func heading(_ text: String) -> Block {
-        Block(id: UUID(), kind: .heading(text))
+    static func heading(_ text: String, level: Int = 1) -> Block {
+        Block(id: UUID(), kind: .heading(level: level, inlines: plain(text)))
     }
 
     static func para(_ text: String) -> Block {
-        Block(id: UUID(), kind: .paragraph(text))
+        Block(id: UUID(), kind: .paragraph(inlines: plain(text)))
+    }
+
+    static func headingIR(level: Int, _ inlines: [InlineNode]) -> Block {
+        Block(id: UUID(), kind: .heading(level: level, inlines: inlines))
+    }
+
+    static func paraIR(_ inlines: [InlineNode]) -> Block {
+        Block(id: UUID(), kind: .paragraph(inlines: inlines))
     }
 
     static func image(_ image: NSImage) -> Block {
         Block(id: UUID(), kind: .image(image))
+    }
+
+    /// Trivial wrapper used wherever a String literal is the entire content —
+    /// keeps construction sites readable while every value site still goes
+    /// through `[InlineNode]`. Lifted to file scope (vs. inline `[.text(s)]`)
+    /// so updating the demo to richer IR is a one-line edit per call site.
+    static func plain(_ text: String) -> [InlineNode] { [.text(text)] }
+
+    /// Curated showcase of inline IR + heading levels. Sits at the top of
+    /// `initialBlocks` so opening the demo immediately exercises the new
+    /// markdown rendering path.
+    static func markdownShowcase() -> [Block] {
+        let docsURL = URL(string: "https://example.com/docs")!
+        let issueURL = URL(string: "https://example.com/issues/42")!
+        return [
+            headingIR(level: 1, [.text("Markdown showcase")]),
+
+            paraIR([
+                .text("This first section exercises every "),
+                .strong([.text("inline node kind")]),
+                .text(" the renderer supports. Below are headings "),
+                .code("h1"),
+                .text(" through "),
+                .code("h6"),
+                .text(", followed by a paragraph that mixes "),
+                .strong([.text("bold")]),
+                .text(", "),
+                .emphasis([.text("italic")]),
+                .text(", "),
+                .strong([.emphasis([.text("bold-italic")])]),
+                .text(", "),
+                .code("inline code"),
+                .text(", and a "),
+                .link(children: [.text("hyperlink")], url: docsURL),
+                .text("."),
+            ]),
+
+            paraIR([
+                .text("Hard line breaks split a paragraph without ending the block."),
+                .lineBreak,
+                .text("This second sentence sits on its own visual line but "),
+                .text("shares the paragraph's typographic state."),
+                .lineBreak,
+                .text("A third line, again broken with "),
+                .code("\\n"),
+                .text("-equivalent."),
+            ]),
+
+            headingIR(level: 1, [.text("Heading level 1")]),
+            headingIR(level: 2, [.text("Heading level 2")]),
+            headingIR(level: 3, [.text("Heading level 3")]),
+            headingIR(level: 4, [.text("Heading level 4")]),
+            headingIR(level: 5, [.text("Heading level 5")]),
+            headingIR(level: 6, [.text("Heading level 6")]),
+
+            paraIR([
+                .text("Nested emphasis: "),
+                .strong([
+                    .text("bold with an "),
+                    .emphasis([.text("italic phrase")]),
+                    .text(" inside"),
+                ]),
+                .text(", and a "),
+                .link(children: [
+                    .strong([.text("bold")]),
+                    .text(" "),
+                    .code("link"),
+                ], url: issueURL),
+                .text(" carrying mixed children."),
+            ]),
+
+            paraIR([
+                .text("CJK + emphasis 混排:这里出现一段"),
+                .strong([.text("加粗的中文短语")]),
+                .text(",紧接一个 "),
+                .code("monospaced"),
+                .text(" 内联代码,然后是 "),
+                .emphasis([.text("italic")]),
+                .text(" 收尾。换行符也能正确穿插。"),
+                .lineBreak,
+                .text("第二行用 "),
+                .link(children: [.text("链接锚点")], url: docsURL),
+                .text(" 收尾。"),
+            ]),
+        ]
     }
 }
 

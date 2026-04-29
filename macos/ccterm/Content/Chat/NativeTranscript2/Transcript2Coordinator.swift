@@ -414,13 +414,13 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     nonisolated static func makeLayout(for block: Block, width: CGFloat) -> RowLayout {
         let contentWidth = max(0, width - 2 * BlockStyle.blockHorizontalPadding)
         switch block.kind {
-        case .heading(let text):
+        case .heading(let level, let inlines):
             return .text(TextLayout.make(
-                attributed: BlockStyle.headingAttributed(text),
+                attributed: BlockStyle.headingAttributed(level: level, inlines: inlines),
                 maxWidth: contentWidth))
-        case .paragraph(let text):
+        case .paragraph(let inlines):
             return .text(TextLayout.make(
-                attributed: BlockStyle.paragraphAttributed(text),
+                attributed: BlockStyle.paragraphAttributed(inlines: inlines),
                 maxWidth: contentWidth))
         case .image(let image):
             return .image(ImageLayout.make(

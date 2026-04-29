@@ -92,7 +92,8 @@ struct TranscriptStressView: View {
         }
         let chars = loaded.reduce(0) { acc, b in
             switch b.kind {
-            case .heading(let s), .paragraph(let s): return acc + s.count
+            case .heading(_, let inlines), .paragraph(let inlines):
+                return acc + InlineNode.charCount(inlines)
             case .image: return acc
             }
         }
@@ -117,8 +118,8 @@ struct TranscriptStressView: View {
             let body = String(line[line.index(after: tab)...])
             let kind: Block.Kind
             switch kindRaw {
-            case "H": kind = .heading(body)
-            case "P": kind = .paragraph(body)
+            case "H": kind = .heading(level: 1, inlines: [.text(body)])
+            case "P": kind = .paragraph(inlines: [.text(body)])
             default: continue
             }
             out.append(Block(id: UUID(), kind: kind))

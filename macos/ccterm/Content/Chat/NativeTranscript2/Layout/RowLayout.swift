@@ -43,4 +43,14 @@ enum RowLayout: Sendable {
         case .image: return []
         }
     }
+
+    /// Underlying `TextLayout` for text-bearing kinds, `nil` for image.
+    /// Selection consumers (cell highlight draw, drag hit-test) use this
+    /// to skip non-text rows without re-switching on the enum.
+    var textLayout: TextLayout? {
+        switch self {
+        case .text(let l): return l
+        case .image: return nil
+        }
+    }
 }

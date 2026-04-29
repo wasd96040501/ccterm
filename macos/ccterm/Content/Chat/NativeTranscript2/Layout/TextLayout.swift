@@ -41,6 +41,12 @@ import CoreText
 struct TextLayout: @unchecked Sendable {
     let lines: [CTLine]
     let lineOrigins: [CGPoint]
+    /// Per-line ascent/descent. Used by selection rect generation and by
+    /// hit-testing to find the line whose vertical band contains a point.
+    /// Promoted from a local `make`-time variable into stored state because
+    /// recomputing `CTLineGetTypographicBounds` on every selection update
+    /// during a drag is wasted work.
+    let lineMetrics: [LineMetrics]
     let totalHeight: CGFloat
     let measuredWidth: CGFloat
     /// Inline code backgrounds in layout-local coords (y down, top-left).
@@ -52,13 +58,28 @@ struct TextLayout: @unchecked Sendable {
     /// rect per line.
     let links: [LinkHit]
 
+    struct LineMetrics: Sendable {
+        let ascent: CGFloat
+        let descent: CGFloat
+    }
+
     struct LinkHit: Sendable {
         let rect: CGRect
         let url: URL
     }
 
+    /// Total typeset character count. Equal to the source attributed
+    /// string's length when `make` ran to completion (typesetter
+    /// consumed all characters).
+    var length: Int {
+        guard let last = lines.last else { return 0 }
+        let r = CTLineGetStringRange(last)
+        return r.location + r.length
+    }
+
     nonisolated static let empty = TextLayout(
-        lines: [], lineOrigins: [], totalHeight: 0, measuredWidth: 0,
+        lines: [], lineOrigins: [], lineMetrics: [],
+        totalHeight: 0, measuredWidth: 0,
         codeBackgrounds: [], links: [])
 
     nonisolated static func make(attributed: NSAttributedString, maxWidth: CGFloat) -> TextLayout {
@@ -68,7 +89,7 @@ struct TextLayout: @unchecked Sendable {
         let length = attributed.length
         var lines: [CTLine] = []
         var origins: [CGPoint] = []
-        var lineMetrics: [(ascent: CGFloat, descent: CGFloat)] = []
+        var metrics: [LineMetrics] = []
         var y: CGFloat = 0
         var start: CFIndex = 0
 
@@ -85,17 +106,17 @@ struct TextLayout: @unchecked Sendable {
 
             y += ascent
             origins.append(CGPoint(x: 0, y: y))
-            lineMetrics.append((ascent, descent))
+            metrics.append(LineMetrics(ascent: ascent, descent: descent))
             y += descent + leading
             lines.append(line)
             start += count
         }
 
         let (codeBackgrounds, links) = extractDecorations(
-            lines: lines, origins: origins, metrics: lineMetrics)
+            lines: lines, origins: origins, metrics: metrics)
 
         return TextLayout(
-            lines: lines, lineOrigins: origins,
+            lines: lines, lineOrigins: origins, lineMetrics: metrics,
             totalHeight: y, measuredWidth: maxWidth,
             codeBackgrounds: codeBackgrounds, links: links)
     }
@@ -109,7 +130,7 @@ struct TextLayout: @unchecked Sendable {
     nonisolated private static func extractDecorations(
         lines: [CTLine],
         origins: [CGPoint],
-        metrics: [(ascent: CGFloat, descent: CGFloat)]
+        metrics: [LineMetrics]
     ) -> (codeBackgrounds: [CGRect], links: [LinkHit]) {
         var codeRects: [CGRect] = []
         var linkHits: [LinkHit] = []
@@ -156,6 +177,74 @@ struct TextLayout: @unchecked Sendable {
         if let s = raw as? String { return URL(string: s) }
         return nil
     }
+
+    // MARK: - Selection queries
+
+    /// Insertion-point index at `point` (layout-local coords, y-down).
+    /// Clamped to `[0, length]`. Used by drag-to-select hit-testing.
+    ///
+    /// - Above the first line: `0`.
+    /// - Below the last line: `length`.
+    /// - Inside or in the leading region above a line's bottom: the line's
+    ///   `CTLineGetStringIndexForPosition` result; on the rare
+    ///   `kCFNotFound` (very negative or very large x) we clamp to that
+    ///   line's start or end. Modern CT clamps internally for in-range x,
+    ///   so the explicit fallback is defensive.
+    func characterIndex(at point: CGPoint) -> Int {
+        guard !lines.isEmpty else { return 0 }
+
+        if point.y < lineOrigins[0].y - lineMetrics[0].ascent { return 0 }
+
+        for i in 0 ..< lines.count {
+            let bottom = lineOrigins[i].y + lineMetrics[i].descent
+            guard point.y <= bottom else { continue }
+            let idx = CTLineGetStringIndexForPosition(
+                lines[i], CGPoint(x: point.x, y: 0))
+            if idx == kCFNotFound {
+                let r = CTLineGetStringRange(lines[i])
+                return point.x < 0 ? r.location : r.location + r.length
+            }
+            return idx
+        }
+        return length
+    }
+
+    /// Selection-highlight rects (one per line fragment that intersects
+    /// `range`). Each rect is tight to the line's ascent/descent in
+    /// layout-local coords, matching `NSTextView`'s default selection
+    /// highlight geometry.
+    func selectionRects(for range: NSRange) -> [CGRect] {
+        guard range.length > 0, !lines.isEmpty else { return [] }
+        let selStart = range.location
+        let selEnd = range.location + range.length
+
+        var rects: [CGRect] = []
+        rects.reserveCapacity(min(lines.count, 4))
+
+        for (i, line) in lines.enumerated() {
+            let lineRange = CTLineGetStringRange(line)
+            let lineStart = lineRange.location
+            let lineEnd = lineStart + lineRange.length
+
+            let lo = max(selStart, lineStart)
+            let hi = min(selEnd, lineEnd)
+            guard hi > lo else { continue }
+
+            let xStart = CTLineGetOffsetForStringIndex(line, lo, nil)
+            let xEnd = CTLineGetOffsetForStringIndex(line, hi, nil)
+            let baseline = lineOrigins[i].y
+            let ascent = lineMetrics[i].ascent
+            let descent = lineMetrics[i].descent
+            rects.append(CGRect(
+                x: xStart,
+                y: baseline - ascent,
+                width: max(0, xEnd - xStart),
+                height: ascent + descent))
+        }
+        return rects
+    }
+
+    // MARK: - Draw
 
     /// Draw into a flipped NSView. `origin` is layout's top-left in view coords.
     func draw(in ctx: CGContext, origin: CGPoint) {

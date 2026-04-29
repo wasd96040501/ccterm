@@ -79,6 +79,17 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// observers on `blockCount` see the new value.
     var onBlockCountChanged: ((Int) -> Void)?
 
+    /// Cross-row text selection. Owns the selection dict; reads back into
+    /// us through the helpers below (`block(atRow:)`, `textLayout(atRow:)`,
+    /// `attributedString(forBlockId:)`, `markCellNeedsDisplay(blockId:)`).
+    let selection: Transcript2SelectionCoordinator
+
+    override init() {
+        self.selection = Transcript2SelectionCoordinator()
+        super.init()
+        self.selection.transcript = self
+    }
+
     private var blocks: [Block] = []
 
     /// Memo of `(block, width) -> RowLayout`. Keyed by id so updates and
@@ -256,13 +267,21 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             }
             guard !indexes.isEmpty else { return }
             for i in indexes.reversed() { blocks.remove(at: i) }
-            for id in idSet { removeCachedLayout(for: id) }
+            for id in idSet {
+                removeCachedLayout(for: id)
+                selection.dropEntry(blockId: id)
+            }
             table?.removeRows(at: indexes, withAnimation: [.effectFade])
 
         case .update(let id, let kind):
             guard let i = blocks.firstIndex(where: { $0.id == id }) else { return }
             blocks[i] = Block(id: id, kind: kind)
             removeCachedLayout(for: id)
+            // Content replacement invalidates the prior selection range
+            // (offsets no longer index into the same string). Drop now so
+            // the upcoming `reloadData(forRowIndexes:)` runs viewFor with
+            // a clean empty selection on the recycled cell.
+            selection.dropEntry(blockId: id)
             let idx = IndexSet(integer: i)
             table?.reloadData(forRowIndexes: idx,
                               columnIndexes: IndexSet(integer: 0))
@@ -559,7 +578,8 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                    row: Int) -> NSView? {
         guard blocks.indices.contains(row) else { return nil }
         let width = layoutWidth
-        let cellLayout = layout(for: blocks[row], width: width)
+        let block = blocks[row]
+        let cellLayout = layout(for: block, width: width)
 
         let id = NSUserInterfaceItemIdentifier("BlockCell")
         let cell: BlockCellView
@@ -570,7 +590,71 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             cell.identifier = id
         }
         cell.layout = cellLayout
+        // Selection is keyed by block id, not by cell instance, so a
+        // recycled cell scrolling onto a row that already had a selection
+        // picks up the existing range here. Empty range = no highlight.
+        cell.blockId = block.id
+        cell.selectedRange = selection.selection(for: block.id)
+            ?? NSRange(location: 0, length: 0)
         return cell
+    }
+
+    // MARK: - Selection helpers (consumed by SelectionCoordinator)
+
+    /// Block at `row`, or `nil` if out of bounds. Selection-side reads
+    /// must accept "no block here" because `applyInBackground`'s
+    /// fire-and-forget hop can shrink `blocks` between the caller's
+    /// row resolution and this read.
+    func block(atRow row: Int) -> Block? {
+        blocks.indices.contains(row) ? blocks[row] : nil
+    }
+
+    /// Block by id. Linear scan — selection paths touch ≤ N blocks, the
+    /// dict-keyed lookup elsewhere is `layoutCache`'s job, not this one.
+    func block(forId id: UUID) -> Block? {
+        blocks.first { $0.id == id }
+    }
+
+    /// `NSAttributedString` for a text-bearing block, rebuilt from the
+    /// inline IR on demand. `nil` for `image`. Used by selection at copy
+    /// time and Cmd+A — we deliberately don't cache it because the cost
+    /// of caching outweighs the rarity of these paths (copy is once per
+    /// gesture; Cmd+A is once per shortcut).
+    func attributedString(forBlockId id: UUID) -> NSAttributedString? {
+        guard let block = block(forId: id) else { return nil }
+        switch block.kind {
+        case .heading(let level, let inlines):
+            return BlockStyle.headingAttributed(level: level, inlines: inlines)
+        case .paragraph(let inlines):
+            return BlockStyle.paragraphAttributed(inlines: inlines)
+        case .image:
+            return nil
+        }
+    }
+
+    /// `TextLayout` for a row's block, or `nil` for non-text rows. Goes
+    /// through the lazy `layout(for:width:)` path so a row whose layout
+    /// was evicted (or not yet computed) lazy-fills its cache entry as
+    /// a side effect.
+    func textLayout(atRow row: Int) -> TextLayout? {
+        guard let block = block(atRow: row) else { return nil }
+        return layout(for: block, width: layoutWidth).textLayout
+    }
+
+    /// Push the current selection state for `blockId` to its visible
+    /// cell, which triggers `needsDisplay` via the cell's `didSet` if
+    /// the range actually changed. No-op if the cell isn't currently
+    /// visible — when it scrolls in, `viewFor` will read the live state
+    /// from the selection dict.
+    func markCellNeedsDisplay(blockId: UUID) {
+        guard let table = tableView,
+              let row = blocks.firstIndex(where: { $0.id == blockId })
+        else { return }
+        guard let cell = table.view(atColumn: 0, row: row, makeIfNecessary: false)
+            as? BlockCellView
+        else { return }
+        cell.selectedRange = selection.selection(for: blockId)
+            ?? NSRange(location: 0, length: 0)
     }
 
 }

@@ -457,13 +457,31 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// dropping `reloadData(forRowIndexes:)` leaves visible cells holding
     /// the old `RowLayout` (drawn at old width) inside a newly-resized
     /// frame, so glyphs land at the wrong x positions during a live resize.
+    ///
+    /// The no-animation grouping is the live-resize fix: by default
+    /// `noteHeightOfRows` repositions rows below via an implicit
+    /// NSAnimationContext / CATransaction animation, while cell-internal
+    /// redraw is synchronous (`needsDisplay = true` in `layout` setter).
+    /// During fast resize the cell already paints at the new height while
+    /// the row below is still mid-animation at its old y — visually the
+    /// rows overlap. Zeroing duration and disabling layer actions makes
+    /// row repositioning land in the same display cycle as the redraw.
+    /// Mirrors Telegram's `TableView.layoutIfNeeded(with:oldWidth:)` →
+    /// `noteHeightOfRow(_:false)` path, which does the same suppression.
     private func invalidate(rows indexes: IndexSet, in tableView: NSTableView) {
         guard !indexes.isEmpty else { return }
+        NSAnimationContext.beginGrouping()
+        NSAnimationContext.current.duration = 0
+        NSAnimationContext.current.allowsImplicitAnimation = false
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         tableView.beginUpdates()
         tableView.reloadData(forRowIndexes: indexes,
                              columnIndexes: IndexSet(integer: 0))
         tableView.noteHeightOfRows(withIndexesChanged: indexes)
         tableView.endUpdates()
+        CATransaction.commit()
+        NSAnimationContext.endGrouping()
     }
 
     // MARK: - Background prefetch (post-live-resize)

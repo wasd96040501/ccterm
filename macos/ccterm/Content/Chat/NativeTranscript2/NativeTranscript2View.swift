@@ -116,6 +116,54 @@ private let previewBlocks: [Block] = {
             .code("Transcript2Coordinator.makeLayout"),
             .text("."),
         ])),
+        Block(id: UUID(), kind: .heading(level: 2, inlines: [.text("List sample")])),
+        Block(id: UUID(), kind: .list(ListBlock(ordered: false, items: [
+            ListBlock.Item(content: [
+                .paragraph([
+                    .text("Bullet item with "),
+                    .strong([.text("emphasis")]),
+                    .text(" and "),
+                    .code("inline code"),
+                    .text("."),
+                ]),
+            ]),
+            ListBlock.Item(content: [
+                .paragraph([.text("Nested list inside a bullet:")]),
+                .list(ListBlock(ordered: true, items: [
+                    ListBlock.Item(content: [.paragraph([.text("Ordered child A")])]),
+                    ListBlock.Item(content: [.paragraph([.text("Ordered child B")])]),
+                ])),
+            ]),
+            ListBlock.Item(checkbox: true, content: [
+                .paragraph([.text("Task done")]),
+            ]),
+            ListBlock.Item(checkbox: false, content: [
+                .paragraph([.text("Task open")]),
+            ]),
+        ]))),
+        Block(id: UUID(), kind: .heading(level: 2, inlines: [.text("Table sample")])),
+        Block(id: UUID(), kind: .table(TableBlock(
+            header: [
+                [.text("Block")], [.text("Layout")], [.text("Notes")],
+            ],
+            rows: [
+                [
+                    [.text("paragraph")],
+                    [.text("TextLayout")],
+                    [.text("inline IR — bold / italic / code / link")],
+                ],
+                [
+                    [.text("list")],
+                    [.text("ListLayout")],
+                    [.text("recursive items, marker midY-aligned to first content line")],
+                ],
+                [
+                    [.text("table")],
+                    [.text("TableLayout")],
+                    [.text("CSS-like min/max column allocation; header bold; zebra body rows")],
+                ],
+            ],
+            alignments: [.left, .left, .left]))),
     ]
 }()
 

@@ -393,6 +393,136 @@ private extension TranscriptDemoView {
                 .link(children: [.text("链接锚点")], url: docsURL),
                 .text(" 收尾。"),
             ]),
+
+            headingIR(level: 2, [.text("Lists")]),
+
+            // Unordered list — bullet markers, with one item carrying a
+            // nested ordered list to exercise the recursion path and the
+            // marker midY-to-first-content-line alignment.
+            Block(id: UUID(), kind: .list(ListBlock(ordered: false, items: [
+                ListBlock.Item(content: [
+                    .paragraph([
+                        .text("Bullet item with mixed inlines: "),
+                        .strong([.text("bold")]),
+                        .text(", "),
+                        .emphasis([.text("italic")]),
+                        .text(", "),
+                        .code("monospaced"),
+                        .text(", and a "),
+                        .link(children: [.text("link")], url: docsURL),
+                        .text("."),
+                    ]),
+                ]),
+                ListBlock.Item(content: [
+                    .paragraph([.text("Nested ordered list:")]),
+                    .list(ListBlock(ordered: true, items: [
+                        ListBlock.Item(content: [.paragraph([.text("First child")])]),
+                        ListBlock.Item(content: [.paragraph([.text("Second child with "), .code("inline code")])]),
+                        ListBlock.Item(content: [.paragraph([.text("Third child has a deeper nest:")]),
+                            .list(ListBlock(ordered: false, items: [
+                                ListBlock.Item(content: [.paragraph([.text("Bullet inside ordered inside bullet")])]),
+                                ListBlock.Item(content: [.paragraph([.text("Markers right-align in their own column")])]),
+                            ])),
+                        ]),
+                    ])),
+                ]),
+                ListBlock.Item(content: [
+                    .paragraph([
+                        .text("中文长列表项也能正常折行,marker 列宽度按本层最宽 marker 计算,"),
+                        .text("不会被嵌套子列表的 marker 影响。"),
+                    ]),
+                ]),
+            ]))),
+
+            // Ordered list with a non-1 start — exercises the
+            // monospaced-numeral right-alignment when marker widths
+            // differ ("9." vs. "10." vs. "11.").
+            Block(id: UUID(), kind: .list(ListBlock(ordered: true, startIndex: 9, items: [
+                ListBlock.Item(content: [.paragraph([.text("Continues from a previous block at index 9.")])]),
+                ListBlock.Item(content: [.paragraph([.text("The dot at the end of the marker stays vertically aligned with the next item's dot.")])]),
+                ListBlock.Item(content: [.paragraph([.text("That's the "), .strong([.text("right-alignment in a fixed-width column")]), .text(" trick.")])]),
+            ]))),
+
+            // Task list — checkbox markers, mix of checked and unchecked,
+            // self-drawn so SF Pro's ☑/☐ asymmetry is bypassed.
+            Block(id: UUID(), kind: .list(ListBlock(ordered: false, items: [
+                ListBlock.Item(checkbox: true, content: [.paragraph([.text("Implement Block.Kind.list and ListLayout")])]),
+                ListBlock.Item(checkbox: true, content: [.paragraph([.text("Implement Block.Kind.table and TableLayout")])]),
+                ListBlock.Item(checkbox: false, content: [.paragraph([.text("Wire selection across list items")])]),
+                ListBlock.Item(checkbox: false, content: [.paragraph([.text("Add per-row collapsing for long lists")])]),
+            ]))),
+
+            headingIR(level: 2, [.text("Tables")]),
+
+            // Three columns, all left-aligned, last column long enough
+            // to wrap so the per-cell TextLayout's CT line-break path
+            // gets exercised.
+            Block(id: UUID(), kind: .table(TableBlock(
+                header: [
+                    [.text("Block")],
+                    [.text("Layout")],
+                    [.text("Notes")],
+                ],
+                rows: [
+                    [
+                        [.text("paragraph")],
+                        [.text("TextLayout")],
+                        [.text("inline IR with "), .strong([.text("bold")]), .text(", "), .emphasis([.text("italic")]), .text(", "), .code("code"), .text(", "), .link(children: [.text("link")], url: docsURL), .text(".")],
+                    ],
+                    [
+                        [.text("heading")],
+                        [.text("TextLayout")],
+                        [.text("Levels 1–6 collapse onto three visual tiers (26 / 22 / 18pt).")],
+                    ],
+                    [
+                        [.text("image")],
+                        [.text("ImageLayout")],
+                        [.text("Aspect-fit; "), .code("maxHeight = 360pt"), .text("; CGImage extracted once at make-time.")],
+                    ],
+                    [
+                        [.text("list")],
+                        [.text("ListLayout")],
+                        [.text("Recursive items, marker midY-aligned to the first content line, checkbox self-drawn so checked / unchecked stay symmetric.")],
+                    ],
+                    [
+                        [.text("table")],
+                        [.text("TableLayout")],
+                        [.text("CSS-like min/max column allocation, bold header band, zebra-striped body, rounded outer border.")],
+                    ],
+                ],
+                alignments: [.left, .left, .left]))),
+
+            // Mixed alignments + numeric content. Right-aligned numerics
+            // line up at the column's right padding; centered "Trend"
+            // arrows hover in the middle.
+            Block(id: UUID(), kind: .table(TableBlock(
+                header: [
+                    [.text("Metric")],
+                    [.text("Value")],
+                    [.text("Trend")],
+                ],
+                rows: [
+                    [[.text("Latency p99")], [.text("12.4 ms")], [.text("↘ improving")]],
+                    [[.text("Throughput")], [.text("840K req/s")], [.text("→ steady")]],
+                    [[.text("Error rate")], [.text("0.012%")], [.text("↗ regressing")]],
+                    [[.text("Cache hit")], [.text("97.8%")], [.text("→ steady")]],
+                ],
+                alignments: [.left, .right, .center]))),
+
+            // Wide CJK table — exercises the min-width clamp + the long-
+            // cell wrap path with non-Latin scripts.
+            Block(id: UUID(), kind: .table(TableBlock(
+                header: [
+                    [.text("阶段")],
+                    [.text("耗时")],
+                    [.text("说明")],
+                ],
+                rows: [
+                    [[.text("解析")], [.text("0.4ms")], [.text("把消息流解析成 Block 数组,纯函数,off-main 安全")]],
+                    [[.text("排版")], [.text("12ms")], [.text("Core Text 跑一遍 typesetter,行高、行距、首行缩进全部就位")]],
+                    [[.text("绘制")], [.text("3.1ms")], [.text("CGContext 一次性绘制,选中底色 → inline code chip → glyph 三趟")]],
+                ],
+                alignments: [.left, .right, .left]))),
         ]
     }
 }

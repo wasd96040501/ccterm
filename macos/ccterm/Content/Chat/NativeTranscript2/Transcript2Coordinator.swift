@@ -461,6 +461,10 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                 image: image,
                 maxWidth: contentWidth,
                 maxHeight: BlockStyle.imageMaxHeight))
+        case .list(let listBlock):
+            return .list(ListLayout.make(block: listBlock, maxWidth: contentWidth))
+        case .table(let tableBlock):
+            return .table(TableLayout.make(block: tableBlock, maxWidth: contentWidth))
         }
     }
 
@@ -664,6 +668,61 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             return BlockStyle.paragraphAttributed(inlines: inlines)
         case .image:
             return nil
+        case .list(let listBlock):
+            // Cmd+A flattens the list to plain text — markers (•, "1.",
+            // checkbox glyphs) aren't real characters, so they don't
+            // appear here. Drag-select is unsupported on list rows
+            // (`textLayout` returns nil), so block-level Cmd+A is the
+            // only path that hits this branch.
+            return Self.flattenList(listBlock, indent: 0)
+        case .table(let tableBlock):
+            // Tab between cells, newline between rows — the same
+            // convention TextEdit / spreadsheet apps recognize when
+            // pasting plain text back into a table.
+            return Self.flattenTable(tableBlock)
+        }
+    }
+
+    nonisolated private static func flattenList(
+        _ list: ListBlock, indent: Int
+    ) -> NSAttributedString {
+        let out = NSMutableAttributedString()
+        let pad = String(repeating: "  ", count: indent)
+        for (i, item) in list.items.enumerated() {
+            if i > 0 { out.append(NSAttributedString(string: "\n")) }
+            for (j, content) in item.content.enumerated() {
+                if j > 0 { out.append(NSAttributedString(string: "\n")) }
+                switch content {
+                case .paragraph(let inlines):
+                    if !pad.isEmpty {
+                        out.append(NSAttributedString(string: pad))
+                    }
+                    out.append(BlockStyle.paragraphAttributed(inlines: inlines))
+                case .list(let nested):
+                    out.append(flattenList(nested, indent: indent + 1))
+                }
+            }
+        }
+        return out
+    }
+
+    nonisolated private static func flattenTable(_ table: TableBlock) -> NSAttributedString {
+        let out = NSMutableAttributedString()
+        appendTableRow(out: out, cells: table.header, bold: true)
+        for row in table.rows {
+            out.append(NSAttributedString(string: "\n"))
+            appendTableRow(out: out, cells: row, bold: false)
+        }
+        return out
+    }
+
+    nonisolated private static func appendTableRow(
+        out: NSMutableAttributedString,
+        cells: [[InlineNode]], bold: Bool
+    ) {
+        for (i, cell) in cells.enumerated() {
+            if i > 0 { out.append(NSAttributedString(string: "\t")) }
+            out.append(BlockStyle.tableCellAttributed(inlines: cell, bold: bold))
         }
     }
 

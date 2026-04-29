@@ -129,11 +129,26 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
 
     var blockIds: [UUID] { blocks.map(\.id) }
 
-    /// Width that rows are laid out at. Driven by the single column's
-    /// `.autoresizingMask`. Returns 0 if the table isn't attached.
+    /// Width that rows are laid out at — clamped to
+    /// `BlockStyle.[min,max]LayoutWidth`. Driven by the single column's
+    /// `.autoresizingMask` (which tracks the table width). Returns 0 if
+    /// the table isn't attached or hasn't been sized yet.
+    ///
+    /// Clamping here is the single source of truth: `makeLayout` sees the
+    /// clamped width, `layoutCache` keys on it, and `CenteredRowView` /
+    /// `Transcript2SelectionCoordinator` both consume `BlockStyle`'s
+    /// helpers to stay in sync. Window resizes that don't cross the
+    /// clamp boundary land on the same cache entry — no relayout.
     var layoutWidth: CGFloat {
-        tableView?.tableColumns.first?.width ?? 0
+        guard let raw = tableView?.tableColumns.first?.width, raw > 0 else { return 0 }
+        return BlockStyle.clampedLayoutWidth(forRowWidth: raw)
     }
+
+    /// Last `layoutWidth` we processed in `tableFrameDidChange`. Used to
+    /// short-circuit notifications whose underlying column-width change
+    /// didn't move the clamped value (resize within the >max band).
+    /// Sentinel `-1` will not match any real width on first run.
+    private var lastLayoutWidth: CGFloat = -1
 
     /// Visible-region height of the enclosing scroll view. Returns 0 if
     /// no scroll view is attached.
@@ -453,6 +468,13 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
 
     @objc func tableFrameDidChange(_ note: Notification) {
         guard let tableView, !blocks.isEmpty else { return }
+        // Resizes inside the >max clamp band leave `layoutWidth` unchanged.
+        // `CenteredRowView.layout()` still re-runs (driven by NSTableView's
+        // tile pass) and repositions the cell horizontally, but no row needs
+        // its layout invalidated — so skip the reload/noteHeightOfRows pair.
+        let width = layoutWidth
+        if width == lastLayoutWidth { return }
+        lastLayoutWidth = width
         if tableView.inLiveResize {
             // Bounded per-frame layout work: only invalidate visible rows.
             // Off-screen rows keep their stale heights and stale cached
@@ -571,6 +593,19 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let width = layoutWidth
         return layout(for: blocks[row], width: width).totalHeight
             + 2 * BlockStyle.blockVerticalPadding
+    }
+
+    func tableView(_ tableView: NSTableView,
+                   rowViewForRow row: Int) -> NSTableRowView? {
+        let id = NSUserInterfaceItemIdentifier("BlockRow")
+        if let reused = tableView.makeView(withIdentifier: id, owner: self)
+            as? CenteredRowView
+        {
+            return reused
+        }
+        let view = CenteredRowView()
+        view.identifier = id
+        return view
     }
 
     func tableView(_ tableView: NSTableView,

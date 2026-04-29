@@ -147,7 +147,12 @@ final class Transcript2SelectionCoordinator: NSObject {
             else { continue }
 
             let rowRect = tableView.rect(ofRow: row)
-            let originX = rowRect.minX + BlockStyle.blockHorizontalPadding
+            // Cell is centered inside the row by `CenteredRowView`, so the
+            // layout's left edge in doc coords includes the centering
+            // offset before the in-cell horizontal padding.
+            let originX = rowRect.minX
+                + BlockStyle.cellOriginX(forRowWidth: rowRect.width)
+                + BlockStyle.blockHorizontalPadding
             let originY = rowRect.minY + BlockStyle.blockVerticalPadding
             let startLocal = CGPoint(x: start.x - originX, y: start.y - originY)
             let currentLocal = CGPoint(x: current.x - originX, y: current.y - originY)
@@ -233,7 +238,9 @@ final class Transcript2SelectionCoordinator: NSObject {
 
         let rowRect = tableView.rect(ofRow: row)
         let local = CGPoint(
-            x: point.x - rowRect.minX - BlockStyle.blockHorizontalPadding,
+            x: point.x - rowRect.minX
+                - BlockStyle.cellOriginX(forRowWidth: rowRect.width)
+                - BlockStyle.blockHorizontalPadding,
             y: point.y - rowRect.minY - BlockStyle.blockVerticalPadding)
         let idx = max(0, min(layout.characterIndex(at: local), attributed.length - 1))
         setSelection(attributed.doubleClick(at: idx), blockId: block.id)

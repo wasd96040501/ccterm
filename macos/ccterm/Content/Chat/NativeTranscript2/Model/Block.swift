@@ -45,6 +45,26 @@ enum BlockStyle: Sendable {
     /// Cap for image height — wide-and-tall sources don't dominate the viewport.
     nonisolated static let imageMaxHeight: CGFloat = 360
 
+    /// Min/max width of the centered cell — the row spans the full table width
+    /// (so the overlay scroller stays at the right edge), but the cell itself
+    /// is clamped to this band by `CenteredRowView`. Width passed into
+    /// `makeLayout` is also clamped, so the layout cache dedupes resizes
+    /// inside the >max region.
+    nonisolated static let minLayoutWidth: CGFloat = 460
+    nonisolated static let maxLayoutWidth: CGFloat = 780
+
+    nonisolated static func clampedLayoutWidth(forRowWidth rowWidth: CGFloat) -> CGFloat {
+        min(maxLayoutWidth, max(minLayoutWidth, rowWidth))
+    }
+
+    /// Horizontal offset from the row's left edge to the centered cell.
+    /// `CenteredRowView` and `Transcript2SelectionCoordinator` both go
+    /// through this so the doc-coord ↔ layout-local conversion stays in
+    /// sync with the visual layout.
+    nonisolated static func cellOriginX(forRowWidth rowWidth: CGFloat) -> CGFloat {
+        (rowWidth - clampedLayoutWidth(forRowWidth: rowWidth)) / 2
+    }
+
     /// Marker attribute for inline code runs. `CTLineDraw` does not honor
     /// `.backgroundColor`, so we tag the run here and `TextLayout` extracts
     /// per-run rects from the typesetter output to paint the background

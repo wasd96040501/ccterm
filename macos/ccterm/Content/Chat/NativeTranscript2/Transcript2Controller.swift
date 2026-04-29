@@ -179,10 +179,10 @@ final class Transcript2Controller {
         width: CGFloat,
         viewportHeight: CGFloat
     ) -> Slice {
-        let pad2 = 2 * BlockStyle.blockVerticalPadding
-
         func rowHeight(_ block: Block) -> CGFloat {
-            Transcript2Coordinator.makeLayout(for: block, width: width).totalHeight + pad2
+            let pad = BlockStyle.blockPadding(for: block.kind)
+            return Transcript2Coordinator.makeLayout(for: block, width: width).totalHeight
+                + pad.top + pad.bottom
         }
 
         switch anchor {

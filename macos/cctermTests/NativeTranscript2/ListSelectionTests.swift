@@ -271,7 +271,8 @@ final class ListSelectionTests: XCTestCase {
             let originX = rowRect.minX
                 + BlockStyle.cellOriginX(forRowWidth: rowRect.width)
                 + BlockStyle.blockHorizontalPadding
-            let originY = rowRect.minY + BlockStyle.blockVerticalPadding
+            let originY = rowRect.minY
+                + BlockStyle.blockPadding(for: block.kind).top
             return CGPoint(
                 x: originX + origin.x + xOffsetIntoText,
                 y: originY + origin.y + para.totalHeight / 2)

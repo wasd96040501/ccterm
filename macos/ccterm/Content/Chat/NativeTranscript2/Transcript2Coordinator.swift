@@ -595,8 +595,9 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
         guard blocks.indices.contains(row) else { return 1 }
         let width = layoutWidth
+        let pad = BlockStyle.blockPadding(for: blocks[row].kind)
         return layout(for: blocks[row], width: width).totalHeight
-            + 2 * BlockStyle.blockVerticalPadding
+            + pad.top + pad.bottom
     }
 
     func tableView(_ tableView: NSTableView,
@@ -629,6 +630,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             cell.identifier = id
         }
         cell.layout = cellLayout
+        cell.padTop = BlockStyle.blockPadding(for: block.kind).top
         // Selection is keyed by block id, not by cell instance, so a
         // recycled cell scrolling onto a row that already had a selection
         // picks up the existing entry here. nil = no highlight.

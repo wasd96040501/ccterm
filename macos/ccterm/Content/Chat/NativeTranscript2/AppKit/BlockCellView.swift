@@ -52,6 +52,11 @@ final class BlockCellView: NSView {
     /// recycle-driven repaint goes through the same `viewFor`.
     var blockId: UUID?
 
+    /// Top padding contributed by the block's row (per-kind via
+    /// `BlockStyle.blockPadding(for:)`). Drives `layoutOrigin.y` and
+    /// selection rect offsetting. Set by `viewFor` alongside `layout`.
+    var padTop: CGFloat = 0
+
     /// Current selection for this cell's block. `nil` = no selection.
     /// `didSet` triggers `needsDisplay` when the value actually changes;
     /// identical assignments are absorbed.
@@ -77,7 +82,7 @@ final class BlockCellView: NSView {
     private var layoutOrigin: CGPoint {
         CGPoint(
             x: BlockStyle.blockHorizontalPadding,
-            y: BlockStyle.blockVerticalPadding)
+            y: padTop)
     }
 
     override func draw(_ dirtyRect: NSRect) {

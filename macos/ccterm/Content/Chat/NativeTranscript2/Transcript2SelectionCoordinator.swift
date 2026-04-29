@@ -148,7 +148,7 @@ final class Transcript2SelectionCoordinator: NSObject {
             let originX = rowRect.minX
                 + BlockStyle.cellOriginX(forRowWidth: rowRect.width)
                 + BlockStyle.blockHorizontalPadding
-            let originY = rowRect.minY + BlockStyle.blockVerticalPadding
+            let originY = rowRect.minY + BlockStyle.blockPadding(for: block.kind).top
             let startLocal = CGPoint(x: start.x - originX, y: start.y - originY)
             let currentLocal = CGPoint(x: current.x - originX, y: current.y - originY)
 
@@ -211,7 +211,8 @@ final class Transcript2SelectionCoordinator: NSObject {
             x: point.x - rowRect.minX
                 - BlockStyle.cellOriginX(forRowWidth: rowRect.width)
                 - BlockStyle.blockHorizontalPadding,
-            y: point.y - rowRect.minY - BlockStyle.blockVerticalPadding)
+            y: point.y - rowRect.minY
+                - BlockStyle.blockPadding(for: block.kind).top)
 
         let pos = adapter.hitTest(local)
         guard let word = adapter.wordBoundary(pos) else { return }
@@ -238,7 +239,8 @@ final class Transcript2SelectionCoordinator: NSObject {
             x: point.x - rowRect.minX
                 - BlockStyle.cellOriginX(forRowWidth: rowRect.width)
                 - BlockStyle.blockHorizontalPadding,
-            y: point.y - rowRect.minY - BlockStyle.blockVerticalPadding)
+            y: point.y - rowRect.minY
+                - BlockStyle.blockPadding(for: block.kind).top)
 
         let pos = adapter.hitTest(local)
         setSelection(adapter.unitRange(pos), blockId: block.id)

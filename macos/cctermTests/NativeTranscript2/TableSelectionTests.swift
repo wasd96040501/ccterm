@@ -361,7 +361,8 @@ final class TableSelectionTests: XCTestCase {
             let originX = rowRect.minX
                 + BlockStyle.cellOriginX(forRowWidth: rowRect.width)
                 + BlockStyle.blockHorizontalPadding
-            let originY = rowRect.minY + BlockStyle.blockVerticalPadding
+            let originY = rowRect.minY
+                + BlockStyle.blockPadding(for: block.kind).top
             let cell = table.cellRects[tableRow][tableCol]
             return CGPoint(x: originX + cell.midX, y: originY + cell.midY)
         }

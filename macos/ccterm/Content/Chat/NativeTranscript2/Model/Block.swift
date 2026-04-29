@@ -94,10 +94,41 @@ struct TableBlock: Equatable, Sendable {
 enum BlockStyle: Sendable {
     static let paragraphFont = NSFont.systemFont(ofSize: 14, weight: .regular)
 
-    /// Vertical padding above/below each block's content within its row.
-    nonisolated static let blockVerticalPadding: CGFloat = 4
     /// Horizontal padding inside the row.
     nonisolated static let blockHorizontalPadding: CGFloat = 16
+
+    /// Per-kind vertical padding (top, bottom) inside each block's row.
+    ///
+    /// Designed so the **actual visible gap** between adjacent blocks reads
+    /// consistent across kinds, rather than letting a single constant land
+    /// at one value for soft-edged text and another for hard-edged tables /
+    /// images.
+    ///
+    /// Body kinds (`paragraph`, `list`) carry symmetric 6/6 → 12pt p↔p gap.
+    /// Hard-edged kinds (`table`, `image`) carry 8/8 → +2pt over body to
+    /// compensate for the leading-illusion gap loss at borders. Headings
+    /// are intentionally asymmetric: a wide top (scaled to font size) marks
+    /// a section break, a near-zero bottom keeps the heading glued to the
+    /// content it owns. The 6pt gap below a heading is contributed entirely
+    /// by the following paragraph's `top`, so the rhythm stays uniform
+    /// regardless of which heading level precedes the body text.
+    nonisolated static func blockPadding(
+        for kind: Block.Kind
+    ) -> (top: CGFloat, bottom: CGFloat) {
+        switch kind {
+        case .heading(let level, _):
+            let clamped = max(1, min(6, level))
+            switch clamped {
+            case 1: return (top: 24, bottom: 0)
+            case 2: return (top: 16, bottom: 0)
+            default: return (top: 10, bottom: 0)
+            }
+        case .paragraph, .list:
+            return (top: 6, bottom: 6)
+        case .image, .table:
+            return (top: 8, bottom: 8)
+        }
+    }
 
     /// Cap for image height — wide-and-tall sources don't dominate the viewport.
     nonisolated static let imageMaxHeight: CGFloat = 360

@@ -1,0 +1,98 @@
+import AppKit
+
+/// Type-erased dispatch over the per-kind layout primitives. Holds whichever
+/// `XxxLayout` value the block kind required, and exposes the three things
+/// downstream code asks for:
+///
+/// - `totalHeight` (consumed by `NSTableView.heightOfRow`)
+/// - `measuredWidth` (used by the layout cache to detect width changes)
+/// - `draw(in:origin:)` (invoked by the cell's `draw(_:)`)
+///
+/// Add a new layout primitive: add the case here, extend the three methods.
+/// The cell view is enum-agnostic — it just calls `layout.draw`.
+enum RowLayout: @unchecked Sendable {
+    case text(TextLayout)
+    case image(ImageLayout)
+    case list(ListLayout)
+    case table(TableLayout)
+    case codeBlock(CodeBlockLayout)
+    case blockquote(BlockquoteLayout)
+    case thematicBreak(ThematicBreakLayout)
+    case userBubble(UserBubbleLayout)
+
+    var totalHeight: CGFloat {
+        switch self {
+        case .text(let l): return l.totalHeight
+        case .image(let l): return l.totalHeight
+        case .list(let l): return l.totalHeight
+        case .table(let l): return l.totalHeight
+        case .codeBlock(let l): return l.totalHeight
+        case .blockquote(let l): return l.totalHeight
+        case .thematicBreak(let l): return l.totalHeight
+        case .userBubble(let l): return l.totalHeight
+        }
+    }
+
+    var measuredWidth: CGFloat {
+        switch self {
+        case .text(let l): return l.measuredWidth
+        case .image(let l): return l.measuredWidth
+        case .list(let l): return l.measuredWidth
+        case .table(let l): return l.measuredWidth
+        case .codeBlock(let l): return l.measuredWidth
+        case .blockquote(let l): return l.measuredWidth
+        case .thematicBreak(let l): return l.measuredWidth
+        case .userBubble(let l): return l.measuredWidth
+        }
+    }
+
+    func draw(in ctx: CGContext, origin: CGPoint) {
+        switch self {
+        case .text(let l): l.draw(in: ctx, origin: origin)
+        case .image(let l): l.draw(in: ctx, origin: origin)
+        case .list(let l): l.draw(in: ctx, origin: origin)
+        case .table(let l): l.draw(in: ctx, origin: origin)
+        case .codeBlock(let l): l.draw(in: ctx, origin: origin)
+        case .blockquote(let l): l.draw(in: ctx, origin: origin)
+        case .thematicBreak(let l): l.draw(in: ctx, origin: origin)
+        case .userBubble(let l): l.draw(in: ctx, origin: origin)
+        }
+    }
+
+    /// Link hit zones in layout-local coords. Cell-side hit-testing
+    /// offsets these by the cell's draw origin. List / table / blockquote
+    /// layouts have already flattened their inner cell links into
+    /// container-local coords during `make`, so they roll up here without
+    /// further transformation.
+    var links: [TextLayout.LinkHit] {
+        switch self {
+        case .text(let l): return l.links
+        case .image: return []
+        case .list(let l): return l.links
+        case .table(let l): return l.links
+        case .codeBlock(let l): return l.links
+        case .blockquote(let l): return l.links
+        case .thematicBreak: return []
+        case .userBubble: return []   // user input is plain text, not parsed
+        }
+    }
+
+    /// Selection-facing API for this row, or `nil` for non-selectable
+    /// kinds (image, thematic break). The selection coordinator and cell
+    /// view consume only this — the underlying `TextLayout` /
+    /// `TableLayout` / `ListLayout` type is encapsulated, so adding a new
+    /// selectable kind needs no changes outside the new layout's own
+    /// file.
+    var selectionAdapter: SelectionAdapter? {
+        switch self {
+        case .text(let l): return l.selectionAdapter
+        case .table(let l): return l.selectionAdapter
+        case .list(let l): return l.selectionAdapter
+        case .codeBlock(let l): return l.selectionAdapter
+        case .blockquote(let l): return l.selectionAdapter
+        case .image: return nil
+        case .thematicBreak: return nil
+        case .userBubble(let l): return l.selectionAdapter
+        }
+    }
+}

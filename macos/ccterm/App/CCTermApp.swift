@@ -6,8 +6,9 @@ struct CCTermApp: App {
 
     var body: some Scene {
         Window("ccterm", id: "main") {
-            RootView()
+            RootView2()
                 .environment(appState)
+                .environment(appState.sessionManager2)
                 .environment(\.syntaxEngine, appState.syntaxEngine)
         }
         .windowStyle(.hiddenTitleBar)
@@ -35,6 +36,7 @@ struct CCTermApp: App {
         CLICapabilityStore.shared.detectVersion()
         CLICapabilityStore.shared.loadFromCache()
         ModelStore.prefetchIfNeeded()
+        MainThreadWatchdog.start()
     }
 }
 

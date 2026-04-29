@@ -30,10 +30,20 @@ extension SessionHandle2 {
         default: break
         }
 
-        switch action(for: message) {
+        let act = action(for: message)
+        switch act {
         case .merge(let id, let payload): attachToolResult(payload, to: id)
         case .confirm(let id, let echo): confirmQueuedEntry(id: id, echo: echo, mode: mode)
         case .append: appendToTimeline(message, mode: mode)
+        case .skip: break
+        }
+
+        // replay 批量 ingest 由调用方（loadHistory Phase A / Phase B）一次性
+        // emit `.initialPaint` / `.prependHistory`——此处不发 per-message。
+        guard mode == .live else { return }
+        switch act {
+        case .append: emitSnapshot(.liveAppend)
+        case .merge, .confirm: emitSnapshot(.update)
         case .skip: break
         }
     }
@@ -230,15 +240,14 @@ private extension Message2Assistant {
 
 private extension Message2 {
 
-    /// 「可分组」：assistant 消息，其所有非空 content block 均为白名单 tool_use。
-    /// 混合 text / thinking / 非白名单 tool_use 的整条视为不可分组。
+    /// 「可分组」：assistant 消息，其所有非空 content block 均为 tool_use（任意 kind）。
+    /// 混合 text / thinking 仍走 `.single`，由 `AssistantMarkdownComponent` 渲染。
     var isGroupableAssistant: Bool {
         guard case .assistant(let a) = self,
               let blocks = a.message?.content,
               !blocks.isEmpty else { return false }
         for block in blocks {
-            guard case .toolUse(let t) = block,
-                  t.groupableKind != nil else { return false }
+            guard case .toolUse = block else { return false }
         }
         return true
     }

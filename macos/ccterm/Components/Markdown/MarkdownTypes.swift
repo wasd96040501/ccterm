@@ -4,6 +4,12 @@ public enum MarkdownSegment: Hashable, Sendable {
     case markdown([MarkdownBlock])
     case heading(level: Int, inlines: [MarkdownInline])
     case blockquote([MarkdownBlock])
+    /// Top-level list extracted to its own segment so the renderer can draw
+    /// markers as non-selectable glyphs in a fixed column and typeset each
+    /// item's body as an independent text flow — no `\t` characters, no
+    /// reliance on paragraph-style tab stops. Nested lists still live inside
+    /// `MarkdownListItem.content` as `MarkdownBlock.list`.
+    case list(MarkdownList)
     case codeBlock(MarkdownCodeBlock)
     case table(MarkdownTable)
     case mathBlock(String)

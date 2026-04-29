@@ -15,10 +15,19 @@ class SessionHandle2 {
         case stopped
     }
 
-    enum HistoryLoadState {
+    enum HistoryLoadState: Equatable {
+        /// 从未触发 loadHistory。
         case notLoaded
-        case loading
+        /// Phase A 字节级 tail 读取中。此时 UI 渲染 empty NativeTranscriptView
+        /// （ProgressView 已移除——tail 一般 < 50 ms，闪一下 spinner 反而差）。
+        case loadingTail
+        /// Phase A 结束，tail 已 append 到 messages 并可渲染；Phase B 全量 parse
+        /// 在后台继续。此 state 期间 `messages` 可能继续增长（live 追加不阻塞）。
+        case tailLoaded(count: Int)
+        /// 完成：Phase B 合并完成，messages 含全量历史。
         case loaded
+        /// 失败：仅在 Phase A 阶段触发（tail 读不了）。Phase B 失败只记 warning
+        /// 日志，state 留在 `.tailLoaded`——用户已看到尾部，不反悔。
         case failed(String)
     }
 
@@ -59,7 +68,26 @@ class SessionHandle2 {
 
     // MARK: - Runtime
 
+    /// 消息 timeline。内部 storage；**view 层不直接读**——渲染消费方绑定
+    /// `snapshot`（含 reason 语义）。Sidebar / bridge 等非渲染读者保留直读。
     internal(set) var messages: [MessageEntry] = []
+
+    /// 渲染层唯一消费契约。每次 messages mutation 后由 handle 内部 emit，携带
+    /// `TranscriptUpdateReason` 让 `TranscriptController` 按意图 dispatch scroll
+    /// 语义——不再从 entries delta 推断。
+    internal(set) var snapshot: TranscriptSnapshot = .initial
+
+    /// `snapshot.revision` 的自增计数。每次 emit 前 +1。
+    @ObservationIgnored private var snapshotRevision: UInt64 = 0
+
+    /// 用户离开此 session 时保存的 scroll 锚。下次切回时消费一次（`.loaded`
+    /// 分支 re-emit `.initialPaint` 带上），让 view 层恢复到离开时的位置。
+    /// nil = 离开时在 bottom（下次贴底即可，无需锚）。
+    ///
+    /// 不持久化到 db（只在 app 运行期内跨 view recreate 保留）—— handle 比 view
+    /// 活得长，这个字段随 handle 生命周期存在。
+    @ObservationIgnored var savedScrollAnchor: SavedScrollAnchor?
+
     internal(set) var pendingPermissions: [PendingPermission] = []
     internal(set) var contextUsedTokens: Int = 0
     internal(set) var contextWindowTokens: Int = 0
@@ -152,12 +180,35 @@ class SessionHandle2 {
 
     // `activate()` / `stop()` / `send(_:)` 实现与文档均在 `SessionHandle2+Start.swift`。
 
+    // MARK: - Snapshot emission
+
+    /// 写一次 `snapshot`，携带本次 mutation 的 reason。调用方负责保证
+    /// `messages` 已经 mutation 完毕。
+    ///
+    /// 规则：
+    /// - **只在 `.live` / 真实生产路径调用**；`receive(_, mode: .replay)` 内部
+    ///   **不**逐条 emit，由调用方（`loadHistory` Phase A/B）在批量结束时一次性
+    ///   emit `.initialPaint` / `.prependHistory`。
+    /// - `skipBootstrapForTesting = true` 的临时 handle（例如 Phase B `buildEntries`
+    ///   的影子 handle）也不应调此方法——调用点自行把 replay 分支走完即可。
+    internal func emitSnapshot(
+        _ reason: TranscriptUpdateReason,
+        scrollHint: SavedScrollAnchor? = nil
+    ) {
+        snapshotRevision &+= 1
+        snapshot = TranscriptSnapshot(
+            messages: messages,
+            reason: reason,
+            scrollHint: scrollHint,
+            revision: snapshotRevision)
+    }
+
     /// 后台加载历史消息到 `messages`。幂等，按 `historyLoadState` 分派。
     ///
-    /// - `.notLoaded`：`historyLoadState` → `.loading`，dispatch 后台 queue 读 JSONL 并解析；
-    ///   完成后在主线程 append 到 `messages`，`historyLoadState` → `.loaded`。
+    /// - `.notLoaded`：两段式读取。`historyLoadState` → `.loadingTail` →
+    ///   `.tailLoaded(count)` → `.loaded`；tail 先上屏，prefix 后台继续合并。
     ///   解析失败 → `.failed(reason)`。
-    /// - `.loading`：no-op（防重复调用）。
+    /// - `.loadingTail` / `.tailLoaded`：no-op（防重复调用 / 正在 Phase B）。
     /// - `.loaded`：no-op。
     /// - `.failed`：重试——切回 `.notLoaded` 并重新触发加载。
     ///

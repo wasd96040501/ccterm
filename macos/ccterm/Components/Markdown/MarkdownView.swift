@@ -109,6 +109,8 @@ struct MarkdownView: View {
             if let prebuilt {
                 MarkdownBlockquoteView(attributed: prebuilt)
             }
+        case .list(let list):
+            MarkdownListView(list: list)
         case .codeBlock(let block):
             MarkdownCodeBlockView(block: block, tokens: tokens)
         case .table(let table):
@@ -132,16 +134,21 @@ struct MarkdownView: View {
     }
 
     private func refresh() async {
+        let t0 = CFAbsoluteTimeGetCurrent()
+        let sourceLength: Int
         let document: MarkdownDocument
         switch input {
         case .source(let s):
+            sourceLength = s.count
             document = await Task.detached(priority: .userInitiated) {
                 MarkdownDocument(parsing: s)
             }.value
         case .document(let d):
+            sourceLength = 0
             document = d
         }
         guard !Task.isCancelled else { return }
+        let tParse = CFAbsoluteTimeGetCurrent()
 
         let builder = MarkdownAttributedBuilder(theme: theme)
         var prebuilt: [NSAttributedString?] = []
@@ -168,21 +175,25 @@ struct MarkdownView: View {
                 prebuilt.append(nil)
             }
         }
+        let tBuild = CFAbsoluteTimeGetCurrent()
 
         // Pre-tokenize all code blocks so the first paint already shows the
         // syntax-highlighted attributed string — no plain-text → highlighted
         // flicker. Falls back silently to plain text if no engine is in env.
         var codeTokens: [Int: [SyntaxToken]] = [:]
+        var codeBlockCount = 0
         if let engine = syntaxEngine {
             await engine.load()
             for (idx, segment) in document.segments.enumerated() {
                 guard case .codeBlock(let block) = segment else { continue }
                 if Task.isCancelled { return }
+                codeBlockCount += 1
                 codeTokens[idx] = await engine.highlight(
                     code: block.code,
                     language: block.language)
             }
         }
+        let tHighlight = CFAbsoluteTimeGetCurrent()
 
         guard !Task.isCancelled else { return }
         state = RenderState(
@@ -191,6 +202,17 @@ struct MarkdownView: View {
             codeTokens: codeTokens,
             mathImages: mathImages,
             tableCells: tableCells)
+
+        // 只记录显著耗时(>20ms)。短段落避免刷屏,代码高亮/大表格/长段落才关心。
+        let total = Int((tHighlight - t0) * 1000)
+        if total > 20 {
+            let parseMs = Int((tParse - t0) * 1000)
+            let buildMs = Int((tBuild - tParse) * 1000)
+            let hlMs = Int((tHighlight - tBuild) * 1000)
+            appLog(.debug, "MarkdownView",
+                "refresh \(total)ms parse=\(parseMs) build=\(buildMs) hl=\(hlMs) "
+                + "src=\(sourceLength) seg=\(document.segments.count) code=\(codeBlockCount)")
+        }
     }
 
     /// Render a LaTeX block to an NSImage via SwiftMath. Returns nil on parse

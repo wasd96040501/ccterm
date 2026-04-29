@@ -54,6 +54,7 @@ extension SessionHandle2 {
         switch single.delivery {
         case .queued, .failed:
             messages.remove(at: idx)
+            emitSnapshot(.update)
         default:
             break
         }

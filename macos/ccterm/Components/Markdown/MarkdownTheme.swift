@@ -9,34 +9,36 @@ struct MarkdownTheme {
 
     // MARK: - Typography
 
-    var bodyFontSize: CGFloat = 13
-    var codeFontSize: CGFloat = 12
+    var bodyFontSize: CGFloat = 14
+    var codeFontSize: CGFloat = 13
 
-    /// h1-h6 font sizes. h4-h6 collapse to h3's size — distinguish by weight only,
+    /// h1-h6 font sizes. Scale follows a Minor Third modular ratio (~1.2):
+    /// 14 → 17 → 20 → 24. h4-h6 collapse to body size — distinguish by weight only,
     /// matching GitHub / Apple HIG convention where deeper headings stop scaling.
-    var headingSizes: [CGFloat] = [22, 19, 16, 16, 16, 16]
+    var headingSizes: [CGFloat] = [24, 20, 17, 14, 14, 14]
 
     // MARK: - Spacing (three semantic layers)
 
-    /// Section break — extra space above a heading (added on top of l2 segment gap).
-    var l1: CGFloat = 16
+    /// Section break — extra space above a heading (replaces, not adds to, l2).
+    var l1: CGFloat = 20
     /// Block-level — between adjacent segments and between blocks inside a markdown segment.
-    var l2: CGFloat = 8
-    /// Item-level — between list items.
-    var l3Item: CGFloat = 4
-    /// Line-level — intra-paragraph line spacing.
-    var l3Line: CGFloat = 2
+    var l2: CGFloat = 10
+    /// Item-level — between list items. Must stay > l3Line so item breaks read
+    /// distinctly from intra-paragraph line wraps (Gestalt proximity).
+    var l3Item: CGFloat = 6
+    /// Line-level — intra-paragraph line spacing. Sized so total baseline-to-
+    /// baseline ≈ 1.5× font size (WCAG 1.4.8, Bringhurst screen reading range).
+    var l3Line: CGFloat = 4
 
     // MARK: - Layout
 
-    var listIndent: CGFloat = 18
     var blockquoteIndent: CGFloat = 14
     /// Width of the vertical bar in the blockquote SwiftUI segment.
     var blockquoteBarWidth: CGFloat = 4
     /// Gap between the blockquote bar and its content.
     var blockquoteBarGap: CGFloat = 12
     /// Vertical inset inside code/table/math blocks.
-    var blockPadding: CGFloat = 8
+    var blockPadding: CGFloat = 10
 
     /// Corner radius shared by all block-level containers (code, math, table).
     /// Picked so radius/height ≈ 0.05-0.08 — soft-square "information
@@ -53,11 +55,13 @@ struct MarkdownTheme {
     var inlineCodeVPadding: CGFloat = 0
     /// Inline code chip: corner radius (≈ 0.21 of chip height — moderate).
     var inlineCodeCornerRadius: CGFloat = 3
-    /// Spacing pushed onto the characters immediately before and after an
-    /// inline code run (via NSAttributedString `.kern`) so the chip never
-    /// visually overlaps neighbouring glyphs. Should be ≥ `inlineCodeHPadding`
-    /// plus a small visual gap.
-    var inlineCodeSideKern: CGFloat = 5
+    /// Visible horizontal gap between the chip's outer (rounded-rect) edge
+    /// and the surrounding text on each side. The actual `InlineSpacer`
+    /// advance written to the attributed string is `inlineCodeOuterGap +
+    /// inlineCodeHPadding` — the chip's drawn edge already extends
+    /// `inlineCodeHPadding` past its glyphs, so the spacer has to overshoot
+    /// by that much to leave the requested visible breathing room.
+    var inlineCodeOuterGap: CGFloat = 2
 
     // MARK: - Derived fonts
 
@@ -88,8 +92,8 @@ struct MarkdownTheme {
         NSColor(name: nil) { appearance in
             let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             return isDark
-                ? NSColor(white: 1, alpha: 0.10)
-                : NSColor(white: 0, alpha: 0.06)
+                ? NSColor(white: 1, alpha: 0.14)
+                : NSColor(white: 0, alpha: 0.08)
         }
     }
 
@@ -156,7 +160,6 @@ struct MarkdownTheme {
         let l2: CGFloat
         let l3Item: CGFloat
         let l3Line: CGFloat
-        let listIndent: CGFloat
         let blockquoteIndent: CGFloat
         let blockPadding: CGFloat
     }
@@ -170,7 +173,6 @@ struct MarkdownTheme {
             l2: l2,
             l3Item: l3Item,
             l3Line: l3Line,
-            listIndent: listIndent,
             blockquoteIndent: blockquoteIndent,
             blockPadding: blockPadding)
     }

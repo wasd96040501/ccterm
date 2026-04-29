@@ -26,12 +26,14 @@ final class SessionHandle2HistoryTests: XCTestCase {
             .appendingPathComponent("Fixtures/\(name)")
     }
 
-    private func waitForLoaded(_ handle: SessionHandle2, timeout: TimeInterval = 5) async throws {
+    /// 等待到 terminal state（`.loaded` 或 `.failed`）。非 terminal 状态
+    /// `.notLoaded / .loadingTail / .tailLoaded` 继续轮询。
+    func waitForLoaded(_ handle: SessionHandle2, timeout: TimeInterval = 5) async throws {
         let start = Date()
         while true {
             switch handle.historyLoadState {
             case .loaded, .failed: return
-            case .loading, .notLoaded:
+            case .loadingTail, .tailLoaded, .notLoaded:
                 if Date().timeIntervalSince(start) > timeout {
                     XCTFail("timed out waiting for loadHistory to settle, last=\(handle.historyLoadState)")
                     return
@@ -105,12 +107,12 @@ final class SessionHandle2HistoryTests: XCTestCase {
         }
         h.loadHistory(overrideURL: nil)
 
-        // 同步部分应已切到 .loading（task 还在排队）
+        // 同步部分应已切到 .loadingTail（task 还在排队）
         switch h.historyLoadState {
-        case .loading, .loaded:
-            break  // .loaded 也算接受（极快情况下 task 已完成）
+        case .loadingTail, .tailLoaded, .loaded:
+            break  // 后两个也算接受（极快情况下 task 已完成到后面阶段）
         default:
-            XCTFail("expected .loading after loadHistory call, got \(h.historyLoadState)")
+            XCTFail("expected .loadingTail after loadHistory call, got \(h.historyLoadState)")
         }
     }
 
@@ -175,7 +177,9 @@ final class SessionHandle2HistoryTests: XCTestCase {
         let after = h.historyLoadState
 
         switch (before, after) {
-        case (.loading, .loading), (.loaded, .loaded):
+        case (.loadingTail, .loadingTail),
+             (.tailLoaded, .tailLoaded),
+             (.loaded, .loaded):
             break
         default:
             XCTFail("idempotency broke: before=\(before) after=\(after)")
@@ -223,7 +227,8 @@ extension SessionHandle2.HistoryLoadState: CustomStringConvertible {
     public var description: String {
         switch self {
         case .notLoaded: return "notLoaded"
-        case .loading: return "loading"
+        case .loadingTail: return "loadingTail"
+        case .tailLoaded(let c): return "tailLoaded(\(c))"
         case .loaded: return "loaded"
         case .failed(let r): return "failed(\(r))"
         }

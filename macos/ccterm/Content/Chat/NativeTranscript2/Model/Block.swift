@@ -22,6 +22,12 @@ struct Block: Identifiable, Equatable, @unchecked Sendable {
         /// dedicated struct.
         case list(ListBlock)
         case table(TableBlock)
+        /// User-side message rendered as a right-aligned bubble. Long text
+        /// auto-truncates with a tail "…" + a `>` chevron whose click
+        /// surfaces the full message in a SwiftUI sheet (presentation
+        /// concerns belong on the SwiftUI side; in-cell rendering stays
+        /// stateless). Short messages render in full with no chevron.
+        case userBubble(text: String)
     }
 }
 
@@ -126,6 +132,12 @@ enum BlockStyle: Sendable {
         case .paragraph, .list:
             return (top: 6, bottom: 6)
         case .image, .table:
+            return (top: 8, bottom: 8)
+        case .userBubble:
+            // Bubble already carries its own internal vertical padding;
+            // the row pad here is the gap between the bubble and the
+            // adjacent row's content. 8/8 matches `image`/`table`'s
+            // hard-edged spacing tier.
             return (top: 8, bottom: 8)
         }
     }
@@ -234,6 +246,57 @@ enum BlockStyle: Sendable {
         let out = NSMutableAttributedString()
         appendInlines(inlines, into: out, base: baseAttributes(font: baseFont))
         return out
+    }
+
+    // MARK: - User bubble geometry
+
+    /// Hard cap on bubble width — keeps long messages from spanning the
+    /// full content column and re-establishes a right-side visual weight
+    /// (bubble visibly hugs the right edge instead of looking like another
+    /// paragraph).
+    nonisolated static let userBubbleMaxWidth: CGFloat = 560
+
+    /// Floor on the empty space to the bubble's left when the message is
+    /// long enough to wrap — guarantees the bubble never bleeds into the
+    /// content column's left edge.
+    nonisolated static let bubbleMinLeftGutter: CGFloat = 60
+
+    nonisolated static let bubbleHorizontalPadding: CGFloat = 16
+    /// Matched to `bubbleCornerRadius` so the rounded corner's curve
+    /// does not geometrically intrude into the text-baseline region —
+    /// at `R > V`, top/bottom-line glyphs visually scrape the corner;
+    /// at `R == V`, the curve sits flush with the text margin and the
+    /// chevron's corner-anchored position lands on a uniform 14pt
+    /// offset from both the right and bottom edges.
+    nonisolated static let bubbleVerticalPadding: CGFloat = 14
+    nonisolated static let bubbleCornerRadius: CGFloat = 14
+
+    /// Bubble background — system accent at 15% so the tint shifts with
+    /// the user's selected accent color and dark/light appearance.
+    nonisolated static let bubbleFillColor: NSColor =
+        NSColor.controlAccentColor.withAlphaComponent(0.15)
+
+    /// Lines at and above this count *may* fold (subject to `userBubbleMinHiddenLines`).
+    nonisolated static let userBubbleCollapseThreshold: Int = 12
+    /// Hide fewer than this many lines reads worse than not folding at
+    /// all (the chevron buys nothing). Effective fold lower bound is
+    /// `threshold + minHiddenLines`.
+    nonisolated static let userBubbleMinHiddenLines: Int = 3
+
+    /// Chevron glyph drawing edge length.
+    nonisolated static let chevronSize: CGFloat = 10
+    /// Click target edge length — expanded around the glyph rect so a 10pt
+    /// chevron is comfortable to hit.
+    nonisolated static let chevronHitSize: CGFloat = 20
+
+    /// User bubble plain text → attributed. No inline IR — user input is
+    /// raw text, markdown emphasis is not parsed here (that's an assistant-
+    /// content concern).
+    nonisolated static func userBubbleAttributed(text: String) -> NSAttributedString {
+        NSAttributedString(string: text, attributes: [
+            .font: paragraphFont,
+            .foregroundColor: NSColor.labelColor,
+        ])
     }
 
     /// Min/max width of the centered cell — the row spans the full table width

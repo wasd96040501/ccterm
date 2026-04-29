@@ -45,7 +45,7 @@ SwiftUI: NativeTranscript2View (NSViewRepresentable)
 
 - **stable id 是 diff 的根**:`Block.id: UUID`,caller 提供。不要用内容 hash 当 id,会让"同名两条消息"被误认成一条
 - **Layout 跟 RowItem 共生死**:`RowItem { id, block, layout: TextLayout }`。layout 算一次跟着 row 活,**不要外部 LRU cache**(老代码的 `TranscriptPrepareCache` 是补丁,新架构 id-based 复用自然就够)
-- **未来的 row state**(折叠等)放 `Coordinator.states: [UUID: any Sendable]`,**不进 `Block.Kind` 关联值,也不进 `RowItem`**。理由:state 要跨 RowItem 重建存活(tool group 内容更新,折叠态要保留)
+- **未来的 row state**(折叠等)放 `Coordinator.states: [UUID: any Sendable]`,**不进 `Block.Kind` 关联值,也不进 `RowItem`**。理由:state 要跨 RowItem 重建存活(tool group 内容更新,折叠态要保留)。MVP 还没需要这种 stateful 行为 —— `userBubble` 用"硬截断 + sheet"避开了 in-cell expand,layout 永远 stateless
 - **永远 `currentBlocks + rebuild()`**:`setBlocks` 和 `frameDidChange` 走同一个 `rebuild()`。`rebuild` 内部 `width <= 0` 早退。**不要再造 `pendingBlocks` 这种特殊路径**
 
 ### 2.3 Diff 路径
@@ -93,23 +93,31 @@ SwiftUI: NativeTranscript2View (NSViewRepresentable)
 - `case .heading(level: Int, inlines: [InlineNode])` / `case .paragraph(inlines: [InlineNode])` → `TextLayout`,经 `BlockStyle.headingAttributed(level:inlines:)` / `paragraphAttributed(inlines:)` 把 inline IR 折叠成 `NSAttributedString`。无 `String` 重载——caller 没有 parser 时手动包 `[.text(s)]`
 - `InlineNode` 是递归 inline IR(text / strong / emphasis / code / link / lineBreak),由上游 markdown parser 产出;Block 层只持有,不解析
 - `case .image(NSImage)` → `ImageLayout`(aspect-fit + maxHeight 兜底)
+- `case .userBubble(text: String)` → `UserBubbleLayout`(右对齐气泡;长文本硬截断到 `userBubbleCollapseThreshold` 行,最后一行用 `CTLineCreateTruncatedLine` 加 `…` 尾,padding 内画 `>` chevron;selection clamp 到 prefix 行,truncated tail 不可选)。**Layout 完全 stateless**,不带 fold 状态 —— chevron mouseDown → `Coordinator.requestUserBubbleSheet(id:)` → 通过 `onUserBubbleSheetRequested` 闭包路由到 `Transcript2Controller.pendingUserBubbleSheet`(`@Observable`)→ SwiftUI 侧 `.sheet(item:)` 弹出完整内容(支持 `Text.textSelection(.enabled)` 复制)。这是 NSView 闭环里**唯一**合法的 SwiftUI 出口 —— `.sheet(item:)` 作为 presentation primitive 必须由 SwiftUI own,但 in-cell 渲染 / 命中 / selection 仍全程 NSView 内部
 
 ## 4. 文件结构
 
 ```
 NativeTranscript2/
 ├── Model/
-│   └── Block.swift                  数据 + 字体/边距常量
+│   └── Block.swift                  数据 + 字体/边距常量 + 气泡 / chevron 几何常量
 ├── Layout/
 │   ├── TextLayout.swift             Core Text 排版结果(immutable + draw)
 │   ├── ImageLayout.swift            aspect-fit + draw(NSImage 自带数据)
-│   └── RowLayout.swift              enum 派发 + RowItem(struct)
+│   ├── ListLayout.swift             递归 list + 自绘 marker / checkbox
+│   ├── TableLayout.swift            CSS-like min/max 列分配 + 自绘网格
+│   ├── UserBubbleLayout.swift       右对齐气泡 + chevron + fade mask + selection clamp
+│   ├── SelectionAdapter.swift       selection-facing API(每个 layout 自带)
+│   └── RowLayout.swift              enum 派发(text/image/list/table/userBubble)
 ├── AppKit/
 │   ├── Transcript2ScrollView.swift  ScrollView + ClipView 子类
 │   ├── Transcript2TableView.swift   TableView 子类(neg-width clamp)
-│   └── BlockCellView.swift          自绘 cell(只调 layout.draw)
-├── Transcript2Coordinator.swift     dataSource/delegate + diff + per-kind 派发
-└── NativeTranscript2View.swift      SwiftUI 桥 + Preview
+│   ├── CenteredRowView.swift        Row view:把 cell 居中到 clampedLayoutWidth
+│   └── BlockCellView.swift          自绘 cell(layout.draw + 链接/chevron 命中)
+├── Transcript2Coordinator.swift          dataSource/delegate + diff + per-kind 派发 + chevron sheet request 路由
+├── Transcript2Controller.swift           imperative 命令通道(apply / loadInitial)
+├── Transcript2SelectionCoordinator.swift 跨行 selection 算法(读 layout.selectionAdapter)
+└── NativeTranscript2View.swift      SwiftUI 桥(updateNSView 是 no-op)+ Preview
 ```
 
 依赖只往下:`NativeTranscript2View → Coordinator → AppKit/ → Layout/ → Model/`。

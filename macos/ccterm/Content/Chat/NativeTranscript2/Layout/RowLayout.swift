@@ -15,6 +15,7 @@ enum RowLayout: @unchecked Sendable {
     case image(ImageLayout)
     case list(ListLayout)
     case table(TableLayout)
+    case userBubble(UserBubbleLayout)
 
     var totalHeight: CGFloat {
         switch self {
@@ -22,6 +23,7 @@ enum RowLayout: @unchecked Sendable {
         case .image(let l): return l.totalHeight
         case .list(let l): return l.totalHeight
         case .table(let l): return l.totalHeight
+        case .userBubble(let l): return l.totalHeight
         }
     }
 
@@ -31,6 +33,7 @@ enum RowLayout: @unchecked Sendable {
         case .image(let l): return l.measuredWidth
         case .list(let l): return l.measuredWidth
         case .table(let l): return l.measuredWidth
+        case .userBubble(let l): return l.measuredWidth
         }
     }
 
@@ -40,6 +43,7 @@ enum RowLayout: @unchecked Sendable {
         case .image(let l): l.draw(in: ctx, origin: origin)
         case .list(let l): l.draw(in: ctx, origin: origin)
         case .table(let l): l.draw(in: ctx, origin: origin)
+        case .userBubble(let l): l.draw(in: ctx, origin: origin)
         }
     }
 
@@ -54,6 +58,7 @@ enum RowLayout: @unchecked Sendable {
         case .image: return []
         case .list(let l): return l.links
         case .table(let l): return l.links
+        case .userBubble: return []   // user input is plain text, not parsed
         }
     }
 
@@ -68,6 +73,7 @@ enum RowLayout: @unchecked Sendable {
         case .table(let l): return l.selectionAdapter
         case .list(let l): return l.selectionAdapter
         case .image: return nil
+        case .userBubble(let l): return l.selectionAdapter
         }
     }
 }

@@ -1,5 +1,14 @@
 import AppKit
 
+/// Identifies the user bubble whose full text should be shown in a SwiftUI
+/// modal sheet. `id` is the originating block's id; `text` is the
+/// untruncated source. `Identifiable` so SwiftUI's `.sheet(item:)`
+/// resolves presentation identity from this value alone.
+struct UserBubbleSheetRequest: Identifiable, Equatable, Sendable {
+    let id: UUID
+    let text: String
+}
+
 /// Public, imperative API for `NativeTranscript2`. Three orthogonal channels:
 ///
 /// 1. **Mutation** — `apply(_:scroll:)` accepts one or more `Change` values
@@ -62,6 +71,15 @@ final class Transcript2Controller {
     /// observe count changes without reaching into AppKit state.
     private(set) var blockCount: Int = 0
 
+    /// Pending request for the SwiftUI "show full user message" sheet,
+    /// driven by chevron clicks inside `BlockCellView`. NSView-internal
+    /// interactions (link click, selection drag, chevron tap) are normally
+    /// AppKit-closed-loop; this is the one well-defined exit point because
+    /// `.sheet(item:)` is a SwiftUI presentation primitive and has to live
+    /// on the SwiftUI side. `NativeTranscript2View` binds against this
+    /// field and clears it on dismiss.
+    var pendingUserBubbleSheet: UserBubbleSheetRequest?
+
     /// Module-internal: handed to `NativeTranscript2View.makeCoordinator`.
     let coordinator: Transcript2Coordinator
 
@@ -69,6 +87,9 @@ final class Transcript2Controller {
         coordinator = Transcript2Coordinator()
         coordinator.onBlockCountChanged = { [weak self] count in
             self?.blockCount = count
+        }
+        coordinator.onUserBubbleSheetRequested = { [weak self] id, text in
+            self?.pendingUserBubbleSheet = UserBubbleSheetRequest(id: id, text: text)
         }
     }
 

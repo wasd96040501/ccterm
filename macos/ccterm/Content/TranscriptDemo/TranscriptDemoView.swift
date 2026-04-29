@@ -106,7 +106,7 @@ private extension TranscriptDemoView {
 
     static func makeInitialBlocks() -> [Block] {
         let icons = DemoIcons()
-        return markdownShowcase() + [
+        return userBubbleShowcase() + markdownShowcase() + [
             heading("Tech News — April 2026"),
             para(
                 "Apple unveiled the next generation of its M-series silicon at a "
@@ -316,6 +316,38 @@ private extension TranscriptDemoView {
     /// through `[InlineNode]`. Lifted to file scope (vs. inline `[.text(s)]`)
     /// so updating the demo to richer IR is a one-line edit per call site.
     static func plain(_ text: String) -> [InlineNode] { [.text(text)] }
+
+    /// Three user bubbles at the top of the demo so the chevron + collapse
+    /// + selection paths are visible immediately on open:
+    /// - one short bubble (no chevron — under threshold)
+    /// - one bubble exactly at the threshold + min-hidden boundary
+    /// - one long bubble that folds by default
+    static func userBubbleShowcase() -> [Block] {
+        let shortMessage =
+            "Quick check — can you take a look at the latest M-series briefing "
+            + "and pull out the headline numbers?"
+
+        let longMessage = (0..<22).map { i in
+            "Line \(i + 1): "
+            + "Could you summarize the architectural changes between the "
+            + "previous generation and this one, with attention to memory "
+            + "subsystem changes and any compiler-stack updates that "
+            + "developers should be aware of? Cite sources when possible."
+        }.joined(separator: "\n")
+
+        let cjkMessage = (0..<14).map { i in
+            "第 \(i + 1) 行:"
+            + "请帮我对比一下国产 7nm 工艺和海外同代工艺的关键差异,"
+            + "包括晶体管密度、最高频率、功耗以及 EDA 工具链的成熟度,"
+            + "并给出未来 18 个月的量产可能性评估。"
+        }.joined(separator: "\n")
+
+        return [
+            Block(id: UUID(), kind: .userBubble(text: shortMessage)),
+            Block(id: UUID(), kind: .userBubble(text: longMessage)),
+            Block(id: UUID(), kind: .userBubble(text: cjkMessage)),
+        ]
+    }
 
     /// Curated showcase of inline IR + heading levels. Sits at the top of
     /// `initialBlocks` so opening the demo immediately exercises the new

@@ -52,6 +52,13 @@ final class BlockCellView: NSView {
     /// recycle-driven repaint goes through the same `viewFor`.
     var blockId: UUID?
 
+    /// Set by `viewFor`. Used by mouseDown when a hit lands on a control
+    /// belonging to the cell's layout (currently: user bubble chevron).
+    /// Selection drag still walks to the enclosing `NSTableView` because
+    /// AppKit's tracking loop owns that gesture — only cell-internal
+    /// controls go through this reference.
+    weak var coordinator: Transcript2Coordinator?
+
     /// Top padding contributed by the block's row (per-kind via
     /// `BlockStyle.blockPadding(for:)`). Drives `layoutOrigin.y` and
     /// selection rect offsetting. Set by `viewFor` alongside `layout`.
@@ -119,10 +126,10 @@ final class BlockCellView: NSView {
         // I-beam over the entire cell for any selectable block — matches
         // `NSTextView`'s behavior of showing I-beam over its full frame
         // (including any internal padding). Order matters: when cursor
-        // rects overlap, the most-recently-added wins, so the link
-        // pointing-hand registered below takes priority inside link
-        // hot zones. Non-selectable rows (image, list) skip — they get
-        // the default arrow.
+        // rects overlap, the most-recently-added wins, so pointing-hand
+        // rects registered below take priority over the I-beam in their
+        // hot zones. Non-selectable rows (image) skip — they get the
+        // default arrow.
         if layout.selectionAdapter != nil {
             addCursorRect(bounds, cursor: .iBeam)
         }
@@ -131,11 +138,24 @@ final class BlockCellView: NSView {
             addCursorRect(hit.rect.offsetBy(dx: origin.x, dy: origin.y),
                           cursor: .pointingHand)
         }
+        if case .userBubble(let l) = layout, let chev = l.chevronHitRect {
+            addCursorRect(chev.offsetBy(dx: origin.x, dy: origin.y),
+                          cursor: .pointingHand)
+        }
     }
 
     override func mouseDown(with event: NSEvent) {
         if let url = linkURL(at: event) {
             NSWorkspace.shared.open(url)
+            return
+        }
+        // Cell-internal control: user bubble chevron. Goes through the
+        // coordinator's sheet-request channel — the only well-defined
+        // exit point from AppKit-internal interactions to SwiftUI, since
+        // `.sheet(item:)` lives on the SwiftUI side. Selection-drag
+        // continues to stay inside `Transcript2SelectionCoordinator`.
+        if let id = blockId, hitChevron(at: event) {
+            coordinator?.requestUserBubbleSheet(id: id)
             return
         }
         // Forward to the enclosing table so its tracking loop owns the
@@ -162,5 +182,14 @@ final class BlockCellView: NSView {
             }
         }
         return nil
+    }
+
+    private func hitChevron(at event: NSEvent) -> Bool {
+        guard case .userBubble(let l)? = layout,
+              let hit = l.chevronHitRect
+        else { return false }
+        let local = convert(event.locationInWindow, from: nil)
+        let origin = layoutOrigin
+        return hit.offsetBy(dx: origin.x, dy: origin.y).contains(local)
     }
 }

@@ -94,11 +94,11 @@ struct TranscriptStressView: View {
             switch b.kind {
             case .heading(_, let inlines), .paragraph(let inlines):
                 return acc + InlineNode.charCount(inlines)
-            case .image, .list, .table:
+            case .image, .list, .table, .userBubble:
                 // Stress corpus only emits heading / paragraph today, so
                 // these cases are unreachable in practice. Listed for
-                // exhaustiveness; if list / table ever land in the
-                // corpus, swap this for a recursive char counter.
+                // exhaustiveness; if list / table / userBubble ever land
+                // in the corpus, swap this for a recursive char counter.
                 return acc
             }
         }

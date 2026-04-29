@@ -1,16 +1,60 @@
 import AppKit
 import SwiftUI
 
-/// SwiftUI entry point. Wraps `Transcript2ScrollView` (containing a
-/// `NSTableView` driven by `Transcript2Coordinator`).
+/// SwiftUI entry point. Mounts `Transcript2ScrollView` (containing a
+/// `NSTableView` driven by `Transcript2Coordinator`) and binds the user
+/// bubble's "show full message" sheet.
 ///
 /// The view takes a caller-owned `Transcript2Controller` — there is no
 /// `[Block]` `State` parameter. Callers mutate transcript content
 /// imperatively via `controller.apply(.insert / .remove / .update)` for
 /// incremental changes, or `controller.loadInitial(_:)` for the cold-load
-/// path. SwiftUI's role is reduced to mounting the AppKit view and wiring
-/// the existing coordinator into it; `updateNSView` is a no-op.
-struct NativeTranscript2View: NSViewRepresentable {
+/// path. SwiftUI's role is reduced to mounting the AppKit view, wiring
+/// the existing coordinator into it, and presenting the sheet driven by
+/// `controller.pendingUserBubbleSheet`; `updateNSView` is a no-op.
+struct NativeTranscript2View: View {
+    @Bindable var controller: Transcript2Controller
+
+    var body: some View {
+        Transcript2NSViewBridge(controller: controller)
+            .sheet(item: $controller.pendingUserBubbleSheet) { request in
+                UserBubbleSheetView(text: request.text)
+            }
+    }
+}
+
+/// Modal view for a user bubble's full text. Selection / copy come for
+/// free via `Text.textSelection(.enabled)`; the dismiss button lives in
+/// the bottom-right and binds the default action key (Return).
+struct UserBubbleSheetView: View {
+    let text: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                Text(text)
+                    .textSelection(.enabled)
+                    .font(.body)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(20)
+            }
+            Divider()
+            HStack {
+                Spacer()
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding(12)
+        }
+        .frame(minWidth: 520, idealWidth: 720, maxWidth: 960,
+               minHeight: 360, idealHeight: 540, maxHeight: 800)
+    }
+}
+
+/// `NSViewRepresentable` half — kept private so the SwiftUI-side sheet
+/// modifier composes cleanly above it.
+private struct Transcript2NSViewBridge: NSViewRepresentable {
     let controller: Transcript2Controller
 
     func makeCoordinator() -> Transcript2Coordinator { controller.coordinator }
@@ -85,7 +129,10 @@ private let previewBlocks: [Block] = {
                             accessibilityDescription: nil)?
         .withSymbolConfiguration(symbolConfig)
         ?? NSImage(size: NSSize(width: 200, height: 120))
+    let longUserText = (0..<18).map { "line \($0): some user text that wraps once or twice depending on width." }.joined(separator: "\n")
     return [
+        Block(id: UUID(), kind: .userBubble(text: "Hi! Can you walk me through the refactor plan?")),
+        Block(id: UUID(), kind: .userBubble(text: longUserText)),
         Block(id: UUID(), kind: .heading(level: 1, inlines: [.text("Refactor plan")])),
         Block(id: UUID(), kind: .paragraph(inlines: [
             .text("Replace the existing "),

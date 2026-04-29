@@ -79,6 +79,14 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// observers on `blockCount` see the new value.
     var onBlockCountChanged: ((Int) -> Void)?
 
+    /// Set by `Transcript2Controller` to forward chevron taps to the
+    /// SwiftUI-owned sheet binding. The cell's mouseDown handler resolves
+    /// the chevron hit, looks up the source `Block.Kind.userBubble(text:)`,
+    /// and fires this — keeping the cross-layer signal narrow (one block
+    /// id + the original text) so neither side reaches into the other's
+    /// internals.
+    var onUserBubbleSheetRequested: ((UUID, String) -> Void)?
+
     /// Cross-row text selection. Owns the selection dict; reads back into
     /// us through the helpers below (`block(atRow:)`, `textLayout(atRow:)`,
     /// `attributedString(forBlockId:)`, `markCellNeedsDisplay(blockId:)`).
@@ -465,7 +473,23 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             return .list(ListLayout.make(block: listBlock, maxWidth: contentWidth))
         case .table(let tableBlock):
             return .table(TableLayout.make(block: tableBlock, maxWidth: contentWidth))
+        case .userBubble(let text):
+            return .userBubble(UserBubbleLayout.make(text: text, maxWidth: contentWidth))
         }
+    }
+
+    // MARK: - User bubble sheet
+
+    /// Forwards a chevron click on the user bubble at `id` to the SwiftUI
+    /// sheet binding (via `onUserBubbleSheetRequested`). No `.update` path
+    /// — fold state is absent from the layout; the sheet is the place to
+    /// read the full message. No-op if `id` is unknown or doesn't point
+    /// at a `userBubble`.
+    func requestUserBubbleSheet(id: UUID) {
+        guard let i = blocks.firstIndex(where: { $0.id == id }),
+              case .userBubble(let text) = blocks[i].kind
+        else { return }
+        onUserBubbleSheetRequested?(id, text)
     }
 
     // MARK: - Width-change driven invalidation
@@ -636,6 +660,10 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         // picks up the existing entry here. nil = no highlight.
         cell.blockId = block.id
         cell.selection = selection.selection(for: block.id)
+        // Reinjected on every viewFor (cells are reused across rows) so
+        // chevron mouseDown can hit `requestUserBubbleSheet` without
+        // scanning the superview chain.
+        cell.coordinator = self
         return cell
     }
 

@@ -52,12 +52,12 @@ final class BlockCellView: NSView {
     /// recycle-driven repaint goes through the same `viewFor`.
     var blockId: UUID?
 
-    /// Current text selection range for this cell's block. Length-0 =
-    /// no selection. `didSet` triggers `needsDisplay` when the value
-    /// actually changes; identical assignments are absorbed.
-    var selectedRange: NSRange = NSRange(location: 0, length: 0) {
+    /// Current selection for this cell's block. `nil` = no selection.
+    /// `didSet` triggers `needsDisplay` when the value actually changes;
+    /// identical assignments are absorbed.
+    var selection: SelectionRange? {
         didSet {
-            if selectedRange != oldValue {
+            if selection != oldValue {
                 needsDisplay = true
             }
         }
@@ -85,32 +85,25 @@ final class BlockCellView: NSView {
         let origin = layoutOrigin
 
         // Selection highlight: under glyphs, matching NSTextView ordering.
-        // Only text-bearing rows have a TextLayout; image rows skip.
-        if selectedRange.length > 0, let textLayout = layout.textLayout {
-            paintSelection(in: ctx, layout: textLayout, origin: origin)
+        // The adapter projects (start, end) → layout-local rects; what
+        // those rects mean (text glyph band / cell rectangle / 1×1 inner
+        // band) is fully encapsulated inside the layout's adapter.
+        if let selection, let adapter = layout.selectionAdapter {
+            let rects = adapter.rects(selection.start, selection.end)
+            if !rects.isEmpty {
+                let color: NSColor = (window?.isKeyWindow == true)
+                    ? .selectedTextBackgroundColor
+                    : .unemphasizedSelectedTextBackgroundColor
+                ctx.setFillColor(color.cgColor)
+                for rect in rects {
+                    // `integral` keeps the bg edges crisp on Retina at
+                    // non-1× scale.
+                    ctx.fill(rect.offsetBy(dx: origin.x, dy: origin.y).integral)
+                }
+            }
         }
 
         layout.draw(in: ctx, origin: origin)
-    }
-
-    /// `selectedTextBackgroundColor` resolves through `NSAppearance`, so
-    /// light/dark and the system Accent Color come for free. The
-    /// unemphasized variant is what `NSTextView` swaps to when its
-    /// window resigns key — same gray, same source. Selection rects are
-    /// pixel-aligned (`integral`) to keep the bg edges crisp on Retina
-    /// at non-1× scale.
-    private func paintSelection(in ctx: CGContext,
-                                layout textLayout: TextLayout,
-                                origin: CGPoint) {
-        let rects = textLayout.selectionRects(for: selectedRange)
-        guard !rects.isEmpty else { return }
-        let color: NSColor = (window?.isKeyWindow == true)
-            ? .selectedTextBackgroundColor
-            : .unemphasizedSelectedTextBackgroundColor
-        ctx.setFillColor(color.cgColor)
-        for rect in rects {
-            ctx.fill(rect.offsetBy(dx: origin.x, dy: origin.y).integral)
-        }
     }
 
     // MARK: - Link interaction
@@ -118,13 +111,14 @@ final class BlockCellView: NSView {
     override func resetCursorRects() {
         super.resetCursorRects()
         guard let layout else { return }
-        // I-beam over the entire cell for text-bearing blocks — matches
+        // I-beam over the entire cell for any selectable block — matches
         // `NSTextView`'s behavior of showing I-beam over its full frame
         // (including any internal padding). Order matters: when cursor
         // rects overlap, the most-recently-added wins, so the link
         // pointing-hand registered below takes priority inside link
-        // hot zones. Image rows skip — they get the default arrow.
-        if layout.textLayout != nil {
+        // hot zones. Non-selectable rows (image, list) skip — they get
+        // the default arrow.
+        if layout.selectionAdapter != nil {
             addCursorRect(bounds, cursor: .iBeam)
         }
         let origin = layoutOrigin

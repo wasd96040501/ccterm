@@ -57,16 +57,16 @@ enum RowLayout: @unchecked Sendable {
         }
     }
 
-    /// Underlying `TextLayout` for kinds with a single contiguous text
-    /// flow (paragraph / heading). `nil` for image, list, and table —
-    /// list and table contain multiple sub-layouts and selection across
-    /// them isn't supported through the single-`TextLayout` selection
-    /// path. Cell highlight draw and drag hit-test both consume this
-    /// accessor and silently skip rows that return `nil`.
-    var textLayout: TextLayout? {
+    /// Selection-facing API for this row, or `nil` for non-selectable
+    /// kinds (image, list). The selection coordinator and cell view
+    /// consume only this — the underlying `TextLayout` / `TableLayout`
+    /// type is encapsulated, so adding a new selectable kind needs no
+    /// changes outside the new layout's own file.
+    var selectionAdapter: SelectionAdapter? {
         switch self {
-        case .text(let l): return l
-        case .image, .list, .table: return nil
+        case .text(let l): return l.selectionAdapter
+        case .table(let l): return l.selectionAdapter
+        case .image, .list: return nil
         }
     }
 }

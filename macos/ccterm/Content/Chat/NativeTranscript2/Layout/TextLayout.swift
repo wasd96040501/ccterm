@@ -39,6 +39,11 @@ import CoreText
 /// hot zones (consumed by the cell for hit-testing + cursor). Done once at
 /// `make` time so layout reuse benefits include the decoration data.
 struct TextLayout: @unchecked Sendable {
+    /// Source attributed string. Held so the layout can produce its own
+    /// `SelectionAdapter` (byWord snap and copy-string) without callers
+    /// having to keep / re-derive it. NSAttributedString is reference-
+    /// shared, so the only cost is a refcount bump.
+    let attributed: NSAttributedString
     let lines: [CTLine]
     let lineOrigins: [CGPoint]
     /// Per-line ascent/descent. Used by selection rect generation and by
@@ -78,6 +83,7 @@ struct TextLayout: @unchecked Sendable {
     }
 
     nonisolated static let empty = TextLayout(
+        attributed: NSAttributedString(),
         lines: [], lineOrigins: [], lineMetrics: [],
         totalHeight: 0, measuredWidth: 0,
         codeBackgrounds: [], links: [])
@@ -116,6 +122,7 @@ struct TextLayout: @unchecked Sendable {
             lines: lines, origins: origins, metrics: metrics)
 
         return TextLayout(
+            attributed: attributed,
             lines: lines, lineOrigins: origins, lineMetrics: metrics,
             totalHeight: y, measuredWidth: maxWidth,
             codeBackgrounds: codeBackgrounds, links: links)
@@ -242,6 +249,50 @@ struct TextLayout: @unchecked Sendable {
                 height: ascent + descent))
         }
         return rects
+    }
+
+    // MARK: - SelectionAdapter
+
+    /// Selection-facing API for this layout. Positions are `.text(char:)`;
+    /// the coordinator and cell view round-trip them opaquely. Built each
+    /// access (closures capture a snapshot of `self`) — call rate is at
+    /// drag-tick / draw frequency, not in any hot loop.
+    var selectionAdapter: SelectionAdapter {
+        let length = self.length
+        return SelectionAdapter(
+            fullRange: SelectionRange(
+                start: .text(char: 0), end: .text(char: length)),
+            hitTest: { p in .text(char: self.characterIndex(at: p)) },
+            rects: { a, b in
+                guard case .text(let i1) = a, case .text(let i2) = b
+                else { return [] }
+                let lo = min(i1, i2)
+                let hi = max(i1, i2)
+                guard hi > lo else { return [] }
+                return self.selectionRects(
+                    for: NSRange(location: lo, length: hi - lo))
+            },
+            string: { a, b in
+                guard case .text(let i1) = a, case .text(let i2) = b
+                else { return "" }
+                let lo = min(i1, i2)
+                let hi = max(i1, i2)
+                guard hi > lo, hi <= self.attributed.length else { return "" }
+                return self.attributed
+                    .attributedSubstring(
+                        from: NSRange(location: lo, length: hi - lo))
+                    .string
+                    .replacingOccurrences(of: "\u{2028}", with: "\n")
+            },
+            wordBoundary: { p in
+                guard case .text(let i) = p, self.attributed.length > 0
+                else { return nil }
+                let clamped = max(0, min(i, self.attributed.length - 1))
+                let word = self.attributed.doubleClick(at: clamped)
+                return SelectionRange(
+                    start: .text(char: word.location),
+                    end: .text(char: word.location + word.length))
+            })
     }
 
     // MARK: - Draw

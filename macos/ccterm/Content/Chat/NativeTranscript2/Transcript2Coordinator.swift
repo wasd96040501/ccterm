@@ -631,10 +631,9 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         cell.layout = cellLayout
         // Selection is keyed by block id, not by cell instance, so a
         // recycled cell scrolling onto a row that already had a selection
-        // picks up the existing range here. Empty range = no highlight.
+        // picks up the existing entry here. nil = no highlight.
         cell.blockId = block.id
-        cell.selectedRange = selection.selection(for: block.id)
-            ?? NSRange(location: 0, length: 0)
+        cell.selection = selection.selection(for: block.id)
         return cell
     }
 
@@ -654,90 +653,25 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         blocks.first { $0.id == id }
     }
 
-    /// `NSAttributedString` for a text-bearing block, rebuilt from the
-    /// inline IR on demand. `nil` for `image`. Used by selection at copy
-    /// time and Cmd+A — we deliberately don't cache it because the cost
-    /// of caching outweighs the rarity of these paths (copy is once per
-    /// gesture; Cmd+A is once per shortcut).
-    func attributedString(forBlockId id: UUID) -> NSAttributedString? {
-        guard let block = block(forId: id) else { return nil }
-        switch block.kind {
-        case .heading(let level, let inlines):
-            return BlockStyle.headingAttributed(level: level, inlines: inlines)
-        case .paragraph(let inlines):
-            return BlockStyle.paragraphAttributed(inlines: inlines)
-        case .image:
-            return nil
-        case .list(let listBlock):
-            // Cmd+A flattens the list to plain text — markers (•, "1.",
-            // checkbox glyphs) aren't real characters, so they don't
-            // appear here. Drag-select is unsupported on list rows
-            // (`textLayout` returns nil), so block-level Cmd+A is the
-            // only path that hits this branch.
-            return Self.flattenList(listBlock, indent: 0)
-        case .table(let tableBlock):
-            // Tab between cells, newline between rows — the same
-            // convention TextEdit / spreadsheet apps recognize when
-            // pasting plain text back into a table.
-            return Self.flattenTable(tableBlock)
-        }
-    }
-
-    nonisolated private static func flattenList(
-        _ list: ListBlock, indent: Int
-    ) -> NSAttributedString {
-        let out = NSMutableAttributedString()
-        let pad = String(repeating: "  ", count: indent)
-        for (i, item) in list.items.enumerated() {
-            if i > 0 { out.append(NSAttributedString(string: "\n")) }
-            for (j, content) in item.content.enumerated() {
-                if j > 0 { out.append(NSAttributedString(string: "\n")) }
-                switch content {
-                case .paragraph(let inlines):
-                    if !pad.isEmpty {
-                        out.append(NSAttributedString(string: pad))
-                    }
-                    out.append(BlockStyle.paragraphAttributed(inlines: inlines))
-                case .list(let nested):
-                    out.append(flattenList(nested, indent: indent + 1))
-                }
-            }
-        }
-        return out
-    }
-
-    nonisolated private static func flattenTable(_ table: TableBlock) -> NSAttributedString {
-        let out = NSMutableAttributedString()
-        appendTableRow(out: out, cells: table.header, bold: true)
-        for row in table.rows {
-            out.append(NSAttributedString(string: "\n"))
-            appendTableRow(out: out, cells: row, bold: false)
-        }
-        return out
-    }
-
-    nonisolated private static func appendTableRow(
-        out: NSMutableAttributedString,
-        cells: [[InlineNode]], bold: Bool
-    ) {
-        for (i, cell) in cells.enumerated() {
-            if i > 0 { out.append(NSAttributedString(string: "\t")) }
-            out.append(BlockStyle.tableCellAttributed(inlines: cell, bold: bold))
-        }
-    }
-
-    /// `TextLayout` for a row's block, or `nil` for non-text rows. Goes
-    /// through the lazy `layout(for:width:)` path so a row whose layout
-    /// was evicted (or not yet computed) lazy-fills its cache entry as
-    /// a side effect.
-    func textLayout(atRow row: Int) -> TextLayout? {
+    /// Selection-facing API for the block at `row`, or `nil` if the row
+    /// is non-selectable (image, list). Goes through the lazy
+    /// `layout(for:width:)` path so a row whose layout was evicted (or
+    /// not yet computed) lazy-fills its cache entry as a side effect.
+    func selectionAdapter(atRow row: Int) -> SelectionAdapter? {
         guard let block = block(atRow: row) else { return nil }
-        return layout(for: block, width: layoutWidth).textLayout
+        return layout(for: block, width: layoutWidth).selectionAdapter
+    }
+
+    /// Selection-facing API keyed by block id (used by Cmd+A, copy, and
+    /// other paths that don't have a row index handy).
+    func selectionAdapter(forBlockId id: UUID) -> SelectionAdapter? {
+        guard let block = block(forId: id) else { return nil }
+        return layout(for: block, width: layoutWidth).selectionAdapter
     }
 
     /// Push the current selection state for `blockId` to its visible
     /// cell, which triggers `needsDisplay` via the cell's `didSet` if
-    /// the range actually changed. No-op if the cell isn't currently
+    /// the value actually changed. No-op if the cell isn't currently
     /// visible — when it scrolls in, `viewFor` will read the live state
     /// from the selection dict.
     func markCellNeedsDisplay(blockId: UUID) {
@@ -747,8 +681,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         guard let cell = table.view(atColumn: 0, row: row, makeIfNecessary: false)
             as? BlockCellView
         else { return }
-        cell.selectedRange = selection.selection(for: blockId)
-            ?? NSRange(location: 0, length: 0)
+        cell.selection = selection.selection(for: blockId)
     }
 
 }

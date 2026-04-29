@@ -66,13 +66,14 @@ final class Transcript2TableView: NSTableView, NSMenuItemValidation {
         let docPoint = convert(event.locationInWindow, from: nil)
         let row = self.row(at: docPoint)
 
-        // Outside any row, or on a non-text row (image): drop existing
-        // selection and don't enter tracking. `super.mouseDown` is
-        // intentionally not called — the default NSTableView click logic
-        // (row selection) is unwanted here (`selectionHighlightStyle`
-        // is `.none`) and would consume drag events.
+        // Outside any row, or on a non-selectable row (image / list):
+        // drop existing selection and don't enter tracking.
+        // `super.mouseDown` is intentionally not called — the default
+        // NSTableView click logic (row selection) is unwanted here
+        // (`selectionHighlightStyle` is `.none`) and would consume drag
+        // events.
         guard row >= 0,
-              coordinator.textLayout(atRow: row) != nil
+              coordinator.selectionAdapter(atRow: row) != nil
         else {
             coordinator.selection.clearAll()
             return

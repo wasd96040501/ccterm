@@ -1,52 +1,59 @@
 import AppKit
 
-/// Cross-row text selection state for the transcript table.
+/// Cross-row selection state for the transcript table.
 ///
-/// Owned by `Transcript2Coordinator`. The coordinator delegates all
-/// selection mutations to this object; in turn, this object reads
-/// per-row data (`block(atRow:)`, `textLayout(atRow:)`,
-/// `attributedString(forBlockId:)`) back through the weak `transcript`
-/// reference and asks the coordinator to push the new range to the
-/// affected `BlockCellView` via `markCellNeedsDisplay(blockId:)`.
+/// Owned by `Transcript2Coordinator`. Reads back per-row data through the
+/// weak `transcript` reference (`block(atRow:)`,
+/// `selectionAdapter(atRow:)`, `selectionAdapter(forBlockId:)`) and asks
+/// the coordinator to repaint affected cells via
+/// `markCellNeedsDisplay(blockId:)`.
 ///
 /// ### Source of truth
 ///
-/// `selections: [UUID: NSRange]` is the source of truth, keyed by
-/// `Block.id`. Per-cell state is **derived** — when a cell is reused for
-/// a previously-selected block on scroll-in, `viewFor` reads the range
-/// out of this dict and applies it to the cell. Holding a weak ref to
-/// the cell instead would break under NSTableView view recycling.
+/// `selections: [UUID: SelectionRange]` is the source of truth, keyed by
+/// `Block.id`. Per-cell state is derived — when a cell is reused for a
+/// previously-selected block on scroll-in, `viewFor` reads the entry out
+/// of this dict and applies it to the cell. Holding a weak ref to the
+/// cell would break under NSTableView view recycling.
 ///
-/// ### Drag-update algorithm
+/// ### Layout-agnostic algorithm
 ///
-/// `updateSelection(from:to:in:)` runs per drag tick during
-/// `Transcript2TableView`'s tracking loop. It computes the row range
-/// `[lowRow, highRow]` covered by `(start, current)` and, for each row,
-/// maps a per-row `(loIndex, hiIndex)` pair:
+/// The drag-tick algorithm works in opaque `LayoutPosition` values
+/// produced and consumed by each row's `SelectionAdapter`. Text rows
+/// use 1-D char positions; table rows use 2-D `(row, col, char)`
+/// positions; the coordinator never `switch`es on the case. Per-row
+/// behavior (paragraph char-flow / table cell-grid / future kinds) is
+/// fully encapsulated inside the adapter — this file has zero
+/// kind-specific code.
 ///
-/// - **Single-row drag** — both indexes from drag-start and drag-current,
-///   sorted.
-/// - **Multi-row, top row** — forward drag: from drag-start to layout
-///   end. Reverse drag: from layout start to drag-current.
-/// - **Multi-row, bottom row** — symmetric.
-/// - **Middle row** — full layout `[0, length]`.
+/// ### Multi-row drag
 ///
-/// Image rows (no `TextLayout`) are skipped — selection is non-contiguous
-/// across non-text blocks, and copy concatenates text-only entries.
+/// Top / middle / bottom row math is the classic chat-style sweep:
+///
+/// - **single-row drag** (start and end in the same row) — both endpoints
+///   from `adapter.hitTest`.
+/// - **top of multi-row drag** — anchor from the click point, cursor at
+///   `adapter.fullRange.end` (selection runs from the click to the row
+///   edge; reverse drag mirrors).
+/// - **bottom of multi-row drag** — anchor at `adapter.fullRange.start`,
+///   cursor from the click.
+/// - **middle row** — full row (`adapter.fullRange`).
+///
+/// Rows whose `selectionAdapter` is `nil` (image, list) drop out
+/// silently — they're skipped in the sweep without breaking the
+/// surrounding selection.
 ///
 /// ### Window-key tracking
 ///
 /// `selectedTextBackgroundColor` (key) vs
-/// `unemphasizedSelectedTextBackgroundColor` (resigned) — the cell
-/// reads `window?.isKeyWindow` at draw time, so we just need to mark
-/// affected cells dirty when key state flips. We listen unscoped (any
-/// window) and let `markCellNeedsDisplay` no-op for non-visible cells.
-/// Cheap because the dict is small (only blocks with active selection).
+/// `unemphasizedSelectedTextBackgroundColor` (resigned) — the cell reads
+/// `window?.isKeyWindow` at draw time, so we just need to mark affected
+/// cells dirty when key state flips.
 @MainActor
 final class Transcript2SelectionCoordinator: NSObject {
     weak var transcript: Transcript2Coordinator?
 
-    private var selections: [UUID: NSRange] = [:]
+    private var selections: [UUID: SelectionRange] = [:]
 
     override init() {
         super.init()
@@ -65,9 +72,7 @@ final class Transcript2SelectionCoordinator: NSObject {
 
     var isEmpty: Bool { selections.isEmpty }
 
-    /// Selection range for a block, or `nil` if none. Length-0 ranges are
-    /// never stored (callers treat them as "no selection").
-    func selection(for blockId: UUID) -> NSRange? { selections[blockId] }
+    func selection(for blockId: UUID) -> SelectionRange? { selections[blockId] }
 
     // MARK: - Mutation
 
@@ -78,9 +83,9 @@ final class Transcript2SelectionCoordinator: NSObject {
         for id in ids { transcript?.markCellNeedsDisplay(blockId: id) }
     }
 
-    /// Replace selection for one block. Length-0 → clear.
-    func setSelection(_ range: NSRange, blockId: UUID) {
-        if range.length == 0 {
+    /// Replace selection for one block. Empty range (start == end) clears.
+    func setSelection(_ range: SelectionRange, blockId: UUID) {
+        if range.start == range.end {
             if selections.removeValue(forKey: blockId) != nil {
                 transcript?.markCellNeedsDisplay(blockId: blockId)
             }
@@ -93,23 +98,23 @@ final class Transcript2SelectionCoordinator: NSObject {
     /// Drop the entry for a block whose row was removed or whose content
     /// was replaced (`.update`). No cell push — the caller (`apply`) is
     /// already running `removeRows` / `reloadData(forRowIndexes:)`, and
-    /// the next `viewFor` for an `.update` reads the (now absent) range
-    /// out of this dict to leave the new cell's `selectedRange` empty.
+    /// the next `viewFor` for an `.update` reads the (now absent) entry
+    /// out of this dict so the new cell starts with no selection.
     func dropEntry(blockId: UUID) {
         selections.removeValue(forKey: blockId)
     }
 
-    /// Cmd+A: full select every text-bearing block.
+    /// Cmd+A: select every selectable block via its adapter's `fullRange`.
+    /// Non-selectable blocks (image, list) silently drop out.
     func selectAllText() {
         guard let tc = transcript else { return }
         var changed = Set<UUID>()
         for id in tc.blockIds {
-            guard let attributed = tc.attributedString(forBlockId: id),
-                  attributed.length > 0
-            else { continue }
-            let new = NSRange(location: 0, length: attributed.length)
-            if selections[id] != new {
-                selections[id] = new
+            guard let adapter = tc.selectionAdapter(forBlockId: id) else { continue }
+            let next = adapter.fullRange
+            if next.start == next.end { continue }
+            if selections[id] != next {
+                selections[id] = next
                 changed.insert(id)
             }
         }
@@ -120,15 +125,8 @@ final class Transcript2SelectionCoordinator: NSObject {
     /// `current` are in the table's document coords (y-down, since the
     /// table is flipped).
     ///
-    /// `byWord` snaps each row's per-row endpoints to word boundaries
-    /// (via `NSAttributedString.doubleClick(at:)` — the same Cocoa
-    /// primitive `NSTextView` uses for double-click word selection).
-    /// Internal endpoints (`0` and `length` at row boundaries) aren't
-    /// snapped: they're already at line/paragraph boundaries and
-    /// snapping them would either no-op or cross a line break and
-    /// drop a character. The attributed string is fetched only for
-    /// rows whose endpoint actually came from a click point — middle
-    /// rows are full-row select and don't need it.
+    /// `byWord` snaps endpoint-row positions to word boundaries via the
+    /// adapter's `wordBoundary` closure. Middle rows are full-row regardless.
     func updateSelection(from start: CGPoint, to current: CGPoint,
                          in tableView: NSTableView,
                          byWord: Bool = false) {
@@ -140,108 +138,72 @@ final class Transcript2SelectionCoordinator: NSObject {
         let highRow = max(startRow, currentRow)
         let reversed = currentRow < startRow
 
-        var next: [UUID: NSRange] = [:]
+        var next: [UUID: SelectionRange] = [:]
         for row in lowRow ... highRow {
             guard let block = tc.block(atRow: row),
-                  let layout = tc.textLayout(atRow: row)
+                  let adapter = tc.selectionAdapter(atRow: row)
             else { continue }
 
             let rowRect = tableView.rect(ofRow: row)
-            // Cell is centered inside the row by `CenteredRowView`, so the
-            // layout's left edge in doc coords includes the centering
-            // offset before the in-cell horizontal padding.
             let originX = rowRect.minX
                 + BlockStyle.cellOriginX(forRowWidth: rowRect.width)
                 + BlockStyle.blockHorizontalPadding
             let originY = rowRect.minY + BlockStyle.blockVerticalPadding
             let startLocal = CGPoint(x: start.x - originX, y: start.y - originY)
             let currentLocal = CGPoint(x: current.x - originX, y: current.y - originY)
-            let length = layout.length
 
-            var lo: Int
-            var hi: Int
+            let posStart = adapter.hitTest(startLocal)
+            let posCurrent = adapter.hitTest(currentLocal)
+
+            var a: LayoutPosition
+            var b: LayoutPosition
             if lowRow == highRow {
-                let i1 = layout.characterIndex(at: startLocal)
-                let i2 = layout.characterIndex(at: currentLocal)
-                lo = min(i1, i2); hi = max(i1, i2)
+                a = posStart; b = posCurrent
             } else if row == lowRow {
-                // Top row of the spanned range. Forward drag: anchor is
-                // here, selection extends from anchor to row end. Reverse
-                // drag: cursor is here, selection extends from cursor to
-                // row end (the rest continues into the rows below toward
-                // the anchor in highRow).
-                if !reversed {
-                    lo = layout.characterIndex(at: startLocal); hi = length
-                } else {
-                    lo = layout.characterIndex(at: currentLocal); hi = length
-                }
+                // Top of multi-row sweep: anchor at the click point that
+                // landed in this row, cursor runs to layout end. Reverse
+                // drag's cursor is the one in this row.
+                a = reversed ? posCurrent : posStart
+                b = adapter.fullRange.end
             } else if row == highRow {
-                // Bottom row, mirror image: forward drag's cursor or
-                // reverse drag's anchor — either way, selection runs from
-                // row start to that endpoint.
-                if !reversed {
-                    lo = 0; hi = layout.characterIndex(at: currentLocal)
-                } else {
-                    lo = 0; hi = layout.characterIndex(at: startLocal)
-                }
+                // Bottom of multi-row sweep: mirror.
+                a = adapter.fullRange.start
+                b = reversed ? posStart : posCurrent
             } else {
-                lo = 0; hi = length
+                // Middle: full row.
+                a = adapter.fullRange.start
+                b = adapter.fullRange.end
             }
 
-            if byWord, row == lowRow || row == highRow,
-               let attributed = tc.attributedString(forBlockId: block.id),
-               attributed.length > 0
-            {
-                // Same-position drag in byWord (mouse hasn't moved past
-                // the original word): expand to the word at that index
-                // so the click-word selection survives stray 0-distance
-                // drag events.
-                if lo == hi {
-                    let r = attributed.doubleClick(
-                        at: max(0, min(lo, attributed.length - 1)))
-                    lo = r.location
-                    hi = r.location + r.length
-                } else {
-                    if lo > 0 {
-                        let r = attributed.doubleClick(
-                            at: max(0, min(lo, attributed.length - 1)))
-                        lo = r.location
-                    }
-                    if hi < attributed.length {
-                        let r = attributed.doubleClick(
-                            at: max(0, min(hi, attributed.length - 1)))
-                        hi = r.location + r.length
-                    }
-                }
+            if byWord, row == lowRow || row == highRow {
+                if let word = adapter.wordBoundary(a) { a = word.start }
+                if let word = adapter.wordBoundary(b) { b = word.end }
             }
 
-            if hi > lo {
-                next[block.id] = NSRange(location: lo, length: hi - lo)
-            }
+            // Empty selection on this row → omit (e.g. zero-distance click).
+            // We use rect emptiness rather than position equality because a
+            // table 1×1 with ch1 == ch2 has equal positions but a
+            // legitimately-empty highlight; both signals collapse to "no
+            // visible selection on this row, don't store."
+            guard a != b, !adapter.rects(a, b).isEmpty else { continue }
+            next[block.id] = SelectionRange(start: a, end: b)
         }
 
-        // Dirty the union of old and new — union covers cells whose
-        // range changed, dropped, or added in this tick. Cells whose
-        // range is identical across ticks still get setNeedsDisplay,
-        // but with `.onSetNeedsDisplay` redraw policy the layer cache
-        // absorbs no-op redraws for free.
         let dirty = Set(selections.keys).union(next.keys)
         selections = next
         for id in dirty { tc.markCellNeedsDisplay(blockId: id) }
     }
 
     /// Word selection at a single click point — driven by double-click.
-    /// Defers to `NSAttributedString.doubleClick(at:)` so word semantics
-    /// (CJK / Latin / numerics / punctuation gaps) match what
-    /// `NSTextView` produces system-wide.
+    /// Defers to the adapter's `wordBoundary`, which knows the layout's
+    /// own word semantics (text uses `NSAttributedString.doubleClick`;
+    /// table snaps inside the hit cell).
     func selectWord(at point: CGPoint, in tableView: NSTableView) {
         guard let tc = transcript else { return }
         let row = tableView.row(at: point)
         guard row >= 0,
               let block = tc.block(atRow: row),
-              let layout = tc.textLayout(atRow: row),
-              let attributed = tc.attributedString(forBlockId: block.id),
-              attributed.length > 0
+              let adapter = tc.selectionAdapter(atRow: row)
         else { return }
 
         let rowRect = tableView.rect(ofRow: row)
@@ -250,57 +212,48 @@ final class Transcript2SelectionCoordinator: NSObject {
                 - BlockStyle.cellOriginX(forRowWidth: rowRect.width)
                 - BlockStyle.blockHorizontalPadding,
             y: point.y - rowRect.minY - BlockStyle.blockVerticalPadding)
-        let idx = max(0, min(layout.characterIndex(at: local), attributed.length - 1))
-        setSelection(attributed.doubleClick(at: idx), blockId: block.id)
+
+        let pos = adapter.hitTest(local)
+        guard let word = adapter.wordBoundary(pos) else { return }
+        setSelection(word, blockId: block.id)
     }
 
-    /// Whole-block selection at a single click point — driven by
-    /// triple-click. In our model "the block" *is* the paragraph /
-    /// heading content, so this is equivalent to selecting from
-    /// position 0 to attributed.length.
+    /// Whole-block selection — driven by triple-click. Mapped to the
+    /// adapter's `fullRange`.
     func selectFullBlock(at point: CGPoint, in tableView: NSTableView) {
         guard let tc = transcript else { return }
         let row = tableView.row(at: point)
         guard row >= 0,
               let block = tc.block(atRow: row),
-              let attributed = tc.attributedString(forBlockId: block.id),
-              attributed.length > 0
+              let adapter = tc.selectionAdapter(atRow: row)
         else { return }
-        setSelection(NSRange(location: 0, length: attributed.length),
-                     blockId: block.id)
+        setSelection(adapter.fullRange, blockId: block.id)
     }
 
     // MARK: - Copy
 
-    /// Concatenated plain-text copy in document order. Newlines between
-    /// blocks; the U+2028 line-separator we use inside paragraphs (for
-    /// `lineBreak`) is normalized to `\n` so paste targets that can't
-    /// render U+2028 don't show a tofu.
+    /// Concatenated plain-text copy in document order. Per-block joiner
+    /// is `\n\n`; intra-block joining (e.g. `\t` between table cells) is
+    /// the adapter's `string` closure's responsibility.
     func copyText() -> String {
         guard let tc = transcript else { return "" }
         var pieces: [String] = []
         for id in tc.blockIds {
-            guard let range = selections[id], range.length > 0,
-                  let attributed = tc.attributedString(forBlockId: id),
-                  range.location + range.length <= attributed.length
+            guard let range = selections[id],
+                  let adapter = tc.selectionAdapter(forBlockId: id)
             else { continue }
-            let s = attributed
-                .attributedSubstring(from: range)
-                .string
-                .replacingOccurrences(of: "\u{2028}", with: "\n")
-            pieces.append(s)
+            let s = adapter.string(range.start, range.end)
+            if !s.isEmpty { pieces.append(s) }
         }
         return pieces.joined(separator: "\n\n")
     }
 
-    /// Whether there is any text-bearing block at all (used to validate
+    /// Whether there is any selectable content at all (used to validate
     /// the Cmd+A menu item).
     var hasSelectableText: Bool {
         guard let tc = transcript else { return false }
         for id in tc.blockIds {
-            if let s = tc.attributedString(forBlockId: id), s.length > 0 {
-                return true
-            }
+            if tc.selectionAdapter(forBlockId: id) != nil { return true }
         }
         return false
     }

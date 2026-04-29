@@ -34,6 +34,15 @@ struct TableLayout: @unchecked Sendable {
     let rowHeights: [CGFloat]
     /// `cells[row][col]`. Row 0 is the header.
     let cells: [[TextLayout]]
+    /// Full cell rectangles in table-local coords (column width × row
+    /// height including padding bands). Selection fills these for
+    /// whole-cell highlight; cell hit-test partitions the table by these.
+    let cellRects: [[CGRect]]
+    /// Each cell's `TextLayout` draw origin in table-local coords. Accounts
+    /// for per-column alignment and horizontal/vertical padding. Selection
+    /// uses this to project a cell's `selectionRects` (for inner-range
+    /// highlight) and to derive cell-local hit-test coords.
+    let cellTextOrigins: [[CGPoint]]
     let alignments: [TableBlock.Alignment]
     let totalHeight: CGFloat
     let measuredWidth: CGFloat
@@ -43,6 +52,7 @@ struct TableLayout: @unchecked Sendable {
 
     nonisolated static let empty = TableLayout(
         columnWidths: [], rowHeights: [], cells: [],
+        cellRects: [], cellTextOrigins: [],
         alignments: [], totalHeight: 0, measuredWidth: 0, links: [])
 
     // MARK: - Make
@@ -144,13 +154,17 @@ struct TableLayout: @unchecked Sendable {
         // Step 5: lay out each cell at its assigned width and harvest
         // links. Cell origin (table-local) is needed up-front so link
         // offsets can be baked in here — at draw-time they'd be
-        // recomputed identically, so we do it once.
+        // recomputed identically, so we do it once. Two passes: first
+        // pass computes layouts and rowHeights; second pass derives
+        // cellRects (need finalized rowHeights) and stashes text origins.
         var cells: [[TextLayout]] = []
         var rowHeights: [CGFloat] = []
+        var textOrigins: [[CGPoint]] = []
         var links: [TextLayout.LinkHit] = []
         var rowY: CGFloat = 0
         for (_, row) in allRowsAttr.enumerated() {
             var laid: [TextLayout] = []
+            var rowOrigins: [CGPoint] = []
             var maxCellH: CGFloat = 0
             var colX: CGFloat = 0
             for (c, attr) in row.enumerated() {
@@ -172,19 +186,44 @@ struct TableLayout: @unchecked Sendable {
                 }
 
                 laid.append(layout)
+                rowOrigins.append(CGPoint(x: xOrigin, y: yOrigin))
                 maxCellH = max(maxCellH, layout.totalHeight)
                 colX += cellW
             }
             cells.append(laid)
+            textOrigins.append(rowOrigins)
             let rowHeight = maxCellH + 2 * vPad
             rowHeights.append(rowHeight)
             rowY += rowHeight
+        }
+
+        // Step 6: derive cell rectangles. Same column boundaries as the
+        // text-origin pass, but the rect height is the finalized row
+        // height (not the per-cell layout height) — selection fill should
+        // cover the whole row band including padding.
+        var cellRects: [[CGRect]] = []
+        cellRects.reserveCapacity(rowHeights.count)
+        var rectY: CGFloat = 0
+        for r in 0 ..< rowHeights.count {
+            let h = rowHeights[r]
+            var rowRects: [CGRect] = []
+            rowRects.reserveCapacity(columnWidths.count)
+            var x: CGFloat = 0
+            for c in 0 ..< columnWidths.count {
+                let w = columnWidths[c]
+                rowRects.append(CGRect(x: x, y: rectY, width: w, height: h))
+                x += w
+            }
+            cellRects.append(rowRects)
+            rectY += h
         }
 
         return TableLayout(
             columnWidths: columnWidths,
             rowHeights: rowHeights,
             cells: cells,
+            cellRects: cellRects,
+            cellTextOrigins: textOrigins,
             alignments: block.alignments,
             totalHeight: rowHeights.reduce(0, +),
             measuredWidth: columnWidths.reduce(0, +),
@@ -216,6 +255,181 @@ struct TableLayout: @unchecked Sendable {
         case .left, .none:
             return cellLeft + hPad
         }
+    }
+
+    // MARK: - Hit-test
+
+    /// Resolve a point (table-local, y-down) to a `(row, col, char)`
+    /// triple. The (row, col) component is total — out-of-bounds points
+    /// clamp to the nearest edge cell, so callers always get a defined
+    /// landing site. The `char` component is the cell's TextLayout
+    /// character index at the click point (or 0 for a clamped landing
+    /// where the click is outside the cell's text region).
+    ///
+    /// Cells fill the table frame edge-to-edge with no inter-cell gap, so
+    /// every interior point lands in exactly one cell — no "snap to
+    /// nearest" geometry is needed beyond the outer-edge clamp.
+    private func hitTestCell(point: CGPoint) -> (row: Int, col: Int, char: Int) {
+        guard !rowHeights.isEmpty, !columnWidths.isEmpty else {
+            return (0, 0, 0)
+        }
+
+        // Locate row by walking accumulated heights. Below-the-table
+        // points clamp to the last row; above-the-table to the first.
+        var row = 0
+        var y: CGFloat = 0
+        if point.y <= 0 {
+            row = 0
+        } else {
+            row = rowHeights.count - 1
+            for i in 0 ..< rowHeights.count {
+                let next = y + rowHeights[i]
+                if point.y < next { row = i; break }
+                y = next
+            }
+        }
+
+        // Locate column similarly.
+        var col = 0
+        var x: CGFloat = 0
+        if point.x <= 0 {
+            col = 0
+        } else {
+            col = columnWidths.count - 1
+            for c in 0 ..< columnWidths.count {
+                let next = x + columnWidths[c]
+                if point.x < next { col = c; break }
+                x = next
+            }
+        }
+
+        let textOrigin = cellTextOrigins[row][col]
+        let local = CGPoint(x: point.x - textOrigin.x,
+                            y: point.y - textOrigin.y)
+        let char = cells[row][col].characterIndex(at: local)
+        return (row, col, char)
+    }
+
+    // MARK: - SelectionAdapter
+
+    /// Selection-facing API for this layout. Positions are
+    /// `.cell(row:col:char:)`; the cell-grid selection rule (rectangle =
+    /// `[min/max row] × [min/max col]`, with `char` granularity surviving
+    /// **only** when the rectangle is 1×1 inside one cell) is enforced
+    /// inside `rects` / `string`. The coordinator and cell view never
+    /// see row / col / char — they round-trip opaque positions.
+    var selectionAdapter: SelectionAdapter {
+        let lastR = max(0, rowHeights.count - 1)
+        let lastC = max(0, columnWidths.count - 1)
+        let lastCellChar = cells.last?.last?.length ?? 0
+        let fullStart: LayoutPosition = .cell(row: 0, col: 0, char: 0)
+        let fullEnd: LayoutPosition = .cell(
+            row: lastR, col: lastC, char: lastCellChar)
+
+        return SelectionAdapter(
+            fullRange: SelectionRange(start: fullStart, end: fullEnd),
+            hitTest: { p in
+                let (r, c, ch) = self.hitTestCell(point: p)
+                return .cell(row: r, col: c, char: ch)
+            },
+            rects: { a, b in
+                guard case .cell(let r1, let c1, let ch1) = a,
+                      case .cell(let r2, let c2, let ch2) = b
+                else { return [] }
+                return self.cellSelectionRects(
+                    r1: r1, c1: c1, ch1: ch1,
+                    r2: r2, c2: c2, ch2: ch2)
+            },
+            string: { a, b in
+                guard case .cell(let r1, let c1, let ch1) = a,
+                      case .cell(let r2, let c2, let ch2) = b
+                else { return "" }
+                return self.cellSelectionString(
+                    r1: r1, c1: c1, ch1: ch1,
+                    r2: r2, c2: c2, ch2: ch2)
+            },
+            wordBoundary: { p in
+                guard case .cell(let r, let c, let ch) = p,
+                      r >= 0, r < self.cells.count,
+                      c >= 0, c < self.cells[r].count
+                else { return nil }
+                let attr = self.cells[r][c].attributed
+                guard attr.length > 0 else { return nil }
+                let clamped = max(0, min(ch, attr.length - 1))
+                let word = attr.doubleClick(at: clamped)
+                return SelectionRange(
+                    start: .cell(row: r, col: c, char: word.location),
+                    end: .cell(row: r, col: c,
+                               char: word.location + word.length))
+            })
+    }
+
+    /// Cell-grid rectangle highlight. 1×1 same-cell uses the cell's own
+    /// glyph-band rects (character-precise); every other case fills full
+    /// cell rects so column / row / rectangle selection all read as solid
+    /// blocks (Numbers / Excel convention — crossing a cell boundary
+    /// signals the user's intent shift from "character precision" to
+    /// "structural region").
+    private func cellSelectionRects(
+        r1: Int, c1: Int, ch1: Int,
+        r2: Int, c2: Int, ch2: Int
+    ) -> [CGRect] {
+        let rowRange = min(r1, r2) ... max(r1, r2)
+        let colRange = min(c1, c2) ... max(c1, c2)
+        if rowRange.count == 1, colRange.count == 1 {
+            let r = rowRange.lowerBound
+            let c = colRange.lowerBound
+            guard r < cells.count, c < cells[r].count else { return [] }
+            let lo = min(ch1, ch2)
+            let hi = max(ch1, ch2)
+            guard hi > lo else { return [] }
+            let textOrigin = cellTextOrigins[r][c]
+            return cells[r][c]
+                .selectionRects(for: NSRange(location: lo, length: hi - lo))
+                .map { $0.offsetBy(dx: textOrigin.x, dy: textOrigin.y) }
+        }
+        var out: [CGRect] = []
+        for r in rowRange where r < cellRects.count {
+            for c in colRange where c < cellRects[r].count {
+                out.append(cellRects[r][c])
+            }
+        }
+        return out
+    }
+
+    /// Cell-grid selection text. 1×1 same-cell yields a per-cell substring;
+    /// multi-cell joins by `\t` within rows and `\n` between rows
+    /// (TextEdit / spreadsheet paste convention). U+2028 inline line
+    /// separators normalize to `\n`.
+    private func cellSelectionString(
+        r1: Int, c1: Int, ch1: Int,
+        r2: Int, c2: Int, ch2: Int
+    ) -> String {
+        let rowRange = min(r1, r2) ... max(r1, r2)
+        let colRange = min(c1, c2) ... max(c1, c2)
+        if rowRange.count == 1, colRange.count == 1 {
+            let r = rowRange.lowerBound
+            let c = colRange.lowerBound
+            guard r < cells.count, c < cells[r].count else { return "" }
+            let attr = cells[r][c].attributed
+            let lo = min(ch1, ch2)
+            let hi = max(ch1, ch2)
+            guard hi > lo, hi <= attr.length else { return "" }
+            return attr
+                .attributedSubstring(from: NSRange(location: lo, length: hi - lo))
+                .string
+                .replacingOccurrences(of: "\u{2028}", with: "\n")
+        }
+        var rowStrings: [String] = []
+        for r in rowRange where r < cells.count {
+            var cellStrings: [String] = []
+            for c in colRange where c < cells[r].count {
+                cellStrings.append(cells[r][c].attributed.string
+                    .replacingOccurrences(of: "\u{2028}", with: "\n"))
+            }
+            rowStrings.append(cellStrings.joined(separator: "\t"))
+        }
+        return rowStrings.joined(separator: "\n")
     }
 
     // MARK: - Draw
@@ -280,24 +494,17 @@ struct TableLayout: @unchecked Sendable {
         }
         ctx.restoreGState()
 
-        // 4: cell text. Each cell's text origin is recomputed (vs.
-        // memoized at make-time): the math is cheap and skipping the
-        // memo keeps `TableLayout`'s fields tightly scoped.
-        var curY = tableRect.minY
-        for (rIdx, h) in rowHeights.enumerated() {
-            var curX = tableRect.minX
-            for (cIdx, layout) in cells[rIdx].enumerated() {
-                let cellW = columnWidths[cIdx]
-                let align = Self.alignmentFor(cIdx, alignments: alignments)
-                let xOrigin = Self.cellOriginX(
-                    cellLeft: curX, cellWidth: cellW,
-                    layoutWidth: layout.measuredWidth,
-                    hPad: hPad, alignment: align)
-                let yOrigin = curY + vPad
-                layout.draw(in: ctx, origin: CGPoint(x: xOrigin, y: yOrigin))
-                curX += cellW
+        // 4: cell text. Origins were computed and stashed at make-time so
+        // hit-test (selection) and draw share one source of truth.
+        for (rIdx, row) in cells.enumerated() {
+            for (cIdx, layout) in row.enumerated() {
+                let textOrigin = cellTextOrigins[rIdx][cIdx]
+                layout.draw(
+                    in: ctx,
+                    origin: CGPoint(
+                        x: tableRect.minX + textOrigin.x,
+                        y: tableRect.minY + textOrigin.y))
             }
-            curY += h
         }
 
         // 5: outer border. Inset by 0.5 so the 1pt stroke sits on the

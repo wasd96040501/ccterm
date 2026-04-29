@@ -58,15 +58,16 @@ enum RowLayout: @unchecked Sendable {
     }
 
     /// Selection-facing API for this row, or `nil` for non-selectable
-    /// kinds (image, list). The selection coordinator and cell view
-    /// consume only this — the underlying `TextLayout` / `TableLayout`
-    /// type is encapsulated, so adding a new selectable kind needs no
-    /// changes outside the new layout's own file.
+    /// kinds (image). The selection coordinator and cell view consume
+    /// only this — the underlying `TextLayout` / `TableLayout` /
+    /// `ListLayout` type is encapsulated, so adding a new selectable
+    /// kind needs no changes outside the new layout's own file.
     var selectionAdapter: SelectionAdapter? {
         switch self {
         case .text(let l): return l.selectionAdapter
         case .table(let l): return l.selectionAdapter
-        case .image, .list: return nil
+        case .list(let l): return l.selectionAdapter
+        case .image: return nil
         }
     }
 }

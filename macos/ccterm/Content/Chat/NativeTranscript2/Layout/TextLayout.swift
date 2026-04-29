@@ -259,9 +259,14 @@ struct TextLayout: @unchecked Sendable {
     /// drag-tick / draw frequency, not in any hot loop.
     var selectionAdapter: SelectionAdapter {
         let length = self.length
+        let full = SelectionRange(
+            start: .text(char: 0), end: .text(char: length))
         return SelectionAdapter(
-            fullRange: SelectionRange(
-                start: .text(char: 0), end: .text(char: length)),
+            fullRange: full,
+            // A text block's "unit" *is* the whole block — there's no
+            // sub-unit (cells / paragraphs) to home in on, so triple-click
+            // == fullRange == Cmd+A on this block.
+            unitRange: { _ in full },
             hitTest: { p in .text(char: self.characterIndex(at: p)) },
             rects: { a, b in
                 guard case .text(let i1) = a, case .text(let i2) = b

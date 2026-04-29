@@ -14,6 +14,7 @@ import AppKit
 enum LayoutPosition: Equatable, Hashable {
     case text(char: Int)
     case cell(row: Int, col: Int, char: Int)
+    case listItem(paragraph: Int, char: Int)
 }
 
 /// Two `LayoutPosition`s describing one block's current selection. Order
@@ -39,6 +40,15 @@ struct SelectionAdapter {
     /// (top-row → end-of-layout, start-of-layout → bottom-row, middle
     /// rows full-select).
     let fullRange: SelectionRange
+
+    /// Range covering "the unit at this position" — drives triple-click
+    /// whole-unit selection. Distinct from `fullRange` because a layout's
+    /// top-level full range and its triple-click target diverge for
+    /// composite layouts: a table's `fullRange` is the whole table
+    /// (Cmd+A target), but `unitRange` at a click point is just that one
+    /// cell. For text, the two coincide (block == unit). For list, the
+    /// unit is the paragraph the position lives in.
+    let unitRange: (LayoutPosition) -> SelectionRange
 
     /// Layout-local point → opaque position. Out-of-bounds points clamp
     /// to the nearest edge so the caller always gets a defined landing.

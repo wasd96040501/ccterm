@@ -328,6 +328,20 @@ struct TableLayout: @unchecked Sendable {
 
         return SelectionAdapter(
             fullRange: SelectionRange(start: fullStart, end: fullEnd),
+            // Triple-click target = the cell the click landed in. Mirrors
+            // Numbers / Excel: triple-click selects the cell's text, not
+            // the whole sheet. (Cmd+A still uses `fullRange` for the
+            // table-wide select-all path.)
+            unitRange: { p in
+                guard case .cell(let r, let c, _) = p,
+                      r >= 0, r < self.cells.count,
+                      c >= 0, c < self.cells[r].count
+                else { return SelectionRange(start: fullStart, end: fullEnd) }
+                let len = self.cells[r][c].length
+                return SelectionRange(
+                    start: .cell(row: r, col: c, char: 0),
+                    end: .cell(row: r, col: c, char: len))
+            },
             hitTest: { p in
                 let (r, c, ch) = self.hitTestCell(point: p)
                 return .cell(row: r, col: c, char: ch)

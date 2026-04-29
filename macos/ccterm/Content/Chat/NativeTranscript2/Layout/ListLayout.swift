@@ -38,11 +38,23 @@ struct ListLayout: @unchecked Sendable {
     /// list-local coords. Cell-side hit-testing applies one final offset
     /// for the cell's draw origin.
     let links: [TextLayout.LinkHit]
+    /// Flattened leaf paragraph TextLayouts in source / render order, with
+    /// each origin already projected into this list's outermost local coords —
+    /// nested-list paragraphs absorb the parent item's `originInList` offset
+    /// at flatten-time. Selection walks this; the recursive layout tree is
+    /// never re-traversed during a drag tick.
+    fileprivate let flatParagraphs: [FlatParagraph]
 
     /// Where item content starts (list-local). Tests / selection bookkeeping
     /// use this — `draw` doesn't go through it (it adds the per-content
     /// `originInList` directly).
     var contentOriginX: CGFloat { markerColumnWidth + markerContentGap }
+
+    fileprivate struct FlatParagraph {
+        let textLayout: TextLayout
+        /// Origin in the (outermost) list's local coords, y-down.
+        let originInList: CGPoint
+    }
 
     struct Item {
         let marker: Marker?
@@ -96,7 +108,7 @@ struct ListLayout: @unchecked Sendable {
 
     nonisolated static let empty = ListLayout(
         items: [], markerColumnWidth: 0, markerContentGap: 0,
-        totalHeight: 0, measuredWidth: 0, links: [])
+        totalHeight: 0, measuredWidth: 0, links: [], flatParagraphs: [])
 
     // MARK: - Make
 
@@ -222,7 +234,35 @@ struct ListLayout: @unchecked Sendable {
             markerContentGap: markerContentGap,
             totalHeight: y,
             measuredWidth: max(measuredW, contentOriginX),
-            links: links)
+            links: links,
+            flatParagraphs: flattenParagraphs(laidItems))
+    }
+
+    /// Walk the post-make item tree once and project every leaf paragraph's
+    /// origin into the outermost list's local coords. A nested list's
+    /// flat paragraphs are already projected into the *nested* list's
+    /// local frame, so we just add the parent item's `originInList` to
+    /// each — no second tree walk needed at any depth.
+    nonisolated private static func flattenParagraphs(_ items: [Item]) -> [FlatParagraph] {
+        var out: [FlatParagraph] = []
+        for item in items {
+            for content in item.contents {
+                switch content {
+                case .text(let layout, let origin):
+                    out.append(FlatParagraph(
+                        textLayout: layout, originInList: origin))
+                case .list(let nested, let origin):
+                    for p in nested.flatParagraphs {
+                        out.append(FlatParagraph(
+                            textLayout: p.textLayout,
+                            originInList: CGPoint(
+                                x: origin.x + p.originInList.x,
+                                y: origin.y + p.originInList.y)))
+                    }
+                }
+            }
+        }
+        return out
     }
 
     /// First-line geometric midY relative to the layout's top-left, y-down.
@@ -259,6 +299,211 @@ struct ListLayout: @unchecked Sendable {
         _ = CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
         let width = ceil(attr.size().width)
         return .text(line: line, width: width, ascent: ascent, descent: descent)
+    }
+
+    // MARK: - Hit-test
+
+    /// Resolve a point (list-local, y-down) to a `(paragraph, char)` pair.
+    /// Paragraph index is total — points above the first paragraph or
+    /// below the last clamp to that paragraph's edge, and the inter-item
+    /// gap rolls into the next paragraph's leading edge (clicks in the
+    /// gap land at char 0 of the paragraph below).
+    private func hitTestParagraph(point: CGPoint) -> (paragraph: Int, char: Int) {
+        guard !flatParagraphs.isEmpty else { return (0, 0) }
+        var idx = flatParagraphs.count - 1
+        for (i, p) in flatParagraphs.enumerated() {
+            let bottomY = p.originInList.y + p.textLayout.totalHeight
+            if point.y < bottomY { idx = i; break }
+        }
+        let p = flatParagraphs[idx]
+        let local = CGPoint(
+            x: point.x - p.originInList.x,
+            y: point.y - p.originInList.y)
+        return (idx, p.textLayout.characterIndex(at: local))
+    }
+
+    // MARK: - SelectionAdapter
+
+    /// Selection-facing API for this layout. Positions are
+    /// `.listItem(paragraph:char:)`, where `paragraph` indexes into the
+    /// flattened leaf-paragraph list (recursive lists are linearized in
+    /// render order). Selection flows like text: same-paragraph drag
+    /// paints a glyph band, multi-paragraph drag paints "from charA to
+    /// end-of-first-paragraph" + "full middle paragraphs" + "0 to charB
+    /// of last paragraph". Marker glyphs are intentionally not selectable
+    /// (they don't live in any `NSAttributedString`), and the inter-item
+    /// gap is also unhighlightable — both match the chat-content
+    /// convention where "select & copy" yields just the text.
+    var selectionAdapter: SelectionAdapter {
+        let count = flatParagraphs.count
+        let lastP = max(0, count - 1)
+        let lastChar = flatParagraphs.last?.textLayout.length ?? 0
+        let fullStart: LayoutPosition = .listItem(paragraph: 0, char: 0)
+        let fullEnd: LayoutPosition = .listItem(paragraph: lastP, char: lastChar)
+
+        return SelectionAdapter(
+            fullRange: SelectionRange(start: fullStart, end: fullEnd),
+            // Triple-click target = the paragraph the click landed in —
+            // not the whole list. Mirrors triple-click on a chat message
+            // selecting the line / paragraph rather than the entire
+            // bubble.
+            unitRange: { p in
+                guard case .listItem(let i, _) = p,
+                      i >= 0, i < self.flatParagraphs.count
+                else { return SelectionRange(start: fullStart, end: fullEnd) }
+                let len = self.flatParagraphs[i].textLayout.length
+                return SelectionRange(
+                    start: .listItem(paragraph: i, char: 0),
+                    end: .listItem(paragraph: i, char: len))
+            },
+            hitTest: { p in
+                let (i, ch) = self.hitTestParagraph(point: p)
+                return .listItem(paragraph: i, char: ch)
+            },
+            rects: { a, b in
+                guard case .listItem(let p1, let ch1) = a,
+                      case .listItem(let p2, let ch2) = b
+                else { return [] }
+                return self.listSelectionRects(
+                    p1: p1, ch1: ch1, p2: p2, ch2: ch2)
+            },
+            string: { a, b in
+                guard case .listItem(let p1, let ch1) = a,
+                      case .listItem(let p2, let ch2) = b
+                else { return "" }
+                return self.listSelectionString(
+                    p1: p1, ch1: ch1, p2: p2, ch2: ch2)
+            },
+            wordBoundary: { p in
+                guard case .listItem(let i, let ch) = p,
+                      i >= 0, i < self.flatParagraphs.count
+                else { return nil }
+                let attr = self.flatParagraphs[i].textLayout.attributed
+                guard attr.length > 0 else { return nil }
+                let clamped = max(0, min(ch, attr.length - 1))
+                let word = attr.doubleClick(at: clamped)
+                return SelectionRange(
+                    start: .listItem(paragraph: i, char: word.location),
+                    end: .listItem(paragraph: i,
+                                   char: word.location + word.length))
+            })
+    }
+
+    /// Multi-paragraph rect projection. Same paragraph → the cell-style
+    /// glyph band from `TextLayout.selectionRects`. Different paragraphs
+    /// → first paragraph from `loCh` to its end, every paragraph
+    /// strictly between fully highlighted, last paragraph from 0 to
+    /// `hiCh`. Each TextLayout's rects offset by the paragraph's
+    /// `originInList`.
+    private func listSelectionRects(
+        p1: Int, ch1: Int, p2: Int, ch2: Int
+    ) -> [CGRect] {
+        let (lo, hi, loCh, hiCh) = orderedEndpoints(
+            p1: p1, ch1: ch1, p2: p2, ch2: ch2)
+        guard lo < flatParagraphs.count, hi < flatParagraphs.count else { return [] }
+
+        if lo == hi {
+            let p = flatParagraphs[lo]
+            guard hiCh > loCh else { return [] }
+            return p.textLayout
+                .selectionRects(for: NSRange(location: loCh, length: hiCh - loCh))
+                .map { $0.offsetBy(dx: p.originInList.x, dy: p.originInList.y) }
+        }
+
+        var out: [CGRect] = []
+        let first = flatParagraphs[lo]
+        let firstLen = first.textLayout.length
+        if firstLen > loCh {
+            out.append(contentsOf: first.textLayout
+                .selectionRects(for: NSRange(
+                    location: loCh, length: firstLen - loCh))
+                .map { $0.offsetBy(dx: first.originInList.x,
+                                   dy: first.originInList.y) })
+        }
+        if hi > lo + 1 {
+            for idx in (lo + 1) ..< hi {
+                let p = flatParagraphs[idx]
+                let len = p.textLayout.length
+                guard len > 0 else { continue }
+                out.append(contentsOf: p.textLayout
+                    .selectionRects(for: NSRange(location: 0, length: len))
+                    .map { $0.offsetBy(dx: p.originInList.x,
+                                       dy: p.originInList.y) })
+            }
+        }
+        let last = flatParagraphs[hi]
+        let safeHiCh = min(hiCh, last.textLayout.length)
+        if safeHiCh > 0 {
+            out.append(contentsOf: last.textLayout
+                .selectionRects(for: NSRange(location: 0, length: safeHiCh))
+                .map { $0.offsetBy(dx: last.originInList.x,
+                                   dy: last.originInList.y) })
+        }
+        return out
+    }
+
+    /// Multi-paragraph copy-string. Same paragraph → substring. Different
+    /// paragraphs → join paragraph slices by `\n` (chat / markdown
+    /// convention; `\n\n` is reserved as the *block* joiner one level up
+    /// in `Transcript2SelectionCoordinator.copyText`). U+2028 inline
+    /// line separators normalize to `\n` per paragraph.
+    private func listSelectionString(
+        p1: Int, ch1: Int, p2: Int, ch2: Int
+    ) -> String {
+        let (lo, hi, loCh, hiCh) = orderedEndpoints(
+            p1: p1, ch1: ch1, p2: p2, ch2: ch2)
+        guard lo < flatParagraphs.count, hi < flatParagraphs.count else { return "" }
+
+        if lo == hi {
+            let attr = flatParagraphs[lo].textLayout.attributed
+            guard hiCh > loCh, hiCh <= attr.length else { return "" }
+            return attr
+                .attributedSubstring(
+                    from: NSRange(location: loCh, length: hiCh - loCh))
+                .string
+                .replacingOccurrences(of: "\u{2028}", with: "\n")
+        }
+
+        var pieces: [String] = []
+        let first = flatParagraphs[lo].textLayout.attributed
+        if first.length > loCh {
+            pieces.append(first
+                .attributedSubstring(from: NSRange(
+                    location: loCh, length: first.length - loCh))
+                .string
+                .replacingOccurrences(of: "\u{2028}", with: "\n"))
+        }
+        if hi > lo + 1 {
+            for idx in (lo + 1) ..< hi {
+                let attr = flatParagraphs[idx].textLayout.attributed
+                guard attr.length > 0 else { continue }
+                pieces.append(attr.string
+                    .replacingOccurrences(of: "\u{2028}", with: "\n"))
+            }
+        }
+        let last = flatParagraphs[hi].textLayout.attributed
+        let safeHiCh = min(hiCh, last.length)
+        if safeHiCh > 0 {
+            pieces.append(last
+                .attributedSubstring(from: NSRange(
+                    location: 0, length: safeHiCh))
+                .string
+                .replacingOccurrences(of: "\u{2028}", with: "\n"))
+        }
+        return pieces.joined(separator: "\n")
+    }
+
+    /// Normalize an unordered (a, b) into (lo, hi) such that lo ≤ hi by
+    /// paragraph, and within the same paragraph by character offset.
+    /// Match the cell-grid selection's `cellSelectionRects` order
+    /// invariant — closures are documented as order-insensitive, so the
+    /// normalization lives here, not at the call site.
+    private func orderedEndpoints(
+        p1: Int, ch1: Int, p2: Int, ch2: Int
+    ) -> (lo: Int, hi: Int, loCh: Int, hiCh: Int) {
+        if p1 < p2 { return (p1, p2, ch1, ch2) }
+        if p1 > p2 { return (p2, p1, ch2, ch1) }
+        return (p1, p1, min(ch1, ch2), max(ch1, ch2))
     }
 
     // MARK: - Draw

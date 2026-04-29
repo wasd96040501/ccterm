@@ -92,7 +92,7 @@ final class Transcript2TableView: NSTableView, NSMenuItemValidation {
         //   1  → drag-select character-precise (no initial selection).
         switch event.clickCount {
         case let n where n >= 3:
-            coordinator.selection.selectFullBlock(at: docPoint, in: self)
+            coordinator.selection.selectUnit(at: docPoint, in: self)
             // No tracking — triple-click is one-shot. Subsequent drag
             // would feel arbitrary on top of a "select all" gesture.
         case 2:

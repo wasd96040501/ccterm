@@ -207,6 +207,17 @@ final class TableSelectionTests: XCTestCase {
         XCTAssertEqual(forwardString, reversedString)
     }
 
+    /// Triple-click on a cell selects only that cell — *not* the entire
+    /// table. Cmd+A is the whole-table path; triple-click goes through
+    /// the adapter's `unitRange` (cell-at-position), which is what
+    /// users expect on a Numbers / Excel-style grid.
+    func testTripleClick_selectsCellNotWholeTable() {
+        let h = makeHarness()
+        let p = h.docPoint(forCellAt: 1, col: 1)
+        h.coordinator.selection.selectUnit(at: p, in: h.tableView)
+        XCTAssertEqual(h.coordinator.selection.copyText(), "r1c1")
+    }
+
     /// Cmd+A: adapter's `fullRange` covers the entire table; copy yields
     /// the whole flattened table.
     func testCmdA_selectsFullTableAndCopiesEverything() {

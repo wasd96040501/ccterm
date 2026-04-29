@@ -39,9 +39,9 @@ import AppKit
 ///   cursor from the click.
 /// - **middle row** — full row (`adapter.fullRange`).
 ///
-/// Rows whose `selectionAdapter` is `nil` (image, list) drop out
-/// silently — they're skipped in the sweep without breaking the
-/// surrounding selection.
+/// Rows whose `selectionAdapter` is `nil` (image) drop out silently —
+/// they're skipped in the sweep without breaking the surrounding
+/// selection.
 ///
 /// ### Window-key tracking
 ///
@@ -105,7 +105,7 @@ final class Transcript2SelectionCoordinator: NSObject {
     }
 
     /// Cmd+A: select every selectable block via its adapter's `fullRange`.
-    /// Non-selectable blocks (image, list) silently drop out.
+    /// Non-selectable blocks (image) silently drop out.
     func selectAllText() {
         guard let tc = transcript else { return }
         var changed = Set<UUID>()
@@ -218,16 +218,30 @@ final class Transcript2SelectionCoordinator: NSObject {
         setSelection(word, blockId: block.id)
     }
 
-    /// Whole-block selection — driven by triple-click. Mapped to the
-    /// adapter's `fullRange`.
-    func selectFullBlock(at point: CGPoint, in tableView: NSTableView) {
+    /// Whole-unit selection at click point — driven by triple-click.
+    /// "Unit" is the layout's smallest semantic chunk: paragraph for
+    /// text blocks, cell for tables, paragraph for lists. Distinct from
+    /// `fullRange` (Cmd+A target): on a table, triple-click must select
+    /// only the clicked cell, not the whole table. The adapter's
+    /// `unitRange` projects the hit-tested position to the right
+    /// granular range.
+    func selectUnit(at point: CGPoint, in tableView: NSTableView) {
         guard let tc = transcript else { return }
         let row = tableView.row(at: point)
         guard row >= 0,
               let block = tc.block(atRow: row),
               let adapter = tc.selectionAdapter(atRow: row)
         else { return }
-        setSelection(adapter.fullRange, blockId: block.id)
+
+        let rowRect = tableView.rect(ofRow: row)
+        let local = CGPoint(
+            x: point.x - rowRect.minX
+                - BlockStyle.cellOriginX(forRowWidth: rowRect.width)
+                - BlockStyle.blockHorizontalPadding,
+            y: point.y - rowRect.minY - BlockStyle.blockVerticalPadding)
+
+        let pos = adapter.hitTest(local)
+        setSelection(adapter.unitRange(pos), blockId: block.id)
     }
 
     // MARK: - Copy

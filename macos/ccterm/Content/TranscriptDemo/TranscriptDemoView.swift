@@ -372,6 +372,8 @@ private extension TranscriptDemoView {
                 .text(", "),
                 .strong([.emphasis([.text("bold-italic")])]),
                 .text(", "),
+                .strikethrough([.text("strikethrough")]),
+                .text(", "),
                 .code("inline code"),
                 .text(", and a "),
                 .link(children: [.text("hyperlink")], url: docsURL),
@@ -555,6 +557,79 @@ private extension TranscriptDemoView {
                     [[.text("绘制")], [.text("3.1ms")], [.text("CGContext 一次性绘制,选中底色 → inline code chip → glyph 三趟")]],
                 ],
                 alignments: [.left, .right, .left]))),
+
+            headingIR(level: 2, [.text("Code blocks")]),
+
+            paraIR([
+                .text("Multi-line monospaced source with a corner copy button. "
+                    + "Hover the top-right corner — the cursor flips to a pointer; "
+                    + "click to copy the verbatim source."),
+            ]),
+
+            Block(id: UUID(), kind: .codeBlock(
+                language: "swift",
+                code: """
+                struct CodeBlockLayout: Sendable {
+                    let text: TextLayout
+                    let code: String
+                    let containerRect: CGRect
+                    let copyHitRect: CGRect?
+
+                    static func make(code: String, maxWidth: CGFloat) -> CodeBlockLayout {
+                        let attr = BlockStyle.codeBlockAttributed(code: code)
+                        let text = TextLayout.make(attributed: attr, maxWidth: maxWidth)
+                        // ...
+                    }
+                }
+                """)),
+
+            Block(id: UUID(), kind: .codeBlock(
+                language: "shell",
+                code: """
+                $ make build
+                $ make test TEST=cctermTests/NativeTranscript2
+                $ open ./build/Debug/ccterm.app
+                """)),
+
+            headingIR(level: 2, [.text("Blockquotes")]),
+
+            Block(id: UUID(), kind: .blockquote(inlines: [
+                .text("Quotes use the shared container chrome — same "),
+                .code("cornerRadius"),
+                .text(" and "),
+                .code("padding"),
+                .text(" as the user bubble and code blocks. The left bar adds a "),
+                .strong([.text("vertical accent")]),
+                .text(" so a quote sandwiched between paragraphs reads as set apart."),
+            ])),
+
+            Block(id: UUID(), kind: .blockquote(inlines: [
+                .text("Inline nodes survive into a blockquote — "),
+                .strong([.text("bold")]),
+                .text(", "),
+                .emphasis([.text("italic")]),
+                .text(", "),
+                .strikethrough([.text("struck through")]),
+                .text(", and "),
+                .link(children: [.text("links")], url: docsURL),
+                .text(" all render the same as in a paragraph, just on a muted color."),
+            ])),
+
+            headingIR(level: 2, [.text("Thematic break")]),
+
+            paraIR([
+                .text("Below this paragraph, a "),
+                .code("---"),
+                .text(" thematic break separates two unrelated sections."),
+            ]),
+
+            Block(id: UUID(), kind: .thematicBreak),
+
+            paraIR([
+                .text("After the rule, the second section starts. "
+                    + "The break is decorative only — no glyphs, no selection, "
+                    + "and the cell skips both the I-beam cursor and the highlight pass."),
+            ]),
         ]
     }
 }

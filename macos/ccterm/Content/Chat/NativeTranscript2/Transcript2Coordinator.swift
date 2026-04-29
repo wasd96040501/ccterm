@@ -473,6 +473,12 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             return .list(ListLayout.make(block: listBlock, maxWidth: contentWidth))
         case .table(let tableBlock):
             return .table(TableLayout.make(block: tableBlock, maxWidth: contentWidth))
+        case .codeBlock(_, let code):
+            return .codeBlock(CodeBlockLayout.make(code: code, maxWidth: contentWidth))
+        case .blockquote(let inlines):
+            return .blockquote(BlockquoteLayout.make(inlines: inlines, maxWidth: contentWidth))
+        case .thematicBreak:
+            return .thematicBreak(ThematicBreakLayout.make(maxWidth: contentWidth))
         case .userBubble(let text):
             return .userBubble(UserBubbleLayout.make(text: text, maxWidth: contentWidth))
         }
@@ -660,6 +666,10 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         // picks up the existing entry here. nil = no highlight.
         cell.blockId = block.id
         cell.selection = selection.selection(for: block.id)
+        // Copy-feedback flash is per-cell transient state — clear it
+        // on every reuse so a recycled cell doesn't carry a stale
+        // checkmark onto a different code block.
+        cell.resetCopiedFeedback()
         // Reinjected on every viewFor (cells are reused across rows) so
         // chevron mouseDown can hit `requestUserBubbleSheet` without
         // scanning the superview chain.

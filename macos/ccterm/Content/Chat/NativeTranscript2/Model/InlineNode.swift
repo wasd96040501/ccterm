@@ -14,6 +14,9 @@ enum InlineNode: Equatable, Sendable {
     case text(String)
     case strong([InlineNode])
     case emphasis([InlineNode])
+    /// GFM strikethrough (`~~text~~`). Renders via `.strikethroughStyle` —
+    /// a single attribute, no extra layout pass.
+    case strikethrough([InlineNode])
     case code(String)
     case link(children: [InlineNode], url: URL)
     /// Hard line break inside a block (markdown's two-space-newline / `<br>`).
@@ -30,7 +33,8 @@ extension InlineNode {
         for node in nodes {
             switch node {
             case .text(let s), .code(let s): total += s.count
-            case .strong(let cs), .emphasis(let cs): total += charCount(cs)
+            case .strong(let cs), .emphasis(let cs), .strikethrough(let cs):
+                total += charCount(cs)
             case .link(let cs, _): total += charCount(cs)
             case .lineBreak: total += 1
             }

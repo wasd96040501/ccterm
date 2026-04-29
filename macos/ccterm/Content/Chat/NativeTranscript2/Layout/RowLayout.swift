@@ -15,6 +15,9 @@ enum RowLayout: @unchecked Sendable {
     case image(ImageLayout)
     case list(ListLayout)
     case table(TableLayout)
+    case codeBlock(CodeBlockLayout)
+    case blockquote(BlockquoteLayout)
+    case thematicBreak(ThematicBreakLayout)
     case userBubble(UserBubbleLayout)
 
     var totalHeight: CGFloat {
@@ -23,6 +26,9 @@ enum RowLayout: @unchecked Sendable {
         case .image(let l): return l.totalHeight
         case .list(let l): return l.totalHeight
         case .table(let l): return l.totalHeight
+        case .codeBlock(let l): return l.totalHeight
+        case .blockquote(let l): return l.totalHeight
+        case .thematicBreak(let l): return l.totalHeight
         case .userBubble(let l): return l.totalHeight
         }
     }
@@ -33,6 +39,9 @@ enum RowLayout: @unchecked Sendable {
         case .image(let l): return l.measuredWidth
         case .list(let l): return l.measuredWidth
         case .table(let l): return l.measuredWidth
+        case .codeBlock(let l): return l.measuredWidth
+        case .blockquote(let l): return l.measuredWidth
+        case .thematicBreak(let l): return l.measuredWidth
         case .userBubble(let l): return l.measuredWidth
         }
     }
@@ -43,36 +52,46 @@ enum RowLayout: @unchecked Sendable {
         case .image(let l): l.draw(in: ctx, origin: origin)
         case .list(let l): l.draw(in: ctx, origin: origin)
         case .table(let l): l.draw(in: ctx, origin: origin)
+        case .codeBlock(let l): l.draw(in: ctx, origin: origin)
+        case .blockquote(let l): l.draw(in: ctx, origin: origin)
+        case .thematicBreak(let l): l.draw(in: ctx, origin: origin)
         case .userBubble(let l): l.draw(in: ctx, origin: origin)
         }
     }
 
     /// Link hit zones in layout-local coords. Cell-side hit-testing
-    /// offsets these by the cell's draw origin. List / table layouts
-    /// have already flattened their inner cell links into list-/table-
-    /// local coords during `make`, so they roll up here without further
-    /// transformation.
+    /// offsets these by the cell's draw origin. List / table / blockquote
+    /// layouts have already flattened their inner cell links into
+    /// container-local coords during `make`, so they roll up here without
+    /// further transformation.
     var links: [TextLayout.LinkHit] {
         switch self {
         case .text(let l): return l.links
         case .image: return []
         case .list(let l): return l.links
         case .table(let l): return l.links
+        case .codeBlock(let l): return l.links
+        case .blockquote(let l): return l.links
+        case .thematicBreak: return []
         case .userBubble: return []   // user input is plain text, not parsed
         }
     }
 
     /// Selection-facing API for this row, or `nil` for non-selectable
-    /// kinds (image). The selection coordinator and cell view consume
-    /// only this — the underlying `TextLayout` / `TableLayout` /
-    /// `ListLayout` type is encapsulated, so adding a new selectable
-    /// kind needs no changes outside the new layout's own file.
+    /// kinds (image, thematic break). The selection coordinator and cell
+    /// view consume only this — the underlying `TextLayout` /
+    /// `TableLayout` / `ListLayout` type is encapsulated, so adding a new
+    /// selectable kind needs no changes outside the new layout's own
+    /// file.
     var selectionAdapter: SelectionAdapter? {
         switch self {
         case .text(let l): return l.selectionAdapter
         case .table(let l): return l.selectionAdapter
         case .list(let l): return l.selectionAdapter
+        case .codeBlock(let l): return l.selectionAdapter
+        case .blockquote(let l): return l.selectionAdapter
         case .image: return nil
+        case .thematicBreak: return nil
         case .userBubble(let l): return l.selectionAdapter
         }
     }

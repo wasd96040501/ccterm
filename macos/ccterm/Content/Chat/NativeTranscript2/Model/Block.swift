@@ -22,6 +22,21 @@ struct Block: Identifiable, Equatable, @unchecked Sendable {
         /// dedicated struct.
         case list(ListBlock)
         case table(TableBlock)
+        /// Fenced or indented code block. `language` is the info string
+        /// from the opening fence (`nil` for indented blocks). `code` is
+        /// the verbatim source — newlines preserved, no inline parsing.
+        /// Rendered as a rounded container with a copy button in the top-
+        /// right corner; syntax highlighting is intentionally out of scope.
+        case codeBlock(language: String?, code: String)
+        /// CommonMark blockquote. Flat `[InlineNode]` payload — nested
+        /// blocks inside a quote (lists, code blocks, nested quotes) are
+        /// not modelled; the parser must collapse them to inlines or split
+        /// them into separate sibling blocks. Rendered with a left bar
+        /// and a rounded muted background.
+        case blockquote(inlines: [InlineNode])
+        /// `---` thematic break / horizontal rule. No payload — purely
+        /// decorative spacer.
+        case thematicBreak
         /// User-side message rendered as a right-aligned bubble. Long text
         /// auto-truncates with a tail "…" + a `>` chevron whose click
         /// surfaces the full message in a SwiftUI sheet (presentation
@@ -129,9 +144,13 @@ enum BlockStyle: Sendable {
             case 2: return (top: 16, bottom: 0)
             default: return (top: 10, bottom: 0)
             }
-        case .paragraph, .list:
+        case .paragraph, .list, .blockquote:
+            // Blockquote sits in the soft-edged tier with paragraphs —
+            // it has no container chrome, only a left bar, so it should
+            // share paragraphs' rhythm rather than the harder 8/8 used
+            // for visible-bordered blocks.
             return (top: 6, bottom: 6)
-        case .image, .table:
+        case .image, .table, .codeBlock:
             return (top: 8, bottom: 8)
         case .userBubble:
             // Bubble already carries its own internal vertical padding;
@@ -139,6 +158,11 @@ enum BlockStyle: Sendable {
             // adjacent row's content. 8/8 matches `image`/`table`'s
             // hard-edged spacing tier.
             return (top: 8, bottom: 8)
+        case .thematicBreak:
+            // Thematic break is a thin line with no glyphs — it needs
+            // wider top/bottom breathing room than text-edged kinds so
+            // the rule doesn't visually attach to either neighbor.
+            return (top: 12, bottom: 12)
         }
     }
 
@@ -201,7 +225,11 @@ enum BlockStyle: Sendable {
     /// would otherwise collapse to a sliver under the CSS-min-content
     /// derivation.
     nonisolated static let tableMinColumnWidth: CGFloat = 40
-    nonisolated static let tableCornerRadius: CGFloat = 6
+    /// Tables sit in the "structural" tier — see
+    /// `structuralCornerRadius`. A 6pt corner reads as data/grid/IDE
+    /// rather than as a soft personal-voice element, matching how
+    /// Slack / Discord / Xcode treat their own data containers.
+    nonisolated static var tableCornerRadius: CGFloat { structuralCornerRadius }
 
     nonisolated static let tableBorderColor: NSColor = .separatorColor
 
@@ -248,6 +276,23 @@ enum BlockStyle: Sendable {
         return out
     }
 
+    // MARK: - Corner-radius tiers
+
+    /// "Soft" tier — speech / personal voice / emotional. Larger curve
+    /// reads as friendly and rounded-organic. Visual-psychology
+    /// research (Bar & Neta 2006 et al.): rounded shapes trigger a
+    /// "safety / approachability" response distinct from sharp shapes'
+    /// "precision / authority" response. Used for chat bubbles where
+    /// the metaphor is a speech balloon.
+    nonisolated static let softCornerRadius: CGFloat = 14
+
+    /// "Structural" tier — data / code / grid / precision. Tight curve
+    /// reads as engineering. Slack / Discord code blocks sit at 4pt;
+    /// Notion at 6pt; Xcode panels at 0–4pt. Used for table outer
+    /// border and code block container — anywhere the content wants
+    /// to read as authoritative / technical rather than personal.
+    nonisolated static let structuralCornerRadius: CGFloat = 6
+
     // MARK: - User bubble geometry
 
     /// Hard cap on bubble width — keeps long messages from spanning the
@@ -266,10 +311,12 @@ enum BlockStyle: Sendable {
     /// does not geometrically intrude into the text-baseline region —
     /// at `R > V`, top/bottom-line glyphs visually scrape the corner;
     /// at `R == V`, the curve sits flush with the text margin and the
-    /// chevron's corner-anchored position lands on a uniform 14pt
-    /// offset from both the right and bottom edges.
-    nonisolated static let bubbleVerticalPadding: CGFloat = 14
-    nonisolated static let bubbleCornerRadius: CGFloat = 14
+    /// chevron's corner-anchored position lands on a uniform `R` offset
+    /// from both the right and bottom edges. Aliased to
+    /// `softCornerRadius` since the bubble's corner is the canonical
+    /// "soft tier" anchor.
+    nonisolated static var bubbleVerticalPadding: CGFloat { softCornerRadius }
+    nonisolated static var bubbleCornerRadius: CGFloat { softCornerRadius }
 
     /// Bubble background — system accent at 15% so the tint shifts with
     /// the user's selected accent color and dark/light appearance.
@@ -298,6 +345,78 @@ enum BlockStyle: Sendable {
             .foregroundColor: NSColor.labelColor,
         ])
     }
+
+    // MARK: - Code block geometry
+
+    /// Code block uses the system monospaced font at the body font's
+    /// point size — picking up SF Mono on system installs and falling
+    /// back automatically. Same point size as paragraph text so a code
+    /// block sandwiched between paragraphs reads as a sibling, not as
+    /// a tonal shift.
+    nonisolated static var codeBlockFont: NSFont {
+        NSFont.monospacedSystemFont(ofSize: paragraphFont.pointSize, weight: .regular)
+    }
+
+    /// Background fill — same tier as inline-code (`secondarySystemFill`).
+    /// Multi-line block in the same tone as inline runs, so a paragraph
+    /// like "use `fn()` to do X, e.g. \n```\nfn(x)\n```" doesn't
+    /// flip-flop tone between the inline mention and the block call.
+    nonisolated static var codeBlockBackgroundColor: NSColor { inlineCodeBackgroundColor }
+
+    /// Verbatim source → monospaced attributed string. Whitespace and
+    /// newlines preserved; no inline parsing, no syntax highlighting.
+    nonisolated static func codeBlockAttributed(code: String) -> NSAttributedString {
+        NSAttributedString(string: code, attributes: [
+            .font: codeBlockFont,
+            .foregroundColor: NSColor.labelColor,
+        ])
+    }
+
+    /// Header band height — sized to a 11pt SF Symbol with a 4–5pt
+    /// breathing margin top/bottom. Closer to Discord's compact
+    /// 24pt strip than GitHub's chunkier 32–36pt header; chat content
+    /// reads better with a low-profile chrome band.
+    nonisolated static let codeBlockHeaderHeight: CGFloat = 24
+
+    /// Reuses `tableHeaderBackground` so a code block's header band
+    /// reads at the same tonal level as a table's header row —
+    /// both are "this strip is chrome, content lives below it". The
+    /// color is dynamic-resolving (alpha-on-white in light mode,
+    /// alpha-on-black in dark mode), so it composites on top of
+    /// `codeBlockBackgroundColor` and tracks appearance without any
+    /// hand-tuned hex values.
+    nonisolated static var codeBlockHeaderOverlayColor: NSColor { tableHeaderBackground }
+    /// Body padding above and below the code text (inside the
+    /// container, *below* the header band). Smaller than user
+    /// bubble's 14pt — the header already eats the top visual weight,
+    /// so 12 around the body keeps the block from reading too tall.
+    nonisolated static let codeBlockBodyVerticalPadding: CGFloat = 12
+    /// Right inset for the copy button hit zone. Matches
+    /// `structuralCornerRadius` so the button optically anchors to the
+    /// corner pivot.
+    nonisolated static var codeBlockCopyRightInset: CGFloat { structuralCornerRadius + 6 }
+    /// Hairline divider color between header and body.
+    nonisolated static let codeBlockDividerColor: NSColor = .separatorColor
+
+    // MARK: - Blockquote geometry
+
+    /// Left accent bar. Tuned to the same values the prior renderer
+    /// settled on — 4pt bar with a 12pt gap to the text, default
+    /// secondary-label color so dark/light tracking is automatic.
+    /// Quotes deliberately use **no background fill and no rounded
+    /// container** — the bar alone does the "this is set apart"
+    /// signaling, matching Slack / Discord / GitHub conventions where
+    /// quotes are margin annotations, not standalone containers.
+    nonisolated static let blockquoteBarColor: NSColor = .secondaryLabelColor
+    nonisolated static let blockquoteBarWidth: CGFloat = 4
+    nonisolated static let blockquoteBarGap: CGFloat = 12
+
+    // MARK: - Thematic break geometry
+
+    /// Hairline rule — 1pt at HiDPI, antialiased. Color uses the system
+    /// separator so it tracks light/dark.
+    nonisolated static let thematicBreakColor: NSColor = .separatorColor
+    nonisolated static let thematicBreakHeight: CGFloat = 1
 
     /// Min/max width of the centered cell — the row spans the full table width
     /// (so the overlay scroller stays at the right edge), but the cell itself
@@ -391,6 +510,12 @@ enum BlockStyle: Sendable {
             case .emphasis(let children):
                 appendInlines(children, into: out,
                               base: withTrait(base, adding: .italic))
+
+            case .strikethrough(let children):
+                var attrs = base
+                attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+                attrs[.strikethroughColor] = base[.foregroundColor] ?? NSColor.labelColor
+                appendInlines(children, into: out, base: attrs)
 
             case .code(let s):
                 var attrs = base

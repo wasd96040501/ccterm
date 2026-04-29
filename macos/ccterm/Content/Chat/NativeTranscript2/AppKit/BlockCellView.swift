@@ -75,6 +75,25 @@ final class BlockCellView: NSView {
         }
     }
 
+    /// Timestamp of the most recent copy click on this cell's code
+    /// block, or `nil` when the button should display its idle
+    /// (`doc.on.doc`) glyph. Set on click; cleared 1.5s later by a
+    /// task that compares the timestamp before clearing (so a quick
+    /// second click doesn't get its checkmark cut short by the first
+    /// click's pending clear). Reset to `nil` on every `viewFor`
+    /// reuse — the feedback is opportunistic, missing it on a
+    /// scroll-recycled cell is fine.
+    private var copiedAt: Date?
+
+    /// Public reset hook for `viewFor` so a recycled cell never shows
+    /// a stale checkmark on a different block.
+    func resetCopiedFeedback() {
+        if copiedAt != nil {
+            copiedAt = nil
+            needsDisplay = true
+        }
+    }
+
     override var isFlipped: Bool { true }
     override var wantsDefaultClipping: Bool { false }
 
@@ -116,6 +135,13 @@ final class BlockCellView: NSView {
         }
 
         layout.draw(in: ctx, origin: origin)
+
+        // Code-block copy glyph — layout owns the visual recipe
+        // (symbol, tint, size); the cell only owns the trigger and
+        // hands its transient `copiedAt` flag through as `checked`.
+        if case .codeBlock(let l) = layout {
+            l.drawCopyGlyph(in: ctx, origin: origin, checked: copiedAt != nil)
+        }
     }
 
     // MARK: - Link interaction
@@ -142,6 +168,10 @@ final class BlockCellView: NSView {
             addCursorRect(chev.offsetBy(dx: origin.x, dy: origin.y),
                           cursor: .pointingHand)
         }
+        if case .codeBlock(let l) = layout, let copy = l.copyHitRect {
+            addCursorRect(copy.offsetBy(dx: origin.x, dy: origin.y),
+                          cursor: .pointingHand)
+        }
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -156,6 +186,13 @@ final class BlockCellView: NSView {
         // continues to stay inside `Transcript2SelectionCoordinator`.
         if let id = blockId, hitChevron(at: event) {
             coordinator?.requestUserBubbleSheet(id: id)
+            return
+        }
+        // Cell-internal control: code block copy button. Stays entirely
+        // inside the cell — copying produces no follow-up UI, just a
+        // pasteboard side effect, so there's no SwiftUI hand-off to do.
+        if hitCopyButton(at: event) {
+            copyCodeToPasteboard()
             return
         }
         // Forward to the enclosing table so its tracking loop owns the
@@ -191,5 +228,35 @@ final class BlockCellView: NSView {
         let local = convert(event.locationInWindow, from: nil)
         let origin = layoutOrigin
         return hit.offsetBy(dx: origin.x, dy: origin.y).contains(local)
+    }
+
+    private func hitCopyButton(at event: NSEvent) -> Bool {
+        guard case .codeBlock(let l)? = layout,
+              let hit = l.copyHitRect
+        else { return false }
+        let local = convert(event.locationInWindow, from: nil)
+        let origin = layoutOrigin
+        return hit.offsetBy(dx: origin.x, dy: origin.y).contains(local)
+    }
+
+    private func copyCodeToPasteboard() {
+        guard case .codeBlock(let l)? = layout else { return }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(l.code, forType: .string)
+
+        // Visual feedback: swap idle → checkmark, schedule a swap back
+        // 1.5s later. Stamp identity prevents a quick second click's
+        // checkmark from being cut short by the first click's
+        // pending clear.
+        let stamp = Date()
+        copiedAt = stamp
+        needsDisplay = true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard let self, self.copiedAt == stamp else { return }
+            self.copiedAt = nil
+            self.needsDisplay = true
+        }
     }
 }

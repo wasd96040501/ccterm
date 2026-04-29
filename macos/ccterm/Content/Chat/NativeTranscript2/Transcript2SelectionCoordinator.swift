@@ -165,16 +165,24 @@ final class Transcript2SelectionCoordinator: NSObject {
                 let i2 = layout.characterIndex(at: currentLocal)
                 lo = min(i1, i2); hi = max(i1, i2)
             } else if row == lowRow {
+                // Top row of the spanned range. Forward drag: anchor is
+                // here, selection extends from anchor to row end. Reverse
+                // drag: cursor is here, selection extends from cursor to
+                // row end (the rest continues into the rows below toward
+                // the anchor in highRow).
                 if !reversed {
                     lo = layout.characterIndex(at: startLocal); hi = length
                 } else {
-                    lo = 0; hi = layout.characterIndex(at: currentLocal)
+                    lo = layout.characterIndex(at: currentLocal); hi = length
                 }
             } else if row == highRow {
+                // Bottom row, mirror image: forward drag's cursor or
+                // reverse drag's anchor — either way, selection runs from
+                // row start to that endpoint.
                 if !reversed {
                     lo = 0; hi = layout.characterIndex(at: currentLocal)
                 } else {
-                    lo = layout.characterIndex(at: startLocal); hi = length
+                    lo = 0; hi = layout.characterIndex(at: startLocal)
                 }
             } else {
                 lo = 0; hi = length

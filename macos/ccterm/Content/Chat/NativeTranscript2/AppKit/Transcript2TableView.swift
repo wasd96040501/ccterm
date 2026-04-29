@@ -129,11 +129,43 @@ final class Transcript2TableView: NSTableView, NSMenuItemValidation {
             let drag = convert(event.locationInWindow, from: nil)
             coordinator.selection.updateSelection(
                 from: start, to: drag, in: self, byWord: byWord)
-            // Autoscroll when the cursor leaves the viewport — the next
-            // tick's `convert(event.locationInWindow, from: nil)` will
-            // see the new doc-coord position automatically.
-            enclosingScrollView?.contentView.autoscroll(with: event)
+            autoscrollIfNeeded(cursorInDocCoord: drag)
         }
+    }
+
+    /// Manual replacement for `NSView.autoscroll(with:)`. Both `self` and
+    /// the clip view receivers misbehave against this view's flipped table
+    /// + `NSScrollView.contentInsets` configuration: the default code path
+    /// trips the viewport-edge check inside the visible area, and against
+    /// a flipped clipView the direction is also inverted. Computing it
+    /// ourselves removes both — `visibleRect` is the unambiguous source of
+    /// truth for what's currently on screen.
+    ///
+    /// Per-tick step is the raw overshoot, capped at 40pt so a far-off
+    /// cursor doesn't fly through the document. `constrainBoundsRect`
+    /// respects the scroll view's `contentInsets`, so we won't scroll past
+    /// the inset-adjusted edges.
+    private func autoscrollIfNeeded(cursorInDocCoord cursor: CGPoint) {
+        guard let scrollView = enclosingScrollView else { return }
+        let visible = visibleRect
+        let dy: CGFloat
+        if cursor.y < visible.minY {
+            dy = cursor.y - visible.minY
+        } else if cursor.y > visible.maxY {
+            dy = cursor.y - visible.maxY
+        } else {
+            return
+        }
+        let step = max(-40, min(40, dy))
+        let clipView = scrollView.contentView
+        let candidate = NSRect(
+            origin: NSPoint(x: clipView.bounds.origin.x,
+                            y: clipView.bounds.origin.y + step),
+            size: clipView.bounds.size)
+        let constrained = clipView.constrainBoundsRect(candidate)
+        guard constrained.origin.y != clipView.bounds.origin.y else { return }
+        clipView.scroll(to: constrained.origin)
+        scrollView.reflectScrolledClipView(clipView)
     }
 
     // MARK: - Edit menu

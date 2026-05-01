@@ -198,11 +198,28 @@ struct CodeBlockLayout: @unchecked Sendable {
     }
 
     // MARK: - Draw
+    //
+    // Split into two passes so `BlockCellView` can sandwich the
+    // selection band between them:
+    //
+    //   1. `drawBackplate` — opaque card chrome (rounded fill + header
+    //      overlay + hairline). Painted *before* selection.
+    //   2. selection rects (cell-driven, using `selectionAdapter`).
+    //   3. `draw` — language label + body glyphs. Painted *after*
+    //      selection so glyphs land on top of the highlight band, the
+    //      same ordering NSTextView uses.
+    //
+    // Codeblock background is opaque (Xcode editor canvas), so a
+    // single-pass `draw` would re-cover the selection band drawn by
+    // the cell. Other layouts have either no background or a
+    // translucent one, hence `RowLayout.drawBackplate` is a no-op for
+    // them.
 
-    func draw(in ctx: CGContext, origin: CGPoint) {
+    /// Card chrome: container fill, header overlay, hairline divider.
+    /// Painted by `BlockCellView` before the selection band.
+    func drawBackplate(in ctx: CGContext, origin: CGPoint) {
         let containerAtScreen = containerRect.offsetBy(dx: origin.x, dy: origin.y)
 
-        // 1) Rounded background (entire container — both header and body).
         ctx.saveGState()
         let containerPath = CGPath(
             roundedRect: containerAtScreen,
@@ -214,10 +231,8 @@ struct CodeBlockLayout: @unchecked Sendable {
         ctx.fillPath()
         ctx.restoreGState()
 
-        // 2) Header overlay — second translucent fill clipped to the
-        //    container's rounded shape so the top corners follow the
-        //    outer curve. Composes with the body fill underneath to
-        //    yield a uniform "one tier darker" header band.
+        // Header overlay — translucent fill clipped to the rounded
+        // container so the top corners follow the outer curve.
         ctx.saveGState()
         ctx.addPath(containerPath)
         ctx.clip()
@@ -225,7 +240,7 @@ struct CodeBlockLayout: @unchecked Sendable {
         ctx.fill(headerRect.offsetBy(dx: origin.x, dy: origin.y))
         ctx.restoreGState()
 
-        // 3) Hairline divider between header and body.
+        // Hairline divider between header and body.
         ctx.saveGState()
         let dividerY = origin.y + headerRect.maxY
         ctx.setFillColor(BlockStyle.codeBlockDividerColor.cgColor)
@@ -235,11 +250,13 @@ struct CodeBlockLayout: @unchecked Sendable {
             width: containerAtScreen.width,
             height: 1))
         ctx.restoreGState()
+    }
 
-        // 4) Language label (chrome). Draws via CT directly into
-        //    `ctx`. The cell view is flipped (y-down), CT expects
-        //    flipped baseline math the same way `TextLayout` already
-        //    handles — invert the text matrix to compensate.
+    func draw(in ctx: CGContext, origin: CGPoint) {
+        // Language label (chrome). Draws via CT directly into `ctx`.
+        // The cell view is flipped (y-down), CT expects flipped
+        // baseline math the same way `TextLayout` already handles —
+        // invert the text matrix to compensate.
         if let langLine {
             ctx.saveGState()
             ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
@@ -250,7 +267,7 @@ struct CodeBlockLayout: @unchecked Sendable {
             ctx.restoreGState()
         }
 
-        // 5) Code body text.
+        // Code body text.
         text.draw(in: ctx, origin: CGPoint(
             x: origin.x + textOriginInLayout.x,
             y: origin.y + textOriginInLayout.y))

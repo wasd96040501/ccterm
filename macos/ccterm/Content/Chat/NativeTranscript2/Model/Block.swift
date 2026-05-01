@@ -362,11 +362,19 @@ enum BlockStyle: Sendable {
         NSFont.monospacedSystemFont(ofSize: paragraphFont.pointSize, weight: .regular)
     }
 
-    /// Background fill — same tier as inline-code (`secondarySystemFill`).
-    /// Multi-line block in the same tone as inline runs, so a paragraph
-    /// like "use `fn()` to do X, e.g. \n```\nfn(x)\n```" doesn't
-    /// flip-flop tone between the inline mention and the block call.
-    nonisolated static var codeBlockBackgroundColor: NSColor { inlineCodeBackgroundColor }
+    /// Background fill — Xcode "Default" canvas tone with a light-mode
+    /// nudge for separation: `#F5F5F7` light / `#1F1F24` dark. Dark uses
+    /// the editor's `DVTSourceTextBackground` verbatim (already darker
+    /// than the chat window). Light shifts off pure `#FFFFFF` so the
+    /// card edge is visible against an otherwise white transcript —
+    /// `#F5F5F7` is the same off-white Apple's developer docs use for
+    /// inline samples, so it still reads as "Xcode-adjacent."
+    nonisolated static let codeBlockBackgroundColor: NSColor = NSColor(name: nil) { appearance in
+        let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        return isDark
+            ? NSColor(srgbRed: 0x1F / 255.0, green: 0x1F / 255.0, blue: 0x24 / 255.0, alpha: 1)
+            : NSColor(srgbRed: 0xF5 / 255.0, green: 0xF5 / 255.0, blue: 0xF7 / 255.0, alpha: 1)
+    }
 
     /// Verbatim source → monospaced attributed string. Whitespace and
     /// newlines preserved; no inline parsing.

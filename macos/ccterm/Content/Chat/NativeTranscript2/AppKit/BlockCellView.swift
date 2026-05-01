@@ -125,6 +125,12 @@ final class BlockCellView: NSView {
         guard let layout, let ctx = NSGraphicsContext.current?.cgContext else { return }
         let origin = layoutOrigin
 
+        // Backplate: opaque chrome that must paint *before* the
+        // selection band so the highlight composites on top of (not
+        // under) the card. No-op for everything except codeblock,
+        // which has an opaque editor-canvas fill.
+        layout.drawBackplate(in: ctx, origin: origin)
+
         // Selection highlight: under glyphs, matching NSTextView ordering.
         // The adapter projects (start, end) → layout-local rects; what
         // those rects mean (text glyph band / cell rectangle / 1×1 inner

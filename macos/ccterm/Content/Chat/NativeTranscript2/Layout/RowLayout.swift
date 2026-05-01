@@ -77,6 +77,17 @@ enum RowLayout: @unchecked Sendable {
         }
     }
 
+    /// Opaque chrome that must paint *before* the cell's selection band
+    /// so the highlight composites on top, under the glyphs. Default is
+    /// a no-op — only codeblock currently has an opaque card background
+    /// that would otherwise hide the selection rect drawn by the cell.
+    func drawBackplate(in ctx: CGContext, origin: CGPoint) {
+        switch self {
+        case .codeBlock(let l): l.drawBackplate(in: ctx, origin: origin)
+        default: break
+        }
+    }
+
     func draw(in ctx: CGContext, origin: CGPoint) {
         switch self {
         case .text(let l): l.draw(in: ctx, origin: origin)

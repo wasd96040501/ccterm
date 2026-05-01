@@ -7,15 +7,25 @@ import AppKit
 /// layer bitmap is reused during scroll (zero `draw(_:)` calls), and AppKit
 /// only re-issues `draw(_:)` after we mark `needsDisplay = true`.
 ///
-/// ### Link interaction
+/// ### Cursor + click dispatch
 ///
-/// `RowLayout.links` carries layout-local hot zones for `.link`-attributed
-/// runs. The cell offsets them by `layoutOrigin` to get cell-local rects,
-/// then:
-/// - `mouseDown` opens the URL on a hit (and consumes the event).
-/// - `resetCursorRects` registers a `pointingHand` cursor for each rect, so
-///   the system handles cursor swapping during hover without us having to
-///   install a tracking area.
+/// The cell is layout-agnostic for both. `RowLayout` exposes:
+/// - `iBeamRect`: where the I-beam should show on hover (`nil` = full
+///   cell `bounds`, the default for full-width text blocks; user-bubble
+///   confines this to its right-aligned `bubbleRect` so the empty left
+///   gutter keeps the default arrow).
+/// - `interactiveHits`: list of `(rect, HitAction)` pairs covering URL
+///   links, the user-bubble chevron, and the code-block copy button.
+///
+/// `resetCursorRects` registers I-beam over `iBeamRect` and pointing-
+/// hand over each `interactiveHits` rect. AppKit handles hover cursor
+/// swap automatically — no tracking area needed.
+///
+/// `mouseDown` walks the same `interactiveHits` list once, switches on
+/// the matched `HitAction`, and falls through to selection-drag
+/// forwarding when no hit is found. Adding a new in-cell control means
+/// emitting another `InteractiveHit` from the relevant layout and
+/// adding one switch arm here — no new `if case .xxx = layout` chains.
 ///
 /// ### Selection
 ///
@@ -149,50 +159,43 @@ final class BlockCellView: NSView {
     override func resetCursorRects() {
         super.resetCursorRects()
         guard let layout else { return }
-        // I-beam over the entire cell for any selectable block — matches
-        // `NSTextView`'s behavior of showing I-beam over its full frame
-        // (including any internal padding). Order matters: when cursor
-        // rects overlap, the most-recently-added wins, so pointing-hand
-        // rects registered below take priority over the I-beam in their
-        // hot zones. Non-selectable rows (image) skip — they get the
-        // default arrow.
-        if layout.selectionAdapter != nil {
-            addCursorRect(bounds, cursor: .iBeam)
-        }
         let origin = layoutOrigin
-        for hit in layout.links {
+        // I-beam: over `iBeamRect` if the layout confines it
+        // (user bubble), else the whole cell `bounds` to match
+        // `NSTextView`'s "I-beam over full frame" behavior. Order
+        // matters: when cursor rects overlap, the most-recently-
+        // added wins, so pointing-hand rects registered below take
+        // priority over the I-beam in their hot zones. Non-
+        // selectable rows (image, thematic break) skip — they get
+        // the default arrow.
+        if layout.selectionAdapter != nil {
+            let rect = layout.iBeamRect.map {
+                $0.offsetBy(dx: origin.x, dy: origin.y)
+            } ?? bounds
+            addCursorRect(rect, cursor: .iBeam)
+        }
+        for hit in layout.interactiveHits {
             addCursorRect(hit.rect.offsetBy(dx: origin.x, dy: origin.y),
-                          cursor: .pointingHand)
-        }
-        if case .userBubble(let l) = layout, let chev = l.chevronHitRect {
-            addCursorRect(chev.offsetBy(dx: origin.x, dy: origin.y),
-                          cursor: .pointingHand)
-        }
-        if case .codeBlock(let l) = layout, let copy = l.copyHitRect {
-            addCursorRect(copy.offsetBy(dx: origin.x, dy: origin.y),
                           cursor: .pointingHand)
         }
     }
 
     override func mouseDown(with event: NSEvent) {
-        if let url = linkURL(at: event) {
-            NSWorkspace.shared.open(url)
-            return
-        }
-        // Cell-internal control: user bubble chevron. Goes through the
-        // coordinator's sheet-request channel — the only well-defined
-        // exit point from AppKit-internal interactions to SwiftUI, since
-        // `.sheet(item:)` lives on the SwiftUI side. Selection-drag
-        // continues to stay inside `Transcript2SelectionCoordinator`.
-        if let id = blockId, hitChevron(at: event) {
-            coordinator?.requestUserBubbleSheet(id: id)
-            return
-        }
-        // Cell-internal control: code block copy button. Stays entirely
-        // inside the cell — copying produces no follow-up UI, just a
-        // pasteboard side effect, so there's no SwiftUI hand-off to do.
-        if hitCopyButton(at: event) {
-            copyCodeToPasteboard()
+        if let action = hitAction(at: event) {
+            switch action {
+            case .openURL(let url):
+                NSWorkspace.shared.open(url)
+            case .openUserBubbleSheet:
+                // The only well-defined exit point from AppKit-internal
+                // interactions to SwiftUI, since `.sheet(item:)` lives
+                // on the SwiftUI side. Selection-drag continues to stay
+                // inside `Transcript2SelectionCoordinator`.
+                if let id = blockId {
+                    coordinator?.requestUserBubbleSheet(id: id)
+                }
+            case .copyText(let text):
+                copyToPasteboard(text)
+            }
             return
         }
         // Forward to the enclosing table so its tracking loop owns the
@@ -209,41 +212,22 @@ final class BlockCellView: NSView {
         }
     }
 
-    private func linkURL(at event: NSEvent) -> URL? {
+    private func hitAction(at event: NSEvent) -> HitAction? {
         guard let layout else { return nil }
         let local = convert(event.locationInWindow, from: nil)
         let origin = layoutOrigin
-        for hit in layout.links {
+        for hit in layout.interactiveHits {
             if hit.rect.offsetBy(dx: origin.x, dy: origin.y).contains(local) {
-                return hit.url
+                return hit.action
             }
         }
         return nil
     }
 
-    private func hitChevron(at event: NSEvent) -> Bool {
-        guard case .userBubble(let l)? = layout,
-              let hit = l.chevronHitRect
-        else { return false }
-        let local = convert(event.locationInWindow, from: nil)
-        let origin = layoutOrigin
-        return hit.offsetBy(dx: origin.x, dy: origin.y).contains(local)
-    }
-
-    private func hitCopyButton(at event: NSEvent) -> Bool {
-        guard case .codeBlock(let l)? = layout,
-              let hit = l.copyHitRect
-        else { return false }
-        let local = convert(event.locationInWindow, from: nil)
-        let origin = layoutOrigin
-        return hit.offsetBy(dx: origin.x, dy: origin.y).contains(local)
-    }
-
-    private func copyCodeToPasteboard() {
-        guard case .codeBlock(let l)? = layout else { return }
+    private func copyToPasteboard(_ text: String) {
         let pb = NSPasteboard.general
         pb.clearContents()
-        pb.setString(l.code, forType: .string)
+        pb.setString(text, forType: .string)
 
         // Visual feedback: swap idle → checkmark, schedule a swap back
         // 1.5s later. Stamp identity prevents a quick second click's

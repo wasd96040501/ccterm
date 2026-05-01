@@ -92,10 +92,34 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// `attributedString(forBlockId:)`, `markCellNeedsDisplay(blockId:)`).
     let selection: Transcript2SelectionCoordinator
 
-    override init() {
+    /// Async-filled per-block side data. Currently backs syntax tokens
+    /// for code blocks; future highlight-shaped derivatives (diff hunks,
+    /// inline annotations) will share the same storage by adding scopes.
+    /// `apply` lifecycle wires `schedule` / `drop` calls; `onDidFill`
+    /// drives a single-row reload after tokens land.
+    let highlightStorage: Transcript2HighlightStorage
+
+    init(syntaxEngine: SyntaxHighlightEngine? = nil) {
         self.selection = Transcript2SelectionCoordinator()
+        self.highlightStorage = Transcript2HighlightStorage(engine: syntaxEngine)
         super.init()
         self.selection.transcript = self
+        self.highlightStorage.onDidFill = { [weak self] id in
+            self?.handleHighlightDidFill(blockId: id)
+        }
+    }
+
+    /// Late-bind a syntax engine. Hosts that read `\.syntaxEngine` from
+    /// SwiftUI environment hop here after `body` resolves the value.
+    /// On `nil → engine` transition, every currently-installed block is
+    /// re-scheduled so cold-loaded code blocks pick up tokens; passing
+    /// the same engine again is harmless (the per-block generation guard
+    /// dedupes redundant in-flight tasks).
+    func attachSyntaxEngine(_ engine: SyntaxHighlightEngine?) {
+        let wasAttached = highlightStorage.hasEngine
+        highlightStorage.setEngine(engine)
+        guard !wasAttached, engine != nil else { return }
+        for block in blocks { highlightStorage.schedule(block) }
     }
 
     private var blocks: [Block] = []
@@ -240,11 +264,19 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             return []
         }
 
+        // Snapshot highlight tokens on MainActor before detaching — the
+        // off-main loop reads per-block tokens from this dict instead of
+        // hopping back to the actor mid-iteration. New tokens that land
+        // between this snapshot and the main hop are picked up by the
+        // `onDidFill` reload path independently.
+        let tokensSnapshot = highlightStorage.snapshot()
+
         Task.detached(priority: .userInitiated) { [weak self] in
             var entries: [(UUID, RowLayout)] = []
             entries.reserveCapacity(toCompute.count)
             for block in toCompute {
-                entries.append((block.id, Self.makeLayout(for: block, width: width)))
+                entries.append((block.id, Self.makeLayout(
+                    for: block, width: width, tokens: tokensSnapshot)))
             }
             await MainActor.run { [entries] in
                 defer { completion() }
@@ -279,6 +311,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                 idx = 0
             }
             blocks.insert(contentsOf: new, at: idx)
+            for block in new { highlightStorage.schedule(block) }
             table?.insertRows(at: IndexSet(idx ..< idx + new.count),
                               withAnimation: [.effectFade])
 
@@ -293,13 +326,22 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             for id in idSet {
                 removeCachedLayout(for: id)
                 selection.dropEntry(blockId: id)
+                highlightStorage.drop(blockId: id)
             }
             table?.removeRows(at: indexes, withAnimation: [.effectFade])
 
         case .update(let id, let kind):
             guard let i = blocks.firstIndex(where: { $0.id == id }) else { return }
-            blocks[i] = Block(id: id, kind: kind)
+            let updated = Block(id: id, kind: kind)
+            blocks[i] = updated
             removeCachedLayout(for: id)
+            // Drop stale highlight tokens (the new kind may carry a
+            // different code or language, or no highlight at all). The
+            // generation guard inside `drop` also invalidates any
+            // in-flight task for the previous content, then `schedule`
+            // kicks the new pass for the replacement kind.
+            highlightStorage.drop(blockId: id)
+            highlightStorage.schedule(updated)
             // Content replacement invalidates the prior selection range
             // (offsets no longer index into the same string). Drop now so
             // the upcoming `reloadData(forRowIndexes:)` runs viewFor with
@@ -310,6 +352,21 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                               columnIndexes: IndexSet(integer: 0))
             table?.noteHeightOfRows(withIndexesChanged: idx)
         }
+    }
+
+    // MARK: - Highlight tokens fill-in
+
+    /// Called by `highlightStorage` after async tokens land for `blockId`.
+    /// Evicts the stale (plain) `RowLayout` and reloads the single row.
+    /// Skips `noteHeightOfRows` because token fill changes only color,
+    /// not glyph metrics — a re-layout pass would be a wasted query.
+    private func handleHighlightDidFill(blockId: UUID) {
+        guard let table = tableView,
+              let row = blocks.firstIndex(where: { $0.id == blockId })
+        else { return }
+        removeCachedLayout(for: blockId)
+        table.reloadData(forRowIndexes: IndexSet(integer: row),
+                         columnIndexes: IndexSet(integer: 0))
     }
 
     // MARK: - Scroll adjustment
@@ -446,14 +503,25 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         if let c = layoutCache[block.id], c.width == width {
             return c.layout
         }
-        let layout = Self.makeLayout(for: block, width: width)
+        let layout = Self.makeLayout(
+            for: block, width: width,
+            tokens: highlightStorage.snapshot())
         layoutCache[block.id] = CachedLayout(width: width, layout: layout)
         return layout
     }
 
-    /// Pure: `(block, width) -> RowLayout`. `nonisolated static` so the
-    /// background prefetch task can call it off-MainActor.
-    nonisolated static func makeLayout(for block: Block, width: CGFloat) -> RowLayout {
+    /// Pure: `(block, width, tokens) -> RowLayout`. `nonisolated static`
+    /// so the background prefetch task can call it off-MainActor.
+    /// `tokens` is a snapshot of `Transcript2HighlightStorage` taken on
+    /// MainActor before the detached task starts; passing the snapshot in
+    /// keeps the per-block lookup actor-free during the off-main loop.
+    /// Defaults to empty so call sites that genuinely don't want
+    /// highlight (e.g. `Transcript2Controller.sliceForViewport`'s
+    /// height-only probe) can omit the parameter.
+    nonisolated static func makeLayout(
+        for block: Block, width: CGFloat,
+        tokens: [Transcript2HighlightKey: [SyntaxToken]] = [:]
+    ) -> RowLayout {
         let contentWidth = max(0, width - 2 * BlockStyle.blockHorizontalPadding)
         switch block.kind {
         case .heading(let level, let inlines):
@@ -473,8 +541,12 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             return .list(ListLayout.make(block: listBlock, maxWidth: contentWidth))
         case .table(let tableBlock):
             return .table(TableLayout.make(block: tableBlock, maxWidth: contentWidth))
-        case .codeBlock(_, let code):
-            return .codeBlock(CodeBlockLayout.make(code: code, maxWidth: contentWidth))
+        case .codeBlock(let language, let code):
+            let codeTokens = tokens[
+                Transcript2HighlightKey(blockId: block.id, scope: .codeBlock)]
+            return .codeBlock(CodeBlockLayout.make(
+                code: code, language: language,
+                tokens: codeTokens, maxWidth: contentWidth))
         case .blockquote(let inlines):
             return .blockquote(BlockquoteLayout.make(inlines: inlines, maxWidth: contentWidth))
         case .thematicBreak:
@@ -573,6 +645,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
 
         let snapshot = staleIdxs.map { blocks[$0] }
         let snapshotCounter = mutationCounter
+        let tokensSnapshot = highlightStorage.snapshot()
         // Push covers the async layout window so the scroller stays hidden
         // through the post-resize relayout. Popped via the task's defer in
         // every outcome (cancelled, drifted, succeeded).
@@ -585,7 +658,8 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             var aborted = false
             for block in snapshot {
                 if Task.isCancelled { aborted = true; break }
-                entries.append((block.id, Self.makeLayout(for: block, width: width)))
+                entries.append((block.id, Self.makeLayout(
+                    for: block, width: width, tokens: tokensSnapshot)))
             }
             await MainActor.run { [entries] in
                 defer { self?.popScrollerHidden() }

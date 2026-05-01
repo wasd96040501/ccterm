@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SwiftUI
 
 /// Render-ready block. `id` is stable identity for diffing — caller assigns.
 ///
@@ -26,7 +27,11 @@ struct Block: Identifiable, Equatable, @unchecked Sendable {
         /// from the opening fence (`nil` for indented blocks). `code` is
         /// the verbatim source — newlines preserved, no inline parsing.
         /// Rendered as a rounded container with a copy button in the top-
-        /// right corner; syntax highlighting is intentionally out of scope.
+        /// right corner. Syntax highlighting is async — the cold render
+        /// shows plain text; `Transcript2HighlightStorage` fills tokens
+        /// in the background and triggers a single-row reload, after
+        /// which `BlockStyle.codeBlockAttributed` produces a colored
+        /// attributed string.
         case codeBlock(language: String?, code: String)
         /// CommonMark blockquote. Flat `[InlineNode]` payload — nested
         /// blocks inside a quote (lists, code blocks, nested quotes) are
@@ -364,10 +369,38 @@ enum BlockStyle: Sendable {
     nonisolated static var codeBlockBackgroundColor: NSColor { inlineCodeBackgroundColor }
 
     /// Verbatim source → monospaced attributed string. Whitespace and
-    /// newlines preserved; no inline parsing, no syntax highlighting.
-    nonisolated static func codeBlockAttributed(code: String) -> NSAttributedString {
-        NSAttributedString(string: code, attributes: [
-            .font: codeBlockFont,
+    /// newlines preserved; no inline parsing.
+    ///
+    /// Syntax highlighting is opt-in via `tokens`: when non-nil, walks
+    /// the token list and emits per-segment foreground colors via
+    /// `SyntaxTheme.color(for:scheme:)`. The colors are wrapped in a
+    /// dynamic `NSColor(name:dynamicProvider:)` so a single attributed
+    /// string tracks light/dark appearance without rebuild.
+    ///
+    /// Plain (`tokens == nil`) is the cold-render path used until
+    /// `Transcript2HighlightStorage` finishes its async tokenize pass.
+    nonisolated static func codeBlockAttributed(
+        code: String, tokens: [SyntaxToken]?
+    ) -> NSAttributedString {
+        let font = codeBlockFont
+        if let tokens, !tokens.isEmpty {
+            let result = NSMutableAttributedString()
+            for token in tokens {
+                let scope = token.scope
+                let color = NSColor(name: nil) { appearance in
+                    let match = appearance.bestMatch(from: [.darkAqua, .aqua])
+                    let scheme: ColorScheme = match == .darkAqua ? .dark : .light
+                    return NSColor(SyntaxTheme.color(for: scope, scheme: scheme))
+                }
+                result.append(NSAttributedString(string: token.text, attributes: [
+                    .font: font,
+                    .foregroundColor: color,
+                ]))
+            }
+            return result
+        }
+        return NSAttributedString(string: code, attributes: [
+            .font: font,
             .foregroundColor: NSColor.labelColor,
         ])
     }
@@ -391,10 +424,28 @@ enum BlockStyle: Sendable {
     /// bubble's 14pt — the header already eats the top visual weight,
     /// so 12 around the body keeps the block from reading too tall.
     nonisolated static let codeBlockBodyVerticalPadding: CGFloat = 12
-    /// Right inset for the copy button hit zone. Matches
-    /// `structuralCornerRadius` so the button optically anchors to the
-    /// corner pivot.
-    nonisolated static var codeBlockCopyRightInset: CGFloat { structuralCornerRadius + 6 }
+
+    /// Header chrome label / glyph color. `secondaryLabel` so the band
+    /// reads as chrome rather than competing with the body's syntax
+    /// colors.
+    nonisolated static let codeBlockHeaderForeground: NSColor = .secondaryLabelColor
+
+    /// Header label / glyph point size. 11pt matches the SF Symbol
+    /// weight calibration `codeBlockHeaderHeight` was chosen for.
+    nonisolated static let codeBlockHeaderFontSize: CGFloat = 11
+
+    /// Left inset for the language label inside the header. Aligned
+    /// with `bubbleHorizontalPadding` so the label sits in the same
+    /// vertical column as the body code beneath it — reads as a single
+    /// flush left edge running the full block.
+    nonisolated static var codeBlockHeaderLeftInset: CGFloat { bubbleHorizontalPadding }
+
+    /// Right inset for the copy button hit zone. Anchored at the
+    /// corner-radius pivot so the hit rect's right edge lands exactly
+    /// where the rounded corner begins — the glyph itself (smaller than
+    /// the hit zone) then floats just inside the curve, hugging the
+    /// edge as the copy icon should as chrome.
+    nonisolated static var codeBlockCopyRightInset: CGFloat { structuralCornerRadius }
     /// Hairline divider color between header and body.
     nonisolated static let codeBlockDividerColor: NSColor = .separatorColor
 

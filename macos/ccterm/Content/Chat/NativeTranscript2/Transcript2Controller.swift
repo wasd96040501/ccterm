@@ -83,14 +83,27 @@ final class Transcript2Controller {
     /// Module-internal: handed to `NativeTranscript2View.makeCoordinator`.
     let coordinator: Transcript2Coordinator
 
-    init() {
-        coordinator = Transcript2Coordinator()
+    /// `syntaxEngine` enables async syntax highlighting for code blocks.
+    /// Pass `nil` (the default) for previews / tests / hosts without an
+    /// engine — code blocks render as plain monospaced text. Hosts that
+    /// only have access to the engine through SwiftUI environment can
+    /// late-bind via `attachSyntaxEngine(_:)`.
+    init(syntaxEngine: SyntaxHighlightEngine? = nil) {
+        coordinator = Transcript2Coordinator(syntaxEngine: syntaxEngine)
         coordinator.onBlockCountChanged = { [weak self] count in
             self?.blockCount = count
         }
         coordinator.onUserBubbleSheetRequested = { [weak self] id, text in
             self?.pendingUserBubbleSheet = UserBubbleSheetRequest(id: id, text: text)
         }
+    }
+
+    /// Late-bind a syntax engine. Pass-through to the coordinator. Safe
+    /// to call repeatedly (idempotent on the same instance) and safe
+    /// regardless of `loadInitial` ordering — the coordinator
+    /// retroactively schedules already-installed blocks on first attach.
+    func attachSyntaxEngine(_ engine: SyntaxHighlightEngine?) {
+        coordinator.attachSyntaxEngine(engine)
     }
 
     // MARK: - Mutation

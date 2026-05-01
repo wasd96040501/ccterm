@@ -14,11 +14,25 @@ import SwiftUI
 /// `controller.pendingUserBubbleSheet`; `updateNSView` is a no-op.
 struct NativeTranscript2View: View {
     @Bindable var controller: Transcript2Controller
+    /// Async syntax highlighter, sourced from the SwiftUI environment so
+    /// every host (chat, demo, stress) gets the same shared engine
+    /// without explicit plumbing. `nil` is the legitimate "no host
+    /// engine" mode — code blocks then render plain. Late-binds via
+    /// `controller.attachSyntaxEngine` once `body` resolves the env.
+    @Environment(\.syntaxEngine) private var syntaxEngine
 
     var body: some View {
         Transcript2NSViewBridge(controller: controller)
             .sheet(item: $controller.pendingUserBubbleSheet) { request in
                 UserBubbleSheetView(text: request.text)
+            }
+            .task(id: ObjectIdentifier(controller)) {
+                // Idempotent re-attach. Survives `controller` swap (rare,
+                // but `.task(id:)` makes the dependency explicit) and
+                // engine swap (env updates don't normally happen, but the
+                // controller's `attachSyntaxEngine` handles a re-set
+                // gracefully via the per-block generation guard).
+                controller.attachSyntaxEngine(syntaxEngine)
             }
     }
 }
@@ -230,4 +244,5 @@ private struct PreviewWrapper: View {
 #Preview("NativeTranscript2 — heading + paragraph + image") {
     PreviewWrapper()
         .frame(width: 600, height: 600)
+        .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }

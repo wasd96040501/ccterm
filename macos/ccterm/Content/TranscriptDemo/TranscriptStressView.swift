@@ -137,4 +137,5 @@ struct TranscriptStressView: View {
 #Preview {
     TranscriptStressView()
         .frame(width: 720, height: 720)
+        .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }

@@ -661,4 +661,5 @@ private struct DemoIcons {
 #Preview {
     TranscriptDemoView()
         .frame(width: 720, height: 720)
+        .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }

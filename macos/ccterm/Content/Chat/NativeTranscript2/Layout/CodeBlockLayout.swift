@@ -1,18 +1,20 @@
 import AppKit
 
-/// Immutable code-block layout — pure function of `(code, maxWidth)`.
+/// Immutable code-block layout — pure function of `(code, language,
+/// tokens, maxWidth)`.
 ///
-/// Two-band container: a 32pt **header** band carrying the copy
-/// button, separated by a 1pt hairline from a body band that holds
-/// the verbatim monospaced source. Container corner is the
-/// "structural" tier (6pt) — code is data/precision, not personal
-/// voice, so a tighter curve reads as IDE-appropriate.
+/// Two-band container: a 24pt **header** band carrying a left-anchored
+/// language label and a right-anchored copy button, separated by a 1pt
+/// hairline from a body band that holds the verbatim monospaced source.
+/// Container corner is the "structural" tier (6pt) — code is
+/// data/precision, not personal voice, so a tighter curve reads as
+/// IDE-appropriate.
 ///
-/// The copy button itself is **not drawn here**. `BlockCellView`
-/// renders an SF Symbol on top of the layout (with a per-click
-/// "checkmark for 1.5s" feedback that's pure cell-local transient
-/// state). Layout exposes `copyCenter` / `copyHitRect` only so the
-/// cell knows where to paint and where to hit-test.
+/// The copy button itself is **not drawn in `draw(in:origin:)`**.
+/// `BlockCellView` renders an SF Symbol on top of the layout (with a
+/// per-click "checkmark for 1.5s" feedback that's pure cell-local
+/// transient state). Layout exposes `copyCenter` / `copyHitRect` only
+/// so the cell knows where to paint and where to hit-test.
 ///
 /// `@unchecked Sendable` — same reason as `TextLayout` (embedded
 /// `CTLine` references).
@@ -30,6 +32,12 @@ struct CodeBlockLayout: @unchecked Sendable {
     /// Top-left of the code region inside the container (below the
     /// header + body top padding).
     let textOriginInLayout: CGPoint
+    /// Pre-typeset language CTLine + baseline origin — `nil` when the
+    /// block has no language or the container is too narrow to fit
+    /// label and copy button without overlap. Drawn in
+    /// `draw(in:origin:)` directly (chrome, not selectable).
+    let langLine: CTLine?
+    let langOriginInLayout: CGPoint
     /// Click target for the copy button — `nil` if the container is
     /// pathologically narrow.
     let copyHitRect: CGRect?
@@ -49,18 +57,31 @@ struct CodeBlockLayout: @unchecked Sendable {
     /// cursor onto code text where clicks aren't actually wired.
     nonisolated static let copyHitSize: CGFloat = 20
 
-    nonisolated static func make(code: String, maxWidth: CGFloat) -> CodeBlockLayout {
+    /// `language` is the info-string from the opening fence (`nil` for
+    /// indented blocks); rendered as a left-anchored chrome label,
+    /// lowercased and trimmed. `tokens` is the optional output of
+    /// `Transcript2HighlightStorage`: `nil` (no scan yet, or no engine,
+    /// or unsupported language) renders plain monospace; non-nil
+    /// produces a colored attributed string. Glyph layout is identical
+    /// either way — a token swap-in does not change `totalHeight`, so
+    /// the coordinator's tokens-filled callback only needs
+    /// `reloadData(forRowIndexes:)`, no `noteHeightOfRows`.
+    nonisolated static func make(
+        code: String, language: String?,
+        tokens: [SyntaxToken]?, maxWidth: CGFloat
+    ) -> CodeBlockLayout {
         guard maxWidth > 0 else {
             return CodeBlockLayout(
                 text: .empty, code: code,
                 containerRect: .zero, headerRect: .zero,
                 textOriginInLayout: .zero,
+                langLine: nil, langOriginInLayout: .zero,
                 copyHitRect: nil, copyCenter: nil,
                 totalHeight: 0, measuredWidth: 0)
         }
         let textMaxWidth = max(
             1, maxWidth - 2 * BlockStyle.bubbleHorizontalPadding)
-        let attributed = BlockStyle.codeBlockAttributed(code: code)
+        let attributed = BlockStyle.codeBlockAttributed(code: code, tokens: tokens)
         let text = TextLayout.make(attributed: attributed, maxWidth: textMaxWidth)
 
         let headerH = BlockStyle.codeBlockHeaderHeight
@@ -72,14 +93,61 @@ struct CodeBlockLayout: @unchecked Sendable {
             x: BlockStyle.bubbleHorizontalPadding,
             y: headerH + bodyVPad)
 
+        // Language label (chrome): trimmed, lowercased, in
+        // `codeBlockHeaderForeground` at `codeBlockHeaderFontSize`.
+        // Vertically centered using the typesetter's ascent so the
+        // glyph's optical center sits on the header midY rather than
+        // its bounding box center, which would push the label slightly
+        // below true center.
+        let langText: String? = {
+            guard let raw = language?
+                .trimmingCharacters(in: .whitespaces).lowercased(),
+                  !raw.isEmpty
+            else { return nil }
+            return raw
+        }()
+        let langLine: CTLine?
+        let langOrigin: CGPoint
+        var langWidth: CGFloat = 0
+        if let langText {
+            let font = NSFont.systemFont(
+                ofSize: BlockStyle.codeBlockHeaderFontSize, weight: .medium)
+            let attr = NSAttributedString(string: langText, attributes: [
+                .font: font,
+                .foregroundColor: BlockStyle.codeBlockHeaderForeground,
+            ])
+            let line = CTLineCreateWithAttributedString(attr)
+            var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
+            let width = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
+            langWidth = width
+            langLine = line
+            // y is the baseline. Center the (ascent+descent) box on header.midY.
+            let textBoxH = ascent + descent
+            let baseline = header.midY + (textBoxH / 2 - ascent) + ascent
+            langOrigin = CGPoint(x: BlockStyle.codeBlockHeaderLeftInset, y: baseline)
+        } else {
+            langLine = nil
+            langOrigin = .zero
+        }
+
         // Copy button: in-header, vertically centered, right-anchored.
+        // Hit-rect right edge anchors at the corner-radius pivot
+        // (`codeBlockCopyRightInset == structuralCornerRadius`); the
+        // smaller glyph then floats just inside the curve. Suppressed
+        // when the container is too narrow to host both label and
+        // button without overlap.
         let half = copyHitSize / 2
         let center = CGPoint(
             x: container.maxX - BlockStyle.codeBlockCopyRightInset - half,
             y: header.midY)
         let copyCenter: CGPoint?
         let copyHit: CGRect?
-        if container.width >= copyHitSize + 2 * BlockStyle.codeBlockCopyRightInset {
+        let labelSafeWidth = (langLine != nil)
+            ? BlockStyle.codeBlockHeaderLeftInset + langWidth + 8
+            : 0
+        if container.width >= labelSafeWidth + copyHitSize
+            + 2 * BlockStyle.codeBlockCopyRightInset
+        {
             copyCenter = center
             copyHit = CGRect(
                 x: center.x - half, y: center.y - half,
@@ -94,6 +162,8 @@ struct CodeBlockLayout: @unchecked Sendable {
             containerRect: container,
             headerRect: header,
             textOriginInLayout: textOrigin,
+            langLine: langLine,
+            langOriginInLayout: langOrigin,
             copyHitRect: copyHit, copyCenter: copyCenter,
             totalHeight: containerHeight,
             measuredWidth: maxWidth)
@@ -164,7 +234,21 @@ struct CodeBlockLayout: @unchecked Sendable {
             height: 1))
         ctx.restoreGState()
 
-        // 4) Code body text.
+        // 4) Language label (chrome). Draws via CT directly into
+        //    `ctx`. The cell view is flipped (y-down), CT expects
+        //    flipped baseline math the same way `TextLayout` already
+        //    handles — invert the text matrix to compensate.
+        if let langLine {
+            ctx.saveGState()
+            ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
+            ctx.textPosition = CGPoint(
+                x: origin.x + langOriginInLayout.x,
+                y: origin.y + langOriginInLayout.y)
+            CTLineDraw(langLine, ctx)
+            ctx.restoreGState()
+        }
+
+        // 5) Code body text.
         text.draw(in: ctx, origin: CGPoint(
             x: origin.x + textOriginInLayout.x,
             y: origin.y + textOriginInLayout.y))
@@ -189,12 +273,15 @@ struct CodeBlockLayout: @unchecked Sendable {
         let name = checked ? "checkmark" : "doc.on.doc"
         // Both states use the same muted tint — the glyph swap is the
         // feedback signal, an additional color shift would over-
-        // emphasize a transient flash.
-        let tint: NSColor = .secondaryLabelColor
+        // emphasize a transient flash. Monochrome rendering (single
+        // palette color) — `hierarchicalColor` would split the symbol
+        // into translucent sub-layers, which reads as washed-out chrome
+        // against the header band's already-translucent overlay.
+        let tint: NSColor = BlockStyle.codeBlockHeaderForeground
         let weight: NSFont.Weight = checked ? .semibold : .regular
         let baseConfig = NSImage.SymbolConfiguration(
-            pointSize: 11, weight: weight)
-        let colorConfig = NSImage.SymbolConfiguration(hierarchicalColor: tint)
+            pointSize: BlockStyle.codeBlockHeaderFontSize, weight: weight)
+        let colorConfig = NSImage.SymbolConfiguration(paletteColors: [tint])
         let config = baseConfig.applying(colorConfig)
         guard let symbol = NSImage(systemSymbolName: name,
                                    accessibilityDescription: nil)?

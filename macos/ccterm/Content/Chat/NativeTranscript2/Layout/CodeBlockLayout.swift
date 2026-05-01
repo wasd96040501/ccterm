@@ -95,10 +95,14 @@ struct CodeBlockLayout: @unchecked Sendable {
 
         // Language label (chrome): trimmed, lowercased, in
         // `codeBlockHeaderForeground` at `codeBlockHeaderFontSize`.
-        // Vertically centered using the typesetter's ascent so the
-        // glyph's optical center sits on the header midY rather than
-        // its bounding box center, which would push the label slightly
-        // below true center.
+        // Vertically centered on `header.midY` by placing the glyph's
+        // visible bounding box (height = ascent + descent) symmetrically
+        // around the midline. In a y-down layout with the textMatrix
+        // flip used by `draw`, baseline = top + ascent, so:
+        //
+        //     visibleTop = midY - (ascent + descent) / 2
+        //     baseline   = visibleTop + ascent
+        //                = midY + (ascent - descent) / 2
         let langText: String? = {
             guard let raw = language?
                 .trimmingCharacters(in: .whitespaces).lowercased(),
@@ -121,9 +125,7 @@ struct CodeBlockLayout: @unchecked Sendable {
             let width = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
             langWidth = width
             langLine = line
-            // y is the baseline. Center the (ascent+descent) box on header.midY.
-            let textBoxH = ascent + descent
-            let baseline = header.midY + (textBoxH / 2 - ascent) + ascent
+            let baseline = header.midY + (ascent - descent) / 2
             langOrigin = CGPoint(x: BlockStyle.codeBlockHeaderLeftInset, y: baseline)
         } else {
             langLine = nil

@@ -31,11 +31,19 @@ extension SessionHandle2 {
         }
 
         let act = action(for: message)
+        // 每个 mutation helper 返回它产出的 TimelineMutation(或 nil),让本
+        // 函数最后统一 emit sink。这样 sink 触发点和 emitSnapshot 在同一
+        // 位置,future maintainer 改任一时都能看见对应路径。
+        let mutation: TimelineMutation?
         switch act {
-        case .merge(let id, let payload): attachToolResult(payload, to: id)
-        case .confirm(let id, let echo): confirmQueuedEntry(id: id, echo: echo, mode: mode)
-        case .append: appendToTimeline(message, mode: mode)
-        case .skip: break
+        case .merge(let id, let payload):
+            mutation = attachToolResult(payload, to: id).map(TimelineMutation.mutated)
+        case .confirm(let id, let echo):
+            mutation = confirmQueuedEntry(id: id, echo: echo, mode: mode).map(TimelineMutation.mutated)
+        case .append:
+            mutation = appendToTimeline(message, mode: mode)
+        case .skip:
+            mutation = nil
         }
 
         // replay 批量 ingest 由调用方（loadHistory Phase A / Phase B）一次性
@@ -46,6 +54,7 @@ extension SessionHandle2 {
         case .merge, .confirm: emitSnapshot(.update)
         case .skip: break
         }
+        if let mutation { onTimelineMutation?(mutation) }
     }
 }
 
@@ -96,57 +105,70 @@ private extension SessionHandle2 {
 
 private extension SessionHandle2 {
 
-    func appendToTimeline(_ message: Message2, mode: ReceiveMode) {
+    func appendToTimeline(_ message: Message2, mode: ReceiveMode) -> TimelineMutation {
         let single = SingleEntry(id: UUID(), payload: .remote(message), delivery: nil, toolResults: [:])
 
+        // mutation 在两种情况下不同:
+        // - 追加到既存 group 的 items → group entry 本体改了内容 → `.mutated`
+        // - 新建 group / append .single → 时间线多了一条 entry → `.appended`
+        let mutation: TimelineMutation
         if message.isGroupableAssistant {
-            // 可分组：last 是 group → 追加到 items；否则开新 group。
             if case .group(var g) = messages.last {
                 g.items.append(single)
                 messages[messages.count - 1] = .group(g)
+                mutation = .mutated(messages[messages.count - 1])
             } else {
                 messages.append(.group(GroupEntry(id: UUID(), items: [single])))
+                mutation = .appended(messages.last!)
             }
         } else {
             messages.append(.single(single))
+            mutation = .appended(messages.last!)
         }
 
         if mode == .live, !isFocused { hasUnread = true }
+        return mutation
     }
 
     /// 把 tool_result 挂到发起该 tool_use 的 assistant single 上。
     /// 倒序搜索：匹配顶层 `.single` 直接挂；匹配 `.group` 时下探 items。
-    func attachToolResult(_ payload: ToolResultPayload, to toolUseId: String) {
+    /// 返回被改动的 entry(`.single` 或 `.group`),由 caller 转成
+    /// `TimelineMutation.mutated`;tool_use_id 找不到对应 entry → 返回 nil
+    /// (老 CLI 偶发 tool_result 找不到锚点)。
+    func attachToolResult(_ payload: ToolResultPayload, to toolUseId: String) -> MessageEntry? {
         for i in messages.indices.reversed() {
             switch messages[i] {
             case .single(var e):
                 if e.ownsToolUse(toolUseId) {
                     e.toolResults[toolUseId] = payload
                     messages[i] = .single(e)
-                    return
+                    return messages[i]
                 }
             case .group(var g):
                 if let j = g.items.lastIndex(where: { $0.ownsToolUse(toolUseId) }) {
                     g.items[j].toolResults[toolUseId] = payload
                     messages[i] = .group(g)
-                    return
+                    return messages[i]
                 }
             }
         }
+        return nil
     }
 
     /// CLI 开始处理一条先前 `send()` 的消息：把 payload 从 `.localUser` 换成
     /// `.remote(echo)`、delivery 切 `.confirmed`，并把 status 推进到 `.responding`
-    /// （仅 live）。用本地 entry 继续展示，不重复 append。
-    func confirmQueuedEntry(id: UUID, echo: Message2, mode: ReceiveMode) {
-        guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
-        guard case .single(var single) = messages[idx] else { return }
+    /// （仅 live）。用本地 entry 继续展示，不重复 append。返回被改动的 entry,
+    /// 给 caller 转成 `TimelineMutation.mutated`;id 不命中 / 非 single → nil。
+    func confirmQueuedEntry(id: UUID, echo: Message2, mode: ReceiveMode) -> MessageEntry? {
+        guard let idx = messages.firstIndex(where: { $0.id == id }) else { return nil }
+        guard case .single(var single) = messages[idx] else { return nil }
         single.payload = .remote(echo)
         single.delivery = .confirmed
         messages[idx] = .single(single)
         if mode == .live, status == .idle {
             status = .responding
         }
+        return messages[idx]
     }
 }
 

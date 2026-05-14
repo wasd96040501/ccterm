@@ -53,8 +53,9 @@ extension SessionHandle2 {
         guard isUserEntry else { return }
         switch single.delivery {
         case .queued, .failed:
-            messages.remove(at: idx)
+            let removed = messages.remove(at: idx)
             emitSnapshot(.update)
+            onTimelineMutation?(.removed(removed))
         default:
             break
         }

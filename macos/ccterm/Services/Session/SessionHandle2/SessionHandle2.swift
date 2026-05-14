@@ -88,6 +88,19 @@ class SessionHandle2 {
     /// 活得长，这个字段随 handle 生命周期存在。
     @ObservationIgnored var savedScrollAnchor: SavedScrollAnchor?
 
+    /// Per-mutation 命令式 sink。每次 messages 写入完毕后由 handle 同步 emit
+    /// 一条 `TimelineMutation`,描述本次具体改了什么。
+    ///
+    /// 与 `snapshot`(整页状态)并行存在 —— view 端 bridge 可只绑这一路,
+    /// 直接翻译成 `Transcript2Controller.apply(...)`,免去扫表 diff。
+    ///
+    /// nil = 当前没有 bridge 接入(纯渲染外的 sidebar / metrics 等订阅方);
+    /// 写 messages 仍正常进行,sink 跳过。
+    ///
+    /// 设值用闭包不用 protocol:bridge 类型在 view 模块,声明在这里只能
+    /// 走闭包/匿名类型;过 weak ownership 在闭包内部解决(`[weak bridge]`)。
+    @ObservationIgnored var onTimelineMutation: ((TimelineMutation) -> Void)?
+
     internal(set) var pendingPermissions: [PendingPermission] = []
     internal(set) var contextUsedTokens: Int = 0
     internal(set) var contextWindowTokens: Int = 0

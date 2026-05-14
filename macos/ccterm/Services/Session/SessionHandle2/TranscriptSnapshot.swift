@@ -49,6 +49,39 @@ enum TranscriptUpdateReason: Equatable {
     case update
 }
 
+/// 命令式 timeline mutation 信号。`SessionHandle2` 在每个写 messages 的点
+/// 同步 emit 一条,描述「**刚刚发生了什么**」(不是「现在是什么状态」 —
+/// 后者已经由 `snapshot` 承担)。
+///
+/// 设计意图:让 view bridge 不必扫整张 messages 表算 diff —— 直接根据
+/// mutation kind 翻译成 `Transcript2Controller.apply(.insert / .remove / .update)`
+/// 或 `loadInitial(...)`。
+///
+/// 与 `snapshot` 的关系:两者并行发出。`snapshot` 是「最新整体状态 + reason」
+/// 的快照,view 用它做整页渲染;`TimelineMutation` 是「这一步具体改了哪条
+/// entry」的指令,view 用它做增量。同一次 messages mutation 先写 snapshot
+/// 再 emit mutation — 保证 sink 收到 mutation 时,handle.messages 已经反映新
+/// 状态。
+///
+/// `reset` 是单条特殊指令,在 `loadHistory` 完成 Phase A / `.loaded` 重入
+/// 时 emit;view bridge 据此 `loadInitial(_:)`。`appended` / `mutated` /
+/// `removed` / `prepended` 一一对应增量。
+enum TimelineMutation {
+    /// 全量替换 view 端 timeline。携带当前 `messages` 副本 + 可选 scrollHint
+    /// (用户上次离开本 session 时的 anchor)。
+    case reset(entries: [MessageEntry], scrollHint: SavedScrollAnchor?)
+    /// 末尾追加一条新 entry。
+    case appended(MessageEntry)
+    /// 头部前插一组 entries(`loadHistory` Phase B prefix)。
+    case prepended([MessageEntry])
+    /// 替换一条已存在的 entry(tool_result merge / queued→confirmed /
+    /// queued→failed / group items 增长)。`entry.id` 是 view 端定位用的 key。
+    case mutated(MessageEntry)
+    /// 移除一条 entry(`cancelMessage`)。完整 entry 透传 —— bridge 用 entry
+    /// 内容推导出本端缓存的 block ids,避免维护反向 map。
+    case removed(MessageEntry)
+}
+
 /// Transcript 视图层的唯一消费契约。SwiftUI 侧绑定 `handle.snapshot`（而不是
 /// `handle.messages`），每次 `snapshot` 写入触发 `updateNSView` → controller
 /// `setEntries(snapshot.messages, reason: snapshot.reason)`。

@@ -1,4 +1,4 @@
-.PHONY: build release test web dmg clean fmt fmt-check help
+.PHONY: build release web dmg clean fmt fmt-check help
 
 XCSTRINGS := macos/ccterm/Localizable.xcstrings
 FMT_XCSTRINGS := python3 macos/scripts/fmt-xcstrings.py
@@ -11,9 +11,6 @@ build: ## Build ccterm (Debug)
 
 release: ## Build ccterm (Release)
 	./macos/scripts/build.sh release
-
-test: ## Run unit tests (all). Pass TEST=<target> to scope, e.g. `make test TEST=cctermTests/TranscriptDiffTests`
-	./macos/scripts/run-tests.sh $(TEST)
 
 web: ## Build web frontend only
 	cd web && bun install && bun run build

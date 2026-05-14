@@ -194,9 +194,17 @@ final class BlockCellView: NSView {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    /// Layout-local origin where the row's `RowLayout` paints. The
+    /// cell's frame spans the row's full width (NSTableView's
+    /// view-based contract); we shift content here so it lands at the
+    /// centered position. `cellOriginX` is the same value
+    /// `Transcript2SelectionCoordinator` uses to convert document
+    /// points into layout-local coords, so cell-side draw / hit / sel
+    /// rects all stay aligned.
     var layoutOrigin: CGPoint {
         CGPoint(
-            x: BlockStyle.blockHorizontalPadding,
+            x: BlockStyle.cellOriginX(forRowWidth: bounds.width)
+                + BlockStyle.blockHorizontalPadding,
             y: padTop)
     }
 

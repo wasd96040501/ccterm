@@ -60,6 +60,11 @@ extension SessionHandle2 {
             // 匹配 stableId 则围绕 anchor 展开并恢复位置（对齐 Telegram
             // `ChatInterfaceHistoryScrollState` + `.positionRestoration`）；
             // 找不到则自然 fallback 到 tail + `.bottom`。
+            //
+            // 同步 emit 在 view 未 mount 时是合法的：bridge → `controller.loadInitial`
+            // 自带 pending 缓存路径，layoutWidth=0 时把 blocks/anchor 暂存，等到
+            // coordinator 的 `onLayoutReady` 触发再消费。所以 handle 这一层无需关心
+            // SwiftUI commit 时序。
             emitSnapshot(.initialPaint, scrollHint: savedScrollAnchor)
             onTimelineMutation?(.reset(entries: messages, scrollHint: savedScrollAnchor))
             return

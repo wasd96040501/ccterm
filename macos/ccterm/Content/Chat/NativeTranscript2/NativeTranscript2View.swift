@@ -102,7 +102,6 @@ private struct Transcript2NSViewBridge: NSViewRepresentable {
         table.allowsEmptySelection = true
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("col"))
-        column.resizingMask = .autoresizingMask
         column.minWidth = 0
         column.maxWidth = .greatestFiniteMagnitude
         table.addTableColumn(column)

@@ -79,6 +79,16 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// observers on `blockCount` see the new value.
     var onBlockCountChanged: ((Int) -> Void)?
 
+    /// Fires when `layoutWidth` first becomes > 0 — i.e. the table has
+    /// been inserted into a scroll view and tiled. `Transcript2Controller`
+    /// hooks this to consume any `loadInitial` it had to defer because
+    /// the table wasn't mounted yet (re-entry race: SwiftUI commits the
+    /// `NativeTranscript2View` *after* `.task` has already driven the
+    /// `.reset` mutation through the bridge into `loadInitial`). Fires at
+    /// most once per 0→positive transition; subsequent width changes
+    /// (live resize, etc.) don't re-fire.
+    var onLayoutReady: (() -> Void)?
+
     /// Set by `Transcript2Controller` to forward chevron taps to the
     /// SwiftUI-owned sheet binding. The cell's mouseDown handler resolves
     /// the chevron hit, looks up the source `Block.Kind.userBubble(text:)`,
@@ -185,9 +195,19 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     var blockIds: [UUID] { blocks.map(\.id) }
 
     /// Width that rows are laid out at — clamped to
-    /// `BlockStyle.[min,max]LayoutWidth`. Driven by the single column's
-    /// `.autoresizingMask` (which tracks the table width). Returns 0 if
-    /// the table isn't attached or hasn't been sized yet.
+    /// `BlockStyle.[min,max]LayoutWidth`. Sourced from `tableView.bounds.width`,
+    /// the same source `CenteredRowView` uses for row geometry — so this and
+    /// `row.bounds.width` are always in lock-step.
+    ///
+    /// **Why not `tableColumns.first?.width`:** `NSTableColumn` autoresize
+    /// is async — it converges in the next `tile` pass, *after* the
+    /// `frameDidChange` notification has already fired. A `Coordinator`
+    /// observer reading `column.width` from that first notification gets
+    /// the stale default (100pt), which `clamp` lifts to `minLayoutWidth`.
+    /// `bounds.width` is set synchronously inside `setFrameSize`, so a
+    /// frame-driven `frameDidChange` and a downstream `layoutWidth` read
+    /// see the same value on the same tick — no "small-width transient"
+    /// window for `onLayoutReady` → `consumePendingInitial` to trip on.
     ///
     /// Clamping here is the single source of truth: `makeLayout` sees the
     /// clamped width, `layoutCache` keys on it, and `CenteredRowView` /
@@ -195,8 +215,8 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// helpers to stay in sync. Window resizes that don't cross the
     /// clamp boundary land on the same cache entry — no relayout.
     var layoutWidth: CGFloat {
-        guard let raw = tableView?.tableColumns.first?.width, raw > 0 else { return 0 }
-        return BlockStyle.clampedLayoutWidth(forRowWidth: raw)
+        guard let table = tableView, table.bounds.width > 0 else { return 0 }
+        return BlockStyle.clampedLayoutWidth(forRowWidth: table.bounds.width)
     }
 
     /// Last `layoutWidth` we processed in `tableFrameDidChange`. Used to
@@ -234,8 +254,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         // settled scroll would jitter the anchor row.
         mutationCounter &+= 1
 
-        let table = tableView
-        if let table {
+        if let table = tableView {
             withScrollAdjustment(scroll, in: table) {
                 table.beginUpdates()
                 for change in changes {
@@ -705,14 +724,23 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     // MARK: - Width-change driven invalidation
 
     @objc func tableFrameDidChange(_ note: Notification) {
-        guard let tableView, !blocks.isEmpty else { return }
-        // Resizes inside the >max clamp band leave `layoutWidth` unchanged.
-        // `CenteredRowView.layout()` still re-runs (driven by NSTableView's
-        // tile pass) and repositions the cell horizontally, but no row needs
-        // its layout invalidated — so skip the reload/noteHeightOfRows pair.
+        guard let tableView else { return }
+        // Resizes inside the >max clamp band leave `layoutWidth` unchanged —
+        // `BlockCellView.layoutOrigin` re-centers content automatically from
+        // the new `bounds.width`, no row needs its layout invalidated.
         let width = layoutWidth
         if width == lastLayoutWidth { return }
+        let prevWidth = lastLayoutWidth
         lastLayoutWidth = width
+        // First 0→positive transition unblocks any deferred `loadInitial`
+        // on the controller side. Has to fire *before* the `blocks.isEmpty`
+        // guard below — when the controller is holding a pending payload,
+        // `blocks` is still empty here, so the original `guard` would
+        // short-circuit and the consume call would never happen.
+        if prevWidth <= 0 && width > 0 {
+            onLayoutReady?()
+        }
+        guard !blocks.isEmpty else { return }
         if tableView.inLiveResize {
             // Bounded per-frame layout work: only invalidate visible rows.
             // Off-screen rows keep their stale heights and stale cached

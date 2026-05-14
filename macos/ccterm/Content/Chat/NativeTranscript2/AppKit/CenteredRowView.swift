@@ -1,30 +1,24 @@
 import AppKit
 
-/// Custom `NSTableRowView` that centers its single column subview at a
-/// clamped width (`BlockStyle.minLayoutWidth ... maxLayoutWidth`).
+/// `NSTableRowView` placeholder — keeps `NSTableView.makeView` keyed on
+/// a stable class identity for row recycling, with no behavior override.
 ///
-/// The row itself spans the full table width — that's what keeps the
-/// `NSScrollView`'s overlay scroller at the document's right edge and keeps
-/// `NSTableView`'s tile/auto-size machinery untouched. Centering happens by
-/// repositioning the cell view inside `layout()`, which is exactly the
-/// `NSTableRowView` hook for arranging column views (the same path AppKit's
-/// own indent-aware row views use).
+/// The visual centering of row content is **not** done here. It lives
+/// in `BlockCellView.layoutOrigin`, which offsets the layout's draw
+/// origin by `BlockStyle.cellOriginX(forRowWidth: bounds.width)`.
 ///
-/// Why this and not a wrapper `documentView`: wrapping the table inside a
-/// centering NSView breaks `NSScrollView.tile()`'s coordination with
-/// `NSTableView`'s automatic content-height tracking — you have to
-/// re-implement that. Subclassing the row view costs nothing and keeps
-/// every other AppKit behavior (live resize, scroller, autoscroll, row
-/// reuse) on the default path.
-final class CenteredRowView: NSTableRowView {
-    override func layout() {
-        super.layout()
-        // Cell view is added by `NSTableView` after `viewFor` returns; on a
-        // freshly-created row that hasn't been populated yet there's nothing
-        // to position.
-        guard let cell = subviews.first(where: { $0 is BlockCellView }) else { return }
-        let w = BlockStyle.clampedLayoutWidth(forRowWidth: bounds.width)
-        let x = BlockStyle.cellOriginX(forRowWidth: bounds.width)
-        cell.frame = NSRect(x: x, y: 0, width: w, height: bounds.height)
-    }
-}
+/// Why centering in the draw origin instead of `cell.frame`:
+/// NSTableView's view-based mode owns cell-view positioning (cell
+/// fills its column, the column spans the row). Reaching back through
+/// `row.layout()` to overwrite `cell.frame` raced against that owner —
+/// any frame-set we didn't catch on the same tick (column resize, tile
+/// pass, autoresize during animation) left a transient row-wide
+/// `bounds.width` at draw time, baked a row-wide bitmap into the cell
+/// layer, and stuck under default `contentsGravity = .resize` once
+/// frame later shrank. Routing centering through the cell's draw
+/// origin eliminates the race: NSTableView keeps its expected cell
+/// geometry, the cell shifts its own paint origin to land content at
+/// the centered position. `bounds.width` is always the row's width;
+/// the layout's internal `maxWidth` (clamped via
+/// `BlockStyle.clampedLayoutWidth`) stays the same as before.
+final class CenteredRowView: NSTableRowView {}

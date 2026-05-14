@@ -199,8 +199,8 @@ NativeTranscript2/
 ├── AppKit/
 │   ├── Transcript2ScrollView.swift  ScrollView + ClipView 子类
 │   ├── Transcript2TableView.swift   TableView 子类(neg-width clamp)
-│   ├── CenteredRowView.swift        Row view:把 cell 居中到 clampedLayoutWidth
-│   ├── BlockCellView.swift          自绘 cell(layout.draw + 链接/chevron 命中 + selection + hover tracking)
+│   ├── CenteredRowView.swift        Row view 占位子类(空实现),仅为 NSTableView.makeView 提供稳定 row 复用 key
+│   ├── BlockCellView.swift          自绘 cell:layoutOrigin.x = cellOriginX + blockHorizontalPadding 实现居中 + layout.draw + 链接/chevron 命中 + selection + hover tracking
 │   └── BlockCellView+SubviewPlan.swift  按 layout 的 SubviewPlan reconcile chevron sublayer + entry subview;ToolGroupEntryView 也在这里
 ├── Transcript2Coordinator.swift          dataSource/delegate + diff + per-kind 派发 + chevron sheet request 路由
 ├── Transcript2Controller.swift           imperative 命令通道(apply / loadInitial)

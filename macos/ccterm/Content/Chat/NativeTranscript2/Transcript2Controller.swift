@@ -96,7 +96,32 @@ final class Transcript2Controller {
         coordinator.onUserBubbleSheetRequested = { [weak self] id, text in
             self?.pendingUserBubbleSheet = UserBubbleSheetRequest(id: id, text: text)
         }
+        coordinator.onLayoutReady = { [weak self] in
+            self?.consumePendingInitial()
+        }
     }
+
+    /// Cached `loadInitial` payload when the coordinator's table isn't
+    /// mounted (or hasn't been tiled to a positive width) at call time.
+    /// Consumed by `consumePendingInitial`, which `coordinator.onLayoutReady`
+    /// invokes on the first 0→positive `layoutWidth` transition.
+    ///
+    /// Re-entry race: when the user switches away and back, the session is
+    /// already at `historyLoadState == .loaded`, so `loadHistory()` emits
+    /// `.reset` *synchronously* from `ChatHistoryView.task`. That fires
+    /// before SwiftUI has committed the new `NativeTranscript2View`'s
+    /// NSView tree, so `coordinator.tableView` is still nil and
+    /// `coordinator.layoutWidth` is 0. The fix is to defer the work here
+    /// rather than try to time-align upstream — the `.notLoaded` path
+    /// happens to give SwiftUI a commit window via its `Task.detached +
+    /// MainActor.run` IO hop, but the `.loaded` path doesn't; both
+    /// converge on the same contract here: *call me whenever, I'll
+    /// consume when the table is real*.
+    private struct PendingInitial {
+        let blocks: [Block]
+        let anchor: InitialAnchor
+    }
+    private var pendingInitial: PendingInitial?
 
     /// Late-bind a syntax engine. Pass-through to the coordinator. Safe
     /// to call repeatedly (idempotent on the same instance) and safe
@@ -134,12 +159,23 @@ final class Transcript2Controller {
         let width = coordinator.layoutWidth
         let viewportHeight = coordinator.viewportHeight
         guard width > 0, viewportHeight > 0 else {
-            // Table not attached or zero-sized. Stash blocks; future attach
-            // triggers reloadData. Scroll is meaningless without a table —
-            // and so is the scroller-hidden token.
-            coordinator.apply([.insert(after: coordinator.blockIds.last, blocks)], scroll: .none)
+            // Table not mounted / not yet tiled. Cache the payload — when
+            // the coordinator's `onLayoutReady` fires (first 0→positive
+            // `layoutWidth` transition, driven by AppKit's tile pass after
+            // SwiftUI mounts the NSView), `consumePendingInitial` replays
+            // this call with a real width and viewport. This keeps the
+            // imperative contract on the controller side: callers don't
+            // need to time their `loadInitial` against SwiftUI commits.
+            //
+            // A later `loadInitial` (e.g. session swap) overwrites the
+            // pending payload — the latest intent wins, which matches
+            // the "re-mount uses fresh controller" lifecycle anyway.
+            pendingInitial = PendingInitial(blocks: blocks, anchor: anchor)
             return
         }
+        // Path reached the real-width branch — drop any stale pending so a
+        // racing `onLayoutReady` after this point doesn't double-apply.
+        pendingInitial = nil
 
         let slice = Self.sliceForViewport(
             blocks: blocks, anchor: anchor,
@@ -196,6 +232,20 @@ final class Transcript2Controller {
     // MARK: - Query
 
     var blockIds: [UUID] { coordinator.blockIds }
+
+    /// Invoked by `coordinator.onLayoutReady` once the table tiles to a
+    /// positive width. Replays the cached `loadInitial` so the normal
+    /// two-phase first-screen path takes effect — viewport batch sync,
+    /// remainder off-main with `.saveVisible`. Re-entrant: if width is
+    /// somehow still 0 when this fires, `loadInitial` will just re-cache
+    /// (a second `onLayoutReady` would then drain it). No-op when nothing
+    /// is pending — `coordinator` may fire `onLayoutReady` on resize-time
+    /// 0→positive sequences unrelated to a deferred initial load.
+    private func consumePendingInitial() {
+        guard let pending = pendingInitial else { return }
+        pendingInitial = nil
+        loadInitial(pending.blocks, anchor: pending.anchor)
+    }
 
     // MARK: - Slicing (private)
 

@@ -118,18 +118,24 @@ enum ToolGroupChildLayout: @unchecked Sendable {
     /// `maxWidth` is the child's available width — already net of the
     /// row's horizontal padding.
     ///
-    /// `lineMap` is whatever `Transcript2HighlightStorage` has filled
-    /// in for this child's id; child kinds that don't use line-map
-    /// highlight simply ignore it.
+    /// `highlight` is whatever `Transcript2HighlightStorage` has filled
+    /// in for this child's id. Each per-kind branch unpacks the
+    /// expected `HighlightValue` shape (`.lineMap` for fileEdit,
+    /// `.tokens` for bash, …); child kinds that don't use highlight
+    /// simply ignore it.
     nonisolated static func make(
         child: ToolGroupBlock.Child,
-        lineMap: [String: [SyntaxToken]]?,
+        highlight: HighlightValue?,
         originX: CGFloat,
         originY: CGFloat,
         maxWidth: CGFloat
     ) -> ToolGroupChildLayout {
         switch child {
         case .fileEdit(let c):
+            let lineMap: [String: [SyntaxToken]]? = {
+                if case .lineMap(let m) = highlight { return m }
+                return nil
+            }()
             return .fileEdit(FileEditChildLayout.make(
                 child: c, lineMap: lineMap,
                 originX: originX, originY: originY,
@@ -140,8 +146,13 @@ enum ToolGroupChildLayout: @unchecked Sendable {
                 originX: originX, originY: originY,
                 maxWidth: maxWidth))
         case .bash(let c):
+            let tokens: [SyntaxToken]? = {
+                if case .tokens(let t) = highlight { return t }
+                return nil
+            }()
             return .bash(BashChildLayout.make(
                 child: c,
+                commandTokens: tokens,
                 originX: originX, originY: originY,
                 maxWidth: maxWidth))
         case .grep(let c):

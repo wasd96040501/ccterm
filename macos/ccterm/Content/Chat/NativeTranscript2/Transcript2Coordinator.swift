@@ -636,18 +636,20 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         case .userBubble(let text):
             return .userBubble(UserBubbleLayout.make(text: text, maxWidth: contentWidth))
         case .toolGroup(let group):
-            // Pull every per-child lineMap snapshot up front so the
+            // Pull every per-child highlight snapshot up front so the
             // off-main precompute path has no per-iteration dict
             // lookups against `highlights` (one bulk filter is cheap
-            // and keeps the inner loop tight).
-            var lineMaps: [UUID: [String: [SyntaxToken]]] = [:]
+            // and keeps the inner loop tight). Each child decides how
+            // to unpack the `HighlightValue` shape (`.lineMap` for
+            // fileEdit, `.tokens` for bash, …).
+            var childHighlights: [UUID: HighlightValue] = [:]
             for child in group.children {
-                if case .lineMap(let m) = highlights[
+                if let value = highlights[
                     Transcript2HighlightKey(
                         blockId: block.id,
                         scope: .toolGroupChild(itemId: child.id))]
                 {
-                    lineMaps[child.id] = m
+                    childHighlights[child.id] = value
                 }
             }
             return .toolGroup(ToolGroupLayout.make(
@@ -655,7 +657,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                 group: group,
                 foldStates: folds,
                 statusStates: statuses,
-                lineMaps: lineMaps,
+                childHighlights: childHighlights,
                 maxWidth: contentWidth))
         }
     }

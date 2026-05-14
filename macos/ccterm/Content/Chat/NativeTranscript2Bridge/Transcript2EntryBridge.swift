@@ -49,15 +49,103 @@ final class Transcript2EntryBridge {
         switch mutation {
         case .reset(let entries, let scrollHint):
             apply(reset: entries, scrollHint: scrollHint)
+            for entry in entries { pushStatuses(for: entry) }
         case .appended(let entry):
             apply(append: entry)
+            pushStatuses(for: entry)
         case .prepended(let entries):
             apply(prepend: entries)
+            for entry in entries { pushStatuses(for: entry) }
         case .mutated(let entry):
             apply(mutate: entry)
+            pushStatuses(for: entry)
         case .removed(let entry):
+            // Block is gone — nothing to push. `Coordinator.applyStructuralChange`
+            // already evicted the entry's `statusStates` slots.
             apply(remove: entry)
         }
+    }
+
+    // MARK: - Status push
+    //
+    // Pure command-style status routing: walk the entry's tool surfaces,
+    // resolve each one's `ToolStatus`, and forward to
+    // `Transcript2Controller.setToolStatus`. `setToolStatus` is
+    // idempotent and caches statuses for ids the coordinator hasn't seen
+    // yet, so call order vs. the structural change above doesn't matter.
+    //
+    // **No mirror state.** We don't diff against a previous status map;
+    // we re-derive the current status from the entry every time the
+    // entry changes. Status derivation is pure:
+    //
+    // - `tool_result` with `isError == true`  →  `.failed(message: nil)`
+    // - `tool_result` present                 →  `.completed`
+    // - no `tool_result` yet                  →  `.running`
+    //
+    // Group status follows the "running == any child running" rule the
+    // user spec'd:
+    //
+    // - single-tool host (`entry|<id>|tg|<idx>`) — one child, so group
+    //   status == child status.
+    // - `.group` host (`group|<id>`) — `.running` if any nested child is
+    //   `.running`, otherwise `.completed`. (No special `.failed` /
+    //   `.cancelled` aggregation today; the row reads "completed even if
+    //   one child errored" — children carry their own per-row palette.)
+
+    private func pushStatuses(for entry: MessageEntry) {
+        switch entry {
+        case .single(let single):
+            pushSingleEntryStatuses(single)
+        case .group(let group):
+            pushGroupEntryStatuses(group)
+        }
+    }
+
+    private func pushSingleEntryStatuses(_ single: SingleEntry) {
+        guard case .remote(let m) = single.payload,
+              case .assistant(let a) = m,
+              let blocks = a.message?.content else { return }
+        for (idx, block) in blocks.enumerated() {
+            guard case .toolUse(let tu) = block else { continue }
+            let toolUseId = tu.id ?? "tu|\(single.id.uuidString)|\(idx)"
+            let childId = StableBlockID.derive("tool", toolUseId)
+            let result = tu.id.flatMap { single.toolResults[$0] }
+            let status = Self.status(for: result)
+            controller.setToolStatus(id: childId, status: status)
+            // Single-tool host group: group has exactly one child, so
+            // group status mirrors that child's status.
+            let groupBlockId = StableBlockID.derive(
+                "entry", single.id.uuidString, "tg", String(idx))
+            controller.setToolStatus(id: groupBlockId, status: status)
+        }
+    }
+
+    private func pushGroupEntryStatuses(_ group: GroupEntry) {
+        var anyRunning = false
+        for (itemIdx, item) in group.items.enumerated() {
+            guard case .remote(let m) = item.payload,
+                  case .assistant(let a) = m,
+                  let blocks = a.message?.content else { continue }
+            for (blockIdx, block) in blocks.enumerated() {
+                guard case .toolUse(let tu) = block else { continue }
+                let toolUseId = tu.id
+                    ?? "tu|\(group.id.uuidString)|\(itemIdx)|\(blockIdx)"
+                let childId = StableBlockID.derive("tool", toolUseId)
+                let result = tu.id.flatMap { item.toolResults[$0] }
+                let status = Self.status(for: result)
+                if case .running = status { anyRunning = true }
+                controller.setToolStatus(id: childId, status: status)
+            }
+        }
+        let groupId = StableBlockID.derive("group", group.id.uuidString)
+        controller.setToolStatus(
+            id: groupId, status: anyRunning ? .running : .completed)
+    }
+
+    private static func status(for result: ToolResultPayload?) -> ToolStatus {
+        guard let result else { return .running }
+        if result.isError == true { return .failed(message: nil) }
+        return .completed
     }
 
     // MARK: - Reset (loadInitial / re-entry)

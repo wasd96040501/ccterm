@@ -1003,7 +1003,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已 glob \"%@\""
+            "value": "已搜索 \"%@\""
           }
         }
       }
@@ -1035,13 +1035,13 @@
               "one": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "已匹配 %lld 个 pattern"
+                  "value": "已搜索 %lld 个 pattern"
                 }
               },
               "other": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "已匹配 %lld 个 pattern"
+                  "value": "已搜索 %lld 个 pattern"
                 }
               }
             }
@@ -1054,7 +1054,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在匹配 “%@”"
+            "value": "正在搜索 \"%@\""
           }
         }
       }
@@ -1064,7 +1064,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在匹配 %@"
+            "value": "正在搜索 %@"
           }
         }
       }
@@ -1095,13 +1095,13 @@
               "one": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "正在 glob %lld 个模式"
+                  "value": "正在搜索 %lld 个 pattern"
                 }
               },
               "other": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "正在 glob %lld 个模式"
+                  "value": "正在搜索 %lld 个 pattern"
                 }
               }
             }
@@ -1457,7 +1457,16 @@
         }
       }
     },
-    "Ran %@": {},
+    "Ran %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已运行 %@"
+          }
+        }
+      }
+    },
     "Ran %lld agents": {
       "localizations": {
         "en": {
@@ -1524,13 +1533,13 @@
               "one": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "已执行 %lld 个命令"
+                  "value": "已运行 %lld 个命令"
                 }
               },
               "other": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "已执行 %lld 个命令"
+                  "value": "已运行 %lld 个命令"
                 }
               }
             }
@@ -1584,16 +1593,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "运行了智能体 %@"
-          }
-        }
-      }
-    },
-    "Ran: %@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "已运行：%@"
           }
         }
       }
@@ -1794,7 +1793,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在运行 %@"
+            "value": "正在执行 %@"
           }
         }
       }
@@ -1935,16 +1934,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在运行 agent：%@"
-          }
-        }
-      }
-    },
-    "Running: %@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在执行：%@"
           }
         }
       }

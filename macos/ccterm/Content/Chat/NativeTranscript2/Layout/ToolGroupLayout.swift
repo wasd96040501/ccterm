@@ -373,7 +373,7 @@ struct ToolGroupLayout: @unchecked Sendable {
         group: ToolGroupBlock,
         foldStates: [UUID: Bool],
         statusStates: [UUID: ToolStatus],
-        lineMaps: [UUID: [String: [SyntaxToken]]],
+        childHighlights: [UUID: HighlightValue],
         maxWidth: CGFloat
     ) -> ToolGroupLayout {
         guard maxWidth > 0 else {
@@ -464,7 +464,7 @@ struct ToolGroupLayout: @unchecked Sendable {
                     let bodyY = y + BlockStyle.toolHeaderChildSpacing
                     let layout = ToolGroupChildLayout.make(
                         child: child,
-                        lineMap: lineMaps[child.id],
+                        highlight: childHighlights[child.id],
                         originX: 0,
                         originY: bodyY,
                         maxWidth: maxWidth)

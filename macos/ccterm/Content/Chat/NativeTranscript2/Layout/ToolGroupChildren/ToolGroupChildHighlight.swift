@@ -28,7 +28,9 @@ enum ToolGroupChildHighlight {
         switch child {
         case .fileEdit(let c):
             return FileEditChildHighlight.plan(c)
-        case .bash, .grep, .glob, .webFetch, .webSearch,
+        case .bash(let c):
+            return BashChildHighlight.plan(c)
+        case .grep, .glob, .webFetch, .webSearch,
              .askUserQuestion, .agent:
             // These bodies render plain text — no syntax highlight today.
             return nil

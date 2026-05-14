@@ -5,8 +5,20 @@ import AppKit
 /// rounded sub-cards via `TextCardSection`. All glyphs use the
 /// system monospaced font (same size as paragraph text, matching
 /// codeblock body so a bash card and a fenced code block read at
-/// one tier). `stderr` cards use `.systemRed` foreground; everything
-/// else uses `.labelColor`.
+/// one tier).
+///
+/// **Command** is syntax-highlighted as `bash` via
+/// `Transcript2HighlightStorage` — same async tokenise pipeline that
+/// powers fenced code blocks. The cold-render path falls back to
+/// plain `.labelColor`; once tokens arrive, `BashChildHighlight`'s
+/// `.tokens` `HighlightValue` lands here and the command card
+/// recolors on next layout build.
+///
+/// **stdout / stderr** are ANSI-aware — SGR escape sequences inside
+/// the stream are parsed by `ANSIAttributedBuilder` so terminal
+/// colours / bold / dim / underline render the same way as the
+/// React-side `BashBlock`. stderr defaults to `.systemRed` for any
+/// run that didn't carry its own SGR colour.
 ///
 /// ```
 /// ┌── containerRect ─────────────────────────────────┐
@@ -40,17 +52,48 @@ struct BashChildLayout: @unchecked Sendable {
 
     nonisolated static func make(
         child: BashChild,
+        commandTokens: [SyntaxToken]?,
         originX: CGFloat,
         originY: CGFloat,
         maxWidth: CGFloat
     ) -> BashChildLayout {
+        let font = BlockStyle.codeBlockFont
+
         var specs: [TextCardSection.Spec] = []
-        specs.append(.init(text: child.command))
+
+        // Command card — syntax-highlighted via hljs `bash` when
+        // tokens have landed, plain `.labelColor` otherwise. We pass
+        // through `BlockStyle.codeBlockAttributed` (the same builder
+        // fenced code blocks use) so dynamic NSColors track light/
+        // dark appearance per token scope.
+        let trimmedCommand = child.command.trimmingTrailingWhitespace
+        if !trimmedCommand.isEmpty {
+            specs.append(.init(
+                text: trimmedCommand,
+                attributed: BlockStyle.codeBlockAttributed(
+                    code: trimmedCommand, tokens: commandTokens)))
+        }
+
         if let stdout = child.stdout {
-            specs.append(.init(text: stdout))
+            let trimmed = stdout.trimmingTrailingWhitespace
+            if !trimmed.isEmpty {
+                specs.append(.init(
+                    text: trimmed,
+                    attributed: ANSIAttributedBuilder.attributed(
+                        from: trimmed, baseFont: font,
+                        baseColor: .labelColor)))
+            }
         }
         if let stderr = child.stderr {
-            specs.append(.init(text: stderr, color: .systemRed))
+            let trimmed = stderr.trimmingTrailingWhitespace
+            if !trimmed.isEmpty {
+                specs.append(.init(
+                    text: trimmed,
+                    color: .systemRed,
+                    attributed: ANSIAttributedBuilder.attributed(
+                        from: trimmed, baseFont: font,
+                        baseColor: .systemRed)))
+            }
         }
         let (sections, height) = TextCardSection.build(
             specs: specs,

@@ -286,7 +286,7 @@ extension ToolUse {
         case .Glob(let v):
             return String(localized: "Globbing \"\(globTarget(v))\"")
         case .Bash(let v):
-            return String(localized: "Running: \(bashTarget(v))")
+            return String(localized: "Running \(bashTarget(v))")
         case .WebFetch(let v):
             return String(localized: "Fetching \(webFetchTarget(v))")
         case .WebSearch(let v):
@@ -317,7 +317,7 @@ extension ToolUse {
         case .Glob(let v):
             return String(localized: "Globbed \"\(globTarget(v))\"")
         case .Bash(let v):
-            return String(localized: "Ran: \(bashTarget(v))")
+            return String(localized: "Ran \(bashTarget(v))")
         case .WebFetch(let v):
             return String(localized: "Fetched \(webFetchTarget(v))")
         case .WebSearch(let v):

@@ -1,5 +1,4 @@
 import AppKit
-import QuartzCore
 
 /// Custom-drawn row cell. Holds a prepared `RowLayout`, draws it via
 /// `override draw(_:)`.
@@ -47,18 +46,15 @@ import QuartzCore
 /// `NSTableRowView`, whose default mouseDown forwarding behavior is not
 /// guaranteed; the explicit walk is deterministic.
 ///
-/// ### Chevron animation
+/// ### Adornments (chevrons + entry subviews)
 ///
-/// Fold-header chevrons live as `CAShapeLayer` sublayers (one per
-/// foldId surfaced by the layout), not as CGContext strokes. This is
-/// the same recipe the old `GroupSideCar` used and is far simpler than
-/// a hand-rolled per-frame redraw loop: `beginChevronAnimation`
-/// captures the layer's presentation-tree rotation, snaps the model
-/// value inside a disabled-actions transaction, then adds an explicit
-/// `CABasicAnimation` on `transform.rotation.z`. CALayer does the
-/// frame-by-frame interpolation for free. The full content swap on
-/// fold (new headers / body cards appearing) is animated through a
-/// single `CATransition.fade` on the cell layer.
+/// Some layouts (today only `toolGroup`) need AppKit-side adornments
+/// on top of the cell's CGContext draw — spinning chevron glyphs and
+/// per-band layer-backed subviews that can slide independently of the
+/// row-height transition. The cell consumes those through `RowLayout.subviewPlan`
+/// (see `BlockCellView+SubviewPlan.swift`). The cell stays
+/// layout-agnostic — the plan is a struct of values + closures, same
+/// recipe as `SelectionAdapter`.
 final class BlockCellView: NSView {
     var layout: RowLayout? {
         didSet {
@@ -74,10 +70,11 @@ final class BlockCellView: NSView {
             // `mouseMoved` — the title brightening + chevron alpha visibly
             // drop until the user wiggles the mouse. Re-evaluating from
             // the cached event-stream position re-establishes hover as
-            // soon as the new layout's hits are known.
+            // soon as the new layout's hits are known. The re-evaluation
+            // may set `hoveredAction`, which itself triggers a plan sync;
+            // the explicit call after covers the no-hover-change case.
             reevaluateHoverFromCachedMouseLocation()
-            syncChevronSublayers()
-            syncEntrySubviews()
+            syncSubviewPlan()
         }
     }
 
@@ -100,8 +97,7 @@ final class BlockCellView: NSView {
     var padTop: CGFloat = 0 {
         didSet {
             if padTop != oldValue {
-                syncChevronSublayers()
-                syncEntrySubviews()
+                syncSubviewPlan()
             }
         }
     }
@@ -113,11 +109,11 @@ final class BlockCellView: NSView {
         didSet {
             if selection != oldValue {
                 needsDisplay = true
-                // Diff selection lives inside per-entry subviews
-                // (paint sandwich is body-local); push the new
-                // layout-local rect list out so each entry can
-                // refresh its slice.
-                pushSelectionToEntrySubviews()
+                // Plan carries the latest selection rects into every
+                // entry subview's draw closure, so a selection change
+                // routes through the same reconcile path as a layout
+                // change or hover change.
+                syncSubviewPlan()
             }
         }
     }
@@ -139,13 +135,13 @@ final class BlockCellView: NSView {
     ///
     /// Updated by `mouseMoved` whenever the tracked location enters or
     /// leaves a hit rect; transitions trigger a single
-    /// `needsDisplay = true` plus a chevron-style refresh.
-    private var hoveredAction: HitAction? {
+    /// `needsDisplay = true` plus a plan resync (which rebuilds chevron
+    /// hover styles and entry subview hover state in one shot).
+    var hoveredAction: HitAction? {
         didSet {
             if hoveredAction != oldValue {
                 needsDisplay = true
-                updateChevronHoverStyles()
-                updateEntrySubviewHoverStates()
+                syncSubviewPlan()
             }
         }
     }
@@ -154,30 +150,29 @@ final class BlockCellView: NSView {
     /// it sized correctly through scroll without manual reseating.
     private var trackingArea: NSTrackingArea?
 
-    /// Per-foldId chevron sublayers. Created lazily on first layout
-    /// that surfaces a header for the id; reused across re-layouts of
-    /// the same row (so rotation animations span the underlying
-    /// `reloadData(forRowIndexes:)` that fold toggle triggers).
-    private var chevronLayers: [UUID: CAShapeLayer] = [:]
+    // MARK: - Subview-plan state
+    //
+    // Stored properties live in the main class declaration because
+    // Swift extensions can't add stored properties to a class. The
+    // logic that consumes them lives in `BlockCellView+SubviewPlan.swift`.
 
-    /// Per-child layer-backed subviews holding each `ToolGroupLayout.Entry`'s
-    /// rendered content (child header + optional body). Cell's main
-    /// bitmap paints the group header only; child entries live in
-    /// these subviews so AppKit's `animator()` proxy can slide each
-    /// subview's frame when an upstream sibling expands/collapses.
-    /// Inside one row, the row-height transition alone fades — only
-    /// per-subview frame animation produces the slide the user sees.
-    private var entryViews: [UUID: ToolGroupEntryView] = [:]
+    /// Per-foldId chevron sublayers. Created lazily on first plan
+    /// that surfaces a chevron with the id; reused across re-layouts
+    /// so rotation animations span the underlying `reloadData(forRowIndexes:)`.
+    var chevronLayers: [UUID: CAShapeLayer] = [:]
 
-    /// Set by `Transcript2Coordinator.toggleFold` just before
-    /// `reloadData` (alongside `beginChevronAnimation` /
-    /// `beginContentCrossFade`). Tells the upcoming
-    /// `syncEntrySubviews()` to push entry-frame updates through
-    /// `view.animator()` so the entries below the toggled one slide
-    /// over the fold-animation duration. Auto-reset once consumed —
-    /// other layout swaps (resize, scroll recycle) snap frames as
-    /// usual.
-    private var pendingEntryAnimation: Bool = false
+    /// Per-entry layer-backed subviews. Cell's main bitmap paints the
+    /// group header only; child entries live in these subviews so
+    /// `view.animator().frame` can slide each one when an upstream
+    /// sibling expands/collapses.
+    var entryViews: [UUID: ToolGroupEntryView] = [:]
+
+    /// Set by `beginFoldTransition` just before the coordinator's
+    /// `reloadData`. Tells the upcoming `syncSubviewPlan()` to route
+    /// entry-frame updates through `view.animator()` so each entry
+    /// slides over the fold-animation duration. Auto-reset once
+    /// consumed — subsequent syncs (resize, hover, selection) snap.
+    var pendingFoldTransition: Bool = false
 
     /// Public reset hook for `viewFor` so a recycled cell never shows
     /// a stale checkmark on a different block.
@@ -186,55 +181,6 @@ final class BlockCellView: NSView {
             copiedAt = nil
             needsDisplay = true
         }
-    }
-
-    /// Animate this row's chevron rotation in response to a fold
-    /// toggle. Called by `Transcript2Coordinator.toggleFold` *before*
-    /// it reloads the row so the layer captures its current
-    /// presentation-tree rotation as the animation's `fromValue`. The
-    /// `reloadData(forRowIndexes:)` that follows reuses the same cell
-    /// instance for the same row, so the rotation animation is
-    /// preserved across the `layout` swap.
-    ///
-    /// Recipe lifted from `GroupSideCar.sync`: snap the model value
-    /// inside a disabled-actions transaction, then add the explicit
-    /// `CABasicAnimation` outside it (an implicit-action chain would
-    /// be killed by `setDisableActions(true)`).
-    func beginChevronAnimation(foldId: UUID, toExpanded: Bool) {
-        guard let layer = chevronLayers[foldId] else { return }
-        let presValue = layer.presentation()?
-            .value(forKeyPath: "transform.rotation.z") as? CGFloat
-        let modelValue = (layer.value(forKeyPath: "transform.rotation.z") as? CGFloat) ?? 0
-        let fromAngle = presValue ?? modelValue
-        let toAngle: CGFloat = toExpanded ? .pi / 2 : 0
-
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        layer.setValue(toAngle, forKeyPath: "transform.rotation.z")
-        CATransaction.commit()
-
-        let anim = CABasicAnimation(keyPath: "transform.rotation.z")
-        anim.duration = BlockStyle.foldAnimationDuration
-        anim.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        anim.fromValue = fromAngle
-        anim.toValue = toAngle
-        layer.add(anim, forKey: "rotate")
-    }
-
-    /// Cross-fade the cell's CGContext-drawn contents over the same
-    /// duration as the chevron rotation, so the new headers / body
-    /// cards appear with a soft fade instead of a pop. `CATransition`
-    /// on the host layer is the AppKit-blessed way to do this —
-    /// QuartzCore handles the bitmap diff between the layer's old
-    /// snapshot and its post-redraw state. Chevron sublayers run
-    /// their own `CABasicAnimation` independently.
-    func beginContentCrossFade() {
-        guard let hostLayer = self.layer else { return }
-        let transition = CATransition()
-        transition.type = .fade
-        transition.duration = BlockStyle.foldAnimationDuration
-        transition.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-        hostLayer.add(transition, forKey: "contentFade")
     }
 
     override var isFlipped: Bool { true }
@@ -248,7 +194,7 @@ final class BlockCellView: NSView {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    private var layoutOrigin: CGPoint {
+    var layoutOrigin: CGPoint {
         CGPoint(
             x: BlockStyle.blockHorizontalPadding,
             y: padTop)
@@ -269,12 +215,14 @@ final class BlockCellView: NSView {
         // those rects mean (text glyph band / cell rectangle / 1×1 inner
         // band) is fully encapsulated inside the layout's adapter.
         //
-        // toolGroup is the one exception: its selection lands inside
-        // expanded body cards that live in per-entry subviews, so the
-        // sandwich (backplate → selection → glyphs) has to happen
-        // inside the subview's `draw(_:)` — painting selection here
-        // would land behind the subview, not under the body glyphs.
-        if !layout.isToolGroup, let selection, let adapter = layout.selectionAdapter {
+        // For layouts that hand selection-bearing regions off to entry
+        // subviews (today: toolGroup), the cell-bitmap copy is harmless:
+        // the subview's frame necessarily covers every selection rect
+        // the layout emits, so the subview-composited bitmap (which
+        // re-paints the same selection rects in view-local coords) hides
+        // this one. Letting both paths coexist keeps the cell ignorant
+        // of whether a given layout uses subviews.
+        if let selection, let adapter = layout.selectionAdapter {
             let rects = adapter.rects(selection.start, selection.end)
             if !rects.isEmpty {
                 let color: NSColor = (window?.isKeyWindow == true)
@@ -297,191 +245,6 @@ final class BlockCellView: NSView {
         if case .codeBlock(let l) = layout {
             l.drawCopyGlyph(in: ctx, origin: origin, checked: copiedAt != nil)
         }
-    }
-
-    // MARK: - Chevron sublayers
-
-    /// Reconcile `chevronLayers` with the current layout's surfaced
-    /// chevron headers. For each header, ensure a `CAShapeLayer`
-    /// exists, position it at the chevron centre in cell-local
-    /// coords, snap its model rotation to match the layout's
-    /// `chevronExpanded` flag, and apply hover-aware colour / opacity.
-    /// Layers for ids that vanished from the layout (collapsed group
-    /// hides its children) are removed.
-    ///
-    /// **Position-animation policy.** First-time placement of a
-    /// fresh layer happens inside `setDisableActions(true)` so the
-    /// initial `position` set doesn't lerp from `(0, 0)`. Repositions
-    /// of an existing layer let the *surrounding* CATransaction
-    /// decide: during a fold transition,
-    /// `Coordinator.toggleFold`'s `NSAnimationContext.runAnimationGroup`
-    /// is active → chevron `position` slides over `foldAnimationDuration`,
-    /// matching the entry's `animator().frame` slide. Outside of
-    /// that — e.g. window resize, which wraps in
-    /// `CATransaction.setDisableActions(true)` — actions stay
-    /// disabled and chevron snaps. (`makeChevronShapeLayer` NSNull-s
-    /// `bounds` / `frame` / `path` / colour so only `position`
-    /// participates in the implicit animation channel.)
-    private func syncChevronSublayers() {
-        guard let hostLayer = self.layer else { return }
-        let descs: [ChevronDescriptor]
-        if case .toolGroup(let l) = layout {
-            descs = chevronDescriptors(in: l)
-        } else {
-            descs = []
-        }
-        var seen = Set<UUID>()
-        let chevronSize = BlockStyle.toolHeaderChevronSize
-
-        for desc in descs {
-            seen.insert(desc.foldId)
-            let isNew = chevronLayers[desc.foldId] == nil
-            let layer = chevronLayers[desc.foldId] ?? makeChevronShapeLayer()
-            let frame = CGRect(x: desc.center.x - chevronSize / 2,
-                               y: desc.center.y - chevronSize / 2,
-                               width: chevronSize, height: chevronSize)
-
-            if isNew {
-                chevronLayers[desc.foldId] = layer
-                hostLayer.addSublayer(layer)
-                // Initial placement: snap (otherwise the fresh
-                // layer's `(0, 0) → desc.center` move would lerp
-                // under any active CATransaction).
-                CATransaction.begin()
-                CATransaction.setDisableActions(true)
-                layer.frame = frame
-                layer.path = Self.chevronPath(size: chevronSize)
-                applyChevronStyle(layer, hovered: isHoveredFold(desc.foldId))
-                layer.setValue(desc.expanded ? CGFloat.pi / 2 : 0,
-                               forKeyPath: "transform.rotation.z")
-                CATransaction.commit()
-            } else {
-                if layer.frame != frame {
-                    layer.frame = frame
-                    layer.path = Self.chevronPath(size: chevronSize)
-                }
-                applyChevronStyle(layer, hovered: isHoveredFold(desc.foldId))
-                layer.setValue(desc.expanded ? CGFloat.pi / 2 : 0,
-                               forKeyPath: "transform.rotation.z")
-            }
-        }
-        // Drop sublayers whose foldId no longer appears in the layout
-        // (group collapsed → child chevrons removed from the table of
-        // contents). Without this, stale chevrons linger as ghost
-        // glyphs over the next layout below them.
-        for (id, layer) in chevronLayers where !seen.contains(id) {
-            layer.removeFromSuperlayer()
-            chevronLayers.removeValue(forKey: id)
-        }
-    }
-
-    /// Per-header descriptor passed from `ToolGroupLayout` to the
-    /// chevron sublayer sync — already offset into cell-local coords
-    /// by `layoutOrigin` so the cell does no extra math at fix-up time.
-    private struct ChevronDescriptor {
-        let foldId: UUID
-        let center: CGPoint
-        let expanded: Bool
-    }
-
-    private func chevronDescriptors(in tg: ToolGroupLayout) -> [ChevronDescriptor] {
-        let origin = layoutOrigin
-        var out: [ChevronDescriptor] = []
-        out.reserveCapacity(1 + tg.items.count)
-        out.append(ChevronDescriptor(
-            foldId: tg.groupHeader.foldId,
-            center: CGPoint(x: origin.x + tg.groupHeader.chevronCenter.x,
-                             y: origin.y + tg.groupHeader.chevronCenter.y),
-            expanded: tg.groupHeader.chevronExpanded))
-        for entry in tg.items {
-            out.append(ChevronDescriptor(
-                foldId: entry.header.foldId,
-                center: CGPoint(x: origin.x + entry.header.chevronCenter.x,
-                                 y: origin.y + entry.header.chevronCenter.y),
-                expanded: entry.header.chevronExpanded))
-        }
-        return out
-    }
-
-    private func makeChevronShapeLayer() -> CAShapeLayer {
-        let layer = CAShapeLayer()
-        layer.fillColor = nil
-        layer.lineCap = .round
-        layer.lineJoin = .round
-        layer.lineWidth = BlockStyle.toolHeaderChevronLineWidth
-        // Chevrons composite above per-entry subview layers (which
-        // live in `cell.layer.sublayers` at default zPosition = 0
-        // alongside these shape layers). Without an explicit
-        // zPosition, sublayer order depends on `addSubview` /
-        // `addSublayer` call order — adding entry views after
-        // chevron sublayers would bury the chevron. zPosition is the
-        // CoreAnimation-blessed way to pin compositing order
-        // independent of add order.
-        layer.zPosition = 1
-        // `position` action stays at its default `CABasicAnimation`
-        // so chevrons slide alongside their sibling entry's
-        // `view.animator().frame` during a fold transition — `position`
-        // is `(layoutOrigin + chevronCenter)`, which moves when an
-        // upstream child expands. `bounds` / `frame` / `path` / colour
-        // / opacity stay NSNull-suppressed so a window resize doesn't
-        // lerp glyph metrics or theme swaps. Resize itself is
-        // safeguarded too — `Coordinator.invalidate(rows:)` wraps
-        // its work in `CATransaction.setDisableActions(true)`, which
-        // overrides the per-layer position action and forces the
-        // chevron to snap.
-        layer.actions = [
-            "bounds": NSNull(),
-            "frame": NSNull(),
-            "path": NSNull(),
-            "strokeColor": NSNull(),
-            "opacity": NSNull(),
-        ]
-        layer.contentsScale = self.layer?.contentsScale ?? 2
-        return layer
-    }
-
-    private func applyChevronStyle(_ layer: CAShapeLayer, hovered: Bool) {
-        let strokeColor: NSColor = hovered
-            ? BlockStyle.toolHeaderHoverForeground
-            : BlockStyle.toolHeaderForeground
-        let alpha: CGFloat = hovered
-            ? BlockStyle.toolHeaderChevronHoverAlpha
-            : BlockStyle.toolHeaderChevronIdleAlpha
-        layer.strokeColor = strokeColor.cgColor
-        layer.opacity = Float(alpha)
-    }
-
-    private func isHoveredFold(_ id: UUID) -> Bool {
-        if case .toggleFold(let hoverId) = hoveredAction, hoverId == id {
-            return true
-        }
-        return false
-    }
-
-    /// Refresh chevron colour / opacity in response to a `hoveredAction`
-    /// transition — cheap, doesn't change geometry.
-    private func updateChevronHoverStyles() {
-        guard !chevronLayers.isEmpty else { return }
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        for (id, layer) in chevronLayers {
-            applyChevronStyle(layer, hovered: isHoveredFold(id))
-        }
-        CATransaction.commit()
-    }
-
-    /// Two-segment `>` stroke path, geometric centre at the layer's
-    /// bounds centre. Identical recipe to `GroupSideCar.chevronPath`.
-    private static func chevronPath(size: CGFloat) -> CGPath {
-        let rect = CGRect(x: 0, y: 0, width: size, height: size)
-        let mid = CGPoint(x: rect.midX, y: rect.midY)
-        let halfW = size * 0.22
-        let halfH = size * 0.4
-        let path = CGMutablePath()
-        path.move(to: CGPoint(x: mid.x - halfW, y: mid.y - halfH))
-        path.addLine(to: CGPoint(x: mid.x + halfW, y: mid.y))
-        path.addLine(to: CGPoint(x: mid.x - halfW, y: mid.y + halfH))
-        return path
     }
 
     // MARK: - Hover tracking
@@ -655,184 +418,5 @@ final class BlockCellView: NSView {
             self.copiedAt = nil
             self.needsDisplay = true
         }
-    }
-
-    // MARK: - Entry subviews (toolGroup)
-
-    /// Set by `Transcript2Coordinator.toggleFold` before the
-    /// upcoming `reloadData`. The next `syncEntrySubviews()` then
-    /// routes frame updates through `view.animator()` so each entry
-    /// slides over the fold-animation duration; subsequent
-    /// non-fold layout swaps (resize, scroll recycle) consume no
-    /// flag and snap frames as usual.
-    func beginEntryFrameAnimation() {
-        pendingEntryAnimation = true
-    }
-
-    /// Reconcile per-entry subviews against the current layout.
-    /// Adds / removes / repositions one `ToolGroupEntryView` per
-    /// `ToolGroupLayout.Entry`. For non-toolGroup layouts, drops
-    /// every entry view.
-    private func syncEntrySubviews() {
-        guard case .toolGroup(let tg) = layout else {
-            for (_, view) in entryViews { view.removeFromSuperview() }
-            entryViews.removeAll()
-            pendingEntryAnimation = false
-            return
-        }
-
-        let animate = pendingEntryAnimation
-        pendingEntryAnimation = false
-        let origin = layoutOrigin
-        let hoveredId = ToolGroupLayout.hoveredFoldId(in: hoveredAction)
-        let layoutSelectionRects = computeToolGroupSelectionRects(layout: tg)
-
-        var seen = Set<UUID>()
-        for entry in tg.items {
-            seen.insert(entry.childId)
-            let frame = CGRect(
-                x: origin.x + entry.bandRect.minX,
-                y: origin.y + entry.bandRect.minY,
-                width: entry.bandRect.width,
-                height: entry.bandRect.height)
-
-            let view: ToolGroupEntryView
-            if let existing = entryViews[entry.childId] {
-                view = existing
-                if animate {
-                    view.animator().frame = frame
-                } else {
-                    view.frame = frame
-                }
-            } else {
-                view = ToolGroupEntryView(frame: frame)
-                entryViews[entry.childId] = view
-                addSubview(view)
-            }
-
-            // Order: chevron sublayers live above subviews
-            // (`zPosition`) — entry subviews stay at the default 0 so
-            // chevron glyphs paint on top of the body card. Subview
-            // ordering among entries doesn't matter (their bands
-            // don't overlap).
-
-            view.entry = entry
-            view.hovered = hoveredId == entry.header.foldId
-            view.selectionRects = layoutSelectionRects
-        }
-
-        for (id, view) in entryViews where !seen.contains(id) {
-            view.removeFromSuperview()
-            entryViews.removeValue(forKey: id)
-        }
-    }
-
-    /// Selection rects in `ToolGroupLayout`-local coords for the
-    /// current `selection` value. Returns empty when there's no
-    /// selection or the layout's adapter declines it. Distributed
-    /// to every entry subview so each one can filter against its
-    /// `bandRect` at draw time — the rect list is small (≤ N body
-    /// rows) so the per-subview filter is cheaper than partitioning
-    /// up front.
-    private func computeToolGroupSelectionRects(layout tg: ToolGroupLayout) -> [CGRect] {
-        guard let selection, let adapter = tg.selectionAdapter else { return [] }
-        return adapter.rects(selection.start, selection.end)
-    }
-
-    /// Push the freshest selection rects to every entry subview.
-    /// Triggered by `selection.didSet`; the views' own `didSet` on
-    /// the property handles `needsDisplay` if the rect set changed.
-    private func pushSelectionToEntrySubviews() {
-        guard case .toolGroup(let tg) = layout, !entryViews.isEmpty else { return }
-        let rects = computeToolGroupSelectionRects(layout: tg)
-        for (_, view) in entryViews {
-            view.selectionRects = rects
-        }
-    }
-
-    /// Refresh hover flag on each entry subview after `hoveredAction`
-    /// flips. Cheap — title colour swap is the only visual outcome
-    /// and the view's `hovered.didSet` absorbs no-op assignments.
-    private func updateEntrySubviewHoverStates() {
-        guard !entryViews.isEmpty else { return }
-        let hoveredId = ToolGroupLayout.hoveredFoldId(in: hoveredAction)
-        for (_, view) in entryViews {
-            view.hovered = (hoveredId == view.entry?.header.foldId)
-        }
-    }
-}
-
-/// Layer-backed subview rendering a single `ToolGroupLayout.Entry`.
-/// Owned by `BlockCellView` for toolGroup rows; one instance per
-/// `ToolGroupLayout.Entry`. The instance's `frame` is the entry's
-/// `bandRect` in cell-local coords — animating that frame via
-/// `view.animator().frame` (driven from the coordinator's
-/// `NSAnimationContext.runAnimationGroup`) is what slides entries
-/// below an expanding child.
-///
-/// **Hit-test passthrough.** `hitTest` returns `nil` so cell-level
-/// mouseDown / hover tracking sees the cursor as if the subview
-/// weren't there. The cell owns every interaction (fold toggle,
-/// selection drag, link click); the subview only owns drawing.
-final class ToolGroupEntryView: NSView {
-    /// Entry data backing this view's draw. Reassigned on every
-    /// layout swap; absent entries are removed (not nil-ed).
-    var entry: ToolGroupLayout.Entry? {
-        didSet { needsDisplay = true }
-    }
-
-    /// `true` when the cell's `hoveredAction` matches this entry's
-    /// header `foldId` — flips the title colour to
-    /// `toolHeaderHoverForeground` at draw time. Chevron alpha is
-    /// independent (driven by the cell's per-foldId `CAShapeLayer`).
-    var hovered: Bool = false {
-        didSet { if hovered != oldValue { needsDisplay = true } }
-    }
-
-    /// Selection rects in toolGroup layout-local coords. Cell
-    /// distributes the full list to every entry view; `drawEntry`
-    /// filters to those intersecting `bandRect`. Equality check
-    /// keeps redraw count tight when the rect list is unchanged.
-    var selectionRects: [CGRect] = [] {
-        didSet { if selectionRects != oldValue { needsDisplay = true } }
-    }
-
-    override var isFlipped: Bool { true }
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        layerContentsRedrawPolicy = .onSetNeedsDisplay
-        // `.topLeft` anchors the redrawn bitmap to the top-left
-        // corner — during a frame.size animation (driven by the
-        // cell's `animator().frame`), the bitmap stays at its
-        // natural size and the layer's `masksToBounds` clipping
-        // crops as bounds interpolate. Default `.resize` would
-        // stretch the bitmap vertically, distorting glyph metrics
-        // while the entry's height eases between old and new.
-        layer?.contentsGravity = .topLeft
-        layer?.masksToBounds = true
-    }
-
-    required init?(coder: NSCoder) { fatalError() }
-
-    /// Hand mouse hits up to the cell — cell owns hover tracking,
-    /// fold-toggle clicks, and selection drag. Without this, the
-    /// subview captures `mouseDown` and the cell never sees it.
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    override func draw(_ dirtyRect: NSRect) {
-        guard let entry, let ctx = NSGraphicsContext.current?.cgContext else {
-            return
-        }
-        let selectionColor: NSColor = (window?.isKeyWindow == true)
-            ? .selectedTextBackgroundColor
-            : .unemphasizedSelectedTextBackgroundColor
-        ToolGroupLayout.drawEntry(
-            entry,
-            hovered: hovered,
-            selectionRects: selectionRects,
-            selectionColor: selectionColor,
-            in: ctx)
     }
 }

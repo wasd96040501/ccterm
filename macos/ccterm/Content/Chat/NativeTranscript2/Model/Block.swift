@@ -645,12 +645,12 @@ enum BlockStyle: Sendable {
     nonisolated static let toolHeaderChildSpacing: CGFloat = 4
 
     /// Fold-transition duration shared by the row-height animation
-    /// (`Coordinator.toggleFold`), the chevron rotation animation
-    /// (`BlockCellView.beginChevronAnimation`), and the cell's
-    /// cross-fade transition (`CATransition` on layout swap). Kept on
-    /// one constant so the three transitions stay phase-aligned —
-    /// the row height, the chevron, and the appearing content all
-    /// finish on the same beat.
+    /// (`Coordinator.toggleFold`'s `NSAnimationContext` group), the
+    /// chevron rotation animation, the entry-frame slide, and the
+    /// cell's cross-fade transition — all driven from
+    /// `BlockCellView.beginFoldTransition`. Kept on one constant so
+    /// the row height, the chevron, the entry slide, and the appearing
+    /// content all finish on the same beat.
     nonisolated static let foldAnimationDuration: CFTimeInterval = 0.22
 
     // MARK: - Diff body geometry

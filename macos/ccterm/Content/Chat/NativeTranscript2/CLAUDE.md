@@ -72,12 +72,30 @@ SwiftUI: NativeTranscript2View (NSViewRepresentable)
 |---|---|
 | 文本字形位置 / image 像素 rect / table cell 内容 | row padding / 圆角 / 阴影 / loading 占位 |
 | 任何**会改 row height 的几何** | 任何**纯装饰**(不影响 height) |
+| 描述需要 cell 挂的 sublayer / subview(`SubviewPlan`) | 按 plan reconcile sublayer / subview |
 
 ### 多种 Layout 的派发
 
 `enum RowLayout` 持有具体的 `XxxLayout`,统一暴露 `totalHeight` / `measuredWidth` / `draw(in:origin:)` 三件事。Cell 不感知 enum 内部,只调 `layout.draw`。
 
 加新 layout 类型 = `RowLayout` 加 case + 三个 switch 各加一行。
+
+### Cell 不是纯自绘 — AppKit 适配器模式
+
+`BlockCellView` 主要走 `override draw(_:)` 自绘路径,但**不再是 100% 单 bitmap**。某些动画/交互行为 CGContext 表达不了,需要挂 AppKit-side 装饰物:
+
+| 装饰物 | 类型 | 为什么不走自绘 |
+|---|---|---|
+| chevron 旋转 | `CAShapeLayer` 子图层 | `transform.rotation.z` 用 `CABasicAnimation` 一行,自绘要每帧重画 |
+| 可滑动的内嵌 body | `NSView` 子视图(layer-backed) | 单行内多个 body 在 fold 时要互相滑过,只有 `view.animator().frame` 才能实现 slide,单 bitmap 只能 fade |
+
+**Layout 怎么声明这些装饰物:**`RowLayout` 暴露 `subviewPlan(origin:hoveredAction:selection:) -> SubviewPlan`,只有需要的 layout(今天只有 `toolGroup`)在自己的 enum case 里返回 non-empty plan。`SubviewPlan` 是 **struct + 闭包**(跟 `SelectionAdapter` 同款 pattern),不是 protocol —— cell 不知道是哪种 layout 在产 plan,只跑通用 reconcile。
+
+**绝对禁止**给"哪种 layout 要装饰物"抽 protocol。原因跟 `ToolGroupChildLayout` enum 一样:protocol 让"忘了在某个 case 实现"成为可能,enum case 加 switch arm 让编译器替你检查。
+
+**SubviewPlan 怎么扩展:**
+- 想加新装饰物类别(目前 chevron / entry 两类) → `SubviewPlan` 加字段 + `BlockCellView+SubviewPlan.swift` 加 reconcile arm
+- 想让别的 layout 产装饰物 → `RowLayout.subviewPlan` 里给那个 case 加 switch arm,在 layout 自己的文件里实现 `subviewPlan(...)` 方法
 
 ## 4. 加新 block kind 的清单
 
@@ -137,19 +155,23 @@ NativeTranscript2/
 │   ├── CodeBlockLayout.swift        header(lang/copy)+ 内嵌 TextLayout body + 异步 token 着色
 │   ├── BlockquoteLayout.swift       左 bar + 内嵌 TextLayout
 │   ├── ThematicBreakLayout.swift    单行 hairline
-│   ├── DiffLayout.swift             hunks body helper(`codeBlock`-style 圆角矩形 + per-line gutter/sign/content),非顶层 RowLayout — 由 FileEditChildLayout 调用
 │   ├── ToolGroupLayout.swift        toolGroup 行(group header + 子项 headers + 展开 child body),enum 分发到 ToolGroupChildLayout
 │   ├── ToolGroupChildren/           toolGroup 子项 layout,一个文件一种 child kind
 │   │   ├── ToolGroupChildLayout.swift     enum 分发 totalHeight/draw/drawBackplate + make 工厂
 │   │   ├── ToolGroupChildHighlight.swift  per-kind highlight 请求 + finalize
-│   │   └── FileEditChildLayout.swift      .fileEdit child:thin wrapper 调 DiffLayout
-│   ├── SelectionAdapter.swift       selection-facing API(每个 layout 自带)
-│   └── RowLayout.swift              enum 派发(text/image/list/table/userBubble/codeBlock/blockquote/thematicBreak/diff)
+│   │   └── FileEdit/
+│   │       ├── FileEditChildLayout.swift  .fileEdit child:thin wrapper 调 DiffLayout
+│   │       ├── FileEditChildHighlight.swift  per-unique-line highlight 请求 + finalize
+│   │       └── DiffLayout.swift           hunks body(`codeBlock`-style 圆角矩形 + per-line gutter/sign/content)
+│   ├── SelectionAdapter.swift       selection-facing API(每个 layout 自带,struct + 闭包)
+│   ├── SubviewPlan.swift            chevron + entry-subview 装饰物 plan(layout 自带,同 SelectionAdapter pattern)
+│   └── RowLayout.swift              enum 派发(text/image/list/table/userBubble/codeBlock/blockquote/thematicBreak/toolGroup)
 ├── AppKit/
 │   ├── Transcript2ScrollView.swift  ScrollView + ClipView 子类
 │   ├── Transcript2TableView.swift   TableView 子类(neg-width clamp)
 │   ├── CenteredRowView.swift        Row view:把 cell 居中到 clampedLayoutWidth
-│   └── BlockCellView.swift          自绘 cell(layout.draw + 链接/chevron 命中)
+│   ├── BlockCellView.swift          自绘 cell(layout.draw + 链接/chevron 命中 + selection + hover tracking)
+│   └── BlockCellView+SubviewPlan.swift  按 layout 的 SubviewPlan reconcile chevron sublayer + entry subview;ToolGroupEntryView 也在这里
 ├── Transcript2Coordinator.swift          dataSource/delegate + diff + per-kind 派发 + chevron sheet request 路由
 ├── Transcript2Controller.swift           imperative 命令通道(apply / loadInitial)
 ├── Transcript2SelectionCoordinator.swift 跨行 selection 算法(读 layout.selectionAdapter)
@@ -192,5 +214,5 @@ NativeTranscript2/
 
 - 改 `Coordinator` 的 diff / pipeline:跑 SwiftUI Preview(`NativeTranscript2View.swift` 的 `#Preview`)目视验证 insert/remove 动画
 - 改 `BlockCellView.draw`:Preview 看排版与字号
-- 改 `TextLayout.make`:加测试是 OK 的,但纯函数不太容易出错,Preview 视觉检查通常够
+- 改 `TextLayout.make`:Preview 视觉检查就够,纯函数本身不太容易出错
 - 改 `Transcript2ScrollView` / `Transcript2TableView`:跑应用(make build + 运行),拖窗口宽度看 reflow

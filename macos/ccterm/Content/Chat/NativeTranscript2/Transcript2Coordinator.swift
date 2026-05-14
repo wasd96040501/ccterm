@@ -655,27 +655,22 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         removeCachedLayout(for: hostId)
         selection.dropEntry(blockId: hostId)
 
-        // Cell-side animations run *before* the reload so the cell
-        // can snapshot its current state (mid-flight chevron angle,
-        // pre-swap bitmap) and start its drivers. The `reloadData`
-        // below installs the new `RowLayout` on the same cell
-        // instance; AppKit reuses the cell for the same row, so the
-        // animation state carries through.
+        // Cell-side fold transition runs *before* the reload so the
+        // cell can snapshot its current state (mid-flight chevron
+        // angle, pre-swap bitmap) and start its drivers. The
+        // `reloadData` below installs the new `RowLayout` on the
+        // same cell instance; AppKit reuses the cell for the same
+        // row, so the animation state carries through.
         //
-        // `beginEntryFrameAnimation` flips a one-shot flag that
-        // tells the upcoming `syncEntrySubviews()` (running inside
-        // `layout.didSet`, inside the `NSAnimationContext` group
-        // below) to route entry frame changes through
-        // `view.animator()`. That's the slide the rest of this
-        // animation needs — within a single toolGroup row the row
-        // height change alone gives a content-fade, only per-entry
-        // frame animation makes siblings below the toggled child
-        // visually move.
+        // `beginFoldTransition` packages three drivers behind one
+        // call (chevron rotation animation, cell-layer cross-fade,
+        // and the one-shot `pendingFoldTransition` flag that routes
+        // the upcoming `syncSubviewPlan()` through `view.animator()`).
+        // Ordering between them is internal to the cell — callers
+        // can't get it wrong by reordering.
         let cell = table.view(atColumn: 0, row: row, makeIfNecessary: false)
             as? BlockCellView
-        cell?.beginChevronAnimation(foldId: id, toExpanded: newExpanded)
-        cell?.beginContentCrossFade()
-        cell?.beginEntryFrameAnimation()
+        cell?.beginFoldTransition(foldId: id, toExpanded: newExpanded)
 
         let idx = IndexSet(integer: row)
         NSAnimationContext.runAnimationGroup { ctx in

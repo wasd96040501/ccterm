@@ -202,13 +202,32 @@ enum RowLayout: @unchecked Sendable {
         }
     }
 
-    /// `true` when this row is a `.toolGroup`. The cell uses this to
-    /// route selection painting into per-entry subviews (where the
-    /// expanded body cards live) instead of the cell's main bitmap —
-    /// otherwise the cell-drawn highlight would land *behind* the
-    /// subview rather than under the body glyphs.
-    var isToolGroup: Bool {
-        if case .toolGroup = self { return true }
-        return false
+    /// Adornments this row wants the cell to host on top of its own
+    /// CGContext draw — animated chevron glyphs (`CAShapeLayer`) and
+    /// layer-backed body subviews (`ToolGroupEntryView`). See
+    /// `SubviewPlan` for the recipe. Default is an empty plan; only
+    /// `toolGroup` opts in today.
+    ///
+    /// The cell rebuilds the plan whenever `layout`, `hoveredAction`,
+    /// `selection`, or `padTop` (= `layoutOrigin`) changes, then runs
+    /// a generic reconcile pass against it. Selection rect duplication
+    /// across cell main bitmap and entry subviews is harmless — the
+    /// `bandRect`-sized subviews necessarily cover every selection
+    /// rect the layout emits (selection is constrained to expanded
+    /// body content), so the cell-bitmap copy is composited under
+    /// the subview and never reaches the screen.
+    func subviewPlan(
+        origin: CGPoint,
+        hoveredAction: HitAction?,
+        selection: SelectionRange?
+    ) -> SubviewPlan {
+        switch self {
+        case .toolGroup(let l):
+            return l.subviewPlan(origin: origin,
+                                 hoveredAction: hoveredAction,
+                                 selection: selection)
+        default:
+            return .empty
+        }
     }
 }

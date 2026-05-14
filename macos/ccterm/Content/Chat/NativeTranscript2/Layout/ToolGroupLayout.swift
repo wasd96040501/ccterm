@@ -447,7 +447,9 @@ struct ToolGroupLayout: @unchecked Sendable {
     //   2. Each entry's content (child header + optional body) is
     //      rendered into a per-entry layer-backed NSView subview
     //      (`ToolGroupEntryView`) sized to `entry.bandRect`. The
-    //      subview's `draw(_:)` calls into `drawEntry(...)` below
+    //      subview invokes the per-entry `draw` closure carried by
+    //      its `SubviewPlan.Entry` spec; that closure captures the
+    //      entry's data and routes through `drawEntry(...)` below
     //      with view-local coords.
     //
     // The split exists so AppKit can slide each entry's subview
@@ -463,7 +465,8 @@ struct ToolGroupLayout: @unchecked Sendable {
     func drawBackplate(in ctx: CGContext, origin: CGPoint) {}
 
     /// Paints the group header title only. Child entries are
-    /// rendered by their own subviews via `drawEntry(...)`.
+    /// rendered by their own subviews via the `draw` closures their
+    /// `SubviewPlan.Entry` specs carry.
     func draw(in ctx: CGContext, origin: CGPoint, hoveredAction: HitAction?) {
         let hoveredId = Self.hoveredFoldId(in: hoveredAction)
         Self.drawHeader(groupHeader,
@@ -477,10 +480,10 @@ struct ToolGroupLayout: @unchecked Sendable {
     ///
     /// `selectionRects` is in layout-local coords (the toolGroup
     /// layout's frame); only rects that intersect `entry.bandRect`
-    /// paint. The cell forwards the same rect list to every entry
-    /// view — selection is constrained to a single body at any
-    /// time, so the filter is exactly one match.
-    nonisolated static func drawEntry(
+    /// paint. Called from `subviewPlan`'s per-entry capture closure;
+    /// `ToolGroupEntryView` itself is layout-agnostic and invokes the
+    /// closure rather than reaching for this method directly.
+    nonisolated private static func drawEntry(
         _ entry: Entry,
         hovered: Bool,
         selectionRects: [CGRect],
@@ -515,15 +518,89 @@ struct ToolGroupLayout: @unchecked Sendable {
 
     /// Extract the fold id from a hovered hit action, or `nil` if the
     /// cursor is over an unrelated hit (URL link, copy button, etc.).
-    static func hoveredFoldId(in action: HitAction?) -> UUID? {
+    nonisolated private static func hoveredFoldId(in action: HitAction?) -> UUID? {
         guard let action else { return nil }
         if case .toggleFold(let id) = action { return id }
         return nil
     }
 
+    // MARK: - Subview plan
+
+    /// Build the cell-facing `SubviewPlan` describing every chevron
+    /// glyph and every entry-body subview this row wants the cell to
+    /// host. The cell consumes the plan through a generic reconciler;
+    /// no knowledge of `ToolGroupLayout`'s internals leaks past this
+    /// boundary.
+    ///
+    /// `origin` is the cell's `layoutOrigin` (row padding offset).
+    /// `hoveredAction` / `selection` are the cell's current state —
+    /// re-building the plan on every hover / selection transition is
+    /// cheap (just value composition over the already-laid-out
+    /// `items`), and lets the reconcile path stay a single code path.
+    func subviewPlan(
+        origin: CGPoint,
+        hoveredAction: HitAction?,
+        selection: SelectionRange?
+    ) -> SubviewPlan {
+        let hoveredId = Self.hoveredFoldId(in: hoveredAction)
+
+        var chevrons: [SubviewPlan.Chevron] = []
+        chevrons.reserveCapacity(1 + items.count)
+        chevrons.append(SubviewPlan.Chevron(
+            id: groupHeader.foldId,
+            center: CGPoint(x: origin.x + groupHeader.chevronCenter.x,
+                            y: origin.y + groupHeader.chevronCenter.y),
+            expanded: groupHeader.chevronExpanded,
+            hovered: hoveredId == groupHeader.foldId))
+
+        // Selection rects in layout-local coords. Distributed to every
+        // entry's draw closure; each entry filters against its own
+        // `bandRect` at draw time (the list is short — ≤ N body rows
+        // — so per-entry filtering is cheaper than partitioning up
+        // front).
+        let selectionRects: [CGRect] = {
+            guard let selection, let adapter = selectionAdapter else { return [] }
+            return adapter.rects(selection.start, selection.end)
+        }()
+
+        var entries: [SubviewPlan.Entry] = []
+        entries.reserveCapacity(items.count)
+        for entry in items {
+            chevrons.append(SubviewPlan.Chevron(
+                id: entry.header.foldId,
+                center: CGPoint(x: origin.x + entry.header.chevronCenter.x,
+                                y: origin.y + entry.header.chevronCenter.y),
+                expanded: entry.header.chevronExpanded,
+                hovered: hoveredId == entry.header.foldId))
+
+            let frame = CGRect(
+                x: origin.x + entry.bandRect.minX,
+                y: origin.y + entry.bandRect.minY,
+                width: entry.bandRect.width,
+                height: entry.bandRect.height)
+
+            let capturedEntry = entry
+            let capturedHovered = hoveredId == entry.header.foldId
+            let capturedRects = selectionRects
+            entries.append(SubviewPlan.Entry(
+                id: entry.childId,
+                frame: frame,
+                draw: { ctx, selectionColor in
+                    Self.drawEntry(capturedEntry,
+                                   hovered: capturedHovered,
+                                   selectionRects: capturedRects,
+                                   selectionColor: selectionColor,
+                                   in: ctx)
+                }))
+        }
+
+        return SubviewPlan(chevrons: chevrons, entries: entries)
+    }
+
     /// Draw a header's title — the chevron glyph is rendered by the
-    /// cell's per-foldId `CAShapeLayer` (see `BlockCellView.syncChevronSublayers`),
-    /// so this path is title-only.
+    /// cell as a per-foldId `CAShapeLayer` driven from the
+    /// `SubviewPlan.Chevron` specs this layout emits (see
+    /// `BlockCellView+SubviewPlan.swift`), so this path is title-only.
     nonisolated private static func drawHeader(
         _ header: Header,
         hovered: Bool,

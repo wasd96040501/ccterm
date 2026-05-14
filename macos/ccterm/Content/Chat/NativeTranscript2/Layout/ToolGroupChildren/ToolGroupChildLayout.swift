@@ -89,6 +89,26 @@ enum ToolGroupChildLayout: @unchecked Sendable {
         }
     }
 
+    /// `TextCardSection` stack underlying this body, when the kind is
+    /// rendered as one or more rounded text cards. `nil` for kinds
+    /// that don't use that primitive — `fileEdit` (diff body, routed
+    /// through `LayoutPosition.diff`), `read` / `generic` (header-only
+    /// kinds with no body). Used by `ToolGroupLayout.selectionAdapter`
+    /// to thread `LayoutPosition.textCard(...)` positions through the
+    /// section's `TextLayout` without per-kind branches.
+    var textCardSections: [TextCardSection]? {
+        switch self {
+        case .fileEdit, .read, .generic: return nil
+        case .bash(let l): return l.sections
+        case .grep(let l): return l.sections
+        case .glob(let l): return l.sections
+        case .webFetch(let l): return l.sections
+        case .webSearch(let l): return l.sections
+        case .askUserQuestion(let l): return l.sections
+        case .agent(let l): return l.sections
+        }
+    }
+
     /// Factory called by `ToolGroupLayout` when an entry is expanded.
     /// Folded entries skip this entirely — the layout's `body` field
     /// stays `nil` and no per-kind work runs.

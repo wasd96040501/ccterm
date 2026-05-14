@@ -54,106 +54,239 @@ struct ToolGroupLayout: @unchecked Sendable {
     /// Diff has no inline links and no inline selection today.
     var links: [TextLayout.LinkHit] { [] }
 
-    /// Selection-facing API. Selection is restricted to expanded
-    /// `fileEdit` body content (gutter / sign columns are not
-    /// selectable). Positions are `LayoutPosition.diff(childIndex:char:)`;
-    /// the adapter routes per-body operations to the matching
-    /// `DiffLayout` and returns empty when caller passes
-    /// cross-body or non-`.diff` endpoints.
+    /// Selection-facing API. Two kinds of selectable region live
+    /// inside the row:
+    ///
+    /// - `fileEdit` bodies → `LayoutPosition.diff(childIndex:char:)`,
+    ///   routed into the entry's `DiffLayout`.
+    /// - text-card bodies (bash / grep / glob / webFetch / webSearch /
+    ///   askUserQuestion / agent) → `LayoutPosition.textCard(childIndex:`
+    ///   `sectionIndex:char:)`, routed into the matching
+    ///   `TextCardSection`'s `TextLayout`.
+    ///
+    /// `Region` is the internal union the adapter walks once at
+    /// build time; downstream closures look regions up by the
+    /// `(childIndex, sectionIndex?)` keys carried by `LayoutPosition`.
+    /// Mixed-region drags (across two bodies, or across two sections
+    /// inside one body) collapse to empty rects / empty string —
+    /// matching the diff-only adapter's prior cross-body clamp.
     var selectionAdapter: SelectionAdapter? {
-        let bodies: [(childIndex: Int, diff: DiffLayout)] = items.enumerated()
-            .compactMap { idx, entry in
-                guard let body = entry.body else { return nil }
-                switch body {
-                case .fileEdit(let l):
-                    let d = l.body
-                    guard !d.containerRect.isEmpty else { return nil }
-                    return (idx, d)
-                case .read, .generic:
-                    // Header-only children have no body geometry —
-                    // selection cannot land on them.
-                    return nil
-                case .bash, .grep, .glob, .webFetch, .webSearch,
-                     .askUserQuestion, .agent:
-                    // Non-diff bodies aren't selectable today
-                    // (`LayoutPosition` has no per-kind case).
-                    return nil
-                }
-            }
-        guard !bodies.isEmpty else { return nil }
+        let regions = Self.buildRegions(items: items)
+        guard !regions.isEmpty else { return nil }
 
-        func diff(for index: Int) -> DiffLayout? {
-            bodies.first(where: { $0.childIndex == index })?.diff
-        }
-
-        // `fullRange` and `unitRange` both span just the *first* body
-        // — Cmd+A and triple-click then pick whichever body the
-        // caller passes in. Drag-selection across bodies isn't
-        // modelled; the adapter's hitTest snaps the cursor into the
-        // single body whose y band it lands in.
-        let firstChildIndex = bodies[0].childIndex
-        let firstDiff = bodies[0].diff
-        let fullRange = SelectionRange(
-            start: .diff(childIndex: firstChildIndex, char: 0),
-            end: .diff(childIndex: firstChildIndex, char: firstDiff.contentLength))
+        // Cmd+A / triple-click target. Spans the first region only —
+        // the caller's hit-tested position then narrows `unitRange`
+        // to the right region. Mirrors the diff-only adapter's
+        // first-body fullRange (Cmd+A lands wherever the user's last
+        // click was, which is the region we'd want anyway).
+        let fullRange = regions[0].fullRange
 
         return SelectionAdapter(
             fullRange: fullRange,
             unitRange: { p in
-                guard case .diff(let i, _) = p,
-                      let d = diff(for: i)
-                else { return fullRange }
-                return SelectionRange(
-                    start: .diff(childIndex: i, char: 0),
-                    end: .diff(childIndex: i, char: d.contentLength))
+                Self.region(for: p, in: regions)?.fullRange ?? fullRange
             },
             hitTest: { point in
-                // Snap to whichever body's y band contains the point
-                // (or, when between bodies, the closest one). Empty
-                // bodies aren't included in `bodies`, so the snap is
-                // always to a real, selectable body.
-                let preferred = bodies.first(where: {
-                    point.y >= $0.diff.containerRect.minY
-                        && point.y <= $0.diff.containerRect.maxY
-                }) ?? bodies.min(by: {
-                    let d0 = min(abs(point.y - $0.diff.containerRect.minY),
-                                 abs(point.y - $0.diff.containerRect.maxY))
-                    let d1 = min(abs(point.y - $1.diff.containerRect.minY),
-                                 abs(point.y - $1.diff.containerRect.maxY))
+                // Snap to whichever region's y band contains the
+                // point (or, when between regions, the closest one).
+                // Empty bodies are filtered out at region-build time,
+                // so the snap always lands on a real selectable
+                // surface.
+                let target = regions.first(where: {
+                    point.y >= $0.bandRect.minY
+                        && point.y <= $0.bandRect.maxY
+                }) ?? regions.min(by: {
+                    let d0 = min(abs(point.y - $0.bandRect.minY),
+                                 abs(point.y - $0.bandRect.maxY))
+                    let d1 = min(abs(point.y - $1.bandRect.minY),
+                                 abs(point.y - $1.bandRect.maxY))
                     return d0 < d1
                 })!
-                let char = preferred.diff.hitTest(point: point)
-                return .diff(childIndex: preferred.childIndex, char: char)
+                return target.hitTest(point)
             },
             rects: { a, b in
-                guard case .diff(let ia, let ca) = a,
-                      case .diff(let ib, let cb) = b,
-                      ia == ib,
-                      let d = diff(for: ia)
+                guard let region = Self.region(for: a, in: regions),
+                      region.matches(b)
                 else { return [] }
-                let lo = min(ca, cb)
-                let hi = max(ca, cb)
-                return d.rects(loChar: lo, hiChar: hi)
+                return region.rects(a, b)
             },
             string: { a, b in
-                guard case .diff(let ia, let ca) = a,
-                      case .diff(let ib, let cb) = b,
-                      ia == ib,
-                      let d = diff(for: ia)
+                guard let region = Self.region(for: a, in: regions),
+                      region.matches(b)
                 else { return "" }
-                let lo = min(ca, cb)
-                let hi = max(ca, cb)
-                return d.string(loChar: lo, hiChar: hi)
+                return region.string(a, b)
             },
             wordBoundary: { p in
-                guard case .diff(let i, let c) = p,
-                      let d = diff(for: i),
-                      let word = d.wordBoundary(at: c)
+                Self.region(for: p, in: regions)?.wordBoundary(p)
+            })
+    }
+
+    /// One selectable surface inside the row — either a `DiffLayout`
+    /// body or a single `TextCardSection` card. All closures are
+    /// pre-bound to the underlying primitive at build time so the
+    /// `selectionAdapter` switch lives in one place
+    /// (`buildRegions`) rather than scattered across every helper.
+    private struct Region {
+        let bandRect: CGRect
+        let fullRange: SelectionRange
+        let matches: (LayoutPosition) -> Bool
+        let hitTest: (CGPoint) -> LayoutPosition
+        let rects: (LayoutPosition, LayoutPosition) -> [CGRect]
+        let string: (LayoutPosition, LayoutPosition) -> String
+        let wordBoundary: (LayoutPosition) -> SelectionRange?
+    }
+
+    nonisolated private static func buildRegions(items: [Entry]) -> [Region] {
+        var out: [Region] = []
+        for (idx, entry) in items.enumerated() {
+            guard let body = entry.body else { continue }
+            switch body {
+            case .fileEdit(let l):
+                let d = l.body
+                guard !d.containerRect.isEmpty else { continue }
+                out.append(makeDiffRegion(childIndex: idx, body: d))
+            case .read, .generic:
+                // Header-only — no body geometry to select.
+                continue
+            case .bash, .grep, .glob, .webFetch, .webSearch,
+                 .askUserQuestion, .agent:
+                // Every kind in this arm exposes its body through
+                // `textCardSections`; the accessor switch on
+                // `ToolGroupChildLayout` is the single source of
+                // truth for "this kind uses the text-card primitive."
+                let sections = body.textCardSections ?? []
+                for (sectionIndex, section) in sections.enumerated() {
+                    out.append(makeTextCardRegion(
+                        childIndex: idx,
+                        sectionIndex: sectionIndex,
+                        section: section))
+                }
+            }
+        }
+        return out
+    }
+
+    nonisolated private static func makeDiffRegion(
+        childIndex: Int, body: DiffLayout
+    ) -> Region {
+        Region(
+            bandRect: body.containerRect,
+            fullRange: SelectionRange(
+                start: .diff(childIndex: childIndex, char: 0),
+                end: .diff(childIndex: childIndex, char: body.contentLength)),
+            matches: { p in
+                if case .diff(let i, _) = p { return i == childIndex }
+                return false
+            },
+            hitTest: { point in
+                .diff(childIndex: childIndex, char: body.hitTest(point: point))
+            },
+            rects: { a, b in
+                guard case .diff(_, let ca) = a, case .diff(_, let cb) = b
+                else { return [] }
+                let lo = min(ca, cb), hi = max(ca, cb)
+                return body.rects(loChar: lo, hiChar: hi)
+            },
+            string: { a, b in
+                guard case .diff(_, let ca) = a, case .diff(_, let cb) = b
+                else { return "" }
+                let lo = min(ca, cb), hi = max(ca, cb)
+                return body.string(loChar: lo, hiChar: hi)
+            },
+            wordBoundary: { p in
+                guard case .diff(_, let c) = p,
+                      let word = body.wordBoundary(at: c)
                 else { return nil }
                 return SelectionRange(
-                    start: .diff(childIndex: i, char: word.location),
-                    end: .diff(childIndex: i, char: word.location + word.length))
+                    start: .diff(childIndex: childIndex, char: word.location),
+                    end: .diff(childIndex: childIndex,
+                               char: word.location + word.length))
             })
+    }
+
+    /// One `TextCardSection` card. Char positions are UTF-16 indices
+    /// into the section's `TextLayout.attributed.string`; rects are
+    /// emitted in layout-local coords by offsetting `TextLayout`'s
+    /// own rects by the section's `textOrigin`.
+    nonisolated private static func makeTextCardRegion(
+        childIndex: Int, sectionIndex: Int, section: TextCardSection
+    ) -> Region {
+        let text = section.text
+        let textOrigin = section.textOrigin
+        let attributed = text.attributed
+        let length = text.length
+
+        let fullRange = SelectionRange(
+            start: .textCard(childIndex: childIndex,
+                             sectionIndex: sectionIndex, char: 0),
+            end: .textCard(childIndex: childIndex,
+                           sectionIndex: sectionIndex, char: length))
+
+        return Region(
+            bandRect: section.cardRect,
+            fullRange: fullRange,
+            matches: { p in
+                if case .textCard(let i, let s, _) = p {
+                    return i == childIndex && s == sectionIndex
+                }
+                return false
+            },
+            hitTest: { point in
+                let local = CGPoint(
+                    x: point.x - textOrigin.x,
+                    y: point.y - textOrigin.y)
+                return .textCard(
+                    childIndex: childIndex,
+                    sectionIndex: sectionIndex,
+                    char: text.characterIndex(at: local))
+            },
+            rects: { a, b in
+                guard case .textCard(_, _, let ca) = a,
+                      case .textCard(_, _, let cb) = b
+                else { return [] }
+                let lo = min(ca, cb), hi = max(ca, cb)
+                guard hi > lo else { return [] }
+                let local = text.selectionRects(
+                    for: NSRange(location: lo, length: hi - lo))
+                return local.map {
+                    $0.offsetBy(dx: textOrigin.x, dy: textOrigin.y)
+                }
+            },
+            string: { a, b in
+                guard case .textCard(_, _, let ca) = a,
+                      case .textCard(_, _, let cb) = b
+                else { return "" }
+                let lo = min(ca, cb), hi = max(ca, cb)
+                guard hi > lo, hi <= attributed.length else { return "" }
+                return attributed
+                    .attributedSubstring(
+                        from: NSRange(location: lo, length: hi - lo))
+                    .string
+                    .replacingOccurrences(of: "\u{2028}", with: "\n")
+            },
+            wordBoundary: { p in
+                guard case .textCard(_, _, let c) = p,
+                      attributed.length > 0
+                else { return nil }
+                let clamped = max(0, min(c, attributed.length - 1))
+                let word = attributed.doubleClick(at: clamped)
+                return SelectionRange(
+                    start: .textCard(childIndex: childIndex,
+                                     sectionIndex: sectionIndex,
+                                     char: word.location),
+                    end: .textCard(childIndex: childIndex,
+                                   sectionIndex: sectionIndex,
+                                   char: word.location + word.length))
+            })
+    }
+
+    /// Find the region that owns `position`. Returns `nil` when no
+    /// region's `matches` accepts the value (caller passed a stale or
+    /// non-toolGroup position).
+    nonisolated private static func region(
+        for position: LayoutPosition, in regions: [Region]
+    ) -> Region? {
+        regions.first(where: { $0.matches(position) })
     }
 
     // MARK: - Inner types

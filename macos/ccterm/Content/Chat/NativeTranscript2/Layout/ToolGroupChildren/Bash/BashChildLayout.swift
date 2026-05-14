@@ -23,10 +23,11 @@ import AppKit
 /// ```
 ///
 /// Selection lands inside the body cards via `ToolGroupLayout`'s
-/// `selectionAdapter` — but today the adapter only routes `.diff(...)`
-/// positions, so Bash cards are non-selectable. Adding selection means
-/// extending `LayoutPosition` with a `.bash(childIndex:section:char:)`
-/// case and threading it through the adapter.
+/// `selectionAdapter`, which builds per-section regions over the
+/// `sections` list and routes `LayoutPosition.textCard(...)`
+/// positions through each section's `TextLayout`. Drag-select clamps
+/// to the section the gesture started in — moving from `command`
+/// into `stdout` doesn't extend the selection across the chrome gap.
 ///
 /// `@unchecked Sendable`: holds `CTLine` references via embedded
 /// `TextCardSection` values.

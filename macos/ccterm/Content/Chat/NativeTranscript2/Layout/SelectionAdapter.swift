@@ -24,6 +24,19 @@ enum LayoutPosition: Equatable, Hashable {
     /// otherwise. Mixed-body drags are not modelled — a drag that
     /// starts in body A and lands in body B clamps to A.
     case diff(childIndex: Int, char: Int)
+    /// Text-card body position. `childIndex` identifies the expanded
+    /// child body inside a `toolGroup` row whose body is a stack of
+    /// `TextCardSection` rounded cards (bash / grep / glob / webFetch
+    /// / webSearch / askUserQuestion / agent — every non-diff,
+    /// non-header-only kind today). `sectionIndex` identifies which
+    /// card inside that body; `char` is the UTF-16 index into the
+    /// section's `TextLayout`'s attributed string. Selection is only
+    /// drawn between two `.textCard` positions sharing the same
+    /// `childIndex` *and* `sectionIndex` — cross-section drags clamp
+    /// to the start section, mirroring how cross-body drags clamp on
+    /// the diff side. A child with a single section (most cases)
+    /// behaves like a single contiguous selectable body.
+    case textCard(childIndex: Int, sectionIndex: Int, char: Int)
 }
 
 /// Two `LayoutPosition`s describing one block's current selection. Order

@@ -129,7 +129,9 @@ SwiftUI: NativeTranscript2View (NSViewRepresentable)
   3. `ToolGroupChildLayout` enum 加 case 加 4 个 switch arm(`totalHeight` / `drawBackplate` / `draw` / `make`);
   4. **header-only kind** (`.read` / `.generic`):`hasExpandableBody = false`,layout `totalHeight == 0`,`draw` / `drawBackplate` 留空 — `ToolGroupLayout` 自动跳过 chevron 绘制 + 不注册 fold hit;
   5. 如果需要异步高亮,`ToolGroupChildHighlight.requests(for:)` 加 case 返回 `Plan`;
-  6. 如果 body 要可选(进入 `selectionAdapter`),给 `LayoutPosition` 加 `.<kind>(...)` case 并在 `ToolGroupLayout.selectionAdapter` 把对应 `case` 路由进去(目前只有 `.fileEdit` 支持选区,其余的 `case .bash, .grep, .glob, .webFetch, .webSearch, .askUserQuestion, .agent: return nil`)。
+  6. 如果 body 要可选(进入 `selectionAdapter`):
+     - 走 `TextCardSection` 的 body(bash / grep / glob / webFetch / webSearch / askUserQuestion / agent)零改动 —— `ToolGroupChildLayout.textCardSections` 已经把 sections 列表暴露出去,`ToolGroupLayout.selectionAdapter` 的 `buildRegions` 自动给每个 section 建一个 `LayoutPosition.textCard(childIndex:sectionIndex:char:)` 区域。仅当你新增的 kind **不基于 `TextCardSection`** 才要扩 `LayoutPosition` —— 给它加一个具体 case 并在 `buildRegions` 里加 switch arm 把对应 `Region` 路由进去
+     - 选区粒度是 section-local(跨 section 拖拽 clamp 到起点 section),跨 child 同样 clamp。fileEdit 是唯一的特例 —— 走 `LayoutPosition.diff(childIndex:char:)`,因为 `DiffLayout` 有自己的 gutter/sign 列剥离逻辑,不能直接走 `TextLayout`
 
   **已实现的 child kinds**(每个独占一个 `Layout/ToolGroupChildren/<Kind>/` 子目录):
 
@@ -153,7 +155,7 @@ SwiftUI: NativeTranscript2View (NSViewRepresentable)
 
   **New-file 模式(`oldString == nil`):** `.add` 行视作 `.context`(无 `+` sign,无 add bg),保留 gutter 行号 + token 高亮 —— 输出为"带行号的 code view"而非"全 add 的 diff"。
 
-  **Selection 暂未支持** —— `ToolGroupLayout.selectionAdapter == nil`
+  **Selection 已支持所有可见 body**:fileEdit 走 `LayoutPosition.diff(childIndex:char:)`,其余 7 种(bash / grep / glob / webFetch / webSearch / askUserQuestion / agent)走 `LayoutPosition.textCard(childIndex:sectionIndex:char:)`,粒度 = 单个 `TextCardSection` 卡片。`read` / `generic` header-only,无 body 可选
 - `case .userBubble(text: String)` → `UserBubbleLayout`(右对齐气泡;长文本硬截断到 `userBubbleCollapseThreshold` 行,最后一行用 `CTLineCreateTruncatedLine` 加 `…` 尾,padding 内画 `>` chevron;selection clamp 到 prefix 行,truncated tail 不可选)。**Layout 完全 stateless**,不带 fold 状态 —— chevron mouseDown → `Coordinator.requestUserBubbleSheet(id:)` → 通过 `onUserBubbleSheetRequested` 闭包路由到 `Transcript2Controller.pendingUserBubbleSheet`(`@Observable`)→ SwiftUI 侧 `.sheet(item:)` 弹出完整内容(支持 `Text.textSelection(.enabled)` 复制)。这是 NSView 闭环里**唯一**合法的 SwiftUI 出口 —— `.sheet(item:)` 作为 presentation primitive 必须由 SwiftUI own,但 in-cell 渲染 / 命中 / selection 仍全程 NSView 内部
 
 ## 4. 文件结构

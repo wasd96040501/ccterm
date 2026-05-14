@@ -30,14 +30,12 @@ import CoreText
 /// Draw cost is insensitive to layout instance — CG glyph cache is
 /// process-global and warms in <1 frame.
 ///
-/// ### Decoration extraction
+/// ### Link extraction
 ///
-/// `CTLineDraw` only paints glyphs — it does **not** honor
-/// `.backgroundColor` and does **not** respond to `.link` clicks. Both
-/// require a post-typeset scan over runs to compute screen-space rects:
-/// inline-code backgrounds (drawn by `draw(in:origin:)` itself), and link
-/// hot zones (consumed by the cell for hit-testing + cursor). Done once at
-/// `make` time so layout reuse benefits include the decoration data.
+/// `CTLineDraw` paints glyphs but does **not** respond to `.link` clicks.
+/// A post-typeset scan over runs computes screen-space rects for link hot
+/// zones (consumed by the cell for hit-testing + cursor). Done once at
+/// `make` time so layout reuse benefits include the link data.
 struct TextLayout: @unchecked Sendable {
     /// Source attributed string. Held so the layout can produce its own
     /// `SelectionAdapter` (byWord snap and copy-string) without callers
@@ -54,11 +52,6 @@ struct TextLayout: @unchecked Sendable {
     let lineMetrics: [LineMetrics]
     let totalHeight: CGFloat
     let measuredWidth: CGFloat
-    /// Inline code backgrounds in layout-local coords (y down, top-left).
-    /// Tight to the line's ascent/descent — no leading — so multi-line
-    /// paragraphs keep their bg boxes inside each line's vertical band
-    /// instead of bleeding into the next line.
-    let codeBackgrounds: [CGRect]
     /// Link hit zones in layout-local coords. Multi-line links produce one
     /// rect per line.
     let links: [LinkHit]
@@ -86,7 +79,7 @@ struct TextLayout: @unchecked Sendable {
         attributed: NSAttributedString(),
         lines: [], lineOrigins: [], lineMetrics: [],
         totalHeight: 0, measuredWidth: 0,
-        codeBackgrounds: [], links: [])
+        links: [])
 
     nonisolated static func make(attributed: NSAttributedString, maxWidth: CGFloat) -> TextLayout {
         guard attributed.length > 0, maxWidth > 0 else { return .empty }
@@ -118,30 +111,27 @@ struct TextLayout: @unchecked Sendable {
             start += count
         }
 
-        let (codeBackgrounds, links) = extractDecorations(
+        let links = extractLinks(
             lines: lines, origins: origins, metrics: metrics)
 
         return TextLayout(
             attributed: attributed,
             lines: lines, lineOrigins: origins, lineMetrics: metrics,
             totalHeight: y, measuredWidth: maxWidth,
-            codeBackgrounds: codeBackgrounds, links: links)
+            links: links)
     }
 
-    /// Walks each line's runs once. The marker check is presence-only; the
-    /// link check accepts both `URL` and `String` (CommonMark parsers
-    /// commonly emit either). Per-run x extent is taken from
-    /// `CTLineGetOffsetForStringIndex` — this is correct in the presence of
-    /// kerning / RTL because CT computes the run's string-range endpoints
-    /// in the line's typographic space.
-    nonisolated private static func extractDecorations(
+    /// Walks each line's runs once. Accepts both `URL` and `String` link
+    /// values (CommonMark parsers commonly emit either). Per-run x extent
+    /// is taken from `CTLineGetOffsetForStringIndex` — this is correct in
+    /// the presence of kerning / RTL because CT computes the run's
+    /// string-range endpoints in the line's typographic space.
+    nonisolated private static func extractLinks(
         lines: [CTLine],
         origins: [CGPoint],
         metrics: [LineMetrics]
-    ) -> (codeBackgrounds: [CGRect], links: [LinkHit]) {
-        var codeRects: [CGRect] = []
+    ) -> [LinkHit] {
         var linkHits: [LinkHit] = []
-        let codeKey = BlockStyle.inlineCodeAttributeKey
         let linkKey = NSAttributedString.Key.link
 
         for (lineIdx, line) in lines.enumerated() {
@@ -152,9 +142,8 @@ struct TextLayout: @unchecked Sendable {
 
             for run in runs {
                 let attrs = CTRunGetAttributes(run) as NSDictionary
-                let hasCode = attrs[codeKey] != nil
-                let linkRaw = attrs[linkKey]
-                guard hasCode || linkRaw != nil else { continue }
+                guard let linkRaw = attrs[linkKey],
+                      let url = parseLink(linkRaw) else { continue }
 
                 let stringRange = CTRunGetStringRange(run)
                 let xStart = CTLineGetOffsetForStringIndex(
@@ -166,16 +155,10 @@ struct TextLayout: @unchecked Sendable {
                     y: baseline - ascent,
                     width: xEnd - xStart,
                     height: ascent + descent)
-
-                if hasCode {
-                    codeRects.append(rect)
-                }
-                if let linkRaw, let url = parseLink(linkRaw) {
-                    linkHits.append(LinkHit(rect: rect, url: url))
-                }
+                linkHits.append(LinkHit(rect: rect, url: url))
             }
         }
-        return (codeRects, linkHits)
+        return linkHits
     }
 
     nonisolated private static func parseLink(_ raw: Any) -> URL? {
@@ -305,30 +288,6 @@ struct TextLayout: @unchecked Sendable {
     /// Draw into a flipped NSView. `origin` is layout's top-left in view coords.
     func draw(in ctx: CGContext, origin: CGPoint) {
         ctx.saveGState()
-
-        // Inline code backgrounds first — glyphs paint on top.
-        if !codeBackgrounds.isEmpty {
-            ctx.setFillColor(BlockStyle.inlineCodeBackgroundColor.cgColor)
-            for rect in codeBackgrounds {
-                // Horizontal padding hugs the glyphs without crowding. The
-                // vertical *expansion* (negative inset) is descender
-                // coverage: CT's typographic descent is the design metric,
-                // but glyphs like `p` / `g` / `y` paint right at that
-                // limit, leaving anti-aliased pixels uncovered if the box
-                // matches descent exactly. Pulling the box 1pt past on
-                // both sides gives clean coverage at the cost of touching
-                // adjacent line bgs when consecutive lines both contain
-                // inline code — rare enough in chat content to accept.
-                let r = rect
-                    .offsetBy(dx: origin.x, dy: origin.y)
-                    .insetBy(dx: -3, dy: -1)
-                let path = CGPath(
-                    roundedRect: r, cornerWidth: 4, cornerHeight: 4,
-                    transform: nil)
-                ctx.addPath(path)
-            }
-            ctx.fillPath()
-        }
 
         // Flip text matrix so Core Text glyphs render upright in a flipped view.
         ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)

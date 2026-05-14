@@ -246,10 +246,16 @@ enum BlockStyle: Sendable {
     /// Hard-edged kinds (`table`, `image`) carry 8/8 → +2pt over body to
     /// compensate for the leading-illusion gap loss at borders. Headings
     /// are intentionally asymmetric: a wide top (scaled to font size) marks
-    /// a section break, a near-zero bottom keeps the heading glued to the
-    /// content it owns. The 6pt gap below a heading is contributed entirely
-    /// by the following paragraph's `top`, so the rhythm stays uniform
-    /// regardless of which heading level precedes the body text.
+    /// a section break, a smaller bottom keeps the heading glued to the
+    /// content it owns. Heading bottom scales with level (h1 6 / h2 4 /
+    /// h3-6 2) so the perceived gap below a heavier heading isn't dwarfed
+    /// by the heading's visual mass — same 6pt below a 26pt h1 and below
+    /// an 18pt h3 reads as "cramped" vs "tight" respectively. Combined
+    /// with paragraph `top: 6`, the resulting heading→p gaps are 12 / 10 /
+    /// 8 pt, all ≤ p↔p 12pt so proximity still glues the heading to its
+    /// body, and all ≥ 0.4em of the heading's font size for breathing.
+    /// Top/bottom ratio stays ~4–5:1 across levels so "above is break,
+    /// below is owned" reads uniformly.
     nonisolated static func blockPadding(
         for kind: Block.Kind
     ) -> (top: CGFloat, bottom: CGFloat) {
@@ -257,9 +263,9 @@ enum BlockStyle: Sendable {
         case .heading(let level, _):
             let clamped = max(1, min(6, level))
             switch clamped {
-            case 1: return (top: 24, bottom: 0)
-            case 2: return (top: 16, bottom: 0)
-            default: return (top: 10, bottom: 0)
+            case 1: return (top: 24, bottom: 6)
+            case 2: return (top: 16, bottom: 4)
+            default: return (top: 10, bottom: 2)
             }
         case .paragraph, .list, .blockquote:
             // Blockquote sits in the soft-edged tier with paragraphs —
@@ -751,22 +757,21 @@ enum BlockStyle: Sendable {
         (rowWidth - clampedLayoutWidth(forRowWidth: rowWidth)) / 2
     }
 
-    /// Marker attribute for inline code runs. `CTLineDraw` does not honor
-    /// `.backgroundColor`, so we tag the run here and `TextLayout` extracts
-    /// per-run rects from the typesetter output to paint the background
-    /// itself with line-bounded geometry. Value is unused; presence is the
-    /// signal.
-    nonisolated static let inlineCodeAttributeKey =
-        NSAttributedString.Key("CCTermInlineCode")
-
-    /// Inline-code background. `secondarySystemFill` is the HIG-documented
-    /// fill tier for "medium-sized layered shapes" — the next tier down,
-    /// `tertiarySystemFill` (for "thin and small layered shapes"), reads as
-    /// invisible against typical chat backgrounds; the next up,
-    /// `systemFill`, is too heavy. `.secondarySystemFill` is already
-    /// dark/light adaptive, so resolution happens automatically at draw
-    /// time via `.cgColor`.
-    nonisolated static let inlineCodeBackgroundColor: NSColor = .secondarySystemFill
+    /// Inline-code foreground. Matches `SyntaxTheme`'s
+    /// `identifier.function` teal (the tint used for `hljs-title
+    /// function_` and bare `hljs-title` inside code blocks — i.e. the
+    /// shade a function declaration name like `setFocused` renders in)
+    /// so an inline `code` reference reads in the same teal hue family
+    /// as function names inside fenced code blocks, one notch lighter
+    /// than the deeper class/struct/enum teal. Dynamic NSColor —
+    /// `.cgColor` resolves against the cell's effective appearance at
+    /// draw time, so light / dark switching is automatic.
+    nonisolated static let inlineCodeColor: NSColor = NSColor(name: nil) { appearance in
+        let isDark = appearance.bestMatch(from: [.darkAqua, .vibrantDark]) != nil
+        return isDark
+            ? NSColor(srgbRed: 0x67 / 255.0, green: 0xb7 / 255.0, blue: 0xa4 / 255.0, alpha: 1.0)
+            : NSColor(srgbRed: 0x31 / 255.0, green: 0x6d / 255.0, blue: 0x74 / 255.0, alpha: 1.0)
+    }
 
     nonisolated static func paragraphAttributed(inlines: [InlineNode]) -> NSAttributedString {
         let out = NSMutableAttributedString()
@@ -833,8 +838,7 @@ enum BlockStyle: Sendable {
             case .code(let s):
                 var attrs = base
                 attrs[.font] = inlineCodeFont(matching: base[.font] as? NSFont)
-                // Marker only — actual fill happens in TextLayout.draw.
-                attrs[inlineCodeAttributeKey] = true
+                attrs[.foregroundColor] = inlineCodeColor
                 out.append(NSAttributedString(string: s, attributes: attrs))
 
             case .link(let children, let url):

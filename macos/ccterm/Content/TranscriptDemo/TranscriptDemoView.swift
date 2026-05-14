@@ -695,6 +695,113 @@ private extension TranscriptDemoView {
                             """,
                             newString: ""))),
                 ]))),
+
+            paraIR([
+                .text("Header-only and rich tool kinds in one group — read / generic "
+                    + "render as static labels without a chevron; bash / grep / glob / "
+                    + "webFetch / webSearch / askUserQuestion / agent each expose their "
+                    + "own body card when expanded."),
+            ]),
+
+            Block(id: UUID(), kind: .toolGroup(ToolGroupBlock(
+                title: String(localized: "Inspected the repo"),
+                children: [
+                    .read(ReadChild(
+                        id: UUID(),
+                        label: String(localized: "Read \("Sources/main.swift")"),
+                        filePath: "Sources/main.swift")),
+                    .bash(BashChild(
+                        id: UUID(),
+                        label: String(localized: "Ran \("make build")"),
+                        command: "make build",
+                        stdout: """
+                        Compiling Foo.swift
+                        Compiling Bar.swift
+                        ** BUILD SUCCEEDED **
+                        """,
+                        stderr: "warning: deprecated API in Bar.swift")),
+                    .grep(GrepChild(
+                        id: UUID(),
+                        label: String(localized: "Grepped \("TODO")"),
+                        pattern: "TODO",
+                        filenames: [
+                            "Sources/Foo.swift",
+                            "Sources/Bar.swift",
+                            "Tests/FooTests.swift",
+                        ],
+                        content: """
+                        Sources/Foo.swift:12: // TODO: rename
+                        Sources/Foo.swift:27: // TODO: nullable?
+                        Sources/Bar.swift:8:  // TODO: handle error
+                        """)),
+                    .glob(GlobChild(
+                        id: UUID(),
+                        label: String(localized: "Globbed \("**/*.swift")"),
+                        pattern: "**/*.swift",
+                        filenames: [
+                            "Sources/App.swift",
+                            "Sources/Foo.swift",
+                            "Sources/Bar.swift",
+                            "Sources/Views/Home.swift",
+                            "Tests/AppTests.swift",
+                        ],
+                        truncated: true)),
+                    .webFetch(WebFetchChild(
+                        id: UUID(),
+                        label: String(localized: "Fetched \("https://example.com")"),
+                        url: "https://example.com/docs",
+                        httpStatus: 200,
+                        result: """
+                        Example Docs
+
+                        This is the fetched body, rendered as plain text. \
+                        Links, lists, and emphasis are not re-parsed in the native \
+                        renderer; the raw response is shown verbatim so callers can \
+                        copy it straight into another tool.
+                        """)),
+                    .webSearch(WebSearchChild(
+                        id: UUID(),
+                        label: String(localized: "Searched \("swift concurrency")"),
+                        query: "swift concurrency",
+                        results: [
+                            .init(
+                                title: "Swift Concurrency — the road to Swift 6",
+                                url: "https://swift.org/blog/concurrency",
+                                snippet: "A concise overview of structured concurrency in Swift."),
+                            .init(
+                                title: "WWDC: Meet async/await",
+                                url: "https://developer.apple.com/videos/play/wwdc2021/10132",
+                                snippet: nil),
+                        ])),
+                    .askUserQuestion(AskUserQuestionChild(
+                        id: UUID(),
+                        label: String(localized: "Asked \(2) questions"),
+                        items: [
+                            .init(
+                                question: "Which framework should we use for navigation?",
+                                answer: "NavigationSplitView"),
+                            .init(
+                                question: "Should the sidebar be collapsible by default?",
+                                answer: nil),
+                        ])),
+                    .agent(AgentChild(
+                        id: UUID(),
+                        label: String(localized: "Ran agent \("research")"),
+                        description: "Audit repo for TODOs",
+                        progress: [
+                            "Searching documentation…",
+                            "Found 12 matches",
+                            "Cross-referencing tests",
+                        ],
+                        output: """
+                        Found 12 TODO comments across 7 files.
+
+                        Hottest cluster sits in Sources/Foo.swift (4 TODOs).
+                        """)),
+                    .generic(GenericChild(
+                        id: UUID(),
+                        label: String(localized: "Skill(\("pdf"))"))),
+                ]))),
         ]
     }
 }

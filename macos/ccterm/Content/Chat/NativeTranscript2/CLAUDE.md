@@ -124,10 +124,26 @@ SwiftUI: NativeTranscript2View (NSViewRepresentable)
   **fold state 路由:** `HitAction.toggleFold(UUID)` 携带的 id 可能是 group host 的 `Block.id`(group header)或某个 `Child.id`(child header)。`Coordinator.toggleFold(id:)` **必须**同时搜索 `blocks.firstIndex(where: { $0.id == id })` **和** 每个 toolGroup 内 `children.contains(where: { $0.id == id })` 才能定位 host row;只搜顶层 blocks 会让 child header 点击无反应。
 
   **新增 child kind:**
-  1. `Block.ToolGroupBlock.Child` 加一个 enum case + payload struct(必须暴露 `id` 和 `headerLabel`,后者驱动 child header 文案);
-  2. `Layout/ToolGroupChildren/XxxChildLayout.swift` 新建文件实现 `make / totalHeight / draw / drawBackplate`;
-  3. `ToolGroupChildLayout` enum 加 case 加 4 个 switch arm;
-  4. 如果需要异步高亮,`ToolGroupChildHighlight.requests(for:)` 加 case 返回 `Plan`。
+  1. `Layout/ToolGroupChildren/<Kind>/<Kind>Child.swift` 新建文件放 payload struct(必须暴露 `id` 和 `label`;`id` 驱动 fold-state / highlight scope,`label` 驱动 child header 文案);Block.swift 只加 enum case + 在 `id` / `headerLabel` / `hasExpandableBody` switch 各加一行;
+  2. `Layout/ToolGroupChildren/<Kind>/<Kind>ChildLayout.swift` 新建文件实现 `make / totalHeight / draw / drawBackplate`。多 sub-card body 直接复用 `TextCardSection.build / drawBackplates / draw`,不要每个 layout 重写一份 sub-card 几何;
+  3. `ToolGroupChildLayout` enum 加 case 加 4 个 switch arm(`totalHeight` / `drawBackplate` / `draw` / `make`);
+  4. **header-only kind** (`.read` / `.generic`):`hasExpandableBody = false`,layout `totalHeight == 0`,`draw` / `drawBackplate` 留空 — `ToolGroupLayout` 自动跳过 chevron 绘制 + 不注册 fold hit;
+  5. 如果需要异步高亮,`ToolGroupChildHighlight.requests(for:)` 加 case 返回 `Plan`;
+  6. 如果 body 要可选(进入 `selectionAdapter`),给 `LayoutPosition` 加 `.<kind>(...)` case 并在 `ToolGroupLayout.selectionAdapter` 把对应 `case` 路由进去(目前只有 `.fileEdit` 支持选区,其余的 `case .bash, .grep, .glob, .webFetch, .webSearch, .askUserQuestion, .agent: return nil`)。
+
+  **已实现的 child kinds**(每个独占一个 `Layout/ToolGroupChildren/<Kind>/` 子目录):
+
+  | Kind | Body |
+  |---|---|
+  | `read` / `generic` | header-only(无 chevron) |
+  | `fileEdit` | diff 卡 (`DiffLayout` + per-line highlight) |
+  | `bash` | command / stdout / stderr 三段 monospaced sub-cards;stderr 红字 |
+  | `grep` | filenames + 可选 content preview,两段 sub-cards |
+  | `glob` | filenames + 可选 "… truncated" 尾,单卡 |
+  | `webFetch` | response body 单卡(plain text) |
+  | `webSearch` | results list (title semibold / url monospace / snippet) |
+  | `askUserQuestion` | Q&A list (semibold question + answer / "awaiting answer…") |
+  | `agent` | progress 卡(`↳ ` 前缀)+ output 卡 |
 
   **禁用 protocol** —— enum 分发保证 exhaustiveness 检查,protocol 让"忘了在哪个文件里实现"成为可能。
 
@@ -156,13 +172,25 @@ NativeTranscript2/
 │   ├── BlockquoteLayout.swift       左 bar + 内嵌 TextLayout
 │   ├── ThematicBreakLayout.swift    单行 hairline
 │   ├── ToolGroupLayout.swift        toolGroup 行(group header + 子项 headers + 展开 child body),enum 分发到 ToolGroupChildLayout
-│   ├── ToolGroupChildren/           toolGroup 子项 layout,一个文件一种 child kind
+│   ├── ToolGroupChildren/           toolGroup 子项 layout,每种 child kind 一个子目录(payload + layout 一起)
 │   │   ├── ToolGroupChildLayout.swift     enum 分发 totalHeight/draw/drawBackplate + make 工厂
 │   │   ├── ToolGroupChildHighlight.swift  per-kind highlight 请求 + finalize
-│   │   └── FileEdit/
-│   │       ├── FileEditChildLayout.swift  .fileEdit child:thin wrapper 调 DiffLayout
-│   │       ├── FileEditChildHighlight.swift  per-unique-line highlight 请求 + finalize
-│   │       └── DiffLayout.swift           hunks body(`codeBlock`-style 圆角矩形 + per-line gutter/sign/content)
+│   │   ├── TextCardSection.swift          多卡 sub-body 共享几何 + draw helpers
+│   │   ├── FileEdit/                      diff body(头-体两段)
+│   │   │   ├── FileEditChild.swift            payload struct
+│   │   │   ├── FileEditChildLayout.swift      thin wrapper 调 DiffLayout
+│   │   │   ├── FileEditChildHighlight.swift   per-unique-line highlight 请求 + finalize
+│   │   │   ├── DiffBlock.swift                diff payload(old/new + hunks 派生)
+│   │   │   └── DiffLayout.swift               hunks body(`codeBlock`-style 圆角矩形 + per-line gutter/sign/content)
+│   │   ├── Read/                          header-only:Read*Child + ReadChildLayout(totalHeight=0)
+│   │   ├── Generic/                       header-only 兜底:GenericChild + GenericChildLayout(totalHeight=0)
+│   │   ├── Bash/                          command + stdout + stderr 三段 sub-cards
+│   │   ├── Grep/                          filenames + content preview 两段 sub-cards
+│   │   ├── Glob/                          filenames 单卡 + 可选 "… truncated" 尾
+│   │   ├── WebFetch/                      response body 单卡(plain text)
+│   │   ├── WebSearch/                     results list 单卡(title / url / snippet 三层)
+│   │   ├── AskUserQuestion/               Q&A list 单卡(question / answer 两层)
+│   │   └── Agent/                         progress + output 两段 sub-cards
 │   ├── SelectionAdapter.swift       selection-facing API(每个 layout 自带,struct + 闭包)
 │   ├── SubviewPlan.swift            chevron + entry-subview 装饰物 plan(layout 自带,同 SelectionAdapter pattern)
 │   └── RowLayout.swift              enum 派发(text/image/list/table/userBubble/codeBlock/blockquote/thematicBreak/toolGroup)

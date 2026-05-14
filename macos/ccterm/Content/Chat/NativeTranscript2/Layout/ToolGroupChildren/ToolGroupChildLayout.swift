@@ -27,6 +27,15 @@ import AppKit
 /// `ToolGroupChildHighlight.requests(for:)`.
 enum ToolGroupChildLayout: @unchecked Sendable {
     case fileEdit(FileEditChildLayout)
+    case read(ReadChildLayout)
+    case bash(BashChildLayout)
+    case grep(GrepChildLayout)
+    case glob(GlobChildLayout)
+    case webFetch(WebFetchChildLayout)
+    case webSearch(WebSearchChildLayout)
+    case askUserQuestion(AskUserQuestionChildLayout)
+    case agent(AgentChildLayout)
+    case generic(GenericChildLayout)
 
     /// Height of this child's expanded body, in points. `0` when the
     /// body is empty (typically: the child is folded, or it has no
@@ -34,6 +43,15 @@ enum ToolGroupChildLayout: @unchecked Sendable {
     var totalHeight: CGFloat {
         switch self {
         case .fileEdit(let l): return l.totalHeight
+        case .read(let l): return l.totalHeight
+        case .bash(let l): return l.totalHeight
+        case .grep(let l): return l.totalHeight
+        case .glob(let l): return l.totalHeight
+        case .webFetch(let l): return l.totalHeight
+        case .webSearch(let l): return l.totalHeight
+        case .askUserQuestion(let l): return l.totalHeight
+        case .agent(let l): return l.totalHeight
+        case .generic(let l): return l.totalHeight
         }
     }
 
@@ -43,6 +61,15 @@ enum ToolGroupChildLayout: @unchecked Sendable {
     func drawBackplate(in ctx: CGContext, origin: CGPoint) {
         switch self {
         case .fileEdit(let l): l.drawBackplate(in: ctx, origin: origin)
+        case .read(let l): l.drawBackplate(in: ctx, origin: origin)
+        case .bash(let l): l.drawBackplate(in: ctx, origin: origin)
+        case .grep(let l): l.drawBackplate(in: ctx, origin: origin)
+        case .glob(let l): l.drawBackplate(in: ctx, origin: origin)
+        case .webFetch(let l): l.drawBackplate(in: ctx, origin: origin)
+        case .webSearch(let l): l.drawBackplate(in: ctx, origin: origin)
+        case .askUserQuestion(let l): l.drawBackplate(in: ctx, origin: origin)
+        case .agent(let l): l.drawBackplate(in: ctx, origin: origin)
+        case .generic(let l): l.drawBackplate(in: ctx, origin: origin)
         }
     }
 
@@ -50,6 +77,15 @@ enum ToolGroupChildLayout: @unchecked Sendable {
     func draw(in ctx: CGContext, origin: CGPoint) {
         switch self {
         case .fileEdit(let l): l.draw(in: ctx, origin: origin)
+        case .read(let l): l.draw(in: ctx, origin: origin)
+        case .bash(let l): l.draw(in: ctx, origin: origin)
+        case .grep(let l): l.draw(in: ctx, origin: origin)
+        case .glob(let l): l.draw(in: ctx, origin: origin)
+        case .webFetch(let l): l.draw(in: ctx, origin: origin)
+        case .webSearch(let l): l.draw(in: ctx, origin: origin)
+        case .askUserQuestion(let l): l.draw(in: ctx, origin: origin)
+        case .agent(let l): l.draw(in: ctx, origin: origin)
+        case .generic(let l): l.draw(in: ctx, origin: origin)
         }
     }
 
@@ -76,6 +112,51 @@ enum ToolGroupChildLayout: @unchecked Sendable {
         case .fileEdit(let c):
             return .fileEdit(FileEditChildLayout.make(
                 child: c, lineMap: lineMap,
+                originX: originX, originY: originY,
+                maxWidth: maxWidth))
+        case .read(let c):
+            return .read(ReadChildLayout.make(
+                child: c,
+                originX: originX, originY: originY,
+                maxWidth: maxWidth))
+        case .bash(let c):
+            return .bash(BashChildLayout.make(
+                child: c,
+                originX: originX, originY: originY,
+                maxWidth: maxWidth))
+        case .grep(let c):
+            return .grep(GrepChildLayout.make(
+                child: c,
+                originX: originX, originY: originY,
+                maxWidth: maxWidth))
+        case .glob(let c):
+            return .glob(GlobChildLayout.make(
+                child: c,
+                originX: originX, originY: originY,
+                maxWidth: maxWidth))
+        case .webFetch(let c):
+            return .webFetch(WebFetchChildLayout.make(
+                child: c,
+                originX: originX, originY: originY,
+                maxWidth: maxWidth))
+        case .webSearch(let c):
+            return .webSearch(WebSearchChildLayout.make(
+                child: c,
+                originX: originX, originY: originY,
+                maxWidth: maxWidth))
+        case .askUserQuestion(let c):
+            return .askUserQuestion(AskUserQuestionChildLayout.make(
+                child: c,
+                originX: originX, originY: originY,
+                maxWidth: maxWidth))
+        case .agent(let c):
+            return .agent(AgentChildLayout.make(
+                child: c,
+                originX: originX, originY: originY,
+                maxWidth: maxWidth))
+        case .generic(let c):
+            return .generic(GenericChildLayout.make(
+                child: c,
                 originX: originX, originY: originY,
                 maxWidth: maxWidth))
         }

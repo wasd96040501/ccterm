@@ -69,6 +69,15 @@ struct ToolGroupLayout: @unchecked Sendable {
                     let d = l.body
                     guard !d.containerRect.isEmpty else { return nil }
                     return (idx, d)
+                case .read, .generic:
+                    // Header-only children have no body geometry —
+                    // selection cannot land on them.
+                    return nil
+                case .bash, .grep, .glob, .webFetch, .webSearch,
+                     .askUserQuestion, .agent:
+                    // Non-diff bodies aren't selectable today
+                    // (`LayoutPosition` has no per-kind case).
+                    return nil
                 }
             }
         guard !bodies.isEmpty else { return nil }
@@ -163,6 +172,13 @@ struct ToolGroupLayout: @unchecked Sendable {
     /// `Child.id` for a child header. The draw pass matches against
     /// the cell's `hoveredAction` to decide which header to paint in
     /// hover state.
+    ///
+    /// `hasChevron` distinguishes foldable headers (group header
+    /// always, plus children whose `Child.hasExpandableBody == true`)
+    /// from static labels (read / generic children). When `false`,
+    /// the chevron is *not* drawn, no fold hit is registered, and
+    /// the title gets the entire band width — the row reads as a
+    /// plain title line, not a control affordance.
     struct Header: @unchecked Sendable {
         let foldId: UUID
         /// Whole header rect in layout-local coords.
@@ -170,13 +186,20 @@ struct ToolGroupLayout: @unchecked Sendable {
         /// Display text (already truncated to fit the band).
         let title: String
         /// Width budget reserved for the title (≤ band width − chevron
-        /// allowance). Used at draw time to clamp the retypeset line
-        /// when hover repaints kick in.
+        /// allowance when `hasChevron`, full band width otherwise).
+        /// Used at draw time to clamp the retypeset line when hover
+        /// repaints kick in.
         let titleWidth: CGFloat
         /// Baseline origin for `CTLine.draw`.
         let titleOrigin: CGPoint
+        /// `true` when this header should render a chevron glyph and
+        /// participate in fold-toggle hit dispatch. `false` for
+        /// header-only child kinds (read, generic) — they're labels,
+        /// not controls.
+        let hasChevron: Bool
         /// Centre of the chevron glyph — drawn at runtime so rotation
-        /// can track the fold flag without a rebuild.
+        /// can track the fold flag without a rebuild. Only consumed
+        /// when `hasChevron == true`.
         let chevronCenter: CGPoint
         /// `true` → chevron points down; `false` → chevron points right.
         let chevronExpanded: Bool
@@ -230,6 +253,7 @@ struct ToolGroupLayout: @unchecked Sendable {
         let groupHeader = makeHeader(
             foldId: blockId,
             title: group.title,
+            hasChevron: true,
             chevronExpanded: groupExpanded,
             y: y,
             maxWidth: maxWidth)
@@ -257,17 +281,21 @@ struct ToolGroupLayout: @unchecked Sendable {
                 // other.
                 let entryStartY = y
                 y += BlockStyle.toolHeaderChildSpacing
-                let childExpanded = foldStates[child.id] ?? false
+                let canFold = child.hasExpandableBody
+                let childExpanded = canFold && (foldStates[child.id] ?? false)
                 let childHeader = makeHeader(
                     foldId: child.id,
                     title: child.headerLabel,
+                    hasChevron: canFold,
                     chevronExpanded: childExpanded,
                     y: y,
                     maxWidth: maxWidth)
                 y += BlockStyle.toolHeaderHeight
-                hits.append(InteractiveHit(
-                    rect: hitRect(over: childHeader, maxWidth: maxWidth),
-                    action: .toggleFold(child.id)))
+                if canFold {
+                    hits.append(InteractiveHit(
+                        rect: hitRect(over: childHeader, maxWidth: maxWidth),
+                        action: .toggleFold(child.id)))
+                }
 
                 let body: ToolGroupChildLayout?
                 if childExpanded {
@@ -316,6 +344,7 @@ struct ToolGroupLayout: @unchecked Sendable {
     nonisolated private static func makeHeader(
         foldId: UUID,
         title: String,
+        hasChevron: Bool,
         chevronExpanded: Bool,
         y: CGFloat,
         maxWidth: CGFloat
@@ -329,9 +358,10 @@ struct ToolGroupLayout: @unchecked Sendable {
         let rect = CGRect(x: 0, y: y, width: maxWidth, height: height)
 
         // Title at `x = 0` (layout-local; the cell's `layoutOrigin.x`
-        // already supplies the row's horizontal padding). Width
-        // budget reserves `chevron + gap` on the right edge.
-        let reserved = chevron + gap
+        // already supplies the row's horizontal padding). Header-only
+        // children (no chevron) get the full band width; foldable
+        // headers reserve `chevron + gap` on the right edge.
+        let reserved: CGFloat = hasChevron ? (chevron + gap) : 0
         let titleBudget = max(0, maxWidth - reserved)
 
         let displayTitle: String
@@ -365,12 +395,17 @@ struct ToolGroupLayout: @unchecked Sendable {
         // midline (the glyphs' x-height band) rather than the band's
         // geometric midline. Without it the chevron reads as floating
         // slightly above the title.
-        let visualCompensation = max(0, (font.capHeight - font.xHeight) / 2)
-        let chevronX = min(titleWidth + gap + chevron / 2,
-                           maxWidth - chevron / 2)
-        let chevronCenter = CGPoint(
-            x: chevronX,
-            y: midY + visualCompensation)
+        let chevronCenter: CGPoint
+        if hasChevron {
+            let visualCompensation = max(0, (font.capHeight - font.xHeight) / 2)
+            let chevronX = min(titleWidth + gap + chevron / 2,
+                               maxWidth - chevron / 2)
+            chevronCenter = CGPoint(
+                x: chevronX,
+                y: midY + visualCompensation)
+        } else {
+            chevronCenter = .zero
+        }
 
         return Header(
             foldId: foldId,
@@ -378,6 +413,7 @@ struct ToolGroupLayout: @unchecked Sendable {
             title: displayTitle,
             titleWidth: titleWidth,
             titleOrigin: titleOrigin,
+            hasChevron: hasChevron,
             chevronCenter: chevronCenter,
             chevronExpanded: chevronExpanded)
     }
@@ -404,7 +440,8 @@ struct ToolGroupLayout: @unchecked Sendable {
 
     nonisolated private static func emptyHeader(foldId: UUID) -> Header {
         Header(foldId: foldId, rect: .zero, title: "", titleWidth: 0,
-               titleOrigin: .zero, chevronCenter: .zero, chevronExpanded: false)
+               titleOrigin: .zero, hasChevron: false,
+               chevronCenter: .zero, chevronExpanded: false)
     }
 
     /// Trim leading path components until the remainder fits `budget`
@@ -546,12 +583,14 @@ struct ToolGroupLayout: @unchecked Sendable {
 
         var chevrons: [SubviewPlan.Chevron] = []
         chevrons.reserveCapacity(1 + items.count)
-        chevrons.append(SubviewPlan.Chevron(
-            id: groupHeader.foldId,
-            center: CGPoint(x: origin.x + groupHeader.chevronCenter.x,
-                            y: origin.y + groupHeader.chevronCenter.y),
-            expanded: groupHeader.chevronExpanded,
-            hovered: hoveredId == groupHeader.foldId))
+        if groupHeader.hasChevron {
+            chevrons.append(SubviewPlan.Chevron(
+                id: groupHeader.foldId,
+                center: CGPoint(x: origin.x + groupHeader.chevronCenter.x,
+                                y: origin.y + groupHeader.chevronCenter.y),
+                expanded: groupHeader.chevronExpanded,
+                hovered: hoveredId == groupHeader.foldId))
+        }
 
         // Selection rects in layout-local coords. Distributed to every
         // entry's draw closure; each entry filters against its own
@@ -566,12 +605,14 @@ struct ToolGroupLayout: @unchecked Sendable {
         var entries: [SubviewPlan.Entry] = []
         entries.reserveCapacity(items.count)
         for entry in items {
-            chevrons.append(SubviewPlan.Chevron(
-                id: entry.header.foldId,
-                center: CGPoint(x: origin.x + entry.header.chevronCenter.x,
-                                y: origin.y + entry.header.chevronCenter.y),
-                expanded: entry.header.chevronExpanded,
-                hovered: hoveredId == entry.header.foldId))
+            if entry.header.hasChevron {
+                chevrons.append(SubviewPlan.Chevron(
+                    id: entry.header.foldId,
+                    center: CGPoint(x: origin.x + entry.header.chevronCenter.x,
+                                    y: origin.y + entry.header.chevronCenter.y),
+                    expanded: entry.header.chevronExpanded,
+                    hovered: hoveredId == entry.header.foldId))
+            }
 
             let frame = CGRect(
                 x: origin.x + entry.bandRect.minX,

@@ -372,8 +372,17 @@ struct DiffLayout: @unchecked Sendable {
     /// One rect per content row whose body chars intersect the range,
     /// tight to the row's full `lineRect` band (so the rect matches
     /// the diff's line-height visual rhythm).
+    ///
+    /// Content rows don't wrap; a long line's CTLine can resolve a char
+    /// `x` past `containerRect.maxX`. The cell paints these rects with
+    /// `wantsDefaultClipping = false`, so an unclamped rect spills past
+    /// the rounded card edge and gets drawn squarely over the corner.
+    /// Clamp each rect's horizontal span into the container so the
+    /// selection band stops at the visual card boundary.
     func rects(loChar: Int, hiChar: Int) -> [CGRect] {
         guard loChar < hiChar else { return [] }
+        let containerMinX = containerRect.minX
+        let containerMaxX = containerRect.maxX
         var out: [CGRect] = []
         for row in rows where row.isContent {
             let rowStart = row.globalStart
@@ -392,10 +401,15 @@ struct DiffLayout: @unchecked Sendable {
             let xLo = CGFloat(CTLineGetOffsetForStringIndex(line, charLo, nil))
             let xHi = CGFloat(CTLineGetOffsetForStringIndex(line, charHi, nil))
             let baseX = row.lineRect.minX
+            let rawLo = baseX + xLo
+            let rawHi = baseX + xHi
+            let clampedLo = max(containerMinX, min(rawLo, containerMaxX))
+            let clampedHi = max(containerMinX, min(rawHi, containerMaxX))
+            guard clampedHi > clampedLo else { continue }
             out.append(CGRect(
-                x: baseX + xLo,
+                x: clampedLo,
                 y: row.lineRect.minY,
-                width: max(0, xHi - xLo),
+                width: clampedHi - clampedLo,
                 height: row.lineRect.height))
         }
         return out

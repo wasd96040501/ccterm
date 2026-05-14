@@ -606,6 +606,16 @@
         }
       }
     },
+    "Delete %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除 %@"
+          }
+        }
+      }
+    },
     "Deleted": {
       "extractionState": "stale",
       "localizations": {
@@ -633,6 +643,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "完成"
+          }
+        }
+      }
+    },
+    "Edit %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑 %@"
           }
         }
       }
@@ -2246,6 +2266,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "工作树"
+          }
+        }
+      }
+    },
+    "Write %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建 %@"
           }
         }
       }

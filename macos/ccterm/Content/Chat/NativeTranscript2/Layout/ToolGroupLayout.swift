@@ -54,8 +54,98 @@ struct ToolGroupLayout: @unchecked Sendable {
     /// Diff has no inline links and no inline selection today.
     var links: [TextLayout.LinkHit] { [] }
 
-    /// Selection unsupported for now.
-    var selectionAdapter: SelectionAdapter? { nil }
+    /// Selection-facing API. Selection is restricted to expanded
+    /// `fileEdit` body content (gutter / sign columns are not
+    /// selectable). Positions are `LayoutPosition.diff(childIndex:char:)`;
+    /// the adapter routes per-body operations to the matching
+    /// `DiffLayout` and returns empty when caller passes
+    /// cross-body or non-`.diff` endpoints.
+    var selectionAdapter: SelectionAdapter? {
+        let bodies: [(childIndex: Int, diff: DiffLayout)] = items.enumerated()
+            .compactMap { idx, entry in
+                guard let body = entry.body else { return nil }
+                switch body {
+                case .fileEdit(let l):
+                    let d = l.body
+                    guard !d.containerRect.isEmpty else { return nil }
+                    return (idx, d)
+                }
+            }
+        guard !bodies.isEmpty else { return nil }
+
+        func diff(for index: Int) -> DiffLayout? {
+            bodies.first(where: { $0.childIndex == index })?.diff
+        }
+
+        // `fullRange` and `unitRange` both span just the *first* body
+        // — Cmd+A and triple-click then pick whichever body the
+        // caller passes in. Drag-selection across bodies isn't
+        // modelled; the adapter's hitTest snaps the cursor into the
+        // single body whose y band it lands in.
+        let firstChildIndex = bodies[0].childIndex
+        let firstDiff = bodies[0].diff
+        let fullRange = SelectionRange(
+            start: .diff(childIndex: firstChildIndex, char: 0),
+            end: .diff(childIndex: firstChildIndex, char: firstDiff.contentLength))
+
+        return SelectionAdapter(
+            fullRange: fullRange,
+            unitRange: { p in
+                guard case .diff(let i, _) = p,
+                      let d = diff(for: i)
+                else { return fullRange }
+                return SelectionRange(
+                    start: .diff(childIndex: i, char: 0),
+                    end: .diff(childIndex: i, char: d.contentLength))
+            },
+            hitTest: { point in
+                // Snap to whichever body's y band contains the point
+                // (or, when between bodies, the closest one). Empty
+                // bodies aren't included in `bodies`, so the snap is
+                // always to a real, selectable body.
+                let preferred = bodies.first(where: {
+                    point.y >= $0.diff.containerRect.minY
+                        && point.y <= $0.diff.containerRect.maxY
+                }) ?? bodies.min(by: {
+                    let d0 = min(abs(point.y - $0.diff.containerRect.minY),
+                                 abs(point.y - $0.diff.containerRect.maxY))
+                    let d1 = min(abs(point.y - $1.diff.containerRect.minY),
+                                 abs(point.y - $1.diff.containerRect.maxY))
+                    return d0 < d1
+                })!
+                let char = preferred.diff.hitTest(point: point)
+                return .diff(childIndex: preferred.childIndex, char: char)
+            },
+            rects: { a, b in
+                guard case .diff(let ia, let ca) = a,
+                      case .diff(let ib, let cb) = b,
+                      ia == ib,
+                      let d = diff(for: ia)
+                else { return [] }
+                let lo = min(ca, cb)
+                let hi = max(ca, cb)
+                return d.rects(loChar: lo, hiChar: hi)
+            },
+            string: { a, b in
+                guard case .diff(let ia, let ca) = a,
+                      case .diff(let ib, let cb) = b,
+                      ia == ib,
+                      let d = diff(for: ia)
+                else { return "" }
+                let lo = min(ca, cb)
+                let hi = max(ca, cb)
+                return d.string(loChar: lo, hiChar: hi)
+            },
+            wordBoundary: { p in
+                guard case .diff(let i, let c) = p,
+                      let d = diff(for: i),
+                      let word = d.wordBoundary(at: c)
+                else { return nil }
+                return SelectionRange(
+                    start: .diff(childIndex: i, char: word.location),
+                    end: .diff(childIndex: i, char: word.location + word.length))
+            })
+    }
 
     // MARK: - Inner types
 
@@ -96,10 +186,21 @@ struct ToolGroupLayout: @unchecked Sendable {
     /// (or when its body layout happens to be empty); when present,
     /// it's already positioned at the right `(x, y)` for the draw
     /// pass to forward straight in.
+    ///
+    /// `bandRect` is the entry's full vertical band in layout-local
+    /// coords — top includes the `toolHeaderChildSpacing` leading
+    /// gap, bottom is either the header's bottom (folded) or the body
+    /// card's bottom (expanded). Adjacent entries' bands tile without
+    /// gaps. The cell stages one layer-backed subview per entry sized
+    /// to `bandRect` so AppKit's `NSAnimationContext` slides each
+    /// entry's frame when an upstream sibling expands/collapses —
+    /// inside a single row the row-height transition alone gives a
+    /// pop, only per-entry frame animation produces the slide.
     struct Entry: @unchecked Sendable {
         let childId: UUID
         let header: Header
         let body: ToolGroupChildLayout?
+        let bandRect: CGRect
     }
 
     // MARK: - Factory
@@ -148,6 +249,13 @@ struct ToolGroupLayout: @unchecked Sendable {
             // next child header, child header → next child header.
             // Matches the old `GroupComponent.groupChildSpacing`.
             for child in group.children {
+                // Track the entry's band start *before* the leading
+                // spacing so adjacent entries' bands tile without
+                // gaps — the per-entry subview in the cell carries
+                // the gap on its top edge, which keeps neighbour
+                // sliding visually flush as one slides past the
+                // other.
+                let entryStartY = y
                 y += BlockStyle.toolHeaderChildSpacing
                 let childExpanded = foldStates[child.id] ?? false
                 let childHeader = makeHeader(
@@ -183,9 +291,13 @@ struct ToolGroupLayout: @unchecked Sendable {
                 } else {
                     body = nil
                 }
+                let bandRect = CGRect(
+                    x: 0, y: entryStartY,
+                    width: maxWidth, height: y - entryStartY)
                 entries.append(Entry(childId: child.id,
                                      header: childHeader,
-                                     body: body))
+                                     body: body,
+                                     bandRect: bandRect))
             }
         }
 
@@ -325,113 +437,120 @@ struct ToolGroupLayout: @unchecked Sendable {
     }
 
     // MARK: - Draw
+    //
+    // The cell paints the toolGroup row in two passes:
+    //
+    //   1. Cell's main bitmap renders the **group header** only.
+    //      `drawBackplate` is a no-op (group header has no fill).
+    //      `draw` paints the group header title; the chevron is a
+    //      `CAShapeLayer` sublayer of the cell.
+    //   2. Each entry's content (child header + optional body) is
+    //      rendered into a per-entry layer-backed NSView subview
+    //      (`ToolGroupEntryView`) sized to `entry.bandRect`. The
+    //      subview's `draw(_:)` calls into `drawEntry(...)` below
+    //      with view-local coords.
+    //
+    // The split exists so AppKit can slide each entry's subview
+    // frame when an upstream sibling expands/collapses
+    // (`NSAnimationContext` on `view.animator().frame = newFrame` is
+    // the AppKit-blessed per-view animation primitive). Rendering
+    // everything into the cell's single bitmap, as the previous
+    // pass did, gives `CATransition.fade` at best — entries below
+    // the toggling child pop into place rather than slide.
 
-    /// Background passes for every expanded item body — forwarded into
-    /// `DiffLayout.drawBackplate`. Headers have no fill so there's
-    /// nothing else to paint here.
-    func drawBackplate(in ctx: CGContext, origin: CGPoint) {
-        for entry in items {
-            entry.body?.drawBackplate(in: ctx, origin: origin)
-        }
-    }
+    /// No-op. Entry bodies own their backplate inside their own
+    /// subview's draw pass; the group header has no fill.
+    func drawBackplate(in ctx: CGContext, origin: CGPoint) {}
 
+    /// Paints the group header title only. Child entries are
+    /// rendered by their own subviews via `drawEntry(...)`.
     func draw(in ctx: CGContext, origin: CGPoint, hoveredAction: HitAction?) {
         let hoveredId = Self.hoveredFoldId(in: hoveredAction)
-        drawHeader(groupHeader, hovered: hoveredId == groupHeader.foldId,
-                   in: ctx, origin: origin)
-        for entry in items {
-            drawHeader(entry.header,
-                       hovered: hoveredId == entry.header.foldId,
-                       in: ctx, origin: origin)
-            entry.body?.draw(in: ctx, origin: origin)
+        Self.drawHeader(groupHeader,
+                        hovered: hoveredId == groupHeader.foldId,
+                        in: ctx, origin: origin)
+    }
+
+    /// Render one `Entry` into `ctx` in **view-local** coords —
+    /// `entry.bandRect.origin` maps to (0, 0) of the receiving
+    /// subview, so we offset every internal call by `-bandRect.origin`.
+    ///
+    /// `selectionRects` is in layout-local coords (the toolGroup
+    /// layout's frame); only rects that intersect `entry.bandRect`
+    /// paint. The cell forwards the same rect list to every entry
+    /// view — selection is constrained to a single body at any
+    /// time, so the filter is exactly one match.
+    nonisolated static func drawEntry(
+        _ entry: Entry,
+        hovered: Bool,
+        selectionRects: [CGRect],
+        selectionColor: NSColor,
+        in ctx: CGContext
+    ) {
+        let dx = -entry.bandRect.minX
+        let dy = -entry.bandRect.minY
+        let originForBody = CGPoint(x: dx, y: dy)
+
+        // 1. Body backplate (rounded container + line/gutter bg).
+        entry.body?.drawBackplate(in: ctx, origin: originForBody)
+
+        // 2. Selection band — under glyphs, above backplate.
+        let bandRect = entry.bandRect
+        let filtered = selectionRects.filter { bandRect.intersects($0) }
+        if !filtered.isEmpty {
+            ctx.setFillColor(selectionColor.cgColor)
+            for r in filtered {
+                ctx.fill(r.offsetBy(dx: dx, dy: dy).integral)
+            }
         }
+
+        // 3. Body glyphs.
+        entry.body?.draw(in: ctx, origin: originForBody)
+
+        // 4. Child header title.
+        drawHeader(entry.header,
+                   hovered: hovered,
+                   in: ctx, origin: originForBody)
     }
 
     /// Extract the fold id from a hovered hit action, or `nil` if the
     /// cursor is over an unrelated hit (URL link, copy button, etc.).
-    private static func hoveredFoldId(in action: HitAction?) -> UUID? {
+    static func hoveredFoldId(in action: HitAction?) -> UUID? {
         guard let action else { return nil }
         if case .toggleFold(let id) = action { return id }
         return nil
     }
 
-    private func drawHeader(_ header: Header,
-                            hovered: Bool,
-                            in ctx: CGContext,
-                            origin: CGPoint)
-    {
+    /// Draw a header's title — the chevron glyph is rendered by the
+    /// cell's per-foldId `CAShapeLayer` (see `BlockCellView.syncChevronSublayers`),
+    /// so this path is title-only.
+    nonisolated private static func drawHeader(
+        _ header: Header,
+        hovered: Bool,
+        in ctx: CGContext,
+        origin: CGPoint
+    ) {
         let titleColor: NSColor = hovered
             ? BlockStyle.toolHeaderHoverForeground
             : BlockStyle.toolHeaderForeground
-        let chevronAlpha: CGFloat = hovered
-            ? BlockStyle.toolHeaderChevronHoverAlpha
-            : BlockStyle.toolHeaderChevronIdleAlpha
 
         // Retypeset on draw so the hover-driven `foregroundColor`
         // swap doesn't require a layout rebuild. Title text was
         // already truncated to fit at make-time, so this is a single
         // CTLine constructor over a known-bounded string.
-        if !header.title.isEmpty {
-            let attr = NSAttributedString(string: header.title, attributes: [
-                .font: BlockStyle.toolHeaderFont,
-                .foregroundColor: titleColor,
-            ])
-            let line = CTLineCreateWithAttributedString(attr)
-            ctx.saveGState()
-            ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
-            ctx.textPosition = CGPoint(
-                x: origin.x + header.titleOrigin.x,
-                y: origin.y + header.titleOrigin.y)
-            CTLineDraw(line, ctx)
-            ctx.restoreGState()
-        }
-
-        drawChevron(at: header.chevronCenter,
-                    expanded: header.chevronExpanded,
-                    color: titleColor,
-                    alpha: chevronAlpha,
-                    in: ctx, origin: origin)
-    }
-
-    /// Two-segment `>` stroke path, rotated to point right (folded)
-    /// or down (expanded). Identical visual recipe to the old
-    /// `GroupSideCar.chevronPath` — bounding box has `halfW = size *
-    /// 0.22`, `halfH = size * 0.4`, drawn with `lineWidth = 1.4` and
-    /// `round` line cap / join. Colour and alpha are the same tint
-    /// the title uses (so hover lifts both in lockstep).
-    private func drawChevron(at center: CGPoint,
-                             expanded: Bool,
-                             color: NSColor,
-                             alpha: CGFloat,
-                             in ctx: CGContext,
-                             origin: CGPoint)
-    {
-        let size = BlockStyle.toolHeaderChevronSize
-        let halfW = size * 0.22
-        let halfH = size * 0.4
-        let cx = origin.x + center.x
-        let cy = origin.y + center.y
-
+        guard !header.title.isEmpty else { return }
+        let attr = NSAttributedString(string: header.title, attributes: [
+            .font: BlockStyle.toolHeaderFont,
+            .foregroundColor: titleColor,
+        ])
+        let line = CTLineCreateWithAttributedString(attr)
         ctx.saveGState()
-        // Translate to chevron centre, then rotate. AppKit's flipped
-        // coord system means `+y` points down; rotating `+π/2` flips
-        // a right-pointing chevron to a down-pointing one (folded →
-        // expanded), matching the old SideCar's rotation direction.
-        ctx.translateBy(x: cx, y: cy)
-        if expanded {
-            ctx.rotate(by: .pi / 2)
-        }
-        let path = CGMutablePath()
-        path.move(to: CGPoint(x: -halfW, y: -halfH))
-        path.addLine(to: CGPoint(x: halfW, y: 0))
-        path.addLine(to: CGPoint(x: -halfW, y: halfH))
-
-        ctx.setStrokeColor(color.withAlphaComponent(alpha).cgColor)
-        ctx.setLineWidth(BlockStyle.toolHeaderChevronLineWidth)
-        ctx.setLineCap(.round)
-        ctx.setLineJoin(.round)
-        ctx.addPath(path)
-        ctx.strokePath()
+        ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
+        ctx.textPosition = CGPoint(
+            x: origin.x + header.titleOrigin.x,
+            y: origin.y + header.titleOrigin.y)
+        CTLineDraw(line, ctx)
         ctx.restoreGState()
     }
+
 }

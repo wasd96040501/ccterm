@@ -15,6 +15,15 @@ enum LayoutPosition: Equatable, Hashable {
     case text(char: Int)
     case cell(row: Int, col: Int, char: Int)
     case listItem(paragraph: Int, char: Int)
+    /// Diff body position. `childIndex` identifies which expanded
+    /// child body inside a `toolGroup` row owns the position; `char`
+    /// is a 0-based index into that body's *content-only* text
+    /// (gutter and sign columns are skipped). Selection can only be
+    /// drawn between two `.diff` positions sharing the same
+    /// `childIndex`; the adapter returns empty rects / empty string
+    /// otherwise. Mixed-body drags are not modelled — a drag that
+    /// starts in body A and lands in body B clamps to A.
+    case diff(childIndex: Int, char: Int)
 }
 
 /// Two `LayoutPosition`s describing one block's current selection. Order

@@ -642,11 +642,11 @@ private extension TranscriptDemoView {
             ]),
 
             Block(id: UUID(), kind: .toolGroup(ToolGroupBlock(
-                title: "Edited 3 files",
+                title: String(localized: "Edited \(3) files"),
                 children: [
                     .fileEdit(FileEditChild(
                         id: UUID(),
-                        label: "Edit Sources/Greeter.swift",
+                        label: String(localized: "Edit \("Sources/Greeter.swift")"),
                         filePath: "Sources/Greeter.swift",
                         diff: DiffBlock(
                             filePath: "Sources/Greeter.swift",
@@ -665,7 +665,7 @@ private extension TranscriptDemoView {
                             """))),
                     .fileEdit(FileEditChild(
                         id: UUID(),
-                        label: "Write config/server.yaml",
+                        label: String(localized: "Write \("config/server.yaml")"),
                         filePath: "config/server.yaml",
                         diff: DiffBlock(
                             filePath: "config/server.yaml",
@@ -681,7 +681,7 @@ private extension TranscriptDemoView {
                             """))),
                     .fileEdit(FileEditChild(
                         id: UUID(),
-                        label: "Delete scripts/cleanup.sh",
+                        label: String(localized: "Delete \("scripts/cleanup.sh")"),
                         filePath: "scripts/cleanup.sh",
                         diff: DiffBlock(
                             filePath: "scripts/cleanup.sh",

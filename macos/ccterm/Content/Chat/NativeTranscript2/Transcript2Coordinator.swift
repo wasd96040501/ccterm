@@ -646,7 +646,8 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             }
         }
         guard let row = hostRow else { return }
-        foldStates[id] = !(foldStates[id] ?? false)
+        let newExpanded = !(foldStates[id] ?? false)
+        foldStates[id] = newExpanded
         let hostId = blocks[row].id
         // Invalidate the host row's cached layout and selection — the
         // toggled id might be a child, but the *layout* of the
@@ -654,9 +655,31 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         removeCachedLayout(for: hostId)
         selection.dropEntry(blockId: hostId)
 
+        // Cell-side animations run *before* the reload so the cell
+        // can snapshot its current state (mid-flight chevron angle,
+        // pre-swap bitmap) and start its drivers. The `reloadData`
+        // below installs the new `RowLayout` on the same cell
+        // instance; AppKit reuses the cell for the same row, so the
+        // animation state carries through.
+        //
+        // `beginEntryFrameAnimation` flips a one-shot flag that
+        // tells the upcoming `syncEntrySubviews()` (running inside
+        // `layout.didSet`, inside the `NSAnimationContext` group
+        // below) to route entry frame changes through
+        // `view.animator()`. That's the slide the rest of this
+        // animation needs — within a single toolGroup row the row
+        // height change alone gives a content-fade, only per-entry
+        // frame animation makes siblings below the toggled child
+        // visually move.
+        let cell = table.view(atColumn: 0, row: row, makeIfNecessary: false)
+            as? BlockCellView
+        cell?.beginChevronAnimation(foldId: id, toExpanded: newExpanded)
+        cell?.beginContentCrossFade()
+        cell?.beginEntryFrameAnimation()
+
         let idx = IndexSet(integer: row)
         NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.18
+            ctx.duration = BlockStyle.foldAnimationDuration
             ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             table.beginUpdates()
             table.noteHeightOfRows(withIndexesChanged: idx)
@@ -861,11 +884,12 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         // on every reuse so a recycled cell doesn't carry a stale
         // checkmark onto a different code block.
         cell.resetCopiedFeedback()
-        // Hover affordance is likewise transient — a recycled cell
-        // must start with no hovered hit, otherwise the previous row's
-        // hovered toolGroup header would still read as "primed" until
-        // the cursor moved.
-        cell.resetHover()
+        // Hover affordance is reseated by `layout.didSet` (via the
+        // cached mouse-location re-evaluation): a fold-toggle reload
+        // keeps the cursor over the same hit and so should keep
+        // brightening it, while a scroll-recycle hop moves the cell
+        // out from under the cursor and the re-evaluation clears the
+        // stale hover by itself. No need to forcibly reset here.
         // Reinjected on every viewFor (cells are reused across rows) so
         // chevron mouseDown can hit `requestUserBubbleSheet` without
         // scanning the superview chain.

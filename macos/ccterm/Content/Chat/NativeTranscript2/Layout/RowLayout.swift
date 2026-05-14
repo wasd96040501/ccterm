@@ -101,10 +101,14 @@ enum RowLayout: @unchecked Sendable {
 
     /// `hoveredAction` is `nil` when no `interactiveHits` rect is
     /// currently under the cursor. Layouts that care about hover (today:
-    /// `toolGroup`'s headers, which brighten title + chevron when their
-    /// own `toggleFold` hit is the hovered one) read this and decide
-    /// per-sub-region whether to draw in hover state. Layouts that
-    /// don't care (everything else) ignore the parameter.
+    /// `toolGroup`'s headers, which brighten title in hover state) read
+    /// this and decide per-sub-region whether to draw in hover state.
+    /// Layouts that don't care (everything else) ignore the parameter.
+    ///
+    /// Chevron glyphs are *not* drawn by `draw` — the cell positions a
+    /// `CAShapeLayer` per chevron from each header's `chevronCenter`
+    /// and animates `transform.rotation.z` via `CABasicAnimation`.
+    /// `ToolGroupLayout.draw` only emits header titles into the CGContext.
     func draw(in ctx: CGContext, origin: CGPoint, hoveredAction: HitAction?) {
         switch self {
         case .text(let l): l.draw(in: ctx, origin: origin)
@@ -196,5 +200,15 @@ enum RowLayout: @unchecked Sendable {
         case .userBubble(let l): return l.selectionAdapter
         case .toolGroup(let l): return l.selectionAdapter
         }
+    }
+
+    /// `true` when this row is a `.toolGroup`. The cell uses this to
+    /// route selection painting into per-entry subviews (where the
+    /// expanded body cards live) instead of the cell's main bitmap —
+    /// otherwise the cell-drawn highlight would land *behind* the
+    /// subview rather than under the body glyphs.
+    var isToolGroup: Bool {
+        if case .toolGroup = self { return true }
+        return false
     }
 }

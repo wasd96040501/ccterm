@@ -644,6 +644,15 @@ enum BlockStyle: Sendable {
     /// "these belong together" pull stays the same.
     nonisolated static let toolHeaderChildSpacing: CGFloat = 4
 
+    /// Fold-transition duration shared by the row-height animation
+    /// (`Coordinator.toggleFold`), the chevron rotation animation
+    /// (`BlockCellView.beginChevronAnimation`), and the cell's
+    /// cross-fade transition (`CATransition` on layout swap). Kept on
+    /// one constant so the three transitions stay phase-aligned —
+    /// the row height, the chevron, and the appearing content all
+    /// finish on the same beat.
+    nonisolated static let foldAnimationDuration: CFTimeInterval = 0.22
+
     // MARK: - Diff body geometry
     //
     // The hunks panel inside an expanded tool-group item. Drawn as a
@@ -697,6 +706,14 @@ enum BlockStyle: Sendable {
     /// to the bottom for a diff. We don't pad inside the body itself;
     /// the line backgrounds extend the full body band.
     nonisolated static let diffBodyVerticalPadding: CGFloat = 0
+
+    /// Breathing room inside the rounded card above the first diff line
+    /// and below the last. Keeps glyphs from visually attaching to the
+    /// card's top/bottom rounded edges. The line-background fills (per
+    /// line) sit *inside* this band so the first/last lines still pick
+    /// up their add/del tint right up to the inner edge — only the
+    /// glyph baseline is pushed in by `diffInnerVerticalPadding`.
+    nonisolated static let diffInnerVerticalPadding: CGFloat = 2
 
     /// Add / del sign colors — used both for the `+ -` glyphs in the
     /// sign column and for per-line backgrounds resolved off `DiffColors`.

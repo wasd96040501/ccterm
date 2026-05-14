@@ -12,6 +12,13 @@ import Foundation
 /// the localized label. Nothing in the current layout reads it.
 struct ReadChild: Equatable, Sendable {
     let id: UUID
+    /// Past-tense / completed-form header text (e.g.
+    /// `"Read Sources/Greeter.swift"`). Routed via
+    /// `Child.headerLabel(for:)` for any non-`.running` status.
     let label: String
+    /// Progressive / running-form header text (e.g.
+    /// `"Reading Sources/Greeter.swift"`). Used when the child's
+    /// `ToolStatus` is `.running`.
+    let activeLabel: String
     let filePath: String
 }

@@ -26,6 +26,21 @@ struct TranscriptDemoView: View {
                 // default closure.
                 if controller.blockCount == 0 {
                     controller.loadInitial(Self.initialBlocks)
+                    // Mark the third toolGroup live. Status flows through
+                    // the dedicated `setToolStatus` channel so the rows
+                    // already in the table refresh granularly — no
+                    // Block.Kind replacement, no highlight invalidation.
+                    // Mixed per-child statuses prove sibling rendering
+                    // stays independent: only the bash row picks up the
+                    // running palette + progressive label.
+                    controller.setToolStatus(
+                        id: Self.runningGroupBlockId, status: .running)
+                    controller.setToolStatus(
+                        id: Self.runningReadChildId, status: .completed)
+                    controller.setToolStatus(
+                        id: Self.runningGrepChildId, status: .completed)
+                    controller.setToolStatus(
+                        id: Self.runningBashChildId, status: .running)
                 }
             }
     }
@@ -642,11 +657,14 @@ private extension TranscriptDemoView {
             ]),
 
             Block(id: UUID(), kind: .toolGroup(ToolGroupBlock(
-                title: String(localized: "Edited \(3) files"),
+                activeTitle: String(localized: "Editing \("scripts/cleanup.sh")"),
+                expandedActiveTitle: String(localized: "Editing \(3) files"),
+                completedTitle: String(localized: "Edited \(3) files"),
                 children: [
                     .fileEdit(FileEditChild(
                         id: UUID(),
                         label: String(localized: "Edit \("Sources/Greeter.swift")"),
+                        activeLabel: String(localized: "Editing \("Sources/Greeter.swift")"),
                         filePath: "Sources/Greeter.swift",
                         diff: DiffBlock(
                             filePath: "Sources/Greeter.swift",
@@ -666,6 +684,7 @@ private extension TranscriptDemoView {
                     .fileEdit(FileEditChild(
                         id: UUID(),
                         label: String(localized: "Write \("config/server.yaml")"),
+                        activeLabel: String(localized: "Writing \("config/server.yaml")"),
                         filePath: "config/server.yaml",
                         diff: DiffBlock(
                             filePath: "config/server.yaml",
@@ -682,6 +701,7 @@ private extension TranscriptDemoView {
                     .fileEdit(FileEditChild(
                         id: UUID(),
                         label: String(localized: "Delete \("scripts/cleanup.sh")"),
+                        activeLabel: String(localized: "Deleting \("scripts/cleanup.sh")"),
                         filePath: "scripts/cleanup.sh",
                         diff: DiffBlock(
                             filePath: "scripts/cleanup.sh",
@@ -704,15 +724,19 @@ private extension TranscriptDemoView {
             ]),
 
             Block(id: UUID(), kind: .toolGroup(ToolGroupBlock(
-                title: String(localized: "Inspected the repo"),
+                activeTitle: String(localized: "Inspecting the repo"),
+                expandedActiveTitle: String(localized: "Inspecting \(8) tools"),
+                completedTitle: String(localized: "Inspected the repo"),
                 children: [
                     .read(ReadChild(
                         id: UUID(),
                         label: String(localized: "Read \("Sources/main.swift")"),
+                        activeLabel: String(localized: "Reading \("Sources/main.swift")"),
                         filePath: "Sources/main.swift")),
                     .bash(BashChild(
                         id: UUID(),
                         label: String(localized: "Ran \("make build")"),
+                        activeLabel: String(localized: "Running \("make build")"),
                         command: "make build",
                         stdout: """
                         Compiling Foo.swift
@@ -723,6 +747,7 @@ private extension TranscriptDemoView {
                     .grep(GrepChild(
                         id: UUID(),
                         label: String(localized: "Grepped \("TODO")"),
+                        activeLabel: String(localized: "Grepping \("TODO")"),
                         pattern: "TODO",
                         filenames: [
                             "Sources/Foo.swift",
@@ -737,6 +762,7 @@ private extension TranscriptDemoView {
                     .glob(GlobChild(
                         id: UUID(),
                         label: String(localized: "Globbed \("**/*.swift")"),
+                        activeLabel: String(localized: "Globbing \("**/*.swift")"),
                         pattern: "**/*.swift",
                         filenames: [
                             "Sources/App.swift",
@@ -749,6 +775,7 @@ private extension TranscriptDemoView {
                     .webFetch(WebFetchChild(
                         id: UUID(),
                         label: String(localized: "Fetched \("https://example.com")"),
+                        activeLabel: String(localized: "Fetching \("https://example.com")"),
                         url: "https://example.com/docs",
                         httpStatus: 200,
                         result: """
@@ -762,6 +789,7 @@ private extension TranscriptDemoView {
                     .webSearch(WebSearchChild(
                         id: UUID(),
                         label: String(localized: "Searched \("swift concurrency")"),
+                        activeLabel: String(localized: "Searching \("swift concurrency")"),
                         query: "swift concurrency",
                         results: [
                             .init(
@@ -776,6 +804,7 @@ private extension TranscriptDemoView {
                     .askUserQuestion(AskUserQuestionChild(
                         id: UUID(),
                         label: String(localized: "Asked \(2) questions"),
+                        activeLabel: String(localized: "Asking \(2) questions"),
                         items: [
                             .init(
                                 question: "Which framework should we use for navigation?",
@@ -787,6 +816,7 @@ private extension TranscriptDemoView {
                     .agent(AgentChild(
                         id: UUID(),
                         label: String(localized: "Ran agent \("research")"),
+                        activeLabel: String(localized: "Running agent \("research")"),
                         description: "Audit repo for TODOs",
                         progress: [
                             "Searching documentation…",
@@ -800,10 +830,66 @@ private extension TranscriptDemoView {
                         """)),
                     .generic(GenericChild(
                         id: UUID(),
-                        label: String(localized: "Skill(\("pdf"))"))),
+                        label: String(localized: "Skill(\("pdf"))"),
+                        activeLabel: String(localized: "Skill(\("pdf"))"))),
+                ]))),
+
+            // Running tool group — demonstrates the (status, fold)
+            // title matrix. Group renders in the "primed" palette
+            // (brighter title + chevron) and follows the SessionHandle2
+            // three-state rule:
+            //   - collapsed → last child's progressive fragment
+            //                 ("Running npm test")
+            //   - expanded  → aggregated progressive
+            //                 ("Running 3 tools")
+            // The Bash child is marked `.running` (progressive header
+            // + label colour); the earlier Read / Grep children stay
+            // at `.completed` so the row demonstrates per-child
+            // status mixing in a single group. State pushes are wired
+            // in `body.task` via `controller.setToolStatus`, so the
+            // running palette is applied as the rows mount.
+            Block(id: TranscriptDemoView.runningGroupBlockId,
+                  kind: .toolGroup(ToolGroupBlock(
+                activeTitle: String(localized: "Running \("npm test")"),
+                expandedActiveTitle: String(localized: "Running \(3) tools"),
+                completedTitle: String(localized: "Ran \(3) tools"),
+                children: [
+                    .read(ReadChild(
+                        id: TranscriptDemoView.runningReadChildId,
+                        label: String(localized: "Read \("package.json")"),
+                        activeLabel: String(localized: "Reading \("package.json")"),
+                        filePath: "package.json")),
+                    .grep(GrepChild(
+                        id: TranscriptDemoView.runningGrepChildId,
+                        label: String(localized: "Searched \("describe(")"),
+                        activeLabel: String(localized: "Searching \("describe(")"),
+                        pattern: "describe(",
+                        filenames: [
+                            "tests/login.test.js",
+                            "tests/cart.test.js",
+                        ],
+                        content: nil)),
+                    .bash(BashChild(
+                        id: TranscriptDemoView.runningBashChildId,
+                        label: String(localized: "Ran \("npm test")"),
+                        activeLabel: String(localized: "Running \("npm test")"),
+                        command: "npm test",
+                        // Streams nil-ed out — the running child has
+                        // not yet produced output, matching the live
+                        // shape of an in-flight bash tool.
+                        stdout: nil,
+                        stderr: nil)),
                 ]))),
         ]
     }
+
+    /// Stable ids for the running-demo group + its children so the
+    /// `.task` block can call `setToolStatus(...)` against known
+    /// surfaces without scanning the block list at runtime.
+    fileprivate static let runningGroupBlockId = UUID()
+    fileprivate static let runningReadChildId = UUID()
+    fileprivate static let runningGrepChildId = UUID()
+    fileprivate static let runningBashChildId = UUID()
 }
 
 /// SF Symbol → NSImage at a fixed point size. Held by the `initialBlocks`

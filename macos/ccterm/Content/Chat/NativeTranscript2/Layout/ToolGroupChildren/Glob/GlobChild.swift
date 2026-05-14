@@ -8,7 +8,10 @@ import Foundation
 /// `label` is the human-facing header text (e.g. `"Globbed '**/*.swift'"`).
 struct GlobChild: Equatable, Sendable {
     let id: UUID
+    /// Past-tense form (e.g. `"Globbed \"**/*.swift\""`).
     let label: String
+    /// Progressive form (e.g. `"Globbing \"**/*.swift\""`).
+    let activeLabel: String
     let pattern: String
     let filenames: [String]
     let truncated: Bool

@@ -8,7 +8,10 @@ import Foundation
 /// `label` is the human-facing header text (e.g. `"Asked 2 questions"`).
 struct AskUserQuestionChild: Equatable, Sendable {
     let id: UUID
+    /// Past-tense form (e.g. `"Asked: <question>"`).
     let label: String
+    /// Progressive form (e.g. `"Asking: <question>"`).
+    let activeLabel: String
     let items: [Item]
 
     struct Item: Equatable, Sendable {

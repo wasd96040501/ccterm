@@ -336,6 +336,13 @@ struct ToolGroupLayout: @unchecked Sendable {
         let chevronCenter: CGPoint
         /// `true` → chevron points down; `false` → chevron points right.
         let chevronExpanded: Bool
+        /// Runtime status for this surface — read from
+        /// `Transcript2Coordinator.statusStates` at layout-build time
+        /// and used by `drawHeader` / `subviewPlan` to swap title
+        /// colour + chevron tint. Geometry is independent of status,
+        /// so a status change only invalidates the cached layout
+        /// (single-row reload), never `noteHeightOfRows`.
+        let status: ToolStatus
     }
 
     /// Per-child layout. The body is `nil` when the child is folded
@@ -365,6 +372,7 @@ struct ToolGroupLayout: @unchecked Sendable {
         blockId: UUID,
         group: ToolGroupBlock,
         foldStates: [UUID: Bool],
+        statusStates: [UUID: ToolStatus],
         lineMaps: [UUID: [String: [SyntaxToken]]],
         maxWidth: CGFloat
     ) -> ToolGroupLayout {
@@ -378,16 +386,29 @@ struct ToolGroupLayout: @unchecked Sendable {
         }
 
         let groupExpanded = foldStates[blockId] ?? false
+        let groupStatus = statusStates[blockId] ?? .completed
 
         // Group header sits flush at the row's top-left (the cell's
         // `layoutOrigin.y` already supplies the row top padding, so
         // layout-local y starts at 0).
+        //
+        // Title text is resolved through `group.resolvedTitle(...)`:
+        //   - (.running, folded)   → activeTitle (last child progressive)
+        //   - (.running, expanded) → expandedActiveTitle (aggregated progressive)
+        //   - (else, *)            → completedTitle (aggregated past-tense)
+        // Geometry is identical across the three variants because the
+        // header band is a fixed-height row; only the typeset text
+        // changes. Status + fold both flow as snapshots into `make`,
+        // so a state flip evicts the row's cached layout and recomputes
+        // with the new title on the next `viewFor`.
         var y: CGFloat = 0
         let groupHeader = makeHeader(
             foldId: blockId,
-            title: group.title,
+            title: group.resolvedTitle(status: groupStatus,
+                                       isExpanded: groupExpanded),
             hasChevron: true,
             chevronExpanded: groupExpanded,
+            status: groupStatus,
             y: y,
             maxWidth: maxWidth)
         y += BlockStyle.toolHeaderHeight
@@ -416,11 +437,19 @@ struct ToolGroupLayout: @unchecked Sendable {
                 y += BlockStyle.toolHeaderChildSpacing
                 let canFold = child.hasExpandableBody
                 let childExpanded = canFold && (foldStates[child.id] ?? false)
+                let childStatus = statusStates[child.id] ?? .completed
+                // Per-child header text follows status: `.running`
+                // takes the progressive form, every terminal status
+                // takes the past-tense form. Centralised on
+                // `Child.headerLabel(for:)` so per-kind label payloads
+                // (`FileEditChild.activeLabel` vs `.label`, etc.) stay
+                // the single source of truth.
                 let childHeader = makeHeader(
                     foldId: child.id,
-                    title: child.headerLabel,
+                    title: child.headerLabel(for: childStatus),
                     hasChevron: canFold,
                     chevronExpanded: childExpanded,
+                    status: childStatus,
                     y: y,
                     maxWidth: maxWidth)
                 y += BlockStyle.toolHeaderHeight
@@ -479,6 +508,7 @@ struct ToolGroupLayout: @unchecked Sendable {
         title: String,
         hasChevron: Bool,
         chevronExpanded: Bool,
+        status: ToolStatus,
         y: CGFloat,
         maxWidth: CGFloat
     ) -> Header {
@@ -548,7 +578,8 @@ struct ToolGroupLayout: @unchecked Sendable {
             titleOrigin: titleOrigin,
             hasChevron: hasChevron,
             chevronCenter: chevronCenter,
-            chevronExpanded: chevronExpanded)
+            chevronExpanded: chevronExpanded,
+            status: status)
     }
 
     /// Hit rect for a header — matches the old `GroupComponent`:
@@ -574,7 +605,8 @@ struct ToolGroupLayout: @unchecked Sendable {
     nonisolated private static func emptyHeader(foldId: UUID) -> Header {
         Header(foldId: foldId, rect: .zero, title: "", titleWidth: 0,
                titleOrigin: .zero, hasChevron: false,
-               chevronCenter: .zero, chevronExpanded: false)
+               chevronCenter: .zero, chevronExpanded: false,
+               status: .completed)
     }
 
     /// Trim leading path components until the remainder fits `budget`
@@ -717,12 +749,16 @@ struct ToolGroupLayout: @unchecked Sendable {
         var chevrons: [SubviewPlan.Chevron] = []
         chevrons.reserveCapacity(1 + items.count)
         if groupHeader.hasChevron {
+            let tint = Self.chevronTint(
+                for: groupHeader.status,
+                hovered: hoveredId == groupHeader.foldId)
             chevrons.append(SubviewPlan.Chevron(
                 id: groupHeader.foldId,
                 center: CGPoint(x: origin.x + groupHeader.chevronCenter.x,
                                 y: origin.y + groupHeader.chevronCenter.y),
                 expanded: groupHeader.chevronExpanded,
-                hovered: hoveredId == groupHeader.foldId))
+                strokeColor: tint.color,
+                alpha: tint.alpha))
         }
 
         // Selection rects in layout-local coords. Distributed to every
@@ -739,12 +775,16 @@ struct ToolGroupLayout: @unchecked Sendable {
         entries.reserveCapacity(items.count)
         for entry in items {
             if entry.header.hasChevron {
+                let tint = Self.chevronTint(
+                    for: entry.header.status,
+                    hovered: hoveredId == entry.header.foldId)
                 chevrons.append(SubviewPlan.Chevron(
                     id: entry.header.foldId,
                     center: CGPoint(x: origin.x + entry.header.chevronCenter.x,
                                     y: origin.y + entry.header.chevronCenter.y),
                     expanded: entry.header.chevronExpanded,
-                    hovered: hoveredId == entry.header.foldId))
+                    strokeColor: tint.color,
+                    alpha: tint.alpha))
             }
 
             let frame = CGRect(
@@ -781,10 +821,6 @@ struct ToolGroupLayout: @unchecked Sendable {
         in ctx: CGContext,
         origin: CGPoint
     ) {
-        let titleColor: NSColor = hovered
-            ? BlockStyle.toolHeaderHoverForeground
-            : BlockStyle.toolHeaderForeground
-
         // Retypeset on draw so the hover-driven `foregroundColor`
         // swap doesn't require a layout rebuild. Title text was
         // already truncated to fit at make-time, so this is a single
@@ -792,7 +828,7 @@ struct ToolGroupLayout: @unchecked Sendable {
         guard !header.title.isEmpty else { return }
         let attr = NSAttributedString(string: header.title, attributes: [
             .font: BlockStyle.toolHeaderFont,
-            .foregroundColor: titleColor,
+            .foregroundColor: titleColor(for: header.status, hovered: hovered),
         ])
         let line = CTLineCreateWithAttributedString(attr)
         ctx.saveGState()
@@ -802,6 +838,68 @@ struct ToolGroupLayout: @unchecked Sendable {
             y: origin.y + header.titleOrigin.y)
         CTLineDraw(line, ctx)
         ctx.restoreGState()
+    }
+
+    // MARK: - Status palette
+    //
+    // Single source of truth for "how does ToolStatus colour the
+    // header". Both `drawHeader` and `subviewPlan` route through
+    // these helpers so title + chevron stay in lockstep. Adding a
+    // new status case only needs an arm in each helper.
+
+    /// Title colour for a header in `status`, optionally with hover
+    /// brightening applied. `.completed` keeps today's behaviour
+    /// (secondary at idle, label at hover) so absent-from-dict rows
+    /// render exactly as before this hook existed.
+    nonisolated private static func titleColor(
+        for status: ToolStatus, hovered: Bool
+    ) -> NSColor {
+        switch status {
+        case .completed:
+            return hovered
+                ? BlockStyle.toolHeaderHoverForeground
+                : BlockStyle.toolHeaderForeground
+        case .running:
+            // Brighter "primed" tone at all times — running headers
+            // pull the eye independent of hover.
+            return BlockStyle.toolHeaderHoverForeground
+        case .failed:
+            return .systemRed
+        case .cancelled:
+            return hovered
+                ? BlockStyle.toolHeaderForeground
+                : .tertiaryLabelColor
+        }
+    }
+
+    /// Chevron stroke colour + alpha for a header in `status`,
+    /// factoring in hover. Hover still raises alpha on every status
+    /// so the click affordance survives.
+    nonisolated private static func chevronTint(
+        for status: ToolStatus, hovered: Bool
+    ) -> (color: NSColor, alpha: CGFloat) {
+        let alpha: CGFloat = hovered
+            ? BlockStyle.toolHeaderChevronHoverAlpha
+            : BlockStyle.toolHeaderChevronIdleAlpha
+        switch status {
+        case .completed:
+            return (
+                hovered
+                    ? BlockStyle.toolHeaderHoverForeground
+                    : BlockStyle.toolHeaderForeground,
+                alpha)
+        case .running:
+            return (BlockStyle.toolHeaderHoverForeground,
+                    BlockStyle.toolHeaderChevronHoverAlpha)
+        case .failed:
+            return (.systemRed, BlockStyle.toolHeaderChevronHoverAlpha)
+        case .cancelled:
+            return (
+                hovered
+                    ? BlockStyle.toolHeaderForeground
+                    : .tertiaryLabelColor,
+                alpha)
+        }
     }
 
 }

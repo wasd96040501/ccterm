@@ -11,7 +11,10 @@ import Foundation
 /// https://example.com"`).
 struct WebFetchChild: Equatable, Sendable {
     let id: UUID
+    /// Past-tense form (e.g. `"Fetched https://example.com"`).
     let label: String
+    /// Progressive form (e.g. `"Fetching https://example.com"`).
+    let activeLabel: String
     let url: String
     let httpStatus: Int?
     /// Response body (text). `nil` when the request is still in

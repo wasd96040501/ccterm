@@ -140,6 +140,27 @@ final class Transcript2Controller {
         coordinator.apply(changes, scroll: scroll)
     }
 
+    // MARK: - Tool status
+
+    /// Push a new runtime `ToolStatus` for a tool surface. `id` may be
+    /// either a `toolGroup` host `Block.id` (group-level status — drives
+    /// the group header's palette) or a nested `ToolGroupBlock.Child.id`
+    /// (per-child status — drives one child header). The owning row is
+    /// resolved on the coordinator side; callers don't need to know
+    /// which tier they're addressing.
+    ///
+    /// Refresh is granular: only the host row reloads (single-row
+    /// `reloadData(forRowIndexes:)`), and row height stays put (status
+    /// only repaints header colour, never moves glyphs). Sibling rows
+    /// are untouched.
+    ///
+    /// Idempotent: setting the same status twice is a no-op. Status for
+    /// an unknown id is cached so a future insert carrying that id
+    /// picks the value up via the next `makeLayout`.
+    func setToolStatus(id: UUID, status: ToolStatus) {
+        coordinator.setStatus(id: id, status: status)
+    }
+
     // MARK: - First-screen load
 
     /// Two-phase initial load. Phase 1 (sync) inserts a viewport-covering

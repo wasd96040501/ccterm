@@ -132,6 +132,22 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// `makeLayout` loop stays actor-free.
     func foldStateSnapshot() -> [UUID: Bool] { foldStates }
 
+    /// Per-surface runtime status — same sparse-dict pattern as
+    /// `foldStates`. Keyed by `Block.id` for group-level status and
+    /// by `ToolGroupBlock.Child.id` for per-child status. Absent =
+    /// `.completed` (default visible state, matches the past-tense
+    /// label convention used by every child kind's `headerLabel`).
+    /// Driven by `Transcript2Controller.setToolStatus(id:status:)`
+    /// — `setStatus(id:status:)` below is the single mutation
+    /// entry point, and it evicts the host row's cached layout +
+    /// reloads that single row.
+    private var statusStates: [UUID: ToolStatus] = [:]
+
+    func statusState(for id: UUID) -> ToolStatus { statusStates[id] ?? .completed }
+
+    /// Off-main snapshot, same role as `foldStateSnapshot()`.
+    func statusStateSnapshot() -> [UUID: ToolStatus] { statusStates }
+
     init(syntaxEngine: SyntaxHighlightEngine? = nil) {
         self.selection = Transcript2SelectionCoordinator()
         self.highlightStorage = Transcript2HighlightStorage(engine: syntaxEngine)
@@ -306,14 +322,16 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             return []
         }
 
-        // Snapshot highlight values + fold flags on MainActor before
-        // detaching — the off-main loop reads per-block data from these
-        // dicts instead of hopping back to the actor mid-iteration. New
-        // tokens / fold toggles that land between this snapshot and the
-        // main hop are picked up by the `onDidFill` / `toggleFold` reload
+        // Snapshot highlight values + fold flags + status flags on
+        // MainActor before detaching — the off-main loop reads per-block
+        // data from these dicts instead of hopping back to the actor
+        // mid-iteration. New tokens / fold toggles / status changes
+        // that land between this snapshot and the main hop are picked
+        // up by the `onDidFill` / `toggleFold` / `setStatus` reload
         // paths independently.
         let highlightSnapshot = highlightStorage.snapshot()
         let foldsSnapshot = foldStates
+        let statusesSnapshot = statusStates
 
         Task.detached(priority: .userInitiated) { [weak self] in
             var entries: [(UUID, RowLayout)] = []
@@ -322,7 +340,8 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                 entries.append((block.id, Self.makeLayout(
                     for: block, width: width,
                     highlights: highlightSnapshot,
-                    folds: foldsSnapshot)))
+                    folds: foldsSnapshot,
+                    statuses: statusesSnapshot)))
             }
             await MainActor.run { [entries] in
                 defer { completion() }
@@ -374,8 +393,13 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                 selection.dropEntry(blockId: id)
                 highlightStorage.drop(blockId: id)
                 // Cleanup is sparse-dict friendly — `removeValue` is a
-                // no-op when the id never carried a fold flag (most blocks).
+                // no-op when the id never carried a fold/status flag
+                // (most blocks). Child-keyed entries (per
+                // `ToolGroupBlock.Child.id`) leak on group removal, same
+                // posture as `foldStates`; bounded by total tool calls
+                // in history.
                 foldStates.removeValue(forKey: id)
+                statusStates.removeValue(forKey: id)
             }
             table?.removeRows(at: indexes, withAnimation: [.effectFade])
 
@@ -555,23 +579,26 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let layout = Self.makeLayout(
             for: block, width: width,
             highlights: highlightStorage.snapshot(),
-            folds: foldStates)
+            folds: foldStates,
+            statuses: statusStates)
         layoutCache[block.id] = CachedLayout(width: width, layout: layout)
         return layout
     }
 
-    /// Pure: `(block, width, highlights, folds) -> RowLayout`.
+    /// Pure: `(block, width, highlights, folds, statuses) -> RowLayout`.
     /// `nonisolated static` so the background prefetch task can call it
-    /// off-MainActor. Both `highlights` and `folds` are snapshots taken
-    /// on MainActor before the detached task starts; passing the
+    /// off-MainActor. `highlights`, `folds`, and `statuses` are snapshots
+    /// taken on MainActor before the detached task starts; passing the
     /// snapshots in keeps the per-block lookup actor-free during the
     /// off-main loop. Defaults to empty so call sites that genuinely
     /// don't want either (e.g. `Transcript2Controller.sliceForViewport`'s
-    /// height-only probe) can omit them.
+    /// height-only probe) can omit them — height is status-independent,
+    /// so the slice probe doesn't need the dict.
     nonisolated static func makeLayout(
         for block: Block, width: CGFloat,
         highlights: [Transcript2HighlightKey: HighlightValue] = [:],
-        folds: [UUID: Bool] = [:]
+        folds: [UUID: Bool] = [:],
+        statuses: [UUID: ToolStatus] = [:]
     ) -> RowLayout {
         let contentWidth = max(0, width - 2 * BlockStyle.blockHorizontalPadding)
         switch block.kind {
@@ -627,6 +654,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                 blockId: block.id,
                 group: group,
                 foldStates: folds,
+                statusStates: statuses,
                 lineMaps: lineMaps,
                 maxWidth: contentWidth))
         }
@@ -705,6 +733,64 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             table.reloadData(forRowIndexes: idx,
                              columnIndexes: IndexSet(integer: 0))
         }
+    }
+
+    // MARK: - Status interactions
+
+    /// Update the runtime status for a tool surface and refresh the
+    /// owning row. `id` may name either a `toolGroup` host
+    /// `Block.id` (group-level status) or a nested `ToolGroupBlock.Child.id`
+    /// (per-child status) — same dual-search as `toggleFold` so callers
+    /// don't need to know which level they're addressing.
+    ///
+    /// No-op when the id resolves to nothing (block not in the
+    /// transcript, or the host row isn't a `toolGroup`). Setting the
+    /// same status the dict already holds is also a no-op so a stream
+    /// of redundant updates from the CLI doesn't churn AppKit.
+    ///
+    /// **Why this isn't a `Change.update`:** `.update` evicts highlight
+    /// tokens, drops selection, and forces the caller to rebuild the
+    /// `Block.Kind` payload — all wasteful for a status flip. This path
+    /// only invalidates the host's cached `RowLayout` (status is a
+    /// layout-build input through the `statusStates` snapshot) and
+    /// reloads the single row. Row height is status-independent, so we
+    /// also skip `noteHeightOfRows`.
+    func setStatus(id: UUID, status: ToolStatus) {
+        guard let table = tableView else {
+            // Table not attached yet — record the status so the future
+            // `reloadData()` after attach picks it up via `makeLayout`.
+            if statusStates[id] != status { statusStates[id] = status }
+            return
+        }
+        // Resolve owning row: either the host block itself or a child
+        // nested in a `toolGroup`. Matches `toggleFold` to keep both
+        // hit paths working off one keyspace.
+        let hostRow = blocks.firstIndex { block in
+            if block.id == id { return true }
+            switch block.kind {
+            case .toolGroup(let group):
+                return group.children.contains(where: { $0.id == id })
+            default:
+                return false
+            }
+        }
+        guard let row = hostRow else {
+            // Unknown id — still cache so a later insert with this id
+            // picks the value up. Bounded by tool-call cardinality.
+            if statusStates[id] != status { statusStates[id] = status }
+            return
+        }
+        if statusStates[id] == status { return }
+        statusStates[id] = status
+        let hostId = blocks[row].id
+        removeCachedLayout(for: hostId)
+        // Selection / highlight intentionally untouched — status
+        // doesn't change glyph geometry inside any selectable body, so
+        // current offsets remain valid.
+        table.reloadData(forRowIndexes: IndexSet(integer: row),
+                         columnIndexes: IndexSet(integer: 0))
+        // No `noteHeightOfRows` — status only repaints the header
+        // bands' colour palette; total row height is unchanged.
     }
 
     // MARK: - User bubble sheet
@@ -807,6 +893,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let snapshotCounter = mutationCounter
         let highlightSnapshot = highlightStorage.snapshot()
         let foldsSnapshot = foldStates
+        let statusesSnapshot = statusStates
         // Push covers the async layout window so the scroller stays hidden
         // through the post-resize relayout. Popped via the task's defer in
         // every outcome (cancelled, drifted, succeeded).
@@ -822,7 +909,8 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                 entries.append((block.id, Self.makeLayout(
                     for: block, width: width,
                     highlights: highlightSnapshot,
-                    folds: foldsSnapshot)))
+                    folds: foldsSnapshot,
+                    statuses: statusesSnapshot)))
             }
             await MainActor.run { [entries] in
                 defer { self?.popScrollerHidden() }

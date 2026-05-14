@@ -85,9 +85,46 @@ struct Block: Identifiable, Equatable, @unchecked Sendable {
 /// in `Transcript2Coordinator.foldStates` independently (toggling
 /// file 2's expansion doesn't reset file 1's).
 struct ToolGroupBlock: Equatable, Sendable {
-    /// Title line drawn in the group header band (e.g. `"Edited 3 files"`).
-    let title: String
+    /// Title shown when the group is `.running` **and folded** — the
+    /// progressive fragment of the *last* tool in the group (e.g.
+    /// `"Reading foo.swift"`). Mirrors
+    /// `GroupEntry.activeTitle` on the SessionHandle2 side.
+    let activeTitle: String
+    /// Title shown when the group is `.running` **and expanded** — the
+    /// aggregated progressive phrase (e.g.
+    /// `"Reading 3 files · Searching 1 pattern"`). Mirrors
+    /// `GroupEntry.expandedActiveTitle`. When running, the expanded
+    /// form is the more informative read because the user has the
+    /// children laid out anyway.
+    let expandedActiveTitle: String
+    /// Title shown when the group is not running — the aggregated
+    /// past-tense phrase (e.g. `"Read 3 files · Searched 1 pattern"`).
+    /// Used for `.completed` / `.failed` / `.cancelled` regardless of
+    /// fold state, because the children have stopped moving.
+    let completedTitle: String
     let children: [Child]
+
+    init(activeTitle: String,
+         expandedActiveTitle: String,
+         completedTitle: String,
+         children: [Child]) {
+        self.activeTitle = activeTitle
+        self.expandedActiveTitle = expandedActiveTitle
+        self.completedTitle = completedTitle
+        self.children = children
+    }
+
+    /// Pick the right title for the current `(status, fold)` pair.
+    /// Single-source-of-truth for the three-state logic so layouts
+    /// and any future consumers don't reimplement the switch.
+    func resolvedTitle(status: ToolStatus, isExpanded: Bool) -> String {
+        switch status {
+        case .running:
+            return isExpanded ? expandedActiveTitle : activeTitle
+        case .completed, .failed, .cancelled:
+            return completedTitle
+        }
+    }
 
     enum Child: Equatable, Sendable {
         case fileEdit(FileEditChild)
@@ -121,11 +158,32 @@ struct ToolGroupBlock: Equatable, Sendable {
             }
         }
 
-        /// Text shown in the child's header band (file path for
-        /// `fileEdit`, command line for `bash`, etc.). Centralised
-        /// on the enum so `ToolGroupLayout` can render every child's
-        /// header through one path.
-        var headerLabel: String {
+        /// Header text for the given runtime `status` — `.running`
+        /// pulls each payload's progressive form (`activeLabel`,
+        /// e.g. `"Editing Sources/Greeter.swift"`); every other
+        /// status pulls the past-tense form (`label`, e.g.
+        /// `"Edit Sources/Greeter.swift"`). The Bridge fills both
+        /// fields from `ToolUse.activeFragment` /
+        /// `ToolUse.completedFragment` so the two forms are pre-
+        /// computed when the child enters the transcript.
+        ///
+        /// Centralising on one method (parameterised by status)
+        /// keeps `ToolGroupLayout` from re-implementing the switch
+        /// at every header build.
+        func headerLabel(for status: ToolStatus) -> String {
+            switch status {
+            case .running:
+                return activeLabel
+            case .completed, .failed, .cancelled:
+                return label
+            }
+        }
+
+        /// Past-tense / completed-form label — also the value used
+        /// for `.failed` and `.cancelled` because those are terminal
+        /// states that follow the same "tool has stopped moving"
+        /// semantics as `.completed`.
+        var label: String {
             switch self {
             case .fileEdit(let c): return c.label
             case .read(let c): return c.label
@@ -137,6 +195,23 @@ struct ToolGroupBlock: Equatable, Sendable {
             case .askUserQuestion(let c): return c.label
             case .agent(let c): return c.label
             case .generic(let c): return c.label
+            }
+        }
+
+        /// Progressive form — used only when the child's status is
+        /// `.running`. Bridge feeds this from `ToolUse.activeFragment`.
+        var activeLabel: String {
+            switch self {
+            case .fileEdit(let c): return c.activeLabel
+            case .read(let c): return c.activeLabel
+            case .bash(let c): return c.activeLabel
+            case .grep(let c): return c.activeLabel
+            case .glob(let c): return c.activeLabel
+            case .webFetch(let c): return c.activeLabel
+            case .webSearch(let c): return c.activeLabel
+            case .askUserQuestion(let c): return c.activeLabel
+            case .agent(let c): return c.activeLabel
+            case .generic(let c): return c.activeLabel
             }
         }
 
@@ -162,6 +237,45 @@ struct ToolGroupBlock: Equatable, Sendable {
 // payload next to its layout makes new child-kind work
 // (data + layout + highlight) self-contained inside one folder,
 // rather than threading through `Block.swift`.
+
+/// Runtime status for a tool-call surface (a `toolGroup` host block
+/// or one of its children). Pushed in through
+/// `Transcript2Controller.setToolStatus(id:status:)` as the CLI
+/// progresses; the value lives in `Transcript2Coordinator.statusStates`
+/// — a sparse dict keyed by `Block.id` (group level) or `Child.id`
+/// (child level), absent = `.completed`.
+///
+/// Status is **not** carried inside `Block.Kind` because:
+/// - Status changes are far more frequent than content changes; routing
+///   them through `Change.update` would needlessly evict highlight
+///   tokens, drop selection, and force callers to rebuild the
+///   `Block.Kind` payload each time.
+/// - Multiple foldable surfaces (group + each child) share one row;
+///   per-surface dispatch wants a separate sparse keyspace, mirroring
+///   how `foldStates` keys the same id space.
+///
+/// `ToolGroupLayout` reads a snapshot at layout-build time and folds
+/// the value into the per-header colour palette. Adding a new visual
+/// rule = extend `ToolGroupLayout.titleColor(for:hovered:)` and
+/// `chevronTint(for:hovered:)`.
+enum ToolStatus: Equatable, Sendable {
+    /// Default visible state — past-tense label, secondary-label
+    /// colour, chevron at idle alpha. Matches the dict's absent
+    /// reading so untracked tools render as today.
+    case completed
+    /// Tool is currently executing. Renders the header in the
+    /// hover-tier brighter colour so the row reads as "live"
+    /// without needing a spinner.
+    case running
+    /// Tool produced an error. Header + chevron paint in
+    /// `systemRed`. `message` is reserved for future inline error
+    /// labelling and currently has no visual effect.
+    case failed(message: String?)
+    /// Tool was cancelled or interrupted. Header dims one tier
+    /// below `.completed` so cancelled rows visually de-emphasise
+    /// in a busy transcript.
+    case cancelled
+}
 
 /// Tree-shaped list payload: top-level `ordered` flag + start index + items;
 /// each item carries an optional checkbox marker and a sequence of paragraph

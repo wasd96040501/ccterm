@@ -8,7 +8,10 @@ import Foundation
 /// `label` is the human-facing header text (e.g. `"Ran agent 'audit'"`).
 struct AgentChild: Equatable, Sendable {
     let id: UUID
+    /// Past-tense form (e.g. `"Agent: <description>"`).
     let label: String
+    /// Progressive form (e.g. `"Running agent: <description>"`).
+    let activeLabel: String
     let description: String
     /// Progress entries — one short line each (e.g. "Searching
     /// documentation…", "Found 12 matches"). Rendered as a bullet

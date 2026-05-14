@@ -16,8 +16,15 @@ import Foundation
 struct FileEditChild: Equatable, Sendable {
     /// Stable identity for fold-state and highlight keys.
     let id: UUID
-    /// Header text displayed in the child header row.
+    /// Past-tense / completed-form header text (e.g.
+    /// `"Edit Sources/Greeter.swift"`). Used for any non-`.running`
+    /// status. Routed via `Child.headerLabel(for:)`.
     let label: String
+    /// Progressive / running-form header text (e.g.
+    /// `"Editing Sources/Greeter.swift"`). Used when the child's
+    /// `ToolStatus` is `.running`. Bridge fills this from
+    /// `ToolUse.activeFragment`.
+    let activeLabel: String
     /// Path used for syntax-highlight language detection (independent
     /// of the displayed `label`).
     let filePath: String

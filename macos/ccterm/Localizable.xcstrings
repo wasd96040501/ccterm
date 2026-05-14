@@ -627,6 +627,16 @@
         }
       }
     },
+    "Deleting %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在删除 %@"
+          }
+        }
+      }
+    },
     "Deny": {
       "localizations": {
         "zh-Hans": {
@@ -1049,6 +1059,16 @@
         }
       }
     },
+    "Globbing %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在匹配 %@"
+          }
+        }
+      }
+    },
     "Globbing %lld patterns": {
       "localizations": {
         "en": {
@@ -1101,6 +1121,16 @@
       }
     },
     "Grepped %@": {},
+    "Grepping %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在搜索 %@"
+          }
+        }
+      }
+    },
     "High": {
       "localizations": {
         "zh-Hans": {
@@ -1128,6 +1158,56 @@
           "stringUnit": {
             "state": "translated",
             "value": "检查了仓库"
+          }
+        }
+      }
+    },
+    "Inspecting %lld tools": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Inspecting %lld tool"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Inspecting %lld tools"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在使用 %lld 个工具"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在使用 %lld 个工具"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Inspecting the repo": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在检查仓库"
           }
         }
       }
@@ -1458,6 +1538,46 @@
         }
       }
     },
+    "Ran %lld tools": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Ran %lld tool"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Ran %lld tools"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "使用了 %lld 个工具"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "使用了 %lld 个工具"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Ran agent %@": {
       "localizations": {
         "zh-Hans": {
@@ -1669,6 +1789,16 @@
         }
       }
     },
+    "Running %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在运行 %@"
+          }
+        }
+      }
+    },
     "Running %lld agents": {
       "localizations": {
         "en": {
@@ -1745,6 +1875,56 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "Running %lld tools": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Running %lld tool"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Running %lld tools"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在使用 %lld 个工具"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在使用 %lld 个工具"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Running agent %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在运行 agent %@"
           }
         }
       }
@@ -1886,6 +2066,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在搜索 “%@”"
+          }
+        }
+      }
+    },
+    "Searching %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在搜索 %@"
           }
         }
       }

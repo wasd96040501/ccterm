@@ -10,5 +10,10 @@ import Foundation
 /// (typically the tool's case name or a one-line summary).
 struct GenericChild: Equatable, Sendable {
     let id: UUID
+    /// Past-tense form / fallback (e.g. `"Used <tool>"`).
     let label: String
+    /// Progressive form (e.g. `"Using <tool>"`). Generic tools
+    /// without a dedicated child layout fall through here, so the
+    /// caller picks whatever phrase reads best.
+    let activeLabel: String
 }

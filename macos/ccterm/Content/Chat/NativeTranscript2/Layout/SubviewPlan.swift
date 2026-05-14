@@ -35,19 +35,29 @@ struct SubviewPlan: @unchecked Sendable {
 
     /// One spinning glyph attached to a foldable header. The cell
     /// owns a `CAShapeLayer` keyed by `id`, snaps `transform.rotation.z`
-    /// to match `expanded`, and styles stroke colour / opacity from
-    /// `hovered`. Chevron path / stroke style are cell-owned (chevron
-    /// is cell decoration, not layout business) — only geometry +
-    /// state lives in the plan.
-    struct Chevron: Sendable {
+    /// to match `expanded`, and applies `strokeColor` / `opacity`
+    /// straight from the spec. Chevron path / line width are cell-owned
+    /// (chevron is cell decoration, not layout business) — only
+    /// geometry + resolved tint lives in the plan.
+    ///
+    /// `strokeColor` and `alpha` are pre-resolved by the layout to
+    /// reflect every per-header input (hover state, `ToolStatus`,
+    /// theme). Keeping the resolution on the layout side lets the
+    /// cell reconciler stay agnostic of status enums — adding a new
+    /// status visual rule only touches `ToolGroupLayout`.
+    struct Chevron: @unchecked Sendable {
         let id: UUID
         /// Chevron centre in cell-local coords.
         let center: CGPoint
         /// `true` → chevron points down (rotation = π/2); `false` →
         /// points right (rotation = 0).
         let expanded: Bool
-        /// `true` → cell draws chevron in hover stroke + alpha.
-        let hovered: Bool
+        /// Stroke colour, already factoring in hover state and the
+        /// header's `ToolStatus`. Dynamic `NSColor`s are fine here —
+        /// `.cgColor` resolves against the cell's effective appearance.
+        let strokeColor: NSColor
+        /// Opacity, already factoring in hover state and `ToolStatus`.
+        let alpha: CGFloat
     }
 
     /// One layer-backed body subview. The cell hosts a

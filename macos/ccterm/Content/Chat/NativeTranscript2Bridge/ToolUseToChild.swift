@@ -9,10 +9,17 @@ import Foundation
 enum ToolUseToChild {
     /// `toolUseId` 唯一标识本次工具调用,贯穿 child id / fold-state /
     /// highlight scope。`result` 来自 `SingleEntry.toolResults[toolUseId]`。
+    ///
+    /// 文案策略:**两份都填**(`label` = 过去时,`activeLabel` = 进行
+    /// 时)。Layout 层根据 `ToolStatus` 选用 —— `.running` 取
+    /// `activeLabel`,其他终态取 `label`。Bridge 自己不再用 `hasResult`
+    /// 切单值;状态由独立的 `setToolStatus` 通道驱动,Bridge 只负责把
+    /// 两个文案备齐。
     static func make(toolUse: ToolUse,
                      toolUseId: String,
                      result: ToolResultPayload?) -> ToolGroupBlock.Child {
-        let label = headerLabel(for: toolUse, hasResult: result != nil)
+        let label = toolUse.completedFragment ?? toolUse.caseName
+        let activeLabel = toolUse.activeFragment ?? toolUse.caseName
         let id = StableBlockID.derive("tool", toolUseId)
         let resultObject: ToolUseResultObject? = {
             if case .object(let obj) = result?.typed { return obj }
@@ -24,12 +31,14 @@ enum ToolUseToChild {
             return .read(ReadChild(
                 id: id,
                 label: label,
+                activeLabel: activeLabel,
                 filePath: v.input?.filePath ?? ""))
 
         case .Edit(let v):
             return .fileEdit(FileEditChild(
                 id: id,
                 label: label,
+                activeLabel: activeLabel,
                 filePath: v.input?.filePath ?? "",
                 diff: DiffBlock(
                     filePath: v.input?.filePath ?? "",
@@ -44,6 +53,7 @@ enum ToolUseToChild {
             return .fileEdit(FileEditChild(
                 id: id,
                 label: label,
+                activeLabel: activeLabel,
                 filePath: v.input?.filePath ?? "",
                 diff: DiffBlock(
                     filePath: v.input?.filePath ?? "",
@@ -58,6 +68,7 @@ enum ToolUseToChild {
             return .bash(BashChild(
                 id: id,
                 label: label,
+                activeLabel: activeLabel,
                 command: v.input?.command ?? "",
                 stdout: stdout,
                 stderr: stderr))
@@ -72,6 +83,7 @@ enum ToolUseToChild {
             return .grep(GrepChild(
                 id: id,
                 label: label,
+                activeLabel: activeLabel,
                 pattern: v.input?.pattern ?? "",
                 filenames: filenames,
                 content: content))
@@ -86,6 +98,7 @@ enum ToolUseToChild {
             return .glob(GlobChild(
                 id: id,
                 label: label,
+                activeLabel: activeLabel,
                 pattern: v.input?.pattern ?? "",
                 filenames: filenames,
                 truncated: truncated))
@@ -98,6 +111,7 @@ enum ToolUseToChild {
             return .webFetch(WebFetchChild(
                 id: id,
                 label: label,
+                activeLabel: activeLabel,
                 url: v.input?.url ?? "",
                 httpStatus: httpStatus,
                 result: body))
@@ -125,6 +139,7 @@ enum ToolUseToChild {
             return .webSearch(WebSearchChild(
                 id: id,
                 label: label,
+                activeLabel: activeLabel,
                 query: v.input?.query ?? v.input?.searchQuery ?? "",
                 results: results))
 
@@ -142,6 +157,7 @@ enum ToolUseToChild {
             return .askUserQuestion(AskUserQuestionChild(
                 id: id,
                 label: label,
+                activeLabel: activeLabel,
                 items: items))
 
         case .Agent(let v):
@@ -156,21 +172,14 @@ enum ToolUseToChild {
             return .agent(AgentChild(
                 id: id,
                 label: label,
+                activeLabel: activeLabel,
                 description: v.input?.description ?? v.input?.name ?? "Agent",
                 progress: progress,
                 output: output))
 
         default:
-            return .generic(GenericChild(id: id, label: label))
+            return .generic(GenericChild(
+                id: id, label: label, activeLabel: activeLabel))
         }
-    }
-
-    /// 子项 header 文案。与老 `ToolBlockView.headerTitle` 同样的语义:有
-    /// result(已完成)用 completedFragment,否则用 activeFragment。展开
-    /// 后的 children 一律以已完成形态展示(group 头由 ToolGroup 自己合成)。
-    private static func headerLabel(for toolUse: ToolUse, hasResult: Bool) -> String {
-        if hasResult, let s = toolUse.completedFragment { return s }
-        if !hasResult, let s = toolUse.activeFragment { return s }
-        return toolUse.caseName
     }
 }

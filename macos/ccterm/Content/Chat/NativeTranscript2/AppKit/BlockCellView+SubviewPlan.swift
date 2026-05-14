@@ -137,7 +137,7 @@ extension BlockCellView {
                     layer.frame = frame
                     layer.path = Self.chevronPath(size: chevronSize)
                 }
-                applyChevronStyle(layer, hovered: spec.hovered)
+                applyChevronStyle(layer, spec: spec)
                 layer.setValue(spec.expanded ? CGFloat.pi / 2 : 0,
                                forKeyPath: "transform.rotation.z")
             } else {
@@ -151,7 +151,7 @@ extension BlockCellView {
                 CATransaction.setDisableActions(true)
                 layer.frame = frame
                 layer.path = Self.chevronPath(size: chevronSize)
-                applyChevronStyle(layer, hovered: spec.hovered)
+                applyChevronStyle(layer, spec: spec)
                 layer.setValue(spec.expanded ? CGFloat.pi / 2 : 0,
                                forKeyPath: "transform.rotation.z")
                 CATransaction.commit()
@@ -240,15 +240,9 @@ extension BlockCellView {
         return layer
     }
 
-    private func applyChevronStyle(_ layer: CAShapeLayer, hovered: Bool) {
-        let strokeColor: NSColor = hovered
-            ? BlockStyle.toolHeaderHoverForeground
-            : BlockStyle.toolHeaderForeground
-        let alpha: CGFloat = hovered
-            ? BlockStyle.toolHeaderChevronHoverAlpha
-            : BlockStyle.toolHeaderChevronIdleAlpha
-        layer.strokeColor = strokeColor.cgColor
-        layer.opacity = Float(alpha)
+    private func applyChevronStyle(_ layer: CAShapeLayer, spec: SubviewPlan.Chevron) {
+        layer.strokeColor = spec.strokeColor.cgColor
+        layer.opacity = Float(spec.alpha)
     }
 
     /// Two-segment `>` stroke path, geometric centre at the layer's

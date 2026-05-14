@@ -121,9 +121,17 @@ enum MessageEntryBlockBuilder {
                     toolUse: tu,
                     toolUseId: toolUseId,
                     result: result)
-                let title = ToolGroupTitleBuilder.singleTitle(
-                    toolUse: tu, hasResult: result != nil)
-                let group = ToolGroupBlock(title: title, children: [child])
+                // 单 tool_use group:三态文案都从同一个 tu 派生 —— 单
+                // 工具情境下"聚合进行时"就退化成"per-tool 进行时",再
+                // 引入 `activeCountPhrase(1)` 反而把"Reading foo.swift"
+                // 替换成更模糊的"Reading 1 file"。
+                let activeTitle = tu.activeFragment ?? tu.caseName
+                let completedTitle = tu.completedFragment ?? tu.caseName
+                let group = ToolGroupBlock(
+                    activeTitle: activeTitle,
+                    expandedActiveTitle: activeTitle,
+                    completedTitle: completedTitle,
+                    children: [child])
                 let blockId = StableBlockID.derive(
                     "entry", single.id.uuidString, "tg", String(idx))
                 out.append(Block(id: blockId, kind: .toolGroup(group)))
@@ -155,18 +163,16 @@ enum MessageEntryBlockBuilder {
             }
         }
         guard !children.isEmpty else { return nil }
+        // 三态文案直接拿 SessionHandle2 `GroupEntry` 的现成实现 —— 它
+        // 已经覆盖 `activeTitle`(末 child 进行时)/ `expandedActiveTitle`
+        // (聚合进行时)/ `completedTitle`(聚合过去时)三态,Bridge
+        // 只负责打包,不重复实现聚合逻辑。
         return Block(
             id: StableBlockID.derive("group", group.id.uuidString),
-            kind: .toolGroup(ToolGroupBlock(title: group.completedTitle, children: children)))
-    }
-}
-
-/// 单个 tool_use 包成 toolGroup 时使用的 title 文案。跟老 ToolBlock 的
-/// header 文案逻辑对齐:running 用 activeFragment,完成用 completedFragment。
-enum ToolGroupTitleBuilder {
-    static func singleTitle(toolUse: ToolUse, hasResult: Bool) -> String {
-        if hasResult, let s = toolUse.completedFragment { return s }
-        if !hasResult, let s = toolUse.activeFragment { return s }
-        return toolUse.caseName
+            kind: .toolGroup(ToolGroupBlock(
+                activeTitle: group.activeTitle,
+                expandedActiveTitle: group.expandedActiveTitle,
+                completedTitle: group.completedTitle,
+                children: children)))
     }
 }

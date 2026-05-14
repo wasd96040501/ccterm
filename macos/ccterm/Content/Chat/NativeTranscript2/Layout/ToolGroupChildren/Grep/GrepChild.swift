@@ -7,7 +7,11 @@ import Foundation
 /// `label` is the human-facing header text (e.g. `"Grepped 'TODO'"`).
 struct GrepChild: Equatable, Sendable {
     let id: UUID
+    /// Past-tense form (e.g. `"Searched \"TODO\""`).
     let label: String
+    /// Progressive form (e.g. `"Searching \"TODO\""`). Used when
+    /// the child's `ToolStatus` is `.running`.
+    let activeLabel: String
     let pattern: String
     let filenames: [String]
     /// Optional inline preview from the tool result — usually

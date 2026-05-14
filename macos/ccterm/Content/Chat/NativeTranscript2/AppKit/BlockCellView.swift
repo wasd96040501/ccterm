@@ -95,11 +95,35 @@ final class BlockCellView: NSView {
     /// scroll-recycled cell is fine.
     private var copiedAt: Date?
 
+    /// `HitAction` of the `InteractiveHit` currently under the cursor,
+    /// or `nil` when no hit is hovered. Drives per-region hover
+    /// affordance inside layouts that opt in (today: toolGroup header
+    /// hover brightens title + chevron).
+    ///
+    /// Updated by `mouseMoved` whenever the tracked location enters or
+    /// leaves a hit rect; transitions trigger a single
+    /// `needsDisplay = true`. Cleared on every `viewFor` reuse so a
+    /// recycled cell never inherits another row's hover state.
+    private var hoveredAction: HitAction?
+
+    /// Tracking area covering the whole cell — `inVisibleRect` keeps
+    /// it sized correctly through scroll without manual reseating.
+    private var trackingArea: NSTrackingArea?
+
     /// Public reset hook for `viewFor` so a recycled cell never shows
     /// a stale checkmark on a different block.
     func resetCopiedFeedback() {
         if copiedAt != nil {
             copiedAt = nil
+            needsDisplay = true
+        }
+    }
+
+    /// Public reset hook for `viewFor` so a recycled cell never
+    /// inherits the previous block's hover affordance.
+    func resetHover() {
+        if hoveredAction != nil {
+            hoveredAction = nil
             needsDisplay = true
         }
     }
@@ -150,13 +174,71 @@ final class BlockCellView: NSView {
             }
         }
 
-        layout.draw(in: ctx, origin: origin)
+        layout.draw(in: ctx, origin: origin, hoveredAction: hoveredAction)
 
         // Code-block copy glyph — layout owns the visual recipe
         // (symbol, tint, size); the cell only owns the trigger and
         // hands its transient `copiedAt` flag through as `checked`.
         if case .codeBlock(let l) = layout {
             l.drawCopyGlyph(in: ctx, origin: origin, checked: copiedAt != nil)
+        }
+    }
+
+    // MARK: - Hover tracking
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let area = trackingArea {
+            removeTrackingArea(area)
+        }
+        // `.inVisibleRect` ⇒ AppKit owns the rect, no manual re-seat
+        // on scroll. `.activeInKeyWindow` matches the
+        // `.selectedTextBackgroundColor` switch behaviour so hover
+        // state and selection both go quiet when the window resigns
+        // key. `.mouseMoved` is required for transient hits that the
+        // pointer didn't enter through the cell's outer boundary
+        // (e.g. moved sideways within the cell across two adjacent
+        // headers).
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited,
+                      .mouseMoved,
+                      .activeInKeyWindow,
+                      .inVisibleRect],
+            owner: self,
+            userInfo: nil)
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        updateHover(at: convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        updateHover(at: convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        if hoveredAction != nil {
+            hoveredAction = nil
+            needsDisplay = true
+        }
+    }
+
+    private func updateHover(at local: NSPoint) {
+        guard let layout else { return }
+        let origin = layoutOrigin
+        var newHover: HitAction?
+        for hit in layout.interactiveHits {
+            if hit.rect.offsetBy(dx: origin.x, dy: origin.y).contains(local) {
+                newHover = hit.action
+                break
+            }
+        }
+        if newHover != hoveredAction {
+            hoveredAction = newHover
+            needsDisplay = true
         }
     }
 
@@ -201,6 +283,8 @@ final class BlockCellView: NSView {
                 }
             case .copyText(let text):
                 copyToPasteboard(text)
+            case .toggleFold(let id):
+                coordinator?.toggleFold(id: id)
             }
             return
         }

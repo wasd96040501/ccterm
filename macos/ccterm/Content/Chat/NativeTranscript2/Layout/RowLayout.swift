@@ -15,7 +15,7 @@ struct InteractiveHit: Sendable {
 /// dispatch stays an exhaustive switch. Adding a fourth interaction
 /// (e.g., "expand inline") = add a case here and a switch arm in
 /// `BlockCellView.mouseDown`.
-enum HitAction: Sendable {
+enum HitAction: Sendable, Equatable {
     /// `.link`-attributed run. Cell opens via `NSWorkspace.shared.open`.
     case openURL(URL)
     /// User-bubble chevron. Cell forwards to
@@ -26,6 +26,12 @@ enum HitAction: Sendable {
     /// general pasteboard and triggers its transient checkmark
     /// feedback.
     case copyText(String)
+    /// Foldable header (toolGroup group or item header). Cell forwards
+    /// to `Transcript2Coordinator.toggleFold(id:)`. The id may be the
+    /// host block's own id (group header) or a nested child id
+    /// (item header) — the coordinator scans the host blocks and
+    /// their toolGroup children to find which row owns the toggle.
+    case toggleFold(UUID)
 }
 
 /// Type-erased dispatch over the per-kind layout primitives. Holds whichever
@@ -50,6 +56,7 @@ enum RowLayout: @unchecked Sendable {
     case blockquote(BlockquoteLayout)
     case thematicBreak(ThematicBreakLayout)
     case userBubble(UserBubbleLayout)
+    case toolGroup(ToolGroupLayout)
 
     var totalHeight: CGFloat {
         switch self {
@@ -61,6 +68,7 @@ enum RowLayout: @unchecked Sendable {
         case .blockquote(let l): return l.totalHeight
         case .thematicBreak(let l): return l.totalHeight
         case .userBubble(let l): return l.totalHeight
+        case .toolGroup(let l): return l.totalHeight
         }
     }
 
@@ -74,21 +82,30 @@ enum RowLayout: @unchecked Sendable {
         case .blockquote(let l): return l.measuredWidth
         case .thematicBreak(let l): return l.measuredWidth
         case .userBubble(let l): return l.measuredWidth
+        case .toolGroup(let l): return l.measuredWidth
         }
     }
 
     /// Opaque chrome that must paint *before* the cell's selection band
     /// so the highlight composites on top, under the glyphs. Default is
-    /// a no-op — only codeblock currently has an opaque card background
-    /// that would otherwise hide the selection rect drawn by the cell.
+    /// a no-op — only codeblock and toolGroup item bodies have an
+    /// opaque card background that would otherwise hide the selection
+    /// rect drawn by the cell.
     func drawBackplate(in ctx: CGContext, origin: CGPoint) {
         switch self {
         case .codeBlock(let l): l.drawBackplate(in: ctx, origin: origin)
+        case .toolGroup(let l): l.drawBackplate(in: ctx, origin: origin)
         default: break
         }
     }
 
-    func draw(in ctx: CGContext, origin: CGPoint) {
+    /// `hoveredAction` is `nil` when no `interactiveHits` rect is
+    /// currently under the cursor. Layouts that care about hover (today:
+    /// `toolGroup`'s headers, which brighten title + chevron when their
+    /// own `toggleFold` hit is the hovered one) read this and decide
+    /// per-sub-region whether to draw in hover state. Layouts that
+    /// don't care (everything else) ignore the parameter.
+    func draw(in ctx: CGContext, origin: CGPoint, hoveredAction: HitAction?) {
         switch self {
         case .text(let l): l.draw(in: ctx, origin: origin)
         case .image(let l): l.draw(in: ctx, origin: origin)
@@ -98,6 +115,8 @@ enum RowLayout: @unchecked Sendable {
         case .blockquote(let l): l.draw(in: ctx, origin: origin)
         case .thematicBreak(let l): l.draw(in: ctx, origin: origin)
         case .userBubble(let l): l.draw(in: ctx, origin: origin)
+        case .toolGroup(let l):
+            l.draw(in: ctx, origin: origin, hoveredAction: hoveredAction)
         }
     }
 
@@ -111,6 +130,10 @@ enum RowLayout: @unchecked Sendable {
     var iBeamRect: CGRect? {
         switch self {
         case .userBubble(let l): return l.bubbleRect
+        // toolGroup falls through to default (`nil`) — its
+        // `selectionAdapter` is also `nil`, so the I-beam path is
+        // skipped entirely. Header hits register `pointingHand`
+        // through `interactiveHits`.
         default: return nil
         }
     }
@@ -132,6 +155,7 @@ enum RowLayout: @unchecked Sendable {
         case .table(let l): links = l.links
         case .codeBlock(let l): links = l.links
         case .blockquote(let l): links = l.links
+        case .toolGroup(let l): links = l.links
         case .image, .thematicBreak, .userBubble: links = []
         }
         hits.append(contentsOf: links.map {
@@ -146,6 +170,8 @@ enum RowLayout: @unchecked Sendable {
             if let r = l.copyHitRect {
                 hits.append(InteractiveHit(rect: r, action: .copyText(l.code)))
             }
+        case .toolGroup(let l):
+            hits.append(contentsOf: l.interactiveHits)
         default:
             break
         }
@@ -168,6 +194,7 @@ enum RowLayout: @unchecked Sendable {
         case .image: return nil
         case .thematicBreak: return nil
         case .userBubble(let l): return l.selectionAdapter
+        case .toolGroup(let l): return l.selectionAdapter
         }
     }
 }

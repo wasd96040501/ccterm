@@ -48,6 +48,131 @@ struct Block: Identifiable, Equatable, @unchecked Sendable {
         /// concerns belong on the SwiftUI side; in-cell rendering stays
         /// stateless). Short messages render in full with no chevron.
         case userBubble(text: String)
+        /// Grouped tool calls (today: a batch of file edits). One row
+        /// owns the group header + every item header + every expanded
+        /// item body. Three independently-foldable layers:
+        ///
+        /// 1. The group itself — chevron flips the entire item list.
+        /// 2. Each item — chevron flips a single file's hunk body.
+        /// 3. Hunk body — a `codeBlock`-style rounded card with the
+        ///    diff drawn inside (gutter + sign + content).
+        ///
+        /// Group, item, and hunk fold flags share the
+        /// `Transcript2Coordinator.foldStates: [UUID: Bool]` dict —
+        /// `ToolGroupBlock.id` keys the group flag, `Item.id` keys
+        /// per-item. Sparse: absent = the layer's default
+        /// (`false`, i.e. folded). A diff used to be a top-level
+        /// `Block.Kind` case; it has been folded into
+        /// `ToolGroupBlock.Item` because every real-world diff arrives
+        /// inside a tool-result envelope.
+        case toolGroup(ToolGroupBlock)
+    }
+}
+
+/// Grouped tool calls. The group renders as a single row containing:
+///
+/// 1. A group header (title + chevron) at the top.
+/// 2. When the group is expanded, one stacked entry per `children`,
+///    each rendered by a per-kind `ToolGroupChildLayout`.
+///
+/// `Child` is a closed enum — new child kinds plug in by adding a
+/// `case` here, a struct payload, and a `ToolGroupChildLayout` arm
+/// (and one arm in `ToolGroupChildHighlight` if the child needs
+/// async highlight). No protocol / no runtime registration table —
+/// the compiler enforces exhaustiveness across the four switches.
+///
+/// Every `Child` exposes a stable `id` so per-child fold flags persist
+/// in `Transcript2Coordinator.foldStates` independently (toggling
+/// file 2's expansion doesn't reset file 1's).
+struct ToolGroupBlock: Equatable, Sendable {
+    /// Title line drawn in the group header band (e.g. `"Edited 3 files"`).
+    let title: String
+    let children: [Child]
+
+    enum Child: Equatable, Sendable {
+        case fileEdit(FileEditChild)
+
+        /// Stable identity used as a fold-state key and as the
+        /// highlight scope discriminator.
+        var id: UUID {
+            switch self {
+            case .fileEdit(let c): return c.id
+            }
+        }
+
+        /// Text shown in the child's header band (file path for
+        /// `fileEdit`, command line for a future bash child, etc.).
+        /// Centralised on the enum so `ToolGroupLayout` can render
+        /// every child's header through one path.
+        var headerLabel: String {
+            switch self {
+            case .fileEdit(let c): return c.label
+            }
+        }
+    }
+}
+
+/// `fileEdit` child payload — a single file's diff.
+///
+/// `label` is the human-facing header text (e.g. `"Edit Sources/Greeter.swift"`
+/// or the past-tense `"Edited Sources/Greeter.swift"`); the renderer
+/// shows it verbatim without injecting any extra prefix. Mirrors the
+/// old `ReadChildRenderer`, which pulled `tool.completedFragment`
+/// (past-tense by default — the active phrase belongs to the group
+/// header that wraps these children).
+///
+/// `filePath` is kept separate from `label` because it has a non-text
+/// job: it feeds `LanguageDetection` for syntax highlighting and
+/// would be unreliable to recover from the localized label string.
+struct FileEditChild: Equatable, Sendable {
+    /// Stable identity for fold-state and highlight keys.
+    let id: UUID
+    /// Header text displayed in the child header row.
+    let label: String
+    /// Path used for syntax-highlight language detection (independent
+    /// of the displayed `label`).
+    let filePath: String
+    let diff: DiffBlock
+}
+
+/// Unified-diff payload. Hunks are derived inside `DiffLayout.make` from
+/// `oldString`/`newString` via the shared `DiffEngine`, so the Block stays
+/// a thin "what to render" record: storing pre-computed hunks here would
+/// duplicate state with the layout cache and force the caller to re-run
+/// the diff engine before every update.
+///
+/// `oldString == nil` is the "new file" signal — the file didn't exist
+/// before this edit. The renderer suppresses the green `+` insertion
+/// styling (no sign column glyph, no add-tinted line/gutter bg) so the
+/// body reads as "code with a gutter" rather than "a diff that's all
+/// additions." Line numbers and async syntax highlighting are kept, so
+/// the result is a viewable copy of the new file's contents without
+/// diff chrome noise. Matches the `suppressInsertionStyle` flag in the
+/// older `NativeDiffView`. Callers map a nullable `originalContent` field
+/// (e.g. tool-result payload) straight into `oldString` without a
+/// `?? ""` coalesce.
+struct DiffBlock: Equatable, Sendable {
+    let filePath: String
+    let oldString: String?
+    let newString: String
+
+    /// True when no prior content exists — drives the "suppress
+    /// insertion styling" branch inside `DiffLayout`.
+    var isNewFile: Bool { oldString == nil }
+
+    /// Sanitised `old` for `DiffEngine` consumers. Diff against an empty
+    /// string when the prior file didn't exist; the renderer
+    /// downstream then chooses how to style those rows.
+    var effectiveOldString: String { oldString ?? "" }
+
+    /// Iteration helper used by `Transcript2HighlightStorage.plan(for:)`
+    /// to enumerate the set of distinct line strings the diff will
+    /// surface — the highlight payload is keyed by raw line content.
+    /// Re-runs `DiffEngine.computeHunks` (cheap on short inputs;
+    /// `DiffLayout.make` runs it again and caches its hunks per-layout).
+    var lines: [String] {
+        DiffEngine.computeHunks(old: effectiveOldString, new: newString)
+            .flatMap { $0.lines.map(\.content) }
     }
 }
 
@@ -155,7 +280,7 @@ enum BlockStyle: Sendable {
             // share paragraphs' rhythm rather than the harder 8/8 used
             // for visible-bordered blocks.
             return (top: 6, bottom: 6)
-        case .image, .table, .codeBlock:
+        case .image, .table, .codeBlock, .toolGroup:
             return (top: 8, bottom: 8)
         case .userBubble:
             // Bubble already carries its own internal vertical padding;
@@ -456,6 +581,131 @@ enum BlockStyle: Sendable {
     nonisolated static var codeBlockCopyRightInset: CGFloat { structuralCornerRadius }
     /// Hairline divider color between header and body.
     nonisolated static let codeBlockDividerColor: NSColor = .separatorColor
+
+    // MARK: - Tool header geometry
+    //
+    // Shared header style for `toolGroup` rows. Used at two tiers:
+    // ① the group header (group title + chevron) at the row top, and
+    // ② each item header (file path + chevron) inside the expanded
+    // group. Both tiers share one set of constants so the row reads as
+    // a uniform stack — same height / font / color / chevron size, no
+    // icon, no extra inset on top of the row's standard horizontal
+    // padding. Identical to the old `NativeTranscript.GroupComponent`
+    // theme values: 12pt medium / `secondaryLabel` / 8pt chevron /
+    // 6pt title↔chevron gap.
+
+    /// Tool-header row height — group header and item header both use
+    /// this. Matches `codeBlockHeaderHeight` so a header band tucked
+    /// against a code block downstream reads at one tier.
+    nonisolated static let toolHeaderHeight: CGFloat = 24
+
+    /// Title typography — 12pt medium / `secondaryLabel`, matching the
+    /// old `GroupComponent`.
+    nonisolated static var toolHeaderFont: NSFont {
+        NSFont.systemFont(ofSize: 12, weight: .medium)
+    }
+    nonisolated static var toolHeaderForeground: NSColor {
+        .secondaryLabelColor
+    }
+
+    /// Chevron edge length — matches old `GroupComponent`'s 8pt glyph
+    /// so the disclosure triangle reads as a small directional hint,
+    /// not a button.
+    nonisolated static let toolHeaderChevronSize: CGFloat = 8
+
+    /// Stroke width for the chevron's two-segment `>` path. 1.4pt
+    /// matches the old `GroupSideCar.chevronLayer.lineWidth`.
+    nonisolated static let toolHeaderChevronLineWidth: CGFloat = 1.4
+
+    /// Chevron alpha — idle / hover. Same values as the old
+    /// `theme.groupChevronIdleAlpha / HoverAlpha`. Hover brightening
+    /// is the primary visual hover affordance (alongside the title
+    /// flipping to `.labelColor`).
+    nonisolated static let toolHeaderChevronIdleAlpha: CGFloat = 0.35
+    nonisolated static let toolHeaderChevronHoverAlpha: CGFloat = 0.85
+
+    /// Hover-state title colour. Idle = `toolHeaderForeground`
+    /// (`.secondaryLabelColor`); hover swaps to the brighter
+    /// `.labelColor` so the active row reads as "primed".
+    nonisolated static var toolHeaderHoverForeground: NSColor {
+        .labelColor
+    }
+
+    /// Title ↔ chevron horizontal gap.
+    nonisolated static let toolHeaderChevronGap: CGFloat = 6
+
+    /// Hit-rect outset around `[title.minX, chevron.maxX]` — gives the
+    /// header a friendlier click target than the bare glyphs.
+    nonisolated static let toolHeaderHitPadding: CGFloat = 6
+
+    /// Vertical gap between adjacent item headers inside an expanded
+    /// group, and between an item header and its expanded body. Matches
+    /// the old `GroupComponent.groupChildSpacing` value so the gestalt
+    /// "these belong together" pull stays the same.
+    nonisolated static let toolHeaderChildSpacing: CGFloat = 4
+
+    // MARK: - Diff body geometry
+    //
+    // The hunks panel inside an expanded tool-group item. Drawn as a
+    // `codeBlock`-style rounded card — same corner radius, body
+    // background, divider color — so a diff body and a fenced code
+    // block sit at one structural tier.
+
+    /// Body monospaced font for diff lines. Same as `codeBlockFont` so
+    /// gutter / sign / content all share one cap-height.
+    nonisolated static var diffBodyFont: NSFont { codeBlockFont }
+
+    /// Spacing between the gutter character cells and the sign column
+    /// /content. `0` matches the old `NativeDiffView` (which fed a
+    /// space-padded gutter string directly into NSTextStorage); the
+    /// vertical column separator is purely the gutter's background-fill
+    /// edge.
+    nonisolated static let diffGutterInternalPadding: CGFloat = 0
+
+    /// Hairline column divider between gutter and sign/content area —
+    /// gives the diff a "two-column" reading. Same color as the header
+    /// divider so the chrome reads as one piece.
+    nonisolated static var diffColumnDividerColor: NSColor { codeBlockDividerColor }
+
+    /// Background under the inter-hunk separator row (`···`).
+    nonisolated static var diffSeparatorBackground: NSColor {
+        DiffColors.dynamicSeparatorBg
+    }
+    nonisolated static var diffSeparatorForeground: NSColor {
+        DiffColors.dynamicSeparatorFg
+    }
+
+    /// Container background tint behind every line — DiffColors' table
+    /// background. Slightly darker than the surrounding chat surface so
+    /// the line backgrounds read against it.
+    nonisolated static var diffContainerBackground: NSColor {
+        DiffColors.dynamicTableBg
+    }
+
+    /// Gutter line-number foreground.
+    nonisolated static var diffGutterForeground: NSColor {
+        DiffColors.dynamicGutterText
+    }
+
+    /// Total horizontal padding inside the body band (left of gutter,
+    /// right of content). 0 to match NativeDiffView: the gutter / sign /
+    /// content backgrounds extend edge-to-edge of the container.
+    nonisolated static let diffBodyHorizontalPadding: CGFloat = 0
+
+    /// Vertical padding between the header's bottom edge and the first
+    /// body line — matches `codeBlockBodyVerticalPadding` but symmetric
+    /// to the bottom for a diff. We don't pad inside the body itself;
+    /// the line backgrounds extend the full body band.
+    nonisolated static let diffBodyVerticalPadding: CGFloat = 0
+
+    /// Add / del sign colors — used both for the `+ -` glyphs in the
+    /// sign column and for per-line backgrounds resolved off `DiffColors`.
+    nonisolated static var diffSignAddForeground: NSColor {
+        DiffColors.dynamicSignAdd
+    }
+    nonisolated static var diffSignDelForeground: NSColor {
+        DiffColors.dynamicSignDel
+    }
 
     // MARK: - Blockquote geometry
 

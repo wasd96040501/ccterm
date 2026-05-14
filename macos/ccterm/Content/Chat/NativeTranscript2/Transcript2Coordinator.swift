@@ -99,6 +99,29 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// drives a single-row reload after tokens land.
     let highlightStorage: Transcript2HighlightStorage
 
+    /// Per-block fold-state persistence. Keyed by `Block.id` so the
+    /// user's expand/collapse choice survives `.update` content
+    /// replacement (a tool-result fill-in mid-stream should not yank a
+    /// diff the user just expanded shut again). Sparse — only blocks
+    /// that have been toggled at least once carry an entry; absent =
+    /// the kind's default (`false` for diff, today's only consumer).
+    /// `nonisolated`-readable through `foldState(for:)` so the
+    /// off-MainActor `makeLayout` path can read it via the snapshot
+    /// argument; mutation goes through `toggleFold(id:)` which then
+    /// drives the single-row relayout.
+    private var foldStates: [UUID: Bool] = [:]
+
+    /// Read helper for `makeLayout` callers. Off-main consumers must
+    /// pass a captured snapshot instead of touching the dict directly.
+    func foldState(for id: UUID) -> Bool { foldStates[id] ?? false }
+
+    /// Snapshot for off-main consumers — same pattern as
+    /// `highlightStorage.snapshot()`. The detached precompute paths
+    /// (`applyInBackground`, `refillLayoutCache`) capture this on
+    /// MainActor before hopping so per-block lookup inside the
+    /// `makeLayout` loop stays actor-free.
+    func foldStateSnapshot() -> [UUID: Bool] { foldStates }
+
     init(syntaxEngine: SyntaxHighlightEngine? = nil) {
         self.selection = Transcript2SelectionCoordinator()
         self.highlightStorage = Transcript2HighlightStorage(engine: syntaxEngine)
@@ -264,19 +287,23 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             return []
         }
 
-        // Snapshot highlight tokens on MainActor before detaching — the
-        // off-main loop reads per-block tokens from this dict instead of
-        // hopping back to the actor mid-iteration. New tokens that land
-        // between this snapshot and the main hop are picked up by the
-        // `onDidFill` reload path independently.
-        let tokensSnapshot = highlightStorage.snapshot()
+        // Snapshot highlight values + fold flags on MainActor before
+        // detaching — the off-main loop reads per-block data from these
+        // dicts instead of hopping back to the actor mid-iteration. New
+        // tokens / fold toggles that land between this snapshot and the
+        // main hop are picked up by the `onDidFill` / `toggleFold` reload
+        // paths independently.
+        let highlightSnapshot = highlightStorage.snapshot()
+        let foldsSnapshot = foldStates
 
         Task.detached(priority: .userInitiated) { [weak self] in
             var entries: [(UUID, RowLayout)] = []
             entries.reserveCapacity(toCompute.count)
             for block in toCompute {
                 entries.append((block.id, Self.makeLayout(
-                    for: block, width: width, tokens: tokensSnapshot)))
+                    for: block, width: width,
+                    highlights: highlightSnapshot,
+                    folds: foldsSnapshot)))
             }
             await MainActor.run { [entries] in
                 defer { completion() }
@@ -327,6 +354,9 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                 removeCachedLayout(for: id)
                 selection.dropEntry(blockId: id)
                 highlightStorage.drop(blockId: id)
+                // Cleanup is sparse-dict friendly — `removeValue` is a
+                // no-op when the id never carried a fold flag (most blocks).
+                foldStates.removeValue(forKey: id)
             }
             table?.removeRows(at: indexes, withAnimation: [.effectFade])
 
@@ -505,22 +535,24 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         }
         let layout = Self.makeLayout(
             for: block, width: width,
-            tokens: highlightStorage.snapshot())
+            highlights: highlightStorage.snapshot(),
+            folds: foldStates)
         layoutCache[block.id] = CachedLayout(width: width, layout: layout)
         return layout
     }
 
-    /// Pure: `(block, width, tokens) -> RowLayout`. `nonisolated static`
-    /// so the background prefetch task can call it off-MainActor.
-    /// `tokens` is a snapshot of `Transcript2HighlightStorage` taken on
-    /// MainActor before the detached task starts; passing the snapshot in
-    /// keeps the per-block lookup actor-free during the off-main loop.
-    /// Defaults to empty so call sites that genuinely don't want
-    /// highlight (e.g. `Transcript2Controller.sliceForViewport`'s
-    /// height-only probe) can omit the parameter.
+    /// Pure: `(block, width, highlights, folds) -> RowLayout`.
+    /// `nonisolated static` so the background prefetch task can call it
+    /// off-MainActor. Both `highlights` and `folds` are snapshots taken
+    /// on MainActor before the detached task starts; passing the
+    /// snapshots in keeps the per-block lookup actor-free during the
+    /// off-main loop. Defaults to empty so call sites that genuinely
+    /// don't want either (e.g. `Transcript2Controller.sliceForViewport`'s
+    /// height-only probe) can omit them.
     nonisolated static func makeLayout(
         for block: Block, width: CGFloat,
-        tokens: [Transcript2HighlightKey: [SyntaxToken]] = [:]
+        highlights: [Transcript2HighlightKey: HighlightValue] = [:],
+        folds: [UUID: Bool] = [:]
     ) -> RowLayout {
         let contentWidth = max(0, width - 2 * BlockStyle.blockHorizontalPadding)
         switch block.kind {
@@ -542,8 +574,12 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         case .table(let tableBlock):
             return .table(TableLayout.make(block: tableBlock, maxWidth: contentWidth))
         case .codeBlock(let language, let code):
-            let codeTokens = tokens[
-                Transcript2HighlightKey(blockId: block.id, scope: .codeBlock)]
+            let codeTokens: [SyntaxToken]? = {
+                guard case .tokens(let t) = highlights[
+                    Transcript2HighlightKey(blockId: block.id, scope: .codeBlock)]
+                else { return nil }
+                return t
+            }()
             return .codeBlock(CodeBlockLayout.make(
                 code: code, language: language,
                 tokens: codeTokens, maxWidth: contentWidth))
@@ -553,6 +589,84 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             return .thematicBreak(ThematicBreakLayout.make(maxWidth: contentWidth))
         case .userBubble(let text):
             return .userBubble(UserBubbleLayout.make(text: text, maxWidth: contentWidth))
+        case .toolGroup(let group):
+            // Pull every per-child lineMap snapshot up front so the
+            // off-main precompute path has no per-iteration dict
+            // lookups against `highlights` (one bulk filter is cheap
+            // and keeps the inner loop tight).
+            var lineMaps: [UUID: [String: [SyntaxToken]]] = [:]
+            for child in group.children {
+                if case .lineMap(let m) = highlights[
+                    Transcript2HighlightKey(
+                        blockId: block.id,
+                        scope: .toolGroupChild(itemId: child.id))]
+                {
+                    lineMaps[child.id] = m
+                }
+            }
+            return .toolGroup(ToolGroupLayout.make(
+                blockId: block.id,
+                group: group,
+                foldStates: folds,
+                lineMaps: lineMaps,
+                maxWidth: contentWidth))
+        }
+    }
+
+    // MARK: - Fold-state interactions
+
+    /// Toggle the persistent fold flag for `id` and replay the single-row
+    /// height change. Wraps the row mutation in a brief animation group so
+    /// the height transition reads as a smooth expand/collapse, matching
+    /// the old `NativeTranscript.GroupComponent` chevron behavior. Layouts
+    /// receive the new flag through their next `makeLayout` query — the
+    /// cache eviction here guarantees that lookup recomputes rather than
+    /// returning the stale, oppositely-folded entry.
+    ///
+    /// No-op if `id` isn't a current block. Selection on the affected
+    /// row is dropped: fold/unfold replaces the layout's body content,
+    /// so prior selection offsets no longer index into anything
+    /// meaningful.
+    func toggleFold(id: UUID) {
+        guard let table = tableView else { return }
+        // Find the owning row. `id` may be either a top-level
+        // `Block.id` (the group header itself) or a
+        // `ToolGroupBlock.Child.id` (an item header inside a group).
+        // Search both so child-header clicks reach the same code path
+        // as group-header clicks — without this fallback, child
+        // toggles silently no-op because nested ids never appear in
+        // `blocks.firstIndex(...)`.
+        let hostRow = blocks.firstIndex { block in
+            if block.id == id { return true }
+            switch block.kind {
+            case .toolGroup(let group):
+                return group.children.contains(where: { $0.id == id })
+            default:
+                return false
+            }
+        }
+        guard let row = hostRow else { return }
+        foldStates[id] = !(foldStates[id] ?? false)
+        let hostId = blocks[row].id
+        // Invalidate the host row's cached layout and selection — the
+        // toggled id might be a child, but the *layout* of the
+        // enclosing toolGroup row is what AppKit needs to re-query.
+        removeCachedLayout(for: hostId)
+        selection.dropEntry(blockId: hostId)
+
+        let idx = IndexSet(integer: row)
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.18
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            table.beginUpdates()
+            table.noteHeightOfRows(withIndexesChanged: idx)
+            table.endUpdates()
+            // `reloadData` swaps the cell's `RowLayout` so the new
+            // folded/expanded body draws — must follow `noteHeightOfRows`
+            // inside the same animation group so the row's height change
+            // and content swap composite together rather than tearing.
+            table.reloadData(forRowIndexes: idx,
+                             columnIndexes: IndexSet(integer: 0))
         }
     }
 
@@ -645,7 +759,8 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
 
         let snapshot = staleIdxs.map { blocks[$0] }
         let snapshotCounter = mutationCounter
-        let tokensSnapshot = highlightStorage.snapshot()
+        let highlightSnapshot = highlightStorage.snapshot()
+        let foldsSnapshot = foldStates
         // Push covers the async layout window so the scroller stays hidden
         // through the post-resize relayout. Popped via the task's defer in
         // every outcome (cancelled, drifted, succeeded).
@@ -659,7 +774,9 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             for block in snapshot {
                 if Task.isCancelled { aborted = true; break }
                 entries.append((block.id, Self.makeLayout(
-                    for: block, width: width, tokens: tokensSnapshot)))
+                    for: block, width: width,
+                    highlights: highlightSnapshot,
+                    folds: foldsSnapshot)))
             }
             await MainActor.run { [entries] in
                 defer { self?.popScrollerHidden() }
@@ -744,6 +861,11 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         // on every reuse so a recycled cell doesn't carry a stale
         // checkmark onto a different code block.
         cell.resetCopiedFeedback()
+        // Hover affordance is likewise transient — a recycled cell
+        // must start with no hovered hit, otherwise the previous row's
+        // hovered toolGroup header would still read as "primed" until
+        // the cursor moved.
+        cell.resetHover()
         // Reinjected on every viewFor (cells are reused across rows) so
         // chevron mouseDown can hit `requestUserBubbleSheet` without
         // scanning the superview chain.

@@ -630,6 +630,71 @@ private extension TranscriptDemoView {
                     + "The break is decorative only — no glyphs, no selection, "
                     + "and the cell skips both the I-beam cursor and the highlight pass."),
             ]),
+
+            headingIR(level: 2, [.text("Tool groups")]),
+
+            paraIR([
+                .text("A tool group folds a batch of related tool calls into a single row. "
+                    + "Click the group header to reveal the per-file headers; click any "
+                    + "file header to reveal its diff. Three independently-foldable "
+                    + "layers (group, item header, hunks card) share the coordinator's "
+                    + "fold-state dict, so toggling one doesn't reset another."),
+            ]),
+
+            Block(id: UUID(), kind: .toolGroup(ToolGroupBlock(
+                title: "Edited 3 files",
+                children: [
+                    .fileEdit(FileEditChild(
+                        id: UUID(),
+                        label: "Edit Sources/Greeter.swift",
+                        filePath: "Sources/Greeter.swift",
+                        diff: DiffBlock(
+                            filePath: "Sources/Greeter.swift",
+                            oldString: """
+                            func greet(name: String) {
+                                print("Hello, \\(name)!")
+                                print("Welcome.")
+                            }
+                            """,
+                            newString: """
+                            func greet(name: String, greeting: String = "Hello") {
+                                print("\\(greeting), \\(name)!")
+                                print("Welcome to the app.")
+                                logger.info("Greeted \\(name)")
+                            }
+                            """))),
+                    .fileEdit(FileEditChild(
+                        id: UUID(),
+                        label: "Write config/server.yaml",
+                        filePath: "config/server.yaml",
+                        diff: DiffBlock(
+                            filePath: "config/server.yaml",
+                            oldString: nil,
+                            newString: """
+                            port: 8080
+                            host: localhost
+                            debug: true
+                            log_level: info
+                            tls:
+                              enabled: false
+                              cert: /etc/ssl/server.crt
+                            """))),
+                    .fileEdit(FileEditChild(
+                        id: UUID(),
+                        label: "Delete scripts/cleanup.sh",
+                        filePath: "scripts/cleanup.sh",
+                        diff: DiffBlock(
+                            filePath: "scripts/cleanup.sh",
+                            oldString: """
+                            #!/bin/bash
+                            echo "starting cleanup"
+                            rm -rf /tmp/cache
+                            rm -rf /tmp/logs
+                            rm -rf /var/cache/build
+                            echo "done"
+                            """,
+                            newString: ""))),
+                ]))),
         ]
     }
 }

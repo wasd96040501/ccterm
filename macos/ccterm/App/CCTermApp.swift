@@ -7,7 +7,6 @@ struct CCTermApp: App {
     var body: some Scene {
         Window("ccterm", id: "main") {
             RootView2()
-                .environment(appState)
                 .environment(appState.sessionManager2)
                 .environment(\.syntaxEngine, appState.syntaxEngine)
         }
@@ -15,7 +14,7 @@ struct CCTermApp: App {
         .defaultSize(width: 1200, height: 860)
         .windowResizability(.contentSize)
         .commands {
-            AppCommands(appState: appState)
+            AppCommands()
         }
 
         Window("Settings", id: "settings") {
@@ -33,15 +32,11 @@ struct CCTermApp: App {
     init() {
         UserDefaults.standard.set(0, forKey: "NSInitialToolTipDelay")
         CursorGuard.install()
-        CLICapabilityStore.shared.detectVersion()
-        CLICapabilityStore.shared.loadFromCache()
-        ModelStore.prefetchIfNeeded()
         MainThreadWatchdog.start()
     }
 }
 
 struct AppCommands: Commands {
-    let appState: AppState
     @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
@@ -51,24 +46,11 @@ struct AppCommands: Commands {
             }
             .keyboardShortcut(",", modifiers: .command)
         }
-        CommandGroup(replacing: .newItem) {
-            Button("New Conversation") { appState.startNewConversation() }
-                .keyboardShortcut("n", modifiers: .command)
-        }
         CommandMenu("Debug") {
             Button("Logs") {
                 openWindow(id: "logs")
             }
             .keyboardShortcut("L", modifiers: [.command, .shift])
-        }
-        CommandGroup(after: .textEditing) {
-            Divider()
-            Button("Find") { appState.searchFocusTrigger = true }
-                .keyboardShortcut("f", modifiers: .command)
-            Button("Find Next") { appState.findNext() }
-                .keyboardShortcut("g", modifiers: .command)
-            Button("Find Previous") { appState.findPrevious() }
-                .keyboardShortcut("g", modifiers: [.command, .shift])
         }
     }
 }

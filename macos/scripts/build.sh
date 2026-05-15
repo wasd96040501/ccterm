@@ -30,19 +30,6 @@ if [ ! -f ../thirdparty/fzf/main.go ]; then
   git -C .. submodule update --init --recursive
 fi
 
-# Check bun is available (needed for WebReact build phase)
-if ! command -v bun &>/dev/null; then
-  echo "Error: bun is required but not installed."
-  echo "Install via: curl -fsSL https://bun.sh/install | bash"
-  exit 1
-fi
-
-# Install web dependencies if needed
-if [ ! -d ../web/node_modules ]; then
-  echo "Installing web dependencies..."
-  (cd ../web && bun install)
-fi
-
 # --- Build ---
 
 BUILD_LOG="/tmp/ccterm-build-$$.log"

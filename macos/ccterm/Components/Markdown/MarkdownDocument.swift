@@ -54,6 +54,19 @@ public struct MarkdownDocument: Hashable, Sendable {
                 let inner = MarkdownConvert.blocks(Array(quote.blockChildren))
                 out.append(.blockquote(inner))
 
+            case let unordered as Markdown.UnorderedList:
+                flushBuffer()
+                let items = Array(unordered.listItems).map { MarkdownConvert.item(for: $0) }
+                out.append(.list(MarkdownList(ordered: false, startIndex: nil, items: items)))
+
+            case let ordered as Markdown.OrderedList:
+                flushBuffer()
+                let items = Array(ordered.listItems).map { MarkdownConvert.item(for: $0) }
+                out.append(.list(MarkdownList(
+                    ordered: true,
+                    startIndex: Int(ordered.startIndex),
+                    items: items)))
+
             case let code as Markdown.CodeBlock:
                 flushBuffer()
                 let language = code.language?.trimmingCharacters(in: .whitespaces)

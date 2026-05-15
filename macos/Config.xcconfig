@@ -1,3 +1,8 @@
 // Shared build configuration for ccterm
 // Local overrides (gitignored) — copy Local.xcconfig.template to Local.xcconfig
 #include? "Local.xcconfig"
+
+// Exclude in-tree per-module documentation from the bundle. PBXFileSystemSynchronizedRootGroup
+// auto-includes every file under the source folder; without this, multiple CLAUDE.md files
+// (one per module) all want to copy to Resources/CLAUDE.md and collide.
+EXCLUDED_SOURCE_FILE_NAMES = $(inherited) CLAUDE.md

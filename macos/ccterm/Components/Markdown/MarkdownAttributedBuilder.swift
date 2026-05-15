@@ -4,9 +4,13 @@ import SwiftMath
 /// Builds `NSAttributedString` output for `.markdown` segments and table cells.
 ///
 /// Pure function over `(blocks, theme)` — no side effects, no UI state.
-/// Main-actor only because it touches `NSFont` / `NSColor` / `NSFontManager`.
-@MainActor
-struct MarkdownAttributedBuilder {
+/// Thread-safe: reachable types (`NSFont`, `NSColor`, `NSAttributedString`) are
+/// documented thread-safe; `NSFontManager` is deliberately avoided (use
+/// `NSFontDescriptor.withSymbolicTraits` via the `NSFont.addingTraits` helper
+/// below). `MathImage.asImage` is lazy — it captures a display list into an
+/// `NSImage(size:flipped:drawingHandler:)` whose handler defers all CG drawing
+/// to the future paint, so `asImage` itself is safe to call off-main.
+nonisolated struct MarkdownAttributedBuilder {
     let theme: MarkdownTheme
 
     // MARK: - Public
@@ -65,7 +69,7 @@ struct MarkdownAttributedBuilder {
     /// Render a flat list of inlines — used for table cells.
     func buildInline(_ inlines: [MarkdownInline], bold: Bool = false) -> NSAttributedString {
         let base: NSFont = bold
-            ? NSFontManager.shared.convert(theme.bodyFont, toHaveTrait: .boldFontMask)
+            ? theme.bodyFont.addingTraits(.bold)
             : theme.bodyFont
         return renderInlines(inlines, baseFont: base, color: theme.primaryColor)
     }
@@ -113,121 +117,14 @@ struct MarkdownAttributedBuilder {
             inner.addAttribute(.foregroundColor, value: theme.blockquoteTextColor, range: range)
             out.append(inner)
 
-        case .list(let list):
-            renderList(list, indent: indent, trailingSpacing: trailingSpacing, into: out)
+        case .list:
+            // List 不走 attributed-string 路径——它被分派到 ``MarkdownListView``
+            // （SwiftUI 路径）和 ``TranscriptListLayout``（CoreText 路径），
+            // 那里 marker 是独立的、不可选的视觉元素。这里静默跳过：builder
+            // 只会在 fallback（list item 内部的 heading / blockquote）时收到
+            // 非 list 的 block，不会有人显式让它渲染 list。
+            break
         }
-    }
-
-    private func renderList(
-        _ list: MarkdownList,
-        indent: CGFloat,
-        trailingSpacing: CGFloat,
-        into out: NSMutableAttributedString
-    ) {
-        // Marker font: monospaced digits for ordered lists so 9, 10, 99, 100
-        // share the same digit width and right-align cleanly.
-        let markerFont: NSFont = list.ordered
-            ? NSFont.monospacedDigitSystemFont(ofSize: theme.bodyFontSize, weight: .regular)
-            : theme.bodyFont
-
-        // Pre-pass: compute the widest marker across this list so every item
-        // shares one right-aligned tab stop.
-        var maxMarkerWidth: CGFloat = 0
-        for (idx, item) in list.items.enumerated() {
-            let m = makeMarker(item: item, idx: idx, list: list, markerFont: markerFont)
-            maxMarkerWidth = max(maxMarkerWidth, m.size().width)
-        }
-        let markerRightX = indent + maxMarkerWidth
-        // Half-em gap between marker and content.
-        let contentX = markerRightX + theme.bodyFontSize * 0.5
-        let tabStops = [
-            NSTextTab(textAlignment: .right, location: markerRightX),
-            NSTextTab(textAlignment: .left, location: contentX),
-        ]
-
-        func listLineStyle(trailing: CGFloat) -> NSParagraphStyle {
-            let style = NSMutableParagraphStyle()
-            style.lineSpacing = theme.l3Line
-            style.paragraphSpacing = trailing
-            style.firstLineHeadIndent = indent
-            style.headIndent = contentX
-            style.tabStops = tabStops
-            return style
-        }
-
-        for (idx, item) in list.items.enumerated() {
-            let isLast = idx == list.items.count - 1
-            let itemTrailing = isLast ? trailingSpacing : theme.l3Item
-            let marker = makeMarker(item: item, idx: idx, list: list, markerFont: markerFont)
-
-            if item.content.isEmpty {
-                let line = NSMutableAttributedString(string: "\t")
-                line.append(marker)
-                line.append(NSAttributedString(string: "\t"))
-                apply(listLineStyle(trailing: itemTrailing), to: line)
-                out.append(line)
-            } else {
-                for (bi, block) in item.content.enumerated() {
-                    let isFirst = bi == 0
-                    let isLastInItem = bi == item.content.count - 1
-                    // Use l3Item (not l2) between blocks WITHIN one list item:
-                    // a list item is a single semantic unit, so its internal
-                    // blocks (paragraph + nested list, or multi-paragraph
-                    // content) should sit tighter than top-level paragraphs.
-                    // Mirrors the same convention used for blockquote inner
-                    // blocks in `buildBlockquote`.
-                    let blockTrailing = isLastInItem ? itemTrailing : theme.l3Item
-
-                    if isFirst, case .paragraph(let inlines) = block {
-                        let line = NSMutableAttributedString(string: "\t")
-                        line.append(marker)
-                        line.append(NSAttributedString(string: "\t"))
-                        line.append(renderInlines(
-                            inlines,
-                            baseFont: theme.bodyFont,
-                            color: theme.primaryColor))
-                        apply(listLineStyle(trailing: blockTrailing), to: line)
-                        out.append(line)
-                    } else {
-                        renderBlock(
-                            block,
-                            indent: contentX,
-                            trailingSpacing: blockTrailing,
-                            into: out)
-                    }
-
-                    if !isLastInItem {
-                        out.append(NSAttributedString(string: "\n"))
-                    }
-                }
-            }
-
-            if !isLast {
-                out.append(NSAttributedString(string: "\n"))
-            }
-        }
-    }
-
-    private func makeMarker(
-        item: MarkdownListItem,
-        idx: Int,
-        list: MarkdownList,
-        markerFont: NSFont
-    ) -> NSAttributedString {
-        if let checkbox = item.checkbox {
-            return checkboxAttachment(checked: checkbox == .checked)
-        }
-        if list.ordered {
-            let n = (list.startIndex ?? 1) + idx
-            return NSAttributedString(string: "\(n).", attributes: [
-                .font: markerFont,
-                .foregroundColor: theme.secondaryColor,
-            ])
-        }
-        return NSAttributedString(string: "•", attributes: [
-            .font: markerFont,
-            .foregroundColor: theme.secondaryColor,
-        ])
     }
 
     /// Render an inline `$..$` math run via SwiftMath as an `NSTextAttachment`,
@@ -258,45 +155,6 @@ struct MarkdownAttributedBuilder {
             width: image.size.width,
             height: image.size.height)
         return NSAttributedString(attachment: attachment)
-    }
-
-    /// SF Symbols `square` / `checkmark.square` rendered as an `NSTextAttachment`
-    /// so checked and unchecked boxes are guaranteed to be the exact same size.
-    /// Sized at 1.2× body font and `.medium` weight — the default `.regular`
-    /// stroke reads thin at body sizes.
-    ///
-    /// Vertical alignment uses the font's **cap height** centre rather than
-    /// x-height. SF Symbol bounding boxes carry asymmetric internal padding,
-    /// and the x-height reference visibly sits the chip below the text mean
-    /// line. capHeight/2 puts the symbol's geometric centre on the same line
-    /// as uppercase letters, which reads as properly centred.
-    private func checkboxAttachment(checked: Bool) -> NSAttributedString {
-        let symbolSize = theme.bodyFontSize * 1.2
-        let name = checked ? "checkmark.square" : "square"
-        let config = NSImage.SymbolConfiguration(pointSize: symbolSize, weight: .medium)
-        guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
-            .withSymbolConfiguration(config)
-        else {
-            return NSAttributedString(string: checked ? "☑" : "☐", attributes: [
-                .font: theme.bodyFont,
-                .foregroundColor: theme.secondaryColor,
-            ])
-        }
-        image.isTemplate = true
-        let attachment = NSTextAttachment()
-        attachment.image = image
-        let capHeight = theme.bodyFont.capHeight
-        attachment.bounds = CGRect(
-            x: 0,
-            y: (capHeight - symbolSize) / 2,
-            width: symbolSize,
-            height: symbolSize)
-        let attr = NSMutableAttributedString(attachment: attachment)
-        attr.addAttribute(
-            .foregroundColor,
-            value: theme.secondaryColor,
-            range: NSRange(location: 0, length: attr.length))
-        return attr
     }
 
     // MARK: - Inline rendering
@@ -350,9 +208,9 @@ struct MarkdownAttributedBuilder {
 
         case .code(let s):
             let font = NSFont.monospacedSystemFont(ofSize: baseFont.pointSize * 0.92, weight: .regular)
-            // Custom marker — drawn as a padded rounded chip by
-            // ``MarkdownLayoutManager``. Built-in `.backgroundColor` only
-            // supports tight rectangles.
+            // Custom marker — drawn as a padded rounded chip by the CoreText
+            // renderer. Built-in `.backgroundColor` only supports tight
+            // character-bounds rectangles.
             let chipAttrs: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: color,
@@ -360,28 +218,23 @@ struct MarkdownAttributedBuilder {
             ]
             let chip = NSAttributedString(string: s, attributes: chipAttrs)
 
-            // LEFT side: push the chip away from the previous character by
-            // bumping that char's kern in the already-emitted output. The kern
-            // sits on a glyph OUTSIDE the chip's marker range, so it shifts
-            // the chip's start position without widening the chip itself.
-            if out.length > 0 {
-                let prevRange = NSRange(location: out.length - 1, length: 1)
-                out.addAttribute(.kern, value: theme.inlineCodeSideKern, range: prevRange)
-            }
+            // External gap on each side via `InlineSpacer` (CTRunDelegate over
+            // U+2060). Spacer width has to compensate for the chip's own
+            // horizontal padding — chipRect extends `chipPadding` past the
+            // last/first glyph, so a spacer of N points only yields
+            // `N - chipPadding` of visible gap. To get exactly `outerGap`
+            // visible breathing room on each side, the spacer must be
+            // `outerGap + chipPadding`.
+            //
+            // Spacers are inserted unconditionally on both sides — at the very
+            // start of a paragraph there's no preceding char, but a missing
+            // leading spacer would put chipRect at x = -chipPadding, clipped
+            // by the layout origin. Always emitting the spacer keeps the chip
+            // honest at line/paragraph boundaries too.
+            let spacerWidth = theme.inlineCodeOuterGap + theme.inlineCodeHPadding
+            out.append(InlineSpacer.attributedString(width: spacerWidth))
             out.append(chip)
-
-            // RIGHT side: append a zero-width word joiner (U+2060) carrying
-            // the kern. CRITICAL — putting the kern on the chip's *last*
-            // character would widen `enumerateEnclosingRects`'s result and
-            // pull the following glyph INSIDE the chip's rounded right edge.
-            // The U+2060 is invisible, has no advance, and is unmarked, so it
-            // sits outside the chip range; only its post-kern carries through
-            // to push the next visible glyph past the chip's drawn edge.
-            let trailing = NSAttributedString(string: "\u{2060}", attributes: [
-                .font: font,
-                .kern: theme.inlineCodeSideKern,
-            ])
-            out.append(trailing)
+            out.append(InlineSpacer.attributedString(width: spacerWidth))
 
         case .link(let destination, let children):
             let before = out.length
@@ -438,8 +291,8 @@ struct MarkdownAttributedBuilder {
         strike: Bool
     ) -> NSAttributedString {
         var font = baseFont
-        if bold { font = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask) }
-        if italic { font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask) }
+        if bold { font = font.addingTraits(.bold) }
+        if italic { font = font.addingTraits(.italic) }
 
         var attrs: [NSAttributedString.Key: Any] = [
             .font: font,
@@ -471,5 +324,21 @@ struct MarkdownAttributedBuilder {
             .paragraphStyle,
             value: style,
             range: NSRange(location: 0, length: attr.length))
+    }
+}
+
+// MARK: - NSFont trait synthesis
+
+extension NSFont {
+    /// Returns a font derived from `self` with additional symbolic traits
+    /// (bold / italic) applied. Replaces `NSFontManager.shared.convert(_:toHaveTrait:)`
+    /// — `NSFontManager` is not thread-safe, `NSFontDescriptor` is.
+    ///
+    /// Falls back to `self` if the descriptor can't resolve a concrete font
+    /// for the requested trait combination.
+    func addingTraits(_ traits: NSFontDescriptor.SymbolicTraits) -> NSFont {
+        let combined = fontDescriptor.symbolicTraits.union(traits)
+        let descriptor = fontDescriptor.withSymbolicTraits(combined)
+        return NSFont(descriptor: descriptor, size: pointSize) ?? self
     }
 }

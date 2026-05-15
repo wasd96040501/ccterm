@@ -105,4 +105,34 @@ function tokenize(code: string, lang?: string | null): string {
   }
 }
 
+/**
+ * Batch variant: tokenize multiple code blocks in a single JSCore round-trip.
+ * Input: JSON string of `[[code, lang|null], ...]`.
+ * Output: JSON string of `[[[text, scope], ...], ...]` — preserving order.
+ *
+ * Saves (N-1) JSCore-boundary crossings + JSON (de)serialisations when a
+ * single assistant message has multiple code blocks.
+ */
+function tokenizeBatch(requestsJson: string): string {
+  let requests: [string, string | null][]
+  try {
+    requests = JSON.parse(requestsJson)
+  } catch {
+    return '[]'
+  }
+  const out: [string, string | null][][] = []
+  for (const req of requests) {
+    const code = typeof req?.[0] === 'string' ? req[0] : ''
+    const lang = typeof req?.[1] === 'string' ? req[1] : null
+    try {
+      const single = tokenize(code, lang)
+      out.push(JSON.parse(single))
+    } catch {
+      out.push([[code, null]])
+    }
+  }
+  return JSON.stringify(out)
+}
+
 ;(globalThis as any).tokenize = tokenize
+;(globalThis as any).tokenizeBatch = tokenizeBatch

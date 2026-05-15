@@ -30,12 +30,42 @@ extension SessionHandle2 {
         default: break
         }
 
-        switch action(for: message) {
-        case .merge(let id, let payload): attachToolResult(payload, to: id)
-        case .confirm(let id, let echo): confirmQueuedEntry(id: id, echo: echo, mode: mode)
-        case .append: appendToTimeline(message, mode: mode)
+        let act = action(for: message)
+        if mode == .live {
+            let actDesc: String
+            switch act {
+            case .merge(let id, _): actDesc = "merge(\(id.prefix(8)))"
+            case .confirm(let id, _): actDesc = "confirm(\(id.uuidString.prefix(8)))"
+            case .append: actDesc = "append"
+            case .skip: actDesc = "skip"
+            }
+            appLog(.info, "SessionHandle2",
+                "[v2-send] receive sid=\(sessionId.prefix(8)) mode=live action=\(actDesc) status=\(status)")
+        }
+        // 每个 mutation helper 返回它产出的 TimelineMutation(或 nil),让本
+        // 函数最后统一 emit sink。这样 sink 触发点和 emitSnapshot 在同一
+        // 位置,future maintainer 改任一时都能看见对应路径。
+        let mutation: TimelineMutation?
+        switch act {
+        case .merge(let id, let payload):
+            mutation = attachToolResult(payload, to: id).map(TimelineMutation.mutated)
+        case .confirm(let id, let echo):
+            mutation = confirmQueuedEntry(id: id, echo: echo, mode: mode).map(TimelineMutation.mutated)
+        case .append:
+            mutation = appendToTimeline(message, mode: mode)
+        case .skip:
+            mutation = nil
+        }
+
+        // replay 批量 ingest 由调用方（loadHistory Phase A / Phase B）一次性
+        // emit `.initialPaint` / `.prependHistory`——此处不发 per-message。
+        guard mode == .live else { return }
+        switch act {
+        case .append: emitSnapshot(.liveAppend)
+        case .merge, .confirm: emitSnapshot(.update)
         case .skip: break
         }
+        if let mutation { onTimelineMutation?(mutation) }
     }
 }
 
@@ -75,10 +105,26 @@ private extension SessionHandle2 {
     /// 按 entry.id ↔ echo.uuid 精确配对，不做文本启发式。
     func matchQueuedEntry(for echo: Message2User) -> UUID? {
         guard let raw = echo.uuid,
-              let echoId = UUID(uuidString: raw) else { return nil }
-        return messages.first { entry in
+              let echoId = UUID(uuidString: raw) else {
+            appLog(.info, "SessionHandle2",
+                "[v2-send] matchQueued no-uuid echo.uuid=\(echo.uuid ?? "(nil)")")
+            return nil
+        }
+        let hit = messages.first { entry in
             entry.id == echoId && entry.delivery == .queued
         }?.id
+        if hit == nil {
+            // 列出所有 queued user entry id,看是否压根没有,或 uuid 对不上
+            let queued = messages.compactMap { entry -> String? in
+                guard case .single(let s) = entry,
+                      case .localUser = s.payload,
+                      s.delivery == .queued else { return nil }
+                return s.id.uuidString.prefix(8) + ""
+            }
+            appLog(.warning, "SessionHandle2",
+                "[v2-send] matchQueued MISS echoUuid=\(raw.prefix(8)) queued=\(queued)")
+        }
+        return hit
     }
 }
 
@@ -86,57 +132,70 @@ private extension SessionHandle2 {
 
 private extension SessionHandle2 {
 
-    func appendToTimeline(_ message: Message2, mode: ReceiveMode) {
+    func appendToTimeline(_ message: Message2, mode: ReceiveMode) -> TimelineMutation {
         let single = SingleEntry(id: UUID(), payload: .remote(message), delivery: nil, toolResults: [:])
 
+        // mutation 在两种情况下不同:
+        // - 追加到既存 group 的 items → group entry 本体改了内容 → `.mutated`
+        // - 新建 group / append .single → 时间线多了一条 entry → `.appended`
+        let mutation: TimelineMutation
         if message.isGroupableAssistant {
-            // 可分组：last 是 group → 追加到 items；否则开新 group。
             if case .group(var g) = messages.last {
                 g.items.append(single)
                 messages[messages.count - 1] = .group(g)
+                mutation = .mutated(messages[messages.count - 1])
             } else {
                 messages.append(.group(GroupEntry(id: UUID(), items: [single])))
+                mutation = .appended(messages.last!)
             }
         } else {
             messages.append(.single(single))
+            mutation = .appended(messages.last!)
         }
 
         if mode == .live, !isFocused { hasUnread = true }
+        return mutation
     }
 
     /// 把 tool_result 挂到发起该 tool_use 的 assistant single 上。
     /// 倒序搜索：匹配顶层 `.single` 直接挂；匹配 `.group` 时下探 items。
-    func attachToolResult(_ payload: ToolResultPayload, to toolUseId: String) {
+    /// 返回被改动的 entry(`.single` 或 `.group`),由 caller 转成
+    /// `TimelineMutation.mutated`;tool_use_id 找不到对应 entry → 返回 nil
+    /// (老 CLI 偶发 tool_result 找不到锚点)。
+    func attachToolResult(_ payload: ToolResultPayload, to toolUseId: String) -> MessageEntry? {
         for i in messages.indices.reversed() {
             switch messages[i] {
             case .single(var e):
                 if e.ownsToolUse(toolUseId) {
                     e.toolResults[toolUseId] = payload
                     messages[i] = .single(e)
-                    return
+                    return messages[i]
                 }
             case .group(var g):
                 if let j = g.items.lastIndex(where: { $0.ownsToolUse(toolUseId) }) {
                     g.items[j].toolResults[toolUseId] = payload
                     messages[i] = .group(g)
-                    return
+                    return messages[i]
                 }
             }
         }
+        return nil
     }
 
     /// CLI 开始处理一条先前 `send()` 的消息：把 payload 从 `.localUser` 换成
     /// `.remote(echo)`、delivery 切 `.confirmed`，并把 status 推进到 `.responding`
-    /// （仅 live）。用本地 entry 继续展示，不重复 append。
-    func confirmQueuedEntry(id: UUID, echo: Message2, mode: ReceiveMode) {
-        guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
-        guard case .single(var single) = messages[idx] else { return }
+    /// （仅 live）。用本地 entry 继续展示，不重复 append。返回被改动的 entry,
+    /// 给 caller 转成 `TimelineMutation.mutated`;id 不命中 / 非 single → nil。
+    func confirmQueuedEntry(id: UUID, echo: Message2, mode: ReceiveMode) -> MessageEntry? {
+        guard let idx = messages.firstIndex(where: { $0.id == id }) else { return nil }
+        guard case .single(var single) = messages[idx] else { return nil }
         single.payload = .remote(echo)
         single.delivery = .confirmed
         messages[idx] = .single(single)
         if mode == .live, status == .idle {
             status = .responding
         }
+        return messages[idx]
     }
 }
 
@@ -155,6 +214,13 @@ private extension SessionHandle2 {
         if let window = result.contextWindow {
             contextWindowTokens = window
         }
+        if mode == .live {
+            appLog(.info, "SessionHandle2",
+                "[v2-send] finishTurn sid=\(sessionId.prefix(8)) status-before=\(status) pendingTurnCount=\(pendingTurnCount)")
+            // turn 结束 -- 每条 .result 对应一条之前 send() 入口 +1 的 turn。
+            // clamp 到 0,replay 模式 / 异常多发不会走负。
+            pendingTurnCount = max(0, pendingTurnCount - 1)
+        }
         if mode == .live, case .responding = status {
             status = .idle
         }
@@ -167,6 +233,10 @@ private extension SessionHandle2 {
         }
         if let cmds = info.slashCommands {
             slashCommands = cmds.map { SlashCommand(name: $0, description: nil) }
+        }
+        if mode == .live {
+            appLog(.info, "SessionHandle2",
+                "[v2-send] adopt-init sid=\(sessionId.prefix(8)) status-before=\(status) cwd=\(info.cwd ?? "(nil)")")
         }
         if mode == .live, case .starting = status {
             status = .idle
@@ -230,15 +300,14 @@ private extension Message2Assistant {
 
 private extension Message2 {
 
-    /// 「可分组」：assistant 消息，其所有非空 content block 均为白名单 tool_use。
-    /// 混合 text / thinking / 非白名单 tool_use 的整条视为不可分组。
+    /// 「可分组」：assistant 消息，其所有非空 content block 均为 tool_use（任意 kind）。
+    /// 混合 text / thinking 仍走 `.single`，由 `AssistantMarkdownComponent` 渲染。
     var isGroupableAssistant: Bool {
         guard case .assistant(let a) = self,
               let blocks = a.message?.content,
               !blocks.isEmpty else { return false }
         for block in blocks {
-            guard case .toolUse(let t) = block,
-                  t.groupableKind != nil else { return false }
+            guard case .toolUse = block else { return false }
         }
         return true
     }

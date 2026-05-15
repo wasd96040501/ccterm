@@ -71,11 +71,30 @@ extension SessionHandle2 {
             toolResults: [:]
         )
         messages.append(.single(single))
+        let entry = messages.last!
+        appLog(.info, "SessionHandle2",
+            "[v2-send] enqueue sid=\(sessionId.prefix(8)) entryId=\(single.id.uuidString.prefix(8)) "
+            + "status=\(status) hasRecord=\(hasRecord) agentSession=\(agentSession != nil) "
+            + "msgCount=\(messages.count) onTLMut=\(onTimelineMutation != nil)")
+        // turn 入口 — 在所有副作用之前 +1,view 层的 isRunning 立刻可见。
+        // 同步发生在 main,@Observable 自动通知 SwiftUI 重渲染。
+        pendingTurnCount += 1
+        emitSnapshot(.liveAppend)
+        // 同时通知 per-mutation sink — bridge / Transcript2 是 onTimelineMutation
+        // 的唯一消费方,enqueue 必须发,不然 user bubble 要等 CLI echo 回来才
+        // 显示(100~300ms 视觉黑屏)。echo 到达时走 `confirmQueuedEntry` 转
+        // `.mutated`,bridge 用稳定 block id 走 `.update` 通道无感替换文本。
+        onTimelineMutation?(.appended(entry))
 
         ensureStarted()
 
         if let session = agentSession {
+            appLog(.info, "SessionHandle2",
+                "[v2-send] write-immediate sid=\(sessionId.prefix(8)) entryId=\(single.id.uuidString.prefix(8))")
             writeUserEntryToCLI(single, session: session)
+        } else {
+            appLog(.info, "SessionHandle2",
+                "[v2-send] defer-flush sid=\(sessionId.prefix(8)) entryId=\(single.id.uuidString.prefix(8)) status=\(status)")
         }
         // 否则 bootstrap 成功后 `flushBootstrapBacklog` 会把它写到 CLI。
     }
@@ -126,8 +145,15 @@ extension SessionHandle2 {
     ///
     /// 不对外暴露——外部只通过 `activate()` 或 `send(_:)` 进入。
     func ensureStarted() {
-        guard status == .notStarted || status == .stopped else { return }
-        appLog(.info, "SessionHandle2", "ensureStarted begin \(sessionId)")
+        guard status == .notStarted || status == .stopped else {
+            appLog(.info, "SessionHandle2",
+                "[v2-send] ensureStarted SKIP sid=\(sessionId.prefix(8)) status=\(status)")
+            return
+        }
+        appLog(.info, "SessionHandle2",
+            "[v2-send] ensureStarted begin sid=\(sessionId.prefix(8)) "
+            + "fresh=\(repository.find(sessionId) == nil) cwd=\(cwd ?? "(nil)") "
+            + "isWorktree=\(isWorktree)")
 
         status = .starting
         termination = nil
@@ -166,24 +192,37 @@ extension SessionHandle2 {
     /// `agentSession` 就绪那一刻调用一次。此后的 `send(_:)` 走"立即写 CLI"
     /// 的快路径。user 消息永远是 `.single`（不参与 grouping），所以只扫 `.single`。
     func flushBootstrapBacklog() {
-        guard let session = agentSession else { return }
+        guard let session = agentSession else {
+            appLog(.warning, "SessionHandle2",
+                "[v2-send] flushBacklog SKIP agentSession=nil sid=\(sessionId.prefix(8))")
+            return
+        }
+        var flushed = 0
         for entry in messages {
             guard case .single(let single) = entry,
                   single.delivery == .queued,
                   case .localUser = single.payload else { continue }
+            appLog(.info, "SessionHandle2",
+                "[v2-send] flushBacklog write sid=\(sessionId.prefix(8)) entryId=\(single.id.uuidString.prefix(8))")
             writeUserEntryToCLI(single, session: session)
+            flushed += 1
         }
+        appLog(.info, "SessionHandle2",
+            "[v2-send] flushBacklog done sid=\(sessionId.prefix(8)) flushed=\(flushed) msgCount=\(messages.count)")
     }
 
     /// 将所有当前 `.queued` 的 user entry 打成 `.failed`（bootstrap 失败 /
     /// 进程异常退出都走这里）。已 `.confirmed` 的保持不变。
     func failQueuedEntries(reason: String) {
+        var anyChanged = false
         for idx in messages.indices {
             guard case .single(var single) = messages[idx],
                   single.delivery == .queued else { continue }
             single.delivery = .failed(reason: reason)
             messages[idx] = .single(single)
+            anyChanged = true
         }
+        if anyChanged { emitSnapshot(.update) }
     }
 }
 
@@ -253,6 +292,7 @@ private extension SessionHandle2 {
                 worktreeBranch: worktreeBranch
             )
             repository.save(record)
+            hasRecord = true
             appLog(.info, "SessionHandle2", "persistConfiguration fresh save \(sessionId)")
         } else {
             if let cwd {
@@ -302,6 +342,9 @@ private extension SessionHandle2 {
     // MARK: Bootstrap
 
     func bootstrap(configuration: SessionConfiguration, fresh: Bool) async {
+        appLog(.info, "SessionHandle2",
+            "[v2-send] bootstrap enter sid=\(sessionId.prefix(8)) fresh=\(fresh) "
+            + "resume=\(configuration.resume ?? "(nil)") wd=\(configuration.workingDirectory.path)")
         let session = AgentSDK.Session(configuration: configuration)
         session.lastKnownSessionId = sessionId
         attachCallbacks(to: session)
@@ -309,34 +352,98 @@ private extension SessionHandle2 {
         do {
             try await session.start()
         } catch {
-            appLog(.error, "SessionHandle2", "bootstrap FAILED \(sessionId) err=\(error)")
-            self.termination = error.localizedDescription
-            self.status = .stopped
-            self.repository.updateError(sessionId, error: error.localizedDescription)
-            failQueuedEntries(reason: "bootstrap failed")
+            // sync 启动失败(chdir 不到 / binary 找不到) — 走统一 failLaunch。
+            failLaunch(reason: "\(error)")
             return
         }
+        appLog(.info, "SessionHandle2",
+            "[v2-send] bootstrap start-ok sid=\(sessionId.prefix(8)) status-before-attach=\(status)")
 
         // stdin 真正就绪后才暴露 agentSession，避免 send() 在 start() 完成前写入
         // stdin（writeJSON guard 了 nil pipe，但保持不变量更清晰）。
         self.agentSession = session
 
-        _ = await withCheckedContinuation { (cont: CheckedContinuation<InitializeResponse?, Never>) in
-            session.initialize(promptSuggestions: true) { cont.resume(returning: $0) }
+        // Race:initialize completion vs 进程死亡。CLI 可能起来后秒退
+        // (--resume 找不到 JSONL 等),此时 initialize 的 control response
+        // 永远不会回来,SDK 的 `pendingControlResponses` 不会被进程退出 fire
+        // 掉,光等会一直挂。挂一把 `bootstrapExitHook`,让 handleProcessExit
+        // 把死讯转发回这把 continuation,统一走 failLaunch。
+        let initResp: InitializeResponse? = await withCheckedContinuation { (cont: CheckedContinuation<InitializeResponse?, Never>) in
+            var resumed = false
+            let resume: (InitializeResponse?) -> Void = { resp in
+                guard !resumed else { return }
+                resumed = true
+                cont.resume(returning: resp)
+            }
+            self.bootstrapExitHook = { _ in resume(nil) }
+            session.initialize(promptSuggestions: true) { resp in
+                Task { @MainActor in resume(resp) }
+            }
         }
+        self.bootstrapExitHook = nil
+
+        // 如果在等 init 的过程中进程死了,handleProcessExit 已经在自己那条
+        // 路径上调了 failLaunch(status 翻 .stopped),这里 short-circuit。
+        guard status == .starting else {
+            appLog(.info, "SessionHandle2",
+                "[v2-send] bootstrap aborted-during-init sid=\(sessionId.prefix(8)) status=\(status)")
+            return
+        }
+
+        appLog(.info, "SessionHandle2",
+            "[v2-send] bootstrap initialize-done sid=\(sessionId.prefix(8)) "
+            + "respNil=\(initResp == nil) status=\(status)")
 
         status = .idle
         if fresh {
             repository.updateStatus(sessionId, to: .created)
         }
         flushBootstrapBacklog()
-        appLog(.info, "SessionHandle2", "bootstrap done \(sessionId) fresh=\(fresh)")
+        appLog(.info, "SessionHandle2", "[v2-send] bootstrap done sid=\(sessionId.prefix(8)) fresh=\(fresh)")
+    }
+
+    /// 所有 CLI launch-time 失败的统一收口:sync `Process.run()` 抛错、init
+    /// 完成前 CLI 自己 exit 非零都来这里。
+    ///
+    /// 副作用按"就让 UI 立即可见"的顺序排:status / pendingTurnCount 先翻,
+    /// agentSession 摘掉,queued entries 标失败,repo 写错误,最后 onLaunchFailure
+    /// 通知订阅方(SessionManager2)弹 alert。
+    ///
+    /// 入参 `reason` 直接对外用,**不做本地化处理**——`String(describing: error)`
+    /// 给出 SDK enum 完整原貌,`process exited (code N): <stderr>` 给出 CLI 自己
+    /// 的原始 stderr。
+    func failLaunch(reason: String) {
+        appLog(.error, "SessionHandle2",
+            "[v2-send] failLaunch sid=\(sessionId.prefix(8)) reason=\(reason)")
+        self.termination = reason
+        self.status = .stopped
+        self.pendingTurnCount = 0
+        self.agentSession = nil
+        self.stderrBuffer = ""
+        for pending in pendingPermissions {
+            pending.respond(.deny(reason: "Launch failed"))
+        }
+        pendingPermissions.removeAll()
+        failQueuedEntries(reason: reason)
+        repository.updateError(sessionId, error: reason)
+        onLaunchFailure?(reason)
     }
 
     // MARK: Callbacks
 
     func attachCallbacks(to session: AgentSDK.Session) {
+        let sidPrefix = sessionId.prefix(8)
         session.onMessage = { [weak self] msg in
+            let kind: String
+            switch msg {
+            case .user: kind = "user"
+            case .assistant: kind = "assistant"
+            case .result: kind = "result"
+            case .system(.`init`): kind = "system.init"
+            case .system: kind = "system.other"
+            default: kind = "other"
+            }
+            appLog(.info, "SessionHandle2", "[v2-send] onMessage sid=\(sidPrefix) kind=\(kind)")
             Task { @MainActor [weak self] in
                 self?.receive(msg, mode: .live)
             }
@@ -397,12 +504,25 @@ private extension SessionHandle2 {
         let trimmed = stderrBuffer.isEmpty ? nil : String(stderrBuffer.prefix(500))
         let desc = trimmed.map { "process exited (code \(code)): \($0)" }
             ?? "process exited (code \(code))"
-        appLog(.warning, "SessionHandle2", "handleProcessExit \(sessionId) \(desc)")
+        appLog(.warning, "SessionHandle2",
+            "[v2-send] processExit sid=\(sessionId.prefix(8)) code=\(code) stderr=\(trimmed ?? "(empty)")")
 
+        // bootstrap init 等待期间死亡 → 解开 init 的 continuation,然后走
+        // 统一 failLaunch。bootstrap 那边 short-circuit 收尾。
+        if let hook = bootstrapExitHook {
+            bootstrapExitHook = nil
+            hook(code)
+            failLaunch(reason: desc)
+            return
+        }
+
+        // 已运行后死亡 — 常规清理(无 alert)。
         stderrBuffer = ""
         agentSession = nil
         termination = desc
         status = .stopped
+        // 进程死了 — 所有在飞 turn 都不可能再 .result 回来,归零防止 isRunning 卡住。
+        pendingTurnCount = 0
 
         for pending in pendingPermissions {
             pending.respond(.deny(reason: "Process exited"))
@@ -426,7 +546,14 @@ private extension SessionHandle2 {
     /// `entry.id` 作为 `uuid` extra 伴随发出，CLI 在 `--replay-user-messages`
     /// 开启下原样回显，用于 `confirmQueuedEntry` 的精确匹配。
     func writeUserEntryToCLI(_ entry: SingleEntry, session: AgentSDK.Session) {
-        guard case .localUser(let input) = entry.payload else { return }
+        guard case .localUser(let input) = entry.payload else {
+            appLog(.warning, "SessionHandle2",
+                "[v2-send] writeCLI SKIP not-localUser entryId=\(entry.id.uuidString.prefix(8))")
+            return
+        }
+        appLog(.info, "SessionHandle2",
+            "[v2-send] writeCLI sid=\(sessionId.prefix(8)) entryId=\(entry.id.uuidString.prefix(8)) "
+            + "textLen=\(input.text?.count ?? 0) hasImage=\(input.image != nil)")
         var extra: [String: Any] = ["uuid": entry.id.uuidString.lowercased()]
         if let plan = input.planContent {
             extra["plan_content"] = plan

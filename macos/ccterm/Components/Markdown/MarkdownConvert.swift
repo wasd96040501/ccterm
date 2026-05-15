@@ -30,7 +30,7 @@ nonisolated enum MarkdownConvert {
         markups.compactMap(block)
     }
 
-    private static func item(for listItem: Markdown.ListItem) -> MarkdownListItem {
+    static func item(for listItem: Markdown.ListItem) -> MarkdownListItem {
         let cb: MarkdownListItem.Checkbox?
         switch listItem.checkbox {
         case .some(.checked): cb = .checked
@@ -41,21 +41,39 @@ nonisolated enum MarkdownConvert {
     }
 
     static func inlines(_ markups: [Markdown.InlineMarkup]) -> [MarkdownInline] {
+        inlines(markups, insideLink: false)
+    }
+
+    /// `insideLink` 开关控制是否对纯文本片段跑 `MarkdownAutolink`——在
+    /// `[…](url)` 的 children 内关闭，防止链接文案里的 URL 被再次拆成内层
+    /// 链接、盖掉外层 destination。
+    private static func inlines(_ markups: [Markdown.InlineMarkup], insideLink: Bool) -> [MarkdownInline] {
         var result: [MarkdownInline] = []
         for markup in markups {
             switch markup {
             case let text as Markdown.Text:
-                result.append(contentsOf: MarkdownMath.splitInlineMath(in: text.string))
+                let mathSplit = MarkdownMath.splitInlineMath(in: text.string)
+                if insideLink {
+                    result.append(contentsOf: mathSplit)
+                } else {
+                    for piece in mathSplit {
+                        if case .text(let s) = piece {
+                            result.append(contentsOf: MarkdownAutolink.split(s))
+                        } else {
+                            result.append(piece)
+                        }
+                    }
+                }
             case let emphasis as Markdown.Emphasis:
-                result.append(.emphasis(inlines(Array(emphasis.inlineChildren))))
+                result.append(.emphasis(inlines(Array(emphasis.inlineChildren), insideLink: insideLink)))
             case let strong as Markdown.Strong:
-                result.append(.strong(inlines(Array(strong.inlineChildren))))
+                result.append(.strong(inlines(Array(strong.inlineChildren), insideLink: insideLink)))
             case let strike as Markdown.Strikethrough:
-                result.append(.strikethrough(inlines(Array(strike.inlineChildren))))
+                result.append(.strikethrough(inlines(Array(strike.inlineChildren), insideLink: insideLink)))
             case let code as Markdown.InlineCode:
                 result.append(.code(code.code))
             case let link as Markdown.Link:
-                result.append(.link(destination: link.destination ?? "", children: inlines(Array(link.inlineChildren))))
+                result.append(.link(destination: link.destination ?? "", children: inlines(Array(link.inlineChildren), insideLink: true)))
             case let image as Markdown.Image:
                 result.append(.image(source: image.source ?? "", alt: image.plainText))
             case is Markdown.LineBreak:

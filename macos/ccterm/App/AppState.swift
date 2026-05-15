@@ -7,6 +7,7 @@ import AgentSDK
 final class AppState {
     // MARK: - Services
     let sessionService = SessionService()
+    let sessionManager2 = SessionManager2()
     let gitBranchService = GitBranchService()
     let syntaxEngine = SyntaxHighlightEngine()
     // MARK: - ViewModels
@@ -64,9 +65,12 @@ final class AppState {
             Task { await self.sessionService.stopAll() }
         }
 
-        // Load syntax highlight engine asynchronously
+        // Eagerly load the syntax highlight engine in the background so the
+        // first `highlightBatch` call doesn't pay the JSCore / highlight.js
+        // init cost (~30ms) on the user-facing path. `.utility` priority keeps
+        // it behind real user interactions.
         let engine = syntaxEngine
-        Task { await engine.load() }
+        Task.detached(priority: .utility) { await engine.load() }
     }
 
     // MARK: - Search Actions

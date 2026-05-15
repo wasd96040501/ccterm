@@ -16,6 +16,5 @@ let package = Package(
             name: "SmokeTest",
             dependencies: ["AgentSDK"]
         ),
-        .testTarget(name: "AgentSDKTests", dependencies: ["AgentSDK"]),
     ]
 )

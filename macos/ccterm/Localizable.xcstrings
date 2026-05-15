@@ -4,6 +4,16 @@
     "": {},
     "%@:": {},
     "%lld": {},
+    "%lld blocks · %lld KB": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 段 · %lld KB"
+          }
+        }
+      }
+    },
     "%lld min ago": {
       "extractionState": "stale",
       "localizations": {
@@ -95,6 +105,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "添加目录…"
+          }
+        }
+      }
+    },
+    "Add Message": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "增加一条消息"
           }
         }
       }
@@ -205,12 +225,92 @@
         }
       }
     },
+    "Asked %lld questions": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Asked %lld question"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Asked %lld questions"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已询问 %lld 个问题"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已询问 %lld 个问题"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Asked: %@": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "已询问：%@"
+          }
+        }
+      }
+    },
+    "Asking %lld questions": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Asking %lld question"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Asking %lld questions"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在询问 %lld 个问题"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在询问 %lld 个问题"
+                }
+              }
+            }
           }
         }
       }
@@ -474,6 +574,16 @@
         }
       }
     },
+    "Corpus missing": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语料缺失"
+          }
+        }
+      }
+    },
     "Create plan before making changes": {
       "localizations": {
         "zh-Hans": {
@@ -496,6 +606,16 @@
         }
       }
     },
+    "Delete %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除 %@"
+          }
+        }
+      }
+    },
     "Deleted": {
       "extractionState": "stale",
       "localizations": {
@@ -503,6 +623,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "已删除"
+          }
+        }
+      }
+    },
+    "Deleting %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在删除 %@"
           }
         }
       }
@@ -523,6 +653,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "完成"
+          }
+        }
+      }
+    },
+    "Edit %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑 %@"
           }
         }
       }
@@ -583,6 +723,46 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在编辑 %@"
+          }
+        }
+      }
+    },
+    "Editing %lld files": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Editing %lld file"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Editing %lld files"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在编辑 %lld 个文件"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在编辑 %lld 个文件"
+                }
+              }
+            }
           }
         }
       }
@@ -657,6 +837,26 @@
         }
       }
     },
+    "Failed to launch CLI": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CLI 启动失败"
+          }
+        }
+      }
+    },
+    "Failed to load history": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加载历史失败"
+          }
+        }
+      }
+    },
     "Fetched %@": {
       "localizations": {
         "zh-Hans": {
@@ -667,12 +867,92 @@
         }
       }
     },
+    "Fetched %lld URLs": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Fetched %lld URL"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Fetched %lld URLs"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已抓取 %lld 个 URL"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已抓取 %lld 个 URL"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Fetching %@": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "正在抓取 %@"
+          }
+        }
+      }
+    },
+    "Fetching %lld URLs": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Fetching %lld URL"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Fetching %lld URLs"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在抓取 %lld 个 URL"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在抓取 %lld 个 URL"
+                }
+              }
+            }
           }
         }
       }
@@ -733,11 +1013,12 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已 glob \"%@\""
+            "value": "已搜索 \"%@\""
           }
         }
       }
     },
+    "Globbed %@": {},
     "Globbed %lld patterns": {
       "localizations": {
         "en": {
@@ -764,13 +1045,13 @@
               "one": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "已匹配 %lld 个 pattern"
+                  "value": "已搜索 %lld 个 pattern"
                 }
               },
               "other": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "已匹配 %lld 个 pattern"
+                  "value": "已搜索 %lld 个 pattern"
                 }
               }
             }
@@ -783,7 +1064,57 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "正在匹配 “%@”"
+            "value": "正在搜索 \"%@\""
+          }
+        }
+      }
+    },
+    "Globbing %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在搜索 %@"
+          }
+        }
+      }
+    },
+    "Globbing %lld patterns": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Globbing %lld pattern"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Globbing %lld patterns"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在搜索 %lld 个 pattern"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在搜索 %lld 个 pattern"
+                }
+              }
+            }
           }
         }
       }
@@ -795,6 +1126,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "跳转到会话"
+          }
+        }
+      }
+    },
+    "Grepped %@": {},
+    "Grepping %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在搜索 %@"
           }
         }
       }
@@ -816,6 +1158,66 @@
           "stringUnit": {
             "state": "translated",
             "value": "进行中"
+          }
+        }
+      }
+    },
+    "Inspected the repo": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检查了仓库"
+          }
+        }
+      }
+    },
+    "Inspecting %lld tools": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Inspecting %lld tool"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Inspecting %lld tools"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在使用 %lld 个工具"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在使用 %lld 个工具"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Inspecting the repo": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在检查仓库"
           }
         }
       }
@@ -851,7 +1253,16 @@
         }
       }
     },
-    "Loading plan WebView...": {},
+    "Loading stress corpus…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加载压测语料…"
+          }
+        }
+      }
+    },
     "Loading…": {
       "localizations": {
         "zh-Hans": {
@@ -974,7 +1385,16 @@
         }
       }
     },
-    "OK": {},
+    "OK": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "好"
+          }
+        }
+      }
+    },
     "Open in Finder": {
       "localizations": {
         "zh-Hans": {
@@ -1056,6 +1476,56 @@
         }
       }
     },
+    "Ran %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已运行 %@"
+          }
+        }
+      }
+    },
+    "Ran %lld agents": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Ran %lld agent"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Ran %lld agents"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已运行 %lld 个 agent"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已运行 %lld 个 agent"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Ran %lld commands": {
       "localizations": {
         "en": {
@@ -1082,13 +1552,13 @@
               "one": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "已执行 %lld 个命令"
+                  "value": "已运行 %lld 个命令"
                 }
               },
               "other": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "已执行 %lld 个命令"
+                  "value": "已运行 %lld 个命令"
                 }
               }
             }
@@ -1096,12 +1566,52 @@
         }
       }
     },
-    "Ran: %@": {
+    "Ran %lld tools": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Ran %lld tool"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Ran %lld tools"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "使用了 %lld 个工具"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "使用了 %lld 个工具"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Ran agent %@": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已运行：%@"
+            "value": "运行了智能体 %@"
           }
         }
       }
@@ -1166,12 +1676,62 @@
         }
       }
     },
+    "Reading %lld files": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Reading %lld file"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Reading %lld files"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在读取 %lld 个文件"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在读取 %lld 个文件"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Reject": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "拒绝"
+          }
+        }
+      }
+    },
+    "Remove Message": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "减少一条消息"
           }
         }
       }
@@ -1227,12 +1787,162 @@
         }
       }
     },
+    "Run `macos/scripts/build-stress-corpus.py` and rebuild.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请运行 `macos/scripts/build-stress-corpus.py` 后重新构建。"
+          }
+        }
+      }
+    },
     "Running": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "运行中"
+          }
+        }
+      }
+    },
+    "Running %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在执行 %@"
+          }
+        }
+      }
+    },
+    "Running %lld agents": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Running %lld agent"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Running %lld agents"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在运行 %lld 个 agent"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在运行 %lld 个 agent"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Running %lld commands": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Running %lld command"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Running %lld commands"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在运行 %lld 条命令"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在运行 %lld 条命令"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Running %lld tools": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Running %lld tool"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Running %lld tools"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在使用 %lld 个工具"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在使用 %lld 个工具"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Running agent %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在运行 agent %@"
           }
         }
       }
@@ -1247,17 +1957,6 @@
         }
       }
     },
-    "Running: %@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "正在执行：%@"
-          }
-        }
-      }
-    },
-    "Scenario": {},
     "Search branches…": {
       "localizations": {
         "zh-Hans": {
@@ -1288,6 +1987,7 @@
         }
       }
     },
+    "Searched %@": {},
     "Searched %lld patterns": {
       "localizations": {
         "en": {
@@ -1328,12 +2028,142 @@
         }
       }
     },
+    "Searched %lld queries": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Searched %lld query"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Searched %lld queries"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已搜索 %lld 个查询"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已搜索 %lld 个查询"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "Searching \"%@\"": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "正在搜索 “%@”"
+          }
+        }
+      }
+    },
+    "Searching %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在搜索 %@"
+          }
+        }
+      }
+    },
+    "Searching %lld patterns": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Searching %lld pattern"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Searching %lld patterns"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在搜索 %lld 个模式"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在搜索 %lld 个模式"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Searching %lld queries": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Searching %lld query"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Searching %lld queries"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在搜索 %lld 个查询"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在搜索 %lld 个查询"
+                }
+              }
+            }
           }
         }
       }
@@ -1452,6 +2282,16 @@
         }
       }
     },
+    "Skill(%@)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skill(%@)"
+          }
+        }
+      }
+    },
     "Skip all permission checks": {
       "localizations": {
         "zh-Hans": {
@@ -1502,6 +2342,26 @@
         }
       }
     },
+    "Transcript Demo": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "渲染演示"
+          }
+        }
+      }
+    },
+    "Transcript Stress": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "渲染压测"
+          }
+        }
+      }
+    },
     "Type something": {
       "localizations": {
         "zh-Hans": {
@@ -1532,12 +2392,102 @@
         }
       }
     },
+    "Used %lld tools": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Used %lld tool"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Used %lld tools"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已使用 %lld 个工具"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "已使用 %lld 个工具"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Using %lld tools": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Using %lld tool"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Using %lld tools"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在使用 %lld 个工具"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在使用 %lld 个工具"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "View Plan": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "查看计划"
+          }
+        }
+      }
+    },
+    "Working": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作中"
           }
         }
       }
@@ -1562,12 +2512,62 @@
         }
       }
     },
+    "Write %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新建 %@"
+          }
+        }
+      }
+    },
     "Writing %@": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "正在写入 %@"
+          }
+        }
+      }
+    },
+    "Writing %lld files": {
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Writing %lld file"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Writing %lld files"
+                }
+              }
+            }
+          }
+        },
+        "zh-Hans": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在写入 %lld 个文件"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "正在写入 %lld 个文件"
+                }
+              }
+            }
           }
         }
       }
@@ -1642,6 +2642,16 @@
         }
       }
     },
+    "awaiting answer…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待回答…"
+          }
+        }
+      }
+    },
     "ccterm": {},
     "claude": {},
     "current": {
@@ -1674,6 +2684,7 @@
         }
       }
     },
+    "… truncated": {},
     "⌘Enter to comment": {
       "localizations": {
         "zh-Hans": {

@@ -14,11 +14,19 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Setup Go
+        # fzf submodule (thirdparty/fzf) 在 Xcode build phase 里 go build 出来,
+        # macos runner 默认未必有 go,显式装一个稳定版本。
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
       - name: Xcode info
         run: |
           xcode-select -p
           xcodebuild -version
           sw_vers
+          go version
 
       - name: Run UI tests
         run: make test-all

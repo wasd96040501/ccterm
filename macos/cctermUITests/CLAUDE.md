@@ -1,6 +1,10 @@
 # UI Test 编写规范
 
-XCUITest 端到端测试。慢(单测 10-30s),严禁默认全量;总是 `make test FILTER=...` 针对性跑。
+XCUITest 端到端测试。
+
+**默认走 GitHub PR 跑 CI,不要本地跑。** UI test 会唤起 ccterm.app 抢用户焦点、操控键盘鼠标,本地跑会打扰你正在用的桌面。push PR 后 `ui-test` workflow 自动跑 `make test-all`。
+
+只有 CI 暴露问题需要本地复现、或者你正在 debug UI test 本身时,才用 `make test FILTER=...` 本地针对性跑。慢(单测 10-30s),严禁默认本地全量。
 
 ## 架构
 
@@ -154,9 +158,10 @@ button.click()
 ### 写键盘事件的注意点
 
 - `app.typeText(...)` / `app.typeKey(...)` 走 `CGEventPost` 系统级输入栈。
-  **机器装有非英文 IME 且作为活动输入源**时可能触发输入法选择弹窗或 System
-  Settings,污染测试环境。
-- 跑 UI test **前置条件**:输入源是 English/ABC。
+  **本地机器装有非英文 IME 且作为活动输入源**时可能触发输入法选择弹窗或 System
+  Settings,污染测试环境(GitHub CI runner 默认 English 输入源,不会有此问题——
+  这也是默认走 CI 跑测试的另一层理由)。
+- 本地跑 UI test 的前置条件:输入源是 English/ABC。
 - 如果一个测试根本不需要键盘,优先用 mock CLI scenario 让状态自然达成,不用
   键盘事件。
 
@@ -168,17 +173,27 @@ button.click()
 
 ## 运行测试
 
+### 默认:push PR 跑 CI
+
+push 到任意 PR 分支 → `.github/workflows/test.yml` 自动跑 `make test-all`。结果在 GitHub Actions 页面:
+- 通过 → check 绿勾
+- 失败 → workflow log 含失败用例 + assertion;xcresult artifact 自动上传,可下载用 Xcode 打开看 screenshots / video
+
+CI runner 装好了所有依赖(Go、Xcode),不需要本地维护构建环境。
+
+### 本地复现(仅在必要时)
+
 ```bash
-# 单 method(开发最常用)
+# 单 method
 make test FILTER=InputBar2StopButtonUITests/testStopButtonCancelsRunningState
 
 # 单 class
 make test FILTER=InputBar2StopButtonUITests
 
-# 全量(慢,只在临发 PR 时跑)
+# 全量(慎用,UI test 会抢焦点干扰桌面)
 make test-all
 ```
 
 输出格式:成功一行 + xcresult 路径;失败给关键 assertion + crash log + xcresult。
-xcresult bundle 含 screenshots 和 video,定位"按钮没出现"这类问题最直接,
-`open /tmp/ccterm-test-.../result.xcresult` 自动 Xcode 加载。
+xcresult bundle 含 screenshots 和 video,`open /tmp/ccterm-test-.../result.xcresult`
+自动 Xcode 加载。

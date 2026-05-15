@@ -13,8 +13,13 @@ final class SessionManager2 {
     @ObservationIgnored private let repository: SessionRepository
     @ObservationIgnored private var handles: [String: SessionHandle2] = [:]
 
+    /// 未归档的会话记录，按 `lastActiveAt` 降序。Sidebar v2 直接观察此数组渲染。
+    /// 由 `refreshRecords()` 主动刷新；初始化时填充一次。
+    private(set) var records: [SessionRecord] = []
+
     init(repository: SessionRepository = SessionRepository()) {
         self.repository = repository
+        self.records = repository.findAll()
     }
 
     /// 按 `sessionId` 获取 `SessionHandle2`。DB 无记录 → nil。
@@ -33,6 +38,21 @@ final class SessionManager2 {
     /// 只复用已被业务流程创建过的实例。
     func existingSession(_ sessionId: String) -> SessionHandle2? {
         handles[sessionId]
+    }
+
+    /// 为 NewSession draft 准备 handle。DB 必须**无**对应记录（identity 由 UI 新生成的 UUID 给出）。
+    /// 与 `session(_:)` 的区别：不读 repository，纯 in-memory 构造；后续 `activate()` /
+    /// `send(_:)` 触发 `ensureStarted` 时走 fresh 路径写 DB。
+    func prepareDraft(_ sessionId: String) -> SessionHandle2 {
+        if let handle = handles[sessionId] { return handle }
+        let handle = SessionHandle2(sessionId: sessionId, repository: repository)
+        handles[sessionId] = handle
+        return handle
+    }
+
+    /// 重读 repository 全量记录并回写到 `records`。NewSession 启动后由调用方触发。
+    func refreshRecords() {
+        records = repository.findAll()
     }
 
     /// 所有未归档的会话记录，按 `lastActiveAt` 降序。Sidebar v2 用。

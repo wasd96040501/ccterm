@@ -41,6 +41,11 @@ class SessionHandle2 {
     internal(set) var status: Status = .notStarted
     internal(set) var historyLoadState: HistoryLoadState = .notLoaded
 
+    /// 是否已在 repository 中有持久化 record。init 时从 `repository.find != nil` 派生;
+    /// `ensureStarted` 走 fresh 路径 `persistConfiguration` 完成后翻 true。UI overlay
+    /// 用此区分"还是 draft" vs "已是正式 session",触发形态切换动画。
+    internal(set) var hasRecord: Bool = false
+
     /// 最近一次启动失败或进程异常退出的描述（含 exit code）。nil 表示"未发生"。
     /// 运行时由进程退出 handler 写入；hydrate 时从 `record.error` 还原。
     internal(set) var termination: String?
@@ -162,6 +167,7 @@ class SessionHandle2 {
         self.sessionId = sessionId
         self.repository = repository
         if let record = repository.find(sessionId) {
+            hasRecord = true
             apply(record)
         }
     }

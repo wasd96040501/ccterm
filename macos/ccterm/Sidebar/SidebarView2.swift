@@ -7,8 +7,9 @@ import SwiftUI
 struct SidebarView2: View {
     @Binding var selection: String?
     @Environment(SessionManager2.self) private var manager
-    @State private var groups: [ProjectGroup2] = []
 
+    /// Sentinel selection value: 第一行 "New Session" tab。
+    static let newSessionTag = "__new_session__"
     /// Sentinel selection value used by the dev-only Transcript Demo tab.
     /// Reserved by the double-underscore prefix; real session IDs are UUIDs.
     static let transcriptDemoTag = "__transcript_demo__"
@@ -18,12 +19,14 @@ struct SidebarView2: View {
     var body: some View {
         List(selection: $selection) {
             Section {
+                Label("New Session", systemImage: "square.and.pencil")
+                    .tag(Self.newSessionTag)
                 Label("Transcript Demo", systemImage: "doc.text.image")
                     .tag(Self.transcriptDemoTag)
                 Label("Transcript Stress", systemImage: "speedometer")
                     .tag(Self.transcriptStressTag)
             }
-            ForEach(groups) { group in
+            ForEach(groupedRecords) { group in
                 Section(group.folderName) {
                     ForEach(group.records) { record in
                         SidebarRow2(record: record)
@@ -33,13 +36,13 @@ struct SidebarView2: View {
             }
         }
         .listStyle(.sidebar)
-        .task { reload() }
     }
 
-    private func reload() {
-        let records = manager.allRecords()
-        let buckets = Dictionary(grouping: records) { $0.groupingFolderName ?? "Unknown" }
-        groups = buckets.map { folder, items in
+    /// 由 `manager.records` 派生的分组列表。computed 直读 observable
+    /// → records 更新时自动重算，无需手动 reload。
+    private var groupedRecords: [ProjectGroup2] {
+        let buckets = Dictionary(grouping: manager.records) { $0.groupingFolderName ?? "Unknown" }
+        return buckets.map { folder, items in
             ProjectGroup2(
                 folderName: folder,
                 records: items.sorted { $0.lastActiveAt > $1.lastActiveAt }

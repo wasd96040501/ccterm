@@ -57,13 +57,12 @@ struct ChatHistoryView: View {
             }
         }
         .task(id: sessionId) {
-            let h = manager.session(sessionId)
+            // 用 `prepareDraft` 取(无 record 也能拿到 handle):draft session 也需要
+            // 挂载 NativeTranscript2View,这样 Start 前后 NSView 身份稳定 — chrome
+            // overlay 的形态切换动画才能成为"transcript 没重建"的视觉证据。
+            // `prepareDraft` 对已存在 record 的 sessionId 也是 idempotent get-or-create。
+            let h = manager.prepareDraft(sessionId)
             handle = h
-            guard let h else {
-                appLog(.warning, "ChatHistoryView",
-                    "[history] task-inject session=\(sessionId.prefix(8))… handle=nil")
-                return
-            }
             // 先绑 sink,再调 loadHistory。`.loaded` 分支会同步 emit
             // `.reset`,顺序反了会丢首帧。
             let b = Transcript2EntryBridge(controller: controller)

@@ -257,6 +257,7 @@ private extension SessionHandle2 {
                 worktreeBranch: worktreeBranch
             )
             repository.save(record)
+            hasRecord = true
             appLog(.info, "SessionHandle2", "persistConfiguration fresh save \(sessionId)")
         } else {
             if let cwd {

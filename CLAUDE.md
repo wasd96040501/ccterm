@@ -241,7 +241,33 @@ make fmt                                    # 格式化代码（xcstrings 等）
 - 提交 PR 之前必须执行 `make fmt`，确保格式一致
 - 脚本（`macos/scripts/*.sh`）已经通过 `excludedCommands` 配置了 sandbox 豁免，直接通过 make 调用即可，不需要 `dangerouslyDisableSandbox`
 - `make build` 的终端输出仅包含成功 / 失败和两个日志路径（full log + summary）。构建失败时先读 summary 文件诊断，不要 `tail` / `cat` full log。summary 不够时再读 full log
-- 本项目不维护单元测试 — 不要新增 XCTest / Swift Testing 文件，也不要建议跑 `make test` / `xcodebuild test`
+
+## 测试
+
+本项目用 XCUITest 做端到端 UI 测试，不维护 unit test（`cctermTests/` 只放占位文件）。UI 测试很慢（单测试约 10-30s），**禁止默认全量跑** — 总是用 `FILTER` 针对性跑。
+
+```bash
+# 单测试方法（最常用）
+make test FILTER=InputBar2StopButtonUITests/testStopButtonCancelsRunningState
+
+# 单测试 class（class 内所有方法）
+make test FILTER=InputBar2StopButtonUITests
+
+# 全量跑（仅在用户明确要求或临发 PR 自验时用）
+make test-all
+```
+
+**输出格式（渐进式）：**
+- 成功：一行结果 + xcresult 路径，结束。
+- 失败：先打"失败 case + 关键 assertion + crash 报告路径"等核心信息，再列 `summary` / `full log` / `xcresult` 三个 detail 文件路径。LLM 想看细节自己 Read 那些文件，不要 `tail` / `cat` 全 log。
+- xcresult bundle 含 screenshots 和 video，定位"按钮没出现"这类问题最直接。Finder 打开或 `open /tmp/ccterm-test-.../result.xcresult` 自动用 Xcode 加载。
+- crash log（macOS DiagnosticReports）会在测试结束后被自动扫描并列在输出里 — 进程崩了不会只表现为 "test failed" 而藏掉根因。
+
+**UI test 编写规范：**
+- 用 `--ui-test-skip-bootstrap` 启动参数让 `SessionManager2` 新建的 handle 跳过 CLI bootstrap（`status` 停在 `.starting`，turn 不会因 `.result` 自动归零），让"send→stop"这种状态机切换不依赖真 Claude CLI。
+- 需要交互的 SwiftUI 控件加 `.accessibilityIdentifier("ComponentName.ElementName")`（约定:`<View>.<Role>`，如 `InputBar2.SendButton`）。**不要**把 identifier 加在外层容器上 — SwiftUI 会传染给所有后代，覆盖子元素自己的 id。
+- NSViewRepresentable 包的 NSTextView 无法直接靠 a11y id 取到 — 点击其外层容器 → `app.typeText(...)` 让焦点处接键盘事件。
+- 一条测试只验证一条 invariant；不要在同一个 case 里串多个 user journey。
 
 ## Worktree 规范
 

@@ -35,6 +35,11 @@ struct InputBarView2: View {
         .frame(minHeight: 2 * Self.cornerRadius)
         .modifier(BarSurface(cornerRadius: Self.cornerRadius))
         .animation(.smooth(duration: animationDuration), value: isRunning)
+        // 不在外层放 accessibilityIdentifier:SwiftUI 默认会把容器的 id 传染给
+        // 后代,覆盖子元素自己的 id(SendButton / StopButton / TextField 都会变
+        // 成同一个 id,UI test 无法区分)。需要查询整个 bar 的 a11y root 时,可
+        // 通过 .accessibilityElement(children: .contain) + .accessibilityIdentifier
+        // 包裹,但当前测试只查具体子元素,无此需要。
     }
 
     // MARK: - Text Area
@@ -52,6 +57,7 @@ struct InputBarView2: View {
             isFocused: $isFocused,
             desiredCursorPosition: $desiredCursorPosition
         )
+        .accessibilityIdentifier("InputBar2.TextField")
         .padding(.leading, 16)
         .padding(.trailing, 4)
         // (40 - 17)/2 ≈ 11.5：单行时上下各 11.5，刚好把 ~17pt 行高在 40pt 容器内居中
@@ -68,6 +74,7 @@ struct InputBarView2: View {
                 color: Color(nsColor: .systemGray),
                 action: onStop
             )
+            .accessibilityIdentifier("InputBar2.StopButton")
             .transition(.scale.combined(with: .opacity))
         } else {
             circleButton(
@@ -75,6 +82,7 @@ struct InputBarView2: View {
                 color: .accentColor,
                 action: handleSend
             )
+            .accessibilityIdentifier("InputBar2.SendButton")
             .opacity(canSend ? 1.0 : 0.4)
             .disabled(!canSend)
             .transition(.scale.combined(with: .opacity))

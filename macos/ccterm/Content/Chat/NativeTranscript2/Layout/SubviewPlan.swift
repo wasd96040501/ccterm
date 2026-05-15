@@ -67,42 +67,55 @@ struct SubviewPlan: @unchecked Sendable {
         let alpha: CGFloat
     }
 
-    /// One Apple-style shimmer surface painted in place of a running
-    /// header's title. **Replaces** the static title for the header —
-    /// `ToolGroupLayout.drawHeader` skips its CTLine pass when
-    /// `wantsShimmer(for: status)` is true so this overlay owns the
-    /// glyph rendering entirely. Two layers cooperate:
+    /// One Apple-style shimmer surface painted **on top of** a
+    /// running header's title (the cell bitmap always paints the
+    /// static base title at the secondary tier; this overlay only
+    /// adds the brightening sweep). Two layers cooperate:
     ///
     /// 1. A `CALayer` whose `contents` is a CGImage of the title
-    ///    pre-rendered in the bright `.labelColor` palette. The cell
-    ///    reconciler renders + caches the image keyed by (title, font,
-    ///    scale).
+    ///    pre-rendered in the bright `.labelColor` palette using the
+    ///    same `CTLine` typesetting the cell bitmap uses for the
+    ///    base. The cell reconciler renders + caches the image
+    ///    keyed by (title, font, appearance, scale, sub-pixel
+    ///    offsets, aligned size).
     /// 2. A `CAGradientLayer` set as the `.mask` of layer 1 — colours
-    ///    are `[white(α=base), white(α=1.0), white(α=base)]` so the
-    ///    bright text shows at `base` alpha by default (which puts the
-    ///    visual weight at the same tier as `secondaryLabel`) and
-    ///    peaks at 100% along the sweeping stripe. The mask's
-    ///    `locations` keyframe slides the peak from off-screen-left to
-    ///    off-screen-right on a `repeatCount = .infinity` loop.
+    ///    are fixed at `[α=0, α=1, α=0]` so the overlay is invisible
+    ///    outside the moving stripe and fully opaque at the peak.
+    ///    The mask's `locations` keyframe slides the peak from
+    ///    off-screen-left to off-screen-right on a
+    ///    `repeatCount = .infinity` loop.
+    ///
+    /// **Compositing model** (see `BlockStyle.toolHeaderShimmer*`):
+    /// the secondary base text stays at full alpha in the cell
+    /// bitmap. The overlay glyphs land at the same sub-pixel screen
+    /// positions as the base (the reconciler injects an `xOffset`
+    /// derived from the residual between `textRect.minX` and the
+    /// pixel-aligned layer frame), so where the stripe peak crosses
+    /// a glyph the labelColor pixels composite "over" the secondary
+    /// pixels — labelColor wins, glyph edges stay sharp because the
+    /// base never drops below full alpha.
     ///
     /// `textRect` is the title's bounding box in **cell-local** coords
-    /// (origin = top-left, sized to glyph asc/descent). The reconciler
-    /// uses it as the contents-layer frame and as the canvas size when
-    /// rendering the title CGImage. `title` / `font` carry the
-    /// content + typography needed to render that bitmap; the layout
-    /// already produced the truncated display string at make-time, so
-    /// the reconciler doesn't re-truncate.
+    /// (origin = top-left, sized to glyph asc/descent). The
+    /// reconciler pixel-aligns it against the host backing scale
+    /// before assigning to the overlay layer's frame so CALayer
+    /// never resamples the bitmap. `title` / `font` carry the
+    /// content + typography needed to render that bitmap; the
+    /// layout already produced the truncated display string at
+    /// make-time, so the reconciler doesn't re-truncate.
     struct Shimmer: @unchecked Sendable {
         let id: UUID
         let textRect: CGRect
         let title: String
         let font: NSFont
         /// `true` when the cell's `hoveredAction` matches this header.
-        /// The reconciler raises the mask's base alpha to `1.0` in
-        /// that case so the title reads at full hover-tier
-        /// `.labelColor` brightness end-to-end (peak == base, sweep
-        /// visually pauses), matching the colour non-running hovered
-        /// headers reach through `titleColor(for:hovered:)`.
+        /// The reconciler hides the overlay (`text.opacity = 0`) in
+        /// that case because the cell-bitmap base title is already
+        /// drawn at hover-tier `.labelColor` (via
+        /// `titleColor(for:hovered:)`) — overlay would paint
+        /// redundant pixels. The mask `locations` animation keeps
+        /// cycling against the invisible layer so un-hovering picks
+        /// up mid-cycle without a phase reset.
         let hovered: Bool
     }
 

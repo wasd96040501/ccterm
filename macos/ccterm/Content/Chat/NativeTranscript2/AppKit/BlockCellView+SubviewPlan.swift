@@ -190,34 +190,54 @@ extension BlockCellView {
         }
     }
 
-    /// Reconcile mask-swept title overlays against `specs`. One
-    /// `ShimmerLayerSet` per running-header id:
+    /// Reconcile shimmer overlay layers against `specs`. One
+    /// `ShimmerLayerSet` per running-header id, composed as an
+    /// **additive overlay** on top of the cell-bitmap base title:
     ///
     ///   • `text`: a `CALayer` whose `contents` is a CGImage of the
-    ///     header title pre-rendered at the bright `.labelColor` tier.
-    ///     Frame matches the title's natural CTLine bbox so the bright
-    ///     glyphs sit pixel-aligned with where the cell bitmap *would*
-    ///     have drawn the static title (the cell's `drawHeader` skips
-    ///     the title pass when `wantsShimmer(for:)` is true, so this
-    ///     is the only title rendering for the header).
+    ///     header title pre-rendered at the bright `.labelColor` tier
+    ///     using the same `CTLine` typesetting the cell bitmap uses
+    ///     for the base title (see `renderShimmerTitleImage`). The
+    ///     bitmap encodes glyph alpha as the layer's alpha channel —
+    ///     gap pixels around glyphs are transparent.
     ///   • `mask`: a `CAGradientLayer` set as `text.mask`. Three-stop
-    ///     alpha gradient `[base, 1.0, base]` runs a `locations`
-    ///     keyframe from off-screen-left to off-screen-right so the
-    ///     bright text shows at `base` alpha by default and pulses up
-    ///     to full `.labelColor` along the swept stripe.
+    ///     alpha gradient `[α=0, α=1, α=0]` runs a `locations`
+    ///     keyframe from off-screen-left to off-screen-right. Effect:
+    ///     overlay pixels are visible only along the swept stripe.
     ///
-    /// **Hover combination.** When `spec.hovered` is true, the
-    /// reconciler raises the mask's base alpha to `1.0` (via the
-    /// "alphas" key on the gradient stops) so the title sits at full
-    /// `.labelColor` end-to-end — same brightness non-running hovered
-    /// headers reach through `titleColor(for:hovered:)`. The shimmer
-    /// `locations` animation keeps running but is visually no-op since
-    /// peak == base.
+    /// **Compositing model.** Outside the stripe, mask α=0 → overlay
+    /// pixels invisible → only the cell-bitmap base title (drawn at
+    /// `.secondaryLabel`) shows. At the stripe peak, mask α=1 →
+    /// overlay glyphs at full `.labelColor` opacity composite "over"
+    /// the secondary base → labelColor wins where there's text. At
+    /// the stripe edges (mask α 0→1), Porter-Duff "over" gives
+    /// `result = label·α + secondary·(1−α)` per glyph pixel — a
+    /// smooth brightness transition without per-pixel coverage drift.
+    ///
+    /// **Glyph alignment.** Critical to the "no smear" property: the
+    /// overlay glyphs must land at the *same sub-pixel positions* as
+    /// the cell-bitmap base glyphs. We achieve this by (a) rendering
+    /// the overlay bitmap with the exact `CTLine` API the cell uses,
+    /// and (b) injecting a sub-pixel `xOffset` (the fractional part
+    /// of `textRect.minX` against the host backing scale's pixel
+    /// grid) into the bitmap's `textPosition.x`. The layer frame
+    /// itself is pixel-aligned to the backing scale so CALayer never
+    /// resamples the bitmap. See `pixelAlignedFrame(for:scale:)`.
+    ///
+    /// **Hover combination.** Cell drawHeader paints the base title
+    /// at `.labelColor` already when `hovered && running` (the
+    /// `titleColor(for:hovered:)` palette is symmetric across
+    /// running and completed). The overlay would just paint the same
+    /// labelColor on top, contributing nothing — so we hide it
+    /// (`text.opacity = 0`). The `locations` animation keeps cycling
+    /// against an invisible layer; un-hovering snaps the overlay
+    /// back into view mid-cycle without any phase reset.
     ///
     /// Reuse policy: same set is reused across re-layouts so the
-    /// running `locations` animation keeps cycling past
-    /// `reloadData(forRowIndexes:)` (status flips, hover transitions).
-    /// Image is re-rendered only when (title, font, scale) changes.
+    /// `locations` animation keeps cycling past
+    /// `reloadData(forRowIndexes:)` (status flips, hover transitions,
+    /// resize). Image is re-rendered only when (title, font,
+    /// appearance, scale) changes.
     private func applyShimmerPlan(_ specs: [SubviewPlan.Shimmer]) {
         guard let hostLayer = self.layer else {
             for (_, set) in shimmerLayers { set.text.removeFromSuperlayer() }
@@ -225,50 +245,73 @@ extension BlockCellView {
             return
         }
         var seen = Set<UUID>()
-        let scale = hostLayer.contentsScale
+        let scale = max(hostLayer.contentsScale, 1)
         for spec in specs {
             seen.insert(spec.id)
             let set = shimmerLayers[spec.id] ?? {
-                let set = ShimmerLayerSet(scale: scale)
+                let set = ShimmerLayerSet()
                 shimmerLayers[spec.id] = set
                 hostLayer.addSublayer(set.text)
                 return set
             }()
             CATransaction.begin()
             CATransaction.setDisableActions(true)
-            if set.text.frame != spec.textRect {
-                set.text.frame = spec.textRect
+            // Pixel-align the overlay frame to the host backing
+            // scale so CALayer never resamples the bitmap. The
+            // residual sub-pixel offset between the layout's
+            // `textRect.minX` and the aligned frame is folded into
+            // the bitmap's `textPosition.x` so glyph 0 lands at the
+            // same sub-pixel screen position as the cell-bitmap
+            // base text — see `renderShimmerTitleImage`.
+            let aligned = Self.pixelAlignedFrame(for: spec.textRect, scale: scale)
+            let xOffset = spec.textRect.minX - aligned.minX
+            let bottomPadding = aligned.maxY - spec.textRect.maxY
+            if set.text.frame != aligned {
+                set.text.frame = aligned
             }
             if set.mask.frame != set.text.bounds {
                 set.mask.frame = set.text.bounds
             }
-            // Image rebuild: skip when the cached key already covers
-            // (title, font, appearance). NSImage handles backing-scale
-            // re-renders internally (CALayer pulls
-            // `layerContents(forContentsScale:)` on demand), so the
-            // key doesn't need a `scale` axis. Appearance participates
-            // because `.labelColor` resolves to different RGB in
-            // Light vs. Dark — appearance flip must invalidate the
-            // cached `NSImage`.
+            // Sync contentsScale on every reconcile. The host
+            // layer's scale can change after the set was created
+            // (cell joined a window with different backingScale,
+            // window dragged across displays, etc.); also covered
+            // defensively by `viewDidChangeBackingProperties`,
+            // which invalidates `imageKey` so the next reconcile
+            // re-renders.
+            if set.text.contentsScale != scale {
+                set.text.contentsScale = scale
+                set.mask.contentsScale = scale
+            }
+            // Cache key includes scale so a backing-scale change
+            // forces a re-raster at the new pixel density. The
+            // `xOffset` participates because changing it shifts the
+            // bitmap glyph rasterization; same string at the same
+            // font but a different sub-pixel x-offset is a
+            // different bitmap.
             let key = ShimmerLayerSet.ImageKey(
                 title: spec.title,
                 fontName: spec.font.fontName,
                 pointSize: spec.font.pointSize,
-                appearanceName: effectiveAppearance.name)
+                appearanceName: effectiveAppearance.name,
+                scale: scale,
+                xOffset: xOffset,
+                bottomPadding: bottomPadding,
+                width: aligned.width,
+                height: aligned.height)
             if set.imageKey != key || set.text.contents == nil {
-                set.text.contents = renderShimmerTitleImage(spec: spec)
+                set.text.contents = renderShimmerTitleImage(
+                    spec: spec,
+                    bitmapSize: aligned.size,
+                    xOffset: xOffset,
+                    bottomPadding: bottomPadding)
                 set.imageKey = key
             }
-            // Mask alpha: hover wins (peak == base = 1.0), otherwise
-            // sweep alternates base ↔ 1.0.
-            let baseAlpha: CGFloat = spec.hovered
-                ? 1.0
-                : BlockStyle.toolHeaderShimmerBaseAlpha
-            set.mask.colors = [
-                NSColor.white.withAlphaComponent(baseAlpha).cgColor,
-                NSColor.white.cgColor,
-                NSColor.white.withAlphaComponent(baseAlpha).cgColor,
-            ]
+            // Hover: cell-bitmap base title is already at .labelColor,
+            // so the overlay would paint redundant pixels. Hide it
+            // entirely (animation keeps running on the invisible
+            // layer so un-hovering picks up mid-cycle).
+            set.text.opacity = spec.hovered ? 0 : 1
             CATransaction.commit()
             if set.mask.animation(forKey: Self.shimmerAnimationKey) == nil {
                 set.mask.add(Self.makeShimmerAnimation(),
@@ -281,43 +324,85 @@ extension BlockCellView {
         }
     }
 
+    /// Pixel-align `rect` to the host backing `scale`'s pixel grid
+    /// by flooring the min corner and ceiling the max corner. The
+    /// resulting rect's edges land on integer pixel boundaries
+    /// (`alignedRect.minX * scale` is an integer), so when assigned
+    /// to a `CALayer.frame` the bitmap composites without resampling.
+    /// The expanded width/height (≤ 1/scale extra on each side)
+    /// covers both glyph drift slack and the sub-pixel `xOffset`
+    /// needed for glyph alignment.
+    nonisolated private static func pixelAlignedFrame(
+        for rect: CGRect, scale: CGFloat
+    ) -> CGRect {
+        let minX = (rect.minX * scale).rounded(.down) / scale
+        let minY = (rect.minY * scale).rounded(.down) / scale
+        let maxX = (rect.maxX * scale).rounded(.up) / scale
+        let maxY = (rect.maxY * scale).rounded(.up) / scale
+        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
     /// Rasterise the bright-tier title via `NSImage(size:flipped:`
-    /// `drawingHandler:)` + `NSAttributedString.draw(at:)`. Going
-    /// through AppKit's high-level path (instead of constructing a
-    /// `CGBitmapContext` by hand) gets us:
+    /// `drawingHandler:)` + `CTLineDraw`. Goes through the same
+    /// Core Text path the cell bitmap uses for `drawHeader`, so
+    /// glyph metrics, advances, and sub-pixel positioning behaviour
+    /// are identical between the overlay and the base.
     ///
-    ///   • Sub-pixel font positioning — the AppKit drawing context
-    ///     ships with `CGContextSetShouldSubpixelPositionFonts(true)`
-    ///     and friends already enabled, so retina glyphs land on
-    ///     fractional pixel offsets without manual flag wrangling.
-    ///   • LCD / grayscale font smoothing parity with the cell bitmap.
-    ///   • Backing-scale awareness — `CALayer.contents = NSImage` makes
-    ///     CoreAnimation pull `layerContents(forContentsScale:)` at
-    ///     the host layer's `contentsScale`, which re-runs this
-    ///     drawing handler at the correct pixel density. No manual
-    ///     `scaleBy` ceremony, no rounding mismatch between bitmap
-    ///     pixels and layer bounds.
+    ///   • `bitmapSize` is the pre-aligned overlay layer size in
+    ///     points; the bitmap rasterises at `bitmapSize × scale`
+    ///     pixels via NSImage's backing-scale-aware drawing handler.
+    ///   • `xOffset` is the residual fractional offset between the
+    ///     layout's `textRect.minX` and the pixel-aligned layer
+    ///     frame's `minX`. Injected into `textPosition.x` so glyph 0
+    ///     lands at the same sub-pixel screen position as the
+    ///     cell-bitmap base title's glyph 0.
+    ///   • `bottomPadding` is the vertical analog: the residual
+    ///     padding between the title's `textRect.maxY` and the
+    ///     pixel-aligned layer frame's `maxY` (≤ 1/scale points of
+    ///     slack from the ceiling-rounded alignment). Folded into
+    ///     `textPosition.y` along with `−font.descender` to put the
+    ///     baseline at the right y-up position inside the bitmap.
     ///
-    /// The handler runs inside `performAsCurrentDrawingAppearance` so
-    /// `.labelColor` resolves against the cell's effective appearance
-    /// (Light / Dark) rather than the app's main appearance. The
-    /// `flipped: false` orientation matches `NSAttributedString.draw`'s
-    /// "lower-left = origin" convention; `.draw(at: .zero)` puts the
-    /// glyph baseline at `-descender` from the bottom, which lines up
-    /// with `textRect`'s `(titleBaseline - ascender) ↔ titleBaseline`
-    /// vertical span.
-    private func renderShimmerTitleImage(spec: SubviewPlan.Shimmer) -> NSImage {
-        let size = NSSize(width: spec.textRect.width,
-                          height: spec.textRect.height)
+    /// `flipped: false` matches `CTLineDraw`'s default y-up text
+    /// matrix — no `textMatrix` wrangling needed inside the handler.
+    /// The handler runs inside `performAsCurrentDrawingAppearance`
+    /// so `.labelColor` resolves against the cell's effective
+    /// appearance (Light / Dark) rather than the app's main
+    /// appearance.
+    private func renderShimmerTitleImage(
+        spec: SubviewPlan.Shimmer,
+        bitmapSize: CGSize,
+        xOffset: CGFloat,
+        bottomPadding: CGFloat
+    ) -> NSImage {
+        let size = NSSize(width: bitmapSize.width, height: bitmapSize.height)
         let appearance = effectiveAppearance
+        let title = spec.title
+        let font = spec.font
+        // Baseline in y-up bitmap coords:
+        //   • The cell's `textRect.maxY` (y-down) equals
+        //     `baseline − descender` (descender < 0 → maxY > baseline).
+        //   • The overlay frame's `aligned.maxY` extends past
+        //     `textRect.maxY` by `bottomPadding` (≤ 1/scale points
+        //     of ceiling-rounding slack).
+        //   • Distance from bitmap bottom (y-up = 0) to baseline:
+        //       (aligned.maxY − baseline)
+        //     = (aligned.maxY − (textRect.maxY + descender))
+        //     = (aligned.maxY − textRect.maxY) + (−descender)
+        //     = bottomPadding + (−descender)
+        let baselineY = bottomPadding + (-font.descender)
         return NSImage(size: size, flipped: false) { _ in
             appearance.performAsCurrentDrawingAppearance {
-                let attrs: [NSAttributedString.Key: Any] = [
-                    .font: spec.font,
+                guard let ctx = NSGraphicsContext.current?.cgContext else {
+                    return
+                }
+                let attr = NSAttributedString(string: title, attributes: [
+                    .font: font,
                     .foregroundColor: BlockStyle.toolHeaderShimmerHighlight,
-                ]
-                NSAttributedString(string: spec.title, attributes: attrs)
-                    .draw(at: .zero)
+                ])
+                let line = CTLineCreateWithAttributedString(attr)
+                ctx.textPosition = CGPoint(x: xOffset, y: baselineY)
+                CTLineDraw(line, ctx)
             }
             return true
         }
@@ -497,21 +582,30 @@ final class ToolGroupEntryView: NSView {
     }
 }
 
-/// Two-layer pair backing one running header's shimmer:
+/// Two-layer pair backing one running header's additive shimmer
+/// overlay:
 ///
 ///   • `text` is a plain `CALayer` whose `.contents` is a CGImage of
-///     the title pre-rendered at full `.labelColor` brightness. The
-///     reconciler refreshes the image whenever the cached `imageKey`
-///     no longer matches (title / font / scale / appearance change).
-///     `text` is what the cell actually composites onto its host
-///     layer.
+///     the title pre-rendered at full `.labelColor` brightness via
+///     the same `CTLine` typesetting the cell bitmap uses for the
+///     base title (see `renderShimmerTitleImage`). The bitmap's
+///     alpha channel encodes glyph coverage — gap pixels are fully
+///     transparent. The reconciler refreshes the image whenever the
+///     cached `imageKey` no longer matches.
 ///   • `mask` is a horizontal `CAGradientLayer` set as `text.mask`.
-///     The reconciler updates `colors` (`[white(α=base), white(α=1.0),
-///     white(α=base)]`) and runs a `locations` keyframe that slides
-///     the peak from off-screen-left to off-screen-right. With
-///     `text.mask = mask`, the `text` layer's contents inherit the
-///     mask alpha — bright glyphs show at `base` brightness most of
-///     the time, peaking at `.labelColor` along the swept stripe.
+///     Colors are fixed at `[α=0, α=1, α=0]` (constructor) so the
+///     overlay is visible only along the moving stripe. A
+///     `locations` keyframe slides the peak from off-screen-left to
+///     off-screen-right.
+///
+/// **Compositing:** the overlay sits on top of the cell-bitmap base
+/// title (which is always drawn at the static `secondaryLabel` /
+/// hover-tier `labelColor` palette via `drawHeader`). Outside the
+/// stripe, mask α=0 → overlay invisible → only base shows. At the
+/// stripe peak, mask α=1 → labelColor glyphs composite "over" the
+/// secondary base → labelColor wins where there's text. Glyph
+/// alignment between overlay and base is sub-pixel-perfect via the
+/// reconciler's `xOffset` injection — see `applyShimmerPlan`.
 ///
 /// Reuse: one set per running header `id`. The set survives
 /// `reloadData(forRowIndexes:)` (recreated only when the spec drops
@@ -524,9 +618,20 @@ final class ShimmerLayerSet {
     /// inequality so unchanged shimmer specs (the common case during
     /// hover transitions or sibling row changes) don't burn CPU on
     /// CTLine + bitmap context construction every reconcile pass.
-    /// Appearance-name participates because `.labelColor` resolves to
-    /// different RGB across Light / Dark, so a system theme flip must
-    /// invalidate the cached bitmap.
+    ///
+    /// Axes:
+    ///   • `appearanceName` — `.labelColor` resolves to different RGB
+    ///     across Light / Dark, so a theme flip must re-raster.
+    ///   • `scale` — backing-scale change (window dragged across
+    ///     displays) shifts pixel density; bitmap must re-raster.
+    ///   • `xOffset` — sub-pixel x-offset injected for glyph
+    ///     alignment with the cell-bitmap base; a different offset
+    ///     gives a different glyph rasterization.
+    ///   • `bottomPadding` — ceiling-rounding slack at the bottom
+    ///     of the aligned frame; participates because the bitmap's
+    ///     baseline y depends on it.
+    ///   • `width` / `height` — the pixel-aligned bitmap canvas;
+    ///     resize requires a fresh bitmap at the new dimensions.
     var imageKey: ImageKey?
 
     struct ImageKey: Equatable {
@@ -534,34 +639,55 @@ final class ShimmerLayerSet {
         let fontName: String
         let pointSize: CGFloat
         let appearanceName: NSAppearance.Name
+        let scale: CGFloat
+        let xOffset: CGFloat
+        let bottomPadding: CGFloat
+        let width: CGFloat
+        let height: CGFloat
     }
 
-    init(scale: CGFloat) {
+    init() {
         let text = CALayer()
-        text.contentsScale = scale
         // Sit above per-entry subview layers so the shimmer composites
         // on top of child header surfaces (entry views are at default
         // zPosition = 0). Same recipe as `chevronLayers`.
         text.zPosition = 1
-        text.contentsGravity = .resize
+        // `.topLeft` (not `.resize`) so the bitmap's pixel grid maps
+        // 1:1 onto the layer's pixel grid. Combined with the
+        // reconciler's pixel-aligned frame, CALayer never resamples
+        // the bitmap — glyphs stay bit-exact.
+        text.contentsGravity = .topLeft
         // Suppress every implicit-animation channel on the host layer
         // — the only animation we want is the explicit `locations`
         // keyframe on the mask. An implicit `position` lerp triggered
         // by `frame =` would drag the bright text visibly across rows
-        // on re-layouts (resize, layout swap).
+        // on re-layouts (resize, layout swap). `opacity` is
+        // suppressed too so the hover-driven hide/show snaps rather
+        // than fading.
         text.actions = [
             "bounds": NSNull(),
             "frame": NSNull(),
             "position": NSNull(),
             "contents": NSNull(),
+            "contentsScale": NSNull(),
             "opacity": NSNull(),
+            "hidden": NSNull(),
         ]
 
         let mask = CAGradientLayer()
         mask.startPoint = CGPoint(x: 0, y: 0.5)
         mask.endPoint = CGPoint(x: 1, y: 0.5)
         mask.locations = [0, 0.5, 1]
-        mask.contentsScale = scale
+        // Mask colors are immutable for the life of the set —
+        // `[α=0, α=1, α=0]` always. Hover state is handled by
+        // toggling `text.opacity` on the host layer, not by
+        // re-shading the mask. This keeps the GPU's gradient
+        // texture cache stable across hover transitions.
+        mask.colors = [
+            NSColor.white.withAlphaComponent(0).cgColor,
+            NSColor.white.cgColor,
+            NSColor.white.withAlphaComponent(0).cgColor,
+        ]
         mask.actions = [
             "bounds": NSNull(),
             "frame": NSNull(),
@@ -573,6 +699,7 @@ final class ShimmerLayerSet {
             // defensive) don't lerp against the running animation.
             "locations": NSNull(),
             "opacity": NSNull(),
+            "contentsScale": NSNull(),
             "startPoint": NSNull(),
             "endPoint": NSNull(),
         ]

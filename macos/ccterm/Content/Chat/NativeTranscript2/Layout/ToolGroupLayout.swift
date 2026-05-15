@@ -873,21 +873,25 @@ struct ToolGroupLayout: @unchecked Sendable {
     /// `SubviewPlan.Chevron` specs this layout emits (see
     /// `BlockCellView+SubviewPlan.swift`), so this path is title-only.
     ///
-    /// **`wantsShimmer` early-return:** when the header's status opts
-    /// into a sweeping shimmer, the cell hosts a `CALayer` whose
-    /// contents is a pre-rendered bright-tier title bitmap (see
-    /// `SubviewPlan.Shimmer`). Drawing the static CTLine title here
-    /// on top of that would double-render the glyphs and create a
-    /// ghosting halo wherever sub-pixel positioning differs between
-    /// the bitmap and the layer — so we skip the title pass entirely
-    /// and let the shimmer layer own the rendering.
+    /// **Always paints the title.** Even when `wantsShimmer(for:)` is
+    /// true, the cell bitmap owns the *base* title at the static
+    /// `titleColor(for:hovered:)` — which for `.running` resolves to
+    /// the same `secondaryLabel` tier that `.completed` reads at, so
+    /// the row's resting weight doesn't pop on a status flip. The
+    /// shimmer layer (when present) is an **additive overlay** that
+    /// paints `.labelColor` glyphs on top of this base only along the
+    /// swept stripe — see `SubviewPlan.Shimmer` for the compositing
+    /// model. Both paths use the same `CTLine` typesetting so the
+    /// overlay glyphs land at the same sub-pixel positions as the
+    /// base; the alpha mask transitions between "label on top of
+    /// secondary" and "secondary alone" without per-pixel coverage
+    /// drift.
     nonisolated private static func drawHeader(
         _ header: Header,
         hovered: Bool,
         in ctx: CGContext,
         origin: CGPoint
     ) {
-        if wantsShimmer(for: header.status) { return }
         // Retypeset on draw so the hover-driven `foregroundColor`
         // swap doesn't require a layout rebuild. Title text was
         // already truncated to fit at make-time, so this is a single

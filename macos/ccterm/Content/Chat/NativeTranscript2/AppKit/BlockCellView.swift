@@ -224,6 +224,39 @@ final class BlockCellView: NSView {
         }
     }
 
+    /// Backing-scale change (cell joined a window, window dragged
+    /// across displays with different `backingScaleFactor`). AppKit
+    /// auto-updates the *host* layer's `contentsScale` and re-issues
+    /// `draw(_:)`, so the cell-bitmap title rasterises at the new
+    /// pixel density on its own. But manually-managed sublayers
+    /// (`shimmerLayers`, `chevronLayers`) don't auto-inherit — their
+    /// `contentsScale` stays at whatever value we wrote at creation,
+    /// which would leave overlay glyphs rasterised at the old scale
+    /// (visibly soft on a higher-DPI display).
+    ///
+    /// Push the new scale into every sublayer here, and invalidate
+    /// each shimmer layer's `imageKey` so the next reconcile (forced
+    /// via `syncSubviewPlan` below) re-rasters the glyph bitmap at
+    /// the new pixel density. Chevron layers don't have backing
+    /// images — they're vector `CAShapeLayer`s — so updating
+    /// `contentsScale` is enough; CoreAnimation re-strokes the path
+    /// at the new scale on the next composite.
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        let scale = window?.backingScaleFactor
+            ?? self.layer?.contentsScale
+            ?? 2
+        for (_, set) in shimmerLayers {
+            set.text.contentsScale = scale
+            set.mask.contentsScale = scale
+            set.imageKey = nil
+        }
+        for (_, layer) in chevronLayers {
+            layer.contentsScale = scale
+        }
+        syncSubviewPlan()
+    }
+
     /// Layout-local origin where the row's `RowLayout` paints. The
     /// cell's frame spans the row's full width (NSTableView's
     /// view-based contract); we shift content here so it lands at the

@@ -756,30 +756,36 @@ enum BlockStyle: Sendable {
 
     /// Shimmer overlay parameters for `.running` tool headers.
     ///
-    /// Apple-style mask-sweep: the cell hosts a `CALayer` whose
-    /// contents is a CGImage of the title pre-rendered at full
-    /// `.labelColor` brightness. A `CAGradientLayer` set as the
-    /// layer's `.mask` carries a horizontally-translating alpha
-    /// stripe — base `toolHeaderShimmerBaseAlpha` at the ends, peak
-    /// `1.0` at the centre — so the title shows at base brightness by
-    /// default (visually ≈ `secondaryLabel`) and pulses up to the full
-    /// hover-tier `.labelColor` along the swept stripe. The mask's
-    /// `locations` keyframe slides the peak from off-screen-left to
-    /// off-screen-right on a continuous loop.
+    /// **Additive overlay model.** The cell bitmap always paints the
+    /// base title at the static `titleColor(for:hovered:)` palette
+    /// (which for `.running` resolves to the same `secondaryLabel`
+    /// tier `.completed` reads at — no status-flip pop). On top of
+    /// that, the cell hosts a `CALayer` whose contents is a CGImage
+    /// of the same title rendered at `.labelColor`. A
+    /// `CAGradientLayer` set as the layer's `.mask` carries a
+    /// horizontally-translating alpha stripe — `α=0` at the ends,
+    /// `α=1` at the centre — so the overlay glyphs are visible only
+    /// along the moving stripe, smoothly transitioning to invisible
+    /// outside it.
     ///
-    /// Hover combines cleanly: when a running header is hovered, the
-    /// reconciler raises the mask's *base* alpha to `1.0` so the
-    /// whole title sits at the same `.labelColor` weight that
-    /// non-running hovered headers reach via `titleColor`. Peak
-    /// stays at `1.0`, so the sweep visually flattens — hover wins
-    /// without removing the shimmer plumbing.
+    /// Compositing: outside the stripe, only the secondary base
+    /// shows. At the stripe peak, labelColor glyphs composite "over"
+    /// secondary glyphs at the same sub-pixel positions (the cell
+    /// reconciler injects an `xOffset` to align the overlay bitmap
+    /// to the cell-bitmap glyph grid) — labelColor wins where there's
+    /// text. The base text stays sharp at all times because it's
+    /// drawn directly into the cell bitmap at full alpha; the
+    /// overlay only modulates the *colour*, never reduces base
+    /// opacity, so glyph edges never blur.
+    ///
+    /// Hover: cell drawHeader paints the base title at `.labelColor`
+    /// already (the `titleColor(for:hovered:)` palette is symmetric
+    /// across running and completed). The overlay would paint
+    /// redundant pixels, so the reconciler hides it
+    /// (`text.opacity = 0`). The `locations` animation keeps cycling
+    /// against an invisible layer so un-hovering picks up
+    /// mid-cycle without phase reset.
     nonisolated static var toolHeaderShimmerHighlight: NSColor { .labelColor }
-    /// Mask alpha at the swept stripe ends — the title's "resting"
-    /// brightness when shimmer is active and the header is *not*
-    /// hovered. 0.55 puts a `.labelColor` glyph at the same visual
-    /// weight as `.secondaryLabelColor` so the static reading-weight
-    /// matches the completed-state title beside it.
-    nonisolated static let toolHeaderShimmerBaseAlpha: CGFloat = 0.55
     /// One sweep cycle duration. 1.6s matches Apple's typing-indicator
     /// / Apple Music shimmer cadence — fast enough to register as
     /// alive, slow enough to read as ambient.

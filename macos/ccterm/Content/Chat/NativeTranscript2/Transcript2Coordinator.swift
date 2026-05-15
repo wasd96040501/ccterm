@@ -115,22 +115,9 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// diff the user just expanded shut again). Sparse — only blocks
     /// that have been toggled at least once carry an entry; absent =
     /// the kind's default (`false` for diff, today's only consumer).
-    /// `nonisolated`-readable through `foldState(for:)` so the
-    /// off-MainActor `makeLayout` path can read it via the snapshot
-    /// argument; mutation goes through `toggleFold(id:)` which then
-    /// drives the single-row relayout.
+    /// Mutation goes through `toggleFold(id:)` which drives the
+    /// single-row relayout.
     private var foldStates: [UUID: Bool] = [:]
-
-    /// Read helper for `makeLayout` callers. Off-main consumers must
-    /// pass a captured snapshot instead of touching the dict directly.
-    func foldState(for id: UUID) -> Bool { foldStates[id] ?? false }
-
-    /// Snapshot for off-main consumers — same pattern as
-    /// `highlightStorage.snapshot()`. The detached precompute paths
-    /// (`applyInBackground`, `refillLayoutCache`) capture this on
-    /// MainActor before hopping so per-block lookup inside the
-    /// `makeLayout` loop stays actor-free.
-    func foldStateSnapshot() -> [UUID: Bool] { foldStates }
 
     /// Per-surface runtime status — same sparse-dict pattern as
     /// `foldStates`. Keyed by `Block.id` for group-level status and
@@ -142,11 +129,6 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// entry point, and it evicts the host row's cached layout +
     /// reloads that single row.
     private var statusStates: [UUID: ToolStatus] = [:]
-
-    func statusState(for id: UUID) -> ToolStatus { statusStates[id] ?? .completed }
-
-    /// Off-main snapshot, same role as `foldStateSnapshot()`.
-    func statusStateSnapshot() -> [UUID: ToolStatus] { statusStates }
 
     init(syntaxEngine: SyntaxHighlightEngine? = nil) {
         self.selection = Transcript2SelectionCoordinator()

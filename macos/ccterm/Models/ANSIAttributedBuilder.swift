@@ -68,10 +68,6 @@ enum ANSIAttributedBuilder {
         var underline: Bool = false
         var fg: NSColor?
         var bg: NSColor?
-
-        var isPlain: Bool {
-            !bold && !dim && !italic && !underline && fg == nil && bg == nil
-        }
     }
 
     // MARK: - Escape parsing

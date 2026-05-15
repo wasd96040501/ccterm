@@ -222,24 +222,6 @@ extension SessionHandle2 {
         }
     }
 
-    /// 兼容入口：旧测试沿用。把整个文件 parse 成 `[Message2]`（无 tail/prefix
-    /// 分离）。保留给 unit tests。生产代码走两段式。
-    nonisolated static func parseJSONL(at url: URL?) -> Result<[Message2], Error> {
-        guard let url, FileManager.default.fileExists(atPath: url.path) else {
-            return .success([])
-        }
-        do {
-            let data = try Data(contentsOf: url)
-            guard let text = String(data: data, encoding: .utf8) else {
-                return .failure(HistoryParseError.invalidUTF8)
-            }
-            let lines = text.components(separatedBy: .newlines).filter { !$0.isEmpty }
-            return .success(parseLines(lines))
-        } catch {
-            return .failure(error)
-        }
-    }
-
     /// 把 JSONL 文本行数组 forward parse 成 `[Message2]`，丢掉解析失败的行。
     nonisolated static func parseLines(_ lines: [String]) -> [Message2] {
         let resolver = Message2Resolver()

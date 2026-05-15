@@ -1,5 +1,15 @@
 import Foundation
 
+/// 会话的持久化生命周期状态（存储在 CDSession.status 中）。
+enum SessionStatus: String {
+    /// DB 已建，CLI 从未成功初始化（cwd 未知）。
+    case pending
+    /// CLI 至少成功初始化过一次，有完整元数据。
+    case created
+    /// 软删除（归档）。
+    case archived
+}
+
 struct SessionExtra: Codable {
     var pluginDirs: [String]?
     var permissionMode: String?

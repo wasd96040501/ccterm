@@ -1,4 +1,4 @@
-.PHONY: build release web dmg clean fmt fmt-check help
+.PHONY: build release dmg clean fmt fmt-check help
 
 XCSTRINGS := macos/ccterm/Localizable.xcstrings
 FMT_XCSTRINGS := python3 macos/scripts/fmt-xcstrings.py
@@ -11,9 +11,6 @@ build: ## Build ccterm (Debug)
 
 release: ## Build ccterm (Release)
 	./macos/scripts/build.sh release
-
-web: ## Build web frontend only
-	cd web && bun install && bun run build
 
 dmg: ## Create DMG installer (usage: make dmg APP=/path/to/ccterm.app)
 	@test -n "$(APP)" || (echo "Usage: make dmg APP=/path/to/ccterm.app" && exit 1)
@@ -38,5 +35,3 @@ fmt-check: ## Check formatting (CI)
 
 clean: ## Remove all build artifacts
 	rm -rf ~/Library/Developer/Xcode/DerivedData/ccterm-*
-	rm -rf web/node_modules web/dist
-	rm -f macos/ccterm/Resources/*.js macos/ccterm/Resources/*.css macos/ccterm/Resources/*-react.html

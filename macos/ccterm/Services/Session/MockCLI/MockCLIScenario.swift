@@ -2,22 +2,20 @@
 
 import Foundation
 
-/// UI test 用的 mock claude CLI 行为脚本。
+/// UI test 用的 mock claude CLI 行为脚本(最小契约)。
 ///
-/// 每个 scenario 对应一个特定的测试场景(stop 按钮、permission 流、流式输出 etc),
-/// 子进程启动时由 `CCTERM_MOCK_CLI_SCENARIO` 环境变量选定。
+/// **大多数 scenario 不直接实现此协议,而是继承 `MockCLIBaseScenario`**——base
+/// 提供"贴近真 claude CLI"的默认行为(initialize ack、interrupt ack、user echo
+/// + result success...),scenario 只 override 偏离默认的钩子。直接实现此协议
+/// 的场景:需要完全自定义路由 / 跳过默认解析(典型如 chaos test 想要直接读 raw
+/// JSON 并随机 emit)。
 ///
-/// 实现规范:
-/// - scenario 类型必须无参 init。`MockCLIRegistry` 用 `() -> any MockCLIScenario` factory。
-/// - 状态(sessionId、是否收到过 init、计数等)存类内可变属性即可——子进程单线程,
-///   `MockCLIRunner` 串行化调用 `onStart` / `onIncoming`。
-/// - 实现尽量贴近真 claude CLI 的行为(用 `MockCLISender` 的便捷方法发常见消息形状),
-///   只在为了测试特定边界时偏离(如"故意不发 result 让 turn 永远挂着")。
+/// 协议层不提供任何默认行为,故意保持"裸"——所有"mock claude 应该怎么行动" 都是
+/// **test-specific** 的、写在 scenario 类里;`MockCLIRunner` / `MockCLISender` /
+/// `MockCLIIncoming.parse` 只是脚手架,不替 scenario 做决定。
 ///
-/// 新增 scenario:
-/// 1. 在 `Scenarios/<Name>Scenario.swift` 写一个新类型实现本协议
-/// 2. 在 `MockCLIRegistry.scenarios` 注册名字 → factory
-/// 3. UI test 通过 `launchEnvironment["CCTERM_MOCK_CLI_SCENARIO"] = "<Name>"` 选用
+/// 注册:每个 scenario 必须在 `MockCLIRegistry.scenarios` 加一行 name → factory,
+/// 名字与 UI test 里 `launchEnvironment["CCTERM_MOCK_CLI_SCENARIO"]` 的值匹配。
 protocol MockCLIScenario: AnyObject {
 
     /// 子进程刚启动、stdin 还没有任何消息时调用一次。多数 scenario 不做事,等

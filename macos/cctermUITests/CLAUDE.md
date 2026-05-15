@@ -42,9 +42,18 @@ store**,UI test 跑完不会留脏数据。
 
 `Services/Session/MockCLI/`(DEBUG only)。
 
-- **`MockCLIScenario`**:测试者实现的 protocol。补两个回调:
-  - `onStart(send:)` — 子进程启动调一次,多数 scenario 不做事
-  - `onIncoming(_:send:)` — 收到 host 的每条 JSON 时调用
+- **`MockCLIBaseScenario`**:**绝大多数 scenario 应继承此类**。提供"贴近真
+  claude CLI"的默认行为(initialize ack + system.init、interrupt ack + result.error、
+  user echo + result.success、其它 control_request 一律 ack),scenario 只 override
+  自己测试关心的那个钩子。所有"mock claude 怎么行动"都是 **test-specific** 的,
+  由 scenario 决定 —— mock CLI 框架(Runner/Sender/Parser)只提供脚手架。
+
+  override 钩子:`onStart` / `onInitialize` / `onInterrupt` / `onControlRequest`(其它 subtype)
+  / `onUserMessage` / `onControlResponse` / `onUnknown`。
+
+- **`MockCLIScenario`**(协议):仅当需要完全自定义路由 / 跳过默认解析(典型:
+  chaos test 直接读 raw JSON 并随机 emit)时才直接实现。补两个回调 `onStart`
+  / `onIncoming`,所有路由自己负责。
 
 - **`MockCLISender`**:写 stdout 的便捷句柄。常用消息有快捷方法:
   - `ackControlSuccess(requestId:response:)` / `ackControlError(...)` — 响应 host 的 control_request
@@ -62,33 +71,27 @@ store**,UI test 跑完不会留脏数据。
 
 ### 新增 scenario 的流程
 
-1. 在 `Services/Session/MockCLI/Scenarios/<Name>Scenario.swift` 写新类型,实现 `MockCLIScenario`:
+1. 在 `Services/Session/MockCLI/Scenarios/<Name>Scenario.swift` 写新类型,**继承
+   `MockCLIBaseScenario`**,只 override 测试关心的钩子:
    ```swift
    #if DEBUG
-   final class MyScenario: MockCLIScenario {
-       private var sessionId = "11111111-1111-1111-1111-111111111111"
-
-       func onIncoming(_ message: MockCLIIncoming, send: MockCLISender) {
-           switch message {
-           case .controlRequest(let subtype, let requestId, _, _):
-               // ack initialize / interrupt / set_model / ...
-               send.ackControlSuccess(requestId: requestId)
-               if subtype == "initialize" { send.sendSystemInit(sessionId: sessionId) }
-           case .userMessage(let text, let uuid, _):
-               if let uuid { send.echoUser(text: text, uuid: uuid, sessionId: sessionId) }
-               // 后续推送 assistant / result...
-           default: break
-           }
+   final class MyScenario: MockCLIBaseScenario {
+       // 偏离默认:turn 永远挂着 —— echo user 但不发 result
+       override func onUserMessage(text: String, uuid: String?, send: MockCLISender) {
+           if let uuid { send.echoUser(text: text, uuid: uuid, sessionId: sessionId) }
        }
+       // 其它钩子(initialize / interrupt / ...)走 base 默认行为,无需 override
    }
    #endif
    ```
 2. 在 `MockCLIRegistry.scenarios` 加一行:`"myScenario": { MyScenario() }`
 3. 测试里 `launchEnvironment["CCTERM_MOCK_CLI_SCENARIO"] = "myScenario"`
 
-scenario 行为**尽量贴近真 claude CLI**(标准 ack + 标准 echo),只在为了测试
-特定边界(故意挂起、故意发 error 等)时偏离。一个 scenario 服务一类测试场景,
-不要往一个 scenario 里塞多个无关的行为分支。
+一个 scenario 服务一个测试用例(或一组共享同一种"CLI 行为偏离"的相关用例),
+不要往一个 scenario 里塞多个无关的行为分支 —— 多写几个 scenario 类,每个只
+override 自己关心的那一两个钩子,更容易看清"这个 scenario 跟真 claude CLI 的
+唯一区别是什么"。chaos test 等需要随机/复杂行为的场景可以直接实现
+`MockCLIScenario` 协议,绕过 base 的默认解析,自己读 raw JSON 决定怎么 emit。
 
 ### 不要做的事
 

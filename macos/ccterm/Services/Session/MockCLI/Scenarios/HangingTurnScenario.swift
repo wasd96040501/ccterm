@@ -2,54 +2,19 @@
 
 import Foundation
 
-/// Scenario:让 turn 永远挂着。用于验证 stop / interrupt 路径——只要 host 不主动
-/// interrupt,assistant 就永远不会发 result,turn 一直在飞。
+/// "turn 永远挂着"的 scenario:host 发用户消息后,mock 只 echo 不发 result,
+/// `isRunning` 持续为 true,直到 host 发 `interrupt` 才被 base 的默认 `onInterrupt`
+/// 关掉 turn。
 ///
-/// 行为:
-/// - host 发 `initialize` → ack success + 发 `system.init`(让 SessionHandle2 完成 bootstrap)
-/// - host 发 user message → echo 回 user 一条(uuid 一致,触发 queued→confirmed),
-///   **不**发 `assistant` / `result`,turn 永远挂着(`isRunning` 持续 true)
-/// - host 发 `interrupt` → ack success + 发 `result.error_during_execution` 关掉 turn
-/// - 其它 control_request → 一律 ack success(避免 host 那边 callback 挂死)
-final class HangingTurnScenario: MockCLIScenario {
-
-    /// 由首个收到的消息 / initialize 注入。默认是个稳定的固定 UUID,以便 scenario 内
-    /// 自行 emit 时也能用。
-    private var sessionId: String = "11111111-1111-1111-1111-111111111111"
-
-    func onIncoming(_ message: MockCLIIncoming, send: MockCLISender) {
-        switch message {
-        case .controlRequest(let subtype, let requestId, _, _):
-            handleControlRequest(subtype: subtype, requestId: requestId, send: send)
-
-        case .userMessage(let text, let uuid, _):
-            // echo 回去,uuid 保持一致 — SessionHandle2 用 uuid 把 .queued 转 .confirmed
-            if let uuid {
-                send.echoUser(text: text, uuid: uuid, sessionId: sessionId)
-            }
-            // 故意不发 assistant / result — turn 永远挂着
-
-        case .controlResponse, .unknown:
-            break
+/// 服务对象:`InputBar2StopButtonUITests` —— 验证 stop 按钮真的能中断 turn。
+/// 其它 control_request(initialize 等)都走 `MockCLIBaseScenario` 默认行为,
+/// 这里只 override 唯一一个偏离默认的钩子。
+final class HangingTurnScenario: MockCLIBaseScenario {
+    override func onUserMessage(text: String, uuid: String?, send: MockCLISender) {
+        if let uuid {
+            send.echoUser(text: text, uuid: uuid, sessionId: sessionId)
         }
-    }
-
-    private func handleControlRequest(subtype: String, requestId: String, send: MockCLISender) {
-        switch subtype {
-        case "initialize":
-            send.ackControlSuccess(requestId: requestId, response: [
-                "commands": [],
-                "models": [],
-            ])
-            send.sendSystemInit(sessionId: sessionId)
-
-        case "interrupt":
-            send.ackControlSuccess(requestId: requestId)
-            send.sendResultError(sessionId: sessionId, errors: ["interrupted"])
-
-        default:
-            send.ackControlSuccess(requestId: requestId)
-        }
+        // 故意不发 result —— turn 一直挂着。
     }
 }
 

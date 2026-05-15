@@ -277,6 +277,10 @@ make test-all
 - NSViewRepresentable 包的 NSTextView 无法直接 a11y query — 点击外层容器让焦点落到 NSTextView，再 `app.typeText(...)`。
 - 一条测试只验证一条 invariant，不串多个 user journey。
 
+## PR 规范
+
+PR title 和 body 一律用英文。
+
 ## Worktree 规范
 
 在 worktree 中工作时，默认读取和操作 worktree 路径下的文件。不要读取主仓库目录的文件，除非用户主动要求。

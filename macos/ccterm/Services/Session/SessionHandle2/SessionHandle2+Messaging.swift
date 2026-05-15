@@ -5,27 +5,41 @@ import AgentSDK
 
 extension SessionHandle2 {
 
-    /// 中断当前模型响应。仅 `.responding` 有效；其他 status no-op。
+    /// 中断当前 turn。守卫用 `isRunning`(`pendingTurnCount > 0`),不再用
+    /// `status == .responding` —— send() 入口同步 +1 pendingTurnCount,而 status
+    /// 翻 `.responding` 要等 CLI echo 回来,中间 100-300ms 空窗 stop 按钮已经显示
+    /// 但旧的 `.responding` 守卫会拦下,表现为"点了没用"。
     ///
-    /// 流程：`.responding` → `.interrupting`（写 stdin）→ SDK ack → `.idle`。
-    /// 本地 entry delivery 不动——`.queued` 的那些消息已经写到 CLI stdin，
-    /// 在 CLI 侧排队，interrupt 不会把它们吐回来。如果后续它们仍被处理并 echo，
-    /// `receive` 会自然切 `.confirmed`；若 CLI 一并丢弃，则停留 `.queued`，
-    /// 用户可以 `cancelMessage` 清掉。
+    /// 副作用按"UI 立即可见"的顺序排:
+    /// 1. `pendingTurnCount = 0`:isRunning 立即 false,bar 切回 send 态。
+    /// 2. `.responding` → `.interrupting`(其他 status 保持不变,避免污染
+    ///    `.starting` / `.idle` 这种"还没收到 echo" 的子态)。
+    /// 3. 仍 `.queued` 的本地 user entry 标 failed,防止 bootstrap 完成后
+    ///    `flushBootstrapBacklog` 把它们补发给 CLI(那样用户点了 stop 实际还是发出去了)。
+    /// 4. agentSession 在场就发 RPC;不在场(bootstrap 还没到 attach)直接跳过 ——
+    ///    没 CLI 连接就没有 turn 可中断,本地清理已经满足语义。
     func interrupt() {
-        guard status == .responding, let agentSession else {
-            appLog(.info, "SessionHandle2", "interrupt() ignored — status=\(status) \(sessionId)")
+        guard isRunning else {
+            appLog(.info, "SessionHandle2", "interrupt() ignored — not running status=\(status) \(sessionId)")
             return
         }
-        appLog(.info, "SessionHandle2", "interrupt() begin \(sessionId)")
-        status = .interrupting
-        // interrupt 让所有在飞 turn 不会再 .result -- 归零,UI 立即恢复 send 态。
+        appLog(.info, "SessionHandle2", "interrupt() begin status=\(status) \(sessionId)")
         pendingTurnCount = 0
+        if status == .responding {
+            status = .interrupting
+        }
+        failQueuedEntries(reason: "interrupted")
+        guard let agentSession else {
+            appLog(.info, "SessionHandle2", "interrupt() no agentSession — local-only \(sessionId)")
+            return
+        }
         agentSession.interrupt { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                self.status = .idle
-                appLog(.info, "SessionHandle2", "interrupt() ack → idle \(self.sessionId)")
+                if self.status == .interrupting {
+                    self.status = .idle
+                }
+                appLog(.info, "SessionHandle2", "interrupt() ack \(self.sessionId)")
             }
         }
     }

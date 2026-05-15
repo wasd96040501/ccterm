@@ -5,12 +5,13 @@ import Observation
 /// 按 `sessionId` 懒创建并缓存 `SessionHandle2`。不做 launch / stop / archive / pin，
 /// 这些仍在老 `SessionService` 上；v2 会在后续步骤逐步接管。
 ///
-/// 持有独立的 `SessionRepository` 实例，通过 `CoreDataStack.shared` 与老栈共享数据。
+/// 持有独立的 `SessionRepository` 实例:生产为 `CoreDataSessionRepository`(与老栈
+/// 共享 `CoreDataStack.shared`),UI test 为 `InMemorySessionRepository`(DEBUG only)。
 @Observable
 @MainActor
 final class SessionManager2 {
 
-    @ObservationIgnored private let repository: SessionRepository
+    @ObservationIgnored private let repository: any SessionRepository
     @ObservationIgnored private var handles: [String: SessionHandle2] = [:]
 
     /// 未归档的会话记录，按 `lastActiveAt` 降序。Sidebar v2 直接观察此数组渲染。
@@ -28,7 +29,7 @@ final class SessionManager2 {
         let message: String
     }
 
-    init(repository: SessionRepository = SessionRepository()) {
+    init(repository: any SessionRepository = CoreDataSessionRepository()) {
         self.repository = repository
         self.records = repository.findAll()
     }

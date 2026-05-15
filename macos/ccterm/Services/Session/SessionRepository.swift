@@ -14,14 +14,77 @@ struct SessionExtraUpdate {
 
 // MARK: - SessionRepository
 
-/// SessionRecord 实体的持久化层（DAO）。基于 CoreData（CDSessionRecord）。
+/// `SessionRecord` 实体的持久化层（DAO）契约。
 ///
-/// 由 SessionService 内部持有，外层不直接使用。
-/// SessionRecord 是持久化实体，描述"一条会话记录"——id、cwd、status、时间戳等。
-/// 不含运行时状态（消息、进程状态）。运行时状态由 SessionHandle 持有。
+/// 生产实现是 `CoreDataSessionRepository`,基于 `CDSessionRecord` / CoreData。
+/// UI test 使用 `InMemorySessionRepository`(DEBUG only),避免污染主 CoreData store。
 ///
-/// 关系：SessionRepository 1 <--管理--* SessionRecord（CDSessionRecord）
-class SessionRepository {
+/// SessionRecord 是持久化实体,描述"一条会话记录"——id、cwd、status、时间戳等;
+/// **不含**运行时状态(消息、进程状态)。运行时状态由 `SessionHandle2` 持有。
+protocol SessionRepository: AnyObject {
+
+    // MARK: Query
+
+    /// 按 sessionId 查找。未找到返回 nil。
+    func find(_ sessionId: String) -> SessionRecord?
+
+    /// 查找所有非 archived 的会话,按 lastActiveAt 降序。
+    func findAll() -> [SessionRecord]
+
+    /// 查找所有 archived 的会话。
+    func findArchived() -> [SessionRecord]
+
+    // MARK: Create / Delete
+
+    /// 持久化一个新的 SessionRecord。id 冲突时覆盖。
+    func save(_ session: SessionRecord)
+
+    /// 归档会话。status → .archived, archivedAt = now。
+    func archive(_ sessionId: String)
+
+    /// 取消归档。status → .created,清除 archivedAt。
+    func unarchive(_ sessionId: String)
+
+    /// 从存储中永久删除。不可恢复。
+    func delete(_ sessionId: String)
+
+    // MARK: Update
+
+    /// 更新会话的持久化生命周期状态。
+    func updateStatus(_ sessionId: String, to status: SessionStatus)
+
+    /// 更新会话的 cwd。同时清除 error。
+    func updateCwd(_ sessionId: String, cwd: String)
+
+    /// 更新会话标题。
+    func updateTitle(_ sessionId: String, title: String)
+
+    /// 启动失败时写 stderr / 进程退出原因。传 nil 清除。
+    func updateError(_ sessionId: String, error: String?)
+
+    /// 部分更新 extra 字段。只更新 SessionExtraUpdate 中非 nil 的字段。
+    func updateExtra(_ sessionId: String, with update: SessionExtraUpdate)
+
+    /// 更新 worktree 分支名。归档时保存,用于取消归档时重建 worktree。
+    func updateWorktreeBranch(_ sessionId: String, branch: String?)
+
+    /// 更新 isWorktree 开关。仅 non-active 下由 SessionHandle 调用。
+    func updateIsWorktree(_ sessionId: String, isWorktree: Bool)
+
+    /// 置顶会话。
+    func pinSession(sessionId: String)
+
+    /// 取消置顶。
+    func unpinSession(sessionId: String)
+
+    /// 刷新 lastActiveAt 为当前时间。每次会话有交互时调用。
+    func touch(_ sessionId: String)
+}
+
+// MARK: - CoreDataSessionRepository
+
+/// `SessionRepository` 的 CoreData 实现。基于 `CDSessionRecord`,与老栈共享 `CoreDataStack.shared`。
+final class CoreDataSessionRepository: SessionRepository {
 
     private let coreDataStack: CoreDataStack
 
@@ -36,13 +99,11 @@ class SessionRepository {
 
     // MARK: - Query
 
-    /// 按 sessionId 查找。未找到返回 nil。
     func find(_ sessionId: String) -> SessionRecord? {
         guard let entity = fetchEntity(sessionId) else { return nil }
         return Self.session(from: entity)
     }
 
-    /// 查找所有非 archived 的会话，按 lastActiveAt 降序。
     func findAll() -> [SessionRecord] {
         let request = NSFetchRequest<CDSessionRecord>(entityName: "CDSessionRecord")
         request.predicate = NSPredicate(format: "status != %@", SessionStatus.archived.rawValue)
@@ -51,12 +112,11 @@ class SessionRepository {
             let results = try coreDataStack.viewContext.fetch(request)
             return results.compactMap { Self.session(from: $0) }
         } catch {
-            appLog(.error, "SessionRepository", "findAll failed: \(error.localizedDescription)")
+            appLog(.error, "CoreDataSessionRepository", "findAll failed: \(error.localizedDescription)")
             return []
         }
     }
 
-    /// 查找所有 archived 的会话。
     func findArchived() -> [SessionRecord] {
         let request = NSFetchRequest<CDSessionRecord>(entityName: "CDSessionRecord")
         request.predicate = NSPredicate(format: "status == %@", SessionStatus.archived.rawValue)
@@ -65,14 +125,13 @@ class SessionRepository {
             let results = try coreDataStack.viewContext.fetch(request)
             return results.compactMap { Self.session(from: $0) }
         } catch {
-            appLog(.error, "SessionRepository", "findArchived failed: \(error.localizedDescription)")
+            appLog(.error, "CoreDataSessionRepository", "findArchived failed: \(error.localizedDescription)")
             return []
         }
     }
 
     // MARK: - Create / Delete
 
-    /// 持久化一个新的 SessionRecord。id 冲突时覆盖。
     func save(_ session: SessionRecord) {
         let context = coreDataStack.viewContext
         let entity = fetchEntity(session.sessionId) ?? CDSessionRecord(context: context)
@@ -97,7 +156,6 @@ class SessionRepository {
         coreDataStack.saveContext()
     }
 
-    /// 归档会话。status → .archived，archivedAt = now。
     func archive(_ sessionId: String) {
         guard let entity = fetchEntity(sessionId) else { return }
         entity.status = SessionStatus.archived.rawValue
@@ -105,7 +163,6 @@ class SessionRepository {
         coreDataStack.saveContext()
     }
 
-    /// 取消归档。status → .created，清除 archivedAt。
     func unarchive(_ sessionId: String) {
         guard let entity = fetchEntity(sessionId) else { return }
         entity.status = SessionStatus.created.rawValue
@@ -113,7 +170,6 @@ class SessionRepository {
         coreDataStack.saveContext()
     }
 
-    /// 从存储中永久删除。不可恢复。
     func delete(_ sessionId: String) {
         guard let entity = fetchEntity(sessionId) else { return }
         coreDataStack.viewContext.delete(entity)
@@ -122,7 +178,6 @@ class SessionRepository {
 
     // MARK: - Update
 
-    /// 更新会话的持久化生命周期状态。
     func updateStatus(_ sessionId: String, to status: SessionStatus) {
         guard let entity = fetchEntity(sessionId) else { return }
         entity.status = status.rawValue
@@ -132,7 +187,6 @@ class SessionRepository {
         coreDataStack.saveContext()
     }
 
-    /// 更新会话的 cwd。同时清除 error。
     func updateCwd(_ sessionId: String, cwd: String) {
         guard let entity = fetchEntity(sessionId) else { return }
         entity.cwd = cwd
@@ -140,21 +194,18 @@ class SessionRepository {
         coreDataStack.saveContext()
     }
 
-    /// 更新会话标题。
     func updateTitle(_ sessionId: String, title: String) {
         guard let entity = fetchEntity(sessionId) else { return }
         entity.title = title
         coreDataStack.saveContext()
     }
 
-    /// 启动失败时写 stderr。
     func updateError(_ sessionId: String, error: String?) {
         guard let entity = fetchEntity(sessionId) else { return }
         entity.error = error
         coreDataStack.saveContext()
     }
 
-    /// 部分更新 extra 字段。只更新 SessionExtraUpdate 中非 nil 的字段。
     func updateExtra(_ sessionId: String, with update: SessionExtraUpdate) {
         guard let entity = fetchEntity(sessionId) else { return }
         var extra = Self.decodeExtra(entity.extraJSON)
@@ -177,21 +228,18 @@ class SessionRepository {
         coreDataStack.saveContext()
     }
 
-    /// 更新 worktree 分支名。归档时保存，用于取消归档时重建 worktree。
     func updateWorktreeBranch(_ sessionId: String, branch: String?) {
         guard let entity = fetchEntity(sessionId) else { return }
         entity.worktreeBranch = branch
         coreDataStack.saveContext()
     }
 
-    /// 更新 isWorktree 开关。仅 non-active 下由 SessionHandle 调用。
     func updateIsWorktree(_ sessionId: String, isWorktree: Bool) {
         guard let entity = fetchEntity(sessionId) else { return }
         entity.isWorktree = isWorktree
         coreDataStack.saveContext()
     }
 
-    /// 置顶会话。
     func pinSession(sessionId: String) {
         guard let entity = fetchEntity(sessionId) else { return }
         entity.isPinned = true
@@ -199,7 +247,6 @@ class SessionRepository {
         coreDataStack.saveContext()
     }
 
-    /// 取消置顶。
     func unpinSession(sessionId: String) {
         guard let entity = fetchEntity(sessionId) else { return }
         entity.isPinned = false
@@ -207,7 +254,6 @@ class SessionRepository {
         coreDataStack.saveContext()
     }
 
-    /// 刷新 lastActiveAt 为当前时间。每次会话有交互时调用。
     func touch(_ sessionId: String) {
         guard let entity = fetchEntity(sessionId) else { return }
         entity.lastActiveAt = Date()

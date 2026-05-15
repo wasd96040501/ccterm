@@ -323,7 +323,7 @@ private extension SessionHandle2 {
     func makeAgentConfig(fresh: Bool) -> SessionConfiguration {
         let customCommand = UserDefaults.standard.string(forKey: "customCLICommand")
         let wd = URL(fileURLWithPath: cwd ?? originPath ?? FileManager.default.currentDirectoryPath)
-        return SessionConfiguration(
+        var config = SessionConfiguration(
             workingDirectory: wd,
             model: model,
             permissionMode: permissionMode.toSDK(),
@@ -335,6 +335,16 @@ private extension SessionHandle2 {
             customCommand: customCommand,
             allowDangerouslySkipPermissions: true
         )
+
+        #if DEBUG
+        if let override = Self.mockCLIOverride {
+            config.binaryPath = override.binaryPath
+            config.customCommand = nil
+            config.env = override.env
+        }
+        #endif
+
+        return config
     }
 
     // MARK: Bootstrap

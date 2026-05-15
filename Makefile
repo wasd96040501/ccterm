@@ -1,4 +1,4 @@
-.PHONY: build release dmg clean fmt fmt-check help
+.PHONY: build release dmg clean fmt fmt-check test test-all help
 
 XCSTRINGS := macos/ccterm/Localizable.xcstrings
 FMT_XCSTRINGS := python3 macos/scripts/fmt-xcstrings.py
@@ -11,6 +11,17 @@ build: ## Build ccterm (Debug)
 
 release: ## Build ccterm (Release)
 	./macos/scripts/build.sh release
+
+test: ## Run UI test — REQUIRES FILTER=ClassName or ClassName/method (see CLAUDE.md)
+	@test -n "$(FILTER)" || (echo "error: FILTER is required. Examples:"; \
+		echo "  make test FILTER=InputBar2StopButtonUITests"; \
+		echo "  make test FILTER=InputBar2StopButtonUITests/testStopButtonCancelsRunningState"; \
+		echo "  make test-all   # 全量跑(慢,慎用)"; \
+		exit 1)
+	./macos/scripts/test.sh "$(FILTER)"
+
+test-all: ## Run all UI tests (slow; only when full coverage explicitly needed)
+	ALLOW_FULL_RUN=1 ./macos/scripts/test.sh ""
 
 dmg: ## Create DMG installer (usage: make dmg APP=/path/to/ccterm.app)
 	@test -n "$(APP)" || (echo "Usage: make dmg APP=/path/to/ccterm.app" && exit 1)

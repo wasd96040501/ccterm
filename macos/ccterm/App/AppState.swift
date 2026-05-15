@@ -4,10 +4,16 @@ import Observation
 @Observable
 @MainActor
 final class AppState {
-    let sessionManager2 = SessionManager2()
+    let sessionManager2: SessionManager2
     let syntaxEngine = SyntaxHighlightEngine()
 
     init() {
+        #if DEBUG
+        self.sessionManager2 = AppState.applyTestModeIfNeeded() ?? SessionManager2()
+        #else
+        self.sessionManager2 = SessionManager2()
+        #endif
+
         // Eagerly load the syntax highlight engine in the background so the
         // first `highlightBatch` call doesn't pay the JSCore / highlight.js
         // init cost (~30ms) on the user-facing path. `.utility` priority keeps

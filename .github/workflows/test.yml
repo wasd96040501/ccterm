@@ -1,0 +1,41 @@
+name: ui-test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  ui-test:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Go
+        # fzf submodule (thirdparty/fzf) 在 Xcode build phase 里 go build 出来,
+        # macos runner 默认未必有 go,显式装一个稳定版本。
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Xcode info
+        run: |
+          xcode-select -p
+          xcodebuild -version
+          sw_vers
+          go version
+
+      - name: Run UI tests
+        run: make test-all
+
+      - name: Upload xcresult on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcresult
+          path: /tmp/ccterm-test-*/result.xcresult
+          if-no-files-found: ignore
+          retention-days: 7

@@ -202,6 +202,28 @@ final class BlockCellView: NSView {
 
     required init?(coder: NSCoder) { fatalError() }
 
+    /// Resize-driven re-centering. NSTableView resizes our frame to track
+    /// the row's width on every tile pass. `layoutOrigin.x` is derived
+    /// from `bounds.width` (`BlockStyle.cellOriginX`), so a width change
+    /// shifts where the layout's draw origin should land — but with
+    /// `.onSetNeedsDisplay` AppKit doesn't auto-mark the layer dirty,
+    /// and entry subviews keep their old `subviewPlan`-built frames.
+    /// Result without this hook: in-band resizes (raw width changes that
+    /// don't move the clamped `layoutWidth`) leave already-cached cells
+    /// painted at the old centred origin while new scroll-in cells use
+    /// the new origin — visible as a horizontal tear.
+    /// `Coordinator.tableFrameDidChange` short-circuits in that band on
+    /// purpose (no Core Text relayout needed), so the redraw obligation
+    /// belongs here.
+    override func setFrameSize(_ newSize: NSSize) {
+        let widthChanged = newSize.width != frame.size.width
+        super.setFrameSize(newSize)
+        if widthChanged {
+            needsDisplay = true
+            syncSubviewPlan()
+        }
+    }
+
     /// Layout-local origin where the row's `RowLayout` paints. The
     /// cell's frame spans the row's full width (NSTableView's
     /// view-based contract); we shift content here so it lands at the

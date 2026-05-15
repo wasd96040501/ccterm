@@ -1,0 +1,33 @@
+name: ui-test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  ui-test:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Xcode info
+        run: |
+          xcode-select -p
+          xcodebuild -version
+          sw_vers
+
+      - name: Run UI tests
+        run: make test-all
+
+      - name: Upload xcresult on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcresult
+          path: /tmp/ccterm-test-*/result.xcresult
+          if-no-files-found: ignore
+          retention-days: 7

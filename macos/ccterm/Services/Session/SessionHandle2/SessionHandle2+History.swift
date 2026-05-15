@@ -281,7 +281,7 @@ extension SessionHandle2 {
     fileprivate static func buildEntries(from messages: [Message2]) -> [MessageEntry] {
         // 为避免与真实 handle 的 state 纠缠，用 inMemory SessionRepository 建一个
         // 临时 handle，跑 receive 获得 entries，再提取出来。
-        let repo = SessionRepository(coreDataStack: CoreDataStack(inMemory: true))
+        let repo = CoreDataSessionRepository(coreDataStack: CoreDataStack(inMemory: true))
         let tmp = SessionHandle2(sessionId: "prefix-builder-\(UUID().uuidString)", repository: repo)
         tmp.skipBootstrapForTesting = true
         for m in messages { tmp.receive(m, mode: .replay) }

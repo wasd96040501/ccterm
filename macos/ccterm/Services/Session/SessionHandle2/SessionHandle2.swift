@@ -34,7 +34,7 @@ class SessionHandle2 {
     // MARK: - Identity
 
     let sessionId: String
-    internal let repository: SessionRepository
+    internal let repository: any SessionRepository
 
     // MARK: - Status
 
@@ -191,7 +191,7 @@ class SessionHandle2 {
     /// | `setPluginDirectories` | no-op（`--plugin-dir` 是启动参数） | `canSetPluginDirectories` |
     /// | `setFocused` | 本地（不碰 CLI） | —（永远可调） |
     /// | `respond(to:decision:)` | 本地（命中 pending 才生效） | — |
-    init(sessionId: String, repository: SessionRepository) {
+    init(sessionId: String, repository: any SessionRepository) {
         self.sessionId = sessionId
         self.repository = repository
         if let record = repository.find(sessionId) {

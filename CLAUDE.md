@@ -263,11 +263,14 @@ make test-all
 - xcresult bundle 含 screenshots 和 video，定位"按钮没出现"这类问题最直接。Finder 打开或 `open /tmp/ccterm-test-.../result.xcresult` 自动用 Xcode 加载。
 - crash log（macOS DiagnosticReports）会在测试结束后被自动扫描并列在输出里 — 进程崩了不会只表现为 "test failed" 而藏掉根因。
 
-**UI test 编写规范：**
-- 用 `--ui-test-skip-bootstrap` 启动参数让 `SessionManager2` 新建的 handle 跳过 CLI bootstrap（`status` 停在 `.starting`，turn 不会因 `.result` 自动归零），让"send→stop"这种状态机切换不依赖真 Claude CLI。
-- 需要交互的 SwiftUI 控件加 `.accessibilityIdentifier("ComponentName.ElementName")`（约定:`<View>.<Role>`，如 `InputBar2.SendButton`）。**不要**把 identifier 加在外层容器上 — SwiftUI 会传染给所有后代，覆盖子元素自己的 id。
-- NSViewRepresentable 包的 NSTextView 无法直接靠 a11y id 取到 — 点击其外层容器 → `app.typeText(...)` 让焦点处接键盘事件。
-- 一条测试只验证一条 invariant；不要在同一个 case 里串多个 user journey。
+**UI test 隔离基建（DEBUG only）：** 测试通过 `launchEnvironment` 切到隔离模式 —— 不污染主 CoreData store，不依赖真 Claude CLI。
+
+- `CCTERM_TEST_MODE=1` → `AppState` 切到 `InMemorySessionRepository`（永远不写 `CDSessionRecord`），并把 `SessionHandle2.mockCLIOverride` 装好。
+- `CCTERM_MOCK_CLI_SCENARIO=<name>` → 选用 `MockCLIRegistry` 里的 scenario。后续 `ensureStarted` spawn 的 CLI 子进程实际是当前 ccterm 二进制（`AppEntryPoint` 在 `CCTERM_RUN_AS_MOCK_CLI=1` 时转发到 `MockCLIRunner`），跑指定 scenario，通过 stdin/stdout JSONL 与父进程交互——协议与真 Claude CLI 一致。
+- 新增测试时**不**加 launch arg / 不加 `forceXxxForTest()` 方法。要触发某种 CLI 行为（hang turn / refuse permission / stream chunks）就**写一个 scenario**实现 `MockCLIScenario` 协议并在 `MockCLIRegistry` 注册。详见 [cctermUITests/CLAUDE.md](macos/cctermUITests/CLAUDE.md)。
+- 需要交互的 SwiftUI 控件加 `.accessibilityIdentifier("ComponentName.ElementName")`（约定 `<View>.<Role>`，如 `InputBar2.SendButton`）。**加在子元素上**，不要加在外层容器（SwiftUI 容器 id 传染覆盖子元素的 id）。
+- NSViewRepresentable 包的 NSTextView 无法直接 a11y query — 点击外层容器让焦点落到 NSTextView，再 `app.typeText(...)`。
+- 一条测试只验证一条 invariant，不串多个 user journey。
 
 ## Worktree 规范
 

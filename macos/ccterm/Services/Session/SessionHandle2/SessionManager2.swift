@@ -5,19 +5,14 @@ import Observation
 /// 按 `sessionId` 懒创建并缓存 `SessionHandle2`。不做 launch / stop / archive / pin，
 /// 这些仍在老 `SessionService` 上；v2 会在后续步骤逐步接管。
 ///
-/// 持有独立的 `SessionRepository` 实例，通过 `CoreDataStack.shared` 与老栈共享数据。
+/// 持有独立的 `SessionRepository` 实例:生产为 `CoreDataSessionRepository`(与老栈
+/// 共享 `CoreDataStack.shared`),UI test 为 `InMemorySessionRepository`(DEBUG only)。
 @Observable
 @MainActor
 final class SessionManager2 {
 
-    @ObservationIgnored private let repository: SessionRepository
+    @ObservationIgnored private let repository: any SessionRepository
     @ObservationIgnored private var handles: [String: SessionHandle2] = [:]
-
-    /// UI 测试模式:启动参数 `--ui-test-skip-bootstrap` 存在时,新创建的 handle 跳过
-    /// CLI bootstrap(`status` 停在 `.starting`, `pendingTurnCount` 自然由 send/interrupt
-    /// 控制),让 send→stop 按钮切换不依赖真 Claude CLI。
-    @ObservationIgnored private static let skipBootstrapForUITest: Bool =
-        ProcessInfo.processInfo.arguments.contains("--ui-test-skip-bootstrap")
 
     /// 未归档的会话记录，按 `lastActiveAt` 降序。Sidebar v2 直接观察此数组渲染。
     /// 由 `refreshRecords()` 主动刷新；初始化时填充一次。
@@ -34,7 +29,7 @@ final class SessionManager2 {
         let message: String
     }
 
-    init(repository: SessionRepository = SessionRepository()) {
+    init(repository: any SessionRepository = CoreDataSessionRepository()) {
         self.repository = repository
         self.records = repository.findAll()
     }
@@ -84,9 +79,6 @@ final class SessionManager2 {
                 sessionId: sid,
                 message: reason
             )
-        }
-        if Self.skipBootstrapForUITest {
-            handle.skipBootstrapForTesting = true
         }
     }
 

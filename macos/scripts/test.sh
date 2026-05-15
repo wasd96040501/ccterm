@@ -53,6 +53,12 @@ XCB_ARGS=(
   -configuration Debug
   -destination "$DESTINATION"
   -resultBundlePath "$XCRESULT"
+  # 忽略签名:UI test 不需要分发,本地/CI 都不依赖开发者证书。
+  # `DEVELOPMENT_TEAM=` 覆盖 Local.xcconfig 里可能设的值。
+  CODE_SIGNING_ALLOWED=NO
+  CODE_SIGNING_REQUIRED=NO
+  CODE_SIGN_IDENTITY=-
+  DEVELOPMENT_TEAM=
 )
 if [ -n "$FILTER" ]; then
   XCB_ARGS+=(-only-testing:"$TEST_TARGET/$FILTER")

@@ -65,9 +65,9 @@ RootView2
 
 ### 数据流
 
-- **历史加载**：ChatHistoryView 进入 → `manager.prepareDraft(sessionId)` 拿 handle → 绑 `Transcript2EntryBridge` → `handle.loadHistory()` → bridge 把 `TimelineMutation` 翻译成 controller 的 `loadInitial` / `apply` 调用 → NativeTranscript2 diff-render
+- **历史加载**：ChatHistoryView 进入 → `manager.prepareDraft(sessionId)` 拿 handle → 绑 `Transcript2EntryBridge` → `handle.loadHistory()` → bridge 把 `MessagesChange` 翻译成 controller 的 `loadInitial` / `apply` 调用 → NativeTranscript2 diff-render
 - **运行态渲染**：`SessionHandle2.isRunning` (`@Observable`) → SwiftUI 自动追踪 → LoadingPillView2 fade、InputBarView2 send↔stop 切换
-- **消息推送**：CLI 推消息 → `SessionHandle2.receive` → 更新 `messages` / 推 `onTimelineMutation` → bridge → controller 增量 reload
+- **消息推送**：CLI 推消息 → `SessionHandle2.receive` → 更新 `messages` / 推 `onMessagesChange` → bridge → controller 增量 reload
 - **Session 切换**：SidebarView2 onSelect → `selectedSessionId` 变化 → `ChatHistoryView` 的 `.id(sid)` 触发重建，`@State` reset
 - **草稿启动**：进入 NewSession tab 时 `RootView2` 懒分配 `draftSessionId`；用户首条消息 → `handle.setCwd(home)` + `handle.send(text)` → 启动后 `manager.refreshRecords()` 并把选中切到具体 sessionId
 
@@ -92,22 +92,29 @@ RootView2
 | `SessionHandle2+Receive.swift` | CLI 推送消息的处理路径 |
 | `SessionHandle2+Types.swift` | `PendingPermission` / `SlashCommand` 类型 |
 | `MessageEntry.swift` | 渲染就绪的消息条目（含 `SingleEntry` / `GroupEntry`） |
-| `TranscriptSnapshot.swift` + `TimelineMutation` | 视图层意图枚举与 bridge 信号 |
+| `MessagesChange.swift` | timeline 变更信号枚举（bridge 消费） |
 | `SessionManager2.swift` | `SessionHandle2` 注册表，按 sessionId 懒创建 + 缓存 |
 
-### Observe vs Mutation
+### 渲染端通信
 
-| 机制 | 用途 | 消费方式 |
-|------|------|----------|
-| **Observable 属性** | 连续状态（messages、isRunning、historyLoadState、pendingPermissions） | SwiftUI 自动追踪 / computed 直读 |
-| **`onTimelineMutation` 闭包** | 离散 timeline 变更信号（`.reset` / `.append` / `.update`） | `Transcript2EntryBridge.attach(handle)` 内部消费，翻译成 controller 命令 |
+session 状态推给"渲染端"时，**根据渲染端是 AppKit 还是 SwiftUI** 选不同通道，不混用：
+
+| 渲染端 | 通道 | 说明 |
+|--------|------|------|
+| **AppKit 原生组件**（如 `NativeTranscript2`、`NSTableView` 驱动的视图） | 同步闭包回调 + 直接调 imperative controller | handle 在 mutate 完 messages 的同一调用栈上同步触发回调（`onMessagesChange` 等），bridge 立即把指令翻译成 `controller.apply(.insert / .remove / .update)` |
+| **SwiftUI** | `@Observable` 字段（连续状态）或 `AsyncStream` 事件（离散副作用） | View 直接 trace `handle.status` / `handle.isRunning` 等字段；副作用走 `eventStream()` |
+
+**为什么 AppKit 路径不走 AsyncStream / @Observable：**
+- AsyncStream 至少多一次 main-actor hop，比同步回调多 1 帧延迟
+- @Observable 触发的 `updateNSView` 是 pull 模型，需要在 SwiftUI 侧重算 diff；AppKit 的 imperative API 直接给 controller 增量指令，免去这层
 
 **规范：**
-- 禁止在 View 中缓存 handle 属性副本作为状态来源 — 通过 computed / 直读
+- AppKit 渲染端：在 handle 上声明 `@ObservationIgnored var onXxxChange: ((XxxChange) -> Void)?` 闭包字段；bridge 在 `.task` / `init` 里挂钩，dismantle 时 weak 自动失活
+- 给 AppKit 路径加新通知：handle 加闭包字段 + 在 mutate 点同步触发 → bridge 加 dispatch 分支 → 直接调 `controller.apply(...)`
+- 禁止在 AppKit 路径上同时 emit 一个 `@Observable` 镜像和一个回调（任选其一；当前 `SessionHandle2.messages` 只通过 `onMessagesChange` 推给 transcript，不另 emit snapshot）
+- 禁止在 View 中缓存 handle 属性副本作为状态来源 — 通过 computed / 直读 `@Observable` 字段
 - 本地操作（`send` / `interrupt` / `setPermissionMode`）只发起 stdin 请求或本地状态过渡，不绕过 handle 直写 observable
-- 新增运行时状态字段：在 SessionHandle2 加 `@Observable` 属性 → View 直读
-- 禁止用 `.onChange` 监听 handle 属性来触发副作用，改用 `onTimelineMutation` 或 handle 上现成的内部钩子
-- 新增消息变更类型：在 `TimelineMutation` 加 case → SessionHandle2 相应位置 emit → `Transcript2EntryBridge` 加分支
+- 新增消息变更类型：在 `MessagesChange` 加 case → SessionHandle2 相应位置触发 `onMessagesChange?(...)` → `Transcript2EntryBridge.apply` 加分支
 
 ## 工具渲染（NativeTranscript2）
 

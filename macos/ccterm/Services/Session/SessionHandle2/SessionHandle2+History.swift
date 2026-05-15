@@ -55,18 +55,13 @@ extension SessionHandle2 {
         case .loadingTail, .tailLoaded:
             return
         case .loaded:
-            // 已加载过（用户切走后再切回）—— 重新 emit `.initialPaint`，view 层按
-            // 首次打开语义 re-paint。带上 `savedScrollAnchor`：view 若能找到
-            // 匹配 stableId 则围绕 anchor 展开并恢复位置（对齐 Telegram
-            // `ChatInterfaceHistoryScrollState` + `.positionRestoration`）；
-            // 找不到则自然 fallback 到 tail + `.bottom`。
+            // 已加载过（用户切走后再切回）—— 让 bridge 整体 reload 一次。
             //
             // 同步 emit 在 view 未 mount 时是合法的：bridge → `controller.loadInitial`
-            // 自带 pending 缓存路径，layoutWidth=0 时把 blocks/anchor 暂存，等到
+            // 自带 pending 缓存路径，layoutWidth=0 时把 blocks 暂存，等到
             // coordinator 的 `onLayoutReady` 触发再消费。所以 handle 这一层无需关心
             // SwiftUI commit 时序。
-            emitSnapshot(.initialPaint, scrollHint: savedScrollAnchor)
-            onTimelineMutation?(.reset(entries: messages, scrollHint: savedScrollAnchor))
+            onMessagesChange?(.reset(messages))
             return
         case .failed:
             historyLoadState = .notLoaded
@@ -99,14 +94,12 @@ extension SessionHandle2 {
                     for m in parsed.messages { self.receive(m, mode: .replay) }
                     let count = parsed.messages.count
                     self.historyLoadState = .tailLoaded(count: count)
-                    // Phase A 批量 ingest 完毕 → 首帧意图。哪怕 messages 为空
-                    // (session 没有任何可渲染消息) 也要发一次,让视图从 .idle
-                    // 翻到 initialPaint 对应的渲染分支。
-                    self.emitSnapshot(.initialPaint)
-                    // 给命令式 bridge 一个对应的 reset 指令 —— Phase A 期间
-                    // 的逐条 receive() 走的是 replay mode,sink 不触发,这里
-                    // 一次性 dump 当前 messages 当作初始装载。
-                    self.onTimelineMutation?(.reset(entries: self.messages, scrollHint: nil))
+                    // Phase A 批量 ingest 完毕 → 一次性 dump 当前 messages
+                    // 给 bridge 当作初始装载。Phase A 期间的逐条 receive()
+                    // 走的是 replay mode,sink 不触发,所以这里是首条到达
+                    // bridge 的指令。哪怕 messages 为空也要发一次,让 bridge
+                    // 翻到 didLoadInitial = true。
+                    self.onMessagesChange?(.reset(self.messages))
                     let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
                     appLog(.info, "SessionHandle2",
                         "loadHistory tail done \(self.sessionId) count=\(count) ingest=\(ms)ms")
@@ -159,24 +152,16 @@ extension SessionHandle2 {
                         to: &self.messages, from: newTailStart, using: index)
 
                     self.historyLoadState = .loaded
-                    // Phase B 完成 → emit 前插意图(哪怕 prefix 为空也要发:
-                    // tool_result reresolve 也算 update)。
-                    if prefixCount > 0 {
-                        self.emitSnapshot(.prependHistory)
-                    } else if !updatedIdx.isEmpty {
-                        self.emitSnapshot(.update)
-                    }
-
-                    // 给命令式 bridge 发对应增量:先 prepended,再针对 tail 区
-                    // 被 reresolve 的 entries 各发一条 mutated。两步顺序:
-                    // bridge 在收到 prepended 后会重新算 anchor,后续 mutate
-                    // 才能正确定位 tail entry。
+                    // Phase B 完成 → 给 bridge 发对应增量:先 prepended,再
+                    // 针对 tail 区被 reresolve 的 entries 各发一条 updated。
+                    // 两步顺序: bridge 在收到 prepended 后会重新算 anchor,
+                    // 后续 update 才能正确定位 tail entry。
                     if prefixCount > 0 {
                         let prefixEntries = Array(self.messages.prefix(prefixCount))
-                        self.onTimelineMutation?(.prepended(prefixEntries))
+                        self.onMessagesChange?(.prepended(prefixEntries))
                     }
                     for idx in updatedIdx where self.messages.indices.contains(idx) {
-                        self.onTimelineMutation?(.mutated(self.messages[idx]))
+                        self.onMessagesChange?(.updated(self.messages[idx]))
                     }
                     let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
                     appLog(.info, "SessionHandle2",

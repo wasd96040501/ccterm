@@ -56,8 +56,7 @@ extension SessionHandle2 {
         switch single.delivery {
         case .queued, .failed:
             let removed = messages.remove(at: idx)
-            emitSnapshot(.update)
-            onTimelineMutation?(.removed(removed))
+            onMessagesChange?(.removed(removed))
         default:
             break
         }

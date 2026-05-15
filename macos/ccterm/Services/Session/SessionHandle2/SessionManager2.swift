@@ -17,9 +17,24 @@ final class SessionManager2 {
     /// 由 `refreshRecords()` 主动刷新；初始化时填充一次。
     private(set) var records: [SessionRecord] = []
 
+    /// 最近一次任何 handle 的 CLI 启动失败信息。RootView2 绑 `.alert` 观察此
+    /// 字段:非 nil 即弹,确认后调 `clearLaunchFailure()` 复位。每条新失败
+    /// 直接覆盖旧值——并发多失败时只保留最新,不堆栈(无 use case 需要全量)。
+    private(set) var lastLaunchFailure: LaunchFailure?
+
+    struct LaunchFailure: Identifiable, Equatable {
+        let id = UUID()
+        let sessionId: String
+        let message: String
+    }
+
     init(repository: SessionRepository = SessionRepository()) {
         self.repository = repository
         self.records = repository.findAll()
+    }
+
+    func clearLaunchFailure() {
+        lastLaunchFailure = nil
     }
 
     /// 按 `sessionId` 获取 `SessionHandle2`。DB 无记录 → nil。
@@ -29,6 +44,7 @@ final class SessionManager2 {
         if let handle = handles[sessionId] { return handle }
         guard repository.find(sessionId) != nil else { return nil }
         let handle = SessionHandle2(sessionId: sessionId, repository: repository)
+        wireLaunchFailure(handle)
         handles[sessionId] = handle
         return handle
     }
@@ -46,8 +62,23 @@ final class SessionManager2 {
     func prepareDraft(_ sessionId: String) -> SessionHandle2 {
         if let handle = handles[sessionId] { return handle }
         let handle = SessionHandle2(sessionId: sessionId, repository: repository)
+        wireLaunchFailure(handle)
         handles[sessionId] = handle
         return handle
+    }
+
+    /// 把 handle 的 `onLaunchFailure` 接到本 manager 的 `lastLaunchFailure`。
+    /// 每条新 handle 创建时调一次,后续 bootstrap 失败由 handle 同步触发,manager
+    /// 写 observable 字段,RootView2 的 `.alert` 自动展示。
+    private func wireLaunchFailure(_ handle: SessionHandle2) {
+        let sid = handle.sessionId
+        handle.onLaunchFailure = { [weak self] reason in
+            // reason 是 handle 算好的原始描述,不再做本地化或字段重排。
+            self?.lastLaunchFailure = LaunchFailure(
+                sessionId: sid,
+                message: reason
+            )
+        }
     }
 
     /// 重读 repository 全量记录并回写到 `records`。NewSession 启动后由调用方触发。

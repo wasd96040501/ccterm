@@ -19,6 +19,8 @@ extension SessionHandle2 {
         }
         appLog(.info, "SessionHandle2", "interrupt() begin \(sessionId)")
         status = .interrupting
+        // interrupt 让所有在飞 turn 不会再 .result -- 归零,UI 立即恢复 send 态。
+        pendingTurnCount = 0
         agentSession.interrupt { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }

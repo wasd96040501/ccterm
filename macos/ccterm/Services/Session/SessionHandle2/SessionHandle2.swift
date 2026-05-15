@@ -106,6 +106,34 @@ class SessionHandle2 {
     /// 走闭包/匿名类型;过 weak ownership 在闭包内部解决(`[weak bridge]`)。
     @ObservationIgnored var onTimelineMutation: ((TimelineMutation) -> Void)?
 
+    /// CLI 启动失败回调。所有"launch-time" 失败路径(sync `Process.run` 抛错
+    /// 或 init 完成前 CLI 进程自己 exit)都汇到 `failLaunch(reason:)` 一处,
+    /// 在那里同步触发一次,传入原始的、未经本地化包装的描述字符串。订阅方
+    /// (SessionManager2)负责转给 UI 层做 alert。
+    ///
+    /// 跟 `onTimelineMutation` 一样走闭包注入,避免把 UI 类型漏进 handle。
+    /// weak 由订阅方在闭包里处理。
+    @ObservationIgnored var onLaunchFailure: ((String) -> Void)?
+
+    /// bootstrap 内 init 等待期间挂一把钩子,让 `handleProcessExit` 能把
+    /// "init 还没等到就死掉" 的事件原路传回 bootstrap 的 continuation,避免
+    /// initialize 完成回调永远不来导致 Task 卡住。bootstrap 离开 init 等待
+    /// 时清零。
+    @ObservationIgnored internal var bootstrapExitHook: ((Int32) -> Void)?
+
+    /// 当前 turn 在飞数。每次 `send(_:)` 入口 +1,每次收到 `.result` -1,
+    /// 进程异常 / 主动 interrupt 归 0。`isRunning` 从此派生 — view 层(loading
+    /// pill / InputBar 的 send↔stop)统一读 `isRunning`,保证 source of truth。
+    ///
+    /// 为什么不直接用 `status`:`.idle` 和 `.responding` 之间有 send→CLI echo
+    /// 的 ~200ms 空窗,中间发的消息没法靠 status 立即翻"运行中"。turn count
+    /// 是 send 入口同步 +1,无延迟。
+    internal(set) var pendingTurnCount: Int = 0
+
+    /// view 层的"是否运行中"读这条。`.send(_:)` 起到 `.result` / `interrupt`
+    /// 止之间为 true。多条 user 消息在飞时按 turn 累计。
+    var isRunning: Bool { pendingTurnCount > 0 }
+
     internal(set) var pendingPermissions: [PendingPermission] = []
     internal(set) var contextUsedTokens: Int = 0
     internal(set) var contextWindowTokens: Int = 0

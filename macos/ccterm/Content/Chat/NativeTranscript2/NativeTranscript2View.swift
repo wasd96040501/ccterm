@@ -84,7 +84,11 @@ private struct Transcript2NSViewBridge: NSViewRepresentable {
         scroll.wantsLayer = true
         scroll.layerContentsRedrawPolicy = .never
         scroll.automaticallyAdjustsContentInsets = false
-        scroll.contentInsets = NSEdgeInsets(top: 12, left: 0, bottom: 12, right: 0)
+        // bottom inset 给出"滚到底也能看清最后一条 + 不与下方 input bar 撞贴"
+        // 的呼吸空间。RootView2 的 input bar(高 ~40)+ bottom padding(36)
+        // 占掉视觉上的 ~76pt,这里再叠 28pt loading row + breathing,确保最后
+        // 一条消息可以滚到 bar 之上完整可见。
+        scroll.contentInsets = NSEdgeInsets(top: 12, left: 0, bottom: 112, right: 0)
         scroll.contentView = Transcript2ClipView()
 
         let table = Transcript2TableView()

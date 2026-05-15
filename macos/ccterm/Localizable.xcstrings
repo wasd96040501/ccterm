@@ -837,6 +837,16 @@
         }
       }
     },
+    "Failed to launch CLI": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CLI 启动失败"
+          }
+        }
+      }
+    },
     "Failed to load history": {
       "localizations": {
         "zh-Hans": {
@@ -1375,7 +1385,16 @@
         }
       }
     },
-    "OK": {},
+    "OK": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "好"
+          }
+        }
+      }
+    },
     "Open in Finder": {
       "localizations": {
         "zh-Hans": {
@@ -2459,6 +2478,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "查看计划"
+          }
+        }
+      }
+    },
+    "Working": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作中"
           }
         }
       }

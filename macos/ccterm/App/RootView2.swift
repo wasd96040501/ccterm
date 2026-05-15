@@ -20,6 +20,18 @@ struct RootView2: View {
                 .frame(minWidth: 400)
         }
         .frame(minWidth: 800, minHeight: 480)
+        .alert(
+            "Failed to launch CLI",
+            isPresented: Binding(
+                get: { manager.lastLaunchFailure != nil },
+                set: { if !$0 { manager.clearLaunchFailure() } }
+            ),
+            presenting: manager.lastLaunchFailure
+        ) { _ in
+            Button("OK", role: .cancel) { manager.clearLaunchFailure() }
+        } message: { failure in
+            Text(failure.message)
+        }
         .task(id: selectedSessionId) {
             // 进入 NewSession tab 时懒分配 draftSessionId。
             // 已绑定时不重新生成（保留用户尚未启动的草稿）。
@@ -80,18 +92,16 @@ struct RootView2: View {
                     // frame 直接写入 @State,scrim 据此抠洞。bar 加在 padding
                     // 之内(`.frame` 之外),所以上报的 rect 就是 bar 本体
                     // (含 frame 约束,不含 padding 的 spacing 区)。
-                    InputBarView2(onSubmit: { text in
-                        submit(text: text, sessionId: sid)
-                    })
+                    InputBarChrome(
+                        sessionId: sid,
+                        coordSpace: Self.detailCoordSpace,
+                        onSubmit: { text in submit(text: text, sessionId: sid) },
+                        onBarRect: { rect in barRect = rect }
+                    )
                     .frame(
                         minWidth: BlockStyle.minLayoutWidth,
                         maxWidth: 624
                     )
-                    .onGeometryChange(for: CGRect.self) { proxy in
-                        proxy.frame(in: .named(Self.detailCoordSpace))
-                    } action: { rect in
-                        barRect = rect
-                    }
                     .padding(.horizontal, 20)
                     .padding(.bottom, 36)
                 }
@@ -117,17 +127,60 @@ struct RootView2: View {
         let handle = manager.prepareDraft(sessionId)
         let isFirstStart = !handle.hasRecord
         if isFirstStart {
-            let dev = FileManager.default
-                .homeDirectoryForCurrentUser
-                .appendingPathComponent("dev")
-                .path
-            handle.setCwd(dev)
+            // fresh draft 没有 cwd 兜底 — 用户尚未选目录。落到 home 目录,保证
+            // CLI `Process.run()` 的 chdir 一定能成立(以前硬编码 ~/dev,机器上
+            // 没这个目录会直接 launchFailed,后续 resume 也跟着死)。
+            handle.setCwd(FileManager.default.homeDirectoryForCurrentUser.path)
         }
         handle.send(text: text)
         if isFirstStart {
             manager.refreshRecords()
             selectedSessionId = sessionId
             draftSessionId = nil
+        }
+    }
+}
+
+// MARK: - InputBarChrome
+
+/// 输入栏 chrome:LoadingPill(运行态)+ InputBarView2 垂直叠放。
+///
+/// 持有 handle 的 source of truth(`SessionHandle2.isRunning`),供 pill 显示 /
+/// bar 按钮 send↔stop 切换共用一条状态。pill 浮在 bar 左上,通过 `VStack` 自
+/// 然布局 — geometry reporting 只回报 bar 本体,scrim 抠洞不会因 pill 撑大。
+private struct InputBarChrome: View {
+    let sessionId: String
+    let coordSpace: String
+    let onSubmit: (String) -> Void
+    let onBarRect: (CGRect) -> Void
+
+    @Environment(SessionManager2.self) private var manager
+    @State private var handle: SessionHandle2?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if handle?.isRunning == true {
+                LoadingPillView2()
+                    .padding(.leading, 4)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+            InputBarView2(
+                onSubmit: onSubmit,
+                onStop: { handle?.interrupt() },
+                isRunning: handle?.isRunning ?? false
+            )
+            .onGeometryChange(for: CGRect.self) { proxy in
+                proxy.frame(in: .named(coordSpace))
+            } action: { rect in
+                onBarRect(rect)
+            }
+        }
+        .animation(.smooth(duration: 0.25), value: handle?.isRunning ?? false)
+        .task(id: sessionId) {
+            // `prepareDraft` 对 fresh / historical 都是 idempotent get-or-create,
+            // 和 ChatHistoryView 拿到的是同一个 handle 实例(@Observable 追踪
+            // `isRunning` 派生字段自动驱动重渲染)。
+            handle = manager.prepareDraft(sessionId)
         }
     }
 }

@@ -14,9 +14,14 @@ struct InputBarView2: View {
 
     /// 由调用方注入。仅在 `canSend` 为 true 时被触发(空白文字不会调用)。
     var onSubmit: (String) -> Void = { _ in }
+    /// stop 按钮按下时触发(只在 `isRunning` 为 true 显示 stop 时可点)。调用方
+    /// 一般转发给 `SessionHandle2.interrupt()`。
+    var onStop: () -> Void = {}
+    /// 来自 handle 的运行态。true → 显示 stop 按钮;false → send 按钮 +
+    /// canSend 控制 enable。`@State` 不再持本地副本,避免和 handle 漂移。
+    var isRunning: Bool = false
 
     @State private var text: String = ""
-    @State private var isResponding: Bool = false
     @State private var isFocused: Bool = false
     @State private var desiredCursorPosition: Int?
 
@@ -29,7 +34,7 @@ struct InputBarView2: View {
         }
         .frame(minHeight: 2 * Self.cornerRadius)
         .modifier(BarSurface(cornerRadius: Self.cornerRadius))
-        .animation(.smooth(duration: animationDuration), value: isResponding)
+        .animation(.smooth(duration: animationDuration), value: isRunning)
     }
 
     // MARK: - Text Area
@@ -43,7 +48,7 @@ struct InputBarView2: View {
             minLines: 1,
             maxLines: 10,
             onCommandReturn: { handleSend() },
-            onEscape: { handleStop() },
+            onEscape: { if isRunning { onStop() } },
             isFocused: $isFocused,
             desiredCursorPosition: $desiredCursorPosition
         )
@@ -57,11 +62,11 @@ struct InputBarView2: View {
 
     @ViewBuilder
     private var sendOrStopButton: some View {
-        if isResponding {
+        if isRunning {
             circleButton(
                 icon: "stop.fill",
                 color: Color(nsColor: .systemGray),
-                action: handleStop
+                action: onStop
             )
             .transition(.scale.combined(with: .opacity))
         } else {
@@ -85,11 +90,6 @@ struct InputBarView2: View {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         onSubmit(trimmed)
         text = ""
-        isResponding = true
-    }
-
-    private func handleStop() {
-        isResponding = false
     }
 
     // MARK: - Helpers

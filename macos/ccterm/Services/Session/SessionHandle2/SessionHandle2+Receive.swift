@@ -31,6 +31,17 @@ extension SessionHandle2 {
         }
 
         let act = action(for: message)
+        if mode == .live {
+            let actDesc: String
+            switch act {
+            case .merge(let id, _): actDesc = "merge(\(id.prefix(8)))"
+            case .confirm(let id, _): actDesc = "confirm(\(id.uuidString.prefix(8)))"
+            case .append: actDesc = "append"
+            case .skip: actDesc = "skip"
+            }
+            appLog(.info, "SessionHandle2",
+                "[v2-send] receive sid=\(sessionId.prefix(8)) mode=live action=\(actDesc) status=\(status)")
+        }
         // 每个 mutation helper 返回它产出的 TimelineMutation(或 nil),让本
         // 函数最后统一 emit sink。这样 sink 触发点和 emitSnapshot 在同一
         // 位置,future maintainer 改任一时都能看见对应路径。
@@ -94,10 +105,26 @@ private extension SessionHandle2 {
     /// 按 entry.id ↔ echo.uuid 精确配对，不做文本启发式。
     func matchQueuedEntry(for echo: Message2User) -> UUID? {
         guard let raw = echo.uuid,
-              let echoId = UUID(uuidString: raw) else { return nil }
-        return messages.first { entry in
+              let echoId = UUID(uuidString: raw) else {
+            appLog(.info, "SessionHandle2",
+                "[v2-send] matchQueued no-uuid echo.uuid=\(echo.uuid ?? "(nil)")")
+            return nil
+        }
+        let hit = messages.first { entry in
             entry.id == echoId && entry.delivery == .queued
         }?.id
+        if hit == nil {
+            // 列出所有 queued user entry id,看是否压根没有,或 uuid 对不上
+            let queued = messages.compactMap { entry -> String? in
+                guard case .single(let s) = entry,
+                      case .localUser = s.payload,
+                      s.delivery == .queued else { return nil }
+                return s.id.uuidString.prefix(8) + ""
+            }
+            appLog(.warning, "SessionHandle2",
+                "[v2-send] matchQueued MISS echoUuid=\(raw.prefix(8)) queued=\(queued)")
+        }
+        return hit
     }
 }
 
@@ -187,6 +214,13 @@ private extension SessionHandle2 {
         if let window = result.contextWindow {
             contextWindowTokens = window
         }
+        if mode == .live {
+            appLog(.info, "SessionHandle2",
+                "[v2-send] finishTurn sid=\(sessionId.prefix(8)) status-before=\(status) pendingTurnCount=\(pendingTurnCount)")
+            // turn 结束 -- 每条 .result 对应一条之前 send() 入口 +1 的 turn。
+            // clamp 到 0,replay 模式 / 异常多发不会走负。
+            pendingTurnCount = max(0, pendingTurnCount - 1)
+        }
         if mode == .live, case .responding = status {
             status = .idle
         }
@@ -199,6 +233,10 @@ private extension SessionHandle2 {
         }
         if let cmds = info.slashCommands {
             slashCommands = cmds.map { SlashCommand(name: $0, description: nil) }
+        }
+        if mode == .live {
+            appLog(.info, "SessionHandle2",
+                "[v2-send] adopt-init sid=\(sessionId.prefix(8)) status-before=\(status) cwd=\(info.cwd ?? "(nil)")")
         }
         if mode == .live, case .starting = status {
             status = .idle

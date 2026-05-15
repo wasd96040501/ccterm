@@ -811,18 +811,6 @@ enum BlockStyle: Sendable {
     /// gutter / sign / content all share one cap-height.
     nonisolated static var diffBodyFont: NSFont { codeBlockFont }
 
-    /// Spacing between the gutter character cells and the sign column
-    /// /content. `0` matches the old `NativeDiffView` (which fed a
-    /// space-padded gutter string directly into NSTextStorage); the
-    /// vertical column separator is purely the gutter's background-fill
-    /// edge.
-    nonisolated static let diffGutterInternalPadding: CGFloat = 0
-
-    /// Hairline column divider between gutter and sign/content area —
-    /// gives the diff a "two-column" reading. Same color as the header
-    /// divider so the chrome reads as one piece.
-    nonisolated static var diffColumnDividerColor: NSColor { codeBlockDividerColor }
-
     /// Background under the inter-hunk separator row (`···`).
     nonisolated static var diffSeparatorBackground: NSColor {
         DiffColors.dynamicSeparatorBg
@@ -842,17 +830,6 @@ enum BlockStyle: Sendable {
     nonisolated static var diffGutterForeground: NSColor {
         DiffColors.dynamicGutterText
     }
-
-    /// Total horizontal padding inside the body band (left of gutter,
-    /// right of content). 0 to match NativeDiffView: the gutter / sign /
-    /// content backgrounds extend edge-to-edge of the container.
-    nonisolated static let diffBodyHorizontalPadding: CGFloat = 0
-
-    /// Vertical padding between the header's bottom edge and the first
-    /// body line — matches `codeBlockBodyVerticalPadding` but symmetric
-    /// to the bottom for a diff. We don't pad inside the body itself;
-    /// the line backgrounds extend the full body band.
-    nonisolated static let diffBodyVerticalPadding: CGFloat = 0
 
     /// Breathing room inside the rounded card above the first diff line
     /// and below the last. Keeps glyphs from visually attaching to the

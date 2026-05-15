@@ -97,18 +97,6 @@ final class MockCLISender {
         ])
     }
 
-    /// 对一条 `control_request` 回 error。
-    func ackControlError(requestId: String, error: String) {
-        sendJSON([
-            "type": "control_response",
-            "response": [
-                "subtype": "error",
-                "request_id": requestId,
-                "error": error,
-            ] as [String: Any],
-        ])
-    }
-
     /// 发 `system.init` 消息(session 建立信号)。
     func sendSystemInit(sessionId: String, model: String = "claude-sonnet-4-6") {
         sendJSON([

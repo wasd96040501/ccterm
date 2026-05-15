@@ -50,13 +50,6 @@ final class SessionManager2 {
         return handle
     }
 
-    /// 返回已缓存的 handle，否则 nil —— 不触发懒创建。
-    /// 用于 hover prewarm 等路径：hover 不应凭空创建 handle，
-    /// 只复用已被业务流程创建过的实例。
-    func existingSession(_ sessionId: String) -> SessionHandle2? {
-        handles[sessionId]
-    }
-
     /// 为 NewSession draft 准备 handle。DB 必须**无**对应记录（identity 由 UI 新生成的 UUID 给出）。
     /// 与 `session(_:)` 的区别：不读 repository，纯 in-memory 构造；后续 `activate()` /
     /// `send(_:)` 触发 `ensureStarted` 时走 fresh 路径写 DB。
@@ -85,10 +78,5 @@ final class SessionManager2 {
     /// 重读 repository 全量记录并回写到 `records`。NewSession 启动后由调用方触发。
     func refreshRecords() {
         records = repository.findAll()
-    }
-
-    /// 所有未归档的会话记录，按 `lastActiveAt` 降序。Sidebar v2 用。
-    func allRecords() -> [SessionRecord] {
-        repository.findAll()
     }
 }

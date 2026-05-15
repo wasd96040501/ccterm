@@ -19,22 +19,6 @@ enum MessageEntry: Identifiable {
         }
     }
 
-    /// Flatten to `[SingleEntry]`. `.single` yields one; `.group` yields `items`.
-    /// Use at call sites that need to walk actual assistant/user payloads.
-    var singles: [SingleEntry] {
-        switch self {
-        case .single(let e): return [e]
-        case .group(let g): return g.items
-        }
-    }
-
-    /// Convenience forwarder to the inner `.single`'s remote Message2.
-    /// Returns `nil` for `.group` and for local (not-yet-echoed) user entries.
-    var message: Message2? {
-        if case .single(let e) = self { return e.remoteMessage }
-        return nil
-    }
-
     /// Convenience forwarder to the inner `.single` payload. Getter returns `nil`
     /// for `.group`; setter is a no-op on `.group`.
     var delivery: DeliveryState? {

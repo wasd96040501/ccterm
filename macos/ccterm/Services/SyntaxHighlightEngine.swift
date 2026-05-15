@@ -209,8 +209,6 @@ actor SyntaxHighlightEngine {
         return results.map { $0 ?? [] }
     }
 
-    var isLoaded: Bool { tokenizeFn != nil }
-
     // MARK: - LRU helpers
 
     private func touch(_ key: CacheKey) {

@@ -2,7 +2,7 @@ import SwiftUI
 
 /// v2 Sidebar：按项目分组的扁平历史会话列表。只读浏览用，无 running / pinned / archive / unread。
 ///
-/// 数据源直接来自 `SessionManager2.allRecords()`，按 `groupingFolderName` 分组，
+/// 数据源直接来自 `SessionManager2.records`，按 `groupingFolderName` 分组，
 /// 组内按 `lastActiveAt` 降序。
 struct SidebarView2: View {
     @Binding var selection: String?

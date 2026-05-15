@@ -12,6 +12,9 @@ struct InputBarView2: View {
     private let buttonInset: CGFloat = 6
     private let animationDuration: TimeInterval = 0.35
 
+    /// 由调用方注入。仅在 `canSend` 为 true 时被触发(空白文字不会调用)。
+    var onSubmit: (String) -> Void = { _ in }
+
     @State private var text: String = ""
     @State private var isResponding: Bool = false
     @State private var isFocused: Bool = false
@@ -79,6 +82,9 @@ struct InputBarView2: View {
 
     private func handleSend() {
         guard canSend else { return }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        onSubmit(trimmed)
+        text = ""
         isResponding = true
     }
 

@@ -37,10 +37,10 @@ struct RootView2: View {
             TranscriptStressView()
         } else if let sid = effectiveSessionId {
             // `.id(sid)` 锁住 ChatHistoryView 身份:NewSession → History 过渡时
-            // sid 不变(draft 的 UUID 在 Start 后就是 history 的 sessionId),
-            // SwiftUI 不重建 NSView。chrome 作为 z-overlay **常驻**于每个 session,
-            // 形态由 `handle.hasRecord` 驱动(card ↔ pill),自身的 spring 动画
-            // 就是"底下 transcript view 没被拆"的视觉证据。
+            // sid 不变(draft 的 UUID 在首条消息发送后就是 history 的 sessionId),
+            // SwiftUI 不重建 NSView。底部 InputBarView2 同时承担 "draft 启动入口"
+            // 和 "history 续发消息" 两种角色,由 onSubmit 闭包内根据
+            // `handle.hasRecord` 决定是否触发首次启动副作用。
             ChatHistoryView(sessionId: sid)
                 .id(sid)
                 .overlay(alignment: .bottom) {
@@ -80,35 +80,25 @@ struct RootView2: View {
                     // frame 直接写入 @State,scrim 据此抠洞。bar 加在 padding
                     // 之内(`.frame` 之外),所以上报的 rect 就是 bar 本体
                     // (含 frame 约束,不含 padding 的 spacing 区)。
-                    InputBarView2()
-                        .frame(
-                            minWidth: BlockStyle.minLayoutWidth,
-                            maxWidth: 624
-                        )
-                        .onGeometryChange(for: CGRect.self) { proxy in
-                            proxy.frame(in: .named(Self.detailCoordSpace))
-                        } action: { rect in
-                            barRect = rect
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 36)
-                }
-                .overlay(alignment: .top) {
-                    NewSessionChrome(
-                        handle: chromeHandle(for: sid),
-                        onStarted: handleStarted
+                    InputBarView2(onSubmit: { text in
+                        submit(text: text, sessionId: sid)
+                    })
+                    .frame(
+                        minWidth: BlockStyle.minLayoutWidth,
+                        maxWidth: 624
                     )
+                    .onGeometryChange(for: CGRect.self) { proxy in
+                        proxy.frame(in: .named(Self.detailCoordSpace))
+                    } action: { rect in
+                        barRect = rect
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 36)
                 }
                 .coordinateSpace(name: Self.detailCoordSpace)
         } else {
             Color.clear
         }
-    }
-
-    /// chrome 用的 handle。`prepareDraft` 对已有 record 的 sessionId 也是
-    /// get-or-create — draft 和 history 走同一路径。
-    private func chromeHandle(for sid: String) -> SessionHandle2 {
-        manager.prepareDraft(sid)
     }
 
     /// 由 tab + draft 派生的"当前展示的 sessionId"。
@@ -119,11 +109,25 @@ struct RootView2: View {
         return selectedSessionId
     }
 
-    /// Start 按钮回调:同帧完成 records 刷新 + 选中态切换 + draft 清空。
-    /// effectiveSessionId 在前后两帧都是同一个 UUID,ChatHistoryView 身份不变。
-    private func handleStarted(_ startedSessionId: String) {
-        manager.refreshRecords()
-        selectedSessionId = startedSessionId
-        draftSessionId = nil
+    /// 输入栏发送回调。`prepareDraft` 对已有 record 的 sessionId 也是
+    /// get-or-create — draft 和 history 走同一路径。首条消息(draft 启动)时
+    /// 写默认 cwd 并把选中态从 newSessionTag 切到具体 sessionId,后续消息
+    /// 走同一分支直接转发到 handle。
+    private func submit(text: String, sessionId: String) {
+        let handle = manager.prepareDraft(sessionId)
+        let isFirstStart = !handle.hasRecord
+        if isFirstStart {
+            let dev = FileManager.default
+                .homeDirectoryForCurrentUser
+                .appendingPathComponent("dev")
+                .path
+            handle.setCwd(dev)
+        }
+        handle.send(text: text)
+        if isFirstStart {
+            manager.refreshRecords()
+            selectedSessionId = sessionId
+            draftSessionId = nil
+        }
     }
 }

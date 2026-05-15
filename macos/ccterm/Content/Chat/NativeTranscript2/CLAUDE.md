@@ -46,7 +46,7 @@ SwiftUI: NativeTranscript2View (NSViewRepresentable)
 - **stable id 是 diff 的根**:`Block.id: UUID`,caller 提供。不要用内容 hash 当 id,会让"同名两条消息"被误认成一条
 - **Layout 跟 RowItem 共生死**:`RowItem { id, block, layout: TextLayout }`。layout 算一次跟着 row 活,**不要外部 LRU cache**(老代码的 `TranscriptPrepareCache` 是补丁,新架构 id-based 复用自然就够)
 - **Row state**(折叠等)放 `Coordinator.foldStates: [UUID: Bool]`(已落地),**不进 `Block.Kind` 关联值**。理由:state 要跨 `.update` 内容更新存活(content 改了用户的展开偏好不能被推翻);也要跨 `RowLayout` 重建存活(layout 是 `(block, width, state)` 的纯函数,state 是输入而非字段)。Layout 始终 stateless —— `userBubble` 用"硬截断 + sheet"避开 in-cell expand;`diff` 用 `foldStates[id]` 驱动 collapsed↔expanded body shape,`Coordinator.toggleFold(id:)` 翻转 flag 并在动画 group 内 `noteHeightOfRows` + `reloadData(forRowIndexes:)`。新增 stateful 行为类型时:state 字段加到 coordinator(sparse dict,absent = default),`makeLayout` switch 透传到对应 `XxxLayout.make` 参数
-- **Tool runtime status** 是同款 sparse-dict 模式的第二个落地:`Coordinator.statusStates: [UUID: ToolStatus]`(absent = `.completed`),keyspace 跟 `foldStates` 共享 —— 顶层 `Block.id` = group 状态,`ToolGroupBlock.Child.id` = child 状态。`Transcript2Controller.setToolStatus(id:status:)` → `Coordinator.setStatus(id:)` → `removeCachedLayout(for: hostBlockId)` + 单行 `reloadData(forRowIndexes:)`。**不走 `Change.update`**:那条路会无谓 drop highlight + drop selection,并强制 caller 重组 `Block.Kind`。status 只改 header 颜色(不改 row height),所以 `setStatus` 跳过 `noteHeightOfRows`;status 由 `ToolGroupLayout` 在 `make` 时折进 `Header.status`,`drawHeader` 和 `subviewPlan` 通过 `titleColor(for:hovered:)` / `chevronTint(for:hovered:)` 两个 helper 解析颜色。加新状态视觉规则只改这两个 helper。**`SubviewPlan.Chevron` 携带的是 resolved `strokeColor` + `alpha`(已经 fold 进 status + hover),cell 端零状态枚举感知**
+- **Tool runtime status** 是同款 sparse-dict 模式的第二个落地:`Coordinator.statusStates: [UUID: ToolStatus]`(absent = `.completed`),keyspace 跟 `foldStates` 共享 —— 顶层 `Block.id` = group 状态,`ToolGroupBlock.Child.id` = child 状态。`Transcript2Controller.setToolStatus(id:status:)` → `Coordinator.setStatus(id:)` → `removeCachedLayout(for: hostBlockId)` + 单行 `reloadData(forRowIndexes:)`。**不走 `Change.update`**:那条路会无谓 drop highlight + drop selection,并强制 caller 重组 `Block.Kind`。status 只改 header 颜色 / shimmer overlay(不改 row height),所以 `setStatus` 跳过 `noteHeightOfRows`;status 由 `ToolGroupLayout` 在 `make` 时折进 `Header.status`,`drawHeader` / `subviewPlan` 通过 `titleColor(for:hovered:)` / `chevronTint(for:hovered:)` / `wantsShimmer(for:)` 三个 helper 解析颜色 + shimmer 出场。加新状态视觉规则只改这三个 helper。**`.running` 不再用更亮的 hover-tier 颜色**(那条路径会让 running ↔ completed 翻转产生 brightness pop):running 的 title / chevron 颜色与 completed 完全一致,差异由 sweeping shimmer overlay (`SubviewPlan.Shimmer`) 表达。**`SubviewPlan.Chevron` 携带的是 resolved `strokeColor` + `alpha`(已经 fold 进 status + hover),`SubviewPlan.Shimmer` 只携带 frame(高光颜色 / 速率 / locations 动画在 cell reconciler 里),cell 端零状态枚举感知**
 - **永远 `currentBlocks + rebuild()`**:`setBlocks` 和 `frameDidChange` 走同一个 `rebuild()`。`rebuild` 内部 `width <= 0` 早退。**不要再造 `pendingBlocks` 这种特殊路径**
 
 ### 2.3 Diff 路径
@@ -95,7 +95,7 @@ SwiftUI: NativeTranscript2View (NSViewRepresentable)
 **绝对禁止**给"哪种 layout 要装饰物"抽 protocol。原因跟 `ToolGroupChildLayout` enum 一样:protocol 让"忘了在某个 case 实现"成为可能,enum case 加 switch arm 让编译器替你检查。
 
 **SubviewPlan 怎么扩展:**
-- 想加新装饰物类别(目前 chevron / entry 两类) → `SubviewPlan` 加字段 + `BlockCellView+SubviewPlan.swift` 加 reconcile arm
+- 想加新装饰物类别(目前 chevron / entry / shimmer 三类) → `SubviewPlan` 加字段 + `BlockCellView+SubviewPlan.swift` 加 reconcile arm
 - 想让别的 layout 产装饰物 → `RowLayout.subviewPlan` 里给那个 case 加 switch arm,在 layout 自己的文件里实现 `subviewPlan(...)` 方法
 
 ## 4. 加新 block kind 的清单

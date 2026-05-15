@@ -255,17 +255,20 @@ struct ToolGroupBlock: Equatable, Sendable {
 ///   how `foldStates` keys the same id space.
 ///
 /// `ToolGroupLayout` reads a snapshot at layout-build time and folds
-/// the value into the per-header colour palette. Adding a new visual
-/// rule = extend `ToolGroupLayout.titleColor(for:hovered:)` and
-/// `chevronTint(for:hovered:)`.
+/// the value into the per-header colour palette + shimmer overlay
+/// flag. Adding a new visual rule = extend
+/// `ToolGroupLayout.titleColor(for:hovered:)`,
+/// `chevronTint(for:hovered:)`, and `wantsShimmer(for:)`.
 enum ToolStatus: Equatable, Sendable {
     /// Default visible state — past-tense label, secondary-label
     /// colour, chevron at idle alpha. Matches the dict's absent
     /// reading so untracked tools render as today.
     case completed
-    /// Tool is currently executing. Renders the header in the
-    /// hover-tier brighter colour so the row reads as "live"
-    /// without needing a spinner.
+    /// Tool is currently executing. Title + chevron keep the same
+    /// idle colour as `.completed` so the static reading weight
+    /// doesn't shift on a status flip; an Apple-style sweeping
+    /// shimmer overlay (driven by `ToolGroupLayout.subviewPlan` →
+    /// `SubviewPlan.Shimmer`) is what signals "live" to the eye.
     case running
     /// Tool produced an error. Header + chevron paint in
     /// `systemRed`. `message` is reserved for future inline error
@@ -750,6 +753,37 @@ enum BlockStyle: Sendable {
     /// the old `GroupComponent.groupChildSpacing` value so the gestalt
     /// "these belong together" pull stays the same.
     nonisolated static let toolHeaderChildSpacing: CGFloat = 4
+
+    /// Shimmer overlay parameters for `.running` tool headers.
+    ///
+    /// Apple-style mask-sweep: the cell hosts a `CALayer` whose
+    /// contents is a CGImage of the title pre-rendered at full
+    /// `.labelColor` brightness. A `CAGradientLayer` set as the
+    /// layer's `.mask` carries a horizontally-translating alpha
+    /// stripe — base `toolHeaderShimmerBaseAlpha` at the ends, peak
+    /// `1.0` at the centre — so the title shows at base brightness by
+    /// default (visually ≈ `secondaryLabel`) and pulses up to the full
+    /// hover-tier `.labelColor` along the swept stripe. The mask's
+    /// `locations` keyframe slides the peak from off-screen-left to
+    /// off-screen-right on a continuous loop.
+    ///
+    /// Hover combines cleanly: when a running header is hovered, the
+    /// reconciler raises the mask's *base* alpha to `1.0` so the
+    /// whole title sits at the same `.labelColor` weight that
+    /// non-running hovered headers reach via `titleColor`. Peak
+    /// stays at `1.0`, so the sweep visually flattens — hover wins
+    /// without removing the shimmer plumbing.
+    nonisolated static var toolHeaderShimmerHighlight: NSColor { .labelColor }
+    /// Mask alpha at the swept stripe ends — the title's "resting"
+    /// brightness when shimmer is active and the header is *not*
+    /// hovered. 0.55 puts a `.labelColor` glyph at the same visual
+    /// weight as `.secondaryLabelColor` so the static reading-weight
+    /// matches the completed-state title beside it.
+    nonisolated static let toolHeaderShimmerBaseAlpha: CGFloat = 0.55
+    /// One sweep cycle duration. 1.6s matches Apple's typing-indicator
+    /// / Apple Music shimmer cadence — fast enough to register as
+    /// alive, slow enough to read as ambient.
+    nonisolated static let toolHeaderShimmerDuration: CFTimeInterval = 1.6
 
     /// Fold-transition duration shared by the row-height animation
     /// (`Coordinator.toggleFold`'s `NSAnimationContext` group), the

@@ -167,6 +167,14 @@ final class BlockCellView: NSView {
     /// sibling expands/collapses.
     var entryViews: [UUID: ToolGroupEntryView] = [:]
 
+    /// Per-headerId shimmer layer pairs (host + mask). Created on the
+    /// first plan that surfaces a shimmer for a `.running` header;
+    /// reused across re-layouts so the sweeping `locations` animation
+    /// keeps cycling past `reloadData(forRowIndexes:)` rather than
+    /// restarting (which would visibly snap the highlight stripe back
+    /// to its origin every status flip / hover transition).
+    var shimmerLayers: [UUID: ShimmerLayerSet] = [:]
+
     /// Set by `beginFoldTransition` just before the coordinator's
     /// `reloadData`. Tells the upcoming `syncSubviewPlan()` to route
     /// entry-frame updates through `view.animator()` so each entry

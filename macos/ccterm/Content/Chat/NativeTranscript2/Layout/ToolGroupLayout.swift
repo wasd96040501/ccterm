@@ -747,6 +747,7 @@ struct ToolGroupLayout: @unchecked Sendable {
         let hoveredId = Self.hoveredFoldId(in: hoveredAction)
 
         var chevrons: [SubviewPlan.Chevron] = []
+        var shimmers: [SubviewPlan.Shimmer] = []
         chevrons.reserveCapacity(1 + items.count)
         if groupHeader.hasChevron {
             let tint = Self.chevronTint(
@@ -759,6 +760,12 @@ struct ToolGroupLayout: @unchecked Sendable {
                 expanded: groupHeader.chevronExpanded,
                 strokeColor: tint.color,
                 alpha: tint.alpha))
+        }
+        if Self.wantsShimmer(for: groupHeader.status), groupHeader.titleWidth > 0 {
+            shimmers.append(Self.shimmer(
+                for: groupHeader,
+                cellOrigin: origin,
+                hovered: hoveredId == groupHeader.foldId))
         }
 
         // Selection rects in layout-local coords. Distributed to every
@@ -786,6 +793,13 @@ struct ToolGroupLayout: @unchecked Sendable {
                     strokeColor: tint.color,
                     alpha: tint.alpha))
             }
+            if Self.wantsShimmer(for: entry.header.status),
+               entry.header.titleWidth > 0 {
+                shimmers.append(Self.shimmer(
+                    for: entry.header,
+                    cellOrigin: origin,
+                    hovered: hoveredId == entry.header.foldId))
+            }
 
             let frame = CGRect(
                 x: origin.x + entry.bandRect.minX,
@@ -808,19 +822,72 @@ struct ToolGroupLayout: @unchecked Sendable {
                 }))
         }
 
-        return SubviewPlan(chevrons: chevrons, entries: entries)
+        return SubviewPlan(
+            chevrons: chevrons,
+            entries: entries,
+            shimmers: shimmers)
+    }
+
+    /// Build a shimmer spec covering the title rect of `header`.
+    /// `cellOrigin` is the cell's `layoutOrigin`. `header.titleOrigin`
+    /// already lives in toolGroup-layout-local coords (its y baked in
+    /// the cumulative cursor for the entry it belongs to), so the
+    /// only offset we need is `cellOrigin` to map layout-local into
+    /// cell-local — the shimmer layer hangs off `cell.layer`, not off
+    /// the per-entry subview, so adding the entry's `bandRect.origin`
+    /// would double-count the y offset and put child-header shimmers
+    /// off-screen.
+    ///
+    /// `textRect` is the bitmap rect for the bright-tier title image:
+    /// origin = `(titleOrigin.x, titleBaseline - ascender)` mapped to
+    /// cell-local, size = `(titleWidth, ascender - descender)`. This
+    /// matches exactly where the cell bitmap *would* have drawn the
+    /// title via CTLine, so swapping the static title out for the
+    /// shimmer image preserves baseline, advance widths, and sub-pixel
+    /// glyph metrics — no double-render ghosting.
+    nonisolated private static func shimmer(
+        for header: Header,
+        cellOrigin: CGPoint,
+        hovered: Bool
+    ) -> SubviewPlan.Shimmer {
+        let font = BlockStyle.toolHeaderFont
+        let ascender = font.ascender
+        let descender = font.descender // typically negative
+        let textHeight = ascender - descender
+        let textTopY = header.titleOrigin.y - ascender
+        let textRect = CGRect(
+            x: cellOrigin.x + header.titleOrigin.x,
+            y: cellOrigin.y + textTopY,
+            width: header.titleWidth,
+            height: textHeight)
+        return SubviewPlan.Shimmer(
+            id: header.foldId,
+            textRect: textRect,
+            title: header.title,
+            font: font,
+            hovered: hovered)
     }
 
     /// Draw a header's title — the chevron glyph is rendered by the
     /// cell as a per-foldId `CAShapeLayer` driven from the
     /// `SubviewPlan.Chevron` specs this layout emits (see
     /// `BlockCellView+SubviewPlan.swift`), so this path is title-only.
+    ///
+    /// **`wantsShimmer` early-return:** when the header's status opts
+    /// into a sweeping shimmer, the cell hosts a `CALayer` whose
+    /// contents is a pre-rendered bright-tier title bitmap (see
+    /// `SubviewPlan.Shimmer`). Drawing the static CTLine title here
+    /// on top of that would double-render the glyphs and create a
+    /// ghosting halo wherever sub-pixel positioning differs between
+    /// the bitmap and the layer — so we skip the title pass entirely
+    /// and let the shimmer layer own the rendering.
     nonisolated private static func drawHeader(
         _ header: Header,
         hovered: Bool,
         in ctx: CGContext,
         origin: CGPoint
     ) {
+        if wantsShimmer(for: header.status) { return }
         // Retypeset on draw so the hover-driven `foregroundColor`
         // swap doesn't require a layout rebuild. Title text was
         // already truncated to fit at make-time, so this is a single
@@ -843,26 +910,29 @@ struct ToolGroupLayout: @unchecked Sendable {
     // MARK: - Status palette
     //
     // Single source of truth for "how does ToolStatus colour the
-    // header". Both `drawHeader` and `subviewPlan` route through
-    // these helpers so title + chevron stay in lockstep. Adding a
-    // new status case only needs an arm in each helper.
+    // header". `drawHeader`, `subviewPlan`, and the shimmer plan all
+    // route through these helpers so title + chevron + sheen stay in
+    // lockstep. Adding a new status case only needs an arm in each
+    // helper.
+    //
+    // `.running` deliberately reuses `.completed`'s palette — a
+    // status flip should not shift the static reading weight of the
+    // row. Live state is signalled by the shimmer overlay (see
+    // `wantsShimmer(for:)`), not by a colour swap.
 
     /// Title colour for a header in `status`, optionally with hover
-    /// brightening applied. `.completed` keeps today's behaviour
-    /// (secondary at idle, label at hover) so absent-from-dict rows
-    /// render exactly as before this hook existed.
+    /// brightening applied. `.completed` and `.running` share one
+    /// palette so flipping a tool from running → completed doesn't
+    /// jolt the row's brightness (the only visual change is the
+    /// shimmer overlay turning off).
     nonisolated private static func titleColor(
         for status: ToolStatus, hovered: Bool
     ) -> NSColor {
         switch status {
-        case .completed:
+        case .completed, .running:
             return hovered
                 ? BlockStyle.toolHeaderHoverForeground
                 : BlockStyle.toolHeaderForeground
-        case .running:
-            // Brighter "primed" tone at all times — running headers
-            // pull the eye independent of hover.
-            return BlockStyle.toolHeaderHoverForeground
         case .failed:
             return .systemRed
         case .cancelled:
@@ -882,15 +952,12 @@ struct ToolGroupLayout: @unchecked Sendable {
             ? BlockStyle.toolHeaderChevronHoverAlpha
             : BlockStyle.toolHeaderChevronIdleAlpha
         switch status {
-        case .completed:
+        case .completed, .running:
             return (
                 hovered
                     ? BlockStyle.toolHeaderHoverForeground
                     : BlockStyle.toolHeaderForeground,
                 alpha)
-        case .running:
-            return (BlockStyle.toolHeaderHoverForeground,
-                    BlockStyle.toolHeaderChevronHoverAlpha)
         case .failed:
             return (.systemRed, BlockStyle.toolHeaderChevronHoverAlpha)
         case .cancelled:
@@ -900,6 +967,16 @@ struct ToolGroupLayout: @unchecked Sendable {
                     : .tertiaryLabelColor,
                 alpha)
         }
+    }
+
+    /// `true` when a header in `status` should host a shimmer overlay
+    /// strip. Currently only `.running` opts in — the visual
+    /// "live" affordance for an executing tool. Static states
+    /// (`.completed` / `.failed` / `.cancelled`) return `false` so
+    /// the cell drops any lingering shimmer layer for that id.
+    nonisolated static func wantsShimmer(for status: ToolStatus) -> Bool {
+        if case .running = status { return true }
+        return false
     }
 
 }

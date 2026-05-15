@@ -52,8 +52,9 @@ extension BlockCellView {
             selection: selection) ?? .empty
         let animateFrames = pendingFoldTransition
         pendingFoldTransition = false
-        applyChevronPlan(plan.chevrons)
+        applyChevronPlan(plan.chevrons, allowSlide: animateFrames)
         applyEntryPlan(plan.entries, animateFrames: animateFrames)
+        applyShimmerPlan(plan.shimmers)
     }
 
     /// Coordinator entry point for a fold toggle. Captures the
@@ -114,7 +115,9 @@ extension BlockCellView {
 
     // MARK: - Reconcile
 
-    private func applyChevronPlan(_ specs: [SubviewPlan.Chevron]) {
+    private func applyChevronPlan(
+        _ specs: [SubviewPlan.Chevron], allowSlide: Bool
+    ) {
         guard let hostLayer = self.layer else {
             // Without a host layer there's nowhere to attach
             // sublayers; drop any stragglers and bail.
@@ -134,8 +137,27 @@ extension BlockCellView {
 
             if let layer = chevronLayers[spec.id] {
                 if layer.frame != frame {
-                    layer.frame = frame
-                    layer.path = Self.chevronPath(size: chevronSize)
+                    // `position` is left as a default `CABasicAnimation`
+                    // on the chevron layer (see `makeChevronShapeLayer`)
+                    // so it can slide alongside its sibling entry's
+                    // `view.animator().frame` during a fold transition.
+                    // **Outside** a fold transition (cell reuse on
+                    // session switch, scroll-driven reload, hover-
+                    // induced layout swap) we don't want that implicit
+                    // lerp — the chevron should snap to the new spec
+                    // position. Wrap the reposition in
+                    // `setDisableActions(true)` whenever
+                    // `allowSlide == false`.
+                    if allowSlide {
+                        layer.frame = frame
+                        layer.path = Self.chevronPath(size: chevronSize)
+                    } else {
+                        CATransaction.begin()
+                        CATransaction.setDisableActions(true)
+                        layer.frame = frame
+                        layer.path = Self.chevronPath(size: chevronSize)
+                        CATransaction.commit()
+                    }
                 }
                 applyChevronStyle(layer, spec: spec)
                 layer.setValue(spec.expanded ? CGFloat.pi / 2 : 0,
@@ -167,6 +189,157 @@ extension BlockCellView {
             chevronLayers.removeValue(forKey: id)
         }
     }
+
+    /// Reconcile mask-swept title overlays against `specs`. One
+    /// `ShimmerLayerSet` per running-header id:
+    ///
+    ///   • `text`: a `CALayer` whose `contents` is a CGImage of the
+    ///     header title pre-rendered at the bright `.labelColor` tier.
+    ///     Frame matches the title's natural CTLine bbox so the bright
+    ///     glyphs sit pixel-aligned with where the cell bitmap *would*
+    ///     have drawn the static title (the cell's `drawHeader` skips
+    ///     the title pass when `wantsShimmer(for:)` is true, so this
+    ///     is the only title rendering for the header).
+    ///   • `mask`: a `CAGradientLayer` set as `text.mask`. Three-stop
+    ///     alpha gradient `[base, 1.0, base]` runs a `locations`
+    ///     keyframe from off-screen-left to off-screen-right so the
+    ///     bright text shows at `base` alpha by default and pulses up
+    ///     to full `.labelColor` along the swept stripe.
+    ///
+    /// **Hover combination.** When `spec.hovered` is true, the
+    /// reconciler raises the mask's base alpha to `1.0` (via the
+    /// "alphas" key on the gradient stops) so the title sits at full
+    /// `.labelColor` end-to-end — same brightness non-running hovered
+    /// headers reach through `titleColor(for:hovered:)`. The shimmer
+    /// `locations` animation keeps running but is visually no-op since
+    /// peak == base.
+    ///
+    /// Reuse policy: same set is reused across re-layouts so the
+    /// running `locations` animation keeps cycling past
+    /// `reloadData(forRowIndexes:)` (status flips, hover transitions).
+    /// Image is re-rendered only when (title, font, scale) changes.
+    private func applyShimmerPlan(_ specs: [SubviewPlan.Shimmer]) {
+        guard let hostLayer = self.layer else {
+            for (_, set) in shimmerLayers { set.text.removeFromSuperlayer() }
+            shimmerLayers.removeAll()
+            return
+        }
+        var seen = Set<UUID>()
+        let scale = hostLayer.contentsScale
+        for spec in specs {
+            seen.insert(spec.id)
+            let set = shimmerLayers[spec.id] ?? {
+                let set = ShimmerLayerSet(scale: scale)
+                shimmerLayers[spec.id] = set
+                hostLayer.addSublayer(set.text)
+                return set
+            }()
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            if set.text.frame != spec.textRect {
+                set.text.frame = spec.textRect
+            }
+            if set.mask.frame != set.text.bounds {
+                set.mask.frame = set.text.bounds
+            }
+            // Image rebuild: skip when the cached key already covers
+            // (title, font, appearance). NSImage handles backing-scale
+            // re-renders internally (CALayer pulls
+            // `layerContents(forContentsScale:)` on demand), so the
+            // key doesn't need a `scale` axis. Appearance participates
+            // because `.labelColor` resolves to different RGB in
+            // Light vs. Dark — appearance flip must invalidate the
+            // cached `NSImage`.
+            let key = ShimmerLayerSet.ImageKey(
+                title: spec.title,
+                fontName: spec.font.fontName,
+                pointSize: spec.font.pointSize,
+                appearanceName: effectiveAppearance.name)
+            if set.imageKey != key || set.text.contents == nil {
+                set.text.contents = renderShimmerTitleImage(spec: spec)
+                set.imageKey = key
+            }
+            // Mask alpha: hover wins (peak == base = 1.0), otherwise
+            // sweep alternates base ↔ 1.0.
+            let baseAlpha: CGFloat = spec.hovered
+                ? 1.0
+                : BlockStyle.toolHeaderShimmerBaseAlpha
+            set.mask.colors = [
+                NSColor.white.withAlphaComponent(baseAlpha).cgColor,
+                NSColor.white.cgColor,
+                NSColor.white.withAlphaComponent(baseAlpha).cgColor,
+            ]
+            CATransaction.commit()
+            if set.mask.animation(forKey: Self.shimmerAnimationKey) == nil {
+                set.mask.add(Self.makeShimmerAnimation(),
+                             forKey: Self.shimmerAnimationKey)
+            }
+        }
+        for (id, set) in shimmerLayers where !seen.contains(id) {
+            set.text.removeFromSuperlayer()
+            shimmerLayers.removeValue(forKey: id)
+        }
+    }
+
+    /// Rasterise the bright-tier title via `NSImage(size:flipped:`
+    /// `drawingHandler:)` + `NSAttributedString.draw(at:)`. Going
+    /// through AppKit's high-level path (instead of constructing a
+    /// `CGBitmapContext` by hand) gets us:
+    ///
+    ///   • Sub-pixel font positioning — the AppKit drawing context
+    ///     ships with `CGContextSetShouldSubpixelPositionFonts(true)`
+    ///     and friends already enabled, so retina glyphs land on
+    ///     fractional pixel offsets without manual flag wrangling.
+    ///   • LCD / grayscale font smoothing parity with the cell bitmap.
+    ///   • Backing-scale awareness — `CALayer.contents = NSImage` makes
+    ///     CoreAnimation pull `layerContents(forContentsScale:)` at
+    ///     the host layer's `contentsScale`, which re-runs this
+    ///     drawing handler at the correct pixel density. No manual
+    ///     `scaleBy` ceremony, no rounding mismatch between bitmap
+    ///     pixels and layer bounds.
+    ///
+    /// The handler runs inside `performAsCurrentDrawingAppearance` so
+    /// `.labelColor` resolves against the cell's effective appearance
+    /// (Light / Dark) rather than the app's main appearance. The
+    /// `flipped: false` orientation matches `NSAttributedString.draw`'s
+    /// "lower-left = origin" convention; `.draw(at: .zero)` puts the
+    /// glyph baseline at `-descender` from the bottom, which lines up
+    /// with `textRect`'s `(titleBaseline - ascender) ↔ titleBaseline`
+    /// vertical span.
+    private func renderShimmerTitleImage(spec: SubviewPlan.Shimmer) -> NSImage {
+        let size = NSSize(width: spec.textRect.width,
+                          height: spec.textRect.height)
+        let appearance = effectiveAppearance
+        return NSImage(size: size, flipped: false) { _ in
+            appearance.performAsCurrentDrawingAppearance {
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .font: spec.font,
+                    .foregroundColor: BlockStyle.toolHeaderShimmerHighlight,
+                ]
+                NSAttributedString(string: spec.title, attributes: attrs)
+                    .draw(at: .zero)
+            }
+            return true
+        }
+    }
+
+    /// Build the mask's keyframe animation. `locations` slides
+    /// through `[-1, -0.5, 0] → [1, 1.5, 2]` so the peak alpha stop
+    /// enters from off-screen-left, crosses the title midline, and
+    /// exits off-screen-right on each cycle. Linear timing keeps the
+    /// perceived sweep velocity constant.
+    private static func makeShimmerAnimation() -> CABasicAnimation {
+        let anim = CABasicAnimation(keyPath: "locations")
+        anim.fromValue = [-1.0, -0.5, 0.0] as [NSNumber]
+        anim.toValue = [1.0, 1.5, 2.0] as [NSNumber]
+        anim.duration = BlockStyle.toolHeaderShimmerDuration
+        anim.repeatCount = .infinity
+        anim.timingFunction = CAMediaTimingFunction(name: .linear)
+        anim.isRemovedOnCompletion = false
+        return anim
+    }
+
+    private static let shimmerAnimationKey = "shimmer"
 
     private func applyEntryPlan(
         _ specs: [SubviewPlan.Entry], animateFrames: Bool
@@ -321,5 +494,90 @@ final class ToolGroupEntryView: NSView {
             ? .selectedTextBackgroundColor
             : .unemphasizedSelectedTextBackgroundColor
         spec.draw(ctx, selectionColor)
+    }
+}
+
+/// Two-layer pair backing one running header's shimmer:
+///
+///   • `text` is a plain `CALayer` whose `.contents` is a CGImage of
+///     the title pre-rendered at full `.labelColor` brightness. The
+///     reconciler refreshes the image whenever the cached `imageKey`
+///     no longer matches (title / font / scale / appearance change).
+///     `text` is what the cell actually composites onto its host
+///     layer.
+///   • `mask` is a horizontal `CAGradientLayer` set as `text.mask`.
+///     The reconciler updates `colors` (`[white(α=base), white(α=1.0),
+///     white(α=base)]`) and runs a `locations` keyframe that slides
+///     the peak from off-screen-left to off-screen-right. With
+///     `text.mask = mask`, the `text` layer's contents inherit the
+///     mask alpha — bright glyphs show at `base` brightness most of
+///     the time, peaking at `.labelColor` along the swept stripe.
+///
+/// Reuse: one set per running header `id`. The set survives
+/// `reloadData(forRowIndexes:)` (recreated only when the spec drops
+/// out of the plan), so the `locations` animation keeps cycling
+/// without snapping back to its origin on every status flip.
+final class ShimmerLayerSet {
+    let text: CALayer
+    let mask: CAGradientLayer
+    /// Cache key for the rendered title image. Re-render is gated on
+    /// inequality so unchanged shimmer specs (the common case during
+    /// hover transitions or sibling row changes) don't burn CPU on
+    /// CTLine + bitmap context construction every reconcile pass.
+    /// Appearance-name participates because `.labelColor` resolves to
+    /// different RGB across Light / Dark, so a system theme flip must
+    /// invalidate the cached bitmap.
+    var imageKey: ImageKey?
+
+    struct ImageKey: Equatable {
+        let title: String
+        let fontName: String
+        let pointSize: CGFloat
+        let appearanceName: NSAppearance.Name
+    }
+
+    init(scale: CGFloat) {
+        let text = CALayer()
+        text.contentsScale = scale
+        // Sit above per-entry subview layers so the shimmer composites
+        // on top of child header surfaces (entry views are at default
+        // zPosition = 0). Same recipe as `chevronLayers`.
+        text.zPosition = 1
+        text.contentsGravity = .resize
+        // Suppress every implicit-animation channel on the host layer
+        // — the only animation we want is the explicit `locations`
+        // keyframe on the mask. An implicit `position` lerp triggered
+        // by `frame =` would drag the bright text visibly across rows
+        // on re-layouts (resize, layout swap).
+        text.actions = [
+            "bounds": NSNull(),
+            "frame": NSNull(),
+            "position": NSNull(),
+            "contents": NSNull(),
+            "opacity": NSNull(),
+        ]
+
+        let mask = CAGradientLayer()
+        mask.startPoint = CGPoint(x: 0, y: 0.5)
+        mask.endPoint = CGPoint(x: 1, y: 0.5)
+        mask.locations = [0, 0.5, 1]
+        mask.contentsScale = scale
+        mask.actions = [
+            "bounds": NSNull(),
+            "frame": NSNull(),
+            "position": NSNull(),
+            "colors": NSNull(),
+            // `locations` is animated *explicitly* via CABasicAnimation;
+            // suppress the implicit channel so `mask.locations =`
+            // assignments outside the keyframe (none today, but
+            // defensive) don't lerp against the running animation.
+            "locations": NSNull(),
+            "opacity": NSNull(),
+            "startPoint": NSNull(),
+            "endPoint": NSNull(),
+        ]
+        text.mask = mask
+        self.text = text
+        self.mask = mask
     }
 }

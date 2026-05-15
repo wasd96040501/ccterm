@@ -2,7 +2,7 @@ import AgentSDK
 import AppKit
 import Foundation
 
-/// 把 `SessionHandle2.onTimelineMutation` 的 entry 级指令翻译成
+/// 把 `SessionHandle2.onMessagesChange` 的 entry 级指令翻译成
 /// `Transcript2Controller` 的 block 级命令。**纯命令式** —— 不维护
 /// "完整 [Block] 镜像然后 diff",只记两张反向表:
 ///
@@ -10,7 +10,7 @@ import Foundation
 /// - `entryBlockIds: [UUID: [UUID]]`:entry.id → 该 entry 产生的 Block.id
 ///   有序列表。
 ///
-/// 当一条 entry mutate 时,先用 builder 算出新 blocks → 跟旧 ids 对比:
+/// 当一条 entry update 时,先用 builder 算出新 blocks → 跟旧 ids 对比:
 /// - 老 / 新 ids 完全一致(典型场景:tool_result merge / confirm / group items
 ///   增长) → 逐条 `.update(id, kind)`,行级动画 / 选区 / fold 全部保住。
 /// - 不一致(罕见:assistant entry 结构变化) → `.remove(old)` + `.insert(new)`,
@@ -25,7 +25,7 @@ final class Transcript2EntryBridge {
 
     private var entryOrder: [UUID] = []
     private var entryBlockIds: [UUID: [UUID]] = [:]
-    /// 反向标记 `loadInitial` 是否已经发过。在它发之前来的 append / mutate
+    /// 反向标记 `loadInitial` 是否已经发过。在它发之前来的 append / update
     /// 都是异常路径(handle 还没 reset)—— 走 fallback,把 entry 直接当 reset
     /// 的种子塞进去,保证不丢内容。
     private var didLoadInitial = false
@@ -34,35 +34,35 @@ final class Transcript2EntryBridge {
         self.controller = controller
     }
 
-    /// 绑到 handle:每次 mutation 走本对象的 `handle(_:)`。weak 捕获让 handle
+    /// 绑到 handle:每次 change 走本对象的 `apply(_:)`。weak 捕获让 handle
     /// 生命周期独立于 view 端 bridge — view dismantle 会让 self deinit,handle
     /// 持的闭包变成 weak-nil,sink 自动失活,无需显式 unbind。
     func attach(to handle: SessionHandle2) {
-        handle.onTimelineMutation = { [weak self] mutation in
-            self?.handle(mutation)
+        handle.onMessagesChange = { [weak self] change in
+            self?.apply(change)
         }
     }
 
     // MARK: - Dispatch
 
-    func handle(_ mutation: TimelineMutation) {
-        switch mutation {
-        case .reset(let entries, let scrollHint):
-            apply(reset: entries, scrollHint: scrollHint)
+    func apply(_ change: MessagesChange) {
+        switch change {
+        case .reset(let entries):
+            applyReset(entries)
             for entry in entries { pushStatuses(for: entry) }
         case .appended(let entry):
-            apply(append: entry)
+            applyAppend(entry)
             pushStatuses(for: entry)
         case .prepended(let entries):
-            apply(prepend: entries)
+            applyPrepend(entries)
             for entry in entries { pushStatuses(for: entry) }
-        case .mutated(let entry):
-            apply(mutate: entry)
+        case .updated(let entry):
+            applyUpdate(entry)
             pushStatuses(for: entry)
         case .removed(let entry):
             // Block is gone — nothing to push. `Coordinator.applyStructuralChange`
             // already evicted the entry's `statusStates` slots.
-            apply(remove: entry)
+            applyRemove(entry)
         }
     }
 
@@ -150,8 +150,7 @@ final class Transcript2EntryBridge {
 
     // MARK: - Reset (loadInitial / re-entry)
 
-    private func apply(reset entries: [MessageEntry],
-                       scrollHint: SavedScrollAnchor?) {
+    private func applyReset(_ entries: [MessageEntry]) {
         // 重建反向表 + 收集 blocks
         var newOrder: [UUID] = []
         newOrder.reserveCapacity(entries.count)
@@ -180,10 +179,6 @@ final class Transcript2EntryBridge {
             }
             entryOrder = newOrder
             entryBlockIds = newMap
-            // scrollHint 暂不消费 — `Transcript2Controller.apply` 没有「按
-            // anchor 跳」的 ScrollState,留到 NativeTranscript2 后续暴露
-            // bottomTo / topTo API 后再接。重入时默认贴底 = chat 常规预期。
-            _ = scrollHint
             controller.coordinator.apply(changes, scroll: .none)
             return
         }
@@ -198,7 +193,7 @@ final class Transcript2EntryBridge {
 
     // MARK: - Append (live message)
 
-    private func apply(append entry: MessageEntry) {
+    private func applyAppend(_ entry: MessageEntry) {
         let blocks = MessageEntryBlockBuilder.entryBlocks(entry)
         if blocks.isEmpty {
             // entry 不产 block(空 user 消息 / 全 thinking 的 assistant)—— 还是
@@ -232,7 +227,7 @@ final class Transcript2EntryBridge {
 
     // MARK: - Prepend (loadHistory Phase B)
 
-    private func apply(prepend entries: [MessageEntry]) {
+    private func applyPrepend(_ entries: [MessageEntry]) {
         var prefixBlocks: [Block] = []
         var newOrder: [UUID] = []
         var newMap: [UUID: [UUID]] = [:]
@@ -253,9 +248,9 @@ final class Transcript2EntryBridge {
             scroll: .saveVisible(.visualTop))
     }
 
-    // MARK: - Mutate (tool_result merge / confirm / group grew)
+    // MARK: - Update (tool_result merge / confirm / group grew)
 
-    private func apply(mutate entry: MessageEntry) {
+    private func applyUpdate(_ entry: MessageEntry) {
         let oldIds = entryBlockIds[entry.id] ?? []
         let newBlocks = MessageEntryBlockBuilder.entryBlocks(entry)
         let newIds = newBlocks.map(\.id)
@@ -279,7 +274,7 @@ final class Transcript2EntryBridge {
         if !newBlocks.isEmpty { changes.append(.insert(after: anchor, newBlocks)) }
         entryBlockIds[entry.id] = newIds
         if entryOrder.firstIndex(of: entry.id) == nil {
-            // mutate 之前 entry 没注册过(sink 顺序乱了)— 防御性 append,
+            // update 之前 entry 没注册过(sink 顺序乱了)— 防御性 append,
             // 至少不让 block 孤悬。
             entryOrder.append(entry.id)
         }
@@ -287,7 +282,7 @@ final class Transcript2EntryBridge {
         controller.coordinator.apply(changes, scroll: .none)
     }
 
-    /// mutate 路径用:entry 还在 entryOrder 里,取它前一位的 last block id。
+    /// update 路径用:entry 还在 entryOrder 里,取它前一位的 last block id。
     private func previousEntryLastBlockId(beforeRebuilding entryId: UUID) -> UUID? {
         guard let idx = entryOrder.firstIndex(of: entryId), idx > 0 else { return nil }
         return entryBlockIds[entryOrder[idx - 1]]?.last
@@ -295,7 +290,7 @@ final class Transcript2EntryBridge {
 
     // MARK: - Remove (cancelMessage)
 
-    private func apply(remove entry: MessageEntry) {
+    private func applyRemove(_ entry: MessageEntry) {
         let ids = entryBlockIds[entry.id] ?? []
         entryBlockIds.removeValue(forKey: entry.id)
         entryOrder.removeAll { $0 == entry.id }

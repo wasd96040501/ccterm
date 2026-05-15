@@ -5,7 +5,7 @@ enum ChatHistoryRenderCase: Equatable {
     /// `.failed` → ContentUnavailableView(reason)
     case error(String)
     /// 其它状态(`.notLoaded / .loadingTail / .tailLoaded / .loaded`) → 渲染
-    /// `NativeTranscript2View`。bridge 通过 `handle.onTimelineMutation` 接管
+    /// `NativeTranscript2View`。bridge 通过 `handle.onMessagesChange` 接管
     /// 内容同步,no ProgressView —— Phase A 一般 < 50 ms,闪一下 spinner 反而
     /// 劣化视觉。
     case transcript
@@ -21,9 +21,9 @@ enum ChatHistoryRenderCase: Equatable {
 /// 只读浏览历史会话。纯 SwiftUI,无 ViewModel:
 /// 从环境拿 `SessionManager2` 懒取 `SessionHandle2`,触发 `loadHistory()`。
 ///
-/// 消费契约:绑定 `SessionHandle2.onTimelineMutation` — 命令式 sink,每条
-/// timeline 写入 emit 一条 `TimelineMutation`,由 `Transcript2EntryBridge`
-/// 翻译成 `Transcript2Controller.apply / loadInitial` 对应调用。
+/// 消费契约:绑定 `SessionHandle2.onMessagesChange` — 同步回调 sink,每次
+/// messages 写入推一条 `MessagesChange`,由 `Transcript2EntryBridge` 翻译
+/// 成 `Transcript2Controller.apply / loadInitial` 对应调用。
 ///
 /// **每个 sessionId 独立 NSView 生命周期**:调用点(RootView2)对
 /// `ChatHistoryView` 加 `.id(sessionId)`,让整个 struct 随 sessionId 重建、
@@ -71,8 +71,7 @@ struct ChatHistoryView: View {
             appLog(.info, "ChatHistoryView",
                 "[history] task-inject session=\(sessionId.prefix(8))… "
                 + "loadState=\(String(describing: h.historyLoadState)) "
-                + "msgCount=\(h.messages.count) "
-                + "savedAnchor=\(h.savedScrollAnchor != nil)")
+                + "msgCount=\(h.messages.count)")
             h.loadHistory()
         }
     }

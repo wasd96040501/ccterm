@@ -75,16 +75,15 @@ extension SessionHandle2 {
         appLog(.info, "SessionHandle2",
             "[v2-send] enqueue sid=\(sessionId.prefix(8)) entryId=\(single.id.uuidString.prefix(8)) "
             + "status=\(status) hasRecord=\(hasRecord) agentSession=\(agentSession != nil) "
-            + "msgCount=\(messages.count) onTLMut=\(onTimelineMutation != nil)")
+            + "msgCount=\(messages.count) onChange=\(onMessagesChange != nil)")
         // turn 入口 — 在所有副作用之前 +1,view 层的 isRunning 立刻可见。
         // 同步发生在 main,@Observable 自动通知 SwiftUI 重渲染。
         pendingTurnCount += 1
-        emitSnapshot(.liveAppend)
-        // 同时通知 per-mutation sink — bridge / Transcript2 是 onTimelineMutation
-        // 的唯一消费方,enqueue 必须发,不然 user bubble 要等 CLI echo 回来才
+        // 通知 AppKit 渲染端 — Transcript2EntryBridge 是 onMessagesChange 的
+        // 唯一消费方。enqueue 必须发,不然 user bubble 要等 CLI echo 回来才
         // 显示(100~300ms 视觉黑屏)。echo 到达时走 `confirmQueuedEntry` 转
-        // `.mutated`,bridge 用稳定 block id 走 `.update` 通道无感替换文本。
-        onTimelineMutation?(.appended(entry))
+        // `.updated`,bridge 用稳定 block id 走 `.update` 通道无感替换文本。
+        onMessagesChange?(.appended(entry))
 
         ensureStarted()
 
@@ -213,16 +212,15 @@ extension SessionHandle2 {
 
     /// 将所有当前 `.queued` 的 user entry 打成 `.failed`（bootstrap 失败 /
     /// 进程异常退出都走这里）。已 `.confirmed` 的保持不变。
+    /// 逐条 emit `.updated` 让 bridge 走 update 通道刷新 delivery 状态。
     func failQueuedEntries(reason: String) {
-        var anyChanged = false
         for idx in messages.indices {
             guard case .single(var single) = messages[idx],
                   single.delivery == .queued else { continue }
             single.delivery = .failed(reason: reason)
             messages[idx] = .single(single)
-            anyChanged = true
+            onMessagesChange?(.updated(messages[idx]))
         }
-        if anyChanged { emitSnapshot(.update) }
     }
 }
 

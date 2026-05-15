@@ -73,45 +73,29 @@ class SessionHandle2 {
 
     // MARK: - Runtime
 
-    /// 消息 timeline。内部 storage；**view 层不直接读**——渲染消费方绑定
-    /// `snapshot`（含 reason 语义）。Sidebar / bridge 等非渲染读者保留直读。
+    /// 消息 timeline。SwiftUI 渲染端（sidebar / metrics 等）直接读这个
+    /// `@Observable` 字段；AppKit 渲染端走 `onMessagesChange` 同步回调拿
+    /// 增量指令，不重复读这里。
     internal(set) var messages: [MessageEntry] = []
 
-    /// 渲染层唯一消费契约。每次 messages mutation 后由 handle 内部 emit，携带
-    /// `TranscriptUpdateReason` 让 `TranscriptController` 按意图 dispatch scroll
-    /// 语义——不再从 entries delta 推断。
-    internal(set) var snapshot: TranscriptSnapshot = .initial
-
-    /// `snapshot.revision` 的自增计数。每次 emit 前 +1。
-    @ObservationIgnored private var snapshotRevision: UInt64 = 0
-
-    /// 用户离开此 session 时保存的 scroll 锚。下次切回时消费一次（`.loaded`
-    /// 分支 re-emit `.initialPaint` 带上），让 view 层恢复到离开时的位置。
-    /// nil = 离开时在 bottom（下次贴底即可，无需锚）。
+    /// AppKit 渲染端的 outgoing sink。每次 `messages` 写入完毕后 handle 在
+    /// 同一调用栈同步触发一条 `MessagesChange`，描述本次具体改了什么。
     ///
-    /// 不持久化到 db（只在 app 运行期内跨 view recreate 保留）—— handle 比 view
-    /// 活得长，这个字段随 handle 生命周期存在。
-    @ObservationIgnored var savedScrollAnchor: SavedScrollAnchor?
-
-    /// Per-mutation 命令式 sink。每次 messages 写入完毕后由 handle 同步 emit
-    /// 一条 `TimelineMutation`,描述本次具体改了什么。
+    /// 设计意图：bridge 收到指令直接调 `Transcript2Controller.apply(...)`，
+    /// 免去扫表 diff，也免去 AsyncStream / @Observable 的额外 main-actor hop。
     ///
-    /// 与 `snapshot`(整页状态)并行存在 —— view 端 bridge 可只绑这一路,
-    /// 直接翻译成 `Transcript2Controller.apply(...)`,免去扫表 diff。
+    /// nil = 当前没有 bridge 接入；写 messages 仍正常进行，sink 跳过。
     ///
-    /// nil = 当前没有 bridge 接入(纯渲染外的 sidebar / metrics 等订阅方);
-    /// 写 messages 仍正常进行,sink 跳过。
-    ///
-    /// 设值用闭包不用 protocol:bridge 类型在 view 模块,声明在这里只能
-    /// 走闭包/匿名类型;过 weak ownership 在闭包内部解决(`[weak bridge]`)。
-    @ObservationIgnored var onTimelineMutation: ((TimelineMutation) -> Void)?
+    /// 设值用闭包不用 protocol：bridge 类型在 view 模块，声明在这里只能走
+    /// 闭包/匿名类型；weak ownership 在闭包内部解决（`[weak bridge]`）。
+    @ObservationIgnored var onMessagesChange: ((MessagesChange) -> Void)?
 
     /// CLI 启动失败回调。所有"launch-time" 失败路径(sync `Process.run` 抛错
     /// 或 init 完成前 CLI 进程自己 exit)都汇到 `failLaunch(reason:)` 一处,
     /// 在那里同步触发一次,传入原始的、未经本地化包装的描述字符串。订阅方
     /// (SessionManager2)负责转给 UI 层做 alert。
     ///
-    /// 跟 `onTimelineMutation` 一样走闭包注入,避免把 UI 类型漏进 handle。
+    /// 跟 `onMessagesChange` 一样走闭包注入,避免把 UI 类型漏进 handle。
     /// weak 由订阅方在闭包里处理。
     @ObservationIgnored var onLaunchFailure: ((String) -> Void)?
 
@@ -226,29 +210,6 @@ class SessionHandle2 {
     // MARK: - Lifecycle commands
 
     // `activate()` / `stop()` / `send(_:)` 实现与文档均在 `SessionHandle2+Start.swift`。
-
-    // MARK: - Snapshot emission
-
-    /// 写一次 `snapshot`，携带本次 mutation 的 reason。调用方负责保证
-    /// `messages` 已经 mutation 完毕。
-    ///
-    /// 规则：
-    /// - **只在 `.live` / 真实生产路径调用**；`receive(_, mode: .replay)` 内部
-    ///   **不**逐条 emit，由调用方（`loadHistory` Phase A/B）在批量结束时一次性
-    ///   emit `.initialPaint` / `.prependHistory`。
-    /// - `skipBootstrapForTesting = true` 的临时 handle（例如 Phase B `buildEntries`
-    ///   的影子 handle）也不应调此方法——调用点自行把 replay 分支走完即可。
-    internal func emitSnapshot(
-        _ reason: TranscriptUpdateReason,
-        scrollHint: SavedScrollAnchor? = nil
-    ) {
-        snapshotRevision &+= 1
-        snapshot = TranscriptSnapshot(
-            messages: messages,
-            reason: reason,
-            scrollHint: scrollHint,
-            revision: snapshotRevision)
-    }
 
     /// 后台加载历史消息到 `messages`。幂等，按 `historyLoadState` 分派。
     ///

@@ -30,10 +30,18 @@ enum ChatHistoryRenderCase: Equatable {
 /// `sessionId` changes and all `@State` resets. This prevents a new session's
 /// first frame from inheriting the old session's controller state.
 ///
-/// **Search bar lives in the window toolbar via `.searchable`** — the native
-/// macOS search field renders in the toolbar's trailing slot. ⌘F focus is
-/// handed in via `TranscriptSearchBus` + `.searchFocused`. The transcript
-/// itself sits flush against the window chrome with no in-pane strip.
+/// **Search bar lives in the window toolbar via `.searchable`** — the
+/// native macOS search field renders in the toolbar's trailing slot. ⌘F
+/// focus is handed in via `TranscriptSearchBus` + `.searchFocused`. The
+/// toolbar keeps its natural material background so the search field
+/// reads as a native control; the top fade-blur scrim in `RootView2`
+/// softens the seam between toolbar chrome and the first transcript row.
+///
+/// **Navigation keys**: plain `Return` advances to the next match (wired
+/// through `.onSubmit(of: .search)` while the field has focus);
+/// `Shift+Return` steps to the previous match via `.onKeyPress(.return)`
+/// inspecting `KeyPress.modifiers`. There are no prev / next / counter
+/// chrome items — the user navigates entirely from the keyboard.
 ///
 /// - Warning: Do not move `.id(sessionId)` inside `body` (e.g. on a Group).
 ///   That only swaps the child subtree; `@State` belongs to the struct itself
@@ -72,14 +80,28 @@ struct ChatHistoryView: View {
             prompt: Text("Find in transcript")
         )
         .searchFocused($isSearchFocused)
+        .toolbar {
+            if #available(macOS 26.0, *) {
+                ToolbarSpacer(.flexible)
+            }
+        }
         .onSubmit(of: .search) { controller.nextSearchHit() }
+        // Shift+Return for previous match. `.onKeyPress` fires whenever
+        // focus is on this view or any descendant — i.e. the search
+        // field. Plain Return is left to `.onSubmit(of: .search)`; we
+        // return `.ignored` so SwiftUI propagates the event. The
+        // `phases:` overload is the one that exposes `KeyPress.modifiers`.
+        .onKeyPress(keys: [.return], phases: .down) { keyPress in
+            guard keyPress.modifiers.contains(.shift) else { return .ignored }
+            controller.previousSearchHit()
+            return .handled
+        }
         .onChange(of: searchQuery) { _, new in
             controller.runSearch(new)
         }
         .onChange(of: searchBus.focusRequestCounter) { _, _ in
             isSearchFocused = true
         }
-        .toolbar { searchAccessoryToolbar }
         .task(id: sessionId) {
             // Use `prepareDraft` so a draft session (no record yet) still gets a
             // handle and mounts `NativeTranscript2View` — this keeps the NSView
@@ -105,44 +127,6 @@ struct ChatHistoryView: View {
             // the ~6-8s bootstrap cost synchronously after the click. Idempotent
             // on non-fresh / running sessions.
             h.activate()
-        }
-    }
-
-    /// Counter + prev / next buttons that sit next to the toolbar search
-    /// field. The counter is hidden while the query is empty so the
-    /// toolbar isn't cluttered before the user types.
-    @ToolbarContentBuilder
-    private var searchAccessoryToolbar: some ToolbarContent {
-        ToolbarItemGroup(placement: .primaryAction) {
-            if !searchQuery.isEmpty {
-                let total = controller.searchState.totalHits
-                let current = total > 0 ? (controller.searchState.currentIndex ?? -1) + 1 : 0
-                Text("\(current) / \(total)")
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .testIdentifier("ChatSearchBar.Counter")
-            }
-
-            Button {
-                controller.previousSearchHit()
-            } label: {
-                Image(systemName: "chevron.up")
-            }
-            .disabled(controller.searchState.totalHits == 0)
-            .keyboardShortcut(.return, modifiers: [.shift])
-            .accessibilityLabel(String(localized: "Previous match"))
-            .testIdentifier("ChatSearchBar.PrevButton")
-            .help(String(localized: "Previous match"))
-
-            Button {
-                controller.nextSearchHit()
-            } label: {
-                Image(systemName: "chevron.down")
-            }
-            .disabled(controller.searchState.totalHits == 0)
-            .accessibilityLabel(String(localized: "Next match"))
-            .testIdentifier("ChatSearchBar.NextButton")
-            .help(String(localized: "Next match"))
         }
     }
 }

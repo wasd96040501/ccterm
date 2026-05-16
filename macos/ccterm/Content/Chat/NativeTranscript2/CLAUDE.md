@@ -371,14 +371,28 @@ band.
 
 The host UI is SwiftUI's built-in `.searchable` modifier attached to
 `ChatHistoryView`, with `placement: .toolbar`. The native `NSSearchField`
-lands in the window toolbar's trailing slot; prev / counter / next live
-next to it as `ToolbarItem`s in a `ToolbarItemGroup(placement:
-.primaryAction)`. Always visible; no open / close cycle. ⌘F (via
+lands in the window toolbar's trailing slot; there are no prev / counter
+/ next chrome items — the user navigates with `Return` (next match, via
+`.onSubmit(of: .search)`) and `Shift+Return` (previous, via
+`.onKeyPress(keys: [.return], phases: .down)` inspecting
+`KeyPress.modifiers`). Always visible; no open / close cycle. ⌘F (via
 `AppCommands` → `TranscriptSearchBus.requestFocus()`) flips the
 `.searchFocused`-bound `@FocusState` and hands keyboard focus to the
 field without changing visibility. XCUITest reaches the field as
 `app.searchFields.firstMatch` (it surfaces as an `XCUIElement` of type
 `searchField`, not `textField`).
+
+The transcript itself runs flush to the window's top edge while the
+search field sits inside the toolbar band. That requires three modifiers
+acting together: `.windowStyle(.hiddenTitleBar)` (enables
+`fullSizeContentView` so the content extends under the chrome),
+`.windowToolbarStyle(.unifiedCompact)` (collapses the toolbar into the
+title-bar band rather than stacking under it — the default `.expanded`
+style adds ~52pt), and `.toolbarBackground(.hidden, for: .windowToolbar)`
+(keeps the toolbar material from painting a band over the transcript).
+`ChatHistoryTopFadeScrimUITests.testTranscriptFlushToWindowTop` guards
+the combined invariant by comparing `scrim.frame.minY` to
+`window.frame.minY`.
 
 ### Data flow
 

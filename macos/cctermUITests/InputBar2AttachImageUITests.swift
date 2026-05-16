@@ -41,26 +41,10 @@ final class InputBar2AttachImageUITests: XCTestCase {
     func testAttachButtonIsPresentOnLaunch() throws {
         let app = launchApp()
 
-        // Wait for the send button to appear — that's a known-good
-        // anchor so we know the bar is mounted before we probe a11y.
-        _ = app.buttons["InputBar2.SendButton"].waitForExistence(timeout: 10)
-
-        let id = "InputBar2.AttachButton"
-        let attach = app.descendants(matching: .any)[id]
-        if !attach.waitForExistence(timeout: 10) {
-            // Embed the live tree in the assertion message so the CI
-            // log shows which element type SwiftUI Menu actually
-            // exposes its label as on the runner. Remove once stable.
-            let diag =
-                "buttons=\(app.buttons[id].exists) "
-                + "images=\(app.images[id].exists) "
-                + "menuButtons=\(app.menuButtons[id].exists) "
-                + "popUpButtons=\(app.popUpButtons[id].exists) "
-                + "otherElements=\(app.otherElements[id].exists)"
-            XCTFail(
-                "attach button '\(id)' not found at launch. "
-                    + "Probe: \(diag)\n\nFull a11y tree:\n\(app.debugDescription)")
-        }
+        let attachButton = attachMenuButton(in: app)
+        XCTAssertTrue(
+            attachButton.waitForExistence(timeout: 10),
+            "attach button should be present on the input bar at launch")
 
         XCTAssertFalse(
             app.descendants(matching: .any)["InputBar2.AttachmentThumbnail"].exists,
@@ -122,11 +106,21 @@ final class InputBar2AttachImageUITests: XCTestCase {
         return app
     }
 
+    /// SwiftUI `Menu` on macOS 26 renders as a `MenuButton` whose
+    /// `accessibilityIdentifier` is swallowed — the only stable handle is
+    /// the `accessibilityLabel` we set on the production Menu. Tests
+    /// query the MenuButton by that label, which doubles as the
+    /// screen-reader-friendly description ("Attach image or file").
+    @MainActor
+    private func attachMenuButton(in app: XCUIApplication) -> XCUIElement {
+        app.menuButtons["Attach image or file"]
+    }
+
     /// Drive the real attach flow: open Menu → click Image → drive
     /// `NSOpenPanel` via ⌘⇧G with the test file path → Open.
     @MainActor
     private func attachImageViaUI(in app: XCUIApplication) {
-        let attachButton = app.images["InputBar2.AttachButton"]
+        let attachButton = attachMenuButton(in: app)
         XCTAssertTrue(
             attachButton.waitForExistence(timeout: 10),
             "attach button must exist before we can open the menu")

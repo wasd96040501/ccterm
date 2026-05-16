@@ -325,6 +325,16 @@
         }
       }
     },
+    "Attach image or file": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "附加图片或文件"
+          }
+        }
+      }
+    },
     "Auto": {
       "localizations": {
         "zh-Hans": {

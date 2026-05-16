@@ -46,6 +46,16 @@
         }
       }
     },
+    "(no branch)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "（无分支）"
+          }
+        }
+      }
+    },
     "@ Select directory · Enter temporary session": {
       "extractionState": "stale",
       "localizations": {
@@ -460,6 +470,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "取消"
+          }
+        }
+      }
+    },
+    "Choose Folder…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择目录…"
+          }
+        }
+      }
+    },
+    "Choose a folder for the new session": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为新会话选择目录"
           }
         }
       }
@@ -1484,6 +1514,16 @@
         }
       }
     },
+    "No recent projects": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "暂无最近项目"
+          }
+        }
+      }
+    },
     "OK": {
       "localizations": {
         "zh-Hans": {
@@ -1818,6 +1858,16 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "Recent": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近项目"
           }
         }
       }
@@ -2433,6 +2483,16 @@
         }
       }
     },
+    "Start Building": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始构建"
+          }
+        }
+      }
+    },
     "Start New Conversation": {
       "extractionState": "stale",
       "localizations": {
@@ -2451,6 +2511,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "切换分支"
+          }
+        }
+      }
+    },
+    "Tap + above to add one": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点击上方 + 添加项目"
           }
         }
       }

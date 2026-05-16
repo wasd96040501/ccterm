@@ -536,22 +536,37 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         }
     }
 
+    /// Scroll so `id`'s top aligns with the visible content area's top edge.
+    ///
+    /// `NSClipView.bounds.height` spans the full clip frame (NSScrollView's
+    /// `contentInsets` does *not* shrink it — insets only widen the allowed
+    /// scroll range), so visible-content-area-top in clip coords is at
+    /// `contentInsets.top`, not 0. Setting `bounds.origin.y = rect.minY -
+    /// contentInsets.top` lands the row's top there.
     private func scrollRowToTop(id: UUID, in tableView: NSTableView) {
         guard let row = blocks.firstIndex(where: { $0.id == id }),
             let scrollView = tableView.enclosingScrollView
         else { return }
-        let target = tableView.rect(ofRow: row).origin.y
+        let rect = tableView.rect(ofRow: row)
+        let target = rect.minY - scrollView.contentInsets.top
         scrollView.contentView.scroll(
             to: NSPoint(x: scrollView.contentView.bounds.origin.x, y: target))
     }
 
+    /// Scroll so `id`'s bottom aligns with the visible content area's bottom
+    /// edge. Mirrors `scrollRowToTop`: clip bounds span the full frame, so
+    /// the visible content area's bottom in clip coords is at
+    /// `clip.bounds.height - contentInsets.bottom`. The pre-fix
+    /// implementation used just `clip.bounds.height`, which dropped the row
+    /// into the bottom inset region (under the input-bar overlay).
     private func scrollRowToBottom(id: UUID, in tableView: NSTableView) {
         guard let row = blocks.firstIndex(where: { $0.id == id }),
             let scrollView = tableView.enclosingScrollView
         else { return }
         let rect = tableView.rect(ofRow: row)
-        let viewportH = scrollView.contentView.bounds.height
-        let target = max(0, rect.maxY - viewportH)
+        let visibleBottomInClip =
+            scrollView.contentView.bounds.height - scrollView.contentInsets.bottom
+        let target = rect.maxY - visibleBottomInClip
         scrollView.contentView.scroll(
             to: NSPoint(x: scrollView.contentView.bounds.origin.x, y: target))
     }

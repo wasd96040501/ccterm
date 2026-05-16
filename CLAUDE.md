@@ -142,10 +142,14 @@ Don't burn the full PR pipeline (~3–4 min) to validate one test. Instead:
 
 ### Local reproduction (last resort — UI tests steal focus)
 
+Only for debugging the test itself (e.g. AX tree inspection) when the CI
+debug loop above isn't giving you enough signal. `make test-all` should
+basically never run locally — that's what `test.yml` is for.
+
 ```bash
 make test FILTER=InputBar2StopButtonUITests/testStopButtonCancelsRunningState   # one method
 make test FILTER=InputBar2StopButtonUITests                                     # one class
-make test-all                                                                   # full suite (slow; pre-merge gut check only)
+make test-all                                                                   # full suite (slow; debugging only)
 ```
 
 Local commands (unit tests, do not steal focus):

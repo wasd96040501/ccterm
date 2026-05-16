@@ -43,13 +43,21 @@ final class ChatHistoryTopFadeScrimUITests: XCTestCase {
     /// the transcript runs flush to the window top with no toolbar /
     /// chrome strip pushing it down.
     ///
-    /// The transcript search field floats as a custom overlay
-    /// (`TranscriptSearchOverlayView`) rather than living in a window
-    /// toolbar via `.searchable(placement: .toolbar)`. A SwiftUI window
-    /// toolbar reserves a ~52pt vertical chrome band that
-    /// `.ignoresSafeArea(edges: .top)` cannot fully reclaim on macOS;
-    /// re-introducing it would push the first row below the window
-    /// chrome and this assertion would catch the regression.
+    /// Three modifiers cooperate to make this work while `.searchable`
+    /// still hosts the search field in the toolbar:
+    /// 1. `.windowStyle(.hiddenTitleBar)` on the Window enables
+    ///    `NSWindow.StyleMask.fullSizeContentView` so the SwiftUI
+    ///    content view extends up under the chrome.
+    /// 2. `.windowToolbarStyle(.unifiedCompact)` collapses the toolbar
+    ///    into the title-bar band instead of stacking it below — under
+    ///    the default `.expanded` style the two stack and chrome is
+    ///    ~52pt instead of zero.
+    /// 3. `.toolbarBackground(.hidden, for: .windowToolbar)` keeps the
+    ///    toolbar material from painting a band over the transcript.
+    ///
+    /// Removing any of those three lets `scrim.frame.minY` drop below
+    /// `window.frame.minY` by the toolbar height and this assertion
+    /// fires.
     @MainActor
     func testTranscriptFlushToWindowTop() throws {
         let app = launchTestApp()
@@ -71,10 +79,11 @@ final class ChatHistoryTopFadeScrimUITests: XCTestCase {
         XCTAssertLessThanOrEqual(
             abs(delta), Self.topAlignmentTolerance,
             "scrim top should align with window top (transcript flush to top); "
-                + "delta=\(delta)pt — a positive delta of ~52pt indicates a "
-                + "window toolbar is reserving chrome space again "
-                + "(reintroducing `.searchable(placement: .toolbar)` is "
-                + "the most common cause).")
+                + "delta=\(delta)pt — a positive delta of ~52pt indicates the "
+                + "window toolbar is reserving chrome space again. Check that "
+                + ".windowStyle(.hiddenTitleBar), .windowToolbarStyle(.unifiedCompact), "
+                + "and .toolbarBackground(.hidden, for: .windowToolbar) are all "
+                + "still in place.")
     }
 
     @MainActor

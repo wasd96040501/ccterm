@@ -11,7 +11,16 @@ struct CCTermApp: App {
                 .environment(\.syntaxEngine, appState.syntaxEngine)
                 .environment(searchBus)
         }
+        // `.hiddenTitleBar` enables `NSWindow.StyleMask.fullSizeContentView`
+        // so the content view extends up under the chrome. Pairing it with
+        // `.unifiedCompact` collapses the toolbar into the title-bar band
+        // (instead of stacking below it as the default `.expanded` style
+        // does) — that's what lets `.searchable` host a search field at
+        // the top of the window without pushing the transcript ~52pt down.
+        // `ChatHistoryView` adds `.toolbarBackground(.hidden, for: .windowToolbar)`
+        // so the toolbar's material doesn't paint over the transcript.
         .windowStyle(.hiddenTitleBar)
+        .windowToolbarStyle(.unifiedCompact)
         .defaultSize(width: 1200, height: 860)
         .windowResizability(.contentSize)
         .commands {
@@ -54,9 +63,9 @@ struct AppCommands: Commands {
         // route (`typeKey(_:modifierFlags:)` does not reliably
         // synthesize the shortcut through window-local monitors).
         //
-        // The transcript's search field is always visible as the
-        // `TranscriptSearchOverlayView` floating at top-trailing of
-        // `ChatHistoryView`; ⌘F's job is purely to hand keyboard
+        // The transcript's search field is always visible in the
+        // window toolbar (rendered by `.searchable` on
+        // `ChatHistoryView`); ⌘F's job is purely to hand keyboard
         // focus to that field. Routed via `TranscriptSearchBus` —
         // an `@Observable` counter — instead of `NotificationCenter`,
         // because the per-view subscriber lives behind a SwiftUI

@@ -369,23 +369,30 @@ per-cell paint is derived, affected cells are reseated via
 two compose at draw time, search highlights composite over the selection
 band.
 
-The host UI is `TranscriptSearchOverlayView` — an `NSViewRepresentable`
-wrapping `NSSearchField` — anchored to the top-trailing corner of
-`ChatHistoryView` via `.overlay(alignment: .top)` with an `HStack`
-`Spacer` doing the right-alignment. Floating (rather than living in the
-window toolbar via `.searchable(placement: .toolbar)`) is intentional:
-a SwiftUI window toolbar reserves a ~52pt vertical chrome band that
-`.ignoresSafeArea` cannot fully reclaim, which would push the transcript
-below the window's top edge. The overlay sits in the band the top
-fade-blur scrim covers, so it reads as a chromeless affordance over the
-first row. ⌘F (via `AppCommands` → `TranscriptSearchBus.requestFocus()`)
-flips the `@FocusState`-bound `isFocused`, which the representable's
-`updateNSView` translates into `window.makeFirstResponder(field)`.
-There are no prev / counter / next chrome items — `Return` (action on
-the `NSSearchField` cell) advances to the next match and `Shift+Return`
-(intercepted in `control(_:textView:doCommandBy:)`) steps back. XCUITest
-reaches the field as `app.searchFields.firstMatch` because
-`NSSearchField` surfaces as an `XCUIElement` of type `searchField`.
+The host UI is SwiftUI's built-in `.searchable` modifier attached to
+`ChatHistoryView`, with `placement: .toolbar`. The native `NSSearchField`
+lands in the window toolbar's trailing slot; there are no prev / counter
+/ next chrome items — the user navigates with `Return` (next match, via
+`.onSubmit(of: .search)`) and `Shift+Return` (previous, via
+`.onKeyPress(keys: [.return], phases: .down)` inspecting
+`KeyPress.modifiers`). Always visible; no open / close cycle. ⌘F (via
+`AppCommands` → `TranscriptSearchBus.requestFocus()`) flips the
+`.searchFocused`-bound `@FocusState` and hands keyboard focus to the
+field without changing visibility. XCUITest reaches the field as
+`app.searchFields.firstMatch` (it surfaces as an `XCUIElement` of type
+`searchField`, not `textField`).
+
+The transcript itself runs flush to the window's top edge while the
+search field sits inside the toolbar band. That requires three modifiers
+acting together: `.windowStyle(.hiddenTitleBar)` (enables
+`fullSizeContentView` so the content extends under the chrome),
+`.windowToolbarStyle(.unifiedCompact)` (collapses the toolbar into the
+title-bar band rather than stacking under it — the default `.expanded`
+style adds ~52pt), and `.toolbarBackground(.hidden, for: .windowToolbar)`
+(keeps the toolbar material from painting a band over the transcript).
+`ChatHistoryTopFadeScrimUITests.testTranscriptFlushToWindowTop` guards
+the combined invariant by comparing `scrim.frame.minY` to
+`window.frame.minY`.
 
 ### Data flow
 

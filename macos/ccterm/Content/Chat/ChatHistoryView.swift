@@ -30,19 +30,24 @@ enum ChatHistoryRenderCase: Equatable {
 /// `sessionId` changes and all `@State` resets. This prevents a new session's
 /// first frame from inheriting the old session's controller state.
 ///
-/// **Search bar floats as an overlay** — `TranscriptSearchOverlayView` is
-/// anchored to the top-trailing corner of the transcript with an `HStack`
-/// `Spacer` doing the right-alignment. Floating (rather than living in
-/// the AppKit window toolbar via `.searchable(placement: .toolbar)`) keeps
-/// the transcript truly flush to the window's top edge — a SwiftUI window
-/// toolbar reserves vertical chrome that `.ignoresSafeArea` cannot fully
-/// reclaim. The top fade-blur scrim in `RootView2` provides the visual
-/// transition between the search field and the first row.
+/// **Search bar lives in the window toolbar via `.searchable`** — the native
+/// macOS `NSSearchField` renders in the toolbar's trailing slot. ⌘F focus
+/// is handed in via `TranscriptSearchBus` + `.searchFocused`. The transcript
+/// runs flush against the window's top edge with the search field reading as
+/// a chromeless floating affordance. That flush behavior is a four-modifier
+/// recipe: `.windowStyle(.hiddenTitleBar)` and `.windowToolbarStyle(.unifiedCompact)`
+/// on the `Window` scene collapse the toolbar into the title-bar band
+/// (instead of stacking under it) and enable `fullSizeContentView`;
+/// `.toolbarBackground(.hidden, for: .windowToolbar)` here keeps the
+/// toolbar's material from painting over the transcript; and
+/// `.ignoresSafeArea(edges: .top)` at the `RootView2` call site lets the
+/// transcript extend up under the toolbar slot.
 ///
-/// **Navigation keys**: plain `Return` advances to the next match (the
-/// field's `.onSubmit` calls `controller.nextSearchHit()`); `Shift+Return`
-/// steps to the previous match via an `.onKeyPress(keys: [.return])` that
-/// inspects `KeyPress.modifiers`.
+/// **Navigation keys**: plain `Return` advances to the next match (wired
+/// through `.onSubmit(of: .search)` while the field has focus);
+/// `Shift+Return` steps to the previous match via `.onKeyPress(.return)`
+/// inspecting `KeyPress.modifiers`. There are no prev / next / counter
+/// chrome items — the user navigates entirely from the keyboard.
 ///
 /// - Warning: Do not move `.id(sessionId)` inside `body` (e.g. on a Group).
 ///   That only swaps the child subtree; `@State` belongs to the struct itself
@@ -56,13 +61,7 @@ struct ChatHistoryView: View {
     @State private var controller = Transcript2Controller()
     @State private var bridge: Transcript2EntryBridge?
     @State private var searchQuery: String = ""
-    // `@State Bool` rather than `@FocusState` because focus is driven
-    // through AppKit (`NSSearchField`-via-`NSViewRepresentable`) — a
-    // `Binding<Bool>` is what crosses into the representable. The flag
-    // is set from two directions: ⌘F (via `TranscriptSearchBus`) flips
-    // it to `true`, and the field's begin / end editing notifications
-    // flip it back from AppKit.
-    @State private var isSearchFocused: Bool = false
+    @FocusState private var isSearchFocused: Bool
 
     var body: some View {
         Group {
@@ -81,24 +80,22 @@ struct ChatHistoryView: View {
                 Color.clear
             }
         }
-        .overlay(alignment: .top) {
-            // HStack + leading `Spacer` is the user-requested
-            // right-alignment idiom: the spacer absorbs all available
-            // horizontal slack so the search field is pushed flush to
-            // the trailing edge. The overlay sits in the same band the
-            // top fade-blur scrim covers, so the field reads as a
-            // chromeless floating affordance over the first row.
-            HStack(spacing: 0) {
-                Spacer(minLength: 0)
-                TranscriptSearchOverlayView(
-                    query: $searchQuery,
-                    isFocused: $isSearchFocused,
-                    onNext: { controller.nextSearchHit() },
-                    onPrevious: { controller.previousSearchHit() }
-                )
-            }
-            .padding(.top, 16)
-            .padding(.trailing, 16)
+        .searchable(
+            text: $searchQuery,
+            placement: .toolbar,
+            prompt: Text("Find in transcript")
+        )
+        .searchFocused($isSearchFocused)
+        .onSubmit(of: .search) { controller.nextSearchHit() }
+        // Shift+Return for previous match. `.onKeyPress` fires whenever
+        // focus is on this view or any descendant — i.e. the search
+        // field. Plain Return is left to `.onSubmit(of: .search)`; we
+        // return `.ignored` so SwiftUI propagates the event. The
+        // `phases:` overload is the one that exposes `KeyPress.modifiers`.
+        .onKeyPress(keys: [.return], phases: .down) { keyPress in
+            guard keyPress.modifiers.contains(.shift) else { return .ignored }
+            controller.previousSearchHit()
+            return .handled
         }
         .onChange(of: searchQuery) { _, new in
             controller.runSearch(new)
@@ -106,6 +103,12 @@ struct ChatHistoryView: View {
         .onChange(of: searchBus.focusRequestCounter) { _, _ in
             isSearchFocused = true
         }
+        // Hide the toolbar's material background so the transcript can
+        // run flush to the window's top edge under the floating search
+        // field. Combined with `.ignoresSafeArea(edges: .top)` at the
+        // call site in RootView2, this gives a true edge-to-edge
+        // transcript with the search field as a chromeless overlay.
+        .toolbarBackground(.hidden, for: .windowToolbar)
         .task(id: sessionId) {
             // Use `prepareDraft` so a draft session (no record yet) still gets a
             // handle and mounts `NativeTranscript2View` — this keeps the NSView

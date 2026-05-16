@@ -6,8 +6,7 @@ How the chat pane is assembled. There is **no ViewModel** — `RootView2` is the
 |---|---|---|---|
 | `RootView2` | View | 1 | Owns selection / draft `sessionId` locally; assembles sidebar + transcript + input bar |
 | `SidebarView2` | View | 1 | Reads `SessionManager2.records` to render the history list; writes back the selected `sessionId` via `@Binding` |
-| `ChatHistoryView` | View | per-session (`.id(sessionId)`) | Acquires a `SessionHandle2`, attaches `Transcript2EntryBridge`, kicks `loadHistory()`, renders `NativeTranscript2View`, overlays `TranscriptSearchOverlayView` |
-| `TranscriptSearchOverlayView` | View | per-session | `NSSearchField` wrapped via `NSViewRepresentable`, floating at top-trailing of the chat detail. Hosts ⌘F focus + `Return` / `Shift+Return` nav. |
+| `ChatHistoryView` | View | per-session (`.id(sessionId)`) | Acquires a `SessionHandle2`, attaches `Transcript2EntryBridge`, kicks `loadHistory()`, renders `NativeTranscript2View` |
 | `InputBarView2` | View | per-session | Pure UI (text field + send/stop button); `onSubmit` / `onStop` / `isRunning` are injected |
 | `LoadingPillView2` | View | per-session | Running-state indicator pill, floats over the top-left of the input bar |
 

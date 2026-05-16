@@ -1395,16 +1395,6 @@
         }
       }
     },
-    "Next match": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "下一处"
-          }
-        }
-      }
-    },
     "No Archived Sessions": {
       "localizations": {
         "zh-Hans": {
@@ -1522,16 +1512,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "插件"
-          }
-        }
-      }
-    },
-    "Previous match": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "上一处"
           }
         }
       }

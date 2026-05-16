@@ -5,13 +5,21 @@ import XCTest
 /// The search field is rendered by SwiftUI's `.searchable` modifier in
 /// the window toolbar's trailing slot and is always present — there is
 /// no open / close cycle to drive. Tests click the field directly to
-/// take focus, type, then exercise the counter and the prev / next
-/// buttons (the latter still live as `ToolbarItem`s next to the field).
+/// take focus, type, then exercise navigation via keyboard:
+///
+/// - `Return` advances to the next match (`.onSubmit(of: .search)` on
+///   `ChatHistoryView`).
+/// - `Shift+Return` steps to the previous match (`.onKeyPress(.return)`
+///   inspecting `KeyPress.modifiers`).
+///
+/// There is no counter / prev / next chrome to observe — the toolbar
+/// holds only the field. We assert the smoke path: the field accepts
+/// typing, retains its value across Return / Shift+Return, and the
+/// navigation does not crash the runner.
 ///
 /// Drives the fixture via `SearchableContentScenario`: after the user
 /// sends a message, the mock emits three assistant lines, two of
-/// which contain "apple". The two-hit / one-non-hit shape catches
-/// off-by-one bugs in the cursor that pure two-hit scans miss.
+/// which contain "apple".
 ///
 /// Test-mode wiring documented in [cctermUITests/CLAUDE.md](CLAUDE.md):
 /// `CCTERM_TEST_MODE=1` installs the in-memory repo + mock CLI override.
@@ -23,7 +31,7 @@ final class TranscriptSearchUITests: XCTestCase {
     }
 
     @MainActor
-    func testSearchBarTypeNavigate() throws {
+    func testSearchFieldTypeAndKeyboardNavigate() throws {
         let app = launchAppAndSeedTranscript()
 
         let field = app.searchFields.firstMatch
@@ -34,85 +42,47 @@ final class TranscriptSearchUITests: XCTestCase {
 
         // Query "apple" — two hits among the three assistant lines.
         app.typeText("apple")
-
-        let counter = app.staticTexts["ChatSearchBar.Counter"]
-        XCTAssertTrue(
-            counter.waitForExistence(timeout: 3),
-            "counter should appear after typing a non-empty query")
-        // SwiftUI `Text` on macOS exposes its content via AX `value`
-        // (AXStaticText.AXValue), not `label`. `.label` is empty.
         XCTAssertEqual(
-            counter.value as? String, "1 / 2",
-            "first hit should be the current cursor (1-based of 2 total)")
+            field.value as? String, "apple",
+            "search field value should reflect the typed query")
 
-        // Next button → second hit.
-        nextMatch(in: app).click()
+        // Plain Return advances to the next match. Shift+Return steps
+        // back. The runs are smoke checks: navigation must not crash
+        // and the field must retain focus / text.
+        app.typeKey(.return, modifierFlags: [])
         XCTAssertEqual(
-            counter.value as? String, "2 / 2",
-            "next button should advance the cursor to the second hit")
+            field.value as? String, "apple",
+            "search field should retain its query after Return (next)")
 
-        // Wrap-around: next on the last hit → first hit.
-        nextMatch(in: app).click()
+        app.typeKey(.return, modifierFlags: .shift)
         XCTAssertEqual(
-            counter.value as? String, "1 / 2",
-            "next on the last hit should wrap back to the first")
-
-        // Previous button → wrap back to last.
-        prevMatch(in: app).click()
-        XCTAssertEqual(
-            counter.value as? String, "2 / 2",
-            "previous on the first hit should wrap to the last")
+            field.value as? String, "apple",
+            "search field should retain its query after Shift+Return (previous)")
     }
 
+    /// ⌘F from anywhere should focus the search field. The shortcut is
+    /// wired through `AppCommands` → `TranscriptSearchBus.requestFocus()`
+    /// → `ChatHistoryView.isSearchFocused`.
     @MainActor
-    func testSearchBarNoHitsCounter() throws {
+    func testCommandFFocusesSearchField() throws {
         let app = launchAppAndSeedTranscript()
 
         let field = app.searchFields.firstMatch
         XCTAssertTrue(
             field.waitForExistence(timeout: 5),
             "search field should be present in the toolbar")
-        field.click()
 
-        // A token that's nowhere in the fixture's assistant text.
-        app.typeText("zzzzzz")
-
-        let counter = app.staticTexts["ChatSearchBar.Counter"]
-        XCTAssertTrue(counter.waitForExistence(timeout: 3))
-        // See `testSearchBarTypeNavigate` for why `.value` instead of
-        // `.label`: AXStaticText surfaces its content as AXValue.
+        app.typeKey("f", modifierFlags: .command)
+        // Typing immediately after the focus shortcut should land in
+        // the field; reading `.value` confirms the keystrokes were
+        // routed there.
+        app.typeText("zz")
         XCTAssertEqual(
-            counter.value as? String, "0 / 0",
-            "counter should read 0 / 0 when the query has no hits")
-
-        // Nav buttons should be disabled — clicking must not crash
-        // and must leave counter unchanged.
-        let nextButton = nextMatch(in: app)
-        XCTAssertFalse(
-            nextButton.isEnabled,
-            "next button should be disabled when there are no hits")
-        XCTAssertEqual(
-            counter.value as? String, "0 / 0",
-            "counter should remain 0 / 0 with no hits")
+            field.value as? String, "zz",
+            "⌘F should focus the search field so subsequent typing lands in it")
     }
 
     // MARK: - Helpers
-
-    /// Toolbar items in macOS's `NSToolbar` expose two AX `Button`
-    /// elements with the same identifier — an outer host wrapper and
-    /// the inner SwiftUI button. Both proxy to the same SwiftUI
-    /// action and reflect the same enablement state, so picking
-    /// `firstMatch` is fine; the literal subscript form would throw
-    /// "multiple matching elements" on the toolbar variant.
-    @MainActor
-    private func nextMatch(in app: XCUIApplication) -> XCUIElement {
-        app.buttons.matching(identifier: "ChatSearchBar.NextButton").firstMatch
-    }
-
-    @MainActor
-    private func prevMatch(in app: XCUIApplication) -> XCUIElement {
-        app.buttons.matching(identifier: "ChatSearchBar.PrevButton").firstMatch
-    }
 
     @MainActor
     private func launchAppAndSeedTranscript() -> XCUIApplication {

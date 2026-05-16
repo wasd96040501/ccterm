@@ -1,0 +1,80 @@
+name: test-debug
+
+# Manual debug runner for iterating on a single test (or a handful) on CI
+# instead of locally. Triggered only by `gh workflow run`; the standard PR /
+# push pipeline (test.yml) remains the merge gate and is not affected.
+#
+# Cache key matches test.yml exactly, so a debug run reuses the DerivedData
+# that the latest PR run populated → first iteration is just a delta build.
+
+on:
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: |
+          Comma-separated test IDs. Each item must start with
+          `cctermTests/` (unit) or `cctermUITests/` (UI), followed by
+          `<Class>` or `<Class>/<method>`.
+          Examples:
+            cctermUITests/InputBar2StopButtonUITests/testStopButtonCancelsRunningState
+            cctermTests/MessageEntryBlockBuilderTests
+            cctermUITests/FooUITests,cctermTests/BarTests
+        required: true
+        type: string
+
+jobs:
+  test:
+    runs-on: macos-26
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Xcode info
+        run: |
+          xcode-select -p
+          xcodebuild -version
+          sw_vers
+          go version
+
+      - name: Compute cache fingerprint
+        id: fp
+        run: |
+          XCODE=$(xcodebuild -version | head -n1 | awk '{print $2}')
+          FZF_SHA=$(git submodule status thirdparty/fzf | awk '{print $1}' | tr -d ' -+')
+          echo "xcode=$XCODE" >> "$GITHUB_OUTPUT"
+          echo "fzf=$FZF_SHA"  >> "$GITHUB_OUTPUT"
+
+      # Key + restore-keys identical to test.yml so debug runs share the cache
+      # that PR / push runs populate. Bumping .github/cache-salt invalidates
+      # both pipelines together.
+      - name: Cache DerivedData
+        uses: actions/cache@v4
+        with:
+          path: macos/build/test-dd
+          key: dd-${{ runner.os }}-${{ runner.arch }}-xc${{ steps.fp.outputs.xcode }}-fzf${{ steps.fp.outputs.fzf }}-salt${{ hashFiles('.github/cache-salt') }}-src${{ hashFiles('macos/**/*.swift', 'macos/ccterm.xcodeproj/project.pbxproj', 'macos/Config.xcconfig', 'macos/AgentSDK/Package.swift', 'macos/ccterm/Localizable.xcstrings') }}
+          restore-keys: |
+            dd-${{ runner.os }}-${{ runner.arch }}-xc${{ steps.fp.outputs.xcode }}-fzf${{ steps.fp.outputs.fzf }}-salt${{ hashFiles('.github/cache-salt') }}-
+
+      - name: Build for testing
+        run: make build-for-testing
+
+      - name: Run filtered tests
+        env:
+          FILTER: ${{ inputs.filter }}
+        run: ./macos/scripts/test-filtered.sh
+
+      - name: Upload xcresult on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcresult-debug
+          path: /tmp/ccterm-debug-*/result.xcresult
+          if-no-files-found: ignore
+          retention-days: 7

@@ -674,6 +674,18 @@ automatically. Results are on the GitHub Actions page:
   artifact is uploaded automatically and opens in Xcode with screenshots
   and video.
 
+### Iterating on a single UI test
+
+Use the dev-test loop documented in the root [CLAUDE.md](../../CLAUDE.md):
+
+```bash
+gh workflow run test-debug.yml --ref <branch> \
+  -f filter=cctermUITests/InputBar2StopButtonUITests/testStopButtonCancelsRunningState
+scripts/wait-for-workflow.sh --workflow test-debug.yml   # run in background
+```
+
+Shares cache with `test.yml`, so the first iteration is a delta build.
+
 ### Local reproduction
 
 ```bash

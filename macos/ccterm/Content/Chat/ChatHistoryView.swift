@@ -37,11 +37,12 @@ enum ChatHistoryRenderCase: Equatable {
 struct ChatHistoryView: View {
     let sessionId: String
     @Environment(SessionManager2.self) private var manager
+    @Environment(TranscriptSearchBus.self) private var searchBus
     @State private var handle: SessionHandle2?
     @State private var controller = Transcript2Controller()
     @State private var bridge: Transcript2EntryBridge?
-    /// `.findInTranscript` notification (posted by the app-scope ⌘F
-    /// menu item, see `AppCommands`) toggles this. Per-session
+    /// Toggled when the user invokes the global Find command
+    /// (`TranscriptSearchBus.openRequestCounter` bumps). Per-session
     /// because `ChatHistoryView` is `.id(sessionId)`-rebuilt; users
     /// coming back to a session start with the bar hidden.
     @State private var isSearchVisible: Bool = false
@@ -77,7 +78,7 @@ struct ChatHistoryView: View {
             }
         }
         .animation(.easeInOut(duration: 0.15), value: isSearchVisible)
-        .onReceive(NotificationCenter.default.publisher(for: .findInTranscript)) { _ in
+        .onChange(of: searchBus.openRequestCounter) { _, _ in
             isSearchVisible.toggle()
         }
         .task(id: sessionId) {

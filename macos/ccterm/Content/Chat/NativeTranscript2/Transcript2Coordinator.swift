@@ -1146,30 +1146,46 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     }
 
     /// Force any ancestor folds on a search hit's row open before nav
-    /// scrolls to it. Today only fileEdit / textCard child bodies are
-    /// searchable, so this is a no-op for plain text blocks — kept as
-    /// the single entry point so future ToolGroup search support
-    /// (which will hit folded child bodies) lands here unchanged.
-    func expandForSearchHit(blockId: UUID) {
+    /// scrolls to it. For `toolGroup` rows the position encodes which
+    /// child the hit lives in (`.diff` / `.textCard` carry `childIndex`)
+    /// — only that specific child is unfolded so we don't disturb the
+    /// user's expand state on sibling children. When `position` is `nil`
+    /// or carries no child index (plain text blocks land here too),
+    /// only the group host gets opened.
+    func expandForSearchHit(blockId: UUID, position: LayoutPosition? = nil) {
         guard let i = blocks.firstIndex(where: { $0.id == blockId }) else { return }
         switch blocks[i].kind {
         case .toolGroup(let group):
-            // Open the group host first (otherwise children stay
-            // hidden), then any child whose body the hit landed in.
-            // We don't yet know the child id from the hit's range
-            // (search v1 covers .text-only adapters), so the group
-            // unfold is enough; child-aware unfold ships with the
-            // toolGroup search follow-up.
+            // Open the group host first — children only re-lay-out
+            // once the group is expanded; their own `foldStates[child.id]`
+            // is preserved from before the user folded the group.
             if foldStates[blockId] != true {
                 toggleFold(id: blockId)
             }
-            for child in group.children where child.hasExpandableBody {
-                if foldStates[child.id] != true {
-                    toggleFold(id: child.id)
-                }
+            // Then narrow to the specific child the hit landed in.
+            // The hit's position is `LayoutPosition.diff/.textCard`
+            // which carries `childIndex` into `group.children`.
+            guard let childIndex = Self.childIndex(for: position),
+                group.children.indices.contains(childIndex)
+            else { return }
+            let child = group.children[childIndex]
+            if child.hasExpandableBody, foldStates[child.id] != true {
+                toggleFold(id: child.id)
             }
         default:
             return
+        }
+    }
+
+    /// Extract the `childIndex` payload from a tool-group layout position.
+    /// Returns `nil` for any position that doesn't carry one (plain text
+    /// blocks, or `nil` position) — caller treats that as "no specific
+    /// child to expand."
+    private static func childIndex(for position: LayoutPosition?) -> Int? {
+        switch position {
+        case .diff(let i, _): return i
+        case .textCard(let i, _, _): return i
+        default: return nil
         }
     }
 

@@ -15,6 +15,7 @@ enum MockCLIRegistry {
         "hangingTurn": { HangingTurnScenario() },
         "imageEcho": { ImageEchoScenario() },
         "searchableContent": { SearchableContentScenario() },
+        "toolGroupSearchableContent": { ToolGroupSearchableContentScenario() },
     ]
 
     /// Returns nil for unknown names; `MockCLIRunner` writes stderr and exits

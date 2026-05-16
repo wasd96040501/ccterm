@@ -229,7 +229,10 @@ final class Transcript2SearchCoordinator: NSObject {
             let tc = transcript
         else { return }
         let hit = hits[idx]
-        tc.expandForSearchHit(blockId: hit.blockId)
+        // Pass the start position so a tool-group hit unfolds only the
+        // specific child the highlight lives in; plain-text positions
+        // get ignored by `expandForSearchHit`.
+        tc.expandForSearchHit(blockId: hit.blockId, position: hit.range.start)
         tc.scrollBlockIntoView(blockId: hit.blockId)
         tc.markCellSearchDirty(blockId: hit.blockId)
     }

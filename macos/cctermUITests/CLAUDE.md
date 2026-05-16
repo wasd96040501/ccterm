@@ -116,7 +116,7 @@ wrapper instead of calling `.accessibilityIdentifier(_:)` directly:
 
 ```swift
 .testIdentifier("ComponentName.ElementName")
-// e.g. ChatSearchBar.Field, InputBar2.SendButton
+// e.g. ChatSearchBar.NextButton, InputBar2.SendButton
 ```
 
 `testIdentifier(_:)` is defined in `macos/ccterm/Extensions/View+TestIdentifier.swift`.

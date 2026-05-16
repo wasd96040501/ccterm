@@ -369,15 +369,16 @@ per-cell paint is derived, affected cells are reseated via
 two compose at draw time, search highlights composite over the selection
 band.
 
-The host UI is `ChatSearchBarView` mounted in `ChatHistoryView`'s
-top toolbar strip — a plain SwiftUI `HStack` with a leading `Spacer`
-that pushes the field against the trailing edge. Always visible; no
-open / close cycle. ⌘F (via `AppCommands` → `TranscriptSearchBus.requestFocus()`)
-hands keyboard focus to the field without changing visibility. The
-strip is a local `HStack` rather than SwiftUI's window `.toolbar`
-because `.windowStyle(.hiddenTitleBar)` constrains window-toolbar
-rendering and the in-toolbar `TextField` doesn't surface as a
-`textFields` element in XCUITest's accessibility tree.
+The host UI is SwiftUI's built-in `.searchable` modifier attached to
+`ChatHistoryView`, with `placement: .toolbar`. The native `NSSearchField`
+lands in the window toolbar's trailing slot; prev / counter / next live
+next to it as `ToolbarItem`s in a `ToolbarItemGroup(placement:
+.primaryAction)`. Always visible; no open / close cycle. ⌘F (via
+`AppCommands` → `TranscriptSearchBus.requestFocus()`) flips the
+`.searchFocused`-bound `@FocusState` and hands keyboard focus to the
+field without changing visibility. XCUITest reaches the field as
+`app.searchFields.firstMatch` (it surfaces as an `XCUIElement` of type
+`searchField`, not `textField`).
 
 ### Data flow
 

@@ -2,10 +2,11 @@ import XCTest
 
 /// Verifies the in-transcript search feature end-to-end.
 ///
-/// The search field is mounted in `ChatHistoryView`'s top toolbar
-/// strip and is always present — there is no open / close cycle to
-/// drive. Tests click the field directly to take focus, type, then
-/// exercise the counter and the prev / next buttons.
+/// The search field is rendered by SwiftUI's `.searchable` modifier in
+/// the window toolbar's trailing slot and is always present — there is
+/// no open / close cycle to drive. Tests click the field directly to
+/// take focus, type, then exercise the counter and the prev / next
+/// buttons (the latter still live as `ToolbarItem`s next to the field).
 ///
 /// Drives the fixture via `SearchableContentScenario`: after the user
 /// sends a message, the mock emits three assistant lines, two of
@@ -25,7 +26,7 @@ final class TranscriptSearchUITests: XCTestCase {
     func testSearchBarTypeNavigate() throws {
         let app = launchAppAndSeedTranscript()
 
-        let field = app.textFields["ChatSearchBar.Field"]
+        let field = app.searchFields.firstMatch
         XCTAssertTrue(
             field.waitForExistence(timeout: 5),
             "search field should be present in the toolbar")
@@ -45,19 +46,19 @@ final class TranscriptSearchUITests: XCTestCase {
             "first hit should be the current cursor (1-based of 2 total)")
 
         // Next button → second hit.
-        app.buttons["ChatSearchBar.NextButton"].click()
+        nextMatch(in: app).click()
         XCTAssertEqual(
             counter.value as? String, "2 / 2",
             "next button should advance the cursor to the second hit")
 
         // Wrap-around: next on the last hit → first hit.
-        app.buttons["ChatSearchBar.NextButton"].click()
+        nextMatch(in: app).click()
         XCTAssertEqual(
             counter.value as? String, "1 / 2",
             "next on the last hit should wrap back to the first")
 
         // Previous button → wrap back to last.
-        app.buttons["ChatSearchBar.PrevButton"].click()
+        prevMatch(in: app).click()
         XCTAssertEqual(
             counter.value as? String, "2 / 2",
             "previous on the first hit should wrap to the last")
@@ -67,7 +68,7 @@ final class TranscriptSearchUITests: XCTestCase {
     func testSearchBarNoHitsCounter() throws {
         let app = launchAppAndSeedTranscript()
 
-        let field = app.textFields["ChatSearchBar.Field"]
+        let field = app.searchFields.firstMatch
         XCTAssertTrue(
             field.waitForExistence(timeout: 5),
             "search field should be present in the toolbar")
@@ -86,7 +87,7 @@ final class TranscriptSearchUITests: XCTestCase {
 
         // Nav buttons should be disabled — clicking must not crash
         // and must leave counter unchanged.
-        let nextButton = app.buttons["ChatSearchBar.NextButton"]
+        let nextButton = nextMatch(in: app)
         XCTAssertFalse(
             nextButton.isEnabled,
             "next button should be disabled when there are no hits")
@@ -96,6 +97,22 @@ final class TranscriptSearchUITests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    /// Toolbar items in macOS's `NSToolbar` expose two AX `Button`
+    /// elements with the same identifier — an outer host wrapper and
+    /// the inner SwiftUI button. Both proxy to the same SwiftUI
+    /// action and reflect the same enablement state, so picking
+    /// `firstMatch` is fine; the literal subscript form would throw
+    /// "multiple matching elements" on the toolbar variant.
+    @MainActor
+    private func nextMatch(in app: XCUIApplication) -> XCUIElement {
+        app.buttons.matching(identifier: "ChatSearchBar.NextButton").firstMatch
+    }
+
+    @MainActor
+    private func prevMatch(in app: XCUIApplication) -> XCUIElement {
+        app.buttons.matching(identifier: "ChatSearchBar.PrevButton").firstMatch
+    }
 
     @MainActor
     private func launchAppAndSeedTranscript() -> XCUIApplication {
@@ -119,8 +136,12 @@ final class TranscriptSearchUITests: XCTestCase {
 
         // Turn-complete signal: send button reappears once the mock
         // finishes and transcript has the assistant content installed.
+        // 15s rather than 10s: the searchable fixture emits three
+        // assistant lines before `result.success`, and the first test
+        // of the class also eats cold-launch latency on the CI VM —
+        // 10s has been observed to tail-clip just past the deadline.
         XCTAssertTrue(
-            sendButton.waitForExistence(timeout: 10),
+            sendButton.waitForExistence(timeout: 15),
             "send button should reappear after mock completes the turn")
         return app
     }

@@ -86,6 +86,19 @@ struct ChatHistoryView: View {
             prompt: Text("Find in transcript")
         )
         .searchFocused($isSearchFocused)
+        // On macOS 26 (Tahoe) the search field installed by `.searchable`
+        // stretches across the entire toolbar by default, swallowing the
+        // leading area. `ToolbarSpacer(.flexible)` reserves the leading
+        // band so the search field collapses to its natural width and
+        // sits flush against the trailing edge — matching native Mail /
+        // Contacts behavior. macOS 15 already trail-aligns the field
+        // natively, so the spacer is gated by availability and the
+        // toolbar reads as empty on the deployment-target floor.
+        .toolbar {
+            if #available(macOS 26.0, *) {
+                ToolbarSpacer(.flexible)
+            }
+        }
         .onSubmit(of: .search) { controller.nextSearchHit() }
         // Shift+Return for previous match. `.onKeyPress` fires whenever
         // focus is on this view or any descendant — i.e. the search

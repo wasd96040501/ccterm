@@ -1,4 +1,4 @@
-name: ui-test
+name: test
 
 on:
   pull_request:
@@ -6,17 +6,16 @@ on:
     branches: [main]
 
 jobs:
-  ui-test:
+  test:
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
 
       - name: Setup Go
-        # fzf submodule (thirdparty/fzf) 在 Xcode build phase 里 go build 出来,
-        # macos runner 默认未必有 go,显式装一个稳定版本。
+        # fzf submodule is compiled from Go sources inside an Xcode build phase.
         uses: actions/setup-go@v5
         with:
           go-version: stable
@@ -28,14 +27,29 @@ jobs:
           sw_vers
           go version
 
+      # One build for both test targets — `build-for-testing` populates the
+      # derivedData that the two `test-without-building` steps below share.
+      - name: Build for testing
+        run: make build-for-testing
+
+      - name: Run unit tests
+        env:
+          SKIP_BUILD: "1"
+        run: ./macos/scripts/test-unit.sh
+
       - name: Run UI tests
-        run: make test-all
+        env:
+          SKIP_BUILD: "1"
+          ALLOW_FULL_RUN: "1"
+        run: ./macos/scripts/test.sh ""
 
       - name: Upload xcresult on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: xcresult
-          path: /tmp/ccterm-test-*/result.xcresult
+          path: |
+            /tmp/ccterm-test-*/result.xcresult
+            /tmp/ccterm-utest-*/result.xcresult
           if-no-files-found: ignore
           retention-days: 7

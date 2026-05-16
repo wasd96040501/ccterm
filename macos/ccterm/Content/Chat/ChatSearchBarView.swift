@@ -72,7 +72,11 @@ struct ChatSearchBarView: View {
                         .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
                 }
         }
-        .testIdentifier("ChatSearchBar")
+        // Intentionally no `.testIdentifier("ChatSearchBar")` on the
+        // container — SwiftUI propagates container a11y identifiers
+        // to every descendant, clobbering the per-element ids
+        // (`ChatSearchBar.Field`, `.NextButton`, etc.) that the
+        // XCUITest suite queries by.
         .onChange(of: searchBus.focusRequestCounter) { _, _ in
             isFocused = true
         }

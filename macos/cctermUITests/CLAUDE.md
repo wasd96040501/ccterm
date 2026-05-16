@@ -141,7 +141,35 @@ Examples in this codebase:
   DEBUG-only repo. (Same `MainType+Suffix.swift` shape.)
 
 Other notes:
-- **Set on the leaf element**, not the outer container. SwiftUI's container identifier propagates to every descendant and overrides their own ids.
+- **Set on the leaf element, not the outer container.** SwiftUI's
+  container identifier propagates to every descendant and clobbers
+  their own ids — *including* sibling ids set on inner elements. The
+  a11y tree XCUITest sees will collapse to the container's id on
+  every child, and `app.textFields["Foo.Field"]` / `.buttons["Foo.Bar"]`
+  silently fail to match.
+
+  ```swift
+  // ❌ WRONG — outer `.testIdentifier("Foo")` overrides the inner ids
+  HStack {
+      Image(...)
+      TextField(...).testIdentifier("Foo.Field")
+      Button(...).testIdentifier("Foo.Btn")
+  }
+  .testIdentifier("Foo")
+
+  // ✅ RIGHT — leave the container without an identifier
+  HStack {
+      Image(...)
+      TextField(...).testIdentifier("Foo.Field")
+      Button(...).testIdentifier("Foo.Btn")
+  }
+  ```
+
+  Diagnosing this is non-obvious from the XCTAssert message alone
+  ("element doesn't exist"). When that happens, dump the a11y tree:
+  `print(app.debugDescription)` — and the same dump lives in every
+  failure's xcresult bundle under "App UI hierarchy". Look for the
+  leaf elements whose `identifier:` is the *container's* id.
 - Plain `NSTextView` wrapped by `NSViewRepresentable` is not directly addressable via a11y queries — click the outer container to focus the `NSTextView`, then `app.typeText(...)`.
 - App-scope keyboard shortcuts (e.g. ⌘F) should route through a
   `Commands` menu item (`AppCommands`) and signal per-view state via

@@ -2,11 +2,10 @@ import XCTest
 
 /// Verifies the in-transcript search feature end-to-end.
 ///
-/// The search field is mounted as a `.primaryAction` `ToolbarItem` on
-/// `ChatHistoryView` and is always present in the window toolbar —
-/// there is no open / close cycle to drive. Tests click the field
-/// directly to take focus, type, then exercise the counter and the
-/// prev / next buttons.
+/// The search field is mounted in `ChatHistoryView`'s top toolbar
+/// strip and is always present — there is no open / close cycle to
+/// drive. Tests click the field directly to take focus, type, then
+/// exercise the counter and the prev / next buttons.
 ///
 /// Drives the fixture via `SearchableContentScenario`: after the user
 /// sends a message, the mock emits three assistant lines, two of
@@ -22,43 +21,13 @@ final class TranscriptSearchUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    /// Isolation smoke test — verifies the search field is present in the
-    /// accessibility tree right after launch, without going through the
-    /// launch-and-seed helper. If this fails, the field is missing
-    /// regardless of the message-send path, and the diagnostic dump
-    /// printed below tells us exactly what the tree looks like.
-    @MainActor
-    func testAaaSearchFieldPresentOnLaunch() throws {
-        let app = XCUIApplication()
-        app.launchEnvironment = [
-            "CCTERM_TEST_MODE": "1",
-            "CCTERM_MOCK_CLI_SCENARIO": "searchableContent",
-        ]
-        app.launch()
-
-        // Wait for the chat view to mount (signal: send button present).
-        _ = app.buttons["InputBar2.SendButton"].waitForExistence(timeout: 10)
-
-        let field = app.textFields["ChatSearchBar.Field"]
-        let found = field.waitForExistence(timeout: 5)
-        if !found {
-            print("DEBUG a11y tree (no field found):\n\(app.debugDescription)")
-        }
-        XCTAssertTrue(found, "ChatSearchBar.Field must be in the a11y tree at launch")
-    }
-
     @MainActor
     func testSearchBarTypeNavigate() throws {
         let app = launchAppAndSeedTranscript()
 
         let field = app.textFields["ChatSearchBar.Field"]
-        if !field.waitForExistence(timeout: 5) {
-            // Diagnostic dump — CI is hitting a missing field, log the
-            // full a11y tree so we can see what's actually there.
-            print("DEBUG a11y tree (after launchAndSeed):\n\(app.debugDescription)")
-        }
         XCTAssertTrue(
-            field.exists,
+            field.waitForExistence(timeout: 5),
             "search field should be present in the toolbar")
         field.click()
 

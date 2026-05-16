@@ -99,6 +99,14 @@ final class Transcript2HighlightStorage {
         self.engine = engine
     }
 
+    /// macOS 26 SDK workaround — the default `@MainActor` deinit routes
+    /// through `swift_task_deinitOnExecutorImpl`, which aborts inside
+    /// `swift::TaskLocal::StopLookupScope::~StopLookupScope()` (this
+    /// class is the dealloc-chain leaf that owns the offending
+    /// TaskLocal state in `cctermTests`' deinit chain). `nonisolated`
+    /// skips the executor hop. See `SessionHandle2.deinit`.
+    nonisolated deinit {}
+
     /// Late-binding entry point. Idempotent if `engine` is already set to
     /// the same instance (compared by identity); otherwise replaces. The
     /// caller (`Transcript2Coordinator.attachSyntaxEngine`) is responsible

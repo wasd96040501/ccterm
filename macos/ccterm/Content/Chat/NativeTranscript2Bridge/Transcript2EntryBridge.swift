@@ -42,6 +42,14 @@ final class Transcript2EntryBridge {
         self.controller = controller
     }
 
+    /// macOS 26 SDK workaround: a default `@MainActor` deinit routes
+    /// through `swift_task_deinitOnExecutorImpl`, which hits a libmalloc
+    /// abort while tearing down `TaskLocal`. `nonisolated deinit` skips
+    /// that executor hop. See `SessionHandle2.deinit` for the original
+    /// note — same fix, applied to every `@MainActor` class in this
+    /// dealloc chain.
+    nonisolated deinit {}
+
     /// Bind to a handle: every change flows through this object's `apply(_:)`.
     /// Weak capture decouples the handle's lifetime from the view-side bridge —
     /// view dismantle deinits self, the handle's closure becomes weak-nil, and

@@ -2,10 +2,11 @@ import XCTest
 
 /// Verifies the in-transcript search feature end-to-end.
 ///
-/// The search field is mounted in `ChatHistoryView`'s top toolbar
-/// strip and is always present — there is no open / close cycle to
-/// drive. Tests click the field directly to take focus, type, then
-/// exercise the counter and the prev / next buttons.
+/// The search field is rendered by SwiftUI's `.searchable` modifier in
+/// the window toolbar's trailing slot and is always present — there is
+/// no open / close cycle to drive. Tests click the field directly to
+/// take focus, type, then exercise the counter and the prev / next
+/// buttons (the latter still live as `ToolbarItem`s next to the field).
 ///
 /// Drives the fixture via `SearchableContentScenario`: after the user
 /// sends a message, the mock emits three assistant lines, two of
@@ -25,7 +26,7 @@ final class TranscriptSearchUITests: XCTestCase {
     func testSearchBarTypeNavigate() throws {
         let app = launchAppAndSeedTranscript()
 
-        let field = app.textFields["ChatSearchBar.Field"]
+        let field = app.searchFields.firstMatch
         XCTAssertTrue(
             field.waitForExistence(timeout: 5),
             "search field should be present in the toolbar")
@@ -67,7 +68,7 @@ final class TranscriptSearchUITests: XCTestCase {
     func testSearchBarNoHitsCounter() throws {
         let app = launchAppAndSeedTranscript()
 
-        let field = app.textFields["ChatSearchBar.Field"]
+        let field = app.searchFields.firstMatch
         XCTAssertTrue(
             field.waitForExistence(timeout: 5),
             "search field should be present in the toolbar")

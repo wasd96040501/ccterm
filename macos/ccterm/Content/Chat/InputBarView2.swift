@@ -106,7 +106,7 @@ struct InputBarView2: View {
                 .overlay(
                     Circle().stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
                 )
-                .accessibilityIdentifier("InputBar2.AttachButton")
+                .testIdentifier("InputBar2.AttachButton")
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -151,7 +151,7 @@ struct InputBarView2: View {
                     )
             }
             .buttonStyle(.plain)
-            .accessibilityIdentifier("InputBar2.AttachmentThumbnail")
+            .testIdentifier("InputBar2.AttachmentThumbnail")
             .overlay(alignment: .topTrailing) {
                 Button(action: { attachment = nil }) {
                     Image(systemName: "xmark.circle.fill")
@@ -161,7 +161,7 @@ struct InputBarView2: View {
                 }
                 .buttonStyle(.plain)
                 .padding(2)
-                .accessibilityIdentifier("InputBar2.RemoveAttachment")
+                .testIdentifier("InputBar2.RemoveAttachment")
             }
             Spacer(minLength: 0)
         }
@@ -185,7 +185,7 @@ struct InputBarView2: View {
             isFocused: $isFocused,
             desiredCursorPosition: $desiredCursorPosition
         )
-        .accessibilityIdentifier("InputBar2.TextField")
+        .testIdentifier("InputBar2.TextField")
         .padding(.leading, textLeadingPadding)
         .padding(.trailing, textTrailingPadding)
         // (32 - 17)/2 = 7.5: single-line case, 7.5 top + bottom centers the
@@ -203,7 +203,7 @@ struct InputBarView2: View {
                 color: Color(nsColor: .systemGray),
                 action: onStop
             )
-            .accessibilityIdentifier("InputBar2.StopButton")
+            .testIdentifier("InputBar2.StopButton")
             .transition(.scale.combined(with: .opacity))
         } else {
             circleButton(
@@ -211,7 +211,7 @@ struct InputBarView2: View {
                 color: .accentColor,
                 action: handleSend
             )
-            .accessibilityIdentifier("InputBar2.SendButton")
+            .testIdentifier("InputBar2.SendButton")
             .opacity(canSend ? 1.0 : 0.4)
             .disabled(!canSend)
             .transition(.scale.combined(with: .opacity))
@@ -310,7 +310,7 @@ private struct ImagePreviewView: View {
             minWidth: 360, idealWidth: 520, maxWidth: 800,
             minHeight: 280, idealHeight: 420, maxHeight: 720
         )
-        .accessibilityIdentifier("InputBar2.ImagePreview")
+        .testIdentifier("InputBar2.ImagePreview")
     }
 }
 

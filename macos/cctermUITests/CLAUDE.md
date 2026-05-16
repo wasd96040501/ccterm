@@ -287,7 +287,6 @@ A SwiftUI `Menu` on macOS 26 surfaces as a `MenuButton`. Two surprises:
        Image(systemName: "plus")  // …styling
    }
    .accessibilityLabel(String(localized: "Attach image or file"))   // ← test handle
-   .testIdentifier("InputBar2.AttachButton")                        // future-proofing
    ```
 
    ```swift
@@ -295,8 +294,12 @@ A SwiftUI `Menu` on macOS 26 surfaces as a `MenuButton`. Two surprises:
    let attach = app.menuButtons["Attach image or file"]
    ```
 
-   Keep the `.testIdentifier(...)` too — if Apple starts honoring it in a
-   future macOS, the test side switches over without touching production.
+   **Don't** add a "future-proofing" `.testIdentifier(...)` alongside the
+   label — XCUITest doesn't honor it on `Menu` today, and dead identifiers
+   that nothing queries are exactly the kind of speculative chrome we don't
+   ship (see the [no-dead-code rule below](#production-code-forbidden-patterns)).
+   When a future macOS starts honoring it, add it then — alongside the
+   test that queries it.
 
 2. The menu *items* also swallow identifiers — XCUITest does not surface
    `.accessibilityIdentifier(_:)` placed on a `Button` inside a `Menu`. The
@@ -540,6 +543,14 @@ problems are fixed *on the test side*.
   it (then put the call site in a `+TestSupport.swift` file and add a
   real DEBUG seam) or it doesn't (then tighten the access). Stale
   "test hook" comments are forbidden.
+- ❌ **Don't leave speculative test-hook chrome in production.** A
+  `.testIdentifier(...)` that no current test queries, an
+  `.accessibilityLabel(...)` added "just in case", a public method that
+  exists only to keep a hypothetical future test convenient — all dead.
+  Add them alongside the test that needs them, never ahead of one.
+  This is the same "don't design for hypothetical future requirements"
+  rule the project applies to production code generally — UI-test
+  chrome doesn't get an exception.
 
 ### Allowed DEBUG seams
 

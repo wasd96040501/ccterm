@@ -85,14 +85,11 @@ struct InputBarView2: View {
 
     private var attachButton: some View {
         // SwiftUI `Menu` on macOS 26 renders as a `MenuButton` whose
-        // accessibility node ignores child identifiers — putting
-        // `.accessibilityIdentifier` inside the label closure is
-        // silently dropped. The reliable handle is
-        // `.accessibilityLabel(_:)` on the Menu itself, which sets the
-        // MenuButton's `title` attribute; tests query
-        // `app.menuButtons["InputBar2.AttachButton"]`. Keep
-        // `.testIdentifier` too in case future macOS versions start
-        // honoring it.
+        // accessibility node swallows child identifiers — putting
+        // `.testIdentifier` on the Menu or its label closure is
+        // silently dropped. The stable handle is `.accessibilityLabel`
+        // on the Menu (sets the MenuButton's AX label); tests query
+        // `app.menuButtons["Attach image or file"]`.
         Menu {
             Button {
                 presentImagePicker()
@@ -119,7 +116,6 @@ struct InputBarView2: View {
         // primary query key — `app.menuButtons["Attach image or file"]`
         // — since the MenuButton swallows identifiers.
         .accessibilityLabel(String(localized: "Attach image or file"))
-        .testIdentifier("InputBar2.AttachButton")
     }
 
     // MARK: - Pill

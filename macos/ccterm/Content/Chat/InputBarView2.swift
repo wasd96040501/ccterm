@@ -21,7 +21,6 @@ struct InputBarView2: View {
     private let pillMinHeight: CGFloat = 32
     private let sendButtonSize: CGFloat = 24
     private let sendButtonInset: CGFloat = 4
-    private let attachButtonSize: CGFloat = 24
     private let attachToPillSpacing: CGFloat = 8
     private let textLeadingPadding: CGFloat = 12
     private let textTrailingPadding: CGFloat = 4
@@ -69,7 +68,7 @@ struct InputBarView2: View {
 
     var body: some View {
         HStack(alignment: .bottom, spacing: attachToPillSpacing) {
-            attachButton
+            AttachButton(onPickImage: presentImagePicker)
             pill
         }
         .animation(.smooth(duration: animationDuration), value: isRunning)
@@ -79,43 +78,6 @@ struct InputBarView2: View {
                 ImagePreviewView(thumbnail: attachment.thumbnail)
             }
         }
-    }
-
-    // MARK: - Attach Button
-
-    private var attachButton: some View {
-        // SwiftUI `Menu` on macOS 26 renders as a `MenuButton` whose
-        // accessibility node swallows child identifiers — putting
-        // `.testIdentifier` on the Menu or its label closure is
-        // silently dropped. The stable handle is `.accessibilityLabel`
-        // on the Menu (sets the MenuButton's AX label); tests query
-        // `app.menuButtons["Attach image or file"]`.
-        Menu {
-            Button {
-                presentImagePicker()
-            } label: {
-                Label(String(localized: "Image"), systemImage: "photo")
-            }
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: iconPointSize, weight: .bold))
-                .foregroundStyle(.primary)
-                .frame(width: attachButtonSize, height: attachButtonSize)
-                .background(
-                    Circle().fill(Color(nsColor: .controlBackgroundColor).opacity(0.6))
-                )
-                .overlay(
-                    Circle().stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
-                )
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        // Semantic label for VoiceOver: replaces the SF-symbol-derived
-        // default ("Add") with a meaningful word. Tests use it as the
-        // primary query key — `app.menuButtons["Attach image or file"]`
-        // — since the MenuButton swallows identifiers.
-        .accessibilityLabel(String(localized: "Attach image or file"))
     }
 
     // MARK: - Pill

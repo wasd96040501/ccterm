@@ -2,7 +2,6 @@
   "sourceLanguage": "en",
   "strings": {
     "": {},
-    "%@:": {},
     "%lld": {},
     "%lld blocks · %lld KB": {
       "localizations": {
@@ -47,8 +46,8 @@
         }
       }
     },
-    "+%lld": {},
     "@ Select directory · Enter temporary session": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -59,6 +58,7 @@
       }
     },
     "@ Select directory · ⌘Enter temporary session": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -69,6 +69,7 @@
       }
     },
     "Accept Edits": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -79,6 +80,7 @@
       }
     },
     "Add \"%@\"": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -100,6 +102,7 @@
       }
     },
     "Add Directory…": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -120,6 +123,7 @@
       }
     },
     "Add folders": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -141,6 +145,7 @@
       }
     },
     "Additional Dirs (%lld)": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -185,6 +190,7 @@
       }
     },
     "Archive": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -206,6 +212,7 @@
       }
     },
     "Ask Permission": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -216,6 +223,7 @@
       }
     },
     "Ask before every tool use": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -336,6 +344,7 @@
       }
     },
     "Auto": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -368,6 +377,7 @@
       }
     },
     "Auto accept file edits only": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -378,6 +388,7 @@
       }
     },
     "Automatically determine when to ask": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -388,6 +399,7 @@
       }
     },
     "Available after session starts": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -398,6 +410,7 @@
       }
     },
     "Back": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -408,6 +421,7 @@
       }
     },
     "Branches (%lld)": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -418,6 +432,7 @@
       }
     },
     "Bypass Permissions": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -428,6 +443,7 @@
       }
     },
     "CLI Starting": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -438,6 +454,7 @@
       }
     },
     "Cancel": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -458,6 +475,7 @@
       }
     },
     "Claude asked a question, but no options were provided.": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -468,6 +486,7 @@
       }
     },
     "Claude has questions": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -512,6 +531,7 @@
     },
     "Clear Logs": {},
     "Clear context and auto-accept all changes": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -522,6 +542,7 @@
       }
     },
     "Click + to add folders": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -532,6 +553,7 @@
       }
     },
     "Command Enter (⌘↩)": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -553,6 +575,7 @@
       }
     },
     "Confirm": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -575,6 +598,7 @@
     },
     "Copy All": {},
     "Copy Branch": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -585,6 +609,7 @@
       }
     },
     "Copy Path": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -605,6 +630,7 @@
       }
     },
     "Create plan before making changes": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -658,6 +684,7 @@
       }
     },
     "Deny": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -788,6 +815,7 @@
       }
     },
     "Enter (↩)": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -798,6 +826,7 @@
       }
     },
     "Enter to comment": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -808,6 +837,7 @@
       }
     },
     "Enter to deny with feedback": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -818,6 +848,7 @@
       }
     },
     "Enter to queue": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -838,6 +869,7 @@
       }
     },
     "Execute": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -848,6 +880,7 @@
       }
     },
     "Execute and Discard Comments": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -989,6 +1022,7 @@
       }
     },
     "Find Next": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -999,6 +1033,7 @@
       }
     },
     "Find Previous": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1039,6 +1074,7 @@
       }
     },
     "Generating branch…": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1182,6 +1218,7 @@
       }
     },
     "High": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1284,6 +1321,7 @@
       }
     },
     "Keep context and auto-accept file edits": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1324,6 +1362,7 @@
       }
     },
     "Local Project": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1335,6 +1374,7 @@
     },
     "Logs": {},
     "Low": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1356,6 +1396,7 @@
       }
     },
     "Max": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1366,6 +1407,7 @@
       }
     },
     "Medium": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1376,6 +1418,7 @@
       }
     },
     "New Conversation": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1385,7 +1428,9 @@
         }
       }
     },
+    "New Session": {},
     "New Worktree": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1396,6 +1441,7 @@
       }
     },
     "No Archived Sessions": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1406,6 +1452,7 @@
       }
     },
     "No Matching Branches": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1416,6 +1463,7 @@
       }
     },
     "No matches": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1426,6 +1474,7 @@
       }
     },
     "No plugin directories": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1446,6 +1495,7 @@
       }
     },
     "Open in Finder": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1467,6 +1517,7 @@
       }
     },
     "Pin": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1477,6 +1528,7 @@
       }
     },
     "Pinned": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1487,6 +1539,7 @@
       }
     },
     "Plan": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1497,6 +1550,7 @@
       }
     },
     "Please select a working directory first": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1507,6 +1561,7 @@
       }
     },
     "Plugins": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1517,6 +1572,7 @@
       }
     },
     "Primary Directory": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1767,6 +1823,7 @@
       }
     },
     "Reject": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1787,6 +1844,7 @@
       }
     },
     "Remove selected folder": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1808,6 +1866,7 @@
       }
     },
     "Reveal JSONL in Finder": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1818,6 +1877,7 @@
       }
     },
     "Review and approve each change individually": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1828,6 +1888,7 @@
       }
     },
     "Revise": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1848,6 +1909,7 @@
       }
     },
     "Running": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -2008,6 +2070,7 @@
       }
     },
     "Search branches…": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -2018,6 +2081,7 @@
       }
     },
     "Search folders…": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -2241,6 +2305,7 @@
       }
     },
     "Select Working Directory": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -2251,6 +2316,7 @@
       }
     },
     "Select a plugin directory": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -2261,6 +2327,7 @@
       }
     },
     "Select folders to add": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -2271,6 +2338,7 @@
       }
     },
     "Select plugin directories": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -2281,6 +2349,7 @@
       }
     },
     "Select primary directory and additional directories": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -2291,6 +2360,7 @@
       }
     },
     "Select the target branch to switch to": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -2300,6 +2370,7 @@
         }
       }
     },
+    "Send a message": {},
     "Send message with": {
       "localizations": {
         "zh-Hans": {
@@ -2310,7 +2381,6 @@
         }
       }
     },
-    "Session exited with code %d": {},
     "Session exited with code %lld": {
       "extractionState": "stale",
       "localizations": {
@@ -2343,6 +2413,7 @@
       }
     },
     "Skip all permission checks": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -2363,6 +2434,7 @@
       }
     },
     "Start New Conversation": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -2373,6 +2445,7 @@
       }
     },
     "Switch Branch": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -2383,6 +2456,7 @@
       }
     },
     "Temporary Session": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -2413,6 +2487,7 @@
       }
     },
     "Type something": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -2423,6 +2498,7 @@
       }
     },
     "Unarchive": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -2433,6 +2509,7 @@
       }
     },
     "Unpin": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -2533,6 +2610,7 @@
       }
     },
     "View Plan": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -2553,6 +2631,7 @@
       }
     },
     "Working Directory": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -2563,6 +2642,7 @@
       }
     },
     "Worktree": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -2683,6 +2763,7 @@
       }
     },
     "You have unsent comments": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -2693,6 +2774,7 @@
       }
     },
     "Your comments will be discarded after execution. Continue?": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -2715,6 +2797,7 @@
     "ccterm": {},
     "claude": {},
     "current": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -2735,6 +2818,7 @@
       }
     },
     "recent": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -2744,8 +2828,8 @@
         }
       }
     },
-    "… truncated": {},
     "⌘Enter to comment": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -2756,6 +2840,7 @@
       }
     },
     "⌘Enter to deny with feedback": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -2766,6 +2851,7 @@
       }
     },
     "⌘Enter to queue": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -2784,8 +2870,7 @@
           }
         }
       }
-    },
-    "⌘N": {}
+    }
   },
   "version": "1.0"
 }

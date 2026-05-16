@@ -30,18 +30,12 @@ enum ChatHistoryRenderCase: Equatable {
 /// `sessionId` changes and all `@State` resets. This prevents a new session's
 /// first frame from inheriting the old session's controller state.
 ///
-/// **Search bar lives in the window toolbar via `.searchable`** — the native
-/// macOS `NSSearchField` renders in the toolbar's trailing slot. ⌘F focus
-/// is handed in via `TranscriptSearchBus` + `.searchFocused`. The transcript
-/// runs flush against the window's top edge with the search field reading as
-/// a chromeless floating affordance. That flush behavior is a four-modifier
-/// recipe: `.windowStyle(.hiddenTitleBar)` and `.windowToolbarStyle(.unifiedCompact)`
-/// on the `Window` scene collapse the toolbar into the title-bar band
-/// (instead of stacking under it) and enable `fullSizeContentView`;
-/// `.toolbarBackground(.hidden, for: .windowToolbar)` here keeps the
-/// toolbar's material from painting over the transcript; and
-/// `.ignoresSafeArea(edges: .top)` at the `RootView2` call site lets the
-/// transcript extend up under the toolbar slot.
+/// **Search bar lives in the window toolbar via `.searchable`** — the
+/// native macOS search field renders in the toolbar's trailing slot. ⌘F
+/// focus is handed in via `TranscriptSearchBus` + `.searchFocused`. The
+/// toolbar keeps its natural material background so the search field
+/// reads as a native control; the top fade-blur scrim in `RootView2`
+/// softens the seam between toolbar chrome and the first transcript row.
 ///
 /// **Navigation keys**: plain `Return` advances to the next match (wired
 /// through `.onSubmit(of: .search)` while the field has focus);
@@ -86,19 +80,6 @@ struct ChatHistoryView: View {
             prompt: Text("Find in transcript")
         )
         .searchFocused($isSearchFocused)
-        // On macOS 26 (Tahoe) the search field installed by `.searchable`
-        // stretches across the entire toolbar by default, swallowing the
-        // leading area. `ToolbarSpacer(.flexible)` reserves the leading
-        // band so the search field collapses to its natural width and
-        // sits flush against the trailing edge — matching native Mail /
-        // Contacts behavior. macOS 15 already trail-aligns the field
-        // natively, so the spacer is gated by availability and the
-        // toolbar reads as empty on the deployment-target floor.
-        .toolbar {
-            if #available(macOS 26.0, *) {
-                ToolbarSpacer(.flexible)
-            }
-        }
         .onSubmit(of: .search) { controller.nextSearchHit() }
         // Shift+Return for previous match. `.onKeyPress` fires whenever
         // focus is on this view or any descendant — i.e. the search
@@ -116,12 +97,6 @@ struct ChatHistoryView: View {
         .onChange(of: searchBus.focusRequestCounter) { _, _ in
             isSearchFocused = true
         }
-        // Hide the toolbar's material background so the transcript can
-        // run flush to the window's top edge under the floating search
-        // field. Combined with `.ignoresSafeArea(edges: .top)` at the
-        // call site in RootView2, this gives a true edge-to-edge
-        // transcript with the search field as a chromeless overlay.
-        .toolbarBackground(.hidden, for: .windowToolbar)
         .task(id: sessionId) {
             // Use `prepareDraft` so a draft session (no record yet) still gets a
             // handle and mounts `NativeTranscript2View` — this keeps the NSView

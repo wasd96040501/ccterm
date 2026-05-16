@@ -62,6 +62,7 @@ struct RootView2: View {
             // first-start side effects only when needed.
             ChatHistoryView(sessionId: sid)
                 .id(sid)
+                .ignoresSafeArea(edges: .top)
                 .overlay(alignment: .top) {
                     // Top fade scrim, mirror of the bottom one: same
                     // windowBackgroundColor LinearGradient, direction
@@ -137,21 +138,6 @@ struct RootView2: View {
                     .padding(.bottom, 36)
                 }
                 .coordinateSpace(name: Self.detailCoordSpace)
-                // `.ignoresSafeArea(edges: .top)` is applied AFTER the
-                // overlays so the entire composite (transcript + top
-                // fade scrim + bottom scrim + input bar) extends into
-                // the toolbar/title-bar band. Applied BEFORE the
-                // overlays, only the transcript NSView extends —
-                // the SwiftUI `.overlay(alignment: .top)` frame is
-                // still computed in the safe-area-restricted bounds,
-                // and the scrim's top would sit ~40pt below the
-                // window's top edge (the toolbar reservation). Move
-                // it here and the overlay's bounds inherit the
-                // extension, so the scrim's top aligns with the
-                // window's top — which is what
-                // `ChatHistoryTopFadeScrimUITests.testTranscriptFlushToWindowTop`
-                // asserts via `scrim.frame.minY ≈ window.frame.minY`.
-                .ignoresSafeArea(edges: .top)
         } else {
             Color.clear
         }

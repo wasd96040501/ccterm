@@ -13,10 +13,11 @@ import UniformTypeIdentifiers
 /// - pill: 32pt min height, `cornerRadius = 16`. Send button is concentric
 ///   with the bottom-right corner: button radius 12, shared center ⇒ 4pt
 ///   from the right / bottom.
-/// - attach: standalone `AttachButton` (circle button rendered via system
-///   `.bordered` / `.glass` styling), vertically centered with the pill,
-///   8pt spacing — Gestalt proximity reads as "two related but independent
-///   controls".
+/// - attach: standalone `AttachButton` — a 32pt circle anchored to the
+///   pill's bottom edge with 8pt spacing. Bottom-aligning (rather than
+///   centering) means the `+` stays glued to the text row even when the
+///   pill grows upward to host a thumbnail strip, instead of drifting up
+///   to the overall pill center.
 struct InputBarView2: View {
     static let cornerRadius: CGFloat = 16
     private let pillMinHeight: CGFloat = 32
@@ -26,7 +27,7 @@ struct InputBarView2: View {
     private let textLeadingPadding: CGFloat = 12
     private let textTrailingPadding: CGFloat = 4
     private let textVerticalPadding: CGFloat = 7.5
-    private let thumbnailSize: CGFloat = 56
+    private let thumbnailSize: CGFloat = 48
     private let thumbnailTopPadding: CGFloat = 8
     private let thumbnailBottomPadding: CGFloat = 8
     private let thumbnailLeadingPadding: CGFloat = 12
@@ -80,7 +81,14 @@ struct InputBarView2: View {
     @State private var isPresentingPreview: Bool = false
 
     var body: some View {
-        HStack(alignment: .center, spacing: attachToPillSpacing) {
+        // `.bottom` (not `.center`) so the attach button always sits at
+        // the bottom 32pt of the pill where the text row lives. Without
+        // an attachment, pill and attach are both 32pt high → centers
+        // coincide. With an attachment, pill grows upward to host the
+        // thumbnail strip, but the text row stays anchored to the
+        // bottom — bottom-alignment keeps the `+` centered on the text
+        // row rather than drifting to the overall pill center.
+        HStack(alignment: .bottom, spacing: attachToPillSpacing) {
             AttachButton(onPickImage: presentImagePicker)
                 .modifier(ReportFrame(coordSpace: coordSpace, action: onAttachRect))
             pill

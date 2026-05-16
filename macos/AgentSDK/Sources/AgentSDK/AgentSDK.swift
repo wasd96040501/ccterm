@@ -90,6 +90,7 @@ public final class Session {
         let binaryPathOverride = configuration.binaryPath
         let customCommand = configuration.customCommand
         let envOverrides = configuration.env
+        let inheritsParentEnvironment = configuration.inheritsParentEnvironment
         let arguments = buildArguments()
 
         // Run binary lookup, env resolution, and Process.run() off the calling thread.
@@ -137,7 +138,16 @@ public final class Session {
             proc.arguments = finalArguments
             proc.currentDirectoryURL = workingDirectory
 
-            var env = ShellEnvironment.loginEnvironment() ?? ProcessInfo.processInfo.environment
+            // Skip the login-shell env collection when the caller is launching
+            // a binary that doesn't depend on the user's login PATH (e.g. the
+            // UI-test mock CLI is a self-contained Swift binary). `zsh -li -c env`
+            // is multi-second on CI runners, so this short-circuit removes the
+            // dominant cost from first-send bootstrap in tests.
+            let baseEnv =
+                inheritsParentEnvironment
+                ? ProcessInfo.processInfo.environment
+                : (ShellEnvironment.loginEnvironment() ?? ProcessInfo.processInfo.environment)
+            var env = baseEnv
             env.removeValue(forKey: "CLAUDECODE")
             for (k, v) in envOverrides { env[k] = v }
             proc.environment = env

@@ -62,6 +62,7 @@ struct RootView2: View {
             // first-start side effects only when needed.
             ChatHistoryView(sessionId: sid)
                 .id(sid)
+                .ignoresSafeArea(edges: .top)
                 .overlay(alignment: .top) {
                     // Top fade scrim, mirror of the bottom one: same
                     // windowBackgroundColor LinearGradient, direction
@@ -81,7 +82,7 @@ struct RootView2: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .allowsHitTesting(false)
                     .accessibilityElement()
-                    .accessibilityIdentifier("ChatHistory.TopFadeScrim")
+                    .testIdentifier("ChatHistory.TopFadeScrim")
                 }
                 .overlay(alignment: .bottom) {
                     // Fade scrim: a standalone gradient at the detail pane
@@ -126,7 +127,7 @@ struct RootView2: View {
                     InputBarChrome(
                         sessionId: sid,
                         coordSpace: Self.detailCoordSpace,
-                        onSubmit: { text in submit(text: text, sessionId: sid) },
+                        onSubmit: { submission in submit(submission, sessionId: sid) },
                         onBarRect: { rect in barRect = rect }
                     )
                     .frame(
@@ -155,7 +156,12 @@ struct RootView2: View {
     /// message (draft launch), set a default cwd and flip selection from
     /// `newSessionTag` to the concrete sessionId; subsequent messages take the
     /// same branch and forward directly to the handle.
-    private func submit(text: String, sessionId: String) {
+    ///
+    /// Image-bearing submissions take the `send(image:mediaType:caption:)`
+    /// route; text-only submissions take `send(text:)`. The caption is the
+    /// trimmed text when both are present, otherwise the default `[image]`
+    /// label from the handle.
+    private func submit(_ submission: InputBarView2.Submission, sessionId: String) {
         let handle = manager.prepareDraft(sessionId)
         let isFirstStart = !handle.hasRecord
         if isFirstStart {
@@ -165,7 +171,12 @@ struct RootView2: View {
             // lacking that directory and dragged subsequent resumes down with it.)
             handle.setCwd(FileManager.default.homeDirectoryForCurrentUser.path)
         }
-        handle.send(text: text)
+        if let image = submission.image {
+            let caption = submission.text.isEmpty ? nil : submission.text
+            handle.send(image: image.data, mediaType: image.mediaType, caption: caption)
+        } else {
+            handle.send(text: submission.text)
+        }
         if isFirstStart {
             manager.refreshRecords()
             selectedSessionId = sessionId
@@ -185,7 +196,7 @@ struct RootView2: View {
 private struct InputBarChrome: View {
     let sessionId: String
     let coordSpace: String
-    let onSubmit: (String) -> Void
+    let onSubmit: (InputBarView2.Submission) -> Void
     let onBarRect: (CGRect) -> Void
 
     @Environment(SessionManager2.self) private var manager

@@ -216,6 +216,94 @@ button.click()
 - Expecting absence: `XCTAssertFalse(element.exists)` (no wait — UI mutations are visible synchronously).
 - Assertion messages state **which invariant was violated**, not "X should be Y".
 
+## Hard-won XCUITest patterns
+
+The XCUITest accessibility model differs from what most SwiftUI tutorials show, and the semantics change across macOS versions. Don't iterate by intuition — when something doesn't surface, **web-search a confirmed working recipe first** (Apple Developer Forums, Stack Overflow), link the source in the test file's comments, and add a one-liner to this section so the next person doesn't redo the search.
+
+**Forbidden shortcut:** *never* mutate production code (swap `Menu` for `Popover`, add hidden test-only menu items, gate behavior on an env var to bypass an OS dialog) to make a UI test pass. The CI failure is a test-side problem; fix it on the test side, or — once you've exhausted real-UI options — add an isolated DEBUG injection in a `+TestSupport.swift` file with a comment linking the constraint that forced it.
+
+### Diagnosing "element not found"
+
+When `app.buttons[id]` / `app.images[id]` / etc. return `false`, *don't* keep guessing at element types. Print the live accessibility tree from inside a failing test and read it from the CI log:
+
+```swift
+print("=== full a11y tree ===")
+print(app.debugDescription)
+```
+
+You'll see entries like `Button, 0x…, identifier: 'InputBar2.SendButton', {{x, y}, {w, h}}` and you can pick the matching element type directly. Remove the diagnostic before merging.
+
+### SwiftUI `Menu` on macOS
+
+`Menu` does *not* surface as a `.button` or `.menuButton`. The label-as-`Image` workaround that Apple Developer Forums posts mention is iOS-specific — it does not transfer to current macOS. The recipe that works on macOS 26+:
+
+```swift
+Menu {
+    Button("Image") { presentImagePicker() }
+} label: {
+    Image(systemName: "plus") // …
+}
+.accessibilityIdentifier("MyMenu")  // outer Menu, NOT inner Image
+```
+
+Query the activator with `app.descendants(matching: .any)["MyMenu"]` (type-agnostic; the live tree will tell you the exact type — common variants are `.popUpButton` and `.menuButton`, but the `.descendants(.any)` query works regardless of macOS version).
+
+Once the menu is open, items are addressable by their **localized visible label** through `app.menuItems`:
+
+```swift
+attachButton.click()
+let item = app.menuItems["Image"]   // visible label, NOT a11y id
+item.click()
+```
+
+XCUITest does not surface `.accessibilityIdentifier` placed on the body of a `Button` *inside* a `Menu` — the visible label is the only stable handle. Tests run in English (see the keyboard caveat above) so use the English string.
+
+### Driving `NSOpenPanel` (and other OS dialogs)
+
+`NSOpenPanel` is system-owned but **XCUITest can drive it** through the host app's `XCUIApplication`. On macOS 26 it surfaces as a regular *window* (identifier `'open-panel'`, title `'Open'`) — not as `.dialog` and not as `.sheet`. Older recipes from Apple Developer Forums use `app.dialogs.firstMatch`, which silently doesn't match anymore. Standard recipe for selecting a known absolute path:
+
+```swift
+let panel = app.windows["open-panel"]
+XCTAssertTrue(panel.waitForExistence(timeout: 10))
+
+// "Go to Folder" is a sheet on the panel window, with a single
+// textField for the path (not a comboBox as older recipes suggest).
+app.typeKey("g", modifierFlags: [.command, .shift])
+let goSheet = panel.sheets.firstMatch
+XCTAssertTrue(goSheet.waitForExistence(timeout: 5))
+
+let pathField = goSheet.textFields.firstMatch
+XCTAssertTrue(pathField.waitForExistence(timeout: 5))
+
+// Use the pasteboard, not typeText — the field's autocomplete is
+// fast enough to interleave its own suggestions mid-stream and
+// garble the result (a CI screen recording showed
+// '/tmp/ccterm-ui-test-atta/tmp/ccterm-...png' instead of the
+// path). Pasting bypasses the autocomplete entirely.
+let pb = NSPasteboard.general
+pb.clearContents()
+pb.setString("/tmp/my-test-file.png", forType: .string)
+pathField.click()
+app.typeKey("a", modifierFlags: .command)
+app.typeKey("v", modifierFlags: .command)
+app.typeKey(.return, modifierFlags: [])  // macOS 26 hides the Go button
+
+let openButton = panel.buttons["Open"]
+XCTAssertTrue(openButton.waitForExistence(timeout: 5))
+
+// Wait for `isEnabled` — a disabled Open button still accepts clicks
+// under XCUITest, so the test would pass and the file wouldn't open.
+let enabled = NSPredicate(format: "isEnabled == true")
+_ = XCTWaiter().wait(
+    for: [XCTNSPredicateExpectation(predicate: enabled, object: openButton)],
+    timeout: 5)
+openButton.click()
+```
+
+The test runner can write a fixture to `/tmp` in `setUpWithError` and remove it in `tearDownWithError` — production code reads the file via the real `Data(contentsOf:)` path, so the panel + filesystem branches both stay covered.
+
+Sources: [Apple Developer Forums — "How do we use NSOpenPanel in XCUITests"](https://developer.apple.com/forums/thread/63275) (keyboard flow; element-type advice is now outdated). The `open-panel` window identifier was confirmed by dumping `app.debugDescription` on the macOS 26 CI runner.
+
 ## Running tests
 
 ### Default: CI

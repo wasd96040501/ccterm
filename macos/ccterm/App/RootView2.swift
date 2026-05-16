@@ -116,8 +116,6 @@ struct RootView2: View {
                     .frame(height: Self.topFadeScrimHeight)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .allowsHitTesting(false)
-                    .accessibilityElement()
-                    .testIdentifier("ChatHistory.TopFadeScrim")
                 }
                 .overlay(alignment: .bottom) {
                     // Fade scrim: a standalone gradient at the detail pane

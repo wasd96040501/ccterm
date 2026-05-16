@@ -8,7 +8,7 @@ on:
 jobs:
   test:
     runs-on: macos-26
-    timeout-minutes: 35
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with:
@@ -59,29 +59,14 @@ jobs:
           restore-keys: |
             dd-${{ runner.os }}-${{ runner.arch }}-xc${{ steps.fp.outputs.xcode }}-fzf${{ steps.fp.outputs.fzf }}-salt${{ hashFiles('.github/cache-salt') }}-
 
-      # One build for both test targets — `build-for-testing` populates the
-      # derivedData that the two `test-without-building` steps below share.
-      - name: Build for testing
-        run: make build-for-testing
-
       - name: Run unit tests
-        env:
-          SKIP_BUILD: "1"
-        run: ./macos/scripts/test-unit.sh
-
-      - name: Run UI tests
-        env:
-          SKIP_BUILD: "1"
-          ALLOW_FULL_RUN: "1"
-        run: ./macos/scripts/test.sh ""
+        run: make test-unit
 
       - name: Upload xcresult on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: xcresult
-          path: |
-            /tmp/ccterm-test-*/result.xcresult
-            /tmp/ccterm-utest-*/result.xcresult
+          path: /tmp/ccterm-utest-*/result.xcresult
           if-no-files-found: ignore
           retention-days: 7

@@ -9,11 +9,7 @@ final class AppState {
     let recentProjects = RecentProjectsStore()
 
     init() {
-        #if DEBUG
-        self.sessionManager2 = AppState.applyTestModeIfNeeded() ?? SessionManager2()
-        #else
         self.sessionManager2 = SessionManager2()
-        #endif
 
         // Eagerly load the syntax highlight engine in the background so the
         // first `highlightBatch` call doesn't pay the JSCore / highlight.js

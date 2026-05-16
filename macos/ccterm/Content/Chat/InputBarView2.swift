@@ -141,7 +141,6 @@ struct InputBarView2: View {
                     )
             }
             .buttonStyle(.plain)
-            .testIdentifier("InputBar2.AttachmentThumbnail")
             .overlay(alignment: .topTrailing) {
                 Button(action: { attachment = nil }) {
                     Image(systemName: "xmark.circle.fill")
@@ -151,7 +150,6 @@ struct InputBarView2: View {
                 }
                 .buttonStyle(.plain)
                 .padding(2)
-                .testIdentifier("InputBar2.RemoveAttachment")
             }
             Spacer(minLength: 0)
         }
@@ -175,7 +173,6 @@ struct InputBarView2: View {
             isFocused: $isFocused,
             desiredCursorPosition: $desiredCursorPosition
         )
-        .testIdentifier("InputBar2.TextField")
         .padding(.leading, textLeadingPadding)
         .padding(.trailing, textTrailingPadding)
         // (32 - 17)/2 = 7.5: single-line case, 7.5 top + bottom centers the
@@ -193,7 +190,6 @@ struct InputBarView2: View {
                 color: Color(nsColor: .systemGray),
                 action: onStop
             )
-            .testIdentifier("InputBar2.StopButton")
             .transition(.scale.combined(with: .opacity))
         } else {
             circleButton(
@@ -201,7 +197,6 @@ struct InputBarView2: View {
                 color: .accentColor,
                 action: handleSend
             )
-            .testIdentifier("InputBar2.SendButton")
             .opacity(canSend ? 1.0 : 0.4)
             .disabled(!canSend)
             .transition(.scale.combined(with: .opacity))
@@ -318,7 +313,6 @@ private struct ImagePreviewView: View {
             minWidth: 360, idealWidth: 520, maxWidth: 800,
             minHeight: 280, idealHeight: 420, maxHeight: 720
         )
-        .testIdentifier("InputBar2.ImagePreview")
     }
 }
 

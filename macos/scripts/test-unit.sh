@@ -1,17 +1,17 @@
 #!/bin/bash
-# Unit-test runner. Runs cctermTests against the shared derivedData built by
-# `build-for-testing.sh`. Parallel by default — each XCTestCase class runs in
-# its own process, so they must not share global state (see
+# Unit-test runner. Builds (incrementally) and runs cctermTests in one
+# xcodebuild invocation. Parallel by default — each XCTestCase class runs
+# in its own process, so they must not share global state (see
 # cctermTests/CLAUDE.md).
 #
 # Usage:
 #   ./scripts/test-unit.sh                       # all unit tests (parallel)
 #   ./scripts/test-unit.sh ClassName             # one class
 #   ./scripts/test-unit.sh ClassName/method      # one method
-#   SKIP_BUILD=1 ./scripts/test-unit.sh          # CI mode: use existing derivedData
 #
-# When SKIP_BUILD=1, DERIVED_DATA_PATH must be set or the script falls back to
-# the standard path used by build-for-testing.sh.
+# DerivedData is cached under macos/build/test-dd by default; override with
+# DERIVED_DATA_PATH if needed. CI restores the same path from cache so the
+# first run after a cache hit is incremental.
 #
 # Exit codes:
 #   0 success / 1 test failure / 2 build failure.
@@ -56,16 +56,9 @@ else
   XCB_ARGS+=(-only-testing:"$TEST_TARGET")
 fi
 
-# Action: with SKIP_BUILD=1, expect derivedData populated by a prior
-# build-for-testing run; just run the tests. Otherwise: build + test in one
-# invocation (xcodebuild handles incremental builds).
-if [ "${SKIP_BUILD:-0}" = "1" ]; then
-  XCB_ARGS+=(test-without-building)
-else
-  XCB_ARGS+=(test)
-fi
+XCB_ARGS+=(test)
 
-echo "Running unit tests: filter=${FILTER:-<all>} skip-build=${SKIP_BUILD:-0}"
+echo "Running unit tests: filter=${FILTER:-<all>}"
 echo "DerivedData: $DERIVED_DATA_PATH"
 echo "Logs: $LOG_DIR"
 

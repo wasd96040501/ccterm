@@ -1,10 +1,11 @@
 # Unit tests
 
-`cctermTests` is the unit-test target. Use it for **pure-logic** tests that
-don't need to drive the SwiftUI/AppKit view hierarchy — bridge dispatch,
-history parsing, block-builder output, session-handle state transitions.
-Everything that requires real focus + mouse + keyboard belongs in
-`cctermUITests` instead.
+`cctermTests` is the only test target. Use it for **pure-logic** tests
+— bridge dispatch, history parsing, block-builder output, session-handle
+state transitions. There is no separate UI-test target; cover anything
+that would otherwise require a click / keystroke / focus state by
+exercising the underlying handle, bridge, or controller directly. See
+the root [CLAUDE.md](../../CLAUDE.md#tests) for the rationale.
 
 ## Parallel execution: hard rules
 
@@ -82,19 +83,19 @@ addTeardownBlock { try? FileManager.default.removeItem(at: url) }
 handle.loadHistory(overrideURL: url)
 ```
 
-## What goes here vs. UI tests
+## What goes here
 
-| Scenario | Target |
+| Scenario | Approach |
 |---|---|
-| Block builder produces correct ids for a parsed entry | `cctermTests` |
-| `SessionHandle2.loadHistory` fires `.reset` with prebuilt blocks | `cctermTests` |
-| Bridge applies `.reset` → controller's blockIds match | `cctermTests` |
-| User clicks Send and the input field clears | `cctermUITests` |
-| Sidebar selection brings the right transcript forward | `cctermUITests` |
+| Block builder produces correct ids for a parsed entry | Call the builder, assert on its output |
+| `SessionHandle2.loadHistory` fires `.reset` with prebuilt blocks | Wire up a closure on the handle, assert it fires with the expected payload |
+| Bridge applies `.reset` → controller's blockIds match | Construct the bridge + controller, feed a `MessagesChange`, assert controller state |
+| Send-button enable state under various input | Drive `SessionHandle2.send` and inspect `isRunning` / `status` directly |
+| Sidebar selection routes to the right handle | Hold the manager, simulate the selection change in code, assert the resulting handle |
 
-If the question is **"given input X, does function/object Y produce
-output Z"** — it's a unit test. If the question involves a click, a key
-press, a window, or a focus state — it's a UI test.
+If a test feels like it wants to "click a button," reach for the
+underlying method the button would invoke. The button click is `handle.send(...)`;
+the keystroke is `controller.handleKey(...)`. Test those.
 
 ## Running
 
@@ -114,8 +115,8 @@ development.
 
 ## CI
 
-The `test` workflow (`.github/workflows/test.yml`) builds the test bundles
-once via `make build-for-testing`, then runs both `cctermTests` and
-`cctermUITests` against the same derivedData using
-`test-without-building`. A failure in either uploads the matching
-`xcresult` to the workflow artifacts.
+The `test` workflow (`.github/workflows/test.yml`) runs `make test-unit`
+on every PR and push to `main`. DerivedData under `macos/build/test-dd`
+is cached across runs so incremental builds reuse `.swiftmodule` /
+`.o` outputs. On failure, the `xcresult` bundle is uploaded as a
+workflow artifact for post-mortem.

@@ -9,7 +9,8 @@ import Observation
 ///
 /// Holds its own `SessionRepository` instance: in production it's
 /// `CoreDataSessionRepository` (sharing `CoreDataStack.shared` with the
-/// legacy stack); in UI tests it's `InMemorySessionRepository` (DEBUG only).
+/// legacy stack); unit tests can inject `InMemorySessionRepository`
+/// (DEBUG only) to avoid touching the real CoreData store.
 @Observable
 @MainActor
 final class SessionManager2 {

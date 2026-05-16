@@ -4,10 +4,10 @@ import Foundation
 
 /// In-memory implementation of `SessionRepository`.
 ///
-/// **DEBUG build only.** UI tests use this to avoid contaminating the main
-/// CoreData store (`CDSessionRecord`) with dirty data. Lifetime is tied to
-/// a single app process; everything is wiped on exit, no persistent side
-/// effects.
+/// **DEBUG build only.** Unit tests inject this so they can drive a
+/// `SessionManager2` / `SessionHandle2` without touching the on-disk
+/// CoreData store (`CDSessionRecord`). Lifetime is tied to a single
+/// process; everything is wiped on exit, no persistent side effects.
 ///
 /// Behavior contract matches `CoreDataSessionRepository`, so swapping does
 /// not require branching in `SessionManager2` / `SessionHandle2`.

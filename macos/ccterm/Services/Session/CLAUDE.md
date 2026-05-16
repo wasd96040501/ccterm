@@ -46,4 +46,4 @@ The AppKit path deliberately skips `AsyncStream` and `@Observable`:
 
 ## Test infrastructure
 
-The mock CLI runtime (`MockCLI/`) and `InMemorySessionRepository` exist to make UI tests deterministic without spawning the real Claude CLI. Details live in [cctermUITests/CLAUDE.md](../../../cctermUITests/CLAUDE.md). Do not add `forceXxxForTest()` methods on `SessionHandle2` or `SessionManager2` — author a scenario instead.
+Unit tests inject `InMemorySessionRepository` (DEBUG only) when constructing a `SessionManager2` so they don't touch the on-disk CoreData store. Do not add `forceXxxForTest()` methods on `SessionHandle2` or `SessionManager2` — drive the handle through its public surface (send / interrupt / loadHistory / receive) and assert on the observable result instead.

@@ -1,5 +1,6 @@
 import SwiftUI
 
+@main
 struct CCTermApp: App {
     @State private var appState = AppState()
     @State private var searchBus = TranscriptSearchBus()

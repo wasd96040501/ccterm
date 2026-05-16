@@ -135,10 +135,25 @@ final class InputBar2AttachImageUITests: XCTestCase {
             "Menu should contain an 'Image' item")
         imageItem.click()
 
+        // Give the panel a moment to mount, then probe across element
+        // types. macOS 26 may surface NSOpenPanel as a sheet attached to
+        // the host window, not as a `.dialog`. Embed the probe + full
+        // a11y tree in the assertion message so the CI log shows the
+        // exact element type to query for.
+        Thread.sleep(forTimeInterval: 2)
+        let probe =
+            "dialogs=\(app.dialogs.count) "
+            + "sheets=\(app.sheets.count) "
+            + "windows=\(app.windows.count) "
+            + "buttons[Open]=\(app.buttons["Open"].exists) "
+            + "buttons[Cancel]=\(app.buttons["Cancel"].exists)"
         let panel = app.dialogs.firstMatch
-        XCTAssertTrue(
-            panel.waitForExistence(timeout: 10),
-            "NSOpenPanel should appear after selecting the Image menu item")
+        if !panel.waitForExistence(timeout: 5) {
+            XCTFail(
+                "NSOpenPanel not addressable as Dialog. "
+                    + "Probe: \(probe)\n\nFull a11y tree:\n\(app.debugDescription)")
+            return
+        }
 
         // ⌘⇧G opens the "Go to Folder" sheet — the documented way to
         // address an absolute path inside NSOpenPanel without browsing.

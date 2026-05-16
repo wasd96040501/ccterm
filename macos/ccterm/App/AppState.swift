@@ -6,6 +6,7 @@ import SwiftUI
 final class AppState {
     let sessionManager2: SessionManager2
     let syntaxEngine = SyntaxHighlightEngine()
+    let recentProjects = RecentProjectsStore()
 
     init() {
         #if DEBUG

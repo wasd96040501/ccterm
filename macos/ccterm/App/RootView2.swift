@@ -39,6 +39,7 @@ struct RootView2: View {
     /// nil → repo's current branch (Worktree falls back to detached check).
     @State private var draftSourceBranch: String?
     @Environment(SessionManager2.self) private var manager
+    @Environment(RecentProjectsStore.self) private var recents
     /// Compose mode is "the New Session tab is selected." Once `submit`
     /// flips `selectedSessionId` to the concrete draft UUID, this turns
     /// false and the animated layout settles the input bar at the
@@ -277,6 +278,12 @@ struct RootView2: View {
             handle.setWorktree(draftUseWorktree)
             if draftUseWorktree {
                 handle.setWorktreeBranch(draftSourceBranch)
+            }
+            // Surface the project in next session's recents list. Only
+            // when the user explicitly picked a folder — home fallback
+            // isn't a "project".
+            if let picked = draftCwd {
+                recents.add(picked)
             }
         }
         if let image = submission.image {

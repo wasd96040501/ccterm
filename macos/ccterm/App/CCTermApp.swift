@@ -8,6 +8,7 @@ struct CCTermApp: App {
         Window("ccterm", id: "main") {
             RootView2()
                 .environment(appState.sessionManager2)
+                .environment(appState.recentProjects)
                 .environment(\.syntaxEngine, appState.syntaxEngine)
                 .environment(searchBus)
         }

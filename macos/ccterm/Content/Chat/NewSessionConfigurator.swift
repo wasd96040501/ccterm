@@ -2,22 +2,20 @@ import AppKit
 import SwiftUI
 
 /// "Compose" card shown above the input bar on the New Session tab. Two
-/// columns separated by a vertical divider, mirroring Xcode's welcome
-/// window:
+/// columns (no visible divider), mirroring Xcode's welcome window:
 ///
 /// - **Left**: a centered (H+V) stack — hammer icon, "Start Building
-///   <folder>" single-line heading, and an optional source-branch row
-///   (branch picker + Worktree checkbox). The branch row hides entirely
-///   when the chosen folder is not a git repo or HEAD is detached.
-/// - **Right**: a sidebar-styled list of recent project folders derived
-///   from `SessionManager2.records` (unique by `groupingPath`). Selecting
-///   one writes back through `folderPath`. Empty state directs the user
-///   to the `+` button in the top-right header.
+///   <folder>" single-line heading, and a branch + Worktree row that
+///   fades in / out (opacity-only, so the icon/title don't shift) when
+///   the picked folder is or isn't a git repo with a named HEAD.
+/// - **Right**: a sidebar-styled list of recent project folders backed
+///   by `RecentProjectsStore` (UserDefaults). Selecting one writes back
+///   through `folderPath`. Each row has a right-click menu (Reveal in
+///   Finder / Remove from Recents).
 ///
 /// State for the chosen folder / branch / worktree flag is owned by the
 /// caller (RootView2) so the same values feed straight into the submit
-/// path — this view holds only derived caches (git probe results, recent
-/// list).
+/// path — this view holds only derived caches (git probe results).
 struct NewSessionConfigurator: View {
     @Binding var folderPath: String?
     @Binding var useWorktree: Bool
@@ -26,52 +24,61 @@ struct NewSessionConfigurator: View {
     /// Fixed visual height; the parent assumes this when computing the
     /// compose-mode vertical centering padding.
     static let height: CGFloat = 300
-    /// Right-column width. Left column takes the rest minus a 1pt divider.
+    /// Right-column width. Left column takes the rest.
     private static let recentColumnWidth: CGFloat = 240
 
-    @Environment(SessionManager2.self) private var manager
+    @Environment(RecentProjectsStore.self) private var recents
     @State private var branches: [String] = []
     @State private var currentBranch: String? = nil
     @State private var isGitRepo: Bool = false
+    @State private var showBranchPicker: Bool = false
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 12) {
             leftPanel
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(16)
-            Divider()
             rightPanel
-                .frame(width: Self.recentColumnWidth, alignment: .top)
+                .frame(width: Self.recentColumnWidth)
                 .frame(maxHeight: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color(nsColor: .controlBackgroundColor))
+                )
         }
         .frame(height: Self.height)
         .testIdentifier("NewSession.Card")
-        .onChange(of: folderPath) { _, _ in refreshGitInfo(resetOverride: true) }
-        .task { refreshGitInfo(resetOverride: true) }
+        .task(id: folderPath) { refreshGitInfo(resetOverride: true) }
     }
 
     // MARK: - Left panel
 
-    /// Centered (H+V) stack: hammer icon, single-line title, optional
-    /// branch row. The branch row fades in / out so switching between a
-    /// git folder and a plain folder doesn't snap the layout.
+    /// Centered (H+V) stack: hammer icon, single-line title, branch row.
+    /// The branch row fades via opacity (never structurally removed) so
+    /// the icon + title stay in the same position regardless of the
+    /// picked folder's git status.
     @ViewBuilder
     private var leftPanel: some View {
+        let branchVisible = currentBranch != nil
+        // Outer VStack centers the whole block (icon + leading-aligned
+        // title/branch sub-block) in the left panel. Inner VStack uses
+        // .leading alignment so the branch row starts at the title
+        // text's leading edge, not the column edge. The icon sits in
+        // its own row above and is centered relative to the sub-block.
         VStack(spacing: 14) {
             Image(systemName: "hammer.fill")
                 .font(.system(size: 44, weight: .regular))
                 .foregroundStyle(.tint)
                 .frame(height: 56)
 
-            Text(headingText)
-                .font(.system(size: 18, weight: .semibold))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(maxWidth: .infinity)
+            VStack(alignment: .leading, spacing: 10) {
+                Text(headingText)
+                    .font(.system(size: 18, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
 
-            if currentBranch != nil {
                 HStack(spacing: 10) {
-                    branchPicker
+                    branchPill
                     Toggle(isOn: $useWorktree) {
                         Text(String(localized: "Worktree"))
                             .font(.system(size: 12))
@@ -80,11 +87,12 @@ struct NewSessionConfigurator: View {
                     .controlSize(.small)
                     .testIdentifier("NewSession.WorktreeToggle")
                 }
-                .transition(.opacity)
+                .opacity(branchVisible ? 1 : 0)
+                .allowsHitTesting(branchVisible)
+                .animation(.smooth(duration: 0.25), value: branchVisible)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .animation(.smooth(duration: 0.25), value: currentBranch)
     }
 
     /// "Start Building <folder>" on one line. Folder name is trimmed of
@@ -98,38 +106,38 @@ struct NewSessionConfigurator: View {
         return name.isEmpty ? base : "\(base) \(name)"
     }
 
+    /// Branch trigger: hover-capsule pill that opens the popover-based
+    /// `BranchPickerView` (the same reusable component the legacy chat
+    /// stack used). Confirming a branch in the popover writes
+    /// `sourceBranch` and dismisses.
     @ViewBuilder
-    private var branchPicker: some View {
+    private var branchPill: some View {
         let displayBranch = sourceBranch ?? currentBranch ?? ""
-        Menu {
-            ForEach(branches, id: \.self) { name in
-                Button(action: { sourceBranch = name }) {
-                    if name == sourceBranch || (sourceBranch == nil && name == currentBranch) {
-                        Label(name, systemImage: "checkmark")
-                    } else {
-                        Text(name)
-                    }
-                }
-            }
+        Button {
+            showBranchPicker = true
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "arrow.triangle.branch")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 14, height: 14)
                 Text(displayBranch)
+                    .font(.system(size: 12))
                     .lineLimit(1)
                     .truncationMode(.middle)
-                    .font(.system(size: 12))
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .frame(maxWidth: 180)
+            .foregroundStyle(.secondary)
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
+        .buttonStyle(HoverCapsuleStyle())
+        .popover(isPresented: $showBranchPicker, arrowEdge: .bottom) {
+            BranchPickerView(
+                branches: branches,
+                currentBranch: currentBranch,
+                onSelect: { selected in
+                    sourceBranch = selected
+                    showBranchPicker = false
+                }
+            )
+        }
         .testIdentifier("NewSession.BranchPicker")
     }
 
@@ -158,7 +166,7 @@ struct NewSessionConfigurator: View {
             .padding(.top, 12)
             .padding(.bottom, 6)
 
-            if recents.isEmpty {
+            if recents.entries.isEmpty {
                 emptyRecents
             } else {
                 recentsList
@@ -190,9 +198,17 @@ struct NewSessionConfigurator: View {
         // means picking a row is a single round-trip into the same
         // state RootView2 reads at submit time.
         List(selection: folderPathSelection) {
-            ForEach(recents) { entry in
+            ForEach(recents.entries) { entry in
                 recentRow(entry)
                     .tag(entry.path as String?)
+                    .contextMenu {
+                        Button(String(localized: "Reveal in Finder")) {
+                            revealInFinder(entry.path)
+                        }
+                        Button(String(localized: "Remove from Recents")) {
+                            removeFromRecents(entry.path)
+                        }
+                    }
             }
         }
         .listStyle(.sidebar)
@@ -213,7 +229,7 @@ struct NewSessionConfigurator: View {
     }
 
     @ViewBuilder
-    private func recentRow(_ entry: RecentFolder) -> some View {
+    private func recentRow(_ entry: RecentProjectsStore.Entry) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(entry.name)
                 .font(.system(size: 12, weight: .medium))
@@ -227,34 +243,7 @@ struct NewSessionConfigurator: View {
         .padding(.vertical, 2)
     }
 
-    // MARK: - Recents derivation
-
-    private struct RecentFolder: Hashable, Identifiable {
-        var id: String { path }
-        let path: String
-        let name: String
-        let lastActive: Date
-    }
-
-    /// One row per unique `groupingPath`, sorted by the most recent
-    /// `lastActiveAt` in that group. Capped to keep the list a short
-    /// pick-from-recents rather than a second sidebar.
-    private var recents: [RecentFolder] {
-        var seen = Set<String>()
-        var out: [RecentFolder] = []
-        for record in manager.records {
-            guard let path = record.groupingPath else { continue }
-            if seen.insert(path).inserted {
-                let name = (path as NSString).lastPathComponent
-                out.append(
-                    RecentFolder(path: path, name: name, lastActive: record.lastActiveAt))
-            }
-            if out.count >= 20 { break }
-        }
-        return out
-    }
-
-    // MARK: - Folder picker
+    // MARK: - Folder picker / actions
 
     private func presentFolderPicker() {
         let panel = NSOpenPanel()
@@ -264,17 +253,29 @@ struct NewSessionConfigurator: View {
         panel.message = String(localized: "Choose a folder for the new session")
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
+            recents.add(url.path)
             folderPath = url.path
+        }
+    }
+
+    private func revealInFinder(_ path: String) {
+        let url = URL(fileURLWithPath: path)
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    private func removeFromRecents(_ path: String) {
+        recents.remove(path)
+        if folderPath == path {
+            folderPath = nil
         }
     }
 
     // MARK: - Git probing
 
     /// Cache `isGitRepo` / `currentBranch` / `branches` for the picked
-    /// folder. Called once on appear and whenever `folderPath` changes.
-    /// All git calls are short, synchronous, and bounded by `runGit`'s
-    /// timeout — invoking them on the main actor is fine for a one-shot
-    /// directory probe.
+    /// folder. Called on appear and whenever `folderPath` changes (via
+    /// `.task(id:)`). If the picked path no longer exists on disk, the
+    /// recents entry is silently removed.
     ///
     /// `resetOverride` forces `sourceBranch` back to the new repo's
     /// current branch — needed when the folder changes, otherwise the
@@ -289,12 +290,26 @@ struct NewSessionConfigurator: View {
             sourceBranch = nil
             return
         }
-        isGitRepo = GitUtils.isGitRepository(at: path)
-        if isGitRepo {
-            let head = GitUtils.currentBranch(at: path)
-            currentBranch = head
-            branches = Self.listBranches(at: path)
-            if resetOverride || sourceBranch == nil || !branches.contains(sourceBranch ?? "") {
+        // Stale recents entry: folder no longer exists. Drop it and
+        // clear the selection so the user gets the no-folder UI.
+        if !FileManager.default.fileExists(atPath: path) {
+            recents.remove(path)
+            folderPath = nil
+            isGitRepo = false
+            branches = []
+            currentBranch = nil
+            useWorktree = false
+            sourceBranch = nil
+            return
+        }
+        let repo = GitUtils.isGitRepository(at: path)
+        let head = repo ? GitUtils.currentBranch(at: path) : nil
+        let list = repo ? Self.listBranches(at: path) : []
+        isGitRepo = repo
+        currentBranch = head
+        branches = list
+        if repo {
+            if resetOverride || sourceBranch == nil || !list.contains(sourceBranch ?? "") {
                 sourceBranch = head
             }
             if head == nil {
@@ -305,8 +320,6 @@ struct NewSessionConfigurator: View {
         } else {
             useWorktree = false
             sourceBranch = nil
-            currentBranch = nil
-            branches = []
         }
     }
 
@@ -341,5 +354,5 @@ struct NewSessionConfigurator: View {
         .padding(40)
     }
     .frame(width: 720, height: 460)
-    .environment(SessionManager2())
+    .environment(RecentProjectsStore())
 }

@@ -101,6 +101,13 @@ final class Transcript2Controller {
         }
     }
 
+    /// macOS 26 SDK workaround — see `SessionHandle2.deinit` for the
+    /// background. The default `@MainActor` deinit aborts inside
+    /// `swift::TaskLocal::StopLookupScope::~StopLookupScope()` when the
+    /// dealloc chain tears down our `Transcript2HighlightStorage`'s
+    /// `TaskLocal` state. `nonisolated` skips the executor hop.
+    nonisolated deinit {}
+
     /// Cached `loadInitial` payload when the coordinator's table isn't
     /// mounted (or hasn't been tiled to a positive width) at call time.
     /// Consumed by `consumePendingInitial`, which `coordinator.onLayoutReady`

@@ -20,6 +20,7 @@ SCHEME="ccterm"
 DESTINATION='platform=macOS,arch=arm64'
 TEST_TARGET="cctermUITests"
 FILTER="${1:-}"
+DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-$PWD/build/test-dd}"
 
 # --- 参数守卫 ---
 if [ -z "$FILTER" ] && [ "${ALLOW_FULL_RUN:-0}" != "1" ]; then
@@ -52,6 +53,7 @@ XCB_ARGS=(
   -scheme "$SCHEME"
   -configuration Debug
   -destination "$DESTINATION"
+  -derivedDataPath "$DERIVED_DATA_PATH"
   -resultBundlePath "$XCRESULT"
   # 忽略签名:UI test 不需要分发,本地/CI 都不依赖开发者证书。
   # `DEVELOPMENT_TEAM=` 覆盖 Local.xcconfig 里可能设的值。
@@ -62,8 +64,19 @@ XCB_ARGS=(
 )
 if [ -n "$FILTER" ]; then
   XCB_ARGS+=(-only-testing:"$TEST_TARGET/$FILTER")
+else
+  # No FILTER → restrict to the UI test target so we don't accidentally pick
+  # up cctermTests (that's what test-unit.sh is for).
+  XCB_ARGS+=(-only-testing:"$TEST_TARGET")
 fi
-XCB_ARGS+=(test)
+
+# SKIP_BUILD=1 → reuse derivedData populated by build-for-testing.sh. Otherwise
+# build + test in one invocation.
+if [ "${SKIP_BUILD:-0}" = "1" ]; then
+  XCB_ARGS+=(test-without-building)
+else
+  XCB_ARGS+=(test)
+fi
 
 echo "Running UI test: filter=${FILTER:-<all>}"
 echo "Logs: $LOG_DIR"

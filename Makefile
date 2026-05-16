@@ -1,9 +1,9 @@
-.PHONY: build release dmg clean fmt fmt-check test test-all help
+.PHONY: build release dmg clean fmt fmt-check test test-all test-unit build-for-testing help
 
 XCSTRINGS := macos/ccterm/Localizable.xcstrings
 FMT_XCSTRINGS := python3 macos/scripts/fmt-xcstrings.py
 SWIFT_FORMAT := swift-format
-SWIFT_SRC := macos/ccterm macos/cctermUITests macos/AgentSDK/Sources
+SWIFT_SRC := macos/ccterm macos/cctermTests macos/cctermUITests macos/AgentSDK/Sources
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  make %-12s %s\n", $$1, $$2}'
@@ -24,6 +24,12 @@ test: ## Run UI test — REQUIRES FILTER=ClassName or ClassName/method (see CLAU
 
 test-all: ## Run all UI tests (slow; only when full coverage explicitly needed)
 	ALLOW_FULL_RUN=1 ./macos/scripts/test.sh ""
+
+test-unit: ## Run unit tests (cctermTests) — fast, parallel-safe, no UI focus theft
+	./macos/scripts/test-unit.sh "$(FILTER)"
+
+build-for-testing: ## Build test bundles once for reuse by unit + UI test runs (CI optimization)
+	./macos/scripts/build-for-testing.sh
 
 dmg: ## Create DMG installer (usage: make dmg APP=/path/to/ccterm.app)
 	@test -n "$(APP)" || (echo "Usage: make dmg APP=/path/to/ccterm.app" && exit 1)

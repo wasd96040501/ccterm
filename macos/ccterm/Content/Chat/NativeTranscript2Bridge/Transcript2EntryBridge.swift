@@ -26,8 +26,13 @@ import Foundation
 final class Transcript2EntryBridge {
     let controller: Transcript2Controller
 
-    private var entryOrder: [UUID] = []
-    private var entryBlockIds: [UUID: [UUID]] = [:]
+    // Module-internal so `cctermTests` (compiled with `@testable import`)
+    // can verify the reverse map after `.reset` / `.prepended` without
+    // having to mount an `NSTableView` (the bridge's contract is that
+    // these tables match the entry order it received, regardless of
+    // whether the controller's table is real).
+    private(set) var entryOrder: [UUID] = []
+    private(set) var entryBlockIds: [UUID: [UUID]] = [:]
     /// Tracks whether `loadInitial` has fired. Any append / update arriving
     /// before it is the abnormal path (handle hasn't reset yet) — fall back
     /// by treating the entry as a reset seed so content isn't lost.
@@ -36,6 +41,14 @@ final class Transcript2EntryBridge {
     init(controller: Transcript2Controller) {
         self.controller = controller
     }
+
+    /// macOS 26 SDK workaround: a default `@MainActor` deinit routes
+    /// through `swift_task_deinitOnExecutorImpl`, which hits a libmalloc
+    /// abort while tearing down `TaskLocal`. `nonisolated deinit` skips
+    /// that executor hop. See `SessionHandle2.deinit` for the original
+    /// note — same fix, applied to every `@MainActor` class in this
+    /// dealloc chain.
+    nonisolated deinit {}
 
     /// Bind to a handle: every change flows through this object's `apply(_:)`.
     /// Weak capture decouples the handle's lifetime from the view-side bridge —
@@ -51,14 +64,14 @@ final class Transcript2EntryBridge {
 
     func apply(_ change: MessagesChange) {
         switch change {
-        case .reset(let entries):
-            applyReset(entries)
+        case .reset(let entries, let precomputed):
+            applyReset(entries, precomputed: precomputed)
             for entry in entries { pushStatuses(for: entry) }
         case .appended(let entry):
             applyAppend(entry)
             pushStatuses(for: entry)
-        case .prepended(let entries):
-            applyPrepend(entries)
+        case .prepended(let entries, let precomputed):
+            applyPrepend(entries, precomputed: precomputed)
             for entry in entries { pushStatuses(for: entry) }
         case .updated(let entry):
             applyUpdate(entry)
@@ -68,6 +81,19 @@ final class Transcript2EntryBridge {
             // already evicted the entry's `statusStates` slots.
             applyRemove(entry)
         }
+    }
+
+    /// Pull the blocks for an entry from the precomputed map (off-main
+    /// build) when available, otherwise fall back to the inline
+    /// `MessageEntryBlockBuilder.entryBlocks` (on-main Markdown parse).
+    /// The fallback keeps every code path well-defined when a caller
+    /// doesn't ship a precomputed payload — incremental writes
+    /// (`.appended` / `.updated`) intentionally don't.
+    private func blocks(for entry: MessageEntry, precomputed: [UUID: [Block]]?) -> [Block] {
+        if let cached = precomputed?[entry.id] {
+            return cached
+        }
+        return MessageEntryBlockBuilder.entryBlocks(entry)
     }
 
     // MARK: - Status push
@@ -157,7 +183,7 @@ final class Transcript2EntryBridge {
 
     // MARK: - Reset (loadInitial / re-entry)
 
-    private func applyReset(_ entries: [MessageEntry]) {
+    private func applyReset(_ entries: [MessageEntry], precomputed: [UUID: [Block]]?) {
         // Rebuild reverse tables and collect blocks.
         var newOrder: [UUID] = []
         newOrder.reserveCapacity(entries.count)
@@ -165,7 +191,7 @@ final class Transcript2EntryBridge {
         newMap.reserveCapacity(entries.count)
         var allBlocks: [Block] = []
         for entry in entries {
-            let blocks = MessageEntryBlockBuilder.entryBlocks(entry)
+            let blocks = self.blocks(for: entry, precomputed: precomputed)
             newOrder.append(entry.id)
             newMap[entry.id] = blocks.map(\.id)
             allBlocks.append(contentsOf: blocks)
@@ -237,12 +263,12 @@ final class Transcript2EntryBridge {
 
     // MARK: - Prepend (loadHistory Phase B)
 
-    private func applyPrepend(_ entries: [MessageEntry]) {
+    private func applyPrepend(_ entries: [MessageEntry], precomputed: [UUID: [Block]]?) {
         var prefixBlocks: [Block] = []
         var newOrder: [UUID] = []
         var newMap: [UUID: [UUID]] = [:]
         for entry in entries {
-            let blocks = MessageEntryBlockBuilder.entryBlocks(entry)
+            let blocks = self.blocks(for: entry, precomputed: precomputed)
             newOrder.append(entry.id)
             newMap[entry.id] = blocks.map(\.id)
             prefixBlocks.append(contentsOf: blocks)
@@ -253,8 +279,15 @@ final class Transcript2EntryBridge {
 
         guard !prefixBlocks.isEmpty else { return }
         // Prepend → `.saveVisible(.visualTop)` keeps the user's currently
-        // visible first line at the same visual position.
-        controller.coordinator.apply(
+        // visible first line at the same visual position. Route through
+        // `applyInBackground` so the per-row layout precompute (paragraph
+        // wrap, code-block typeset, tool-group geometry) runs on a
+        // detached `userInitiated` task and not on the main thread —
+        // mirroring what `loadInitial`'s Phase 2 already does for the
+        // first-screen path. The bridge stays synchronous from the
+        // handle's perspective: the structural change still lands in a
+        // single main hop.
+        controller.coordinator.applyInBackground(
             [.insert(after: nil, prefixBlocks)],
             scroll: .saveVisible(.visualTop))
     }

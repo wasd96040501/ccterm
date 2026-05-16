@@ -40,24 +40,56 @@ struct ChatHistoryView: View {
     @State private var handle: SessionHandle2?
     @State private var controller = Transcript2Controller()
     @State private var bridge: Transcript2EntryBridge?
+    /// ⌘F toggles this. The search bar is mounted only while true —
+    /// its `.onDisappear` clears the transcript's search state so
+    /// dismiss = wipe (no lingering yellow rects). Per-session because
+    /// ChatHistoryView is `.id(sessionId)`-rebuilt; users coming back
+    /// to a session start with the bar hidden.
+    @State private var isSearchVisible: Bool = false
 
     var body: some View {
-        Group {
-            if let handle {
-                switch ChatHistoryRenderCase.classify(handle.historyLoadState) {
-                case .error(let reason):
-                    ContentUnavailableView(
-                        "Failed to load history",
-                        systemImage: "exclamationmark.triangle",
-                        description: Text(reason)
-                    )
-                case .transcript:
-                    NativeTranscript2View(controller: controller)
+        ZStack(alignment: .top) {
+            Group {
+                if let handle {
+                    switch ChatHistoryRenderCase.classify(handle.historyLoadState) {
+                    case .error(let reason):
+                        ContentUnavailableView(
+                            "Failed to load history",
+                            systemImage: "exclamationmark.triangle",
+                            description: Text(reason)
+                        )
+                    case .transcript:
+                        NativeTranscript2View(controller: controller)
+                    }
+                } else {
+                    Color.clear
                 }
-            } else {
-                Color.clear
+            }
+
+            // Hidden ⌘F trigger — a SwiftUI `Button` is the only
+            // place `keyboardShortcut` actually delivers events to.
+            // 0-opacity + 0-frame so the chrome stays invisible; the
+            // button only exists for its shortcut binding.
+            Button("") {
+                isSearchVisible.toggle()
+            }
+            .keyboardShortcut("f", modifiers: .command)
+            .opacity(0)
+            .frame(width: 0, height: 0)
+            .accessibilityIdentifier("ChatHistory.SearchShortcut")
+
+            if isSearchVisible {
+                ChatSearchBarView(
+                    controller: controller,
+                    onDismiss: { isSearchVisible = false }
+                )
+                .padding(.top, 12)
+                .padding(.trailing, 16)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
+        .animation(.easeInOut(duration: 0.15), value: isSearchVisible)
         .task(id: sessionId) {
             // Use `prepareDraft` so a draft session (no record yet) still gets a
             // handle and mounts `NativeTranscript2View` — this keeps the NSView

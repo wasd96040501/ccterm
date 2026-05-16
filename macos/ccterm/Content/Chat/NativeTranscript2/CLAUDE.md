@@ -72,6 +72,18 @@ All structural changes route through `applyStructuralChange` ([:348-410](Transcr
 
 `handleHighlightDidFill` ([:418-425](Transcript2Coordinator.swift:418)) calls only `removeCachedLayout(for:) + reloadData(forRowIndexes:)`. Tokens change color, never glyph positions or line breaks. **Cost of adding `noteHeightOfRows`**: AppKit re-queries `heightOfRow` for the changed row and every following row (O(N) layout passes per fill).
 
+### 2.13b Search highlights bypass `Change.update`
+
+`Transcript2SearchCoordinator` keeps hits in a sparse `[UUID: [Int]]`-indexed
+dict (sibling to `selection`). On scan / nav, only the affected cells are
+asked to repaint via `markCellSearchDirty(blockId:)`, which sets
+`BlockCellView.searchHighlights` and triggers `needsDisplay = true`. There
+is no `Change.update`, no `noteHeightOfRows`, no `reloadData(forRowIndexes:)` —
+search overlay only changes paint, never glyph metrics or row height. **Cost
+of routing through `Change.update`**: every keystroke would drop selection,
+re-schedule syntax tokens, and force `noteHeightOfRows` over every changed
+row — search-as-you-type turns into a frame-budget killer.
+
 ### 2.13 Status updates bypass `Change.update`
 
 `Coordinator.setStatus(id:)` writes `statusStates[id]`, evicts the host's cached layout, and runs a single-row `reloadData(forRowIndexes:)`. It does NOT route through `Change.update`. **Cost of routing through `Change.update`**: rebuild of `Block.Kind`, drop of selection, drop of highlight tokens, and an unnecessary `noteHeightOfRows` (status changes color, not height).
@@ -124,12 +136,14 @@ Current sparse dicts:
 |---|---|---|---|
 | `Coordinator.foldStates: [UUID: Bool]` | `Block.id` or `Child.id` | `false` (folded) | Collapsed↔expanded body shape. `userBubble` does not use this (it uses "hard truncate + sheet" instead). |
 | `Coordinator.statusStates: [UUID: ToolStatus]` | `Block.id` (group) or `Child.id` (child) | `.completed` | Header color + shimmer overlay. |
+| `search.hits: [Hit]` + derived `hitsByBlock: [UUID: [Int]]` | `Block.id` | absent (no hits) | Yellow / orange-yellow search overlays. State is **paint-only** — no metric change. See §2.13b. |
 
 Keyspace is shared: `foldStates[childId]` and `statusStates[childId]` both work — top-level `Block.id` keys the group, `Child.id` keys a child.
 
 Mutation entry points:
 - `Coordinator.toggleFold(id:)` — flips the flag, then inside an animation group calls `noteHeightOfRows` + `reloadData(forRowIndexes:)`.
 - `Transcript2Controller.setToolStatus(id:status:)` → `Coordinator.setStatus(id:)` → `removeCachedLayout(for: hostBlockId)` + a single-row `reloadData(forRowIndexes:)`. Skips `noteHeightOfRows` (status changes color only, never height) and bypasses `Change.update` (which would drop highlight + drop selection and force the caller to rebuild `Block.Kind`).
+- `Transcript2Controller.runSearch(_:)` / `nextSearchHit()` / `previousSearchHit()` / `endSearch()` → `Transcript2SearchCoordinator`. Mutation path is paint-only: writes the per-block hit set, asks `Coordinator.markCellSearchDirty(blockId:)` to push the new specs to visible cells. No `reloadData`, no `noteHeightOfRows`, no `Change.update`. Nav auto-runs `Coordinator.expandForSearchHit(blockId:)` + `scrollBlockIntoView(blockId:)` so a hit in a folded child becomes visible.
 
 ### 3.3 Tool group status visuals
 
@@ -338,12 +352,76 @@ NativeTranscript2/
 │   ├── BlockCellView.swift          Self-drawn cell: layoutOrigin.x = cellOriginX + blockHorizontalPadding for centering + layout.draw + link/chevron hit testing + selection + hover tracking
 │   └── BlockCellView+SubviewPlan.swift  Reconciles the chevron sublayer and entry subview against the layout's SubviewPlan; ToolGroupEntryView also lives here
 ├── Transcript2Coordinator.swift          DataSource/Delegate + diff + per-kind dispatch + chevron sheet request routing
-├── Transcript2Controller.swift           Imperative command channel (apply / loadInitial)
+├── Transcript2Controller.swift           Imperative command channel (apply / loadInitial / search)
 ├── Transcript2SelectionCoordinator.swift Cross-row selection algorithm (reads layout.selectionAdapter)
+├── Transcript2SearchCoordinator.swift    In-transcript ⌘F scan + nav + per-cell highlight push
 └── NativeTranscript2View.swift      SwiftUI bridge (updateNSView is a no-op) + Preview
 ```
 
 Dependencies only flow downward: `NativeTranscript2View → Coordinator → AppKit/ → Layout/ → Model/`.
+
+## 6.5 Search
+
+`Transcript2SearchCoordinator` (next to `Transcript2SelectionCoordinator`)
+owns the in-transcript ⌘F state. Same pattern: state lives here, per-cell
+paint is derived, affected cells are reseated via
+`Coordinator.markCellSearchDirty(blockId:)`. Sibling to selection — the
+two compose at draw time, search highlights composite over the selection
+band.
+
+### Data flow
+
+1. `Transcript2Controller.runSearch("apple")` →
+   `coordinator.search.runQuery("apple")`.
+2. Scanner walks `coordinator.blockIds`, asks each block's
+   `selectionAdapter.searchableRegions()` for plain-text bands, runs a
+   case-insensitive literal `NSString.range(of:options:)` per region, and
+   converts each match into a `SelectionRange` via the region's
+   `position` closure.
+3. Hits land in `Transcript2SearchCoordinator.hits: [(blockId, range)]`,
+   sorted by document order. Derived `hitsByBlock: [UUID: [Int]]` is
+   the per-cell lookup.
+4. `onStateChanged` fires; `Transcript2Controller` mirrors to its
+   `@Observable` `searchState` so the SwiftUI search bar re-renders.
+
+### Search-range == selection-range
+
+Every searchable region is supplied by the same
+`SelectionAdapter.searchableRegions` closure that the layout uses for
+selection. Hit rects flow through the *same* `adapter.rects` the
+selection band uses — so a yellow rect is guaranteed to land on the
+same glyphs a selection drag across that range would highlight. Adding
+a new selectable layout that supplies `searchableRegions` opts it into
+search automatically — `Transcript2SearchCoordinator` has zero
+kind-specific code.
+
+### Rendering
+
+`BlockCellView` carries `searchHighlights: [SearchHighlightSpec]?`. The
+cell draws yellow / orange-yellow rects between the selection band and
+the glyph pass, so search overlays composite *on top of* selection
+(search is the active task; selection is dormant context). Colors are
+`NSColor.systemYellow.withAlphaComponent(0.42)` (inactive hit) and
+`NSColor.systemOrange.withAlphaComponent(0.78)` (current cursor),
+attenuated when the window has resigned key.
+
+### v1 coverage
+
+Today's `searchableRegions` is provided by the `.text` family of
+layouts: `paragraph`, `heading`, `codeBlock`, `blockquote`, `userBubble`
+(visible prefix only — the truncated tail isn't selectable, so it isn't
+searchable). `toolGroup` / `list` / `table` return empty regions; their
+selection adapters exist but they haven't been wired into search yet.
+Adding them is a `searchableRegions` implementation per layout — no
+framework change.
+
+### Folded-state navigation
+
+A future toolGroup hit landing in a folded child auto-expands ancestors
+through `Coordinator.expandForSearchHit(blockId:)` before
+`scrollBlockIntoView(blockId:)` drops the row into view. Per-child
+expansion ships with the toolGroup-search follow-up; the v1 entry point
+already opens the group host so the row is visible.
 
 ## 7. Async highlight back-fill
 

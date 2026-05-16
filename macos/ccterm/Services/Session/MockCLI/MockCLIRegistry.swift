@@ -12,7 +12,8 @@ enum MockCLIRegistry {
     /// Scenario name → zero-arg factory. Name must match the UI test's
     /// environment variable value.
     static let scenarios: [String: () -> any MockCLIScenario] = [
-        "hangingTurn": { HangingTurnScenario() }
+        "hangingTurn": { HangingTurnScenario() },
+        "searchableContent": { SearchableContentScenario() },
     ]
 
     /// Returns nil for unknown names; `MockCLIRunner` writes stderr and exits

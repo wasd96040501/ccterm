@@ -47,6 +47,28 @@ struct SelectionRange: Equatable {
     let end: LayoutPosition
 }
 
+/// One contiguous chunk of plain text the layout exposes to the search
+/// scanner. A layout may publish multiple regions (a `toolGroup` row
+/// publishes one per searchable child); matches are confined to a single
+/// region — cross-region matches are not modelled, which mirrors how
+/// selection's `string()` is region-local.
+///
+/// **Contract.** `position(0)` returns the start `LayoutPosition` of
+/// this region, `position(text.utf16.count)` the end. The scanner only
+/// calls `position` at offsets it discovered via `NSString.range(of:)`,
+/// which are UTF-16 unit indices — so the closure must interpret its
+/// argument as a UTF-16 offset (same units used by every other
+/// `LayoutPosition.char` in this file).
+///
+/// **Why a closure, not `[LayoutPosition]`:** the conversion is
+/// deterministic (`char → LayoutPosition` is a 1:1 map for `.text`,
+/// `.diff`, `.textCard`), so materialising a per-character position
+/// array would be O(N) work + O(N) memory per layout for no gain.
+struct SearchableRegion {
+    let text: String
+    let position: (Int) -> LayoutPosition
+}
+
 /// Layout's selection-facing API. A struct of typed function values
 /// captured over the (immutable) layout instance — no protocol, no
 /// `any`, no associatedtype.
@@ -90,4 +112,35 @@ struct SelectionAdapter {
     /// word selection and byWord drag snap. Returns `nil` at positions
     /// where the layout has no word concept (empty layout, etc.).
     let wordBoundary: (LayoutPosition) -> SelectionRange?
+
+    /// Searchable plain-text regions in this layout, paired with a
+    /// closure that maps a UTF-16 char offset within the region back
+    /// to a `LayoutPosition`. The search coordinator scans each
+    /// region's `text`, then projects hit ranges through `position`
+    /// into endpoints the existing `rects` / `string` closures
+    /// understand. Default is empty for layouts that don't (yet)
+    /// participate in search — keep selection-only by setting nothing.
+    let searchableRegions: () -> [SearchableRegion]
+
+    /// Memberwise init keeps `searchableRegions` opt-in: layouts that
+    /// haven't been wired for search omit it and get an empty default,
+    /// so adding the field doesn't force every existing adapter site
+    /// to touch the constructor.
+    init(
+        fullRange: SelectionRange,
+        unitRange: @escaping (LayoutPosition) -> SelectionRange,
+        hitTest: @escaping (CGPoint) -> LayoutPosition,
+        rects: @escaping (LayoutPosition, LayoutPosition) -> [CGRect],
+        string: @escaping (LayoutPosition, LayoutPosition) -> String,
+        wordBoundary: @escaping (LayoutPosition) -> SelectionRange?,
+        searchableRegions: @escaping () -> [SearchableRegion] = { [] }
+    ) {
+        self.fullRange = fullRange
+        self.unitRange = unitRange
+        self.hitTest = hitTest
+        self.rects = rects
+        self.string = string
+        self.wordBoundary = wordBoundary
+        self.searchableRegions = searchableRegions
+    }
 }

@@ -291,7 +291,24 @@ struct UserBubbleLayout: @unchecked Sendable {
                 guard hi > lo, hi <= source.length else { return "" }
                 return source.substring(with: NSRange(location: lo, length: hi - lo))
             },
-            wordBoundary: { _ in nil })
+            wordBoundary: { _ in nil },
+            searchableRegions: {
+                // Decision A: only the visible (non-truncated) prefix
+                // participates in search — search range == selection
+                // range. The truncated tail of a long user message is
+                // reachable only through the chevron sheet. The text
+                // is the same `fullText` clamped to the typeset prefix
+                // length; for non-truncated bubbles `totalLength`
+                // already equals `fullText.utf16.count`.
+                let prefixLen = min(totalLength, source.length)
+                guard prefixLen > 0 else { return [] }
+                let prefix = source.substring(with: NSRange(location: 0, length: prefixLen))
+                return [
+                    SearchableRegion(
+                        text: prefix,
+                        position: { .text(char: $0) })
+                ]
+            })
     }
 
     nonisolated private static func charIndex(

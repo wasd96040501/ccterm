@@ -283,6 +283,20 @@ struct TextLayout: @unchecked Sendable {
                 return SelectionRange(
                     start: .text(char: word.location),
                     end: .text(char: word.location + word.length))
+            },
+            searchableRegions: {
+                // Single region covering the whole block. U+2028 (inline
+                // line separators inserted for soft breaks) are mapped
+                // to \n so search queries against multi-line user-visible
+                // text match what the eye reads. `position` is identity
+                // since `.text(char:)` uses the same UTF-16 indexing.
+                let raw = self.attributed.string
+                let normalised = raw.replacingOccurrences(of: "\u{2028}", with: "\n")
+                return [
+                    SearchableRegion(
+                        text: normalised,
+                        position: { .text(char: $0) })
+                ]
             })
     }
 

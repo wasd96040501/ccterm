@@ -118,6 +118,19 @@ final class BlockCellView: NSView {
         }
     }
 
+    /// In-transcript search highlights overlaying this cell. `nil` /
+    /// empty = no overlay. Each entry carries a `SelectionRange` (in
+    /// the layout's own opaque coords — same shape selection uses) and
+    /// an `isCurrent` flag that switches the fill from inactive yellow
+    /// to active orange-yellow.
+    var searchHighlights: [SearchHighlightSpec]? {
+        didSet {
+            if searchHighlights != oldValue {
+                needsDisplay = true
+            }
+        }
+    }
+
     /// Timestamp of the most recent copy click on this cell's code
     /// block, or `nil` when the button should display its idle
     /// (`doc.on.doc`) glyph. Set on click; cleared 1.5s later by a
@@ -310,6 +323,28 @@ final class BlockCellView: NSView {
             }
         }
 
+        // Search highlights composite *over* the selection band so a
+        // search hit overlapping the selection still reads as yellow
+        // (the search task is the active foreground task). Glyphs
+        // then paint over both — same NSTextView ordering.
+        if let hits = searchHighlights, !hits.isEmpty,
+            let adapter = layout.selectionAdapter
+        {
+            let isKey = window?.isKeyWindow == true
+            for hit in hits {
+                let rects = adapter.rects(hit.range.start, hit.range.end)
+                if rects.isEmpty { continue }
+                let color: NSColor =
+                    hit.isCurrent
+                    ? Self.searchActiveFillColor(isKey: isKey)
+                    : Self.searchInactiveFillColor(isKey: isKey)
+                ctx.setFillColor(color.cgColor)
+                for rect in rects {
+                    ctx.fill(rect.offsetBy(dx: origin.x, dy: origin.y).integral)
+                }
+            }
+        }
+
         layout.draw(in: ctx, origin: origin, hoveredAction: hoveredAction)
 
         // Code-block copy glyph — layout owns the visual recipe
@@ -475,6 +510,33 @@ final class BlockCellView: NSView {
             }
         }
         return nil
+    }
+
+    // MARK: - Search highlight palette
+
+    /// Inactive (non-current) hit fill. Pale yellow at low alpha so
+    /// it reads as "found here, not focused", clearly distinct from
+    /// the selection band's blue-ish system tint. Slightly weaker
+    /// when the window has resigned key — matches selection's
+    /// emphasized/unemphasized split so an inactive transcript
+    /// doesn't shout for attention.
+    nonisolated static func searchInactiveFillColor(isKey: Bool) -> NSColor {
+        let alpha: CGFloat = isKey ? 0.42 : 0.28
+        return NSColor.systemYellow.withAlphaComponent(alpha)
+    }
+
+    /// Active (current-cursor) hit fill. Same yellow family, deeper
+    /// alpha + a slight orange shift so the active marker reads as
+    /// the focus among a cloud of inactive hits without changing
+    /// hue tier (so the eye still groups every hit as "the search
+    /// set").
+    nonisolated static func searchActiveFillColor(isKey: Bool) -> NSColor {
+        // `systemOrange.withAlphaComponent` lands on the same warm
+        // yellow ramp as `systemYellow` at deeper alpha — the macOS
+        // accent uses the same hue space for find-bar highlights in
+        // Safari / Mail.
+        let alpha: CGFloat = isKey ? 0.78 : 0.55
+        return NSColor.systemOrange.withAlphaComponent(alpha)
     }
 
     private func copyToPasteboard(_ text: String) {

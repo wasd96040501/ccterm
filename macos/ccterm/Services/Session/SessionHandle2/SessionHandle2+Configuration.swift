@@ -106,6 +106,33 @@ extension SessionHandle2 {
         }
     }
 
+    /// Set the user-selected source directory. Persisted at `ensureStarted`'s
+    /// fresh save (read by `SessionRecord.originPath`); also the base repo
+    /// for worktree provisioning (read by `provisionWorktreeIfNeeded`). Used
+    /// by `groupingFolderName` to bucket sidebar history. Non-active only.
+    func setOriginPath(_ originPath: String?) {
+        guard !isAttached else {
+            appLog(.info, "SessionHandle2", "setOriginPath ignored — attached \(sessionId)")
+            return
+        }
+        self.originPath = originPath
+    }
+
+    /// Set the source branch for worktree provisioning. Read by
+    /// `Worktree.create(from:sourceBranch:)` at `ensureStarted` time; after
+    /// the worktree is created, `ensureStarted` overwrites this field with
+    /// the generated `<adj>-<sci>-<hex>` branch name. Non-active only.
+    func setWorktreeBranch(_ branch: String?) {
+        guard !isAttached else {
+            appLog(.info, "SessionHandle2", "setWorktreeBranch ignored — attached \(sessionId)")
+            return
+        }
+        self.worktreeBranch = branch
+        if isPersisted {
+            repository.updateWorktreeBranch(sessionId, branch: branch)
+        }
+    }
+
     /// `--plugin-dir` is a CLI launch argument with no runtime RPC — no-op
     /// while attached (no memory or db write). UI binds
     /// `canSetPluginDirectories` to disable the entry point.

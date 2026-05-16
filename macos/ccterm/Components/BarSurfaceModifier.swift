@@ -26,9 +26,9 @@ struct BarSurfaceModifier: ViewModifier {
     func body(content: Content) -> some View {
         if #available(macOS 26.0, *) {
             content
-                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius))
+                .glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
                 .overlay {
-                    RoundedRectangle(cornerRadius: cornerRadius)
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
                 }
                 .compositingGroup()
@@ -38,9 +38,9 @@ struct BarSurfaceModifier: ViewModifier {
         } else {
             content
                 .background(colorScheme == .dark ? .thickMaterial : .bar)
-                .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
                 .overlay {
-                    RoundedRectangle(cornerRadius: cornerRadius)
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
                 }
                 .shadow(

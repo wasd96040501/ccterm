@@ -1,38 +1,46 @@
+import AppKit
 import XCTest
 
-/// Verifies the image-attach flow on `InputBarView2`:
+/// Verifies the image-attach flow on `InputBarView2` against the real UI
+/// (SwiftUI `Menu` + AppKit `NSOpenPanel`) — no production-side test
+/// hooks. The synthetic PNG is written to `/tmp` by the test runner so
+/// the production `Data(contentsOf:)` path is exercised end-to-end.
 ///
-/// 1. The attach button (`InputBar2.AttachButton`) is mounted alongside the
-///    text field and the send button on launch.
-/// 2. Clicking it opens a Menu containing the hidden test item
-///    (`InputBar2.TestAttachImage`); selecting that item — which bypasses
-///    `NSOpenPanel` and installs a synthetic in-memory PNG — surfaces the
-///    thumbnail (`InputBar2.AttachmentThumbnail`) inside the pill.
-/// 3. Sending the message with an attachment clears the thumbnail and
-///    returns the pill to its single-line layout.
+/// ### How the dialog is driven
 ///
-/// `NSOpenPanel` is a system-owned modal that XCUITest cannot drive, so the
-/// test-item injection is the only sanctioned entry point in test mode.
-/// Production users still go through the Menu → NSOpenPanel path; that
-/// branch is not exercised by these tests.
+/// `NSOpenPanel` is a system-owned modal but it surfaces as
+/// `app.dialogs.firstMatch` in XCUITest. We drive it the same way a user
+/// would when they know the path: ⌘⇧G ("Go to Folder") → type the path
+/// → Enter → Open. This is the documented pattern from Apple's developer
+/// forums for opening a known file.
+///
+/// ### How `SwiftUI.Menu` is addressed
+///
+/// On macOS 12+ a SwiftUI `Menu` exposes its label as an `image`
+/// accessibility element (not a `button`). The identifier therefore sits
+/// on the `Image` *inside* the label closure, and tests query
+/// `app.images["InputBar2.AttachButton"]`.
 ///
 /// Scenario: `imageEcho` (inherits `MockCLIBaseScenario` defaults — echo +
-/// `result.success`, so the turn completes cleanly and the bar returns to
-/// the send-button state). Documented in [cctermUITests/CLAUDE.md](CLAUDE.md).
+/// `result.success`). The turn completes cleanly so the bar returns to
+/// the send-button state. Documented in [cctermUITests/CLAUDE.md](CLAUDE.md).
 final class InputBar2AttachImageUITests: XCTestCase {
+
+    private let testImagePath = "/tmp/ccterm-ui-test-attach.png"
 
     override func setUpWithError() throws {
         continueAfterFailure = false
+        try writeTestImage(to: testImagePath)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(atPath: testImagePath)
     }
 
     @MainActor
     func testAttachButtonIsPresentOnLaunch() throws {
         let app = launchApp()
-
-        // SwiftUI `Menu` on macOS doesn't surface as `.button` in XCUI —
-        // it's a `popUpButton` / `menuButton` depending on style. Query
-        // type-agnostically via `descendants(matching: .any)`.
-        let attachButton = app.descendants(matching: .any)["InputBar2.AttachButton"]
+        let attachButton = app.images["InputBar2.AttachButton"]
         XCTAssertTrue(
             attachButton.waitForExistence(timeout: 10),
             "attach button should be present on the input bar at launch")
@@ -45,8 +53,7 @@ final class InputBar2AttachImageUITests: XCTestCase {
     @MainActor
     func testAttachingImageShowsThumbnail() throws {
         let app = launchApp()
-
-        attachSyntheticImage(in: app)
+        attachImageViaUI(in: app)
 
         let thumbnail = app.descendants(matching: .any)["InputBar2.AttachmentThumbnail"]
         XCTAssertTrue(
@@ -57,8 +64,7 @@ final class InputBar2AttachImageUITests: XCTestCase {
     @MainActor
     func testSendingImageClearsThumbnail() throws {
         let app = launchApp()
-
-        attachSyntheticImage(in: app)
+        attachImageViaUI(in: app)
 
         let thumbnail = app.descendants(matching: .any)["InputBar2.AttachmentThumbnail"]
         XCTAssertTrue(
@@ -73,8 +79,8 @@ final class InputBar2AttachImageUITests: XCTestCase {
         sendButton.click()
 
         // Thumbnail clears synchronously inside `handleSend` (it sets
-        // `attachment = nil`), but the SwiftUI rebuild may need a tick to
-        // remove the a11y node — poll until it disappears.
+        // `attachment = nil`); SwiftUI may need a tick to remove the
+        // a11y node — poll for absence.
         let pred = NSPredicate(format: "exists == false")
         let expectation = XCTNSPredicateExpectation(predicate: pred, object: thumbnail)
         XCTAssertEqual(
@@ -99,21 +105,83 @@ final class InputBar2AttachImageUITests: XCTestCase {
         return app
     }
 
-    /// Click the attach Menu and pick the test-only item. The item is
-    /// only mounted under `CCTERM_TEST_MODE=1`; its action installs the
-    /// synthetic in-memory PNG without ever opening `NSOpenPanel`.
+    /// Drive the real attach flow: open Menu → click Image → drive
+    /// `NSOpenPanel` via ⌘⇧G with the test file path → Open.
     @MainActor
-    private func attachSyntheticImage(in app: XCUIApplication) {
-        let attachButton = app.descendants(matching: .any)["InputBar2.AttachButton"]
+    private func attachImageViaUI(in app: XCUIApplication) {
+        let attachButton = app.images["InputBar2.AttachButton"]
         XCTAssertTrue(
             attachButton.waitForExistence(timeout: 10),
             "attach button must exist before we can open the menu")
         attachButton.click()
 
-        let testItem = app.descendants(matching: .any)["InputBar2.TestAttachImage"]
+        // Menu item is identified by its localized label. CI runs in
+        // English (CLAUDE.md notes the existing convention); local
+        // developers need the system input source set to English too.
+        let imageItem = app.menuItems["Image"]
         XCTAssertTrue(
-            testItem.waitForExistence(timeout: 5),
-            "test attach menu item should be mounted under CCTERM_TEST_MODE")
-        testItem.click()
+            imageItem.waitForExistence(timeout: 5),
+            "Menu should contain an 'Image' item")
+        imageItem.click()
+
+        let panel = app.dialogs.firstMatch
+        XCTAssertTrue(
+            panel.waitForExistence(timeout: 10),
+            "NSOpenPanel should appear after selecting the Image menu item")
+
+        // ⌘⇧G opens the "Go to Folder" sheet — the documented way to
+        // address an absolute path inside NSOpenPanel without browsing.
+        app.typeKey("g", modifierFlags: [.command, .shift])
+
+        let goSheet = panel.sheets.firstMatch
+        XCTAssertTrue(
+            goSheet.waitForExistence(timeout: 5),
+            "Go to Folder sheet should appear after ⌘⇧G")
+
+        let pathField = goSheet.comboBoxes.firstMatch
+        XCTAssertTrue(
+            pathField.waitForExistence(timeout: 5),
+            "Go to Folder sheet should expose a path combobox")
+        pathField.click()
+        pathField.typeText(testImagePath)
+
+        // The sheet's primary action is "Go"; some macOS versions also
+        // accept Return. Try the button first, fall back to Return.
+        let goButton = goSheet.buttons["Go"]
+        if goButton.exists {
+            goButton.click()
+        } else {
+            app.typeKey(.return, modifierFlags: [])
+        }
+
+        // After Go, NSOpenPanel highlights the file. The Open button
+        // commits the selection.
+        let openButton = panel.buttons["Open"]
+        XCTAssertTrue(
+            openButton.waitForExistence(timeout: 5),
+            "Open button should be present on NSOpenPanel after navigation")
+        openButton.click()
+    }
+
+    /// Write a tiny 16×16 solid-blue PNG to `path`. Production code reads
+    /// it via `Data(contentsOf:)`; `UTType(filenameExtension: "png")`
+    /// resolves the media type to `image/png`.
+    private func writeTestImage(to path: String) throws {
+        let size = NSSize(width: 16, height: 16)
+        let img = NSImage(size: size)
+        img.lockFocus()
+        NSColor.systemBlue.setFill()
+        NSRect(origin: .zero, size: size).fill()
+        img.unlockFocus()
+        guard let tiff = img.tiffRepresentation,
+            let bitmap = NSBitmapImageRep(data: tiff),
+            let png = bitmap.representation(using: .png, properties: [:])
+        else {
+            throw NSError(
+                domain: "InputBar2AttachImageUITests",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "could not encode test PNG"])
+        }
+        try png.write(to: URL(fileURLWithPath: path))
     }
 }

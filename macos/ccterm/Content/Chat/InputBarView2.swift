@@ -66,7 +66,6 @@ struct InputBarView2: View {
     @State private var desiredCursorPosition: Int?
     @State var attachment: Attachment?
     @State private var isPresentingPreview: Bool = false
-    @State private var isAttachMenuPresented: Bool = false
 
     var body: some View {
         HStack(alignment: .bottom, spacing: attachToPillSpacing) {
@@ -85,13 +84,18 @@ struct InputBarView2: View {
     // MARK: - Attach Button
 
     private var attachButton: some View {
-        // Button + Popover instead of SwiftUI `Menu`. `Menu` renders as a
-        // popUpButton in NSAccessibility and its `accessibilityIdentifier`
-        // doesn't surface reliably under XCUITest (the popup items also
-        // become unaddressable while the menu is open). A plain `Button`
-        // keeps the activator queryable as `.button`, and a popover with
-        // inline `Button` children keeps each menu entry queryable too.
-        Button(action: { isAttachMenuPresented.toggle() }) {
+        // SwiftUI `Menu` on macOS surfaces its label as an `image`
+        // element in NSAccessibility since macOS 12 — XCUITest queries
+        // it via `app.images[id]`. The accessibility identifier must
+        // sit on the Image inside the label closure (not on the outer
+        // Menu) or it won't propagate to the rendered element.
+        Menu {
+            Button {
+                presentImagePicker()
+            } label: {
+                Label(String(localized: "Image"), systemImage: "photo")
+            }
+        } label: {
             Image(systemName: "plus")
                 .font(.system(size: iconPointSize, weight: .bold))
                 .foregroundStyle(.primary)
@@ -102,51 +106,11 @@ struct InputBarView2: View {
                 .overlay(
                     Circle().stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
                 )
+                .accessibilityIdentifier("InputBar2.AttachButton")
         }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("InputBar2.AttachButton")
-        .popover(isPresented: $isAttachMenuPresented, arrowEdge: .bottom) {
-            attachMenuPopover
-        }
-    }
-
-    private var attachMenuPopover: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button {
-                isAttachMenuPresented = false
-                presentImagePicker()
-            } label: {
-                Label(String(localized: "Image"), systemImage: "photo")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .accessibilityIdentifier("InputBar2.AttachImageMenuItem")
-
-            #if DEBUG
-            if ProcessInfo.processInfo.environment["CCTERM_TEST_MODE"] == "1" {
-                // UI tests bypass NSOpenPanel (OS-owned modal, not XCUI-
-                // drivable) via this hidden item. Gated on the test env
-                // var so devs running the app from Xcode without test
-                // mode don't see it.
-                Button {
-                    isAttachMenuPresented = false
-                    attachImage(data: Self.testImagePNGData, mediaType: "image/png")
-                } label: {
-                    Text("Test Attach Image")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .accessibilityIdentifier("InputBar2.TestAttachImage")
-            }
-            #endif
-        }
-        .frame(width: 200)
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
     }
 
     // MARK: - Pill

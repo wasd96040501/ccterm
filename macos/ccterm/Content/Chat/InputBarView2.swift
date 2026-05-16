@@ -13,9 +13,10 @@ import UniformTypeIdentifiers
 /// - pill: 32pt min height, `cornerRadius = 16`. Send button is concentric
 ///   with the bottom-right corner: button radius 12, shared center ⇒ 4pt
 ///   from the right / bottom.
-/// - attach: a standalone 24pt circle in an HStack with the pill,
-///   8pt spacing — Gestalt proximity (~ ⅓ element width) reads as "two
-///   related but independent controls".
+/// - attach: standalone `AttachButton` (circle button rendered via system
+///   `.bordered` / `.glass` styling), vertically centered with the pill,
+///   8pt spacing — Gestalt proximity reads as "two related but independent
+///   controls".
 struct InputBarView2: View {
     static let cornerRadius: CGFloat = 16
     private let pillMinHeight: CGFloat = 32
@@ -67,7 +68,7 @@ struct InputBarView2: View {
     @State private var isPresentingPreview: Bool = false
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: attachToPillSpacing) {
+        HStack(alignment: .center, spacing: attachToPillSpacing) {
             AttachButton(onPickImage: presentImagePicker)
             pill
         }

@@ -1,36 +1,34 @@
 import SwiftUI
 
 /// Standalone `+` button for the input bar. Opens a menu of attachment
-/// types (currently just Image).
+/// types (Image today; structured as a `Menu` so future types — Files,
+/// snippets, etc. — drop in without restructuring this view).
 ///
-/// Surface and interaction state come entirely from system button styling
-/// — no hand-rolled background or hover overlay:
+/// Visuals come entirely from system button styling — no hand-painted
+/// background, no manual hover overlay:
 ///
-/// - `.menuStyle(.button)` renders the Menu through SwiftUI's button
-///   pipeline so `ButtonStyle` actually applies (the default menu style
-///   ignores it).
-/// - `.buttonStyle(.bordered)` paints a material chip on macOS 14/15;
-///   macOS 26+ automatically promotes the same style to Liquid Glass.
-///   Hover and press highlights are provided by the system in both eras.
-/// - `.buttonBorderShape(.circle)` clips that surface to a circle.
-///
-/// Deliberately not sharing `InputBarView2`'s `barSurface` modifier — the
-/// bar modifier is shaped for the rounded-rectangular pill chrome (drop
-/// shadow + edge stroke sized to a large surface) and doesn't fit a
-/// small circular button.
+/// - `.menuStyle(.button)` routes the Menu's activator through the
+///   button render pipeline so `ButtonStyle` actually applies. The
+///   default menu style ignores `.buttonStyle`.
+/// - macOS 26+: `.buttonStyle(.glass)` renders Liquid Glass with the
+///   system's built-in hover / press response. `.bordered` does *not*
+///   auto-promote to LG on 26 — `.glass` is the only style that does.
+/// - macOS 14/15: `.buttonStyle(.bordered)` paints a material chip with
+///   the system's built-in hover / press response.
+/// - `.buttonBorderShape(.circle)` clips the surface to a circle.
+/// - `.controlSize(.large)` brings the natural button height close to
+///   `InputBarView2.pillMinHeight` (32pt) so the two read as one row
+///   under the parent HStack's `.center` alignment.
 struct AttachButton: View {
     /// Fired when the user picks "Image" from the menu. The caller drives
     /// the `NSOpenPanel` flow so this view stays purely visual.
     var onPickImage: () -> Void
 
-    private let iconPointSize: CGFloat = 13
-
     var body: some View {
         // SwiftUI `Menu` on macOS 26 renders as a `MenuButton` whose
-        // accessibility node swallows child identifiers — putting
-        // `.testIdentifier` on the Menu or its label closure is silently
-        // dropped. The stable handle is `.accessibilityLabel` on the
-        // Menu (sets the MenuButton's AX label); tests query
+        // accessibility node swallows child identifiers. The stable
+        // handle is `.accessibilityLabel` on the Menu (sets the
+        // MenuButton's AX label); tests query
         // `app.menuButtons["Attach image or file"]`.
         Menu {
             Button(action: onPickImage) {
@@ -38,14 +36,30 @@ struct AttachButton: View {
             }
         } label: {
             Image(systemName: "plus")
-                .font(.system(size: iconPointSize, weight: .bold))
+                .font(.system(size: 13, weight: .semibold))
         }
-        .menuStyle(.button)
-        .buttonStyle(.bordered)
-        .buttonBorderShape(.circle)
+        .modifier(AttachButtonSurface())
         .menuIndicator(.hidden)
         .fixedSize()
         .accessibilityLabel(String(localized: "Attach image or file"))
+    }
+}
+
+private struct AttachButtonSurface: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content
+                .menuStyle(.button)
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .controlSize(.large)
+        } else {
+            content
+                .menuStyle(.button)
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.circle)
+                .controlSize(.large)
+        }
     }
 }
 

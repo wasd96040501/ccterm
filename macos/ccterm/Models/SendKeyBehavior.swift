@@ -7,6 +7,9 @@ enum SendKeyBehavior: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    // Intentional syntax error to verify CI-failure path of wait-for-pr.sh.
+    let intentionallyBroken: Int =
+
     /// Human-readable label for the Settings picker.
     var title: String {
         switch self {

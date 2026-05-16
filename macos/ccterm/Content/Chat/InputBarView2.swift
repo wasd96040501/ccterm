@@ -68,7 +68,7 @@ struct InputBarView2: View {
     @State private var isPresentingPreview: Bool = false
 
     var body: some View {
-        let stack = HStack(alignment: .bottom, spacing: attachToPillSpacing) {
+        HStack(alignment: .bottom, spacing: attachToPillSpacing) {
             attachButton
             pill
         }
@@ -79,11 +79,6 @@ struct InputBarView2: View {
                 ImagePreviewView(thumbnail: attachment.thumbnail)
             }
         }
-        #if DEBUG
-        return stack.overlay(alignment: .topLeading) { testAttachHook() }
-        #else
-        return stack
-        #endif
     }
 
     // MARK: - Attach Button
@@ -95,6 +90,20 @@ struct InputBarView2: View {
             } label: {
                 Label(String(localized: "Image"), systemImage: "photo")
             }
+            .accessibilityIdentifier("InputBar2.AttachImageMenuItem")
+            #if DEBUG
+            if ProcessInfo.processInfo.environment["CCTERM_TEST_MODE"] == "1" {
+                // UI tests bypass NSOpenPanel (OS-owned modal, not XCUI-
+                // drivable) by attaching a synthetic in-memory PNG via
+                // this hidden menu item. Gated on the test env var so
+                // developers running the app from Xcode without test
+                // mode don't see it.
+                Button("Test Attach Image") {
+                    attachImage(data: Self.testImagePNGData, mediaType: "image/png")
+                }
+                .accessibilityIdentifier("InputBar2.TestAttachImage")
+            }
+            #endif
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: iconPointSize, weight: .bold))
@@ -133,19 +142,22 @@ struct InputBarView2: View {
     }
 
     private var thumbnailStrip: some View {
-        HStack(spacing: 0) {
+        // Strip is only mounted while `attachment != nil`, so the fallback
+        // `NSImage()` keeps the Button label type unconditional —
+        // `_ConditionalContent` labels occasionally drop the parent's
+        // accessibility identifier under XCUI.
+        let thumb = attachment?.thumbnail ?? NSImage()
+        return HStack(spacing: 0) {
             Button(action: { isPresentingPreview = true }) {
-                if let thumb = attachment?.thumbnail {
-                    Image(nsImage: thumb)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: thumbnailSize, height: thumbnailSize)
-                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
-                        )
-                }
+                Image(nsImage: thumb)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .frame(width: thumbnailSize, height: thumbnailSize)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+                    )
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("InputBar2.AttachmentThumbnail")

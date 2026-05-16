@@ -4,17 +4,17 @@ import XCTest
 ///
 /// 1. The attach button (`InputBar2.AttachButton`) is mounted alongside the
 ///    text field and the send button on launch.
-/// 2. Activating the test hook (`InputBar2.TestAttachImage`) — which
-///    bypasses `NSOpenPanel` and installs a synthetic in-memory PNG —
-///    surfaces the thumbnail (`InputBar2.AttachmentThumbnail`) inside the
-///    pill, growing the bar's height.
+/// 2. Clicking it opens a Menu containing the hidden test item
+///    (`InputBar2.TestAttachImage`); selecting that item — which bypasses
+///    `NSOpenPanel` and installs a synthetic in-memory PNG — surfaces the
+///    thumbnail (`InputBar2.AttachmentThumbnail`) inside the pill.
 /// 3. Sending the message with an attachment clears the thumbnail and
 ///    returns the pill to its single-line layout.
 ///
 /// `NSOpenPanel` is a system-owned modal that XCUITest cannot drive, so the
-/// test hook is the only sanctioned entry point in test mode. Production
-/// users still go through the Menu → NSOpenPanel path; that branch is not
-/// exercised by these tests.
+/// test-item injection is the only sanctioned entry point in test mode.
+/// Production users still go through the Menu → NSOpenPanel path; that
+/// branch is not exercised by these tests.
 ///
 /// Scenario: `imageEcho` (inherits `MockCLIBaseScenario` defaults — echo +
 /// `result.success`, so the turn completes cleanly and the bar returns to
@@ -29,13 +29,13 @@ final class InputBar2AttachImageUITests: XCTestCase {
     func testAttachButtonIsPresentOnLaunch() throws {
         let app = launchApp()
 
-        let attachButton = app.descendants(matching: .any)["InputBar2.AttachButton"]
+        let attachButton = app.buttons["InputBar2.AttachButton"]
         XCTAssertTrue(
             attachButton.waitForExistence(timeout: 10),
             "attach button should be present on the input bar at launch")
 
         XCTAssertFalse(
-            app.descendants(matching: .any)["InputBar2.AttachmentThumbnail"].exists,
+            app.buttons["InputBar2.AttachmentThumbnail"].exists,
             "thumbnail should not be visible before attaching an image")
     }
 
@@ -43,17 +43,9 @@ final class InputBar2AttachImageUITests: XCTestCase {
     func testAttachingImageShowsThumbnail() throws {
         let app = launchApp()
 
-        // Wait for the bar to mount, then drive the test hook (which
-        // installs the synthetic PNG without opening NSOpenPanel).
-        _ = app.descendants(matching: .any)["InputBar2.AttachButton"]
-            .waitForExistence(timeout: 10)
-        let hook = app.buttons["InputBar2.TestAttachImage"]
-        XCTAssertTrue(
-            hook.waitForExistence(timeout: 5),
-            "test attach hook should be mounted under CCTERM_TEST_MODE")
-        hook.click()
+        attachSyntheticImage(in: app)
 
-        let thumbnail = app.descendants(matching: .any)["InputBar2.AttachmentThumbnail"]
+        let thumbnail = app.buttons["InputBar2.AttachmentThumbnail"]
         XCTAssertTrue(
             thumbnail.waitForExistence(timeout: 5),
             "thumbnail should appear inside the pill after attaching an image")
@@ -63,13 +55,9 @@ final class InputBar2AttachImageUITests: XCTestCase {
     func testSendingImageClearsThumbnail() throws {
         let app = launchApp()
 
-        _ = app.descendants(matching: .any)["InputBar2.AttachButton"]
-            .waitForExistence(timeout: 10)
-        let hook = app.buttons["InputBar2.TestAttachImage"]
-        XCTAssertTrue(hook.waitForExistence(timeout: 5))
-        hook.click()
+        attachSyntheticImage(in: app)
 
-        let thumbnail = app.descendants(matching: .any)["InputBar2.AttachmentThumbnail"]
+        let thumbnail = app.buttons["InputBar2.AttachmentThumbnail"]
         XCTAssertTrue(
             thumbnail.waitForExistence(timeout: 5),
             "thumbnail must appear before we can send the image")
@@ -106,5 +94,23 @@ final class InputBar2AttachImageUITests: XCTestCase {
         ]
         app.launch()
         return app
+    }
+
+    /// Click the attach Menu and pick the test-only item. The item is
+    /// only mounted under `CCTERM_TEST_MODE=1`; its action installs the
+    /// synthetic in-memory PNG without ever opening `NSOpenPanel`.
+    @MainActor
+    private func attachSyntheticImage(in app: XCUIApplication) {
+        let attachButton = app.buttons["InputBar2.AttachButton"]
+        XCTAssertTrue(
+            attachButton.waitForExistence(timeout: 10),
+            "attach button must exist before we can open the menu")
+        attachButton.click()
+
+        let testItem = app.menuItems["InputBar2.TestAttachImage"]
+        XCTAssertTrue(
+            testItem.waitForExistence(timeout: 5),
+            "test attach menu item should be mounted under CCTERM_TEST_MODE")
+        testItem.click()
     }
 }

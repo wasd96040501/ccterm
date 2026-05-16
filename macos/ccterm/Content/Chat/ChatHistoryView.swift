@@ -99,6 +99,12 @@ struct ChatHistoryView: View {
                     + "loadState=\(String(describing: h.historyLoadState)) "
                     + "msgCount=\(h.messages.count)")
             h.loadHistory()
+            // Warm up the CLI subprocess now (spawn + initialize round-trip) so
+            // slashCommands / availableModels / contextWindow are populated by
+            // the time the user types, and the first `send(_:)` doesn't pay
+            // the ~6-8s bootstrap cost synchronously after the click. Idempotent
+            // on non-fresh / running sessions.
+            h.activate()
         }
     }
 

@@ -62,7 +62,6 @@ struct RootView2: View {
             // first-start side effects only when needed.
             ChatHistoryView(sessionId: sid)
                 .id(sid)
-                .ignoresSafeArea(edges: .top)
                 .overlay(alignment: .top) {
                     // Top fade scrim, mirror of the bottom one: same
                     // windowBackgroundColor LinearGradient, direction
@@ -138,6 +137,7 @@ struct RootView2: View {
                     .padding(.bottom, 36)
                 }
                 .coordinateSpace(name: Self.detailCoordSpace)
+                .ignoresSafeArea(edges: .top)
         } else {
             Color.clear
         }

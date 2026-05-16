@@ -80,6 +80,11 @@ struct ChatHistoryView: View {
             prompt: Text("Find in transcript")
         )
         .searchFocused($isSearchFocused)
+        .toolbar {
+            if #available(macOS 26.0, *) {
+                ToolbarSpacer(.flexible)
+            }
+        }
         .onSubmit(of: .search) { controller.nextSearchHit() }
         // Shift+Return for previous match. `.onKeyPress` fires whenever
         // focus is on this view or any descendant — i.e. the search

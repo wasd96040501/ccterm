@@ -11,7 +11,7 @@ import SwiftUI
 ///
 /// **Conventions** — see `macos/cctermUITests/CLAUDE.md`:
 /// - Identifier strings are `"<ComponentName>.<ElementName>"`
-///   (e.g. `ChatSearchBar.Field`).
+///   (e.g. `ChatSearchBar.NextButton`, `InputBar2.SendButton`).
 /// - Set on the leaf element, not the outer container — SwiftUI's
 ///   container propagation would otherwise collapse every descendant
 ///   to the same id.

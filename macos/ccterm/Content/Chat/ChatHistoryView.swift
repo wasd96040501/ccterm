@@ -30,6 +30,11 @@ enum ChatHistoryRenderCase: Equatable {
 /// `sessionId` changes and all `@State` resets. This prevents a new session's
 /// first frame from inheriting the old session's controller state.
 ///
+/// **Search bar lives in the window toolbar via `.searchable`** — the native
+/// macOS search field renders in the toolbar's trailing slot. ⌘F focus is
+/// handed in via `TranscriptSearchBus` + `.searchFocused`. The transcript
+/// itself sits flush against the window chrome with no in-pane strip.
+///
 /// - Warning: Do not move `.id(sessionId)` inside `body` (e.g. on a Group).
 ///   That only swaps the child subtree; `@State` belongs to the struct itself
 ///   and doesn't cross the id boundary, so the bridge carries over and the
@@ -41,42 +46,40 @@ struct ChatHistoryView: View {
     @State private var handle: SessionHandle2?
     @State private var controller = Transcript2Controller()
     @State private var bridge: Transcript2EntryBridge?
+    @State private var searchQuery: String = ""
+    @FocusState private var isSearchFocused: Bool
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Persistent top toolbar strip — the chat-history-local
-            // equivalent of `.toolbar` (SwiftUI's window toolbar API
-            // is constrained under `.windowStyle(.hiddenTitleBar)`,
-            // and the in-toolbar field doesn't surface reliably in
-            // XCUITest's accessibility tree). `Spacer` pushes the
-            // search bar against the trailing edge so it sits on the
-            // right regardless of pane width.
-            HStack(spacing: 0) {
-                Spacer(minLength: 0)
-                ChatSearchBarView(controller: controller, searchBus: searchBus)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-
-            Divider()
-
-            Group {
-                if let handle {
-                    switch ChatHistoryRenderCase.classify(handle.historyLoadState) {
-                    case .error(let reason):
-                        ContentUnavailableView(
-                            "Failed to load history",
-                            systemImage: "exclamationmark.triangle",
-                            description: Text(reason)
-                        )
-                    case .transcript:
-                        NativeTranscript2View(controller: controller)
-                    }
-                } else {
-                    Color.clear
+        Group {
+            if let handle {
+                switch ChatHistoryRenderCase.classify(handle.historyLoadState) {
+                case .error(let reason):
+                    ContentUnavailableView(
+                        "Failed to load history",
+                        systemImage: "exclamationmark.triangle",
+                        description: Text(reason)
+                    )
+                case .transcript:
+                    NativeTranscript2View(controller: controller)
                 }
+            } else {
+                Color.clear
             }
         }
+        .searchable(
+            text: $searchQuery,
+            placement: .toolbar,
+            prompt: Text("Find in transcript")
+        )
+        .searchFocused($isSearchFocused)
+        .onSubmit(of: .search) { controller.nextSearchHit() }
+        .onChange(of: searchQuery) { _, new in
+            controller.runSearch(new)
+        }
+        .onChange(of: searchBus.focusRequestCounter) { _, _ in
+            isSearchFocused = true
+        }
+        .toolbar { searchAccessoryToolbar }
         .task(id: sessionId) {
             // Use `prepareDraft` so a draft session (no record yet) still gets a
             // handle and mounts `NativeTranscript2View` — this keeps the NSView
@@ -96,6 +99,44 @@ struct ChatHistoryView: View {
                     + "loadState=\(String(describing: h.historyLoadState)) "
                     + "msgCount=\(h.messages.count)")
             h.loadHistory()
+        }
+    }
+
+    /// Counter + prev / next buttons that sit next to the toolbar search
+    /// field. The counter is hidden while the query is empty so the
+    /// toolbar isn't cluttered before the user types.
+    @ToolbarContentBuilder
+    private var searchAccessoryToolbar: some ToolbarContent {
+        ToolbarItemGroup(placement: .primaryAction) {
+            if !searchQuery.isEmpty {
+                let total = controller.searchState.totalHits
+                let current = total > 0 ? (controller.searchState.currentIndex ?? -1) + 1 : 0
+                Text("\(current) / \(total)")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+                    .testIdentifier("ChatSearchBar.Counter")
+            }
+
+            Button {
+                controller.previousSearchHit()
+            } label: {
+                Image(systemName: "chevron.up")
+            }
+            .disabled(controller.searchState.totalHits == 0)
+            .keyboardShortcut(.return, modifiers: [.shift])
+            .accessibilityLabel(String(localized: "Previous match"))
+            .testIdentifier("ChatSearchBar.PrevButton")
+            .help(String(localized: "Previous match"))
+
+            Button {
+                controller.nextSearchHit()
+            } label: {
+                Image(systemName: "chevron.down")
+            }
+            .disabled(controller.searchState.totalHits == 0)
+            .accessibilityLabel(String(localized: "Next match"))
+            .testIdentifier("ChatSearchBar.NextButton")
+            .help(String(localized: "Next match"))
         }
     }
 }

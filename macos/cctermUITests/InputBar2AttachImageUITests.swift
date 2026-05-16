@@ -29,13 +29,16 @@ final class InputBar2AttachImageUITests: XCTestCase {
     func testAttachButtonIsPresentOnLaunch() throws {
         let app = launchApp()
 
-        let attachButton = app.buttons["InputBar2.AttachButton"]
+        // SwiftUI `Menu` on macOS doesn't surface as `.button` in XCUI —
+        // it's a `popUpButton` / `menuButton` depending on style. Query
+        // type-agnostically via `descendants(matching: .any)`.
+        let attachButton = app.descendants(matching: .any)["InputBar2.AttachButton"]
         XCTAssertTrue(
             attachButton.waitForExistence(timeout: 10),
             "attach button should be present on the input bar at launch")
 
         XCTAssertFalse(
-            app.buttons["InputBar2.AttachmentThumbnail"].exists,
+            app.descendants(matching: .any)["InputBar2.AttachmentThumbnail"].exists,
             "thumbnail should not be visible before attaching an image")
     }
 
@@ -45,7 +48,7 @@ final class InputBar2AttachImageUITests: XCTestCase {
 
         attachSyntheticImage(in: app)
 
-        let thumbnail = app.buttons["InputBar2.AttachmentThumbnail"]
+        let thumbnail = app.descendants(matching: .any)["InputBar2.AttachmentThumbnail"]
         XCTAssertTrue(
             thumbnail.waitForExistence(timeout: 5),
             "thumbnail should appear inside the pill after attaching an image")
@@ -57,7 +60,7 @@ final class InputBar2AttachImageUITests: XCTestCase {
 
         attachSyntheticImage(in: app)
 
-        let thumbnail = app.buttons["InputBar2.AttachmentThumbnail"]
+        let thumbnail = app.descendants(matching: .any)["InputBar2.AttachmentThumbnail"]
         XCTAssertTrue(
             thumbnail.waitForExistence(timeout: 5),
             "thumbnail must appear before we can send the image")
@@ -101,13 +104,13 @@ final class InputBar2AttachImageUITests: XCTestCase {
     /// synthetic in-memory PNG without ever opening `NSOpenPanel`.
     @MainActor
     private func attachSyntheticImage(in app: XCUIApplication) {
-        let attachButton = app.buttons["InputBar2.AttachButton"]
+        let attachButton = app.descendants(matching: .any)["InputBar2.AttachButton"]
         XCTAssertTrue(
             attachButton.waitForExistence(timeout: 10),
             "attach button must exist before we can open the menu")
         attachButton.click()
 
-        let testItem = app.menuItems["InputBar2.TestAttachImage"]
+        let testItem = app.descendants(matching: .any)["InputBar2.TestAttachImage"]
         XCTAssertTrue(
             testItem.waitForExistence(timeout: 5),
             "test attach menu item should be mounted under CCTERM_TEST_MODE")

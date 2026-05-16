@@ -13,6 +13,7 @@ enum MockCLIRegistry {
     /// environment variable value.
     static let scenarios: [String: () -> any MockCLIScenario] = [
         "hangingTurn": { HangingTurnScenario() },
+        "imageEcho": { ImageEchoScenario() },
         "searchableContent": { SearchableContentScenario() },
     ]
 

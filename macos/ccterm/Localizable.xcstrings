@@ -437,6 +437,16 @@
         }
       }
     },
+    "Choose an image to attach": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择要附加的图片"
+          }
+        }
+      }
+    },
     "Claude asked a question, but no options were provided.": {
       "localizations": {
         "zh-Hans": {
@@ -1167,6 +1177,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "高"
+          }
+        }
+      }
+    },
+    "Image": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "图片"
           }
         }
       }

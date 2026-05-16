@@ -66,8 +66,18 @@ private struct SidebarRow2: View {
     let record: SessionRecord
 
     var body: some View {
-        Text(record.title.isEmpty ? record.sessionId : record.title)
-            .lineLimit(1)
-            .truncationMode(.middle)
+        Group {
+            if record.title.isEmpty {
+                // Placeholder: visually weakened (italic + secondary) so it
+                // reads as "no title yet" rather than as the real title.
+                Text("Untitled")
+                    .italic()
+                    .foregroundStyle(.secondary)
+            } else {
+                Text(record.title)
+            }
+        }
+        .lineLimit(1)
+        .truncationMode(.middle)
     }
 }

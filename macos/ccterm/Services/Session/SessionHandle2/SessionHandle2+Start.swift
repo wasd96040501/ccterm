@@ -421,6 +421,27 @@ extension SessionHandle2 {
 
     // MARK: Bootstrap
 
+    /// Why this exists: the bootstrap init wait can resolve in exactly two
+    /// ways, and the caller's reaction differs.
+    ///
+    /// - `.completed(_)` — the CLI processed our initialize control_request
+    ///   and either returned a parsed `InitializeResponse` or a `nil` (response
+    ///   was empty / unparseable but the process is alive). Caller proceeds to
+    ///   flush the bootstrap backlog.
+    /// - `.processDied` — `handleProcessExit` fired and routed the death back
+    ///   through `bootstrapExitHook`. Caller short-circuits; failLaunch
+    ///   already cleaned up.
+    ///
+    /// Returning a typed signal rather than overloading status / agentSession
+    /// for "is the process alive" prevents a real bug where adopt(system.init)
+    /// could flip status to .idle before the bootstrap continuation observed
+    /// it, masquerading as a process death and silently dropping the queued
+    /// user message.
+    fileprivate enum BootstrapInitOutcome {
+        case completed(InitializeResponse?)
+        case processDied
+    }
+
     fileprivate func bootstrap(configuration: SessionConfiguration, fresh: Bool) async {
         appLog(
             .info, "SessionHandle2",
@@ -454,31 +475,47 @@ extension SessionHandle2 {
         // hang forever. The `bootstrapExitHook` lets handleProcessExit
         // forward the death back to this continuation so we route through
         // failLaunch.
-        let initResp: InitializeResponse? = await withCheckedContinuation {
-            (cont: CheckedContinuation<InitializeResponse?, Never>) in
+        //
+        // Why an explicit outcome enum (instead of inferring "process died"
+        // from `status == .stopped`): the CLI typically emits a `system.init`
+        // message in lockstep with the initialize control_response. Both land
+        // on MainActor as separate tasks, and adopt(system.init) was
+        // previously flipping `status` from `.starting` to `.idle` ahead of
+        // the bootstrap continuation. The old `guard status == .starting`
+        // guard couldn't distinguish "adopt got there first" from "process
+        // died" and aborted the flush silently — the queued user message
+        // would never reach the CLI, no `.result` would arrive, isRunning
+        // would stick at true forever. The outcome enum carries the
+        // intent through the continuation: only `.processDied` short-circuits.
+        let outcome: BootstrapInitOutcome = await withCheckedContinuation {
+            (cont: CheckedContinuation<BootstrapInitOutcome, Never>) in
             var resumed = false
-            let resume: (InitializeResponse?) -> Void = { resp in
+            let finish: (BootstrapInitOutcome) -> Void = { result in
                 guard !resumed else { return }
                 resumed = true
-                cont.resume(returning: resp)
+                cont.resume(returning: result)
             }
-            self.bootstrapExitHook = { _ in resume(nil) }
+            self.bootstrapExitHook = { _ in finish(.processDied) }
             session.initialize(promptSuggestions: true) { resp in
-                Task { @MainActor in resume(resp) }
+                Task { @MainActor in finish(.completed(resp)) }
             }
         }
         self.bootstrapExitHook = nil
 
-        // If the process died while waiting for init, handleProcessExit
-        // already called failLaunch on its own path (status flipped to
-        // .stopped); short-circuit here.
-        guard status == .starting else {
+        // Only "the process actually died during init" short-circuits.
+        // handleProcessExit already ran failLaunch on that path, so we have
+        // nothing to do here.
+        if case .processDied = outcome {
             appLog(
                 .info, "SessionHandle2",
-                "[v2-send] bootstrap aborted-during-init sid=\(sessionId.prefix(8)) status=\(status)")
+                "[v2-send] bootstrap aborted process-died-during-init sid=\(sessionId.prefix(8))")
             return
         }
 
+        let initResp: InitializeResponse? = {
+            if case .completed(let resp) = outcome { return resp }
+            return nil
+        }()
         appLog(
             .info, "SessionHandle2",
             "[v2-send] bootstrap initialize-done sid=\(sessionId.prefix(8)) "

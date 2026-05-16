@@ -19,10 +19,10 @@ import XCTest
 ///
 /// ### How `SwiftUI.Menu` is addressed
 ///
-/// On macOS 12+ a SwiftUI `Menu` exposes its label as an `image`
-/// accessibility element (not a `button`). The identifier therefore sits
-/// on the `Image` *inside* the label closure, and tests query
-/// `app.images["InputBar2.AttachButton"]`.
+/// On macOS 26 a SwiftUI `Menu` surfaces as a `MenuButton` that swallows
+/// `.accessibilityIdentifier`; the stable handle is the
+/// `.accessibilityLabel` we set on the Menu, queried as
+/// `app.menuButtons["Attach image or file"]`.
 ///
 /// Scenario: `imageEcho` (inherits `MockCLIBaseScenario` defaults — echo +
 /// `result.success`). The turn completes cleanly so the bar returns to

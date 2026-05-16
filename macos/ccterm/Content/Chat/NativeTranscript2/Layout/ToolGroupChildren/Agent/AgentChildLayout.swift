@@ -39,17 +39,20 @@ struct AgentChildLayout: @unchecked Sendable {
     ) -> AgentChildLayout {
         var specs: [TextCardSection.Spec] = []
         if !child.progress.isEmpty {
-            specs.append(.init(
-                text: "",
-                attributed: buildProgressAttributed(child.progress)))
+            specs.append(
+                .init(
+                    text: "",
+                    attributed: buildProgressAttributed(child.progress)))
         }
         if let output = child.output?.trimmingTrailingWhitespace,
-           !output.isEmpty
+            !output.isEmpty
         {
-            let attr = NSAttributedString(string: output, attributes: [
-                .font: BlockStyle.paragraphFont,
-                .foregroundColor: NSColor.labelColor,
-            ])
+            let attr = NSAttributedString(
+                string: output,
+                attributes: [
+                    .font: BlockStyle.paragraphFont,
+                    .foregroundColor: NSColor.labelColor,
+                ])
             specs.append(.init(text: "", attributed: attr))
         }
         let (sections, height) = TextCardSection.build(
@@ -81,15 +84,19 @@ struct AgentChildLayout: @unchecked Sendable {
         let result = NSMutableAttributedString()
         for (index, raw) in entries.enumerated() {
             if index > 0 {
-                result.append(NSAttributedString(string: "\n",
-                                                  attributes: prefixAttrs))
+                result.append(
+                    NSAttributedString(
+                        string: "\n",
+                        attributes: prefixAttrs))
             }
             let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { continue }
-            result.append(NSAttributedString(
-                string: "↳ ", attributes: prefixAttrs))
-            result.append(NSAttributedString(
-                string: trimmed, attributes: textAttrs))
+            result.append(
+                NSAttributedString(
+                    string: "↳ ", attributes: prefixAttrs))
+            result.append(
+                NSAttributedString(
+                    string: trimmed, attributes: textAttrs))
         }
         return result
     }

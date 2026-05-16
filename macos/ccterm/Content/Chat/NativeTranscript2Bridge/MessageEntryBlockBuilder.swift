@@ -44,9 +44,11 @@ enum MessageEntryBlockBuilder {
         switch single.payload {
         case .localUser(let local):
             guard let text = local.text, !text.isEmpty else { return [] }
-            return [Block(
-                id: userBubbleBlockId(entryId: single.id),
-                kind: .userBubble(text: text))]
+            return [
+                Block(
+                    id: userBubbleBlockId(entryId: single.id),
+                    kind: .userBubble(text: text))
+            ]
 
         case .remote(let m):
             switch m {
@@ -57,8 +59,10 @@ enum MessageEntryBlockBuilder {
         }
     }
 
-    private static func remoteUserBlocks(_ user: Message2User,
-                                         single: SingleEntry) -> [Block] {
+    private static func remoteUserBlocks(
+        _ user: Message2User,
+        single: SingleEntry
+    ) -> [Block] {
         guard let content = user.message?.content else { return [] }
         let text: String
         switch content {
@@ -75,9 +79,11 @@ enum MessageEntryBlockBuilder {
             return []
         }
         guard !text.isEmpty else { return [] }
-        return [Block(
-            id: userBubbleBlockId(entryId: single.id),
-            kind: .userBubble(text: text))]
+        return [
+            Block(
+                id: userBubbleBlockId(entryId: single.id),
+                kind: .userBubble(text: text))
+        ]
     }
 
     /// User bubble block id 在 `.localUser → .remote.user` 转换前后必须保持
@@ -87,8 +93,10 @@ enum MessageEntryBlockBuilder {
         StableBlockID.derive("entry", entryId.uuidString, "userBubble")
     }
 
-    private static func assistantBlocks(_ assistant: Message2Assistant,
-                                        single: SingleEntry) -> [Block] {
+    private static func assistantBlocks(
+        _ assistant: Message2Assistant,
+        single: SingleEntry
+    ) -> [Block] {
         guard let blocks = assistant.message?.content else { return [] }
 
         var out: [Block] = []
@@ -149,17 +157,20 @@ enum MessageEntryBlockBuilder {
         var children: [ToolGroupBlock.Child] = []
         for (itemIdx, item) in group.items.enumerated() {
             guard case .remote(let m) = item.payload,
-                  case .assistant(let a) = m,
-                  let blocks = a.message?.content else { continue }
+                case .assistant(let a) = m,
+                let blocks = a.message?.content
+            else { continue }
             for (blockIdx, block) in blocks.enumerated() {
                 guard case .toolUse(let tu) = block else { continue }
-                let toolUseId = tu.id
+                let toolUseId =
+                    tu.id
                     ?? "tu|\(group.id.uuidString)|\(itemIdx)|\(blockIdx)"
                 let result = tu.id.flatMap { item.toolResults[$0] }
-                children.append(ToolUseToChild.make(
-                    toolUse: tu,
-                    toolUseId: toolUseId,
-                    result: result))
+                children.append(
+                    ToolUseToChild.make(
+                        toolUse: tu,
+                        toolUseId: toolUseId,
+                        result: result))
             }
         }
         guard !children.isEmpty else { return nil }
@@ -169,10 +180,11 @@ enum MessageEntryBlockBuilder {
         // 只负责打包,不重复实现聚合逻辑。
         return Block(
             id: StableBlockID.derive("group", group.id.uuidString),
-            kind: .toolGroup(ToolGroupBlock(
-                activeTitle: group.activeTitle,
-                expandedActiveTitle: group.expandedActiveTitle,
-                completedTitle: group.completedTitle,
-                children: children)))
+            kind: .toolGroup(
+                ToolGroupBlock(
+                    activeTitle: group.activeTitle,
+                    expandedActiveTitle: group.expandedActiveTitle,
+                    completedTitle: group.completedTitle,
+                    children: children)))
     }
 }

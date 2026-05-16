@@ -42,4 +42,3 @@ extension InlineNode {
         return total
     }
 }
-

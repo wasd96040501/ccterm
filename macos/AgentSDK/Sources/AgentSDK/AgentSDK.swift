@@ -49,7 +49,8 @@ public final class Session {
 
     /// CLI 请求工具使用权限。通过 completion 异步返回决策结果。
     /// 在 readQueue 线程上回调，completion 可在任意线程调用。
-    public var onPermissionRequest: ((_ request: PermissionRequest, _ completion: @escaping (PermissionDecision) -> Void) -> Void)?
+    public var onPermissionRequest:
+        ((_ request: PermissionRequest, _ completion: @escaping (PermissionDecision) -> Void) -> Void)?
 
     /// CLI 取消了之前的权限请求。
     public var onPermissionCancelled: ((_ requestId: String) -> Void)?
@@ -118,9 +119,11 @@ public final class Session {
                     try which.run()
                     which.waitUntilExit()
                     guard which.terminationStatus == 0,
-                          let resolved = String(data: whichPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+                        let resolved = String(
+                            data: whichPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
                             .trimmingCharacters(in: .whitespacesAndNewlines),
-                          !resolved.isEmpty else {
+                        !resolved.isEmpty
+                    else {
                         throw AgentSDKError.binaryNotFound
                     }
                     firstToken = resolved
@@ -264,7 +267,8 @@ public final class Session {
 
     /// 设置最大 thinking tokens。
     public func setMaxThinkingTokens(_ tokens: Int, completion: (([String: Any]) -> Void)? = nil) {
-        sendControlRequest(subtype: "set_max_thinking_tokens", params: ["max_thinking_tokens": tokens], completion: completion)
+        sendControlRequest(
+            subtype: "set_max_thinking_tokens", params: ["max_thinking_tokens": tokens], completion: completion)
     }
 
     /// 设置权限模式。
@@ -273,8 +277,11 @@ public final class Session {
     }
 
     /// 回滚文件到指定消息。
-    public func rewindFiles(toMessageId messageId: String, dryRun: Bool = false, completion: (([String: Any]) -> Void)? = nil) {
-        sendControlRequest(subtype: "rewind_files", params: ["user_message_id": messageId, "dry_run": dryRun], completion: completion)
+    public func rewindFiles(
+        toMessageId messageId: String, dryRun: Bool = false, completion: (([String: Any]) -> Void)? = nil
+    ) {
+        sendControlRequest(
+            subtype: "rewind_files", params: ["user_message_id": messageId, "dry_run": dryRun], completion: completion)
     }
 
     /// 停止任务。
@@ -439,7 +446,8 @@ public final class Session {
     }
 
     public func mcpToggle(serverName: String, enabled: Bool, completion: (([String: Any]) -> Void)? = nil) {
-        sendControlRequest(subtype: "mcp_toggle", params: ["serverName": serverName, "enabled": enabled], completion: completion)
+        sendControlRequest(
+            subtype: "mcp_toggle", params: ["serverName": serverName, "enabled": enabled], completion: completion)
     }
 
     public func mcpStatus(completion: (([String: Any]) -> Void)? = nil) {
@@ -645,10 +653,11 @@ public final class Session {
 
         // Output format (structured output JSON schema)
         if let outputFormat = config.outputFormat,
-           let type = outputFormat["type"] as? String, type == "json_schema",
-           let schema = outputFormat["schema"],
-           let schemaData = try? JSONSerialization.data(withJSONObject: schema),
-           let schemaJSON = String(data: schemaData, encoding: .utf8) {
+            let type = outputFormat["type"] as? String, type == "json_schema",
+            let schema = outputFormat["schema"],
+            let schemaData = try? JSONSerialization.data(withJSONObject: schema),
+            let schemaJSON = String(data: schemaData, encoding: .utf8)
+        {
             args += ["--json-schema", schemaJSON]
         }
 
@@ -681,9 +690,10 @@ public final class Session {
             }
 
             if !buffer.isEmpty,
-               let line = String(data: buffer, encoding: .utf8)?
-                .trimmingCharacters(in: .newlines),
-               !line.isEmpty {
+                let line = String(data: buffer, encoding: .utf8)?
+                    .trimmingCharacters(in: .newlines),
+                !line.isEmpty
+            {
                 self?.routeLine(line)
             }
         }
@@ -693,8 +703,9 @@ public final class Session {
 
     private func routeLine(_ line: String) {
         guard let data = line.data(using: .utf8),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let type = json["type"] as? String else {
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let type = json["type"] as? String
+        else {
             return
         }
 
@@ -720,7 +731,8 @@ public final class Session {
 
         case "control_response":
             if let response = json["response"] as? [String: Any],
-               let requestId = response["request_id"] as? String {
+                let requestId = response["request_id"] as? String
+            {
                 pendingControlResponses.removeValue(forKey: requestId)?(response)
             }
 
@@ -738,8 +750,9 @@ public final class Session {
 
     private func handleControlRequest(_ json: [String: Any]) {
         guard let requestId = json["request_id"] as? String,
-              let request = json["request"] as? [String: Any],
-              let subtype = request["subtype"] as? String else {
+            let request = json["request"] as? [String: Any],
+            let subtype = request["subtype"] as? String
+        else {
             return
         }
 
@@ -800,7 +813,9 @@ public final class Session {
             var body: [String: Any] = [
                 "behavior": "allow",
                 "updatedInput": updatedInput ?? request.rawInput,
-                "updatedPermissions": updatedPermissions ?? request.permissionSuggestions?.map { $0.toJSON() as! [String: Any] } ?? [],
+                "updatedPermissions": updatedPermissions ?? request.permissionSuggestions?.map {
+                    $0.toJSON() as! [String: Any]
+                } ?? [],
             ]
             if let toolUseId = request.toolUseId { body["toolUseID"] = toolUseId }
             responseBody = body
@@ -904,7 +919,8 @@ public final class Session {
 
     private func writeJSON(_ json: [String: Any]) {
         guard let data = try? JSONSerialization.data(withJSONObject: json),
-              var line = String(data: data, encoding: .utf8) else { return }
+            var line = String(data: data, encoding: .utf8)
+        else { return }
         // Export app→CLI messages
         if configuration.messageExportDirectory != nil {
             exportLine(line)
@@ -922,9 +938,10 @@ public final class Session {
         guard let pipe = stderrPipe else { return }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         guard !data.isEmpty,
-              let text = String(data: data, encoding: .utf8)?
+            let text = String(data: data, encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines),
-              !text.isEmpty else { return }
+            !text.isEmpty
+        else { return }
         onStderr?(text)
     }
 

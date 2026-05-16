@@ -104,9 +104,10 @@ struct CodeBlockLayout: @unchecked Sendable {
         //     baseline   = visibleTop + ascent
         //                = midY + (ascent - descent) / 2
         let langText: String? = {
-            guard let raw = language?
-                .trimmingCharacters(in: .whitespaces).lowercased(),
-                  !raw.isEmpty
+            guard
+                let raw = language?
+                    .trimmingCharacters(in: .whitespaces).lowercased(),
+                !raw.isEmpty
             else { return nil }
             return raw
         }()
@@ -116,12 +117,16 @@ struct CodeBlockLayout: @unchecked Sendable {
         if let langText {
             let font = NSFont.systemFont(
                 ofSize: BlockStyle.codeBlockHeaderFontSize, weight: .medium)
-            let attr = NSAttributedString(string: langText, attributes: [
-                .font: font,
-                .foregroundColor: BlockStyle.codeBlockHeaderForeground,
-            ])
+            let attr = NSAttributedString(
+                string: langText,
+                attributes: [
+                    .font: font,
+                    .foregroundColor: BlockStyle.codeBlockHeaderForeground,
+                ])
             let line = CTLineCreateWithAttributedString(attr)
-            var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
+            var ascent: CGFloat = 0
+            var descent: CGFloat = 0
+            var leading: CGFloat = 0
             let width = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
             langWidth = width
             langLine = line
@@ -144,7 +149,8 @@ struct CodeBlockLayout: @unchecked Sendable {
             y: header.midY)
         let copyCenter: CGPoint?
         let copyHit: CGRect?
-        let labelSafeWidth = (langLine != nil)
+        let labelSafeWidth =
+            (langLine != nil)
             ? BlockStyle.codeBlockHeaderLeftInset + langWidth + 8
             : 0
         if container.width >= labelSafeWidth + copyHitSize
@@ -244,11 +250,12 @@ struct CodeBlockLayout: @unchecked Sendable {
         ctx.saveGState()
         let dividerY = origin.y + headerRect.maxY
         ctx.setFillColor(BlockStyle.codeBlockDividerColor.cgColor)
-        ctx.fill(CGRect(
-            x: containerAtScreen.minX,
-            y: dividerY,
-            width: containerAtScreen.width,
-            height: 1))
+        ctx.fill(
+            CGRect(
+                x: containerAtScreen.minX,
+                y: dividerY,
+                width: containerAtScreen.width,
+                height: 1))
         ctx.restoreGState()
     }
 
@@ -268,9 +275,11 @@ struct CodeBlockLayout: @unchecked Sendable {
         }
 
         // Code body text.
-        text.draw(in: ctx, origin: CGPoint(
-            x: origin.x + textOriginInLayout.x,
-            y: origin.y + textOriginInLayout.y))
+        text.draw(
+            in: ctx,
+            origin: CGPoint(
+                x: origin.x + textOriginInLayout.x,
+                y: origin.y + textOriginInLayout.y))
 
         // The copy glyph itself is dispatched by `BlockCellView` via
         // `drawCopyGlyph(in:origin:checked:)` after this method
@@ -302,9 +311,11 @@ struct CodeBlockLayout: @unchecked Sendable {
             pointSize: BlockStyle.codeBlockHeaderFontSize, weight: weight)
         let colorConfig = NSImage.SymbolConfiguration(paletteColors: [tint])
         let config = baseConfig.applying(colorConfig)
-        guard let symbol = NSImage(systemSymbolName: name,
-                                   accessibilityDescription: nil)?
-            .withSymbolConfiguration(config)
+        guard
+            let symbol = NSImage(
+                systemSymbolName: name,
+                accessibilityDescription: nil)?
+                .withSymbolConfiguration(config)
         else { return }
 
         let size = symbol.size
@@ -320,12 +331,13 @@ struct CodeBlockLayout: @unchecked Sendable {
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(
             cgContext: ctx, flipped: true)
-        symbol.draw(in: rect,
-                    from: .zero,
-                    operation: .sourceOver,
-                    fraction: 1.0,
-                    respectFlipped: true,
-                    hints: nil)
+        symbol.draw(
+            in: rect,
+            from: .zero,
+            operation: .sourceOver,
+            fraction: 1.0,
+            respectFlipped: true,
+            hints: nil)
         NSGraphicsContext.restoreGraphicsState()
     }
 }

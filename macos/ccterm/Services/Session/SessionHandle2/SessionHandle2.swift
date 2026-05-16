@@ -1,6 +1,6 @@
+import AgentSDK
 import Foundation
 import Observation
-import AgentSDK
 
 @Observable
 @MainActor
@@ -187,7 +187,7 @@ class SessionHandle2 {
     /// @MainActor class deinit 否则会走 `swift_task_deinitOnExecutorImpl`，命中 macOS 26 SDK 的
     /// libswift_Concurrency bug（`TaskLocal::StopLookupScope` 析构时 free 未 malloc 的指针 → abort）。
     /// nonisolated deinit 跳过 executor-hop 路径规避该 bug。
-    nonisolated deinit { }
+    nonisolated deinit {}
 
     /// 把 `record` 的持久化字段映射到当前 handle。仅覆盖字段，不碰 status / messages。
     private func apply(_ record: SessionRecord) {
@@ -200,7 +200,8 @@ class SessionHandle2 {
         model = record.extra.model
         effort = record.extra.effort.flatMap(Effort.init(rawValue:))
         if let raw = record.extra.permissionMode,
-           let mapped = PermissionMode(rawValue: raw) {
+            let mapped = PermissionMode(rawValue: raw)
+        {
             permissionMode = mapped
         }
         additionalDirectories = record.extra.addDirs ?? []

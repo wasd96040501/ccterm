@@ -95,7 +95,7 @@ struct TranscriptStressView: View {
             case .heading(_, let inlines), .paragraph(let inlines):
                 return acc + InlineNode.charCount(inlines)
             case .image, .list, .table, .codeBlock, .blockquote,
-                 .thematicBreak, .userBubble, .toolGroup:
+                .thematicBreak, .userBubble, .toolGroup:
                 // Stress corpus only emits heading / paragraph today, so
                 // these cases are unreachable in practice. Listed for
                 // exhaustiveness; if any of these ever land in the
@@ -110,8 +110,9 @@ struct TranscriptStressView: View {
     /// Pure: parses the bundled TSV corpus into `[Block]`. Returns `nil` if
     /// the resource is missing (e.g. fresh checkout before the script ran).
     nonisolated private static func loadCorpus() -> [Block]? {
-        guard let url = Bundle.main.url(
-            forResource: "transcript_stress_corpus", withExtension: "txt")
+        guard
+            let url = Bundle.main.url(
+                forResource: "transcript_stress_corpus", withExtension: "txt")
         else { return nil }
         guard let text = try? String(contentsOf: url, encoding: .utf8) else {
             return nil

@@ -18,65 +18,80 @@ enum MarkdownToBlocks {
 
     // MARK: - Segment
 
-    private static func appendSegment(_ seg: MarkdownSegment, idPrefix: String,
-                                      into out: inout [Block]) {
+    private static func appendSegment(
+        _ seg: MarkdownSegment, idPrefix: String,
+        into out: inout [Block]
+    ) {
         switch seg {
         case .markdown(let blocks):
             for (i, b) in blocks.enumerated() {
                 appendBlock(b, idPrefix: "\(idPrefix)|md\(i)", into: &out)
             }
         case .heading(let level, let inlines):
-            out.append(Block(
-                id: StableBlockID.derive(idPrefix, "heading"),
-                kind: .heading(level: level, inlines: convertInlines(inlines))))
+            out.append(
+                Block(
+                    id: StableBlockID.derive(idPrefix, "heading"),
+                    kind: .heading(level: level, inlines: convertInlines(inlines))))
         case .blockquote(let inner):
             let inlines = flattenToInlines(inner)
-            out.append(Block(
-                id: StableBlockID.derive(idPrefix, "blockquote"),
-                kind: .blockquote(inlines: inlines)))
+            out.append(
+                Block(
+                    id: StableBlockID.derive(idPrefix, "blockquote"),
+                    kind: .blockquote(inlines: inlines)))
         case .list(let list):
-            out.append(Block(
-                id: StableBlockID.derive(idPrefix, "list"),
-                kind: .list(convertList(list))))
+            out.append(
+                Block(
+                    id: StableBlockID.derive(idPrefix, "list"),
+                    kind: .list(convertList(list))))
         case .codeBlock(let cb):
-            out.append(Block(
-                id: StableBlockID.derive(idPrefix, "code"),
-                kind: .codeBlock(language: cb.language, code: cb.code)))
+            out.append(
+                Block(
+                    id: StableBlockID.derive(idPrefix, "code"),
+                    kind: .codeBlock(language: cb.language, code: cb.code)))
         case .table(let tbl):
-            out.append(Block(
-                id: StableBlockID.derive(idPrefix, "table"),
-                kind: .table(convertTable(tbl))))
+            out.append(
+                Block(
+                    id: StableBlockID.derive(idPrefix, "table"),
+                    kind: .table(convertTable(tbl))))
         case .mathBlock(let s):
             // NativeTranscript2 不渲染数学公式,降级为代码块预览,起码内容不丢。
-            out.append(Block(
-                id: StableBlockID.derive(idPrefix, "math"),
-                kind: .codeBlock(language: "math", code: s)))
+            out.append(
+                Block(
+                    id: StableBlockID.derive(idPrefix, "math"),
+                    kind: .codeBlock(language: "math", code: s)))
         case .thematicBreak:
-            out.append(Block(
-                id: StableBlockID.derive(idPrefix, "hr"),
-                kind: .thematicBreak))
+            out.append(
+                Block(
+                    id: StableBlockID.derive(idPrefix, "hr"),
+                    kind: .thematicBreak))
         }
     }
 
-    private static func appendBlock(_ block: MarkdownBlock, idPrefix: String,
-                                    into out: inout [Block]) {
+    private static func appendBlock(
+        _ block: MarkdownBlock, idPrefix: String,
+        into out: inout [Block]
+    ) {
         switch block {
         case .paragraph(let inlines):
-            out.append(Block(
-                id: StableBlockID.derive(idPrefix, "para"),
-                kind: .paragraph(inlines: convertInlines(inlines))))
+            out.append(
+                Block(
+                    id: StableBlockID.derive(idPrefix, "para"),
+                    kind: .paragraph(inlines: convertInlines(inlines))))
         case .heading(let level, let children):
-            out.append(Block(
-                id: StableBlockID.derive(idPrefix, "heading"),
-                kind: .heading(level: level, inlines: convertInlines(children))))
+            out.append(
+                Block(
+                    id: StableBlockID.derive(idPrefix, "heading"),
+                    kind: .heading(level: level, inlines: convertInlines(children))))
         case .blockquote(let inner):
-            out.append(Block(
-                id: StableBlockID.derive(idPrefix, "blockquote"),
-                kind: .blockquote(inlines: flattenToInlines(inner))))
+            out.append(
+                Block(
+                    id: StableBlockID.derive(idPrefix, "blockquote"),
+                    kind: .blockquote(inlines: flattenToInlines(inner))))
         case .list(let list):
-            out.append(Block(
-                id: StableBlockID.derive(idPrefix, "list"),
-                kind: .list(convertList(list))))
+            out.append(
+                Block(
+                    id: StableBlockID.derive(idPrefix, "list"),
+                    kind: .list(convertList(list))))
         }
     }
 

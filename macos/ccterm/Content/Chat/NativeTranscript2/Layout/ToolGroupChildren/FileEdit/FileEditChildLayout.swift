@@ -31,11 +31,12 @@ struct FileEditChildLayout: @unchecked Sendable {
         originY: CGFloat,
         maxWidth: CGFloat
     ) -> FileEditChildLayout {
-        FileEditChildLayout(body: DiffLayout.make(
-            diff: child.diff,
-            lineMap: lineMap,
-            originX: originX,
-            originY: originY,
-            maxWidth: maxWidth))
+        FileEditChildLayout(
+            body: DiffLayout.make(
+                diff: child.diff,
+                lineMap: lineMap,
+                originX: originX,
+                originY: originY,
+                maxWidth: maxWidth))
     }
 }

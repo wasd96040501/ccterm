@@ -62,10 +62,12 @@ public struct MarkdownDocument: Hashable, Sendable {
             case let ordered as Markdown.OrderedList:
                 flushBuffer()
                 let items = Array(ordered.listItems).map { MarkdownConvert.item(for: $0) }
-                out.append(.list(MarkdownList(
-                    ordered: true,
-                    startIndex: Int(ordered.startIndex),
-                    items: items)))
+                out.append(
+                    .list(
+                        MarkdownList(
+                            ordered: true,
+                            startIndex: Int(ordered.startIndex),
+                            items: items)))
 
             case let code as Markdown.CodeBlock:
                 flushBuffer()

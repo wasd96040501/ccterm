@@ -123,7 +123,7 @@ struct DiffLayout: @unchecked Sendable {
         // hunks plus a space on each side.
         let maxLineNo = hunks.flatMap(\.lines).compactMap(\.lineNo).max() ?? 0
         let digits = max(2, String(maxLineNo).count)
-        let gutterText = String(repeating: " ", count: digits + 2) // " NNN "
+        let gutterText = String(repeating: " ", count: digits + 2)  // " NNN "
         let gutterWidth = textWidth(gutterText, attrs: [.font: font])
 
         // Per-row prefix length is constant within a body: " NNN " +
@@ -139,34 +139,39 @@ struct DiffLayout: @unchecked Sendable {
 
         for (hi, hunk) in hunks.enumerated() {
             if hi > 0 {
-                let sepRect = CGRect(x: originX, y: y,
-                                     width: maxWidth, height: lineH)
+                let sepRect = CGRect(
+                    x: originX, y: y,
+                    width: maxWidth, height: lineH)
                 let sepLine = CTLineCreateWithAttributedString(
-                    NSAttributedString(string: " ··· ", attributes: [
-                        .font: font,
-                        .foregroundColor: BlockStyle.diffSeparatorForeground,
-                    ]))
-                rows.append(Row(
-                    lineRect: sepRect,
-                    gutterRect: .zero,
-                    lineBg: BlockStyle.diffSeparatorBackground,
-                    gutterBg: .clear,
-                    line: sepLine,
-                    baseline: CGPoint(
-                        x: originX + BlockStyle.bubbleHorizontalPadding,
-                        y: y + font.ascender),
-                    isContent: false,
-                    contentStartIndex: 0,
-                    contentLength: 0,
-                    contentText: "",
-                    globalStart: 0))
+                    NSAttributedString(
+                        string: " ··· ",
+                        attributes: [
+                            .font: font,
+                            .foregroundColor: BlockStyle.diffSeparatorForeground,
+                        ]))
+                rows.append(
+                    Row(
+                        lineRect: sepRect,
+                        gutterRect: .zero,
+                        lineBg: BlockStyle.diffSeparatorBackground,
+                        gutterBg: .clear,
+                        line: sepLine,
+                        baseline: CGPoint(
+                            x: originX + BlockStyle.bubbleHorizontalPadding,
+                            y: y + font.ascender),
+                        isContent: false,
+                        contentStartIndex: 0,
+                        contentLength: 0,
+                        contentText: "",
+                        globalStart: 0))
                 y += lineH
             }
             for line in hunk.lines {
                 let effectiveType: DiffEngine.Line.LineType =
                     (suppressAdd && line.type == .add) ? .context : line.type
-                let lineRect = CGRect(x: originX, y: y,
-                                      width: maxWidth, height: lineH)
+                let lineRect = CGRect(
+                    x: originX, y: y,
+                    width: maxWidth, height: lineH)
                 let gutterRect = CGRect(
                     x: originX, y: y, width: gutterWidth, height: lineH)
                 let attr = buildLineAttributed(
@@ -177,21 +182,23 @@ struct DiffLayout: @unchecked Sendable {
                 let contentLenU16 = (line.content as NSString).length
                 // Each preceding content row contributes its content
                 // length + 1 (newline). The first row starts at 0.
-                let globalStart = hasEmittedContent
+                let globalStart =
+                    hasEmittedContent
                     ? (runningContentChars + 1)
                     : 0
-                rows.append(Row(
-                    lineRect: lineRect,
-                    gutterRect: gutterRect,
-                    lineBg: DiffColors.dynamicContentBg(effectiveType),
-                    gutterBg: DiffColors.dynamicGutterBg(effectiveType),
-                    line: ctLine,
-                    baseline: CGPoint(x: originX, y: y + font.ascender),
-                    isContent: true,
-                    contentStartIndex: prefixUTF16,
-                    contentLength: contentLenU16,
-                    contentText: line.content,
-                    globalStart: globalStart))
+                rows.append(
+                    Row(
+                        lineRect: lineRect,
+                        gutterRect: gutterRect,
+                        lineBg: DiffColors.dynamicContentBg(effectiveType),
+                        gutterBg: DiffColors.dynamicGutterBg(effectiveType),
+                        line: ctLine,
+                        baseline: CGPoint(x: originX, y: y + font.ascender),
+                        isContent: true,
+                        contentStartIndex: prefixUTF16,
+                        contentLength: contentLenU16,
+                        contentText: line.content,
+                        globalStart: globalStart))
                 runningContentChars = globalStart + contentLenU16
                 hasEmittedContent = true
                 y += lineH
@@ -224,10 +231,12 @@ struct DiffLayout: @unchecked Sendable {
                 x: row.lineRect.minX, y: row.lineRect.minY - pad,
                 width: row.lineRect.width,
                 height: row.lineRect.height + pad),
-            gutterRect: row.gutterRect.isEmpty ? .zero : CGRect(
-                x: row.gutterRect.minX, y: row.gutterRect.minY - pad,
-                width: row.gutterRect.width,
-                height: row.gutterRect.height + pad),
+            gutterRect: row.gutterRect.isEmpty
+                ? .zero
+                : CGRect(
+                    x: row.gutterRect.minX, y: row.gutterRect.minY - pad,
+                    width: row.gutterRect.width,
+                    height: row.gutterRect.height + pad),
             lineBg: row.lineBg, gutterBg: row.gutterBg,
             line: row.line, baseline: row.baseline,
             isContent: row.isContent,
@@ -243,10 +252,12 @@ struct DiffLayout: @unchecked Sendable {
                 x: row.lineRect.minX, y: row.lineRect.minY,
                 width: row.lineRect.width,
                 height: row.lineRect.height + pad),
-            gutterRect: row.gutterRect.isEmpty ? .zero : CGRect(
-                x: row.gutterRect.minX, y: row.gutterRect.minY,
-                width: row.gutterRect.width,
-                height: row.gutterRect.height + pad),
+            gutterRect: row.gutterRect.isEmpty
+                ? .zero
+                : CGRect(
+                    x: row.gutterRect.minX, y: row.gutterRect.minY,
+                    width: row.gutterRect.width,
+                    height: row.gutterRect.height + pad),
             lineBg: row.lineBg, gutterBg: row.gutterBg,
             line: row.line, baseline: row.baseline,
             isContent: row.isContent,
@@ -261,7 +272,9 @@ struct DiffLayout: @unchecked Sendable {
     ) -> CGFloat {
         let line = CTLineCreateWithAttributedString(
             NSAttributedString(string: s, attributes: attrs))
-        var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
+        var ascent: CGFloat = 0
+        var descent: CGFloat = 0
+        var leading: CGFloat = 0
         return CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
     }
 
@@ -277,40 +290,59 @@ struct DiffLayout: @unchecked Sendable {
         tokens: [SyntaxToken]?
     ) -> NSAttributedString {
         let lineNoStr = line.lineNo.map(String.init) ?? ""
-        let padded = String(repeating: " ", count: max(0, digits - lineNoStr.count))
+        let padded =
+            String(repeating: " ", count: max(0, digits - lineNoStr.count))
             + lineNoStr
 
         let result = NSMutableAttributedString()
-        result.append(NSAttributedString(string: " \(padded) ", attributes: [
-            .font: font,
-            .foregroundColor: BlockStyle.diffGutterForeground,
-        ]))
+        result.append(
+            NSAttributedString(
+                string: " \(padded) ",
+                attributes: [
+                    .font: font,
+                    .foregroundColor: BlockStyle.diffGutterForeground,
+                ]))
 
         let sign: String
         let signColor: NSColor
         switch effectiveType {
-        case .add:     sign = "+"; signColor = BlockStyle.diffSignAddForeground
-        case .del:     sign = "-"; signColor = BlockStyle.diffSignDelForeground
-        case .context: sign = " "; signColor = NSColor.labelColor
+        case .add:
+            sign = "+"
+            signColor = BlockStyle.diffSignAddForeground
+        case .del:
+            sign = "-"
+            signColor = BlockStyle.diffSignDelForeground
+        case .context:
+            sign = " "
+            signColor = NSColor.labelColor
         }
-        result.append(NSAttributedString(string: " \(sign) ", attributes: [
-            .font: font,
-            .foregroundColor: signColor,
-        ]))
+        result.append(
+            NSAttributedString(
+                string: " \(sign) ",
+                attributes: [
+                    .font: font,
+                    .foregroundColor: signColor,
+                ]))
 
         if let tokens, !line.content.isEmpty {
             for token in tokens {
                 let color = colorForToken(scope: token.scope)
-                result.append(NSAttributedString(string: token.text, attributes: [
-                    .font: font,
-                    .foregroundColor: color,
-                ]))
+                result.append(
+                    NSAttributedString(
+                        string: token.text,
+                        attributes: [
+                            .font: font,
+                            .foregroundColor: color,
+                        ]))
             }
         } else if !line.content.isEmpty {
-            result.append(NSAttributedString(string: line.content, attributes: [
-                .font: font,
-                .foregroundColor: NSColor.labelColor,
-            ]))
+            result.append(
+                NSAttributedString(
+                    string: line.content,
+                    attributes: [
+                        .font: font,
+                        .foregroundColor: NSColor.labelColor,
+                    ]))
         }
 
         result.append(NSAttributedString(string: " ", attributes: [.font: font]))
@@ -406,11 +438,12 @@ struct DiffLayout: @unchecked Sendable {
             let clampedLo = max(containerMinX, min(rawLo, containerMaxX))
             let clampedHi = max(containerMinX, min(rawHi, containerMaxX))
             guard clampedHi > clampedLo else { continue }
-            out.append(CGRect(
-                x: clampedLo,
-                y: row.lineRect.minY,
-                width: clampedHi - clampedLo,
-                height: row.lineRect.height))
+            out.append(
+                CGRect(
+                    x: clampedLo,
+                    y: row.lineRect.minY,
+                    width: clampedHi - clampedLo,
+                    height: row.lineRect.height))
         }
         return out
     }
@@ -432,17 +465,21 @@ struct DiffLayout: @unchecked Sendable {
             // OR the trailing `\n` (i.e., rowEnd) is inside the range.
             let nlIndex = rowEnd
             let trailingNlInRange = (nlIndex >= loChar && nlIndex < hiChar)
-            let bodyOverlap = (hiChar > rowStart && loChar < rowEnd) ||
-                              (rowStart == rowEnd && loChar <= rowStart && rowStart < hiChar)
+            let bodyOverlap =
+                (hiChar > rowStart && loChar < rowEnd)
+                || (rowStart == rowEnd && loChar <= rowStart && rowStart < hiChar)
             guard bodyOverlap || trailingNlInRange else { continue }
             let lo = max(loChar, rowStart)
             let hi = min(hiChar, rowEnd)
             let localLo = lo - rowStart
             let localHi = max(0, hi - rowStart)
             let nsText = row.contentText as NSString
-            let slice = (localHi > localLo)
-                ? nsText.substring(with: NSRange(location: localLo,
-                                                  length: localHi - localLo))
+            let slice =
+                (localHi > localLo)
+                ? nsText.substring(
+                    with: NSRange(
+                        location: localLo,
+                        length: localHi - localLo))
                 : ""
             if !first { out += "\n" }
             out += slice

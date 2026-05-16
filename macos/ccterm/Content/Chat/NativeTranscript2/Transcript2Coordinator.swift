@@ -237,12 +237,14 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// Silently no-op when no scroll view is attached — push/pop balance
     /// holds because both will no-op together.
     func pushScrollerHidden() { transcriptScrollView?.pushScrollerHidden() }
-    func popScrollerHidden()  { transcriptScrollView?.popScrollerHidden() }
+    func popScrollerHidden() { transcriptScrollView?.popScrollerHidden() }
 
     // MARK: - Mutation: sync
 
-    func apply(_ changes: [Transcript2Controller.Change],
-               scroll: Transcript2Controller.ScrollState = .none) {
+    func apply(
+        _ changes: [Transcript2Controller.Change],
+        scroll: Transcript2Controller.ScrollState = .none
+    ) {
         // Bump so any inflight `cacheRefillTask` discards its onMain on
         // hop. We don't cancel here: the counter is the actual guard, and
         // `cacheRefillTask` polices its own lifetime via the next
@@ -289,12 +291,20 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// (succeeded, table-detached, zero-width). Callers use it to balance
     /// paired lifecycle work (e.g. scroller push/pop) that must survive
     /// the async hop.
-    func applyInBackground(_ changes: [Transcript2Controller.Change],
-                           scroll: Transcript2Controller.ScrollState,
-                           completion: @MainActor @escaping () -> Void = {}) {
-        guard tableView != nil else { completion(); return }
+    func applyInBackground(
+        _ changes: [Transcript2Controller.Change],
+        scroll: Transcript2Controller.ScrollState,
+        completion: @MainActor @escaping () -> Void = {}
+    ) {
+        guard tableView != nil else {
+            completion()
+            return
+        }
         let width = layoutWidth
-        guard width > 0 else { completion(); return }
+        guard width > 0 else {
+            completion()
+            return
+        }
 
         // Only `.insert` carries new blocks; `.remove` / `.update` either
         // don't add layouts or evict them. `.update`'s replacement layout
@@ -319,11 +329,15 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             var entries: [(UUID, RowLayout)] = []
             entries.reserveCapacity(toCompute.count)
             for block in toCompute {
-                entries.append((block.id, Self.makeLayout(
-                    for: block, width: width,
-                    highlights: highlightSnapshot,
-                    folds: foldsSnapshot,
-                    statuses: statusesSnapshot)))
+                entries.append(
+                    (
+                        block.id,
+                        Self.makeLayout(
+                            for: block, width: width,
+                            highlights: highlightSnapshot,
+                            folds: foldsSnapshot,
+                            statuses: statusesSnapshot)
+                    ))
             }
             await MainActor.run { [entries] in
                 defer { completion() }
@@ -345,8 +359,10 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
 
     // MARK: - Structural change (mechanical, no scroll, no scheduling)
 
-    private func applyStructuralChange(_ change: Transcript2Controller.Change,
-                                       in table: NSTableView?) {
+    private func applyStructuralChange(
+        _ change: Transcript2Controller.Change,
+        in table: NSTableView?
+    ) {
         switch change {
         case .insert(let after, let new):
             guard !new.isEmpty else { return }
@@ -359,8 +375,9 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             }
             blocks.insert(contentsOf: new, at: idx)
             for block in new { highlightStorage.schedule(block) }
-            table?.insertRows(at: IndexSet(idx ..< idx + new.count),
-                              withAnimation: [.effectFade])
+            table?.insertRows(
+                at: IndexSet(idx..<idx + new.count),
+                withAnimation: [.effectFade])
 
         case .remove(let ids):
             let idSet = Set(ids)
@@ -403,8 +420,9 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             // a clean empty selection on the recycled cell.
             selection.dropEntry(blockId: id)
             let idx = IndexSet(integer: i)
-            table?.reloadData(forRowIndexes: idx,
-                              columnIndexes: IndexSet(integer: 0))
+            table?.reloadData(
+                forRowIndexes: idx,
+                columnIndexes: IndexSet(integer: 0))
             table?.noteHeightOfRows(withIndexesChanged: idx)
         }
     }
@@ -417,11 +435,12 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// not glyph metrics — a re-layout pass would be a wasted query.
     private func handleHighlightDidFill(blockId: UUID) {
         guard let table = tableView,
-              let row = blocks.firstIndex(where: { $0.id == blockId })
+            let row = blocks.firstIndex(where: { $0.id == blockId })
         else { return }
         removeCachedLayout(for: blockId)
-        table.reloadData(forRowIndexes: IndexSet(integer: row),
-                         columnIndexes: IndexSet(integer: 0))
+        table.reloadData(
+            forRowIndexes: IndexSet(integer: row),
+            columnIndexes: IndexSet(integer: 0))
     }
 
     // MARK: - Scroll adjustment
@@ -429,9 +448,11 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// Wraps a structural-change closure with the requested scroll behavior.
     /// `.saveVisible` disables implicit animations so the height/insert
     /// transition doesn't race with the scroll-origin compensation.
-    private func withScrollAdjustment(_ scroll: Transcript2Controller.ScrollState,
-                                      in tableView: NSTableView,
-                                      body: () -> Void) {
+    private func withScrollAdjustment(
+        _ scroll: Transcript2Controller.ScrollState,
+        in tableView: NSTableView,
+        body: () -> Void
+    ) {
         switch scroll {
         case .none:
             body()
@@ -466,8 +487,10 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let side: Transcript2Controller.ScrollState.Side
     }
 
-    private func captureAnchor(side: Transcript2Controller.ScrollState.Side,
-                               in tableView: NSTableView) -> ScrollAnchor? {
+    private func captureAnchor(
+        side: Transcript2Controller.ScrollState.Side,
+        in tableView: NSTableView
+    ) -> ScrollAnchor? {
         guard let scrollView = tableView.enclosingScrollView else { return nil }
         let visible = tableView.rows(in: tableView.visibleRect)
         guard visible.location != NSNotFound, visible.length > 0 else { return nil }
@@ -501,14 +524,16 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let delta = newRefY - anchor.oldRefY
         if abs(delta) > 0.5 {
             scrollView.contentView.scroll(
-                to: NSPoint(x: scrollView.contentView.bounds.origin.x,
-                            y: anchor.oldScrollY + delta))
+                to: NSPoint(
+                    x: scrollView.contentView.bounds.origin.x,
+                    y: anchor.oldScrollY + delta))
         }
     }
 
     private func scrollRowToTop(id: UUID, in tableView: NSTableView) {
         guard let row = blocks.firstIndex(where: { $0.id == id }),
-              let scrollView = tableView.enclosingScrollView else { return }
+            let scrollView = tableView.enclosingScrollView
+        else { return }
         let target = tableView.rect(ofRow: row).origin.y
         scrollView.contentView.scroll(
             to: NSPoint(x: scrollView.contentView.bounds.origin.x, y: target))
@@ -516,7 +541,8 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
 
     private func scrollRowToBottom(id: UUID, in tableView: NSTableView) {
         guard let row = blocks.firstIndex(where: { $0.id == id }),
-              let scrollView = tableView.enclosingScrollView else { return }
+            let scrollView = tableView.enclosingScrollView
+        else { return }
         let rect = tableView.rect(ofRow: row)
         let viewportH = scrollView.contentView.bounds.height
         let target = max(0, rect.maxY - viewportH)
@@ -585,32 +611,37 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let contentWidth = max(0, width - 2 * BlockStyle.blockHorizontalPadding)
         switch block.kind {
         case .heading(let level, let inlines):
-            return .text(TextLayout.make(
-                attributed: BlockStyle.headingAttributed(level: level, inlines: inlines),
-                maxWidth: contentWidth))
+            return .text(
+                TextLayout.make(
+                    attributed: BlockStyle.headingAttributed(level: level, inlines: inlines),
+                    maxWidth: contentWidth))
         case .paragraph(let inlines):
-            return .text(TextLayout.make(
-                attributed: BlockStyle.paragraphAttributed(inlines: inlines),
-                maxWidth: contentWidth))
+            return .text(
+                TextLayout.make(
+                    attributed: BlockStyle.paragraphAttributed(inlines: inlines),
+                    maxWidth: contentWidth))
         case .image(let image):
-            return .image(ImageLayout.make(
-                image: image,
-                maxWidth: contentWidth,
-                maxHeight: BlockStyle.imageMaxHeight))
+            return .image(
+                ImageLayout.make(
+                    image: image,
+                    maxWidth: contentWidth,
+                    maxHeight: BlockStyle.imageMaxHeight))
         case .list(let listBlock):
             return .list(ListLayout.make(block: listBlock, maxWidth: contentWidth))
         case .table(let tableBlock):
             return .table(TableLayout.make(block: tableBlock, maxWidth: contentWidth))
         case .codeBlock(let language, let code):
             let codeTokens: [SyntaxToken]? = {
-                guard case .tokens(let t) = highlights[
-                    Transcript2HighlightKey(blockId: block.id, scope: .codeBlock)]
+                guard
+                    case .tokens(let t) = highlights[
+                        Transcript2HighlightKey(blockId: block.id, scope: .codeBlock)]
                 else { return nil }
                 return t
             }()
-            return .codeBlock(CodeBlockLayout.make(
-                code: code, language: language,
-                tokens: codeTokens, maxWidth: contentWidth))
+            return .codeBlock(
+                CodeBlockLayout.make(
+                    code: code, language: language,
+                    tokens: codeTokens, maxWidth: contentWidth))
         case .blockquote(let inlines):
             return .blockquote(BlockquoteLayout.make(inlines: inlines, maxWidth: contentWidth))
         case .thematicBreak:
@@ -634,13 +665,14 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                     childHighlights[child.id] = value
                 }
             }
-            return .toolGroup(ToolGroupLayout.make(
-                blockId: block.id,
-                group: group,
-                foldStates: folds,
-                statusStates: statuses,
-                childHighlights: childHighlights,
-                maxWidth: contentWidth))
+            return .toolGroup(
+                ToolGroupLayout.make(
+                    blockId: block.id,
+                    group: group,
+                    foldStates: folds,
+                    statusStates: statuses,
+                    childHighlights: childHighlights,
+                    maxWidth: contentWidth))
         }
     }
 
@@ -699,7 +731,8 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         // the upcoming `syncSubviewPlan()` through `view.animator()`).
         // Ordering between them is internal to the cell — callers
         // can't get it wrong by reordering.
-        let cell = table.view(atColumn: 0, row: row, makeIfNecessary: false)
+        let cell =
+            table.view(atColumn: 0, row: row, makeIfNecessary: false)
             as? BlockCellView
         cell?.beginFoldTransition(foldId: id, toExpanded: newExpanded)
 
@@ -714,8 +747,9 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             // folded/expanded body draws — must follow `noteHeightOfRows`
             // inside the same animation group so the row's height change
             // and content swap composite together rather than tearing.
-            table.reloadData(forRowIndexes: idx,
-                             columnIndexes: IndexSet(integer: 0))
+            table.reloadData(
+                forRowIndexes: idx,
+                columnIndexes: IndexSet(integer: 0))
         }
     }
 
@@ -771,8 +805,9 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         // Selection / highlight intentionally untouched — status
         // doesn't change glyph geometry inside any selectable body, so
         // current offsets remain valid.
-        table.reloadData(forRowIndexes: IndexSet(integer: row),
-                         columnIndexes: IndexSet(integer: 0))
+        table.reloadData(
+            forRowIndexes: IndexSet(integer: row),
+            columnIndexes: IndexSet(integer: 0))
         // No `noteHeightOfRows` — status only repaints the header
         // bands' colour palette; total row height is unchanged.
     }
@@ -786,7 +821,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// at a `userBubble`.
     func requestUserBubbleSheet(id: UUID) {
         guard let i = blocks.firstIndex(where: { $0.id == id }),
-              case .userBubble(let text) = blocks[i].kind
+            case .userBubble(let text) = blocks[i].kind
         else { return }
         onUserBubbleSheetRequested?(id, text)
     }
@@ -818,13 +853,14 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             // post-resize background prefetch.
             let visible = tableView.rows(in: tableView.visibleRect)
             guard visible.location != NSNotFound, visible.length > 0 else { return }
-            invalidate(rows: IndexSet(visible.location ..< visible.location + visible.length),
-                       in: tableView)
+            invalidate(
+                rows: IndexSet(visible.location..<visible.location + visible.length),
+                in: tableView)
         } else {
             // Outside live resize, frame changes are programmatic / one-off
             // (initial layout, window animation). Invalidate everything;
             // AppKit re-queries lazily on next layout pass.
-            invalidate(rows: IndexSet(0 ..< blocks.count), in: tableView)
+            invalidate(rows: IndexSet(0..<blocks.count), in: tableView)
         }
     }
 
@@ -853,8 +889,9 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         tableView.beginUpdates()
-        tableView.reloadData(forRowIndexes: indexes,
-                             columnIndexes: IndexSet(integer: 0))
+        tableView.reloadData(
+            forRowIndexes: indexes,
+            columnIndexes: IndexSet(integer: 0))
         tableView.noteHeightOfRows(withIndexesChanged: indexes)
         tableView.endUpdates()
         CATransaction.commit()
@@ -889,18 +926,26 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             entries.reserveCapacity(snapshot.count)
             var aborted = false
             for block in snapshot {
-                if Task.isCancelled { aborted = true; break }
-                entries.append((block.id, Self.makeLayout(
-                    for: block, width: width,
-                    highlights: highlightSnapshot,
-                    folds: foldsSnapshot,
-                    statuses: statusesSnapshot)))
+                if Task.isCancelled {
+                    aborted = true
+                    break
+                }
+                entries.append(
+                    (
+                        block.id,
+                        Self.makeLayout(
+                            for: block, width: width,
+                            highlights: highlightSnapshot,
+                            folds: foldsSnapshot,
+                            statuses: statusesSnapshot)
+                    ))
             }
             await MainActor.run { [entries] in
                 defer { self?.popScrollerHidden() }
                 if aborted { return }
                 guard let self, let table = self.tableView,
-                      self.layoutWidth == width else { return }
+                    self.layoutWidth == width
+                else { return }
                 // mutationCounter drift → an `apply` ran during the task.
                 // Skip the entire onMain (cache writes, noteHeightOfRows,
                 // saveVisible). Reason: noteHeightOfRows is deferred to
@@ -939,8 +984,10 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             + pad.top + pad.bottom
     }
 
-    func tableView(_ tableView: NSTableView,
-                   rowViewForRow row: Int) -> NSTableRowView? {
+    func tableView(
+        _ tableView: NSTableView,
+        rowViewForRow row: Int
+    ) -> NSTableRowView? {
         let id = NSUserInterfaceItemIdentifier("BlockRow")
         if let reused = tableView.makeView(withIdentifier: id, owner: self)
             as? CenteredRowView
@@ -952,9 +999,11 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         return view
     }
 
-    func tableView(_ tableView: NSTableView,
-                   viewFor tableColumn: NSTableColumn?,
-                   row: Int) -> NSView? {
+    func tableView(
+        _ tableView: NSTableView,
+        viewFor tableColumn: NSTableColumn?,
+        row: Int
+    ) -> NSView? {
         guard blocks.indices.contains(row) else { return nil }
         let width = layoutWidth
         let block = blocks[row]
@@ -1031,10 +1080,11 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// from the selection dict.
     func markCellNeedsDisplay(blockId: UUID) {
         guard let table = tableView,
-              let row = blocks.firstIndex(where: { $0.id == blockId })
+            let row = blocks.firstIndex(where: { $0.id == blockId })
         else { return }
-        guard let cell = table.view(atColumn: 0, row: row, makeIfNecessary: false)
-            as? BlockCellView
+        guard
+            let cell = table.view(atColumn: 0, row: row, makeIfNecessary: false)
+                as? BlockCellView
         else { return }
         cell.selection = selection.selection(for: blockId)
     }

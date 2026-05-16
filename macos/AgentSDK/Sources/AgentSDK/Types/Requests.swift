@@ -10,7 +10,8 @@ public enum PermissionSuggestion: JSONParseable, UnknownStrippable {
 
     public init(json: Any) throws {
         guard let dict = json as? [String: Any],
-              let tag = dict["type"] as? String else {
+            let tag = dict["type"] as? String
+        else {
             self = .unknown(name: "unknown", raw: [:])
             return
         }
@@ -203,13 +204,15 @@ extension PermissionRequest {
         "Task": "running task", "ExitPlanMode": "the plan",
     ]
 
-    private static let feedbackTemplate = "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\n"
+    private static let feedbackTemplate =
+        "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\n"
 
     /// 场景1: Deny 无反馈 — 自动拼接 "User rejected {verb} {desc}"，interrupt: true。
     public func deny() -> PermissionDecision {
         let verb = Self.toolVerbs[toolName] ?? "using"
         let desc = describeInput()
-        let message = desc.isEmpty
+        let message =
+            desc.isEmpty
             ? "User rejected \(verb)"
             : "User rejected \(verb) \(desc)"
         return .deny(reason: message, interrupt: true)
@@ -226,7 +229,9 @@ extension PermissionRequest {
     }
 
     /// 场景4: Allow Always — 可选传入编辑过的 input 和自定义权限规则，默认使用 CLI 建议的 permissionSuggestions。
-    public func allowAlways(updatedInput: [String: Any]? = nil, updatedPermissions: [[String: Any]]? = nil) -> PermissionDecision {
+    public func allowAlways(
+        updatedInput: [String: Any]? = nil, updatedPermissions: [[String: Any]]? = nil
+    ) -> PermissionDecision {
         let permissions = updatedPermissions ?? permissionSuggestions?.map { $0.toJSON() as! [String: Any] }
         return .allowAlways(updatedInput: updatedInput, updatedPermissions: permissions)
     }

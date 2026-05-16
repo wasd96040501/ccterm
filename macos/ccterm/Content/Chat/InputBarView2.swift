@@ -135,8 +135,9 @@ private struct BarSurface: ViewModifier {
                         .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
                 }
                 .compositingGroup()
-                .shadow(color: .black.opacity(colorScheme == .dark ? 0.3 : 0.12),
-                        radius: 12, x: 0, y: 4)
+                .shadow(
+                    color: .black.opacity(colorScheme == .dark ? 0.3 : 0.12),
+                    radius: 12, x: 0, y: 4)
         } else {
             content
                 .background(colorScheme == .dark ? .thickMaterial : .bar)
@@ -145,8 +146,9 @@ private struct BarSurface: ViewModifier {
                     RoundedRectangle(cornerRadius: cornerRadius)
                         .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
                 }
-                .shadow(color: colorScheme == .light ? .black.opacity(0.1) : .clear,
-                        radius: 8, x: 0, y: 1)
+                .shadow(
+                    color: colorScheme == .light ? .black.opacity(0.1) : .clear,
+                    radius: 8, x: 0, y: 1)
         }
     }
 }

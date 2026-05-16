@@ -34,8 +34,9 @@ final class InputBar2StopButtonUITests: XCTestCase {
         let sendButton = app.buttons["InputBar2.SendButton"]
         let stopButton = app.buttons["InputBar2.StopButton"]
 
-        XCTAssertTrue(sendButton.waitForExistence(timeout: 10),
-                      "send button should be present on launch")
+        XCTAssertTrue(
+            sendButton.waitForExistence(timeout: 10),
+            "send button should be present on launch")
         XCTAssertFalse(stopButton.exists, "stop button should not be visible before sending")
 
         // NSTextView 不直接吃 a11y query — 点 send 按钮左侧的 bar 区让焦点落到 InputTextView
@@ -45,15 +46,17 @@ final class InputBar2StopButtonUITests: XCTestCase {
         app.typeKey("\r", modifierFlags: .command)
 
         // Mock CLI 不发 result,所以 turn 一直挂着 → stop 按钮可见
-        XCTAssertTrue(stopButton.waitForExistence(timeout: 5),
-                      "stop button should appear after sending (mock CLI holds turn)")
+        XCTAssertTrue(
+            stopButton.waitForExistence(timeout: 5),
+            "stop button should appear after sending (mock CLI holds turn)")
         XCTAssertFalse(sendButton.exists, "send button should be hidden while running")
 
         // 核心断言:点 stop 必须把 bar 切回 send
         stopButton.click()
 
-        XCTAssertTrue(sendButton.waitForExistence(timeout: 3),
-                      "send button should return after stop (interrupt resets pendingTurnCount)")
+        XCTAssertTrue(
+            sendButton.waitForExistence(timeout: 3),
+            "send button should return after stop (interrupt resets pendingTurnCount)")
         XCTAssertFalse(stopButton.exists, "stop button should be gone after interrupt")
     }
 }

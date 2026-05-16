@@ -1,5 +1,5 @@
-import Foundation
 import AgentSDK
+import Foundation
 
 /// CLI 发来的待决策权限请求。包含请求内容和响应闭包。
 /// UI 展示请求内容，用户决策后调用 respond 闭包，自动回调 CLI 并从列表中移除。

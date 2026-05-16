@@ -73,7 +73,10 @@ nonisolated enum MarkdownConvert {
             case let code as Markdown.InlineCode:
                 result.append(.code(code.code))
             case let link as Markdown.Link:
-                result.append(.link(destination: link.destination ?? "", children: inlines(Array(link.inlineChildren), insideLink: true)))
+                result.append(
+                    .link(
+                        destination: link.destination ?? "",
+                        children: inlines(Array(link.inlineChildren), insideLink: true)))
             case let image as Markdown.Image:
                 result.append(.image(source: image.source ?? "", alt: image.plainText))
             case is Markdown.LineBreak:

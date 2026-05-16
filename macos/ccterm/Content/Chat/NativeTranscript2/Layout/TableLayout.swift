@@ -69,13 +69,13 @@ struct TableLayout: @unchecked Sendable {
         // Step 1: per-cell attributed strings. Header is bold; missing
         // cells (jagged source rows) become empty strings — tables stay
         // rectangular regardless of the source's column-count drift.
-        let headerAttrs: [NSAttributedString] = (0 ..< columnCount).map { col in
+        let headerAttrs: [NSAttributedString] = (0..<columnCount).map { col in
             BlockStyle.tableCellAttributed(
                 inlines: col < block.header.count ? block.header[col] : [],
                 bold: true)
         }
         let bodyAttrs: [[NSAttributedString]] = block.rows.map { row in
-            (0 ..< columnCount).map { col in
+            (0..<columnCount).map { col in
                 BlockStyle.tableCellAttributed(
                     inlines: col < row.count ? row[col] : [],
                     bold: false)
@@ -113,14 +113,14 @@ struct TableLayout: @unchecked Sendable {
         // collapse to a sliver.
         var columnMins = [CGFloat](repeating: 0, count: columnCount)
         var columnMaxs = [CGFloat](repeating: 0, count: columnCount)
-        for r in 0 ..< rowCount {
-            for c in 0 ..< columnCount {
+        for r in 0..<rowCount {
+            for c in 0..<columnCount {
                 columnMins[c] = max(columnMins[c], cellMin[r][c])
                 columnMaxs[c] = max(columnMaxs[c], cellMax[r][c])
             }
         }
         let minFloor = BlockStyle.tableMinColumnWidth
-        for c in 0 ..< columnCount {
+        for c in 0..<columnCount {
             columnMins[c] = max(columnMins[c], minFloor)
             columnMaxs[c] = max(columnMaxs[c], columnMins[c])
         }
@@ -180,9 +180,10 @@ struct TableLayout: @unchecked Sendable {
                 let yOrigin = rowY + vPad
 
                 for hit in layout.links {
-                    links.append(TextLayout.LinkHit(
-                        rect: hit.rect.offsetBy(dx: xOrigin, dy: yOrigin),
-                        url: hit.url))
+                    links.append(
+                        TextLayout.LinkHit(
+                            rect: hit.rect.offsetBy(dx: xOrigin, dy: yOrigin),
+                            url: hit.url))
                 }
 
                 laid.append(layout)
@@ -204,12 +205,12 @@ struct TableLayout: @unchecked Sendable {
         var cellRects: [[CGRect]] = []
         cellRects.reserveCapacity(rowHeights.count)
         var rectY: CGFloat = 0
-        for r in 0 ..< rowHeights.count {
+        for r in 0..<rowHeights.count {
             let h = rowHeights[r]
             var rowRects: [CGRect] = []
             rowRects.reserveCapacity(columnWidths.count)
             var x: CGFloat = 0
-            for c in 0 ..< columnWidths.count {
+            for c in 0..<columnWidths.count {
                 let w = columnWidths[c]
                 rowRects.append(CGRect(x: x, y: rectY, width: w, height: h))
                 x += w
@@ -282,9 +283,12 @@ struct TableLayout: @unchecked Sendable {
             row = 0
         } else {
             row = rowHeights.count - 1
-            for i in 0 ..< rowHeights.count {
+            for i in 0..<rowHeights.count {
                 let next = y + rowHeights[i]
-                if point.y < next { row = i; break }
+                if point.y < next {
+                    row = i
+                    break
+                }
                 y = next
             }
         }
@@ -296,16 +300,20 @@ struct TableLayout: @unchecked Sendable {
             col = 0
         } else {
             col = columnWidths.count - 1
-            for c in 0 ..< columnWidths.count {
+            for c in 0..<columnWidths.count {
                 let next = x + columnWidths[c]
-                if point.x < next { col = c; break }
+                if point.x < next {
+                    col = c
+                    break
+                }
                 x = next
             }
         }
 
         let textOrigin = cellTextOrigins[row][col]
-        let local = CGPoint(x: point.x - textOrigin.x,
-                            y: point.y - textOrigin.y)
+        let local = CGPoint(
+            x: point.x - textOrigin.x,
+            y: point.y - textOrigin.y)
         let char = cells[row][col].characterIndex(at: local)
         return (row, col, char)
     }
@@ -334,8 +342,8 @@ struct TableLayout: @unchecked Sendable {
             // table-wide select-all path.)
             unitRange: { p in
                 guard case .cell(let r, let c, _) = p,
-                      r >= 0, r < self.cells.count,
-                      c >= 0, c < self.cells[r].count
+                    r >= 0, r < self.cells.count,
+                    c >= 0, c < self.cells[r].count
                 else { return SelectionRange(start: fullStart, end: fullEnd) }
                 let len = self.cells[r][c].length
                 return SelectionRange(
@@ -348,7 +356,7 @@ struct TableLayout: @unchecked Sendable {
             },
             rects: { a, b in
                 guard case .cell(let r1, let c1, let ch1) = a,
-                      case .cell(let r2, let c2, let ch2) = b
+                    case .cell(let r2, let c2, let ch2) = b
                 else { return [] }
                 return self.cellSelectionRects(
                     r1: r1, c1: c1, ch1: ch1,
@@ -356,7 +364,7 @@ struct TableLayout: @unchecked Sendable {
             },
             string: { a, b in
                 guard case .cell(let r1, let c1, let ch1) = a,
-                      case .cell(let r2, let c2, let ch2) = b
+                    case .cell(let r2, let c2, let ch2) = b
                 else { return "" }
                 return self.cellSelectionString(
                     r1: r1, c1: c1, ch1: ch1,
@@ -364,8 +372,8 @@ struct TableLayout: @unchecked Sendable {
             },
             wordBoundary: { p in
                 guard case .cell(let r, let c, let ch) = p,
-                      r >= 0, r < self.cells.count,
-                      c >= 0, c < self.cells[r].count
+                    r >= 0, r < self.cells.count,
+                    c >= 0, c < self.cells[r].count
                 else { return nil }
                 let attr = self.cells[r][c].attributed
                 guard attr.length > 0 else { return nil }
@@ -373,8 +381,9 @@ struct TableLayout: @unchecked Sendable {
                 let word = attr.doubleClick(at: clamped)
                 return SelectionRange(
                     start: .cell(row: r, col: c, char: word.location),
-                    end: .cell(row: r, col: c,
-                               char: word.location + word.length))
+                    end: .cell(
+                        row: r, col: c,
+                        char: word.location + word.length))
             })
     }
 
@@ -388,8 +397,8 @@ struct TableLayout: @unchecked Sendable {
         r1: Int, c1: Int, ch1: Int,
         r2: Int, c2: Int, ch2: Int
     ) -> [CGRect] {
-        let rowRange = min(r1, r2) ... max(r1, r2)
-        let colRange = min(c1, c2) ... max(c1, c2)
+        let rowRange = min(r1, r2)...max(r1, r2)
+        let colRange = min(c1, c2)...max(c1, c2)
         if rowRange.count == 1, colRange.count == 1 {
             let r = rowRange.lowerBound
             let c = colRange.lowerBound
@@ -419,8 +428,8 @@ struct TableLayout: @unchecked Sendable {
         r1: Int, c1: Int, ch1: Int,
         r2: Int, c2: Int, ch2: Int
     ) -> String {
-        let rowRange = min(r1, r2) ... max(r1, r2)
-        let colRange = min(c1, c2) ... max(c1, c2)
+        let rowRange = min(r1, r2)...max(r1, r2)
+        let colRange = min(c1, c2)...max(c1, c2)
         if rowRange.count == 1, colRange.count == 1 {
             let r = rowRange.lowerBound
             let c = colRange.lowerBound
@@ -429,7 +438,8 @@ struct TableLayout: @unchecked Sendable {
             let lo = min(ch1, ch2)
             let hi = max(ch1, ch2)
             guard hi > lo, hi <= attr.length else { return "" }
-            return attr
+            return
+                attr
                 .attributedSubstring(from: NSRange(location: lo, length: hi - lo))
                 .string
                 .replacingOccurrences(of: "\u{2028}", with: "\n")
@@ -438,8 +448,9 @@ struct TableLayout: @unchecked Sendable {
         for r in rowRange where r < cells.count {
             var cellStrings: [String] = []
             for c in colRange where c < cells[r].count {
-                cellStrings.append(cells[r][c].attributed.string
-                    .replacingOccurrences(of: "\u{2028}", with: "\n"))
+                cellStrings.append(
+                    cells[r][c].attributed.string
+                        .replacingOccurrences(of: "\u{2028}", with: "\n"))
             }
             rowStrings.append(cellStrings.joined(separator: "\t"))
         }
@@ -467,9 +478,10 @@ struct TableLayout: @unchecked Sendable {
         // 1 + 2: clip → fill backgrounds. Clip closes with the saveGState
         // on (3) so the inner dividers also respect the rounded corners.
         ctx.saveGState()
-        ctx.addPath(CGPath(
-            roundedRect: tableRect,
-            cornerWidth: radius, cornerHeight: radius, transform: nil))
+        ctx.addPath(
+            CGPath(
+                roundedRect: tableRect,
+                cornerWidth: radius, cornerHeight: radius, transform: nil))
         ctx.clip()
 
         var rowY = tableRect.minY
@@ -498,13 +510,15 @@ struct TableLayout: @unchecked Sendable {
         for (idx, h) in rowHeights.enumerated() {
             rowY += h
             if idx == rowHeights.count - 1 { break }
-            let color: NSColor = idx == 0
+            let color: NSColor =
+                idx == 0
                 ? BlockStyle.tableBorderColor
                 : BlockStyle.tableInnerDividerColor
             ctx.setFillColor(color.cgColor)
-            ctx.fill(CGRect(
-                x: tableRect.minX, y: rowY - 0.5,
-                width: tableRect.width, height: 1))
+            ctx.fill(
+                CGRect(
+                    x: tableRect.minX, y: rowY - 0.5,
+                    width: tableRect.width, height: 1))
         }
         ctx.restoreGState()
 
@@ -526,9 +540,10 @@ struct TableLayout: @unchecked Sendable {
         ctx.saveGState()
         ctx.setStrokeColor(BlockStyle.tableBorderColor.cgColor)
         ctx.setLineWidth(1)
-        ctx.addPath(CGPath(
-            roundedRect: tableRect.insetBy(dx: 0.5, dy: 0.5),
-            cornerWidth: radius, cornerHeight: radius, transform: nil))
+        ctx.addPath(
+            CGPath(
+                roundedRect: tableRect.insetBy(dx: 0.5, dy: 0.5),
+                cornerWidth: radius, cornerHeight: radius, transform: nil))
         ctx.strokePath()
         ctx.restoreGState()
     }

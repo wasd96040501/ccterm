@@ -123,11 +123,12 @@ extension Worktree {
     /// 就是 main repo root。
     static func resolveBaseRepo(_ path: String) -> String {
         guard let gitDir = GitQuery.gitDir(at: path),
-              gitDir.contains("/.git/worktrees/"),
-              let commonDir = GitQuery.gitCommonDir(at: path)
+            gitDir.contains("/.git/worktrees/"),
+            let commonDir = GitQuery.gitCommonDir(at: path)
         else { return path }
 
-        let absCommon = (commonDir as NSString).isAbsolutePath
+        let absCommon =
+            (commonDir as NSString).isAbsolutePath
             ? commonDir
             : ((path as NSString).appendingPathComponent(commonDir) as NSString).standardizingPath
         return (absCommon as NSString).deletingLastPathComponent
@@ -193,7 +194,8 @@ extension Worktree {
         let gitDir = (baseRepo as NSString).appendingPathComponent(".git")
         let fetchHead = (gitDir as NSString).appendingPathComponent("FETCH_HEAD")
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: fetchHead),
-              let mtime = attrs[.modificationDate] as? Date else {
+            let mtime = attrs[.modificationDate] as? Date
+        else {
             return nil
         }
         return Date().timeIntervalSince(mtime)
@@ -227,8 +229,9 @@ extension Worktree {
         let originRef = "refs/remotes/origin/\(branch)"
 
         guard let local = revParse(baseRepo: baseRepo, ref: localRef),
-              let origin = revParse(baseRepo: baseRepo, ref: originRef),
-              local != origin else {
+            let origin = revParse(baseRepo: baseRepo, ref: originRef),
+            local != origin
+        else {
             return
         }
         guard isAncestor(baseRepo: baseRepo, ancestor: localRef, descendant: originRef) else {
@@ -248,8 +251,9 @@ extension Worktree {
             timeout: 5
         )
         guard r.exitCode == 0,
-              let out = r.stdout?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !out.isEmpty else {
+            let out = r.stdout?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !out.isEmpty
+        else {
             return nil
         }
         return out
@@ -276,7 +280,8 @@ extension Worktree {
         let localExists = revParse(baseRepo: baseRepo, ref: localRef) != nil
 
         if originExists {
-            let preferOrigin = !localExists
+            let preferOrigin =
+                !localExists
                 || isAncestor(baseRepo: baseRepo, ancestor: localRef, descendant: originRef)
             if preferOrigin { return originRef }
         }
@@ -319,9 +324,11 @@ extension Worktree {
             timeout: 5
         )
         if baseHooks.exitCode == 0,
-           let out = baseHooks.stdout?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !out.isEmpty {
-            let absolute = (out as NSString).isAbsolutePath
+            let out = baseHooks.stdout?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !out.isEmpty
+        {
+            let absolute =
+                (out as NSString).isAbsolutePath
                 ? out
                 : (source as NSString).appendingPathComponent(out)
             let set = runGit(
@@ -347,13 +354,16 @@ extension Worktree {
         // 3. git-common-dir/hooks 含非 .sample 文件
         let common = runGit(["rev-parse", "--git-common-dir"], cwd: source, timeout: 5)
         if common.exitCode == 0,
-           let out = common.stdout?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !out.isEmpty {
-            let hooksDir = (out as NSString).isAbsolutePath
+            let out = common.stdout?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !out.isEmpty
+        {
+            let hooksDir =
+                (out as NSString).isAbsolutePath
                 ? (out as NSString).appendingPathComponent("hooks")
                 : ((source as NSString).appendingPathComponent(out) as NSString).appendingPathComponent("hooks")
             if let files = try? FileManager.default.contentsOfDirectory(atPath: hooksDir),
-               files.contains(where: { !$0.hasSuffix(".sample") }) {
+                files.contains(where: { !$0.hasSuffix(".sample") })
+            {
                 _ = runGit(
                     ["config", "--worktree", "core.hooksPath", hooksDir],
                     cwd: worktree,

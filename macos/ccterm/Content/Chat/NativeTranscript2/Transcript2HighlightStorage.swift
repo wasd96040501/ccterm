@@ -197,8 +197,11 @@ final class Transcript2HighlightStorage {
             // highlight-bearing child kind is one switch arm in
             // `ToolGroupChildHighlight` — no work here.
             var payload: [(code: String, lang: String?)] = []
-            var ranges: [(itemId: UUID, range: Range<Int>,
-                          finalize: ([[SyntaxToken]]) -> HighlightValue?)] = []
+            var ranges:
+                [(
+                    itemId: UUID, range: Range<Int>,
+                    finalize: ([[SyntaxToken]]) -> HighlightValue?
+                )] = []
             for child in group.children {
                 guard let plan = ToolGroupChildHighlight.requests(for: child)
                 else { continue }
@@ -222,7 +225,7 @@ final class Transcript2HighlightStorage {
                 })
 
         case .heading, .paragraph, .image, .list, .table,
-             .blockquote, .thematicBreak, .userBubble:
+            .blockquote, .thematicBreak, .userBubble:
             return nil
         }
     }

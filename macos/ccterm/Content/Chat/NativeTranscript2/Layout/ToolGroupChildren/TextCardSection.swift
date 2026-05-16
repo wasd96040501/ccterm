@@ -67,9 +67,11 @@ struct TextCardSection: @unchecked Sendable {
         /// the body-wide gap rhythm.
         let verticalPadding: CGFloat?
 
-        init(text: String, color: NSColor = .labelColor,
-             attributed: NSAttributedString? = nil,
-             verticalPadding: CGFloat? = nil) {
+        init(
+            text: String, color: NSColor = .labelColor,
+            attributed: NSAttributedString? = nil,
+            verticalPadding: CGFloat? = nil
+        ) {
             self.text = text
             self.color = color
             self.attributed = attributed
@@ -108,10 +110,12 @@ struct TextCardSection: @unchecked Sendable {
             } else {
                 let trimmed = spec.text.trimmingTrailingWhitespace
                 guard !trimmed.isEmpty else { continue }
-                attr = NSAttributedString(string: trimmed, attributes: [
-                    .font: font,
-                    .foregroundColor: spec.color,
-                ])
+                attr = NSAttributedString(
+                    string: trimmed,
+                    attributes: [
+                        .font: font,
+                        .foregroundColor: spec.color,
+                    ])
             }
             guard attr.length > 0 else { continue }
             let textLayout = TextLayout.make(
@@ -122,10 +126,11 @@ struct TextCardSection: @unchecked Sendable {
                 x: originX, y: y, width: maxWidth, height: cardH)
             let textOrigin = CGPoint(
                 x: originX + hPad, y: y + vPad)
-            sections.append(TextCardSection(
-                cardRect: cardRect,
-                textOrigin: textOrigin,
-                text: textLayout))
+            sections.append(
+                TextCardSection(
+                    cardRect: cardRect,
+                    textOrigin: textOrigin,
+                    text: textLayout))
             y += cardH + sectionSpacing
         }
 
@@ -165,9 +170,11 @@ struct TextCardSection: @unchecked Sendable {
         in ctx: CGContext, origin: CGPoint
     ) {
         for section in sections {
-            section.text.draw(in: ctx, origin: CGPoint(
-                x: origin.x + section.textOrigin.x,
-                y: origin.y + section.textOrigin.y))
+            section.text.draw(
+                in: ctx,
+                origin: CGPoint(
+                    x: origin.x + section.textOrigin.x,
+                    y: origin.y + section.textOrigin.y))
         }
     }
 }

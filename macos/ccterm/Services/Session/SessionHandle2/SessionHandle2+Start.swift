@@ -1,5 +1,5 @@
-import Foundation
 import AgentSDK
+import Foundation
 
 // MARK: - Lifecycle (public)
 
@@ -44,11 +44,12 @@ extension SessionHandle2 {
     /// 发送图片消息。`caption` 作为文字伴随 block（默认 "[image]"），image
     /// 以 base64 打包进 content array。语义见 `enqueueAndSend(_:)`。
     func send(image data: Data, mediaType: String, caption: String? = nil) {
-        enqueueAndSend(LocalUserInput(
-            text: caption,
-            image: (data: data, mediaType: mediaType),
-            planContent: nil
-        ))
+        enqueueAndSend(
+            LocalUserInput(
+                text: caption,
+                image: (data: data, mediaType: mediaType),
+                planContent: nil
+            ))
     }
 
     /// 统一发送路径：
@@ -72,10 +73,11 @@ extension SessionHandle2 {
         )
         messages.append(.single(single))
         let entry = messages.last!
-        appLog(.info, "SessionHandle2",
+        appLog(
+            .info, "SessionHandle2",
             "[v2-send] enqueue sid=\(sessionId.prefix(8)) entryId=\(single.id.uuidString.prefix(8)) "
-            + "status=\(status) hasRecord=\(hasRecord) agentSession=\(agentSession != nil) "
-            + "msgCount=\(messages.count) onChange=\(onMessagesChange != nil)")
+                + "status=\(status) hasRecord=\(hasRecord) agentSession=\(agentSession != nil) "
+                + "msgCount=\(messages.count) onChange=\(onMessagesChange != nil)")
         // turn 入口 — 在所有副作用之前 +1,view 层的 isRunning 立刻可见。
         // 同步发生在 main,@Observable 自动通知 SwiftUI 重渲染。
         pendingTurnCount += 1
@@ -88,12 +90,15 @@ extension SessionHandle2 {
         ensureStarted()
 
         if let session = agentSession {
-            appLog(.info, "SessionHandle2",
+            appLog(
+                .info, "SessionHandle2",
                 "[v2-send] write-immediate sid=\(sessionId.prefix(8)) entryId=\(single.id.uuidString.prefix(8))")
             writeUserEntryToCLI(single, session: session)
         } else {
-            appLog(.info, "SessionHandle2",
-                "[v2-send] defer-flush sid=\(sessionId.prefix(8)) entryId=\(single.id.uuidString.prefix(8)) status=\(status)")
+            appLog(
+                .info, "SessionHandle2",
+                "[v2-send] defer-flush sid=\(sessionId.prefix(8)) entryId=\(single.id.uuidString.prefix(8)) status=\(status)"
+            )
         }
         // 否则 bootstrap 成功后 `flushBootstrapBacklog` 会把它写到 CLI。
     }
@@ -145,14 +150,16 @@ extension SessionHandle2 {
     /// 不对外暴露——外部只通过 `activate()` 或 `send(_:)` 进入。
     func ensureStarted() {
         guard status == .notStarted || status == .stopped else {
-            appLog(.info, "SessionHandle2",
+            appLog(
+                .info, "SessionHandle2",
                 "[v2-send] ensureStarted SKIP sid=\(sessionId.prefix(8)) status=\(status)")
             return
         }
-        appLog(.info, "SessionHandle2",
+        appLog(
+            .info, "SessionHandle2",
             "[v2-send] ensureStarted begin sid=\(sessionId.prefix(8)) "
-            + "fresh=\(repository.find(sessionId) == nil) cwd=\(cwd ?? "(nil)") "
-            + "isWorktree=\(isWorktree)")
+                + "fresh=\(repository.find(sessionId) == nil) cwd=\(cwd ?? "(nil)") "
+                + "isWorktree=\(isWorktree)")
 
         status = .starting
         termination = nil
@@ -192,21 +199,25 @@ extension SessionHandle2 {
     /// 的快路径。user 消息永远是 `.single`（不参与 grouping），所以只扫 `.single`。
     func flushBootstrapBacklog() {
         guard let session = agentSession else {
-            appLog(.warning, "SessionHandle2",
+            appLog(
+                .warning, "SessionHandle2",
                 "[v2-send] flushBacklog SKIP agentSession=nil sid=\(sessionId.prefix(8))")
             return
         }
         var flushed = 0
         for entry in messages {
             guard case .single(let single) = entry,
-                  single.delivery == .queued,
-                  case .localUser = single.payload else { continue }
-            appLog(.info, "SessionHandle2",
+                single.delivery == .queued,
+                case .localUser = single.payload
+            else { continue }
+            appLog(
+                .info, "SessionHandle2",
                 "[v2-send] flushBacklog write sid=\(sessionId.prefix(8)) entryId=\(single.id.uuidString.prefix(8))")
             writeUserEntryToCLI(single, session: session)
             flushed += 1
         }
-        appLog(.info, "SessionHandle2",
+        appLog(
+            .info, "SessionHandle2",
             "[v2-send] flushBacklog done sid=\(sessionId.prefix(8)) flushed=\(flushed) msgCount=\(messages.count)")
     }
 
@@ -216,7 +227,8 @@ extension SessionHandle2 {
     func failQueuedEntries(reason: String) {
         for idx in messages.indices {
             guard case .single(var single) = messages[idx],
-                  single.delivery == .queued else { continue }
+                single.delivery == .queued
+            else { continue }
             single.delivery = .failed(reason: reason)
             messages[idx] = .single(single)
             onMessagesChange?(.updated(messages[idx]))
@@ -226,11 +238,11 @@ extension SessionHandle2 {
 
 // MARK: - Private impl
 
-private extension SessionHandle2 {
+extension SessionHandle2 {
 
     // MARK: Worktree
 
-    func provisionWorktreeIfNeeded() throws -> Worktree {
+    fileprivate func provisionWorktreeIfNeeded() throws -> Worktree {
         guard let origin = originPath else {
             throw Worktree.Error.notGitRepository(path: "(nil originPath)")
         }
@@ -239,7 +251,7 @@ private extension SessionHandle2 {
 
     // MARK: Title generation
 
-    func launchTitleGenerationTask(firstMessage: String) {
+    fileprivate func launchTitleGenerationTask(firstMessage: String) {
         let sid = sessionId
         let customCLI = UserDefaults.standard.string(forKey: "customCLICommand")
 
@@ -277,7 +289,7 @@ private extension SessionHandle2 {
 
     // MARK: Configuration persistence
 
-    func persistConfiguration(fresh: Bool) {
+    fileprivate func persistConfiguration(fresh: Bool) {
         if fresh {
             let record = SessionRecord(
                 sessionId: sessionId,
@@ -299,18 +311,20 @@ private extension SessionHandle2 {
             if !title.isEmpty {
                 repository.updateTitle(sessionId, title: title)
             }
-            repository.updateExtra(sessionId, with: SessionExtraUpdate(
-                pluginDirs: pluginDirectories,
-                permissionMode: permissionMode.rawValue,
-                addDirs: additionalDirectories,
-                model: model,
-                effort: effort?.rawValue
-            ))
+            repository.updateExtra(
+                sessionId,
+                with: SessionExtraUpdate(
+                    pluginDirs: pluginDirectories,
+                    permissionMode: permissionMode.rawValue,
+                    addDirs: additionalDirectories,
+                    model: model,
+                    effort: effort?.rawValue
+                ))
             appLog(.info, "SessionHandle2", "persistConfiguration resume overwrite \(sessionId)")
         }
     }
 
-    func currentExtra() -> SessionExtra {
+    fileprivate func currentExtra() -> SessionExtra {
         SessionExtra(
             pluginDirs: pluginDirectories.isEmpty ? nil : pluginDirectories,
             permissionMode: permissionMode.rawValue,
@@ -320,7 +334,7 @@ private extension SessionHandle2 {
         )
     }
 
-    func makeAgentConfig(fresh: Bool) -> SessionConfiguration {
+    fileprivate func makeAgentConfig(fresh: Bool) -> SessionConfiguration {
         let customCommand = UserDefaults.standard.string(forKey: "customCLICommand")
         let wd = URL(fileURLWithPath: cwd ?? originPath ?? FileManager.default.currentDirectoryPath)
         var config = SessionConfiguration(
@@ -349,10 +363,11 @@ private extension SessionHandle2 {
 
     // MARK: Bootstrap
 
-    func bootstrap(configuration: SessionConfiguration, fresh: Bool) async {
-        appLog(.info, "SessionHandle2",
+    fileprivate func bootstrap(configuration: SessionConfiguration, fresh: Bool) async {
+        appLog(
+            .info, "SessionHandle2",
             "[v2-send] bootstrap enter sid=\(sessionId.prefix(8)) fresh=\(fresh) "
-            + "resume=\(configuration.resume ?? "(nil)") wd=\(configuration.workingDirectory.path)")
+                + "resume=\(configuration.resume ?? "(nil)") wd=\(configuration.workingDirectory.path)")
         let session = AgentSDK.Session(configuration: configuration)
         session.lastKnownSessionId = sessionId
         attachCallbacks(to: session)
@@ -364,7 +379,8 @@ private extension SessionHandle2 {
             failLaunch(reason: "\(error)")
             return
         }
-        appLog(.info, "SessionHandle2",
+        appLog(
+            .info, "SessionHandle2",
             "[v2-send] bootstrap start-ok sid=\(sessionId.prefix(8)) status-before-attach=\(status)")
 
         // stdin 真正就绪后才暴露 agentSession，避免 send() 在 start() 完成前写入
@@ -376,7 +392,8 @@ private extension SessionHandle2 {
         // 永远不会回来,SDK 的 `pendingControlResponses` 不会被进程退出 fire
         // 掉,光等会一直挂。挂一把 `bootstrapExitHook`,让 handleProcessExit
         // 把死讯转发回这把 continuation,统一走 failLaunch。
-        let initResp: InitializeResponse? = await withCheckedContinuation { (cont: CheckedContinuation<InitializeResponse?, Never>) in
+        let initResp: InitializeResponse? = await withCheckedContinuation {
+            (cont: CheckedContinuation<InitializeResponse?, Never>) in
             var resumed = false
             let resume: (InitializeResponse?) -> Void = { resp in
                 guard !resumed else { return }
@@ -393,14 +410,16 @@ private extension SessionHandle2 {
         // 如果在等 init 的过程中进程死了,handleProcessExit 已经在自己那条
         // 路径上调了 failLaunch(status 翻 .stopped),这里 short-circuit。
         guard status == .starting else {
-            appLog(.info, "SessionHandle2",
+            appLog(
+                .info, "SessionHandle2",
                 "[v2-send] bootstrap aborted-during-init sid=\(sessionId.prefix(8)) status=\(status)")
             return
         }
 
-        appLog(.info, "SessionHandle2",
+        appLog(
+            .info, "SessionHandle2",
             "[v2-send] bootstrap initialize-done sid=\(sessionId.prefix(8)) "
-            + "respNil=\(initResp == nil) status=\(status)")
+                + "respNil=\(initResp == nil) status=\(status)")
 
         status = .idle
         if fresh {
@@ -420,8 +439,9 @@ private extension SessionHandle2 {
     /// 入参 `reason` 直接对外用,**不做本地化处理**——`String(describing: error)`
     /// 给出 SDK enum 完整原貌,`process exited (code N): <stderr>` 给出 CLI 自己
     /// 的原始 stderr。
-    func failLaunch(reason: String) {
-        appLog(.error, "SessionHandle2",
+    fileprivate func failLaunch(reason: String) {
+        appLog(
+            .error, "SessionHandle2",
             "[v2-send] failLaunch sid=\(sessionId.prefix(8)) reason=\(reason)")
         self.termination = reason
         self.status = .stopped
@@ -439,7 +459,7 @@ private extension SessionHandle2 {
 
     // MARK: Callbacks
 
-    func attachCallbacks(to session: AgentSDK.Session) {
+    fileprivate func attachCallbacks(to session: AgentSDK.Session) {
         let sidPrefix = sessionId.prefix(8)
         session.onMessage = { [weak self] msg in
             let kind: String
@@ -491,7 +511,7 @@ private extension SessionHandle2 {
         session.onElicitationRequest = { _ in .cancel }
     }
 
-    func enqueuePermission(
+    fileprivate func enqueuePermission(
         _ request: PermissionRequest,
         completion: @escaping (PermissionDecision) -> Void
     ) {
@@ -508,11 +528,13 @@ private extension SessionHandle2 {
         pendingPermissions.append(pending)
     }
 
-    func handleProcessExit(_ code: Int32) {
+    fileprivate func handleProcessExit(_ code: Int32) {
         let trimmed = stderrBuffer.isEmpty ? nil : String(stderrBuffer.prefix(500))
-        let desc = trimmed.map { "process exited (code \(code)): \($0)" }
+        let desc =
+            trimmed.map { "process exited (code \(code)): \($0)" }
             ?? "process exited (code \(code))"
-        appLog(.warning, "SessionHandle2",
+        appLog(
+            .warning, "SessionHandle2",
             "[v2-send] processExit sid=\(sessionId.prefix(8)) code=\(code) stderr=\(trimmed ?? "(empty)")")
 
         // bootstrap init 等待期间死亡 → 解开 init 的 continuation,然后走
@@ -553,15 +575,17 @@ private extension SessionHandle2 {
     ///
     /// `entry.id` 作为 `uuid` extra 伴随发出，CLI 在 `--replay-user-messages`
     /// 开启下原样回显，用于 `confirmQueuedEntry` 的精确匹配。
-    func writeUserEntryToCLI(_ entry: SingleEntry, session: AgentSDK.Session) {
+    fileprivate func writeUserEntryToCLI(_ entry: SingleEntry, session: AgentSDK.Session) {
         guard case .localUser(let input) = entry.payload else {
-            appLog(.warning, "SessionHandle2",
+            appLog(
+                .warning, "SessionHandle2",
                 "[v2-send] writeCLI SKIP not-localUser entryId=\(entry.id.uuidString.prefix(8))")
             return
         }
-        appLog(.info, "SessionHandle2",
+        appLog(
+            .info, "SessionHandle2",
             "[v2-send] writeCLI sid=\(sessionId.prefix(8)) entryId=\(entry.id.uuidString.prefix(8)) "
-            + "textLen=\(input.text?.count ?? 0) hasImage=\(input.image != nil)")
+                + "textLen=\(input.text?.count ?? 0) hasImage=\(input.image != nil)")
         var extra: [String: Any] = ["uuid": entry.id.uuidString.lowercased()]
         if let plan = input.planContent {
             extra["plan_content"] = plan

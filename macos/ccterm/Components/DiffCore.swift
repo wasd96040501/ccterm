@@ -38,16 +38,21 @@ enum DiffEngine {
 
         // Build flat diff output: deletions before insertions at each position
         var flat: [(Character, String)] = []
-        var oi = 0, ni = 0
+        var oi = 0
+        var ni = 0
         while oi < oldLines.count || ni < newLines.count {
             while oi < oldLines.count, removedSet.contains(oi) {
-                flat.append(("-", oldLines[oi])); oi += 1
+                flat.append(("-", oldLines[oi]))
+                oi += 1
             }
             while ni < newLines.count, insertedSet.contains(ni) {
-                flat.append(("+", newLines[ni])); ni += 1
+                flat.append(("+", newLines[ni]))
+                ni += 1
             }
             if oi < oldLines.count, ni < newLines.count {
-                flat.append((" ", newLines[ni])); oi += 1; ni += 1
+                flat.append((" ", newLines[ni]))
+                oi += 1
+                ni += 1
             }
         }
 
@@ -67,12 +72,15 @@ enum DiffEngine {
 
         // Merge nearby change groups
         var groups: [(Int, Int)] = []
-        var gs = changes[0], ge = changes[0]
+        var gs = changes[0]
+        var ge = changes[0]
         for i in 1..<changes.count {
             if changes[i] - ge <= 2 * context {
                 ge = changes[i]
             } else {
-                groups.append((gs, ge)); gs = changes[i]; ge = changes[i]
+                groups.append((gs, ge))
+                gs = changes[i]
+                ge = changes[i]
             }
         }
         groups.append((gs, ge))
@@ -82,10 +90,13 @@ enum DiffEngine {
             let hi = min(lines.count, group.1 + context + 1)
 
             // Starting line numbers for this hunk
-            var oldLine = 1, newLine = 1
+            var oldLine = 1
+            var newLine = 1
             for i in 0..<lo {
                 switch lines[i].0 {
-                case " ": oldLine += 1; newLine += 1
+                case " ":
+                    oldLine += 1
+                    newLine += 1
                 case "-": oldLine += 1
                 case "+": newLine += 1
                 default: break
@@ -93,13 +104,15 @@ enum DiffEngine {
             }
 
             var hunkLines: [Line] = []
-            var curOld = oldLine, curNew = newLine
+            var curOld = oldLine
+            var curNew = newLine
             for i in lo..<hi {
                 let (ch, content) = lines[i]
                 switch ch {
                 case " ":
                     hunkLines.append(Line(type: .context, content: content, lineNo: curNew))
-                    curOld += 1; curNew += 1
+                    curOld += 1
+                    curNew += 1
                 case "+":
                     hunkLines.append(Line(type: .add, content: content, lineNo: curNew))
                     curNew += 1
@@ -129,35 +142,35 @@ enum DiffColors {
 
     static func tableBg(_ scheme: ColorScheme) -> Color {
         scheme == .dark
-            ? Color(.sRGB, red: 27/255, green: 31/255, blue: 38/255)
-            : Color(.sRGB, red: 129/255, green: 139/255, blue: 152/255, opacity: 31/255)
+            ? Color(.sRGB, red: 27 / 255, green: 31 / 255, blue: 38 / 255)
+            : Color(.sRGB, red: 129 / 255, green: 139 / 255, blue: 152 / 255, opacity: 31 / 255)
     }
 
     static func gutterText(_ scheme: ColorScheme) -> Color {
         scheme == .dark
-            ? Color(.sRGB, red: 230/255, green: 237/255, blue: 243/255, opacity: 0.4)
-            : Color(.sRGB, red: 31/255, green: 35/255, blue: 40/255, opacity: 0.5)
+            ? Color(.sRGB, red: 230 / 255, green: 237 / 255, blue: 243 / 255, opacity: 0.4)
+            : Color(.sRGB, red: 31 / 255, green: 35 / 255, blue: 40 / 255, opacity: 0.5)
     }
 
     static func signAdd(_ scheme: ColorScheme) -> Color {
         scheme == .dark
-            ? Color(.sRGB, red: 63/255, green: 185/255, blue: 80/255)
-            : Color(.sRGB, red: 26/255, green: 127/255, blue: 55/255)
+            ? Color(.sRGB, red: 63 / 255, green: 185 / 255, blue: 80 / 255)
+            : Color(.sRGB, red: 26 / 255, green: 127 / 255, blue: 55 / 255)
     }
 
     static func signDel(_ scheme: ColorScheme) -> Color {
         scheme == .dark
-            ? Color(.sRGB, red: 248/255, green: 81/255, blue: 73/255)
-            : Color(.sRGB, red: 207/255, green: 34/255, blue: 46/255)
+            ? Color(.sRGB, red: 248 / 255, green: 81 / 255, blue: 73 / 255)
+            : Color(.sRGB, red: 207 / 255, green: 34 / 255, blue: 46 / 255)
     }
 
     static func gutterBg(_ type: DiffEngine.Line.LineType, _ scheme: ColorScheme) -> Color {
         switch (type, scheme) {
-        case (.add, .dark):      Color(.sRGB, red: 63/255, green: 185/255, blue: 80/255, opacity: 0.25)
-        case (.add, .light):     Color(.sRGB, red: 214/255, green: 236/255, blue: 222/255)
-        case (.del, .dark):      Color(.sRGB, red: 248/255, green: 81/255, blue: 73/255, opacity: 0.25)
-        case (.del, .light):     Color(.sRGB, red: 236/255, green: 214/255, blue: 216/255)
-        case (.context, .dark):  Color.white.opacity(0.04)
+        case (.add, .dark): Color(.sRGB, red: 63 / 255, green: 185 / 255, blue: 80 / 255, opacity: 0.25)
+        case (.add, .light): Color(.sRGB, red: 214 / 255, green: 236 / 255, blue: 222 / 255)
+        case (.del, .dark): Color(.sRGB, red: 248 / 255, green: 81 / 255, blue: 73 / 255, opacity: 0.25)
+        case (.del, .light): Color(.sRGB, red: 236 / 255, green: 214 / 255, blue: 216 / 255)
+        case (.context, .dark): Color.white.opacity(0.04)
         case (.context, .light): Color.black.opacity(0.04)
         default: .clear
         }
@@ -165,83 +178,83 @@ enum DiffColors {
 
     static func contentBg(_ type: DiffEngine.Line.LineType, _ scheme: ColorScheme) -> Color {
         switch (type, scheme) {
-        case (.add, .dark):  Color(.sRGB, red: 63/255, green: 185/255, blue: 80/255, opacity: 0.15)
-        case (.add, .light): Color(.sRGB, red: 230/255, green: 243/255, blue: 235/255)
-        case (.del, .dark):  Color(.sRGB, red: 248/255, green: 81/255, blue: 73/255, opacity: 0.15)
-        case (.del, .light): Color(.sRGB, red: 243/255, green: 230/255, blue: 231/255)
+        case (.add, .dark): Color(.sRGB, red: 63 / 255, green: 185 / 255, blue: 80 / 255, opacity: 0.15)
+        case (.add, .light): Color(.sRGB, red: 230 / 255, green: 243 / 255, blue: 235 / 255)
+        case (.del, .dark): Color(.sRGB, red: 248 / 255, green: 81 / 255, blue: 73 / 255, opacity: 0.15)
+        case (.del, .light): Color(.sRGB, red: 243 / 255, green: 230 / 255, blue: 231 / 255)
         default: .clear
         }
     }
 
     static func separatorBg(_ scheme: ColorScheme) -> Color {
         scheme == .dark
-            ? Color(.sRGB, red: 48/255, green: 54/255, blue: 61/255)
-            : Color(.sRGB, red: 209/255, green: 217/255, blue: 224/255)
+            ? Color(.sRGB, red: 48 / 255, green: 54 / 255, blue: 61 / 255)
+            : Color(.sRGB, red: 209 / 255, green: 217 / 255, blue: 224 / 255)
     }
 
     static func separatorFg(_ scheme: ColorScheme) -> Color {
         scheme == .dark
-            ? Color(.sRGB, red: 230/255, green: 237/255, blue: 243/255, opacity: 0.3)
-            : Color(.sRGB, red: 31/255, green: 35/255, blue: 40/255, opacity: 0.4)
+            ? Color(.sRGB, red: 230 / 255, green: 237 / 255, blue: 243 / 255, opacity: 0.3)
+            : Color(.sRGB, red: 31 / 255, green: 35 / 255, blue: 40 / 255, opacity: 0.4)
     }
 
     // MARK: NSColor (AppKit-native consumers)
 
     static func nsTableBg(isDark: Bool) -> NSColor {
         isDark
-            ? NSColor(srgbRed: 27/255, green: 31/255, blue: 38/255, alpha: 1)
-            : NSColor(srgbRed: 129/255, green: 139/255, blue: 152/255, alpha: 31/255)
+            ? NSColor(srgbRed: 27 / 255, green: 31 / 255, blue: 38 / 255, alpha: 1)
+            : NSColor(srgbRed: 129 / 255, green: 139 / 255, blue: 152 / 255, alpha: 31 / 255)
     }
 
     static func nsGutterText(isDark: Bool) -> NSColor {
         isDark
-            ? NSColor(srgbRed: 230/255, green: 237/255, blue: 243/255, alpha: 0.4)
-            : NSColor(srgbRed: 31/255, green: 35/255, blue: 40/255, alpha: 0.5)
+            ? NSColor(srgbRed: 230 / 255, green: 237 / 255, blue: 243 / 255, alpha: 0.4)
+            : NSColor(srgbRed: 31 / 255, green: 35 / 255, blue: 40 / 255, alpha: 0.5)
     }
 
     static func nsSignAdd(isDark: Bool) -> NSColor {
         isDark
-            ? NSColor(srgbRed: 63/255, green: 185/255, blue: 80/255, alpha: 1)
-            : NSColor(srgbRed: 26/255, green: 127/255, blue: 55/255, alpha: 1)
+            ? NSColor(srgbRed: 63 / 255, green: 185 / 255, blue: 80 / 255, alpha: 1)
+            : NSColor(srgbRed: 26 / 255, green: 127 / 255, blue: 55 / 255, alpha: 1)
     }
 
     static func nsSignDel(isDark: Bool) -> NSColor {
         isDark
-            ? NSColor(srgbRed: 248/255, green: 81/255, blue: 73/255, alpha: 1)
-            : NSColor(srgbRed: 207/255, green: 34/255, blue: 46/255, alpha: 1)
+            ? NSColor(srgbRed: 248 / 255, green: 81 / 255, blue: 73 / 255, alpha: 1)
+            : NSColor(srgbRed: 207 / 255, green: 34 / 255, blue: 46 / 255, alpha: 1)
     }
 
     static func nsGutterBg(_ type: DiffEngine.Line.LineType, isDark: Bool) -> NSColor {
         switch (type, isDark) {
-        case (.add, true):      NSColor(srgbRed: 63/255, green: 185/255, blue: 80/255, alpha: 0.25)
-        case (.add, false):     NSColor(srgbRed: 214/255, green: 236/255, blue: 222/255, alpha: 1)
-        case (.del, true):      NSColor(srgbRed: 248/255, green: 81/255, blue: 73/255, alpha: 0.25)
-        case (.del, false):     NSColor(srgbRed: 236/255, green: 214/255, blue: 216/255, alpha: 1)
-        case (.context, true):  NSColor(white: 1, alpha: 0.04)
+        case (.add, true): NSColor(srgbRed: 63 / 255, green: 185 / 255, blue: 80 / 255, alpha: 0.25)
+        case (.add, false): NSColor(srgbRed: 214 / 255, green: 236 / 255, blue: 222 / 255, alpha: 1)
+        case (.del, true): NSColor(srgbRed: 248 / 255, green: 81 / 255, blue: 73 / 255, alpha: 0.25)
+        case (.del, false): NSColor(srgbRed: 236 / 255, green: 214 / 255, blue: 216 / 255, alpha: 1)
+        case (.context, true): NSColor(white: 1, alpha: 0.04)
         case (.context, false): NSColor(white: 0, alpha: 0.04)
         }
     }
 
     static func nsContentBg(_ type: DiffEngine.Line.LineType, isDark: Bool) -> NSColor {
         switch (type, isDark) {
-        case (.add, true):  NSColor(srgbRed: 63/255, green: 185/255, blue: 80/255, alpha: 0.15)
-        case (.add, false): NSColor(srgbRed: 230/255, green: 243/255, blue: 235/255, alpha: 1)
-        case (.del, true):  NSColor(srgbRed: 248/255, green: 81/255, blue: 73/255, alpha: 0.15)
-        case (.del, false): NSColor(srgbRed: 243/255, green: 230/255, blue: 231/255, alpha: 1)
+        case (.add, true): NSColor(srgbRed: 63 / 255, green: 185 / 255, blue: 80 / 255, alpha: 0.15)
+        case (.add, false): NSColor(srgbRed: 230 / 255, green: 243 / 255, blue: 235 / 255, alpha: 1)
+        case (.del, true): NSColor(srgbRed: 248 / 255, green: 81 / 255, blue: 73 / 255, alpha: 0.15)
+        case (.del, false): NSColor(srgbRed: 243 / 255, green: 230 / 255, blue: 231 / 255, alpha: 1)
         case (.context, _): .clear
         }
     }
 
     static func nsSeparatorBg(isDark: Bool) -> NSColor {
         isDark
-            ? NSColor(srgbRed: 48/255, green: 54/255, blue: 61/255, alpha: 1)
-            : NSColor(srgbRed: 209/255, green: 217/255, blue: 224/255, alpha: 1)
+            ? NSColor(srgbRed: 48 / 255, green: 54 / 255, blue: 61 / 255, alpha: 1)
+            : NSColor(srgbRed: 209 / 255, green: 217 / 255, blue: 224 / 255, alpha: 1)
     }
 
     static func nsSeparatorFg(isDark: Bool) -> NSColor {
         isDark
-            ? NSColor(srgbRed: 230/255, green: 237/255, blue: 243/255, alpha: 0.3)
-            : NSColor(srgbRed: 31/255, green: 35/255, blue: 40/255, alpha: 0.4)
+            ? NSColor(srgbRed: 230 / 255, green: 237 / 255, blue: 243 / 255, alpha: 0.3)
+            : NSColor(srgbRed: 31 / 255, green: 35 / 255, blue: 40 / 255, alpha: 0.4)
     }
 
     // MARK: - Dynamic NSColor (appearance-aware, resolved at draw time)

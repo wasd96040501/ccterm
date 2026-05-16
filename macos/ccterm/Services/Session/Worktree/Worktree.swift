@@ -71,14 +71,15 @@ extension Worktree {
     ///   手工 `git worktree add` 到别处的 worktree 不会被识别，避免外部管理冲突。
     static func locate(at path: String) -> Worktree? {
         guard let gitDir = GitQuery.gitDir(at: path),
-              gitDir.contains("/.git/worktrees/"),
-              let topLevel = GitQuery.showToplevel(at: path),
-              let commonDir = GitQuery.gitCommonDir(at: path)
+            gitDir.contains("/.git/worktrees/"),
+            let topLevel = GitQuery.showToplevel(at: path),
+            let commonDir = GitQuery.gitCommonDir(at: path)
         else { return nil }
 
         // baseRepo = dirname(gitCommonDir) —— main repo 的 .git 的父。
         // commonDir 可能是相对路径，resolve 成绝对后再 dirname。
-        let absCommon = (commonDir as NSString).isAbsolutePath
+        let absCommon =
+            (commonDir as NSString).isAbsolutePath
             ? commonDir
             : ((path as NSString).appendingPathComponent(commonDir) as NSString).standardizingPath
         let baseRepo = (absCommon as NSString).deletingLastPathComponent

@@ -2,6 +2,8 @@
 
 XCSTRINGS := macos/ccterm/Localizable.xcstrings
 FMT_XCSTRINGS := python3 macos/scripts/fmt-xcstrings.py
+SWIFT_FORMAT := swift-format
+SWIFT_SRC := macos/ccterm macos/cctermUITests macos/AgentSDK/Sources
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  make %-12s %s\n", $$1, $$2}'
@@ -34,10 +36,12 @@ dmg: ## Create DMG installer (usage: make dmg APP=/path/to/ccterm.app)
 		ccterm.dmg \
 		"$(APP)"
 
-fmt: ## Format localization strings
+fmt: ## Format Swift sources and localization strings
+	$(SWIFT_FORMAT) format --parallel --in-place --recursive $(SWIFT_SRC)
 	$(FMT_XCSTRINGS) $(XCSTRINGS)
 
 fmt-check: ## Check formatting (CI)
+	$(SWIFT_FORMAT) lint --parallel --strict --recursive $(SWIFT_SRC)
 	$(FMT_XCSTRINGS) --check $(XCSTRINGS)
 	@if grep -nE '^\s*DEVELOPMENT_TEAM\s*=' macos/ccterm.xcodeproj/project.pbxproj; then \
 		echo "error: DEVELOPMENT_TEAM must live in macos/Local.xcconfig, not project.pbxproj"; \

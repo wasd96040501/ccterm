@@ -61,8 +61,9 @@ struct UserBubbleSheetView: View {
             }
             .padding(12)
         }
-        .frame(minWidth: 520, idealWidth: 720, maxWidth: 960,
-               minHeight: 360, idealHeight: 540, maxHeight: 800)
+        .frame(
+            minWidth: 520, idealWidth: 720, maxWidth: 960,
+            minHeight: 360, idealHeight: 540, maxHeight: 800)
     }
 }
 
@@ -130,8 +131,10 @@ private struct Transcript2NSViewBridge: NSViewRepresentable {
         // from a SwiftUI snapshot.
     }
 
-    static func dismantleNSView(_ nsView: Transcript2ScrollView,
-                                coordinator: Transcript2Coordinator) {
+    static func dismantleNSView(
+        _ nsView: Transcript2ScrollView,
+        coordinator: Transcript2Coordinator
+    ) {
         NotificationCenter.default.removeObserver(coordinator)
     }
 }
@@ -142,92 +145,116 @@ private struct Transcript2NSViewBridge: NSViewRepresentable {
 /// stable across Preview re-renders.
 private let previewBlocks: [Block] = {
     let symbolConfig = NSImage.SymbolConfiguration(pointSize: 96, weight: .regular)
-    let demoImage = NSImage(systemSymbolName: "photo.on.rectangle.angled",
-                            accessibilityDescription: nil)?
+    let demoImage =
+        NSImage(
+            systemSymbolName: "photo.on.rectangle.angled",
+            accessibilityDescription: nil)?
         .withSymbolConfiguration(symbolConfig)
         ?? NSImage(size: NSSize(width: 200, height: 120))
-    let longUserText = (0..<18).map { "line \($0): some user text that wraps once or twice depending on width." }.joined(separator: "\n")
+    let longUserText = (0..<18).map { "line \($0): some user text that wraps once or twice depending on width." }
+        .joined(separator: "\n")
     return [
         Block(id: UUID(), kind: .userBubble(text: "Hi! Can you walk me through the refactor plan?")),
         Block(id: UUID(), kind: .userBubble(text: longUserText)),
         Block(id: UUID(), kind: .heading(level: 1, inlines: [.text("Refactor plan")])),
-        Block(id: UUID(), kind: .paragraph(inlines: [
-            .text("Replace the existing "),
-            .code("NativeTranscript"),
-            .text(" module with a smaller, "),
-            .strong([.text("Core Text")]),
-            .text("–based renderer."),
-        ])),
+        Block(
+            id: UUID(),
+            kind: .paragraph(inlines: [
+                .text("Replace the existing "),
+                .code("NativeTranscript"),
+                .text(" module with a smaller, "),
+                .strong([.text("Core Text")]),
+                .text("–based renderer."),
+            ])),
         Block(id: UUID(), kind: .heading(level: 2, inlines: [.text("Layouts so far")])),
-        Block(id: UUID(), kind: .paragraph(inlines: [
-            .strong([.text("TextLayout")]),
-            .text(" handles headings and paragraphs. "),
-            .strong([.text("ImageLayout")]),
-            .text(" handles raster / vector images. Both report their own height and draw themselves through the "),
-            .code("RowLayout"),
-            .text(" enum."),
-        ])),
+        Block(
+            id: UUID(),
+            kind: .paragraph(inlines: [
+                .strong([.text("TextLayout")]),
+                .text(" handles headings and paragraphs. "),
+                .strong([.text("ImageLayout")]),
+                .text(" handles raster / vector images. Both report their own height and draw themselves through the "),
+                .code("RowLayout"),
+                .text(" enum."),
+            ])),
         Block(id: UUID(), kind: .image(demoImage)),
-        Block(id: UUID(), kind: .paragraph(inlines: [
-            .emphasis([.text("Adding a new block kind")]),
-            .text(" means: extend "),
-            .code("Block.Kind"),
-            .text(", add a "),
-            .code("XxxLayout"),
-            .text(" primitive, add a case to "),
-            .code("RowLayout"),
-            .text(", add a switch arm in "),
-            .code("Transcript2Coordinator.makeLayout"),
-            .text("."),
-        ])),
+        Block(
+            id: UUID(),
+            kind: .paragraph(inlines: [
+                .emphasis([.text("Adding a new block kind")]),
+                .text(" means: extend "),
+                .code("Block.Kind"),
+                .text(", add a "),
+                .code("XxxLayout"),
+                .text(" primitive, add a case to "),
+                .code("RowLayout"),
+                .text(", add a switch arm in "),
+                .code("Transcript2Coordinator.makeLayout"),
+                .text("."),
+            ])),
         Block(id: UUID(), kind: .heading(level: 2, inlines: [.text("List sample")])),
-        Block(id: UUID(), kind: .list(ListBlock(ordered: false, items: [
-            ListBlock.Item(content: [
-                .paragraph([
-                    .text("Bullet item with "),
-                    .strong([.text("emphasis")]),
-                    .text(" and "),
-                    .code("inline code"),
-                    .text("."),
-                ]),
-            ]),
-            ListBlock.Item(content: [
-                .paragraph([.text("Nested list inside a bullet:")]),
-                .list(ListBlock(ordered: true, items: [
-                    ListBlock.Item(content: [.paragraph([.text("Ordered child A")])]),
-                    ListBlock.Item(content: [.paragraph([.text("Ordered child B")])]),
-                ])),
-            ]),
-            ListBlock.Item(checkbox: true, content: [
-                .paragraph([.text("Task done")]),
-            ]),
-            ListBlock.Item(checkbox: false, content: [
-                .paragraph([.text("Task open")]),
-            ]),
-        ]))),
+        Block(
+            id: UUID(),
+            kind: .list(
+                ListBlock(
+                    ordered: false,
+                    items: [
+                        ListBlock.Item(content: [
+                            .paragraph([
+                                .text("Bullet item with "),
+                                .strong([.text("emphasis")]),
+                                .text(" and "),
+                                .code("inline code"),
+                                .text("."),
+                            ])
+                        ]),
+                        ListBlock.Item(content: [
+                            .paragraph([.text("Nested list inside a bullet:")]),
+                            .list(
+                                ListBlock(
+                                    ordered: true,
+                                    items: [
+                                        ListBlock.Item(content: [.paragraph([.text("Ordered child A")])]),
+                                        ListBlock.Item(content: [.paragraph([.text("Ordered child B")])]),
+                                    ])),
+                        ]),
+                        ListBlock.Item(
+                            checkbox: true,
+                            content: [
+                                .paragraph([.text("Task done")])
+                            ]),
+                        ListBlock.Item(
+                            checkbox: false,
+                            content: [
+                                .paragraph([.text("Task open")])
+                            ]),
+                    ]))),
         Block(id: UUID(), kind: .heading(level: 2, inlines: [.text("Table sample")])),
-        Block(id: UUID(), kind: .table(TableBlock(
-            header: [
-                [.text("Block")], [.text("Layout")], [.text("Notes")],
-            ],
-            rows: [
-                [
-                    [.text("paragraph")],
-                    [.text("TextLayout")],
-                    [.text("inline IR — bold / italic / code / link")],
-                ],
-                [
-                    [.text("list")],
-                    [.text("ListLayout")],
-                    [.text("recursive items, marker midY-aligned to first content line")],
-                ],
-                [
-                    [.text("table")],
-                    [.text("TableLayout")],
-                    [.text("CSS-like min/max column allocation; header bold; zebra body rows")],
-                ],
-            ],
-            alignments: [.left, .left, .left]))),
+        Block(
+            id: UUID(),
+            kind: .table(
+                TableBlock(
+                    header: [
+                        [.text("Block")], [.text("Layout")], [.text("Notes")],
+                    ],
+                    rows: [
+                        [
+                            [.text("paragraph")],
+                            [.text("TextLayout")],
+                            [.text("inline IR — bold / italic / code / link")],
+                        ],
+                        [
+                            [.text("list")],
+                            [.text("ListLayout")],
+                            [.text("recursive items, marker midY-aligned to first content line")],
+                        ],
+                        [
+                            [.text("table")],
+                            [.text("TableLayout")],
+                            [.text("CSS-like min/max column allocation; header bold; zebra body rows")],
+                        ],
+                    ],
+                    alignments: [.left, .left, .left]))),
     ]
 }()
 

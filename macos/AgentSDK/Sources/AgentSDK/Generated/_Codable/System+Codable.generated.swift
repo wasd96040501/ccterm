@@ -3,10 +3,12 @@ import Foundation
 extension System {
     public init(json: Any) throws {
         guard let dict = json as? [String: Any] else {
-            self = .unknown(name: "unknown", raw: [:]); return
+            self = .unknown(name: "unknown", raw: [:])
+            return
         }
         guard let tag = dict["subtype"] as? String else {
-            self = .unknown(name: "unknown", raw: dict); return
+            self = .unknown(name: "unknown", raw: dict)
+            return
         }
         switch tag {
         case "api_error":

@@ -37,13 +37,15 @@ public class Message2Resolver {
     private func resolveFields(_ message: inout Message2) {
         if case .user(var _parent) = message {
             if case .object(var _obj)? = _parent.toolUseResult,
-               _obj.isUnresolved {
+                _obj.isUnresolved
+            {
                 if let _nav0 = _parent.message {
                     if case .array(let _items)? = _nav0.content {
                         for _item in _items {
                             if case .toolResult(let _result) = _item {
                                 if let _lookupKey = _result.toolUseId,
-                                   let _origin = resolvedToolIndex[_lookupKey] {
+                                    let _origin = resolvedToolIndex[_lookupKey]
+                                {
                                     try? _obj.resolve(from: _origin)
                                     _parent.toolUseResult = .object(_obj)
                                     message = .user(_parent)

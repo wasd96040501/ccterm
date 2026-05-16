@@ -11,13 +11,14 @@ struct HoverCapsuleStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .modifier(HoverCapsuleModifier(
-                hoverColor: hoverColor,
-                hoverOpacity: hoverOpacity,
-                pressOpacity: pressOpacity,
-                staticFill: staticFill,
-                isPressed: configuration.isPressed
-            ))
+            .modifier(
+                HoverCapsuleModifier(
+                    hoverColor: hoverColor,
+                    hoverOpacity: hoverOpacity,
+                    pressOpacity: pressOpacity,
+                    staticFill: staticFill,
+                    isPressed: configuration.isPressed
+                ))
     }
 }
 
@@ -63,10 +64,11 @@ extension View {
         hoverColor: Color = Color(nsColor: .labelColor),
         hoverOpacity: Double = 0.08
     ) -> some View {
-        modifier(HoverCapsuleModifier(
-            hoverColor: hoverColor,
-            hoverOpacity: hoverOpacity,
-            staticFill: staticFill
-        ))
+        modifier(
+            HoverCapsuleModifier(
+                hoverColor: hoverColor,
+                hoverOpacity: hoverOpacity,
+                staticFill: staticFill
+            ))
     }
 }

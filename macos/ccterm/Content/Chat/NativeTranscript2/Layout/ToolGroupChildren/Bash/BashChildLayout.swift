@@ -68,31 +68,34 @@ struct BashChildLayout: @unchecked Sendable {
         // dark appearance per token scope.
         let trimmedCommand = child.command.trimmingTrailingWhitespace
         if !trimmedCommand.isEmpty {
-            specs.append(.init(
-                text: trimmedCommand,
-                attributed: BlockStyle.codeBlockAttributed(
-                    code: trimmedCommand, tokens: commandTokens)))
+            specs.append(
+                .init(
+                    text: trimmedCommand,
+                    attributed: BlockStyle.codeBlockAttributed(
+                        code: trimmedCommand, tokens: commandTokens)))
         }
 
         if let stdout = child.stdout {
             let trimmed = stdout.trimmingTrailingWhitespace
             if !trimmed.isEmpty {
-                specs.append(.init(
-                    text: trimmed,
-                    attributed: ANSIAttributedBuilder.attributed(
-                        from: trimmed, baseFont: font,
-                        baseColor: .labelColor)))
+                specs.append(
+                    .init(
+                        text: trimmed,
+                        attributed: ANSIAttributedBuilder.attributed(
+                            from: trimmed, baseFont: font,
+                            baseColor: .labelColor)))
             }
         }
         if let stderr = child.stderr {
             let trimmed = stderr.trimmingTrailingWhitespace
             if !trimmed.isEmpty {
-                specs.append(.init(
-                    text: trimmed,
-                    color: .systemRed,
-                    attributed: ANSIAttributedBuilder.attributed(
-                        from: trimmed, baseFont: font,
-                        baseColor: .systemRed)))
+                specs.append(
+                    .init(
+                        text: trimmed,
+                        color: .systemRed,
+                        attributed: ANSIAttributedBuilder.attributed(
+                            from: trimmed, baseFont: font,
+                            baseColor: .systemRed)))
             }
         }
         let (sections, height) = TextCardSection.build(

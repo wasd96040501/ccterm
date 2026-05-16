@@ -130,9 +130,10 @@ public enum Prompt {
         try which.run()
         which.waitUntilExit()
         guard which.terminationStatus == 0,
-              let resolved = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+            let resolved = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines),
-              !resolved.isEmpty else {
+            !resolved.isEmpty
+        else {
             throw AgentSDKError.binaryNotFound
         }
         return resolved

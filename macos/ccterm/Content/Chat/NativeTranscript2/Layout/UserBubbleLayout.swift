@@ -87,9 +87,11 @@ struct UserBubbleLayout: @unchecked Sendable {
     nonisolated private static let truncationGuardWidth: CGFloat = 24
 
     nonisolated static func make(text: String, maxWidth: CGFloat) -> UserBubbleLayout {
-        let maxBubbleWidth = max(120, min(
-            BlockStyle.userBubbleMaxWidth,
-            maxWidth - BlockStyle.bubbleMinLeftGutter))
+        let maxBubbleWidth = max(
+            120,
+            min(
+                BlockStyle.userBubbleMaxWidth,
+                maxWidth - BlockStyle.bubbleMinLeftGutter))
         let textMaxWidth = max(40, maxBubbleWidth - 2 * BlockStyle.bubbleHorizontalPadding)
 
         let attributed = BlockStyle.userBubbleAttributed(text: text)
@@ -175,8 +177,9 @@ struct UserBubbleLayout: @unchecked Sendable {
         while start < length {
             let count = CTTypesetterSuggestLineBreak(typesetter, start, Double(maxWidth))
             guard count > 0 else { break }
-            lines.append(CTTypesetterCreateLine(
-                typesetter, CFRange(location: start, length: count)))
+            lines.append(
+                CTTypesetterCreateLine(
+                    typesetter, CFRange(location: start, length: count)))
             start += count
         }
         return lines
@@ -196,16 +199,19 @@ struct UserBubbleLayout: @unchecked Sendable {
     ) -> [CTLine] {
         let combined = CTTypesetterCreateLine(
             typesetter,
-            CFRange(location: prefixCharCount,
-                    length: attributedLength - prefixCharCount))
-        let token = CTLineCreateWithAttributedString(NSAttributedString(
-            string: "\u{2026}",
-            attributes: [
-                .font: BlockStyle.paragraphFont,
-                .foregroundColor: NSColor.labelColor,
-            ]) as CFAttributedString)
-        let truncated = CTLineCreateTruncatedLine(
-            combined, Double(truncationWidth), .end, token) ?? combined
+            CFRange(
+                location: prefixCharCount,
+                length: attributedLength - prefixCharCount))
+        let token = CTLineCreateWithAttributedString(
+            NSAttributedString(
+                string: "\u{2026}",
+                attributes: [
+                    .font: BlockStyle.paragraphFont,
+                    .foregroundColor: NSColor.labelColor,
+                ]) as CFAttributedString)
+        let truncated =
+            CTLineCreateTruncatedLine(
+                combined, Double(truncationWidth), .end, token) ?? combined
         return prefix + [truncated]
     }
 
@@ -222,7 +228,9 @@ struct UserBubbleLayout: @unchecked Sendable {
         var widths: [CGFloat] = []
         var y: CGFloat = 0
         for line in lines {
-            var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
+            var ascent: CGFloat = 0
+            var descent: CGFloat = 0
+            var leading: CGFloat = 0
             let typoWidth = CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
             y += ascent
             origins.append(CGPoint(x: 0, y: y))
@@ -259,23 +267,27 @@ struct UserBubbleLayout: @unchecked Sendable {
             unitRange: { _ in full },
             hitTest: { p in
                 let textP = CGPoint(x: p.x - textOrigin.x, y: p.y - textOrigin.y)
-                return .text(char: Self.charIndex(
-                    lines: lines, origins: origins, metrics: metrics, at: textP))
+                return .text(
+                    char: Self.charIndex(
+                        lines: lines, origins: origins, metrics: metrics, at: textP))
             },
             rects: { a, b in
                 guard case .text(let i1) = a, case .text(let i2) = b
                 else { return [] }
-                let lo = min(i1, i2), hi = max(i1, i2)
+                let lo = min(i1, i2)
+                let hi = max(i1, i2)
                 guard hi > lo else { return [] }
                 return Self.selectionRects(
                     lines: lines, origins: origins, metrics: metrics,
-                    range: NSRange(location: lo, length: hi - lo))
-                    .map { $0.offsetBy(dx: textOrigin.x, dy: textOrigin.y) }
+                    range: NSRange(location: lo, length: hi - lo)
+                )
+                .map { $0.offsetBy(dx: textOrigin.x, dy: textOrigin.y) }
             },
             string: { a, b in
                 guard case .text(let i1) = a, case .text(let i2) = b
                 else { return "" }
-                let lo = min(i1, i2), hi = max(i1, i2)
+                let lo = min(i1, i2)
+                let hi = max(i1, i2)
                 guard hi > lo, hi <= source.length else { return "" }
                 return source.substring(with: NSRange(location: lo, length: hi - lo))
             },
@@ -287,7 +299,7 @@ struct UserBubbleLayout: @unchecked Sendable {
     ) -> Int {
         guard !lines.isEmpty else { return 0 }
         if p.y < origins[0].y - metrics[0].ascent { return 0 }
-        for i in 0 ..< lines.count {
+        for i in 0..<lines.count {
             let bottom = origins[i].y + metrics[i].descent
             guard p.y <= bottom else { continue }
             let idx = CTLineGetStringIndexForPosition(lines[i], CGPoint(x: p.x, y: 0))
@@ -316,9 +328,10 @@ struct UserBubbleLayout: @unchecked Sendable {
             let baseline = origins[i].y
             let ascent = metrics[i].ascent
             let descent = metrics[i].descent
-            rects.append(CGRect(
-                x: xStart, y: baseline - ascent,
-                width: max(0, xEnd - xStart), height: ascent + descent))
+            rects.append(
+                CGRect(
+                    x: xStart, y: baseline - ascent,
+                    width: max(0, xEnd - xStart), height: ascent + descent))
         }
         return rects
     }
@@ -353,8 +366,10 @@ struct UserBubbleLayout: @unchecked Sendable {
 
         // 3) Chevron at the corner pivot.
         if let center = chevronCenter {
-            drawChevron(in: ctx, centerInRow: CGPoint(
-                x: center.x + origin.x, y: center.y + origin.y))
+            drawChevron(
+                in: ctx,
+                centerInRow: CGPoint(
+                    x: center.x + origin.x, y: center.y + origin.y))
         }
     }
 

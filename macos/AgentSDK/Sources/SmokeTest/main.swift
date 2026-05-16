@@ -1,5 +1,5 @@
-import Foundation
 import AgentSDK
+import Foundation
 
 let config = SessionConfiguration(
     workingDirectory: URL(fileURLWithPath: FileManager.default.currentDirectoryPath),

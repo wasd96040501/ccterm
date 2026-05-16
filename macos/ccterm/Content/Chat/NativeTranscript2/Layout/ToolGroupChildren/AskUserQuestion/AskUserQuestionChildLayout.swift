@@ -33,9 +33,10 @@ struct AskUserQuestionChildLayout: @unchecked Sendable {
     ) -> AskUserQuestionChildLayout {
         var specs: [TextCardSection.Spec] = []
         if !child.items.isEmpty {
-            specs.append(.init(
-                text: "",
-                attributed: buildAttributed(items: child.items)))
+            specs.append(
+                .init(
+                    text: "",
+                    attributed: buildAttributed(items: child.items)))
         }
         let (sections, height) = TextCardSection.build(
             specs: specs,
@@ -67,9 +68,10 @@ struct AskUserQuestionChildLayout: @unchecked Sendable {
         // reads as "still waiting" without a chrome separator.
         let pendingDescriptor = answerFont.fontDescriptor
             .withSymbolicTraits(.italic)
-        let pendingFont = NSFont(
-            descriptor: pendingDescriptor,
-            size: answerFont.pointSize) ?? answerFont
+        let pendingFont =
+            NSFont(
+                descriptor: pendingDescriptor,
+                size: answerFont.pointSize) ?? answerFont
         let pendingAttrs: [NSAttributedString.Key: Any] = [
             .font: pendingFont,
             .foregroundColor: NSColor.tertiaryLabelColor,
@@ -79,23 +81,30 @@ struct AskUserQuestionChildLayout: @unchecked Sendable {
         let result = NSMutableAttributedString()
         for (index, item) in items.enumerated() {
             if index > 0 {
-                result.append(NSAttributedString(string: "\n\n",
-                                                  attributes: newlineAttrs))
+                result.append(
+                    NSAttributedString(
+                        string: "\n\n",
+                        attributes: newlineAttrs))
             }
-            result.append(NSAttributedString(
-                string: item.question, attributes: questionAttrs))
-            result.append(NSAttributedString(string: "\n",
-                                              attributes: newlineAttrs))
+            result.append(
+                NSAttributedString(
+                    string: item.question, attributes: questionAttrs))
+            result.append(
+                NSAttributedString(
+                    string: "\n",
+                    attributes: newlineAttrs))
             if let answer = item.answer?
                 .trimmingCharacters(in: .whitespacesAndNewlines),
                 !answer.isEmpty
             {
-                result.append(NSAttributedString(
-                    string: answer, attributes: answerAttrs))
+                result.append(
+                    NSAttributedString(
+                        string: answer, attributes: answerAttrs))
             } else {
-                result.append(NSAttributedString(
-                    string: String(localized: "awaiting answer…"),
-                    attributes: pendingAttrs))
+                result.append(
+                    NSAttributedString(
+                        string: String(localized: "awaiting answer…"),
+                        attributes: pendingAttrs))
             }
         }
         return result

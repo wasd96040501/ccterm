@@ -39,8 +39,9 @@ final class Transcript2ScrollView: NSScrollView {
     }
 
     func popScrollerHidden() {
-        precondition(scrollerHiddenCount > 0,
-                     "popScrollerHidden without matching push")
+        precondition(
+            scrollerHiddenCount > 0,
+            "popScrollerHidden without matching push")
         scrollerHiddenCount -= 1
         if scrollerHiddenCount == 0 {
             // Animate only the fade-in — feels intentional, and there's no

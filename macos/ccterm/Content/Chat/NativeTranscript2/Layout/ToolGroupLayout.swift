@@ -92,27 +92,30 @@ struct ToolGroupLayout: @unchecked Sendable {
                 // Empty bodies are filtered out at region-build time,
                 // so the snap always lands on a real selectable
                 // surface.
-                let target = regions.first(where: {
-                    point.y >= $0.bandRect.minY
-                        && point.y <= $0.bandRect.maxY
-                }) ?? regions.min(by: {
-                    let d0 = min(abs(point.y - $0.bandRect.minY),
-                                 abs(point.y - $0.bandRect.maxY))
-                    let d1 = min(abs(point.y - $1.bandRect.minY),
-                                 abs(point.y - $1.bandRect.maxY))
-                    return d0 < d1
-                })!
+                let target =
+                    regions.first(where: {
+                        point.y >= $0.bandRect.minY
+                            && point.y <= $0.bandRect.maxY
+                    }) ?? regions.min(by: {
+                        let d0 = min(
+                            abs(point.y - $0.bandRect.minY),
+                            abs(point.y - $0.bandRect.maxY))
+                        let d1 = min(
+                            abs(point.y - $1.bandRect.minY),
+                            abs(point.y - $1.bandRect.maxY))
+                        return d0 < d1
+                    })!
                 return target.hitTest(point)
             },
             rects: { a, b in
                 guard let region = Self.region(for: a, in: regions),
-                      region.matches(b)
+                    region.matches(b)
                 else { return [] }
                 return region.rects(a, b)
             },
             string: { a, b in
                 guard let region = Self.region(for: a, in: regions),
-                      region.matches(b)
+                    region.matches(b)
                 else { return "" }
                 return region.string(a, b)
             },
@@ -149,17 +152,18 @@ struct ToolGroupLayout: @unchecked Sendable {
                 // Header-only — no body geometry to select.
                 continue
             case .bash, .grep, .glob, .webFetch, .webSearch,
-                 .askUserQuestion, .agent:
+                .askUserQuestion, .agent:
                 // Every kind in this arm exposes its body through
                 // `textCardSections`; the accessor switch on
                 // `ToolGroupChildLayout` is the single source of
                 // truth for "this kind uses the text-card primitive."
                 let sections = body.textCardSections ?? []
                 for (sectionIndex, section) in sections.enumerated() {
-                    out.append(makeTextCardRegion(
-                        childIndex: idx,
-                        sectionIndex: sectionIndex,
-                        section: section))
+                    out.append(
+                        makeTextCardRegion(
+                            childIndex: idx,
+                            sectionIndex: sectionIndex,
+                            section: section))
                 }
             }
         }
@@ -184,23 +188,26 @@ struct ToolGroupLayout: @unchecked Sendable {
             rects: { a, b in
                 guard case .diff(_, let ca) = a, case .diff(_, let cb) = b
                 else { return [] }
-                let lo = min(ca, cb), hi = max(ca, cb)
+                let lo = min(ca, cb)
+                let hi = max(ca, cb)
                 return body.rects(loChar: lo, hiChar: hi)
             },
             string: { a, b in
                 guard case .diff(_, let ca) = a, case .diff(_, let cb) = b
                 else { return "" }
-                let lo = min(ca, cb), hi = max(ca, cb)
+                let lo = min(ca, cb)
+                let hi = max(ca, cb)
                 return body.string(loChar: lo, hiChar: hi)
             },
             wordBoundary: { p in
                 guard case .diff(_, let c) = p,
-                      let word = body.wordBoundary(at: c)
+                    let word = body.wordBoundary(at: c)
                 else { return nil }
                 return SelectionRange(
                     start: .diff(childIndex: childIndex, char: word.location),
-                    end: .diff(childIndex: childIndex,
-                               char: word.location + word.length))
+                    end: .diff(
+                        childIndex: childIndex,
+                        char: word.location + word.length))
             })
     }
 
@@ -217,10 +224,12 @@ struct ToolGroupLayout: @unchecked Sendable {
         let length = text.length
 
         let fullRange = SelectionRange(
-            start: .textCard(childIndex: childIndex,
-                             sectionIndex: sectionIndex, char: 0),
-            end: .textCard(childIndex: childIndex,
-                           sectionIndex: sectionIndex, char: length))
+            start: .textCard(
+                childIndex: childIndex,
+                sectionIndex: sectionIndex, char: 0),
+            end: .textCard(
+                childIndex: childIndex,
+                sectionIndex: sectionIndex, char: length))
 
         return Region(
             bandRect: section.cardRect,
@@ -242,9 +251,10 @@ struct ToolGroupLayout: @unchecked Sendable {
             },
             rects: { a, b in
                 guard case .textCard(_, _, let ca) = a,
-                      case .textCard(_, _, let cb) = b
+                    case .textCard(_, _, let cb) = b
                 else { return [] }
-                let lo = min(ca, cb), hi = max(ca, cb)
+                let lo = min(ca, cb)
+                let hi = max(ca, cb)
                 guard hi > lo else { return [] }
                 let local = text.selectionRects(
                     for: NSRange(location: lo, length: hi - lo))
@@ -254,29 +264,34 @@ struct ToolGroupLayout: @unchecked Sendable {
             },
             string: { a, b in
                 guard case .textCard(_, _, let ca) = a,
-                      case .textCard(_, _, let cb) = b
+                    case .textCard(_, _, let cb) = b
                 else { return "" }
-                let lo = min(ca, cb), hi = max(ca, cb)
+                let lo = min(ca, cb)
+                let hi = max(ca, cb)
                 guard hi > lo, hi <= attributed.length else { return "" }
-                return attributed
+                return
+                    attributed
                     .attributedSubstring(
-                        from: NSRange(location: lo, length: hi - lo))
+                        from: NSRange(location: lo, length: hi - lo)
+                    )
                     .string
                     .replacingOccurrences(of: "\u{2028}", with: "\n")
             },
             wordBoundary: { p in
                 guard case .textCard(_, _, let c) = p,
-                      attributed.length > 0
+                    attributed.length > 0
                 else { return nil }
                 let clamped = max(0, min(c, attributed.length - 1))
                 let word = attributed.doubleClick(at: clamped)
                 return SelectionRange(
-                    start: .textCard(childIndex: childIndex,
-                                     sectionIndex: sectionIndex,
-                                     char: word.location),
-                    end: .textCard(childIndex: childIndex,
-                                   sectionIndex: sectionIndex,
-                                   char: word.location + word.length))
+                    start: .textCard(
+                        childIndex: childIndex,
+                        sectionIndex: sectionIndex,
+                        char: word.location),
+                    end: .textCard(
+                        childIndex: childIndex,
+                        sectionIndex: sectionIndex,
+                        char: word.location + word.length))
             })
     }
 
@@ -404,8 +419,9 @@ struct ToolGroupLayout: @unchecked Sendable {
         var y: CGFloat = 0
         let groupHeader = makeHeader(
             foldId: blockId,
-            title: group.resolvedTitle(status: groupStatus,
-                                       isExpanded: groupExpanded),
+            title: group.resolvedTitle(
+                status: groupStatus,
+                isExpanded: groupExpanded),
             hasChevron: true,
             chevronExpanded: groupExpanded,
             status: groupStatus,
@@ -414,9 +430,10 @@ struct ToolGroupLayout: @unchecked Sendable {
         y += BlockStyle.toolHeaderHeight
 
         var hits: [InteractiveHit] = []
-        hits.append(InteractiveHit(
-            rect: hitRect(over: groupHeader, maxWidth: maxWidth),
-            action: .toggleFold(blockId)))
+        hits.append(
+            InteractiveHit(
+                rect: hitRect(over: groupHeader, maxWidth: maxWidth),
+                action: .toggleFold(blockId)))
 
         var entries: [Entry] = []
 
@@ -454,9 +471,10 @@ struct ToolGroupLayout: @unchecked Sendable {
                     maxWidth: maxWidth)
                 y += BlockStyle.toolHeaderHeight
                 if canFold {
-                    hits.append(InteractiveHit(
-                        rect: hitRect(over: childHeader, maxWidth: maxWidth),
-                        action: .toggleFold(child.id)))
+                    hits.append(
+                        InteractiveHit(
+                            rect: hitRect(over: childHeader, maxWidth: maxWidth),
+                            action: .toggleFold(child.id)))
                 }
 
                 let body: ToolGroupChildLayout?
@@ -484,10 +502,12 @@ struct ToolGroupLayout: @unchecked Sendable {
                 let bandRect = CGRect(
                     x: 0, y: entryStartY,
                     width: maxWidth, height: y - entryStartY)
-                entries.append(Entry(childId: child.id,
-                                     header: childHeader,
-                                     body: body,
-                                     bandRect: bandRect))
+                entries.append(
+                    Entry(
+                        childId: child.id,
+                        header: childHeader,
+                        body: body,
+                        bandRect: bandRect))
             }
         }
 
@@ -536,8 +556,9 @@ struct ToolGroupLayout: @unchecked Sendable {
             // preserved, matching `web/src/utils/displayPath.ts`'s
             // behavior on the React side.
             displayTitle = truncateHead(title, budget: titleBudget, font: font)
-            titleWidth = min(textWidth(displayTitle, attrs: [.font: font]),
-                             titleBudget)
+            titleWidth = min(
+                textWidth(displayTitle, attrs: [.font: font]),
+                titleBudget)
         } else {
             displayTitle = ""
             titleWidth = 0
@@ -561,8 +582,9 @@ struct ToolGroupLayout: @unchecked Sendable {
         let chevronCenter: CGPoint
         if hasChevron {
             let visualCompensation = max(0, (font.capHeight - font.xHeight) / 2)
-            let chevronX = min(titleWidth + gap + chevron / 2,
-                               maxWidth - chevron / 2)
+            let chevronX = min(
+                titleWidth + gap + chevron / 2,
+                maxWidth - chevron / 2)
             chevronCenter = CGPoint(
                 x: chevronX,
                 y: midY + visualCompensation)
@@ -603,10 +625,11 @@ struct ToolGroupLayout: @unchecked Sendable {
     }
 
     nonisolated private static func emptyHeader(foldId: UUID) -> Header {
-        Header(foldId: foldId, rect: .zero, title: "", titleWidth: 0,
-               titleOrigin: .zero, hasChevron: false,
-               chevronCenter: .zero, chevronExpanded: false,
-               status: .completed)
+        Header(
+            foldId: foldId, rect: .zero, title: "", titleWidth: 0,
+            titleOrigin: .zero, hasChevron: false,
+            chevronCenter: .zero, chevronExpanded: false,
+            status: .completed)
     }
 
     /// Trim leading path components until the remainder fits `budget`
@@ -634,7 +657,9 @@ struct ToolGroupLayout: @unchecked Sendable {
     ) -> CGFloat {
         let line = CTLineCreateWithAttributedString(
             NSAttributedString(string: s, attributes: attrs))
-        var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
+        var ascent: CGFloat = 0
+        var descent: CGFloat = 0
+        var leading: CGFloat = 0
         return CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
     }
 
@@ -671,9 +696,10 @@ struct ToolGroupLayout: @unchecked Sendable {
     /// `SubviewPlan.Entry` specs carry.
     func draw(in ctx: CGContext, origin: CGPoint, hoveredAction: HitAction?) {
         let hoveredId = Self.hoveredFoldId(in: hoveredAction)
-        Self.drawHeader(groupHeader,
-                        hovered: hoveredId == groupHeader.foldId,
-                        in: ctx, origin: origin)
+        Self.drawHeader(
+            groupHeader,
+            hovered: hoveredId == groupHeader.foldId,
+            in: ctx, origin: origin)
     }
 
     /// Render one `Entry` into `ctx` in **view-local** coords —
@@ -713,9 +739,10 @@ struct ToolGroupLayout: @unchecked Sendable {
         entry.body?.draw(in: ctx, origin: originForBody)
 
         // 4. Child header title.
-        drawHeader(entry.header,
-                   hovered: hovered,
-                   in: ctx, origin: originForBody)
+        drawHeader(
+            entry.header,
+            hovered: hovered,
+            in: ctx, origin: originForBody)
     }
 
     /// Extract the fold id from a hovered hit action, or `nil` if the
@@ -753,19 +780,22 @@ struct ToolGroupLayout: @unchecked Sendable {
             let tint = Self.chevronTint(
                 for: groupHeader.status,
                 hovered: hoveredId == groupHeader.foldId)
-            chevrons.append(SubviewPlan.Chevron(
-                id: groupHeader.foldId,
-                center: CGPoint(x: origin.x + groupHeader.chevronCenter.x,
-                                y: origin.y + groupHeader.chevronCenter.y),
-                expanded: groupHeader.chevronExpanded,
-                strokeColor: tint.color,
-                alpha: tint.alpha))
+            chevrons.append(
+                SubviewPlan.Chevron(
+                    id: groupHeader.foldId,
+                    center: CGPoint(
+                        x: origin.x + groupHeader.chevronCenter.x,
+                        y: origin.y + groupHeader.chevronCenter.y),
+                    expanded: groupHeader.chevronExpanded,
+                    strokeColor: tint.color,
+                    alpha: tint.alpha))
         }
         if Self.wantsShimmer(for: groupHeader.status), groupHeader.titleWidth > 0 {
-            shimmers.append(Self.shimmer(
-                for: groupHeader,
-                cellOrigin: origin,
-                hovered: hoveredId == groupHeader.foldId))
+            shimmers.append(
+                Self.shimmer(
+                    for: groupHeader,
+                    cellOrigin: origin,
+                    hovered: hoveredId == groupHeader.foldId))
         }
 
         // Selection rects in layout-local coords. Distributed to every
@@ -785,20 +815,24 @@ struct ToolGroupLayout: @unchecked Sendable {
                 let tint = Self.chevronTint(
                     for: entry.header.status,
                     hovered: hoveredId == entry.header.foldId)
-                chevrons.append(SubviewPlan.Chevron(
-                    id: entry.header.foldId,
-                    center: CGPoint(x: origin.x + entry.header.chevronCenter.x,
-                                    y: origin.y + entry.header.chevronCenter.y),
-                    expanded: entry.header.chevronExpanded,
-                    strokeColor: tint.color,
-                    alpha: tint.alpha))
+                chevrons.append(
+                    SubviewPlan.Chevron(
+                        id: entry.header.foldId,
+                        center: CGPoint(
+                            x: origin.x + entry.header.chevronCenter.x,
+                            y: origin.y + entry.header.chevronCenter.y),
+                        expanded: entry.header.chevronExpanded,
+                        strokeColor: tint.color,
+                        alpha: tint.alpha))
             }
             if Self.wantsShimmer(for: entry.header.status),
-               entry.header.titleWidth > 0 {
-                shimmers.append(Self.shimmer(
-                    for: entry.header,
-                    cellOrigin: origin,
-                    hovered: hoveredId == entry.header.foldId))
+                entry.header.titleWidth > 0
+            {
+                shimmers.append(
+                    Self.shimmer(
+                        for: entry.header,
+                        cellOrigin: origin,
+                        hovered: hoveredId == entry.header.foldId))
             }
 
             let frame = CGRect(
@@ -810,16 +844,18 @@ struct ToolGroupLayout: @unchecked Sendable {
             let capturedEntry = entry
             let capturedHovered = hoveredId == entry.header.foldId
             let capturedRects = selectionRects
-            entries.append(SubviewPlan.Entry(
-                id: entry.childId,
-                frame: frame,
-                draw: { ctx, selectionColor in
-                    Self.drawEntry(capturedEntry,
-                                   hovered: capturedHovered,
-                                   selectionRects: capturedRects,
-                                   selectionColor: selectionColor,
-                                   in: ctx)
-                }))
+            entries.append(
+                SubviewPlan.Entry(
+                    id: entry.childId,
+                    frame: frame,
+                    draw: { ctx, selectionColor in
+                        Self.drawEntry(
+                            capturedEntry,
+                            hovered: capturedHovered,
+                            selectionRects: capturedRects,
+                            selectionColor: selectionColor,
+                            in: ctx)
+                    }))
         }
 
         return SubviewPlan(
@@ -852,7 +888,7 @@ struct ToolGroupLayout: @unchecked Sendable {
     ) -> SubviewPlan.Shimmer {
         let font = BlockStyle.toolHeaderFont
         let ascender = font.ascender
-        let descender = font.descender // typically negative
+        let descender = font.descender  // typically negative
         let textHeight = ascender - descender
         let textTopY = header.titleOrigin.y - ascender
         let textRect = CGRect(
@@ -897,10 +933,12 @@ struct ToolGroupLayout: @unchecked Sendable {
         // already truncated to fit at make-time, so this is a single
         // CTLine constructor over a known-bounded string.
         guard !header.title.isEmpty else { return }
-        let attr = NSAttributedString(string: header.title, attributes: [
-            .font: BlockStyle.toolHeaderFont,
-            .foregroundColor: titleColor(for: header.status, hovered: hovered),
-        ])
+        let attr = NSAttributedString(
+            string: header.title,
+            attributes: [
+                .font: BlockStyle.toolHeaderFont,
+                .foregroundColor: titleColor(for: header.status, hovered: hovered),
+            ])
         let line = CTLineCreateWithAttributedString(attr)
         ctx.saveGState()
         ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
@@ -952,7 +990,8 @@ struct ToolGroupLayout: @unchecked Sendable {
     nonisolated private static func chevronTint(
         for status: ToolStatus, hovered: Bool
     ) -> (color: NSColor, alpha: CGFloat) {
-        let alpha: CGFloat = hovered
+        let alpha: CGFloat =
+            hovered
             ? BlockStyle.toolHeaderChevronHoverAlpha
             : BlockStyle.toolHeaderChevronIdleAlpha
         switch status {
@@ -961,7 +1000,8 @@ struct ToolGroupLayout: @unchecked Sendable {
                 hovered
                     ? BlockStyle.toolHeaderHoverForeground
                     : BlockStyle.toolHeaderForeground,
-                alpha)
+                alpha
+            )
         case .failed:
             return (.systemRed, BlockStyle.toolHeaderChevronHoverAlpha)
         case .cancelled:
@@ -969,7 +1009,8 @@ struct ToolGroupLayout: @unchecked Sendable {
                 hovered
                     ? BlockStyle.toolHeaderForeground
                     : .tertiaryLabelColor,
-                alpha)
+                alpha
+            )
         }
     }
 

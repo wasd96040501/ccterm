@@ -46,10 +46,11 @@ extension BlockCellView {
     /// `hoveredAction`, `selection`. Cheap — plan build is value
     /// composition; reconcile early-exits when nothing changed.
     func syncSubviewPlan() {
-        let plan = layout?.subviewPlan(
-            origin: layoutOrigin,
-            hoveredAction: hoveredAction,
-            selection: selection) ?? .empty
+        let plan =
+            layout?.subviewPlan(
+                origin: layoutOrigin,
+                hoveredAction: hoveredAction,
+                selection: selection) ?? .empty
         let animateFrames = pendingFoldTransition
         pendingFoldTransition = false
         applyChevronPlan(plan.chevrons, allowSlide: animateFrames)
@@ -72,7 +73,8 @@ extension BlockCellView {
     /// the `layout` swap that follows.
     func beginFoldTransition(foldId: UUID, toExpanded: Bool) {
         if let layer = chevronLayers[foldId] {
-            let presValue = layer.presentation()?
+            let presValue =
+                layer.presentation()?
                 .value(forKeyPath: "transform.rotation.z") as? CGFloat
             let modelValue = (layer.value(forKeyPath: "transform.rotation.z") as? CGFloat) ?? 0
             let fromAngle = presValue ?? modelValue
@@ -160,8 +162,9 @@ extension BlockCellView {
                     }
                 }
                 applyChevronStyle(layer, spec: spec)
-                layer.setValue(spec.expanded ? CGFloat.pi / 2 : 0,
-                               forKeyPath: "transform.rotation.z")
+                layer.setValue(
+                    spec.expanded ? CGFloat.pi / 2 : 0,
+                    forKeyPath: "transform.rotation.z")
             } else {
                 let layer = makeChevronShapeLayer()
                 chevronLayers[spec.id] = layer
@@ -174,8 +177,9 @@ extension BlockCellView {
                 layer.frame = frame
                 layer.path = Self.chevronPath(size: chevronSize)
                 applyChevronStyle(layer, spec: spec)
-                layer.setValue(spec.expanded ? CGFloat.pi / 2 : 0,
-                               forKeyPath: "transform.rotation.z")
+                layer.setValue(
+                    spec.expanded ? CGFloat.pi / 2 : 0,
+                    forKeyPath: "transform.rotation.z")
                 CATransaction.commit()
             }
         }
@@ -248,12 +252,14 @@ extension BlockCellView {
         let scale = max(hostLayer.contentsScale, 1)
         for spec in specs {
             seen.insert(spec.id)
-            let set = shimmerLayers[spec.id] ?? {
-                let set = ShimmerLayerSet()
-                shimmerLayers[spec.id] = set
-                hostLayer.addSublayer(set.text)
-                return set
-            }()
+            let set =
+                shimmerLayers[spec.id]
+                ?? {
+                    let set = ShimmerLayerSet()
+                    shimmerLayers[spec.id] = set
+                    hostLayer.addSublayer(set.text)
+                    return set
+                }()
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             // Pixel-align the overlay frame to the host backing
@@ -314,8 +320,9 @@ extension BlockCellView {
             set.text.opacity = spec.hovered ? 0 : 1
             CATransaction.commit()
             if set.mask.animation(forKey: Self.shimmerAnimationKey) == nil {
-                set.mask.add(Self.makeShimmerAnimation(),
-                             forKey: Self.shimmerAnimationKey)
+                set.mask.add(
+                    Self.makeShimmerAnimation(),
+                    forKey: Self.shimmerAnimationKey)
             }
         }
         for (id, set) in shimmerLayers where !seen.contains(id) {
@@ -396,10 +403,12 @@ extension BlockCellView {
                 guard let ctx = NSGraphicsContext.current?.cgContext else {
                     return
                 }
-                let attr = NSAttributedString(string: title, attributes: [
-                    .font: font,
-                    .foregroundColor: BlockStyle.toolHeaderShimmerHighlight,
-                ])
+                let attr = NSAttributedString(
+                    string: title,
+                    attributes: [
+                        .font: font,
+                        .foregroundColor: BlockStyle.toolHeaderShimmerHighlight,
+                    ])
                 let line = CTLineCreateWithAttributedString(attr)
                 ctx.textPosition = CGPoint(x: xOffset, y: baselineY)
                 CTLineDraw(line, ctx)
@@ -575,7 +584,8 @@ final class ToolGroupEntryView: NSView {
         // time. The view supplies it here and the closure paints
         // accordingly. Falls back to a sensible default when not in
         // a window (off-screen draw during view assembly).
-        let selectionColor: NSColor = (window?.isKeyWindow == true)
+        let selectionColor: NSColor =
+            (window?.isKeyWindow == true)
             ? .selectedTextBackgroundColor
             : .unemphasizedSelectedTextBackgroundColor
         spec.draw(ctx, selectionColor)

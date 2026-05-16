@@ -2,8 +2,8 @@ import Foundation
 
 /// CLI 功能标识。
 public enum CLIFeature: String, CaseIterable, Sendable {
-    case model           // --model
-    case pluginDir       // --plugin-dir
+    case model  // --model
+    case pluginDir  // --plugin-dir
 }
 
 /// CLI 能力检测结果。基于版本号判断功能是否可用。
@@ -12,14 +12,15 @@ public struct CLICapability: Sendable {
 
     /// 版本映射表（保守值，取 release notes 中首次提及的版本）
     private static let minVersions: [CLIFeature: (Int, Int, Int)] = [
-        .model:          (2, 0, 41),
-        .pluginDir:      (2, 1, 74),
+        .model: (2, 0, 41),
+        .pluginDir: (2, 1, 74),
     ]
 
     /// 检查某功能是否可用
     public func isAvailable(_ feature: CLIFeature) -> Bool {
         guard let min = Self.minVersions[feature],
-              let current = Self.parseVersion(version) else { return false }
+            let current = Self.parseVersion(version)
+        else { return false }
         return current >= min
     }
 
@@ -42,8 +43,9 @@ public struct CLICapability: Sendable {
             proc.waitUntilExit()
         } catch { return nil }
         guard proc.terminationStatus == 0,
-              let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8),
-              let version = extractVersion(output) else { return nil }
+            let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8),
+            let version = extractVersion(output)
+        else { return nil }
         return CLICapability(version: version)
     }
 

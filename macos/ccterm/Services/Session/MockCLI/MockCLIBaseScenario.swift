@@ -66,10 +66,12 @@ class MockCLIBaseScenario: MockCLIScenario {
 
     /// host 发 `initialize` control_request。默认回 success + `system.init`。
     func onInitialize(requestId: String, params: [String: Any], send: MockCLISender) {
-        send.ackControlSuccess(requestId: requestId, response: [
-            "commands": [],
-            "models": [],
-        ])
+        send.ackControlSuccess(
+            requestId: requestId,
+            response: [
+                "commands": [],
+                "models": [],
+            ])
         send.sendSystemInit(sessionId: sessionId)
     }
 

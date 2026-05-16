@@ -53,9 +53,12 @@ extension Worktree {
             }
 
             // git <lfsFlags> -C <baseRepo> -c core.longpaths=true worktree add -b <name> <path> <startPoint>
-            let args = lfsFlags
-                + ["-C", baseRepo, "-c", "core.longpaths=true",
-                   "worktree", "add", "-b", name, path, startPoint]
+            let args =
+                lfsFlags
+                + [
+                    "-C", baseRepo, "-c", "core.longpaths=true",
+                    "worktree", "add", "-b", name, path, startPoint,
+                ]
             let r = runCommand("/usr/bin/git", args, cwd: baseRepo, timeout: 60)
 
             if r.exitCode == 0 {

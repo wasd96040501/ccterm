@@ -104,10 +104,12 @@ struct ToolGroupBlock: Equatable, Sendable {
     let completedTitle: String
     let children: [Child]
 
-    init(activeTitle: String,
-         expandedActiveTitle: String,
-         completedTitle: String,
-         children: [Child]) {
+    init(
+        activeTitle: String,
+        expandedActiveTitle: String,
+        completedTitle: String,
+        children: [Child]
+    ) {
         self.activeTitle = activeTitle
         self.expandedActiveTitle = expandedActiveTitle
         self.completedTitle = completedTitle
@@ -223,7 +225,7 @@ struct ToolGroupBlock: Equatable, Sendable {
         var hasExpandableBody: Bool {
             switch self {
             case .fileEdit, .bash, .grep, .glob, .webFetch, .webSearch,
-                 .askUserQuestion, .agent:
+                .askUserQuestion, .agent:
                 return true
             case .read, .generic: return false
             }
@@ -440,10 +442,12 @@ enum BlockStyle: Sendable {
 
     /// Bullet glyph "•" rendered at body font weight / size.
     nonisolated static func listBulletMarkerAttributed() -> NSAttributedString {
-        NSAttributedString(string: "•", attributes: [
-            .font: paragraphFont,
-            .foregroundColor: listMarkerColor,
-        ])
+        NSAttributedString(
+            string: "•",
+            attributes: [
+                .font: paragraphFont,
+                .foregroundColor: listMarkerColor,
+            ])
     }
 
     /// Ordered marker "N." rendered in monospaced body font so a column of
@@ -451,10 +455,12 @@ enum BlockStyle: Sendable {
     nonisolated static func listOrderedMarkerAttributed(_ n: Int) -> NSAttributedString {
         let font = NSFont.monospacedSystemFont(
             ofSize: paragraphFont.pointSize, weight: .regular)
-        return NSAttributedString(string: "\(n).", attributes: [
-            .font: font,
-            .foregroundColor: listMarkerColor,
-        ])
+        return NSAttributedString(
+            string: "\(n).",
+            attributes: [
+                .font: font,
+                .foregroundColor: listMarkerColor,
+            ])
     }
 
     // MARK: - Table geometry
@@ -508,7 +514,8 @@ enum BlockStyle: Sendable {
     nonisolated static func tableCellAttributed(
         inlines: [InlineNode], bold: Bool
     ) -> NSAttributedString {
-        let baseFont: NSFont = bold
+        let baseFont: NSFont =
+            bold
             ? NSFont.systemFont(ofSize: paragraphFont.pointSize, weight: .semibold)
             : paragraphFont
         let out = NSMutableAttributedString()
@@ -580,10 +587,12 @@ enum BlockStyle: Sendable {
     /// raw text, markdown emphasis is not parsed here (that's an assistant-
     /// content concern).
     nonisolated static func userBubbleAttributed(text: String) -> NSAttributedString {
-        NSAttributedString(string: text, attributes: [
-            .font: paragraphFont,
-            .foregroundColor: NSColor.labelColor,
-        ])
+        NSAttributedString(
+            string: text,
+            attributes: [
+                .font: paragraphFont,
+                .foregroundColor: NSColor.labelColor,
+            ])
     }
 
     // MARK: - Code block geometry
@@ -635,17 +644,22 @@ enum BlockStyle: Sendable {
                     let scheme: ColorScheme = match == .darkAqua ? .dark : .light
                     return NSColor(SyntaxTheme.color(for: scope, scheme: scheme))
                 }
-                result.append(NSAttributedString(string: token.text, attributes: [
-                    .font: font,
-                    .foregroundColor: color,
-                ]))
+                result.append(
+                    NSAttributedString(
+                        string: token.text,
+                        attributes: [
+                            .font: font,
+                            .foregroundColor: color,
+                        ]))
             }
             return result
         }
-        return NSAttributedString(string: code, attributes: [
-            .font: font,
-            .foregroundColor: NSColor.labelColor,
-        ])
+        return NSAttributedString(
+            string: code,
+            attributes: [
+                .font: font,
+                .foregroundColor: NSColor.labelColor,
+            ])
     }
 
     /// Header band height — sized to a 11pt SF Symbol with a 4–5pt
@@ -910,8 +924,10 @@ enum BlockStyle: Sendable {
         return out
     }
 
-    nonisolated static func headingAttributed(level: Int,
-                                              inlines: [InlineNode]) -> NSAttributedString {
+    nonisolated static func headingAttributed(
+        level: Int,
+        inlines: [InlineNode]
+    ) -> NSAttributedString {
         let out = NSMutableAttributedString()
         appendInlines(inlines, into: out, base: baseAttributes(font: headingFont(level: level)))
         return out
@@ -932,7 +948,9 @@ enum BlockStyle: Sendable {
         return NSFont.systemFont(ofSize: size, weight: .semibold)
     }
 
-    nonisolated private static func baseAttributes(font: NSFont)
+    nonisolated private static func baseAttributes(
+        font: NSFont
+    )
         -> [NSAttributedString.Key: Any]
     {
         [
@@ -944,21 +962,25 @@ enum BlockStyle: Sendable {
     /// Recursive walker. `base` carries the inherited attributes; each node
     /// derives a child attribute set, recurses, then drops back. Keeps the
     /// builder allocation-light — one `NSAttributedString.append` per leaf.
-    nonisolated private static func appendInlines(_ nodes: [InlineNode],
-                                                  into out: NSMutableAttributedString,
-                                                  base: [NSAttributedString.Key: Any]) {
+    nonisolated private static func appendInlines(
+        _ nodes: [InlineNode],
+        into out: NSMutableAttributedString,
+        base: [NSAttributedString.Key: Any]
+    ) {
         for node in nodes {
             switch node {
             case .text(let s):
                 out.append(NSAttributedString(string: s, attributes: base))
 
             case .strong(let children):
-                appendInlines(children, into: out,
-                              base: withTrait(base, adding: .bold))
+                appendInlines(
+                    children, into: out,
+                    base: withTrait(base, adding: .bold))
 
             case .emphasis(let children):
-                appendInlines(children, into: out,
-                              base: withTrait(base, adding: .italic))
+                appendInlines(
+                    children, into: out,
+                    base: withTrait(base, adding: .italic))
 
             case .strikethrough(let children):
                 var attrs = base
@@ -987,8 +1009,10 @@ enum BlockStyle: Sendable {
         }
     }
 
-    nonisolated private static func withTrait(_ attrs: [NSAttributedString.Key: Any],
-                                              adding trait: NSFontDescriptor.SymbolicTraits)
+    nonisolated private static func withTrait(
+        _ attrs: [NSAttributedString.Key: Any],
+        adding trait: NSFontDescriptor.SymbolicTraits
+    )
         -> [NSAttributedString.Key: Any]
     {
         guard let font = attrs[.font] as? NSFont else { return attrs }
@@ -1007,7 +1031,7 @@ enum BlockStyle: Sendable {
         let pointSize = surrounding?.pointSize ?? paragraphFont.pointSize
         let weight: NSFont.Weight = {
             guard let f = surrounding,
-                  f.fontDescriptor.symbolicTraits.contains(.bold)
+                f.fontDescriptor.symbolicTraits.contains(.bold)
             else { return .regular }
             return .semibold
         }()

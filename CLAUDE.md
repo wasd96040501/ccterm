@@ -73,6 +73,7 @@ The Xcode project uses filesystem-synced groups (`PBXFileSystemSynchronizedRootG
 - **macOS 14 (Sonoma)** or newer.
 - **Xcode** — after install, run `xcodebuild -runFirstLaunch` once to initialize command-line tools.
 - **Go** — the `thirdparty/fzf` submodule is compiled from Go sources inside an Xcode build phase. `brew install go` or grab a tarball from <https://go.dev/dl/>.
+- **swift-format** — `brew install swift-format`. Apple's official formatter; `make fmt` / `make fmt-check` invoke it via `PATH`. We don't use the Xcode-bundled copy because it requires Xcode 16+ (macOS 14.5+); brew works on any supported macOS.
 - **Git submodules** — the first `make build` initializes them automatically; you can also run `git submodule update --init --recursive` manually.
 
 ## Build

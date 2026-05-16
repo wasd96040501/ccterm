@@ -11,7 +11,7 @@ enum MockCLIRegistry {
 
     /// scenario 名字 → 无参 factory。名字必须与 UI test 里的环境变量值匹配。
     static let scenarios: [String: () -> any MockCLIScenario] = [
-        "hangingTurn": { HangingTurnScenario() },
+        "hangingTurn": { HangingTurnScenario() }
     ]
 
     /// 找不到名字时返回 nil;`MockCLIRunner` 会写 stderr 并以非零退出,

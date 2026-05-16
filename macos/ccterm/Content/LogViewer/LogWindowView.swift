@@ -81,11 +81,12 @@ struct LogWindowView: View {
                     }
                     .font(.system(size: 11, weight: .medium))
                 }
-                .buttonStyle(HoverCapsuleStyle(
-                    staticFill: viewModel.selectedLevel == level
-                        ? Color.accentColor.opacity(0.2)
-                        : nil
-                ))
+                .buttonStyle(
+                    HoverCapsuleStyle(
+                        staticFill: viewModel.selectedLevel == level
+                            ? Color.accentColor.opacity(0.2)
+                            : nil
+                    ))
             }
         }
     }

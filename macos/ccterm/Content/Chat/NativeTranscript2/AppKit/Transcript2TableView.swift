@@ -61,7 +61,10 @@ final class Transcript2TableView: NSTableView, NSMenuItemValidation {
     override var acceptsFirstResponder: Bool { true }
 
     override func mouseDown(with event: NSEvent) {
-        guard let coordinator else { super.mouseDown(with: event); return }
+        guard let coordinator else {
+            super.mouseDown(with: event)
+            return
+        }
 
         let docPoint = convert(event.locationInWindow, from: nil)
         let row = self.row(at: docPoint)
@@ -73,7 +76,7 @@ final class Transcript2TableView: NSTableView, NSMenuItemValidation {
         // (`selectionHighlightStyle` is `.none`) and would consume drag
         // events.
         guard row >= 0,
-              coordinator.selectionAdapter(atRow: row) != nil
+            coordinator.selectionAdapter(atRow: row) != nil
         else {
             coordinator.selection.clearAll()
             return
@@ -93,15 +96,17 @@ final class Transcript2TableView: NSTableView, NSMenuItemValidation {
         switch event.clickCount {
         case let n where n >= 3:
             coordinator.selection.selectUnit(at: docPoint, in: self)
-            // No tracking — triple-click is one-shot. Subsequent drag
-            // would feel arbitrary on top of a "select all" gesture.
+        // No tracking — triple-click is one-shot. Subsequent drag
+        // would feel arbitrary on top of a "select all" gesture.
         case 2:
             coordinator.selection.selectWord(at: docPoint, in: self)
-            trackSelection(startDocPoint: docPoint, byWord: true,
-                           coordinator: coordinator)
+            trackSelection(
+                startDocPoint: docPoint, byWord: true,
+                coordinator: coordinator)
         default:
-            trackSelection(startDocPoint: docPoint, byWord: false,
-                           coordinator: coordinator)
+            trackSelection(
+                startDocPoint: docPoint, byWord: false,
+                coordinator: coordinator)
         }
     }
 
@@ -113,16 +118,19 @@ final class Transcript2TableView: NSTableView, NSMenuItemValidation {
     /// `byWord` propagates into `updateSelection` so a double-click
     /// drag snaps to word boundaries on every tick. Single-click
     /// drag is character-precise.
-    private func trackSelection(startDocPoint start: CGPoint,
-                                byWord: Bool,
-                                coordinator: Transcript2Coordinator) {
+    private func trackSelection(
+        startDocPoint start: CGPoint,
+        byWord: Bool,
+        coordinator: Transcript2Coordinator
+    ) {
         let mask: NSEvent.EventTypeMask = [.leftMouseDragged, .leftMouseUp]
         while true {
-            guard let event = NSApp.nextEvent(
-                matching: mask,
-                until: .distantFuture,
-                inMode: .eventTracking,
-                dequeue: true)
+            guard
+                let event = NSApp.nextEvent(
+                    matching: mask,
+                    until: .distantFuture,
+                    inMode: .eventTracking,
+                    dequeue: true)
             else { break }
 
             if event.type == .leftMouseUp { break }
@@ -160,8 +168,9 @@ final class Transcript2TableView: NSTableView, NSMenuItemValidation {
         let step = max(-40, min(40, dy))
         let clipView = scrollView.contentView
         let candidate = NSRect(
-            origin: NSPoint(x: clipView.bounds.origin.x,
-                            y: clipView.bounds.origin.y + step),
+            origin: NSPoint(
+                x: clipView.bounds.origin.x,
+                y: clipView.bounds.origin.y + step),
             size: clipView.bounds.size)
         let constrained = clipView.constrainBoundsRect(candidate)
         guard constrained.origin.y != clipView.bounds.origin.y else { return }

@@ -8,11 +8,13 @@ public enum SessionHistory {
             .appendingPathComponent(".claude/projects")
         let target = "\(sessionId).jsonl"
 
-        guard let enumerator = FileManager.default.enumerator(
-            at: base,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        ) else {
+        guard
+            let enumerator = FileManager.default.enumerator(
+                at: base,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            )
+        else {
             return nil
         }
 
@@ -27,7 +29,8 @@ public enum SessionHistory {
     /// 从 JSONL 文件加载所有可解析的消息。
     public static func loadMessages(from fileURL: URL) -> [Message2] {
         guard let data = try? Data(contentsOf: fileURL),
-              let content = String(data: data, encoding: .utf8) else {
+            let content = String(data: data, encoding: .utf8)
+        else {
             return []
         }
 
@@ -35,9 +38,10 @@ public enum SessionHistory {
         var messages: [Message2] = []
         for line in content.components(separatedBy: .newlines) {
             guard !line.isEmpty,
-                  let lineData = line.data(using: .utf8),
-                  let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
-                  let message = try? resolver.resolve(json) else {
+                let lineData = line.data(using: .utf8),
+                let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+                let message = try? resolver.resolve(json)
+            else {
                 continue
             }
             messages.append(message)

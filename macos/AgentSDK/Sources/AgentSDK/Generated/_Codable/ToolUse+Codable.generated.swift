@@ -3,10 +3,12 @@ import Foundation
 extension ToolUse {
     public init(json: Any) throws {
         guard let dict = json as? [String: Any] else {
-            self = .unknown(name: "unknown", raw: [:]); return
+            self = .unknown(name: "unknown", raw: [:])
+            return
         }
         guard let tag = dict["name"] as? String else {
-            self = .unknown(name: "unknown", raw: dict); return
+            self = .unknown(name: "unknown", raw: dict)
+            return
         }
         switch tag {
         case "Agent":

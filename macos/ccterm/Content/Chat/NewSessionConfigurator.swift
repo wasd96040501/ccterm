@@ -5,11 +5,10 @@ import SwiftUI
 /// columns separated by a vertical divider, mirroring Xcode's welcome
 /// window:
 ///
-/// - **Left**: large folder icon, "Start Building" title, the chosen
-///   folder's name (acts as the folder picker trigger), and a row with
-///   the source-branch picker and a Worktree checkbox. The branch picker
-///   and the worktree toggle disable themselves when the chosen folder
-///   is not a git repository.
+/// - **Left**: a centered (H+V) stack — hammer icon, "Start Building
+///   <folder>" single-line heading, and an optional source-branch row
+///   (branch picker + Worktree checkbox). The branch row hides entirely
+///   when the chosen folder is not a git repo or HEAD is detached.
 /// - **Right**: a sidebar-styled list of recent project folders derived
 ///   from `SessionManager2.records` (unique by `groupingPath`). Selecting
 ///   one writes back through `folderPath`. Empty state directs the user
@@ -26,7 +25,7 @@ struct NewSessionConfigurator: View {
 
     /// Fixed visual height; the parent assumes this when computing the
     /// compose-mode vertical centering padding.
-    static let height: CGFloat = 200
+    static let height: CGFloat = 300
     /// Right-column width. Left column takes the rest minus a 1pt divider.
     private static let recentColumnWidth: CGFloat = 240
 
@@ -38,7 +37,7 @@ struct NewSessionConfigurator: View {
     var body: some View {
         HStack(spacing: 0) {
             leftPanel
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(16)
             Divider()
             rightPanel
@@ -46,66 +45,62 @@ struct NewSessionConfigurator: View {
                 .frame(maxHeight: .infinity)
         }
         .frame(height: Self.height)
-        .barSurface(cornerRadius: 16)
         .testIdentifier("NewSession.Card")
-        .onChange(of: folderPath) { _, _ in refreshGitInfo() }
-        .task { refreshGitInfo() }
+        .onChange(of: folderPath) { _, _ in refreshGitInfo(resetOverride: true) }
+        .task { refreshGitInfo(resetOverride: true) }
     }
 
     // MARK: - Left panel
 
+    /// Centered (H+V) stack: hammer icon, single-line title, optional
+    /// branch row. The branch row fades in / out so switching between a
+    /// git folder and a plain folder doesn't snap the layout.
     @ViewBuilder
     private var leftPanel: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 14) {
-                Image(systemName: folderPath == nil ? "folder.badge.plus" : "folder.fill")
-                    .font(.system(size: 40))
-                    .foregroundStyle(.tint)
-                    .frame(width: 56, height: 56, alignment: .center)
+        VStack(spacing: 14) {
+            Image(systemName: "hammer.fill")
+                .font(.system(size: 44, weight: .regular))
+                .foregroundStyle(.tint)
+                .frame(height: 56)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(String(localized: "Start Building"))
-                        .font(.system(size: 18, weight: .semibold))
+            Text(headingText)
+                .font(.system(size: 18, weight: .semibold))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity)
 
-                    Button(action: presentFolderPicker) {
-                        HStack(spacing: 4) {
-                            Text(
-                                folderPath.map { ($0 as NSString).lastPathComponent }
-                                    ?? String(localized: "Choose Folder…")
-                            )
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .foregroundStyle(folderPath == nil ? Color.secondary : Color.primary)
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(.secondary)
-                        }
+            if currentBranch != nil {
+                HStack(spacing: 10) {
+                    branchPicker
+                    Toggle(isOn: $useWorktree) {
+                        Text(String(localized: "Worktree"))
+                            .font(.system(size: 12))
                     }
-                    .buttonStyle(.plain)
-                    .testIdentifier("NewSession.FolderPicker")
+                    .toggleStyle(.checkbox)
+                    .controlSize(.small)
+                    .testIdentifier("NewSession.WorktreeToggle")
                 }
-                Spacer(minLength: 0)
-            }
-
-            Spacer(minLength: 0)
-
-            HStack(spacing: 10) {
-                branchPicker
-                Toggle(isOn: $useWorktree) {
-                    Text(String(localized: "Worktree"))
-                        .font(.system(size: 12))
-                }
-                .toggleStyle(.checkbox)
-                .controlSize(.small)
-                .disabled(!isGitRepo)
-                .testIdentifier("NewSession.WorktreeToggle")
+                .transition(.opacity)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(.smooth(duration: 0.25), value: currentBranch)
+    }
+
+    /// "Start Building <folder>" on one line. Folder name is trimmed of
+    /// trailing whitespace; when no folder is picked yet, fall back to
+    /// the bare title.
+    private var headingText: String {
+        let base = String(localized: "Start Building")
+        guard let folder = folderPath else { return base }
+        let name = (folder as NSString).lastPathComponent
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? base : "\(base) \(name)"
     }
 
     @ViewBuilder
     private var branchPicker: some View {
-        let displayBranch = sourceBranch ?? currentBranch ?? String(localized: "(no branch)")
+        let displayBranch = sourceBranch ?? currentBranch ?? ""
         Menu {
             ForEach(branches, id: \.self) { name in
                 Button(action: { sourceBranch = name }) {
@@ -135,7 +130,6 @@ struct NewSessionConfigurator: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .disabled(!isGitRepo)
         .testIdentifier("NewSession.BranchPicker")
     }
 
@@ -281,7 +275,12 @@ struct NewSessionConfigurator: View {
     /// All git calls are short, synchronous, and bounded by `runGit`'s
     /// timeout — invoking them on the main actor is fine for a one-shot
     /// directory probe.
-    private func refreshGitInfo() {
+    ///
+    /// `resetOverride` forces `sourceBranch` back to the new repo's
+    /// current branch — needed when the folder changes, otherwise the
+    /// previous folder's branch selection would survive even if the new
+    /// repo happens to have a branch by the same name.
+    private func refreshGitInfo(resetOverride: Bool) {
         guard let path = folderPath else {
             isGitRepo = false
             branches = []
@@ -292,10 +291,16 @@ struct NewSessionConfigurator: View {
         }
         isGitRepo = GitUtils.isGitRepository(at: path)
         if isGitRepo {
-            currentBranch = GitUtils.currentBranch(at: path)
+            let head = GitUtils.currentBranch(at: path)
+            currentBranch = head
             branches = Self.listBranches(at: path)
-            if sourceBranch == nil || !branches.contains(sourceBranch ?? "") {
-                sourceBranch = currentBranch
+            if resetOverride || sourceBranch == nil || !branches.contains(sourceBranch ?? "") {
+                sourceBranch = head
+            }
+            if head == nil {
+                // Detached HEAD: branch row is hidden, so worktree must
+                // not stay accidentally enabled.
+                useWorktree = false
             }
         } else {
             useWorktree = false
@@ -335,6 +340,6 @@ struct NewSessionConfigurator: View {
         .frame(width: 544)
         .padding(40)
     }
-    .frame(width: 720, height: 360)
+    .frame(width: 720, height: 460)
     .environment(SessionManager2())
 }

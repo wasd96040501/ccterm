@@ -233,7 +233,7 @@ struct RootView2: View {
     /// Padding-from-bottom that lands the (configurator + bar) stack at
     /// the right vertical position for the current mode. The compose
     /// stack height is approximated rather than measured (configurator
-    /// + spacing + bar ≈ 200 + 16 + 60 = 276pt); the `max(...)` clamp
+    /// + spacing + bar ≈ 300 + 16 + 60 = 376pt); the `max(...)` clamp
     /// prevents the bar from drifting below its chat resting height on
     /// tiny windows.
     private func bottomInset(detailHeight: CGFloat) -> CGFloat {

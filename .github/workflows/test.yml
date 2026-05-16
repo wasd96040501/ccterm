@@ -5,10 +5,17 @@ on:
   push:
     branches: [main]
 
+# build-tests 编一次,ui-test matrix 多个 shard 并行用同一份产物,省去重复编译。
+# macOS 上 UI test 没法在单机并行(全局 WindowServer / focus 互抢),只能多机分片。
+# GitHub 公共 macOS runner 标准实例对开源仓库免费,但全账户 macOS 并发上限 5
+# (Free/Pro/Team),所以 shard 数 <=5 才有实际收益。
+
 jobs:
-  ui-test:
+  build-tests:
     runs-on: macos-26
     timeout-minutes: 30
+    outputs:
+      xctestrun-name: ${{ steps.locate.outputs.xctestrun-name }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,14 +35,60 @@ jobs:
           sw_vers
           go version
 
-      - name: Run UI tests
-        run: make test-all
+      - name: Build for testing
+        run: ./macos/scripts/build-tests.sh
+
+      - id: locate
+        name: Locate xctestrun
+        working-directory: macos
+        run: |
+          XCTESTRUN=$(find build/DD/Build/Products -maxdepth 1 -name '*.xctestrun' | head -1)
+          if [ -z "$XCTESTRUN" ]; then
+            echo "error: no xctestrun produced" >&2
+            exit 1
+          fi
+          echo "xctestrun-name=$(basename "$XCTESTRUN")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload test bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-bundle
+          path: macos/build/DD/Build/Products
+          retention-days: 1
+          if-no-files-found: error
+
+  ui-test:
+    needs: build-tests
+    runs-on: macos-26
+    timeout-minutes: 20
+    strategy:
+      # 一个 shard 挂了别影响其他 shard 跑完,方便一次看全部失败。
+      fail-fast: false
+      matrix:
+        # 按 test class 切分。加新测试类时往这里追加一行即可。
+        # 上限建议 5(踩 GitHub macOS 并发额度);单 shard 时间太短就别拆。
+        shard:
+          - InputBar2StopButtonUITests
+    steps:
+      - uses: actions/checkout@v4
+        # 只跑预编译的 test bundle,不需要源码 build,也不需要 fzf submodule。
+        # checkout 仅为了拿到 scripts/test-shard.sh。
+
+      - name: Download test bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: test-bundle
+          path: macos/build/DD/Build/Products
+
+      - name: Run shard
+        working-directory: macos
+        run: ./scripts/test-shard.sh "build/DD/Build/Products/${{ needs.build-tests.outputs.xctestrun-name }}" "${{ matrix.shard }}"
 
       - name: Upload xcresult on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: xcresult
+          name: xcresult-${{ matrix.shard }}
           path: /tmp/ccterm-test-*/result.xcresult
           if-no-files-found: ignore
           retention-days: 7

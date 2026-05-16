@@ -32,7 +32,7 @@ struct ChatSearchBarView: View {
             )
             .textFieldStyle(.plain)
             .focused($isFocused)
-            .accessibilityIdentifier("ChatSearchBar.Field")
+            .testIdentifier("ChatSearchBar.Field")
             .onSubmit { controller.nextSearchHit() }
             .onChange(of: query) { _, new in
                 controller.runSearch(new)
@@ -48,7 +48,7 @@ struct ChatSearchBarView: View {
             .buttonStyle(.plain)
             .disabled(controller.searchState.totalHits == 0)
             .keyboardShortcut(.return, modifiers: [.shift])
-            .accessibilityIdentifier("ChatSearchBar.PrevButton")
+            .testIdentifier("ChatSearchBar.PrevButton")
             .help(String(localized: "Previous match"))
 
             Button(action: { controller.nextSearchHit() }) {
@@ -58,7 +58,7 @@ struct ChatSearchBarView: View {
             }
             .buttonStyle(.plain)
             .disabled(controller.searchState.totalHits == 0)
-            .accessibilityIdentifier("ChatSearchBar.NextButton")
+            .testIdentifier("ChatSearchBar.NextButton")
             .help(String(localized: "Next match"))
 
             Button(action: onDismiss) {
@@ -68,7 +68,7 @@ struct ChatSearchBarView: View {
             }
             .buttonStyle(.plain)
             .keyboardShortcut(.cancelAction)
-            .accessibilityIdentifier("ChatSearchBar.CloseButton")
+            .testIdentifier("ChatSearchBar.CloseButton")
             .help(String(localized: "Close find bar"))
         }
         .padding(.horizontal, 10)
@@ -83,7 +83,7 @@ struct ChatSearchBarView: View {
                 .shadow(color: .black.opacity(0.12), radius: 6, x: 0, y: 2)
         }
         .frame(width: 320)
-        .accessibilityIdentifier("ChatSearchBar")
+        .testIdentifier("ChatSearchBar")
         .onAppear { isFocused = true }
         .onDisappear { controller.endSearch() }
     }
@@ -97,7 +97,7 @@ struct ChatSearchBarView: View {
                 .monospacedDigit()
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
-                .accessibilityIdentifier("ChatSearchBar.Counter")
+                .testIdentifier("ChatSearchBar.Counter")
         }
     }
 }

@@ -45,6 +45,22 @@ struct AppCommands: Commands {
             }
             .keyboardShortcut(",", modifiers: .command)
         }
+        // Real menu item drives the ⌘F shortcut. SwiftUI's
+        // `keyboardShortcut` on a hidden Button + NSEvent local
+        // monitors both have been observed to not deliver in
+        // XCUITest harnesses; a menu-attached shortcut routes
+        // through the standard AppKit responder chain and is
+        // queryable by the test runner. `ChatHistoryView`
+        // subscribes via `NotificationCenter` (see `findInTranscript`).
+        CommandGroup(after: .textEditing) {
+            Button(action: {
+                NotificationCenter.default.post(
+                    name: .findInTranscript, object: nil)
+            }) {
+                Text("Find in transcript")
+            }
+            .keyboardShortcut("f", modifiers: .command)
+        }
         CommandMenu("Debug") {
             Button("Logs") {
                 openWindow(id: "logs")
@@ -52,4 +68,16 @@ struct AppCommands: Commands {
             .keyboardShortcut("L", modifiers: [.command, .shift])
         }
     }
+}
+
+extension Notification.Name {
+    /// Posted by the global ⌘F menu item; consumed by the active
+    /// `ChatHistoryView` to toggle its in-transcript search bar.
+    /// Decoupled this way because the menu lives on the `App` scene
+    /// (one per process) while the search bar's state lives on
+    /// `ChatHistoryView` (one per session — `.id(sessionId)`-rebuilt).
+    /// `NotificationCenter` is the well-trodden bridge for app-scope
+    /// commands to per-view state without inventing a global
+    /// `@Observable` for one boolean.
+    static let findInTranscript = Notification.Name("ccterm.findInTranscript")
 }

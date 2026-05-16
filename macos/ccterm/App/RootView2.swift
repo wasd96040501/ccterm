@@ -4,6 +4,11 @@ import SwiftUI
 /// not in AppState or any router.
 struct RootView2: View {
     static fileprivate let detailCoordSpace = "RootView2.detail"
+    /// Height of the top fade-blur scrim covering the transcript's top edge.
+    /// Fixed (not derived from `safeAreaInsets`) — the transcript runs flush
+    /// to the window's top, and a constant fade range keeps the visual weight
+    /// of the scrim consistent regardless of window height.
+    fileprivate static let topFadeScrimHeight: CGFloat = 80
 
     @State private var selectedSessionId: String? = SidebarView2.newSessionTag
     @State private var draftSessionId: String?
@@ -57,6 +62,30 @@ struct RootView2: View {
             // first-start side effects only when needed.
             ChatHistoryView(sessionId: sid)
                 .id(sid)
+                .overlay(alignment: .top) {
+                    // Top fade-blur scrim, mirror of the bottom one. The
+                    // transcript runs flush to the window's top edge (no
+                    // contentInsets.top), so content scrolling past the top
+                    // would otherwise abut the window chrome / traffic
+                    // lights hard. The scrim provides a soft fade-out:
+                    // most opaque at the top edge → fully clear at 80pt
+                    // down. Backed by a Material layer so the fade reads
+                    // as a progressive blur rather than a flat color wash.
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                        .frame(height: Self.topFadeScrimHeight)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .mask {
+                            LinearGradient(
+                                colors: [.black, .clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        }
+                        .allowsHitTesting(false)
+                        .accessibilityElement()
+                        .accessibilityIdentifier("ChatHistory.TopFadeScrim")
+                }
                 .overlay(alignment: .bottom) {
                     // Fade scrim: a standalone gradient at the detail pane
                     // bottom, z-ordered above the transcript and below the

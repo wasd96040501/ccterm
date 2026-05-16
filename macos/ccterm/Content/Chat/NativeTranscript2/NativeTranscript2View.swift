@@ -92,6 +92,11 @@ private struct Transcript2NSViewBridge: NSViewRepresentable {
         // lost. Result: scroll-to-bottom landed at clip frame bottom
         // rather than at the visible-content-area bottom.
         scroll.contentView = Transcript2ClipView()
+        // Top inset is 0: the transcript runs flush to the window's top edge
+        // so the top fade-blur scrim (RootView2) can sit directly on top of
+        // the scrolling content without a visible gap between scrim and the
+        // first row.
+        //
         // Bottom inset reserves space below the natural content end so the
         // last message never crowds the input bar, and so the user can
         // scroll the transcript up further to expose empty room beneath it
@@ -100,7 +105,7 @@ private struct Transcript2NSViewBridge: NSViewRepresentable {
         // - 28pt loading pill above the bar when running.
         // - 76pt fixed breathing room so non-running state has a comfortable
         //   gap and running state still leaves the pill clear of content.
-        scroll.contentInsets = NSEdgeInsets(top: 12, left: 0, bottom: 180, right: 0)
+        scroll.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 180, right: 0)
 
         let table = Transcript2TableView()
         table.headerView = nil

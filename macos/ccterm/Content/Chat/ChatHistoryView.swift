@@ -124,6 +124,7 @@ struct ChatHistoryView: View {
             }
             .disabled(controller.searchState.totalHits == 0)
             .keyboardShortcut(.return, modifiers: [.shift])
+            .accessibilityLabel(String(localized: "Previous match"))
             .testIdentifier("ChatSearchBar.PrevButton")
             .help(String(localized: "Previous match"))
 
@@ -133,6 +134,7 @@ struct ChatHistoryView: View {
                 Image(systemName: "chevron.down")
             }
             .disabled(controller.searchState.totalHits == 0)
+            .accessibilityLabel(String(localized: "Next match"))
             .testIdentifier("ChatSearchBar.NextButton")
             .help(String(localized: "Next match"))
         }

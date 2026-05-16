@@ -46,19 +46,19 @@ final class TranscriptSearchUITests: XCTestCase {
             "first hit should be the current cursor (1-based of 2 total)")
 
         // Next button → second hit.
-        app.buttons["ChatSearchBar.NextButton"].click()
+        nextMatch(in: app).click()
         XCTAssertEqual(
             counter.value as? String, "2 / 2",
             "next button should advance the cursor to the second hit")
 
         // Wrap-around: next on the last hit → first hit.
-        app.buttons["ChatSearchBar.NextButton"].click()
+        nextMatch(in: app).click()
         XCTAssertEqual(
             counter.value as? String, "1 / 2",
             "next on the last hit should wrap back to the first")
 
         // Previous button → wrap back to last.
-        app.buttons["ChatSearchBar.PrevButton"].click()
+        prevMatch(in: app).click()
         XCTAssertEqual(
             counter.value as? String, "2 / 2",
             "previous on the first hit should wrap to the last")
@@ -87,7 +87,7 @@ final class TranscriptSearchUITests: XCTestCase {
 
         // Nav buttons should be disabled — clicking must not crash
         // and must leave counter unchanged.
-        let nextButton = app.buttons["ChatSearchBar.NextButton"]
+        let nextButton = nextMatch(in: app)
         XCTAssertFalse(
             nextButton.isEnabled,
             "next button should be disabled when there are no hits")
@@ -97,6 +97,22 @@ final class TranscriptSearchUITests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    /// Toolbar items in macOS's `NSToolbar` expose two AX `Button`
+    /// elements with the same identifier — an outer host wrapper and
+    /// the inner SwiftUI button. Both proxy to the same SwiftUI
+    /// action and reflect the same enablement state, so picking
+    /// `firstMatch` is fine; the literal subscript form would throw
+    /// "multiple matching elements" on the toolbar variant.
+    @MainActor
+    private func nextMatch(in app: XCUIApplication) -> XCUIElement {
+        app.buttons.matching(identifier: "ChatSearchBar.NextButton").firstMatch
+    }
+
+    @MainActor
+    private func prevMatch(in app: XCUIApplication) -> XCUIElement {
+        app.buttons.matching(identifier: "ChatSearchBar.PrevButton").firstMatch
+    }
 
     @MainActor
     private func launchAppAndSeedTranscript() -> XCUIApplication {

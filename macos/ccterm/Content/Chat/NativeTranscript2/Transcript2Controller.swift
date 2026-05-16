@@ -80,6 +80,22 @@ final class Transcript2Controller {
     /// field and clears it on dismiss.
     var pendingUserBubbleSheet: UserBubbleSheetRequest?
 
+    /// Observable snapshot of the in-transcript search state. Mirrored
+    /// from `Transcript2SearchCoordinator` after every state change so
+    /// SwiftUI hosts (search bar count, prev/next button enablement)
+    /// re-render without touching AppKit state. `currentIndex` is
+    /// 0-based; the search-bar UI displays it as `currentIndex + 1`.
+    private(set) var searchState: SearchState = SearchState(
+        query: "", totalHits: 0, currentIndex: nil)
+
+    struct SearchState: Equatable, Sendable {
+        let query: String
+        let totalHits: Int
+        /// `nil` when there are no hits at all, or the search hasn't
+        /// been seeded yet. Otherwise 0-based.
+        let currentIndex: Int?
+    }
+
     /// Module-internal: handed to `NativeTranscript2View.makeCoordinator`.
     let coordinator: Transcript2Coordinator
 
@@ -98,6 +114,9 @@ final class Transcript2Controller {
         }
         coordinator.onLayoutReady = { [weak self] in
             self?.consumePendingInitial()
+        }
+        coordinator.search.onStateChanged = { [weak self] in
+            self?.refreshSearchState()
         }
     }
 
@@ -255,6 +274,36 @@ final class Transcript2Controller {
                 [weak coordinator] in coordinator?.popScrollerHidden()
             }
         }
+    }
+
+    // MARK: - Search
+
+    /// Re-run a literal, case-insensitive search across the
+    /// transcript. Empty query clears state. Selecting a query of "x"
+    /// then editing to "xy" is just another `runSearch("xy")` call —
+    /// the coordinator drops the prior hit set and recomputes.
+    func runSearch(_ query: String) {
+        coordinator.search.runQuery(query)
+    }
+
+    /// Step the search cursor forward, wrapping past the end. No-op
+    /// when there are no hits. Triggers auto-expand + scroll-into-view
+    /// on the new current hit.
+    func nextSearchHit() { coordinator.search.next() }
+
+    /// Step the search cursor backward, wrapping past the start.
+    func previousSearchHit() { coordinator.search.previous() }
+
+    /// Drop the search session entirely. Clears all yellow rects and
+    /// resets `searchState` to empty. Idempotent.
+    func endSearch() { coordinator.search.clear() }
+
+    private func refreshSearchState() {
+        let s = coordinator.search
+        searchState = SearchState(
+            query: s.query,
+            totalHits: s.totalHits,
+            currentIndex: s.currentIndex)
     }
 
     // MARK: - Query

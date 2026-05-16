@@ -200,7 +200,8 @@ struct CodeBlockLayout: @unchecked Sendable {
                 }
             },
             string: inner.string,
-            wordBoundary: inner.wordBoundary)
+            wordBoundary: inner.wordBoundary,
+            searchableRegions: inner.searchableRegions)
     }
 
     // MARK: - Draw

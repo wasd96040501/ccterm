@@ -111,14 +111,84 @@ app.launch()
 
 ### Accessibility identifiers
 
+UI-test-only chrome must not ship in Release. Use the `.testIdentifier(_:)`
+wrapper instead of calling `.accessibilityIdentifier(_:)` directly:
+
 ```swift
-.accessibilityIdentifier("ComponentName.ElementName")
-// e.g. InputBar2.SendButton, InputBar2.StopButton, InputBar2.TextField
+.testIdentifier("ComponentName.ElementName")
+// e.g. ChatSearchBar.Field, InputBar2.SendButton
 ```
 
-Notes:
-- **Set on the leaf element**, not the outer container. SwiftUI's container identifier propagates to every descendant and overrides their own ids.
+`testIdentifier(_:)` is defined in `macos/ccterm/Extensions/View+TestIdentifier.swift`.
+In DEBUG it forwards to `accessibilityIdentifier(_:)`; in Release it's a
+no-op `self`-returning passthrough. Both branches return the same opaque
+`some View` so call sites compile in every flavor without a flag check.
+
+**File-layout rule.** Anything whose sole purpose is wiring a UI test —
+a11y identifiers, test-only modifiers, `#if DEBUG`-only scenarios /
+hooks — lives in a sibling `+TestSupport` / `+TestIdentifier` /
+`+TestXxx` extension file (`MainType+Suffix.swift`), wrapped in
+`#if DEBUG`. Don't sprinkle bare `.accessibilityIdentifier(_:)` in
+production view bodies; don't inline test scenarios next to production
+session logic. The boundary makes "what does this file ship at release"
+auditable at a glance.
+
+Examples in this codebase:
+- `Extensions/View+TestIdentifier.swift` — the wrapper itself.
+- `Services/Session/MockCLI/Scenarios/*Scenario.swift` — each is
+  `#if DEBUG ... #endif`-wrapped.
+- `Services/Session/SessionRepository+InMemoryMock.swift` —
+  DEBUG-only repo. (Same `MainType+Suffix.swift` shape.)
+
+Other notes:
+- **Set on the leaf element, not the outer container.** SwiftUI's
+  container identifier propagates to every descendant and clobbers
+  their own ids — *including* sibling ids set on inner elements. The
+  a11y tree XCUITest sees will collapse to the container's id on
+  every child, and `app.textFields["Foo.Field"]` / `.buttons["Foo.Bar"]`
+  silently fail to match.
+
+  ```swift
+  // ❌ WRONG — outer `.testIdentifier("Foo")` overrides the inner ids
+  HStack {
+      Image(...)
+      TextField(...).testIdentifier("Foo.Field")
+      Button(...).testIdentifier("Foo.Btn")
+  }
+  .testIdentifier("Foo")
+
+  // ✅ RIGHT — leave the container without an identifier
+  HStack {
+      Image(...)
+      TextField(...).testIdentifier("Foo.Field")
+      Button(...).testIdentifier("Foo.Btn")
+  }
+  ```
+
+  Diagnosing this is non-obvious from the XCTAssert message alone
+  ("element doesn't exist"). When that happens, dump the a11y tree:
+  `print(app.debugDescription)` — and the same dump lives in every
+  failure's xcresult bundle under "App UI hierarchy". Look for the
+  leaf elements whose `identifier:` is the *container's* id.
 - Plain `NSTextView` wrapped by `NSViewRepresentable` is not directly addressable via a11y queries — click the outer container to focus the `NSTextView`, then `app.typeText(...)`.
+- **SwiftUI `Text` content lands in AX `value`, not `label`.** A
+  `Text("1 / 2")` becomes an `AXStaticText` whose `AXValue` carries
+  `"1 / 2"`; `AXLabel` is empty. In XCUITest, read via
+  `staticText.value as? String`, not `.label`. `.label` returns "" and
+  the equality check fails with no obvious cause from the assert
+  message. The same applies to `Label` and `Text` rendered as decorative
+  static text. (Buttons and TextFields behave normally — their `label`
+  property is populated.)
+- App-scope keyboard shortcuts (e.g. ⌘F) should route through a
+  `Commands` menu item (`AppCommands`) and signal per-view state via
+  an `@Observable` bus injected through `.environment(...)`. Hidden /
+  zero-frame `Button.keyboardShortcut` and
+  `NSEvent.addLocalMonitorForEvents` are both unreliable under
+  XCUITest's `typeKey(_:modifierFlags:)`; menu-attached shortcuts route
+  through the standard AppKit responder chain and deliver consistently.
+  `NotificationCenter` is observed to drop deliveries when the
+  subscriber lives behind a SwiftUI `.id(...)` boundary, so prefer
+  the bus pattern.
 
 ### Waiting for elements
 

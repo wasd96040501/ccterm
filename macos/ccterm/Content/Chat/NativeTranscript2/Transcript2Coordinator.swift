@@ -102,6 +102,12 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// `attributedString(forBlockId:)`, `markCellNeedsDisplay(blockId:)`).
     let selection: Transcript2SelectionCoordinator
 
+    /// In-transcript text search. Sibling to `selection` — both consume
+    /// `SelectionAdapter` through the same back-channel helpers. Lives
+    /// here so `viewFor` can reseat the per-cell highlight specs onto
+    /// recycled cells the same way selection state is reseated.
+    let search: Transcript2SearchCoordinator
+
     /// Async-filled per-block side data. Currently backs syntax tokens
     /// for code blocks; future highlight-shaped derivatives (diff hunks,
     /// inline annotations) will share the same storage by adding scopes.
@@ -132,9 +138,11 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
 
     init(syntaxEngine: SyntaxHighlightEngine? = nil) {
         self.selection = Transcript2SelectionCoordinator()
+        self.search = Transcript2SearchCoordinator()
         self.highlightStorage = Transcript2HighlightStorage(engine: syntaxEngine)
         super.init()
         self.selection.transcript = self
+        self.search.transcript = self
         self.highlightStorage.onDidFill = { [weak self] id in
             self?.handleHighlightDidFill(blockId: id)
         }
@@ -396,6 +404,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             for id in idSet {
                 removeCachedLayout(for: id)
                 selection.dropEntry(blockId: id)
+                search.dropEntry(blockId: id)
                 highlightStorage.drop(blockId: id)
                 // Cleanup is sparse-dict friendly — `removeValue` is a
                 // no-op when the id never carried a fold/status flag
@@ -425,6 +434,10 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             // the upcoming `reloadData(forRowIndexes:)` runs viewFor with
             // a clean empty selection on the recycled cell.
             selection.dropEntry(blockId: id)
+            // Search hits referenced offsets into the old text — drop too.
+            // The next `runQuery` (if user is still typing) will re-find
+            // matches in the replacement content.
+            search.dropEntry(blockId: id)
             let idx = IndexSet(integer: i)
             table?.reloadData(
                 forRowIndexes: idx,
@@ -1045,6 +1058,10 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         // picks up the existing entry here. nil = no highlight.
         cell.blockId = block.id
         cell.selection = selection.selection(for: block.id)
+        // Same recycle-friendly story for search highlights — drive them
+        // off the per-block lookup so a scroll-in cell picks up the
+        // current scan's hits without holding a cell ref.
+        cell.searchHighlights = search.hits(for: block.id)?.ranges
         // Copy-feedback flash is per-cell transient state — clear it
         // on every reuse so a recycled cell doesn't carry a stale
         // checkmark onto a different code block.
@@ -1108,6 +1125,80 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                 as? BlockCellView
         else { return }
         cell.selection = selection.selection(for: blockId)
+    }
+
+    // MARK: - Search-side helpers
+
+    /// Search-coordinator equivalent of `markCellNeedsDisplay`. Pushes
+    /// the latest hit specs for `blockId` to its visible cell so the
+    /// next draw frame reflects the new highlight state (added /
+    /// removed hits, current-cursor flip). Non-visible cells get the
+    /// state on scroll-in via `viewFor`.
+    func markCellSearchDirty(blockId: UUID) {
+        guard let table = tableView,
+            let row = blocks.firstIndex(where: { $0.id == blockId })
+        else { return }
+        guard
+            let cell = table.view(atColumn: 0, row: row, makeIfNecessary: false)
+                as? BlockCellView
+        else { return }
+        cell.searchHighlights = search.hits(for: blockId)?.ranges
+    }
+
+    /// Force any ancestor folds on a search hit's row open before nav
+    /// scrolls to it. Today only fileEdit / textCard child bodies are
+    /// searchable, so this is a no-op for plain text blocks — kept as
+    /// the single entry point so future ToolGroup search support
+    /// (which will hit folded child bodies) lands here unchanged.
+    func expandForSearchHit(blockId: UUID) {
+        guard let i = blocks.firstIndex(where: { $0.id == blockId }) else { return }
+        switch blocks[i].kind {
+        case .toolGroup(let group):
+            // Open the group host first (otherwise children stay
+            // hidden), then any child whose body the hit landed in.
+            // We don't yet know the child id from the hit's range
+            // (search v1 covers .text-only adapters), so the group
+            // unfold is enough; child-aware unfold ships with the
+            // toolGroup search follow-up.
+            if foldStates[blockId] != true {
+                toggleFold(id: blockId)
+            }
+            for child in group.children where child.hasExpandableBody {
+                if foldStates[child.id] != true {
+                    toggleFold(id: child.id)
+                }
+            }
+        default:
+            return
+        }
+    }
+
+    /// Scroll so the row owning `blockId` is comfortably visible
+    /// (top-aligned with a one-row breathing margin under the
+    /// scroll-view's top inset). Used by search nav. No-op when the
+    /// row is already in the visible band.
+    func scrollBlockIntoView(blockId: UUID) {
+        guard let table = tableView,
+            let scrollView = table.enclosingScrollView,
+            let row = blocks.firstIndex(where: { $0.id == blockId })
+        else { return }
+        let rect = table.rect(ofRow: row)
+        let visible = table.visibleRect
+        let visibleTop = visible.minY + scrollView.contentInsets.top
+        let visibleBottom = visible.maxY - scrollView.contentInsets.bottom
+        // Already comfortably in view → don't disturb scroll state.
+        if rect.minY >= visibleTop, rect.maxY <= visibleBottom { return }
+        // Otherwise scroll-to-top with the table's content inset
+        // honored — reuse the helper used by `.scrollState(.top)`.
+        scrollRowToTopPublic(id: blockId)
+    }
+
+    /// Public wrapper around the private `scrollRowToTop` helper so the
+    /// search coordinator can ask for a top-aligned scroll without
+    /// reaching into private API.
+    func scrollRowToTopPublic(id: UUID) {
+        guard let table = tableView else { return }
+        scrollRowToTop(id: id, in: table)
     }
 
 }

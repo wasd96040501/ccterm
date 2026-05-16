@@ -2,18 +2,20 @@ import SwiftUI
 
 struct CCTermApp: App {
     @State private var appState = AppState()
+    @State private var searchBus = TranscriptSearchBus()
 
     var body: some Scene {
         Window("ccterm", id: "main") {
             RootView2()
                 .environment(appState.sessionManager2)
                 .environment(\.syntaxEngine, appState.syntaxEngine)
+                .environment(searchBus)
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1200, height: 860)
         .windowResizability(.contentSize)
         .commands {
-            AppCommands()
+            AppCommands(searchBus: searchBus)
         }
 
         Window("Settings", id: "settings") {
@@ -37,6 +39,7 @@ struct CCTermApp: App {
 
 struct AppCommands: Commands {
     @Environment(\.openWindow) private var openWindow
+    let searchBus: TranscriptSearchBus
 
     var body: some Commands {
         CommandGroup(replacing: .appSettings) {
@@ -44,6 +47,24 @@ struct AppCommands: Commands {
                 Label("Settings", systemImage: "gear")
             }
             .keyboardShortcut(",", modifiers: .command)
+        }
+        // Top-level Find menu — the entry is guaranteed present in
+        // the menu bar regardless of whether SwiftUI auto-installed
+        // the Edit menu, and gives ⌘F a stable AppKit responder-chain
+        // route (`typeKey(_:modifierFlags:)` does not reliably
+        // synthesize the shortcut through window-local monitors).
+        //
+        // The transcript's search field is always visible in
+        // `ChatHistoryView`'s top toolbar strip; ⌘F's job is purely
+        // to hand keyboard focus to that field. Routed via
+        // `TranscriptSearchBus` — an `@Observable` counter — instead
+        // of `NotificationCenter`, because the per-view subscriber
+        // lives behind a SwiftUI `.id(sessionId)` boundary.
+        CommandMenu("Find") {
+            Button(action: { searchBus.requestFocus() }) {
+                Text("Find in Transcript")
+            }
+            .keyboardShortcut("f", modifiers: .command)
         }
         CommandMenu("Debug") {
             Button("Logs") {

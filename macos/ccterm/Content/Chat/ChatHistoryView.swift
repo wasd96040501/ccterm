@@ -41,45 +41,34 @@ struct ChatHistoryView: View {
     @State private var handle: SessionHandle2?
     @State private var controller = Transcript2Controller()
     @State private var bridge: Transcript2EntryBridge?
-    /// Toggled when the user invokes the global Find command
-    /// (`TranscriptSearchBus.openRequestCounter` bumps). Per-session
-    /// because `ChatHistoryView` is `.id(sessionId)`-rebuilt; users
-    /// coming back to a session start with the bar hidden.
-    @State private var isSearchVisible: Bool = false
 
     var body: some View {
-        ZStack(alignment: .top) {
-            Group {
-                if let handle {
-                    switch ChatHistoryRenderCase.classify(handle.historyLoadState) {
-                    case .error(let reason):
-                        ContentUnavailableView(
-                            "Failed to load history",
-                            systemImage: "exclamationmark.triangle",
-                            description: Text(reason)
-                        )
-                    case .transcript:
-                        NativeTranscript2View(controller: controller)
-                    }
-                } else {
-                    Color.clear
+        Group {
+            if let handle {
+                switch ChatHistoryRenderCase.classify(handle.historyLoadState) {
+                case .error(let reason):
+                    ContentUnavailableView(
+                        "Failed to load history",
+                        systemImage: "exclamationmark.triangle",
+                        description: Text(reason)
+                    )
+                case .transcript:
+                    NativeTranscript2View(controller: controller)
                 }
-            }
-
-            if isSearchVisible {
-                ChatSearchBarView(
-                    controller: controller,
-                    onDismiss: { isSearchVisible = false }
-                )
-                .padding(.top, 12)
-                .padding(.trailing, 16)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .transition(.move(edge: .top).combined(with: .opacity))
+            } else {
+                Color.clear
             }
         }
-        .animation(.easeInOut(duration: 0.15), value: isSearchVisible)
-        .onChange(of: searchBus.openRequestCounter) { _, _ in
-            isSearchVisible.toggle()
+        // Search bar is mounted in the window toolbar so it's always
+        // visible on the trailing edge. `.primaryAction` is the macOS
+        // canonical placement for trailing toolbar items — it sits to
+        // the right of the unified toolbar strip without needing a
+        // manual Spacer (Spacer does not stretch inside
+        // `ToolbarItemGroup` on macOS).
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                ChatSearchBarView(controller: controller, searchBus: searchBus)
+            }
         }
         .task(id: sessionId) {
             // Use `prepareDraft` so a draft session (no record yet) still gets a

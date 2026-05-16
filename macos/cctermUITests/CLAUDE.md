@@ -144,11 +144,15 @@ Other notes:
 - **Set on the leaf element**, not the outer container. SwiftUI's container identifier propagates to every descendant and overrides their own ids.
 - Plain `NSTextView` wrapped by `NSViewRepresentable` is not directly addressable via a11y queries — click the outer container to focus the `NSTextView`, then `app.typeText(...)`.
 - App-scope keyboard shortcuts (e.g. ⌘F) should route through a
-  `Commands` menu item (`AppCommands`) and notify per-view state via
-  `NotificationCenter`. Hidden / zero-frame `Button.keyboardShortcut`
-  and `NSEvent.addLocalMonitorForEvents` are both unreliable under
+  `Commands` menu item (`AppCommands`) and signal per-view state via
+  an `@Observable` bus injected through `.environment(...)`. Hidden /
+  zero-frame `Button.keyboardShortcut` and
+  `NSEvent.addLocalMonitorForEvents` are both unreliable under
   XCUITest's `typeKey(_:modifierFlags:)`; menu-attached shortcuts route
   through the standard AppKit responder chain and deliver consistently.
+  `NotificationCenter` is observed to drop deliveries when the
+  subscriber lives behind a SwiftUI `.id(...)` boundary, so prefer
+  the bus pattern.
 
 ### Waiting for elements
 

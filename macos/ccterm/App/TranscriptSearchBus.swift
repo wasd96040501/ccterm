@@ -2,29 +2,30 @@ import Foundation
 
 /// App-scope command bus for the chat transcript ⌘F / Find action.
 ///
-/// `AppCommands`' Find menu item lives on the `App` scene; the search
-/// bar's `isSearchVisible` lives per-`ChatHistoryView`. We need a way
-/// for the scene-scope menu to signal the per-view state without:
+/// The search field is always-on (mounted as a `.primaryAction`
+/// `ToolbarItem` in `ChatHistoryView`), so there is nothing to
+/// "open". What ⌘F still needs to do is hand keyboard focus to the
+/// field even when another control had it. The Find menu item lives
+/// on the `App` scene; the field's `@FocusState` lives per-
+/// `ChatHistoryView`. This counter is the SwiftUI-native, lifecycle-
+/// safe bridge between them.
 ///
-/// 1. A global mutable singleton (untrackable side effects), or
-/// 2. `NotificationCenter` (observed to not deliver reliably when
-///    SwiftUI is the publisher and the subscriber is a `.onReceive`
-///    inside a view that lives behind a SwiftUI `.id(...)` boundary).
-///
-/// `@Observable` + `.environment()` + `.onChange(of:)` is the
-/// SwiftUI-native, lifecycle-safe path. `openRequestCounter` is
-/// monotonically bumped so back-to-back invocations register even
-/// though the value never "settles" at a unique state.
+/// `@Observable` + `.environment()` + `.onChange(of:)` is used instead of
+/// `NotificationCenter` because the per-view subscriber lives behind a
+/// SwiftUI `.id(sessionId)` boundary (`ChatHistoryView` is rebuilt on
+/// session swap). `focusRequestCounter` is monotonically bumped so
+/// back-to-back invocations register even though the value never
+/// "settles" at a unique state.
 @Observable
 @MainActor
 final class TranscriptSearchBus {
-    /// Bump-on-request counter. ChatHistoryView watches this via
-    /// `.onChange(of:)` and toggles its `isSearchVisible` each time
-    /// the value changes. Initial value is `0`; first invocation
-    /// produces `1`, which is a real `change` event.
-    private(set) var openRequestCounter: Int = 0
+    /// Bump-on-request counter. `ChatSearchBarView` watches this via
+    /// `.onChange(of:)` and sets `isFocused = true` each time the
+    /// value changes. Initial value is `0`; first invocation produces
+    /// `1`, which is a real `change` event.
+    private(set) var focusRequestCounter: Int = 0
 
-    func requestOpen() {
-        openRequestCounter &+= 1
+    func requestFocus() {
+        focusRequestCounter &+= 1
     }
 }

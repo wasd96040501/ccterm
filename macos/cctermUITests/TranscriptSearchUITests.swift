@@ -2,13 +2,11 @@ import XCTest
 
 /// Verifies the in-transcript search feature end-to-end.
 ///
-/// **Trigger is menu-click, not ⌘F.** XCUITest's
-/// `typeKey(_:modifierFlags:)` does not reliably route through
-/// AppKit's menu-shortcut path under CI, so we open the search bar
-/// by clicking the `Find → Find in Transcript` menu item. The ⌘F
-/// shortcut still ships (bound on the same menu item) — but
-/// exercising it through XCUITest is not the responsibility of
-/// these tests. Manual / user testing covers the keyboard path.
+/// The search field is mounted as a `.primaryAction` `ToolbarItem` on
+/// `ChatHistoryView` and is always present in the window toolbar —
+/// there is no open / close cycle to drive. Tests click the field
+/// directly to take focus, type, then exercise the counter and the
+/// prev / next buttons.
 ///
 /// Drives the fixture via `SearchableContentScenario`: after the user
 /// sends a message, the mock emits three assistant lines, two of
@@ -25,14 +23,14 @@ final class TranscriptSearchUITests: XCTestCase {
     }
 
     @MainActor
-    func testSearchBarOpenTypeNavigateClose() throws {
+    func testSearchBarTypeNavigate() throws {
         let app = launchAppAndSeedTranscript()
 
-        openSearchBar(in: app)
         let field = app.textFields["ChatSearchBar.Field"]
         XCTAssertTrue(
             field.waitForExistence(timeout: 5),
-            "search field should appear after clicking the Find menu")
+            "search field should be present in the toolbar")
+        field.click()
 
         // Query "apple" — two hits among the three assistant lines.
         app.typeText("apple")
@@ -62,21 +60,17 @@ final class TranscriptSearchUITests: XCTestCase {
         XCTAssertEqual(
             counter.label, "2 / 2",
             "previous on the first hit should wrap to the last")
-
-        // Close button dismisses the bar.
-        app.buttons["ChatSearchBar.CloseButton"].click()
-        XCTAssertFalse(
-            field.exists,
-            "search field should be gone after the close button")
     }
 
     @MainActor
     func testSearchBarNoHitsCounter() throws {
         let app = launchAppAndSeedTranscript()
 
-        openSearchBar(in: app)
         let field = app.textFields["ChatSearchBar.Field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            field.waitForExistence(timeout: 5),
+            "search field should be present in the toolbar")
+        field.click()
 
         // A token that's nowhere in the fixture's assistant text.
         app.typeText("zzzzzz")
@@ -126,24 +120,5 @@ final class TranscriptSearchUITests: XCTestCase {
             sendButton.waitForExistence(timeout: 10),
             "send button should reappear after mock completes the turn")
         return app
-    }
-
-    /// Open the in-transcript search bar by clicking the
-    /// `Find → Find in Transcript` menu item. Avoids relying on
-    /// keyboard-shortcut event delivery, which is unreliable under
-    /// XCUITest. Still validates that the menu (and its `⌘F`
-    /// shortcut binding) is properly registered.
-    @MainActor
-    private func openSearchBar(in app: XCUIApplication) {
-        let findMenu = app.menuBars.menuBarItems["Find"]
-        XCTAssertTrue(
-            findMenu.waitForExistence(timeout: 5),
-            "Find menu should be present in the menu bar")
-        findMenu.click()
-        let findItem = app.menuItems["Find in Transcript"]
-        XCTAssertTrue(
-            findItem.waitForExistence(timeout: 3),
-            "Find → Find in Transcript menu item should exist")
-        findItem.click()
     }
 }

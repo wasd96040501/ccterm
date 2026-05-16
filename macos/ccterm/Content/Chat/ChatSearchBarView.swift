@@ -1,30 +1,30 @@
 import SwiftUI
 
-/// Floating "find in transcript" bar. Toggled by ⌘F from
-/// `ChatHistoryView`; dismissed via the close button or ESC.
+/// Persistent "find in transcript" field. Mounted as a
+/// `ToolbarItem(placement: .primaryAction)` on `ChatHistoryView`, so it
+/// sits at the trailing edge of the window toolbar and never appears /
+/// disappears — there is no open/close cycle.
 ///
-/// Reads `Transcript2Controller.searchState` to render the counter and
-/// enable / disable nav buttons; writes the query through
-/// `controller.runSearch(_:)` on every keystroke. Re-running the same
-/// query is idempotent on the coordinator side, so debouncing here
-/// isn't necessary for the 80% case (small transcripts) — large
-/// transcripts may want a 100ms throttle later, but ship the simple
-/// version first.
+/// Reads `Transcript2Controller.searchState` for the counter and to
+/// enable / disable nav buttons; writes through `controller.runSearch(_:)`
+/// on every keystroke (small transcripts re-scan in O(rows·blockLen);
+/// large transcripts may later want a 100ms throttle here).
+///
+/// `TranscriptSearchBus.focusRequestCounter` is observed so the global
+/// ⌘F Find command can hand focus to this field even when another
+/// control had it.
 struct ChatSearchBarView: View {
     @Bindable var controller: Transcript2Controller
-    /// Called when the user dismisses (close button / ESC / ⌘F again).
-    /// Owner is expected to flip its own `isSearchVisible` state and
-    /// rely on `.onDisappear` here to clear the search session.
-    var onDismiss: () -> Void
+    let searchBus: TranscriptSearchBus
 
     @State private var query: String = ""
     @FocusState private var isFocused: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
-                .font(.system(size: 12))
+                .font(.system(size: 11))
 
             TextField(
                 String(localized: "Find in transcript"),
@@ -32,6 +32,7 @@ struct ChatSearchBarView: View {
             )
             .textFieldStyle(.plain)
             .focused($isFocused)
+            .frame(minWidth: 140, idealWidth: 180, maxWidth: 220)
             .testIdentifier("ChatSearchBar.Field")
             .onSubmit { controller.nextSearchHit() }
             .onChange(of: query) { _, new in
@@ -42,10 +43,10 @@ struct ChatSearchBarView: View {
 
             Button(action: { controller.previousSearchHit() }) {
                 Image(systemName: "chevron.up")
-                    .font(.system(size: 11, weight: .semibold))
-                    .frame(width: 20, height: 20)
+                    .font(.system(size: 10, weight: .semibold))
+                    .frame(width: 18, height: 18)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.borderless)
             .disabled(controller.searchState.totalHits == 0)
             .keyboardShortcut(.return, modifiers: [.shift])
             .testIdentifier("ChatSearchBar.PrevButton")
@@ -53,39 +54,28 @@ struct ChatSearchBarView: View {
 
             Button(action: { controller.nextSearchHit() }) {
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 11, weight: .semibold))
-                    .frame(width: 20, height: 20)
+                    .font(.system(size: 10, weight: .semibold))
+                    .frame(width: 18, height: 18)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.borderless)
             .disabled(controller.searchState.totalHits == 0)
             .testIdentifier("ChatSearchBar.NextButton")
             .help(String(localized: "Next match"))
-
-            Button(action: onDismiss) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .semibold))
-                    .frame(width: 20, height: 20)
-            }
-            .buttonStyle(.plain)
-            .keyboardShortcut(.cancelAction)
-            .testIdentifier("ChatSearchBar.CloseButton")
-            .help(String(localized: "Close find bar"))
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
         .background {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(.background)
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.6))
                 .overlay {
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: 6)
                         .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
                 }
-                .shadow(color: .black.opacity(0.12), radius: 6, x: 0, y: 2)
         }
-        .frame(width: 320)
         .testIdentifier("ChatSearchBar")
-        .onAppear { isFocused = true }
-        .onDisappear { controller.endSearch() }
+        .onChange(of: searchBus.focusRequestCounter) { _, _ in
+            isFocused = true
+        }
     }
 
     @ViewBuilder
@@ -95,7 +85,7 @@ struct ChatSearchBarView: View {
             let current = total > 0 ? (controller.searchState.currentIndex ?? -1) + 1 : 0
             Text("\(current) / \(total)")
                 .monospacedDigit()
-                .font(.system(size: 11))
+                .font(.system(size: 10))
                 .foregroundStyle(.secondary)
                 .testIdentifier("ChatSearchBar.Counter")
         }

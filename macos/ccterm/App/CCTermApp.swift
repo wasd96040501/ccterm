@@ -50,18 +50,18 @@ struct AppCommands: Commands {
         }
         // Top-level Find menu — the entry is guaranteed present in
         // the menu bar regardless of whether SwiftUI auto-installed
-        // the Edit menu, and XCUITests can click it by name in lieu
-        // of relying on `⌘F` event delivery (XCUITest's
-        // `typeKey(_:modifierFlags:)` doesn't reliably route through
-        // the menu shortcut path).
+        // the Edit menu, and gives ⌘F a stable AppKit responder-chain
+        // route (`typeKey(_:modifierFlags:)` does not reliably
+        // synthesize the shortcut through window-local monitors).
         //
-        // Routes through `TranscriptSearchBus` — an `@Observable`
-        // counter — instead of `NotificationCenter`. The per-view
-        // `.onChange(of:)` subscriber is the SwiftUI-native path and
-        // delivers reliably across the `.id(sessionId)` boundary on
-        // `ChatHistoryView`.
+        // The transcript's search field is always visible in the
+        // window toolbar; ⌘F's job is purely to hand keyboard focus
+        // to that field. Routed via `TranscriptSearchBus` — an
+        // `@Observable` counter — instead of `NotificationCenter`,
+        // because the per-view subscriber lives behind a SwiftUI
+        // `.id(sessionId)` boundary.
         CommandMenu("Find") {
-            Button(action: { searchBus.requestOpen() }) {
+            Button(action: { searchBus.requestFocus() }) {
                 Text("Find in Transcript")
             }
             .keyboardShortcut("f", modifiers: .command)

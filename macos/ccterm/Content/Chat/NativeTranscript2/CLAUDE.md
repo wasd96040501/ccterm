@@ -363,11 +363,17 @@ Dependencies only flow downward: `NativeTranscript2View → Coordinator → AppK
 ## 6.5 Search
 
 `Transcript2SearchCoordinator` (next to `Transcript2SelectionCoordinator`)
-owns the in-transcript ⌘F state. Same pattern: state lives here, per-cell
-paint is derived, affected cells are reseated via
+owns the in-transcript search state. Same pattern: state lives here,
+per-cell paint is derived, affected cells are reseated via
 `Coordinator.markCellSearchDirty(blockId:)`. Sibling to selection — the
 two compose at draw time, search highlights composite over the selection
 band.
+
+The host UI is `ChatSearchBarView` mounted as a `.primaryAction`
+`ToolbarItem` on `ChatHistoryView` — the field is always visible at
+the trailing edge of the window toolbar; there is no open / close
+cycle. ⌘F (via `AppCommands` → `TranscriptSearchBus.requestFocus()`)
+hands keyboard focus to the field without changing visibility.
 
 ### Data flow
 

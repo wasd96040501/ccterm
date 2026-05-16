@@ -685,6 +685,78 @@ extension TranscriptDemoView {
                         $ open ./build/Debug/ccterm.app
                         """)),
 
+            headingIR(level: 2, [.text("Long-line wrap")]),
+
+            paraIR([
+                .text(
+                    "Code-related blocks all soft-wrap inside their card. "
+                        + "Long source lines break at character boundaries when "
+                        + "no whitespace fits; diff continuation lines indent to "
+                        + "the content column so the gutter and sign stay aligned "
+                        + "with the first visual line.")
+            ]),
+
+            Block(
+                id: UUID(),
+                kind: .codeBlock(
+                    language: "swift",
+                    code: """
+                        // A single very long source line with mixed whitespace — wraps at word boundaries first.
+                        let longSentence = "This is a deliberately long string that should wrap softly across multiple visual lines inside the code block container."
+                        // Unbreakable token — wraps mid-word at the character boundary.
+                        let longIdentifier = "abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz"
+                        """)),
+
+            Block(
+                id: UUID(),
+                kind: .toolGroup(
+                    ToolGroupBlock(
+                        activeTitle: String(localized: "Editing \("Sources/Wrap.swift")"),
+                        expandedActiveTitle: String(localized: "Editing \(1) file"),
+                        completedTitle: String(localized: "Edited \(1) file"),
+                        children: [
+                            .fileEdit(
+                                FileEditChild(
+                                    id: UUID(),
+                                    label: String(localized: "Edit \("Sources/Wrap.swift")"),
+                                    activeLabel: String(localized: "Editing \("Sources/Wrap.swift")"),
+                                    filePath: "Sources/Wrap.swift",
+                                    diff: DiffBlock(
+                                        filePath: "Sources/Wrap.swift",
+                                        oldString: """
+                                            let message = "short prefix"
+                                            print(message)
+                                            """,
+                                        newString: """
+                                            let message = "This is a deliberately long string that should wrap inside the diff card with continuation lines indented to the content column so the gutter and sign stay readable."
+                                            let unbreakable = "abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz"
+                                            print(message)
+                                            print(unbreakable)
+                                            """)))
+                        ]))),
+
+            Block(
+                id: UUID(),
+                kind: .toolGroup(
+                    ToolGroupBlock(
+                        activeTitle: String(localized: "Running \("echo …")"),
+                        expandedActiveTitle: String(localized: "Running \(1) tool"),
+                        completedTitle: String(localized: "Ran \(1) tool"),
+                        children: [
+                            .bash(
+                                BashChild(
+                                    id: UUID(),
+                                    label: String(localized: "Ran \("echo …")"),
+                                    activeLabel: String(localized: "Running \("echo …")"),
+                                    command:
+                                        "echo 'This is a deliberately long single-line command intended to overflow the card width so it has to soft-wrap inside the command sub-card just like stdout does.'",
+                                    stdout: """
+                                        This is a long stdout line that should wrap inside the stdout sub-card without any horizontal scrolling — words break at the nearest whitespace, and unbreakable tokens fall back to character boundaries.
+                                        abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz0123456789abcdefghijklmnopqrstuvwxyz
+                                        """,
+                                    stderr: nil))
+                        ]))),
+
             headingIR(level: 2, [.text("Blockquotes")]),
 
             Block(

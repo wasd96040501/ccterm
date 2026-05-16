@@ -1,101 +1,101 @@
 import Foundation
 
-/// 会话启动配置。
+/// Session launch configuration.
 public struct SessionConfiguration {
-    /// CLI 的工作目录。对应 `--cwd`。
+    /// CLI working directory. Maps to `--cwd`.
     public var workingDirectory: URL
 
-    /// 使用的模型名称。nil 使用 CLI 默认值。对应 `--model`。
+    /// Model name. nil uses the CLI default. Maps to `--model`.
     public var model: String?
 
-    /// 主模型不可用时的备用模型。对应 `--fallback-model`。
+    /// Fallback model used when the primary model is unavailable. Maps to `--fallback-model`.
     public var fallbackModel: String?
 
-    /// 权限模式（default/acceptEdits/plan/bypassPermissions/dontAsk）。对应 `--permission-mode`。
+    /// Permission mode (default/acceptEdits/plan/bypassPermissions/dontAsk). Maps to `--permission-mode`.
     public var permissionMode: PermissionMode?
 
-    /// 指定新会话的 session ID（必须为合法 UUID）。对应 `--session-id`。
+    /// Session ID for the new session (must be a valid UUID). Maps to `--session-id`.
     public var sessionId: String?
 
-    /// 恢复已有会话。传 session ID 恢复指定会话，传空字符串打开交互选择器。对应 `--resume`。
+    /// Resume an existing session: pass a session ID to resume that one, or an empty string to open the interactive picker. Maps to `--resume`.
     public var resume: String?
 
-    /// 创建 git worktree 隔离。传名称指定 worktree 名，传空字符串自动命名。对应 `--worktree`。
+    /// Create git worktree isolation. Pass a name, or an empty string to auto-name. Maps to `--worktree`.
     public var worktree: String?
 
-    /// claude 二进制路径。nil 自动查找（$PATH / ~/.claude/local/）。对应 `--cli-path`。
+    /// Path to the `claude` binary. nil auto-locates (`$PATH` / `~/.claude/local/`). Maps to `--cli-path`.
     public var binaryPath: String?
 
-    /// 系统提示配置。nil 使用 CLI 默认提示。对应 `--system-prompt` / `--append-system-prompt`。
+    /// System prompt configuration. nil uses the CLI default. Maps to `--system-prompt` / `--append-system-prompt`.
     public var systemPrompt: SystemPromptConfig?
 
-    /// 最大对话轮数，达到后自动结束。对应 `--max-turns`。
+    /// Maximum conversation turns; the session auto-ends when reached. Maps to `--max-turns`.
     public var maxTurns: Int?
 
-    /// 最大预算（美元），超出后停止。对应 `--max-budget-usd`。
+    /// Maximum budget in USD; the session stops once exceeded. Maps to `--max-budget-usd`.
     public var maxBudgetUsd: Double?
 
-    /// 额外允许的工具名称列表。对应 `--allowedTools`。
+    /// Extra allowed tool names. Maps to `--allowedTools`.
     public var allowedTools: [String]
 
-    /// 禁止使用的工具名称列表。对应 `--disallowedTools`。
+    /// Disallowed tool names. Maps to `--disallowedTools`.
     public var disallowedTools: [String]
 
-    /// 基础工具集配置。nil 使用默认工具集。对应 `--tools`。
+    /// Base tool set. nil uses the default. Maps to `--tools`.
     public var tools: ToolsConfig?
 
-    /// 启用的 beta 功能标识列表。对应 `--beta`。
+    /// Enabled beta feature flags. Maps to `--beta`.
     public var betas: [String]
 
-    /// Thinking（扩展思考）配置。对应 `--thinking`。
+    /// Extended thinking configuration. Maps to `--thinking`.
     public var thinking: ThinkingConfig?
 
-    /// 最大 thinking tokens。优先使用 `thinking` 配置。对应 `--max-thinking-tokens`。
+    /// Maximum thinking tokens. Prefers `thinking` over this when both are set. Maps to `--max-thinking-tokens`.
     public var maxThinkingTokens: Int?
 
-    /// 推理力度（low/medium/high/max）。对应 `--effort`。
+    /// Reasoning effort (low/medium/high/max). Maps to `--effort`.
     public var effort: Effort?
 
-    /// 结构化输出的 JSON Schema。对应 `--output-format`。
+    /// JSON Schema for structured output. Maps to `--output-format`.
     public var outputFormat: [String: Any]?
 
-    /// MCP 服务器配置（JSON 字符串或文件路径）。对应 `--mcp-config`。
+    /// MCP server configuration (JSON string or file path). Maps to `--mcp-config`.
     public var mcpConfig: String?
 
-    /// 内联 settings JSON 或 settings 文件路径。对应 `--settings`。
+    /// Inline settings JSON or path to a settings file. Maps to `--settings`.
     public var settings: String?
 
-    /// 额外工作目录列表。对应 `--add-dir`。
+    /// Additional working directories. Maps to `--add-dir`.
     public var addDirs: [String]
 
-    /// 继续当前目录下最近一次的对话。对应 `--continue`。
+    /// Continue the most recent conversation in the current directory. Maps to `--continue`.
     public var continueConversation: Bool
 
-    /// resume 时创建新 session ID，而非复用原 ID。需配合 resume 或 continueConversation 使用。对应 `--fork-session`。
+    /// On resume, mint a new session ID instead of reusing the original. Use with `resume` or `continueConversation`. Maps to `--fork-session`.
     public var forkSession: Bool
 
-    /// 流式输出中包含部分消息（assistant 消息的中间状态）。对应 `--include-partial-messages`。
+    /// Include partial messages (intermediate assistant states) in the stream. Maps to `--include-partial-messages`.
     public var includePartialMessages: Bool
 
-    /// 加载哪些来源的 settings（user/project/local）。nil 使用默认，空数组不加载任何设置。对应 `--setting-sources`。
+    /// Which settings sources to load (user/project/local). nil = default; empty array loads nothing. Maps to `--setting-sources`.
     public var settingSources: [String]?
 
-    /// 插件目录路径列表。对应 `--plugin-dir`。
+    /// Plugin directory paths. Maps to `--plugin-dir`.
     public var plugins: [String]
 
-    /// 传递给 CLI 子进程的额外环境变量。
+    /// Extra environment variables passed to the CLI subprocess.
     public var env: [String: String]
 
-    /// 用户自定义命令前缀，如 "trae-proxy claude --"。非空时替代默认 claude 二进制。
+    /// Custom command prefix, e.g. `"trae-proxy claude --"`. When non-empty, replaces the default `claude` binary.
     public var customCommand: String?
 
-    /// Allows switching to bypass-permissions mode at runtime without enabling it by default. Corresponds to `--allow-dangerously-skip-permissions`.
+    /// Allows switching to bypass-permissions mode at runtime without enabling it by default. Maps to `--allow-dangerously-skip-permissions`.
     public var allowDangerouslySkipPermissions: Bool
 
-    /// 透传给 CLI 的额外命令行参数。
+    /// Extra command-line arguments passed through to the CLI.
     public var extraArguments: [String]
 
-    /// 原始消息导出目录。设置后，所有 stdout JSONL 行按 session ID 分文件写入该目录。
+    /// Raw-message export directory. When set, every stdout JSONL line is written here, one file per session ID.
     public var messageExportDirectory: URL?
 
     public init(
@@ -170,18 +170,18 @@ public struct SessionConfiguration {
 // MARK: - Supporting Types
 
 public enum SystemPromptConfig {
-    /// 自定义系统提示（覆盖默认）。
+    /// Custom system prompt that replaces the default.
     case custom(String)
-    /// 使用默认提示并追加内容。
+    /// Use the default prompt and append additional text.
     case append(String)
-    /// 清空系统提示。
+    /// Clear the system prompt entirely.
     case empty
 }
 
 public enum ToolsConfig {
-    /// 自定义工具列表。空数组表示无工具。
+    /// Custom tool list. Empty array means no tools.
     case list([String])
-    /// 使用默认工具集（claude_code preset）。
+    /// Use the default tool set (`claude_code` preset).
     case `default`
 }
 

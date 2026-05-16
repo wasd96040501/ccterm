@@ -1,13 +1,12 @@
 import SwiftUI
 
-/// 两段式 historyLoadState 映射到视图分支。纯值、可测试。
+/// Maps the two-phase `historyLoadState` to a view branch. Pure value, testable.
 enum ChatHistoryRenderCase: Equatable {
-    /// `.failed` → ContentUnavailableView(reason)
     case error(String)
-    /// 其它状态(`.notLoaded / .loadingTail / .tailLoaded / .loaded`) → 渲染
-    /// `NativeTranscript2View`。bridge 通过 `handle.onMessagesChange` 接管
-    /// 内容同步,no ProgressView —— Phase A 一般 < 50 ms,闪一下 spinner 反而
-    /// 劣化视觉。
+    /// Any non-failed state (`.notLoaded / .loadingTail / .tailLoaded / .loaded`)
+    /// renders `NativeTranscript2View`. The bridge syncs content via
+    /// `handle.onMessagesChange`. No ProgressView — Phase A is typically
+    /// < 50 ms, and a flashed spinner reads worse than a brief blank.
     case transcript
 
     static func classify(_ state: SessionHandle2.HistoryLoadState) -> ChatHistoryRenderCase {
@@ -18,20 +17,23 @@ enum ChatHistoryRenderCase: Equatable {
     }
 }
 
-/// 只读浏览历史会话。纯 SwiftUI,无 ViewModel:
-/// 从环境拿 `SessionManager2` 懒取 `SessionHandle2`,触发 `loadHistory()`。
+/// Read-only history browser. Pure SwiftUI, no ViewModel: pulls
+/// `SessionManager2` from the environment, lazily acquires a `SessionHandle2`,
+/// and kicks `loadHistory()`.
 ///
-/// 消费契约:绑定 `SessionHandle2.onMessagesChange` — 同步回调 sink,每次
-/// messages 写入推一条 `MessagesChange`,由 `Transcript2EntryBridge` 翻译
-/// 成 `Transcript2Controller.apply / loadInitial` 对应调用。
+/// Consumes `SessionHandle2.onMessagesChange` — a synchronous sink. Each
+/// `messages` write pushes one `MessagesChange`, which `Transcript2EntryBridge`
+/// translates into `Transcript2Controller.apply / loadInitial` calls.
 ///
-/// **每个 sessionId 独立 NSView 生命周期**:调用点(RootView2)对
-/// `ChatHistoryView` 加 `.id(sessionId)`,让整个 struct 随 sessionId 重建、
-/// `@State` 全部 reset,避免新 session 的首帧用旧 session 的 controller 状态。
+/// **Per-session NSView lifecycle**: the call site (RootView2) attaches
+/// `.id(sessionId)` to `ChatHistoryView`, so the whole struct rebuilds when
+/// `sessionId` changes and all `@State` resets. This prevents a new session's
+/// first frame from inheriting the old session's controller state.
 ///
-/// - Warning: 不要把 `.id(sessionId)` 加到 body 内部(例如 Group 上)——
-///   那样只换子树 View,`@State` 属于 struct 本身不跨 id 边界,bridge 会被
-///   carry over,新 session 首帧会短暂渲染旧 session 内容。
+/// - Warning: Do not move `.id(sessionId)` inside `body` (e.g. on a Group).
+///   That only swaps the child subtree; `@State` belongs to the struct itself
+///   and doesn't cross the id boundary, so the bridge carries over and the
+///   new session's first frame briefly renders the old session's content.
 struct ChatHistoryView: View {
     let sessionId: String
     @Environment(SessionManager2.self) private var manager
@@ -57,14 +59,15 @@ struct ChatHistoryView: View {
             }
         }
         .task(id: sessionId) {
-            // 用 `prepareDraft` 取(无 record 也能拿到 handle):draft session 也需要
-            // 挂载 NativeTranscript2View,这样 Start 前后 NSView 身份稳定 — chrome
-            // overlay 的形态切换动画才能成为"transcript 没重建"的视觉证据。
-            // `prepareDraft` 对已存在 record 的 sessionId 也是 idempotent get-or-create。
+            // Use `prepareDraft` so a draft session (no record yet) still gets a
+            // handle and mounts `NativeTranscript2View` — this keeps the NSView
+            // identity stable across Start, so the chrome overlay's morph animation
+            // is visible proof that the transcript didn't rebuild. `prepareDraft`
+            // is idempotent get-or-create for existing-record session ids too.
             let h = manager.prepareDraft(sessionId)
             handle = h
-            // 先绑 sink,再调 loadHistory。`.loaded` 分支会同步 emit
-            // `.reset`,顺序反了会丢首帧。
+            // Bind the sink before calling loadHistory. The `.loaded` branch
+            // synchronously emits `.reset`; reversed order loses the first frame.
             let b = Transcript2EntryBridge(controller: controller)
             b.attach(to: h)
             bridge = b

@@ -2,17 +2,20 @@
 
 import Foundation
 
-/// Mock CLI 从 host(AgentSDK)收到的一条 JSON 消息,预解析为常见 shape。
+/// One JSON message the mock CLI received from the host (AgentSDK),
+/// pre-parsed into common shapes.
 ///
-/// 解析规则:
-/// - `type=user` → `.userMessage`,`text` 抽出 string content,`uuid` 抽出 echo 用 uuid。
-/// - `type=control_request` → `.controlRequest`,带上 `subtype`/`requestId`/`params`。
-/// - `type=control_response` → `.controlResponse`(host 响应 mock 发出的 control_request,
-///   如 permission 决策)。
-/// - 其它都进 `.unknown`(scenario 可选自行读 raw)。
+/// Parsing rules:
+/// - `type=user` → `.userMessage`; `text` extracts string content, `uuid`
+///   extracts the uuid used for echo.
+/// - `type=control_request` → `.controlRequest`, with `subtype` / `requestId`
+///   / `params`.
+/// - `type=control_response` → `.controlResponse` (host responding to a
+///   control_request the mock sent, e.g. a permission decision).
+/// - Anything else falls into `.unknown` (scenario may parse raw).
 ///
-/// scenario 可以在 `.unknown` 路径里读 `raw` 自行解析未来新加的消息类型,
-/// 不需要先扩 `MockCLIIncoming`。
+/// Scenarios can handle new message types via the `.unknown` path by reading
+/// `raw` directly, without first extending `MockCLIIncoming`.
 enum MockCLIIncoming {
     case userMessage(text: String, uuid: String?, raw: [String: Any])
     case controlRequest(subtype: String, requestId: String, params: [String: Any], raw: [String: Any])
@@ -60,7 +63,7 @@ enum MockCLIIncoming {
     }
 }
 
-/// 写 stdout 的句柄。线程安全 —— 内部同步串行化。
+/// Stdout write handle. Thread-safe — serializes internally.
 final class MockCLISender {
 
     private let writer: (Data) -> Void
@@ -72,7 +75,8 @@ final class MockCLISender {
 
     // MARK: - Low-level
 
-    /// 写一行 JSON(自动追加换行)。所有便捷方法最终都走这里。
+    /// Write one JSON line (newline appended). All convenience methods funnel
+    /// through here.
     func sendJSON(_ json: [String: Any]) {
         lock.lock()
         defer { lock.unlock() }
@@ -84,9 +88,10 @@ final class MockCLISender {
         writer(out)
     }
 
-    // MARK: - Helpers (常用 CLI→host 消息形状)
+    // MARK: - Helpers (common CLI→host message shapes)
 
-    /// 对一条 `control_request` 回 success。`response` 是放进 `response.response` 里的字段。
+    /// Reply success to a `control_request`. `response` goes into the inner
+    /// `response.response` field.
     func ackControlSuccess(requestId: String, response: [String: Any] = [:]) {
         sendJSON([
             "type": "control_response",
@@ -98,7 +103,7 @@ final class MockCLISender {
         ])
     }
 
-    /// 发 `system.init` 消息(session 建立信号)。
+    /// Emit `system.init` (session-established signal).
     func sendSystemInit(sessionId: String, model: String = "claude-sonnet-4-6") {
         sendJSON([
             "type": "system",
@@ -111,7 +116,8 @@ final class MockCLISender {
         ])
     }
 
-    /// echo 一条 user 消息(用于本地 queued→confirmed 匹配)。`uuid` 应与 host 发来的一致。
+    /// Echo a user message (drives the host's queued→confirmed match).
+    /// `uuid` must match what the host sent.
     func echoUser(text: String, uuid: String, sessionId: String) {
         sendJSON([
             "type": "user",
@@ -124,7 +130,7 @@ final class MockCLISender {
         ])
     }
 
-    /// 发 assistant 文本消息(streaming 中间块或完整块)。
+    /// Emit an assistant text message (streaming chunk or full block).
     func sendAssistantText(_ text: String, sessionId: String, messageId: String = UUID().uuidString) {
         sendJSON([
             "type": "assistant",
@@ -139,7 +145,7 @@ final class MockCLISender {
         ])
     }
 
-    /// 发 turn 结束的 result(success 路径)。
+    /// Emit the turn-completion result (success path).
     func sendResultSuccess(sessionId: String, numTurns: Int = 1) {
         sendJSON([
             "type": "result",
@@ -150,7 +156,7 @@ final class MockCLISender {
         ])
     }
 
-    /// 发 turn 结束的 result(error 路径,如被 interrupt)。
+    /// Emit the turn-completion result (error path, e.g. on interrupt).
     func sendResultError(sessionId: String, errors: [String] = ["interrupted"]) {
         sendJSON([
             "type": "result",

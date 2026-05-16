@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-// MARK: - Names pool（Docker moby/pkg/namesgenerator，照搬 claude.app slice 行 48/50）
+// MARK: - Names pool (Docker moby/pkg/namesgenerator; copied from claude.app slice lines 48/50)
 
 fileprivate enum Names {
     static let adjectives: [String] = [
@@ -68,8 +68,10 @@ fileprivate enum Names {
 
 extension Worktree {
 
-    /// 生成 `<adj>-<sci>-<hex6>`。调用方可自行决定冲突重试策略；本函数不做
-    /// "已用过去重"（2.66 亿空间下跨进程冲突概率极低，create 内部用 git 命令失败兜底）。
+    /// Generate `<adj>-<sci>-<hex6>`. Callers decide their own retry
+    /// strategy; this function does not deduplicate against used names
+    /// (cross-process collisions in a 266M space are vanishingly rare;
+    /// `create` falls back to retry on git command failure).
     static func generateName() -> String {
         let adj = Names.adjectives.randomElement()!
         let sci = Names.scientists.randomElement()!
@@ -84,7 +86,7 @@ extension Worktree {
 
 enum GitQuery {
 
-    /// `git -C path rev-parse --git-dir`，输出绝对或相对路径。
+    /// `git -C path rev-parse --git-dir`; absolute or relative path.
     static func gitDir(at path: String) -> String? {
         let r = Worktree.runGit(["rev-parse", "--git-dir"], cwd: path, timeout: 5)
         guard r.exitCode == 0, let out = r.stdout?.trimmingCharacters(in: .whitespacesAndNewlines), !out.isEmpty else {
@@ -93,7 +95,7 @@ enum GitQuery {
         return out
     }
 
-    /// `git -C path rev-parse --git-common-dir`。
+    /// `git -C path rev-parse --git-common-dir`.
     static func gitCommonDir(at path: String) -> String? {
         let r = Worktree.runGit(["rev-parse", "--git-common-dir"], cwd: path, timeout: 5)
         guard r.exitCode == 0, let out = r.stdout?.trimmingCharacters(in: .whitespacesAndNewlines), !out.isEmpty else {
@@ -102,7 +104,7 @@ enum GitQuery {
         return out
     }
 
-    /// `git -C path rev-parse --show-toplevel`。
+    /// `git -C path rev-parse --show-toplevel`.
     static func showToplevel(at path: String) -> String? {
         let r = Worktree.runGit(["rev-parse", "--show-toplevel"], cwd: path, timeout: 5)
         guard r.exitCode == 0, let out = r.stdout?.trimmingCharacters(in: .whitespacesAndNewlines), !out.isEmpty else {
@@ -116,11 +118,11 @@ enum GitQuery {
 
 extension Worktree {
 
-    /// 对齐 claude.app `cQr`——入参若是 worktree 路径，解析到 main repo root；
-    /// 否则返原路径。
+    /// Mirrors claude.app `cQr` — if input is a worktree path, resolve to
+    /// the main repo root; otherwise return as-is.
     ///
-    /// 判据：`git-dir` 包含 `/.git/worktrees/` 即是 worktree；此时 `dirname(git-common-dir)`
-    /// 就是 main repo root。
+    /// Heuristic: `git-dir` containing `/.git/worktrees/` indicates a
+    /// worktree; in that case `dirname(git-common-dir)` is the main repo root.
     static func resolveBaseRepo(_ path: String) -> String {
         guard let gitDir = GitQuery.gitDir(at: path),
             gitDir.contains("/.git/worktrees/"),
@@ -139,11 +141,13 @@ extension Worktree {
 
 extension Worktree {
 
-    /// 若系统 PATH 无 `git-lfs`，返回 smudge/process/required 禁用 flags；有则空数组。
-    /// 对齐 claude.app slice 行 112：无 LFS 时避免 `git worktree add` 尝试 smudge
-    /// 大文件导致整体失败。
+    /// Returns smudge/process/required-disable flags when `git-lfs` is
+    /// missing from PATH; empty otherwise. Mirrors claude.app slice line
+    /// 112: without LFS, prevents `git worktree add` from trying to smudge
+    /// huge files and failing the whole operation.
     ///
-    /// 结果**不缓存**——测试要能通过修改 PATH 切换状态。生产调用次数少，可忽略成本。
+    /// **Not cached** — tests need to flip state by changing PATH, and
+    /// production call frequency is low enough that the cost is negligible.
     static func lfsFlagsIfUnavailable() -> [String] {
         if isLFSAvailable() { return [] }
         return [
@@ -167,8 +171,9 @@ extension Worktree {
     fileprivate static let fetchStaleThreshold: TimeInterval = 10 * 60
     fileprivate static let fetchTimeoutSeconds: TimeInterval = 15
 
-    /// FETCH_HEAD 陈旧且本进程未近期 fetch 过 → `git fetch --prune origin`（15s 超时）。
-    /// 失败静默——on-disk refs 仍可用。对齐 claude.app `maybeRefreshOrigin`。
+    /// When FETCH_HEAD is stale and this process hasn't fetched recently:
+    /// `git fetch --prune origin` (15s timeout). Silent on failure —
+    /// on-disk refs still work. Mirrors claude.app `maybeRefreshOrigin`.
     static func refreshOriginIfStale(baseRepo: String) {
         if fetchAttemptStore.recentlyAttempted(baseRepo, threshold: fetchStaleThreshold) {
             return
@@ -222,8 +227,9 @@ fileprivate final class FetchAttemptStore {
 
 extension Worktree {
 
-    /// 若 local `<branch>` 落后 `origin/<branch>` 且未分叉，用 `update-ref` 或
-    /// `merge --ff-only` 推进；失败静默。对齐 claude.app `maybeFastForwardLocalBranch`。
+    /// If local `<branch>` lags `origin/<branch>` and hasn't diverged,
+    /// advance it via `update-ref` or `merge --ff-only`; silent on failure.
+    /// Mirrors claude.app `maybeFastForwardLocalBranch`.
     static func maybeFastForwardLocalBranch(baseRepo: String, branch: String) {
         let localRef = "refs/heads/\(branch)"
         let originRef = "refs/remotes/origin/\(branch)"
@@ -264,12 +270,12 @@ extension Worktree {
 
 extension Worktree {
 
-    /// 决定 `worktree add` 的 start point。
-    /// - sourceBranch == nil → base 当前 branch；detached → nil
-    /// - 优先 `origin/<src>`（origin 存在 && （local 不存在 || local is-ancestor-of origin））
-    /// - 否则 local refs/heads/<src>
-    /// - 否则 raw <src>
-    /// - 都不存在 → nil
+    /// Decide the `worktree add` start point.
+    /// - sourceBranch == nil → base's current branch; detached → nil
+    /// - Prefer `origin/<src>` (origin exists && (local missing || local is-ancestor-of origin))
+    /// - Otherwise local refs/heads/<src>
+    /// - Otherwise raw <src>
+    /// - None → nil
     static func resolveStartPoint(baseRepo: String, sourceBranch: String?) -> String? {
         guard let src = sourceBranch else {
             return GitUtils.currentBranch(at: baseRepo)
@@ -295,7 +301,7 @@ extension Worktree {
 
 extension Worktree {
 
-    /// `<baseRepo>/.claude/worktrees/<name>`（单层，无 projectName）。
+    /// `<baseRepo>/.claude/worktrees/<name>` (single level, no projectName).
     static func worktreeDir(baseRepo: String, name: String) -> String {
         let base = (baseRepo as NSString).appendingPathComponent(".claude/worktrees")
         return (base as NSString).appendingPathComponent(name)
@@ -306,18 +312,19 @@ extension Worktree {
 
 extension Worktree {
 
-    /// 开启 `extensions.worktreeConfig` + `--worktree core.longpaths=true`。
+    /// Enable `extensions.worktreeConfig` + `--worktree core.longpaths=true`.
     static func enableWorktreeConfigExtensions(at worktreePath: String) {
         _ = runGit(["config", "extensions.worktreeConfig", "true"], cwd: worktreePath, timeout: 5)
         _ = runGit(["config", "--worktree", "core.longpaths", "true"], cwd: worktreePath, timeout: 5)
     }
 
-    /// `core.hooksPath` → `.husky` → `git-common-dir/hooks` 三级 fallback，
-    /// 以 `--worktree` scope 写入 worktree config。对齐 claude.app `configureHooksPath`。
+    /// Three-tier fallback: `core.hooksPath` → `.husky` →
+    /// `git-common-dir/hooks`. Writes to the worktree config in
+    /// `--worktree` scope. Mirrors claude.app `configureHooksPath`.
     static func inheritHooksPath(source: String, worktree: String) {
         _ = runGit(["config", "extensions.worktreeConfig", "true"], cwd: worktree, timeout: 5)
 
-        // 1. base 显式 core.hooksPath
+        // 1. base's explicit core.hooksPath
         let baseHooks = runGit(
             ["config", "--type=path", "--get", "core.hooksPath"],
             cwd: source,
@@ -351,7 +358,7 @@ extension Worktree {
             if r.exitCode == 0 { return }
         }
 
-        // 3. git-common-dir/hooks 含非 .sample 文件
+        // 3. git-common-dir/hooks containing non-.sample files
         let common = runGit(["rev-parse", "--git-common-dir"], cwd: source, timeout: 5)
         if common.exitCode == 0,
             let out = common.stdout?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -373,9 +380,11 @@ extension Worktree {
         }
     }
 
-    /// 读 `<source>/.worktreeinclude` 非注释行作为 pathspec，`git ls-files --others
-    /// --ignored --exclude-standard` 枚举匹配的 gitignored 文件，按相对路径拷贝到 worktree。
-    /// 对齐 claude.app `B0r`（slice 行 1-24）。失败单条仅日志。
+    /// Read non-comment lines from `<source>/.worktreeinclude` as
+    /// pathspecs; use `git ls-files --others --ignored --exclude-standard`
+    /// to enumerate matching gitignored files, then copy by relative path
+    /// into the worktree. Mirrors claude.app `B0r` (slice lines 1-24).
+    /// Per-file failures are logged only.
     static func copyWorktreeIncludeFiles(source: String, worktree: String) {
         let includeFile = (source as NSString).appendingPathComponent(".worktreeinclude")
         guard let content = try? String(contentsOfFile: includeFile, encoding: .utf8) else { return }
@@ -388,9 +397,9 @@ extension Worktree {
         copyGitignoredMatches(source: source, worktree: worktree, pathspecs: patterns, label: ".worktreeinclude")
     }
 
-    /// 把 `<source>/.claude` 下所有 gitignored 文件拷到 worktree。对齐 claude.app `Q0r`
-    /// （slice 行 25-41）。与 `copySettingsLocal` 有部分交集（`.claude/settings.local.json`），
-    /// 幂等。
+    /// Copy every gitignored file under `<source>/.claude` into the
+    /// worktree. Mirrors claude.app `Q0r` (slice lines 25-41). Overlaps
+    /// with `copySettingsLocal` (`.claude/settings.local.json`); idempotent.
     static func copyGitignoredClaudeFiles(source: String, worktree: String) {
         let claudeDir = (source as NSString).appendingPathComponent(".claude")
         var isDir: ObjCBool = false
@@ -400,8 +409,9 @@ extension Worktree {
         copyGitignoredMatches(source: source, worktree: worktree, pathspecs: [".claude"], label: ".claude")
     }
 
-    /// 单独的 `.claude/settings.local.json` 拷贝——用于 `restore` 场景（不想重新跑完整
-    /// gitignored 枚举）。`create` 路径由 `copyGitignoredClaudeFiles` 覆盖。
+    /// Standalone `.claude/settings.local.json` copy — for the `restore`
+    /// path (where we don't want to rerun the full gitignored enumeration).
+    /// The `create` path is covered by `copyGitignoredClaudeFiles`.
     static func copySettingsLocal(source: String, worktree: String) {
         let src = (source as NSString).appendingPathComponent(".claude/settings.local.json")
         guard FileManager.default.fileExists(atPath: src) else { return }
@@ -421,7 +431,8 @@ extension Worktree {
         let r = runGit(args, cwd: source, timeout: 10)
         guard r.exitCode == 0, let out = r.stdout, !out.isEmpty else { return }
 
-        // `-z` → NUL 分隔（含多行 / 特殊字符文件名安全）
+        // `-z` → NUL-separated (safe for filenames with newlines or
+        // special characters)
         let relatives = out.split(separator: "\0").map(String.init).filter { !$0.isEmpty }
         guard !relatives.isEmpty else { return }
 

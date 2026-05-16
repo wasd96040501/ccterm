@@ -104,8 +104,9 @@ public struct PermissionRule: JSONParseable, UnknownStrippable {
 
 // MARK: - Decision Reason
 
-/// JSON 中 `decision_reason` 既可以是 dict `{ "type": "...", "reason": "..." }` 也可以是纯 string。
-/// 不能用 macro 的原因：`@JSONTagged` 的 `init(json: Any)` 先 cast 到 `[String: Any]`，string 输入会失败。
+/// In JSON, `decision_reason` can be either a dict `{ "type": "...", "reason": "..." }` or a bare string.
+/// Cannot use the macro because `@JSONTagged`'s `init(json: Any)` casts to `[String: Any]` first,
+/// which fails for a string input.
 public enum DecisionReason: JSONParseable, UnknownStrippable {
     case string(String)
     case structured(type: String, reason: String?)
@@ -134,7 +135,7 @@ public enum DecisionReason: JSONParseable, UnknownStrippable {
         }
     }
 
-    /// 便捷属性：无论哪种形态都返回原因文本
+    /// Convenience accessor that returns the reason text regardless of which case is set.
     public var reason: String? {
         switch self {
         case .string(let s): return s
@@ -158,7 +159,7 @@ public struct PermissionRequest: JSONParseable, UnknownStrippable {
     public let toolUseId: String?
     public let agentId: String?
 
-    /// 类型化 input，从 rawInput + toolName 解析
+    /// Typed input parsed from `rawInput` + `toolName`.
     public var toolInput: ToolUse {
         let fakeBlock: [String: Any] = ["name": toolName, "input": rawInput, "id": toolUseId ?? "preview"]
         return (try? ToolUse(json: fakeBlock)) ?? .unknown(name: toolName, raw: rawInput)
@@ -183,7 +184,7 @@ public struct PermissionRequest: JSONParseable, UnknownStrippable {
 // MARK: - PermissionRequest Preview
 
 extension PermissionRequest {
-    /// 仅用于 Preview / 测试场景构造 mock 数据。
+    /// Builds mock data for Previews / tests only.
     public static func makePreview(requestId: String, toolName: String, input: [String: Any]) -> PermissionRequest {
         let dict: [String: Any] = [
             "request_id": requestId,
@@ -207,7 +208,7 @@ extension PermissionRequest {
     private static let feedbackTemplate =
         "The user doesn't want to proceed with this tool use. The tool use was rejected (eg. if it was a file edit, the new_string was NOT written to the file). To tell you how to proceed, the user said:\n"
 
-    /// 场景1: Deny 无反馈 — 自动拼接 "User rejected {verb} {desc}"，interrupt: true。
+    /// Deny without feedback — composes `"User rejected {verb} {desc}"`, `interrupt: true`.
     public func deny() -> PermissionDecision {
         let verb = Self.toolVerbs[toolName] ?? "using"
         let desc = describeInput()
@@ -218,17 +219,18 @@ extension PermissionRequest {
         return .deny(reason: message, interrupt: true)
     }
 
-    /// 场景2: Deny + 用户反馈文字 — 使用 feedback 模板，interrupt: false。
+    /// Deny with user-provided feedback — wraps it in the feedback template, `interrupt: false`.
     public func deny(feedback: String) -> PermissionDecision {
         .deny(reason: Self.feedbackTemplate + feedback, interrupt: false)
     }
 
-    /// 场景3: Allow Once — 可选传入用户编辑过的 input。
+    /// Allow once, optionally with a user-edited input.
     public func allowOnce(updatedInput: [String: Any]? = nil) -> PermissionDecision {
         .allow(updatedInput: updatedInput)
     }
 
-    /// 场景4: Allow Always — 可选传入编辑过的 input 和自定义权限规则，默认使用 CLI 建议的 permissionSuggestions。
+    /// Allow always — optionally with an edited input and custom permission rules;
+    /// defaults to the CLI-supplied `permissionSuggestions`.
     public func allowAlways(
         updatedInput: [String: Any]? = nil, updatedPermissions: [[String: Any]]? = nil
     ) -> PermissionDecision {
@@ -247,7 +249,7 @@ extension PermissionRequest {
 
 // MARK: - Hook Request
 
-/// CLI 请求执行 Hook 回调。
+/// CLI request to execute a hook callback.
 public struct HookRequest: JSONParseable, UnknownStrippable {
     public let _raw: [String: Any]
     public let requestId: String
@@ -269,7 +271,7 @@ public struct HookRequest: JSONParseable, UnknownStrippable {
 
 // MARK: - MCP Request
 
-/// CLI 转发 MCP 协议消息。
+/// CLI forwarding an MCP protocol message.
 public struct MCPRequest: JSONParseable, UnknownStrippable {
     public let _raw: [String: Any]
     public let requestId: String
@@ -289,7 +291,7 @@ public struct MCPRequest: JSONParseable, UnknownStrippable {
 
 // MARK: - Elicitation Request
 
-/// CLI 请求用户输入。
+/// CLI request for user input.
 public struct ElicitationRequest: JSONParseable, UnknownStrippable {
     public let _raw: [String: Any]
     public let requestId: String
@@ -309,7 +311,7 @@ public struct ElicitationRequest: JSONParseable, UnknownStrippable {
 
 // MARK: - Initialize Response
 
-/// `initialize` control_response 的 `response.response` 部分。
+/// The `response.response` portion of an `initialize` control_response.
 public struct InitializeResponse: JSONParseable, UnknownStrippable {
     public let _raw: [String: Any]
     public let commands: [SlashCommandInfo]?

@@ -449,9 +449,6 @@ extension TranscriptDemoView {
 
             headingIR(level: 2, [.text("Lists")]),
 
-            // Unordered list — bullet markers, with one item carrying a
-            // nested ordered list to exercise the recursion path and the
-            // marker midY-to-first-content-line alignment.
             Block(
                 id: UUID(),
                 kind: .list(
@@ -509,9 +506,8 @@ extension TranscriptDemoView {
                             ]),
                         ]))),
 
-            // Ordered list with a non-1 start — exercises the
-            // monospaced-numeral right-alignment when marker widths
-            // differ ("9." vs. "10." vs. "11.").
+            // Non-1 start exercises monospaced right-alignment when marker
+            // widths differ ("9." vs. "10." vs. "11.").
             Block(
                 id: UUID(),
                 kind: .list(
@@ -535,8 +531,8 @@ extension TranscriptDemoView {
                             ]),
                         ]))),
 
-            // Task list — checkbox markers, mix of checked and unchecked,
-            // self-drawn so SF Pro's ☑/☐ asymmetry is bypassed.
+            // Task list — checkboxes are self-drawn so SF Pro's ☑/☐
+            // asymmetry is bypassed.
             Block(
                 id: UUID(),
                 kind: .list(
@@ -558,9 +554,8 @@ extension TranscriptDemoView {
 
             headingIR(level: 2, [.text("Tables")]),
 
-            // Three columns, all left-aligned, last column long enough
-            // to wrap so the per-cell TextLayout's CT line-break path
-            // gets exercised.
+            // Last column wraps so the per-cell TextLayout's CT line-break
+            // path gets exercised.
             Block(
                 id: UUID(),
                 kind: .table(
@@ -614,9 +609,6 @@ extension TranscriptDemoView {
                         ],
                         alignments: [.left, .left, .left]))),
 
-            // Mixed alignments + numeric content. Right-aligned numerics
-            // line up at the column's right padding; centered "Trend"
-            // arrows hover in the middle.
             Block(
                 id: UUID(),
                 kind: .table(
@@ -634,8 +626,8 @@ extension TranscriptDemoView {
                         ],
                         alignments: [.left, .right, .center]))),
 
-            // Wide CJK table — exercises the min-width clamp + the long-
-            // cell wrap path with non-Latin scripts.
+            // CJK table exercises min-width clamp + long-cell wrap with
+            // non-Latin scripts.
             Block(
                 id: UUID(),
                 kind: .table(

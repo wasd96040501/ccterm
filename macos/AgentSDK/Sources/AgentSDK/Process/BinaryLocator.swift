@@ -2,8 +2,8 @@ import Foundation
 
 enum BinaryLocator {
 
-    /// 按优先级查找 claude CLI 二进制。
-    /// 优先级：环境变量 > ~/.local/bin > /usr/local/bin > which
+    /// Locates the claude CLI binary by priority:
+    /// CLAUDE_BINARY_PATH env var > ~/.local/bin > /usr/local/bin > `which`.
     static func locate() -> String? {
         if let envPath = ProcessInfo.processInfo.environment["CLAUDE_BINARY_PATH"],
             FileManager.default.isExecutableFile(atPath: envPath)

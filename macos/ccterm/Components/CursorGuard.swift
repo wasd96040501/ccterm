@@ -1,16 +1,20 @@
 import AppKit
 
-/// 全局 cursor 守卫。通过 swizzle `NSCursor.set()` 拦截 WKWebView 的异步 cursor 更新。
+/// Global cursor guard. Swizzles `NSCursor.set()` to intercept WKWebView's
+/// asynchronous cursor updates.
 ///
-/// WKWebView 通过内部 IPC 直接调用 `NSCursor.set()`，绕过 AppKit 的 cursor rect
-/// 和 cursorUpdate 系统。标准的 overlay、resetCursorRects、cursorUpdate 均无法拦截。
+/// WKWebView invokes `NSCursor.set()` directly over internal IPC, bypassing
+/// AppKit's cursor rect and cursorUpdate machinery. Standard overlays,
+/// `resetCursorRects`, and `cursorUpdate` cannot intercept it.
 ///
-/// 本方案在 `NSCursor.set()` 入口处拦截：
-/// 1. 如果鼠标在已注册的 guard rect 内 → 强制 arrow cursor
-/// 2. 如果鼠标在已注册的 text input view 上且 cursor 被设为 arrow → 修正为 I-beam
-/// 3. 其他情况 → 放行
+/// This implementation intercepts at `NSCursor.set()` entry:
+/// 1. If the mouse is inside any registered guard rect → force arrow cursor
+/// 2. If over a registered text input view and the cursor is being set to
+///    arrow → correct to I-beam
+/// 3. Otherwise → pass through
 ///
-/// swizzle 在 `install()` 时安装一次。guard rect 和 text input view 均通过 registry 动态注册/注销。
+/// The swizzle is installed once via `install()`. Guard rects and text input
+/// views register/unregister dynamically through the registry.
 enum CursorGuard {
 
     // MARK: - Registry
@@ -22,14 +26,14 @@ enum CursorGuard {
 
     struct Entry {
         weak var view: NSView?
-        var rects: [CGRect]  // view 本地坐标系（flipped, origin 左上角）
+        var rects: [CGRect]  // view-local coords (flipped, origin top-left)
     }
 
     struct WeakView {
         weak var view: NSView?
     }
 
-    /// 安装 swizzle。应用启动时调用一次。
+    /// Install the swizzle. Call once at app launch.
     static func install() {
         os_unfair_lock_lock(&lock)
         defer { os_unfair_lock_unlock(&lock) }
@@ -38,28 +42,25 @@ enum CursorGuard {
         installed = true
     }
 
-    /// 注册 guard rects。
     static func register(_ view: NSView, rects: [CGRect]) {
         os_unfair_lock_lock(&lock)
         defer { os_unfair_lock_unlock(&lock) }
         entries[ObjectIdentifier(view)] = Entry(view: view, rects: rects)
     }
 
-    /// 移除注册。
     static func unregister(_ view: NSView) {
         os_unfair_lock_lock(&lock)
         defer { os_unfair_lock_unlock(&lock) }
         entries.removeValue(forKey: ObjectIdentifier(view))
     }
 
-    /// 注册需要 I-beam 光标修正的 text input view。
+    /// Register a text input view that needs I-beam cursor correction.
     static func registerTextInput(_ view: NSView) {
         os_unfair_lock_lock(&lock)
         defer { os_unfair_lock_unlock(&lock) }
         textInputViews[ObjectIdentifier(view)] = WeakView(view: view)
     }
 
-    /// 移除 text input view 注册。
     static func unregisterTextInput(_ view: NSView) {
         os_unfair_lock_lock(&lock)
         defer { os_unfair_lock_unlock(&lock) }
@@ -76,7 +77,7 @@ enum CursorGuard {
 
     // MARK: - Hit Test
 
-    /// 鼠标是否在任意已注册的 guard rect 内。
+    /// True if the mouse is inside any registered guard rect.
     fileprivate static func isMouseInGuardRect() -> Bool {
         guard let window = NSApp.keyWindow else { return false }
         let mouseInWindow = window.mouseLocationOutsideOfEventStream
@@ -98,7 +99,7 @@ enum CursorGuard {
         return false
     }
 
-    /// 鼠标是否在任意已注册的 text input view 上。
+    /// True if the mouse is over any registered text input view.
     fileprivate static func isMouseOverTextInput() -> Bool {
         guard let window = NSApp.keyWindow else { return false }
         let mouseInWindow = window.mouseLocationOutsideOfEventStream
@@ -122,21 +123,21 @@ enum CursorGuard {
 
 extension NSCursor {
     @objc func cursorGuard_set() {
-        // 1. Guard rect 内：强制 arrow
+        // 1. Inside guard rect: force arrow
         if CursorGuard.isMouseInGuardRect() {
             if self != NSCursor.arrow {
                 NSCursor.arrow.cursorGuard_set()
             } else {
-                cursorGuard_set()  // 调原始 set()
+                cursorGuard_set()  // calls the original set() (post-swizzle)
             }
             return
         }
-        // 2. InputTextView 上：arrow → I-beam
+        // 2. Over an InputTextView: arrow → I-beam
         if self == NSCursor.arrow, CursorGuard.isMouseOverTextInput() {
             NSCursor.iBeam.cursorGuard_set()
             return
         }
-        // 3. 放行
+        // 3. Pass through
         cursorGuard_set()
     }
 }

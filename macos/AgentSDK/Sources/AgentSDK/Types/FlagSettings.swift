@@ -1,18 +1,18 @@
 import Foundation
 
-// MARK: - Removable: 三态值包装
+// MARK: - Removable: tri-state value wrapper
 
-/// 表示一个可设置、可清除、或不传的字段。
+/// Field that can be set, cleared, or omitted entirely.
 ///
-/// - `unset`: 不参与序列化（字段不出现在 JSON 中）
-/// - `clear`: 序列化为 JSON `null`（CLI 侧将该字段从 flag settings 中删除）
-/// - `set(T)`: 序列化为具体值
+/// - `unset`: skipped during serialization (field absent from JSON)
+/// - `clear`: serialized as JSON `null` (CLI removes the field from flag settings)
+/// - `set(T)`: serialized as the wrapped value
 public enum Removable<T> {
     case unset
     case clear
     case set(T)
 
-    /// 将值转换为可序列化的 `Any?`。返回 `nil` 表示跳过该字段。
+    /// Converts the value to a serializable `Any?`. Returning `nil` skips the field.
     func serialized(_ transform: (T) -> Any) -> Any? {
         switch self {
         case .unset: return nil
@@ -21,13 +21,13 @@ public enum Removable<T> {
         }
     }
 
-    /// 便捷方法：值本身可直接作为 JSON 值的类型。
+    /// Convenience overload for types that are themselves valid JSON values.
     func serialized() -> Any? where T: JSONSerializableValue {
         serialized { $0.jsonValue }
     }
 }
 
-/// 可直接序列化为 JSON 值的类型。
+/// Type that can be used directly as a JSON value.
 protocol JSONSerializableValue {
     var jsonValue: Any { get }
 }
@@ -47,7 +47,7 @@ extension Dictionary: JSONSerializableValue where Key == String, Value: JSONSeri
 
 // MARK: - DictionarySerializable
 
-/// 可序列化为 `[String: Any]` 的类型。
+/// Type that serializes to `[String: Any]`.
 protocol DictionarySerializable {
     func toDictionary() -> [String: Any]
 }
@@ -58,9 +58,10 @@ extension DictionarySerializable {
 
 // MARK: - FlagSettings
 
-/// 类型安全的 flag settings 构建器，对应 CLI 的 `apply_flag_settings` 协议。
+/// Type-safe builder for the CLI's `apply_flag_settings` protocol.
 ///
-/// 所有字段默认为 `.unset`（不参与序列化）。设置 `.clear` 将在 CLI 侧删除对应字段。
+/// Every field defaults to `.unset` (omitted from serialization).
+/// Setting `.clear` removes the corresponding field on the CLI side.
 ///
 /// ```swift
 /// var settings = FlagSettings()
@@ -71,242 +72,241 @@ extension DictionarySerializable {
 /// ```
 public struct FlagSettings: DictionarySerializable {
 
-    // MARK: 模型 & 推理
+    // MARK: Model & reasoning
 
-    /// 覆盖默认模型。设置后额外调用 `setMainLoopModelOverride()`。
+    /// Overrides the default model. When set, also triggers `setMainLoopModelOverride()`.
     public var model: Removable<String> = .unset
 
-    /// 可选模型白名单。支持 family alias ("opus")、version prefix ("opus-4-5")、full model ID。
+    /// Optional model whitelist. Accepts family alias ("opus"), version prefix ("opus-4-5"), or full model ID.
     public var availableModels: Removable<[String]> = .unset
 
-    /// 模型 ID 映射（如 Anthropic model ID → Bedrock ARN）。
+    /// Model ID remap (e.g. Anthropic model ID -> Bedrock ARN).
     public var modelOverrides: Removable<[String: String]> = .unset
 
-    /// 服务端 advisor tool 使用的模型。
+    /// Model used by the server-side advisor tool.
     public var advisorModel: Removable<String> = .unset
 
-    /// 推理 effort 级别。`max` 仅对 ant 用户可用。
+    /// Reasoning effort level. `max` is only available to Anthropic users.
     public var effortLevel: Removable<Effort> = .unset
 
-    /// 是否启用 thinking。`false` 禁用 thinking，默认 `true`。
+    /// Whether thinking is enabled. `false` disables it; default is `true`.
     public var alwaysThinkingEnabled: Removable<Bool> = .unset
 
-    /// 快速模式。
     public var fastMode: Removable<Bool> = .unset
 
-    /// fast mode 不跨 session 持久化。
+    /// Fast mode is not persisted across sessions.
     public var fastModePerSessionOptIn: Removable<Bool> = .unset
 
-    // MARK: 认证 & 凭证
+    // MARK: Auth & credentials
 
-    /// 输出认证值的脚本路径。
+    /// Path to a script that prints the auth value.
     public var apiKeyHelper: Removable<String> = .unset
 
-    /// 导出 AWS 凭证的脚本路径。
+    /// Path to a script that exports AWS credentials.
     public var awsCredentialExport: Removable<String> = .unset
 
-    /// 刷新 AWS 认证的脚本路径。
+    /// Path to a script that refreshes AWS auth.
     public var awsAuthRefresh: Removable<String> = .unset
 
-    /// 刷新 GCP 认证的命令。
+    /// Command that refreshes GCP auth.
     public var gcpAuthRefresh: Removable<String> = .unset
 
-    /// 强制登录方式。
+    /// Forces a specific login method.
     public var forceLoginMethod: Removable<LoginMethod> = .unset
 
-    /// OAuth 登录的组织 UUID。
+    /// Organization UUID for OAuth login.
     public var forceLoginOrgUUID: Removable<String> = .unset
 
-    // MARK: 权限 & 安全
+    // MARK: Permissions & security
 
-    /// 工具使用权限配置。
+    /// Tool permission configuration.
     public var permissions: Removable<Permissions> = .unset
 
-    /// 仅使用 managed 权限规则。
+    /// Only honor managed permission rules.
     public var allowManagedPermissionRulesOnly: Removable<Bool> = .unset
 
-    /// 跳过 bypass 模式确认。
+    /// Skip the bypass-mode confirmation prompt.
     public var skipDangerousModePermissionPrompt: Removable<Bool> = .unset
 
-    /// 禁用 auto mode。设置为 `true` 传 `"disable"`。
+    /// Disable auto mode. Setting `true` sends `"disable"`.
     public var disableAutoMode: Removable<Bool> = .unset
 
-    // MARK: MCP 服务器
+    // MARK: MCP servers
 
-    /// 自动批准项目所有 MCP 服务器。
+    /// Auto-approve every MCP server in the project.
     public var enableAllProjectMcpServers: Removable<Bool> = .unset
 
-    /// 已批准的 .mcp.json 服务器。
+    /// Approved `.mcp.json` servers.
     public var enabledMcpjsonServers: Removable<[String]> = .unset
 
-    /// 已拒绝的 .mcp.json 服务器。
+    /// Rejected `.mcp.json` servers.
     public var disabledMcpjsonServers: Removable<[String]> = .unset
 
-    /// MCP 服务器白名单。
+    /// MCP server allowlist.
     public var allowedMcpServers: Removable<[McpServerEntry]> = .unset
 
-    /// MCP 服务器黑名单。
+    /// MCP server denylist.
     public var deniedMcpServers: Removable<[McpServerEntry]> = .unset
 
-    /// 仅从 managed settings 读取 MCP 白名单。
+    /// Read the MCP allowlist only from managed settings.
     public var allowManagedMcpServersOnly: Removable<Bool> = .unset
 
-    // MARK: Hooks & 自定义
+    // MARK: Hooks & customization
 
-    /// 工具执行前后的自定义命令。JSON 结构: `Record<eventName, HookMatcher[]>`。
+    /// Custom commands run before/after tool execution. JSON shape: `Record<eventName, HookMatcher[]>`.
     public var hooks: Removable<[String: Any]> = .unset
 
-    /// 禁用所有 hooks 和 statusLine。
+    /// Disable every hook and statusLine.
     public var disableAllHooks: Removable<Bool> = .unset
 
-    /// 仅允许 managed hooks。
+    /// Only allow managed hooks.
     public var allowManagedHooksOnly: Removable<Bool> = .unset
 
-    /// HTTP hook URL 白名单（支持 `*` 通配符）。
+    /// HTTP hook URL allowlist (supports `*` wildcards).
     public var allowedHttpHookUrls: Removable<[String]> = .unset
 
-    /// HTTP hook 可用的环境变量白名单。
+    /// Allowlist of env vars exposed to HTTP hooks.
     public var httpHookAllowedEnvVars: Removable<[String]> = .unset
 
-    /// 自定义状态栏。
+    /// Custom status line.
     public var statusLine: Removable<StatusLine> = .unset
 
-    /// 仅允许插件定制。`true` 锁全部，指定数组锁特定表面。
+    /// Restrict customization to plugins. `true` locks everything; an array locks specific surfaces.
     public var strictPluginOnlyCustomization: Removable<PluginCustomization> = .unset
 
-    // MARK: UI & 输出
+    // MARK: UI & output
 
-    /// 助手响应输出样式。
+    /// Assistant response output style.
     public var outputStyle: Removable<String> = .unset
 
-    /// 偏好语言。
+    /// Preferred language.
     public var language: Removable<String> = .unset
 
-    /// 禁用语法高亮。
+    /// Disable syntax highlighting.
     public var syntaxHighlightingDisabled: Removable<Bool> = .unset
 
-    /// 显示 spinner tips。
+    /// Show spinner tips.
     public var spinnerTipsEnabled: Removable<Bool> = .unset
 
-    /// 自定义 spinner 动词。
+    /// Custom spinner verbs.
     public var spinnerVerbs: Removable<SpinnerVerbs> = .unset
 
-    /// 覆盖 spinner tips。
+    /// Override spinner tips.
     public var spinnerTipsOverride: Removable<SpinnerTipsOverride> = .unset
 
-    /// 减少动画。
+    /// Reduce animations.
     public var prefersReducedMotion: Removable<Bool> = .unset
 
-    /// 显示 thinking 摘要。默认 `false`。
+    /// Show thinking summaries. Default `false`.
     public var showThinkingSummaries: Removable<Bool> = .unset
 
-    /// 提示建议。
+    /// Prompt suggestions.
     public var promptSuggestionEnabled: Removable<Bool> = .unset
 
-    /// `/rename` 更新终端标题。默认 `true`。
+    /// Have `/rename` update the terminal title. Default `true`.
     public var terminalTitleFromRename: Removable<Bool> = .unset
 
-    // MARK: 插件 & Marketplace
+    // MARK: Plugins & marketplaces
 
-    /// 启用的插件。key 格式: `"plugin-id@marketplace-id"`。
-    /// value: `true`/`false` 或字符串数组。
+    /// Enabled plugins. Key format: `"plugin-id@marketplace-id"`.
+    /// Value: `true`/`false` or a string array.
     public var enabledPlugins: Removable<[String: Any]> = .unset
 
-    /// 额外 marketplace。
+    /// Additional marketplaces.
     public var extraKnownMarketplaces: Removable<[String: ExtraKnownMarketplace]> = .unset
 
-    /// 企业 marketplace 白名单。
+    /// Enterprise marketplace allowlist.
     public var strictKnownMarketplaces: Removable<[[String: Any]]> = .unset
 
-    /// 企业 marketplace 黑名单。
+    /// Enterprise marketplace denylist.
     public var blockedMarketplaces: Removable<[[String: Any]]> = .unset
 
-    /// 插件配置。
+    /// Plugin configuration.
     public var pluginConfigs: Removable<[String: Any]> = .unset
 
-    /// 插件信任警告自定义消息（仅从 policy settings 读取）。
+    /// Custom plugin trust warning message (read only from policy settings).
     public var pluginTrustMessage: Removable<String> = .unset
 
-    // MARK: Git & 项目
+    // MARK: Git & project
 
-    /// commit/PR 归属文本。
+    /// Commit/PR attribution text.
     public var attribution: Removable<Attribution> = .unset
 
-    /// (已废弃) co-authored-by 归属。用 `attribution` 替代。
+    /// (Deprecated) co-authored-by attribution. Use `attribution` instead.
     public var includeCoAuthoredBy: Removable<Bool> = .unset
 
-    /// 系统提示包含 git 指令。默认 `true`。
+    /// Include git instructions in the system prompt. Default `true`.
     public var includeGitInstructions: Removable<Bool> = .unset
 
-    /// worktree 配置。
+    /// Worktree configuration.
     public var worktree: Removable<Worktree> = .unset
 
-    /// 计划文件自定义目录（相对项目根目录）。
+    /// Custom plans directory (relative to the project root).
     public var plansDirectory: Removable<String> = .unset
 
-    // MARK: 其他
+    // MARK: Misc
 
-    /// 环境变量。
+    /// Environment variables.
     public var env: Removable<[String: String]> = .unset
 
-    /// `@` 提及自定义文件建议命令。
+    /// Custom command for `@`-mention file suggestions.
     public var fileSuggestion: Removable<FileSuggestion> = .unset
 
-    /// 文件选择器是否遵循 .gitignore。默认 `true`。
+    /// File picker honors `.gitignore`. Default `true`.
     public var respectGitignore: Removable<Bool> = .unset
 
-    /// 聊天记录保留天数。`0` = 禁用持久化。默认 `30`。
+    /// Chat history retention in days. `0` disables persistence. Default `30`.
     public var cleanupPeriodDays: Removable<Int> = .unset
 
-    /// 默认 shell。
+    /// Default shell.
     public var defaultShell: Removable<Shell> = .unset
 
-    /// 沙箱配置。
+    /// Sandbox configuration.
     public var sandbox: Removable<Sandbox> = .unset
 
-    /// 跳过 WebFetch 黑名单检查。
+    /// Skip the WebFetch denylist check.
     public var skipWebFetchPreflight: Removable<Bool> = .unset
 
-    /// 调查问卷出现概率（0-1）。
+    /// Survey appearance probability (0-1).
     public var feedbackSurveyRate: Removable<Double> = .unset
 
-    /// 自动更新渠道。
+    /// Auto-update channel.
     public var autoUpdatesChannel: Removable<UpdateChannel> = .unset
 
-    /// 最低版本（防降级）。
+    /// Minimum version (prevents downgrades).
     public var minimumVersion: Removable<String> = .unset
 
-    /// 主线程使用的 agent 名称。
+    /// Agent used by the main loop.
     public var agent: Removable<String> = .unset
 
-    /// 启动时显示的公司公告。
+    /// Company announcements shown at launch.
     public var companyAnnouncements: Removable<[String]> = .unset
 
-    /// 远程会话配置。
+    /// Remote session configuration.
     public var remote: Removable<Remote> = .unset
 
-    /// SSH 连接配置。
+    /// SSH connection configurations.
     public var sshConfigs: Removable<[SSHConfig]> = .unset
 
-    /// 排除的 CLAUDE.md 文件 glob。
+    /// Glob patterns for CLAUDE.md files to exclude.
     public var claudeMdExcludes: Removable<[String]> = .unset
 
-    /// 启用 auto-memory。
+    /// Enable auto-memory.
     public var autoMemoryEnabled: Removable<Bool> = .unset
 
-    /// auto-memory 目录（支持 `~/` 前缀）。
+    /// Auto-memory directory (supports `~/` prefix).
     public var autoMemoryDirectory: Removable<String> = .unset
 
-    /// 后台记忆整合。
+    /// Background memory consolidation.
     public var autoDreamEnabled: Removable<Bool> = .unset
 
-    /// plan 审批时显示"清除上下文"选项。
+    /// Show the "clear context" option when accepting a plan.
     public var showClearContextOnPlanAccept: Removable<Bool> = .unset
 
-    /// 启用 channel 通知。
+    /// Enable channel notifications.
     public var channelsEnabled: Removable<Bool> = .unset
 
-    /// channel 插件白名单。
+    /// Channel plugin allowlist.
     public var allowedChannelPlugins: Removable<[ChannelPlugin]> = .unset
 
     public init() {}
@@ -320,7 +320,7 @@ public struct FlagSettings: DictionarySerializable {
             if let value { dict[key] = value }
         }
 
-        // 模型 & 推理
+        // Model & reasoning
         add("model", model.serialized())
         add("availableModels", availableModels.serialized())
         add("modelOverrides", modelOverrides.serialized())
@@ -330,7 +330,7 @@ public struct FlagSettings: DictionarySerializable {
         add("fastMode", fastMode.serialized())
         add("fastModePerSessionOptIn", fastModePerSessionOptIn.serialized())
 
-        // 认证 & 凭证
+        // Auth & credentials
         add("apiKeyHelper", apiKeyHelper.serialized())
         add("awsCredentialExport", awsCredentialExport.serialized())
         add("awsAuthRefresh", awsAuthRefresh.serialized())
@@ -338,13 +338,13 @@ public struct FlagSettings: DictionarySerializable {
         add("forceLoginMethod", forceLoginMethod.serialized { $0.rawValue })
         add("forceLoginOrgUUID", forceLoginOrgUUID.serialized())
 
-        // 权限 & 安全
+        // Permissions & security
         add("permissions", permissions.serialized { $0.toDictionary() })
         add("allowManagedPermissionRulesOnly", allowManagedPermissionRulesOnly.serialized())
         add("skipDangerousModePermissionPrompt", skipDangerousModePermissionPrompt.serialized())
         add("disableAutoMode", disableAutoMode.serialized { $0 ? "disable" as Any : NSNull() as Any })
 
-        // MCP 服务器
+        // MCP servers
         add("enableAllProjectMcpServers", enableAllProjectMcpServers.serialized())
         add("enabledMcpjsonServers", enabledMcpjsonServers.serialized())
         add("disabledMcpjsonServers", disabledMcpjsonServers.serialized())
@@ -352,7 +352,7 @@ public struct FlagSettings: DictionarySerializable {
         add("deniedMcpServers", deniedMcpServers.serialized { $0.map { $0.toDictionary() } })
         add("allowManagedMcpServersOnly", allowManagedMcpServersOnly.serialized())
 
-        // Hooks & 自定义
+        // Hooks & customization
         add("hooks", hooks.serialized { $0 })
         add("disableAllHooks", disableAllHooks.serialized())
         add("allowManagedHooksOnly", allowManagedHooksOnly.serialized())
@@ -361,7 +361,7 @@ public struct FlagSettings: DictionarySerializable {
         add("statusLine", statusLine.serialized { $0.toDictionary() })
         add("strictPluginOnlyCustomization", strictPluginOnlyCustomization.serialized { $0.jsonValue })
 
-        // UI & 输出
+        // UI & output
         add("outputStyle", outputStyle.serialized())
         add("language", language.serialized())
         add("syntaxHighlightingDisabled", syntaxHighlightingDisabled.serialized())
@@ -373,7 +373,7 @@ public struct FlagSettings: DictionarySerializable {
         add("promptSuggestionEnabled", promptSuggestionEnabled.serialized())
         add("terminalTitleFromRename", terminalTitleFromRename.serialized())
 
-        // 插件 & Marketplace
+        // Plugins & marketplaces
         add("enabledPlugins", enabledPlugins.serialized { $0 })
         add(
             "extraKnownMarketplaces",
@@ -385,14 +385,14 @@ public struct FlagSettings: DictionarySerializable {
         add("pluginConfigs", pluginConfigs.serialized { $0 })
         add("pluginTrustMessage", pluginTrustMessage.serialized())
 
-        // Git & 项目
+        // Git & project
         add("attribution", attribution.serialized { $0.toDictionary() })
         add("includeCoAuthoredBy", includeCoAuthoredBy.serialized())
         add("includeGitInstructions", includeGitInstructions.serialized())
         add("worktree", worktree.serialized { $0.toDictionary() })
         add("plansDirectory", plansDirectory.serialized())
 
-        // 其他
+        // Misc
         add("env", env.serialized())
         add("fileSuggestion", fileSuggestion.serialized { $0.toDictionary() })
         add("respectGitignore", respectGitignore.serialized())
@@ -423,29 +423,26 @@ public struct FlagSettings: DictionarySerializable {
 
 extension FlagSettings {
 
-    /// 登录方式。
     public enum LoginMethod: String {
         case claudeai
         case console
     }
 
-    /// 默认 shell。
     public enum Shell: String {
         case bash
         case powershell
     }
 
-    /// 自动更新渠道。
     public enum UpdateChannel: String {
         case latest
         case stable
     }
 
-    /// 插件定制锁定范围。
+    /// Scope of plugin-only customization lock.
     public enum PluginCustomization {
-        /// 锁定全部定制表面。
+        /// Lock every customization surface.
         case all
-        /// 锁定指定表面。
+        /// Lock the listed surfaces.
         case surfaces([Surface])
 
         public enum Surface: String {
@@ -468,21 +465,21 @@ extension FlagSettings {
 
 extension FlagSettings {
 
-    /// 权限配置。
+    /// Permission configuration.
     public struct Permissions: DictionarySerializable {
-        /// 允许的操作规则。
+        /// Allowed action rules.
         public var allow: [[String: Any]]?
-        /// 拒绝的操作规则。
+        /// Denied action rules.
         public var deny: [[String: Any]]?
-        /// 需要确认的操作规则。
+        /// Action rules that require confirmation.
         public var ask: [[String: Any]]?
-        /// 默认权限模式。
+        /// Default permission mode.
         public var defaultMode: String?
-        /// 禁用 bypass permissions 模式。设置 `"disable"` 禁用。
+        /// Disable bypass-permissions mode by setting `"disable"`.
         public var disableBypassPermissionsMode: String?
-        /// 禁用 auto mode。设置 `"disable"` 禁用。
+        /// Disable auto mode by setting `"disable"`.
         public var disableAutoMode: String?
-        /// 额外工作目录。
+        /// Additional working directories.
         public var additionalDirectories: [String]?
 
         public init(
@@ -516,23 +513,23 @@ extension FlagSettings {
         }
     }
 
-    /// MCP 服务器条目（serverName / serverCommand / serverUrl 三选一）。
+    /// MCP server entry — pick one of `serverName` / `serverCommand` / `serverUrl`.
     public struct McpServerEntry: DictionarySerializable {
         public var serverName: String?
         public var serverCommand: [String]?
         public var serverUrl: String?
 
-        /// 按服务器名称匹配。
+        /// Match by server name.
         public static func name(_ name: String) -> McpServerEntry {
             McpServerEntry(serverName: name)
         }
 
-        /// 按启动命令匹配。
+        /// Match by launch command.
         public static func command(_ command: [String]) -> McpServerEntry {
             McpServerEntry(serverCommand: command)
         }
 
-        /// 按 URL 匹配。
+        /// Match by URL.
         public static func url(_ url: String) -> McpServerEntry {
             McpServerEntry(serverUrl: url)
         }
@@ -552,7 +549,7 @@ extension FlagSettings {
         }
     }
 
-    /// 自定义状态栏。
+    /// Custom status line.
     public struct StatusLine: DictionarySerializable {
         public var command: String
         public var padding: Int?
@@ -569,7 +566,7 @@ extension FlagSettings {
         }
     }
 
-    /// 自定义 spinner 动词。
+    /// Custom spinner verbs.
     public struct SpinnerVerbs: DictionarySerializable {
         public var mode: Mode
         public var verbs: [String]
@@ -589,7 +586,7 @@ extension FlagSettings {
         }
     }
 
-    /// 覆盖 spinner tips。
+    /// Override for spinner tips.
     public struct SpinnerTipsOverride: DictionarySerializable {
         public var excludeDefault: Bool?
         public var tips: [String]
@@ -606,11 +603,11 @@ extension FlagSettings {
         }
     }
 
-    /// Git 归属配置。
+    /// Git attribution configuration.
     public struct Attribution: DictionarySerializable {
-        /// commit 归属文本。空字符串隐藏归属。
+        /// Commit attribution text. Empty string hides the attribution.
         public var commit: String?
-        /// PR 归属文本。
+        /// PR attribution text.
         public var pr: String?
 
         public init(commit: String? = nil, pr: String? = nil) {
@@ -626,7 +623,7 @@ extension FlagSettings {
         }
     }
 
-    /// Worktree 配置。
+    /// Worktree configuration.
     public struct Worktree: DictionarySerializable {
         public var symlinkDirectories: [String]?
         public var sparsePaths: [String]?
@@ -644,7 +641,7 @@ extension FlagSettings {
         }
     }
 
-    /// `@` 提及自定义文件建议命令。
+    /// Custom command for `@`-mention file suggestions.
     public struct FileSuggestion: DictionarySerializable {
         public var command: String
 
@@ -657,7 +654,7 @@ extension FlagSettings {
         }
     }
 
-    /// 额外 marketplace 配置。
+    /// Additional marketplace configuration.
     public struct ExtraKnownMarketplace: DictionarySerializable {
         public var source: [String: Any]
         public var installLocation: String?
@@ -677,7 +674,7 @@ extension FlagSettings {
         }
     }
 
-    /// 远程会话配置。
+    /// Remote session configuration.
     public struct Remote: DictionarySerializable {
         public var defaultEnvironmentId: String?
 
@@ -692,17 +689,17 @@ extension FlagSettings {
         }
     }
 
-    /// SSH 连接配置。
+    /// SSH connection configuration.
     public struct SSHConfig: DictionarySerializable {
         public var id: String
         public var name: String
-        /// `"user@hostname"` 或 `~/.ssh/config` 中的 host alias。
+        /// `"user@hostname"` or a host alias from `~/.ssh/config`.
         public var sshHost: String
-        /// SSH 端口，默认 22。
+        /// SSH port; defaults to 22.
         public var sshPort: Int?
-        /// SSH 密钥文件路径。
+        /// SSH identity file path.
         public var sshIdentityFile: String?
-        /// 起始目录（支持 `~/` 展开）。
+        /// Starting directory (supports `~/` expansion).
         public var startDirectory: String?
 
         public init(
@@ -730,27 +727,27 @@ extension FlagSettings {
         }
     }
 
-    /// 沙箱配置。
+    /// Sandbox configuration.
     ///
-    /// 通过 `applyFlagSettings` 发送给 CLI，控制 Bash 命令的文件系统和网络隔离。
+    /// Sent to the CLI via `applyFlagSettings`; controls filesystem and network isolation for Bash commands.
     public struct Sandbox: DictionarySerializable {
-        /// 是否启用沙箱。
+        /// Whether the sandbox is enabled.
         public var enabled: Bool?
-        /// 沙箱不可用时是否硬报错（默认 `false`，仅警告）。
+        /// Hard-fail when the sandbox is unavailable (default `false` — warn only).
         public var failIfUnavailable: Bool?
-        /// 是否允许 `dangerouslyDisableSandbox` 逃逸（`false` 则完全禁用）。
+        /// Allow the `dangerouslyDisableSandbox` escape (`false` disables it entirely).
         public var allowUnsandboxedCommands: Bool?
-        /// 仅允许 managed settings 中配置的域名，阻止其他所有域名。
+        /// Only allow domains configured via managed settings, blocking everything else.
         public var allowManagedDomainsOnly: Bool?
-        /// Linux: 在 Docker 内启用弱化沙箱（显著降低安全性）。
+        /// Linux: enable a weakened sandbox inside Docker (significantly less secure).
         public var enableWeakerNestedSandbox: Bool?
-        /// 文件系统隔离配置。
+        /// Filesystem isolation configuration.
         public var filesystem: Filesystem?
-        /// 网络隔离配置。
+        /// Network isolation configuration.
         public var network: Network?
-        /// 排除在沙箱外运行的命令模式（如 `"docker *"`）。
+        /// Command patterns excluded from the sandbox (e.g. `"docker *"`).
         public var excludedCommands: [String]?
-        /// 允许访问的 Unix socket 路径。
+        /// Unix socket paths allowed inside the sandbox.
         public var allowUnixSockets: [String]?
 
         public init(
@@ -789,24 +786,24 @@ extension FlagSettings {
             return dict
         }
 
-        /// 文件系统隔离配置。
+        /// Filesystem isolation configuration.
         ///
-        /// 路径前缀规则：
-        /// - `/path` → 绝对路径（如 `/tmp/build`）
-        /// - `~/path` → 相对 home 目录（如 `~/.kube`）
-        /// - `./path` 或无前缀 → 相对项目根目录（project settings）或 `~/.claude`（user settings）
+        /// Path prefix rules:
+        /// - `/path` -> absolute path (e.g. `/tmp/build`)
+        /// - `~/path` -> relative to the home directory (e.g. `~/.kube`)
+        /// - `./path` or no prefix -> relative to the project root (project settings) or `~/.claude` (user settings)
         ///
-        /// 多 scope 的路径数组是**合并**的，不会被覆盖。
+        /// Path arrays from multiple scopes are **merged**, not overridden.
         public struct Filesystem: DictionarySerializable {
-            /// 额外允许写入的路径。
+            /// Additional paths permitted for writes.
             public var allowWrite: [String]?
-            /// 拒绝写入的路径。
+            /// Paths denied for writes.
             public var denyWrite: [String]?
-            /// 拒绝读取的路径。
+            /// Paths denied for reads.
             public var denyRead: [String]?
-            /// 在 `denyRead` 区域内重新允许读取的路径。
+            /// Paths re-allowed for reads inside a `denyRead` region.
             public var allowRead: [String]?
-            /// 仅使用 managed settings 的 `allowRead`（忽略 user/project/local 的 `allowRead`）。
+            /// Only honor `allowRead` from managed settings (ignore the user/project/local entries).
             public var allowManagedReadPathsOnly: Bool?
 
             public init(
@@ -834,13 +831,13 @@ extension FlagSettings {
             }
         }
 
-        /// 网络隔离配置。
+        /// Network isolation configuration.
         public struct Network: DictionarySerializable {
-            /// 允许访问的域名（支持 `*` 通配符，如 `"*.example.com"`）。
+            /// Allowed domains (supports `*` wildcards, e.g. `"*.example.com"`).
             public var allowedDomains: [String]?
-            /// 自定义 HTTP 代理端口。
+            /// Custom HTTP proxy port.
             public var httpProxyPort: Int?
-            /// 自定义 SOCKS 代理端口。
+            /// Custom SOCKS proxy port.
             public var socksProxyPort: Int?
 
             public init(
@@ -863,7 +860,7 @@ extension FlagSettings {
         }
     }
 
-    /// Channel 插件白名单条目。
+    /// Entry in the channel plugin allowlist.
     public struct ChannelPlugin: DictionarySerializable {
         public var marketplace: String
         public var plugin: String

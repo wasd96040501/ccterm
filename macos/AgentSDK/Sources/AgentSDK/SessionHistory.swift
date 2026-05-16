@@ -2,7 +2,7 @@ import Foundation
 
 public enum SessionHistory {
 
-    /// 在 `~/.claude/projects/` 下递归查找 `<sessionId>.jsonl` 文件。
+    /// Recursively searches `~/.claude/projects/` for `<sessionId>.jsonl`.
     public static func findSessionFile(sessionId: String) -> URL? {
         let base = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects")
@@ -26,7 +26,7 @@ public enum SessionHistory {
         return nil
     }
 
-    /// 从 JSONL 文件加载所有可解析的消息。
+    /// Loads every parseable message from a JSONL file.
     public static func loadMessages(from fileURL: URL) -> [Message2] {
         guard let data = try? Data(contentsOf: fileURL),
             let content = String(data: data, encoding: .utf8)
@@ -49,7 +49,7 @@ public enum SessionHistory {
         return messages
     }
 
-    /// 按 sessionId 查找文件并加载消息。找不到文件返回空数组。
+    /// Looks up the file for `sessionId` and loads its messages. Returns an empty array if the file is missing.
     public static func loadMessages(sessionId: String) -> [Message2] {
         guard let fileURL = findSessionFile(sessionId: sessionId) else {
             return []

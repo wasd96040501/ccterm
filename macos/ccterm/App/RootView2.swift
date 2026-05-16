@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// v2 根视图：Sidebar v2 + 只读 ChatHistoryView。
-/// 选中态本地持有，不走 AppState / ChatRouter。
+/// Root view: Sidebar + read-only ChatHistoryView. Selection is held locally,
+/// not in AppState or any router.
 struct RootView2: View {
     static fileprivate let detailCoordSpace = "RootView2.detail"
 
@@ -33,8 +33,8 @@ struct RootView2: View {
             Text(failure.message)
         }
         .task(id: selectedSessionId) {
-            // 进入 NewSession tab 时懒分配 draftSessionId。
-            // 已绑定时不重新生成（保留用户尚未启动的草稿）。
+            // Lazily allocate draftSessionId on entering the NewSession tab.
+            // Don't regenerate when already set — preserves the user's unsent draft.
             if selectedSessionId == SidebarView2.newSessionTag, draftSessionId == nil {
                 draftSessionId = UUID().uuidString.lowercased()
             }
@@ -48,18 +48,21 @@ struct RootView2: View {
         } else if selectedSessionId == SidebarView2.transcriptStressTag {
             TranscriptStressView()
         } else if let sid = effectiveSessionId {
-            // `.id(sid)` 锁住 ChatHistoryView 身份:NewSession → History 过渡时
-            // sid 不变(draft 的 UUID 在首条消息发送后就是 history 的 sessionId),
-            // SwiftUI 不重建 NSView。底部 InputBarView2 同时承担 "draft 启动入口"
-            // 和 "history 续发消息" 两种角色,由 onSubmit 闭包内根据
-            // `handle.hasRecord` 决定是否触发首次启动副作用。
+            // `.id(sid)` pins ChatHistoryView identity across the NewSession →
+            // History transition: sid is stable (the draft UUID becomes the
+            // history sessionId after the first send), so SwiftUI doesn't
+            // rebuild the NSView. The bottom InputBarView2 plays both the
+            // "draft launcher" and "history continuation" roles — its
+            // onSubmit closure branches on `handle.hasRecord` to trigger the
+            // first-start side effects only when needed.
             ChatHistoryView(sessionId: sid)
                 .id(sid)
                 .overlay(alignment: .bottom) {
-                    // Fade scrim:detail pane 底部一道独立渐变,z-order 在
-                    // transcript 之上、input bar 之下。bar 区域用 mask 抠
-                    // 掉,这样 bar 的 glass / material 折射的就是 transcript
-                    // 本身,不会叠一层灰。
+                    // Fade scrim: a standalone gradient at the detail pane
+                    // bottom, z-ordered above the transcript and below the
+                    // input bar. The bar area is masked out so the bar's
+                    // glass / material refracts the transcript directly,
+                    // without an extra gray layer on top.
                     LinearGradient(
                         colors: [
                             Color(nsColor: .windowBackgroundColor).opacity(0),
@@ -86,12 +89,14 @@ struct RootView2: View {
                     .allowsHitTesting(false)
                 }
                 .overlay(alignment: .bottom) {
-                    // 宽度对齐 NativeTranscript2 的 content band:min 一致,
-                    // max = 0.8 * BlockStyle.maxLayoutWidth(780)= 624(4 倍数)。
-                    // `onGeometryChange` 把 bar 在 detail coord space 里的
-                    // frame 直接写入 @State,scrim 据此抠洞。bar 加在 padding
-                    // 之内(`.frame` 之外),所以上报的 rect 就是 bar 本体
-                    // (含 frame 约束,不含 padding 的 spacing 区)。
+                    // Width matches NativeTranscript2's content band: same
+                    // min; max = 0.8 * BlockStyle.maxLayoutWidth(780) = 624
+                    // (multiple of 4). `onGeometryChange` writes the bar's
+                    // frame in detail coord space straight into @State; the
+                    // scrim cuts its hole from that. The bar sits inside the
+                    // `.frame` and outside the `.padding`, so the reported
+                    // rect is the bar proper (frame constraints included,
+                    // padding spacing excluded).
                     InputBarChrome(
                         sessionId: sid,
                         coordSpace: Self.detailCoordSpace,
@@ -111,7 +116,7 @@ struct RootView2: View {
         }
     }
 
-    /// 由 tab + draft 派生的"当前展示的 sessionId"。
+    /// The currently displayed sessionId, derived from the tab + draft.
     private var effectiveSessionId: String? {
         if selectedSessionId == SidebarView2.newSessionTag {
             return draftSessionId
@@ -119,17 +124,19 @@ struct RootView2: View {
         return selectedSessionId
     }
 
-    /// 输入栏发送回调。`prepareDraft` 对已有 record 的 sessionId 也是
-    /// get-or-create — draft 和 history 走同一路径。首条消息(draft 启动)时
-    /// 写默认 cwd 并把选中态从 newSessionTag 切到具体 sessionId,后续消息
-    /// 走同一分支直接转发到 handle。
+    /// Input bar send callback. `prepareDraft` is get-or-create even for an
+    /// existing record — draft and history follow the same path. On the first
+    /// message (draft launch), set a default cwd and flip selection from
+    /// `newSessionTag` to the concrete sessionId; subsequent messages take the
+    /// same branch and forward directly to the handle.
     private func submit(text: String, sessionId: String) {
         let handle = manager.prepareDraft(sessionId)
         let isFirstStart = !handle.hasRecord
         if isFirstStart {
-            // fresh draft 没有 cwd 兜底 — 用户尚未选目录。落到 home 目录,保证
-            // CLI `Process.run()` 的 chdir 一定能成立(以前硬编码 ~/dev,机器上
-            // 没这个目录会直接 launchFailed,后续 resume 也跟着死)。
+            // Fresh draft has no cwd fallback — user hasn't picked a directory.
+            // Default to home so CLI `Process.run()`'s chdir always succeeds.
+            // (Previously hardcoded to ~/dev, which launchFailed on machines
+            // lacking that directory and dragged subsequent resumes down with it.)
             handle.setCwd(FileManager.default.homeDirectoryForCurrentUser.path)
         }
         handle.send(text: text)
@@ -143,11 +150,12 @@ struct RootView2: View {
 
 // MARK: - InputBarChrome
 
-/// 输入栏 chrome:LoadingPill(运行态)+ InputBarView2 垂直叠放。
+/// Input bar chrome: LoadingPill (running) stacked above InputBarView2.
 ///
-/// 持有 handle 的 source of truth(`SessionHandle2.isRunning`),供 pill 显示 /
-/// bar 按钮 send↔stop 切换共用一条状态。pill 浮在 bar 左上,通过 `VStack` 自
-/// 然布局 — geometry reporting 只回报 bar 本体,scrim 抠洞不会因 pill 撑大。
+/// Owns the source of truth for `SessionHandle2.isRunning`, shared by the pill
+/// visibility and the bar's send↔stop button toggle. The pill floats at the
+/// bar's top-left via natural `VStack` layout; geometry reporting only reports
+/// the bar itself, so the scrim hole isn't enlarged by the pill.
 private struct InputBarChrome: View {
     let sessionId: String
     let coordSpace: String
@@ -177,9 +185,10 @@ private struct InputBarChrome: View {
         }
         .animation(.smooth(duration: 0.25), value: handle?.isRunning ?? false)
         .task(id: sessionId) {
-            // `prepareDraft` 对 fresh / historical 都是 idempotent get-or-create,
-            // 和 ChatHistoryView 拿到的是同一个 handle 实例(@Observable 追踪
-            // `isRunning` 派生字段自动驱动重渲染)。
+            // `prepareDraft` is idempotent get-or-create for both fresh and
+            // historical sessions, returning the same handle instance that
+            // ChatHistoryView holds. @Observable on `isRunning` drives
+            // re-render automatically.
             handle = manager.prepareDraft(sessionId)
         }
     }

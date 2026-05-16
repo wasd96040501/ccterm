@@ -3,7 +3,8 @@ import Foundation
 
 // MARK: - SessionExtraUpdate
 
-/// SessionRecord extra 字段的部分更新。只更新非 nil 字段。
+/// Partial update for `SessionRecord.extra`. Only non-nil fields are
+/// applied.
 struct SessionExtraUpdate {
     var pluginDirs: [String]?
     var permissionMode: String?
@@ -14,76 +15,81 @@ struct SessionExtraUpdate {
 
 // MARK: - SessionRepository
 
-/// `SessionRecord` 实体的持久化层（DAO）契约。
+/// DAO contract for the `SessionRecord` entity.
 ///
-/// 生产实现是 `CoreDataSessionRepository`,基于 `CDSessionRecord` / CoreData。
-/// UI test 使用 `InMemorySessionRepository`(DEBUG only),避免污染主 CoreData store。
+/// Production implementation is `CoreDataSessionRepository`, backed by
+/// `CDSessionRecord` / CoreData. UI tests use `InMemorySessionRepository`
+/// (DEBUG only) to avoid contaminating the main CoreData store.
 ///
-/// SessionRecord 是持久化实体,描述"一条会话记录"——id、cwd、status、时间戳等;
-/// **不含**运行时状态(消息、进程状态)。运行时状态由 `SessionHandle2` 持有。
+/// SessionRecord is a persisted entity describing "one session record" —
+/// id, cwd, status, timestamps, etc. **It does not contain runtime state**
+/// (messages, process state); that lives on `SessionHandle2`.
 protocol SessionRepository: AnyObject {
 
     // MARK: Query
 
-    /// 按 sessionId 查找。未找到返回 nil。
+    /// Look up by sessionId; nil when missing.
     func find(_ sessionId: String) -> SessionRecord?
 
-    /// 查找所有非 archived 的会话,按 lastActiveAt 降序。
+    /// All non-archived sessions, descending by lastActiveAt.
     func findAll() -> [SessionRecord]
 
-    /// 查找所有 archived 的会话。
+    /// All archived sessions.
     func findArchived() -> [SessionRecord]
 
     // MARK: Create / Delete
 
-    /// 持久化一个新的 SessionRecord。id 冲突时覆盖。
+    /// Persist a SessionRecord. Overwrites on id conflict.
     func save(_ session: SessionRecord)
 
-    /// 归档会话。status → .archived, archivedAt = now。
+    /// Archive: status → .archived, archivedAt = now.
     func archive(_ sessionId: String)
 
-    /// 取消归档。status → .created,清除 archivedAt。
+    /// Unarchive: status → .created, clear archivedAt.
     func unarchive(_ sessionId: String)
 
-    /// 从存储中永久删除。不可恢复。
+    /// Permanently delete from storage. Unrecoverable.
     func delete(_ sessionId: String)
 
     // MARK: Update
 
-    /// 更新会话的持久化生命周期状态。
+    /// Update the persisted lifecycle state.
     func updateStatus(_ sessionId: String, to status: SessionStatus)
 
-    /// 更新会话的 cwd。同时清除 error。
+    /// Update cwd and clear error.
     func updateCwd(_ sessionId: String, cwd: String)
 
-    /// 更新会话标题。
+    /// Update title.
     func updateTitle(_ sessionId: String, title: String)
 
-    /// 启动失败时写 stderr / 进程退出原因。传 nil 清除。
+    /// Write stderr / process-exit reason on launch failure. Pass nil to clear.
     func updateError(_ sessionId: String, error: String?)
 
-    /// 部分更新 extra 字段。只更新 SessionExtraUpdate 中非 nil 的字段。
+    /// Partial update of extra fields; only non-nil fields in
+    /// SessionExtraUpdate are applied.
     func updateExtra(_ sessionId: String, with update: SessionExtraUpdate)
 
-    /// 更新 worktree 分支名。归档时保存,用于取消归档时重建 worktree。
+    /// Update worktree branch name. Saved on archive so unarchive can
+    /// rebuild the worktree.
     func updateWorktreeBranch(_ sessionId: String, branch: String?)
 
-    /// 更新 isWorktree 开关。仅 non-active 下由 SessionHandle 调用。
+    /// Update isWorktree flag. Called by SessionHandle while non-active only.
     func updateIsWorktree(_ sessionId: String, isWorktree: Bool)
 
-    /// 置顶会话。
+    /// Pin a session.
     func pinSession(sessionId: String)
 
-    /// 取消置顶。
+    /// Unpin a session.
     func unpinSession(sessionId: String)
 
-    /// 刷新 lastActiveAt 为当前时间。每次会话有交互时调用。
+    /// Refresh lastActiveAt to now. Call on every interaction.
     func touch(_ sessionId: String)
 }
 
 // MARK: - CoreDataSessionRepository
 
-/// `SessionRepository` 的 CoreData 实现。基于 `CDSessionRecord`,与老栈共享 `CoreDataStack.shared`。
+/// CoreData implementation of `SessionRepository`. Backed by
+/// `CDSessionRecord`; shares `CoreDataStack.shared` with the legacy stack.
 final class CoreDataSessionRepository: SessionRepository {
 
     private let coreDataStack: CoreDataStack
@@ -92,9 +98,10 @@ final class CoreDataSessionRepository: SessionRepository {
         self.coreDataStack = coreDataStack
     }
 
-    /// Workaround: macOS 26 SDK 的 `swift_task_deinitOnExecutorImpl` 在 isolated deinit 链中
-    /// 命中 libmalloc pointer-freed-but-not-allocated 崩溃。显式 nonisolated deinit 跳过
-    /// executor-hop 路径。详见 SessionHandle2.swift 的同类注释。
+    /// Workaround: macOS 26 SDK's `swift_task_deinitOnExecutorImpl` hits a
+    /// libmalloc pointer-freed-but-not-allocated crash in the isolated
+    /// deinit chain. Explicit nonisolated deinit skips the executor-hop
+    /// path. See SessionHandle2.swift for the matching note.
     nonisolated deinit {}
 
     // MARK: - Query

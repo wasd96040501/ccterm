@@ -1,8 +1,6 @@
 import Foundation
 import OSLog
 
-// MARK: - LogLevel
-
 enum LogLevel: Int, Comparable, CaseIterable, Sendable {
     case debug = 0
     case info = 1
@@ -41,8 +39,6 @@ enum LogLevel: Int, Comparable, CaseIterable, Sendable {
     }
 }
 
-// MARK: - LogEntry
-
 struct LogEntry: Identifiable, Sendable {
     let id: UUID
     let timestamp: Date
@@ -50,8 +46,6 @@ struct LogEntry: Identifiable, Sendable {
     let category: String
     let message: String
 }
-
-// MARK: - AppLogger
 
 @Observable
 @MainActor
@@ -77,8 +71,6 @@ final class AppLogger {
         entries.removeAll()
     }
 }
-
-// MARK: - Global Convenience
 
 /// Log a message. Thread-safe — can be called from any thread.
 /// Writes to both the in-app log viewer and macOS unified logging.

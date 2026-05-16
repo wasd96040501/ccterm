@@ -1,9 +1,9 @@
 import Foundation
 
-/// 一次性 prompt 执行器。对应 `claude -p --no-session-persistence --output-format json`。
+/// One-shot prompt runner. Wraps `claude -p --no-session-persistence --output-format json`.
 public enum Prompt {
 
-    /// 执行一次性 prompt，等待进程退出后返回结果。
+    /// Runs a one-shot prompt, waits for the process to exit, and returns the result.
     public static func run(
         message: String,
         configuration: PromptConfiguration
@@ -100,7 +100,7 @@ public enum Prompt {
 
     // MARK: - Private
 
-    /// 解析可执行文件路径和前缀参数（customCommand 拆分后的中间 token）。
+    /// Resolves the executable path and the prefix arguments (the intermediate tokens from splitting `customCommand`).
     private static func resolveExecutable(
         config: PromptConfiguration
     ) throws -> (executablePath: String, prefixArgs: [String]) {

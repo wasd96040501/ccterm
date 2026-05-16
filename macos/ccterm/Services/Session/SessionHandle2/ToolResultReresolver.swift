@@ -1,16 +1,19 @@
 import AgentSDK
 import Foundation
 
-/// Phase B (full history load) 完成后调用，把 Phase A 阶段因跨 tail 边界而
-/// 遗留的 unresolved tool_results 就地解决掉。
+/// Called after Phase B (full history load) completes; resolves any
+/// unresolved tool_results that Phase A left behind because their origin
+/// tool_use sat across the tail boundary.
 ///
-/// 与 `Message2Resolver.resolveFields` 等价 —— 但用 **外部传入** 的
-/// `[toolUseId: ToolUse]` index，而非依赖 resolver 的内部状态。这样就能在「两段
-/// 拼接」后给 tail 切片做一次性回填，无需改动 generated resolver。
+/// Equivalent to `Message2Resolver.resolveFields`, but uses an
+/// **externally supplied** `[toolUseId: ToolUse]` index instead of the
+/// resolver's internal state. That lets us do a single-pass backfill on
+/// the tail slice after the two pieces are stitched together, without
+/// modifying the generated resolver.
 enum ToolResultReresolver {
 
-    /// 扫描 `messages` 里所有 assistant block 的 tool_use，聚合成
-    /// `[toolUseId: ToolUse]`。
+    /// Walk every assistant block's tool_use in `messages` and aggregate
+    /// into `[toolUseId: ToolUse]`.
     static func buildToolUseIndex(from messages: [Message2]) -> [String: ToolUse] {
         var index: [String: ToolUse] = [:]
         for m in messages {
@@ -26,13 +29,14 @@ enum ToolResultReresolver {
         return index
     }
 
-    /// 对 `entries[fromIndex...]` 区间的每个 `.single(.remote(.user))`：如果
-    /// `toolUseResult` 是 unresolved object 且能在 `index` 里查到对应 origin
-    /// tool_use，就地 resolve。
+    /// For each `.single(.remote(.user))` in `entries[fromIndex...]`: if
+    /// `toolUseResult` is an unresolved object and the index has the
+    /// origin tool_use, resolve in place.
     ///
-    /// 返回被修改的 entry 下标集合（调用点可用它决定是否必要触发 UI 刷新）。
-    /// 当前实现会把 entries 的 entry.id 保持不变 —— TranscriptDiff 识别
-    /// contentHash 变化会走 updated 路径。
+    /// Returns the indices of mutated entries (callers can use it to
+    /// decide whether to trigger a UI refresh). The current implementation
+    /// keeps `entry.id` stable — TranscriptDiff sees the contentHash
+    /// change and routes through the updated path.
     @discardableResult
     static func applyResolution(
         to entries: inout [MessageEntry],
@@ -66,8 +70,8 @@ enum ToolResultReresolver {
         return updated
     }
 
-    /// 对 SingleEntry.payload 做一次 re-resolve（仅 `.remote(.user)` 生效）。
-    /// 返回是否真的修改了 payload。
+    /// Re-resolve a single payload (effective only for `.remote(.user)`).
+    /// Returns whether the payload actually changed.
     private static func reResolvePayload(
         _ payload: inout SingleEntry.Payload,
         using index: [String: ToolUse]
@@ -76,7 +80,8 @@ enum ToolResultReresolver {
         guard case .user(var parent) = msg else { return false }
         guard case .object(var obj)? = parent.toolUseResult, obj.isUnresolved else { return false }
 
-        // 找到 tool_result block 的 toolUseId，去 index 查 origin。
+        // Find the tool_result block's toolUseId and look up its origin
+        // in the index.
         guard case .array(let items)? = parent.message?.content else { return false }
         for item in items {
             if case .toolResult(let result) = item,

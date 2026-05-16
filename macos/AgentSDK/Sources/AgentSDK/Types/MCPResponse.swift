@@ -1,6 +1,6 @@
 import Foundation
 
-/// MCP 消息的响应结果。
+/// Response to an MCP message.
 public enum MCPResponse {
     case success(response: [String: Any]? = nil)
     case error(message: String)

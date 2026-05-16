@@ -2,35 +2,38 @@
 
 import Foundation
 
-/// 含默认行为的 scenario base class。**所有 test scenario 应当继承此类**,
-/// 只 override 自己关心的钩子,其它走 base 的"贴近真 claude CLI"默认行为。
+/// Base scenario class with default behavior. **All test scenarios should
+/// subclass this**, overriding only the hooks they care about; the rest fall
+/// back to base "close to the real claude CLI" defaults.
 ///
-/// 默认行为概览:
-/// - `onStart`:no-op,等 host 发 initialize。
-/// - `onInitialize`:回 control_response success + 发 `system.init`。
-/// - `onInterrupt`:回 control_response success + 发 `result.error_during_execution`,
-///   关掉 turn。
-/// - `onControlRequest`(其它 subtype):一律 ack success(避免 host callback 挂死)。
-/// - `onUserMessage`:echo user(uuid 一致触发 queued→confirmed)+ 发
-///   `result.success`,turn 一来一回完成。
-/// - `onControlResponse`/`onUnknown`:no-op。
+/// Default behavior:
+/// - `onStart`: no-op, wait for host to send initialize.
+/// - `onInitialize`: ack control_response success + emit `system.init`.
+/// - `onInterrupt`: ack control_response success + emit
+///   `result.error_during_execution` to close the turn.
+/// - `onControlRequest` (other subtypes): always ack success (prevents host
+///   callbacks from hanging).
+/// - `onUserMessage`: echo user (uuid match triggers queued→confirmed) + emit
+///   `result.success`; one round-trip turn.
+/// - `onControlResponse` / `onUnknown`: no-op.
 ///
-/// 用法 —— 一个测试一个 scenario,只 override 关心的钩子:
+/// Usage — one scenario per test, override only what differs:
 /// ```swift
 /// final class MyScenario: MockCLIBaseScenario {
 ///     override func onUserMessage(text: String, uuid: String?, send: MockCLISender) {
-///         // 偏离默认:echo 但不发 result —— turn 永远挂着
+///         // Deviation: echo but don't send result — turn hangs forever.
 ///         if let uuid { send.echoUser(text: text, uuid: uuid, sessionId: sessionId) }
 ///     }
 /// }
 /// ```
 ///
-/// 框架层(`MockCLIRunner` / `MockCLISender` / `MockCLIIncoming.parse`)只负责脚手架,
-/// 不写任何业务/测试相关逻辑;所有"mock claude 应该做什么"都在 scenario 类里。
+/// The framework layer (`MockCLIRunner` / `MockCLISender` /
+/// `MockCLIIncoming.parse`) is scaffolding only — no business or test-specific
+/// logic. All "what mock claude should do" lives in scenario classes.
 class MockCLIBaseScenario: MockCLIScenario {
 
-    /// scenario 内自洽的会话 id。`onInitialize` 回 `system.init`、`echoUser` /
-    /// `sendResultXxx` 都用它。需要的话 scenario 可以在 init 里覆盖。
+    /// Scenario-internal session id. Used by `onInitialize` for `system.init`,
+    /// and by `echoUser` / `sendResultXxx`. Scenarios may override in init.
     var sessionId: String = "11111111-1111-1111-1111-111111111111"
 
     init() {}
@@ -38,8 +41,9 @@ class MockCLIBaseScenario: MockCLIScenario {
     // MARK: - MockCLIScenario
 
     func onStart(send: MockCLISender) {
-        // 默认 no-op。要在子进程一启动就 emit 东西(模拟"CLI 自言自语")的 scenario
-        // 才需要 override —— 大多数 scenario 等 host 发 initialize 即可。
+        // Default no-op. Override only when a scenario must emit something on
+        // subprocess startup (simulating CLI talking on its own); most
+        // scenarios just wait for host's initialize.
     }
 
     final func onIncoming(_ message: MockCLIIncoming, send: MockCLISender) {
@@ -64,7 +68,8 @@ class MockCLIBaseScenario: MockCLIScenario {
 
     // MARK: - Override points
 
-    /// host 发 `initialize` control_request。默认回 success + `system.init`。
+    /// Host sent `initialize` control_request. Default: ack success + emit
+    /// `system.init`.
     func onInitialize(requestId: String, params: [String: Any], send: MockCLISender) {
         send.ackControlSuccess(
             requestId: requestId,
@@ -75,26 +80,28 @@ class MockCLIBaseScenario: MockCLIScenario {
         send.sendSystemInit(sessionId: sessionId)
     }
 
-    /// host 发 `interrupt` control_request。默认 ack success 并 emit 一条
-    /// `result.error_during_execution` 关掉 turn。
+    /// Host sent `interrupt` control_request. Default: ack success and emit
+    /// a `result.error_during_execution` to close the turn.
     func onInterrupt(requestId: String, send: MockCLISender) {
         send.ackControlSuccess(requestId: requestId)
         send.sendResultError(sessionId: sessionId, errors: ["interrupted"])
     }
 
-    /// initialize / interrupt 之外的 control_request(`set_model` / `apply_flag_settings` 等)。
-    /// 默认 ack success(空 response)。scenario override 来模拟错误 / 验证参数 / 等等。
+    /// Other control_request subtypes (`set_model`, `apply_flag_settings`, ...).
+    /// Default: ack success with empty response. Override to simulate errors
+    /// or validate params.
     func onControlRequest(subtype: String, requestId: String, params: [String: Any], send: MockCLISender) {
         send.ackControlSuccess(requestId: requestId)
     }
 
-    /// host 发用户消息。默认 echo 一条 user(用 host 给的 uuid),立刻发
-    /// `result.success` —— turn 一发就完。
+    /// Host sent a user message. Default: echo one user message (with the
+    /// host-supplied uuid), then immediately send `result.success` — turn
+    /// completes in one round trip.
     ///
-    /// 典型 override:
-    /// - "turn 永远挂着" → echo 完不发 result
-    /// - "assistant 流式回若干 chunk 再完结" → echo + sendAssistantText * N + sendResultSuccess
-    /// - "permission 流" → echo + 发 control_request(can_use_tool) 给 host
+    /// Common overrides:
+    /// - "turn hangs forever" → echo without sending result
+    /// - "assistant streams N chunks then finishes" → echo + sendAssistantText * N + sendResultSuccess
+    /// - "permission flow" → echo + send control_request(can_use_tool) to host
     func onUserMessage(text: String, uuid: String?, send: MockCLISender) {
         if let uuid {
             send.echoUser(text: text, uuid: uuid, sessionId: sessionId)
@@ -102,15 +109,13 @@ class MockCLIBaseScenario: MockCLIScenario {
         send.sendResultSuccess(sessionId: sessionId)
     }
 
-    /// host 回 mock 之前发出的 control_request(典型:mock 发了 `can_use_tool`,
-    /// host 回 allow/deny)。默认 no-op。
+    /// Host responding to a control_request the mock previously sent (e.g.
+    /// mock sent `can_use_tool`, host replies allow/deny). Default no-op.
     func onControlResponse(requestId: String, response: [String: Any], send: MockCLISender) {
-        // 默认 no-op。
     }
 
-    /// 任意未识别 type 的消息。默认 no-op,scenario 自行解析 raw 即可。
+    /// Any unrecognized message type. Default no-op; scenarios may parse `raw`.
     func onUnknown(raw: [String: Any], send: MockCLISender) {
-        // 默认 no-op。
     }
 }
 

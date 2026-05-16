@@ -2,27 +2,31 @@
 
 import Foundation
 
-/// Mock claude CLI 子进程入口。
+/// Mock claude CLI subprocess entry point.
 ///
-/// 进程结构(由 `AppEntryPoint` 调度):
+/// Process structure (orchestrated by `AppEntryPoint`):
 /// ```
-///   父进程(ccterm.app,XCUI test 启动) ──spawn──▶ 子进程(同一 ccterm 二进制,
-///                                                      但 CCTERM_RUN_AS_MOCK_CLI=1
-///                                                      → 走 MockCLIRunner.run())
+///   Parent (ccterm.app, launched by XCUI test) ──spawn──▶ Child (same ccterm
+///                                                            binary, but
+///                                                            CCTERM_RUN_AS_MOCK_CLI=1
+///                                                            → MockCLIRunner.run())
 /// ```
 ///
-/// 通信:
-/// - 父→子:stdin 一行一条 JSON(claude CLI 的 stream-json 协议)。
-/// - 子→父:stdout 一行一条 JSON(同上)。
-/// - stderr 用于 scenario 找不到 / 解析错的诊断输出。
+/// Communication:
+/// - Parent → child: stdin, one JSON line per message (claude CLI stream-json
+///   protocol).
+/// - Child → parent: stdout, one JSON line per message (same).
+/// - stderr is used for diagnostic output (unknown scenario / parse errors).
 ///
-/// 运行模型:
-/// - 单线程同步。`scenario.onStart` → `scenario.onIncoming(...)` 按序串行。
-/// - scenario 收到消息可立即写 stdout(同方法内)。
-/// - stdin 出现 EOF 或被 close → 子进程退出 0。
+/// Execution model:
+/// - Single-threaded, synchronous. `scenario.onStart` → `scenario.onIncoming(...)`
+///   serialized in order.
+/// - Scenarios may write to stdout immediately on receipt (within the same
+///   call).
+/// - stdin EOF / close → child exits 0.
 enum MockCLIRunner {
 
-    /// 入口。**不返回**:要么 `exit(0)` 结束,要么 `exit(1)` 出错。
+    /// Entry point. **Never returns**: either `exit(0)` or `exit(1)`.
     static func run() -> Never {
         let env = ProcessInfo.processInfo.environment
         let scenarioName = env["CCTERM_MOCK_CLI_SCENARIO"] ?? ""
@@ -46,8 +50,9 @@ enum MockCLIRunner {
             scenario.onIncoming(incoming, send: sender)
         }
 
-        // stdin EOF — host 关掉了 pipe(典型:SessionHandle2.stop 走 close),
-        // 干净退出让 onProcessExit(0) 触发常规清理路径。
+        // stdin EOF — host closed the pipe (typically SessionHandle2.stop's
+        // close). Exit cleanly so onProcessExit(0) triggers the normal cleanup
+        // path.
         exit(0)
     }
 

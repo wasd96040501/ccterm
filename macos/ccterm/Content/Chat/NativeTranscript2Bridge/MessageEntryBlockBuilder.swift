@@ -1,34 +1,38 @@
 import AgentSDK
 import Foundation
 
-/// `MessageEntry` → `[Block]` 转换。纯函数,可在任意线程跑。
+/// `MessageEntry` → `[Block]` translation. Pure function, safe on any thread.
 ///
-/// 设计要点:
-/// - **稳定 id**:每条 Block / ToolGroupBlock.Child 的 UUID 由
-///   `(entryId, role, idx...)` 派生(`StableBlockID`)。同一条 entry 跨
-///   状态变化(`.localUser` → `.remote.user`、tool_result 回填、group items
-///   增长)产同样 id → Coordinator 的 `.update` 路径直接替换 kind,保住
-///   fold-state / selection / animation 等 row-local 状态。
-/// - **assistant entry 内 text vs tool 顺序**:跟着 `Message2Assistant.message?.content`
-///   原始顺序走。text blocks 连续 buffer 成一段 markdown,遇到 tool_use 时
-///   先 flush markdown 段,再以单 child 形式产出一个 toolGroup,然后继续。
-/// - **GroupEntry**:多个 item 的 tool_uses 聚合成一个 toolGroup,title 取
-///   `completedTitle`。
+/// Design notes:
+/// - **Stable ids**: every Block / ToolGroupBlock.Child UUID is derived from
+///   `(entryId, role, idx...)` via `StableBlockID`. The same entry across state
+///   transitions (`.localUser` → `.remote.user`, tool_result back-fill, group
+///   items growing) yields the same id, so the Coordinator's `.update` path
+///   swaps kind in place and preserves row-local state (fold, selection,
+///   animation).
+/// - **Text vs tool ordering inside an assistant entry**: follows the original
+///   `Message2Assistant.message?.content` order. Consecutive text blocks buffer
+///   into one markdown chunk; on tool_use the markdown chunk is flushed first,
+///   then a single-child toolGroup is emitted, then iteration continues.
+/// - **GroupEntry**: tool_uses across multiple items aggregate into one
+///   toolGroup, with `completedTitle` as the header.
 ///
-/// `unknown` / `thinking` block 跳过,不产 Block。
+/// `unknown` / `thinking` blocks are skipped and produce no Block.
 enum MessageEntryBlockBuilder {
 
-    /// 批量入口。用于 `loadInitial`(reset),内部走 `entryBlocks` 各 entry
-    /// 一次,再合并 — 保证「一条 entry 算出的 blocks 在批量和增量两条路径
-    /// 上完全一致」(没有合并阶段才会做的额外计算)。
+    /// Batch entry point. Used by `loadInitial` (reset). Internally walks each
+    /// entry through `entryBlocks` once and merges — guaranteeing that the
+    /// blocks for one entry are identical between batch and incremental paths
+    /// (no merge-only side computations).
     static func blocks(from entries: [MessageEntry]) -> [Block] {
         var out: [Block] = []
         for entry in entries { out.append(contentsOf: entryBlocks(entry)) }
         return out
     }
 
-    /// 单条 entry → 0..N blocks。bridge 的增量路径(append / prepend / mutate)
-    /// 直接调本方法,把 entry 翻译成精确的 Block 列表交给 controller。
+    /// Single entry → 0..N blocks. The bridge's incremental paths (append /
+    /// prepend / mutate) call this directly to translate an entry into the
+    /// exact Block list handed to the controller.
     static func entryBlocks(_ entry: MessageEntry) -> [Block] {
         switch entry {
         case .single(let s):
@@ -69,8 +73,9 @@ enum MessageEntryBlockBuilder {
         case .string(let s):
             text = s
         case .array(let items):
-            // 过滤掉 tool_result item(已经被合并到对应 assistant 的 toolGroup);
-            // 剩下的 text item 拼成一段 userBubble。
+            // Drop tool_result items (already merged into the matching
+            // assistant's toolGroup); join remaining text items into one
+            // userBubble.
             text = items.compactMap { item -> String? in
                 if case .text(let t) = item, let s = t.text, !s.isEmpty { return s }
                 return nil
@@ -86,9 +91,10 @@ enum MessageEntryBlockBuilder {
         ]
     }
 
-    /// User bubble block id 在 `.localUser → .remote.user` 转换前后必须保持
-    /// 一致 —— `confirm` 走的是 `.update(id, newKind)`,id 变了就退化成
-    /// remove + insert,会把动画/选区抹平。
+    /// The user bubble block id must stay constant across the
+    /// `.localUser → .remote.user` transition: `confirm` goes through
+    /// `.update(id, newKind)`. A changed id degrades to remove + insert and
+    /// wipes animation / selection.
     private static func userBubbleBlockId(entryId: UUID) -> UUID {
         StableBlockID.derive("entry", entryId.uuidString, "userBubble")
     }
@@ -120,19 +126,21 @@ enum MessageEntryBlockBuilder {
                 }
             case .toolUse(let tu):
                 flushText()
-                // ToolUse.id 是 Optional<String> —— CLI 上游对每条 tool_use
-                // 都填了 id,nil 仅出现在脏数据。fallback 用 `tu|<idx>` 保证
-                // 仍能 derive 出稳定的 child id;result 查表用 nil(找不到)。
+                // ToolUse.id is Optional<String> — upstream CLI populates it
+                // for every tool_use; nil only appears in dirty data. Fallback
+                // `tu|<idx>` keeps child id derivation stable; result lookup
+                // with nil simply misses.
                 let toolUseId = tu.id ?? "tu|\(single.id.uuidString)|\(idx)"
                 let result = tu.id.flatMap { single.toolResults[$0] }
                 let child = ToolUseToChild.make(
                     toolUse: tu,
                     toolUseId: toolUseId,
                     result: result)
-                // 单 tool_use group:三态文案都从同一个 tu 派生 —— 单
-                // 工具情境下"聚合进行时"就退化成"per-tool 进行时",再
-                // 引入 `activeCountPhrase(1)` 反而把"Reading foo.swift"
-                // 替换成更模糊的"Reading 1 file"。
+                // Single-tool group: all three title states derive from the
+                // same tu. With one tool, "aggregated progressive" degrades
+                // to "per-tool progressive"; introducing `activeCountPhrase(1)`
+                // would replace "Reading foo.swift" with the vaguer
+                // "Reading 1 file".
                 let activeTitle = tu.activeFragment ?? tu.caseName
                 let completedTitle = tu.completedFragment ?? tu.caseName
                 let group = ToolGroupBlock(
@@ -174,10 +182,11 @@ enum MessageEntryBlockBuilder {
             }
         }
         guard !children.isEmpty else { return nil }
-        // 三态文案直接拿 SessionHandle2 `GroupEntry` 的现成实现 —— 它
-        // 已经覆盖 `activeTitle`(末 child 进行时)/ `expandedActiveTitle`
-        // (聚合进行时)/ `completedTitle`(聚合过去时)三态,Bridge
-        // 只负责打包,不重复实现聚合逻辑。
+        // Reuse the three title states already implemented on
+        // SessionHandle2's `GroupEntry`: `activeTitle` (last child
+        // progressive), `expandedActiveTitle` (aggregated progressive),
+        // `completedTitle` (aggregated past tense). Bridge just packages —
+        // it doesn't re-implement aggregation.
         return Block(
             id: StableBlockID.derive("group", group.id.uuidString),
             kind: .toolGroup(

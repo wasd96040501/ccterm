@@ -1,11 +1,13 @@
 import Foundation
 
-/// 把 markdown 源文本(assistant text segment)转成 NativeTranscript2 的
-/// `[Block]`。复用项目已有的 `MarkdownDocument` parser,只做 IR 形态变换:
-/// `MarkdownSegment` → `Block.Kind`、`MarkdownInline` → `InlineNode`。
+/// Converts markdown source (an assistant text segment) into NativeTranscript2's
+/// `[Block]`. Reuses the project's existing `MarkdownDocument` parser; only
+/// reshapes the IR: `MarkdownSegment` → `Block.Kind`, `MarkdownInline` →
+/// `InlineNode`.
 ///
-/// `idPrefix` 用来派生稳定 UUID — 同一个 assistant entry 内,segment 顺序
-/// 不变,前缀 + index 折出的 id 也不会变,Coordinator 的增量 diff 走快路径。
+/// `idPrefix` derives stable UUIDs — within a single assistant entry, segment
+/// order is fixed, so prefix + index folds into the same id every time and
+/// the Coordinator's incremental diff stays on the fast path.
 enum MarkdownToBlocks {
     static func blocks(source: String, idPrefix: String) -> [Block] {
         let doc = MarkdownDocument(parsing: source)
@@ -54,7 +56,8 @@ enum MarkdownToBlocks {
                     id: StableBlockID.derive(idPrefix, "table"),
                     kind: .table(convertTable(tbl))))
         case .mathBlock(let s):
-            // NativeTranscript2 不渲染数学公式,降级为代码块预览,起码内容不丢。
+            // NativeTranscript2 doesn't render math; fall back to a code-block
+            // preview so the content at least survives.
             out.append(
                 Block(
                     id: StableBlockID.derive(idPrefix, "math"),
@@ -118,7 +121,7 @@ enum MarkdownToBlocks {
             if let url = URL(string: dest) {
                 return .link(children: inner, url: url)
             }
-            // 退化为纯文本组合,保留可读性
+            // Degrade to plain text to preserve readability.
             return inner.isEmpty ? .text(dest) : wrapText(inner)
         case .image(_, let alt):
             return .text("[image: \(alt)]")
@@ -127,15 +130,16 @@ enum MarkdownToBlocks {
         case .lineBreak:
             return .lineBreak
         case .softBreak:
-            // CommonMark: softbreak 等价于空格;保留单空格让 wrap 算法自然处理
+            // CommonMark: softbreak == space. Keep a single space and let the
+            // wrap algorithm handle it naturally.
             return .text(" ")
         }
     }
 
     private static func wrapText(_ inlines: [InlineNode]) -> InlineNode {
-        // 把多个 inline 包成单个节点的简单办法:用 strong 但去掉粗体语义会丢
-        // 信息,改用 emphasis 同样不准。这里用 emphasis 不可,直接展平不可 —
-        // 调用方期望单个 InlineNode。最终办法:返回 text(string)。
+        // Caller wants a single InlineNode. Wrapping in `strong` would lose
+        // bold semantics; `emphasis` is similarly wrong. Flattening to a plain
+        // text node is the only honest collapse.
         var s = ""
         for n in inlines {
             switch n {
@@ -215,8 +219,9 @@ enum MarkdownToBlocks {
 
     // MARK: - Blockquote flattening
 
-    /// `Block.blockquote` 只持 `[InlineNode]`,不支持嵌套 block。这里把
-    /// `MarkdownBlock` 树折成纯 inline 流,paragraph 之间插 lineBreak。
+    /// `Block.blockquote` only carries `[InlineNode]` — no nested blocks. This
+    /// folds a `MarkdownBlock` tree into a flat inline stream, inserting
+    /// `lineBreak` between paragraphs.
     private static func flattenToInlines(_ blocks: [MarkdownBlock]) -> [InlineNode] {
         var out: [InlineNode] = []
         for (i, b) in blocks.enumerated() {

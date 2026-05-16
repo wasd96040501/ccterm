@@ -1,7 +1,5 @@
 import SwiftUI
 
-// MARK: - ButtonStyle
-
 struct HoverCapsuleStyle: ButtonStyle {
     var hoverColor: Color = Color(nsColor: .labelColor)
     var hoverOpacity: Double = 0.08
@@ -21,8 +19,6 @@ struct HoverCapsuleStyle: ButtonStyle {
                 ))
     }
 }
-
-// MARK: - ViewModifier (shared implementation)
 
 struct HoverCapsuleModifier: ViewModifier {
     var hoverColor: Color = Color(nsColor: .labelColor)
@@ -54,8 +50,6 @@ struct HoverCapsuleModifier: ViewModifier {
         )
     }
 }
-
-// MARK: - View Extension
 
 extension View {
     /// Apply a capsule background. When `staticFill` is set, always visible; otherwise hover-only.

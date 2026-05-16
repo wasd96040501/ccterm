@@ -1,35 +1,35 @@
 import Foundation
 
-/// 一次性 prompt 配置。对应 `claude -p` 模式。
+/// One-shot prompt configuration. Drives `claude -p` mode.
 public struct PromptConfiguration {
-    /// CLI 工作目录。对应 `--cwd`。
+    /// CLI working directory. Maps to `--cwd`.
     public var workingDirectory: URL
 
-    /// 模型名称。对应 `--model`。
+    /// Maps to `--model`.
     public var model: String?
 
-    /// 系统提示。对应 `--system-prompt`。
+    /// Maps to `--system-prompt`.
     public var systemPrompt: String?
 
-    /// 工具列表。空数组 = `--tools ''`（禁用所有工具）。nil = CLI 默认。
+    /// Tool list. Empty array = `--tools ''` (disables all tools); nil = CLI default.
     public var tools: [String]?
 
-    /// 结构化输出 JSON Schema 字符串。对应 `--json-schema`。
+    /// Structured-output JSON Schema string. Maps to `--json-schema`.
     public var jsonSchema: String?
 
-    /// claude 二进制路径。nil 自动查找。
+    /// Path to the `claude` binary. nil = auto-locate.
     public var binaryPath: String?
 
-    /// 额外环境变量。
+    /// Extra environment variables.
     public var env: [String: String]
 
-    /// 用户自定义命令前缀，如 "trae-proxy claude --"。非空时替代默认 claude 二进制。
+    /// Custom command prefix, e.g. `"trae-proxy claude --"`. When non-empty, replaces the default `claude` binary.
     public var customCommand: String?
 
-    /// 禁用斜杠命令解析。对应 `--disable-slash-commands`。
+    /// Maps to `--disable-slash-commands`.
     public var disableSlashCommands: Bool
 
-    /// 推理投入等级。对应 `--effort`。
+    /// Reasoning effort level. Maps to `--effort`.
     public var effort: String?
 
     public init(

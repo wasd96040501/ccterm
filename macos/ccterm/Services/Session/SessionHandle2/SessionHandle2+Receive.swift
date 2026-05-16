@@ -5,8 +5,8 @@ import Foundation
 
 extension SessionHandle2 {
 
-    /// live 来自 CLI 实时推送；replay 来自 JSONL 历史回放。
-    /// 唯一差异：replay 不推进 lifecycle，不置 hasUnread。
+    /// live = real-time CLI push; replay = JSONL history playback.
+    /// Only difference: replay does not advance lifecycle and does not set hasUnread.
     enum ReceiveMode { case live, replay }
 }
 
@@ -14,14 +14,14 @@ extension SessionHandle2 {
 
 extension SessionHandle2 {
 
-    /// 单一 ingest 入口。吞一条 Message2 并更新 handle：
-    /// - 同步副作用（usage、contextWindow、cwd、slashCommands、permissionMode、lifecycle）
-    /// - user echo 带 uuid 命中本地 `.queued` entry → 切 `.confirmed` 并把 payload
-    ///   从 `.localUser` 替换为 `.remote(echo)`，推进 status
-    /// - tool_result 原位合并到对应 assistant single（可能位于 group 内部）
-    /// - 其它可见消息按「可分组」规则 append 到 timeline
+    /// Single ingest entry point. Consumes one Message2 and updates the handle:
+    /// - Synchronous side effects (usage, contextWindow, cwd, slashCommands, permissionMode, lifecycle)
+    /// - user echo whose uuid matches a local `.queued` entry → flip to `.confirmed` and
+    ///   replace payload from `.localUser` with `.remote(echo)`, advance status
+    /// - tool_result merged in place into the matching assistant single (may live inside a group)
+    /// - other visible messages are appended to the timeline per the "groupable" rule
     ///
-    /// live 与 replay 走同一路径；`mode` 仅影响 lifecycle 推进与 hasUnread 触发。
+    /// live and replay share the same path; `mode` only affects lifecycle advancement and hasUnread.
     func receive(_ message: Message2, mode: ReceiveMode = .live) {
         switch message {
         case .assistant(let a): noteUsage(a.message?.usage)
@@ -43,8 +43,8 @@ extension SessionHandle2 {
                 .info, "SessionHandle2",
                 "[v2-send] receive sid=\(sessionId.prefix(8)) mode=live action=\(actDesc) status=\(status)")
         }
-        // 每个 mutation helper 返回它产出的 MessagesChange(或 nil),让本
-        // 函数最后统一通过 onMessagesChange 推给 bridge。
+        // Each mutation helper returns the MessagesChange it produced (or nil), so this
+        // function can dispatch them uniformly to the bridge via onMessagesChange at the end.
         let change: MessagesChange?
         switch act {
         case .merge(let id, let payload):
@@ -57,8 +57,8 @@ extension SessionHandle2 {
             change = nil
         }
 
-        // replay 批量 ingest 由调用方（loadHistory Phase A / Phase B）在
-        // 批量结束时一次性发 `.reset` / `.prepended`——此处不发 per-message。
+        // For replay, the caller (loadHistory Phase A / Phase B) emits a single
+        // `.reset` / `.prepended` at the end of the batch — we do not emit per-message here.
         guard mode == .live else { return }
         if let change { onMessagesChange?(change) }
     }
@@ -70,8 +70,8 @@ extension SessionHandle2 {
 
     fileprivate enum Action {
         case merge(toolUseId: String, payload: ToolResultPayload)
-        /// 本地 `.queued` entry 命中 CLI echo（按 uuid 匹配），切 `.confirmed` 且
-        /// payload 从 `.localUser` 替换为 `.remote(echo)`。
+        /// Local `.queued` entry matched by CLI echo (by uuid); flip to `.confirmed` and
+        /// replace payload from `.localUser` with `.remote(echo)`.
         case confirm(entryId: UUID, echo: Message2)
         case append
         case skip
@@ -95,9 +95,9 @@ extension SessionHandle2 {
         }
     }
 
-    /// 在 `messages` 里找 uuid 和该 user echo 一致、且仍 `.queued` 的 entry。
-    /// CLI 通过 `--replay-user-messages` 原样回显我们发送时塞的 uuid，因此此处
-    /// 按 entry.id ↔ echo.uuid 精确配对，不做文本启发式。
+    /// Find an entry in `messages` whose uuid matches this user echo and is still `.queued`.
+    /// The CLI echoes back the uuid we sent verbatim via `--replay-user-messages`, so we
+    /// pair exactly on entry.id ↔ echo.uuid — no text-based heuristics.
     fileprivate func matchQueuedEntry(for echo: Message2User) -> UUID? {
         guard let raw = echo.uuid,
             let echoId = UUID(uuidString: raw)
@@ -111,7 +111,7 @@ extension SessionHandle2 {
             entry.id == echoId && entry.delivery == .queued
         }?.id
         if hit == nil {
-            // 列出所有 queued user entry id,看是否压根没有,或 uuid 对不上
+            // List all queued user entry ids to see if there are none, or if the uuid simply doesn't match.
             let queued = messages.compactMap { entry -> String? in
                 guard case .single(let s) = entry,
                     case .localUser = s.payload,
@@ -134,9 +134,9 @@ extension SessionHandle2 {
     fileprivate func appendToTimeline(_ message: Message2, mode: ReceiveMode) -> MessagesChange {
         let single = SingleEntry(id: UUID(), payload: .remote(message), delivery: nil, toolResults: [:])
 
-        // change 在两种情况下不同:
-        // - 追加到既存 group 的 items → group entry 本体改了内容 → `.updated`
-        // - 新建 group / append .single → 时间线多了一条 entry → `.appended`
+        // change differs in two cases:
+        // - appending to an existing group's items → the group entry's contents changed → `.updated`
+        // - creating a new group / appending a .single → timeline gained an entry → `.appended`
         let change: MessagesChange
         if message.isGroupableAssistant {
             if case .group(var g) = messages.last {
@@ -156,11 +156,11 @@ extension SessionHandle2 {
         return change
     }
 
-    /// 把 tool_result 挂到发起该 tool_use 的 assistant single 上。
-    /// 倒序搜索：匹配顶层 `.single` 直接挂；匹配 `.group` 时下探 items。
-    /// 返回被改动的 entry(`.single` 或 `.group`),由 caller 转成
-    /// `MessagesChange.updated`;tool_use_id 找不到对应 entry → 返回 nil
-    /// (老 CLI 偶发 tool_result 找不到锚点)。
+    /// Attach tool_result to the assistant single that issued the matching tool_use.
+    /// Reverse scan: match a top-level `.single` directly; for `.group`, descend into items.
+    /// Returns the mutated entry (`.single` or `.group`) so the caller can wrap it in
+    /// `MessagesChange.updated`; if tool_use_id has no matching entry → nil
+    /// (older CLI versions occasionally emit tool_result without an anchor).
     fileprivate func attachToolResult(_ payload: ToolResultPayload, to toolUseId: String) -> MessageEntry? {
         for i in messages.indices.reversed() {
             switch messages[i] {
@@ -181,10 +181,10 @@ extension SessionHandle2 {
         return nil
     }
 
-    /// CLI 开始处理一条先前 `send()` 的消息：把 payload 从 `.localUser` 换成
-    /// `.remote(echo)`、delivery 切 `.confirmed`，并把 status 推进到 `.responding`
-    /// （仅 live）。用本地 entry 继续展示，不重复 append。返回被改动的 entry,
-    /// 给 caller 转成 `MessagesChange.updated`;id 不命中 / 非 single → nil。
+    /// CLI began processing a previously `send()`-ed message: swap payload from `.localUser`
+    /// to `.remote(echo)`, flip delivery to `.confirmed`, and advance status to `.responding`
+    /// (live only). Reuse the local entry for display — do not append a duplicate. Returns
+    /// the mutated entry so the caller can wrap it in `MessagesChange.updated`; id miss / non-single → nil.
     fileprivate func confirmQueuedEntry(id: UUID, echo: Message2, mode: ReceiveMode) -> MessageEntry? {
         guard let idx = messages.firstIndex(where: { $0.id == id }) else { return nil }
         guard case .single(var single) = messages[idx] else { return nil }
@@ -219,8 +219,8 @@ extension SessionHandle2 {
                 .info, "SessionHandle2",
                 "[v2-send] finishTurn sid=\(sessionId.prefix(8)) status-before=\(status) pendingTurnCount=\(pendingTurnCount)"
             )
-            // turn 结束 -- 每条 .result 对应一条之前 send() 入口 +1 的 turn。
-            // clamp 到 0,replay 模式 / 异常多发不会走负。
+            // turn end -- each .result corresponds to one turn previously +1'd by send().
+            // Clamp to 0 so replay mode / spurious extras never go negative.
             pendingTurnCount = max(0, pendingTurnCount - 1)
         }
         if mode == .live, case .responding = status {
@@ -251,8 +251,8 @@ extension SessionHandle2 {
 
 extension Message2User {
 
-    /// 本消息是否作为独立 entry 进 timeline。
-    /// 剔除子 agent、synthetic、compact summary、transcript-only、空文本。
+    /// Whether this message enters the timeline as its own entry.
+    /// Filters out sub-agents, synthetic, compact summary, transcript-only, and empty text.
     fileprivate var isVisible: Bool {
         guard parentToolUseId == nil,
             isSynthetic != true,
@@ -276,7 +276,7 @@ extension Message2User {
         }
     }
 
-    /// 第一个 tool_result 块（通常每条 user 消息只带一个）。
+    /// The first tool_result block (each user message typically carries only one).
     fileprivate var toolResultBlock: ItemToolResult? {
         guard case .array(let items) = message?.content else { return nil }
         for item in items {
@@ -288,7 +288,7 @@ extension Message2User {
 
 extension Message2Assistant {
 
-    /// 是否有可见内容（text 或 tool_use）。thinking-only / subagent 视为不可见。
+    /// Has any visible content (text or tool_use). thinking-only / subagent is treated as invisible.
     fileprivate var isVisible: Bool {
         guard parentToolUseId == nil, let blocks = message?.content else { return false }
         return blocks.contains { block in
@@ -303,8 +303,8 @@ extension Message2Assistant {
 
 extension Message2 {
 
-    /// 「可分组」：assistant 消息，其所有非空 content block 均为 tool_use（任意 kind）。
-    /// 混合 text / thinking 仍走 `.single`，由 `AssistantMarkdownComponent` 渲染。
+    /// "Groupable": an assistant message whose non-empty content blocks are all tool_use (any kind).
+    /// Mixed text / thinking still goes through `.single` and is rendered by `AssistantMarkdownComponent`.
     fileprivate var isGroupableAssistant: Bool {
         guard case .assistant(let a) = self,
             let blocks = a.message?.content,
@@ -319,7 +319,7 @@ extension Message2 {
 
 extension Message2Result {
 
-    /// 从 modelUsage 取最大的 contextWindow。success / errorDuringExecution 共用。
+    /// Take the max contextWindow from modelUsage. Shared by success / errorDuringExecution.
     fileprivate var contextWindow: Int? {
         let usage: [String: ModelUsageValue]?
         switch self {

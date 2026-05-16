@@ -1,19 +1,21 @@
 import SwiftUI
 
-/// 浮在 `InputBarView2` 左上方的运行态指示 pill。视觉语言:
+/// Running-state pill that floats above the top-left of `InputBarView2`.
 ///
-/// - 材质:`.barSurface` — 与 InputBar 完全一致(Liquid Glass / `.thickMaterial`
-///   + 描边 + 阴影,由 macOS 版本派发)。
-/// - 圆角:12pt。InputBar 是 20pt,12 = 0.6× — 落在"和谐子层级 chip"区间,既
-///   显然小一级,又不会因为差距过大显得突兀。
-/// - 内容:三颗小圆点呼吸 + 简短文案(`"Working"`,走 String Catalog 本地化)。
-///   dot 直径 3pt、间距 4pt — 比 InputBar 的发送按钮(28pt)小一个数量级,视觉
-///   重量克制。
-/// - 动画:相位错开正弦呼吸,峰值从左到右流过 3 颗 dot。
+/// - Surface: `.barSurface` — identical to InputBar (Liquid Glass /
+///   `.thickMaterial` + stroke + shadow, dispatched by macOS version).
+/// - Corner: 12pt. InputBar is 20pt, so 12 = 0.6× — clearly a sub-level chip,
+///   visibly smaller without feeling discordant.
+/// - Content: three breathing dots + short text (`"Working"`, localized via
+///   String Catalog). Dot diameter 3pt, gap 4pt — an order of magnitude smaller
+///   than the InputBar send button (28pt), keeping visual weight restrained.
+/// - Animation: phase-staggered sine breath, peak sweeps left-to-right across
+///   the three dots.
 ///
-/// 可见性由调用方传入(`isVisible`)。调用方应根据 `SessionHandle2.status` 判定
-/// (responding / starting / interrupting → 显示;idle / stopped / notStarted →
-/// 隐藏),让 source of truth 留在 handle 上 — pill 是纯视图,不持运行态副本。
+/// Visibility is passed in by the caller (`isVisible`). Callers should derive
+/// it from `SessionHandle2.status` (responding / starting / interrupting →
+/// show; idle / stopped / notStarted → hide), keeping the source of truth on
+/// the handle — the pill is a pure view and holds no running-state copy.
 struct LoadingPillView2: View {
     static let cornerRadius: CGFloat = 12
 
@@ -31,8 +33,9 @@ struct LoadingPillView2: View {
     }
 }
 
-/// 三颗小圆点,峰值从左到右流过。`TimelineView(.animation)` 让 SwiftUI 按显示
-/// 刷新率重绘 opacity,所有状态都从全局时间派生,无 `@State` 翻转,不怕重建。
+/// Three dots with the peak sweeping left-to-right. `TimelineView(.animation)`
+/// has SwiftUI redraw opacity at the display refresh rate; all state is
+/// derived from global time, no `@State` toggles, safe across rebuilds.
 private struct DotsRow: View {
     private let dotSize: CGFloat = 3
     private let spacing: CGFloat = 4
@@ -55,9 +58,10 @@ private struct DotsRow: View {
         .accessibilityHidden(true)
     }
 
-    /// `phase = t/period - i*Δ/period` 让 index 越大相位越**小**,index 0 先到
-    /// 峰(phase = 0.5),index 2 最后到 — 视觉上波峰自左向右扫过。
-    /// `truncatingRemainder(dividingBy:)` 对负数返回负数,加 1 归一到 [0, 1)。
+    /// `phase = t/period - i*Δ/period` makes higher index mean *smaller* phase,
+    /// so index 0 hits peak first (phase = 0.5) and index 2 last — the wave
+    /// crest sweeps left-to-right. `truncatingRemainder(dividingBy:)` returns
+    /// negative for negatives, so +1 normalizes back into [0, 1).
     private func opacity(t: TimeInterval, index: Int) -> Double {
         var phase = (t / period - Double(index) * phaseStagger / period)
             .truncatingRemainder(dividingBy: 1)

@@ -170,7 +170,7 @@ struct TextInputView: NSViewRepresentable {
             isUpdatingText = false
             scrollView?.updateIntrinsicHeight()
             updatePlaceholderVisibility()
-            // text 和 cursor 同时回调，保证一致
+            // Report text + cursor together so observers see a consistent pair.
             let cursor = textView.selectedRange().location
             onTextChanged?(textView.string, cursor)
         }
@@ -179,7 +179,7 @@ struct TextInputView: NSViewRepresentable {
             guard let textView = textView else { return }
             if textView.hasMarkedText() { return }
             let location = textView.selectedRange().location
-            // 纯光标移动（不打字），text 不变，cursor 变
+            // Pure cursor move (no typing): text unchanged, cursor changed.
             onTextChanged?(textView.string, location)
         }
 

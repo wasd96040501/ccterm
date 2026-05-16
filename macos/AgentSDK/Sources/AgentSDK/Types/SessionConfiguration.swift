@@ -86,6 +86,17 @@ public struct SessionConfiguration {
     /// Extra environment variables passed to the CLI subprocess.
     public var env: [String: String]
 
+    /// When true, the CLI subprocess inherits the parent process's
+    /// environment (`ProcessInfo.processInfo.environment`) instead of
+    /// spawning a login shell to collect one. Default false.
+    ///
+    /// Why: `ShellEnvironment.loginEnvironment()` runs `zsh -li -c env`,
+    /// which on CI runners costs multiple seconds (path_helper / Homebrew
+    /// shellenv / user rc). Set to true when the binary you're launching
+    /// doesn't need the user's login PATH (e.g. an explicit `binaryPath`
+    /// pointing at a self-contained executable like the UI-test mock CLI).
+    public var inheritsParentEnvironment: Bool
+
     /// Custom command prefix, e.g. `"trae-proxy claude --"`. When non-empty, replaces the default `claude` binary.
     public var customCommand: String?
 
@@ -128,6 +139,7 @@ public struct SessionConfiguration {
         plugins: [String] = [],
         customCommand: String? = nil,
         env: [String: String] = [:],
+        inheritsParentEnvironment: Bool = false,
         allowDangerouslySkipPermissions: Bool = false,
         extraArguments: [String] = [],
         messageExportDirectory: URL? = nil
@@ -161,6 +173,7 @@ public struct SessionConfiguration {
         self.plugins = plugins
         self.customCommand = customCommand
         self.env = env
+        self.inheritsParentEnvironment = inheritsParentEnvironment
         self.allowDangerouslySkipPermissions = allowDangerouslySkipPermissions
         self.extraArguments = extraArguments
         self.messageExportDirectory = messageExportDirectory

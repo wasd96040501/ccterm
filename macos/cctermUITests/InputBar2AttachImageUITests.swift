@@ -92,13 +92,8 @@ final class InputBar2AttachImageUITests: XCTestCase {
             .completed,
             "thumbnail should be cleared after the image is sent")
 
-        // First-send bootstrap is heavier than a normal turn: ensureStarted
-        // spawns the CLI process, runs initialize, then `flushBootstrapBacklog`
-        // writes the queued image. On the macOS CI runner the whole sequence
-        // (bootstrap + echo + result.success) can take well past 5s, even
-        // though each step is cheap individually.
         XCTAssertTrue(
-            sendButton.waitForExistence(timeout: 15),
+            sendButton.waitForExistence(timeout: 5),
             "send button should return after the mock CLI completes the turn")
     }
 

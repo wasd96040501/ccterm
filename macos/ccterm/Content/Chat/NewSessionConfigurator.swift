@@ -24,8 +24,14 @@ struct NewSessionConfigurator: View {
     /// Fixed visual height; the parent assumes this when computing the
     /// compose-mode vertical centering padding.
     static let height: CGFloat = 300
-    /// Right-column width. Left column takes the rest.
-    private static let recentColumnWidth: CGFloat = 240
+    /// Right-column width. Left column takes the rest. Roughly 38% of
+    /// the 544pt compose width — same proportion Xcode's welcome window
+    /// uses for its recents pane.
+    private static let recentColumnWidth: CGFloat = 200
+    /// Outer card corner radius. Shared by the unified surface, the
+    /// content clip, and the stroke overlay so the geometry stays
+    /// consistent regardless of platform branch in `BarSurfaceModifier`.
+    private static let cardCornerRadius: CGFloat = 12
 
     @Environment(RecentProjectsStore.self) private var recents
     @State private var branches: [String] = []
@@ -34,19 +40,36 @@ struct NewSessionConfigurator: View {
     @State private var showBranchPicker: Bool = false
 
     var body: some View {
-        HStack(spacing: 12) {
+        // One unified card (single rounded rect with `barSurface` —
+        // Liquid Glass on macOS 26+, thick material on older) split
+        // visually into two halves by a darker fill + a 0.5pt vertical
+        // separator on the right pane. Mirrors Xcode's welcome window:
+        // same block, just cut in two.
+        HStack(spacing: 0) {
             leftPanel
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(16)
+
             rightPanel
                 .frame(width: Self.recentColumnWidth)
                 .frame(maxHeight: .infinity)
                 .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color(nsColor: .controlBackgroundColor))
+                    // Recess overlay: a touch darker than the unified
+                    // material beneath. `Color.black.opacity(...)` so
+                    // the effect rides on top of whatever the parent
+                    // surface resolves to (glass / material / solid).
+                    Color.black.opacity(0.18)
                 )
+                .overlay(alignment: .leading) {
+                    // Hairline dividing the left and right halves.
+                    Rectangle()
+                        .fill(Color(nsColor: .separatorColor))
+                        .frame(width: 0.5)
+                }
         }
         .frame(height: Self.height)
+        .clipShape(RoundedRectangle(cornerRadius: Self.cardCornerRadius))
+        .barSurface(cornerRadius: Self.cardCornerRadius)
         .testIdentifier("NewSession.Card")
         .task(id: folderPath) { refreshGitInfo(resetOverride: true) }
     }
@@ -60,37 +83,37 @@ struct NewSessionConfigurator: View {
     @ViewBuilder
     private var leftPanel: some View {
         let branchVisible = currentBranch != nil
-        // Outer VStack centers the whole block (icon + leading-aligned
-        // title/branch sub-block) in the left panel. Inner VStack uses
-        // .leading alignment so the branch row starts at the title
-        // text's leading edge, not the column edge. The icon sits in
-        // its own row above and is centered relative to the sub-block.
+        // One flat VStack — every child is horizontally centered in the
+        // left half. An earlier version nested a `.leading` sub-stack
+        // to align the branch row with the title's leading edge, but
+        // that pushed the title off-center whenever the (possibly
+        // invisible) branch row was wider than the title text. Keeping
+        // everything centered matches Xcode's welcome window and stays
+        // stable across folder-pick states.
         VStack(spacing: 14) {
             Image(systemName: "hammer.fill")
                 .font(.system(size: 44, weight: .regular))
                 .foregroundStyle(.tint)
                 .frame(height: 56)
 
-            VStack(alignment: .leading, spacing: 10) {
-                Text(headingText)
-                    .font(.system(size: 18, weight: .semibold))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+            Text(headingText)
+                .font(.system(size: 18, weight: .semibold))
+                .lineLimit(1)
+                .truncationMode(.tail)
 
-                HStack(spacing: 10) {
-                    branchPill
-                    Toggle(isOn: $useWorktree) {
-                        Text(String(localized: "Worktree"))
-                            .font(.system(size: 12))
-                    }
-                    .toggleStyle(.checkbox)
-                    .controlSize(.small)
-                    .testIdentifier("NewSession.WorktreeToggle")
+            HStack(spacing: 10) {
+                branchPill
+                Toggle(isOn: $useWorktree) {
+                    Text(String(localized: "Worktree"))
+                        .font(.system(size: 12))
                 }
-                .opacity(branchVisible ? 1 : 0)
-                .allowsHitTesting(branchVisible)
-                .animation(.smooth(duration: 0.25), value: branchVisible)
+                .toggleStyle(.checkbox)
+                .controlSize(.small)
+                .testIdentifier("NewSession.WorktreeToggle")
             }
+            .opacity(branchVisible ? 1 : 0)
+            .allowsHitTesting(branchVisible)
+            .animation(.smooth(duration: 0.25), value: branchVisible)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

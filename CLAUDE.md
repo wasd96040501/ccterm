@@ -1,4 +1,6 @@
-# CCTerm 代码规范
+# CCTerm 代码规范（test/wfpr-conflict, intentionally divergent)
+
+注意:这一行是为了制造与 main 的合并冲突而存在的,不应被合并。
 
 ## 架构
 

@@ -39,8 +39,11 @@ jobs:
         run: ./macos/scripts/build-tests.sh
 
       - id: locate
-        name: Locate xctestrun
+        name: Package test bundle
         working-directory: macos
+        # upload-artifact 内部用 zip,会破坏 .app 里 framework 的 symlink
+        # (XCTest.framework/XCTest -> Versions/A/XCTest 之类),导致 test runner
+        # 启动时 dyld 找不到符号。先 tar 一下规避。
         run: |
           XCTESTRUN=$(find build/DD/Build/Products -maxdepth 1 -name '*.xctestrun' | head -1)
           if [ -z "$XCTESTRUN" ]; then
@@ -48,12 +51,13 @@ jobs:
             exit 1
           fi
           echo "xctestrun-name=$(basename "$XCTESTRUN")" >> "$GITHUB_OUTPUT"
+          tar -czf /tmp/test-bundle.tar.gz -C build/DD/Build/Products .
 
       - name: Upload test bundle
         uses: actions/upload-artifact@v4
         with:
           name: test-bundle
-          path: macos/build/DD/Build/Products
+          path: /tmp/test-bundle.tar.gz
           retention-days: 1
           if-no-files-found: error
 
@@ -78,7 +82,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: test-bundle
-          path: macos/build/DD/Build/Products
+          path: /tmp
+
+      - name: Unpack test bundle
+        working-directory: macos
+        run: |
+          mkdir -p build/DD/Build/Products
+          tar -xzf /tmp/test-bundle.tar.gz -C build/DD/Build/Products
 
       - name: Run shard
         working-directory: macos

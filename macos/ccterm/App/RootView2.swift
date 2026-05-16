@@ -63,28 +63,25 @@ struct RootView2: View {
             ChatHistoryView(sessionId: sid)
                 .id(sid)
                 .overlay(alignment: .top) {
-                    // Top fade-blur scrim, mirror of the bottom one. The
+                    // Top fade scrim, mirror of the bottom one: same
+                    // windowBackgroundColor LinearGradient, direction
+                    // reversed (opaque at top → clear 80pt down). The
                     // transcript runs flush to the window's top edge (no
-                    // contentInsets.top), so content scrolling past the top
-                    // would otherwise abut the window chrome / traffic
-                    // lights hard. The scrim provides a soft fade-out:
-                    // most opaque at the top edge → fully clear at 80pt
-                    // down. Backed by a Material layer so the fade reads
-                    // as a progressive blur rather than a flat color wash.
-                    Rectangle()
-                        .fill(.ultraThinMaterial)
-                        .frame(height: Self.topFadeScrimHeight)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                        .mask {
-                            LinearGradient(
-                                colors: [.black, .clear],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        }
-                        .allowsHitTesting(false)
-                        .accessibilityElement()
-                        .accessibilityIdentifier("ChatHistory.TopFadeScrim")
+                    // contentInsets.top), so this softens the seam between
+                    // window chrome and the first visible row.
+                    LinearGradient(
+                        colors: [
+                            Color(nsColor: .windowBackgroundColor),
+                            Color(nsColor: .windowBackgroundColor).opacity(0),
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: Self.topFadeScrimHeight)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .allowsHitTesting(false)
+                    .accessibilityElement()
+                    .accessibilityIdentifier("ChatHistory.TopFadeScrim")
                 }
                 .overlay(alignment: .bottom) {
                     // Fade scrim: a standalone gradient at the detail pane

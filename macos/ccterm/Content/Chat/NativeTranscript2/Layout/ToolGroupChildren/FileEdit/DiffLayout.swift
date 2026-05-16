@@ -9,8 +9,21 @@ import SwiftUI
 ///
 /// Body content is a flat list of `Row` values, one per diff line
 /// plus inter-hunk ` ··· ` separators. Each row carries its line
-/// background + gutter background + pre-typeset `CTLine`, so the
-/// draw loop is just two fill passes + one glyph pass.
+/// background + gutter background + a pre-typeset prefix (gutter +
+/// sign glyphs) + a wrapped content `TextLayout`, so the draw loop
+/// is just two fill passes + glyph passes.
+///
+/// ### Soft wrap
+///
+/// Long diff lines wrap inside the card. The prefix column glyphs
+/// (gutter line number + sign) are painted once on the first visual
+/// line; the content `TextLayout` typesets through
+/// `CTTypesetterSuggestLineBreak` at `cardWidth - prefixWidth`, so
+/// continuation visual lines start at the content column. Add / del
+/// line backgrounds and the gutter tint both extend over the full
+/// wrapped row band — wrap continuation lines drop the line number
+/// glyph but keep the same gutter colour as the first visual line,
+/// so the colour column reads as one consistent band.
 ///
 /// ### Async syntax highlighting
 ///
@@ -33,8 +46,8 @@ import SwiftUI
 ///
 /// Selection is restricted to the **content column** — gutter
 /// (line-number) and sign (`+ / - / space`) glyphs are not part of
-/// the selectable text. `hitTest` clamps points in those columns to
-/// the start of the row's content. The string output joins per-row
+/// the selectable text. `hitTest` clamps points in the prefix column
+/// to the start of the row's content. The string output joins per-row
 /// content with `\n` so paste targets see plain code without the
 /// diff chrome columns. Position type is `LayoutPosition.diff(...)`;
 /// `ToolGroupLayout` is the one that turns these positions into a
@@ -46,29 +59,47 @@ struct DiffLayout: @unchecked Sendable {
     /// Rounded `codeBlock`-style card rect in layout-local coords.
     let containerRect: CGRect
 
-    /// One drawn row inside the card.
+    /// One drawn row inside the card. After soft-wrap, a row spans
+    /// `lineRect.height` worth of vertical space — one or more visual
+    /// lines stacked from the row's top.
     struct Row: @unchecked Sendable {
-        /// Full-width line background rect.
+        /// Full-width line band rect spanning all visual lines of the
+        /// row (after wrap). Background fill for add / del rows
+        /// covers this entire rect.
         let lineRect: CGRect
-        /// Gutter (line-number column) background rect, painted over
-        /// `lineRect`'s portion of the same band.
+        /// Gutter (line-number column) background rect — spans the
+        /// full wrapped row band so the gutter colour matches across
+        /// the first visual line and any continuation lines (the
+        /// number glyph is still drawn on the first visual line only,
+        /// but the colour column stays consistent). `.zero` for
+        /// separator rows.
         let gutterRect: CGRect
         let lineBg: NSColor
         let gutterBg: NSColor
-        /// Pre-typeset row content (gutter + sign + content, or
-        /// ` ··· ` for separators). `nil` for empty-content rows.
-        let line: CTLine?
-        /// Baseline in layout-local coords for `CTLine.draw`.
-        let baseline: CGPoint
+        /// Prefix glyphs: gutter line number + sign column. Painted on
+        /// the first visual line only; `nil` for separator rows.
+        let prefixLine: CTLine?
+        /// Baseline (layout-local coords) for `prefixLine` — aligned
+        /// with the first visual line's baseline so prefix and content
+        /// share one cap-height row.
+        let prefixBaseline: CGPoint
+        /// Wrapped content layout. For content rows, this is the
+        /// per-diff-line source text — typeset at
+        /// `cardWidth - prefixWidth`, may break into multiple visual
+        /// lines. For separator rows, this is the centred " ··· "
+        /// rendered as a single non-wrapping line.
+        let contentLayout: TextLayout
+        /// Top-left (layout-local coords) for `contentLayout.draw(...)`
+        /// — equal to `lineRect.minX + prefixWidth` for content rows
+        /// (so wrap continuation visual lines align with the content
+        /// column), and `lineRect.minX + bubbleHorizontalPadding` for
+        /// separator rows.
+        let contentOrigin: CGPoint
         /// `true` for content rows (selectable); `false` for inter-
         /// hunk `···` separators (decorative).
         let isContent: Bool
-        /// UTF-16 offset where the *content* column starts inside
-        /// `line`'s attributed string. `0` for separator rows.
-        let contentStartIndex: Int
-        /// UTF-16 length of the content text itself (excludes prefix
-        /// gutter / sign / trailing space). `0` for separators or
-        /// empty-content lines.
+        /// UTF-16 length of the content text itself. `0` for
+        /// separators or empty-content lines.
         let contentLength: Int
         /// Raw content text — used by `string(loChar:hiChar:)` so
         /// pasteboard output stays clean even when the rendered
@@ -119,16 +150,23 @@ struct DiffLayout: @unchecked Sendable {
         let font = BlockStyle.diffBodyFont
         let lineH = font.ascender - font.descender
 
-        // Gutter width: padded to the widest line number across all
-        // hunks plus a space on each side.
+        // Gutter + sign prefix sizing. Both columns are constant-width
+        // within a body — gutter padded to the widest line number, sign
+        // is always " ± ". `prefixWidth` is what we subtract from
+        // `maxWidth` to size the content column, so wrap continuation
+        // lines align with the content column.
         let maxLineNo = hunks.flatMap(\.lines).compactMap(\.lineNo).max() ?? 0
         let digits = max(2, String(maxLineNo).count)
         let gutterText = String(repeating: " ", count: digits + 2)  // " NNN "
         let gutterWidth = textWidth(gutterText, attrs: [.font: font])
+        // Sign column is always 3 mono-glyphs (" + " / " - " / "   ").
+        let signWidth = textWidth("   ", attrs: [.font: font])
+        let prefixWidth = gutterWidth + signWidth
 
-        // Per-row prefix length is constant within a body: " NNN " +
-        // " ± " = (digits + 2) + 3 = digits + 5 UTF-16 units.
-        let prefixUTF16: Int = (digits + 2) + 3
+        // Content column width — the wrap budget for each row's
+        // `TextLayout`. Floor at 1 so we never pass a non-positive
+        // width to the typesetter.
+        let contentMaxWidth = max(1, maxWidth - prefixWidth)
 
         var rows: [Row] = []
         rows.reserveCapacity(hunks.reduce(0) { $0 + $1.lines.count + 1 })
@@ -139,47 +177,68 @@ struct DiffLayout: @unchecked Sendable {
 
         for (hi, hunk) in hunks.enumerated() {
             if hi > 0 {
+                let sepAttr = NSAttributedString(
+                    string: " ··· ",
+                    attributes: [
+                        .font: font,
+                        .foregroundColor: BlockStyle.diffSeparatorForeground,
+                    ])
+                // Separator is short — typeset at full card width so
+                // it never wraps even on pathologically narrow cards.
+                let sepLayout = TextLayout.make(
+                    attributed: sepAttr, maxWidth: maxWidth)
+                let sepH = max(lineH, sepLayout.totalHeight)
                 let sepRect = CGRect(
-                    x: originX, y: y,
-                    width: maxWidth, height: lineH)
-                let sepLine = CTLineCreateWithAttributedString(
-                    NSAttributedString(
-                        string: " ··· ",
-                        attributes: [
-                            .font: font,
-                            .foregroundColor: BlockStyle.diffSeparatorForeground,
-                        ]))
+                    x: originX, y: y, width: maxWidth, height: sepH)
                 rows.append(
                     Row(
                         lineRect: sepRect,
                         gutterRect: .zero,
                         lineBg: BlockStyle.diffSeparatorBackground,
                         gutterBg: .clear,
-                        line: sepLine,
-                        baseline: CGPoint(
+                        prefixLine: nil,
+                        prefixBaseline: .zero,
+                        contentLayout: sepLayout,
+                        contentOrigin: CGPoint(
                             x: originX + BlockStyle.bubbleHorizontalPadding,
-                            y: y + font.ascender),
+                            y: y),
                         isContent: false,
-                        contentStartIndex: 0,
                         contentLength: 0,
                         contentText: "",
                         globalStart: 0))
-                y += lineH
+                y += sepH
             }
             for line in hunk.lines {
                 let effectiveType: DiffEngine.Line.LineType =
                     (suppressAdd && line.type == .add) ? .context : line.type
+
+                // Prefix glyphs: gutter " NNN " + sign " ± ". Built as
+                // one CTLine so the per-row draw cost stays at one
+                // glyph pass instead of two.
+                let prefixAttr = buildPrefixAttributed(
+                    line: line, effectiveType: effectiveType,
+                    digits: digits, font: font)
+                let prefixLine = CTLineCreateWithAttributedString(prefixAttr)
+
+                // Content TextLayout — wraps when the source line is
+                // wider than the content column. Empty content rows
+                // (a blank diff line) produce an empty layout with
+                // `totalHeight == 0`; we still allocate `lineH` for
+                // the row band so the gutter remains visible.
+                let contentAttr = buildContentAttributed(
+                    content: line.content, font: font,
+                    tokens: lineMap?[line.content])
+                let contentLayout = TextLayout.make(
+                    attributed: contentAttr, maxWidth: contentMaxWidth)
+                let rowH = max(lineH, contentLayout.totalHeight)
+
                 let lineRect = CGRect(
                     x: originX, y: y,
-                    width: maxWidth, height: lineH)
+                    width: maxWidth, height: rowH)
                 let gutterRect = CGRect(
-                    x: originX, y: y, width: gutterWidth, height: lineH)
-                let attr = buildLineAttributed(
-                    line: line, effectiveType: effectiveType,
-                    digits: digits, font: font,
-                    tokens: lineMap?[line.content])
-                let ctLine = CTLineCreateWithAttributedString(attr)
+                    x: originX, y: y, width: gutterWidth, height: rowH)
                 let contentLenU16 = (line.content as NSString).length
+
                 // Each preceding content row contributes its content
                 // length + 1 (newline). The first row starts at 0.
                 let globalStart =
@@ -192,16 +251,19 @@ struct DiffLayout: @unchecked Sendable {
                         gutterRect: gutterRect,
                         lineBg: DiffColors.dynamicContentBg(effectiveType),
                         gutterBg: DiffColors.dynamicGutterBg(effectiveType),
-                        line: ctLine,
-                        baseline: CGPoint(x: originX, y: y + font.ascender),
+                        prefixLine: prefixLine,
+                        prefixBaseline: CGPoint(
+                            x: originX, y: y + font.ascender),
+                        contentLayout: contentLayout,
+                        contentOrigin: CGPoint(
+                            x: originX + prefixWidth, y: y),
                         isContent: true,
-                        contentStartIndex: prefixUTF16,
                         contentLength: contentLenU16,
                         contentText: line.content,
                         globalStart: globalStart))
                 runningContentChars = globalStart + contentLenU16
                 hasEmittedContent = true
-                y += lineH
+                y += rowH
             }
         }
 
@@ -238,9 +300,11 @@ struct DiffLayout: @unchecked Sendable {
                     width: row.gutterRect.width,
                     height: row.gutterRect.height + pad),
             lineBg: row.lineBg, gutterBg: row.gutterBg,
-            line: row.line, baseline: row.baseline,
+            prefixLine: row.prefixLine,
+            prefixBaseline: row.prefixBaseline,
+            contentLayout: row.contentLayout,
+            contentOrigin: row.contentOrigin,
             isContent: row.isContent,
-            contentStartIndex: row.contentStartIndex,
             contentLength: row.contentLength,
             contentText: row.contentText,
             globalStart: row.globalStart)
@@ -259,9 +323,11 @@ struct DiffLayout: @unchecked Sendable {
                     width: row.gutterRect.width,
                     height: row.gutterRect.height + pad),
             lineBg: row.lineBg, gutterBg: row.gutterBg,
-            line: row.line, baseline: row.baseline,
+            prefixLine: row.prefixLine,
+            prefixBaseline: row.prefixBaseline,
+            contentLayout: row.contentLayout,
+            contentOrigin: row.contentOrigin,
             isContent: row.isContent,
-            contentStartIndex: row.contentStartIndex,
             contentLength: row.contentLength,
             contentText: row.contentText,
             globalStart: row.globalStart)
@@ -278,16 +344,15 @@ struct DiffLayout: @unchecked Sendable {
         return CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
     }
 
-    /// Per-line attributed string: ` NNN ` (gutter) + ` ± ` (sign) +
-    /// `content`. Tokens from `lineMap` colourise the `content` segment;
-    /// absent / `nil` falls back to `labelColor`. Gutter and sign live
-    /// outside `lineMap` so they always render even on the cold path.
-    nonisolated private static func buildLineAttributed(
+    /// Build the per-row prefix attributed string: ` NNN ` (gutter)
+    /// + ` ± ` (sign). Same fonts / colors as the original
+    /// `buildLineAttributed`, just split off so the content half can
+    /// be typeset independently.
+    nonisolated private static func buildPrefixAttributed(
         line: DiffEngine.Line,
         effectiveType: DiffEngine.Line.LineType,
         digits: Int,
-        font: NSFont,
-        tokens: [SyntaxToken]?
+        font: NSFont
     ) -> NSAttributedString {
         let lineNoStr = line.lineNo.map(String.init) ?? ""
         let padded =
@@ -323,8 +388,21 @@ struct DiffLayout: @unchecked Sendable {
                     .font: font,
                     .foregroundColor: signColor,
                 ]))
+        return result
+    }
 
-        if let tokens, !line.content.isEmpty {
+    /// Build the per-row content attributed string — the source text,
+    /// optionally token-coloured. Empty content (a blank diff line)
+    /// returns an empty attributed string, which `TextLayout.make`
+    /// short-circuits to `.empty`.
+    nonisolated private static func buildContentAttributed(
+        content: String,
+        font: NSFont,
+        tokens: [SyntaxToken]?
+    ) -> NSAttributedString {
+        guard !content.isEmpty else { return NSAttributedString() }
+        if let tokens, !tokens.isEmpty {
+            let result = NSMutableAttributedString()
             for token in tokens {
                 let color = colorForToken(scope: token.scope)
                 result.append(
@@ -335,18 +413,14 @@ struct DiffLayout: @unchecked Sendable {
                             .foregroundColor: color,
                         ]))
             }
-        } else if !line.content.isEmpty {
-            result.append(
-                NSAttributedString(
-                    string: line.content,
-                    attributes: [
-                        .font: font,
-                        .foregroundColor: NSColor.labelColor,
-                    ]))
+            return result
         }
-
-        result.append(NSAttributedString(string: " ", attributes: [.font: font]))
-        return result
+        return NSAttributedString(
+            string: content,
+            attributes: [
+                .font: font,
+                .foregroundColor: NSColor.labelColor,
+            ])
     }
 
     nonisolated private static func colorForToken(scope: String?) -> NSColor {
@@ -374,26 +448,19 @@ struct DiffLayout: @unchecked Sendable {
     func hitTest(point: CGPoint) -> Int {
         guard contentLength > 0 else { return 0 }
 
-        // Walk rows top-down. Skip separators. Track the most recent
-        // content row whose top has been crossed; clamp to its end if
-        // the point falls in a gap or below the last row.
         var lastContentRow: Row?
         for row in rows where row.isContent {
             if point.y < row.lineRect.minY {
-                // Above this row. If a previous content row exists,
-                // clamp to its end; else clamp to the first row's
-                // start.
                 if let prev = lastContentRow {
                     return prev.globalStart + prev.contentLength
                 }
                 return row.globalStart
             }
             if point.y <= row.lineRect.maxY {
-                return Self.charIndex(in: row, atLocalX: point.x)
+                return Self.charIndex(in: row, atLocalPoint: point)
             }
             lastContentRow = row
         }
-        // Past the last content row.
         if let last = lastContentRow {
             return last.globalStart + last.contentLength
         }
@@ -401,16 +468,14 @@ struct DiffLayout: @unchecked Sendable {
     }
 
     /// Selection rects covering the half-open range `[loChar, hiChar)`.
-    /// One rect per content row whose body chars intersect the range,
-    /// tight to the row's full `lineRect` band (so the rect matches
-    /// the diff's line-height visual rhythm).
+    /// One rect per visual line fragment that intersects the range;
+    /// wrap-continuation lines emit their own rects, indented to the
+    /// content column.
     ///
-    /// Content rows don't wrap; a long line's CTLine can resolve a char
-    /// `x` past `containerRect.maxX`. The cell paints these rects with
-    /// `wantsDefaultClipping = false`, so an unclamped rect spills past
-    /// the rounded card edge and gets drawn squarely over the corner.
-    /// Clamp each rect's horizontal span into the container so the
-    /// selection band stops at the visual card boundary.
+    /// Rects are clamped horizontally to the container so a long
+    /// wrapped line never bleeds past the rounded card edge — same
+    /// invariant as the pre-wrap layout (which clamped to handle the
+    /// "long single CTLine spills past the card" case).
     func rects(loChar: Int, hiChar: Int) -> [CGRect] {
         guard loChar < hiChar else { return [] }
         let containerMinX = containerRect.minX
@@ -422,28 +487,26 @@ struct DiffLayout: @unchecked Sendable {
             let lo = max(loChar, rowStart)
             let hi = min(hiChar, rowEnd)
             guard hi >= lo else { continue }
-            guard let line = row.line else { continue }
-            // Both endpoints empty (e.g. selection lands on the
-            // \n separator only) → skip.
             if hi == lo && lo == rowStart { continue }
             let localLo = lo - rowStart
             let localHi = hi - rowStart
-            let charLo = row.contentStartIndex + localLo
-            let charHi = row.contentStartIndex + localHi
-            let xLo = CGFloat(CTLineGetOffsetForStringIndex(line, charLo, nil))
-            let xHi = CGFloat(CTLineGetOffsetForStringIndex(line, charHi, nil))
-            let baseX = row.lineRect.minX
-            let rawLo = baseX + xLo
-            let rawHi = baseX + xHi
-            let clampedLo = max(containerMinX, min(rawLo, containerMaxX))
-            let clampedHi = max(containerMinX, min(rawHi, containerMaxX))
-            guard clampedHi > clampedLo else { continue }
-            out.append(
-                CGRect(
-                    x: clampedLo,
-                    y: row.lineRect.minY,
-                    width: clampedHi - clampedLo,
-                    height: row.lineRect.height))
+            let nsRange = NSRange(
+                location: localLo, length: max(0, localHi - localLo))
+            guard nsRange.length > 0 else { continue }
+            let layoutRects = row.contentLayout.selectionRects(for: nsRange)
+            for r in layoutRects {
+                let absRect = r.offsetBy(
+                    dx: row.contentOrigin.x, dy: row.contentOrigin.y)
+                let clampedLo = max(containerMinX, min(absRect.minX, containerMaxX))
+                let clampedHi = max(containerMinX, min(absRect.maxX, containerMaxX))
+                guard clampedHi > clampedLo else { continue }
+                out.append(
+                    CGRect(
+                        x: clampedLo,
+                        y: absRect.minY,
+                        width: clampedHi - clampedLo,
+                        height: absRect.height))
+            }
         }
         return out
     }
@@ -458,11 +521,6 @@ struct DiffLayout: @unchecked Sendable {
         for row in rows where row.isContent {
             let rowStart = row.globalStart
             let rowEnd = row.globalStart + row.contentLength
-            // We always emit a row's contribution (possibly empty)
-            // when the range covers any part of the row OR a
-            // newline boundary just after it. Easier formulation:
-            // include this row if `loChar <= rowEnd && hiChar > rowStart`,
-            // OR the trailing `\n` (i.e., rowEnd) is inside the range.
             let nlIndex = rowEnd
             let trailingNlInRange = (nlIndex >= loChar && nlIndex < hiChar)
             let bodyOverlap =
@@ -498,8 +556,6 @@ struct DiffLayout: @unchecked Sendable {
             guard char >= rowStart, char <= rowEnd else { continue }
             guard row.contentLength > 0 else { return nil }
             let local = max(0, min(char - rowStart, row.contentLength - 1))
-            // NSString.doubleClick(at:) requires a valid char index
-            // strictly inside the string; clamp into [0, len-1].
             let attr = NSAttributedString(string: row.contentText)
             let word = attr.doubleClick(at: local)
             return NSRange(
@@ -509,22 +565,25 @@ struct DiffLayout: @unchecked Sendable {
         return nil
     }
 
-    /// Helper: row-local x → full-line char index, then narrow to the
-    /// row's content column (gutter / sign clamps to the row's content
-    /// start; trailing space past content clamps to its end).
-    nonisolated private static func charIndex(in row: Row, atLocalX x: CGFloat) -> Int {
-        guard let line = row.line else { return row.globalStart }
-        let baseX = row.lineRect.minX
-        let lineLocalX = x - baseX
-        let raw = CTLineGetStringIndexForPosition(
-            line, CGPoint(x: lineLocalX, y: 0))
-        if raw == kCFNotFound {
-            return row.globalStart + (lineLocalX < 0 ? 0 : row.contentLength)
-        }
-        let contentStart = row.contentStartIndex
-        let contentEnd = contentStart + row.contentLength
-        let clamped = max(contentStart, min(contentEnd, raw))
-        return row.globalStart + (clamped - contentStart)
+    /// Helper: layout-local point → content-only char index.
+    /// Points landing in the gutter / sign columns (`x` left of
+    /// `contentOrigin.x`) clamp to the start of the visual line the
+    /// point falls in. Points past the content edge clamp to the
+    /// visual line's end. Points past the row's last visual line
+    /// (e.g. when content's `totalHeight < lineH` and the click lands
+    /// in the bottom slack) clamp to the row's content end.
+    nonisolated private static func charIndex(in row: Row, atLocalPoint p: CGPoint) -> Int {
+        // Translate to content-layout local coords (top-left of the
+        // content layout is `row.contentOrigin`).
+        let localP = CGPoint(
+            x: p.x - row.contentOrigin.x,
+            y: p.y - row.contentOrigin.y)
+        // `TextLayout.characterIndex` handles out-of-bounds clamping:
+        // y above the layout → 0; y below → length; x outside a line
+        // → the line's start/end.
+        let idx = row.contentLayout.characterIndex(at: localP)
+        let clamped = max(0, min(row.contentLength, idx))
+        return row.globalStart + clamped
     }
 
     // MARK: - Draw
@@ -563,12 +622,14 @@ struct DiffLayout: @unchecked Sendable {
 
         ctx.addPath(path)
         ctx.clip()
-        // Pass 1 — line backgrounds (full width).
+        // Pass 1 — line backgrounds (full width, full wrapped height).
         for row in rows where row.lineBg.alphaComponent > 0 {
             ctx.setFillColor(row.lineBg.cgColor)
             ctx.fill(row.lineRect.offsetBy(dx: origin.x, dy: origin.y))
         }
         // Pass 2 — gutter backgrounds layered over line backgrounds.
+        // Gutter tint is first-visual-line only; continuation visual
+        // lines fall through to the underlying lineBg.
         for row in rows where row.gutterBg.alphaComponent > 0 {
             ctx.setFillColor(row.gutterBg.cgColor)
             ctx.fill(row.gutterRect.offsetBy(dx: origin.x, dy: origin.y))
@@ -590,13 +651,27 @@ struct DiffLayout: @unchecked Sendable {
         ctx.addPath(clipPath)
         ctx.clip()
 
+        // Prefix glyphs (gutter + sign) — single CTLine per content
+        // row, drawn at the first visual line's baseline.
+        ctx.saveGState()
         ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
         for row in rows {
-            guard let line = row.line else { continue }
+            guard let prefix = row.prefixLine else { continue }
             ctx.textPosition = CGPoint(
-                x: origin.x + row.baseline.x,
-                y: origin.y + row.baseline.y)
-            CTLineDraw(line, ctx)
+                x: origin.x + row.prefixBaseline.x,
+                y: origin.y + row.prefixBaseline.y)
+            CTLineDraw(prefix, ctx)
+        }
+        ctx.restoreGState()
+
+        // Content glyphs — wrapped TextLayout handles its own text
+        // matrix flip.
+        for row in rows {
+            row.contentLayout.draw(
+                in: ctx,
+                origin: CGPoint(
+                    x: origin.x + row.contentOrigin.x,
+                    y: origin.y + row.contentOrigin.y))
         }
         ctx.restoreGState()
     }

@@ -13,7 +13,14 @@ struct RootView2: View {
     @State private var selectedSessionId: String? = SidebarView2.newSessionTag
     @State private var draftSessionId: String?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
-    @State private var barRect: CGRect = .zero
+    /// Frame of the round attach button, in `detailCoordSpace`. The
+    /// bottom scrim cuts a *Circle* hole here.
+    @State private var attachRect: CGRect = .zero
+    /// Frame of the rounded-rectangle pill, in `detailCoordSpace`. The
+    /// bottom scrim cuts a *RoundedRectangle* hole here. Reported
+    /// separately from `attachRect` so the 8pt gap between attach and
+    /// pill is NOT cut — the gradient bridges them naturally there.
+    @State private var pillRect: CGRect = .zero
     @Environment(SessionManager2.self) private var manager
 
     var body: some View {
@@ -86,9 +93,13 @@ struct RootView2: View {
                 .overlay(alignment: .bottom) {
                     // Fade scrim: a standalone gradient at the detail pane
                     // bottom, z-ordered above the transcript and below the
-                    // input bar. The bar area is masked out so the bar's
-                    // glass / material refracts the transcript directly,
-                    // without an extra gray layer on top.
+                    // input bar. Two holes are cut — a Circle for the
+                    // attach button and a RoundedRectangle for the pill —
+                    // so each control's glass/material refracts the
+                    // transcript directly. The 8pt gap between attach and
+                    // pill is intentionally NOT cut, so the scrim's
+                    // gradient bridges them rather than leaving a
+                    // hard-edged slot.
                     LinearGradient(
                         colors: [
                             Color(nsColor: .windowBackgroundColor).opacity(0),
@@ -102,11 +113,18 @@ struct RootView2: View {
                     .mask {
                         Color.white
                             .overlay {
-                                if barRect != .zero {
+                                if attachRect != .zero {
+                                    Circle()
+                                        .fill(.black)
+                                        .frame(width: attachRect.width, height: attachRect.height)
+                                        .position(x: attachRect.midX, y: attachRect.midY)
+                                        .blendMode(.destinationOut)
+                                }
+                                if pillRect != .zero {
                                     RoundedRectangle(cornerRadius: InputBarView2.cornerRadius)
                                         .fill(.black)
-                                        .frame(width: barRect.width, height: barRect.height)
-                                        .position(x: barRect.midX, y: barRect.midY)
+                                        .frame(width: pillRect.width, height: pillRect.height)
+                                        .position(x: pillRect.midX, y: pillRect.midY)
                                         .blendMode(.destinationOut)
                                 }
                             }
@@ -117,17 +135,15 @@ struct RootView2: View {
                 .overlay(alignment: .bottom) {
                     // Width matches NativeTranscript2's content band: same
                     // min; max = 0.8 * BlockStyle.maxLayoutWidth(780) = 624
-                    // (multiple of 4). `onGeometryChange` writes the bar's
-                    // frame in detail coord space straight into @State; the
-                    // scrim cuts its hole from that. The bar sits inside the
-                    // `.frame` and outside the `.padding`, so the reported
-                    // rect is the bar proper (frame constraints included,
-                    // padding spacing excluded).
+                    // (multiple of 4). `InputBarView2` reports two frames
+                    // — attach button and pill — in detail coord space;
+                    // the scrim cuts two independent holes from them.
                     InputBarChrome(
                         sessionId: sid,
                         coordSpace: Self.detailCoordSpace,
                         onSubmit: { submission in submit(submission, sessionId: sid) },
-                        onBarRect: { rect in barRect = rect }
+                        onAttachRect: { rect in attachRect = rect },
+                        onPillRect: { rect in pillRect = rect }
                     )
                     .frame(
                         minWidth: BlockStyle.minLayoutWidth,
@@ -197,7 +213,8 @@ private struct InputBarChrome: View {
     let sessionId: String
     let coordSpace: String
     let onSubmit: (InputBarView2.Submission) -> Void
-    let onBarRect: (CGRect) -> Void
+    let onAttachRect: (CGRect) -> Void
+    let onPillRect: (CGRect) -> Void
 
     @Environment(SessionManager2.self) private var manager
     @State private var handle: SessionHandle2?
@@ -212,13 +229,11 @@ private struct InputBarChrome: View {
             InputBarView2(
                 onSubmit: onSubmit,
                 onStop: { handle?.interrupt() },
-                isRunning: handle?.isRunning ?? false
+                isRunning: handle?.isRunning ?? false,
+                coordSpace: coordSpace,
+                onAttachRect: onAttachRect,
+                onPillRect: onPillRect
             )
-            .onGeometryChange(for: CGRect.self) { proxy in
-                proxy.frame(in: .named(coordSpace))
-            } action: { rect in
-                onBarRect(rect)
-            }
         }
         .animation(.smooth(duration: 0.25), value: handle?.isRunning ?? false)
         .task(id: sessionId) {

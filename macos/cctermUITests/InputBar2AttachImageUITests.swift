@@ -161,11 +161,23 @@ final class InputBar2AttachImageUITests: XCTestCase {
         XCTAssertTrue(
             pathField.waitForExistence(timeout: 5),
             "Go to Folder sheet should expose a single path textField")
-        pathField.click()
-        pathField.typeText(testImagePath)
 
-        // The sheet's primary action is "Go"; some macOS versions also
-        // accept Return. Try the button first, fall back to Return.
+        // Insert the path via the pasteboard. `typeText` is unreliable
+        // here because the field's path-autocomplete inserts suggestion
+        // text mid-stream — captured screen recordings show a garbled
+        // path like '/tmp/ccterm-ui-test-atta/tmp/ccterm-...png', which
+        // leaves the Open button disabled because nothing got selected.
+        // Pasting bypasses autocomplete entirely.
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(testImagePath, forType: .string)
+        pathField.click()
+        app.typeKey("a", modifierFlags: .command)
+        app.typeKey("v", modifierFlags: .command)
+
+        // The sheet's primary action is Return — macOS 26 hides the
+        // explicit "Go" button. (Older versions had one; the no-op
+        // fallback keeps that path covered.)
         let goButton = goSheet.buttons["Go"]
         if goButton.exists {
             goButton.click()
@@ -173,12 +185,21 @@ final class InputBar2AttachImageUITests: XCTestCase {
             app.typeKey(.return, modifierFlags: [])
         }
 
-        // After Go, NSOpenPanel highlights the file. The Open button
-        // commits the selection.
+        // Wait for Open to *enable* — that's the proof the file was
+        // actually selected. A disabled Open button can still be
+        // clicked under XCUITest but does nothing.
         let openButton = panel.buttons["Open"]
         XCTAssertTrue(
             openButton.waitForExistence(timeout: 5),
             "Open button should be present on NSOpenPanel after navigation")
+
+        let enabled = NSPredicate(format: "isEnabled == true")
+        XCTAssertEqual(
+            XCTWaiter().wait(
+                for: [XCTNSPredicateExpectation(predicate: enabled, object: openButton)],
+                timeout: 5),
+            .completed,
+            "Open button should become enabled once the file is selected")
         openButton.click()
     }
 

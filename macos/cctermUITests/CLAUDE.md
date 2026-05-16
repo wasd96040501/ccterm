@@ -273,11 +273,31 @@ let goSheet = panel.sheets.firstMatch
 XCTAssertTrue(goSheet.waitForExistence(timeout: 5))
 
 let pathField = goSheet.textFields.firstMatch
-pathField.click()
-pathField.typeText("/tmp/my-test-file.png")
-goSheet.buttons["Go"].click()
+XCTAssertTrue(pathField.waitForExistence(timeout: 5))
 
-panel.buttons["Open"].click()
+// Use the pasteboard, not typeText — the field's autocomplete is
+// fast enough to interleave its own suggestions mid-stream and
+// garble the result (a CI screen recording showed
+// '/tmp/ccterm-ui-test-atta/tmp/ccterm-...png' instead of the
+// path). Pasting bypasses the autocomplete entirely.
+let pb = NSPasteboard.general
+pb.clearContents()
+pb.setString("/tmp/my-test-file.png", forType: .string)
+pathField.click()
+app.typeKey("a", modifierFlags: .command)
+app.typeKey("v", modifierFlags: .command)
+app.typeKey(.return, modifierFlags: [])  // macOS 26 hides the Go button
+
+let openButton = panel.buttons["Open"]
+XCTAssertTrue(openButton.waitForExistence(timeout: 5))
+
+// Wait for `isEnabled` — a disabled Open button still accepts clicks
+// under XCUITest, so the test would pass and the file wouldn't open.
+let enabled = NSPredicate(format: "isEnabled == true")
+_ = XCTWaiter().wait(
+    for: [XCTNSPredicateExpectation(predicate: enabled, object: openButton)],
+    timeout: 5)
+openButton.click()
 ```
 
 The test runner can write a fixture to `/tmp` in `setUpWithError` and remove it in `tearDownWithError` — production code reads the file via the real `Data(contentsOf:)` path, so the panel + filesystem branches both stay covered.

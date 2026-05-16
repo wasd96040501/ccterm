@@ -40,9 +40,30 @@ final class InputBar2AttachImageUITests: XCTestCase {
     @MainActor
     func testAttachButtonIsPresentOnLaunch() throws {
         let app = launchApp()
-        let attachButton = app.images["InputBar2.AttachButton"]
+
+        // Wait for the send button to appear — that's a known-good
+        // anchor so we know the bar is mounted before we probe a11y.
+        _ = app.buttons["InputBar2.SendButton"].waitForExistence(timeout: 10)
+
+        // Diagnostic: print every element matching the attach identifier
+        // across each XCUI element type, so the CI log shows which type
+        // SwiftUI Menu actually exposes its label as on macOS 26.
+        let id = "InputBar2.AttachButton"
+        print("=== diagnostic for \(id) ===")
+        print("  app.buttons:       \(app.buttons[id].exists)")
+        print("  app.images:        \(app.images[id].exists)")
+        print("  app.menuButtons:   \(app.menuButtons[id].exists)")
+        print("  app.popUpButtons:  \(app.popUpButtons[id].exists)")
+        print("  app.otherElements: \(app.otherElements[id].exists)")
+        print(
+            "  descendants(.any): \(app.descendants(matching: .any)[id].exists)"
+        )
+        print("=== full a11y tree ===")
+        print(app.debugDescription)
+
+        let attach = app.descendants(matching: .any)[id]
         XCTAssertTrue(
-            attachButton.waitForExistence(timeout: 10),
+            attach.waitForExistence(timeout: 10),
             "attach button should be present on the input bar at launch")
 
         XCTAssertFalse(

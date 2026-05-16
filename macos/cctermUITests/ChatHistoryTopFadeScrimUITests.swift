@@ -43,20 +43,25 @@ final class ChatHistoryTopFadeScrimUITests: XCTestCase {
     /// the transcript runs flush to the window top with no toolbar /
     /// chrome strip pushing it down.
     ///
-    /// Three modifiers cooperate to make this work while `.searchable`
+    /// Four pieces cooperate to make this work while `.searchable`
     /// still hosts the search field in the toolbar:
-    /// 1. `.windowStyle(.hiddenTitleBar)` on the Window enables
-    ///    `NSWindow.StyleMask.fullSizeContentView` so the SwiftUI
-    ///    content view extends up under the chrome.
-    /// 2. `.windowToolbarStyle(.unifiedCompact)` collapses the toolbar
-    ///    into the title-bar band instead of stacking it below — under
-    ///    the default `.expanded` style the two stack and chrome is
-    ///    ~52pt instead of zero.
-    /// 3. `.toolbarBackground(.hidden, for: .windowToolbar)` keeps the
+    /// 1. `.windowStyle(.hiddenTitleBar)` on the Window scene — hides
+    ///    the title text.
+    /// 2. `WindowConfigurator` (an `NSViewRepresentable` added as a
+    ///    `.background`) explicitly flips `NSWindow.styleMask` to
+    ///    include `.fullSizeContentView` and sets
+    ///    `titlebarAppearsTransparent = true`. SwiftUI's
+    ///    `.hiddenTitleBar` style does NOT do this on its own; without
+    ///    the explicit flip the content still starts ~40pt below the
+    ///    window's top.
+    /// 3. `.windowToolbarStyle(.unifiedCompact)` collapses the toolbar
+    ///    into the title-bar band instead of stacking it below — the
+    ///    default `.expanded` style adds another ~14pt.
+    /// 4. `.toolbarBackground(.hidden, for: .windowToolbar)` keeps the
     ///    toolbar material from painting a band over the transcript.
     ///
-    /// Removing any of those three lets `scrim.frame.minY` drop below
-    /// `window.frame.minY` by the toolbar height and this assertion
+    /// Removing any of these lets `scrim.frame.minY` drop below
+    /// `window.frame.minY` by the chrome height and this assertion
     /// fires.
     @MainActor
     func testTranscriptFlushToWindowTop() throws {
@@ -79,11 +84,13 @@ final class ChatHistoryTopFadeScrimUITests: XCTestCase {
         XCTAssertLessThanOrEqual(
             abs(delta), Self.topAlignmentTolerance,
             "scrim top should align with window top (transcript flush to top); "
-                + "delta=\(delta)pt — a positive delta of ~52pt indicates the "
-                + "window toolbar is reserving chrome space again. Check that "
+                + "delta=\(delta)pt — a positive delta of ~40pt indicates "
+                + "`WindowConfigurator` failed to set `.fullSizeContentView` on the "
+                + "underlying NSWindow; ~14pt extra would suggest the default "
+                + "`.expanded` toolbar style is back. Check that "
                 + ".windowStyle(.hiddenTitleBar), .windowToolbarStyle(.unifiedCompact), "
-                + "and .toolbarBackground(.hidden, for: .windowToolbar) are all "
-                + "still in place.")
+                + ".toolbarBackground(.hidden, for: .windowToolbar), and "
+                + "WindowConfigurator's .background(...) are all still in place.")
     }
 
     @MainActor

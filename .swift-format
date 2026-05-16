@@ -17,7 +17,7 @@
     "allowedFunctions": ["XCTAssertNoThrow"]
   },
   "rules": {
-    "AlwaysUseLowerCamelCase": true,
+    "AlwaysUseLowerCamelCase": false,
     "AmbiguousTrailingClosureOverload": true,
     "AvoidRetroactiveConformances": true,
     "DoNotUseSemicolons": true,
@@ -43,7 +43,7 @@
     "UseEarlyExits": false,
     "UseShorthandTypeNames": true,
     "UseSingleLinePropertyGetter": true,
-    "UseSynthesizedInitializer": true,
+    "UseSynthesizedInitializer": false,
     "UseTripleSlashForDocumentationComments": true,
     "UseWhereClausesInForLoops": false,
     "FileScopedDeclarationPrivacy": false,

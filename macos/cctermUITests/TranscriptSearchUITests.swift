@@ -136,8 +136,12 @@ final class TranscriptSearchUITests: XCTestCase {
 
         // Turn-complete signal: send button reappears once the mock
         // finishes and transcript has the assistant content installed.
+        // 15s rather than 10s: the searchable fixture emits three
+        // assistant lines before `result.success`, and the first test
+        // of the class also eats cold-launch latency on the CI VM —
+        // 10s has been observed to tail-clip just past the deadline.
         XCTAssertTrue(
-            sendButton.waitForExistence(timeout: 10),
+            sendButton.waitForExistence(timeout: 15),
             "send button should reappear after mock completes the turn")
         return app
     }

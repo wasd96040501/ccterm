@@ -42,19 +42,22 @@ struct SingleEntry: Identifiable {
     var delivery: DeliveryState?
     var toolResults: [String: ToolResultPayload]
 
-    /// Payload 有两种形态：
-    /// - `.localUser`：`send(text:)` / `send(image:)` 刚 append 的条目，尚未收到 CLI echo。
-    ///   保留原始 text / image / planContent，write 到 CLI 时直接用，无需解析 `Message2`。
-    /// - `.remote`：来自 CLI（或 JSONL 回放）的已解析 `Message2`。user echo 到达时，
-    ///   `.localUser` 会被替换成 `.remote`；assistant / tool_result 始终是 `.remote`。
+    /// Payload has two shapes:
+    /// - `.localUser`: an entry just appended by `send(text:)` / `send(image:)`,
+    ///   not yet echoed by the CLI. Retains raw text / image / planContent so
+    ///   `writeUserEntryToCLI` can read them directly without parsing a `Message2`.
+    /// - `.remote`: a parsed `Message2` from the CLI (or JSONL replay). When a
+    ///   user echo arrives, `.localUser` is replaced by `.remote`;
+    ///   assistant / tool_result are always `.remote`.
     enum Payload {
         case localUser(LocalUserInput)
         case remote(Message2)
     }
 }
 
-/// 本地发给 CLI 的用户消息快照。`send(_:)` 入口保留的原始输入，
-/// `writeUserEntryToCLI` 直接读这里的字段，无需往 `Message2` 里塞再扒出来。
+/// Snapshot of a user message we sent locally. Captured at the `send(_:)`
+/// entry so `writeUserEntryToCLI` can read the fields directly without
+/// stuffing them into a `Message2` only to extract them again.
 struct LocalUserInput {
     var text: String?
     var image: (data: Data, mediaType: String)?
@@ -74,13 +77,14 @@ struct ToolResultPayload {
 }
 
 extension SingleEntry {
-    /// 等价于旧 `message` 字段：仅 `.remote` 时非空。
+    /// Non-nil only for `.remote` payloads.
     var remoteMessage: Message2? {
         if case .remote(let m) = payload { return m }
         return nil
     }
 
-    /// 旧 API 兼容：尽量返回一个 Message2。`.localUser` 没有，返回 nil。
+    /// Legacy API: returns the underlying Message2 when present, nil for
+    /// `.localUser`.
     var message: Message2? { remoteMessage }
 
     /// All `toolUse` blocks inside an assistant single, in order. Empty for
@@ -164,14 +168,16 @@ extension GroupEntry {
 
 // MARK: - DeliveryState
 
-/// User entry 生命周期。
+/// User entry lifecycle.
 ///
-/// - `queued`：本地已 append，尚未收到 CLI 的 user echo（可能 CLI 还没起、还在 bootstrap、
-///   或 CLI 忙着处理前面的 turn，消息还在 CLI 侧排队）。
-/// - `confirmed`：CLI 已回显同 uuid 的 user 消息，turn 已真正开始处理。
-/// - `failed`：进程退出等不可恢复错误，UI 可提示用户。
+/// - `queued`: appended locally but no CLI echo yet (CLI might not be up,
+///   still bootstrapping, or busy with a prior turn — the message may be
+///   queued CLI-side).
+/// - `confirmed`: CLI echoed back a user message with the same uuid — the
+///   turn has actually begun processing.
+/// - `failed`: process exit or other unrecoverable error; UI can surface this.
 ///
-/// 非 user entry 的 `delivery` 恒为 nil。
+/// `delivery` is always nil for non-user entries.
 enum DeliveryState: Equatable {
     case queued
     case confirmed

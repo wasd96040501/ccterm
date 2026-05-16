@@ -2,32 +2,35 @@
 
 import Foundation
 
-/// UI test 模式装配。app 进程启动时通过环境变量与 XCUI test runner 握手:
+/// UI test mode wiring. Handshake with the XCUI test runner via environment
+/// variables at app launch:
 ///
-/// | 环境变量                       | 含义                                           |
-/// |--------------------------------|------------------------------------------------|
-/// | `CCTERM_TEST_MODE=1`           | 总开关。开了才走 in-memory repo / mock CLI     |
-/// | `CCTERM_MOCK_CLI_SCENARIO=foo` | mock CLI 子进程要跑哪个 scenario(参看 Registry)|
+/// | Variable                       | Meaning                                          |
+/// |--------------------------------|--------------------------------------------------|
+/// | `CCTERM_TEST_MODE=1`           | Master switch — enables in-memory repo / mock CLI |
+/// | `CCTERM_MOCK_CLI_SCENARIO=foo` | Scenario the mock CLI subprocess should run (see Registry) |
 ///
-/// 作用:
-/// 1. 切换 `SessionManager2` 用 `InMemorySessionRepository`,避免把测试数据写进
-///    主 CoreData store(脏数据)。
-/// 2. 给 `SessionHandle2.mockCLIOverride` 注入 binary path + env,让后续
-///    `ensureStarted` spawn 的"CLI 子进程"实际是当前 ccterm 二进制(走 `AppEntryPoint`
-///    的 mock 分支,跑指定 scenario)。
+/// Effects:
+/// 1. Switches `SessionManager2` to `InMemorySessionRepository` so test data
+///    never lands in the real CoreData store.
+/// 2. Sets `SessionHandle2.mockCLIOverride` with binary path + env so that
+///    subsequent `ensureStarted`-spawned "CLI subprocesses" are actually the
+///    current ccterm binary (taking the mock branch in `AppEntryPoint`,
+///    running the requested scenario).
 ///
-/// 仅 DEBUG。release build 此文件整体不参与编译。
+/// DEBUG only — this file is excluded from release builds.
 extension AppState {
 
-    /// 在 `init` 早期调用。返回值是测试模式专用的 `SessionManager2`(走 in-memory repo);
-    /// 没启用测试模式则返回 nil,调用方按常规路径构造。
+    /// Call early from `init`. Returns a test-mode `SessionManager2` (in-memory
+    /// repo) when test mode is on; returns nil otherwise so the caller falls
+    /// back to the regular path.
     static func applyTestModeIfNeeded() -> SessionManager2? {
         let env = ProcessInfo.processInfo.environment
         guard env["CCTERM_TEST_MODE"] == "1" else { return nil }
 
         let scenario = env["CCTERM_MOCK_CLI_SCENARIO"] ?? ""
         guard let executable = Bundle.main.executablePath else {
-            // 没 executable path 几乎不可能(系统接口保证),但 fallback 仍要安全:不启用 mock CLI
+            // Missing executable path is virtually impossible, but fall back safely: skip mock CLI.
             return SessionManager2(repository: InMemorySessionRepository())
         }
 

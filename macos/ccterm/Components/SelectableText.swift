@@ -1,11 +1,15 @@
 import AppKit
 import SwiftUI
 
-/// 可选择文本组件，使用 NSTextField + 自定义 cell 桥接，正确支持 lineLimit + 文本选择。
+/// Selectable text component bridged from NSTextField + custom cell so that
+/// lineLimit and text selection both work.
 ///
-/// - NSTextField 原生支持 `maximumNumberOfLines` + `truncatesLastVisibleLine`（显示省略号）
-/// - 默认 NSTextField 被点击时 macOS 会安装 field editor 覆盖 cell，导致 lineLimit 失效
-/// - 自定义 `TruncatingCell` 限制 field editor 的行数，使其不会超出截断范围
+/// - NSTextField natively supports `maximumNumberOfLines` +
+///   `truncatesLastVisibleLine` (shows the ellipsis).
+/// - On click, macOS installs a field editor that overrides the cell, which
+///   defeats the line limit.
+/// - `TruncatingCell` constrains the field editor's line count so it stays
+///   within the truncation bounds.
 struct SelectableText: NSViewRepresentable {
     let text: String
     var lineLimit: Int = 0
@@ -42,9 +46,8 @@ struct SelectableText: NSViewRepresentable {
     }
 }
 
-// MARK: - TruncatingCell
-
-/// 自定义 NSTextFieldCell，限制 field editor 不超出 cell 自身的行数限制。
+/// Custom NSTextFieldCell that constrains the field editor to the cell's
+/// own line limit.
 private final class TruncatingCell: NSTextFieldCell {
 
     var lineLimit: Int = 0

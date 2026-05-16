@@ -5,7 +5,8 @@ import Foundation
 
 extension SessionHandle2 {
 
-    /// 是否绑定了 CLI 子进程。`.starting` / `.idle` / `.responding` / `.interrupting` 视为 attached。
+    /// True when bound to a CLI subprocess. `.starting` / `.idle` /
+    /// `.responding` / `.interrupting` count as attached.
     var isAttached: Bool {
         switch status {
         case .starting, .idle, .responding, .interrupting: return true
@@ -15,30 +16,35 @@ extension SessionHandle2 {
 
     // MARK: - canSet* (observable, for UI binding)
     //
-    // 只为「运行时受限」的 setter 暴露 canSet*；永远可调的 setter（model / effort /
-    // permissionMode / additionalDirectories / focused）无 flag——UI 不需要禁用。
+    // Only setters constrained at runtime expose canSet*; always-callable
+    // setters (model / effort / permissionMode / additionalDirectories /
+    // focused) have no flag — the UI never needs to disable them.
 
-    /// `setCwd` 是否可调。CLI 运行时不支持改 cwd，attached 下拒。
+    /// CLI does not support changing cwd at runtime; refused while attached.
     var canSetCwd: Bool { !isAttached }
-    /// `setWorktree` 是否可调。运行时不可改。
+    /// Worktree flag cannot change at runtime.
     var canSetWorktree: Bool { !isAttached }
-    /// `setPluginDirectories` 是否可调。`--plugin-dir` 是 CLI 启动参数，运行时无 RPC。
+    /// `--plugin-dir` is a CLI launch argument with no runtime RPC.
     var canSetPluginDirectories: Bool { !isAttached }
 
-    /// 当前 sessionId 是否已在 repository 中持久化。用于决定 set* 是否写 db。
-    /// 首次 `ensureStarted()` 前 fresh 态为 false；之后或 resume 均为 true。
+    /// Whether the current sessionId is already persisted. Used to decide
+    /// whether `set*` writes the db. False before the first `ensureStarted()`
+    /// in fresh mode, true thereafter and for resume.
     private var isPersisted: Bool { repository.find(sessionId) != nil }
 }
 
-// MARK: - Configuration: model / effort / permissionMode（乐观写入 + RPC）
+// MARK: - Configuration: model / effort / permissionMode (optimistic write + RPC)
 
 extension SessionHandle2 {
 
-    /// 变更 model。乐观写入：立刻改内存、持久化（若已有 record）、attached 下发 RPC。
-    /// CLI init 回包为 authoritative，若不同会覆盖本地值。
+    /// Optimistic write: update memory immediately, persist (if a record
+    /// exists), and send RPC when attached. The CLI's init reply is
+    /// authoritative — a divergent value will overwrite the local one.
     ///
-    /// 不接受 nil——内部 storage 为 `String?` 仅为"未设置"占位，UI 场景无清空需求；
-    /// 且 `SessionExtraUpdate` 以 nil 表示"不更新"，无法表达"清回 nil"。
+    /// Does not accept nil — the underlying `String?` storage is just an
+    /// "unset" placeholder, no UI flow needs to clear it, and
+    /// `SessionExtraUpdate` uses nil to mean "no update", so nil cannot
+    /// express "clear back to nil".
     func setModel(_ model: String) {
         self.model = model
         if isPersisted {
@@ -49,7 +55,7 @@ extension SessionHandle2 {
         }
     }
 
-    /// 变更推理力度。路由规则同 `setModel`。不接受 nil（理由同上）。
+    /// Same routing as `setModel`. Does not accept nil (same reason).
     func setEffort(_ effort: Effort) {
         self.effort = effort
         if isPersisted {
@@ -60,7 +66,7 @@ extension SessionHandle2 {
         }
     }
 
-    /// 变更权限模式。路由规则同 `setModel`。
+    /// Same routing as `setModel`.
     func setPermissionMode(_ mode: PermissionMode) {
         self.permissionMode = mode
         if isPersisted {
@@ -72,11 +78,11 @@ extension SessionHandle2 {
     }
 }
 
-// MARK: - Configuration: cwd / worktree / dirs（仅 non-active）
+// MARK: - Configuration: cwd / worktree / dirs (non-active only)
 
 extension SessionHandle2 {
 
-    /// 变更工作目录。attached 下 no-op（CLI 运行时不支持改 cwd；需先 stop）。
+    /// No-op while attached (CLI runtime can't change cwd; stop first).
     func setCwd(_ cwd: String) {
         guard !isAttached else {
             appLog(.info, "SessionHandle2", "setCwd ignored — attached \(sessionId)")
@@ -88,7 +94,7 @@ extension SessionHandle2 {
         }
     }
 
-    /// 变更 worktree 开关。路由规则同 `setCwd`（运行时不可改）。
+    /// Same routing as `setCwd` (cannot change at runtime).
     func setWorktree(_ isWorktree: Bool) {
         guard !isAttached else {
             appLog(.info, "SessionHandle2", "setWorktree ignored — attached \(sessionId)")
@@ -100,8 +106,9 @@ extension SessionHandle2 {
         }
     }
 
-    /// 变更插件目录列表。`--plugin-dir` 是 CLI 启动参数，运行时无对应 RPC——attached
-    /// 下 no-op（不写内存、不写 db），UI 直接 bind `canSetPluginDirectories` 禁用入口。
+    /// `--plugin-dir` is a CLI launch argument with no runtime RPC — no-op
+    /// while attached (no memory or db write). UI binds
+    /// `canSetPluginDirectories` to disable the entry point.
     func setPluginDirectories(_ dirs: [String]) {
         guard !isAttached else {
             appLog(.info, "SessionHandle2", "setPluginDirectories ignored — attached \(sessionId)")
@@ -114,13 +121,14 @@ extension SessionHandle2 {
     }
 }
 
-// MARK: - Configuration: additionalDirectories（运行时可改；attached 下走 RPC）
+// MARK: - Configuration: additionalDirectories (mutable at runtime via RPC)
 
 extension SessionHandle2 {
 
-    /// 变更额外工作目录列表。运行时可改——走 `applyFlagSettings.permissions.additionalDirectories`。
-    /// UI 层加/删单项用 read-modify-write：
-    /// `handle.setAdditionalDirectories(handle.additionalDirectories + [path])`。
+    /// Mutable at runtime via
+    /// `applyFlagSettings.permissions.additionalDirectories`. UI layer
+    /// adds/removes single entries with read-modify-write:
+    /// `handle.setAdditionalDirectories(handle.additionalDirectories + [path])`.
     func setAdditionalDirectories(_ dirs: [String]) {
         self.additionalDirectories = dirs
         if isPersisted {
@@ -140,8 +148,8 @@ extension SessionHandle2 {
 
 extension SessionHandle2 {
 
-    /// 回应一条 pending permission。命中则调 respond 闭包（闭包内部会自动从数组移除）；
-    /// 未命中 no-op。
+    /// Reply to a pending permission. Calls the respond closure on a hit
+    /// (the closure removes the entry from the array); no-op otherwise.
     func respond(to permissionId: String, decision: PermissionDecision) {
         guard let pending = pendingPermissions.first(where: { $0.id == permissionId }) else {
             appLog(.info, "SessionHandle2", "respond no-match id=\(permissionId) \(sessionId)")
@@ -155,7 +163,8 @@ extension SessionHandle2 {
 
 extension SessionHandle2 {
 
-    /// UI 写入"本 session 是否正被用户查看"。聚焦时清 `hasUnread`，失焦时不动。
+    /// UI sets whether the session is currently being viewed. Focusing clears
+    /// `hasUnread`; defocusing does not change it.
     func setFocused(_ focused: Bool) {
         isFocused = focused
         if focused {

@@ -1,14 +1,15 @@
 import SwiftUI
 
-/// v2 Sidebar：按项目分组的扁平历史会话列表。只读浏览用，无 running / pinned / archive / unread。
+/// Sidebar: flat history list of sessions grouped by project. Read-only — no
+/// running / pinned / archive / unread state.
 ///
-/// 数据源直接来自 `SessionManager2.records`，按 `groupingFolderName` 分组，
-/// 组内按 `lastActiveAt` 降序。
+/// Sourced directly from `SessionManager2.records`, grouped by
+/// `groupingFolderName`, sorted by `lastActiveAt` descending within each group.
 struct SidebarView2: View {
     @Binding var selection: String?
     @Environment(SessionManager2.self) private var manager
 
-    /// Sentinel selection value: 第一行 "New Session" tab。
+    /// Sentinel selection value for the "New Session" tab.
     static let newSessionTag = "__new_session__"
     /// Sentinel selection value used by the dev-only Transcript Demo tab.
     /// Reserved by the double-underscore prefix; real session IDs are UUIDs.
@@ -38,8 +39,8 @@ struct SidebarView2: View {
         .listStyle(.sidebar)
     }
 
-    /// 由 `manager.records` 派生的分组列表。computed 直读 observable
-    /// → records 更新时自动重算，无需手动 reload。
+    /// Grouped list derived from `manager.records`. Computed reads the
+    /// observable directly, so updates recompute automatically without manual reload.
     private var groupedRecords: [ProjectGroup2] {
         let buckets = Dictionary(grouping: manager.records) { $0.groupingFolderName ?? "Unknown" }
         return buckets.map { folder, items in
@@ -55,15 +56,11 @@ struct SidebarView2: View {
     }
 }
 
-// MARK: - Types
-
 private struct ProjectGroup2: Identifiable {
     var id: String { folderName }
     let folderName: String
     let records: [SessionRecord]
 }
-
-// MARK: - Row
 
 private struct SidebarRow2: View {
     let record: SessionRecord

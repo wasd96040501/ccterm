@@ -44,9 +44,10 @@ nonisolated enum MarkdownConvert {
         inlines(markups, insideLink: false)
     }
 
-    /// `insideLink` 开关控制是否对纯文本片段跑 `MarkdownAutolink`——在
-    /// `[…](url)` 的 children 内关闭，防止链接文案里的 URL 被再次拆成内层
-    /// 链接、盖掉外层 destination。
+    /// `insideLink` controls whether plain-text fragments run through
+    /// `MarkdownAutolink`. Disabled inside `[…](url)` children so that a URL
+    /// in the link text isn't split into an inner link that overrides the
+    /// outer destination.
     private static func inlines(_ markups: [Markdown.InlineMarkup], insideLink: Bool) -> [MarkdownInline] {
         var result: [MarkdownInline] = []
         for markup in markups {

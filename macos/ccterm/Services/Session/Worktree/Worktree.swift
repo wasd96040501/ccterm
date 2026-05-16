@@ -1,44 +1,52 @@
 import Foundation
 
-/// 一个 git worktree 的身份。值类型、不可变；git 层动态状态（当前 branch、HEAD）
-/// 不在此类型里追踪——由调用方（SessionHandle2 / SessionRecord）持有。
+/// Identity of a git worktree. Value type, immutable; git-layer dynamic
+/// state (current branch, HEAD) is not tracked here — the caller
+/// (SessionHandle2 / SessionRecord) holds it.
 ///
-/// 对齐 claude.app `p0r.createWorktree` 产出 `{ name, path, baseRepo, sourceBranch, ... }`
-/// 的 `worktree` 对象（slice 行 143-151），裁掉 sessionId / createdAt 等运行态字段
-/// —— 那些字段在 ccterm 里由 SessionRecord 追踪。
+/// Mirrors the `worktree` object claude.app's `p0r.createWorktree`
+/// produces (`{ name, path, baseRepo, sourceBranch, ... }`, slice lines
+/// 143-151), trimmed of sessionId / createdAt and other runtime fields —
+/// SessionRecord owns those in ccterm.
 ///
-/// 典型流程：`Worktree.create(from:)` → SessionHandle2 把 path/name 落 db →
-/// LLM 生成 → `wt.renameBranch(to:)` → archive 时 `wt.remove()` →
-/// unarchive 时 `Worktree.restore(at:baseRepo:branch:)`。
+/// Typical flow: `Worktree.create(from:)` → SessionHandle2 persists
+/// path/name to db → LLM-generated rename → `wt.renameBranch(to:)` →
+/// `wt.remove()` on archive → `Worktree.restore(at:baseRepo:branch:)` on
+/// unarchive.
 struct Worktree: Equatable, Hashable {
 
-    /// Worktree 绝对路径。
+    /// Worktree absolute path.
     let path: String
 
-    /// `<adj>-<sci>-<hex6>`，同时作为 worktree 目录名与创建时的初始 branch 名。
-    /// LLM rename 之后 git 层 branch 会变，但 name / path 不变。
+    /// `<adj>-<sci>-<hex6>`. Doubles as the worktree directory name and
+    /// the initial branch name. LLM rename later changes the git-layer
+    /// branch, but `name` / `path` stay the same.
     let name: String
 
-    /// 规范化后的 main repo root（入参若是 worktree 路径会被解析到主仓）。
+    /// Normalized main repo root (an input worktree path is resolved up
+    /// to the main repo).
     let baseRepo: String
 
-    /// 创建时依据的源 branch。nil 表示使用 baseRepo 的 HEAD。
-    /// `locate` / `restore` 返回的实例可能填 nil（反查不出或不关心）。
+    /// Source branch the worktree was created from. nil means the
+    /// baseRepo HEAD. Instances returned by `locate` / `restore` may set
+    /// this to nil (cannot back-derive or don't care).
     let sourceBranch: String?
 
     // MARK: - Error
 
     enum Error: Swift.Error, LocalizedError {
-        /// 入参不是 git 仓库。
+        /// Input is not a git repository.
         case notGitRepository(path: String)
-        /// base 是 detached HEAD 且调用方未提供 sourceBranch。
+        /// Base is detached HEAD and no sourceBranch was provided.
         case detachedHeadWithoutSource
-        /// `remove()` 拒绝删除 managed dir 之外的路径（安全校验）。
+        /// `remove()` refused to delete a path outside the managed dir
+        /// (safety check).
         case pathOutsideManagedDir(path: String)
-        /// 父目录创建失败。
+        /// Parent directory creation failed.
         case directoryCreationFailed(path: String, underlying: String)
-        /// 底层 git 命令失败。`isBranchConflict` 为 true 表示冲突（rename 10 次耗尽、
-        /// 或 create 5 次 regenerate 耗尽）。
+        /// Underlying git command failed. `isBranchConflict == true` means
+        /// a conflict (rename hit 10 attempts, or create hit 5 regenerate
+        /// attempts).
         case git(stderr: String, isBranchConflict: Bool)
 
         var errorDescription: String? {
@@ -62,13 +70,17 @@ struct Worktree: Equatable, Hashable {
 
 extension Worktree {
 
-    /// 从任意 git 路径反查 worktree 身份；非 worktree 或不在 managed dir 内返回 nil。
-    /// 对齐 claude.app `p0r.detectWorktreeInfo`（slice 行 187-205）。
+    /// Reverse-look up a worktree identity from any git path; returns nil
+    /// for non-worktrees or paths outside the managed dir. Mirrors
+    /// claude.app `p0r.detectWorktreeInfo` (slice lines 187-205).
     ///
-    /// - `gitDir`（`git rev-parse --git-dir`）必须包含 `/.git/worktrees/`——这是
-    ///   git 认为某 checkout 是 worktree 的判据。
-    /// - 路径必须在 `<baseRepo>/.claude/worktrees/` 下（由本项目 `create` 管理）。
-    ///   手工 `git worktree add` 到别处的 worktree 不会被识别，避免外部管理冲突。
+    /// - `gitDir` (`git rev-parse --git-dir`) must contain
+    ///   `/.git/worktrees/` — that's git's own criterion for "this
+    ///   checkout is a worktree".
+    /// - The path must sit under `<baseRepo>/.claude/worktrees/` (managed
+    ///   by this project's `create`). Manually `git worktree add`-ed
+    ///   worktrees elsewhere are not recognized, avoiding external
+    ///   management conflicts.
     static func locate(at path: String) -> Worktree? {
         guard let gitDir = GitQuery.gitDir(at: path),
             gitDir.contains("/.git/worktrees/"),
@@ -76,8 +88,9 @@ extension Worktree {
             let commonDir = GitQuery.gitCommonDir(at: path)
         else { return nil }
 
-        // baseRepo = dirname(gitCommonDir) —— main repo 的 .git 的父。
-        // commonDir 可能是相对路径，resolve 成绝对后再 dirname。
+        // baseRepo = dirname(gitCommonDir) — the parent of the main
+        // repo's .git. commonDir may be relative; resolve to absolute
+        // before dirname.
         let absCommon =
             (commonDir as NSString).isAbsolutePath
             ? commonDir
@@ -96,9 +109,10 @@ extension Worktree {
         )
     }
 
-    /// 检查 `path` 是否为 `container` 的子孙。解析 symlink 后做前缀匹配（macOS tmp
-    /// 是 /private/tmp 的 symlink，必须先 resolve 才能正确比较）。
-    /// 等效 claude.app `isPathInside`（slice 行 68-71）。
+    /// Whether `path` is a descendant of `container`. Symlinks are
+    /// resolved first, then prefix-matched (macOS /tmp is a symlink to
+    /// /private/tmp, so resolution is required for correctness).
+    /// Equivalent to claude.app `isPathInside` (slice lines 68-71).
     static func isPathInside(_ path: String, _ container: String) -> Bool {
         let a = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
         let b = URL(fileURLWithPath: container).resolvingSymlinksInPath().path

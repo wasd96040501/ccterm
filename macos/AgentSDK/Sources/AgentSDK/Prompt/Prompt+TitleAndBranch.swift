@@ -2,18 +2,20 @@ import Foundation
 
 extension Prompt {
 
-    /// 一次 LLM 同时生成 title 和（从 title 派生的）branch name。
+    /// Generates a title and (derived from the title) branch name in a single LLM call.
     ///
-    /// 抄自 Claude.app 的 `/dust/generate_title_and_branch` 实现：
-    /// - 起一次性 `claude -p` 子进程，inline 完整提示词（coding-session 模板内置）
-    /// - 关闭工具（`--tools ""`）
-    /// - model response 中正则抓取 `<title>...</title>`
-    /// - branch = `claude/<slugify(title).prefix(50)>`（字符串派生，不做第二次 LLM）
+    /// Ported from Claude.app's `/dust/generate_title_and_branch`:
+    /// - spawn a one-shot `claude -p` subprocess with the full prompt inlined (built-in coding-session template)
+    /// - disable tools (`--tools ""`)
+    /// - regex-extract `<title>...</title>` from the model response
+    /// - branch = `claude/<slugify(title).prefix(50)>` (pure string derivation, no second LLM call)
     ///
-    /// 与 `run(message:configuration:)` 的差异：提示词内置、返回 typed 结构、自带超时。
+    /// Differences vs. `run(message:configuration:)`: the prompt is built in,
+    /// the return value is typed, and it has its own timeout.
     ///
-    /// `firstMessage` 会被 head-truncate 到 `maxDescriptionChars`（默认 2000 字符，约
-    /// 500 tokens）避免用户贴长 diff/代码把 token 打爆——title 意图几乎全在开头。
+    /// `firstMessage` is head-truncated to `maxDescriptionChars` (default 2000 chars, ~500 tokens)
+    /// so a long pasted diff / code blob does not blow up the token budget — the title intent
+    /// is almost always at the start.
     public static func runTitleAndBranch(
         firstMessage: String,
         configuration: PromptConfiguration,
@@ -100,7 +102,7 @@ extension Prompt {
                 )
             }
 
-            // title_i18n 缺失时 fallback 到 title，保证非空
+            // Fall back to `title` when title_i18n is missing so the field is never empty.
             let titleI18n = extractTag("title_i18n", from: resultText) ?? title
             let branch = slugifyToBranch(title)
             return TitleAndBranch(title: title, titleI18n: titleI18n, branch: branch)
@@ -108,11 +110,11 @@ extension Prompt {
     }
 
     public struct TitleAndBranch: Sendable, Equatable {
-        /// 英文 title（固定英文，给 branch slug 用）。
+        /// English title (always English — used for the branch slug).
         public let title: String
-        /// 与用户输入同语言的 title。若输入是英文则等同 `title`。
+        /// Title in the same language as the user input. Equals `title` when the input was English.
         public let titleI18n: String
-        /// `claude/<slug(title).prefix(50)>`，无 ASCII 可 slug 时为空串。
+        /// `claude/<slug(title).prefix(50)>`, or empty when the title has no ASCII to slug.
         public let branch: String
 
         public init(title: String, titleI18n: String, branch: String) {
@@ -122,9 +124,9 @@ extension Prompt {
         }
     }
 
-    /// 照抄 Claude.app 的 `JMr`：
-    /// `title.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,50).replace(/-+$/,"")`
-    /// 非空则前缀 `claude/`，空则返回空串。
+    /// Direct port of Claude.app's `JMr`:
+    /// `title.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"").slice(0,50).replace(/-+$/,"")`.
+    /// Prefixes `claude/` when non-empty, returns empty string otherwise.
     public static func slugifyToBranch(_ title: String) -> String {
         let asciiAlnum: Set<Character> = Set("abcdefghijklmnopqrstuvwxyz0123456789")
         var slug = ""
@@ -145,19 +147,21 @@ extension Prompt {
         return slug.isEmpty ? "" : "claude/\(slug)"
     }
 
-    /// 仍保留：LLM 回复里抓 `<title>...</title>`。历史兼容。
+    /// Kept for backwards compatibility: extracts `<title>...</title>` from an LLM reply.
     public static func extractTitle(from text: String) -> String? {
         extractTag("title", from: text)
     }
 
-    /// Head-truncate：字符数超过 `limit` 时截取前 `limit` 字符并追加 `" …"` 标记。
-    /// 使用 Swift `String.Index` 按 character（grapheme cluster）计数，中英混合安全。
+    /// Head-truncates `text`: when longer than `limit` characters, returns the first `limit`
+    /// characters with a trailing `" …"` marker. Counts grapheme clusters via `String.Index`,
+    /// so it is safe for mixed-script text.
     public static func truncateHead(_ text: String, to limit: Int) -> String {
         guard limit > 0, text.count > limit else { return text }
         return String(text.prefix(limit)) + " …"
     }
 
-    /// 通用单标签提取：第一处 `<tag>…</tag>` 之间的内容，trim 空白，空串返回 nil。
+    /// Generic single-tag extractor: returns the trimmed contents of the first `<tag>…</tag>`,
+    /// or nil if missing or empty.
     public static func extractTag(_ tag: String, from text: String) -> String? {
         let openTag = "<\(tag)>"
         let closeTag = "</\(tag)>"
@@ -171,7 +175,8 @@ extension Prompt {
         return inner.isEmpty ? nil : inner
     }
 
-    /// 与 `resolveExecutable` 同语义，但不复用其 private 实现，保持 `run` 完全不动。
+    /// Same semantics as `resolveExecutable`, but kept separate so the original `run`
+    /// implementation stays untouched.
     private static func resolveTitleExecutable(
         config: PromptConfiguration
     ) throws -> (executablePath: String, prefixArgs: [String]) {
@@ -209,8 +214,9 @@ extension Prompt {
         return resolved
     }
 
-    /// coding-session 模板，基于 Claude.app 的 `HMr`（`/tmp/claude-index.beautified.js` L232130）
-    /// 扩展：要求同时输出英文 `<title>`（branch slug 用）和用户原语言的 `<title_i18n>`。
+    /// Coding-session template, based on Claude.app's `HMr` (`/tmp/claude-index.beautified.js` L232130).
+    /// Extended to require both an English `<title>` (used for the branch slug) and a
+    /// `<title_i18n>` in the user's original language.
     fileprivate static let codingTitlePrompt = """
         You are coming up with a succinct title for a coding session based on the provided description. The title should be clear, concise, and accurately reflect the content of the coding task.
         You should keep it short and simple, ideally no more than 6 words. Avoid using jargon or overly technical terms unless absolutely necessary. The title should be easy to understand for anyone reading it.

@@ -1,24 +1,27 @@
 import SwiftUI
 
-/// V2 输入栏（仅 UI，不接入 session handle）。
+/// V2 input bar (UI only, no session handle wiring).
 ///
-/// 布局：squircle 容器 + `HStack(text, sendButton)`。空 / 单行时容器高度 = `2 *
-/// cornerRadius`（40pt）。发送按钮与右下角同心：corner radius 20，button radius
-/// 14，共享圆心 ⇒ 距右 / 下 6pt。Cmd+Return 发送 → 图标切换为 stop；Esc 取消 →
-/// 回到发送态。
+/// Layout: squircle container + `HStack(text, sendButton)`. Empty / single line
+/// → container height = `2 * cornerRadius` (40pt). The send button is concentric
+/// with the bottom-right corner: corner radius 20, button radius 14, shared
+/// center ⇒ 6pt from the right / bottom. Cmd+Return sends → icon swaps to stop;
+/// Esc cancels → back to send.
 struct InputBarView2: View {
     static let cornerRadius: CGFloat = 20
     private let buttonSize: CGFloat = 28
     private let buttonInset: CGFloat = 6
     private let animationDuration: TimeInterval = 0.35
 
-    /// 由调用方注入。仅在 `canSend` 为 true 时被触发(空白文字不会调用)。
+    /// Injected by the caller. Only fired when `canSend` is true (whitespace-
+    /// only text won't trigger it).
     var onSubmit: (String) -> Void = { _ in }
-    /// stop 按钮按下时触发(只在 `isRunning` 为 true 显示 stop 时可点)。调用方
-    /// 一般转发给 `SessionHandle2.interrupt()`。
+    /// Fired when the stop button is pressed (only clickable while `isRunning`
+    /// shows stop). Callers typically forward to `SessionHandle2.interrupt()`.
     var onStop: () -> Void = {}
-    /// 来自 handle 的运行态。true → 显示 stop 按钮;false → send 按钮 +
-    /// canSend 控制 enable。`@State` 不再持本地副本,避免和 handle 漂移。
+    /// Running state from the handle. true → show stop button; false → send
+    /// button gated by `canSend`. No local `@State` copy — avoids drift from
+    /// the handle.
     var isRunning: Bool = false
 
     @State private var text: String = ""
@@ -35,11 +38,13 @@ struct InputBarView2: View {
         .frame(minHeight: 2 * Self.cornerRadius)
         .modifier(BarSurface(cornerRadius: Self.cornerRadius))
         .animation(.smooth(duration: animationDuration), value: isRunning)
-        // 不在外层放 accessibilityIdentifier:SwiftUI 默认会把容器的 id 传染给
-        // 后代,覆盖子元素自己的 id(SendButton / StopButton / TextField 都会变
-        // 成同一个 id,UI test 无法区分)。需要查询整个 bar 的 a11y root 时,可
-        // 通过 .accessibilityElement(children: .contain) + .accessibilityIdentifier
-        // 包裹,但当前测试只查具体子元素,无此需要。
+        // Do not put `accessibilityIdentifier` on the outer container: SwiftUI
+        // propagates the container's id to descendants by default, overriding
+        // each child's own id (SendButton / StopButton / TextField would all
+        // collapse to the same id, defeating UI tests). To query the whole bar
+        // as an a11y root, wrap with .accessibilityElement(children: .contain)
+        // + .accessibilityIdentifier — current tests only query specific
+        // children, so it's not needed.
     }
 
     // MARK: - Text Area
@@ -60,7 +65,8 @@ struct InputBarView2: View {
         .accessibilityIdentifier("InputBar2.TextField")
         .padding(.leading, 16)
         .padding(.trailing, 4)
-        // (40 - 17)/2 ≈ 11.5：单行时上下各 11.5，刚好把 ~17pt 行高在 40pt 容器内居中
+        // (40 - 17)/2 ≈ 11.5: single-line case, 11.5 top + bottom centers the
+        // ~17pt line height within the 40pt container.
         .padding(.vertical, 11.5)
     }
 
@@ -116,8 +122,9 @@ struct InputBarView2: View {
 
 // MARK: - Bar Surface
 
-/// macOS 26+ → Liquid Glass(`glassEffect(_:in:)`,系统提供半透明 + 边缘高光 +
-/// 折射)。低于 26 → dark `.thickMaterial` / light `.bar` + 描边 + 阴影。
+/// macOS 26+ → Liquid Glass (`glassEffect(_:in:)`, system-provided translucency
+/// + edge highlight + refraction). Below 26 → dark `.thickMaterial` / light
+/// `.bar` + stroke + shadow.
 ///
 /// Reference: <https://developer.apple.com/documentation/swiftui/view/glasseffect(_:in:isenabled:)>
 private struct BarSurface: ViewModifier {

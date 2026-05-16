@@ -1,6 +1,6 @@
 import Foundation
 
-/// Elicitation 请求的响应结果。
+/// Response to an elicitation request.
 public enum ElicitationResult {
     case respond(data: [String: Any])
     case cancel

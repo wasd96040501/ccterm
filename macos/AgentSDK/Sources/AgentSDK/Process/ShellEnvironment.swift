@@ -2,7 +2,7 @@ import Foundation
 
 enum ShellEnvironment {
 
-    /// 从登录 shell 加载完整环境变量。每次调用都重新执行，确保拿到最新的 shell 配置。
+    /// Loads the full environment from a login shell. Re-runs on every call so the freshest shell config is picked up.
     static func loginEnvironment() -> [String: String]? {
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/sh"
         let proc = Process()

@@ -5,20 +5,23 @@ import Foundation
 
 extension SessionHandle2 {
 
-    /// Claude CLI 的 live JSONL 目录（`~/.claude/projects/<slug>/<sessionId>.jsonl`）。
+    /// Claude CLI's live JSONL directory
+    /// (`~/.claude/projects/<slug>/<sessionId>.jsonl`).
     nonisolated static var claudeProjectsRoot: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects")
     }
 
-    /// CCTerm 自建的 export JSONL 目录（含完整 stdio 消息）。优先使用。
+    /// CCTerm's own export JSONL directory (contains the full stdio stream).
+    /// Preferred over the live file.
     nonisolated static var exportRoot: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".cache/ccterm/export")
     }
 
-    /// 本 session 的历史 JSONL URL。export 优先；不存在则回落到 live；再不存在则 nil。
-    /// slug 需要 repository 里的 cwd，所以 `activate()` 之前 resume 也能拿到。
+    /// History JSONL URL for this session. Export takes priority, then falls
+    /// back to live, otherwise nil. Slug derives from the repository's cwd,
+    /// so even resume before `activate()` can locate it.
     var historyJSONLURL: URL? {
         let export = Self.exportRoot.appendingPathComponent("\(sessionId).jsonl")
         if FileManager.default.fileExists(atPath: export.path) { return export }
@@ -35,32 +38,40 @@ extension SessionHandle2 {
 
 extension SessionHandle2 {
 
-    /// 两段式历史加载：
-    /// 1. **Phase A**：`JSONLTailReader` 字节级读末尾 ~80 行，forward-parse，receive
-    ///    进 messages → `.tailLoaded(count)`。典型 < 50 ms，UI 可以立刻渲染末屏。
-    /// 2. **Phase B**：后台 parse `[0, tailStartByteOffset)` prefix，主线程 prepend
-    ///    到 messages 头部 + 用 prefix 的 tool_use index 回填 tail 中遗留的
-    ///    unresolved tool_results → `.loaded`。
+    /// Two-phase history load:
+    /// 1. **Phase A**: `JSONLTailReader` does a byte-level read of the last
+    ///    ~80 lines, forward-parses, receives into messages →
+    ///    `.tailLoaded(count)`. Typically < 50 ms, so the UI can render the
+    ///    tail immediately.
+    /// 2. **Phase B**: parse `[0, tailStartByteOffset)` in the background,
+    ///    prepend to the head of messages on the main thread, and use the
+    ///    prefix's tool_use index to backfill any unresolved tool_results in
+    ///    the tail → `.loaded`.
     ///
-    /// live 追加在 Phase B 期间自由 append 到 messages 尾部；Phase B 用 prepend
-    /// 操作不动 suffix —— live 不会被吞掉。
+    /// Live appends to the tail during Phase B continue freely; Phase B only
+    /// prepends, never touching the suffix — live messages are not swallowed.
     ///
-    /// 幂等：`.loadingTail` / `.tailLoaded` / `.loaded` 直接返回；`.failed` 视为重试。
-    /// 与 `activate()` 完全正交——stopped / notStarted session 也能查看历史。
+    /// Idempotent: `.loadingTail` / `.tailLoaded` / `.loaded` return
+    /// immediately; `.failed` retries. Fully orthogonal to `activate()` —
+    /// stopped / notStarted sessions can still view history.
     ///
-    /// - Parameter url: 可选路径覆盖，仅测试使用；生产代码调 `loadHistory()` 走默认解析。
-    /// - Parameter tailTarget: Phase A 目标行数。默认 80 对典型 viewport 够用。
+    /// - Parameter url: Optional path override, test-only; production code
+    ///   calls `loadHistory()` for default resolution.
+    /// - Parameter tailTarget: Phase A target line count. 80 covers typical
+    ///   viewports.
     func loadHistory(overrideURL url: URL? = nil, tailTarget: Int = 80) {
         switch historyLoadState {
         case .loadingTail, .tailLoaded:
             return
         case .loaded:
-            // 已加载过（用户切走后再切回）—— 让 bridge 整体 reload 一次。
+            // Already loaded (user switched away and back) — have the bridge
+            // reload everything.
             //
-            // 同步 emit 在 view 未 mount 时是合法的：bridge → `controller.loadInitial`
-            // 自带 pending 缓存路径，layoutWidth=0 时把 blocks 暂存，等到
-            // coordinator 的 `onLayoutReady` 触发再消费。所以 handle 这一层无需关心
-            // SwiftUI commit 时序。
+            // Synchronously emitting before the view is mounted is safe:
+            // bridge → `controller.loadInitial` has its own pending-cache
+            // path that buffers blocks while layoutWidth=0 and consumes them
+            // when the coordinator's `onLayoutReady` fires. So this layer
+            // doesn't have to care about SwiftUI commit ordering.
             onMessagesChange?(.reset(messages))
             return
         case .failed:
@@ -96,11 +107,12 @@ extension SessionHandle2 {
                     for m in parsed.messages { self.receive(m, mode: .replay) }
                     let count = parsed.messages.count
                     self.historyLoadState = .tailLoaded(count: count)
-                    // Phase A 批量 ingest 完毕 → 一次性 dump 当前 messages
-                    // 给 bridge 当作初始装载。Phase A 期间的逐条 receive()
-                    // 走的是 replay mode,sink 不触发,所以这里是首条到达
-                    // bridge 的指令。哪怕 messages 为空也要发一次,让 bridge
-                    // 翻到 didLoadInitial = true。
+                    // Phase A bulk ingest done — dump current messages to the
+                    // bridge as the initial load. Per-message receive() during
+                    // Phase A runs in replay mode and does not fire the sink,
+                    // so this is the bridge's first instruction. Send it even
+                    // when messages is empty so the bridge can flip
+                    // didLoadInitial = true.
                     self.onMessagesChange?(.reset(self.messages))
                     let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
                     appLog(
@@ -110,7 +122,8 @@ extension SessionHandle2 {
             }
 
             // ── Phase B: prefix ─────────────────────────────────────────
-            // tailEndOffset = 0 表示 tail 已覆盖全文件，无需 Phase B。
+            // tailEndOffset == 0 means the tail covered the whole file —
+            // no Phase B needed.
             guard tailEndOffset > 0, let resolved else {
                 await MainActor.run { [weak self] in
                     self?.historyLoadState = .loaded
@@ -121,7 +134,8 @@ extension SessionHandle2 {
                 at: resolved, byteLimit: tailEndOffset)
             switch prefixResult {
             case .failure(let err):
-                // Phase B 失败不 downgrade — tail 已经可见。只 warning。
+                // Phase B failure does not downgrade — tail is already
+                // visible. Just warn.
                 await MainActor.run { [weak self] in
                     appLog(
                         .warning, "SessionHandle2",
@@ -133,13 +147,15 @@ extension SessionHandle2 {
                 let t0 = CFAbsoluteTimeGetCurrent()
                 await MainActor.run { [weak self] in
                     guard let self else { return }
-                    // Phase B 的 tailBaseline = 当前 messages.count（含 Phase A 的 tail
-                    // + Phase B 跑期间 live 追加的）。prepend 完成后 tail 区间的起点
-                    // 变成 prefixEntries.count。
+                    // Phase B's tailBaseline = current messages.count
+                    // (Phase A tail plus any live appends during Phase B).
+                    // After prepend, the tail starts at prefixEntries.count.
                     let tailBaseline = self.messages.count
 
-                    // 1. 先把 prefix 喂进一个临时 receive 通道：借用现有 append 逻辑，
-                    //    但插到头部。最简单：收集 prefix 的 MessageEntry，然后一次 insert。
+                    // 1. Run prefix through a temporary receive pipeline:
+                    //    reuse the existing append logic but insert at the
+                    //    head. Simplest path: collect prefix MessageEntry,
+                    //    then insert once.
                     let prefixEntries = Self.buildEntries(from: prefix)
                     if !prefixEntries.isEmpty {
                         self.messages.insert(contentsOf: prefixEntries, at: 0)
@@ -148,8 +164,8 @@ extension SessionHandle2 {
                     let newTailStart = prefixCount
                     let absoluteTailEnd = newTailStart + tailBaseline
 
-                    // 2. 用 prefix + tail 所有 tool_use 建 index,回填 tail 里
-                    //    unresolved tool_results。
+                    // 2. Build a tool_use index from prefix + tail and use it
+                    //    to resolve tool_results in the tail.
                     let allForIndex: [Message2] =
                         prefix
                         + self.tailMessagesAsArray(
@@ -159,10 +175,11 @@ extension SessionHandle2 {
                         to: &self.messages, from: newTailStart, using: index)
 
                     self.historyLoadState = .loaded
-                    // Phase B 完成 → 给 bridge 发对应增量:先 prepended,再
-                    // 针对 tail 区被 reresolve 的 entries 各发一条 updated。
-                    // 两步顺序: bridge 在收到 prepended 后会重新算 anchor,
-                    // 后续 update 才能正确定位 tail entry。
+                    // Phase B done — emit the bridge increments: prepended
+                    // first, then one updated per re-resolved tail entry.
+                    // Order matters: the bridge recomputes its anchor after
+                    // prepended, so subsequent updates can correctly locate
+                    // the tail entry.
                     if prefixCount > 0 {
                         let prefixEntries = Array(self.messages.prefix(prefixCount))
                         self.onMessagesChange?(.prepended(prefixEntries))
@@ -187,7 +204,7 @@ extension SessionHandle2 {
         let tailStartByteOffset: Int
     }
 
-    /// Phase A: 字节 tail + forward parse + per-file `Message2Resolver`。
+    /// Phase A: byte tail + forward parse + per-file `Message2Resolver`.
     nonisolated static func parseTail(
         at url: URL?, targetLines: Int
     ) -> Result<TailParsed, Error> {
@@ -210,9 +227,10 @@ extension SessionHandle2 {
         }
     }
 
-    /// Phase B: 读 `[0, byteLimit)` 解析为 prefix Message2 列表。独立 resolver。
-    /// 如果 prefix 内 tool_use 能 cover tail 的 unresolved tool_result，回填阶段
-    /// 再统一处理。
+    /// Phase B: read `[0, byteLimit)` and parse into a prefix Message2 list,
+    /// using its own resolver. If the prefix's tool_use entries can cover any
+    /// unresolved tool_results in the tail, the backfill step handles them
+    /// together later.
     nonisolated static func parsePrefix(
         at url: URL, byteLimit: Int
     ) -> Result<[Message2], Error> {
@@ -231,7 +249,8 @@ extension SessionHandle2 {
         }
     }
 
-    /// 把 JSONL 文本行数组 forward parse 成 `[Message2]`，丢掉解析失败的行。
+    /// Forward-parse JSONL text lines into `[Message2]`, dropping lines that
+    /// fail to parse.
     nonisolated static func parseLines(_ lines: [String]) -> [Message2] {
         let resolver = Message2Resolver()
         var out: [Message2] = []
@@ -248,16 +267,18 @@ extension SessionHandle2 {
         return out
     }
 
-    /// 把 parse 出来的 prefix `[Message2]` 走一遍 `receive(...)` 的 filter 逻辑，
-    /// 收集成 `[MessageEntry]`（给 Phase B prepend 用）。
+    /// Run prefix `[Message2]` through `receive(...)`'s filter logic and
+    /// collect the resulting `[MessageEntry]` for Phase B prepend.
     ///
-    /// 复用 `receive(_:mode:.replay)` 的 timeline 写入规则就意味着要做一次"影子
-    /// handle"—— 过于重。简化：prefix 只做 minimum 转换（single + group），不分
-    /// lifecycle / hasUnread。这里选用一个专用 session-temp handle 跑一次转换。
+    /// Reusing `receive(_:mode:.replay)`'s timeline write rules implies a
+    /// "shadow handle" — too heavy. Simplification: prefix only does the
+    /// minimum conversion (single + group), no lifecycle / hasUnread. Here
+    /// we spin up a dedicated temp handle and run a single conversion.
     @MainActor
     fileprivate static func buildEntries(from messages: [Message2]) -> [MessageEntry] {
-        // 为避免与真实 handle 的 state 纠缠，用 inMemory SessionRepository 建一个
-        // 临时 handle，跑 receive 获得 entries，再提取出来。
+        // Avoid entangling with the real handle's state by building a temp
+        // handle on an in-memory SessionRepository, running receive, and
+        // extracting the resulting entries.
         let repo = CoreDataSessionRepository(coreDataStack: CoreDataStack(inMemory: true))
         let tmp = SessionHandle2(sessionId: "prefix-builder-\(UUID().uuidString)", repository: repo)
         tmp.skipBootstrapForTesting = true
@@ -265,8 +286,8 @@ extension SessionHandle2 {
         return tmp.messages
     }
 
-    /// 把 self.messages 在 `[start, end)` 区间的 remote Message2 挖出来，供
-    /// Phase B 的 tool_use index 构建使用。
+    /// Extract remote Message2 entries in `[start, end)` for Phase B's
+    /// tool_use index construction.
     @MainActor
     fileprivate func tailMessagesAsArray(from start: Int, until end: Int) -> [Message2] {
         guard start < messages.count else { return [] }

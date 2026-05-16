@@ -1,20 +1,23 @@
 import AgentSDK
 import Foundation
 
-/// 把 `ToolUse + ToolResultPayload` 转成 `ToolGroupBlock.Child`。
+/// Converts `ToolUse + ToolResultPayload` into a `ToolGroupBlock.Child`.
 ///
-/// 与老 `ToolBlockView` 的派发逻辑同构,但产出是 native transcript 的
-/// per-kind child struct:每个 child 自带稳定 `id`(StableBlockID 派生
-/// 自 toolUseId)+ 显示用 `label` + 渲染时需要的字段。
+/// Same dispatch shape as the legacy `ToolBlockView`, but the output is the
+/// native transcript's per-kind child struct: each child carries a stable
+/// `id` (derived via StableBlockID from toolUseId), a display `label`, and
+/// the fields needed for rendering.
 enum ToolUseToChild {
-    /// `toolUseId` 唯一标识本次工具调用,贯穿 child id / fold-state /
-    /// highlight scope。`result` 来自 `SingleEntry.toolResults[toolUseId]`。
+    /// `toolUseId` uniquely identifies this tool invocation across child id /
+    /// fold-state / highlight scope. `result` comes from
+    /// `SingleEntry.toolResults[toolUseId]`.
     ///
-    /// 文案策略:**两份都填**(`label` = 过去时,`activeLabel` = 进行
-    /// 时)。Layout 层根据 `ToolStatus` 选用 —— `.running` 取
-    /// `activeLabel`,其他终态取 `label`。Bridge 自己不再用 `hasResult`
-    /// 切单值;状态由独立的 `setToolStatus` 通道驱动,Bridge 只负责把
-    /// 两个文案备齐。
+    /// Label policy: **fill both** (`label` = past tense, `activeLabel` =
+    /// progressive). The layout selects between them based on `ToolStatus` —
+    /// `.running` picks `activeLabel`, terminal states pick `label`. The
+    /// bridge no longer toggles a single value via `hasResult`; status flows
+    /// through the independent `setToolStatus` channel and the bridge just
+    /// stages both labels.
     static func make(
         toolUse: ToolUse,
         toolUseId: String,

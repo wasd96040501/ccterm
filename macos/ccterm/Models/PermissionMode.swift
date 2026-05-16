@@ -8,7 +8,6 @@ enum PermissionMode: String {
     case auto = "auto"
     case bypassPermissions = "bypassPermissions"
 
-    /// 映射到 AgentSDK PermissionMode。
     func toSDK() -> AgentSDK.PermissionMode {
         switch self {
         case .auto: return .auto

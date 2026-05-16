@@ -1,16 +1,20 @@
 import SwiftUI
 
-/// 浮在 chat detail 底部 chrome 的统一表面材质 — InputBarView2 / LoadingPillView2
-/// 共用。两条分支:
+/// Unified surface material for chrome floating at the bottom of the chat
+/// detail — shared by InputBarView2 / LoadingPillView2. Two branches:
 ///
-/// - macOS 26+:Liquid Glass(`glassEffect(_:in:)`),系统提供半透明 + 边缘高光 +
-///   折射;在外面叠一层 `separatorColor` 描边压住边缘,再加柔和阴影。`compositingGroup`
-///   保证阴影只投到圆角形状外、不"穿透"玻璃。
-/// - macOS 14/15:dark `.thickMaterial` / light `.bar`,clipShape 圆角后描边,
-///   light 模式叠一层细阴影增强浮起感。
+/// - macOS 26+: Liquid Glass (`glassEffect(_:in:)`) — system provides
+///   translucency + edge highlight + refraction; adds a `separatorColor`
+///   stroke to firm up the edge, plus a soft shadow. `compositingGroup`
+///   keeps the shadow outside the rounded shape rather than "bleeding"
+///   through the glass.
+/// - macOS 14/15: dark `.thickMaterial` / light `.bar`, clipped to a
+///   rounded rect with a stroke; light mode adds a thin shadow to enhance
+///   the lifted feel.
 ///
-/// 调用方提供 `cornerRadius`,模块内不假设固定值 — InputBar 用 20pt 大圆角,
-/// LoadingPill 用更小的 chip-size 圆角(harmonious sub-radius)。
+/// Caller supplies `cornerRadius`; this modifier doesn't bake in a value —
+/// InputBar uses 20pt; LoadingPill uses a smaller chip-size radius
+/// (harmonious sub-radius).
 ///
 /// Reference: <https://developer.apple.com/documentation/swiftui/view/glasseffect(_:in:isenabled:)>
 struct BarSurfaceModifier: ViewModifier {
@@ -47,8 +51,8 @@ struct BarSurfaceModifier: ViewModifier {
 }
 
 extension View {
-    /// 应用 chat detail chrome 的统一表面材质。InputBar / LoadingPill 共享此 modifier
-    /// 保证视觉一致 — radius 各传各的。
+    /// Apply the chat-detail chrome surface material. Shared by InputBar /
+    /// LoadingPill for visual consistency; each passes its own radius.
     func barSurface(cornerRadius: CGFloat) -> some View {
         modifier(BarSurfaceModifier(cornerRadius: cornerRadius))
     }

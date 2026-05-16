@@ -1,12 +1,12 @@
 import Foundation
 
-/// 会话的持久化生命周期状态（存储在 CDSession.status 中）。
+/// Persisted session lifecycle state (stored in CDSession.status).
 enum SessionStatus: String {
-    /// DB 已建，CLI 从未成功初始化（cwd 未知）。
+    /// DB row created; CLI has never successfully initialized (cwd unknown).
     case pending
-    /// CLI 至少成功初始化过一次，有完整元数据。
+    /// CLI initialized at least once; full metadata is available.
     case created
-    /// 软删除（归档）。
+    /// Soft-deleted (archived).
     case archived
 }
 
@@ -29,7 +29,8 @@ struct SessionExtra: Codable {
     }
 }
 
-/// 新 session 系统的数据模型。与 legacy Session struct 独立，由 SessionService/SessionRepository 使用。
+/// Data model for the new session system. Independent of the legacy
+/// Session struct; used by SessionService / SessionRepository.
 struct SessionRecord: Identifiable {
 
     let id: UUID
@@ -49,7 +50,8 @@ struct SessionRecord: Identifiable {
     var isTempDir: Bool
     var worktreeBranch: String?
 
-    /// slug 从 cwd 确定性推导，不持久化。需与 Claude CLI 的 slug 生成逻辑一致。
+    /// Slug is deterministically derived from cwd, not persisted. Must
+    /// match Claude CLI's slug generation logic.
     var slug: String? {
         cwd?.replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: " ", with: "-")

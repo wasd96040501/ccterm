@@ -5,20 +5,25 @@ import Foundation
 
 extension SessionHandle2 {
 
-    /// 显式激活 session：确保 CLI 子进程已起、initialize 完毕（拿到 slashCommands /
-    /// availableModels / contextWindow）。不会发送消息。
+    /// Explicitly activate the session: make sure the CLI subprocess is up
+    /// and has finished initialize (slashCommands / availableModels /
+    /// contextWindow are populated). Does not send a message.
     ///
-    /// 幂等：`.notStarted` / `.stopped` → 启动 bootstrap；其他 status 直接 no-op。
-    /// UI 打开 session 视图时调用此方法预热 CLI，让 slash 补全等元数据立即可用。
+    /// Idempotent: `.notStarted` / `.stopped` → kick off bootstrap; other
+    /// statuses → no-op. The UI calls this when opening a session view to
+    /// warm up the CLI so slash autocomplete etc. is ready.
     ///
-    /// 与 `send(_:)` 的关系：`send` 内部也会自动确保启动，所以用户如果直接发消息
-    /// 不需要显式先调 `activate()`——`activate()` 的价值在于"不发消息也要 CLI 就绪"的场景。
+    /// Relationship with `send(_:)`: `send` also auto-starts internally, so
+    /// users sending a message directly don't need to call `activate()`
+    /// first. `activate()` matters when the CLI must be ready *without*
+    /// sending a message.
     func activate() {
         ensureStarted()
     }
 
-    /// 手动停止 CLI 子进程。active 态下调 `close()`；之后由 onProcessExit 回调接管
-    /// status/termination/pendingPermissions 清理。其他 status 下 no-op。
+    /// Manually stop the CLI subprocess. While active, calls `close()`; the
+    /// onProcessExit callback then handles status / termination /
+    /// pendingPermissions cleanup. No-op otherwise.
     func stop() {
         switch status {
         case .notStarted, .stopped:
@@ -35,14 +40,16 @@ extension SessionHandle2 {
 
 extension SessionHandle2 {
 
-    /// 发送文本消息。语义见 `enqueueAndSend(_:)`。
-    /// `planContent` 透传给 CLI 的 `plan_content` 字段（ExitPlanMode 场景）。
+    /// Send a text message. See `enqueueAndSend(_:)` for semantics.
+    /// `planContent` passes through to the CLI's `plan_content` field
+    /// (ExitPlanMode scenario).
     func send(text: String, planContent: String? = nil) {
         enqueueAndSend(LocalUserInput(text: text, image: nil, planContent: planContent))
     }
 
-    /// 发送图片消息。`caption` 作为文字伴随 block（默认 "[image]"），image
-    /// 以 base64 打包进 content array。语义见 `enqueueAndSend(_:)`。
+    /// Send an image message. `caption` becomes a companion text block
+    /// (default `"[image]"`); the image is packed as base64 into the content
+    /// array. See `enqueueAndSend(_:)` for semantics.
     func send(image data: Data, mediaType: String, caption: String? = nil) {
         enqueueAndSend(
             LocalUserInput(
@@ -52,18 +59,23 @@ extension SessionHandle2 {
             ))
     }
 
-    /// 统一发送路径：
-    /// 1. 立即 append 一条 `.queued` `.localUser(input)` `SingleEntry`（UI 即时看到）。
-    /// 2. 如果 session 尚未启动/已停止，自动触发 `ensureStarted()`。
-    /// 3. 如果 CLI 已 attach（`agentSession != nil`），立即把消息写到 stdin；
-    ///    CLI 侧自己排队，不在 Swift 侧做 flush gating。
-    /// 4. CLI 吃到消息后会 echo 回一条带同 uuid 的 user 消息，`receive` 按 uuid
-    ///    命中本条 entry 并把 payload 替换成 `.remote(echo)`、delivery 切 `.confirmed`。
+    /// Unified send path:
+    /// 1. Immediately append a `.queued` `.localUser(input)` `SingleEntry`
+    ///    (UI sees it right away).
+    /// 2. Auto-trigger `ensureStarted()` if the session is unstarted/stopped.
+    /// 3. If the CLI is attached (`agentSession != nil`), write the message
+    ///    to stdin immediately. The CLI handles its own queueing — Swift
+    ///    does not gate flushes.
+    /// 4. After the CLI consumes the message it echoes back a user message
+    ///    with the same uuid; `receive` matches the entry by uuid and swaps
+    ///    payload to `.remote(echo)`, delivery to `.confirmed`.
     ///
-    /// entry.id 作为 `uuid` 字段随消息发给 CLI（`--replay-user-messages` 确保
-    /// CLI 原样回显），用于精确匹配。
+    /// `entry.id` is sent as the `uuid` field on the message (the CLI
+    /// echoes it back verbatim under `--replay-user-messages`) so the match
+    /// is exact.
     ///
-    /// title 生成是正交能力——调用方（fresh + 首条文本场景）显式调 `generateTitle(from:)`。
+    /// Title generation is orthogonal — the caller (the fresh + first-text
+    /// flow) calls `generateTitle(from:)` explicitly.
     private func enqueueAndSend(_ input: LocalUserInput) {
         let single = SingleEntry(
             id: UUID(),
@@ -78,13 +90,16 @@ extension SessionHandle2 {
             "[v2-send] enqueue sid=\(sessionId.prefix(8)) entryId=\(single.id.uuidString.prefix(8)) "
                 + "status=\(status) hasRecord=\(hasRecord) agentSession=\(agentSession != nil) "
                 + "msgCount=\(messages.count) onChange=\(onMessagesChange != nil)")
-        // turn 入口 — 在所有副作用之前 +1,view 层的 isRunning 立刻可见。
-        // 同步发生在 main,@Observable 自动通知 SwiftUI 重渲染。
+        // Turn entry — bump before any side effect so the view's isRunning
+        // is visible immediately. Synchronous on main; @Observable
+        // auto-notifies SwiftUI to re-render.
         pendingTurnCount += 1
-        // 通知 AppKit 渲染端 — Transcript2EntryBridge 是 onMessagesChange 的
-        // 唯一消费方。enqueue 必须发,不然 user bubble 要等 CLI echo 回来才
-        // 显示(100~300ms 视觉黑屏)。echo 到达时走 `confirmQueuedEntry` 转
-        // `.updated`,bridge 用稳定 block id 走 `.update` 通道无感替换文本。
+        // Notify the AppKit renderer — Transcript2EntryBridge is
+        // onMessagesChange's only consumer. Must emit on enqueue, otherwise
+        // the user bubble would only appear after the CLI echo (100-300ms
+        // of visual blank). When the echo arrives, `confirmQueuedEntry`
+        // converts it to `.updated`; the bridge uses a stable block id and
+        // swaps the text via `.update` invisibly.
         onMessagesChange?(.appended(entry))
 
         ensureStarted()
@@ -100,7 +115,8 @@ extension SessionHandle2 {
                 "[v2-send] defer-flush sid=\(sessionId.prefix(8)) entryId=\(single.id.uuidString.prefix(8)) status=\(status)"
             )
         }
-        // 否则 bootstrap 成功后 `flushBootstrapBacklog` 会把它写到 CLI。
+        // Otherwise `flushBootstrapBacklog` writes it to the CLI after
+        // bootstrap succeeds.
     }
 }
 
@@ -108,15 +124,18 @@ extension SessionHandle2 {
 
 extension SessionHandle2 {
 
-    /// 生成 title 的唯一入口。与 `activate()` 正交——fresh + 空 title 的 policy
-    /// 由调用方（ChatRouter）决定，handle 只提供能力。
+    /// Sole entry point for title generation. Orthogonal to `activate()` —
+    /// the "fresh + empty title" policy lives in the caller (ChatRouter);
+    /// the handle just provides the capability.
     ///
-    /// 可重入：空 `firstMessage` 或 `isGeneratingTitle == true` 时 no-op，
-    /// 调用方失败重试 / 用户手动重生成直接再调即可。
+    /// Reentrant: empty `firstMessage` or `isGeneratingTitle == true` is a
+    /// no-op, so callers can retry on failure or let the user re-trigger
+    /// regeneration just by calling again.
     ///
-    /// 生成过程异步（`Task.detached`），不阻塞调用线程。完成后通过
-    /// `applyGeneratedTitle` 写回 handle + repository；失败时 `isGeneratingTitle`
-    /// 复位、不改 title。
+    /// Generation runs asynchronously (`Task.detached`) and does not block
+    /// the caller. On success, `applyGeneratedTitle` writes back to handle
+    /// and repository; on failure, `isGeneratingTitle` resets and title is
+    /// untouched.
     func generateTitle(from firstMessage: String) {
         guard !firstMessage.isEmpty else { return }
         guard !isGeneratingTitle else { return }
@@ -124,13 +143,14 @@ extension SessionHandle2 {
         launchTitleGenerationTask(firstMessage: firstMessage)
     }
 
-    /// 应用 LLM 生成的 title 到 handle 和 db。
+    /// Apply the LLM-generated title to handle and db.
     ///
-    /// 总是复位 `isGeneratingTitle`、写 title。worktree 场景下 branch 保持
-    /// `ensureStarted` 里 provision 出的初始随机名不变（`Prompt.TitleAndBranch.branch`
-    /// 字段被丢弃）。
+    /// Always resets `isGeneratingTitle` and writes the title. In the
+    /// worktree case, the branch keeps the initial random name provisioned
+    /// in `ensureStarted` (`Prompt.TitleAndBranch.branch` is discarded).
     ///
-    /// 拆成独立方法便于测试直接驱动，无需触发真 LLM 调用。
+    /// Split into a standalone method so tests can drive it directly without
+    /// firing a real LLM call.
     func applyGeneratedTitle(_ result: Prompt.TitleAndBranch) {
         isGeneratingTitle = false
         title = result.titleI18n
@@ -143,11 +163,11 @@ extension SessionHandle2 {
 
 extension SessionHandle2 {
 
-    /// 幂等启动入口。`.notStarted` / `.stopped` 下组装 configuration、provision
-    /// worktree（fresh + isWorktree）、persist config、启动 bootstrap Task；
-    /// 其他 status 直接 no-op。
+    /// Idempotent startup entry. In `.notStarted` / `.stopped`, assembles
+    /// configuration, provisions a worktree (fresh + isWorktree), persists
+    /// config, and launches the bootstrap Task. Other statuses → no-op.
     ///
-    /// 不对外暴露——外部只通过 `activate()` 或 `send(_:)` 进入。
+    /// Not exposed externally — callers use `activate()` or `send(_:)`.
     func ensureStarted() {
         guard status == .notStarted || status == .stopped else {
             appLog(
@@ -167,9 +187,10 @@ extension SessionHandle2 {
 
         let fresh = (repository.find(sessionId) == nil)
 
-        // fresh + isWorktree 时先 provision worktree，同步更新 cwd + 初始 branch
-        // （adj-sci-hex）。后续 LLM rename 会改 branch，但不改 cwd。失败直接走
-        // 失败路径（status → .stopped，不写 db，不走 bootstrap）。
+        // For fresh + isWorktree, provision the worktree first and
+        // synchronously update cwd plus the initial branch (adj-sci-hex).
+        // Later LLM rename changes branch but not cwd. Failure takes the
+        // failure path (status → .stopped, no db write, no bootstrap).
         if fresh, isWorktree {
             do {
                 let wt = try provisionWorktreeIfNeeded()
@@ -194,9 +215,11 @@ extension SessionHandle2 {
         }
     }
 
-    /// 把所有 `.queued` `.localUser` entry 写到 CLI。仅在 bootstrap 刚成功、
-    /// `agentSession` 就绪那一刻调用一次。此后的 `send(_:)` 走"立即写 CLI"
-    /// 的快路径。user 消息永远是 `.single`（不参与 grouping），所以只扫 `.single`。
+    /// Write every `.queued` `.localUser` entry to the CLI. Called once when
+    /// bootstrap just succeeded and `agentSession` becomes ready. After
+    /// that, `send(_:)` takes the "write CLI immediately" fast path. User
+    /// messages are always `.single` (never grouped), so we only scan
+    /// `.single`.
     func flushBootstrapBacklog() {
         guard let session = agentSession else {
             appLog(
@@ -221,9 +244,10 @@ extension SessionHandle2 {
             "[v2-send] flushBacklog done sid=\(sessionId.prefix(8)) flushed=\(flushed) msgCount=\(messages.count)")
     }
 
-    /// 将所有当前 `.queued` 的 user entry 打成 `.failed`（bootstrap 失败 /
-    /// 进程异常退出都走这里）。已 `.confirmed` 的保持不变。
-    /// 逐条 emit `.updated` 让 bridge 走 update 通道刷新 delivery 状态。
+    /// Mark every currently `.queued` user entry as `.failed` (bootstrap
+    /// failure / process abort). Already-`.confirmed` entries are untouched.
+    /// Emits one `.updated` per entry so the bridge's update channel can
+    /// refresh delivery state.
     func failQueuedEntries(reason: String) {
         for idx in messages.indices {
             guard case .single(var single) = messages[idx],
@@ -375,7 +399,8 @@ extension SessionHandle2 {
         do {
             try await session.start()
         } catch {
-            // sync 启动失败(chdir 不到 / binary 找不到) — 走统一 failLaunch。
+            // Sync startup failure (chdir / binary missing) — funnel through
+            // the unified failLaunch.
             failLaunch(reason: "\(error)")
             return
         }
@@ -383,15 +408,18 @@ extension SessionHandle2 {
             .info, "SessionHandle2",
             "[v2-send] bootstrap start-ok sid=\(sessionId.prefix(8)) status-before-attach=\(status)")
 
-        // stdin 真正就绪后才暴露 agentSession，避免 send() 在 start() 完成前写入
-        // stdin（writeJSON guard 了 nil pipe，但保持不变量更清晰）。
+        // Only expose `agentSession` once stdin is actually ready, so
+        // `send()` can't write before `start()` completes (writeJSON does
+        // guard nil pipes, but keeping the invariant tight is clearer).
         self.agentSession = session
 
-        // Race:initialize completion vs 进程死亡。CLI 可能起来后秒退
-        // (--resume 找不到 JSONL 等),此时 initialize 的 control response
-        // 永远不会回来,SDK 的 `pendingControlResponses` 不会被进程退出 fire
-        // 掉,光等会一直挂。挂一把 `bootstrapExitHook`,让 handleProcessExit
-        // 把死讯转发回这把 continuation,统一走 failLaunch。
+        // Race: initialize completion vs process death. The CLI may start
+        // and die instantly (e.g. `--resume` can't find the JSONL); in that
+        // case the initialize control response never arrives, the SDK's
+        // `pendingControlResponses` is not fired by process exit, and we'd
+        // hang forever. The `bootstrapExitHook` lets handleProcessExit
+        // forward the death back to this continuation so we route through
+        // failLaunch.
         let initResp: InitializeResponse? = await withCheckedContinuation {
             (cont: CheckedContinuation<InitializeResponse?, Never>) in
             var resumed = false
@@ -407,8 +435,9 @@ extension SessionHandle2 {
         }
         self.bootstrapExitHook = nil
 
-        // 如果在等 init 的过程中进程死了,handleProcessExit 已经在自己那条
-        // 路径上调了 failLaunch(status 翻 .stopped),这里 short-circuit。
+        // If the process died while waiting for init, handleProcessExit
+        // already called failLaunch on its own path (status flipped to
+        // .stopped); short-circuit here.
         guard status == .starting else {
             appLog(
                 .info, "SessionHandle2",
@@ -429,16 +458,18 @@ extension SessionHandle2 {
         appLog(.info, "SessionHandle2", "[v2-send] bootstrap done sid=\(sessionId.prefix(8)) fresh=\(fresh)")
     }
 
-    /// 所有 CLI launch-time 失败的统一收口:sync `Process.run()` 抛错、init
-    /// 完成前 CLI 自己 exit 非零都来这里。
+    /// Single sink for every CLI launch-time failure: sync `Process.run()`
+    /// throwing, or the CLI exiting non-zero before init completes.
     ///
-    /// 副作用按"就让 UI 立即可见"的顺序排:status / pendingTurnCount 先翻,
-    /// agentSession 摘掉,queued entries 标失败,repo 写错误,最后 onLaunchFailure
-    /// 通知订阅方(SessionManager2)弹 alert。
+    /// Side effects ordered for "make it visible to UI first":
+    /// status / pendingTurnCount flip first, agentSession is detached,
+    /// queued entries are failed, repo error is written, then
+    /// onLaunchFailure notifies the subscriber (SessionManager2) to show
+    /// an alert.
     ///
-    /// 入参 `reason` 直接对外用,**不做本地化处理**——`String(describing: error)`
-    /// 给出 SDK enum 完整原貌,`process exited (code N): <stderr>` 给出 CLI 自己
-    /// 的原始 stderr。
+    /// `reason` is surfaced directly — **no localization**.
+    /// `String(describing: error)` preserves the full SDK enum;
+    /// `process exited (code N): <stderr>` preserves the CLI's raw stderr.
     fileprivate func failLaunch(reason: String) {
         appLog(
             .error, "SessionHandle2",
@@ -505,7 +536,7 @@ extension SessionHandle2 {
             }
         }
 
-        // stage 1 的最小 no-op；hook/mcp/elicitation 按需后续补。
+        // Stage-1 minimal no-ops; fill in hook / mcp / elicitation later.
         session.onHookRequest = { _ in HookResult.success() }
         session.onMCPRequest = { _ in MCPResponse.success() }
         session.onElicitationRequest = { _ in .cancel }
@@ -537,8 +568,9 @@ extension SessionHandle2 {
             .warning, "SessionHandle2",
             "[v2-send] processExit sid=\(sessionId.prefix(8)) code=\(code) stderr=\(trimmed ?? "(empty)")")
 
-        // bootstrap init 等待期间死亡 → 解开 init 的 continuation,然后走
-        // 统一 failLaunch。bootstrap 那边 short-circuit 收尾。
+        // Died during bootstrap init wait → unblock the init continuation,
+        // then route through the unified failLaunch. The bootstrap side
+        // short-circuits its cleanup.
         if let hook = bootstrapExitHook {
             bootstrapExitHook = nil
             hook(code)
@@ -546,12 +578,13 @@ extension SessionHandle2 {
             return
         }
 
-        // 已运行后死亡 — 常规清理(无 alert)。
+        // Died after running — normal cleanup (no alert).
         stderrBuffer = ""
         agentSession = nil
         termination = desc
         status = .stopped
-        // 进程死了 — 所有在飞 turn 都不可能再 .result 回来,归零防止 isRunning 卡住。
+        // Process is dead — no `.result` will arrive for any in-flight turn,
+        // so zero this out to keep `isRunning` from getting stuck.
         pendingTurnCount = 0
 
         for pending in pendingPermissions {
@@ -566,15 +599,17 @@ extension SessionHandle2 {
 
     // MARK: Outgoing wire
 
-    /// 把一条 `.localUser` SingleEntry 写到 CLI stdin。`.remote` 或非 user entry
-    /// 直接忽略——只有本地尚未 echo 的 entry 才有 outgoing 职责。
+    /// Write one `.localUser` SingleEntry to CLI stdin. `.remote` or
+    /// non-user entries are ignored — only locally-not-yet-echoed entries
+    /// have outgoing responsibility.
     ///
-    /// - text-only：走 string-content 的 `sendMessage(_:extra:)`。
-    /// - 带 image：构造 text + image(base64) 的 content array，走
-    ///   `sendMessage(contentBlocks:extra:)`。
+    /// - text-only: use the string-content `sendMessage(_:extra:)`.
+    /// - with image: build a text + image(base64) content array and use
+    ///   `sendMessage(contentBlocks:extra:)`.
     ///
-    /// `entry.id` 作为 `uuid` extra 伴随发出，CLI 在 `--replay-user-messages`
-    /// 开启下原样回显，用于 `confirmQueuedEntry` 的精确匹配。
+    /// `entry.id` is sent as the `uuid` extra; the CLI echoes it back
+    /// verbatim under `--replay-user-messages` for `confirmQueuedEntry`'s
+    /// exact match.
     fileprivate func writeUserEntryToCLI(_ entry: SingleEntry, session: AgentSDK.Session) {
         guard case .localUser(let input) = entry.payload else {
             appLog(

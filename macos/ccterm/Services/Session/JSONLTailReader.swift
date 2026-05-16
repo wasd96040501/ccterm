@@ -1,19 +1,22 @@
 import Foundation
 
-/// 字节级 tail 读取器 —— 从文件末尾向前 chunk 读，拼出 ≥ N 行 JSONL，返回
-/// **forward** 顺序（最早→最新）。用于两段式 `loadHistory` 的 Phase A：让
-/// UI 在几十 ms 内就能看到末尾若干条消息，而不是阻塞全量 parse。
+/// Byte-level tail reader — reads chunks backward from EOF to assemble ≥ N
+/// JSONL lines, returned in **forward** order (oldest → newest). Used by
+/// `loadHistory` Phase A so the UI can render the last few messages within
+/// tens of ms instead of waiting on a full parse.
 ///
-/// 文件路径下的 JSONL 约定：每行一条 JSON 记录、`\n` 分隔、末尾可能有空行。
-/// 中间 `\n` 只作行分隔符（json payload 不含裸 `\n`），所以仅用 `\n` 切行即可。
+/// JSONL convention: one JSON record per line, `\n` separated, possible
+/// trailing blank line. Inner `\n` only acts as line separator (JSON payloads
+/// contain no bare `\n`), so splitting on `\n` is sufficient.
 enum JSONLTailReader {
 
     struct Result {
-        /// `targetLines` 行 JSONL，forward 顺序（最早→最新）。
-        /// 空数组可能性：文件空 / 只含空行。
+        /// `targetLines` JSONL rows in forward order (oldest → newest).
+        /// Empty when the file is empty or only blank lines.
         let lines: [String]
-        /// 这批 lines 在文件中的起始字节偏移。Phase B 按 `[0, offset)` 读 prefix
-        /// bytes；若返回值 == 0 意味着尾部已涵盖全文件（没有 prefix 要读）。
+        /// Starting byte offset of these lines in the file. Phase B reads the
+        /// prefix `[0, offset)`; offset == 0 means the tail covered the whole
+        /// file (no prefix left to read).
         let tailStartByteOffset: Int
     }
 
@@ -27,15 +30,16 @@ enum JSONLTailReader {
         }
     }
 
-    /// 读文件末尾 ≥ `targetLines` 行 JSONL。
+    /// Read ≥ `targetLines` JSONL lines from the end of the file.
     ///
     /// - Parameters:
-    ///   - url: JSONL 文件路径
-    ///   - targetLines: 期望行数下限。实际返回可能略多（一个 chunk 边界可能跨多行）。
-    ///   - maxBytes: 字节读取上限。避免文件末尾有超大单行把整个文件读完。
-    ///     默认 1 MiB 对典型 CLI JSONL 足够。
+    ///   - url: JSONL file path.
+    ///   - targetLines: Lower bound on returned line count. Actual count may
+    ///     exceed this (chunk boundaries can straddle multiple lines).
+    ///   - maxBytes: Byte cap to avoid reading the whole file when a giant
+    ///     single line sits at the end. 1 MiB suffices for typical CLI JSONL.
     /// - Returns: `Result(lines, tailStartByteOffset)`
-    /// - Throws: `ReaderError.fileNotFound` 或 底层 I/O 错误
+    /// - Throws: `ReaderError.fileNotFound` or underlying I/O errors.
     static func readTail(
         url: URL,
         targetLines: Int,
@@ -57,8 +61,8 @@ enum JSONLTailReader {
         var bufferBytes: [UInt8] = []
         var readSoFar = 0
         var currentOffset = fileSize
-        // 每次读 chunk，拼到 bufferBytes 前面。
-        // 直到 累计字节 >= maxBytes 或 覆盖全文件 或 足够 targetLines 行。
+        // Read each chunk and prepend it to bufferBytes until we hit maxBytes,
+        // cover the whole file, or accumulate enough lines.
         while currentOffset > 0, readSoFar < maxBytes {
             let take = min(chunkSize, currentOffset, maxBytes - readSoFar)
             let readFrom = currentOffset - take
@@ -73,19 +77,23 @@ enum JSONLTailReader {
             // count the tail piece once currentOffset == 0 (whole file read).
             let lineCount = countNewlines(bufferBytes)
             if currentOffset > 0, lineCount > targetLines {
-                // 已有足够行（多出一行用作边界保护——第一个 `\n` 之前的残缺段丢掉）。
+                // One extra line as boundary guard — the partial fragment
+                // before the first `\n` will be dropped.
                 break
             }
             if currentOffset == 0 { break }
         }
 
-        // 切行：按 \n 拆。`split` 会丢掉空 segment，但我们要区分「末尾空行」和「文件中间
-        // 空行」——JSONL 中间不会有空行，末尾可能有。所以用 components(separatedBy:)。
+        // Split on `\n`. `split` drops empty segments, but we need to
+        // distinguish "trailing blank line" from "blank in the middle":
+        // JSONL has no middle blanks, but may have a trailing one. So use
+        // components(separatedBy:).
         let text = String(decoding: bufferBytes, as: UTF8.self)
         let all = text.components(separatedBy: "\n")
 
-        // all 的第一项可能是"残段"（被 chunk 边界切掉头）。如果 currentOffset > 0，
-        // 说明我们没有读到文件起始，第一个 piece 可能是上半行残件 —— 丢掉。
+        // The first piece may be a fragment cut by a chunk boundary. When
+        // currentOffset > 0 we did not reach the file start, so drop the
+        // first piece as a likely partial line head.
         let usable: [String]
         var droppedBytes: Int
         if currentOffset > 0 {
@@ -97,29 +105,30 @@ enum JSONLTailReader {
             usable = all
         }
 
-        // 过滤空行（末尾 "\n\n" 产出的 empty segment）。
+        // Filter blank lines (empty segments produced by trailing "\n\n").
         let nonEmpty = usable.filter { !$0.isEmpty }
 
-        // 截取末尾 targetLines 条（可能少于 target，如果 buffer 里就这么多）。
+        // Take the last targetLines (may be fewer if the buffer holds fewer).
         let tail: [String]
         if nonEmpty.count > targetLines {
             tail = Array(nonEmpty.suffix(targetLines))
-            // startByteOffset = fileSize - (最后 targetLines 行的字节数 + 中间分隔 \n)
+            // startByteOffset = fileSize - (bytes of last targetLines + their
+            // separating \n).
             let tailBytes = tail.reduce(0) { $0 + $1.utf8.count + 1 }
             return Result(
                 lines: tail,
                 tailStartByteOffset: max(0, fileSize - tailBytes))
         } else {
             tail = nonEmpty
-            // buffer 里只有这些行。startByteOffset = currentOffset（未读部分的字节数）
-            // 加上已被 `droppedBytes` 丢掉的那部分残段。
+            // Buffer holds all the lines we have. startByteOffset =
+            // currentOffset (unread bytes) plus the fragment we dropped.
             return Result(
                 lines: tail,
                 tailStartByteOffset: currentOffset + droppedBytes)
         }
     }
 
-    /// 快速计算 byte 数组中 `\n` 的个数（不分配 String）。
+    /// Fast count of `\n` bytes in a byte array (no String allocation).
     private static func countNewlines(_ bytes: [UInt8]) -> Int {
         var n = 0
         for b in bytes where b == 0x0A { n += 1 }

@@ -1,22 +1,21 @@
 import Foundation
 
-/// CLI 功能标识。
+/// CLI feature identifiers.
 public enum CLIFeature: String, CaseIterable, Sendable {
     case model  // --model
     case pluginDir  // --plugin-dir
 }
 
-/// CLI 能力检测结果。基于版本号判断功能是否可用。
+/// CLI capability probe result. Decides feature availability from the version number.
 public struct CLICapability: Sendable {
     public let version: String  // e.g. "2.1.87"
 
-    /// 版本映射表（保守值，取 release notes 中首次提及的版本）
+    /// Minimum version per feature (conservative — taken from the release notes' first mention).
     private static let minVersions: [CLIFeature: (Int, Int, Int)] = [
         .model: (2, 0, 41),
         .pluginDir: (2, 1, 74),
     ]
 
-    /// 检查某功能是否可用
     public func isAvailable(_ feature: CLIFeature) -> Bool {
         guard let min = Self.minVersions[feature],
             let current = Self.parseVersion(version)
@@ -24,12 +23,11 @@ public struct CLICapability: Sendable {
         return current >= min
     }
 
-    /// 所有可用功能
     public var availableFeatures: Set<CLIFeature> {
         Set(CLIFeature.allCases.filter { isAvailable($0) })
     }
 
-    /// 检测当前安装的 CLI，返回 nil 表示 CLI 未安装或无法获取版本
+    /// Probes the installed CLI. Returns nil when the CLI is missing or its version is unparseable.
     public static func detect() async -> CLICapability? {
         guard let binaryPath = BinaryLocator.locate() else { return nil }
         let proc = Process()
@@ -51,14 +49,14 @@ public struct CLICapability: Sendable {
 
     // MARK: - Private
 
-    /// 从 "2.1.87 (Claude Code)\n" 提取 "2.1.87"
+    /// Extracts "2.1.87" from `"2.1.87 (Claude Code)\n"`.
     private static func extractVersion(_ output: String) -> String? {
         let pattern = #"(\d+\.\d+\.\d+)"#
         guard let range = output.range(of: pattern, options: .regularExpression) else { return nil }
         return String(output[range])
     }
 
-    /// "2.1.87" → (2, 1, 87)
+    /// `"2.1.87"` → `(2, 1, 87)`.
     private static func parseVersion(_ str: String) -> (Int, Int, Int)? {
         let parts = str.split(separator: ".").compactMap { Int($0) }
         guard parts.count == 3 else { return nil }

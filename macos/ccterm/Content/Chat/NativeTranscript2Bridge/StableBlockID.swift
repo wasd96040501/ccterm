@@ -1,18 +1,21 @@
 import CryptoKit
 import Foundation
 
-/// Deterministic UUID 派生工具。把 `(entryId, role, idx, ...)` 这样的稳定坐标
-/// 折成同样稳定的 UUID,用作 `Block.id` 和 `ToolGroupBlock.Child.id`。
+/// Deterministic UUID derivation. Folds a stable coordinate like
+/// `(entryId, role, idx, ...)` into a stable UUID for use as `Block.id` and
+/// `ToolGroupBlock.Child.id`.
 ///
-/// 为什么需要：`Transcript2Coordinator` 的 diff、fold-state、selection、
-/// highlight scope 全部 key on `Block.id` / `Child.id`。同一条 entry 在两次
-/// snapshot 重建之间必须算出同一个 UUID,否则 (a) 增量 diff 会变成
-/// remove-all+insert-all,(b) 用户展开的 diff 会被重置。
+/// Why: `Transcript2Coordinator`'s diff, fold-state, selection, and highlight
+/// scope are all keyed on `Block.id` / `Child.id`. The same entry must hash
+/// to the same UUID across snapshot rebuilds, otherwise (a) incremental diff
+/// degrades to remove-all + insert-all, and (b) user-expanded diffs reset.
 ///
-/// 实现：SHA256(seed) 前 16 字节 → UUID v5/variant。同一 seed → 同一 UUID。
+/// Implementation: SHA256(seed) → first 16 bytes → UUID v5/variant. Same seed
+/// → same UUID.
 enum StableBlockID {
-    /// 折叠任意字符串列表为同一稳定 UUID。用 `|` 做分隔符纯粹是为了
-    /// debug 时一眼看出 seed 结构,不影响正确性。
+    /// Folds any list of strings into one stable UUID. The `|` separator is
+    /// purely for legibility when inspecting the seed; it doesn't affect
+    /// correctness.
     static func derive(_ parts: String...) -> UUID {
         let seed = parts.joined(separator: "|")
         let digest = SHA256.hash(data: Data(seed.utf8))

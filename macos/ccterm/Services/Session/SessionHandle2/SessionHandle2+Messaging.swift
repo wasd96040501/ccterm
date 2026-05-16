@@ -5,19 +5,24 @@ import Foundation
 
 extension SessionHandle2 {
 
-    /// 中断当前 turn。守卫用 `isRunning`(`pendingTurnCount > 0`),不再用
-    /// `status == .responding` —— send() 入口同步 +1 pendingTurnCount,而 status
-    /// 翻 `.responding` 要等 CLI echo 回来,中间 100-300ms 空窗 stop 按钮已经显示
-    /// 但旧的 `.responding` 守卫会拦下,表现为"点了没用"。
+    /// Interrupt the current turn. Guards on `isRunning`
+    /// (`pendingTurnCount > 0`), not `status == .responding` — `send()` bumps
+    /// `pendingTurnCount` synchronously, but status only flips to
+    /// `.responding` after the CLI echo. During the 100-300ms gap the stop
+    /// button is already visible, so the old `.responding` guard would
+    /// reject the click and the user sees "click did nothing".
     ///
-    /// 副作用按"UI 立即可见"的顺序排:
-    /// 1. `pendingTurnCount = 0`:isRunning 立即 false,bar 切回 send 态。
-    /// 2. `.responding` → `.interrupting`(其他 status 保持不变,避免污染
-    ///    `.starting` / `.idle` 这种"还没收到 echo" 的子态)。
-    /// 3. 仍 `.queued` 的本地 user entry 标 failed,防止 bootstrap 完成后
-    ///    `flushBootstrapBacklog` 把它们补发给 CLI(那样用户点了 stop 实际还是发出去了)。
-    /// 4. agentSession 在场就发 RPC;不在场(bootstrap 还没到 attach)直接跳过 ——
-    ///    没 CLI 连接就没有 turn 可中断,本地清理已经满足语义。
+    /// Side effects ordered for "UI feedback first":
+    /// 1. `pendingTurnCount = 0`: isRunning flips false immediately, bar
+    ///    switches back to send state.
+    /// 2. `.responding` → `.interrupting` (other statuses untouched, so we
+    ///    don't pollute `.starting` / `.idle` "echo not received yet" sub-states).
+    /// 3. Mark queued local user entries as failed, so a later
+    ///    `flushBootstrapBacklog` (after bootstrap finishes) doesn't resend
+    ///    them to the CLI — otherwise stop would still send the message.
+    /// 4. Send RPC if `agentSession` is alive; skip otherwise (bootstrap not
+    ///    attached yet) — no CLI means no turn to interrupt; local cleanup
+    ///    already satisfies the semantics.
     func interrupt() {
         guard isRunning else {
             appLog(.info, "SessionHandle2", "interrupt() ignored — not running status=\(status) \(sessionId)")
@@ -44,17 +49,19 @@ extension SessionHandle2 {
         }
     }
 
-    /// 取消一条用户消息。
+    /// Cancel a user message.
     ///
-    /// - entry.delivery 为 `.queued` / `.failed`：从 `messages` 数组移除。
-    /// - `.confirmed` / nil（非 user entry）：no-op。
-    /// - id 不存在或 entry 不是 user：no-op。
+    /// - `entry.delivery` is `.queued` / `.failed`: remove from `messages`.
+    /// - `.confirmed` / nil (non-user entry): no-op.
+    /// - id not found, or entry is not a user message: no-op.
     ///
-    /// 注意：`.queued` 的消息可能已经写到 CLI stdin（CLI 侧排队中）。本地 remove
-    /// 只抹去 UI entry，并不能让 CLI 不处理它；如果它之后还是被处理，CLI 会
-    /// emit 一条孤立的 user echo（找不到本地 entry 匹配），此时 `receive`
-    /// 会走 append 分支，当作新消息展示。这是已知妥协——真正的 remote cancel
-    /// 需要 CLI 支持，目前没有。
+    /// Caveat: a `.queued` message may already have been written to CLI
+    /// stdin (queued CLI-side). Local removal only erases the UI entry and
+    /// cannot prevent the CLI from processing it. If the CLI proceeds, it
+    /// will emit a stray user echo with no matching local entry; `receive`
+    /// will then take the append branch and surface it as a new message.
+    /// Known limitation — real remote cancel requires CLI support, which
+    /// doesn't exist yet.
     func cancelMessage(id: UUID) {
         guard let idx = messages.firstIndex(where: { $0.id == id }) else { return }
         guard case .single(let single) = messages[idx] else { return }

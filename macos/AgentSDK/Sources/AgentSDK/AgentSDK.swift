@@ -1,24 +1,20 @@
 import Foundation
 
-/// 与 CLI 子进程交互的会话。
+/// A session that interacts with the CLI subprocess.
 ///
-/// 使用方式：
+/// Usage:
 /// ```swift
 /// let config = SessionConfiguration(workingDirectory: projectURL)
 /// let session = Session(configuration: config)
 ///
-/// // 注册回调
 /// session.onMessage = { message in ... }
 /// session.onPermissionRequest = { request in return .allow }
 /// session.onProcessExit = { code in ... }
 ///
-/// // 启动
 /// try session.start()
 ///
-/// // 发送消息
 /// session.sendMessage("Fix the bug")
 ///
-/// // 发送控制命令
 /// session.setModel("claude-sonnet-4-6")
 /// session.interrupt()
 /// ```
@@ -36,41 +32,39 @@ public final class Session {
     private let stdinQueue = DispatchQueue(label: "com.agent-sdk.stdin")
     private var pendingPermissions: [String: PermissionRequest] = [:]
     private var pendingControlResponses: [String: ([String: Any]) -> Void] = [:]
-    /// 当前 session ID，用于 export 文件名。外部可在 start() 前预设，避免 initialize 消息写入 unknown.jsonl。
+    /// Current session ID used as the export file name. Pre-set this before `start()`
+    /// so the initialize message does not get written to `unknown.jsonl`.
     public var lastKnownSessionId: String?
     private var exportFileHandle: FileHandle?
     private var exportSessionId: String?
     private let resolver = Message2Resolver()
 
-    /// 进程是否在运行。
     public var isRunning: Bool { process?.isRunning ?? false }
 
     // MARK: - Callbacks
 
-    /// CLI 请求工具使用权限。通过 completion 异步返回决策结果。
-    /// 在 readQueue 线程上回调，completion 可在任意线程调用。
+    /// CLI requests permission for a tool use. Reply asynchronously via `completion`.
+    /// Invoked on `readQueue`; `completion` may be called from any thread.
     public var onPermissionRequest:
         ((_ request: PermissionRequest, _ completion: @escaping (PermissionDecision) -> Void) -> Void)?
 
-    /// CLI 取消了之前的权限请求。
+    /// CLI cancelled a previous permission request.
     public var onPermissionCancelled: ((_ requestId: String) -> Void)?
 
-    /// CLI 请求 Hook 回调。返回值直接用于响应 CLI。
+    /// CLI requests a hook callback. The return value is sent back to the CLI as-is.
     public var onHookRequest: ((_ request: HookRequest) -> HookResult)?
 
-    /// CLI 转发 MCP 消息。返回值直接用于响应 CLI。
+    /// CLI forwards an MCP message. The return value is sent back to the CLI as-is.
     public var onMCPRequest: ((_ request: MCPRequest) -> MCPResponse)?
 
-    /// CLI 请求用户输入（elicitation）。返回值直接用于响应 CLI。
+    /// CLI requests user input (elicitation). The return value is sent back to the CLI as-is.
     public var onElicitationRequest: ((_ request: ElicitationRequest) -> ElicitationResult)?
 
-    /// 收到类型化的消息（assistant、user、system、result 等）。
+    /// A typed message arrived (assistant, user, system, result, ...).
     public var onMessage: ((_ message: Message2) -> Void)?
 
-    /// 收到 stderr 输出。
     public var onStderr: ((_ text: String) -> Void)?
 
-    /// 进程退出。
     public var onProcessExit: ((_ exitCode: Int32) -> Void)?
 
     // MARK: - Lifecycle
@@ -85,9 +79,10 @@ public final class Session {
 
     // MARK: - Start / Stop
 
-    /// 启动 CLI 子进程。
+    /// Starts the CLI subprocess.
     ///
-    /// Binary 查找、环境变量解析和 `Process.run()` 在后台线程执行，不阻塞调用方线程。
+    /// Binary lookup, environment resolution, and `Process.run()` execute on a
+    /// background thread so the caller is not blocked.
     public func start() async throws {
         guard !isRunning else { throw AgentSDKError.alreadyRunning }
 
@@ -97,21 +92,20 @@ public final class Session {
         let envOverrides = configuration.env
         let arguments = buildArguments()
 
-        // 在后台线程执行可能耗时的操作：binary 查找、环境解析、Process.run()
+        // Run binary lookup, env resolution, and Process.run() off the calling thread.
         let (proc, stdin, stdout, stderr) = try await Task.detached {
             let executablePath: String
             let finalArguments: [String]
 
             if let customCommand, !customCommand.isEmpty {
-                // 用户自定义命令前缀：按空格拆分，第一个 token 为可执行文件，其余 + 原 arguments 为参数
+                // Custom command prefix: first token is the executable, the rest are prepended to arguments.
                 let tokens = customCommand.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
                 guard var firstToken = tokens.first else { throw AgentSDKError.binaryNotFound }
-                // 非绝对路径时用 which 解析完整路径
                 if !firstToken.hasPrefix("/") {
                     let which = Process()
                     which.executableURL = URL(fileURLWithPath: "/usr/bin/which")
                     which.arguments = [firstToken]
-                    // 使用 login shell 环境确保 PATH 完整
+                    // Use login shell environment so PATH is complete.
                     which.environment = ShellEnvironment.loginEnvironment() ?? ProcessInfo.processInfo.environment
                     let whichPipe = Pipe()
                     which.standardOutput = whichPipe
@@ -182,7 +176,7 @@ public final class Session {
         readStdoutAsync()
     }
 
-    /// 停止 CLI 子进程（立即终止）。
+    /// Stops the CLI subprocess immediately.
     public func stop() {
         if let proc = process, proc.isRunning {
             proc.terminate()
@@ -190,10 +184,11 @@ public final class Session {
         cleanup()
     }
 
-    /// 优雅关闭 CLI 子进程。
+    /// Gracefully shuts down the CLI subprocess.
     ///
-    /// 关闭 stdin（发送 EOF），等待最多 5 秒让进程自行退出以完成会话文件写入。
-    /// 超时则强制 terminate。完成后在主线程回调。
+    /// Closes stdin (sends EOF) and waits up to 5 seconds for the process to exit
+    /// on its own so it can finish writing the session file. On timeout, force-terminates.
+    /// `completion` is invoked on the main thread.
     public func close(completion: (() -> Void)? = nil) {
         guard let proc = process, proc.isRunning else {
             cleanup()
@@ -201,19 +196,17 @@ public final class Session {
             return
         }
 
-        // 关闭 stdin，让 CLI 收到 EOF 后自行退出
+        // Close stdin so the CLI exits on EOF.
         stdinQueue.async { [weak self] in
             self?.stdinPipe?.fileHandleForWriting.closeFile()
         }
 
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            // 等待最多 5 秒
             let deadline = Date().addingTimeInterval(5)
             while proc.isRunning, Date() < deadline {
                 Thread.sleep(forTimeInterval: 0.1)
             }
 
-            // 超时仍在运行则强制终止
             if proc.isRunning {
                 NSLog("[AgentSDK] Graceful shutdown timed out, terminating")
                 proc.terminate()
@@ -228,13 +221,12 @@ public final class Session {
 
     // MARK: - Send User Message
 
-    /// 发送 string content 的用户消息。
     public func sendMessage(_ text: String, extra: [String: Any] = [:]) {
         sendUserJSON(content: text, extra: extra)
     }
 
-    /// 发送 array content 的用户消息（text / image 等混合 block）。
-    /// 每个 block 为 raw dict，如 `["type": "image", "source": ["type": "base64", ...]]`。
+    /// Sends a user message with an array `content` (mixed text / image blocks).
+    /// Each block is a raw dict, e.g. `["type": "image", "source": ["type": "base64", ...]]`.
     public func sendMessage(contentBlocks: [[String: Any]], extra: [String: Any] = [:]) {
         sendUserJSON(content: contentBlocks, extra: extra)
     }
@@ -255,28 +247,24 @@ public final class Session {
 
     // MARK: - Control Requests
 
-    /// 中断当前执行。
     public func interrupt(completion: (([String: Any]) -> Void)? = nil) {
         sendControlRequest(subtype: "interrupt", completion: completion)
     }
 
-    /// 设置模型。
     public func setModel(_ model: String, completion: (([String: Any]) -> Void)? = nil) {
         sendControlRequest(subtype: "set_model", params: ["model": model], completion: completion)
     }
 
-    /// 设置最大 thinking tokens。
     public func setMaxThinkingTokens(_ tokens: Int, completion: (([String: Any]) -> Void)? = nil) {
         sendControlRequest(
             subtype: "set_max_thinking_tokens", params: ["max_thinking_tokens": tokens], completion: completion)
     }
 
-    /// 设置权限模式。
     public func setPermissionMode(_ mode: PermissionMode, completion: (([String: Any]) -> Void)? = nil) {
         sendControlRequest(subtype: "set_permission_mode", params: ["mode": mode.rawValue], completion: completion)
     }
 
-    /// 回滚文件到指定消息。
+    /// Rewinds files back to the state at the given user message.
     public func rewindFiles(
         toMessageId messageId: String, dryRun: Bool = false, completion: (([String: Any]) -> Void)? = nil
     ) {
@@ -284,12 +272,11 @@ public final class Session {
             subtype: "rewind_files", params: ["user_message_id": messageId, "dry_run": dryRun], completion: completion)
     }
 
-    /// 停止任务。
     public func stopTask(taskId: String, completion: (([String: Any]) -> Void)? = nil) {
         sendControlRequest(subtype: "stop_task", params: ["task_id": taskId], completion: completion)
     }
 
-    /// 应用 flag settings（运行时动态合并到 flag settings 层）。
+    /// Applies flag settings (merged into the runtime flag settings layer).
     ///
     /// ```swift
     /// var settings = FlagSettings()
@@ -314,7 +301,6 @@ public final class Session {
         }
     }
 
-    /// async/await 版本。
     public func applyFlagSettings(_ settings: FlagSettings) async -> FlagSettingsResponse {
         await withCheckedContinuation { continuation in
             applyFlagSettings(settings) { response in
@@ -323,116 +309,102 @@ public final class Session {
         }
     }
 
-    // MARK: - Flag Settings 便捷方法
+    // MARK: - Flag Settings Convenience
 
-    /// 切换 effort 级别。
     public func setEffort(_ effort: Effort, completion: ((FlagSettingsResponse) -> Void)? = nil) {
         var s = FlagSettings()
         s.effortLevel = .set(effort)
         applyFlagSettings(s, completion: completion)
     }
 
-    /// 清除 effort（恢复默认）。
+    /// Clears the effort override (reverts to the default).
     public func clearEffort(completion: ((FlagSettingsResponse) -> Void)? = nil) {
         var s = FlagSettings()
         s.effortLevel = .clear
         applyFlagSettings(s, completion: completion)
     }
 
-    /// 切换 fast mode。
     public func setFastMode(_ enabled: Bool, completion: ((FlagSettingsResponse) -> Void)? = nil) {
         var s = FlagSettings()
         s.fastMode = .set(enabled)
         applyFlagSettings(s, completion: completion)
     }
 
-    /// 切换 thinking。
     public func setThinkingEnabled(_ enabled: Bool, completion: ((FlagSettingsResponse) -> Void)? = nil) {
         var s = FlagSettings()
         s.alwaysThinkingEnabled = .set(enabled)
         applyFlagSettings(s, completion: completion)
     }
 
-    /// 设置输出语言。
     public func setLanguage(_ language: String, completion: ((FlagSettingsResponse) -> Void)? = nil) {
         var s = FlagSettings()
         s.language = .set(language)
         applyFlagSettings(s, completion: completion)
     }
 
-    /// 设置输出样式。
     public func setOutputStyle(_ style: String, completion: ((FlagSettingsResponse) -> Void)? = nil) {
         var s = FlagSettings()
         s.outputStyle = .set(style)
         applyFlagSettings(s, completion: completion)
     }
 
-    /// 通过 flag settings 设置模型（走 settings cascade，同时触发 model override）。
+    /// Sets the model via flag settings (goes through the settings cascade and also triggers a model override).
     public func setModelViaSettings(_ model: String, completion: ((FlagSettingsResponse) -> Void)? = nil) {
         var s = FlagSettings()
         s.model = .set(model)
         applyFlagSettings(s, completion: completion)
     }
 
-    /// 设置 auto-memory 开关。
     public func setAutoMemory(_ enabled: Bool, completion: ((FlagSettingsResponse) -> Void)? = nil) {
         var s = FlagSettings()
         s.autoMemoryEnabled = .set(enabled)
         applyFlagSettings(s, completion: completion)
     }
 
-    // MARK: - Flag Settings 便捷方法 (async)
+    // MARK: - Flag Settings Convenience (async)
 
-    /// 切换 effort 级别。
     public func setEffort(_ effort: Effort) async -> FlagSettingsResponse {
         await withCheckedContinuation { continuation in
             setEffort(effort) { continuation.resume(returning: $0) }
         }
     }
 
-    /// 清除 effort（恢复默认）。
     public func clearEffort() async -> FlagSettingsResponse {
         await withCheckedContinuation { continuation in
             clearEffort { continuation.resume(returning: $0) }
         }
     }
 
-    /// 切换 fast mode。
     public func setFastMode(_ enabled: Bool) async -> FlagSettingsResponse {
         await withCheckedContinuation { continuation in
             setFastMode(enabled) { continuation.resume(returning: $0) }
         }
     }
 
-    /// 切换 thinking。
     public func setThinkingEnabled(_ enabled: Bool) async -> FlagSettingsResponse {
         await withCheckedContinuation { continuation in
             setThinkingEnabled(enabled) { continuation.resume(returning: $0) }
         }
     }
 
-    /// 设置输出语言。
     public func setLanguage(_ language: String) async -> FlagSettingsResponse {
         await withCheckedContinuation { continuation in
             setLanguage(language) { continuation.resume(returning: $0) }
         }
     }
 
-    /// 设置输出样式。
     public func setOutputStyle(_ style: String) async -> FlagSettingsResponse {
         await withCheckedContinuation { continuation in
             setOutputStyle(style) { continuation.resume(returning: $0) }
         }
     }
 
-    /// 通过 flag settings 设置模型。
     public func setModelViaSettings(_ model: String) async -> FlagSettingsResponse {
         await withCheckedContinuation { continuation in
             setModelViaSettings(model) { continuation.resume(returning: $0) }
         }
     }
 
-    /// 设置 auto-memory 开关。
     public func setAutoMemory(_ enabled: Bool) async -> FlagSettingsResponse {
         await withCheckedContinuation { continuation in
             setAutoMemory(enabled) { continuation.resume(returning: $0) }
@@ -460,8 +432,8 @@ public final class Session {
 
     // MARK: - Initialize Control Request
 
-    /// 发送初始化控制请求（设置 systemPrompt、hooks、MCP servers 等）。
-    /// 应在 start() 之后、sendMessage() 之前调用。
+    /// Sends the `initialize` control request (configures systemPrompt, hooks, MCP servers, ...).
+    /// Must be called after `start()` and before `sendMessage()`.
     public func initialize(
         systemPrompt: String? = nil,
         appendSystemPrompt: String? = nil,
@@ -485,7 +457,7 @@ public final class Session {
 
     // MARK: - Generic Control Request
 
-    /// 发送任意控制请求。
+    /// Sends an arbitrary control request.
     public func sendControlRequest(
         subtype: String,
         params: [String: Any] = [:],
@@ -511,8 +483,8 @@ public final class Session {
         var args = ["--output-format", "stream-json", "--verbose"]
         args += ["--input-format", "stream-json"]
         args += ["--permission-prompt-tool", "stdio"]
-        // 让 CLI 把 stdin 里的 user 消息在成为当前 turn 时回显到 stdout（保留我们发的 uuid），
-        // 用作本地 queued → confirmed 的匹配信号。
+        // Have the CLI echo our stdin user messages back on stdout (preserving our uuid) when
+        // they become the current turn. We use this as the local queued -> confirmed signal.
         args += ["--replay-user-messages"]
 
         // System prompt
@@ -714,7 +686,6 @@ public final class Session {
             lastKnownSessionId = sid
         }
 
-        // Export raw JSONL
         if configuration.messageExportDirectory != nil {
             exportLine(line)
         }
@@ -921,7 +892,6 @@ public final class Session {
         guard let data = try? JSONSerialization.data(withJSONObject: json),
             var line = String(data: data, encoding: .utf8)
         else { return }
-        // Export app→CLI messages
         if configuration.messageExportDirectory != nil {
             exportLine(line)
         }
@@ -952,7 +922,7 @@ public final class Session {
 
         let sessionId = lastKnownSessionId ?? "unknown"
 
-        // Open new file handle if session ID changed or not yet opened
+        // Open a new file handle when the session ID changes or none is open yet.
         if exportFileHandle == nil || exportSessionId != sessionId {
             exportFileHandle?.closeFile()
             exportFileHandle = nil

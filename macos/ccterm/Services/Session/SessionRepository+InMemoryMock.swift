@@ -2,16 +2,18 @@
 
 import Foundation
 
-/// `SessionRepository` 的纯内存实现。
+/// In-memory implementation of `SessionRepository`.
 ///
-/// **仅 DEBUG build**。UI test 用此实现避免污染主 CoreData store(`CDSessionRecord`)
-/// 形成脏数据。生命周期与单次 app 进程绑定:进程退出即清空,无任何持久化副作用。
+/// **DEBUG build only.** UI tests use this to avoid contaminating the main
+/// CoreData store (`CDSessionRecord`) with dirty data. Lifetime is tied to
+/// a single app process; everything is wiped on exit, no persistent side
+/// effects.
 ///
-/// 行为契约与 `CoreDataSessionRepository` 一致——保证 swap 后 `SessionManager2` /
-/// `SessionHandle2` 不需要分支处理。
+/// Behavior contract matches `CoreDataSessionRepository`, so swapping does
+/// not require branching in `SessionManager2` / `SessionHandle2`.
 ///
-/// 不是 thread-safe;调用方(主体是 `@MainActor` 的 `SessionHandle2` / `SessionManager2`)
-/// 在主线程使用。
+/// Not thread-safe; callers (mostly `@MainActor` `SessionHandle2` /
+/// `SessionManager2`) use it on the main thread.
 final class InMemorySessionRepository: SessionRepository {
 
     private var records: [String: SessionRecord] = [:]

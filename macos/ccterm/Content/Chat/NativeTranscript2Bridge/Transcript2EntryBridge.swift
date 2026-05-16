@@ -2,41 +2,45 @@ import AgentSDK
 import AppKit
 import Foundation
 
-/// 把 `SessionHandle2.onMessagesChange` 的 entry 级指令翻译成
-/// `Transcript2Controller` 的 block 级命令。**纯命令式** —— 不维护
-/// "完整 [Block] 镜像然后 diff",只记两张反向表:
+/// Translates entry-level instructions from `SessionHandle2.onMessagesChange`
+/// into block-level commands for `Transcript2Controller`. **Purely imperative**
+/// — does not maintain a full `[Block]` mirror to diff against; just two
+/// reverse tables:
 ///
-/// - `entryOrder: [UUID]`:entry 在时间线上的排列顺序。
-/// - `entryBlockIds: [UUID: [UUID]]`:entry.id → 该 entry 产生的 Block.id
-///   有序列表。
+/// - `entryOrder: [UUID]`: timeline order of entries.
+/// - `entryBlockIds: [UUID: [UUID]]`: entry.id → ordered list of Block.ids
+///   produced by that entry.
 ///
-/// 当一条 entry update 时,先用 builder 算出新 blocks → 跟旧 ids 对比:
-/// - 老 / 新 ids 完全一致(典型场景:tool_result merge / confirm / group items
-///   增长) → 逐条 `.update(id, kind)`,行级动画 / 选区 / fold 全部保住。
-/// - 不一致(罕见:assistant entry 结构变化) → `.remove(old)` + `.insert(new)`,
-///   anchor 走前一条 entry 的最后一个 block id。
+/// On entry update: run the builder to compute new blocks, then compare to old
+/// ids:
+/// - identical id sequences (typical: tool_result merge / confirm / group items
+///   grew) → per-block `.update(id, kind)`, preserving row-level animation /
+///   selection / fold.
+/// - mismatched (rare: assistant entry structure changed) → `.remove(old)` +
+///   `.insert(new)`, anchored to the previous entry's last block id.
 ///
-/// **不变量**:`entryOrder` / `entryBlockIds` 在每次 dispatch 完成后跟
-/// `handle.messages` 的 entry 序保持一致。Reset 时整体重建,append /
-/// prepend / remove 各自就近维护一致。
+/// **Invariant**: after every dispatch, `entryOrder` / `entryBlockIds` match
+/// `handle.messages`'s entry order. Reset rebuilds wholesale; append / prepend
+/// / remove each maintain consistency locally.
 @MainActor
 final class Transcript2EntryBridge {
     let controller: Transcript2Controller
 
     private var entryOrder: [UUID] = []
     private var entryBlockIds: [UUID: [UUID]] = [:]
-    /// 反向标记 `loadInitial` 是否已经发过。在它发之前来的 append / update
-    /// 都是异常路径(handle 还没 reset)—— 走 fallback,把 entry 直接当 reset
-    /// 的种子塞进去,保证不丢内容。
+    /// Tracks whether `loadInitial` has fired. Any append / update arriving
+    /// before it is the abnormal path (handle hasn't reset yet) — fall back
+    /// by treating the entry as a reset seed so content isn't lost.
     private var didLoadInitial = false
 
     init(controller: Transcript2Controller) {
         self.controller = controller
     }
 
-    /// 绑到 handle:每次 change 走本对象的 `apply(_:)`。weak 捕获让 handle
-    /// 生命周期独立于 view 端 bridge — view dismantle 会让 self deinit,handle
-    /// 持的闭包变成 weak-nil,sink 自动失活,无需显式 unbind。
+    /// Bind to a handle: every change flows through this object's `apply(_:)`.
+    /// Weak capture decouples the handle's lifetime from the view-side bridge —
+    /// view dismantle deinits self, the handle's closure becomes weak-nil, and
+    /// the sink deactivates automatically. No explicit unbind needed.
     func attach(to handle: SessionHandle2) {
         handle.onMessagesChange = { [weak self] change in
             self?.apply(change)
@@ -154,7 +158,7 @@ final class Transcript2EntryBridge {
     // MARK: - Reset (loadInitial / re-entry)
 
     private func applyReset(_ entries: [MessageEntry]) {
-        // 重建反向表 + 收集 blocks
+        // Rebuild reverse tables and collect blocks.
         var newOrder: [UUID] = []
         newOrder.reserveCapacity(entries.count)
         var newMap: [UUID: [UUID]] = [:]
@@ -167,10 +171,11 @@ final class Transcript2EntryBridge {
             allBlocks.append(contentsOf: blocks)
         }
 
-        // 二次 reset(用户切走再切回 / Phase A 再次触发)走 controller 的
-        // 增量 API 比再调一次 `loadInitial` 更稳:Coordinator 已经在 viewport
-        // 跑过,blocks 数组直接 swap 反倒会丢动画。这里用 remove-all + insert
-        // 一次性把内容刷掉 — 用户视角等价 reload,但走的是同一个 apply 通道。
+        // Second reset (user navigated away then back / Phase A re-fires) goes
+        // through the controller's incremental API rather than another
+        // `loadInitial`: the Coordinator has already viewport-rendered, and a
+        // blunt blocks-array swap would lose animation. Use remove-all +
+        // insert in one batch — visually a reload, but on the apply channel.
         if didLoadInitial {
             var changes: [Transcript2Controller.Change] = []
             let oldAllIds = entryOrder.flatMap { entryBlockIds[$0] ?? [] }
@@ -186,7 +191,7 @@ final class Transcript2EntryBridge {
             return
         }
 
-        // 首次 reset:走 loadInitial 的两段式快速首屏。
+        // First reset: take loadInitial's two-phase fast first-screen path.
         entryOrder = newOrder
         entryBlockIds = newMap
         didLoadInitial = true
@@ -199,8 +204,9 @@ final class Transcript2EntryBridge {
     private func applyAppend(_ entry: MessageEntry) {
         let blocks = MessageEntryBlockBuilder.entryBlocks(entry)
         if blocks.isEmpty {
-            // entry 不产 block(空 user 消息 / 全 thinking 的 assistant)—— 还是
-            // 占用 entryOrder 一个槽,future mutate 找前一条 anchor 不出错。
+            // Entry produced no block (empty user message / all-thinking
+            // assistant) — still take an entryOrder slot so a future mutate
+            // can resolve the previous-entry anchor correctly.
             entryOrder.append(entry.id)
             entryBlockIds[entry.id] = []
             return
@@ -210,7 +216,7 @@ final class Transcript2EntryBridge {
         entryBlockIds[entry.id] = blocks.map(\.id)
 
         if !didLoadInitial {
-            // sink 在 reset 前到了:用首条 message 当 cold load 的种子。
+            // Sink fired before reset: use the first message as cold-load seed.
             didLoadInitial = true
             controller.loadInitial(blocks, anchor: .bottom)
             return
@@ -219,11 +225,12 @@ final class Transcript2EntryBridge {
             [.insert(after: anchor, blocks)], scroll: .none)
     }
 
-    /// 查 entry 即将插入位置前一条 entry 的最后一个 block id;不存在(首条
-    /// entry / 前一条没 block)返回 nil(= insert at index 0)。
+    /// Last block id of the entry preceding the insertion point. Returns nil
+    /// (= insert at index 0) when there is no predecessor (first entry / prior
+    /// entry produced no blocks).
     private func previousEntryLastBlockId(beforeAppending entryId: UUID) -> UUID? {
-        // 调用点保证 entryId 不在 entryOrder 中(尚未加入),所以 entryOrder.last
-        // 就是 anchor 来源。.last?.flatMap 走两层 Optional。
+        // Callers guarantee entryId is not yet in entryOrder, so entryOrder.last
+        // is the anchor source.
         guard let prev = entryOrder.last else { return nil }
         return entryBlockIds[prev]?.last
     }
@@ -245,7 +252,8 @@ final class Transcript2EntryBridge {
         for (k, v) in newMap { entryBlockIds[k] = v }
 
         guard !prefixBlocks.isEmpty else { return }
-        // 前插 → `.saveVisible(.visualTop)` 让用户当前看见的首行视觉位置不变。
+        // Prepend → `.saveVisible(.visualTop)` keeps the user's currently
+        // visible first line at the same visual position.
         controller.coordinator.apply(
             [.insert(after: nil, prefixBlocks)],
             scroll: .saveVisible(.visualTop))
@@ -258,9 +266,9 @@ final class Transcript2EntryBridge {
         let newBlocks = MessageEntryBlockBuilder.entryBlocks(entry)
         let newIds = newBlocks.map(\.id)
 
-        // 同 id 序列:典型 95% 情况 — 直接逐条 update 即可。
+        // Identical id sequence: the typical 95% case — per-block update.
         if oldIds == newIds {
-            // 全 0(entry 不产 block)→ 无事可做。
+            // All-empty (entry produces no block) → nothing to do.
             guard !newIds.isEmpty else { return }
             let changes: [Transcript2Controller.Change] = newBlocks.map {
                 .update(id: $0.id, kind: $0.kind)
@@ -269,23 +277,25 @@ final class Transcript2EntryBridge {
             return
         }
 
-        // 结构变了:remove 旧 + insert 新,anchor 走前一条 entry。整段视为
-        // 原子替换。增量也能写但成本不值 — 这条路径极少触发。
+        // Structure changed: remove old + insert new, anchored to the previous
+        // entry. Atomic replacement of the whole segment. A finer-grained diff
+        // is possible but not worth the cost — this path almost never fires.
         let anchor = previousEntryLastBlockId(beforeRebuilding: entry.id)
         var changes: [Transcript2Controller.Change] = []
         if !oldIds.isEmpty { changes.append(.remove(ids: oldIds)) }
         if !newBlocks.isEmpty { changes.append(.insert(after: anchor, newBlocks)) }
         entryBlockIds[entry.id] = newIds
         if entryOrder.firstIndex(of: entry.id) == nil {
-            // update 之前 entry 没注册过(sink 顺序乱了)— 防御性 append,
-            // 至少不让 block 孤悬。
+            // Entry was never registered before this update (out-of-order
+            // sink). Defensively append so the block doesn't hang loose.
             entryOrder.append(entry.id)
         }
         guard !changes.isEmpty else { return }
         controller.coordinator.apply(changes, scroll: .none)
     }
 
-    /// update 路径用:entry 还在 entryOrder 里,取它前一位的 last block id。
+    /// Update path: entry is still in entryOrder; return the predecessor's
+    /// last block id.
     private func previousEntryLastBlockId(beforeRebuilding entryId: UUID) -> UUID? {
         guard let idx = entryOrder.firstIndex(of: entryId), idx > 0 else { return nil }
         return entryBlockIds[entryOrder[idx - 1]]?.last

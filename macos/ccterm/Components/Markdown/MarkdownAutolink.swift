@@ -1,13 +1,15 @@
 import Foundation
 
-/// 将裸 URL 从纯文本中切出为 `.link` inline。仅识别 `http://` 和 `https://`
-/// scheme——file path、email、裸域名（example.com）保持为文本，避免把代码
-/// 路径/文件名误识别成链接。
+/// Splits bare URLs out of plain text into `.link` inlines. Only recognizes
+/// `http://` and `https://` schemes — file paths, emails, and bare domains
+/// (example.com) stay as text to avoid misidentifying code paths / filenames
+/// as links.
 ///
-/// 调用方（`MarkdownConvert`）负责在 `[…](url)` 内部短路此处理，防止双重
-/// linkify。
+/// The caller (`MarkdownConvert`) is responsible for short-circuiting this
+/// inside `[…](url)` to prevent double-linkification.
 enum MarkdownAutolink {
-    /// 扫描 `text`，返回单个 `.text`（未命中）或 `.text` / `.link` 混合序列。
+    /// Scan `text` and return either a single `.text` (no matches) or a
+    /// mixed `.text` / `.link` sequence.
     static func split(_ text: String) -> [MarkdownInline] {
         guard text.contains("://") else { return [.text(text)] }
         guard let detector = Self.detector else { return [.text(text)] }
@@ -48,14 +50,15 @@ enum MarkdownAutolink {
 
     // MARK: - Private
 
-    /// `NSDataDetector` 继承自 `NSRegularExpression`，按 Apple 文档对
-    /// `matches(in:options:range:)` 是线程安全的——共享一个实例即可。
+    /// `NSDataDetector` inherits from `NSRegularExpression`; per Apple docs
+    /// `matches(in:options:range:)` is thread-safe, so a shared instance is fine.
     private static let detector: NSDataDetector? = {
         try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
     }()
 
-    /// 剥离 URL 尾部的标点。句子里常见的 `visit https://x.com.` 会被 detector
-    /// 连句号一起吞；这里把 `.,;:!?` 和不成对的闭合括号还给文本。
+    /// Strip trailing punctuation from a URL match. Common sentence shapes
+    /// like `visit https://x.com.` get the trailing period swallowed by the
+    /// detector; return `.,;:!?` and unmatched closing brackets to the text.
     private static func trimTrailingPunctuation(_ range: inout NSRange, in text: NSString) {
         while range.length > 0 {
             let lastIdx = range.location + range.length - 1

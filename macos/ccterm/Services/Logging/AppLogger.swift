@@ -72,7 +72,7 @@ final class AppLogger {
     }
 }
 
-/// Log a message. Thread-safe — can be called from any thread.
+/// Log a message. Thread-safe; can be called from any thread.
 /// Writes to both the in-app log viewer and macOS unified logging.
 func appLog(_ level: LogLevel, _ category: String, _ message: String) {
     let osLogger = Logger(

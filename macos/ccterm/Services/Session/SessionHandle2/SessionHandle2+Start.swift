@@ -77,6 +77,17 @@ extension SessionHandle2 {
     /// Title generation is orthogonal — the caller (the fresh + first-text
     /// flow) calls `generateTitle(from:)` explicitly.
     private func enqueueAndSend(_ input: LocalUserInput) {
+        // Fresh + first text → seed the persisted title from the user's
+        // message. `persistConfiguration` (called downstream by
+        // `ensureStarted`) reads `self.title` when writing the record, so
+        // setting it here is enough; no separate db write needed.
+        if !hasRecord, title.isEmpty, let firstText = input.text {
+            let derived = Self.deriveTitleFromFirstMessage(firstText)
+            if !derived.isEmpty {
+                title = derived
+            }
+        }
+
         let single = SingleEntry(
             id: UUID(),
             payload: .localUser(input),
@@ -156,6 +167,24 @@ extension SessionHandle2 {
         title = result.titleI18n
         repository.updateTitle(sessionId, title: result.titleI18n)
         appLog(.info, "SessionHandle2", "title-gen done \(sessionId) title=\(result.titleI18n)")
+    }
+
+    /// Normalize a user message into a single-line sidebar title:
+    /// collapse newlines into spaces, trim surrounding whitespace, and
+    /// truncate to `maxLength` characters (appending `…` when cut). Result
+    /// may be empty when the input is whitespace-only — callers should
+    /// guard against that.
+    static func deriveTitleFromFirstMessage(_ text: String, maxLength: Int = 80) -> String {
+        let oneLine =
+            text
+            .replacingOccurrences(of: "\r\n", with: " ")
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+        let trimmed = oneLine.trimmingCharacters(in: .whitespaces)
+        if trimmed.count > maxLength {
+            return trimmed.prefix(maxLength) + "…"
+        }
+        return trimmed
     }
 }
 

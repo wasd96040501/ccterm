@@ -2392,6 +2392,16 @@
         }
       }
     },
+    "Untitled": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未命名"
+          }
+        }
+      }
+    },
     "Used %lld tools": {
       "localizations": {
         "en": {

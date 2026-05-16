@@ -45,26 +45,22 @@ final class InputBar2AttachImageUITests: XCTestCase {
         // anchor so we know the bar is mounted before we probe a11y.
         _ = app.buttons["InputBar2.SendButton"].waitForExistence(timeout: 10)
 
-        // Diagnostic: print every element matching the attach identifier
-        // across each XCUI element type, so the CI log shows which type
-        // SwiftUI Menu actually exposes its label as on macOS 26.
         let id = "InputBar2.AttachButton"
-        print("=== diagnostic for \(id) ===")
-        print("  app.buttons:       \(app.buttons[id].exists)")
-        print("  app.images:        \(app.images[id].exists)")
-        print("  app.menuButtons:   \(app.menuButtons[id].exists)")
-        print("  app.popUpButtons:  \(app.popUpButtons[id].exists)")
-        print("  app.otherElements: \(app.otherElements[id].exists)")
-        print(
-            "  descendants(.any): \(app.descendants(matching: .any)[id].exists)"
-        )
-        print("=== full a11y tree ===")
-        print(app.debugDescription)
-
         let attach = app.descendants(matching: .any)[id]
-        XCTAssertTrue(
-            attach.waitForExistence(timeout: 10),
-            "attach button should be present on the input bar at launch")
+        if !attach.waitForExistence(timeout: 10) {
+            // Embed the live tree in the assertion message so the CI
+            // log shows which element type SwiftUI Menu actually
+            // exposes its label as on the runner. Remove once stable.
+            let diag =
+                "buttons=\(app.buttons[id].exists) "
+                + "images=\(app.images[id].exists) "
+                + "menuButtons=\(app.menuButtons[id].exists) "
+                + "popUpButtons=\(app.popUpButtons[id].exists) "
+                + "otherElements=\(app.otherElements[id].exists)"
+            XCTFail(
+                "attach button '\(id)' not found at launch. "
+                    + "Probe: \(diag)\n\nFull a11y tree:\n\(app.debugDescription)")
+        }
 
         XCTAssertFalse(
             app.descendants(matching: .any)["InputBar2.AttachmentThumbnail"].exists,

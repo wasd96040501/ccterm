@@ -2,20 +2,23 @@ import XCTest
 
 /// Verifies the in-transcript search feature end-to-end.
 ///
-/// The search field is rendered by SwiftUI's `.searchable` modifier in
-/// the window toolbar's trailing slot and is always present — there is
-/// no open / close cycle to drive. Tests click the field directly to
-/// take focus, type, then exercise navigation via keyboard:
+/// The search field is `TranscriptSearchOverlayView` — an
+/// `NSSearchField` wrapped via `NSViewRepresentable` and floated as an
+/// `.overlay(alignment: .top)` at the top-trailing corner of
+/// `ChatHistoryView`. It's always mounted; tests click it to take
+/// focus, type, then exercise navigation via keyboard:
 ///
-/// - `Return` advances to the next match (`.onSubmit(of: .search)` on
-///   `ChatHistoryView`).
-/// - `Shift+Return` steps to the previous match (`.onKeyPress(.return)`
-///   inspecting `KeyPress.modifiers`).
+/// - `Return` advances to the next match (the cell's action target
+///   calls `controller.nextSearchHit()`).
+/// - `Shift+Return` steps to the previous match
+///   (`control(_:textView:doCommandBy:)` intercepts `insertNewline:`
+///   when `NSApp.currentEvent.modifierFlags` contains `.shift`).
 ///
-/// There is no counter / prev / next chrome to observe — the toolbar
-/// holds only the field. We assert the smoke path: the field accepts
-/// typing, retains its value across Return / Shift+Return, and the
-/// navigation does not crash the runner.
+/// There is no counter / prev / next chrome to observe — we assert the
+/// smoke path: the field accepts typing, retains its value across
+/// Return / Shift+Return, and the navigation does not crash the
+/// runner. Because the field is an `NSSearchField`, XCUITest still
+/// queries it via `app.searchFields.firstMatch`.
 ///
 /// Drives the fixture via `SearchableContentScenario`: after the user
 /// sends a message, the mock emits three assistant lines, two of
@@ -37,7 +40,7 @@ final class TranscriptSearchUITests: XCTestCase {
         let field = app.searchFields.firstMatch
         XCTAssertTrue(
             field.waitForExistence(timeout: 5),
-            "search field should be present in the toolbar")
+            "search field overlay should be present at top-trailing of the chat")
         field.click()
 
         // Query "apple" — two hits among the three assistant lines.
@@ -70,7 +73,7 @@ final class TranscriptSearchUITests: XCTestCase {
         let field = app.searchFields.firstMatch
         XCTAssertTrue(
             field.waitForExistence(timeout: 5),
-            "search field should be present in the toolbar")
+            "search field overlay should be present at top-trailing of the chat")
 
         app.typeKey("f", modifierFlags: .command)
         // Typing immediately after the focus shortcut should land in

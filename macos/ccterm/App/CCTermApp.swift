@@ -54,9 +54,9 @@ struct AppCommands: Commands {
         // route (`typeKey(_:modifierFlags:)` does not reliably
         // synthesize the shortcut through window-local monitors).
         //
-        // The transcript's search field is always visible in the
-        // window toolbar (rendered by `.searchable` on
-        // `ChatHistoryView`); ⌘F's job is purely to hand keyboard
+        // The transcript's search field is always visible as the
+        // `TranscriptSearchOverlayView` floating at top-trailing of
+        // `ChatHistoryView`; ⌘F's job is purely to hand keyboard
         // focus to that field. Routed via `TranscriptSearchBus` —
         // an `@Observable` counter — instead of `NotificationCenter`,
         // because the per-view subscriber lives behind a SwiftUI

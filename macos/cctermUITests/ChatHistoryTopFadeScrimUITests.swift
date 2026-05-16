@@ -43,14 +43,13 @@ final class ChatHistoryTopFadeScrimUITests: XCTestCase {
     /// the transcript runs flush to the window top with no toolbar /
     /// chrome strip pushing it down.
     ///
-    /// `.searchable(placement: .toolbar)` would normally reserve a
-    /// ~38pt band at the top of the detail pane; the production code
-    /// cancels that by hiding the toolbar background
-    /// (`.toolbarBackground(.hidden, for: .windowToolbar)`) and
-    /// ignoring the top safe area (`.ignoresSafeArea(edges: .top)`).
-    /// This test is the guard that those two modifiers remain in
-    /// place; removing either makes `scrim.frame.minY` drop below
-    /// `window.frame.minY` by the toolbar height.
+    /// The transcript search field floats as a custom overlay
+    /// (`TranscriptSearchOverlayView`) rather than living in a window
+    /// toolbar via `.searchable(placement: .toolbar)`. A SwiftUI window
+    /// toolbar reserves a ~52pt vertical chrome band that
+    /// `.ignoresSafeArea(edges: .top)` cannot fully reclaim on macOS;
+    /// re-introducing it would push the first row below the window
+    /// chrome and this assertion would catch the regression.
     @MainActor
     func testTranscriptFlushToWindowTop() throws {
         let app = launchTestApp()
@@ -72,10 +71,10 @@ final class ChatHistoryTopFadeScrimUITests: XCTestCase {
         XCTAssertLessThanOrEqual(
             abs(delta), Self.topAlignmentTolerance,
             "scrim top should align with window top (transcript flush to top); "
-                + "delta=\(delta)pt — a positive delta of ~38pt indicates the "
-                + ".searchable toolbar is reserving chrome space again "
-                + "(missing .toolbarBackground(.hidden, for: .windowToolbar) "
-                + "or .ignoresSafeArea(edges: .top)).")
+                + "delta=\(delta)pt — a positive delta of ~52pt indicates a "
+                + "window toolbar is reserving chrome space again "
+                + "(reintroducing `.searchable(placement: .toolbar)` is "
+                + "the most common cause).")
     }
 
     @MainActor

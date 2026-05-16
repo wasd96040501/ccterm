@@ -369,16 +369,23 @@ per-cell paint is derived, affected cells are reseated via
 two compose at draw time, search highlights composite over the selection
 band.
 
-The host UI is SwiftUI's built-in `.searchable` modifier attached to
-`ChatHistoryView`, with `placement: .toolbar`. The native `NSSearchField`
-lands in the window toolbar's trailing slot; prev / counter / next live
-next to it as `ToolbarItem`s in a `ToolbarItemGroup(placement:
-.primaryAction)`. Always visible; no open / close cycle. ⌘F (via
-`AppCommands` → `TranscriptSearchBus.requestFocus()`) flips the
-`.searchFocused`-bound `@FocusState` and hands keyboard focus to the
-field without changing visibility. XCUITest reaches the field as
-`app.searchFields.firstMatch` (it surfaces as an `XCUIElement` of type
-`searchField`, not `textField`).
+The host UI is `TranscriptSearchOverlayView` — an `NSViewRepresentable`
+wrapping `NSSearchField` — anchored to the top-trailing corner of
+`ChatHistoryView` via `.overlay(alignment: .top)` with an `HStack`
+`Spacer` doing the right-alignment. Floating (rather than living in the
+window toolbar via `.searchable(placement: .toolbar)`) is intentional:
+a SwiftUI window toolbar reserves a ~52pt vertical chrome band that
+`.ignoresSafeArea` cannot fully reclaim, which would push the transcript
+below the window's top edge. The overlay sits in the band the top
+fade-blur scrim covers, so it reads as a chromeless affordance over the
+first row. ⌘F (via `AppCommands` → `TranscriptSearchBus.requestFocus()`)
+flips the `@FocusState`-bound `isFocused`, which the representable's
+`updateNSView` translates into `window.makeFirstResponder(field)`.
+There are no prev / counter / next chrome items — `Return` (action on
+the `NSSearchField` cell) advances to the next match and `Shift+Return`
+(intercepted in `control(_:textView:doCommandBy:)`) steps back. XCUITest
+reaches the field as `app.searchFields.firstMatch` because
+`NSSearchField` surfaces as an `XCUIElement` of type `searchField`.
 
 ### Data flow
 

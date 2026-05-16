@@ -1,6 +1,8 @@
 # NativeTranscript2
 
-Self-drawn `NSTableView`-backed chat transcript. Each row is a `Block`; layout is computed once per row and cached on the `RowItem`.
+Self-drawn `NSTableView`-backed chat transcript. Each row is a `Block`; layout is a pure function of `(block, width, state)`, computed once per `(id, width)` and memoized in `Coordinator.layoutCache`.
+
+> **Load-bearing performance contract.** Section 2 below codifies the techniques that keep the transcript at 60fps under 10k+ blocks. Each item lists what it costs to break it. **Any change that weakens or removes one of these items requires explicit user confirmation before implementation** — do not silently "simplify", refactor away, or replace with a SwiftUI/AppKit equivalent. If a change appears to need one of these relaxed, stop and ask.
 
 ## 1. Architecture
 
@@ -16,23 +18,98 @@ SwiftUI: NativeTranscript2View (NSViewRepresentable)
                └─ BlockCellView (NSView, override draw(_:), .onSetNeedsDisplay)
 ```
 
-Data flow: `SwiftUI [Block] → updateNSView → Coordinator.setBlocks → rebuild → diff → NSTableView insertRows/removeRows/reloadRows`.
+`Transcript2Coordinator.blocks: [Block]` is the single source of truth — no `rows` mirror, no parallel diff structure. Mutation enters via `Controller.Change` (`.insert(after:blocks:)` / `.remove(ids:)` / `.update(id:kind:)`) and dispatches to `apply` (sync, lazy layout) or `applyInBackground` (off-main precompute then a single main hop).
 
-## 2. Invariants
+## 2. Performance contract
 
-### 2.1 Rendering path
+Every item below is load-bearing for either scroll FPS, layout-pass cost, or memory churn. Cited file:line is authoritative; the description summarizes. **Changing any of these requires user confirmation.**
 
-- Cells use `override draw(_:)` with layer policy `.onSetNeedsDisplay`. `.never` is paired with `CALayerDelegate.draw`; this codebase does not use that route.
-- `NSScrollView` and `NSClipView` use `.never` — they have no content of their own, only compositing children, so they contribute zero draw calls during scroll.
-- `isCompatibleWithResponsiveScrolling = true` is required. Without it AppKit falls back to the synchronous `drawRect` slow path.
+### 2.1 Why `NSTableView`, not `List` / `LazyVStack`
 
-### 2.2 Data and state
+`NSTableView` calls `heightOfRow(row:)` synchronously. The coordinator answers from `layoutCache` ([Transcript2Coordinator.swift:934](Transcript2Coordinator.swift:934)) or computes synchronously on miss ([:557](Transcript2Coordinator.swift:557)); no estimated heights, no async height resolution. SwiftUI `List` / `LazyVStack` cannot pre-compute heights synchronously without either blocking (defeats laziness) or estimating (visible jumps on scroll-in). **Cost of replacing**: either freeze on cold load while heights resolve, or jitter on every scroll as estimates resolve to real heights.
 
-- **Stable ids drive the diff.** `Block.id: UUID` is caller-supplied. Never derive ids from content hashes — two consecutive identical messages would collapse into one.
-- **Layout lifetime tracks `RowItem`.** `RowItem { id, block, layout: TextLayout }`. The layout is computed once and lives with the row. No external LRU cache — id-based reuse covers it.
-- **`currentBlocks + rebuild()` is the only update path.** `setBlocks` and `frameDidChange` both call `rebuild()`. `rebuild` early-exits on `width <= 0`. Never add a `pendingBlocks` side channel.
+### 2.2 Cell layer policy: `wantsLayer + .onSetNeedsDisplay`
 
-### 2.3 Coordinator-held row state
+`BlockCellView` ([BlockCellView.swift:199-200](AppKit/BlockCellView.swift:199)) caches its CGContext-drawn bitmap in a CALayer. During scroll the GPU composites the cached bitmap with zero `draw(_:)` calls; `draw(_:)` only re-runs after explicit `needsDisplay = true`. **Cost of switching to `.never`**: redraw every visible cell every frame during scroll (thousands of glyphs typeset per frame; UI freezes on 200+ row transcripts). **Cost of switching to `.onDemand`**: redraws on every structural change including hover.
+
+### 2.3 ScrollView / ClipView layer policy `.never` + responsive scrolling
+
+`Transcript2ScrollView.isCompatibleWithResponsiveScrolling = true` ([:11](AppKit/Transcript2ScrollView.swift:11)) plus `.never` on both the scroll view ([:79-80](AppKit/Transcript2ScrollView.swift:79)) and clip view ([Transcript2ScrollView.swift:76-82](AppKit/Transcript2ScrollView.swift:76)). These views own no pixels — only composite children. **Cost of removing `isCompatibleWithResponsiveScrolling`**: AppKit falls back to synchronous `drawRect` during scroll, blocking the event loop per frame. **Cost of dropping `.never`**: a redundant `drawRect` pass per scroll tick on a view with nothing to draw.
+
+### 2.4 Layout cache: `[UUID: CachedLayout]`, no LRU
+
+`layoutCache: [UUID: CachedLayout { width, layout }]` ([Transcript2Coordinator.swift:163-168](Transcript2Coordinator.swift:163)) is keyed by block id; the width lives inside the entry. Cache evicts only on `.update` / `.remove` (point invalidation via `removeCachedLayout(for:)` [:547](Transcript2Coordinator.swift:547)). On `.insert`, layouts populate lazily through `layout(for:width:)` ([:557](Transcript2Coordinator.swift:557)) or eagerly through `applyInBackground` / `refillLayoutCache`. **Cost of an LRU**: eviction logic + hit-rate variance for nothing — transcript size is bounded (≤ 10k blocks typical), the dict cost is dominated by id lookup.
+
+### 2.5 Pure off-main layout via `nonisolated static makeLayout`
+
+`Transcript2Coordinator.makeLayout(for:width:highlights:folds:statuses:)` ([:579-584](Transcript2Coordinator.swift:579)) is `nonisolated static`. It takes snapshot dicts (highlights / folds / statuses) captured on MainActor before the detached task starts; the off-main loop has no actor hops inside its per-block iteration. **Cost of making it `MainActor`**: every detached layout pass becomes a stream of main-actor hops, serializing with UI work and destroying the parallelism that backs `applyInBackground` / `refillLayoutCache`.
+
+### 2.6 `applyInBackground` (fire-and-forget) for large prepends
+
+For loadInitial Phase 2 and other large structural changes, `applyInBackground` ([:292-344](Transcript2Coordinator.swift:292)) computes layouts on a detached `userInitiated` Task, then a single main hop installs them and runs the structural change inside `withScrollAdjustment`. **Untracked, non-cancellable on purpose** — row-mutation is dataSource critical-path work; `Change.insert` resolves anchors by id at apply time, so landing is robust against any `apply`s in between. **Cost of making it sync**: 100+ ms freeze on every cold-load Phase 2 prepend.
+
+### 2.7 `refillLayoutCache` post-resize prefetch + `mutationCounter` guard
+
+After `viewDidEndLiveResize`, `refillLayoutCache` ([:866](Transcript2Coordinator.swift:866)) prefetches layouts for off-screen rows on a detached task, then under `.saveVisible(.visualTop)` installs them and runs `noteHeightOfRows`. `mutationCounter` ([:253](Transcript2Coordinator.swift:253), [:913](Transcript2Coordinator.swift:913)) drops the entire onMain block if any `apply` ran during the task — running `saveVisible` against AppKit's stale (deferred-re-query) heights would jitter the anchor row. **Cost of dropping the counter**: visible anchor jumps when an `apply` interleaves with a resize-prefetch. **Cost of dropping the prefetch**: off-screen rows lazy-layout one-at-a-time as user scrolls in, producing jank.
+
+### 2.8 Live-resize bounds work to visible rows only
+
+`tableFrameDidChange` ([:796](Transcript2Coordinator.swift:796)) checks `inLiveResize`; during live resize it only invalidates rows in `tableView.visibleRect` ([:819-822](Transcript2Coordinator.swift:819)). Off-screen layouts stay stale until `refillLayoutCache` runs. **Cost of invalidating all rows during live resize**: O(N) layout passes per frame against rows the user can't see — drag-resize becomes unresponsive on long transcripts.
+
+### 2.9 Negative-width clamp on `setFrameSize`
+
+`Transcript2TableView.setFrameSize` clamps width and height to ≥ 0 ([:34-39](AppKit/Transcript2TableView.swift:34)). AppKit briefly sends negative widths during scroller layout. **Cost of dropping**: "Invalid view geometry" warnings and undefined frame state during the scroller-layout window.
+
+### 2.10 `invalidate(rows:)` suppresses implicit animations during reload
+
+`invalidate(rows:)` ([:848-862](Transcript2Coordinator.swift:848)) wraps `reloadData(forRowIndexes:) + noteHeightOfRows` inside `NSAnimationContext.duration = 0 + allowsImplicitAnimation = false + CATransaction.setDisableActions(true)`. Without suppression, `noteHeightOfRows` animates row reposition while cell redraw is synchronous — during fast resize, cells paint at new height while the row below is mid-animation at the old y; visually rows overlap. **Cost of dropping suppression**: ghosting during fast window resize.
+
+### 2.11 Granular `insertRows` / `removeRows` / `reloadData(forRowIndexes:)`; never `reloadData()`
+
+All structural changes route through `applyStructuralChange` ([:348-410](Transcript2Coordinator.swift:348)) wrapped in `beginUpdates` / `endUpdates` ([:257-261](Transcript2Coordinator.swift:257)). `reloadData()` (no args) is banned — it would dump `layoutCache` semantics by re-running `viewFor` for every row, re-typesetting every paragraph at scroll cost. **Cost of one `reloadData()`**: O(N) typeset passes + full cell-reuse churn.
+
+### 2.12 Highlight back-fill skips `noteHeightOfRows`
+
+`handleHighlightDidFill` ([:418-425](Transcript2Coordinator.swift:418)) calls only `removeCachedLayout(for:) + reloadData(forRowIndexes:)`. Tokens change color, never glyph positions or line breaks. **Cost of adding `noteHeightOfRows`**: AppKit re-queries `heightOfRow` for the changed row and every following row (O(N) layout passes per fill).
+
+### 2.13 Status updates bypass `Change.update`
+
+`Coordinator.setStatus(id:)` writes `statusStates[id]`, evicts the host's cached layout, and runs a single-row `reloadData(forRowIndexes:)`. It does NOT route through `Change.update`. **Cost of routing through `Change.update`**: rebuild of `Block.Kind`, drop of selection, drop of highlight tokens, and an unnecessary `noteHeightOfRows` (status changes color, not height).
+
+### 2.14 `cacheLayouts` anti-poison check
+
+`cacheLayouts(_:width:)` ([:540-545](Transcript2Coordinator.swift:540)) skips writes when the cache already has a fresh entry at the same width. An inflight background task that completes after a sync `apply` evicted + lazy-refilled the entry would otherwise overwrite the authoritative fresh layout with its older snapshot. **Cost of dropping the check**: cache poisoning under interleaved `apply` + `applyInBackground` / `refillLayoutCache` traffic.
+
+### 2.15 Generation guard in `Transcript2HighlightStorage`
+
+`schedule` / `drop` bump `inflightGen[blockId]`; a job compares generations on completion and discards on drift. **Cost of dropping**: an `.update` that replaces `oldCode` with `newCode` lets the in-flight job for the old version write back, painting stale tokens onto current content.
+
+### 2.16 Shimmer overlay: CALayer + CTLine + subpixel `xOffset` + image cache
+
+[BlockCellView+SubviewPlan.swift:193-405](AppKit/BlockCellView+SubviewPlan.swift:193) and the `ShimmerLayerSet` class ([:585-710](AppKit/BlockCellView+SubviewPlan.swift:585)). Three load-bearing techniques:
+
+- The overlay glyph bitmap is rendered with a sub-pixel `xOffset` ([:267](AppKit/BlockCellView+SubviewPlan.swift:267), [:404](AppKit/BlockCellView+SubviewPlan.swift:404)) so overlay glyphs and cell-bitmap glyphs share the same sub-pixel position. **Cost of dropping**: visible glyph smear / "double image" as the stripe sweeps.
+- The rendered bitmap is keyed by `imageKey(title, font, appearance, scale, xOffset, bottomPadding, size)` ([:635](AppKit/BlockCellView+SubviewPlan.swift:635)) and skipped on equality. **Cost of dropping**: 15–50 µs `CTLine` raster on every reconcile (hover transition, sibling row change).
+- `viewDidChangeBackingProperties` propagates `contentsScale` and invalidates cached bitmaps. **Cost of dropping**: stale rasterizations linger when dragging between Retina/non-Retina displays.
+
+### 2.17 `CenteredRowView` row-reuse key
+
+`CenteredRowView` is a no-op `NSTableRowView` subclass paired with the identifier `"BlockRow"` in `rowViewForRow` ([:942-953](Transcript2Coordinator.swift:942)). The row view does no layout — centering happens in `BlockCellView.layoutOrigin`. Its purpose is to give NSTableView a stable reuse key for row views. **Cost of removing**: NSTableView allocates fresh row views per scroll tick.
+
+### 2.18 Lazy `heightOfRow` + identity-stable `Block.id`
+
+`Block.id: UUID` is caller-supplied, never derived from content hash. The cache, diff, selection, highlight scope, fold state, and status state are all keyed by it. **Cost of content-hashed ids**: identical consecutive messages collapse to one row; selection and highlight scope drift across content-equivalent updates; `.update` events flood the cache and selection paths spuriously.
+
+## 3. Invariants
+
+### 3.1 Data and state
+
+- **Single source of truth** is `Transcript2Coordinator.blocks: [Block]`. No `rows` mirror, no parallel diff structure. The only sync invariant is layout↔data, mediated by `layoutCache: [UUID: CachedLayout]`.
+- **Stable ids drive identity.** `Block.id: UUID` is caller-supplied. Never derive ids from content hashes — identical consecutive messages would collide and selection/highlight scope would drift across content-equivalent updates.
+- **Layout is a pure function**: `Self.makeLayout(for:width:highlights:folds:statuses:)` is `nonisolated static`. Cache entries are derived, not authoritative — `removeCachedLayout(for:)` is always safe; `heightOfRow` lazy-recomputes on miss.
+- **Two mutation entry points only.** `apply(_:scroll:)` (sync, lazy layout, incremental updates) and `applyInBackground(_:scroll:)` (off-main precompute, single main hop, large prepends). Both dispatch to `applyStructuralChange` per `Change` enum. No third channel; do not add a `pendingBlocks` side path.
+
+### 3.2 Coordinator-held row state
 
 Row state (fold flags, status, …) lives on `Coordinator` as **sparse dictionaries** (absent = default). It is NOT stored on `Block.Kind` associated values, for two reasons:
 
@@ -54,7 +131,7 @@ Mutation entry points:
 - `Coordinator.toggleFold(id:)` — flips the flag, then inside an animation group calls `noteHeightOfRows` + `reloadData(forRowIndexes:)`.
 - `Transcript2Controller.setToolStatus(id:status:)` → `Coordinator.setStatus(id:)` → `removeCachedLayout(for: hostBlockId)` + a single-row `reloadData(forRowIndexes:)`. Skips `noteHeightOfRows` (status changes color only, never height) and bypasses `Change.update` (which would drop highlight + drop selection and force the caller to rebuild `Block.Kind`).
 
-### 2.4 Tool group status visuals
+### 3.3 Tool group status visuals
 
 Status is folded into `ToolGroupLayout.Header.status` at `make` time. `drawHeader` and `subviewPlan` resolve color and shimmer through three helpers: `titleColor(for:hovered:)`, `chevronTint(for:hovered:)`, `wantsShimmer(for:)`. New status visual rules go in these helpers only.
 
@@ -71,13 +148,19 @@ Status is folded into `ToolGroupLayout.Header.status` at `make` time. `drawHeade
 
 **SubviewPlan payload:** `SubviewPlan.Chevron` carries a resolved `strokeColor` + `alpha` (status + hover folded in). `SubviewPlan.Shimmer` carries `textRect` + title + font + hovered`; highlight color, sweep speed, gradient locations, and pixel alignment live inside the cell reconciler. The cell stays state-enum-free.
 
-### 2.5 Diff path
+### 3.4 Structural change dispatch
 
-- Granular `insertRows` / `removeRows` / `reloadRows` + `noteHeightOfRows`. Never `reloadData()`.
-- `Swift.CollectionDifference` computes structural diff; same-id, content-changed rows go into an additional `contentChanged` `IndexSet`.
-- Wrap mutations in `tableView.beginUpdates` / `endUpdates`. Do not re-enter the data source between them.
+The `Change` enum (emitted by `Transcript2Controller`) is the only shape `applyStructuralChange` ([Transcript2Coordinator.swift:348-410](Transcript2Coordinator.swift:348)) consumes. There is no diff algorithm in the coordinator — the controller declares the operation, the coordinator runs it.
 
-## 3. Layout boundaries
+| Case | NSTableView call | Cache effect |
+|---|---|---|
+| `.insert(after, blocks)` | `insertRows(at:withAnimation:[.effectFade])` | None (lazy lookup on next `viewFor` / `heightOfRow`) |
+| `.remove(ids)` | `removeRows(at:withAnimation:[.effectFade])` | `removeCachedLayout(for: id)` + `selection.dropEntry` + `highlightStorage.drop` + remove from `foldStates` / `statusStates` |
+| `.update(id, kind)` | `reloadData(forRowIndexes:) + noteHeightOfRows(withIndexesChanged:)` | `removeCachedLayout` + `highlightStorage.drop` + `highlightStorage.schedule(new)` + `selection.dropEntry` |
+
+All mutations run inside `beginUpdates` / `endUpdates` ([Transcript2Coordinator.swift:257-261](Transcript2Coordinator.swift:257)). Never `reloadData()` (see §2.11).
+
+## 4. Layout boundaries
 
 `XxxLayout` is an immutable value capturing the width-dependent geometry needed to (a) report a row's height to `NSTableView` and (b) draw the block's main body. Derived from a particular block payload, the current width, and (optionally) coordinator-held state.
 
@@ -120,15 +203,15 @@ Adding a new layout kind = one new `RowLayout` case + one line in each of the th
 - New decoration category (today: chevron / entry / shimmer) → add a field on `SubviewPlan` + a reconcile arm in `BlockCellView+SubviewPlan.swift`.
 - Letting another layout emit decorations → add an arm in `RowLayout.subviewPlan` and implement `subviewPlan(...)` in that layout's own file.
 
-## 4. Adding a new block kind
+## 5. Adding a new block kind
 
 Add a `case` to `enum Block.Kind`. Then:
 
-1. Decide whether you need a new `Layout` type (re-run the three checks in §3).
-2. Add a `Transcript2Coordinator.makeRowItem` arm: dispatch to the matching `XxxLayout.make`, wrap in the matching `RowLayout` case.
+1. Decide whether you need a new `Layout` type (re-run the three checks in §4).
+2. Add a `Transcript2Coordinator.makeLayout` arm ([Transcript2Coordinator.swift:579](Transcript2Coordinator.swift:579)): dispatch on `block.kind` to the matching `XxxLayout.make`, wrap in the matching `RowLayout` case. The function is `nonisolated static` (off-main precompute requirement, §2.5) — any new arm must remain actor-free; capture per-block snapshot data from the supplied `highlights` / `folds` / `statuses` dicts.
 3. If it's a new layout type: add `Layout/XxxLayout.swift` and a case to the `RowLayout` enum.
 
-Dispatch per kind in `makeRowItem`. Do not add an umbrella `BlockStyle.attributed(for: Block)` helper — block kinds don't share an attributed-string shape and non-text blocks would break it.
+Dispatch per kind inside `makeLayout`. Do not add an umbrella `BlockStyle.attributed(for: Block)` helper — block kinds don't share an attributed-string shape and non-text blocks would break it.
 
 ### Implemented examples
 
@@ -210,7 +293,7 @@ Children mirror this: each payload exposes `label` (past form) and `activeLabel`
 
 This is the **only legal SwiftUI escape hatch** from the NSView loop: `.sheet(item:)` is a presentation primitive that must be owned by SwiftUI. In-cell rendering, hit testing, and selection stay entirely inside NSView.
 
-## 5. File layout
+## 6. File layout
 
 ```
 NativeTranscript2/
@@ -262,7 +345,7 @@ NativeTranscript2/
 
 Dependencies only flow downward: `NativeTranscript2View → Coordinator → AppKit/ → Layout/ → Model/`.
 
-## 6. Async highlight back-fill
+## 7. Async highlight back-fill
 
 `Transcript2HighlightStorage` is a per-block async side-channel. Supported value shapes:
 
@@ -292,7 +375,7 @@ Dependencies only flow downward: `NativeTranscript2View → Coordinator → AppK
 
 The framework itself does not change — storage and the reload pipeline are generic.
 
-## 7. Verifying changes
+## 8. Verifying changes
 
 | Touched | Verify with |
 |---|---|

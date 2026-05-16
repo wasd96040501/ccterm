@@ -51,14 +51,14 @@ final class Transcript2EntryBridge {
 
     func apply(_ change: MessagesChange) {
         switch change {
-        case .reset(let entries):
-            applyReset(entries)
+        case .reset(let entries, let precomputed):
+            applyReset(entries, precomputed: precomputed)
             for entry in entries { pushStatuses(for: entry) }
         case .appended(let entry):
             applyAppend(entry)
             pushStatuses(for: entry)
-        case .prepended(let entries):
-            applyPrepend(entries)
+        case .prepended(let entries, let precomputed):
+            applyPrepend(entries, precomputed: precomputed)
             for entry in entries { pushStatuses(for: entry) }
         case .updated(let entry):
             applyUpdate(entry)
@@ -68,6 +68,19 @@ final class Transcript2EntryBridge {
             // already evicted the entry's `statusStates` slots.
             applyRemove(entry)
         }
+    }
+
+    /// Pull the blocks for an entry from the precomputed map (off-main
+    /// build) when available, otherwise fall back to the inline
+    /// `MessageEntryBlockBuilder.entryBlocks` (on-main Markdown parse).
+    /// The fallback keeps every code path well-defined when a caller
+    /// doesn't ship a precomputed payload — incremental writes
+    /// (`.appended` / `.updated`) intentionally don't.
+    private func blocks(for entry: MessageEntry, precomputed: [UUID: [Block]]?) -> [Block] {
+        if let cached = precomputed?[entry.id] {
+            return cached
+        }
+        return MessageEntryBlockBuilder.entryBlocks(entry)
     }
 
     // MARK: - Status push
@@ -157,7 +170,7 @@ final class Transcript2EntryBridge {
 
     // MARK: - Reset (loadInitial / re-entry)
 
-    private func applyReset(_ entries: [MessageEntry]) {
+    private func applyReset(_ entries: [MessageEntry], precomputed: [UUID: [Block]]?) {
         // Rebuild reverse tables and collect blocks.
         var newOrder: [UUID] = []
         newOrder.reserveCapacity(entries.count)
@@ -165,7 +178,7 @@ final class Transcript2EntryBridge {
         newMap.reserveCapacity(entries.count)
         var allBlocks: [Block] = []
         for entry in entries {
-            let blocks = MessageEntryBlockBuilder.entryBlocks(entry)
+            let blocks = self.blocks(for: entry, precomputed: precomputed)
             newOrder.append(entry.id)
             newMap[entry.id] = blocks.map(\.id)
             allBlocks.append(contentsOf: blocks)
@@ -237,12 +250,12 @@ final class Transcript2EntryBridge {
 
     // MARK: - Prepend (loadHistory Phase B)
 
-    private func applyPrepend(_ entries: [MessageEntry]) {
+    private func applyPrepend(_ entries: [MessageEntry], precomputed: [UUID: [Block]]?) {
         var prefixBlocks: [Block] = []
         var newOrder: [UUID] = []
         var newMap: [UUID: [UUID]] = [:]
         for entry in entries {
-            let blocks = MessageEntryBlockBuilder.entryBlocks(entry)
+            let blocks = self.blocks(for: entry, precomputed: precomputed)
             newOrder.append(entry.id)
             newMap[entry.id] = blocks.map(\.id)
             prefixBlocks.append(contentsOf: blocks)

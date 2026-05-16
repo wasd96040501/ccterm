@@ -72,7 +72,12 @@ extension SessionHandle2 {
             // path that buffers blocks while layoutWidth=0 and consumes them
             // when the coordinator's `onLayoutReady` fires. So this layer
             // doesn't have to care about SwiftUI commit ordering.
-            onMessagesChange?(.reset(messages))
+            //
+            // No precomputed blocks here: the re-entry path is synchronous
+            // and we accept the same-frame Markdown parse cost. The slow
+            // path is the cold load (Phase A / Phase B), where precompute
+            // moves the parse off the main thread.
+            onMessagesChange?(.reset(messages, precomputedBlocks: nil))
             return
         case .failed:
             historyLoadState = .notLoaded
@@ -102,22 +107,39 @@ extension SessionHandle2 {
             case .success(let parsed):
                 tailEndOffset = parsed.tailStartByteOffset
                 let t0 = CFAbsoluteTimeGetCurrent()
-                await MainActor.run { [weak self] in
-                    guard let self else { return }
+                // Hop 1 (main): ingest the parsed Message2s into entries and
+                // flip the load state. receive() in replay mode does not
+                // fire the sink, so the bridge is still empty at this point.
+                let snapshot: [MessageEntry] = await MainActor.run { [weak self] in
+                    guard let self else { return [] }
                     for m in parsed.messages { self.receive(m, mode: .replay) }
                     let count = parsed.messages.count
                     self.historyLoadState = .tailLoaded(count: count)
-                    // Phase A bulk ingest done — dump current messages to the
-                    // bridge as the initial load. Per-message receive() during
-                    // Phase A runs in replay mode and does not fire the sink,
-                    // so this is the bridge's first instruction. Send it even
-                    // when messages is empty so the bridge can flip
-                    // didLoadInitial = true.
-                    self.onMessagesChange?(.reset(self.messages))
                     let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
                     appLog(
                         .info, "SessionHandle2",
-                        "loadHistory tail done \(self.sessionId) count=\(count) ingest=\(ms)ms")
+                        "loadHistory tail ingest done \(self.sessionId) count=\(count) ingest=\(ms)ms")
+                    return self.messages
+                }
+                // Off-main: pre-build the (entry.id → [Block]) map. The
+                // dominant cost here is `MarkdownDocument(parsing:)` for
+                // assistant text segments — keeping it off the main thread
+                // is the whole point of this two-hop dance.
+                let t1 = CFAbsoluteTimeGetCurrent()
+                let precomputed = MessageEntryBlockBuilder.precompute(snapshot)
+                let precomputeMs = Int((CFAbsoluteTimeGetCurrent() - t1) * 1000)
+                // Hop 2 (main): hand the precomputed blocks to the bridge.
+                // Fire `.reset` even when snapshot is empty so the bridge
+                // flips `didLoadInitial = true` and subsequent live
+                // appends take the incremental path.
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    self.onMessagesChange?(
+                        .reset(snapshot, precomputedBlocks: precomputed))
+                    appLog(
+                        .info, "SessionHandle2",
+                        "loadHistory tail reset fired \(self.sessionId) "
+                            + "count=\(snapshot.count) precompute=\(precomputeMs)ms")
                 }
             }
 
@@ -182,7 +204,8 @@ extension SessionHandle2 {
                     // the tail entry.
                     if prefixCount > 0 {
                         let prefixEntries = Array(self.messages.prefix(prefixCount))
-                        self.onMessagesChange?(.prepended(prefixEntries))
+                        self.onMessagesChange?(
+                            .prepended(prefixEntries, precomputedBlocks: nil))
                     }
                     for idx in updatedIdx where self.messages.indices.contains(idx) {
                         self.onMessagesChange?(.updated(self.messages[idx]))

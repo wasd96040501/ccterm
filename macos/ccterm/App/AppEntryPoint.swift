@@ -22,19 +22,6 @@ struct AppEntryPoint {
         if ProcessInfo.processInfo.environment["CCTERM_RUN_AS_MOCK_CLI"] == "1" {
             MockCLIRunner.run()
         }
-        // Unit-test host. xcodebuild spawned us via the test runner with
-        // `TEST_HOST` pointing at this binary; XCTest will load the test
-        // bundle once we hand control to a runloop. Start a UI-less
-        // `NSApplication` (no dock icon, no windows, no SwiftUI tree) so
-        // the test bundle has a runloop to run on without bringing the
-        // real app forward during parallel CI runs. Returning here would
-        // exit the process before XCTest could establish its connection.
-        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
-            let app = NSApplication.shared
-            app.setActivationPolicy(.prohibited)
-            app.run()
-            return
-        }
         #endif
         CCTermApp.main()
     }

@@ -13,20 +13,21 @@ import UniformTypeIdentifiers
 /// - pill: 32pt min height, `cornerRadius = 16`. Send button is concentric
 ///   with the bottom-right corner: button radius 12, shared center ⇒ 4pt
 ///   from the right / bottom.
-/// - attach: a standalone 24pt circle in an HStack with the pill,
-///   8pt spacing — Gestalt proximity (~ ⅓ element width) reads as "two
-///   related but independent controls".
+/// - attach: standalone `AttachButton` — a 32pt circle anchored to the
+///   pill's bottom edge with 8pt spacing. Bottom-aligning (rather than
+///   centering) means the `+` stays glued to the text row even when the
+///   pill grows upward to host a thumbnail strip, instead of drifting up
+///   to the overall pill center.
 struct InputBarView2: View {
     static let cornerRadius: CGFloat = 16
     private let pillMinHeight: CGFloat = 32
     private let sendButtonSize: CGFloat = 24
     private let sendButtonInset: CGFloat = 4
-    private let attachButtonSize: CGFloat = 24
     private let attachToPillSpacing: CGFloat = 8
     private let textLeadingPadding: CGFloat = 12
     private let textTrailingPadding: CGFloat = 4
     private let textVerticalPadding: CGFloat = 7.5
-    private let thumbnailSize: CGFloat = 56
+    private let thumbnailSize: CGFloat = 48
     private let thumbnailTopPadding: CGFloat = 8
     private let thumbnailBottomPadding: CGFloat = 8
     private let thumbnailLeadingPadding: CGFloat = 12
@@ -60,6 +61,18 @@ struct InputBarView2: View {
     /// button gated by `canSend`. No local `@State` copy — avoids drift from
     /// the handle.
     var isRunning: Bool = false
+    /// Coordinate space in which to report `onAttachRect` / `onPillRect`.
+    /// `nil` disables geometry reporting (e.g. previews).
+    var coordSpace: String? = nil
+    /// Fired with the attach button's frame (in `coordSpace`). The bottom
+    /// scrim uses it to cut a *Circle* hole — bar chrome should never see
+    /// a gray gradient on top of the LG button.
+    var onAttachRect: ((CGRect) -> Void)? = nil
+    /// Fired with the pill's frame (in `coordSpace`). The bottom scrim
+    /// uses it to cut a *RoundedRectangle* hole. Reported separately from
+    /// `onAttachRect` so the 8pt spacing between the two is NOT cut,
+    /// letting the scrim's gradient bridge them naturally.
+    var onPillRect: ((CGRect) -> Void)? = nil
 
     @State private var text: String = ""
     @State private var isFocused: Bool = false
@@ -68,9 +81,18 @@ struct InputBarView2: View {
     @State private var isPresentingPreview: Bool = false
 
     var body: some View {
+        // `.bottom` (not `.center`) so the attach button always sits at
+        // the bottom 32pt of the pill where the text row lives. Without
+        // an attachment, pill and attach are both 32pt high → centers
+        // coincide. With an attachment, pill grows upward to host the
+        // thumbnail strip, but the text row stays anchored to the
+        // bottom — bottom-alignment keeps the `+` centered on the text
+        // row rather than drifting to the overall pill center.
         HStack(alignment: .bottom, spacing: attachToPillSpacing) {
-            attachButton
+            AttachButton(onPickImage: presentImagePicker)
+                .modifier(ReportFrame(coordSpace: coordSpace, action: onAttachRect))
             pill
+                .modifier(ReportFrame(coordSpace: coordSpace, action: onPillRect))
         }
         .animation(.smooth(duration: animationDuration), value: isRunning)
         .animation(.smooth(duration: animationDuration), value: attachment != nil)
@@ -79,43 +101,6 @@ struct InputBarView2: View {
                 ImagePreviewView(thumbnail: attachment.thumbnail)
             }
         }
-    }
-
-    // MARK: - Attach Button
-
-    private var attachButton: some View {
-        // SwiftUI `Menu` on macOS 26 renders as a `MenuButton` whose
-        // accessibility node swallows child identifiers — putting
-        // `.testIdentifier` on the Menu or its label closure is
-        // silently dropped. The stable handle is `.accessibilityLabel`
-        // on the Menu (sets the MenuButton's AX label); tests query
-        // `app.menuButtons["Attach image or file"]`.
-        Menu {
-            Button {
-                presentImagePicker()
-            } label: {
-                Label(String(localized: "Image"), systemImage: "photo")
-            }
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: iconPointSize, weight: .bold))
-                .foregroundStyle(.primary)
-                .frame(width: attachButtonSize, height: attachButtonSize)
-                .background(
-                    Circle().fill(Color(nsColor: .controlBackgroundColor).opacity(0.6))
-                )
-                .overlay(
-                    Circle().stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
-                )
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        // Semantic label for VoiceOver: replaces the SF-symbol-derived
-        // default ("Add") with a meaningful word. Tests use it as the
-        // primary query key — `app.menuButtons["Attach image or file"]`
-        // — since the MenuButton swallows identifiers.
-        .accessibilityLabel(String(localized: "Attach image or file"))
     }
 
     // MARK: - Pill
@@ -280,6 +265,29 @@ struct InputBarView2: View {
                 .background(Circle().fill(color))
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Geometry reporting
+
+/// Attaches an `.onGeometryChange` in `coordSpace` (when both `coordSpace`
+/// and `action` are non-nil) and forwards the rect. Centralized so attach
+/// and pill report through identical machinery; no-op when the host
+/// doesn't need geometry (previews, isolated screenshots).
+private struct ReportFrame: ViewModifier {
+    let coordSpace: String?
+    let action: ((CGRect) -> Void)?
+
+    func body(content: Content) -> some View {
+        if let coordSpace, let action {
+            content.onGeometryChange(for: CGRect.self) { proxy in
+                proxy.frame(in: .named(coordSpace))
+            } action: { rect in
+                action(rect)
+            }
+        } else {
+            content
+        }
     }
 }
 

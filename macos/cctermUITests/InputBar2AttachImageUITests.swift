@@ -92,8 +92,13 @@ final class InputBar2AttachImageUITests: XCTestCase {
             .completed,
             "thumbnail should be cleared after the image is sent")
 
+        // Bootstrap-on-send: the CLI subprocess is only spawned when the
+        // user actually sends (no eager pre-warm at session-open). So
+        // this wait covers the full mock-CLI bootstrap → echo →
+        // result.success chain, not just a turn round-trip. CI VMs are
+        // slow; 15 s was observed insufficient, so give 30 s headroom.
         XCTAssertTrue(
-            sendButton.waitForExistence(timeout: 5),
+            sendButton.waitForExistence(timeout: 30),
             "send button should return after the mock CLI completes the turn")
     }
 

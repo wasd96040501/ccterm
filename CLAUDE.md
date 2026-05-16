@@ -107,6 +107,8 @@ make test-all                                                                   
 
 The full suite is slow (10–30s per test) and steals focus — never default to running it locally.
 
+If you want to run UI tests locally without the focus theft, see [macos/scripts/uitest/README.md](macos/scripts/uitest/README.md) — a one-time `make uitest-setup` installs a hidden second user account and `make test` automatically forwards through SSH when it's available. CI is unaffected.
+
 Full UI test infrastructure (mock CLI, in-memory session repo, scenario authoring, identifier conventions) is documented in [cctermUITests/CLAUDE.md](macos/cctermUITests/CLAUDE.md).
 
 ## CI

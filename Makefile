@@ -1,4 +1,5 @@
-.PHONY: build release dmg clean fmt fmt-check test test-all test-unit build-for-testing help
+.PHONY: build release dmg clean fmt fmt-check test test-all test-unit build-for-testing help \
+        uitest-setup uitest-uninstall uitest-wake
 
 XCSTRINGS := macos/ccterm/Localizable.xcstrings
 FMT_XCSTRINGS := python3 macos/scripts/fmt-xcstrings.py
@@ -56,3 +57,12 @@ fmt-check: ## Check formatting (CI)
 
 clean: ## Remove all build artifacts
 	rm -rf ~/Library/Developer/Xcode/DerivedData/ccterm-*
+
+uitest-setup: ## One-time: install hidden cctermtest sandbox so `make test` doesn't steal focus (macos/scripts/uitest/README.md)
+	./macos/scripts/uitest/setup.sh
+
+uitest-uninstall: ## Reverse uitest-setup (pass ARGS=--delete-user to also remove the account)
+	./macos/scripts/uitest/uninstall.sh $(ARGS)
+
+uitest-wake: ## Wake the cctermtest Aqua session after a reboot (when FileVault / --no-autologin blocks autologin)
+	./macos/scripts/uitest/wake.sh

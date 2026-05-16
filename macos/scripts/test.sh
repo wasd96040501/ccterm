@@ -9,6 +9,12 @@
 #   ./scripts/test.sh ClassName/methodName  # 只跑一个 method
 #   ALLOW_FULL_RUN=1 ./scripts/test.sh ""   # 全量跑(谨慎,UI test 慢)
 #
+# 自动检测:
+#   如果当前用户已通过 `make uitest-setup` 配置了隐藏测试账号 cctermtest 且
+#   cctermtest 的 Aqua session 在后台活着,本脚本会自动透过 SSH 把 xcodebuild
+#   转发到 cctermtest 里跑——主账号屏幕完全不被打扰。
+#   设置 UITEST_FORCE_LOCAL=1 显式禁用,强制本地跑(CI 应该用这个)。
+#
 # 退出码:
 #   0 成功 / 1 测试失败 / 2 build/setup 失败 / 3 参数错误
 
@@ -21,6 +27,7 @@ DESTINATION='platform=macOS,arch=arm64'
 TEST_TARGET="cctermUITests"
 FILTER="${1:-}"
 DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-$PWD/build/test-dd}"
+UITEST_USER="${UITEST_USER:-cctermtest}"
 
 # --- 参数守卫 ---
 if [ -z "$FILTER" ] && [ "${ALLOW_FULL_RUN:-0}" != "1" ]; then
@@ -33,6 +40,36 @@ error: UI test 必须针对性跑。请指定 FILTER:
   ALLOW_FULL_RUN=1 make test FILTER=""
 EOF
   exit 3
+fi
+
+# --- cctermtest 自动路由 ---
+# 三个条件同时满足才转发:
+#   1) UITEST_FORCE_LOCAL 没设
+#   2) cctermtest 用户存在且 Aqua session 在后台活着 (Dock 进程)
+#   3) ssh 免密能连通
+should_route_via_uitest_user() {
+  [ "${UITEST_FORCE_LOCAL:-0}" = "1" ] && return 1
+  id -u "$UITEST_USER" >/dev/null 2>&1 || return 1
+  pgrep -u "$UITEST_USER" -x Dock >/dev/null 2>&1 || return 1
+  ssh -o BatchMode=yes -o ConnectTimeout=3 "$UITEST_USER@127.0.0.1" true 2>/dev/null || return 1
+  return 0
+}
+
+if should_route_via_uitest_user; then
+  REPO_ROOT="$(pwd)"
+  echo "→ Routing UI test through $UITEST_USER session (no focus theft)."
+  echo "  Set UITEST_FORCE_LOCAL=1 to disable; run 'make uitest-uninstall' to remove."
+  # Re-invoke ourselves on the remote side with UITEST_FORCE_LOCAL=1 so the
+  # remote shell takes the local-execution branch and doesn't infinite-loop.
+  REMOTE_CMD="cd '$REPO_ROOT' && UITEST_FORCE_LOCAL=1 ALLOW_FULL_RUN='${ALLOW_FULL_RUN:-0}' SKIP_BUILD='${SKIP_BUILD:-0}' ./macos/scripts/test.sh '$FILTER'"
+  exec ssh -t "$UITEST_USER@127.0.0.1" "bash -lc \"$REMOTE_CMD\""
+fi
+
+# Warn the developer if cctermtest exists but isn't reachable (so they know
+# they're about to get focus theft and can either fix it or accept it).
+if [ "${UITEST_FORCE_LOCAL:-0}" != "1" ] && id -u "$UITEST_USER" >/dev/null 2>&1; then
+  echo "warning: $UITEST_USER exists but its session/ssh isn't reachable —"
+  echo "         running locally (will steal focus). Try: make uitest-wake"
 fi
 
 # --- 日志路径 ---

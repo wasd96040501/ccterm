@@ -6,13 +6,16 @@ import XCTest
 /// hooks. The synthetic PNG is written to `/tmp` by the test runner so
 /// the production `Data(contentsOf:)` path is exercised end-to-end.
 ///
-/// ### How the dialog is driven
+/// ### How the panel is driven
 ///
-/// `NSOpenPanel` is a system-owned modal but it surfaces as
-/// `app.dialogs.firstMatch` in XCUITest. We drive it the same way a user
-/// would when they know the path: ⌘⇧G ("Go to Folder") → type the path
-/// → Enter → Open. This is the documented pattern from Apple's developer
-/// forums for opening a known file.
+/// On macOS 26 `NSOpenPanel.begin(...)` surfaces as a regular *window*
+/// — not a `.dialog` and not a `.sheet`. The a11y tree carries
+/// `identifier: 'open-panel'` and `title: 'Open'`. Tests query it as
+/// `app.windows["open-panel"]`. We drive it the same way a user would
+/// when they know the path: ⌘⇧G ("Go to Folder") → type the path →
+/// Enter → Open. Apple developer forums document the keyboard flow;
+/// the element-type discovery comes from dumping `app.debugDescription`
+/// on the CI runner (see [cctermUITests/CLAUDE.md](CLAUDE.md)).
 ///
 /// ### How `SwiftUI.Menu` is addressed
 ///
@@ -135,45 +138,30 @@ final class InputBar2AttachImageUITests: XCTestCase {
             "Menu should contain an 'Image' item")
         imageItem.click()
 
-        // Give the panel a moment to mount, then probe across element
-        // types. macOS 26 may surface NSOpenPanel as a sheet attached to
-        // the host window, not as a `.dialog`. Embed the probe + full
-        // a11y tree in the assertion message so the CI log shows the
-        // exact element type to query for.
-        Thread.sleep(forTimeInterval: 2)
-        let probe =
-            "dialogs=\(app.dialogs.count) "
-            + "sheets=\(app.sheets.count) "
-            + "windows=\(app.windows.count) "
-            + "buttons[Open]=\(app.buttons["Open"].exists) "
-            + "buttons[Cancel]=\(app.buttons["Cancel"].exists)"
-        let panel = app.dialogs.firstMatch
-        if !panel.waitForExistence(timeout: 5) {
-            XCTFail(
-                "NSOpenPanel not addressable as Dialog. "
-                    + "Probe: \(probe)\n\nFull a11y tree:\n\(app.debugDescription)")
-            return
-        }
+        // macOS 26 surfaces NSOpenPanel as a Window with identifier
+        // 'open-panel' (title 'Open'), not as a `.dialog` or `.sheet`.
+        // Discovered via `app.debugDescription` dump from the CI runner.
+        let panel = app.windows["open-panel"]
+        XCTAssertTrue(
+            panel.waitForExistence(timeout: 10),
+            "NSOpenPanel window 'open-panel' should appear after selecting the Image menu item")
 
-        // ⌘⇧G opens the "Go to Folder" sheet — the documented way to
-        // address an absolute path inside NSOpenPanel without browsing.
+        // ⌘⇧G opens the "Go to Folder" prompt. Its container shape
+        // (sheet vs popover vs window) varies across macOS versions, so
+        // query the path combobox as a descendant of the panel rather
+        // than scoping through a fixed container type.
         app.typeKey("g", modifierFlags: [.command, .shift])
 
-        let goSheet = panel.sheets.firstMatch
-        XCTAssertTrue(
-            goSheet.waitForExistence(timeout: 5),
-            "Go to Folder sheet should appear after ⌘⇧G")
-
-        let pathField = goSheet.comboBoxes.firstMatch
+        let pathField = panel.descendants(matching: .comboBox).firstMatch
         XCTAssertTrue(
             pathField.waitForExistence(timeout: 5),
-            "Go to Folder sheet should expose a path combobox")
+            "Go to Folder path combobox should appear after ⌘⇧G")
         pathField.click()
         pathField.typeText(testImagePath)
 
         // The sheet's primary action is "Go"; some macOS versions also
         // accept Return. Try the button first, fall back to Return.
-        let goButton = goSheet.buttons["Go"]
+        let goButton = panel.descendants(matching: .button)["Go"]
         if goButton.exists {
             goButton.click()
         } else {

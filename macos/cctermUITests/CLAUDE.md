@@ -260,28 +260,29 @@ XCUITest does not surface `.accessibilityIdentifier` placed on the body of a `Bu
 
 ### Driving `NSOpenPanel` (and other OS dialogs)
 
-`NSOpenPanel` is system-owned but **XCUITest can drive it** through the host app's `XCUIApplication`. Standard recipe for selecting a known absolute path:
+`NSOpenPanel` is system-owned but **XCUITest can drive it** through the host app's `XCUIApplication`. On macOS 26 it surfaces as a regular *window* (identifier `'open-panel'`, title `'Open'`) — not as `.dialog` and not as `.sheet`. Older recipes from Apple Developer Forums use `app.dialogs.firstMatch`, which silently doesn't match anymore. Standard recipe for selecting a known absolute path:
 
 ```swift
-let panel = app.dialogs.firstMatch
+let panel = app.windows["open-panel"]
 XCTAssertTrue(panel.waitForExistence(timeout: 10))
 
-// "Go to Folder" sheet — the documented escape from browsing.
+// "Go to Folder" — container shape (sheet / popover / window) varies
+// across macOS versions, so query the combobox as a descendant of the
+// panel rather than through a fixed container type.
 app.typeKey("g", modifierFlags: [.command, .shift])
-let sheet = panel.sheets.firstMatch
-XCTAssertTrue(sheet.waitForExistence(timeout: 5))
 
-let pathField = sheet.comboBoxes.firstMatch
+let pathField = panel.descendants(matching: .comboBox).firstMatch
+XCTAssertTrue(pathField.waitForExistence(timeout: 5))
 pathField.click()
 pathField.typeText("/tmp/my-test-file.png")
-sheet.buttons["Go"].click()
+panel.descendants(matching: .button)["Go"].click()
 
 panel.buttons["Open"].click()
 ```
 
 The test runner can write a fixture to `/tmp` in `setUpWithError` and remove it in `tearDownWithError` — production code reads the file via the real `Data(contentsOf:)` path, so the panel + filesystem branches both stay covered.
 
-Source: [Apple Developer Forums — "How do we use NSOpenPanel in XCUITests"](https://developer.apple.com/forums/thread/63275).
+Sources: [Apple Developer Forums — "How do we use NSOpenPanel in XCUITests"](https://developer.apple.com/forums/thread/63275) (keyboard flow; element-type advice is now outdated). The `open-panel` window identifier was confirmed by dumping `app.debugDescription` on the macOS 26 CI runner.
 
 ## Running tests
 

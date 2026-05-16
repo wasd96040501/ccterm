@@ -85,12 +85,22 @@ private struct Transcript2NSViewBridge: NSViewRepresentable {
         scroll.wantsLayer = true
         scroll.layerContentsRedrawPolicy = .never
         scroll.automaticallyAdjustsContentInsets = false
-        // Bottom inset gives breathing room so the last message stays
-        // visible above RootView2's input bar (~40pt high + 36pt
-        // bottom padding ≈ 76pt visually); add 28pt loading row +
-        // breathing so the final message can scroll fully above the bar.
-        scroll.contentInsets = NSEdgeInsets(top: 12, left: 0, bottom: 112, right: 0)
+        // Swap to our layer-backed `.never`-redraw clip *before* writing
+        // `contentInsets`. NSScrollView stores the insets on its current
+        // contentView; replacing the contentView afterwards drops to a
+        // fresh NSClipView with zero insets and our value is silently
+        // lost. Result: scroll-to-bottom landed at clip frame bottom
+        // rather than at the visible-content-area bottom.
         scroll.contentView = Transcript2ClipView()
+        // Bottom inset reserves space below the natural content end so the
+        // last message never crowds the input bar, and so the user can
+        // scroll the transcript up further to expose empty room beneath it
+        // (avoiding a "suffocating" final message). Breakdown:
+        // - 40pt input bar + 36pt bottom padding ≈ 76pt overlapped by chrome.
+        // - 28pt loading pill above the bar when running.
+        // - 76pt fixed breathing room so non-running state has a comfortable
+        //   gap and running state still leaves the pill clear of content.
+        scroll.contentInsets = NSEdgeInsets(top: 12, left: 0, bottom: 180, right: 0)
 
         let table = Transcript2TableView()
         table.headerView = nil

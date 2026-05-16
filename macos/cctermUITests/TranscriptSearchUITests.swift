@@ -38,26 +38,28 @@ final class TranscriptSearchUITests: XCTestCase {
         XCTAssertTrue(
             counter.waitForExistence(timeout: 3),
             "counter should appear after typing a non-empty query")
+        // SwiftUI `Text` on macOS exposes its content via AX `value`
+        // (AXStaticText.AXValue), not `label`. `.label` is empty.
         XCTAssertEqual(
-            counter.label, "1 / 2",
+            counter.value as? String, "1 / 2",
             "first hit should be the current cursor (1-based of 2 total)")
 
         // Next button → second hit.
         app.buttons["ChatSearchBar.NextButton"].click()
         XCTAssertEqual(
-            counter.label, "2 / 2",
+            counter.value as? String, "2 / 2",
             "next button should advance the cursor to the second hit")
 
         // Wrap-around: next on the last hit → first hit.
         app.buttons["ChatSearchBar.NextButton"].click()
         XCTAssertEqual(
-            counter.label, "1 / 2",
+            counter.value as? String, "1 / 2",
             "next on the last hit should wrap back to the first")
 
         // Previous button → wrap back to last.
         app.buttons["ChatSearchBar.PrevButton"].click()
         XCTAssertEqual(
-            counter.label, "2 / 2",
+            counter.value as? String, "2 / 2",
             "previous on the first hit should wrap to the last")
     }
 
@@ -76,8 +78,10 @@ final class TranscriptSearchUITests: XCTestCase {
 
         let counter = app.staticTexts["ChatSearchBar.Counter"]
         XCTAssertTrue(counter.waitForExistence(timeout: 3))
+        // See `testSearchBarTypeNavigate` for why `.value` instead of
+        // `.label`: AXStaticText surfaces its content as AXValue.
         XCTAssertEqual(
-            counter.label, "0 / 0",
+            counter.value as? String, "0 / 0",
             "counter should read 0 / 0 when the query has no hits")
 
         // Nav buttons should be disabled — clicking must not crash
@@ -87,7 +91,7 @@ final class TranscriptSearchUITests: XCTestCase {
             nextButton.isEnabled,
             "next button should be disabled when there are no hits")
         XCTAssertEqual(
-            counter.label, "0 / 0",
+            counter.value as? String, "0 / 0",
             "counter should remain 0 / 0 with no hits")
     }
 

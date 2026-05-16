@@ -171,6 +171,14 @@ Other notes:
   failure's xcresult bundle under "App UI hierarchy". Look for the
   leaf elements whose `identifier:` is the *container's* id.
 - Plain `NSTextView` wrapped by `NSViewRepresentable` is not directly addressable via a11y queries — click the outer container to focus the `NSTextView`, then `app.typeText(...)`.
+- **SwiftUI `Text` content lands in AX `value`, not `label`.** A
+  `Text("1 / 2")` becomes an `AXStaticText` whose `AXValue` carries
+  `"1 / 2"`; `AXLabel` is empty. In XCUITest, read via
+  `staticText.value as? String`, not `.label`. `.label` returns "" and
+  the equality check fails with no obvious cause from the assert
+  message. The same applies to `Label` and `Text` rendered as decorative
+  static text. (Buttons and TextFields behave normally — their `label`
+  property is populated.)
 - App-scope keyboard shortcuts (e.g. ⌘F) should route through a
   `Commands` menu item (`AppCommands`) and signal per-view state via
   an `@Observable` bus injected through `.environment(...)`. Hidden /

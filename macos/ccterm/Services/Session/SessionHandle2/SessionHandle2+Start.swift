@@ -403,19 +403,6 @@ extension SessionHandle2 {
             allowDangerouslySkipPermissions: true
         )
 
-        #if DEBUG
-        if let override = Self.mockCLIOverride {
-            config.binaryPath = override.binaryPath
-            config.customCommand = nil
-            config.env = override.env
-            // Mock CLI is a self-contained Swift binary — it needs no PATH
-            // lookup, no login shell. Skip `zsh -li -c env`, which on the CI
-            // runner costs multiple seconds and was the dominant chunk of
-            // first-send bootstrap latency.
-            config.inheritsParentEnvironment = true
-        }
-        #endif
-
         return config
     }
 

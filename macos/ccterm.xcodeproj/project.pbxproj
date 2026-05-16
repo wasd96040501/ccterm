@@ -20,19 +20,11 @@
 			remoteGlobalIDString = 2B3DA4E32F5701A1000987D3;
 			remoteInfo = ccterm;
 		};
-		2B3DA5022F5701A2000987D3 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 2B3DA4DC2F5701A1000987D3 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 2B3DA4E32F5701A1000987D3;
-			remoteInfo = ccterm;
-		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		2B3DA4E42F5701A1000987D3 /* ccterm.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ccterm.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		2B3DA4F72F5701A2000987D3 /* cctermTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = cctermTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		2B3DA5012F5701A2000987D3 /* cctermUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = cctermUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		EA5A16FF2F5A000000CC0001 /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -45,11 +37,6 @@
 		2B3DA4FA2F5701A2000987D3 /* cctermTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = cctermTests;
-			sourceTree = "<group>";
-		};
-		2B3DA5042F5701A2000987D3 /* cctermUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = cctermUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -72,13 +59,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		2B3DA4FE2F5701A2000987D3 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -88,7 +68,6 @@
 				EA5A16FF2F5A000000CC0001 /* Config.xcconfig */,
 				2B3DA4E62F5701A1000987D3 /* ccterm */,
 				2B3DA4FA2F5701A2000987D3 /* cctermTests */,
-				2B3DA5042F5701A2000987D3 /* cctermUITests */,
 				2B3DA4E52F5701A1000987D3 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -98,7 +77,6 @@
 			children = (
 				2B3DA4E42F5701A1000987D3 /* ccterm.app */,
 				2B3DA4F72F5701A2000987D3 /* cctermTests.xctest */,
-				2B3DA5012F5701A2000987D3 /* cctermUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -155,29 +133,6 @@
 			productReference = 2B3DA4F72F5701A2000987D3 /* cctermTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		2B3DA5002F5701A2000987D3 /* cctermUITests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 2B3DA5112F5701A2000987D3 /* Build configuration list for PBXNativeTarget "cctermUITests" */;
-			buildPhases = (
-				2B3DA4FD2F5701A2000987D3 /* Sources */,
-				2B3DA4FE2F5701A2000987D3 /* Frameworks */,
-				2B3DA4FF2F5701A2000987D3 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				2B3DA5032F5701A2000987D3 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				2B3DA5042F5701A2000987D3 /* cctermUITests */,
-			);
-			name = cctermUITests;
-			packageProductDependencies = (
-			);
-			productName = cctermUITests;
-			productReference = 2B3DA5012F5701A2000987D3 /* cctermUITests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -192,10 +147,6 @@
 						CreatedOnToolsVersion = 26.3;
 					};
 					2B3DA4F62F5701A2000987D3 = {
-						CreatedOnToolsVersion = 26.3;
-						TestTargetID = 2B3DA4E32F5701A1000987D3;
-					};
-					2B3DA5002F5701A2000987D3 = {
 						CreatedOnToolsVersion = 26.3;
 						TestTargetID = 2B3DA4E32F5701A1000987D3;
 					};
@@ -223,7 +174,6 @@
 			targets = (
 				2B3DA4E32F5701A1000987D3 /* ccterm */,
 				2B3DA4F62F5701A2000987D3 /* cctermTests */,
-				2B3DA5002F5701A2000987D3 /* cctermUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -237,13 +187,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		2B3DA4F52F5701A2000987D3 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		2B3DA4FF2F5701A2000987D3 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -284,13 +227,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		2B3DA4FD2F5701A2000987D3 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -298,11 +234,6 @@
 			isa = PBXTargetDependency;
 			target = 2B3DA4E32F5701A1000987D3 /* ccterm */;
 			targetProxy = 2B3DA4F82F5701A2000987D3 /* PBXContainerItemProxy */;
-		};
-		2B3DA5032F5701A2000987D3 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 2B3DA4E32F5701A1000987D3 /* ccterm */;
-			targetProxy = 2B3DA5022F5701A2000987D3 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -535,44 +466,6 @@
 			};
 			name = Release;
 		};
-		2B3DA5122F5701A2000987D3 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			baseConfigurationReference = EA5A16FF2F5A000000CC0001 /* Config.xcconfig */;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.ccterm.app.uitests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = ccterm;
-			};
-			name = Debug;
-		};
-		2B3DA5132F5701A2000987D3 /* Release */ = {
-			isa = XCBuildConfiguration;
-			baseConfigurationReference = EA5A16FF2F5A000000CC0001 /* Config.xcconfig */;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.ccterm.app.uitests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TEST_TARGET_NAME = ccterm;
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -599,15 +492,6 @@
 			buildConfigurations = (
 				2B3DA50F2F5701A2000987D3 /* Debug */,
 				2B3DA5102F5701A2000987D3 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
-		2B3DA5112F5701A2000987D3 /* Build configuration list for PBXNativeTarget "cctermUITests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				2B3DA5122F5701A2000987D3 /* Debug */,
-				2B3DA5132F5701A2000987D3 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -18,7 +18,7 @@ struct SessionExtraUpdate {
 /// DAO contract for the `SessionRecord` entity.
 ///
 /// Production implementation is `CoreDataSessionRepository`, backed by
-/// `CDSessionRecord` / CoreData. UI tests use `InMemorySessionRepository`
+/// `CDSessionRecord` / CoreData. Unit tests use `InMemorySessionRepository`
 /// (DEBUG only) to avoid contaminating the main CoreData store.
 ///
 /// SessionRecord is a persisted entity describing "one session record" —

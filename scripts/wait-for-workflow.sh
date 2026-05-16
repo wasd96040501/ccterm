@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # wait-for-workflow.sh — block until a GitHub Actions run reaches a terminal
-# state. Designed for the dev-test loop where you trigger the debug workflow
-# and wait on its outcome:
+# state. Useful when you've just dispatched a `workflow_dispatch` run and want
+# to wait for its outcome:
 #
-#   gh workflow run test-debug.yml -f filter=cctermUITests/Foo
-#   scripts/wait-for-workflow.sh --workflow test-debug.yml   # blocks
+#   gh workflow run foo.yml --ref my-branch
+#   scripts/wait-for-workflow.sh --workflow foo.yml   # blocks
 #
 # Run with `run_in_background: true` so Claude does not foreground-poll
 # (which burns prompt cache and loses state on compression).

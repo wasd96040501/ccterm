@@ -17,14 +17,14 @@
 
 ## Talking to the renderer
 
-When the handle needs to notify the renderer that something changed, the channel depends on **whether the renderer is AppKit or SwiftUI**. Pick one; do not mix.
+The notification channel depends on whether the renderer is AppKit or SwiftUI. Pick one per piece of state; never mix.
 
 | Renderer | Channel | Notes |
 |---|---|---|
 | **AppKit-native** (e.g. `NativeTranscript2`, anything driving an `NSTableView`) | Synchronous closure callback → direct imperative controller call | The handle mutates `messages` and fires the callback (`onMessagesChange`, ...) inside the same call stack. The bridge translates the event into `controller.apply(.insert / .remove / .update)` immediately. |
 | **SwiftUI** | `@Observable` field (for continuous state) or `AsyncStream` (for discrete side effects) | The view tracks `handle.status` / `handle.isRunning` directly; one-shot effects go through `eventStream()`. |
 
-### Why the AppKit path skips AsyncStream / @Observable
+The AppKit path deliberately skips `AsyncStream` and `@Observable`:
 
 - `AsyncStream` adds at least one main-actor hop — one frame of latency over a synchronous callback.
 - `@Observable`-driven `updateNSView` is a pull model: SwiftUI has to recompute the diff. Going imperative lets the bridge hand the controller exactly the increment it needs.
@@ -33,7 +33,7 @@ When the handle needs to notify the renderer that something changed, the channel
 
 - **AppKit channel** — declare a `@ObservationIgnored var onXxxChange: ((XxxChange) -> Void)?` on the handle. The bridge wires it up in `.task` / `init`; teardown is automatic via `weak`.
 - **Adding a new notification on the AppKit path** — add the closure on the handle, fire it synchronously at the mutation site, add a dispatch arm to the bridge, then call `controller.apply(...)`.
-- **Never emit a state change on both channels.** Pick one. Today `SessionHandle2.messages` is delivered only through `onMessagesChange`; there is no shadow snapshot.
+- **Never emit a state change on both channels.** Pick one. `SessionHandle2.messages` is delivered only through `onMessagesChange`; there is no shadow snapshot.
 - **Views never cache handle properties as their own state.** Read the `@Observable` field directly or expose a computed property.
 - **Local actions** (`send` / `interrupt` / `setPermissionMode`) either issue a stdin request or perform a local state transition. They never write to observables behind the handle's back.
 - **New change variants** — add a `case` to `MessagesChange`, fire `onMessagesChange?(...)` at the mutation site in `SessionHandle2`, add the matching arm in `Transcript2EntryBridge.apply`.

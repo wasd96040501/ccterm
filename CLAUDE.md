@@ -93,11 +93,20 @@ make fmt         # Format code (xcstrings, ...)
 
 ## Tests
 
-End-to-end via XCUITest. No unit tests (`cctermTests/` is a stub).
+Two targets, one decision rule: **if the question involves a click, a key
+press, a window, or a focus state → UI test; otherwise → unit test.**
 
-**Run on CI, not locally, by default.** UI tests grab focus on the foreground app and drive keyboard/mouse, which is disruptive on your desktop. Pushing a PR triggers the `ui-test` workflow (`.github/workflows/test.yml`) which runs the full suite. Logs and `xcresult` artifacts land on the Actions page.
+| Target | Kind | Doc |
+|---|---|---|
+| `cctermTests` | Pure-logic unit tests (bridge dispatch, history parsing, block builder, handle state machine). Safe to run locally. | [cctermTests/CLAUDE.md](macos/cctermTests/CLAUDE.md) |
+| `cctermUITests` | End-to-end XCUITest. Takes focus, drives mouse + keyboard. Run on CI, not locally. | [cctermUITests/CLAUDE.md](macos/cctermUITests/CLAUDE.md) |
 
-Only run locally when you need to reproduce a CI failure or you're debugging the UI tests themselves:
+UI tests **run on CI, not locally, by default** — they take focus on the
+foreground app and drive keyboard + mouse, which is disruptive. Pushing to
+any PR branch triggers `.github/workflows/test.yml`, which runs both
+targets. Logs and `xcresult` artifacts land on the Actions page.
+
+Local reproduction commands (UI tests):
 
 ```bash
 make test FILTER=InputBar2StopButtonUITests/testStopButtonCancelsRunningState   # one method
@@ -105,9 +114,19 @@ make test FILTER=InputBar2StopButtonUITests                                     
 make test-all                                                                   # full suite (slow; pre-merge gut check only)
 ```
 
-The full suite is slow (10–30s per test) and steals focus — never default to running it locally.
+Local commands (unit tests, do not steal focus):
 
-Full UI test infrastructure (mock CLI, in-memory session repo, scenario authoring, identifier conventions) is documented in [cctermUITests/CLAUDE.md](macos/cctermUITests/CLAUDE.md).
+```bash
+make test-unit                                                  # full unit suite, parallel by class
+make test-unit FILTER=MessageEntryBlockBuilderTests             # one class
+```
+
+UI test infrastructure (mock CLI, in-memory session repo, scenario
+authoring, accessibility-tree conventions, hard "no test tricks in
+production code" rules) is documented in
+[cctermUITests/CLAUDE.md](macos/cctermUITests/CLAUDE.md). **Read that
+before touching production code under test mode** — the rules on what
+can vs. can't sit behind `#if DEBUG` live there.
 
 ## CI
 

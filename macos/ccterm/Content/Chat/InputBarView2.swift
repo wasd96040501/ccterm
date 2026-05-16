@@ -257,16 +257,11 @@ struct InputBarView2: View {
     }
 
     /// Read the file at `url`, derive a media type from its extension, and
-    /// build a downscaled NSImage for the thumbnail. Public to support test
-    /// hooks (see InputBarView2+TestSupport in DEBUG).
-    func attachImage(at url: URL) {
+    /// build a thumbnail.
+    fileprivate func attachImage(at url: URL) {
         guard let data = try? Data(contentsOf: url) else { return }
-        attachImage(data: data, mediaType: mediaType(for: url))
-    }
-
-    func attachImage(data: Data, mediaType: String) {
         let thumb = NSImage(data: data) ?? NSImage()
-        attachment = Attachment(data: data, mediaType: mediaType, thumbnail: thumb)
+        attachment = Attachment(data: data, mediaType: mediaType(for: url), thumbnail: thumb)
     }
 
     private func mediaType(for url: URL) -> String {

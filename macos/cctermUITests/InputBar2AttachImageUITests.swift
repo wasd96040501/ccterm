@@ -146,16 +146,29 @@ final class InputBar2AttachImageUITests: XCTestCase {
             panel.waitForExistence(timeout: 10),
             "NSOpenPanel window 'open-panel' should appear after selecting the Image menu item")
 
-        // ⌘⇧G opens the "Go to Folder" prompt. Its container shape
-        // (sheet vs popover vs window) varies across macOS versions, so
-        // query the path combobox as a descendant of the panel rather
-        // than scoping through a fixed container type.
+        // ⌘⇧G opens the "Go to Folder" prompt. The container shape
+        // (sheet vs popover vs window) and the path input element type
+        // (comboBox vs textField vs searchField) both vary across
+        // macOS versions, so probe and dump the live tree on failure.
         app.typeKey("g", modifierFlags: [.command, .shift])
+        Thread.sleep(forTimeInterval: 1)
 
         let pathField = panel.descendants(matching: .comboBox).firstMatch
-        XCTAssertTrue(
-            pathField.waitForExistence(timeout: 5),
-            "Go to Folder path combobox should appear after ⌘⇧G")
+        if !pathField.waitForExistence(timeout: 4) {
+            let probe =
+                "panel.comboBoxes=\(panel.descendants(matching: .comboBox).count) "
+                + "panel.textFields=\(panel.descendants(matching: .textField).count) "
+                + "panel.searchFields=\(panel.descendants(matching: .searchField).count) "
+                + "panel.popovers=\(panel.descendants(matching: .popover).count) "
+                + "panel.sheets=\(panel.sheets.count) "
+                + "app.popovers=\(app.popovers.count) "
+                + "app.sheets=\(app.sheets.count) "
+                + "app.windows=\(app.windows.count)"
+            XCTFail(
+                "Go to Folder path input not found in panel. "
+                    + "Probe: \(probe)\n\nFull a11y tree:\n\(app.debugDescription)")
+            return
+        }
         pathField.click()
         pathField.typeText(testImagePath)
 

@@ -17,7 +17,10 @@ struct SessionExtra: Codable {
     var model: String?
     var effort: String?
 
-    init(pluginDirs: [String]? = nil, permissionMode: String? = nil, addDirs: [String]? = nil, model: String? = nil, effort: String? = nil) {
+    init(
+        pluginDirs: [String]? = nil, permissionMode: String? = nil, addDirs: [String]? = nil, model: String? = nil,
+        effort: String? = nil
+    ) {
         self.pluginDirs = pluginDirs
         self.permissionMode = permissionMode
         self.addDirs = addDirs

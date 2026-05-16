@@ -3,7 +3,8 @@ import Foundation
 extension ToolUseResultObject {
     public init(json: Any) throws {
         guard let dict = json as? [String: Any] else {
-            self = .unknown(name: "unresolved", raw: [:], origin: nil); return
+            self = .unknown(name: "unresolved", raw: [:], origin: nil)
+            return
         }
         self = .unknown(name: "unresolved", raw: dict, origin: nil)
     }

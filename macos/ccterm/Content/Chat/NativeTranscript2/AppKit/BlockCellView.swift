@@ -243,7 +243,8 @@ final class BlockCellView: NSView {
     /// at the new scale on the next composite.
     override func viewDidChangeBackingProperties() {
         super.viewDidChangeBackingProperties()
-        let scale = window?.backingScaleFactor
+        let scale =
+            window?.backingScaleFactor
             ?? self.layer?.contentsScale
             ?? 2
         for (_, set) in shimmerLayers {
@@ -296,7 +297,8 @@ final class BlockCellView: NSView {
         if let selection, let adapter = layout.selectionAdapter {
             let rects = adapter.rects(selection.start, selection.end)
             if !rects.isEmpty {
-                let color: NSColor = (window?.isKeyWindow == true)
+                let color: NSColor =
+                    (window?.isKeyWindow == true)
                     ? .selectedTextBackgroundColor
                     : .unemphasizedSelectedTextBackgroundColor
                 ctx.setFillColor(color.cgColor)
@@ -335,10 +337,12 @@ final class BlockCellView: NSView {
         // headers).
         let area = NSTrackingArea(
             rect: .zero,
-            options: [.mouseEnteredAndExited,
-                      .mouseMoved,
-                      .activeInKeyWindow,
-                      .inVisibleRect],
+            options: [
+                .mouseEnteredAndExited,
+                .mouseMoved,
+                .activeInKeyWindow,
+                .inVisibleRect,
+            ],
             owner: self,
             userInfo: nil)
         addTrackingArea(area)
@@ -414,14 +418,16 @@ final class BlockCellView: NSView {
         // selectable rows (image, thematic break) skip — they get
         // the default arrow.
         if layout.selectionAdapter != nil {
-            let rect = layout.iBeamRect.map {
-                $0.offsetBy(dx: origin.x, dy: origin.y)
-            } ?? bounds
+            let rect =
+                layout.iBeamRect.map {
+                    $0.offsetBy(dx: origin.x, dy: origin.y)
+                } ?? bounds
             addCursorRect(rect, cursor: .iBeam)
         }
         for hit in layout.interactiveHits {
-            addCursorRect(hit.rect.offsetBy(dx: origin.x, dy: origin.y),
-                          cursor: .pointingHand)
+            addCursorRect(
+                hit.rect.offsetBy(dx: origin.x, dy: origin.y),
+                cursor: .pointingHand)
         }
     }
 

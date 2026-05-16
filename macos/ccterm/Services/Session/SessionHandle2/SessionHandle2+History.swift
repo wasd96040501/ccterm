@@ -1,5 +1,5 @@
-import Foundation
 import AgentSDK
+import Foundation
 
 // MARK: - JSONL path resolution
 
@@ -71,7 +71,8 @@ extension SessionHandle2 {
         historyLoadState = .loadingTail
 
         let resolved = url ?? historyJSONLURL
-        appLog(.info, "SessionHandle2",
+        appLog(
+            .info, "SessionHandle2",
             "loadHistory begin \(sessionId) url=\(resolved?.path ?? "(none)") tailTarget=\(tailTarget)")
 
         Task.detached {
@@ -82,7 +83,8 @@ extension SessionHandle2 {
             case .failure(let err):
                 await MainActor.run { [weak self] in
                     self?.historyLoadState = .failed(err.localizedDescription)
-                    appLog(.warning, "SessionHandle2",
+                    appLog(
+                        .warning, "SessionHandle2",
                         "loadHistory FAILED(tail) \(self?.sessionId ?? "?") err=\(err.localizedDescription)")
                 }
                 return
@@ -101,7 +103,8 @@ extension SessionHandle2 {
                     // 翻到 didLoadInitial = true。
                     self.onMessagesChange?(.reset(self.messages))
                     let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
-                    appLog(.info, "SessionHandle2",
+                    appLog(
+                        .info, "SessionHandle2",
                         "loadHistory tail done \(self.sessionId) count=\(count) ingest=\(ms)ms")
                 }
             }
@@ -120,8 +123,10 @@ extension SessionHandle2 {
             case .failure(let err):
                 // Phase B 失败不 downgrade — tail 已经可见。只 warning。
                 await MainActor.run { [weak self] in
-                    appLog(.warning, "SessionHandle2",
-                        "loadHistory PREFIX_FAIL \(self?.sessionId ?? "?") err=\(err.localizedDescription) — keeping tailLoaded")
+                    appLog(
+                        .warning, "SessionHandle2",
+                        "loadHistory PREFIX_FAIL \(self?.sessionId ?? "?") err=\(err.localizedDescription) — keeping tailLoaded"
+                    )
                 }
                 return
             case .success(let prefix):
@@ -145,8 +150,10 @@ extension SessionHandle2 {
 
                     // 2. 用 prefix + tail 所有 tool_use 建 index,回填 tail 里
                     //    unresolved tool_results。
-                    let allForIndex: [Message2] = prefix + self.tailMessagesAsArray(
-                        from: newTailStart, until: absoluteTailEnd)
+                    let allForIndex: [Message2] =
+                        prefix
+                        + self.tailMessagesAsArray(
+                            from: newTailStart, until: absoluteTailEnd)
                     let index = ToolResultReresolver.buildToolUseIndex(from: allForIndex)
                     let updatedIdx = ToolResultReresolver.applyResolution(
                         to: &self.messages, from: newTailStart, using: index)
@@ -164,9 +171,10 @@ extension SessionHandle2 {
                         self.onMessagesChange?(.updated(self.messages[idx]))
                     }
                     let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
-                    appLog(.info, "SessionHandle2",
+                    appLog(
+                        .info, "SessionHandle2",
                         "loadHistory full done \(self.sessionId) prefix=\(prefixCount) "
-                        + "tailReresolved=\(updatedIdx.count) merge=\(ms)ms")
+                            + "tailReresolved=\(updatedIdx.count) merge=\(ms)ms")
                 }
             }
         }
@@ -193,9 +201,10 @@ extension SessionHandle2 {
             let readerResult = try JSONLTailReader.readTail(
                 url: url, targetLines: targetLines)
             let msgs = parseLines(readerResult.lines)
-            return .success(TailParsed(
-                messages: msgs,
-                tailStartByteOffset: readerResult.tailStartByteOffset))
+            return .success(
+                TailParsed(
+                    messages: msgs,
+                    tailStartByteOffset: readerResult.tailStartByteOffset))
         } catch {
             return .failure(error)
         }
@@ -229,8 +238,9 @@ extension SessionHandle2 {
         out.reserveCapacity(lines.count)
         for line in lines {
             guard let data = line.data(using: .utf8),
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let msg = try? resolver.resolve(json) else {
+                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                let msg = try? resolver.resolve(json)
+            else {
                 continue
             }
             out.append(msg)

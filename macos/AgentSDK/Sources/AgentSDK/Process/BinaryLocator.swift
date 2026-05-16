@@ -6,7 +6,8 @@ enum BinaryLocator {
     /// 优先级：环境变量 > ~/.local/bin > /usr/local/bin > which
     static func locate() -> String? {
         if let envPath = ProcessInfo.processInfo.environment["CLAUDE_BINARY_PATH"],
-           FileManager.default.isExecutableFile(atPath: envPath) {
+            FileManager.default.isExecutableFile(atPath: envPath)
+        {
             return envPath
         }
 
@@ -39,9 +40,11 @@ enum BinaryLocator {
         }
         guard proc.terminationStatus == 0 else { return nil }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let path = String(data: data, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines),
-              !path.isEmpty else { return nil }
+        guard
+            let path = String(data: data, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+            !path.isEmpty
+        else { return nil }
         return path
     }
 }

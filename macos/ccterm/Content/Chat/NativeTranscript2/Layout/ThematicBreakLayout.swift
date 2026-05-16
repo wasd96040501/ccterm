@@ -24,11 +24,12 @@ struct ThematicBreakLayout: Sendable {
         guard measuredWidth > 0 else { return }
         ctx.saveGState()
         ctx.setFillColor(BlockStyle.thematicBreakColor.cgColor)
-        ctx.fill(CGRect(
-            x: origin.x,
-            y: origin.y + (totalHeight - BlockStyle.thematicBreakHeight) / 2,
-            width: measuredWidth,
-            height: BlockStyle.thematicBreakHeight))
+        ctx.fill(
+            CGRect(
+                x: origin.x,
+                y: origin.y + (totalHeight - BlockStyle.thematicBreakHeight) / 2,
+                width: measuredWidth,
+                height: BlockStyle.thematicBreakHeight))
         ctx.restoreGState()
     }
 }

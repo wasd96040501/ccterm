@@ -77,7 +77,8 @@ final class MockCLISender {
         lock.lock()
         defer { lock.unlock() }
         guard let data = try? JSONSerialization.data(withJSONObject: json),
-              var line = String(data: data, encoding: .utf8) else { return }
+            var line = String(data: data, encoding: .utf8)
+        else { return }
         line.append("\n")
         guard let out = line.data(using: .utf8) else { return }
         writer(out)
@@ -132,7 +133,7 @@ final class MockCLISender {
                 "id": messageId,
                 "role": "assistant",
                 "content": [
-                    ["type": "text", "text": text],
+                    ["type": "text", "text": text]
                 ],
             ] as [String: Any],
         ])

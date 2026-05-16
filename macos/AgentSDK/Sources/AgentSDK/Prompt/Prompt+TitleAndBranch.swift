@@ -84,7 +84,8 @@ extension Prompt {
             }
 
             guard let json = try? JSONSerialization.jsonObject(with: stdoutData) as? [String: Any],
-                  let resultText = json["result"] as? String else {
+                let resultText = json["result"] as? String
+            else {
                 let stdoutText = String(data: stdoutData, encoding: .utf8) ?? ""
                 throw AgentSDKError.promptFailed(
                     exitCode: 0,
@@ -161,7 +162,8 @@ extension Prompt {
         let openTag = "<\(tag)>"
         let closeTag = "</\(tag)>"
         guard let start = text.range(of: openTag),
-              let end = text.range(of: closeTag, range: start.upperBound..<text.endIndex) else {
+            let end = text.range(of: closeTag, range: start.upperBound..<text.endIndex)
+        else {
             return nil
         }
         let inner = text[start.upperBound..<end.lowerBound]
@@ -198,9 +200,10 @@ extension Prompt {
         try which.run()
         which.waitUntilExit()
         guard which.terminationStatus == 0,
-              let resolved = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+            let resolved = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines),
-              !resolved.isEmpty else {
+            !resolved.isEmpty
+        else {
             throw AgentSDKError.binaryNotFound
         }
         return resolved
@@ -209,27 +212,27 @@ extension Prompt {
     /// coding-session 模板，基于 Claude.app 的 `HMr`（`/tmp/claude-index.beautified.js` L232130）
     /// 扩展：要求同时输出英文 `<title>`（branch slug 用）和用户原语言的 `<title_i18n>`。
     fileprivate static let codingTitlePrompt = """
-    You are coming up with a succinct title for a coding session based on the provided description. The title should be clear, concise, and accurately reflect the content of the coding task.
-    You should keep it short and simple, ideally no more than 6 words. Avoid using jargon or overly technical terms unless absolutely necessary. The title should be easy to understand for anyone reading it.
+        You are coming up with a succinct title for a coding session based on the provided description. The title should be clear, concise, and accurately reflect the content of the coding task.
+        You should keep it short and simple, ideally no more than 6 words. Avoid using jargon or overly technical terms unless absolutely necessary. The title should be easy to understand for anyone reading it.
 
-    You must output TWO titles in XML tags, in this exact order:
-    1. <title>…</title> — always in English, no more than 6 words. This is used for git branch naming, so it must be English regardless of the description language.
-    2. <title_i18n>…</title_i18n> — same meaning as <title>, but in the SAME language as the user's description. If the description is already in English, repeat the English title verbatim.
+        You must output TWO titles in XML tags, in this exact order:
+        1. <title>…</title> — always in English, no more than 6 words. This is used for git branch naming, so it must be English regardless of the description language.
+        2. <title_i18n>…</title_i18n> — same meaning as <title>, but in the SAME language as the user's description. If the description is already in English, repeat the English title verbatim.
 
-    For example (English input):
-    <title>Fix login button not working on mobile</title>
-    <title_i18n>Fix login button not working on mobile</title_i18n>
+        For example (English input):
+        <title>Fix login button not working on mobile</title>
+        <title_i18n>Fix login button not working on mobile</title_i18n>
 
-    For example (Chinese input):
-    <title>Fix empty-password login crash</title>
-    <title_i18n>修复空密码登录崩溃</title_i18n>
+        For example (Chinese input):
+        <title>Fix empty-password login crash</title>
+        <title_i18n>修复空密码登录崩溃</title_i18n>
 
-    For example (Japanese input):
-    <title>Add dark mode to settings</title>
-    <title_i18n>設定にダークモードを追加</title_i18n>
+        For example (Japanese input):
+        <title>Add dark mode to settings</title>
+        <title_i18n>設定にダークモードを追加</title_i18n>
 
-    Here is the session description:
-    <description>{session_description}</description>
-    Please generate the two titles for this session.
-    """
+        Here is the session description:
+        <description>{session_description}</description>
+        Please generate the two titles for this session.
+        """
 }

@@ -1,5 +1,5 @@
-import Foundation
 import AgentSDK
+import Foundation
 
 // MARK: - Entry
 
@@ -87,7 +87,8 @@ extension SingleEntry {
     /// user / non-assistant / non-tool_use messages.
     var toolUses: [ToolUse] {
         guard case .assistant(let a) = remoteMessage,
-              let blocks = a.message?.content else { return [] }
+            let blocks = a.message?.content
+        else { return [] }
         return blocks.compactMap { block in
             if case .toolUse(let t) = block { return t }
             return nil
@@ -118,15 +119,16 @@ extension GroupEntry {
     ///   `Read 3 files · Searched 1 pattern`).
     func title(isActive: Bool, isExpanded: Bool = false) -> String {
         switch (isActive, isExpanded) {
-        case (true, false):  return activeTitle
-        case (true, true):   return expandedActiveTitle
-        case (false, _):     return completedTitle
+        case (true, false): return activeTitle
+        case (true, true): return expandedActiveTitle
+        case (false, _): return completedTitle
         }
     }
 
     var activeTitle: String {
         guard let last = items.last,
-              let tool = last.toolUses.first else { return "" }
+            let tool = last.toolUses.first
+        else { return "" }
         return tool.activeFragment ?? ""
     }
 
@@ -199,34 +201,34 @@ enum GroupableToolName {
     /// selected via xcstrings `%lld` variation.
     func completedCountPhrase(_ count: Int) -> String {
         switch self {
-        case .read:            return String(localized: "Read \(count) files")
-        case .edit:            return String(localized: "Edited \(count) files")
-        case .write:           return String(localized: "Wrote \(count) files")
-        case .grep:            return String(localized: "Searched \(count) patterns")
-        case .glob:            return String(localized: "Globbed \(count) patterns")
-        case .bash:            return String(localized: "Ran \(count) commands")
-        case .webFetch:        return String(localized: "Fetched \(count) URLs")
-        case .webSearch:       return String(localized: "Searched \(count) queries")
-        case .agent:           return String(localized: "Ran \(count) agents")
+        case .read: return String(localized: "Read \(count) files")
+        case .edit: return String(localized: "Edited \(count) files")
+        case .write: return String(localized: "Wrote \(count) files")
+        case .grep: return String(localized: "Searched \(count) patterns")
+        case .glob: return String(localized: "Globbed \(count) patterns")
+        case .bash: return String(localized: "Ran \(count) commands")
+        case .webFetch: return String(localized: "Fetched \(count) URLs")
+        case .webSearch: return String(localized: "Searched \(count) queries")
+        case .agent: return String(localized: "Ran \(count) agents")
         case .askUserQuestion: return String(localized: "Asked \(count) questions")
-        case .other:           return String(localized: "Used \(count) tools")
+        case .other: return String(localized: "Used \(count) tools")
         }
     }
 
     /// Present-continuous aggregated phrase for the expanded-active group title.
     func activeCountPhrase(_ count: Int) -> String {
         switch self {
-        case .read:            return String(localized: "Reading \(count) files")
-        case .edit:            return String(localized: "Editing \(count) files")
-        case .write:           return String(localized: "Writing \(count) files")
-        case .grep:            return String(localized: "Searching \(count) patterns")
-        case .glob:            return String(localized: "Globbing \(count) patterns")
-        case .bash:            return String(localized: "Running \(count) commands")
-        case .webFetch:        return String(localized: "Fetching \(count) URLs")
-        case .webSearch:       return String(localized: "Searching \(count) queries")
-        case .agent:           return String(localized: "Running \(count) agents")
+        case .read: return String(localized: "Reading \(count) files")
+        case .edit: return String(localized: "Editing \(count) files")
+        case .write: return String(localized: "Writing \(count) files")
+        case .grep: return String(localized: "Searching \(count) patterns")
+        case .glob: return String(localized: "Globbing \(count) patterns")
+        case .bash: return String(localized: "Running \(count) commands")
+        case .webFetch: return String(localized: "Fetching \(count) URLs")
+        case .webSearch: return String(localized: "Searching \(count) queries")
+        case .agent: return String(localized: "Running \(count) agents")
         case .askUserQuestion: return String(localized: "Asking \(count) questions")
-        case .other:           return String(localized: "Using \(count) tools")
+        case .other: return String(localized: "Using \(count) tools")
         }
     }
 }
@@ -239,17 +241,17 @@ extension ToolUse {
     /// through to ``GroupableToolName/other``.
     var groupableKind: GroupableToolName {
         switch self {
-        case .Read:            return .read
-        case .Edit:            return .edit
-        case .Write:           return .write
-        case .Grep:            return .grep
-        case .Glob:            return .glob
-        case .Bash:            return .bash
-        case .WebFetch:        return .webFetch
-        case .WebSearch:       return .webSearch
-        case .Agent:           return .agent
+        case .Read: return .read
+        case .Edit: return .edit
+        case .Write: return .write
+        case .Grep: return .grep
+        case .Glob: return .glob
+        case .Bash: return .bash
+        case .WebFetch: return .webFetch
+        case .WebSearch: return .webSearch
+        case .Agent: return .agent
         case .AskUserQuestion: return .askUserQuestion
-        default:               return .other
+        default: return .other
         }
     }
 

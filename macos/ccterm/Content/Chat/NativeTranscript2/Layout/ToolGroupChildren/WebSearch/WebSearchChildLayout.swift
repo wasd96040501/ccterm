@@ -42,9 +42,10 @@ struct WebSearchChildLayout: @unchecked Sendable {
     ) -> WebSearchChildLayout {
         var specs: [TextCardSection.Spec] = []
         if !child.results.isEmpty {
-            specs.append(.init(
-                text: "",
-                attributed: buildAttributed(results: child.results)))
+            specs.append(
+                .init(
+                    text: "",
+                    attributed: buildAttributed(results: child.results)))
         }
         let (sections, height) = TextCardSection.build(
             specs: specs,
@@ -87,26 +88,38 @@ struct WebSearchChildLayout: @unchecked Sendable {
         let result = NSMutableAttributedString()
         for (index, hit) in results.enumerated() {
             if index > 0 {
-                result.append(NSAttributedString(string: "\n\n", attributes: [
-                    .font: bodyFont,
-                ]))
+                result.append(
+                    NSAttributedString(
+                        string: "\n\n",
+                        attributes: [
+                            .font: bodyFont
+                        ]))
             }
-            result.append(NSAttributedString(
-                string: hit.title, attributes: titleAttrs))
-            result.append(NSAttributedString(string: "\n", attributes: [
-                .font: bodyFont,
-            ]))
-            result.append(NSAttributedString(
-                string: hit.url, attributes: urlAttrs))
+            result.append(
+                NSAttributedString(
+                    string: hit.title, attributes: titleAttrs))
+            result.append(
+                NSAttributedString(
+                    string: "\n",
+                    attributes: [
+                        .font: bodyFont
+                    ]))
+            result.append(
+                NSAttributedString(
+                    string: hit.url, attributes: urlAttrs))
             if let snippet = hit.snippet?
                 .trimmingCharacters(in: .whitespacesAndNewlines),
                 !snippet.isEmpty
             {
-                result.append(NSAttributedString(string: "\n", attributes: [
-                    .font: bodyFont,
-                ]))
-                result.append(NSAttributedString(
-                    string: snippet, attributes: snippetAttrs))
+                result.append(
+                    NSAttributedString(
+                        string: "\n",
+                        attributes: [
+                            .font: bodyFont
+                        ]))
+                result.append(
+                    NSAttributedString(
+                        string: snippet, attributes: snippetAttrs))
             }
         }
         return result

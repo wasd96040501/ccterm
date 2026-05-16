@@ -24,7 +24,7 @@ actor SyntaxHighlightEngine {
         // both invoke this; only the first call does real work.
         guard tokenizeFn == nil else { return }
         guard let url = Bundle.main.url(forResource: "hljs-jscore", withExtension: "js"),
-              let source = try? String(contentsOf: url, encoding: .utf8)
+            let source = try? String(contentsOf: url, encoding: .utf8)
         else {
             NSLog("[SyntaxHighlightEngine] Failed to load hljs-jscore.js from bundle")
             return
@@ -87,9 +87,9 @@ actor SyntaxHighlightEngine {
 
         let args: [Any] = language != nil ? [code, language!] : [code, NSNull()]
         guard let result = fn.call(withArguments: args),
-              let jsonString = result.toString(),
-              let data = jsonString.data(using: .utf8),
-              let parsed = try? JSONSerialization.jsonObject(with: data) as? [[Any]]
+            let jsonString = result.toString(),
+            let data = jsonString.data(using: .utf8),
+            let parsed = try? JSONSerialization.jsonObject(with: data) as? [[Any]]
         else {
             return [SyntaxToken(text: code, scope: nil)]
         }
@@ -178,12 +178,12 @@ actor SyntaxHighlightEngine {
         if let batchFn = tokenizeBatchFn {
             let payload: [[Any]] = missPayload.map { [$0.0, $0.1 as Any? ?? NSNull()] }
             if let payloadData = try? JSONSerialization.data(withJSONObject: payload),
-               let payloadJSON = String(data: payloadData, encoding: .utf8),
-               let rv = batchFn.call(withArguments: [payloadJSON]),
-               let jsonString = rv.toString(),
-               let data = jsonString.data(using: .utf8),
-               let parsed = try? JSONSerialization.jsonObject(with: data) as? [[[Any]]],
-               parsed.count == missIndices.count
+                let payloadJSON = String(data: payloadData, encoding: .utf8),
+                let rv = batchFn.call(withArguments: [payloadJSON]),
+                let jsonString = rv.toString(),
+                let data = jsonString.data(using: .utf8),
+                let parsed = try? JSONSerialization.jsonObject(with: data) as? [[[Any]]],
+                parsed.count == missIndices.count
             {
                 for (offset, origIndex) in missIndices.enumerated() {
                     let tokens: [SyntaxToken] = parsed[offset].compactMap { pair in

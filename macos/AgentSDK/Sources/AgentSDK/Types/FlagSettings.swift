@@ -375,9 +375,11 @@ public struct FlagSettings: DictionarySerializable {
 
         // 插件 & Marketplace
         add("enabledPlugins", enabledPlugins.serialized { $0 })
-        add("extraKnownMarketplaces", extraKnownMarketplaces.serialized { dict in
-            dict.mapValues { $0.toDictionary() }
-        })
+        add(
+            "extraKnownMarketplaces",
+            extraKnownMarketplaces.serialized { dict in
+                dict.mapValues { $0.toDictionary() }
+            })
         add("strictKnownMarketplaces", strictKnownMarketplaces.serialized { $0 })
         add("blockedMarketplaces", blockedMarketplaces.serialized { $0 })
         add("pluginConfigs", pluginConfigs.serialized { $0 })

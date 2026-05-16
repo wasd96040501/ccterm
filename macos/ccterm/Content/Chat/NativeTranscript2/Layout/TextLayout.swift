@@ -143,7 +143,8 @@ struct TextLayout: @unchecked Sendable {
             for run in runs {
                 let attrs = CTRunGetAttributes(run) as NSDictionary
                 guard let linkRaw = attrs[linkKey],
-                      let url = parseLink(linkRaw) else { continue }
+                    let url = parseLink(linkRaw)
+                else { continue }
 
                 let stringRange = CTRunGetStringRange(run)
                 let xStart = CTLineGetOffsetForStringIndex(
@@ -185,7 +186,7 @@ struct TextLayout: @unchecked Sendable {
 
         if point.y < lineOrigins[0].y - lineMetrics[0].ascent { return 0 }
 
-        for i in 0 ..< lines.count {
+        for i in 0..<lines.count {
             let bottom = lineOrigins[i].y + lineMetrics[i].descent
             guard point.y <= bottom else { continue }
             let idx = CTLineGetStringIndexForPosition(
@@ -225,11 +226,12 @@ struct TextLayout: @unchecked Sendable {
             let baseline = lineOrigins[i].y
             let ascent = lineMetrics[i].ascent
             let descent = lineMetrics[i].descent
-            rects.append(CGRect(
-                x: xStart,
-                y: baseline - ascent,
-                width: max(0, xEnd - xStart),
-                height: ascent + descent))
+            rects.append(
+                CGRect(
+                    x: xStart,
+                    y: baseline - ascent,
+                    width: max(0, xEnd - xStart),
+                    height: ascent + descent))
         }
         return rects
     }
@@ -268,7 +270,8 @@ struct TextLayout: @unchecked Sendable {
                 guard hi > lo, hi <= self.attributed.length else { return "" }
                 return self.attributed
                     .attributedSubstring(
-                        from: NSRange(location: lo, length: hi - lo))
+                        from: NSRange(location: lo, length: hi - lo)
+                    )
                     .string
                     .replacingOccurrences(of: "\u{2028}", with: "\n")
             },

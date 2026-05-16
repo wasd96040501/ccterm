@@ -1,5 +1,5 @@
-import Foundation
 import AgentSDK
+import Foundation
 
 // MARK: - ReceiveMode
 
@@ -39,7 +39,8 @@ extension SessionHandle2 {
             case .append: actDesc = "append"
             case .skip: actDesc = "skip"
             }
-            appLog(.info, "SessionHandle2",
+            appLog(
+                .info, "SessionHandle2",
                 "[v2-send] receive sid=\(sessionId.prefix(8)) mode=live action=\(actDesc) status=\(status)")
         }
         // 每个 mutation helper 返回它产出的 MessagesChange(或 nil),让本
@@ -65,9 +66,9 @@ extension SessionHandle2 {
 
 // MARK: - Dispatch
 
-private extension SessionHandle2 {
+extension SessionHandle2 {
 
-    enum Action {
+    fileprivate enum Action {
         case merge(toolUseId: String, payload: ToolResultPayload)
         /// 本地 `.queued` entry 命中 CLI echo（按 uuid 匹配），切 `.confirmed` 且
         /// payload 从 `.localUser` 替换为 `.remote(echo)`。
@@ -76,7 +77,7 @@ private extension SessionHandle2 {
         case skip
     }
 
-    func action(for message: Message2) -> Action {
+    fileprivate func action(for message: Message2) -> Action {
         switch message {
         case .user(let u):
             if let r = u.toolResultBlock, let id = r.toolUseId {
@@ -97,10 +98,12 @@ private extension SessionHandle2 {
     /// 在 `messages` 里找 uuid 和该 user echo 一致、且仍 `.queued` 的 entry。
     /// CLI 通过 `--replay-user-messages` 原样回显我们发送时塞的 uuid，因此此处
     /// 按 entry.id ↔ echo.uuid 精确配对，不做文本启发式。
-    func matchQueuedEntry(for echo: Message2User) -> UUID? {
+    fileprivate func matchQueuedEntry(for echo: Message2User) -> UUID? {
         guard let raw = echo.uuid,
-              let echoId = UUID(uuidString: raw) else {
-            appLog(.info, "SessionHandle2",
+            let echoId = UUID(uuidString: raw)
+        else {
+            appLog(
+                .info, "SessionHandle2",
                 "[v2-send] matchQueued no-uuid echo.uuid=\(echo.uuid ?? "(nil)")")
             return nil
         }
@@ -111,11 +114,13 @@ private extension SessionHandle2 {
             // 列出所有 queued user entry id,看是否压根没有,或 uuid 对不上
             let queued = messages.compactMap { entry -> String? in
                 guard case .single(let s) = entry,
-                      case .localUser = s.payload,
-                      s.delivery == .queued else { return nil }
+                    case .localUser = s.payload,
+                    s.delivery == .queued
+                else { return nil }
                 return s.id.uuidString.prefix(8) + ""
             }
-            appLog(.warning, "SessionHandle2",
+            appLog(
+                .warning, "SessionHandle2",
                 "[v2-send] matchQueued MISS echoUuid=\(raw.prefix(8)) queued=\(queued)")
         }
         return hit
@@ -124,9 +129,9 @@ private extension SessionHandle2 {
 
 // MARK: - Timeline writes
 
-private extension SessionHandle2 {
+extension SessionHandle2 {
 
-    func appendToTimeline(_ message: Message2, mode: ReceiveMode) -> MessagesChange {
+    fileprivate func appendToTimeline(_ message: Message2, mode: ReceiveMode) -> MessagesChange {
         let single = SingleEntry(id: UUID(), payload: .remote(message), delivery: nil, toolResults: [:])
 
         // change 在两种情况下不同:
@@ -156,7 +161,7 @@ private extension SessionHandle2 {
     /// 返回被改动的 entry(`.single` 或 `.group`),由 caller 转成
     /// `MessagesChange.updated`;tool_use_id 找不到对应 entry → 返回 nil
     /// (老 CLI 偶发 tool_result 找不到锚点)。
-    func attachToolResult(_ payload: ToolResultPayload, to toolUseId: String) -> MessageEntry? {
+    fileprivate func attachToolResult(_ payload: ToolResultPayload, to toolUseId: String) -> MessageEntry? {
         for i in messages.indices.reversed() {
             switch messages[i] {
             case .single(var e):
@@ -180,7 +185,7 @@ private extension SessionHandle2 {
     /// `.remote(echo)`、delivery 切 `.confirmed`，并把 status 推进到 `.responding`
     /// （仅 live）。用本地 entry 继续展示，不重复 append。返回被改动的 entry,
     /// 给 caller 转成 `MessagesChange.updated`;id 不命中 / 非 single → nil。
-    func confirmQueuedEntry(id: UUID, echo: Message2, mode: ReceiveMode) -> MessageEntry? {
+    fileprivate func confirmQueuedEntry(id: UUID, echo: Message2, mode: ReceiveMode) -> MessageEntry? {
         guard let idx = messages.firstIndex(where: { $0.id == id }) else { return nil }
         guard case .single(var single) = messages[idx] else { return nil }
         single.payload = .remote(echo)
@@ -195,22 +200,25 @@ private extension SessionHandle2 {
 
 // MARK: - Effect application
 
-private extension SessionHandle2 {
+extension SessionHandle2 {
 
-    func noteUsage(_ usage: MessageUsage?) {
+    fileprivate func noteUsage(_ usage: MessageUsage?) {
         guard let usage else { return }
-        contextUsedTokens = (usage.inputTokens ?? 0)
+        contextUsedTokens =
+            (usage.inputTokens ?? 0)
             + (usage.cacheCreationInputTokens ?? 0)
             + (usage.cacheReadInputTokens ?? 0)
     }
 
-    func finishTurn(with result: Message2Result, mode: ReceiveMode) {
+    fileprivate func finishTurn(with result: Message2Result, mode: ReceiveMode) {
         if let window = result.contextWindow {
             contextWindowTokens = window
         }
         if mode == .live {
-            appLog(.info, "SessionHandle2",
-                "[v2-send] finishTurn sid=\(sessionId.prefix(8)) status-before=\(status) pendingTurnCount=\(pendingTurnCount)")
+            appLog(
+                .info, "SessionHandle2",
+                "[v2-send] finishTurn sid=\(sessionId.prefix(8)) status-before=\(status) pendingTurnCount=\(pendingTurnCount)"
+            )
             // turn 结束 -- 每条 .result 对应一条之前 send() 入口 +1 的 turn。
             // clamp 到 0,replay 模式 / 异常多发不会走负。
             pendingTurnCount = max(0, pendingTurnCount - 1)
@@ -220,7 +228,7 @@ private extension SessionHandle2 {
         }
     }
 
-    func adopt(_ info: Init, mode: ReceiveMode) {
+    fileprivate func adopt(_ info: Init, mode: ReceiveMode) {
         if let c = info.cwd { cwd = c }
         if let raw = info.permissionMode, let mapped = PermissionMode(rawValue: raw) {
             permissionMode = mapped
@@ -229,7 +237,8 @@ private extension SessionHandle2 {
             slashCommands = cmds.map { SlashCommand(name: $0, description: nil) }
         }
         if mode == .live {
-            appLog(.info, "SessionHandle2",
+            appLog(
+                .info, "SessionHandle2",
                 "[v2-send] adopt-init sid=\(sessionId.prefix(8)) status-before=\(status) cwd=\(info.cwd ?? "(nil)")")
         }
         if mode == .live, case .starting = status {
@@ -240,20 +249,20 @@ private extension SessionHandle2 {
 
 // MARK: - Message introspection
 
-private extension Message2User {
+extension Message2User {
 
     /// 本消息是否作为独立 entry 进 timeline。
     /// 剔除子 agent、synthetic、compact summary、transcript-only、空文本。
-    var isVisible: Bool {
+    fileprivate var isVisible: Bool {
         guard parentToolUseId == nil,
-              isSynthetic != true,
-              isCompactSummary != true,
-              isVisibleInTranscriptOnly != true
+            isSynthetic != true,
+            isCompactSummary != true,
+            isVisibleInTranscriptOnly != true
         else { return false }
         return hasVisibleText
     }
 
-    var hasVisibleText: Bool {
+    fileprivate var hasVisibleText: Bool {
         switch message?.content {
         case .string(let s)?:
             return !s.isEmpty
@@ -268,7 +277,7 @@ private extension Message2User {
     }
 
     /// 第一个 tool_result 块（通常每条 user 消息只带一个）。
-    var toolResultBlock: ItemToolResult? {
+    fileprivate var toolResultBlock: ItemToolResult? {
         guard case .array(let items) = message?.content else { return nil }
         for item in items {
             if case .toolResult(let r) = item { return r }
@@ -277,10 +286,10 @@ private extension Message2User {
     }
 }
 
-private extension Message2Assistant {
+extension Message2Assistant {
 
     /// 是否有可见内容（text 或 tool_use）。thinking-only / subagent 视为不可见。
-    var isVisible: Bool {
+    fileprivate var isVisible: Bool {
         guard parentToolUseId == nil, let blocks = message?.content else { return false }
         return blocks.contains { block in
             switch block {
@@ -292,14 +301,15 @@ private extension Message2Assistant {
     }
 }
 
-private extension Message2 {
+extension Message2 {
 
     /// 「可分组」：assistant 消息，其所有非空 content block 均为 tool_use（任意 kind）。
     /// 混合 text / thinking 仍走 `.single`，由 `AssistantMarkdownComponent` 渲染。
-    var isGroupableAssistant: Bool {
+    fileprivate var isGroupableAssistant: Bool {
         guard case .assistant(let a) = self,
-              let blocks = a.message?.content,
-              !blocks.isEmpty else { return false }
+            let blocks = a.message?.content,
+            !blocks.isEmpty
+        else { return false }
         for block in blocks {
             guard case .toolUse = block else { return false }
         }
@@ -307,10 +317,10 @@ private extension Message2 {
     }
 }
 
-private extension Message2Result {
+extension Message2Result {
 
     /// 从 modelUsage 取最大的 contextWindow。success / errorDuringExecution 共用。
-    var contextWindow: Int? {
+    fileprivate var contextWindow: Int? {
         let usage: [String: ModelUsageValue]?
         switch self {
         case .success(let s): usage = s.modelUsage

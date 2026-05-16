@@ -162,9 +162,10 @@ enum RowLayout: @unchecked Sendable {
         case .toolGroup(let l): links = l.links
         case .image, .thematicBreak, .userBubble: links = []
         }
-        hits.append(contentsOf: links.map {
-            InteractiveHit(rect: $0.rect, action: .openURL($0.url))
-        })
+        hits.append(
+            contentsOf: links.map {
+                InteractiveHit(rect: $0.rect, action: .openURL($0.url))
+            })
         switch self {
         case .userBubble(let l):
             if let r = l.chevronHitRect {
@@ -223,9 +224,10 @@ enum RowLayout: @unchecked Sendable {
     ) -> SubviewPlan {
         switch self {
         case .toolGroup(let l):
-            return l.subviewPlan(origin: origin,
-                                 hoveredAction: hoveredAction,
-                                 selection: selection)
+            return l.subviewPlan(
+                origin: origin,
+                hoveredAction: hoveredAction,
+                selection: selection)
         default:
             return .empty
         }

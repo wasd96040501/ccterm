@@ -136,60 +136,70 @@ enum ToolGroupChildLayout: @unchecked Sendable {
                 if case .lineMap(let m) = highlight { return m }
                 return nil
             }()
-            return .fileEdit(FileEditChildLayout.make(
-                child: c, lineMap: lineMap,
-                originX: originX, originY: originY,
-                maxWidth: maxWidth))
+            return .fileEdit(
+                FileEditChildLayout.make(
+                    child: c, lineMap: lineMap,
+                    originX: originX, originY: originY,
+                    maxWidth: maxWidth))
         case .read(let c):
-            return .read(ReadChildLayout.make(
-                child: c,
-                originX: originX, originY: originY,
-                maxWidth: maxWidth))
+            return .read(
+                ReadChildLayout.make(
+                    child: c,
+                    originX: originX, originY: originY,
+                    maxWidth: maxWidth))
         case .bash(let c):
             let tokens: [SyntaxToken]? = {
                 if case .tokens(let t) = highlight { return t }
                 return nil
             }()
-            return .bash(BashChildLayout.make(
-                child: c,
-                commandTokens: tokens,
-                originX: originX, originY: originY,
-                maxWidth: maxWidth))
+            return .bash(
+                BashChildLayout.make(
+                    child: c,
+                    commandTokens: tokens,
+                    originX: originX, originY: originY,
+                    maxWidth: maxWidth))
         case .grep(let c):
-            return .grep(GrepChildLayout.make(
-                child: c,
-                originX: originX, originY: originY,
-                maxWidth: maxWidth))
+            return .grep(
+                GrepChildLayout.make(
+                    child: c,
+                    originX: originX, originY: originY,
+                    maxWidth: maxWidth))
         case .glob(let c):
-            return .glob(GlobChildLayout.make(
-                child: c,
-                originX: originX, originY: originY,
-                maxWidth: maxWidth))
+            return .glob(
+                GlobChildLayout.make(
+                    child: c,
+                    originX: originX, originY: originY,
+                    maxWidth: maxWidth))
         case .webFetch(let c):
-            return .webFetch(WebFetchChildLayout.make(
-                child: c,
-                originX: originX, originY: originY,
-                maxWidth: maxWidth))
+            return .webFetch(
+                WebFetchChildLayout.make(
+                    child: c,
+                    originX: originX, originY: originY,
+                    maxWidth: maxWidth))
         case .webSearch(let c):
-            return .webSearch(WebSearchChildLayout.make(
-                child: c,
-                originX: originX, originY: originY,
-                maxWidth: maxWidth))
+            return .webSearch(
+                WebSearchChildLayout.make(
+                    child: c,
+                    originX: originX, originY: originY,
+                    maxWidth: maxWidth))
         case .askUserQuestion(let c):
-            return .askUserQuestion(AskUserQuestionChildLayout.make(
-                child: c,
-                originX: originX, originY: originY,
-                maxWidth: maxWidth))
+            return .askUserQuestion(
+                AskUserQuestionChildLayout.make(
+                    child: c,
+                    originX: originX, originY: originY,
+                    maxWidth: maxWidth))
         case .agent(let c):
-            return .agent(AgentChildLayout.make(
-                child: c,
-                originX: originX, originY: originY,
-                maxWidth: maxWidth))
+            return .agent(
+                AgentChildLayout.make(
+                    child: c,
+                    originX: originX, originY: originY,
+                    maxWidth: maxWidth))
         case .generic(let c):
-            return .generic(GenericChildLayout.make(
-                child: c,
-                originX: originX, originY: originY,
-                maxWidth: maxWidth))
+            return .generic(
+                GenericChildLayout.make(
+                    child: c,
+                    originX: originX, originY: originY,
+                    maxWidth: maxWidth))
         }
     }
 }

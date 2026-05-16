@@ -126,7 +126,9 @@ enum ANSIAttributedBuilder {
             case 2: s.dim = true
             case 3: s.italic = true
             case 4: s.underline = true
-            case 22: s.bold = false; s.dim = false
+            case 22:
+                s.bold = false
+                s.dim = false
             case 23: s.italic = false
             case 24: s.underline = false
             case 30...37: s.fg = standardColor(c - 30)
@@ -144,15 +146,16 @@ enum ANSIAttributedBuilder {
                     }
                     i += 2
                 } else if i + 1 < codes.count, codes[i + 1] == 2,
-                          i + 4 < codes.count
+                    i + 4 < codes.count
                 {
                     let r = max(0, min(255, codes[i + 2]))
                     let g = max(0, min(255, codes[i + 3]))
                     let b = max(0, min(255, codes[i + 4]))
-                    let color = NSColor(srgbRed: CGFloat(r) / 255,
-                                        green: CGFloat(g) / 255,
-                                        blue: CGFloat(b) / 255,
-                                        alpha: 1)
+                    let color = NSColor(
+                        srgbRed: CGFloat(r) / 255,
+                        green: CGFloat(g) / 255,
+                        blue: CGFloat(b) / 255,
+                        alpha: 1)
                     if isFg { s.fg = color } else { s.bg = color }
                     i += 4
                 }
@@ -197,17 +200,19 @@ enum ANSIAttributedBuilder {
             let r = levels[(n / 36) % 6]
             let g = levels[(n / 6) % 6]
             let b = levels[n % 6]
-            return NSColor(srgbRed: CGFloat(r) / 255,
-                           green: CGFloat(g) / 255,
-                           blue: CGFloat(b) / 255,
-                           alpha: 1)
+            return NSColor(
+                srgbRed: CGFloat(r) / 255,
+                green: CGFloat(g) / 255,
+                blue: CGFloat(b) / 255,
+                alpha: 1)
         }
         // 24 greyscale ramp (8, 18, 28, …, 238)
         let v = 8 + (idx - 232) * 10
-        return NSColor(srgbRed: CGFloat(v) / 255,
-                       green: CGFloat(v) / 255,
-                       blue: CGFloat(v) / 255,
-                       alpha: 1)
+        return NSColor(
+            srgbRed: CGFloat(v) / 255,
+            green: CGFloat(v) / 255,
+            blue: CGFloat(v) / 255,
+            alpha: 1)
     }
 
     private static func color(hex: UInt32) -> NSColor {

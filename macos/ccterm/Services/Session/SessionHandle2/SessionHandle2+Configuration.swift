@@ -1,5 +1,5 @@
-import Foundation
 import AgentSDK
+import Foundation
 
 // MARK: - Attached predicate
 

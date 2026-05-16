@@ -1,5 +1,5 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
 /// 可选择文本组件，使用 NSTextField + 自定义 cell 桥接，正确支持 lineLimit + 文本选择。
 ///
@@ -56,15 +56,21 @@ private final class TruncatingCell: NSTextFieldCell {
         return editor
     }
 
-    override func select(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText, delegate: Any?, start selStart: Int, length selLength: Int) {
+    override func select(
+        withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText, delegate: Any?, start selStart: Int,
+        length selLength: Int
+    ) {
         if let textView = textObj as? NSTextView {
             textView.textContainer?.maximumNumberOfLines = lineLimit
             textView.textContainer?.lineBreakMode = .byTruncatingTail
         }
-        super.select(withFrame: rect, in: controlView, editor: textObj, delegate: delegate, start: selStart, length: selLength)
+        super.select(
+            withFrame: rect, in: controlView, editor: textObj, delegate: delegate, start: selStart, length: selLength)
     }
 
-    override func edit(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText, delegate: Any?, event: NSEvent?) {
+    override func edit(
+        withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText, delegate: Any?, event: NSEvent?
+    ) {
         if let textView = textObj as? NSTextView {
             textView.textContainer?.maximumNumberOfLines = lineLimit
             textView.textContainer?.lineBreakMode = .byTruncatingTail

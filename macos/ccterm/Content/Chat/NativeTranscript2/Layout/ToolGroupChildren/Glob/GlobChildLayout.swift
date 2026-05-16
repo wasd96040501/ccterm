@@ -27,11 +27,12 @@ struct GlobChildLayout: @unchecked Sendable {
     ) -> GlobChildLayout {
         var specs: [TextCardSection.Spec] = []
         if !child.filenames.isEmpty || child.truncated {
-            specs.append(.init(
-                text: "",
-                attributed: buildAttributed(
-                    filenames: child.filenames,
-                    truncated: child.truncated)))
+            specs.append(
+                .init(
+                    text: "",
+                    attributed: buildAttributed(
+                        filenames: child.filenames,
+                        truncated: child.truncated)))
         }
         let (sections, height) = TextCardSection.build(
             specs: specs,
@@ -55,24 +56,31 @@ struct GlobChildLayout: @unchecked Sendable {
         if !filenames.isEmpty {
             let joined = filenames.joined(separator: "\n")
                 .trimmingTrailingWhitespace
-            result.append(NSAttributedString(string: joined, attributes: [
-                .font: bodyFont,
-                .foregroundColor: NSColor.labelColor,
-            ]))
+            result.append(
+                NSAttributedString(
+                    string: joined,
+                    attributes: [
+                        .font: bodyFont,
+                        .foregroundColor: NSColor.labelColor,
+                    ]))
         }
         if truncated {
             if result.length > 0 {
-                result.append(NSAttributedString(string: "\n", attributes: [
-                    .font: bodyFont,
-                ]))
+                result.append(
+                    NSAttributedString(
+                        string: "\n",
+                        attributes: [
+                            .font: bodyFont
+                        ]))
             }
             let trailerFont = NSFont.systemFont(ofSize: 11, weight: .regular)
-            result.append(NSAttributedString(
-                string: "… truncated",
-                attributes: [
-                    .font: trailerFont,
-                    .foregroundColor: NSColor.secondaryLabelColor,
-                ]))
+            result.append(
+                NSAttributedString(
+                    string: "… truncated",
+                    attributes: [
+                        .font: trailerFont,
+                        .foregroundColor: NSColor.secondaryLabelColor,
+                    ]))
         }
         return result
     }

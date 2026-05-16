@@ -1,5 +1,5 @@
-import Foundation
 import AgentSDK
+import Foundation
 
 /// Phase B (full history load) 完成后调用，把 Phase A 阶段因跨 tail 边界而
 /// 遗留的 unresolved tool_results 就地解决掉。
@@ -15,7 +15,8 @@ enum ToolResultReresolver {
         var index: [String: ToolUse] = [:]
         for m in messages {
             guard case .assistant(let a) = m,
-                  let content = a.message?.content else { continue }
+                let content = a.message?.content
+            else { continue }
             for item in content {
                 if case .toolUse(let tu) = item, let id = tu.id {
                     index[id] = tu
@@ -79,8 +80,9 @@ enum ToolResultReresolver {
         guard case .array(let items)? = parent.message?.content else { return false }
         for item in items {
             if case .toolResult(let result) = item,
-               let lookupKey = result.toolUseId,
-               let origin = index[lookupKey] {
+                let lookupKey = result.toolUseId,
+                let origin = index[lookupKey]
+            {
                 try? obj.resolve(from: origin)
                 parent.toolUseResult = .object(obj)
                 msg = .user(parent)

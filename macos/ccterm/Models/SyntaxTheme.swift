@@ -76,9 +76,9 @@ enum SyntaxTheme {
 
         case "hljs-title", "hljs-section":
             if let modifier,
-               modifier.hasPrefix("class_")
-                || modifier.hasPrefix("struct_")
-                || modifier.hasPrefix("enum_")
+                modifier.hasPrefix("class_")
+                    || modifier.hasPrefix("struct_")
+                    || modifier.hasPrefix("enum_")
             {
                 // `inherited__` — superclass / protocol conformance
                 // *reference*. Same purple as `hljs-type`, not the

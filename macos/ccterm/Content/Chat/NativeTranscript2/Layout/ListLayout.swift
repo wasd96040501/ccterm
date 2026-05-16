@@ -127,7 +127,8 @@ struct ListLayout: @unchecked Sendable {
                 ordinal: block.startIndex + idx)
         }
         let markerColumnWidth = preMarkers.compactMap { $0?.width }.max() ?? 0
-        let markerContentGap: CGFloat = markerColumnWidth > 0
+        let markerContentGap: CGFloat =
+            markerColumnWidth > 0
             ? BlockStyle.listMarkerContentGap
             : 0
         let contentOriginX = markerColumnWidth + markerContentGap
@@ -166,15 +167,16 @@ struct ListLayout: @unchecked Sendable {
                     let originInList = CGPoint(
                         x: contentOriginX, y: itemTopY + innerY)
                     if firstLineMidYInItem == nil,
-                       let mid = firstLineMidY(layout: layout)
+                        let mid = firstLineMidY(layout: layout)
                     {
                         firstLineMidYInItem = innerY + mid
                     }
                     for hit in layout.links {
-                        links.append(TextLayout.LinkHit(
-                            rect: hit.rect.offsetBy(
-                                dx: originInList.x, dy: originInList.y),
-                            url: hit.url))
+                        links.append(
+                            TextLayout.LinkHit(
+                                rect: hit.rect.offsetBy(
+                                    dx: originInList.x, dy: originInList.y),
+                                url: hit.url))
                     }
                     contents.append(.text(layout, originInList: originInList))
                     innerY += layout.totalHeight
@@ -186,7 +188,7 @@ struct ListLayout: @unchecked Sendable {
                     let originInList = CGPoint(
                         x: contentOriginX, y: itemTopY + innerY)
                     if firstLineMidYInItem == nil,
-                       let firstNested = nestedLayout.items.first
+                        let firstNested = nestedLayout.items.first
                     {
                         // Nested list's first marker is already aligned to
                         // the nested first content line — re-using its
@@ -195,10 +197,11 @@ struct ListLayout: @unchecked Sendable {
                         firstLineMidYInItem = innerY + firstNested.markerCenterY
                     }
                     for hit in nestedLayout.links {
-                        links.append(TextLayout.LinkHit(
-                            rect: hit.rect.offsetBy(
-                                dx: originInList.x, dy: originInList.y),
-                            url: hit.url))
+                        links.append(
+                            TextLayout.LinkHit(
+                                rect: hit.rect.offsetBy(
+                                    dx: originInList.x, dy: originInList.y),
+                                url: hit.url))
                     }
                     contents.append(.list(nestedLayout, originInList: originInList))
                     innerY += nestedLayout.totalHeight
@@ -218,13 +221,14 @@ struct ListLayout: @unchecked Sendable {
                 centerY = itemTopY
             }
 
-            laidItems.append(Item(
-                marker: marker,
-                markerCenterY: centerY,
-                markerRightX: markerColumnWidth,
-                topY: itemTopY,
-                height: innerY,
-                contents: contents))
+            laidItems.append(
+                Item(
+                    marker: marker,
+                    markerCenterY: centerY,
+                    markerRightX: markerColumnWidth,
+                    topY: itemTopY,
+                    height: innerY,
+                    contents: contents))
             y = itemTopY + innerY
         }
 
@@ -249,15 +253,17 @@ struct ListLayout: @unchecked Sendable {
             for content in item.contents {
                 switch content {
                 case .text(let layout, let origin):
-                    out.append(FlatParagraph(
-                        textLayout: layout, originInList: origin))
+                    out.append(
+                        FlatParagraph(
+                            textLayout: layout, originInList: origin))
                 case .list(let nested, let origin):
                     for p in nested.flatParagraphs {
-                        out.append(FlatParagraph(
-                            textLayout: p.textLayout,
-                            originInList: CGPoint(
-                                x: origin.x + p.originInList.x,
-                                y: origin.y + p.originInList.y)))
+                        out.append(
+                            FlatParagraph(
+                                textLayout: p.textLayout,
+                                originInList: CGPoint(
+                                    x: origin.x + p.originInList.x,
+                                    y: origin.y + p.originInList.y)))
                     }
                 }
             }
@@ -273,7 +279,7 @@ struct ListLayout: @unchecked Sendable {
     /// `midY = baseline + (descent - ascent) / 2`.
     nonisolated private static func firstLineMidY(layout: TextLayout) -> CGFloat? {
         guard let baseline = layout.lineOrigins.first?.y,
-              let metric = layout.lineMetrics.first
+            let metric = layout.lineMetrics.first
         else { return nil }
         return baseline + (metric.descent - metric.ascent) / 2
     }
@@ -286,16 +292,20 @@ struct ListLayout: @unchecked Sendable {
     ) -> Marker? {
         if let checked = item.checkbox {
             let size = BlockStyle.listCheckboxSize
-            let color = checked
+            let color =
+                checked
                 ? BlockStyle.listCheckboxCheckedColor
                 : BlockStyle.listCheckboxUncheckedColor
             return .checkbox(checked: checked, size: size, color: color)
         }
-        let attr: NSAttributedString = ordered
+        let attr: NSAttributedString =
+            ordered
             ? BlockStyle.listOrderedMarkerAttributed(ordinal)
             : BlockStyle.listBulletMarkerAttributed()
         let line = CTLineCreateWithAttributedString(attr as CFAttributedString)
-        var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
+        var ascent: CGFloat = 0
+        var descent: CGFloat = 0
+        var leading: CGFloat = 0
         _ = CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
         let width = ceil(attr.size().width)
         return .text(line: line, width: width, ascent: ascent, descent: descent)
@@ -313,7 +323,10 @@ struct ListLayout: @unchecked Sendable {
         var idx = flatParagraphs.count - 1
         for (i, p) in flatParagraphs.enumerated() {
             let bottomY = p.originInList.y + p.textLayout.totalHeight
-            if point.y < bottomY { idx = i; break }
+            if point.y < bottomY {
+                idx = i
+                break
+            }
         }
         let p = flatParagraphs[idx]
         let local = CGPoint(
@@ -349,7 +362,7 @@ struct ListLayout: @unchecked Sendable {
             // bubble.
             unitRange: { p in
                 guard case .listItem(let i, _) = p,
-                      i >= 0, i < self.flatParagraphs.count
+                    i >= 0, i < self.flatParagraphs.count
                 else { return SelectionRange(start: fullStart, end: fullEnd) }
                 let len = self.flatParagraphs[i].textLayout.length
                 return SelectionRange(
@@ -362,21 +375,21 @@ struct ListLayout: @unchecked Sendable {
             },
             rects: { a, b in
                 guard case .listItem(let p1, let ch1) = a,
-                      case .listItem(let p2, let ch2) = b
+                    case .listItem(let p2, let ch2) = b
                 else { return [] }
                 return self.listSelectionRects(
                     p1: p1, ch1: ch1, p2: p2, ch2: ch2)
             },
             string: { a, b in
                 guard case .listItem(let p1, let ch1) = a,
-                      case .listItem(let p2, let ch2) = b
+                    case .listItem(let p2, let ch2) = b
                 else { return "" }
                 return self.listSelectionString(
                     p1: p1, ch1: ch1, p2: p2, ch2: ch2)
             },
             wordBoundary: { p in
                 guard case .listItem(let i, let ch) = p,
-                      i >= 0, i < self.flatParagraphs.count
+                    i >= 0, i < self.flatParagraphs.count
                 else { return nil }
                 let attr = self.flatParagraphs[i].textLayout.attributed
                 guard attr.length > 0 else { return nil }
@@ -384,8 +397,9 @@ struct ListLayout: @unchecked Sendable {
                 let word = attr.doubleClick(at: clamped)
                 return SelectionRange(
                     start: .listItem(paragraph: i, char: word.location),
-                    end: .listItem(paragraph: i,
-                                   char: word.location + word.length))
+                    end: .listItem(
+                        paragraph: i,
+                        char: word.location + word.length))
             })
     }
 
@@ -414,30 +428,44 @@ struct ListLayout: @unchecked Sendable {
         let first = flatParagraphs[lo]
         let firstLen = first.textLayout.length
         if firstLen > loCh {
-            out.append(contentsOf: first.textLayout
-                .selectionRects(for: NSRange(
-                    location: loCh, length: firstLen - loCh))
-                .map { $0.offsetBy(dx: first.originInList.x,
-                                   dy: first.originInList.y) })
+            out.append(
+                contentsOf: first.textLayout
+                    .selectionRects(
+                        for: NSRange(
+                            location: loCh, length: firstLen - loCh)
+                    )
+                    .map {
+                        $0.offsetBy(
+                            dx: first.originInList.x,
+                            dy: first.originInList.y)
+                    })
         }
         if hi > lo + 1 {
-            for idx in (lo + 1) ..< hi {
+            for idx in (lo + 1)..<hi {
                 let p = flatParagraphs[idx]
                 let len = p.textLayout.length
                 guard len > 0 else { continue }
-                out.append(contentsOf: p.textLayout
-                    .selectionRects(for: NSRange(location: 0, length: len))
-                    .map { $0.offsetBy(dx: p.originInList.x,
-                                       dy: p.originInList.y) })
+                out.append(
+                    contentsOf: p.textLayout
+                        .selectionRects(for: NSRange(location: 0, length: len))
+                        .map {
+                            $0.offsetBy(
+                                dx: p.originInList.x,
+                                dy: p.originInList.y)
+                        })
             }
         }
         let last = flatParagraphs[hi]
         let safeHiCh = min(hiCh, last.textLayout.length)
         if safeHiCh > 0 {
-            out.append(contentsOf: last.textLayout
-                .selectionRects(for: NSRange(location: 0, length: safeHiCh))
-                .map { $0.offsetBy(dx: last.originInList.x,
-                                   dy: last.originInList.y) })
+            out.append(
+                contentsOf: last.textLayout
+                    .selectionRects(for: NSRange(location: 0, length: safeHiCh))
+                    .map {
+                        $0.offsetBy(
+                            dx: last.originInList.x,
+                            dy: last.originInList.y)
+                    })
         }
         return out
     }
@@ -457,9 +485,11 @@ struct ListLayout: @unchecked Sendable {
         if lo == hi {
             let attr = flatParagraphs[lo].textLayout.attributed
             guard hiCh > loCh, hiCh <= attr.length else { return "" }
-            return attr
+            return
+                attr
                 .attributedSubstring(
-                    from: NSRange(location: loCh, length: hiCh - loCh))
+                    from: NSRange(location: loCh, length: hiCh - loCh)
+                )
                 .string
                 .replacingOccurrences(of: "\u{2028}", with: "\n")
         }
@@ -467,28 +497,35 @@ struct ListLayout: @unchecked Sendable {
         var pieces: [String] = []
         let first = flatParagraphs[lo].textLayout.attributed
         if first.length > loCh {
-            pieces.append(first
-                .attributedSubstring(from: NSRange(
-                    location: loCh, length: first.length - loCh))
-                .string
-                .replacingOccurrences(of: "\u{2028}", with: "\n"))
+            pieces.append(
+                first
+                    .attributedSubstring(
+                        from: NSRange(
+                            location: loCh, length: first.length - loCh)
+                    )
+                    .string
+                    .replacingOccurrences(of: "\u{2028}", with: "\n"))
         }
         if hi > lo + 1 {
-            for idx in (lo + 1) ..< hi {
+            for idx in (lo + 1)..<hi {
                 let attr = flatParagraphs[idx].textLayout.attributed
                 guard attr.length > 0 else { continue }
-                pieces.append(attr.string
-                    .replacingOccurrences(of: "\u{2028}", with: "\n"))
+                pieces.append(
+                    attr.string
+                        .replacingOccurrences(of: "\u{2028}", with: "\n"))
             }
         }
         let last = flatParagraphs[hi].textLayout.attributed
         let safeHiCh = min(hiCh, last.length)
         if safeHiCh > 0 {
-            pieces.append(last
-                .attributedSubstring(from: NSRange(
-                    location: 0, length: safeHiCh))
-                .string
-                .replacingOccurrences(of: "\u{2028}", with: "\n"))
+            pieces.append(
+                last
+                    .attributedSubstring(
+                        from: NSRange(
+                            location: 0, length: safeHiCh)
+                    )
+                    .string
+                    .replacingOccurrences(of: "\u{2028}", with: "\n"))
         }
         return pieces.joined(separator: "\n")
     }
@@ -564,10 +601,11 @@ struct ListLayout: @unchecked Sendable {
         let box = rect.insetBy(dx: stroke / 2, dy: stroke / 2)
         ctx.setStrokeColor(color.cgColor)
         ctx.setLineWidth(stroke)
-        ctx.addPath(CGPath(
-            roundedRect: box,
-            cornerWidth: corner, cornerHeight: corner,
-            transform: nil))
+        ctx.addPath(
+            CGPath(
+                roundedRect: box,
+                cornerWidth: corner, cornerHeight: corner,
+                transform: nil))
         ctx.strokePath()
         if checked {
             // Check glyph: round caps / joins so end points read as

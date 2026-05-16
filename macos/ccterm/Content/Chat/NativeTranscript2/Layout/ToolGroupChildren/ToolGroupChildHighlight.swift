@@ -31,7 +31,7 @@ enum ToolGroupChildHighlight {
         case .bash(let c):
             return BashChildHighlight.plan(c)
         case .grep, .glob, .webFetch, .webSearch,
-             .askUserQuestion, .agent:
+            .askUserQuestion, .agent:
             // These bodies render plain text — no syntax highlight today.
             return nil
         case .read, .generic:

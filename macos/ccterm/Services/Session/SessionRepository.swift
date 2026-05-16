@@ -1,5 +1,5 @@
-import Foundation
 import CoreData
+import Foundation
 
 // MARK: - SessionExtraUpdate
 
@@ -95,7 +95,7 @@ final class CoreDataSessionRepository: SessionRepository {
     /// Workaround: macOS 26 SDK 的 `swift_task_deinitOnExecutorImpl` 在 isolated deinit 链中
     /// 命中 libmalloc pointer-freed-but-not-allocated 崩溃。显式 nonisolated deinit 跳过
     /// executor-hop 路径。详见 SessionHandle2.swift 的同类注释。
-    nonisolated deinit { }
+    nonisolated deinit {}
 
     // MARK: - Query
 
@@ -271,9 +271,10 @@ final class CoreDataSessionRepository: SessionRepository {
 
     private static func session(from entity: CDSessionRecord) -> SessionRecord? {
         guard let uuid = entity.uuid,
-              let sessionId = entity.sessionId,
-              let createdAt = entity.createdAt,
-              let lastActiveAt = entity.lastActiveAt else {
+            let sessionId = entity.sessionId,
+            let createdAt = entity.createdAt,
+            let lastActiveAt = entity.lastActiveAt
+        else {
             return nil
         }
         let status: SessionStatus
@@ -309,7 +310,8 @@ final class CoreDataSessionRepository: SessionRepository {
 
     private static func decodeExtra(_ json: String?) -> SessionExtra {
         guard let json, let data = json.data(using: .utf8),
-              let extra = try? JSONDecoder().decode(SessionExtra.self, from: data) else {
+            let extra = try? JSONDecoder().decode(SessionExtra.self, from: data)
+        else {
             return SessionExtra()
         }
         return extra

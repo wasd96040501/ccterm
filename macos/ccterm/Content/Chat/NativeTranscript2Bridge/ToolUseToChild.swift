@@ -15,9 +15,11 @@ enum ToolUseToChild {
     /// `activeLabel`,其他终态取 `label`。Bridge 自己不再用 `hasResult`
     /// 切单值;状态由独立的 `setToolStatus` 通道驱动,Bridge 只负责把
     /// 两个文案备齐。
-    static func make(toolUse: ToolUse,
-                     toolUseId: String,
-                     result: ToolResultPayload?) -> ToolGroupBlock.Child {
+    static func make(
+        toolUse: ToolUse,
+        toolUseId: String,
+        result: ToolResultPayload?
+    ) -> ToolGroupBlock.Child {
         let label = toolUse.completedFragment ?? toolUse.caseName
         let activeLabel = toolUse.activeFragment ?? toolUse.caseName
         let id = StableBlockID.derive("tool", toolUseId)
@@ -28,50 +30,54 @@ enum ToolUseToChild {
 
         switch toolUse {
         case .Read(let v):
-            return .read(ReadChild(
-                id: id,
-                label: label,
-                activeLabel: activeLabel,
-                filePath: v.input?.filePath ?? ""))
+            return .read(
+                ReadChild(
+                    id: id,
+                    label: label,
+                    activeLabel: activeLabel,
+                    filePath: v.input?.filePath ?? ""))
 
         case .Edit(let v):
-            return .fileEdit(FileEditChild(
-                id: id,
-                label: label,
-                activeLabel: activeLabel,
-                filePath: v.input?.filePath ?? "",
-                diff: DiffBlock(
+            return .fileEdit(
+                FileEditChild(
+                    id: id,
+                    label: label,
+                    activeLabel: activeLabel,
                     filePath: v.input?.filePath ?? "",
-                    oldString: v.input?.oldString,
-                    newString: v.input?.newString ?? "")))
+                    diff: DiffBlock(
+                        filePath: v.input?.filePath ?? "",
+                        oldString: v.input?.oldString,
+                        newString: v.input?.newString ?? "")))
 
         case .Write(let v):
             let originalFile: String? = {
                 if case .Write(let obj, _) = resultObject { return obj.originalFile }
                 return nil
             }()
-            return .fileEdit(FileEditChild(
-                id: id,
-                label: label,
-                activeLabel: activeLabel,
-                filePath: v.input?.filePath ?? "",
-                diff: DiffBlock(
+            return .fileEdit(
+                FileEditChild(
+                    id: id,
+                    label: label,
+                    activeLabel: activeLabel,
                     filePath: v.input?.filePath ?? "",
-                    oldString: originalFile,
-                    newString: v.input?.content ?? "")))
+                    diff: DiffBlock(
+                        filePath: v.input?.filePath ?? "",
+                        oldString: originalFile,
+                        newString: v.input?.content ?? "")))
 
         case .Bash(let v):
             let (stdout, stderr): (String?, String?) = {
                 if case .Bash(let obj, _) = resultObject { return (obj.stdout, obj.stderr) }
                 return (nil, nil)
             }()
-            return .bash(BashChild(
-                id: id,
-                label: label,
-                activeLabel: activeLabel,
-                command: v.input?.command ?? "",
-                stdout: stdout,
-                stderr: stderr))
+            return .bash(
+                BashChild(
+                    id: id,
+                    label: label,
+                    activeLabel: activeLabel,
+                    command: v.input?.command ?? "",
+                    stdout: stdout,
+                    stderr: stderr))
 
         case .Grep(let v):
             let (filenames, content): ([String], String?) = {
@@ -80,13 +86,14 @@ enum ToolUseToChild {
                 }
                 return ([], nil)
             }()
-            return .grep(GrepChild(
-                id: id,
-                label: label,
-                activeLabel: activeLabel,
-                pattern: v.input?.pattern ?? "",
-                filenames: filenames,
-                content: content))
+            return .grep(
+                GrepChild(
+                    id: id,
+                    label: label,
+                    activeLabel: activeLabel,
+                    pattern: v.input?.pattern ?? "",
+                    filenames: filenames,
+                    content: content))
 
         case .Glob(let v):
             let (filenames, truncated): ([String], Bool) = {
@@ -95,31 +102,33 @@ enum ToolUseToChild {
                 }
                 return ([], false)
             }()
-            return .glob(GlobChild(
-                id: id,
-                label: label,
-                activeLabel: activeLabel,
-                pattern: v.input?.pattern ?? "",
-                filenames: filenames,
-                truncated: truncated))
+            return .glob(
+                GlobChild(
+                    id: id,
+                    label: label,
+                    activeLabel: activeLabel,
+                    pattern: v.input?.pattern ?? "",
+                    filenames: filenames,
+                    truncated: truncated))
 
         case .WebFetch(let v):
             let (httpStatus, body): (Int?, String?) = {
                 if case .WebFetch(let obj, _) = resultObject { return (obj.code, obj.result) }
                 return (nil, nil)
             }()
-            return .webFetch(WebFetchChild(
-                id: id,
-                label: label,
-                activeLabel: activeLabel,
-                url: v.input?.url ?? "",
-                httpStatus: httpStatus,
-                result: body))
+            return .webFetch(
+                WebFetchChild(
+                    id: id,
+                    label: label,
+                    activeLabel: activeLabel,
+                    url: v.input?.url ?? "",
+                    httpStatus: httpStatus,
+                    result: body))
 
         case .WebSearch(let v):
             let results: [WebSearchChild.Result] = {
                 if case .WebSearch(let obj, _) = resultObject,
-                   let entries = obj.results
+                    let entries = obj.results
                 {
                     return entries.compactMap { entry -> WebSearchChild.Result? in
                         switch entry {
@@ -136,12 +145,13 @@ enum ToolUseToChild {
                 }
                 return []
             }()
-            return .webSearch(WebSearchChild(
-                id: id,
-                label: label,
-                activeLabel: activeLabel,
-                query: v.input?.query ?? v.input?.searchQuery ?? "",
-                results: results))
+            return .webSearch(
+                WebSearchChild(
+                    id: id,
+                    label: label,
+                    activeLabel: activeLabel,
+                    query: v.input?.query ?? v.input?.searchQuery ?? "",
+                    results: results))
 
         case .AskUserQuestion(let v):
             let answers: [String: String]? = {
@@ -154,11 +164,12 @@ enum ToolUseToChild {
                     question: key,
                     answer: answers?[key])
             }
-            return .askUserQuestion(AskUserQuestionChild(
-                id: id,
-                label: label,
-                activeLabel: activeLabel,
-                items: items))
+            return .askUserQuestion(
+                AskUserQuestionChild(
+                    id: id,
+                    label: label,
+                    activeLabel: activeLabel,
+                    items: items))
 
         case .Agent(let v):
             let (progress, output): ([String], String?) = {
@@ -169,17 +180,19 @@ enum ToolUseToChild {
                 }
                 return ([], nil)
             }()
-            return .agent(AgentChild(
-                id: id,
-                label: label,
-                activeLabel: activeLabel,
-                description: v.input?.description ?? v.input?.name ?? "Agent",
-                progress: progress,
-                output: output))
+            return .agent(
+                AgentChild(
+                    id: id,
+                    label: label,
+                    activeLabel: activeLabel,
+                    description: v.input?.description ?? v.input?.name ?? "Agent",
+                    progress: progress,
+                    output: output))
 
         default:
-            return .generic(GenericChild(
-                id: id, label: label, activeLabel: activeLabel))
+            return .generic(
+                GenericChild(
+                    id: id, label: label, activeLabel: activeLabel))
         }
     }
 }

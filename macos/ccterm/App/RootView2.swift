@@ -63,7 +63,7 @@ struct RootView2: View {
                     LinearGradient(
                         colors: [
                             Color(nsColor: .windowBackgroundColor).opacity(0),
-                            Color(nsColor: .windowBackgroundColor)
+                            Color(nsColor: .windowBackgroundColor),
                         ],
                         startPoint: .top,
                         endPoint: .bottom

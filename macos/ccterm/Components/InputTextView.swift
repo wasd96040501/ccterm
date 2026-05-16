@@ -1,5 +1,5 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
 /// NSViewRepresentable wrapping NSTextView for SwiftUI.
 /// Supports cursor tracking, key interception, IME, and auto-sizing height.
@@ -281,11 +281,11 @@ final class InputNSTextView: NSTextView {
         }
 
         // Home / End key handling
-        if event.keyCode == 115 { // Home
+        if event.keyCode == 115 {  // Home
             setSelectedRange(NSRange(location: 0, length: 0))
             return
         }
-        if event.keyCode == 119 { // End
+        if event.keyCode == 119 {  // End
             setSelectedRange(NSRange(location: string.count, length: 0))
             return
         }
@@ -351,8 +351,9 @@ final class InputTextScrollView: NSScrollView {
 
     func updateIntrinsicHeight() {
         guard let textView = documentView as? NSTextView,
-              let textLayoutManager = textView.textLayoutManager,
-              let textContentManager = textLayoutManager.textContentManager else { return }
+            let textLayoutManager = textView.textLayoutManager,
+            let textContentManager = textLayoutManager.textContentManager
+        else { return }
 
         let documentRange = textContentManager.documentRange
         textLayoutManager.ensureLayout(for: documentRange)

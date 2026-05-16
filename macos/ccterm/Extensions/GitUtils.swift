@@ -20,8 +20,11 @@ enum GitUtils {
             headPath = (gitPath as NSString).appendingPathComponent("HEAD")
         } else {
             // Worktree: .git is a file containing "gitdir: /path/to/.git/worktrees/xxx"
-            guard let content = try? String(contentsOfFile: gitPath, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
-                  content.hasPrefix("gitdir: ") else {
+            guard
+                let content = try? String(contentsOfFile: gitPath, encoding: .utf8).trimmingCharacters(
+                    in: .whitespacesAndNewlines),
+                content.hasPrefix("gitdir: ")
+            else {
                 return nil
             }
             let gitdir = String(content.dropFirst("gitdir: ".count))
@@ -29,14 +32,17 @@ enum GitUtils {
             headPath = (resolved as NSString).appendingPathComponent("HEAD")
         }
 
-        guard let head = try? String(contentsOfFile: headPath, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines) else {
+        guard
+            let head = try? String(contentsOfFile: headPath, encoding: .utf8).trimmingCharacters(
+                in: .whitespacesAndNewlines)
+        else {
             return nil
         }
 
         // "ref: refs/heads/main" → "main"
         let prefix = "ref: refs/heads/"
         guard head.hasPrefix(prefix) else {
-            return nil // Detached HEAD
+            return nil  // Detached HEAD
         }
         return String(head.dropFirst(prefix.count))
     }

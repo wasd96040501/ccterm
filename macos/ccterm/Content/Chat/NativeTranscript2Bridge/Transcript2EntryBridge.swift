@@ -103,8 +103,9 @@ final class Transcript2EntryBridge {
 
     private func pushSingleEntryStatuses(_ single: SingleEntry) {
         guard case .remote(let m) = single.payload,
-              case .assistant(let a) = m,
-              let blocks = a.message?.content else { return }
+            case .assistant(let a) = m,
+            let blocks = a.message?.content
+        else { return }
         for (idx, block) in blocks.enumerated() {
             guard case .toolUse(let tu) = block else { continue }
             let toolUseId = tu.id ?? "tu|\(single.id.uuidString)|\(idx)"
@@ -124,11 +125,13 @@ final class Transcript2EntryBridge {
         var anyRunning = false
         for (itemIdx, item) in group.items.enumerated() {
             guard case .remote(let m) = item.payload,
-                  case .assistant(let a) = m,
-                  let blocks = a.message?.content else { continue }
+                case .assistant(let a) = m,
+                let blocks = a.message?.content
+            else { continue }
             for (blockIdx, block) in blocks.enumerated() {
                 guard case .toolUse(let tu) = block else { continue }
-                let toolUseId = tu.id
+                let toolUseId =
+                    tu.id
                     ?? "tu|\(group.id.uuidString)|\(itemIdx)|\(blockIdx)"
                 let childId = StableBlockID.derive("tool", toolUseId)
                 let result = tu.id.flatMap { item.toolResults[$0] }

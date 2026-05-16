@@ -68,10 +68,11 @@ struct ChatHistoryView: View {
             let b = Transcript2EntryBridge(controller: controller)
             b.attach(to: h)
             bridge = b
-            appLog(.info, "ChatHistoryView",
+            appLog(
+                .info, "ChatHistoryView",
                 "[history] task-inject session=\(sessionId.prefix(8))… "
-                + "loadState=\(String(describing: h.historyLoadState)) "
-                + "msgCount=\(h.messages.count)")
+                    + "loadState=\(String(describing: h.historyLoadState)) "
+                    + "msgCount=\(h.messages.count)")
             h.loadHistory()
         }
     }

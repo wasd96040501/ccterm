@@ -27,8 +27,9 @@ struct BlockquoteLayout: @unchecked Sendable {
     var links: [TextLayout.LinkHit] {
         text.links.map { hit in
             TextLayout.LinkHit(
-                rect: hit.rect.offsetBy(dx: textOriginInLayout.x,
-                                        dy: textOriginInLayout.y),
+                rect: hit.rect.offsetBy(
+                    dx: textOriginInLayout.x,
+                    dy: textOriginInLayout.y),
                 url: hit.url)
         }
     }
@@ -98,8 +99,10 @@ struct BlockquoteLayout: @unchecked Sendable {
         ctx.restoreGState()
 
         // 2) Text — same color and styling as a regular paragraph.
-        text.draw(in: ctx, origin: CGPoint(
-            x: origin.x + textOriginInLayout.x,
-            y: origin.y + textOriginInLayout.y))
+        text.draw(
+            in: ctx,
+            origin: CGPoint(
+                x: origin.x + textOriginInLayout.x,
+                y: origin.y + textOriginInLayout.y))
     }
 }

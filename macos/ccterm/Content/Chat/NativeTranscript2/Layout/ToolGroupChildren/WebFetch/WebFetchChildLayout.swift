@@ -29,10 +29,12 @@ struct WebFetchChildLayout: @unchecked Sendable {
         if let result = child.result {
             let trimmed = result.trimmingTrailingWhitespace
             if !trimmed.isEmpty {
-                let attr = NSAttributedString(string: trimmed, attributes: [
-                    .font: BlockStyle.paragraphFont,
-                    .foregroundColor: NSColor.labelColor,
-                ])
+                let attr = NSAttributedString(
+                    string: trimmed,
+                    attributes: [
+                        .font: BlockStyle.paragraphFont,
+                        .foregroundColor: NSColor.labelColor,
+                    ])
                 specs.append(.init(text: "", attributed: attr))
             }
         }

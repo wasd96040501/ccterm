@@ -58,10 +58,12 @@ final class Transcript2SelectionCoordinator: NSObject {
     override init() {
         super.init()
         let nc = NotificationCenter.default
-        nc.addObserver(self, selector: #selector(windowKeyChanged(_:)),
-                       name: NSWindow.didBecomeKeyNotification, object: nil)
-        nc.addObserver(self, selector: #selector(windowKeyChanged(_:)),
-                       name: NSWindow.didResignKeyNotification, object: nil)
+        nc.addObserver(
+            self, selector: #selector(windowKeyChanged(_:)),
+            name: NSWindow.didBecomeKeyNotification, object: nil)
+        nc.addObserver(
+            self, selector: #selector(windowKeyChanged(_:)),
+            name: NSWindow.didResignKeyNotification, object: nil)
     }
 
     deinit {
@@ -127,9 +129,11 @@ final class Transcript2SelectionCoordinator: NSObject {
     ///
     /// `byWord` snaps endpoint-row positions to word boundaries via the
     /// adapter's `wordBoundary` closure. Middle rows are full-row regardless.
-    func updateSelection(from start: CGPoint, to current: CGPoint,
-                         in tableView: NSTableView,
-                         byWord: Bool = false) {
+    func updateSelection(
+        from start: CGPoint, to current: CGPoint,
+        in tableView: NSTableView,
+        byWord: Bool = false
+    ) {
         guard let tc = transcript, tableView.numberOfRows > 0 else { return }
 
         let startRow = resolvedRow(at: start, in: tableView)
@@ -139,13 +143,14 @@ final class Transcript2SelectionCoordinator: NSObject {
         let reversed = currentRow < startRow
 
         var next: [UUID: SelectionRange] = [:]
-        for row in lowRow ... highRow {
+        for row in lowRow...highRow {
             guard let block = tc.block(atRow: row),
-                  let adapter = tc.selectionAdapter(atRow: row)
+                let adapter = tc.selectionAdapter(atRow: row)
             else { continue }
 
             let rowRect = tableView.rect(ofRow: row)
-            let originX = rowRect.minX
+            let originX =
+                rowRect.minX
                 + BlockStyle.cellOriginX(forRowWidth: rowRect.width)
                 + BlockStyle.blockHorizontalPadding
             let originY = rowRect.minY + BlockStyle.blockPadding(for: block.kind).top
@@ -158,7 +163,8 @@ final class Transcript2SelectionCoordinator: NSObject {
             var a: LayoutPosition
             var b: LayoutPosition
             if lowRow == highRow {
-                a = posStart; b = posCurrent
+                a = posStart
+                b = posCurrent
             } else if row == lowRow {
                 // Top of multi-row sweep: anchor at the click point that
                 // landed in this row, cursor runs to layout end. Reverse
@@ -202,8 +208,8 @@ final class Transcript2SelectionCoordinator: NSObject {
         guard let tc = transcript else { return }
         let row = tableView.row(at: point)
         guard row >= 0,
-              let block = tc.block(atRow: row),
-              let adapter = tc.selectionAdapter(atRow: row)
+            let block = tc.block(atRow: row),
+            let adapter = tc.selectionAdapter(atRow: row)
         else { return }
 
         let rowRect = tableView.rect(ofRow: row)
@@ -230,8 +236,8 @@ final class Transcript2SelectionCoordinator: NSObject {
         guard let tc = transcript else { return }
         let row = tableView.row(at: point)
         guard row >= 0,
-              let block = tc.block(atRow: row),
-              let adapter = tc.selectionAdapter(atRow: row)
+            let block = tc.block(atRow: row),
+            let adapter = tc.selectionAdapter(atRow: row)
         else { return }
 
         let rowRect = tableView.rect(ofRow: row)
@@ -256,7 +262,7 @@ final class Transcript2SelectionCoordinator: NSObject {
         var pieces: [String] = []
         for id in tc.blockIds {
             guard let range = selections[id],
-                  let adapter = tc.selectionAdapter(forBlockId: id)
+                let adapter = tc.selectionAdapter(forBlockId: id)
             else { continue }
             let s = adapter.string(range.start, range.end)
             if !s.isEmpty { pieces.append(s) }
@@ -278,9 +284,9 @@ final class Transcript2SelectionCoordinator: NSObject {
 
     @objc private func windowKeyChanged(_ note: Notification) {
         guard !selections.isEmpty,
-              let table = transcript?.tableView,
-              let window = table.window,
-              note.object as? NSWindow === window
+            let table = transcript?.tableView,
+            let window = table.window,
+            note.object as? NSWindow === window
         else { return }
         for id in selections.keys {
             transcript?.markCellNeedsDisplay(blockId: id)

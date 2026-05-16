@@ -109,6 +109,19 @@ The full suite is slow (10–30s per test) and steals focus — never default to
 
 Full UI test infrastructure (mock CLI, in-memory session repo, scenario authoring, identifier conventions) is documented in [cctermUITests/CLAUDE.md](macos/cctermUITests/CLAUDE.md).
 
+## CI
+
+Two workflows run on every PR:
+
+- **`fmt.yml`** — `make fmt-check` (swift-format + xcstrings).
+- **`test.yml`** — `make build-for-testing` once, then unit + UI tests against the shared `derivedData`.
+
+### Build cache
+
+`test.yml` caches `macos/build/test-dd` (Xcode DerivedData) and `fmt.yml` caches the Homebrew `swift-format` bottle. The cache key is composed of `runner OS+arch + Xcode version + fzf submodule SHA + .github/cache-salt + source file hash`, with a `restore-keys` fallback that drops the source hash so a same-PR retry reuses the previous cache and only recompiles changed files.
+
+**If incremental builds go bad** (stale `.swiftmodule` causing link errors that don't reproduce on a `make clean` build locally): bump `.github/cache-salt` — change the contents (any edit; bumping the integer is fine) and commit. The next CI run misses the cache, builds from scratch, and seeds a fresh cache for everyone.
+
 ## Logging
 
 Use `appLog()` (`Services/Logging/AppLogger.swift`). Never `NSLog` or `print` directly.

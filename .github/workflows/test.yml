@@ -27,6 +27,34 @@ jobs:
           sw_vers
           go version
 
+      # Record toolchain fingerprint for the build cache key. We include the
+      # Xcode version (changes invalidate .swiftmodule ABI) and the fzf submodule
+      # SHA (changes invalidate the in-tree Go build phase output).
+      - name: Compute cache fingerprint
+        id: fp
+        run: |
+          XCODE=$(xcodebuild -version | head -n1 | awk '{print $2}')
+          FZF_SHA=$(git submodule status thirdparty/fzf | awk '{print $1}' | tr -d ' -+')
+          echo "xcode=$XCODE" >> "$GITHUB_OUTPUT"
+          echo "fzf=$FZF_SHA"  >> "$GITHUB_OUTPUT"
+
+      # Cache the shared DerivedData so Swift incremental compilation can reuse
+      # unchanged .swiftmodule / .o outputs across runs. Key composition:
+      #   - runner OS + arch          → CPU/SDK compatibility
+      #   - Xcode version             → toolchain ABI
+      #   - fzf submodule SHA         → Go build phase output
+      #   - .github/cache-salt        → manual escape hatch (bump to invalidate)
+      #   - source hash               → exact match for incremental no-op runs
+      # The restore-key drops the source hash so a same-PR retry restores the
+      # most recent compatible cache; Swift decides which files to rebuild.
+      - name: Cache DerivedData
+        uses: actions/cache@v4
+        with:
+          path: macos/build/test-dd
+          key: dd-${{ runner.os }}-${{ runner.arch }}-xc${{ steps.fp.outputs.xcode }}-fzf${{ steps.fp.outputs.fzf }}-salt${{ hashFiles('.github/cache-salt') }}-src${{ hashFiles('macos/**/*.swift', 'macos/ccterm.xcodeproj/project.pbxproj', 'macos/Config.xcconfig', 'macos/AgentSDK/Package.swift', 'macos/ccterm/Localizable.xcstrings') }}
+          restore-keys: |
+            dd-${{ runner.os }}-${{ runner.arch }}-xc${{ steps.fp.outputs.xcode }}-fzf${{ steps.fp.outputs.fzf }}-salt${{ hashFiles('.github/cache-salt') }}-
+
       # One build for both test targets — `build-for-testing` populates the
       # derivedData that the two `test-without-building` steps below share.
       - name: Build for testing

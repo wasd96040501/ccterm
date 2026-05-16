@@ -10,7 +10,22 @@ jobs:
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
+
+      # Cache the Homebrew swift-format bottle. On cache hit we skip `brew install`
+      # entirely; bumping .github/cache-salt invalidates if the formula gets stuck
+      # at a stale version.
+      - name: Cache swift-format
+        id: cache-sf
+        uses: actions/cache@v4
+        with:
+          path: |
+            /opt/homebrew/bin/swift-format
+            /opt/homebrew/Cellar/swift-format
+          key: swift-format-${{ runner.os }}-${{ runner.arch }}-salt${{ hashFiles('.github/cache-salt') }}
+
       - name: Install swift-format
+        if: steps.cache-sf.outputs.cache-hit != 'true'
         run: brew install swift-format
+
       - name: Check formatting and repo hygiene
         run: make fmt-check

@@ -146,35 +146,27 @@ final class InputBar2AttachImageUITests: XCTestCase {
             panel.waitForExistence(timeout: 10),
             "NSOpenPanel window 'open-panel' should appear after selecting the Image menu item")
 
-        // ⌘⇧G opens the "Go to Folder" prompt. The container shape
-        // (sheet vs popover vs window) and the path input element type
-        // (comboBox vs textField vs searchField) both vary across
-        // macOS versions, so probe and dump the live tree on failure.
+        // ⌘⇧G opens the "Go to Folder" prompt. On macOS 26 it surfaces
+        // as a sheet on the open-panel window, with a single textField
+        // for the path (not a comboBox as older recipes suggest).
+        // Discovered via probe on the CI runner.
         app.typeKey("g", modifierFlags: [.command, .shift])
-        Thread.sleep(forTimeInterval: 1)
 
-        let pathField = panel.descendants(matching: .comboBox).firstMatch
-        if !pathField.waitForExistence(timeout: 4) {
-            let probe =
-                "panel.comboBoxes=\(panel.descendants(matching: .comboBox).count) "
-                + "panel.textFields=\(panel.descendants(matching: .textField).count) "
-                + "panel.searchFields=\(panel.descendants(matching: .searchField).count) "
-                + "panel.popovers=\(panel.descendants(matching: .popover).count) "
-                + "panel.sheets=\(panel.sheets.count) "
-                + "app.popovers=\(app.popovers.count) "
-                + "app.sheets=\(app.sheets.count) "
-                + "app.windows=\(app.windows.count)"
-            XCTFail(
-                "Go to Folder path input not found in panel. "
-                    + "Probe: \(probe)\n\nFull a11y tree:\n\(app.debugDescription)")
-            return
-        }
+        let goSheet = panel.sheets.firstMatch
+        XCTAssertTrue(
+            goSheet.waitForExistence(timeout: 5),
+            "Go to Folder sheet should appear on the panel after ⌘⇧G")
+
+        let pathField = goSheet.textFields.firstMatch
+        XCTAssertTrue(
+            pathField.waitForExistence(timeout: 5),
+            "Go to Folder sheet should expose a single path textField")
         pathField.click()
         pathField.typeText(testImagePath)
 
         // The sheet's primary action is "Go"; some macOS versions also
         // accept Return. Try the button first, fall back to Return.
-        let goButton = panel.descendants(matching: .button)["Go"]
+        let goButton = goSheet.buttons["Go"]
         if goButton.exists {
             goButton.click()
         } else {

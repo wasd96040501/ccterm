@@ -266,16 +266,16 @@ XCUITest does not surface `.accessibilityIdentifier` placed on the body of a `Bu
 let panel = app.windows["open-panel"]
 XCTAssertTrue(panel.waitForExistence(timeout: 10))
 
-// "Go to Folder" — container shape (sheet / popover / window) varies
-// across macOS versions, so query the combobox as a descendant of the
-// panel rather than through a fixed container type.
+// "Go to Folder" is a sheet on the panel window, with a single
+// textField for the path (not a comboBox as older recipes suggest).
 app.typeKey("g", modifierFlags: [.command, .shift])
+let goSheet = panel.sheets.firstMatch
+XCTAssertTrue(goSheet.waitForExistence(timeout: 5))
 
-let pathField = panel.descendants(matching: .comboBox).firstMatch
-XCTAssertTrue(pathField.waitForExistence(timeout: 5))
+let pathField = goSheet.textFields.firstMatch
 pathField.click()
 pathField.typeText("/tmp/my-test-file.png")
-panel.descendants(matching: .button)["Go"].click()
+goSheet.buttons["Go"].click()
 
 panel.buttons["Open"].click()
 ```

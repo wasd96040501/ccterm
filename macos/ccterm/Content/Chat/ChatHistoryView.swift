@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Maps the two-phase `historyLoadState` to a view branch. Pure value, testable.
@@ -46,6 +47,14 @@ struct ChatHistoryView: View {
     /// ChatHistoryView is `.id(sessionId)`-rebuilt; users coming back
     /// to a session start with the bar hidden.
     @State private var isSearchVisible: Bool = false
+    /// Local NSEvent monitor token for ⌘F. SwiftUI's `keyboardShortcut`
+    /// on a hidden / zero-frame `Button` is unreliable across macOS
+    /// versions and XCUITest harnesses — the shortcut isn't delivered
+    /// when an `NSTextView` (input bar) holds first responder. A
+    /// local key-down monitor intercepts the event before the
+    /// responder chain has a chance to swallow it. Stored as `Any?`
+    /// because `addLocalMonitorForEvents` returns an opaque token.
+    @State private var commandFMonitor: Any?
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -66,18 +75,6 @@ struct ChatHistoryView: View {
                 }
             }
 
-            // Hidden ⌘F trigger — a SwiftUI `Button` is the only
-            // place `keyboardShortcut` actually delivers events to.
-            // 0-opacity + 0-frame so the chrome stays invisible; the
-            // button only exists for its shortcut binding.
-            Button("") {
-                isSearchVisible.toggle()
-            }
-            .keyboardShortcut("f", modifiers: .command)
-            .opacity(0)
-            .frame(width: 0, height: 0)
-            .accessibilityIdentifier("ChatHistory.SearchShortcut")
-
             if isSearchVisible {
                 ChatSearchBarView(
                     controller: controller,
@@ -90,6 +87,12 @@ struct ChatHistoryView: View {
             }
         }
         .animation(.easeInOut(duration: 0.15), value: isSearchVisible)
+        .onAppear {
+            installCommandFMonitor()
+        }
+        .onDisappear {
+            removeCommandFMonitor()
+        }
         .task(id: sessionId) {
             // Use `prepareDraft` so a draft session (no record yet) still gets a
             // handle and mounts `NativeTranscript2View` — this keeps the NSView
@@ -109,6 +112,32 @@ struct ChatHistoryView: View {
                     + "loadState=\(String(describing: h.historyLoadState)) "
                     + "msgCount=\(h.messages.count)")
             h.loadHistory()
+        }
+    }
+
+    private func installCommandFMonitor() {
+        guard commandFMonitor == nil else { return }
+        commandFMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // `deviceIndependentFlagsMask` strips function / numpad bits
+            // so a stray modifier on the laptop keyboard doesn't break
+            // the match. We compare against `.command` only because we
+            // want plain ⌘F — adding shift or option should fall
+            // through to whatever else might want it.
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if flags == .command,
+                event.charactersIgnoringModifiers?.lowercased() == "f"
+            {
+                isSearchVisible.toggle()
+                return nil
+            }
+            return event
+        }
+    }
+
+    private func removeCommandFMonitor() {
+        if let m = commandFMonitor {
+            NSEvent.removeMonitor(m)
+            commandFMonitor = nil
         }
     }
 }

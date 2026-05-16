@@ -167,4 +167,10 @@ Follow the Swift API Design Guidelines, plus: suffix `View` / `Service` / `Deleg
 - **PR titles and bodies are English.**
 - **Worktrees**: when working inside a git worktree, default to reading and writing files under the worktree path. Don't touch the main checkout unless asked.
 - **Inline scripts**: any ad-hoc Bash / Python / JavaScript longer than 5 lines must be written to a file first (project root or `/tmp`, named like `tmp_analyze.py`), executed, and deleted. No long heredocs on the command line.
+- **Debug / scratch downloads always go to `/tmp`, never the repo.** Tools that default to the current working directory will dump into the worktree and get swept into your next `git add -A`. Common offenders + the explicit flag to set:
+  - `gh run download <run> --dir /tmp/<name>` (otherwise dumps `<artifact-name>/` into cwd — xcresult bundles are ~2000 binary files)
+  - `curl -o /tmp/<file> …` (don't `curl` without `-o`)
+  - `xcrun xcresulttool export … --output-path /tmp/<dir>`
+
+  If a one-off artifact does land in the worktree, `rm -rf` it before staging — never let `git add -A` decide. As a safety net, `/tmp` style scratch dirs (e.g. `xcresult/`, `tmp_*/`) belong in `.gitignore`.
 - **Waiting for a PR**: run `scripts/wait-for-pr.sh <pr#>` with `run_in_background: true`. It blocks until a terminal state (`READY` / `CHECKS_FAILED` / `CONFLICT` / `REVIEW_CHANGES_REQUESTED` / `MERGED` / `CLOSED` / `TIMEOUT` / `NO_CHECKS`) and prints a one-line summary + JSON. Never foreground-poll `gh pr checks` / `gh pr view` in a sleep loop.

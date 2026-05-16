@@ -30,7 +30,7 @@ Detailed conventions live next to the code they govern. When you touch one of th
 | Chat UI assembly (RootView2 / Sidebar / ChatHistory / InputBar / pill) | [Content/Chat/CLAUDE.md](macos/ccterm/Content/Chat/CLAUDE.md) |
 | `SessionHandle2` runtime, render-side comms, mutation rules | [Services/Session/CLAUDE.md](macos/ccterm/Services/Session/CLAUDE.md) |
 | Native transcript internals (layouts, diff, tool rendering) | [Content/Chat/NativeTranscript2/CLAUDE.md](macos/ccterm/Content/Chat/NativeTranscript2/CLAUDE.md) |
-| UI test infrastructure and writing conventions | [cctermUITests/CLAUDE.md](macos/cctermUITests/CLAUDE.md) |
+| Unit test conventions (parallel safety, in-memory fixtures) | [cctermTests/CLAUDE.md](macos/cctermTests/CLAUDE.md) |
 
 ## Directory layout
 
@@ -93,93 +93,43 @@ make fmt         # Format code (xcstrings, ...)
 
 ## Tests
 
-Two targets, one decision rule: **if the question involves a click, a key
-press, a window, or a focus state → UI test; otherwise → unit test.**
+**Unit tests only.** There is one test target — `cctermTests` — for
+pure-logic tests (bridge dispatch, history parsing, block builder,
+session-handle state transitions). Conventions and the parallel-safety
+rules live in [cctermTests/CLAUDE.md](macos/cctermTests/CLAUDE.md).
 
-| Target | Kind | Doc |
-|---|---|---|
-| `cctermTests` | Pure-logic unit tests (bridge dispatch, history parsing, block builder, handle state machine). Safe to run locally. | [cctermTests/CLAUDE.md](macos/cctermTests/CLAUDE.md) |
-| `cctermUITests` | End-to-end XCUITest. Takes focus, drives mouse + keyboard. Run on CI, not locally. | [cctermUITests/CLAUDE.md](macos/cctermUITests/CLAUDE.md) |
-
-UI tests **run on CI, not locally, by default** — they take focus on the
-foreground app and drive keyboard + mouse, which is disruptive. Pushing to
-any PR branch triggers `.github/workflows/test.yml`, which runs both
-targets. Logs and `xcresult` artifacts land on the Actions page.
-
-### Dev-test loop (preferred for iteration)
-
-Don't burn the full PR pipeline (~3–4 min) to validate one test. Instead:
-
-1. Push the branch.
-2. Trigger the debug workflow with the smallest filter that covers your
-   change (comma-separated; mix unit and UI freely):
-
-   ```bash
-   gh workflow run test-debug.yml --ref <branch> \
-     -f filter=cctermUITests/InputBar2StopButtonUITests/testStopButtonCancelsRunningState
-
-   gh workflow run test-debug.yml --ref <branch> \
-     -f filter=cctermUITests/FooUITests,cctermTests/BarTests
-   ```
-
-3. Wait for completion in the background:
-
-   ```bash
-   scripts/wait-for-workflow.sh --workflow test-debug.yml
-   ```
-
-   (Run via `run_in_background: true`. Returns terminal state + JSON.
-   See `scripts/wait-for-workflow.sh` for env knobs and exit codes.)
-
-4. Iterate until green, then open the PR — `test.yml` runs the full suite
-   as the merge gate.
-
-5. **If the merge-gate run fails**, do not iterate on the PR pipeline.
-   Push the fix and re-trigger `test-debug.yml` with the failing tests
-   in `filter`. The debug workflow shares the same DerivedData cache as
-   `test.yml`, so the first debug run after a PR run is a near-no-op
-   build.
-
-### Local reproduction (last resort — UI tests steal focus)
-
-Only for debugging the test itself (e.g. AX tree inspection) when the CI
-debug loop above isn't giving you enough signal. `make test-all` should
-basically never run locally — that's what `test.yml` is for.
-
-```bash
-make test FILTER=InputBar2StopButtonUITests/testStopButtonCancelsRunningState   # one method
-make test FILTER=InputBar2StopButtonUITests                                     # one class
-make test-all                                                                   # full suite (slow; debugging only)
-```
-
-Local commands (unit tests, do not steal focus):
+> **No UI tests, by design.** We previously maintained a `cctermUITests`
+> XCUITest target. It was removed because XCUITest on macOS proved too
+> flaky and high-friction to be a useful merge gate: AX semantics shift
+> across OS / Xcode versions, the runner steals focus locally, and
+> writing / debugging a single test repeatedly cost more than the
+> regressions it caught. **There is no current plan to bring it back.**
+> Cover anything that requires a click / keystroke / window / focus
+> state by exercising the underlying handle, bridge, or controller
+> directly from a unit test; visual regressions are caught in review
+> and by running the app.
 
 ```bash
 make test-unit                                                  # full unit suite, parallel by class
 make test-unit FILTER=MessageEntryBlockBuilderTests             # one class
+make test-unit FILTER=MessageEntryBlockBuilderTests/testAssistantTextProducesParagraph
 ```
 
-UI test infrastructure (mock CLI, in-memory session repo, scenario
-authoring, accessibility-tree conventions, hard "no test tricks in
-production code" rules) is documented in
-[cctermUITests/CLAUDE.md](macos/cctermUITests/CLAUDE.md). **Read that
-before touching production code under test mode** — the rules on what
-can vs. can't sit behind `#if DEBUG` live there.
+Unit tests do not steal focus and are safe to run locally during normal
+development. Pushing to any PR branch also triggers
+`.github/workflows/test.yml`, which runs `make test-unit` as the merge
+gate; `xcresult` artifacts upload on failure.
 
 ## CI
 
 Two workflows run on every PR:
 
 - **`fmt.yml`** — `make fmt-check` (swift-format + xcstrings).
-- **`test.yml`** — `make build-for-testing` once, then unit + UI tests against the shared `derivedData`. This is the merge gate.
-
-One workflow is manual-only:
-
-- **`test-debug.yml`** — `workflow_dispatch` only. Takes a `filter` input (comma-separated `<Target>/<Class>[/method]` IDs) and runs that subset against the same DerivedData cache `test.yml` uses. Use for iteration; see the dev-test loop above.
+- **`test.yml`** — `make test-unit`. This is the merge gate.
 
 ### Build cache
 
-`test.yml` caches `macos/build/test-dd` (Xcode DerivedData) and `fmt.yml` caches the Homebrew `swift-format` bottle. The cache key is composed of `runner OS+arch + Xcode version + fzf submodule SHA + .github/cache-salt + source file hash`, with a `restore-keys` fallback that drops the source hash so a same-PR retry reuses the previous cache and only recompiles changed files. `test-debug.yml` uses the same key so debug runs ride the PR cache.
+`test.yml` caches `macos/build/test-dd` (Xcode DerivedData) and `fmt.yml` caches the Homebrew `swift-format` bottle. The cache key is composed of `runner OS+arch + Xcode version + fzf submodule SHA + .github/cache-salt + source file hash`, with a `restore-keys` fallback that drops the source hash so a same-PR retry reuses the previous cache and only recompiles changed files.
 
 **If incremental builds go bad** (stale `.swiftmodule` causing link errors that don't reproduce on a `make clean` build locally): bump `.github/cache-salt` — change the contents (any edit; bumping the integer is fine) and commit. The next CI run misses the cache, builds from scratch, and seeds a fresh cache for everyone.
 
@@ -248,9 +198,7 @@ Follow the Swift API Design Guidelines, plus: suffix `View` / `Service` / `Deleg
 
   If a one-off artifact does land in the worktree, `rm -rf` it before staging — never let `git add -A` decide. As a safety net, `/tmp` style scratch dirs (e.g. `xcresult/`, `tmp_*/`) belong in `.gitignore`.
 - **Waiting for a PR**: run `scripts/wait-for-pr.sh <pr#>` with `run_in_background: true`. It blocks until a terminal state (`READY` / `CHECKS_FAILED` / `CONFLICT` / `REVIEW_CHANGES_REQUESTED` / `MERGED` / `CLOSED` / `TIMEOUT` / `NO_CHECKS`) and prints a one-line summary + JSON. Never foreground-poll `gh pr checks` / `gh pr view` in a sleep loop.
-- **Waiting for a workflow_dispatch run**: run `scripts/wait-for-workflow.sh --workflow <file.yml>` (or pass an explicit run ID) with `run_in_background: true`. Returns `SUCCESS` / `FAILURE` / `TIMEOUT` / `NOT_FOUND` + JSON. Used by the dev-test loop above.
 
 ## Engineering principles
 
-- **Never compromise production code to make CI pass.** If a test can't reach a real production control, the fix is in the **test**, not the product. Forbidden patterns: swapping a `Menu` for a `Popover` so XCUI can click it, adding hidden "test-only" menu items, gating a real behavior on an env var to bypass an OS-level dialog. Treat any test-only branch in user-visible production code as a code smell — first try harder on the test side (web search for working XCUITest patterns, drive `NSOpenPanel` via `app.dialogs`, etc.). Only when the real-UI approach is genuinely impossible — and you've documented why — may you add an isolated DEBUG-only injection point in a `+TestSupport.swift` file.
-- **When stuck on UI test plumbing, search the web first.** XCUITest accessibility semantics shift across macOS / Xcode versions; what worked on macOS 14 may not work on macOS 26. Don't iterate by intuition — find a confirmed working pattern (Apple developer forums, Swift Forums, Stack Overflow) and link it in the test file's comments. New working patterns belong in [`macos/cctermUITests/CLAUDE.md`](macos/cctermUITests/CLAUDE.md) so the next person doesn't redo the search.
+- **Never compromise production code to make tests pass.** If a test can't reach a real production control, the fix is in the **test**, not the product. Forbidden patterns: gating real behavior on an env var to bypass logic, exposing internal state through `forceXxxForTest()` methods, widening access purely for a test hook. The right answer is to drive the public surface — call the handle method, fire the bridge event, feed the controller — and assert on the observable result.

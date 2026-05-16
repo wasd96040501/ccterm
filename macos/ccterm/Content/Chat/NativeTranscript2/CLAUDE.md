@@ -378,9 +378,7 @@ lands in the window toolbar's trailing slot; there are no prev / counter
 `KeyPress.modifiers`). Always visible; no open / close cycle. ⌘F (via
 `AppCommands` → `TranscriptSearchBus.requestFocus()`) flips the
 `.searchFocused`-bound `@FocusState` and hands keyboard focus to the
-field without changing visibility. XCUITest reaches the field as
-`app.searchFields.firstMatch` (it surfaces as an `XCUIElement` of type
-`searchField`, not `textField`).
+field without changing visibility.
 
 The transcript itself runs flush to the window's top edge while the
 search field sits inside the toolbar band. That requires three modifiers
@@ -390,9 +388,6 @@ acting together: `.windowStyle(.hiddenTitleBar)` (enables
 title-bar band rather than stacking under it — the default `.expanded`
 style adds ~52pt), and `.toolbarBackground(.hidden, for: .windowToolbar)`
 (keeps the toolbar material from painting a band over the transcript).
-`ChatHistoryTopFadeScrimUITests.testTranscriptFlushToWindowTop` guards
-the combined invariant by comparing `scrim.frame.minY` to
-`window.frame.minY`.
 
 ### Data flow
 

@@ -121,6 +121,17 @@ struct ToolGroupLayout: @unchecked Sendable {
             },
             wordBoundary: { p in
                 Self.region(for: p, in: regions)?.wordBoundary(p)
+            },
+            searchableRegions: {
+                // One SearchableRegion per selectable Region. Folded
+                // children are absent from `regions` (their body is nil
+                // at layout-build time), so their content is NOT in the
+                // initial scan — `Coordinator.expandForSearchHit` covers
+                // the inverse case where a user folds a child *after*
+                // searching: the stale hit's range still encodes the
+                // childIndex, nav re-expands the child, and the new
+                // layout's region picks the highlight back up.
+                regions.compactMap { $0.searchable }
             })
     }
 
@@ -137,6 +148,12 @@ struct ToolGroupLayout: @unchecked Sendable {
         let rects: (LayoutPosition, LayoutPosition) -> [CGRect]
         let string: (LayoutPosition, LayoutPosition) -> String
         let wordBoundary: (LayoutPosition) -> SelectionRange?
+        /// Optional search band exposed via `SelectionAdapter.searchableRegions`.
+        /// `nil` when this region has no searchable text (e.g. an empty
+        /// diff or zero-length text card). The region's char offsets are
+        /// the same UTF-16 space used by `rects` / `string`, so the
+        /// search-range == selection-range invariant holds.
+        let searchable: SearchableRegion?
     }
 
     nonisolated private static func buildRegions(items: [Entry]) -> [Region] {
@@ -173,7 +190,21 @@ struct ToolGroupLayout: @unchecked Sendable {
     nonisolated private static func makeDiffRegion(
         childIndex: Int, body: DiffLayout
     ) -> Region {
-        Region(
+        // Diff body's full content text, used for the searchable band.
+        // `body.contentLength` already accounts for inter-row newlines,
+        // so a UTF-16 char offset into `searchText` is the same scalar
+        // as a `.diff(childIndex:, char:)` position — no remap needed.
+        let searchText =
+            body.contentLength > 0
+            ? body.string(loChar: 0, hiChar: body.contentLength)
+            : ""
+        let searchable: SearchableRegion? =
+            searchText.isEmpty
+            ? nil
+            : SearchableRegion(
+                text: searchText,
+                position: { .diff(childIndex: childIndex, char: $0) })
+        return Region(
             bandRect: body.containerRect,
             fullRange: SelectionRange(
                 start: .diff(childIndex: childIndex, char: 0),
@@ -208,7 +239,8 @@ struct ToolGroupLayout: @unchecked Sendable {
                     end: .diff(
                         childIndex: childIndex,
                         char: word.location + word.length))
-            })
+            },
+            searchable: searchable)
     }
 
     /// One `TextCardSection` card. Char positions are UTF-16 indices
@@ -230,6 +262,26 @@ struct ToolGroupLayout: @unchecked Sendable {
             end: .textCard(
                 childIndex: childIndex,
                 sectionIndex: sectionIndex, char: length))
+
+        // Searchable band: U+2028 → \n normalisation matches what
+        // `TextLayout.searchableRegions` does, so a query against a
+        // multi-line card matches what the eye reads. Char offsets in
+        // the normalised string equal `.textCard(... char:)` (both are
+        // UTF-16; the replacement is single-unit → single-unit).
+        let searchable: SearchableRegion? = {
+            guard length > 0 else { return nil }
+            let normalised =
+                attributed.string
+                .replacingOccurrences(of: "\u{2028}", with: "\n")
+            return SearchableRegion(
+                text: normalised,
+                position: {
+                    .textCard(
+                        childIndex: childIndex,
+                        sectionIndex: sectionIndex,
+                        char: $0)
+                })
+        }()
 
         return Region(
             bandRect: section.cardRect,
@@ -292,7 +344,8 @@ struct ToolGroupLayout: @unchecked Sendable {
                         childIndex: childIndex,
                         sectionIndex: sectionIndex,
                         char: word.location + word.length))
-            })
+            },
+            searchable: searchable)
     }
 
     /// Find the region that owns `position`. Returns `nil` when no

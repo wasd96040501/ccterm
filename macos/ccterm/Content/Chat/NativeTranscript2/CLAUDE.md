@@ -430,23 +430,30 @@ the glyph pass, so search overlays composite *on top of* selection
 `NSColor.systemOrange.withAlphaComponent(0.78)` (current cursor),
 attenuated when the window has resigned key.
 
-### v1 coverage
+### Coverage
 
-Today's `searchableRegions` is provided by the `.text` family of
-layouts: `paragraph`, `heading`, `codeBlock`, `blockquote`, `userBubble`
-(visible prefix only — the truncated tail isn't selectable, so it isn't
-searchable). `toolGroup` / `list` / `table` return empty regions; their
-selection adapters exist but they haven't been wired into search yet.
-Adding them is a `searchableRegions` implementation per layout — no
-framework change.
+`searchableRegions` is provided by the `.text` family of layouts —
+`paragraph`, `heading`, `codeBlock`, `blockquote`, `userBubble` (visible
+prefix only; the truncated tail isn't selectable, so it isn't searchable)
+— and by `toolGroup` rows for **currently-expanded** children:
+`fileEdit` diff bodies and any child built on `TextCardSection` (bash /
+grep / glob / webFetch / webSearch / askUserQuestion / agent). Folded
+children carry no body in the layout, so their text doesn't enter the
+initial scan — same invariant as selection. `list` / `table` return
+empty regions; their selection adapters exist but haven't been wired
+into search yet — adding them is a `searchableRegions` implementation
+per layout, no framework change.
 
 ### Folded-state navigation
 
-A future toolGroup hit landing in a folded child auto-expands ancestors
-through `Coordinator.expandForSearchHit(blockId:)` before
-`scrollBlockIntoView(blockId:)` drops the row into view. Per-child
-expansion ships with the toolGroup-search follow-up; the v1 entry point
-already opens the group host so the row is visible.
+`Coordinator.expandForSearchHit(blockId:position:)` runs before every
+nav scroll. For `toolGroup` rows the hit's start position carries a
+`.diff(childIndex:_)` or `.textCard(childIndex:_,_)`; the coordinator
+opens the group host (if folded) and then the one specific child the
+hit lives in. Sibling children are not disturbed. The flow that this
+covers: user expanded a tool body, ran a search that landed hits in
+it, then collapsed the group / that child — pressing next/prev re-opens
+exactly the row needed to surface the highlight.
 
 ## 7. Async highlight back-fill
 

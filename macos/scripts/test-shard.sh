@@ -39,6 +39,7 @@ if [ ! -f "$XCTESTRUN" ]; then
 fi
 
 TEST_TARGET="cctermUITests"
+DESTINATION='platform=macOS,arch=arm64'
 
 STAMP=$(date +%Y%m%d-%H%M%S)
 LOG_DIR="/tmp/ccterm-test-$STAMP-$$"
@@ -55,6 +56,7 @@ START_TIME=$(date +%s)
 TEST_EXIT=0
 xcodebuild test-without-building \
   -xctestrun "$XCTESTRUN" \
+  -destination "$DESTINATION" \
   -only-testing:"$TEST_TARGET/$FILTER" \
   -resultBundlePath "$XCRESULT" \
   > "$RAW_LOG" 2>&1 || TEST_EXIT=$?

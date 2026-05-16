@@ -998,6 +998,16 @@
         }
       }
     },
+    "Find in Transcript": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在对话中查找"
+          }
+        }
+      }
+    },
     "Find in transcript": {
       "localizations": {
         "zh-Hans": {

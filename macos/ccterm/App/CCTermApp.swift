@@ -45,19 +45,20 @@ struct AppCommands: Commands {
             }
             .keyboardShortcut(",", modifiers: .command)
         }
-        // Real menu item drives the ⌘F shortcut. SwiftUI's
-        // `keyboardShortcut` on a hidden Button + NSEvent local
-        // monitors both have been observed to not deliver in
-        // XCUITest harnesses; a menu-attached shortcut routes
-        // through the standard AppKit responder chain and is
-        // queryable by the test runner. `ChatHistoryView`
+        // Top-level Find menu (instead of `CommandGroup(after:
+        // .textEditing)`) so the entry is guaranteed present in the
+        // menu bar regardless of whether SwiftUI auto-installed the
+        // Edit menu, and so XCUITests can click the menu item by
+        // name in lieu of relying on `⌘F` event delivery (which
+        // XCUITest's `typeKey(_:modifierFlags:)` doesn't reliably
+        // route through the menu shortcut path). `ChatHistoryView`
         // subscribes via `NotificationCenter` (see `findInTranscript`).
-        CommandGroup(after: .textEditing) {
+        CommandMenu("Find") {
             Button(action: {
                 NotificationCenter.default.post(
                     name: .findInTranscript, object: nil)
             }) {
-                Text("Find in transcript")
+                Text("Find in Transcript")
             }
             .keyboardShortcut("f", modifiers: .command)
         }

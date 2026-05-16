@@ -66,15 +66,8 @@ private struct SidebarRow2: View {
     let record: SessionRecord
 
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "bubble.left.and.bubble.right")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .frame(width: 16, alignment: .center)
-            Text(record.title.isEmpty ? record.sessionId : record.title)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer(minLength: 0)
-        }
+        Text(record.title.isEmpty ? record.sessionId : record.title)
+            .lineLimit(1)
+            .truncationMode(.middle)
     }
 }

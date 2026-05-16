@@ -54,12 +54,12 @@ struct AppCommands: Commands {
         // route (`typeKey(_:modifierFlags:)` does not reliably
         // synthesize the shortcut through window-local monitors).
         //
-        // The transcript's search field is always visible in the
-        // window toolbar; ⌘F's job is purely to hand keyboard focus
-        // to that field. Routed via `TranscriptSearchBus` — an
-        // `@Observable` counter — instead of `NotificationCenter`,
-        // because the per-view subscriber lives behind a SwiftUI
-        // `.id(sessionId)` boundary.
+        // The transcript's search field is always visible in
+        // `ChatHistoryView`'s top toolbar strip; ⌘F's job is purely
+        // to hand keyboard focus to that field. Routed via
+        // `TranscriptSearchBus` — an `@Observable` counter — instead
+        // of `NotificationCenter`, because the per-view subscriber
+        // lives behind a SwiftUI `.id(sessionId)` boundary.
         CommandMenu("Find") {
             Button(action: { searchBus.requestFocus() }) {
                 Text("Find in Transcript")

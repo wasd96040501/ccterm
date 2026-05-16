@@ -43,31 +43,38 @@ struct ChatHistoryView: View {
     @State private var bridge: Transcript2EntryBridge?
 
     var body: some View {
-        Group {
-            if let handle {
-                switch ChatHistoryRenderCase.classify(handle.historyLoadState) {
-                case .error(let reason):
-                    ContentUnavailableView(
-                        "Failed to load history",
-                        systemImage: "exclamationmark.triangle",
-                        description: Text(reason)
-                    )
-                case .transcript:
-                    NativeTranscript2View(controller: controller)
-                }
-            } else {
-                Color.clear
-            }
-        }
-        // Search bar is mounted in the window toolbar so it's always
-        // visible on the trailing edge. `.primaryAction` is the macOS
-        // canonical placement for trailing toolbar items — it sits to
-        // the right of the unified toolbar strip without needing a
-        // manual Spacer (Spacer does not stretch inside
-        // `ToolbarItemGroup` on macOS).
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+        VStack(spacing: 0) {
+            // Persistent top toolbar strip — the chat-history-local
+            // equivalent of `.toolbar` (SwiftUI's window toolbar API
+            // is constrained under `.windowStyle(.hiddenTitleBar)`,
+            // and the in-toolbar field doesn't surface reliably in
+            // XCUITest's accessibility tree). `Spacer` pushes the
+            // search bar against the trailing edge so it sits on the
+            // right regardless of pane width.
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
                 ChatSearchBarView(controller: controller, searchBus: searchBus)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+
+            Divider()
+
+            Group {
+                if let handle {
+                    switch ChatHistoryRenderCase.classify(handle.historyLoadState) {
+                    case .error(let reason):
+                        ContentUnavailableView(
+                            "Failed to load history",
+                            systemImage: "exclamationmark.triangle",
+                            description: Text(reason)
+                        )
+                    case .transcript:
+                        NativeTranscript2View(controller: controller)
+                    }
+                } else {
+                    Color.clear
+                }
             }
         }
         .task(id: sessionId) {

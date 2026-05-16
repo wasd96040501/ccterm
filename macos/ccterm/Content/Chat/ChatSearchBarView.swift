@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// Persistent "find in transcript" field. Mounted as a
-/// `ToolbarItem(placement: .primaryAction)` on `ChatHistoryView`, so it
-/// sits at the trailing edge of the window toolbar and never appears /
-/// disappears — there is no open/close cycle.
+/// Persistent "find in transcript" field. Mounted in the top
+/// `HStack` strip of `ChatHistoryView` (pushed against the trailing
+/// edge by a leading `Spacer`), so it is always visible and never
+/// appears / disappears — there is no open / close cycle.
 ///
 /// Reads `Transcript2Controller.searchState` for the counter and to
 /// enable / disable nav buttons; writes through `controller.runSearch(_:)`

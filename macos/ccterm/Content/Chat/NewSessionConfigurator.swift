@@ -31,7 +31,9 @@ struct NewSessionConfigurator: View {
     /// Outer card corner radius. Shared by the unified surface, the
     /// content clip, and the stroke overlay so the geometry stays
     /// consistent regardless of platform branch in `BarSurfaceModifier`.
-    private static let cardCornerRadius: CGFloat = 12
+    /// Matches `InputBarView2.cornerRadius` so the compose card and the
+    /// resting input bar read as one continuous chrome family.
+    private static let cardCornerRadius: CGFloat = InputBarView2.cornerRadius
 
     @Environment(RecentProjectsStore.self) private var recents
     @State private var branches: [String] = []
@@ -68,9 +70,8 @@ struct NewSessionConfigurator: View {
                 }
         }
         .frame(height: Self.height)
-        .clipShape(RoundedRectangle(cornerRadius: Self.cardCornerRadius))
+        .clipShape(RoundedRectangle(cornerRadius: Self.cardCornerRadius, style: .continuous))
         .barSurface(cornerRadius: Self.cardCornerRadius)
-        .testIdentifier("NewSession.Card")
         .task(id: folderPath) { refreshGitInfo(resetOverride: true) }
     }
 
@@ -109,7 +110,6 @@ struct NewSessionConfigurator: View {
                 }
                 .toggleStyle(.checkbox)
                 .controlSize(.small)
-                .testIdentifier("NewSession.WorktreeToggle")
             }
             .opacity(branchVisible ? 1 : 0)
             .allowsHitTesting(branchVisible)
@@ -161,7 +161,6 @@ struct NewSessionConfigurator: View {
                 }
             )
         }
-        .testIdentifier("NewSession.BranchPicker")
     }
 
     // MARK: - Right panel (recents)
@@ -183,7 +182,6 @@ struct NewSessionConfigurator: View {
                 }
                 .buttonStyle(.plain)
                 .help(String(localized: "Choose Folder…"))
-                .testIdentifier("NewSession.AddRecent")
             }
             .padding(.horizontal, 12)
             .padding(.top, 12)
@@ -236,7 +234,6 @@ struct NewSessionConfigurator: View {
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
-        .testIdentifier("NewSession.RecentList")
     }
 
     /// Wrap the binding so the row's `tag` (an optional path) can drive

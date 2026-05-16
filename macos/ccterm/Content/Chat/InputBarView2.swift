@@ -61,6 +61,11 @@ struct InputBarView2: View {
     /// button gated by `canSend`. No local `@State` copy — avoids drift from
     /// the handle.
     var isRunning: Bool = false
+    /// External gate stacked on top of the text/attachment check. RootView2
+    /// sets it to `false` in compose mode while no project folder is picked,
+    /// so the send button greys out until the user chooses a target — the
+    /// draft would otherwise silently fall back to `$HOME` at submit.
+    var submitEnabled: Bool = true
     /// Coordinate space in which to report `onAttachRect` / `onPillRect`.
     /// `nil` disables geometry reporting (e.g. previews).
     var coordSpace: String? = nil
@@ -204,6 +209,7 @@ struct InputBarView2: View {
     }
 
     private var canSend: Bool {
+        guard submitEnabled else { return false }
         let textOK = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         return textOK || attachment != nil
     }

@@ -75,7 +75,13 @@ struct RootView2: View {
             // (text, attachment, and the compose-card config below).
             if selectedSessionId == SidebarView2.newSessionTag, draftSessionId == nil {
                 draftSessionId = UUID().uuidString.lowercased()
-                draftCwd = nil
+                // Pre-fill with the last successfully launched project so a
+                // fresh draft is one click away from sending. The store
+                // validates `lastLaunchedPath` against disk on load, so a
+                // deleted folder won't survive the cold start; if the path
+                // disappeared mid-session, NewSessionConfigurator's git
+                // probe drops it again.
+                draftCwd = recents.lastLaunchedPath
                 draftUseWorktree = false
                 draftSourceBranch = nil
             }
@@ -148,7 +154,7 @@ struct RootView2: View {
                                         .blendMode(.destinationOut)
                                 }
                                 if pillRect != .zero {
-                                    RoundedRectangle(cornerRadius: InputBarView2.cornerRadius)
+                                    RoundedRectangle(cornerRadius: InputBarView2.cornerRadius, style: .continuous)
                                         .fill(.black)
                                         .frame(width: pillRect.width, height: pillRect.height)
                                         .position(x: pillRect.midX, y: pillRect.midY)
@@ -206,6 +212,10 @@ struct RootView2: View {
             InputBarChrome(
                 sessionId: sid,
                 coordSpace: Self.detailCoordSpace,
+                // Compose mode requires a picked folder before send arms;
+                // chat mode never gates on this (the handle already owns
+                // its cwd from the first launch).
+                submitEnabled: !isComposeMode || draftCwd != nil,
                 onSubmit: { submission in submit(submission, sessionId: sid) },
                 onAttachRect: { rect in attachRect = rect },
                 onPillRect: { rect in pillRect = rect }
@@ -277,11 +287,12 @@ struct RootView2: View {
             if draftUseWorktree {
                 handle.setWorktreeBranch(draftSourceBranch)
             }
-            // Surface the project in next session's recents list. Only
-            // when the user explicitly picked a folder — home fallback
-            // isn't a "project".
+            // Surface the project in next session's recents list and
+            // remember it as the default for the next New Session card.
+            // Only when the user explicitly picked a folder — home
+            // fallback isn't a "project".
             if let picked = draftCwd {
-                recents.add(picked)
+                recents.markLaunched(picked)
             }
         }
         if let image = submission.image {
@@ -315,6 +326,7 @@ struct RootView2: View {
 private struct InputBarChrome: View {
     let sessionId: String
     let coordSpace: String
+    let submitEnabled: Bool
     let onSubmit: (InputBarView2.Submission) -> Void
     let onAttachRect: (CGRect) -> Void
     let onPillRect: (CGRect) -> Void
@@ -333,6 +345,7 @@ private struct InputBarChrome: View {
                 onSubmit: onSubmit,
                 onStop: { handle?.interrupt() },
                 isRunning: handle?.isRunning ?? false,
+                submitEnabled: submitEnabled,
                 coordSpace: coordSpace,
                 onAttachRect: onAttachRect,
                 onPillRect: onPillRect

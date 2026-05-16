@@ -97,6 +97,51 @@ final class SessionHandle2HistoryTests: XCTestCase {
         XCTAssertEqual(reset.precomputed?.isEmpty, true)
     }
 
+    // MARK: - Phase B
+
+    /// JSONL larger than `tailTarget`: Phase A picks up the tail, Phase B
+    /// streams the prefix in afterwards. The `.prepended` event must
+    /// carry precomputed blocks for every prefix entry — proving the
+    /// off-main precompute kicked in for the larger-load path too.
+    func testLoadHistoryPhaseBFiresPrependedWithPrecomputedBlocks() async {
+        // 6 JSONL lines, tailTarget=2 → Phase B picks up ~4 prefix lines.
+        let lines = (0..<6).map { i in
+            Message2Fixtures.assistantTextJSONL("Segment \(i)")
+        }
+        let file = try! TempJSONLFile(lines)
+        tempFile = file
+
+        let handle = SessionHandle2(
+            sessionId: UUID().uuidString,
+            repository: InMemorySessionRepository())
+        let recorder = MessagesChangeRecorder()
+        recorder.attach(to: handle)
+
+        handle.loadHistory(overrideURL: file.url, tailTarget: 2)
+
+        let arrived = await recorder.wait { events in
+            events.contains(where: { $0.asPrepended != nil })
+        }
+        XCTAssertTrue(arrived, "prepended event did not arrive within timeout")
+
+        guard let prepended = recorder.events.compactMap(\.asPrepended).first
+        else {
+            return XCTFail("expected at least one .prepended event")
+        }
+        XCTAssertFalse(
+            prepended.entries.isEmpty,
+            "Phase B prefix should not be empty for a multi-line file")
+        XCTAssertNotNil(
+            prepended.precomputed,
+            "Phase B must ship a precomputed-blocks payload")
+        for entry in prepended.entries {
+            let blocks = prepended.precomputed?[entry.id]
+            XCTAssertNotNil(
+                blocks,
+                "precomputed map missing prefix entry \(entry.id)")
+        }
+    }
+
     /// Edge: precomputed payload must match what `MessageEntryBlockBuilder`
     /// would produce on the synchronous fallback path. If they diverge, the
     /// bridge's reverse map would point at the wrong block ids.

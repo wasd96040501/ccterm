@@ -26,8 +26,13 @@ import Foundation
 final class Transcript2EntryBridge {
     let controller: Transcript2Controller
 
-    private var entryOrder: [UUID] = []
-    private var entryBlockIds: [UUID: [UUID]] = [:]
+    // Module-internal so `cctermTests` (compiled with `@testable import`)
+    // can verify the reverse map after `.reset` / `.prepended` without
+    // having to mount an `NSTableView` (the bridge's contract is that
+    // these tables match the entry order it received, regardless of
+    // whether the controller's table is real).
+    private(set) var entryOrder: [UUID] = []
+    private(set) var entryBlockIds: [UUID: [UUID]] = [:]
     /// Tracks whether `loadInitial` has fired. Any append / update arriving
     /// before it is the abnormal path (handle hasn't reset yet) — fall back
     /// by treating the entry as a reset seed so content isn't lost.
@@ -266,8 +271,15 @@ final class Transcript2EntryBridge {
 
         guard !prefixBlocks.isEmpty else { return }
         // Prepend → `.saveVisible(.visualTop)` keeps the user's currently
-        // visible first line at the same visual position.
-        controller.coordinator.apply(
+        // visible first line at the same visual position. Route through
+        // `applyInBackground` so the per-row layout precompute (paragraph
+        // wrap, code-block typeset, tool-group geometry) runs on a
+        // detached `userInitiated` task and not on the main thread —
+        // mirroring what `loadInitial`'s Phase 2 already does for the
+        // first-screen path. The bridge stays synchronous from the
+        // handle's perspective: the structural change still lands in a
+        // single main hop.
+        controller.coordinator.applyInBackground(
             [.insert(after: nil, prefixBlocks)],
             scroll: .saveVisible(.visualTop))
     }

@@ -167,17 +167,20 @@ extension SessionHandle2 {
                 return
             case .success(let prefix):
                 let t0 = CFAbsoluteTimeGetCurrent()
-                await MainActor.run { [weak self] in
-                    guard let self else { return }
-                    // Phase B's tailBaseline = current messages.count
-                    // (Phase A tail plus any live appends during Phase B).
-                    // After prepend, the tail starts at prefixEntries.count.
+                // Hop 1 (main): merge the parsed prefix into `messages`,
+                // build the tool_use index, re-resolve any tail
+                // `tool_result`s whose anchor lives in the prefix, flip
+                // `historyLoadState = .loaded`. Capture the prefix entries
+                // and the re-resolved entries so hop #2 can fan them out
+                // to the bridge after the off-main precompute.
+                let snapshot: PhaseBSnapshot = await MainActor.run { [weak self] in
+                    guard let self else {
+                        return PhaseBSnapshot(prefixEntries: [], updatedEntries: [])
+                    }
+                    // tailBaseline = current messages.count (Phase A tail
+                    // plus any live appends during Phase B). After prepend,
+                    // the tail starts at `prefixEntries.count`.
                     let tailBaseline = self.messages.count
-
-                    // 1. Run prefix through a temporary receive pipeline:
-                    //    reuse the existing append logic but insert at the
-                    //    head. Simplest path: collect prefix MessageEntry,
-                    //    then insert once.
                     let prefixEntries = Self.buildEntries(from: prefix)
                     if !prefixEntries.isEmpty {
                         self.messages.insert(contentsOf: prefixEntries, at: 0)
@@ -185,9 +188,6 @@ extension SessionHandle2 {
                     let prefixCount = prefixEntries.count
                     let newTailStart = prefixCount
                     let absoluteTailEnd = newTailStart + tailBaseline
-
-                    // 2. Build a tool_use index from prefix + tail and use it
-                    //    to resolve tool_results in the tail.
                     let allForIndex: [Message2] =
                         prefix
                         + self.tailMessagesAsArray(
@@ -195,26 +195,46 @@ extension SessionHandle2 {
                     let index = ToolResultReresolver.buildToolUseIndex(from: allForIndex)
                     let updatedIdx = ToolResultReresolver.applyResolution(
                         to: &self.messages, from: newTailStart, using: index)
-
                     self.historyLoadState = .loaded
-                    // Phase B done — emit the bridge increments: prepended
-                    // first, then one updated per re-resolved tail entry.
-                    // Order matters: the bridge recomputes its anchor after
-                    // prepended, so subsequent updates can correctly locate
-                    // the tail entry.
-                    if prefixCount > 0 {
-                        let prefixEntries = Array(self.messages.prefix(prefixCount))
-                        self.onMessagesChange?(
-                            .prepended(prefixEntries, precomputedBlocks: nil))
+                    let prefixSnapshot =
+                        prefixCount > 0
+                        ? Array(self.messages.prefix(prefixCount)) : []
+                    let updatedSnapshot = updatedIdx.compactMap {
+                        idx -> MessageEntry? in
+                        self.messages.indices.contains(idx) ? self.messages[idx] : nil
                     }
-                    for idx in updatedIdx where self.messages.indices.contains(idx) {
-                        self.onMessagesChange?(.updated(self.messages[idx]))
+                    return PhaseBSnapshot(
+                        prefixEntries: prefixSnapshot,
+                        updatedEntries: updatedSnapshot)
+                }
+                // Off-main: precompute blocks for the prefix. Same trick as
+                // Phase A — Markdown parsing for assistant text segments
+                // moves off the main thread.
+                let t1 = CFAbsoluteTimeGetCurrent()
+                let precomputed = MessageEntryBlockBuilder.precompute(snapshot.prefixEntries)
+                let precomputeMs = Int((CFAbsoluteTimeGetCurrent() - t1) * 1000)
+                // Hop 2 (main): fan out `.prepended` (with precomputed
+                // blocks) + `.updated` for every re-resolved tail entry.
+                // Order matters: the bridge recomputes its anchor after
+                // prepended, so subsequent updates correctly locate the
+                // tail entry.
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    if !snapshot.prefixEntries.isEmpty {
+                        self.onMessagesChange?(
+                            .prepended(
+                                snapshot.prefixEntries,
+                                precomputedBlocks: precomputed))
+                    }
+                    for entry in snapshot.updatedEntries {
+                        self.onMessagesChange?(.updated(entry))
                     }
                     let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
                     appLog(
                         .info, "SessionHandle2",
-                        "loadHistory full done \(self.sessionId) prefix=\(prefixCount) "
-                            + "tailReresolved=\(updatedIdx.count) merge=\(ms)ms")
+                        "loadHistory full done \(self.sessionId) prefix=\(snapshot.prefixEntries.count) "
+                            + "tailReresolved=\(snapshot.updatedEntries.count) "
+                            + "precompute=\(precomputeMs)ms merge=\(ms)ms")
                 }
             }
         }
@@ -337,5 +357,14 @@ extension SessionHandle2 {
             case .invalidUTF8: return "History JSONL is not valid UTF-8"
             }
         }
+    }
+
+    /// Phase B's first main hop returns this snapshot to the detached
+    /// task. `prefixEntries` is what gets `.prepended` to the bridge;
+    /// `updatedEntries` are tail entries whose `tool_result` anchors lived
+    /// in the prefix and got re-resolved.
+    fileprivate struct PhaseBSnapshot {
+        let prefixEntries: [MessageEntry]
+        let updatedEntries: [MessageEntry]
     }
 }

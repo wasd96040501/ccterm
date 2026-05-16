@@ -133,11 +133,13 @@ struct RootView2: View {
                     .allowsHitTesting(false)
                 }
                 .overlay(alignment: .bottom) {
-                    // Width matches NativeTranscript2's content band: same
-                    // min; max = 0.8 * BlockStyle.maxLayoutWidth(780) = 624
-                    // (multiple of 4). `InputBarView2` reports two frames
-                    // — attach button and pill — in detail coord space;
-                    // the scrim cuts two independent holes from them.
+                    // Width: minimum follows NativeTranscript2's content
+                    // band; maximum sits 80pt narrower than the transcript
+                    // (624 → 544) so the bar visibly recesses from the
+                    // text column instead of feeling like another block.
+                    // `InputBarView2` reports two frames — attach button
+                    // and pill — in detail coord space; the scrim cuts
+                    // two independent holes from them.
                     InputBarChrome(
                         sessionId: sid,
                         coordSpace: Self.detailCoordSpace,
@@ -147,7 +149,7 @@ struct RootView2: View {
                     )
                     .frame(
                         minWidth: BlockStyle.minLayoutWidth,
-                        maxWidth: 624
+                        maxWidth: 544
                     )
                     .padding(.horizontal, 20)
                     .padding(.bottom, 36)

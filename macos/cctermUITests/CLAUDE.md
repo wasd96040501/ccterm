@@ -2,9 +2,7 @@
 
 End-to-end XCUITest. There are no unit tests; this is the entire test suite.
 
-**Run on CI, not locally, by default.** UI tests bring `ccterm.app` to the foreground, take focus, and drive keyboard + mouse — running them locally interrupts your desktop. Push a PR and the `ui-test` workflow runs `make test-all` for you.
-
-Only run locally when you need to reproduce a CI failure or you're debugging the tests themselves. Each test takes 10–30s; never default to running the full suite locally.
+**Run on CI, not locally, by default.** UI tests bring `ccterm.app` to the foreground, take focus, and drive keyboard + mouse — running them locally interrupts the desktop. Push to any PR branch and `.github/workflows/test.yml` runs `make test-all`. Run locally only to reproduce a CI failure or debug the tests themselves. Each test takes 10–30s.
 
 ## Architecture
 
@@ -45,11 +43,11 @@ Test-mode switches are **environment variables only** (`launchEnvironment`), nev
 
 `Services/Session/MockCLI/` (DEBUG only).
 
-- **`MockCLIBaseScenario`** — **most scenarios should inherit from this**. It provides default behavior that mirrors the real Claude CLI: `initialize` ack + `system.init`, `interrupt` ack + `result.error`, user echo + `result.success`, and ack-everything for unrecognized `control_request` subtypes. A scenario only overrides the hook it actually cares about. Every "how mock claude behaves" decision is **test-specific** and lives on the scenario — the mock CLI framework (Runner / Sender / Parser) is scaffolding only.
+- **`MockCLIBaseScenario`** — base class for almost every scenario. Provides default behavior that mirrors the real Claude CLI: `initialize` ack + `system.init`, `interrupt` ack + `result.error`, user echo + `result.success`, and ack-everything for unrecognized `control_request` subtypes. A scenario only overrides the hook it actually cares about. Every "how mock claude behaves" decision is test-specific and lives on the scenario — the mock CLI framework (Runner / Sender / Parser) is scaffolding only.
 
   Available hooks: `onStart`, `onInitialize`, `onInterrupt`, `onControlRequest` (other subtypes), `onUserMessage`, `onControlResponse`, `onUnknown`.
 
-- **`MockCLIScenario`** (protocol) — implement directly only if you need fully custom routing or want to skip the default parser (typical case: chaos tests that read raw JSON and emit randomly). You own routing via two callbacks: `onStart` / `onIncoming`.
+- **`MockCLIScenario`** (protocol) — implement directly only when you need fully custom routing or want to skip the default parser (e.g. chaos tests that read raw JSON and emit randomly). You own routing via two callbacks: `onStart` / `onIncoming`.
 
 - **`MockCLISender`** — convenience handle for writing to stdout. Common messages have shortcuts:
   - `ackControlSuccess(requestId:response:)` / `ackControlError(...)` — respond to a host `control_request`
@@ -80,14 +78,14 @@ Test-mode switches are **environment variables only** (`launchEnvironment`), nev
 2. Register it in `MockCLIRegistry.scenarios`: `"myScenario": { MyScenario() }`.
 3. In the test, set `launchEnvironment["CCTERM_MOCK_CLI_SCENARIO"] = "myScenario"`.
 
-One scenario serves one test (or a set of related tests sharing the same CLI deviation). Don't pile unrelated branches into a single scenario — write multiple small ones, each overriding just the one or two hooks it needs. That makes "what does this scenario change relative to the real CLI?" easy to see. Chaos tests and other scenarios that need irregular behavior can implement `MockCLIScenario` directly and bypass the base parser.
+One scenario serves one test (or a set of related tests sharing the same CLI deviation). Do not pile unrelated branches into a single scenario — write multiple small ones, each overriding the one or two hooks it needs.
 
-### Things not to do
+### Hard rules
 
-- ❌ Add launch arguments (`--skip-bootstrap`, `--force-running`, ...). They're tricks that grow conditional branches in production code paths. **The only sanctioned testing entry point is a mock CLI scenario** that covers the edge case via the real CLI protocol.
-- ❌ Add `forceXxxForTest()` methods to `SessionHandle2` or `SessionManager2`.
-- ❌ Read or write internal fields (`pendingTurnCount`, `status`, ...) directly. To get `isRunning == true`, let the scenario actually keep the turn open.
-- ❌ `#if DEBUG` skips around production paths. The only DEBUG branches are in `makeAgentConfig` and `AppState.init`, and both **inject** the mock — they never bypass anything.
+- ❌ No launch arguments to control mock behavior (`--skip-bootstrap`, `--force-running`, ...). They grow conditional branches in production code paths. The only sanctioned testing entry point is a mock CLI scenario covering the edge case via the real CLI protocol.
+- ❌ No `forceXxxForTest()` methods on `SessionHandle2` or `SessionManager2`.
+- ❌ No reading or writing internal fields (`pendingTurnCount`, `status`, ...) directly. To get `isRunning == true`, let the scenario keep the turn open.
+- ❌ No `#if DEBUG` skips around production paths. The only DEBUG branches are in `makeAgentConfig` and `AppState.init`, and both **inject** the mock — they never bypass anything.
 
 ## Writing tests
 
@@ -109,7 +107,7 @@ app.launchEnvironment = [
 app.launch()
 ```
 
-**Don't use `launchArguments`** to control mock behavior. `launchArguments` is equivalent to `CommandLine.arguments`, which has "trick" energy. `launchEnvironment` is the isolated test channel.
+**Never use `launchArguments` to control mock behavior.** `launchArguments` is equivalent to `CommandLine.arguments` and leaks into production code paths. `launchEnvironment` is the isolated test channel.
 
 ### Accessibility identifiers
 
@@ -137,34 +135,31 @@ _ = button.waitForExistence(timeout: 5)
 button.click()
 ```
 
-### Caveats around keyboard input
+### Keyboard input caveats
 
-- `app.typeText(...)` / `app.typeKey(...)` go through `CGEventPost` — the system-level input stack. **If your local machine has a non-English IME as the active input source**, you may trigger the IME picker or System Settings dialog, which contaminates the test environment. (GitHub CI runners default to English, so this isn't an issue there — another reason to default to CI.)
-- Local prerequisite for UI tests: active input source = English / ABC.
-- If a test doesn't need keyboard input, prefer driving the state through a mock CLI scenario rather than typing.
+- `app.typeText(...)` / `app.typeKey(...)` go through `CGEventPost` (the system-level input stack). A non-English IME as the active input source can trigger the IME picker or System Settings dialog, contaminating the test environment. GitHub CI runners default to English; locally the active input source must be English / ABC.
+- When a test does not need keyboard input, drive state through a mock CLI scenario rather than typing.
 
 ### Assertion style
 
 - Expecting existence: `waitForExistence(timeout:)` + `XCTAssertTrue`.
 - Expecting absence: `XCTAssertFalse(element.exists)` (no wait — UI mutations are visible synchronously).
-- Write messages that **state which invariant was violated**, not "X should be Y".
+- Assertion messages state **which invariant was violated**, not "X should be Y".
 
 ## Running tests
 
-### Default: push and let CI run
+### Default: CI
 
 Push to any PR branch → `.github/workflows/test.yml` runs `make test-all` automatically. Results are on the GitHub Actions page:
 - Pass → green check.
-- Fail → workflow log lists the failed case and assertion; the `xcresult` artifact is uploaded automatically and opens in Xcode (with screenshots and video).
+- Fail → workflow log lists the failed case + assertion; the `xcresult` artifact is uploaded automatically and opens in Xcode with screenshots and video.
 
-The CI runner already has Go and Xcode set up — no local build environment to maintain.
-
-### Local reproduction (only when needed)
+### Local reproduction
 
 ```bash
 make test FILTER=InputBar2StopButtonUITests/testStopButtonCancelsRunningState   # single method
 make test FILTER=InputBar2StopButtonUITests                                     # single class
-make test-all                                                                   # full suite (handle with care; takes focus)
+make test-all                                                                   # full suite (takes focus)
 ```
 
-Output is progressive: pass prints one line + the `xcresult` path; failure prints the key assertion, crash log, and the three detail paths (summary / full log / xcresult). The `xcresult` bundle contains screenshots and video — `open /tmp/ccterm-test-…/result.xcresult` loads it in Xcode.
+Output is progressive: pass prints one line + the `xcresult` path; failure prints the key assertion, crash log, and three detail paths (summary / full log / xcresult). `open /tmp/ccterm-test-…/result.xcresult` loads the bundle (screenshots + video) in Xcode.

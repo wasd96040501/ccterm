@@ -4,9 +4,11 @@ End-to-end XCUITest. There are no unit tests; this is the entire test suite.
 
 **Run on CI, not locally, by default.** UI tests bring `ccterm.app` to the
 foreground, take focus, and drive keyboard + mouse — running them locally
-interrupts the desktop. Push to any PR branch and `.github/workflows/test.yml`
-runs `make test-all`. Run locally only to reproduce a CI failure or to debug
-the tests themselves. Each test takes 10–30s.
+interrupts the desktop. Two CI paths: `test.yml` (merge gate, runs the
+full suite on every push / PR) and `test-debug.yml` (workflow_dispatch with
+a `filter` input, for iterating on a specific test without burning the full
+gate). See the dev-test loop in the root [CLAUDE.md](../../CLAUDE.md#dev-test-loop-preferred-for-iteration).
+Run locally only when debugging the test itself. Each test takes 10–30s.
 
 If you only have time to read one section, read **[Hard constraints](#hard-constraints)**.
 Everything else assumes you respect those rules.
@@ -664,7 +666,7 @@ button.click()
 
 ## Running tests
 
-### Default: CI
+### Default: CI merge gate
 
 Push to any PR branch → `.github/workflows/test.yml` runs `make test-all`
 automatically. Results are on the GitHub Actions page:
@@ -673,6 +675,18 @@ automatically. Results are on the GitHub Actions page:
 - Fail → workflow log lists the failed case + assertion; the `xcresult`
   artifact is uploaded automatically and opens in Xcode with screenshots
   and video.
+
+### Iterating on a single UI test
+
+Use the dev-test loop documented in the root [CLAUDE.md](../../CLAUDE.md):
+
+```bash
+gh workflow run test-debug.yml --ref <branch> \
+  -f filter=cctermUITests/InputBar2StopButtonUITests/testStopButtonCancelsRunningState
+scripts/wait-for-workflow.sh --workflow test-debug.yml   # run in background
+```
+
+Shares cache with `test.yml`, so the first iteration is a delta build.
 
 ### Local reproduction
 

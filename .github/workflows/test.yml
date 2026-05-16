@@ -16,9 +16,13 @@ jobs:
 
       - name: Setup Go
         # fzf submodule is compiled from Go sources inside an Xcode build phase.
+        # cache-dependency-path points at fzf's go.sum so module downloads are
+        # cached across runs (the toolchain is cached by the action by default).
         uses: actions/setup-go@v5
         with:
           go-version: stable
+          cache: true
+          cache-dependency-path: thirdparty/fzf/go.sum
 
       - name: Xcode info
         run: |

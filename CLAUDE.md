@@ -106,12 +106,50 @@ foreground app and drive keyboard + mouse, which is disruptive. Pushing to
 any PR branch triggers `.github/workflows/test.yml`, which runs both
 targets. Logs and `xcresult` artifacts land on the Actions page.
 
-Local reproduction commands (UI tests):
+### Dev-test loop (preferred for iteration)
+
+Don't burn the full PR pipeline (~3–4 min) to validate one test. Instead:
+
+1. Push the branch.
+2. Trigger the debug workflow with the smallest filter that covers your
+   change (comma-separated; mix unit and UI freely):
+
+   ```bash
+   gh workflow run test-debug.yml --ref <branch> \
+     -f filter=cctermUITests/InputBar2StopButtonUITests/testStopButtonCancelsRunningState
+
+   gh workflow run test-debug.yml --ref <branch> \
+     -f filter=cctermUITests/FooUITests,cctermTests/BarTests
+   ```
+
+3. Wait for completion in the background:
+
+   ```bash
+   scripts/wait-for-workflow.sh --workflow test-debug.yml
+   ```
+
+   (Run via `run_in_background: true`. Returns terminal state + JSON.
+   See `scripts/wait-for-workflow.sh` for env knobs and exit codes.)
+
+4. Iterate until green, then open the PR — `test.yml` runs the full suite
+   as the merge gate.
+
+5. **If the merge-gate run fails**, do not iterate on the PR pipeline.
+   Push the fix and re-trigger `test-debug.yml` with the failing tests
+   in `filter`. The debug workflow shares the same DerivedData cache as
+   `test.yml`, so the first debug run after a PR run is a near-no-op
+   build.
+
+### Local reproduction (last resort — UI tests steal focus)
+
+Only for debugging the test itself (e.g. AX tree inspection) when the CI
+debug loop above isn't giving you enough signal. `make test-all` should
+basically never run locally — that's what `test.yml` is for.
 
 ```bash
 make test FILTER=InputBar2StopButtonUITests/testStopButtonCancelsRunningState   # one method
 make test FILTER=InputBar2StopButtonUITests                                     # one class
-make test-all                                                                   # full suite (slow; pre-merge gut check only)
+make test-all                                                                   # full suite (slow; debugging only)
 ```
 
 Local commands (unit tests, do not steal focus):
@@ -133,11 +171,15 @@ can vs. can't sit behind `#if DEBUG` live there.
 Two workflows run on every PR:
 
 - **`fmt.yml`** — `make fmt-check` (swift-format + xcstrings).
-- **`test.yml`** — `make build-for-testing` once, then unit + UI tests against the shared `derivedData`.
+- **`test.yml`** — `make build-for-testing` once, then unit + UI tests against the shared `derivedData`. This is the merge gate.
+
+One workflow is manual-only:
+
+- **`test-debug.yml`** — `workflow_dispatch` only. Takes a `filter` input (comma-separated `<Target>/<Class>[/method]` IDs) and runs that subset against the same DerivedData cache `test.yml` uses. Use for iteration; see the dev-test loop above.
 
 ### Build cache
 
-`test.yml` caches `macos/build/test-dd` (Xcode DerivedData) and `fmt.yml` caches the Homebrew `swift-format` bottle. The cache key is composed of `runner OS+arch + Xcode version + fzf submodule SHA + .github/cache-salt + source file hash`, with a `restore-keys` fallback that drops the source hash so a same-PR retry reuses the previous cache and only recompiles changed files.
+`test.yml` caches `macos/build/test-dd` (Xcode DerivedData) and `fmt.yml` caches the Homebrew `swift-format` bottle. The cache key is composed of `runner OS+arch + Xcode version + fzf submodule SHA + .github/cache-salt + source file hash`, with a `restore-keys` fallback that drops the source hash so a same-PR retry reuses the previous cache and only recompiles changed files. `test-debug.yml` uses the same key so debug runs ride the PR cache.
 
 **If incremental builds go bad** (stale `.swiftmodule` causing link errors that don't reproduce on a `make clean` build locally): bump `.github/cache-salt` — change the contents (any edit; bumping the integer is fine) and commit. The next CI run misses the cache, builds from scratch, and seeds a fresh cache for everyone.
 
@@ -206,6 +248,7 @@ Follow the Swift API Design Guidelines, plus: suffix `View` / `Service` / `Deleg
 
   If a one-off artifact does land in the worktree, `rm -rf` it before staging — never let `git add -A` decide. As a safety net, `/tmp` style scratch dirs (e.g. `xcresult/`, `tmp_*/`) belong in `.gitignore`.
 - **Waiting for a PR**: run `scripts/wait-for-pr.sh <pr#>` with `run_in_background: true`. It blocks until a terminal state (`READY` / `CHECKS_FAILED` / `CONFLICT` / `REVIEW_CHANGES_REQUESTED` / `MERGED` / `CLOSED` / `TIMEOUT` / `NO_CHECKS`) and prints a one-line summary + JSON. Never foreground-poll `gh pr checks` / `gh pr view` in a sleep loop.
+- **Waiting for a workflow_dispatch run**: run `scripts/wait-for-workflow.sh --workflow <file.yml>` (or pass an explicit run ID) with `run_in_background: true`. Returns `SUCCESS` / `FAILURE` / `TIMEOUT` / `NOT_FOUND` + JSON. Used by the dev-test loop above.
 
 ## Engineering principles
 

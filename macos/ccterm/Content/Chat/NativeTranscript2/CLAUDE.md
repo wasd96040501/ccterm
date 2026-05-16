@@ -1,23 +1,23 @@
 # NativeTranscript2
 
-老 `NativeTranscript` 的重构。Core Text 自绘 + NSTableView,但砍掉老代码的过度抽象(component 协议、prepare cache、refinement、5 种 reason 等)。
+A rewrite of the old `NativeTranscript`. Same approach (Core Text self-drawing on top of `NSTableView`), without the prior over-abstraction (component protocols, prepare cache, refinement passes, five reasons of update, ...).
 
-## 0. 最重要的一条规则:**MVP = 窄范围,不是低质量**
+## 0. The most important rule: **MVP = narrow scope, not low quality**
 
-这是**重构需求**,不是"先随便写,以后补"。
+This is a *refactor*. It is **not** "write it sloppy now, polish later."
 
-| 概念 | 含义 |
+| Concept | Meaning |
 |---|---|
-| **范围**(scope) | MVP 现在只做 heading + paragraph;加 user bubble / tool / list / table 是分阶段 |
-| **质量**(quality) | 每加一个 block kind,视觉/行为达到老代码同等水准。**不存在"MVP 阶段先简单做、以后补全"的路径** |
+| **Scope** | The MVP only ships heading + paragraph. User bubble / tool group / list / table are phased in later. |
+| **Quality** | Every block kind, when it lands, matches the visual fidelity and behavior of the old code. There is no "ship a degraded MVP and improve it later" path. |
 
-具体落地反例(都是踩过的坑):
+Concrete anti-patterns that have bitten us:
 
-- ❌ "MVP 不需要 `.never` / responsive scrolling / negative-width clamp" → **错。**这些是任何生产级 NSTableView 的基线 chrome,不是优化
-- ❌ "MVP 用 `pendingBlocks` 暂存够了,以后再统一" → **错。**统一的 `currentBlocks + rebuild()` 路径成本一样,直接写对的
-- ❌ "MVP 加 list 时用 NSParagraphStyle 凑,sticky bullet 等以后补" → **错。**那叫降质量。要么不加 list(范围),要么加就做对(质量)
+- ❌ "MVP doesn't need `.never` / responsive scrolling / negative-width clamp." **Wrong.** Those are the baseline chrome of any production `NSTableView`, not optimizations.
+- ❌ "Use `pendingBlocks` for MVP, unify later." **Wrong.** The unified `currentBlocks + rebuild()` path costs the same; just write it correctly the first time.
+- ❌ "Add a list with `NSParagraphStyle` for MVP, do sticky bullets later." **Wrong.** That's degraded quality. Either don't ship lists yet (scope), or ship them right (quality).
 
-## 1. 架构
+## 1. Architecture
 
 ```
 SwiftUI: NativeTranscript2View (NSViewRepresentable)
@@ -27,225 +27,246 @@ SwiftUI: NativeTranscript2View (NSViewRepresentable)
    └─ makeNSView →
       Transcript2ScrollView (NSScrollView, .never, responsive)
          └─ Transcript2ClipView (NSClipView, .never)
-            └─ Transcript2TableView (NSTableView, neg-width clamp)
+            └─ Transcript2TableView (NSTableView, negative-width clamp)
                └─ BlockCellView (NSView, override draw(_:), .onSetNeedsDisplay)
 ```
 
-数据流向:`SwiftUI [Block] → updateNSView → Coordinator.setBlocks → rebuild → diff → NSTableView insertRows/removeRows/reloadRows`。
+Data flow: `SwiftUI [Block] → updateNSView → Coordinator.setBlocks → rebuild → diff → NSTableView insertRows/removeRows/reloadRows`.
 
-## 2. 不变量(踩中就是 bug)
+## 2. Invariants (violating any of these is a bug)
 
-### 2.1 渲染路径
+### 2.1 Rendering path
 
-- 自绘 cell 用 `override draw(_:)` 路径,policy 是 **`.onSetNeedsDisplay`**(不是 `.never`)。`.never` 配 CALayerDelegate.draw,本项目没走那条路
-- ScrollView / ClipView 用 **`.never`** —— 它们没自有内容,纯 composite 子视图,滚动 0 draw 调用
-- `isCompatibleWithResponsiveScrolling = true` —— 漏了会回退到同步 drawRect 慢路径
+- Self-drawn cells use `override draw(_:)` with layer policy **`.onSetNeedsDisplay`** (not `.never`). `.never` is paired with `CALayerDelegate.draw`; this project doesn't take that route.
+- `NSScrollView` and `NSClipView` use **`.never`** — they have no content of their own, just composite their children, so they contribute zero draw calls during scroll.
+- `isCompatibleWithResponsiveScrolling = true`. Forgetting this drops you back to the synchronous `drawRect` slow path.
 
-### 2.2 数据 / 排版 / 状态
+### 2.2 Data / layout / state
 
-- **stable id 是 diff 的根**:`Block.id: UUID`,caller 提供。不要用内容 hash 当 id,会让"同名两条消息"被误认成一条
-- **Layout 跟 RowItem 共生死**:`RowItem { id, block, layout: TextLayout }`。layout 算一次跟着 row 活,**不要外部 LRU cache**(老代码的 `TranscriptPrepareCache` 是补丁,新架构 id-based 复用自然就够)
-- **Row state**(折叠等)放 `Coordinator.foldStates: [UUID: Bool]`(已落地),**不进 `Block.Kind` 关联值**。理由:state 要跨 `.update` 内容更新存活(content 改了用户的展开偏好不能被推翻);也要跨 `RowLayout` 重建存活(layout 是 `(block, width, state)` 的纯函数,state 是输入而非字段)。Layout 始终 stateless —— `userBubble` 用"硬截断 + sheet"避开 in-cell expand;`diff` 用 `foldStates[id]` 驱动 collapsed↔expanded body shape,`Coordinator.toggleFold(id:)` 翻转 flag 并在动画 group 内 `noteHeightOfRows` + `reloadData(forRowIndexes:)`。新增 stateful 行为类型时:state 字段加到 coordinator(sparse dict,absent = default),`makeLayout` switch 透传到对应 `XxxLayout.make` 参数
-- **Tool runtime status** 是同款 sparse-dict 模式的第二个落地:`Coordinator.statusStates: [UUID: ToolStatus]`(absent = `.completed`),keyspace 跟 `foldStates` 共享 —— 顶层 `Block.id` = group 状态,`ToolGroupBlock.Child.id` = child 状态。`Transcript2Controller.setToolStatus(id:status:)` → `Coordinator.setStatus(id:)` → `removeCachedLayout(for: hostBlockId)` + 单行 `reloadData(forRowIndexes:)`。**不走 `Change.update`**:那条路会无谓 drop highlight + drop selection,并强制 caller 重组 `Block.Kind`。status 只改 header 颜色 / shimmer overlay(不改 row height),所以 `setStatus` 跳过 `noteHeightOfRows`;status 由 `ToolGroupLayout` 在 `make` 时折进 `Header.status`,`drawHeader` / `subviewPlan` 通过 `titleColor(for:hovered:)` / `chevronTint(for:hovered:)` / `wantsShimmer(for:)` 三个 helper 解析颜色 + shimmer 出场。加新状态视觉规则只改这三个 helper。**`.running` 不再用更亮的 hover-tier 颜色**(那条路径会让 running ↔ completed 翻转产生 brightness pop):running 的 title / chevron 颜色与 completed 完全一致,差异由 sweeping shimmer overlay (`SubviewPlan.Shimmer`) 表达。**Shimmer 是 additive overlay,不是 mask:`drawHeader` 永远把 base 标题用 secondary 色画进 cell bitmap(`wantsShimmer` 不再 short-circuit),overlay 是一个 `CALayer` 持 labelColor 文字 bitmap + `[α=0,1,0]` mask gradient,只在条纹处叠加 labelColor 像素。**这样 base 文字始终全 alpha 锐利,不存在 mask 把 AA glyph 边缘整体衰减导致的「软」感。Overlay layer frame 在 reconciler 里按 host backing scale **像素对齐**,bitmap 用 CTLine 渲染 + `xOffset` 注入子像素偏移,确保 overlay glyph 与 cell-bitmap glyph 子像素位置一致(条纹过境时不会出现「双影」涂抹)。Hover 时 overlay opacity 直接归零(base 已是 labelColor,叠加冗余)。`viewDidChangeBackingProperties` 同步所有 sublayer 的 contentsScale 并 invalidate 缓存的 glyph bitmap,跨屏拖动不会留下旧 DPI 的栅格化文字。**`SubviewPlan.Chevron` 携带的是 resolved `strokeColor` + `alpha`(已经 fold 进 status + hover),`SubviewPlan.Shimmer` 携带 textRect + title + font + hovered(高光颜色 / 速率 / locations 动画 / 像素对齐都在 cell reconciler 里),cell 端零状态枚举感知**
-- **永远 `currentBlocks + rebuild()`**:`setBlocks` 和 `frameDidChange` 走同一个 `rebuild()`。`rebuild` 内部 `width <= 0` 早退。**不要再造 `pendingBlocks` 这种特殊路径**
+- **Stable ids drive the diff.** `Block.id: UUID` is caller-supplied. Never derive ids from content hashes — two consecutive identical messages would collapse into one.
+- **Layout lifetime tracks `RowItem`.** `RowItem { id, block, layout: TextLayout }`. The layout is computed once and lives with the row. Do not introduce an external LRU cache (the old `TranscriptPrepareCache` was a patch around id instability; id-based reuse covers it now).
+- **Row state** (fold flags, ...) lives in `Coordinator.foldStates: [UUID: Bool]`. **It does not go into `Block.Kind`** associated values. Two reasons:
+  - State has to survive `.update` events on content (a content tweak must not undo the user's expand preference).
+  - State has to survive `RowLayout` rebuilds (layout is a pure function of `(block, width, state)`; state is an *input*, not a stored field).
 
-### 2.3 Diff 路径
+  Layouts therefore stay stateless. `userBubble` avoids in-cell expand via "hard truncate + sheet". `diff` reads `foldStates[id]` to drive collapsed↔expanded body shape; `Coordinator.toggleFold(id:)` flips the flag and, inside an animation group, calls `noteHeightOfRows` + `reloadData(forRowIndexes:)`. When you add a new stateful behavior: add a sparse-dict field on the coordinator (absent = default), and thread the value through `makeLayout` into the appropriate `XxxLayout.make` parameter.
+- **Tool runtime status** is the second instance of the sparse-dict pattern: `Coordinator.statusStates: [UUID: ToolStatus]` (absent = `.completed`). The keyspace is shared with `foldStates` — top-level `Block.id` keys the group's status, `ToolGroupBlock.Child.id` keys a child's status. `Transcript2Controller.setToolStatus(id:status:)` → `Coordinator.setStatus(id:)` → `removeCachedLayout(for: hostBlockId)` + a single-row `reloadData(forRowIndexes:)`.
 
-- 走 granular `insertRows` / `removeRows` / `reloadRows` + `noteHeightOfRows`,不是 `reloadData()`
-- `Swift.CollectionDifference` 算结构变更;同 id 但 content 变化的额外加进 `contentChanged` IndexSet
-- `tableView.beginUpdates` / `endUpdates` 包裹,中间不重入 dataSource
+  **This deliberately does not go through `Change.update`**, because that route would needlessly drop highlight + drop selection and force the caller to rebuild `Block.Kind`. Status only changes header color / shimmer overlay (no height change), so `setStatus` also skips `noteHeightOfRows`.
 
-## 3. Layout 边界(`XxxLayout` 该管什么)
+  Status is folded into `ToolGroupLayout.Header.status` at `make` time; `drawHeader` and `subviewPlan` resolve color and shimmer through three helpers (`titleColor(for:hovered:)`, `chevronTint(for:hovered:)`, `wantsShimmer(for:)`). Adding a new status visual rule means editing only these helpers.
 
-> **`XxxLayout` 是一个 immutable 值,封装"从某种 block 数据 + 当前 width(+ state)算出的、用于(a)向 NSTableView 报 height 和 (b)画 block 内容主体的、宽度相关的几何信息"。**
+  **`.running` no longer uses a brighter hover-tier color** (that path produced a brightness pop on running↔completed transitions). Title and chevron colors are identical to `.completed`; the running affordance is a sweeping shimmer overlay (`SubviewPlan.Shimmer`).
 
-判断一段代码"该不该是 Layout 管的事",过这三关:
+  **Shimmer is an additive overlay, not a mask.** `drawHeader` always paints the base title in the secondary color into the cell bitmap (`wantsShimmer` no longer short-circuits). The overlay is a `CALayer` carrying a `labelColor` text bitmap with an `[α=0,1,0]` mask gradient — it adds `labelColor` pixels only where the stripe falls. This keeps base text fully opaque and sharp; a mask-based version dimmed the AA glyph edges and felt soft. The overlay layer frame is pixel-aligned in the cell reconciler using the host's backing scale; the bitmap is rendered via `CTLine` + `xOffset` to inject subpixel offset so overlay glyphs and cell-bitmap glyphs share the same subpixel position (no "double image" smear as the stripe sweeps). On hover, overlay opacity is forced to zero (the base already paints in `labelColor`, so adding more would be redundant). `viewDidChangeBackingProperties` propagates `contentsScale` to every sublayer and invalidates cached glyph bitmaps, so dragging across displays doesn't leave stale rasterizations.
 
-1. **是不是 width 的纯函数?**(确定输入 → 确定输出,不感知 hover/selection/animation)
-2. **是不是 row 内容主体?**(改变会不会动 row height?会动 → Layout;不会 → CellView 装饰)
-3. **是不是 draw 前必须算好的几何?**(`heightOfRow` 必须秒返,不能临时排版)
+  **`SubviewPlan.Chevron` carries a resolved `strokeColor` + `alpha`** (status + hover already folded in). **`SubviewPlan.Shimmer` carries `textRect` + title + font + hovered**; highlight color, sweep speed, gradient locations, and pixel alignment all live inside the cell reconciler. The cell stays state-enum-free.
 
-三关全过 → 该是 Layout。**state 是 Layout 的输入,不是字段**(`make(input, width, state) -> Layout`)。
+- **`currentBlocks + rebuild()` is the only path.** `setBlocks` and `frameDidChange` both call `rebuild()`. `rebuild` early-exits on `width <= 0`. **Do not reintroduce a `pendingBlocks` side-channel.**
 
-### Layout vs CellView 分工
+### 2.3 Diff path
 
-| Layout 管 | CellView 管 |
+- Granular `insertRows` / `removeRows` / `reloadRows` + `noteHeightOfRows`, never `reloadData()`.
+- `Swift.CollectionDifference` computes structural diff; same-id, content-changed rows go into an additional `contentChanged` `IndexSet`.
+- Wrap mutations in `tableView.beginUpdates` / `endUpdates`. Do not re-enter the data source between them.
+
+## 3. Layout boundaries (what `XxxLayout` owns)
+
+> **`XxxLayout`** is an immutable value that captures the width-dependent geometry needed to (a) report a row's height to `NSTableView` and (b) draw the block's main body, derived from a particular block payload, the current width, and (optionally) coordinator-held state.
+
+To decide whether a piece of code belongs in a `Layout`, all three must be true:
+
+1. **Is it a pure function of width?** (Deterministic input → output, no hover/selection/animation awareness.)
+2. **Is it row-body content?** (Would changing it change row height? If yes → Layout. If no → cell decoration.)
+3. **Must it be computed before `draw`?** (`heightOfRow` has to return synchronously — no ad-hoc layout at draw time.)
+
+All three yes → `Layout`. **State is an input to the layout function, not a stored field** (`make(input, width, state) -> Layout`).
+
+### Layout vs. CellView
+
+| Layout owns | CellView owns |
 |---|---|
-| 文本字形位置 / image 像素 rect / table cell 内容 | row padding / 圆角 / 阴影 / loading 占位 |
-| 任何**会改 row height 的几何** | 任何**纯装饰**(不影响 height) |
-| 描述需要 cell 挂的 sublayer / subview(`SubviewPlan`) | 按 plan reconcile sublayer / subview |
+| Glyph positions / image rects / table-cell content | Row padding, corner radius, shadows, loading placeholders |
+| Anything that **changes row height** | Anything purely decorative (does not affect height) |
+| A description of subviews / sublayers the cell needs to host (`SubviewPlan`) | Reconciling subviews / sublayers against the current plan |
 
-### 多种 Layout 的派发
+### Dispatching across layouts
 
-`enum RowLayout` 持有具体的 `XxxLayout`,统一暴露 `totalHeight` / `measuredWidth` / `draw(in:origin:)` 三件事。Cell 不感知 enum 内部,只调 `layout.draw`。
+`enum RowLayout` wraps each concrete `XxxLayout` and exposes a uniform `totalHeight` / `measuredWidth` / `draw(in:origin:)`. The cell never inspects the enum — it just calls `layout.draw`.
 
-加新 layout 类型 = `RowLayout` 加 case + 三个 switch 各加一行。
+Adding a new layout kind = one new `RowLayout` case + one line in each of the three switches.
 
-### Cell 不是纯自绘 — AppKit 适配器模式
+### Cells aren't 100% self-drawn — the AppKit adapter pattern
 
-`BlockCellView` 主要走 `override draw(_:)` 自绘路径,但**不再是 100% 单 bitmap**。某些动画/交互行为 CGContext 表达不了,需要挂 AppKit-side 装饰物:
+`BlockCellView` mostly uses `override draw(_:)`, but **not** as a single bitmap. Some animations and interactions can't be expressed in `CGContext` and need real AppKit decorations:
 
-| 装饰物 | 类型 | 为什么不走自绘 |
+| Decoration | Type | Why not self-draw |
 |---|---|---|
-| chevron 旋转 | `CAShapeLayer` 子图层 | `transform.rotation.z` 用 `CABasicAnimation` 一行,自绘要每帧重画 |
-| 可滑动的内嵌 body | `NSView` 子视图(layer-backed) | 单行内多个 body 在 fold 时要互相滑过,只有 `view.animator().frame` 才能实现 slide,单 bitmap 只能 fade |
+| Chevron rotation | `CAShapeLayer` sublayer | `transform.rotation.z` + `CABasicAnimation` is one line; self-drawing would mean redrawing every frame. |
+| Slidable inline body | `NSView` subview (layer-backed) | Multiple body slabs on one row need to slide past each other during fold transitions. Only `view.animator().frame` can express that; a single bitmap can only crossfade. |
 
-**Layout 怎么声明这些装饰物:**`RowLayout` 暴露 `subviewPlan(origin:hoveredAction:selection:) -> SubviewPlan`,只有需要的 layout(今天只有 `toolGroup`)在自己的 enum case 里返回 non-empty plan。`SubviewPlan` 是 **struct + 闭包**(跟 `SelectionAdapter` 同款 pattern),不是 protocol —— cell 不知道是哪种 layout 在产 plan,只跑通用 reconcile。
+**How a layout declares decorations:** `RowLayout` exposes `subviewPlan(origin:hoveredAction:selection:) -> SubviewPlan`. Layouts that need none return an empty plan; only the ones that need decorations (today: `toolGroup`) return non-empty. `SubviewPlan` is a **struct + closures** — same shape as `SelectionAdapter`, never a protocol. The cell doesn't know which layout produced the plan; it just runs the generic reconciler.
 
-**绝对禁止**给"哪种 layout 要装饰物"抽 protocol。原因跟 `ToolGroupChildLayout` enum 一样:protocol 让"忘了在某个 case 实现"成为可能,enum case 加 switch arm 让编译器替你检查。
+**Don't introduce a protocol for "which layout needs decorations".** Same rationale as `ToolGroupChildLayout`: protocols make "forgot to implement it on this case" possible. Enum cases force the compiler to check.
 
-**SubviewPlan 怎么扩展:**
-- 想加新装饰物类别(目前 chevron / entry / shimmer 三类) → `SubviewPlan` 加字段 + `BlockCellView+SubviewPlan.swift` 加 reconcile arm
-- 想让别的 layout 产装饰物 → `RowLayout.subviewPlan` 里给那个 case 加 switch arm,在 layout 自己的文件里实现 `subviewPlan(...)` 方法
+**Extending `SubviewPlan`:**
+- Adding a new decoration category (today: chevron / entry / shimmer) → add a field on `SubviewPlan` + a reconcile arm in `BlockCellView+SubviewPlan.swift`.
+- Letting another layout emit decorations → add an arm in `RowLayout.subviewPlan` and implement `subviewPlan(...)` in that layout's own file.
 
-## 4. 加新 block kind 的清单
+## 4. Adding a new block kind
 
-按 `enum Block.Kind` case 加。同时:
+Add a `case` to `enum Block.Kind`. Then:
 
-1. **判断是否需要新 Layout 类型**(过第 3 节三关)
-2. **`Transcript2Coordinator.makeRowItem` 的 switch 加分支**:派发到对应 `XxxLayout.make`,wrap 进 `RowLayout` case
-3. **如果是新 layout 类型**:在 `Layout/` 加 `XxxLayout.swift`,在 `RowLayout` enum 里加 case
-4. **不要复活 `BlockStyle.attributed(for: Block)`**(已删):这种"all blocks → one attributed string"的 API 假设撑不过非文本 block。每个 kind 在 makeRowItem 里直接派发即可
+1. **Decide whether you need a new `Layout` type** (re-run the three checks in §3).
+2. **Add a `Transcript2Coordinator.makeRowItem` arm**: dispatch to the matching `XxxLayout.make`, wrap in the matching `RowLayout` case.
+3. **If it's a new layout type**: add `Layout/XxxLayout.swift` and a case to the `RowLayout` enum.
+4. **Do not bring back `BlockStyle.attributed(for: Block)`** (deleted). That "all blocks → one attributed string" shape doesn't survive non-text blocks. Dispatch per kind in `makeRowItem`.
 
-### 已实现的范例
+### Implemented examples
 
-- `case .heading(level: Int, inlines: [InlineNode])` / `case .paragraph(inlines: [InlineNode])` → `TextLayout`,经 `BlockStyle.headingAttributed(level:inlines:)` / `paragraphAttributed(inlines:)` 把 inline IR 折叠成 `NSAttributedString`。无 `String` 重载——caller 没有 parser 时手动包 `[.text(s)]`
-- `InlineNode` 是递归 inline IR(text / strong / emphasis / code / link / lineBreak),由上游 markdown parser 产出;Block 层只持有,不解析
-- `case .image(NSImage)` → `ImageLayout`(aspect-fit + maxHeight 兜底)
-- `case .toolGroup(ToolGroupBlock)` → `ToolGroupLayout`。一行装下整个 toolGroup,跟老 `NativeTranscript.GroupComponent` 一比一对齐 —— 字号 / 颜色 / chevron 形状 / hover / padding 全部对齐,不要再改。
+- `case .heading(level: Int, inlines: [InlineNode])` / `case .paragraph(inlines: [InlineNode])` → `TextLayout`, via `BlockStyle.headingAttributed(level:inlines:)` / `paragraphAttributed(inlines:)`, which folds inline IR into an `NSAttributedString`. There is **no** `String` overload — callers without a parser wrap manually as `[.text(s)]`.
+- `InlineNode` is the recursive inline IR (text / strong / emphasis / code / link / lineBreak), produced by the upstream Markdown parser. The block layer holds it but does not parse it.
+- `case .image(NSImage)` → `ImageLayout` (aspect-fit with a `maxHeight` fallback).
+- `case .toolGroup(ToolGroupBlock)` → `ToolGroupLayout`. One row hosts the entire tool group; the appearance must remain pixel-identical to the old `NativeTranscript.GroupComponent` — font sizes, colors, chevron shape, hover behavior, padding. Don't drift.
 
-  **视觉(一比一对齐老 GroupComponent):**
-  - **group header** (24pt) 在 row 顶部:title + 右侧 chevron。title 12pt medium `secondaryLabel`,chevron 8pt,title↔chevron gap 6pt,无 icon,无 inset(layout-local x=0,row 的水平 padding 由 cell `layoutOrigin.x` 提供)。
-  - **child header** 跟 group header **完全同款常量**(`BlockStyle.toolHeader*`)。child header 之间、group header → first child header 之间都是 `toolHeaderChildSpacing = 4pt`。
-  - **chevron 路径**:自绘两段折线 `>`(`lineWidth = 1.4`,`round` cap/join),不要换 SF Symbol —— 老代码用 CGShapeLayer 同款 path。idle alpha = 0.35,hover alpha = 0.85。folded 时 rotation = 0(指右),expanded 时 rotation = π/2(指下)。
-  - **chevron 视觉中心补偿**:`visualCompensation = max(0, (font.capHeight - font.xHeight) / 2)`,chevron centre.y 在 midY 基础上加此偏移,让 chevron 跟 title 的 x-height 中线对齐(没补偿的话 chevron 会视觉浮在 title 上方)。
-  - **hover 高亮**:`BlockCellView` 通过 `NSTrackingArea(.mouseMoved + .mouseEnteredAndExited + .activeInKeyWindow + .inVisibleRect)` 追踪当前 hover 命中的 `HitAction`,传给 `RowLayout.draw(in:origin:hoveredAction:)`。`ToolGroupLayout.draw` 用 `hoveredAction` 中的 `.toggleFold(id)` 跟每个 header.foldId 匹配,匹配的 header 的 title 改用 `.labelColor`,chevron 改用 hover alpha。其它 layout 忽略 `hoveredAction` 参数。
-  - **expanded body**:child header 展开后下方 4pt gap 浮出一个 `codeBlock`-style 圆角矩形(填色 `diffContainerBackground`,圆角 `structuralCornerRadius`),由 `ToolGroupChildLayout` enum 分发到 per-kind layout 文件(目前只有 `FileEditChildLayout`,内部调 `DiffLayout` 画 hunks)。
+  **Visuals (1:1 with old `GroupComponent`):**
+  - **Group header** (24pt) sits at the top of the row: title plus a chevron on the right. Title is 12pt medium `secondaryLabel`; chevron is 8pt; title↔chevron gap is 6pt. No icon. No inset (layout-local `x=0`; the row's horizontal padding comes from `layoutOrigin.x` on the cell).
+  - **Child headers** use the exact same constants (`BlockStyle.toolHeader*`). Spacing between consecutive child headers, and between the group header and the first child header, is `toolHeaderChildSpacing = 4pt`.
+  - **Chevron path** — two self-drawn line segments forming `>` (`lineWidth = 1.4`, round caps/joins). Do not swap in an SF Symbol; the old `CGShapeLayer` used the same path. Idle alpha = 0.35, hover alpha = 0.85. Folded → `rotation = 0` (pointing right); expanded → `rotation = π/2` (pointing down).
+  - **Chevron visual-center compensation** — `visualCompensation = max(0, (font.capHeight - font.xHeight) / 2)`. The chevron's `centre.y` adds this offset on top of `midY` so it aligns with the title's x-height midline (without it the chevron drifts visually above the title).
+  - **Hover highlight** — `BlockCellView` tracks hit via `NSTrackingArea` (`.mouseMoved` + `.mouseEnteredAndExited` + `.activeInKeyWindow` + `.inVisibleRect`) and passes the resolved `HitAction` to `RowLayout.draw(in:origin:hoveredAction:)`. `ToolGroupLayout.draw` matches `.toggleFold(id)` against each header's `foldId`; matching headers swap title to `.labelColor` and chevron alpha to the hover value. Other layouts ignore `hoveredAction`.
+  - **Expanded body** — under an opened child header, a 4pt gap, then a `codeBlock`-style rounded rect (fill = `diffContainerBackground`, corner = `structuralCornerRadius`). `ToolGroupChildLayout` dispatches to the per-kind layout file (today the only one with a body is `FileEditChildLayout`, which calls `DiffLayout` for hunks).
 
-  **fold state 路由:** `HitAction.toggleFold(UUID)` 携带的 id 可能是 group host 的 `Block.id`(group header)或某个 `Child.id`(child header)。`Coordinator.toggleFold(id:)` **必须**同时搜索 `blocks.firstIndex(where: { $0.id == id })` **和** 每个 toolGroup 内 `children.contains(where: { $0.id == id })` 才能定位 host row;只搜顶层 blocks 会让 child header 点击无反应。
+  **Fold-state routing:** the `UUID` in `HitAction.toggleFold(UUID)` can be either the group host's `Block.id` (group header) or a `Child.id` (child header). `Coordinator.toggleFold(id:)` **must** search both `blocks.firstIndex(where: { $0.id == id })` and `children.contains(where: { $0.id == id })` across every tool group to locate the host row. Searching only top-level blocks would leave child-header clicks dead.
 
-  **三态文案(group + child):** `ToolGroupBlock` 持三个 title(`activeTitle` / `expandedActiveTitle` / `completedTitle`),`group.resolvedTitle(status:isExpanded:)` 是单一选址点 ——`.running` 折叠取 `activeTitle`(末 child 进行时),`.running` 展开取 `expandedActiveTitle`(聚合进行时),其它终态 (`.completed` / `.failed` / `.cancelled`) 取 `completedTitle`(聚合过去时)。Child 同理:每个 payload 持 `label`(过去时)+ `activeLabel`(进行时),`Child.headerLabel(for: ToolStatus)` 派发 —— `.running` 取 `activeLabel`,其它取 `label`。Bridge (`MessageEntryBlockBuilder` + `ToolUseToChild`) 两个文案**都填**,layout 层根据 `statusStates[id]` 即时切换,**不**走 `Change.update` 重组 Block.Kind。三态文案的源头是 `SessionHandle2.GroupEntry.activeTitle` / `expandedActiveTitle` / `completedTitle`(对应 `activeCountPhrase` / `completedCountPhrase`),单 tool group 直接用 `ToolUse.activeFragment` / `completedFragment`,不再走 `activeCountPhrase(1)`(那会把"Reading foo.swift"模糊成"Reading 1 file")。
+  **Three-state labels (group + child):** `ToolGroupBlock` holds three titles (`activeTitle` / `expandedActiveTitle` / `completedTitle`). `group.resolvedTitle(status:isExpanded:)` is the single source of truth:
+  - `.running` + folded → `activeTitle` (the in-progress final child)
+  - `.running` + expanded → `expandedActiveTitle` (aggregate progressive form)
+  - any terminal state (`.completed` / `.failed` / `.cancelled`) → `completedTitle` (aggregate past form)
 
-  **新增 child kind:**
-  1. `Layout/ToolGroupChildren/<Kind>/<Kind>Child.swift` 新建文件放 payload struct(必须暴露 `id` / `label` / `activeLabel`;`id` 驱动 fold-state / highlight scope,`label` = 过去时,`activeLabel` = 进行时,`Child.headerLabel(for: ToolStatus)` 根据状态选用);Block.swift 只加 enum case + 在 `id` / `label` / `activeLabel` / `hasExpandableBody` switch 各加一行;
-  2. `Layout/ToolGroupChildren/<Kind>/<Kind>ChildLayout.swift` 新建文件实现 `make / totalHeight / draw / drawBackplate`。多 sub-card body 直接复用 `TextCardSection.build / drawBackplates / draw`,不要每个 layout 重写一份 sub-card 几何;
-  3. `ToolGroupChildLayout` enum 加 case 加 4 个 switch arm(`totalHeight` / `drawBackplate` / `draw` / `make`);
-  4. **header-only kind** (`.read` / `.generic`):`hasExpandableBody = false`,layout `totalHeight == 0`,`draw` / `drawBackplate` 留空 — `ToolGroupLayout` 自动跳过 chevron 绘制 + 不注册 fold hit;
-  5. 如果需要异步高亮,`ToolGroupChildHighlight.requests(for:)` 加 case 返回 `Plan`;
-  6. 如果 body 要可选(进入 `selectionAdapter`):
-     - 走 `TextCardSection` 的 body(bash / grep / glob / webFetch / webSearch / askUserQuestion / agent)零改动 —— `ToolGroupChildLayout.textCardSections` 已经把 sections 列表暴露出去,`ToolGroupLayout.selectionAdapter` 的 `buildRegions` 自动给每个 section 建一个 `LayoutPosition.textCard(childIndex:sectionIndex:char:)` 区域。仅当你新增的 kind **不基于 `TextCardSection`** 才要扩 `LayoutPosition` —— 给它加一个具体 case 并在 `buildRegions` 里加 switch arm 把对应 `Region` 路由进去
-     - 选区粒度是 section-local(跨 section 拖拽 clamp 到起点 section),跨 child 同样 clamp。fileEdit 是唯一的特例 —— 走 `LayoutPosition.diff(childIndex:char:)`,因为 `DiffLayout` 有自己的 gutter/sign 列剥离逻辑,不能直接走 `TextLayout`
+  Children mirror this: each payload exposes `label` (past form) and `activeLabel` (progressive form), with `Child.headerLabel(for: ToolStatus)` choosing — `.running` → `activeLabel`, otherwise → `label`. The bridge (`MessageEntryBlockBuilder` + `ToolUseToChild`) populates **both** labels; the layout switches in place using `statusStates[id]`. **This does not go through `Change.update`** to rebuild `Block.Kind`. The source of the three titles is `SessionHandle2.GroupEntry.activeTitle` / `expandedActiveTitle` / `completedTitle` (corresponding to `activeCountPhrase` / `completedCountPhrase`). For a single-tool group, use `ToolUse.activeFragment` / `completedFragment` directly — do not route through `activeCountPhrase(1)`, which would blur "Reading foo.swift" into "Reading 1 file".
 
-  **已实现的 child kinds**(每个独占一个 `Layout/ToolGroupChildren/<Kind>/` 子目录):
+  **Adding a new child kind:**
+  1. Create `Layout/ToolGroupChildren/<Kind>/<Kind>Child.swift` with the payload struct (must expose `id` / `label` / `activeLabel`; `id` drives fold state and highlight scope, `label` is the past form, `activeLabel` is the progressive form; `Child.headerLabel(for: ToolStatus)` selects). In `Block.swift`, add the enum case and one arm to each of the `id` / `label` / `activeLabel` / `hasExpandableBody` switches.
+  2. Create `Layout/ToolGroupChildren/<Kind>/<Kind>ChildLayout.swift` implementing `make / totalHeight / draw / drawBackplate`. For multi-sub-card bodies, reuse `TextCardSection.build / drawBackplates / draw` rather than reimplementing sub-card geometry.
+  3. Add the case to `ToolGroupChildLayout` plus four switch arms (`totalHeight`, `drawBackplate`, `draw`, `make`).
+  4. **Header-only kinds** (`.read` / `.generic`): `hasExpandableBody = false`, layout `totalHeight == 0`, empty `draw` and `drawBackplate`. `ToolGroupLayout` skips chevron drawing and skips registering the fold hit automatically.
+  5. If async highlighting is needed, add a case to `ToolGroupChildHighlight.requests(for:)` that returns a `Plan`.
+  6. If the body should be selectable (`selectionAdapter`):
+     - Bodies built on `TextCardSection` (bash / grep / glob / webFetch / webSearch / askUserQuestion / agent) are zero-effort — `ToolGroupChildLayout.textCardSections` already exposes the section list, and `ToolGroupLayout.selectionAdapter.buildRegions` produces one `LayoutPosition.textCard(childIndex:sectionIndex:char:)` region per section. You only need to extend `LayoutPosition` if your new kind **isn't** built on `TextCardSection`: add a concrete case and route it through a `buildRegions` arm.
+     - Selection granularity is section-local (drags that cross sections clamp to the start section). Cross-child drags clamp the same way. `fileEdit` is the lone exception: it uses `LayoutPosition.diff(childIndex:char:)` because `DiffLayout` strips its own gutter and sign columns and can't share `TextLayout`'s path.
+
+  **Implemented child kinds** (each in its own `Layout/ToolGroupChildren/<Kind>/` subdirectory):
 
   | Kind | Body |
   |---|---|
-  | `read` / `generic` | header-only(无 chevron) |
-  | `fileEdit` | diff 卡 (`DiffLayout` + per-line highlight) |
-  | `bash` | command / stdout / stderr 三段 monospaced sub-cards;stderr 红字 |
-  | `grep` | filenames + 可选 content preview,两段 sub-cards |
-  | `glob` | filenames + 可选 "… truncated" 尾,单卡 |
-  | `webFetch` | response body 单卡(plain text) |
-  | `webSearch` | results list (title semibold / url monospace / snippet) |
+  | `read` / `generic` | Header-only (no chevron) |
+  | `fileEdit` | Diff card (`DiffLayout` + per-line highlight) |
+  | `bash` | Command / stdout / stderr — three monospaced sub-cards; stderr in red |
+  | `grep` | Filenames + optional content preview, two sub-cards |
+  | `glob` | Filenames + optional "… truncated" tail, single card |
+  | `webFetch` | Response body, single card (plain text) |
+  | `webSearch` | Results list (title semibold / url monospace / snippet) |
   | `askUserQuestion` | Q&A list (semibold question + answer / "awaiting answer…") |
-  | `agent` | progress 卡(`↳ ` 前缀)+ output 卡 |
+  | `agent` | Progress card (`↳ ` prefix) + output card |
 
-  **禁用 protocol** —— enum 分发保证 exhaustiveness 检查,protocol 让"忘了在哪个文件里实现"成为可能。
+  **No protocols.** Enum dispatch gives exhaustiveness checking; a protocol would let you forget an implementation in some file.
 
-  **child header 文案 = 子项自带 `label`,不是裸 filePath。** `FileEditChild` 同时持 `label`(显示用,例如 "Edit Sources/Greeter.swift",过去时形式)和 `filePath`(供 highlight 语言检测)。这是为了对齐老 `ReadChildRenderer` 的 `tool.completedFragment` 文案规则 —— group 展开时 children 永远展示完成态,active 进行时由 group title 反映。
+  **Child header text uses the payload's own `label`, not the raw file path.** `FileEditChild` carries both `label` (display, e.g. "Edit Sources/Greeter.swift", past form) and `filePath` (for language detection in highlighting). This matches the old `ReadChildRenderer`'s `tool.completedFragment` convention — when a group is expanded, children always show their completed form, and the running affordance is reflected on the group title instead.
 
-  **异步高亮:** scope 是 `Transcript2HighlightScope.toolGroupChild(itemId: child.id)`,每个 child 自己决定 `HighlightValue` 形态;file edit 走 per-unique-line `.lineMap`(同老 `NativeDiffView`,key 是 raw line content)。Line metrics 不随 tokens 变化,`onDidFill` 只 `reloadData(forRowIndexes:)`。
+  **Async highlighting:** scope = `Transcript2HighlightScope.toolGroupChild(itemId: child.id)`. Each child decides the `HighlightValue` shape. `fileEdit` uses per-unique-line `.lineMap` (same as the old `NativeDiffView`); the key is the raw line content. Line metrics don't depend on tokens, so `onDidFill` is a `reloadData(forRowIndexes:)` only — no `noteHeightOfRows`.
 
-  **New-file 模式(`oldString == nil`):** `.add` 行视作 `.context`(无 `+` sign,无 add bg),保留 gutter 行号 + token 高亮 —— 输出为"带行号的 code view"而非"全 add 的 diff"。
+  **New-file mode (`oldString == nil`):** `.add` lines render as `.context` (no `+` sign, no add background); gutter line numbers + token highlight are preserved. The output reads as a "line-numbered code view," not a "diff with everything added."
 
-  **Selection 已支持所有可见 body**:fileEdit 走 `LayoutPosition.diff(childIndex:char:)`,其余 7 种(bash / grep / glob / webFetch / webSearch / askUserQuestion / agent)走 `LayoutPosition.textCard(childIndex:sectionIndex:char:)`,粒度 = 单个 `TextCardSection` 卡片。`read` / `generic` header-only,无 body 可选
-- `case .userBubble(text: String)` → `UserBubbleLayout`(右对齐气泡;长文本硬截断到 `userBubbleCollapseThreshold` 行,最后一行用 `CTLineCreateTruncatedLine` 加 `…` 尾,padding 内画 `>` chevron;selection clamp 到 prefix 行,truncated tail 不可选)。**Layout 完全 stateless**,不带 fold 状态 —— chevron mouseDown → `Coordinator.requestUserBubbleSheet(id:)` → 通过 `onUserBubbleSheetRequested` 闭包路由到 `Transcript2Controller.pendingUserBubbleSheet`(`@Observable`)→ SwiftUI 侧 `.sheet(item:)` 弹出完整内容(支持 `Text.textSelection(.enabled)` 复制)。这是 NSView 闭环里**唯一**合法的 SwiftUI 出口 —— `.sheet(item:)` 作为 presentation primitive 必须由 SwiftUI own,但 in-cell 渲染 / 命中 / selection 仍全程 NSView 内部
+  **Selection is supported on every visible body.** `fileEdit` uses `LayoutPosition.diff(childIndex:char:)`; the other seven kinds (bash / grep / glob / webFetch / webSearch / askUserQuestion / agent) use `LayoutPosition.textCard(childIndex:sectionIndex:char:)` with per-card granularity. `read` / `generic` are header-only and have nothing to select.
 
-## 4. 文件结构
+- `case .userBubble(text: String)` → `UserBubbleLayout`. Right-aligned bubble; long text hard-truncates at `userBubbleCollapseThreshold` lines, the last line trims with `CTLineCreateTruncatedLine` + an ellipsis, and a `>` chevron sits inside the padding. Selection clamps to the prefix lines — the truncated tail is not selectable. **The layout is fully stateless** and has no fold flag. Chevron `mouseDown` → `Coordinator.requestUserBubbleSheet(id:)` → routes through the `onUserBubbleSheetRequested` closure to `Transcript2Controller.pendingUserBubbleSheet` (`@Observable`) → SwiftUI's `.sheet(item:)` shows the full content (`Text.textSelection(.enabled)` for copy). This is the **only** legal SwiftUI escape hatch from the NSView loop: `.sheet(item:)` is a presentation primitive that must be owned by SwiftUI, but in-cell rendering, hit testing, and selection stay entirely inside NSView.
+
+## 5. File layout
 
 ```
 NativeTranscript2/
 ├── Model/
-│   └── Block.swift                  数据 + 字体/边距常量 + 气泡 / chevron / code / diff 几何常量
+│   └── Block.swift                  Block data + font/inset constants + bubble / chevron / code / diff geometry constants
 ├── Layout/
-│   ├── TextLayout.swift             Core Text 排版结果(immutable + draw)
-│   ├── ImageLayout.swift            aspect-fit + draw(NSImage 自带数据)
-│   ├── ListLayout.swift             递归 list + 自绘 marker / checkbox
-│   ├── TableLayout.swift            CSS-like min/max 列分配 + 自绘网格
-│   ├── UserBubbleLayout.swift       右对齐气泡 + chevron + fade mask + selection clamp
-│   ├── CodeBlockLayout.swift        header(lang/copy)+ 内嵌 TextLayout body + 异步 token 着色
-│   ├── BlockquoteLayout.swift       左 bar + 内嵌 TextLayout
-│   ├── ThematicBreakLayout.swift    单行 hairline
-│   ├── ToolGroupLayout.swift        toolGroup 行(group header + 子项 headers + 展开 child body),enum 分发到 ToolGroupChildLayout
-│   ├── ToolGroupChildren/           toolGroup 子项 layout,每种 child kind 一个子目录(payload + layout 一起)
-│   │   ├── ToolGroupChildLayout.swift     enum 分发 totalHeight/draw/drawBackplate + make 工厂
-│   │   ├── ToolGroupChildHighlight.swift  per-kind highlight 请求 + finalize
-│   │   ├── TextCardSection.swift          多卡 sub-body 共享几何 + draw helpers
-│   │   ├── FileEdit/                      diff body(头-体两段)
-│   │   │   ├── FileEditChild.swift            payload struct
-│   │   │   ├── FileEditChildLayout.swift      thin wrapper 调 DiffLayout
-│   │   │   ├── FileEditChildHighlight.swift   per-unique-line highlight 请求 + finalize
-│   │   │   ├── DiffBlock.swift                diff payload(old/new + hunks 派生)
-│   │   │   └── DiffLayout.swift               hunks body(`codeBlock`-style 圆角矩形 + per-line gutter/sign/content)
-│   │   ├── Read/                          header-only:Read*Child + ReadChildLayout(totalHeight=0)
-│   │   ├── Generic/                       header-only 兜底:GenericChild + GenericChildLayout(totalHeight=0)
-│   │   ├── Bash/                          command + stdout + stderr 三段 sub-cards
-│   │   ├── Grep/                          filenames + content preview 两段 sub-cards
-│   │   ├── Glob/                          filenames 单卡 + 可选 "… truncated" 尾
-│   │   ├── WebFetch/                      response body 单卡(plain text)
-│   │   ├── WebSearch/                     results list 单卡(title / url / snippet 三层)
-│   │   ├── AskUserQuestion/               Q&A list 单卡(question / answer 两层)
-│   │   └── Agent/                         progress + output 两段 sub-cards
-│   ├── SelectionAdapter.swift       selection-facing API(每个 layout 自带,struct + 闭包)
-│   ├── SubviewPlan.swift            chevron + entry-subview 装饰物 plan(layout 自带,同 SelectionAdapter pattern)
-│   └── RowLayout.swift              enum 派发(text/image/list/table/userBubble/codeBlock/blockquote/thematicBreak/toolGroup)
+│   ├── TextLayout.swift             Core Text layout result (immutable + draw)
+│   ├── ImageLayout.swift            Aspect-fit + draw (NSImage carries the bitmap)
+│   ├── ListLayout.swift             Recursive list with self-drawn markers / checkboxes
+│   ├── TableLayout.swift            CSS-like min/max column allocation + self-drawn grid
+│   ├── UserBubbleLayout.swift       Right-aligned bubble + chevron + fade mask + selection clamp
+│   ├── CodeBlockLayout.swift        Header (lang + copy) + embedded TextLayout body + async token coloring
+│   ├── BlockquoteLayout.swift       Left bar + embedded TextLayout
+│   ├── ThematicBreakLayout.swift    Single hairline
+│   ├── ToolGroupLayout.swift        Tool group row (group header + child headers + expanded body); dispatches into ToolGroupChildLayout
+│   ├── ToolGroupChildren/           Per-kind tool-group child layouts (payload + layout colocated)
+│   │   ├── ToolGroupChildLayout.swift     Enum dispatch for totalHeight / draw / drawBackplate + `make` factory
+│   │   ├── ToolGroupChildHighlight.swift  Per-kind highlight requests + finalize
+│   │   ├── TextCardSection.swift          Shared geometry + draw helpers for multi-card sub-bodies
+│   │   ├── FileEdit/                      Diff body (header + body)
+│   │   │   ├── FileEditChild.swift            Payload struct
+│   │   │   ├── FileEditChildLayout.swift      Thin wrapper that calls DiffLayout
+│   │   │   ├── FileEditChildHighlight.swift   Per-unique-line highlight requests + finalize
+│   │   │   ├── DiffBlock.swift                Diff payload (old/new + derived hunks)
+│   │   │   └── DiffLayout.swift               Hunks body (`codeBlock`-style rounded rect with per-line gutter / sign / content)
+│   │   ├── Read/                          Header-only: ReadChild + ReadChildLayout (totalHeight = 0)
+│   │   ├── Generic/                       Header-only fallback: GenericChild + GenericChildLayout (totalHeight = 0)
+│   │   ├── Bash/                          Command + stdout + stderr, three sub-cards
+│   │   ├── Grep/                          Filenames + content preview, two sub-cards
+│   │   ├── Glob/                          Filenames + optional "… truncated" tail, single card
+│   │   ├── WebFetch/                      Response body, single card (plain text)
+│   │   ├── WebSearch/                     Results list, single card (title / url / snippet)
+│   │   ├── AskUserQuestion/               Q&A list, single card
+│   │   └── Agent/                         Progress + output, two sub-cards
+│   ├── SelectionAdapter.swift       Selection-facing API (per-layout, struct + closures)
+│   ├── SubviewPlan.swift            Chevron + entry-subview decoration plan (per-layout, same shape as SelectionAdapter)
+│   └── RowLayout.swift              Enum dispatch (text / image / list / table / userBubble / codeBlock / blockquote / thematicBreak / toolGroup)
 ├── AppKit/
-│   ├── Transcript2ScrollView.swift  ScrollView + ClipView 子类
-│   ├── Transcript2TableView.swift   TableView 子类(neg-width clamp)
-│   ├── CenteredRowView.swift        Row view 占位子类(空实现),仅为 NSTableView.makeView 提供稳定 row 复用 key
-│   ├── BlockCellView.swift          自绘 cell:layoutOrigin.x = cellOriginX + blockHorizontalPadding 实现居中 + layout.draw + 链接/chevron 命中 + selection + hover tracking
-│   └── BlockCellView+SubviewPlan.swift  按 layout 的 SubviewPlan reconcile chevron sublayer + entry subview;ToolGroupEntryView 也在这里
-├── Transcript2Coordinator.swift          dataSource/delegate + diff + per-kind 派发 + chevron sheet request 路由
-├── Transcript2Controller.swift           imperative 命令通道(apply / loadInitial)
-├── Transcript2SelectionCoordinator.swift 跨行 selection 算法(读 layout.selectionAdapter)
-└── NativeTranscript2View.swift      SwiftUI 桥(updateNSView 是 no-op)+ Preview
+│   ├── Transcript2ScrollView.swift  NSScrollView + NSClipView subclasses
+│   ├── Transcript2TableView.swift   NSTableView subclass (negative-width clamp)
+│   ├── CenteredRowView.swift        Row-view placeholder subclass (no-op body); exists so NSTableView.makeView has a stable row-reuse key
+│   ├── BlockCellView.swift          Self-drawn cell: layoutOrigin.x = cellOriginX + blockHorizontalPadding for centering + layout.draw + link/chevron hit testing + selection + hover tracking
+│   └── BlockCellView+SubviewPlan.swift  Reconciles the chevron sublayer and entry subview against the layout's SubviewPlan; ToolGroupEntryView also lives here
+├── Transcript2Coordinator.swift          DataSource/Delegate + diff + per-kind dispatch + chevron sheet request routing
+├── Transcript2Controller.swift           Imperative command channel (apply / loadInitial)
+├── Transcript2SelectionCoordinator.swift Cross-row selection algorithm (reads layout.selectionAdapter)
+└── NativeTranscript2View.swift      SwiftUI bridge (updateNSView is a no-op) + Preview
 ```
 
-依赖只往下:`NativeTranscript2View → Coordinator → AppKit/ → Layout/ → Model/`。
+Dependencies only flow downward: `NativeTranscript2View → Coordinator → AppKit/ → Layout/ → Model/`.
 
-## 5. 异步高亮回填
+## 6. Async highlight back-fill
 
-`Transcript2HighlightStorage` 是 per-block 异步 side-data 通道。框架已经支持两种 value 形态:
+`Transcript2HighlightStorage` is a per-block async side-channel. The framework already supports two value shapes:
 
-| Scope | Value | 用法 |
+| Scope | Value | Used by |
 |---|---|---|
-| `.codeBlock` | `.tokens([SyntaxToken])` | codeBlock 整段 highlight |
-| `.diff` | `.lineMap([content: tokens])` | diff per-unique-line highlight,key 是 raw line content |
+| `.codeBlock` | `.tokens([SyntaxToken])` | Whole-block code highlighting |
+| `.diff` | `.lineMap([content: tokens])` | Per-unique-line highlight in diffs; key is the raw line content |
 
-**回填流程**(任意 highlight-bearing kind 共用):
+**Back-fill flow** (the same for every highlight-bearing kind):
 
-1. `Coordinator.apply` 在 `.insert` / `.update` 时调 `storage.schedule(block)`
-2. `schedule` 走 `plan(for: block)` 派发,拿到 `Plan { payload, writeback }`
-3. 一次 `engine.highlightBatch(payload)` 跨 JSCore;结果走 `writeback` 写到 storage
-4. `onDidFill(blockId)` 触发 `removeCachedLayout(for: id)` + `reloadData(forRowIndexes:)`
-5. 下一次 `viewFor` 的 `makeLayout` 调用读到 storage snapshot → 着色版 layout
+1. `Coordinator.apply` calls `storage.schedule(block)` on `.insert` / `.update`.
+2. `schedule` dispatches via `plan(for: block)`, which returns a `Plan { payload, writeback }`.
+3. A single `engine.highlightBatch(payload)` crosses into JSCore; results are written back through `writeback`.
+4. `onDidFill(blockId)` triggers `removeCachedLayout(for: id)` + `reloadData(forRowIndexes:)`.
+5. The next `viewFor` call's `makeLayout` reads the storage snapshot and produces a colored layout.
 
-**Generation guard:** `schedule` / `drop` 都 bump `inflightGen[blockId]`,完成回写时对比 generation,drift 则丢弃 — 防止旧 highlight 覆盖新内容(`.update` 把 oldCode 换成 newCode 时,旧 highlight task 完成后不应该写回)。
+**Generation guard:** both `schedule` and `drop` bump `inflightGen[blockId]`. When a job finishes it compares generations; on drift it discards the result. This prevents an old highlight from overwriting newer content (e.g. after `.update` replaces `oldCode` with `newCode`, the in-flight job from the old version must not write back).
 
-**Layout 不变量:** highlight 回填**只换颜色,不换 metrics** — 同 font 同 width 下 glyph 位置不会因为有无 token 而漂移。所以 `onDidFill` 只 `reloadData(forRowIndexes:)` 触发 cell `viewFor` + `draw`,不 `noteHeightOfRows`(那会让所有后续行重排,无意义抖动)。
+**Layout invariant:** highlight back-fill only changes colors, not metrics — under the same font and width, glyph positions don't shift based on token presence. That's why `onDidFill` only does `reloadData(forRowIndexes:)` and not `noteHeightOfRows`: the latter would re-layout every following row for no visual reason.
 
-**加一种新的 highlight-bearing kind:**
+**Adding a new highlight-bearing kind:**
 
-1. `Transcript2HighlightScope` 加 case(如果不能复用 `.tokens` / `.lineMap`,可以扩 `HighlightValue` 加形态)
-2. `Storage.plan(for:)` switch 加分支:返回该 kind 的 `payload` + `writeback`
-3. `XxxLayout.make` 接收对应形态的可空参数(如 `tokens: [SyntaxToken]?` / `lineMap: [String: [SyntaxToken]]?`)
-4. `Coordinator.makeLayout` switch 从 `highlights` snapshot 取对应 key 的 value,模式匹配出 token 形态,传入
+1. Add a case to `Transcript2HighlightScope` (if `.tokens` / `.lineMap` aren't reusable, extend `HighlightValue` with a new shape).
+2. Add a `Storage.plan(for:)` arm that returns the `payload` + `writeback` for the new kind.
+3. Make `XxxLayout.make` accept the matching optional (e.g. `tokens: [SyntaxToken]?` or `lineMap: [String: [SyntaxToken]]?`).
+4. Add an arm to `Coordinator.makeLayout` that pulls the value from the `highlights` snapshot, pattern-matches the token shape, and threads it through.
 
-无需改 framework — storage / reload pipeline 是泛化的。
+The framework itself doesn't change — storage and the reload pipeline are generic.
 
-## 6. 改动前清单
+## 7. Pre-flight checklist before changes
 
-- 改 `Coordinator` 的 diff / pipeline:跑 SwiftUI Preview(`NativeTranscript2View.swift` 的 `#Preview`)目视验证 insert/remove 动画
-- 改 `BlockCellView.draw`:Preview 看排版与字号
-- 改 `TextLayout.make`:Preview 视觉检查就够,纯函数本身不太容易出错
-- 改 `Transcript2ScrollView` / `Transcript2TableView`:跑应用(make build + 运行),拖窗口宽度看 reflow
+- Touching `Coordinator` diff / pipeline: run the SwiftUI Preview (`NativeTranscript2View.swift` `#Preview`) and eyeball insert/remove animations.
+- Touching `BlockCellView.draw`: Preview to verify layout + font.
+- Touching `TextLayout.make`: Preview is enough; the function is pure and hard to break in subtle ways.
+- Touching `Transcript2ScrollView` / `Transcript2TableView`: run the app (`make build` + launch) and drag the window width to verify reflow.

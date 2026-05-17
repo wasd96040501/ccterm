@@ -63,6 +63,12 @@ struct NewSessionConfigurator: View {
     /// button (anchored to the card corner) stays in z-order above the
     /// scrim regardless.
     private static let recentsTopScrimHeight: CGFloat = 32
+    /// Height of the fade-out scrim at the bottom of the recents list.
+    /// Mirrors the top scrim so the last row dissolves into the card's
+    /// bottom edge the same way the first row dissolves into the top —
+    /// the list reads as a soft band of content inside the card rather
+    /// than something clipped at both ends.
+    private static let recentsBottomScrimHeight: CGFloat = 32
 
     @Environment(RecentProjectsStore.self) private var recents
     @Environment(SessionManager2.self) private var manager
@@ -453,6 +459,8 @@ struct NewSessionConfigurator: View {
                 // and would mistrack light/dark transitions.
                 FadeScrim(.topToBottom, height: Self.recentsTopScrimHeight, style: .ultraThinMaterial)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                FadeScrim(.bottomToTop, height: Self.recentsBottomScrimHeight, style: .ultraThinMaterial)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             }
 
             Button(action: presentFolderPicker) {

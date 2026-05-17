@@ -12,9 +12,19 @@ import Observation
 /// - Entries are unique by absolute path.
 /// - Newest first; `add(_:)` moves an existing path to the front and bumps
 ///   its `lastUsed`.
-/// - Missing folders are pruned silently. The store calls `prune()` on
-///   load and exposes the same method for callers that want to clean up
-///   on user-visible interactions (e.g. just before showing the list).
+/// - Missing folders are pruned silently — both in memory AND in
+///   UserDefaults — every time the store loads. Same goes for the
+///   `lastLaunchedPath` and worktree-pref slices.
+/// - **Load is lazy.** `init` does no I/O. The first time any public
+///   member is read, the store decodes UserDefaults, walks every
+///   persisted path with `FileManager.fileExists`, and writes the
+///   pruned shape back. The fileExists pass is what triggers macOS's
+///   TCC "external volume" prompt when a recent lives on `/Volumes/...`
+///   — eager-loading from `AppState.init` made that prompt fire on
+///   every app launch (and every XCTest fork, since the host app
+///   constructs `AppState` even under XCTest). Deferring to first
+///   read scopes the prompt to "user just opened the New Session
+///   card and is about to need this data."
 @Observable
 @MainActor
 final class RecentProjectsStore {
@@ -40,32 +50,43 @@ final class RecentProjectsStore {
         var name: String { (path as NSString).lastPathComponent }
     }
 
-    private(set) var entries: [Entry] = []
-    /// Path of the most recent project the user actually launched a session
-    /// from (by clicking send on a fresh draft). Survives across app
-    /// launches via UserDefaults; nil if no launch has happened yet or the
-    /// stored path no longer exists on disk.
-    private(set) var lastLaunchedPath: String?
-    /// Per-project worktree preference. Same lifecycle as
-    /// `lastLaunchedPath`: only written when the user actually launches a
-    /// session, read on every compose-card open.
+    // Backing storage; public surface is computed and routes through
+    // `loadIfNeeded()`. Keep these as plain stored properties (no
+    // `@ObservationIgnored`) so SwiftUI views that read `entries` /
+    // `lastLaunchedPath` still get a re-render when the deferred load
+    // populates them.
+    private var _entries: [Entry] = []
+    private var _lastLaunchedPath: String?
     @ObservationIgnored private var worktreePrefs: [String: Bool] = [:]
+    @ObservationIgnored private var hasLoaded = false
 
     @ObservationIgnored private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        load()
-        loadLastLaunched()
-        loadWorktreePrefs()
+    }
+
+    var entries: [Entry] {
+        loadIfNeeded()
+        return _entries
+    }
+
+    /// Path of the most recent project the user actually launched a session
+    /// from (by clicking send on a fresh draft). Survives across app
+    /// launches via UserDefaults; nil if no launch has happened yet or the
+    /// stored path no longer exists on disk.
+    var lastLaunchedPath: String? {
+        loadIfNeeded()
+        return _lastLaunchedPath
     }
 
     /// Insert or refresh `path` at the front of the list.
     func add(_ path: String) {
-        var next = entries.filter { $0.path != path }
+        loadIfNeeded()
+        var next = _entries.filter { $0.path != path }
         next.insert(Entry(path: path, lastUsed: Date()), at: 0)
-        entries = next
-        save()
+        _entries = next
+        saveEntries()
     }
 
     /// Record `path` as the last project that successfully launched a
@@ -74,8 +95,12 @@ final class RecentProjectsStore {
     /// worktree choice for that path so the next compose-card visit
     /// pre-fills it.
     func markLaunched(_ path: String, useWorktree: Bool) {
-        add(path)
-        lastLaunchedPath = path
+        loadIfNeeded()
+        var next = _entries.filter { $0.path != path }
+        next.insert(Entry(path: path, lastUsed: Date()), at: 0)
+        _entries = next
+        saveEntries()
+        _lastLaunchedPath = path
         defaults.set(path, forKey: Self.lastLaunchedKey)
         worktreePrefs[path] = useWorktree
         saveWorktreePrefs()
@@ -84,17 +109,19 @@ final class RecentProjectsStore {
     /// Look up the saved worktree preference for `path`. Returns `nil` when
     /// the project has never been launched (caller decides the default).
     func useWorktree(for path: String) -> Bool? {
-        worktreePrefs[path]
+        loadIfNeeded()
+        return worktreePrefs[path]
     }
 
     /// Remove `path` from the list. No-op if absent.
     func remove(_ path: String) {
-        let next = entries.filter { $0.path != path }
-        guard next.count != entries.count else { return }
-        entries = next
-        save()
-        if lastLaunchedPath == path {
-            lastLaunchedPath = nil
+        loadIfNeeded()
+        let next = _entries.filter { $0.path != path }
+        guard next.count != _entries.count else { return }
+        _entries = next
+        saveEntries()
+        if _lastLaunchedPath == path {
+            _lastLaunchedPath = nil
             defaults.removeObject(forKey: Self.lastLaunchedKey)
         }
         if worktreePrefs.removeValue(forKey: path) != nil {
@@ -105,41 +132,55 @@ final class RecentProjectsStore {
     /// Drop entries whose folder no longer exists on disk. Cheap enough
     /// to call on every UI read.
     func prune() {
+        loadIfNeeded()
         let fm = FileManager.default
-        let surviving = entries.filter { fm.fileExists(atPath: $0.path) }
-        guard surviving.count != entries.count else { return }
-        entries = surviving
-        save()
+        let surviving = _entries.filter { fm.fileExists(atPath: $0.path) }
+        guard surviving.count != _entries.count else { return }
+        _entries = surviving
+        saveEntries()
     }
 
-    private func load() {
+    /// One-shot deferred load. Reads all three UserDefaults slices and
+    /// prunes any path whose folder no longer exists, writing the pruned
+    /// shape back so the bad entries don't resurface on the next launch.
+    /// Idempotent — `hasLoaded` guards re-entry on every subsequent
+    /// public-member read.
+    private func loadIfNeeded() {
+        if hasLoaded { return }
+        hasLoaded = true
+        loadEntries()
+        loadLastLaunched()
+        loadWorktreePrefs()
+    }
+
+    private func loadEntries() {
         guard
             let data = defaults.data(forKey: Self.defaultsKey),
             let decoded = try? JSONDecoder().decode([Entry].self, from: data)
         else {
-            entries = []
+            _entries = []
             return
         }
         let fm = FileManager.default
         let surviving = decoded.filter { fm.fileExists(atPath: $0.path) }
-        entries = surviving.sorted { $0.lastUsed > $1.lastUsed }
-        if surviving.count != decoded.count { save() }
+        _entries = surviving.sorted { $0.lastUsed > $1.lastUsed }
+        if surviving.count != decoded.count { saveEntries() }
     }
 
-    private func save() {
-        guard let data = try? JSONEncoder().encode(entries) else { return }
+    private func saveEntries() {
+        guard let data = try? JSONEncoder().encode(_entries) else { return }
         defaults.set(data, forKey: Self.defaultsKey)
     }
 
     private func loadLastLaunched() {
         guard let stored = defaults.string(forKey: Self.lastLaunchedKey) else {
-            lastLaunchedPath = nil
+            _lastLaunchedPath = nil
             return
         }
         if FileManager.default.fileExists(atPath: stored) {
-            lastLaunchedPath = stored
+            _lastLaunchedPath = stored
         } else {
-            lastLaunchedPath = nil
+            _lastLaunchedPath = nil
             defaults.removeObject(forKey: Self.lastLaunchedKey)
         }
     }

@@ -1,7 +1,9 @@
 import SwiftUI
 
 /// Unified surface material for chrome floating at the bottom of the chat
-/// detail — shared by InputBarView2 / LoadingPillView2. Two branches:
+/// detail. Today's sole consumer is `InputBarView2`; the trailing
+/// "running" pill has moved into the transcript itself (no longer a
+/// floating SwiftUI overlay). Two branches:
 ///
 /// - macOS 26+: Liquid Glass (`glassEffect(_:in:)`) — system provides
 ///   translucency + edge highlight + refraction; adds a `separatorColor`
@@ -12,9 +14,7 @@ import SwiftUI
 ///   rounded rect with a stroke; light mode adds a thin shadow to enhance
 ///   the lifted feel.
 ///
-/// Caller supplies `cornerRadius`; this modifier doesn't bake in a value —
-/// InputBar uses 20pt; LoadingPill uses a smaller chip-size radius
-/// (harmonious sub-radius).
+/// Caller supplies `cornerRadius`; this modifier doesn't bake in a value.
 ///
 /// Reference: <https://developer.apple.com/documentation/swiftui/view/glasseffect(_:in:isenabled:)>
 struct BarSurfaceModifier: ViewModifier {
@@ -51,8 +51,8 @@ struct BarSurfaceModifier: ViewModifier {
 }
 
 extension View {
-    /// Apply the chat-detail chrome surface material. Shared by InputBar /
-    /// LoadingPill for visual consistency; each passes its own radius.
+    /// Apply the chat-detail chrome surface material. Used by
+    /// `InputBarView2`; pass the bar's corner radius.
     func barSurface(cornerRadius: CGFloat) -> some View {
         modifier(BarSurfaceModifier(cornerRadius: cornerRadius))
     }

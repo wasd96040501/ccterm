@@ -914,7 +914,8 @@ struct ToolGroupLayout: @unchecked Sendable {
         return SubviewPlan(
             chevrons: chevrons,
             entries: entries,
-            shimmers: shimmers)
+            shimmers: shimmers,
+            loadingDots: [])
     }
 
     /// Build a shimmer spec covering the title rect of `header`.

@@ -66,6 +66,15 @@ struct Block: Identifiable, Equatable, @unchecked Sendable {
         /// `ToolGroupBlock.Item` because every real-world diff arrives
         /// inside a tool-result envelope.
         case toolGroup(ToolGroupBlock)
+        /// Three breathing dots at the last row, surfacing the
+        /// session's "running" state. Inserted / removed by
+        /// `Transcript2Controller.setLoading(_:)` (which also
+        /// debounces the hide a few hundred ms so back-to-back
+        /// turns don't flicker the row off and back on). Payload-
+        /// free because the visual is fixed. The bridge does not
+        /// own this kind — it is purely a controller-managed
+        /// sentinel row.
+        case loadingPill
     }
 }
 
@@ -405,7 +414,29 @@ enum BlockStyle: Sendable {
             // wider top/bottom breathing room than text-edged kinds so
             // the rule doesn't visually attach to either neighbor.
             return (top: 12, bottom: 12)
+        case .loadingPill:
+            // Three small dots at the end of the transcript. The
+            // dots themselves are only 3pt tall; pad with 12 / 12
+            // so the row has visible breathing room above the
+            // preceding content and below the scrim's fade
+            // boundary, matching `thematicBreak`'s "thin glyph in
+            // a generous band" treatment.
+            return (top: 12, bottom: 12)
         }
+    }
+
+    // MARK: - Loading pill geometry
+
+    /// Three-dot animation diameter — matches the SwiftUI source we
+    /// migrated from (`LoadingPillView2.DotsRow.dotSize`) so the
+    /// breath visual carries across exactly.
+    nonisolated static let loadingPillDotSize: CGFloat = 3
+    /// Horizontal gap between dots.
+    nonisolated static let loadingPillDotGap: CGFloat = 4
+    /// Dot color — `secondaryLabel` so the indicator reads as a
+    /// muted ambient signal rather than a primary affordance.
+    nonisolated static var loadingPillDotColor: NSColor {
+        .secondaryLabelColor
     }
 
     /// Cap for image height — wide-and-tall sources don't dominate the viewport.

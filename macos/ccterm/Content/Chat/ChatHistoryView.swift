@@ -102,6 +102,16 @@ struct ChatHistoryView: View {
         .onChange(of: searchBus.focusRequestCounter) { _, _ in
             isSearchFocused = true
         }
+        // `handle?.isRunning` is `@Observable`, so this fires
+        // whenever the session's turn count crosses 0. The pill is
+        // the controller-managed sentinel row at the transcript's
+        // tail — keep the view side strictly read-only against the
+        // handle and let the controller own block-level mutation.
+        // Also reacts to the initial nil → handle binding so a
+        // re-entered running session lights the pill immediately.
+        .onChange(of: handle?.isRunning ?? false, initial: true) { _, new in
+            controller.setLoading(new)
+        }
         .task(id: sessionId) {
             // Use `prepareDraft` so a draft session (no record yet) still gets a
             // handle and mounts `NativeTranscript2View` — this keeps the NSView

@@ -233,7 +233,7 @@ final class Transcript2HighlightStorage {
                 })
 
         case .heading, .paragraph, .image, .list, .table,
-            .blockquote, .thematicBreak, .userBubble:
+            .blockquote, .thematicBreak, .userBubble, .loadingPill:
             return nil
         }
     }

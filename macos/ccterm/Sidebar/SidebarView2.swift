@@ -133,7 +133,14 @@ private struct ProjectGroup2: Identifiable {
 /// the latter lets history rows reserve the same horizontal column as
 /// rows that do have an icon, so their text lines up with the folder
 /// header's text above.
-private struct SidebarIcon: View {
+///
+/// Access is `internal` rather than `private` so the snapshot test
+/// (`SidebarView2SnapshotTests`) can compose the same row visuals into
+/// a plain `VStack` — SwiftUI's `.listStyle(.sidebar)` is backed by
+/// `NSOutlineView` and refuses to render rows in the offscreen test
+/// window. The struct stays file-scoped in practice; production code
+/// never references it from outside this file.
+struct SidebarIcon: View {
     static let slotWidth: CGFloat = 16
     let systemImage: String?
 
@@ -152,7 +159,8 @@ private struct SidebarIcon: View {
 
 /// Fixed top-of-sidebar entry (New Session, Transcript Demo, ...). Behaves
 /// like a normal selectable List row; its `.tag` is supplied by the caller.
-private struct SidebarItemRow: View {
+/// `internal` only so the snapshot test can mount it; see `SidebarIcon`.
+struct SidebarItemRow: View {
     let title: String
     let systemImage: String
 
@@ -170,7 +178,7 @@ private struct SidebarItemRow: View {
 /// foreground to read as a section label rather than a destination. Tap
 /// anywhere on the row to collapse / expand — the chevron rotates and
 /// the children inside the surrounding `ForEach` animate in/out.
-private struct SidebarFolderHeader: View {
+struct SidebarFolderHeader: View {
     let name: String
     let isExpanded: Bool
     let onToggle: () -> Void
@@ -198,10 +206,18 @@ private struct SidebarFolderHeader: View {
 /// is invoked with `nil` to reserve the icon column as transparent
 /// padding, so the title text aligns with the folder header's text
 /// above. Empty titles render as a faint italic "Untitled" placeholder.
-private struct SidebarHistoryRow: View {
+///
+/// The trailing slot mirrors the leading `SidebarIcon` column width
+/// (`slotWidth = 16`) and shows session runtime state via
+/// `SidebarSessionStatusIndicator` — three breathing dots while the
+/// session is running, a small blue dot when there are unread messages
+/// and nothing is running, otherwise empty.
+struct SidebarHistoryRow: View {
     let record: SessionRecord
+    @Environment(SessionManager2.self) private var manager
 
     var body: some View {
+        let handle = manager.existingHandle(record.sessionId)
         HStack(spacing: 6) {
             SidebarIcon(systemImage: nil)
             Group {
@@ -215,6 +231,85 @@ private struct SidebarHistoryRow: View {
             }
             .lineLimit(1)
             .truncationMode(.middle)
+            Spacer(minLength: 4)
+            SidebarSessionStatusIndicator(
+                isRunning: handle?.isRunning ?? false,
+                hasUnread: handle?.hasUnread ?? false
+            )
         }
+    }
+}
+
+// MARK: - Status indicators
+
+/// Trailing-edge runtime-state slot for a history row. Sits in a frame
+/// matched to `SidebarIcon.slotWidth` so the column lines up with the
+/// leading icon column of New Session / folder header rows above.
+///
+/// Precedence: running wins over unread — once a session goes idle and
+/// unread accumulates, the dot replaces the dots. They are never
+/// rendered simultaneously.
+struct SidebarSessionStatusIndicator: View {
+    let isRunning: Bool
+    let hasUnread: Bool
+
+    var body: some View {
+        ZStack {
+            if isRunning {
+                SidebarLoadingDots()
+            } else if hasUnread {
+                Circle()
+                    .fill(Color.accentColor)
+                    .frame(width: 6, height: 6)
+            }
+        }
+        .frame(width: SidebarIcon.slotWidth, height: SidebarIcon.slotWidth)
+    }
+}
+
+/// SwiftUI port of the transcript's `LoadingPillLayout` — three
+/// breathing dots whose opacities cycle in a left-to-right wave. The
+/// timing constants (`period`, `phaseStagger`, `minOpacity`,
+/// `dotSize`) are copied verbatim from
+/// `BlockCellView+SubviewPlan.swift` so the sidebar pill and the
+/// transcript pill breathe in lockstep when the same session is
+/// visible in both places.
+///
+/// Geometry is squeezed to fit the 16pt `SidebarIcon.slotWidth` — dot
+/// size matches the transcript (3pt) but the inter-dot gap shrinks
+/// (4pt → 2.5pt) so 3 × 3 + 2 × 2.5 = 14pt sits comfortably inside
+/// the slot.
+struct SidebarLoadingDots: View {
+    static let dotSize: CGFloat = 3
+    static let dotGap: CGFloat = 2.5
+    /// Full breath cycle — matches transcript.
+    static let period: Double = 1.2
+    /// Per-dot phase offset — matches transcript.
+    static let phaseStagger: Double = 0.18
+    static let minOpacity: Double = 0.25
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            HStack(spacing: Self.dotGap) {
+                ForEach(0..<3, id: \.self) { index in
+                    Circle()
+                        .fill(Color.secondary)
+                        .frame(width: Self.dotSize, height: Self.dotSize)
+                        .opacity(Self.opacity(at: t, staggerIndex: index))
+                }
+            }
+        }
+    }
+
+    /// Smooth sine breath in `[minOpacity, 1]`, identical shape to the
+    /// transcript's `(1 - cos(2π t)) / 2`. Per-dot `staggerIndex`
+    /// shifts the phase so the wave crest sweeps left-to-right.
+    static func opacity(at time: Double, staggerIndex: Int) -> Double {
+        let shifted = time - Double(staggerIndex) * phaseStagger
+        let normalized = shifted.truncatingRemainder(dividingBy: period) / period
+        let nonNegative = normalized < 0 ? normalized + 1 : normalized
+        let s = (1 - cos(2 * .pi * nonNegative)) / 2
+        return minOpacity + (1 - minOpacity) * s
     }
 }

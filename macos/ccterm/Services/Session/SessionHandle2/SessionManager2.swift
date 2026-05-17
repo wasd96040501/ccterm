@@ -58,6 +58,14 @@ final class SessionManager2 {
         return handle
     }
 
+    /// Non-creating lookup. Returns the cached handle if it exists,
+    /// nil otherwise — never allocates. Sidebar rows use this to read
+    /// runtime-only state (`isRunning` / `hasUnread`) without forcing
+    /// every record in the history list to spin up a handle.
+    func existingHandle(_ sessionId: String) -> SessionHandle2? {
+        handles[sessionId]
+    }
+
     /// Prepare a handle for a NewSession draft. The db must have **no**
     /// matching record (identity comes from a fresh UI-generated UUID).
     /// Differs from `session(_:)`: no repository read, pure in-memory

@@ -91,6 +91,18 @@ struct RootView2: View {
                 draftSourceBranch = nil
             }
         }
+        .onChange(of: selectedSessionId, initial: false) { oldValue, newValue in
+            // The sidebar's only signal for "session viewed" is selection.
+            // Drop focus on the previous handle and acquire it on the new one
+            // so `SessionHandle2.setFocused(true)` clears `hasUnread` (the blue
+            // dot in the sidebar status slot).
+            if let old = oldValue, let handle = manager.existingHandle(old) {
+                handle.setFocused(false)
+            }
+            if let new = newValue, let handle = manager.session(new) {
+                handle.setFocused(true)
+            }
+        }
     }
 
     @ViewBuilder

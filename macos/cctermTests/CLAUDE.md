@@ -123,6 +123,7 @@ them: `make test-unit FILTER=<class>` then `open <png>`.
 | View | Test class | PNG |
 |---|---|---|
 | `TranscriptDemoView` ([source](../ccterm/Content/TranscriptDemo/TranscriptDemoView.swift)) | `TranscriptDemoSnapshotTests` ([source](TranscriptDemoSnapshotTests.swift)) | `/tmp/ccterm-screenshots/TranscriptDemoView.png` |
+| `SidebarView2` row chrome + per-row state indicators ([source](../ccterm/Sidebar/SidebarView2.swift)) | `SidebarView2SnapshotTests` ([source](SidebarView2SnapshotTests.swift)) | `/tmp/ccterm-screenshots/SidebarView2.png` |
 
 If your view isn't in this table, jump to [I want to add a snapshot
 test for a new view](#i-want-to-add-a-snapshot-test-for-a-new-view).

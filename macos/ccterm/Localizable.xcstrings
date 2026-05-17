@@ -13,6 +13,16 @@
         }
       }
     },
+    "%lld changed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 项更改"
+          }
+        }
+      }
+    },
     "%lld min ago": {
       "extractionState": "stale",
       "localizations": {
@@ -20,6 +30,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld 分钟前"
+          }
+        }
+      }
+    },
+    "%lld untracked": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 项未跟踪"
           }
         }
       }
@@ -532,6 +552,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Claude 想要使用此工具"
+          }
+        }
+      }
+    },
+    "Clean": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无更改"
           }
         }
       }
@@ -1897,6 +1927,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "拒绝"
+          }
+        }
+      }
+    },
+    "Remote Main": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "远端主分支"
           }
         }
       }

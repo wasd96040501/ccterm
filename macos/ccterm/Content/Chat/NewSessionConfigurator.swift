@@ -314,38 +314,25 @@ struct NewSessionConfigurator: View {
     @ViewBuilder
     private var rightPanel: some View {
         // Geometry: the card's corner radius is `cardCornerRadius` (16).
-        // For a rounded rect, the centre of the top-right corner arc is
-        // (cornerRadius, cornerRadius) inset from the top-right edge — at
-        // (16, 16) here. To land the `+` button's centre on that arc
-        // centre, given the button is `plusButtonSize` (18) square, inset
-        // it `cornerRadius - plusButtonSize/2 = 16 - 9 = 7` from both
-        // the top and trailing edges. The HStack's `.top` padding then
-        // doubles as the vertical alignment for the "Recent" label: the
-        // HStack's default `.center` vertical alignment puts both the
-        // label's and the button's centres on the same Y, so the label
-        // sits on the same horizontal line as the button (= the corner
-        // arc centre at Y = 16).
-        let plusInset = Self.cardCornerRadius - Self.plusButtonSize / 2
-        VStack(spacing: 0) {
-            HStack {
-                Text(String(localized: "Recent"))
+        // The top-right corner arc's centre sits at (cornerRadius,
+        // cornerRadius) inset from that corner — (16, 16) from the
+        // top-right edge. To land the `+` button's *top-right corner*
+        // on that arc centre, inset the button by exactly
+        // `cornerRadius` from the top and trailing edges of the card.
+        // The button's hit area is `plusButtonSize` (18) square, which
+        // grows downward and leftward from that corner.
+        VStack(alignment: .trailing, spacing: 0) {
+            Button(action: presentFolderPicker) {
+                Image(systemName: "plus")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
-                Spacer()
-                Button(action: presentFolderPicker) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: Self.plusButtonSize, height: Self.plusButtonSize)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(String(localized: "Choose Folder…"))
+                    .frame(width: Self.plusButtonSize, height: Self.plusButtonSize)
+                    .contentShape(Rectangle())
             }
-            .padding(.leading, 12)
-            .padding(.trailing, plusInset)
-            .padding(.top, plusInset)
-            .padding(.bottom, 6)
+            .buttonStyle(.plain)
+            .help(String(localized: "Choose Folder…"))
+            .padding(.top, Self.cardCornerRadius)
+            .padding(.trailing, Self.cardCornerRadius)
 
             if recents.entries.isEmpty {
                 emptyRecents
@@ -377,16 +364,22 @@ struct NewSessionConfigurator: View {
         // `List(selection:)` gives us the native sidebar selection
         // highlight at no cost; binding selection back to `folderPath`
         // means picking a row is a single round-trip into the same
-        // state RootView2 reads at submit time. SwiftUI's
-        // `.scrollIndicators(.hidden)` is silently ignored by `List` on
-        // macOS (the underlying `NSScrollView`'s scroller visibility is
-        // owned by AppKit), so we drop a `HideEnclosingScrollers`
-        // background that walks up to the enclosing `NSScrollView` and
-        // turns its verticalScroller off directly.
+        // state RootView2 reads at submit time. `.scrollIndicators` is
+        // ignored by macOS `List`, and SwiftUI doesn't add `.background`
+        // views as descendants of the List's `NSScrollView` —  so we
+        // stash an `enclosingScrollView`-based probe on EACH row's
+        // background. The probe's `NSView` lands inside a
+        // `NSTableCellView`, which IS inside the List's
+        // `NSScrollView`, so `enclosingScrollView` resolves; redundant
+        // probes are idempotent. Beats inlining a 0-height probe row
+        // because sidebar `List` enforces a ~28pt min row height that
+        // would open a gap above the first real entry.
         List(selection: folderPathSelection) {
             ForEach(recents.entries) { entry in
                 recentRow(entry)
                     .tag(entry.path as String?)
+                    .listRowInsets(EdgeInsets(top: 2, leading: 12, bottom: 2, trailing: 12))
+                    .background(HideEnclosingScrollerWidth())
                     .contextMenu {
                         Button(String(localized: "Reveal in Finder")) {
                             revealInFinder(entry.path)
@@ -399,7 +392,6 @@ struct NewSessionConfigurator: View {
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
-        .background(HideEnclosingScrollers())
     }
 
     /// Wrap the binding so the row's `tag` (an optional path) can drive
@@ -524,21 +516,29 @@ struct NewSessionConfigurator: View {
     }
 }
 
-/// Drops an invisible `NSView` into the host SwiftUI view's hierarchy so
-/// we can walk up to the enclosing `NSScrollView` (the one AppKit creates
-/// for `List`) and force its vertical scroller off. SwiftUI's
-/// `.scrollIndicators(.hidden)` modifier doesn't reach `List`'s
-/// underlying `NSScrollView` on macOS — this is the standard AppKit
-/// escape hatch. `enclosingScrollView` walks the superview chain
-/// itself, so this stays robust if SwiftUI changes its inner wrapping
-/// layers.
-private struct HideEnclosingScrollers: NSViewRepresentable {
+/// Invisible probe used as the `.background` of each recents row. Once
+/// SwiftUI installs the probe's `NSView` into the host `NSTableCellView`,
+/// `enclosingScrollView` returns the List's `NSScrollView`; we then
+/// force scrollers off AND switch to overlay style so the gutter
+/// doesn't reserve layout width even when macOS's global "Show scroll
+/// bars" preference is set to Always. `hasVerticalScroller = false`
+/// alone isn't enough on legacy scroller style — the gutter persists.
+private struct HideEnclosingScrollerWidth: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { ScrollerHidingView() }
     func updateNSView(_ nsView: NSView, context: Context) {}
 
     private final class ScrollerHidingView: NSView {
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
+            schedule()
+        }
+
+        override func viewDidMoveToSuperview() {
+            super.viewDidMoveToSuperview()
+            schedule()
+        }
+
+        private func schedule() {
             DispatchQueue.main.async { [weak self] in
                 self?.hideScrollers()
             }
@@ -546,11 +546,13 @@ private struct HideEnclosingScrollers: NSViewRepresentable {
 
         private func hideScrollers() {
             guard let scrollView = enclosingScrollView else { return }
+            scrollView.scrollerStyle = .overlay
             scrollView.hasVerticalScroller = false
             scrollView.hasHorizontalScroller = false
             scrollView.verticalScroller?.alphaValue = 0
             scrollView.horizontalScroller?.alphaValue = 0
-            scrollView.scrollerStyle = .overlay
+            scrollView.autohidesScrollers = true
+            scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
         }
     }
 }

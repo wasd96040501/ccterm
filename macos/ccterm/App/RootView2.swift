@@ -25,9 +25,13 @@ struct RootView2: View {
     @State private var selectedSessionId: String? = SidebarView2.newSessionTag
     @State private var draftSessionId: String?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
-    /// Frame of the pill, in `detailCoordSpace`. The bottom scrim cuts
-    /// a *RoundedRectangle* hole here so the pill (and the attach
-    /// button it now contains) refracts the transcript directly.
+    /// Frame of the round attach button, in `detailCoordSpace`. The
+    /// bottom scrim cuts a *Circle* hole here.
+    @State private var attachRect: CGRect = .zero
+    /// Frame of the rounded-rectangle pill, in `detailCoordSpace`. The
+    /// bottom scrim cuts a *RoundedRectangle* hole here. Reported
+    /// separately from `attachRect` so the 8pt gap between attach and
+    /// pill is NOT cut — the gradient bridges them naturally there.
     @State private var pillRect: CGRect = .zero
     /// User-selected source folder for the draft. Becomes the handle's
     /// `originPath` (and `cwd` when not worktree). nil → home fallback at
@@ -116,17 +120,27 @@ struct RootView2: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
                 .overlay(alignment: .bottom) {
-                    // Fade scrim: a standalone gradient at the detail
-                    // pane bottom, z-ordered above the transcript and
-                    // below the input bar. One hole is cut — the pill's
-                    // `RoundedRectangle` — so the pill (and the attach
-                    // button it now contains) refracts the transcript
-                    // directly instead of through a gray gradient.
+                    // Fade scrim: a standalone gradient at the detail pane
+                    // bottom, z-ordered above the transcript and below the
+                    // input bar. Two holes are cut — a Circle for the
+                    // attach button and a RoundedRectangle for the pill —
+                    // so each control's glass/material refracts the
+                    // transcript directly. The 8pt gap between attach and
+                    // pill is intentionally NOT cut, so the scrim's
+                    // gradient bridges them rather than leaving a
+                    // hard-edged slot.
                     FadeScrim(.bottomToTop, height: 160)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                         .mask {
                             Color.white
                                 .overlay {
+                                    if attachRect != .zero {
+                                        Circle()
+                                            .fill(.black)
+                                            .frame(width: attachRect.width, height: attachRect.height)
+                                            .position(x: attachRect.midX, y: attachRect.midY)
+                                            .blendMode(.destinationOut)
+                                    }
                                     if pillRect != .zero {
                                         RoundedRectangle(cornerRadius: InputBarView2.cornerRadius, style: .continuous)
                                             .fill(.black)
@@ -197,6 +211,7 @@ struct RootView2: View {
                     // already owns its cwd from the first launch).
                     submitEnabled: !isComposeMode || draftCwd != nil,
                     onSubmit: { submission in submit(submission, sessionId: sid) },
+                    onAttachRect: { rect in attachRect = rect },
                     onPillRect: { rect in pillRect = rect }
                 )
                 .frame(
@@ -276,31 +291,40 @@ struct RootView2: View {
 
 // MARK: - InputBarChrome
 
-/// Thin wrapper around `InputBarView2` that resolves the per-session
+/// Per-session wrapper around `InputBarView2`. Resolves the
 /// `SessionHandle2` so the bar can read `isRunning` (send↔stop swap)
-/// and call `interrupt()`. There is no longer a floating pill above
-/// the bar — the "running" indicator now lives at the tail of the
-/// transcript (driven by `Transcript2Controller.setLoading`).
+/// and call `interrupt()`, and hosts the session-scoped chrome row
+/// (`InputBarSessionChrome`) directly below the bar — kept *outside*
+/// the pill so the bar itself stays "pure UI" and the chrome row can
+/// align its left/right edges with the bar (attach button on the left,
+/// pill's trailing edge on the right). The running indicator now lives
+/// at the tail of the transcript (`Transcript2Controller.setLoading`).
 private struct InputBarChrome: View {
     let sessionId: String
     let coordSpace: String
     let submitEnabled: Bool
     let onSubmit: (InputBarView2.Submission) -> Void
+    let onAttachRect: (CGRect) -> Void
     let onPillRect: (CGRect) -> Void
 
     @Environment(SessionManager2.self) private var manager
     @State private var handle: SessionHandle2?
 
     var body: some View {
-        InputBarView2(
-            onSubmit: onSubmit,
-            onStop: { handle?.interrupt() },
-            isRunning: handle?.isRunning ?? false,
-            submitEnabled: submitEnabled,
-            coordSpace: coordSpace,
-            onPillRect: onPillRect,
-            handle: handle
-        )
+        VStack(alignment: .leading, spacing: InputBarSessionChrome.barSpacing) {
+            InputBarView2(
+                onSubmit: onSubmit,
+                onStop: { handle?.interrupt() },
+                isRunning: handle?.isRunning ?? false,
+                submitEnabled: submitEnabled,
+                coordSpace: coordSpace,
+                onAttachRect: onAttachRect,
+                onPillRect: onPillRect
+            )
+            if let handle {
+                InputBarSessionChrome(handle: handle)
+            }
+        }
         .task(id: sessionId) {
             // `prepareDraft` is idempotent get-or-create for both fresh and
             // historical sessions, returning the same handle instance that

@@ -9,10 +9,15 @@ struct RootView2: View {
     /// to the window's top, and a constant fade range keeps the visual weight
     /// of the scrim consistent regardless of window height.
     fileprivate static let topFadeScrimHeight: CGFloat = 80
-    /// Width clamp shared by the compose-mode configurator card and the
-    /// resting input bar — keeps the bar visually recessed from the
-    /// transcript column while the card lines up to the same width.
+    /// Width clamp for the resting input bar — keeps the bar visually
+    /// recessed from the transcript column. The compose-mode
+    /// configurator above uses its own, wider width (`composeCardWidth`)
+    /// so the bar doesn't have to grow with it.
     fileprivate static let composeMaxWidth: CGFloat = 544
+    /// Width of the new-session compose region. Wider than the input
+    /// bar so the (hero + recents) layout has room to breathe, with
+    /// the bar staying narrower as a discrete control beneath it.
+    fileprivate static let composeCardWidth: CGFloat = 680
     /// Bottom inset of the input bar in chat mode (matches the previous
     /// `.padding(.bottom, 36)`).
     fileprivate static let chatBottomInset: CGFloat = 36
@@ -201,7 +206,7 @@ struct RootView2: View {
                     useWorktree: $draftUseWorktree,
                     sourceBranch: $draftSourceBranch
                 )
-                .frame(width: Self.composeMaxWidth)
+                .frame(width: Self.composeCardWidth)
                 .transition(
                     .asymmetric(
                         insertion: .opacity.combined(with: .move(edge: .bottom)),

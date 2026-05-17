@@ -8,6 +8,7 @@ extension AgentSDK.Effort {
         case .low: return String(localized: "Low")
         case .medium: return String(localized: "Medium")
         case .high: return String(localized: "High")
+        case .xhigh: return String(localized: "Extra high")
         case .max: return String(localized: "Max")
         }
     }

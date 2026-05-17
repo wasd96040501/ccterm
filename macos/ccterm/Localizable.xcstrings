@@ -1038,6 +1038,16 @@
         }
       }
     },
+    "Extra high": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "超高"
+          }
+        }
+      }
+    },
     "Failed to launch CLI": {
       "localizations": {
         "zh-Hans": {

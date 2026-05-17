@@ -208,5 +208,6 @@ public enum Effort: String {
     case low
     case medium
     case high
+    case xhigh
     case max
 }

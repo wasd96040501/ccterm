@@ -125,10 +125,10 @@ private struct ModelEffortPopoverContent: View {
         guard let value = selectedModelValue,
             let info = models.first(where: { $0.value == value })
         else {
-            return [.low, .medium, .high, .max]
+            return [.low, .medium, .high, .xhigh, .max]
         }
         guard let raw = info.supportedEffortLevels else {
-            return [.low, .medium, .high, .max]
+            return [.low, .medium, .high, .xhigh, .max]
         }
         let mapped = raw.compactMap(Effort.init(rawValue:))
         return mapped.isEmpty ? nil : mapped

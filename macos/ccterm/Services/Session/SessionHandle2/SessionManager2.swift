@@ -92,4 +92,16 @@ final class SessionManager2 {
     func refreshRecords() {
         records = repository.findAll()
     }
+
+    /// Soft-delete: flip the record to `.archived` so it drops out of
+    /// `records` / sidebar, while remaining recoverable from the future
+    /// archive list page. If the session has a live handle, stop the CLI
+    /// subprocess first and drop the cached instance — a later
+    /// unarchive lands on a fresh handle.
+    func archive(_ sessionId: String) {
+        handles[sessionId]?.stop()
+        handles.removeValue(forKey: sessionId)
+        repository.archive(sessionId)
+        refreshRecords()
+    }
 }

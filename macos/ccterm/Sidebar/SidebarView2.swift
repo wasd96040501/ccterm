@@ -63,6 +63,11 @@ struct SidebarView2: View {
                         SidebarHistoryRow(record: record)
                             .tag(record.sessionId)
                             .listRowInsets(Self.historyRowInsets)
+                            .contextMenu {
+                                Button(String(localized: "Archive")) {
+                                    archive(record.sessionId)
+                                }
+                            }
                     }
                 }
             }
@@ -77,6 +82,16 @@ struct SidebarView2: View {
     private static let fixedRowInsets = EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 8)
     private static let folderHeaderInsets = EdgeInsets(top: 10, leading: 4, bottom: 4, trailing: 8)
     private static let historyRowInsets = EdgeInsets(top: 1, leading: 4, bottom: 1, trailing: 8)
+
+    /// Soft-delete the row and, if it was the active selection, bounce
+    /// the user back to the New Session tab so the detail pane doesn't
+    /// keep rendering a session that no longer appears in the list.
+    private func archive(_ sessionId: String) {
+        if selection == sessionId {
+            selection = Self.newSessionTag
+        }
+        manager.archive(sessionId)
+    }
 
     private func toggleFolder(_ name: String) {
         withAnimation(.smooth(duration: 0.25)) {

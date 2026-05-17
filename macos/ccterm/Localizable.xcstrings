@@ -200,7 +200,6 @@
       }
     },
     "Archive": {
-      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {

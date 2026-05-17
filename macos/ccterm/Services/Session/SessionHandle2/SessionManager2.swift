@@ -53,7 +53,7 @@ final class SessionManager2 {
         if let handle = handles[sessionId] { return handle }
         guard repository.find(sessionId) != nil else { return nil }
         let handle = SessionHandle2(sessionId: sessionId, repository: repository)
-        wireLaunchFailure(handle)
+        wireHandleCallbacks(handle)
         handles[sessionId] = handle
         return handle
     }
@@ -66,16 +66,20 @@ final class SessionManager2 {
     func prepareDraft(_ sessionId: String) -> SessionHandle2 {
         if let handle = handles[sessionId] { return handle }
         let handle = SessionHandle2(sessionId: sessionId, repository: repository)
-        wireLaunchFailure(handle)
+        wireHandleCallbacks(handle)
         handles[sessionId] = handle
         return handle
     }
 
-    /// Wire the handle's `onLaunchFailure` to this manager's
-    /// `lastLaunchFailure`. Called once per handle on creation; later
-    /// bootstrap failures fire synchronously from the handle, the manager
-    /// writes the observable field, and RootView2's `.alert` displays it.
-    private func wireLaunchFailure(_ handle: SessionHandle2) {
+    /// Wire the handle's manager-facing callbacks. Called once per handle
+    /// on creation:
+    ///
+    /// - `onLaunchFailure` → `lastLaunchFailure` so RootView2's `.alert`
+    ///   surfaces CLI launch errors.
+    /// - `onRecordPersisted` → `refreshRecords()` so the sidebar picks up
+    ///   sessions whose db row is saved asynchronously (worktree-
+    ///   provisioning path; see comment on the handle's property).
+    private func wireHandleCallbacks(_ handle: SessionHandle2) {
         let sid = handle.sessionId
         handle.onLaunchFailure = { [weak self] reason in
             // `reason` is the raw description the handle already produced;
@@ -84,6 +88,12 @@ final class SessionManager2 {
                 sessionId: sid,
                 message: reason
             )
+        }
+        handle.onRecordPersisted = { [weak self] in
+            appLog(
+                .info, "SessionManager2",
+                "onRecordPersisted fired sid=\(sid.prefix(8)) — refreshing records")
+            self?.refreshRecords()
         }
     }
 

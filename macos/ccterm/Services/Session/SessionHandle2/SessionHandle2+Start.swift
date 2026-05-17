@@ -235,15 +235,43 @@ extension SessionHandle2 {
         // (agentSession == nil → message queued → flushed when bootstrap
         // finishes).
         if fresh, isWorktree {
+            // Pre-compute the worktree name and path so the eager db row
+            // already carries the final cwd / worktreeBranch — not a
+            // placeholder. `Worktree.create` then takes `preferredName` and
+            // uses it on the first attempt; on the (rare) branch-name
+            // collision the retry loop picks a fresh name and we patch the
+            // row afterwards.
             let origin = originPath
-            let sourceBranch = worktreeBranch
+            let source = sourceBranch  // parent branch the worktree is forked from
+            let proposedName = Worktree.generateName()
+            let proposedBaseRepo = origin.map { Worktree.resolveBaseRepo($0) }
+            let proposedPath = proposedBaseRepo.map {
+                Worktree.worktreeDir(baseRepo: $0, name: proposedName)
+            }
+
+            // Eager persist: cwd / worktreeBranch reflect the proposed
+            // worktree. Sidebar gets a complete row within a frame of
+            // hitting send. `persistConfiguration` keys off `hasRecord`, so
+            // this lands as a fresh `save` and flips `hasRecord = true`;
+            // the post-worktree call below will take the update branch.
+            if let proposedPath {
+                self.cwd = proposedPath
+            }
+            self.worktreeBranch = proposedName
+            persistConfiguration()
+
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 let outcome: Result<Worktree, Error>
                 do {
                     guard let origin else {
                         throw Worktree.Error.notGitRepository(path: "(nil originPath)")
                     }
-                    outcome = .success(try Worktree.create(from: origin, sourceBranch: sourceBranch))
+                    outcome = .success(
+                        try Worktree.create(
+                            from: origin,
+                            sourceBranch: source,
+                            preferredName: proposedName
+                        ))
                 } catch {
                     outcome = .failure(error)
                 }
@@ -251,16 +279,37 @@ extension SessionHandle2 {
                     guard let self else { return }
                     switch outcome {
                     case .success(let wt):
-                        self.cwd = wt.path
-                        self.worktreeBranch = wt.name
-                        self.continueStartup(fresh: fresh)
+                        // Patch only if the collision-retry loop ended up
+                        // with a different name than we proposed — rare.
+                        if wt.name != proposedName {
+                            appLog(
+                                .info, "SessionHandle2",
+                                "worktree name collision recovered: proposed=\(proposedName) actual=\(wt.name)")
+                            self.cwd = wt.path
+                            self.worktreeBranch = wt.name
+                            self.repository.updateCwd(self.sessionId, cwd: wt.path)
+                            self.repository.updateWorktreeBranch(self.sessionId, branch: wt.name)
+                            self.onRecordPersisted?()
+                        }
+                        // The CLI conversation has never been created for
+                        // this session — `makeAgentConfig` will read the
+                        // `.pending` record and pick fresh mode. Do NOT
+                        // try to be clever about "skip resave" here: the
+                        // resume/fresh decision is owned by
+                        // `shouldResumeBootstrap`, not by a flag flowing in.
+                        self.continueStartup()
                     case .failure(let error):
                         appLog(
                             .error, "SessionHandle2",
                             "worktree provision FAILED \(self.sessionId) err=\(error)")
-                        self.termination =
+                        let desc =
                             (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                        self.termination = desc
                         self.status = .stopped
+                        // Persist the failure on the eagerly-saved row so
+                        // the user sees the error rather than a row that
+                        // silently never starts.
+                        self.repository.updateError(self.sessionId, error: desc)
                         self.failQueuedEntries(reason: "worktree provision failed")
                     }
                 }
@@ -268,20 +317,33 @@ extension SessionHandle2 {
             return
         }
 
-        continueStartup(fresh: fresh)
+        continueStartup()
     }
 
     /// Tail of `ensureStarted`: persist the session config and launch the
     /// bootstrap task. Split out so the worktree async path and the local
     /// (sync) path share the same downstream handling.
-    fileprivate func continueStartup(fresh: Bool) {
-        persistConfiguration(fresh: fresh)
+    ///
+    /// No `fresh` parameter: persistence keys off `hasRecord` (in-memory)
+    /// and the fresh-vs-resume bootstrap decision keys off the durable
+    /// `record.status` via `shouldResumeBootstrap`. Single source of truth,
+    /// no caller can put the two in disagreement.
+    fileprivate func continueStartup() {
+        persistConfiguration()
 
         if skipBootstrapForTesting { return }
 
-        let config = makeAgentConfig(fresh: fresh)
+        // UserDefaults read kept at the call site, not inside
+        // `makeAgentConfig`. The tests in `SessionHandle2BootstrapModeTests`
+        // exercise `makeAgentConfig` directly; under hosted XCTest on CI
+        // (macos-26 runner, no full app launch), `UserDefaults.standard`
+        // reads can fault — see `cctermTests/CLAUDE.md` "No UserDefaults"
+        // rule. Hoisting the read here keeps the pure-derivation function
+        // safe to call from tests.
+        let customCommand = UserDefaults.standard.string(forKey: "customCLICommand")
+        let config = makeAgentConfig(customCommand: customCommand)
         Task { @MainActor [weak self] in
-            await self?.bootstrap(configuration: config, fresh: fresh)
+            await self?.bootstrap(configuration: config)
         }
     }
 
@@ -374,8 +436,8 @@ extension SessionHandle2 {
 
     // MARK: Configuration persistence
 
-    fileprivate func persistConfiguration(fresh: Bool) {
-        if fresh {
+    fileprivate func persistConfiguration() {
+        if !hasRecord {
             let record = SessionRecord(
                 sessionId: sessionId,
                 title: title,
@@ -388,7 +450,12 @@ extension SessionHandle2 {
             )
             repository.save(record)
             hasRecord = true
-            appLog(.info, "SessionHandle2", "persistConfiguration fresh save \(sessionId)")
+            appLog(
+                .info, "SessionHandle2",
+                "persistConfiguration fresh save sid=\(sessionId.prefix(8)) "
+                    + "isWorktree=\(isWorktree) cwd=\(cwd ?? "(nil)") "
+                    + "onRecordPersisted=\(onRecordPersisted != nil)")
+            onRecordPersisted?()
         } else {
             if let cwd {
                 repository.updateCwd(sessionId, cwd: cwd)
@@ -419,15 +486,31 @@ extension SessionHandle2 {
         )
     }
 
-    fileprivate func makeAgentConfig(fresh: Bool) -> SessionConfiguration {
-        let customCommand = UserDefaults.standard.string(forKey: "customCLICommand")
+    /// Build the SDK config for the next CLI launch. Consults the durable
+    /// record state via `shouldResumeBootstrap` so resume vs fresh mode is
+    /// derived from one source of truth — no `fresh: Bool` parameter
+    /// flowing in from the caller.
+    ///
+    /// `customCommand` is injected rather than read from `UserDefaults`
+    /// inside the function so this stays a pure derivation of handle state
+    /// + caller-supplied environment. Production reads
+    /// `UserDefaults.standard["customCLICommand"]` in `continueStartup`;
+    /// tests pass `nil` and assert on the produced config without tripping
+    /// hosted-XCTest UserDefaults faults on CI.
+    ///
+    /// `internal` rather than `fileprivate` so
+    /// `SessionHandle2BootstrapModeTests` can assert directly on the
+    /// produced `SessionConfiguration` without standing up AgentSDK or a
+    /// real CLI subprocess.
+    func makeAgentConfig(customCommand: String?) -> SessionConfiguration {
+        let useResume = Self.shouldResumeBootstrap(for: repository.find(sessionId))
         let wd = URL(fileURLWithPath: cwd ?? originPath ?? FileManager.default.currentDirectoryPath)
         var config = SessionConfiguration(
             workingDirectory: wd,
             model: model,
             permissionMode: permissionMode.toSDK(),
-            sessionId: fresh ? sessionId : nil,
-            resume: fresh ? nil : sessionId,
+            sessionId: useResume ? nil : sessionId,
+            resume: useResume ? sessionId : nil,
             effort: effort,
             addDirs: additionalDirectories,
             plugins: pluginDirectories,
@@ -438,12 +521,35 @@ extension SessionHandle2 {
         return config
     }
 
+    /// Whether the next CLI launch should resume an existing conversation
+    /// (`--resume <id>`) or create a new one (`--session-id <id>`). Resume
+    /// mode is valid only after the CLI has previously created a JSONL for
+    /// this session — captured as `status == .created`, the marker
+    /// `bootstrap` writes once `session.start()` succeeds.
+    ///
+    /// History: a previous design threaded a `fresh: Bool` through
+    /// `continueStartup` / `makeAgentConfig` / `bootstrap`. The worktree-
+    /// fresh path's success continuation passed `fresh: false` (to skip a
+    /// redundant repo save) and inadvertently switched the CLI to resume
+    /// mode on its very first launch — the CLI exited 1 with "No
+    /// conversation found with session ID". Centralising the rule here,
+    /// driven by durable state, makes that class of bug impossible.
+    static func shouldResumeBootstrap(for record: SessionRecord?) -> Bool {
+        record?.status == .created
+    }
+
     // MARK: Bootstrap
 
-    fileprivate func bootstrap(configuration: SessionConfiguration, fresh: Bool) async {
+    fileprivate func bootstrap(configuration: SessionConfiguration) async {
+        // Snapshot the resume/fresh decision NOW so the post-init
+        // `.created` update mirrors what `makeAgentConfig` just wired into
+        // `configuration`. (No mutation between these reads — both happen
+        // inside the same `continueStartup` on MainActor — but recomputing
+        // here keeps the function self-contained.)
+        let wasFresh = !Self.shouldResumeBootstrap(for: repository.find(sessionId))
         appLog(
             .info, "SessionHandle2",
-            "[v2-send] bootstrap enter sid=\(sessionId.prefix(8)) fresh=\(fresh) "
+            "[v2-send] bootstrap enter sid=\(sessionId.prefix(8)) fresh=\(wasFresh) "
                 + "resume=\(configuration.resume ?? "(nil)") wd=\(configuration.workingDirectory.path)")
         let session = AgentSDK.Session(configuration: configuration)
         session.lastKnownSessionId = sessionId
@@ -504,11 +610,11 @@ extension SessionHandle2 {
                 + "respNil=\(initResp == nil) status=\(status)")
 
         status = .idle
-        if fresh {
+        if wasFresh {
             repository.updateStatus(sessionId, to: .created)
         }
         flushBootstrapBacklog()
-        appLog(.info, "SessionHandle2", "[v2-send] bootstrap done sid=\(sessionId.prefix(8)) fresh=\(fresh)")
+        appLog(.info, "SessionHandle2", "[v2-send] bootstrap done sid=\(sessionId.prefix(8)) fresh=\(wasFresh)")
     }
 
     /// Single sink for every CLI launch-time failure: sync `Process.run()`

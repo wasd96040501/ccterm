@@ -20,6 +20,24 @@ final class InMemorySessionRepository: SessionRepository {
 
     init() {}
 
+    /// macOS 26 SDK regression: the default class deinit routes through
+    /// `swift_task_deinitOnExecutorImpl`, which the stricter Xcode 26
+    /// Concurrency runtime fires for any class deallocated from a
+    /// `@MainActor` context (even when the class itself isn't isolated).
+    /// `TaskLocal::StopLookupScope::~StopLookupScope` then frees an un-
+    /// malloc'd pointer and libmalloc aborts:
+    ///
+    ///   ___BUG_IN_CLIENT_OF_LIBMALLOC_POINTER_BEING_FREED_WAS_NOT_ALLOCATED
+    ///
+    /// Marking deinit `nonisolated` skips the executor-hop path. Same
+    /// workaround `SessionHandle2` and `CoreDataSessionRepository` use; see
+    /// their matching notes. Symptom on CI: `cctermTests` running on the
+    /// macos-26 runner crashed mid-test when a `@MainActor` test method
+    /// dropped its last reference to an `InMemorySessionRepository`. Local
+    /// Darwin 25.x runs hit the pre-regression libdispatch and didn't
+    /// reproduce.
+    nonisolated deinit {}
+
     // MARK: - Query
 
     func find(_ sessionId: String) -> SessionRecord? {

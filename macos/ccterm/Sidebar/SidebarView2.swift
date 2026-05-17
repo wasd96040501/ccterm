@@ -74,9 +74,9 @@ struct SidebarView2: View {
     /// Shared horizontal insets keep the icon column aligned across all
     /// three row types; vertical insets differ to give history rows a
     /// tighter rhythm without shrinking the font.
-    private static let fixedRowInsets = EdgeInsets(top: 4, leading: 10, bottom: 4, trailing: 8)
-    private static let folderHeaderInsets = EdgeInsets(top: 10, leading: 10, bottom: 4, trailing: 8)
-    private static let historyRowInsets = EdgeInsets(top: 1, leading: 10, bottom: 1, trailing: 8)
+    private static let fixedRowInsets = EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 8)
+    private static let folderHeaderInsets = EdgeInsets(top: 10, leading: 4, bottom: 4, trailing: 8)
+    private static let historyRowInsets = EdgeInsets(top: 1, leading: 4, bottom: 1, trailing: 8)
 
     private func toggleFolder(_ name: String) {
         withAnimation(.smooth(duration: 0.25)) {

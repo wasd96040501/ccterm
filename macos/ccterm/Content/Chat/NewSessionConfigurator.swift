@@ -48,6 +48,10 @@ struct NewSessionConfigurator: View {
     /// Matches `InputBarView2.cornerRadius` so the compose card and the
     /// resting input bar read as one continuous chrome family.
     private static let cardCornerRadius: CGFloat = InputBarView2.cornerRadius
+    /// Hit-target for the "+" button in the recents header. Sized so the
+    /// inset that lands its centre on the corner-arc centre
+    /// (`cardCornerRadius - plusButtonSize/2`) stays a clean integer (7).
+    private static let plusButtonSize: CGFloat = 18
 
     @Environment(RecentProjectsStore.self) private var recents
     @State private var branches: [String] = []
@@ -127,26 +131,18 @@ struct NewSessionConfigurator: View {
                 .padding(.top, 20)
                 .opacity(branchVisible ? 1 : 0)
                 .allowsHitTesting(branchVisible)
-                .animation(.default, value: branchVisible)
 
             Spacer(minLength: 0)
 
             hintRow
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        // Default cross-fade when the picked folder changes. SwiftUI's
-        // default transition is opacity, which is exactly what we want
-        // for the title's project segment + the subtitle's path text.
-        .animation(.default, value: folderPath)
     }
 
     /// "Start Building <name>" with the project name in the accent
     /// color. Composed via HStack rather than `+` Text composition so
     /// the project segment can use `.foregroundStyle(.tint)` (which is
-    /// not a Text-returning modifier). The name uses
-    /// `.contentTransition(.opacity)` so swapping between non-nil
-    /// project names cross-fades; appearance/disappearance is animated
-    /// by the parent's `.animation(.default, value: folderPath)`.
+    /// not a Text-returning modifier).
     private var titleRow: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(String(localized: "Start Building"))
@@ -156,7 +152,6 @@ struct NewSessionConfigurator: View {
                     .foregroundStyle(.tint)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                    .contentTransition(.opacity)
             }
         }
         .font(.title.weight(.semibold))
@@ -172,11 +167,9 @@ struct NewSessionConfigurator: View {
     }
 
     /// Subtitle: abbreviated path when a folder is picked, otherwise a
-    /// short prompt directing the user to the recents list on the
-    /// right. Replaces the previous design's centered single-line
-    /// heading with real, useful context. `.contentTransition(.opacity)`
-    /// gives a cross-fade when the path changes; appearance flips are
-    /// animated by the parent's `.animation(.default, value: folderPath)`.
+    /// short prompt directing the user to the recents list on the right.
+    /// Replaces the previous design's centered single-line heading with
+    /// real, useful context.
     @ViewBuilder
     private var subtitleView: some View {
         if let path = folderPath {
@@ -185,7 +178,6 @@ struct NewSessionConfigurator: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .contentTransition(.opacity)
         } else {
             Text(String(localized: "Pick a project on the right to begin."))
                 .font(.system(size: 12))
@@ -256,11 +248,14 @@ struct NewSessionConfigurator: View {
                 Image(systemName: useWorktree ? "folder.badge.plus" : "folder")
                     .font(.system(size: 12, weight: .medium))
                     .frame(width: 14, height: 14)
+                    .contentTransition(.symbolEffect(.replace))
                 Text(useWorktree ? String(localized: "New Worktree") : String(localized: "Local"))
                     .font(.system(size: 12))
                     .lineLimit(1)
+                    .contentTransition(.opacity)
             }
             .foregroundStyle(.secondary)
+            .animation(.default, value: useWorktree)
         }
         .menuStyle(.button)
         .menuIndicator(.hidden)
@@ -321,6 +316,19 @@ struct NewSessionConfigurator: View {
 
     @ViewBuilder
     private var rightPanel: some View {
+        // Geometry: the card's corner radius is `cardCornerRadius` (16).
+        // For a rounded rect, the centre of the top-right corner arc is
+        // (cornerRadius, cornerRadius) inset from the top-right edge — at
+        // (16, 16) here. To land the `+` button's centre on that arc
+        // centre, given the button is `plusButtonSize` (18) square, inset
+        // it `cornerRadius - plusButtonSize/2 = 16 - 9 = 7` from both
+        // the top and trailing edges. The HStack's `.top` padding then
+        // doubles as the vertical alignment for the "Recent" label: the
+        // HStack's default `.center` vertical alignment puts both the
+        // label's and the button's centres on the same Y, so the label
+        // sits on the same horizontal line as the button (= the corner
+        // arc centre at Y = 16).
+        let plusInset = Self.cardCornerRadius - Self.plusButtonSize / 2
         VStack(spacing: 0) {
             HStack {
                 Text(String(localized: "Recent"))
@@ -331,14 +339,15 @@ struct NewSessionConfigurator: View {
                     Image(systemName: "plus")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.secondary)
-                        .frame(width: 18, height: 18)
+                        .frame(width: Self.plusButtonSize, height: Self.plusButtonSize)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help(String(localized: "Choose Folder…"))
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 12)
+            .padding(.leading, 12)
+            .padding(.trailing, plusInset)
+            .padding(.top, plusInset)
             .padding(.bottom, 6)
 
             if recents.entries.isEmpty {
@@ -388,6 +397,7 @@ struct NewSessionConfigurator: View {
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
+        .scrollIndicators(.hidden)
     }
 
     /// Wrap the binding so the row's `tag` (an optional path) can drive

@@ -118,50 +118,35 @@ struct NewSessionConfigurator: View {
     private var leftPanel: some View {
         let branchVisible = currentBranch != nil
         VStack(alignment: .leading, spacing: 0) {
-            eyebrowRow
-                .padding(.bottom, 16)
-
             titleRow
 
             subtitleView
                 .padding(.top, 6)
 
-            Rectangle()
-                .fill(Color(nsColor: .separatorColor).opacity(0.6))
-                .frame(maxWidth: 280, maxHeight: 1)
-                .padding(.top, 18)
-                .padding(.bottom, 14)
-
             metaRow
+                .padding(.top, 20)
                 .opacity(branchVisible ? 1 : 0)
                 .allowsHitTesting(branchVisible)
-                .animation(.smooth(duration: 0.25), value: branchVisible)
+                .animation(.default, value: branchVisible)
 
             Spacer(minLength: 0)
 
             hintRow
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
-    private var eyebrowRow: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "wand.and.stars")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.tint)
-                .frame(width: 18, height: 18)
-            Text(String(localized: "New Session"))
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.tertiary)
-                .textCase(.uppercase)
-                .tracking(0.6)
-        }
+        // Default cross-fade when the picked folder changes. SwiftUI's
+        // default transition is opacity, which is exactly what we want
+        // for the title's project segment + the subtitle's path text.
+        .animation(.default, value: folderPath)
     }
 
     /// "Start Building <name>" with the project name in the accent
     /// color. Composed via HStack rather than `+` Text composition so
     /// the project segment can use `.foregroundStyle(.tint)` (which is
-    /// not a Text-returning modifier).
+    /// not a Text-returning modifier). The name uses
+    /// `.contentTransition(.opacity)` so swapping between non-nil
+    /// project names cross-fades; appearance/disappearance is animated
+    /// by the parent's `.animation(.default, value: folderPath)`.
     private var titleRow: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(String(localized: "Start Building"))
@@ -171,9 +156,10 @@ struct NewSessionConfigurator: View {
                     .foregroundStyle(.tint)
                     .lineLimit(1)
                     .truncationMode(.tail)
+                    .contentTransition(.opacity)
             }
         }
-        .font(.system(size: 22, weight: .semibold))
+        .font(.title.weight(.semibold))
     }
 
     /// Trimmed last path component of `folderPath`, or `nil` if no
@@ -188,7 +174,9 @@ struct NewSessionConfigurator: View {
     /// Subtitle: abbreviated path when a folder is picked, otherwise a
     /// short prompt directing the user to the recents list on the
     /// right. Replaces the previous design's centered single-line
-    /// heading with real, useful context.
+    /// heading with real, useful context. `.contentTransition(.opacity)`
+    /// gives a cross-fade when the path changes; appearance flips are
+    /// animated by the parent's `.animation(.default, value: folderPath)`.
     @ViewBuilder
     private var subtitleView: some View {
         if let path = folderPath {
@@ -197,6 +185,7 @@ struct NewSessionConfigurator: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .contentTransition(.opacity)
         } else {
             Text(String(localized: "Pick a project on the right to begin."))
                 .font(.system(size: 12))
@@ -213,16 +202,70 @@ struct NewSessionConfigurator: View {
         return path
     }
 
+    /// Concentric-capsule meta row: outer Capsule is a soft tinted
+    /// background that wraps the worktree menu + branch picker pills.
+    /// Both inner pills use `HoverCapsuleStyle` (radius derives from
+    /// content height); the outer capsule adds 2pt of padding so it
+    /// shares the inner pills' center but has a 2pt-larger radius,
+    /// giving the "concentric, one ring out" look. The outer fill is
+    /// `quaternaryLabel` — a builtin semantic gray subtle enough that
+    /// the inner pills' hover state (labelColor at 8%) still reads as
+    /// a distinct overlay rather than being washed out.
     private var metaRow: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 6) {
+            worktreeMenu
             branchPill
-            Toggle(isOn: $useWorktree) {
-                Text(String(localized: "Worktree"))
-                    .font(.system(size: 12))
-            }
-            .toggleStyle(.checkbox)
-            .controlSize(.small)
         }
+        .padding(2)
+        .background(
+            Capsule().fill(Color(nsColor: .quaternaryLabelColor))
+        )
+        .fixedSize()
+    }
+
+    /// Worktree picker: hover-capsule menu with two options. Driving
+    /// `useWorktree` directly lets the rest of the submit pipeline stay
+    /// unchanged.
+    @ViewBuilder
+    private var worktreeMenu: some View {
+        Menu {
+            Button {
+                useWorktree = false
+            } label: {
+                Label {
+                    Text(String(localized: "Local"))
+                } icon: {
+                    if !useWorktree {
+                        Image(systemName: "checkmark")
+                    }
+                }
+            }
+            Button {
+                useWorktree = true
+            } label: {
+                Label {
+                    Text(String(localized: "New Worktree"))
+                } icon: {
+                    if useWorktree {
+                        Image(systemName: "checkmark")
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: useWorktree ? "folder.badge.plus" : "folder")
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 14, height: 14)
+                Text(useWorktree ? String(localized: "New Worktree") : String(localized: "Local"))
+                    .font(.system(size: 12))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(.secondary)
+        }
+        .menuStyle(.button)
+        .menuIndicator(.hidden)
+        .buttonStyle(HoverCapsuleStyle())
+        .fixedSize()
     }
 
     /// `⌘↩ to send` hint, anchored to the bottom-left of the left

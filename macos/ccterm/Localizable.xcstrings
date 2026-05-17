@@ -1391,6 +1391,16 @@
         }
       }
     },
+    "Local": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地"
+          }
+        }
+      }
+    },
     "Local Project": {
       "extractionState": "stale",
       "localizations": {

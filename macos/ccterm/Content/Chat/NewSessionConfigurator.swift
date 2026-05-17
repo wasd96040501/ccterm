@@ -561,6 +561,9 @@ private struct HideEnclosingScrollerWidth: NSViewRepresentable {
             if trackedScrollView !== scrollView {
                 if let prev = trackedScrollView {
                     NotificationCenter.default.removeObserver(self, name: nil, object: prev)
+                    if let prevDoc = prev.documentView {
+                        NotificationCenter.default.removeObserver(self, name: nil, object: prevDoc)
+                    }
                 }
                 trackedScrollView = scrollView
                 scrollView.postsFrameChangedNotifications = true
@@ -582,6 +585,28 @@ private struct HideEnclosingScrollerWidth: NSViewRepresentable {
                     name: NSScrollView.didLiveScrollNotification,
                     object: scrollView
                 )
+                // The document view is the `NSTableView`. Its bounds
+                // change when row selection updates, content grows /
+                // shrinks, or sidebar redraws — each of those is the
+                // moment AppKit re-tiles the scroll view and any
+                // previously-disabled scroller comes back. Catch the
+                // bounds notification and reapply.
+                if let documentView = scrollView.documentView {
+                    documentView.postsBoundsChangedNotifications = true
+                    documentView.postsFrameChangedNotifications = true
+                    NotificationCenter.default.addObserver(
+                        self,
+                        selector: #selector(reapply),
+                        name: NSView.boundsDidChangeNotification,
+                        object: documentView
+                    )
+                    NotificationCenter.default.addObserver(
+                        self,
+                        selector: #selector(reapply),
+                        name: NSView.frameDidChangeNotification,
+                        object: documentView
+                    )
+                }
             }
             scrollView.scrollerStyle = .overlay
             scrollView.autohidesScrollers = true

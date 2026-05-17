@@ -12,7 +12,7 @@ struct RootView2: View {
     /// Width clamp shared by the compose-mode configurator card and the
     /// resting input bar — keeps the bar visually recessed from the
     /// transcript column while the card lines up to the same width.
-    fileprivate static let composeMaxWidth: CGFloat = 544
+    fileprivate static let composeMaxWidth: CGFloat = 680
     /// Bottom inset of the input bar in chat mode (matches the previous
     /// `.padding(.bottom, 36)`).
     fileprivate static let chatBottomInset: CGFloat = 36

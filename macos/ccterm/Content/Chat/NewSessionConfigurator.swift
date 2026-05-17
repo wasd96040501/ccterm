@@ -2,16 +2,22 @@ import AppKit
 import SwiftUI
 
 /// "Compose" card shown above the input bar on the New Session tab. Two
-/// columns (no visible divider), mirroring Xcode's welcome window:
+/// columns inside a single unified surface:
 ///
-/// - **Left**: a centered (H+V) stack — hammer icon, "Start Building
-///   <folder>" single-line heading, and a branch + Worktree row that
-///   fades in / out (opacity-only, so the icon/title don't shift) when
-///   the picked folder is or isn't a git repo with a named HEAD.
+/// - **Left**: a left- and top-aligned hero stack — eyebrow row (icon +
+///   "New Session"), title with the project name tinted, an abbreviated
+///   path subtitle, a hairline divider, a branch + Worktree meta row
+///   (opacity-faded so the layout above doesn't shift when the picked
+///   folder isn't a git repo), and a small `⌘↩ to send` hint anchored
+///   to the bottom edge. A soft radial tint glow in the top-left of
+///   the card replaces the visual weight a hard outer border would have
+///   given, while echoing the accent color used by the eyebrow icon and
+///   the project name.
 /// - **Right**: a sidebar-styled list of recent project folders backed
 ///   by `RecentProjectsStore` (UserDefaults). Selecting one writes back
-///   through `folderPath`. Each row has a right-click menu (Reveal in
-///   Finder / Remove from Recents).
+///   through `folderPath`. The right pane uses an almost-invisible (2.5%
+///   black) recess and a 0.5pt hairline separator so it reads as part
+///   of the same surface, not a second card glued on.
 ///
 /// State for the chosen folder / branch / worktree flag is owned by the
 /// caller (RootView2) so the same values feed straight into the submit
@@ -23,11 +29,12 @@ struct NewSessionConfigurator: View {
 
     /// Fixed visual height; the parent assumes this when computing the
     /// compose-mode vertical centering padding.
-    static let height: CGFloat = 300
-    /// Right-column width. Left column takes the rest. Roughly 38% of
-    /// the 544pt compose width — same proportion Xcode's welcome window
-    /// uses for its recents pane.
-    private static let recentColumnWidth: CGFloat = 200
+    static let height: CGFloat = 400
+    /// Right-column width. Left column takes the rest. ~36.8% of the
+    /// 680pt compose width — same proportion as the previous 200/544
+    /// design, scaled up so the card grows without changing its
+    /// L/R balance.
+    private static let recentColumnWidth: CGFloat = 250
     /// Outer card corner radius. Shared by the unified surface, the
     /// content clip, and the stroke overlay so the geometry stays
     /// consistent regardless of platform branch in `BarSurfaceModifier`.
@@ -43,90 +50,183 @@ struct NewSessionConfigurator: View {
 
     var body: some View {
         // One unified card (single rounded rect with `barSurface` —
-        // Liquid Glass on macOS 26+, thick material on older) split
-        // visually into two halves by a darker fill + a 0.5pt vertical
-        // separator on the right pane. Mirrors Xcode's welcome window:
-        // same block, just cut in two.
+        // Liquid Glass on macOS 26+, thick material on older). The two
+        // columns share the same surface; the right pane gets only a
+        // hairline separator and a near-invisible recess so the card
+        // reads as one continuous block.
         HStack(spacing: 0) {
             leftPanel
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(16)
+                .padding(.horizontal, 24)
+                .padding(.top, 22)
+                .padding(.bottom, 18)
 
             rightPanel
                 .frame(width: Self.recentColumnWidth)
                 .frame(maxHeight: .infinity)
-                .background(
-                    // Recess overlay: a touch darker than the unified
-                    // material beneath. `Color.black.opacity(...)` so
-                    // the effect rides on top of whatever the parent
-                    // surface resolves to (glass / material / solid).
-                    Color.black.opacity(0.18)
-                )
+                .background(Color.black.opacity(0.025))
                 .overlay(alignment: .leading) {
-                    // Hairline dividing the left and right halves.
                     Rectangle()
                         .fill(Color(nsColor: .separatorColor))
                         .frame(width: 0.5)
                 }
         }
+        .background(atmosphericGlow)
         .frame(height: Self.height)
         .clipShape(RoundedRectangle(cornerRadius: Self.cardCornerRadius, style: .continuous))
         .barSurface(cornerRadius: Self.cardCornerRadius)
         .task(id: folderPath) { refreshGitInfo(resetOverride: true) }
     }
 
+    /// Radial tint glow anchored to the top-left, dissipating across
+    /// the card. This is what gives the card its visual weight on the
+    /// left half so the right pane (recents) doesn't tip the balance.
+    /// It also gives the accent color a second presence on the surface
+    /// — the eyebrow icon and the project name in the title both pick
+    /// up this hue, so the tint is never "orphaned" the way a single
+    /// blue hammer would be on an otherwise neutral card.
+    private var atmosphericGlow: some View {
+        RadialGradient(
+            gradient: Gradient(colors: [
+                Color.accentColor.opacity(0.18),
+                Color.accentColor.opacity(0.0),
+            ]),
+            center: UnitPoint(x: 0.10, y: 0.18),
+            startRadius: 0,
+            endRadius: 360
+        )
+    }
+
     // MARK: - Left panel
 
-    /// Centered (H+V) stack: hammer icon, single-line title, branch row.
-    /// The branch row fades via opacity (never structurally removed) so
-    /// the icon + title stay in the same position regardless of the
-    /// picked folder's git status.
+    /// Left- and top-aligned hero stack with a bottom-anchored hint.
+    /// The branch row uses opacity-only show/hide so the rest of the
+    /// stack doesn't reflow when the picked folder switches between
+    /// git / non-git repos.
     @ViewBuilder
     private var leftPanel: some View {
         let branchVisible = currentBranch != nil
-        // One flat VStack — every child is horizontally centered in the
-        // left half. An earlier version nested a `.leading` sub-stack
-        // to align the branch row with the title's leading edge, but
-        // that pushed the title off-center whenever the (possibly
-        // invisible) branch row was wider than the title text. Keeping
-        // everything centered matches Xcode's welcome window and stays
-        // stable across folder-pick states.
-        VStack(spacing: 14) {
-            Image(systemName: "hammer.fill")
-                .font(.system(size: 44, weight: .regular))
-                .foregroundStyle(.tint)
-                .frame(height: 56)
+        VStack(alignment: .leading, spacing: 0) {
+            eyebrowRow
+                .padding(.bottom, 16)
 
-            Text(headingText)
-                .font(.system(size: 18, weight: .semibold))
-                .lineLimit(1)
-                .truncationMode(.tail)
+            titleRow
 
-            HStack(spacing: 10) {
-                branchPill
-                Toggle(isOn: $useWorktree) {
-                    Text(String(localized: "Worktree"))
-                        .font(.system(size: 12))
-                }
-                .toggleStyle(.checkbox)
-                .controlSize(.small)
-            }
-            .opacity(branchVisible ? 1 : 0)
-            .allowsHitTesting(branchVisible)
-            .animation(.smooth(duration: 0.25), value: branchVisible)
+            subtitleView
+                .padding(.top, 6)
+
+            Rectangle()
+                .fill(Color(nsColor: .separatorColor).opacity(0.6))
+                .frame(maxWidth: 280, maxHeight: 1)
+                .padding(.top, 18)
+                .padding(.bottom, 14)
+
+            metaRow
+                .opacity(branchVisible ? 1 : 0)
+                .allowsHitTesting(branchVisible)
+                .animation(.smooth(duration: 0.25), value: branchVisible)
+
+            Spacer(minLength: 0)
+
+            hintRow
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    /// "Start Building <folder>" on one line. Folder name is trimmed of
-    /// trailing whitespace; when no folder is picked yet, fall back to
-    /// the bare title.
-    private var headingText: String {
-        let base = String(localized: "Start Building")
-        guard let folder = folderPath else { return base }
+    private var eyebrowRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "wand.and.stars")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.tint)
+                .frame(width: 18, height: 18)
+            Text(String(localized: "New Session"))
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.tertiary)
+                .textCase(.uppercase)
+                .tracking(0.6)
+        }
+    }
+
+    /// "Start Building <name>" with the project name in the accent
+    /// color. Composed via HStack rather than `+` Text composition so
+    /// the project segment can use `.foregroundStyle(.tint)` (which is
+    /// not a Text-returning modifier).
+    private var titleRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(String(localized: "Start Building"))
+                .foregroundStyle(.primary)
+            if let name = pickedFolderName {
+                Text(name)
+                    .foregroundStyle(.tint)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+        }
+        .font(.system(size: 22, weight: .semibold))
+    }
+
+    /// Trimmed last path component of `folderPath`, or `nil` if no
+    /// folder is picked / the name is empty after trimming.
+    private var pickedFolderName: String? {
+        guard let folder = folderPath else { return nil }
         let name = (folder as NSString).lastPathComponent
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return name.isEmpty ? base : "\(base) \(name)"
+        return name.isEmpty ? nil : name
+    }
+
+    /// Subtitle: abbreviated path when a folder is picked, otherwise a
+    /// short prompt directing the user to the recents list on the
+    /// right. Replaces the previous design's centered single-line
+    /// heading with real, useful context.
+    @ViewBuilder
+    private var subtitleView: some View {
+        if let path = folderPath {
+            Text(abbreviatedPath(path))
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        } else {
+            Text(String(localized: "Pick a project on the right to begin."))
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func abbreviatedPath(_ path: String) -> String {
+        let home = NSHomeDirectory()
+        if path == home { return "~" }
+        if path.hasPrefix(home + "/") {
+            return "~" + path.dropFirst(home.count)
+        }
+        return path
+    }
+
+    private var metaRow: some View {
+        HStack(spacing: 10) {
+            branchPill
+            Toggle(isOn: $useWorktree) {
+                Text(String(localized: "Worktree"))
+                    .font(.system(size: 12))
+            }
+            .toggleStyle(.checkbox)
+            .controlSize(.small)
+        }
+    }
+
+    /// `⌘↩ to send` hint, anchored to the bottom-left of the left
+    /// panel. Tertiary color, monospaced glyph for the shortcut so it
+    /// reads as a key cap. The shortcut is verified in
+    /// `InputBarView2.handleSend` (Cmd+Return submits regardless of
+    /// the user's Enter-to-send mode).
+    private var hintRow: some View {
+        HStack(spacing: 4) {
+            Text(verbatim: "⌘ ↩")
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+            Text(String(localized: "to send"))
+                .font(.system(size: 11))
+        }
+        .foregroundStyle(.tertiary)
     }
 
     /// Branch trigger: hover-capsule pill that opens the popover-based

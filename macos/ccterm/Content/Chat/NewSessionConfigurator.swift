@@ -1,18 +1,25 @@
 import AppKit
 import SwiftUI
 
-/// "Compose" card shown above the input bar on the New Session tab. Two
-/// columns inside a single unified surface:
+/// "Compose" region shown above the input bar on the New Session tab.
+/// Deliberately *not* a card: the surface uses `.ultraThinMaterial`
+/// with no stroke and no shadow, so it reads as a softly-tinted segment
+/// of the window rather than a floating panel set on top of it. This
+/// inverts the chrome relationship with the input bar below — the bar
+/// keeps its full `barSurface` (stroke + shadow) because it's an action
+/// control, while the compose region above is "page", not "tool".
+///
+/// Two columns inside the same surface:
 ///
 /// - **Left**: a left- and top-aligned hero stack — eyebrow row (icon +
 ///   "New Session"), title with the project name tinted, an abbreviated
 ///   path subtitle, a hairline divider, a branch + Worktree meta row
 ///   (opacity-faded so the layout above doesn't shift when the picked
 ///   folder isn't a git repo), and a small `⌘↩ to send` hint anchored
-///   to the bottom edge. A soft radial tint glow in the top-left of
-///   the card replaces the visual weight a hard outer border would have
-///   given, while echoing the accent color used by the eyebrow icon and
-///   the project name.
+///   to the bottom edge. A soft radial tint glow in the top-left gives
+///   the region its visual weight on the left half so the right pane
+///   doesn't tip the balance, and echoes the accent color used by the
+///   eyebrow icon and the project name.
 /// - **Right**: a sidebar-styled list of recent project folders backed
 ///   by `RecentProjectsStore` (UserDefaults). Selecting one writes back
 ///   through `folderPath`. The right pane uses an almost-invisible (2.5%
@@ -49,11 +56,10 @@ struct NewSessionConfigurator: View {
     @State private var showBranchPicker: Bool = false
 
     var body: some View {
-        // One unified card (single rounded rect with `barSurface` —
-        // Liquid Glass on macOS 26+, thick material on older). The two
-        // columns share the same surface; the right pane gets only a
-        // hairline separator and a near-invisible recess so the card
-        // reads as one continuous block.
+        // No `barSurface` — we deliberately skip the stroke + shadow
+        // chrome so this region doesn't look like a card glued on top
+        // of the window. The only surface treatment is a single
+        // `.ultraThinMaterial` background plus a soft tint glow.
         HStack(spacing: 0) {
             leftPanel
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -72,23 +78,28 @@ struct NewSessionConfigurator: View {
                 }
         }
         .background(atmosphericGlow)
+        .background(
+            RoundedRectangle(cornerRadius: Self.cardCornerRadius, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
         .frame(height: Self.height)
         .clipShape(RoundedRectangle(cornerRadius: Self.cardCornerRadius, style: .continuous))
-        .barSurface(cornerRadius: Self.cardCornerRadius)
         .task(id: folderPath) { refreshGitInfo(resetOverride: true) }
     }
 
     /// Radial tint glow anchored to the top-left, dissipating across
-    /// the card. This is what gives the card its visual weight on the
-    /// left half so the right pane (recents) doesn't tip the balance.
-    /// It also gives the accent color a second presence on the surface
-    /// — the eyebrow icon and the project name in the title both pick
-    /// up this hue, so the tint is never "orphaned" the way a single
-    /// blue hammer would be on an otherwise neutral card.
+    /// the region. This is what gives the compose surface its visual
+    /// weight on the left half so the right pane (recents) doesn't tip
+    /// the balance. It also gives the accent color a second presence on
+    /// the surface — the eyebrow icon and the project name in the
+    /// title both pick up this hue, so the tint is never "orphaned" the
+    /// way a single blue icon would be on an otherwise neutral panel.
+    /// Slightly dimmer than a fully-chromed card would need, because
+    /// without a stroke / shadow there's no chrome to compete with.
     private var atmosphericGlow: some View {
         RadialGradient(
             gradient: Gradient(colors: [
-                Color.accentColor.opacity(0.18),
+                Color.accentColor.opacity(0.14),
                 Color.accentColor.opacity(0.0),
             ]),
             center: UnitPoint(x: 0.10, y: 0.18),

@@ -33,6 +33,10 @@ struct NewSessionConfigurator: View {
     @Binding var folderPath: String?
     @Binding var useWorktree: Bool
     @Binding var sourceBranch: String?
+    /// Invoked when the user clicks the "Continue last session" card.
+    /// `RootView2` flips `selectedSessionId` to this value, swapping the
+    /// compose card out for the chosen session's history.
+    var onResumeSession: ((String) -> Void)? = nil
 
     /// Fixed visual height; the parent assumes this when computing the
     /// compose-mode vertical centering padding.
@@ -54,6 +58,7 @@ struct NewSessionConfigurator: View {
     private static let plusButtonSize: CGFloat = 18
 
     @Environment(RecentProjectsStore.self) private var recents
+    @Environment(SessionManager2.self) private var manager
     @State private var branches: [String] = []
     @State private var currentBranch: String? = nil
     @State private var isGitRepo: Bool = false
@@ -127,16 +132,119 @@ struct NewSessionConfigurator: View {
             subtitleView
                 .padding(.top, 6)
 
+            // `padding(.leading, -6)` pulls the metaRow out by exactly
+            // the HoverCapsule's internal hpad, so the visible content
+            // (folder icon) aligns with the title's text leading edge
+            // rather than the invisible capsule edge.
             metaRow
-                .padding(.top, 20)
+                .padding(.leading, -6)
+                .padding(.top, 6)
                 .opacity(branchVisible ? 1 : 0)
                 .allowsHitTesting(branchVisible)
+
+            let recentSessions = recentSessionsForFolder
+            if !recentSessions.isEmpty {
+                resumeList(recentSessions)
+                    .padding(.top, 18)
+            }
 
             Spacer(minLength: 0)
 
             hintRow
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// Maximum rows the Continue section shows. Picked so the section
+    /// fits comfortably in the fixed `Self.height` left column without
+    /// pushing `hintRow` out of view. No scroll — extra sessions are
+    /// reachable via the sidebar.
+    private static let resumeRowLimit = 5
+
+    /// Top N non-archived sessions whose `groupingPath` matches the
+    /// picked folder, descending by `lastActiveAt`. `manager.records`
+    /// is `@Observable` and already sorted that way, so the prefix is
+    /// correct without an explicit sort.
+    private var recentSessionsForFolder: [SessionRecord] {
+        guard let folder = folderPath else { return [] }
+        return
+            manager.records
+            .lazy
+            .filter { $0.status != .archived && $0.groupingPath == folder }
+            .prefix(Self.resumeRowLimit)
+            .map { $0 }
+    }
+
+    /// Horizontal breathing room inside each resume row. Negative-padded
+    /// on the list container by the same amount so the row content
+    /// (title text) lines up with the title above, while the hover bg
+    /// extends outward into the leftPanel's outer padding to give the
+    /// row a comfortable hit-target — same alignment trick used by
+    /// `metaRow` for the worktree capsule.
+    private static let resumeRowHPad: CGFloat = 8
+
+    /// Flat list of recent sessions: no header, no surrounding chrome.
+    /// Rows expand to fill the left panel's width; content aligns to
+    /// the title above, hover bg extends `resumeRowHPad` past on each
+    /// side via the negative padding below.
+    @ViewBuilder
+    private func resumeList(_ records: [SessionRecord]) -> some View {
+        VStack(spacing: 0) {
+            ForEach(records) { record in
+                resumeRow(record)
+            }
+        }
+        .padding(.horizontal, -Self.resumeRowHPad)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Single resume row: title flush-left, compact relative time
+    /// flush-right. Zero horizontal padding so the title's leading
+    /// edge sits at the same x as the title above; vertical padding
+    /// gives a comfortable click target and a subtle hover-bg breath.
+    @ViewBuilder
+    private func resumeRow(_ record: SessionRecord) -> some View {
+        let title = record.title.isEmpty ? String(localized: "Untitled") : record.title
+        Button {
+            onResumeSession?(record.sessionId)
+        } label: {
+            HStack(spacing: 8) {
+                Text(title)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Spacer(minLength: 8)
+
+                Text(Self.compactRelative(from: record.lastActiveAt))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                    .monospacedDigit()
+            }
+            .padding(.horizontal, Self.resumeRowHPad)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(ResumeRowButtonStyle())
+    }
+
+    /// Compact relative-time string. Caps everything ≥ 7 days at
+    /// ">7d" — beyond that the exact age stops being useful and the
+    /// row should read as "old, look elsewhere". Localised through the
+    /// `now` literal only; the suffix-letter forms (m / h / d) are
+    /// universal enough to leave as ASCII.
+    static func compactRelative(from date: Date, now: Date = Date()) -> String {
+        let seconds = Int(now.timeIntervalSince(date))
+        if seconds < 60 { return String(localized: "now") }
+        let minutes = seconds / 60
+        if minutes < 60 { return "\(minutes)m" }
+        let hours = minutes / 60
+        if hours < 24 { return "\(hours)h" }
+        let days = hours / 24
+        if days < 7 { return "\(days)d" }
+        return ">7d"
     }
 
     /// "Start Building <name>" with the project name in the accent
@@ -198,7 +306,7 @@ struct NewSessionConfigurator: View {
     /// inner pill carries its own hover background via
     /// `HoverCapsuleStyle`; no shared container chrome.
     private var metaRow: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 2) {
             worktreeMenu
             branchPill
         }
@@ -504,6 +612,28 @@ struct NewSessionConfigurator: View {
     }
 }
 
+/// Hover/press background for a single Continue-section row. Flat
+/// (no border, no static fill) so the section reads as a list of
+/// links rather than a stack of cards. Same opacity ladder as
+/// `HoverCapsuleStyle` — 8% pressed, 6% hovered — to keep all
+/// hover affordances in this view family consistent.
+private struct ResumeRowButtonStyle: ButtonStyle {
+    @State private var isHovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+        return configuration.label
+            .background(
+                shape.fill(
+                    Color(nsColor: .labelColor).opacity(
+                        configuration.isPressed ? 0.08 : (isHovered ? 0.06 : 0)
+                    )
+                )
+            )
+            .onHover { isHovered = $0 }
+    }
+}
+
 /// Invisible probe used as the `.background` of each recents row. Once
 /// SwiftUI installs the probe's `NSView` into the host `NSTableCellView`,
 /// `enclosingScrollView` returns the List's `NSScrollView`; we then
@@ -635,4 +765,5 @@ private struct HideEnclosingScrollerWidth: NSViewRepresentable {
     }
     .frame(width: 720, height: 460)
     .environment(RecentProjectsStore())
+    .environment(SessionManager2())
 }

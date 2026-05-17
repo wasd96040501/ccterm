@@ -202,7 +202,17 @@ struct RootView2: View {
                 NewSessionConfigurator(
                     folderPath: $draftCwd,
                     useWorktree: $draftUseWorktree,
-                    sourceBranch: $draftSourceBranch
+                    sourceBranch: $draftSourceBranch,
+                    onResumeSession: { resumeSessionId in
+                        // Mirror `submit(...)`'s success path: animate the
+                        // compose card out via `isComposeMode`, then drop
+                        // the draft id so re-entering New Session next
+                        // time starts fresh.
+                        withAnimation(.smooth(duration: 0.42)) {
+                            selectedSessionId = resumeSessionId
+                            draftSessionId = nil
+                        }
+                    }
                 )
                 .frame(width: Self.composeCardWidth)
                 .transition(.opacity)

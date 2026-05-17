@@ -2936,6 +2936,16 @@
         }
       }
     },
+    "now": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刚刚"
+          }
+        }
+      }
+    },
     "recent": {
       "extractionState": "stale",
       "localizations": {

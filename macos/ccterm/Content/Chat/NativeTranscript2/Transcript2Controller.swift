@@ -119,6 +119,21 @@ final class Transcript2Controller {
     /// short-circuit reentry so the recursion ends at one level.
     private var loadingPillReconciling: Bool = false
 
+    /// In-flight debounce for `setLoading(false)`. Holding the pill
+    /// briefly after `isRunning` flips false smooths the transition
+    /// between two adjacent turns: the next `.send(...)` arrives a
+    /// frame or two later, flips `isRunning` back true, and the
+    /// in-flight hide is cancelled — no insert/remove flicker. The
+    /// same task drives the eventual `loadingPillVisible = false`
+    /// when no follow-up arrives.
+    private var pendingHideTask: Task<Void, Never>?
+
+    /// Debounce window for the running indicator's disappearance.
+    /// 400 ms covers the typical pause between sending a follow-up
+    /// message after the previous turn's `.result` lands without
+    /// dragging the pill noticeably past the response.
+    private static let loadingHideDebounceSeconds: Double = 0.4
+
     /// `syntaxEngine` enables async syntax highlighting for code blocks.
     /// Pass `nil` (the default) for previews / tests / hosts without an
     /// engine — code blocks render as plain monospaced text. Hosts that
@@ -214,9 +229,29 @@ final class Transcript2Controller {
     /// which sees the pill is no longer at the tail and re-pins it
     /// by removing + re-inserting at the new tail in one beat.
     func setLoading(_ visible: Bool) {
-        guard loadingPillVisible != visible else { return }
-        loadingPillVisible = visible
-        reconcileLoadingPill()
+        if visible {
+            // A new turn is starting — drop any pending hide so the
+            // currently-visible pill carries through into the next
+            // turn instead of flickering off and back on within a
+            // few hundred ms.
+            pendingHideTask?.cancel()
+            pendingHideTask = nil
+            guard !loadingPillVisible else { return }
+            loadingPillVisible = true
+            reconcileLoadingPill()
+        } else {
+            // Already off (or already scheduled) — nothing to do.
+            guard loadingPillVisible, pendingHideTask == nil else { return }
+            pendingHideTask = Task { [weak self] in
+                try? await Task.sleep(
+                    nanoseconds: UInt64(
+                        Self.loadingHideDebounceSeconds * 1_000_000_000))
+                guard !Task.isCancelled, let self else { return }
+                self.pendingHideTask = nil
+                self.loadingPillVisible = false
+                self.reconcileLoadingPill()
+            }
+        }
     }
 
     /// Bring the pill into compliance with `loadingPillVisible`:

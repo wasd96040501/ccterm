@@ -2728,16 +2728,6 @@
         }
       }
     },
-    "Working": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "工作中"
-          }
-        }
-      }
-    },
     "Working Directory": {
       "extractionState": "stale",
       "localizations": {

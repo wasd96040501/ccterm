@@ -36,11 +36,15 @@ final class ModelStore {
     }
 
     /// Kick off a one-shot CLI session in a temp directory, harvest the
-    /// model catalog from its init response, and stop. Runs once per
-    /// app launch when the on-disk cache is empty — subsequent calls
-    /// no-op so the popover doesn't flash a spinner on every reopen.
+    /// model catalog from its init response, and stop. Fires every
+    /// launch — the disk cache only seeds the UI for cold start; a
+    /// stale cache must not block a refresh, otherwise the user can
+    /// never see a model the CLI added since last run. The in-flight
+    /// dedupe is still load-bearing: callers that hit `.shared` twice
+    /// per launch (compose mode + a popover open before the first
+    /// fetch lands) would otherwise race a second CLI process.
     func prefetchIfNeeded() {
-        guard models.isEmpty, !isLoading else { return }
+        guard !isLoading else { return }
         isLoading = true
         appLog(.info, "ModelStore", "prefetch starting")
         Task.detached(priority: .userInitiated) { [weak self] in

@@ -56,7 +56,7 @@ struct PopoverRow<Accessory: View>: View {
             .frame(height: PopoverList.rowHeight)
             .contentShape(Rectangle())
         }
-        .buttonStyle(_PopoverRowButtonStyle())
+        .buttonStyle(PopoverRowHoverStyle())
     }
 }
 
@@ -66,7 +66,10 @@ extension PopoverRow where Accessory == EmptyView {
     }
 }
 
-private struct _PopoverRowButtonStyle: ButtonStyle {
+/// Shared hover/press background style for popover menu rows. Internal
+/// so siblings like `ModelPopoverRow` (which can't use `PopoverRow`
+/// because it needs a two-line layout) get the same visual.
+struct PopoverRowHoverStyle: ButtonStyle {
     @State private var hovering = false
 
     func makeBody(configuration: Configuration) -> some View {

@@ -2,38 +2,39 @@ import SwiftUI
 
 /// Footer-row indicator: how much of the model's context window the
 /// running session has used. The ring is a clickable button — tapping
-/// it opens a popover with the absolute numbers and percentage; the
-/// label-less ring keeps the chrome row visually quiet at rest, in
-/// line with Claude.app's "metrics widget" treatment. Hidden when
-/// `contextWindowTokens` is still zero (the CLI hasn't yet reported a
-/// window — usually before the first `.result`).
+/// it opens a popover with the absolute numbers and percentage.
+///
+/// Always renders, including when `contextWindowTokens` is still zero
+/// (CLI hasn't reported a window yet, or the session has just started).
+/// The empty-state ring shows a 0% track; the user expects the chrome
+/// row to keep its shape between sessions rather than have a slot
+/// appear and disappear under it.
 struct ContextRingButton: View {
     let handle: SessionHandle2
     @State private var isPresented = false
 
     var body: some View {
-        if handle.contextWindowTokens > 0 {
-            Button(action: { isPresented.toggle() }) {
-                ProgressRingView(percent: percent)
-                    .frame(width: 22, height: 22)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .popover(isPresented: $isPresented, arrowEdge: .top) {
-                ContextPopoverContent(
-                    used: handle.contextUsedTokens,
-                    total: handle.contextWindowTokens,
-                    percent: percent
-                )
-            }
-            .accessibilityLabel(String(localized: "Context usage"))
-            .accessibilityValue("\(Int(percent))%")
+        Button(action: { isPresented.toggle() }) {
+            ProgressRingView(percent: percent)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .popover(isPresented: $isPresented, arrowEdge: .top) {
+            ContextPopoverContent(
+                used: handle.contextUsedTokens,
+                total: handle.contextWindowTokens,
+                percent: percent
+            )
+        }
+        .accessibilityLabel(String(localized: "Context usage"))
+        .accessibilityValue("\(Int(percent))%")
     }
 
     private var percent: Double {
-        let used = Double(handle.contextUsedTokens)
         let total = Double(handle.contextWindowTokens)
+        guard total > 0 else { return 0 }
+        let used = Double(handle.contextUsedTokens)
         return min(max(used / total * 100, 0), 100)
     }
 }

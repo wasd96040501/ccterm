@@ -92,10 +92,12 @@ class SessionHandle2 {
     internal(set) var model: String?
     internal(set) var effort: Effort?
     internal(set) var permissionMode: PermissionMode = .default
-    /// Per-session "fast mode" opt-in. Mirrors Claude.app's toggle —
-    /// applied at runtime via `applyFlagSettings.fastMode`. Authoritative
-    /// off-by-default; UI gates availability on
-    /// `ModelInfo.supportsFastMode` for the currently selected model.
+    /// Per-session "fast mode" opt-in. Applied at runtime via
+    /// `applyFlagSettings.fastMode`. Authoritative off-by-default. The
+    /// UI toggle is unconditionally enabled: CLI `init.models[]` no
+    /// longer carries a `supportsFastMode` capability, and the CLI
+    /// itself rejects fast-mode on incompatible models — there is no
+    /// client-side gate to apply.
     internal(set) var fastModeEnabled: Bool = false
     internal(set) var additionalDirectories: [String] = []
     internal(set) var pluginDirectories: [String] = []

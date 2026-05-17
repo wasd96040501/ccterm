@@ -67,7 +67,7 @@ final class InputBarSnapshotTests: XCTestCase {
         let handle = SessionHandle2(
             sessionId: UUID().uuidString, repository: repo)
         handle.setPermissionMode(.auto)
-        handle.setModel("claude-opus-4-7")
+        handle.setModel("default")
         handle.setEffort(.xhigh)
         handle.availableModels = Self.mockModels
         handle.contextWindowTokens = contextWindowTokens
@@ -78,29 +78,34 @@ final class InputBarSnapshotTests: XCTestCase {
         return handle
     }
 
-    /// Hand-rolled `[ModelInfo]` mirroring what a recent CLI's
-    /// `InitializeResponse.models` would return. Only the fields the
-    /// picker reads (`value` / `displayName` / `supportedEffortLevels`
-    /// / `supportsFastMode`) need to be present; the rest are nil.
+    /// Hand-rolled `[ModelInfo]` mirroring what a current CLI's
+    /// `InitializeResponse.models` actually returns (captured via
+    /// `scripts/probe_claude_models.py`): three entries — `default` /
+    /// `sonnet` / `haiku` — with per-model `supportsEffort` and
+    /// `supportedEffortLevels`. Only `default` declares
+    /// `supportsAutoMode`, which the permission picker uses to gate
+    /// the `auto` row.
     private static let mockModels: [ModelInfo] = {
         let raws: [[String: Any]] = [
             [
-                "value": "claude-opus-4-7",
-                "displayName": "Opus 4.7",
+                "value": "default",
+                "displayName": "Default (recommended)",
+                "description": "Opus 4.7 with 1M context · Most capable for complex work",
+                "supportsEffort": true,
                 "supportedEffortLevels": ["low", "medium", "high", "xhigh", "max"],
-                "supportsFastMode": false,
+                "supportsAutoMode": true,
             ],
             [
-                "value": "claude-sonnet-4-6",
-                "displayName": "Sonnet 4.6",
-                "supportedEffortLevels": ["low", "medium", "high"],
-                "supportsFastMode": true,
+                "value": "sonnet",
+                "displayName": "Sonnet",
+                "description": "Sonnet 4.6 · Best for everyday tasks",
+                "supportsEffort": true,
+                "supportedEffortLevels": ["low", "medium", "high", "max"],
             ],
             [
-                "value": "claude-haiku-4-5",
-                "displayName": "Haiku 4.5",
-                "supportedEffortLevels": [],
-                "supportsFastMode": true,
+                "value": "haiku",
+                "displayName": "Haiku",
+                "description": "Haiku 4.5 · Fastest for quick answers",
             ],
         ]
         return raws.compactMap { try? ModelInfo(json: $0) }

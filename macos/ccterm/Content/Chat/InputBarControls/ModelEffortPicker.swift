@@ -7,6 +7,23 @@ import SwiftUI
 /// streams from `ModelStore.shared`, kicked off at app launch — the
 /// trigger renders a small `ProgressView` next to its label while the
 /// first fetch is in flight.
+///
+/// Display rules (anchored to CLI `init.models[]`, no Claude.app
+/// expansion): rows show the CLI `value` (raw — `default` / `sonnet` /
+/// `haiku`) as the primary line and the CLI `description` as a smaller
+/// secondary line. No `conciseDisplayName` rewrite, no "1M / Legacy"
+/// dim suffix — the CLI is the single source of truth.
+///
+/// Effort defaults are per-model and persisted in `EffortDefaultStore`.
+/// Switching model auto-applies the remembered effort (or the
+/// first-time default — `default → xhigh`, `sonnet → high`,
+/// fallback → `high`), clamped to the new model's
+/// `supportedEffortLevels`.
+///
+/// Fast mode is always-enabled in the toggle: CLI's `init.models[]`
+/// doesn't carry a `supportsFastMode` field, so we have nothing to
+/// gate on; the CLI itself rejects fast-mode requests on unsupported
+/// models.
 struct ModelEffortPicker: View {
     let handle: SessionHandle2
     @State private var isPresented = false
@@ -20,27 +37,20 @@ struct ModelEffortPicker: View {
                 isPresented.toggle()
             }
             .popover(isPresented: $isPresented, arrowEdge: .top) {
-                // Model / effort selections close the popover on tap.
-                // This is both the standard menu-row affordance AND
-                // the cheapest fix for popover-anchor drift: the
-                // trigger's intrinsic width is allowed to update
-                // immediately (no "freeze" hack), but it only does so
-                // *after* the popover has dismissed — so the anchor
-                // never moves while the menu is on screen. Fast-mode
-                // is a switch, not a menu row, so it stays open.
                 ModelEffortPopoverContent(
                     models: visibleModels,
                     selectedModelValue: handle.model,
-                    selectedEffort: handle.effort,
+                    selectedEffort: effectiveEffort,
                     fastModeEnabled: handle.fastModeEnabled,
-                    fastModeSupported: selectedModelInfo?.supportsFastMode ?? false,
                     onSelectModel: { value in
-                        handle.setModel(value)
-                        reconcileEffortIfNeeded(forModelValue: value)
+                        applyModelSelection(value)
                         isPresented = false
                     },
                     onSelectEffort: { effort in
                         handle.setEffort(effort)
+                        if let value = handle.model {
+                            EffortDefaultStore.shared.remember(effort, for: value)
+                        }
                         isPresented = false
                     },
                     onToggleFastMode: { enabled in
@@ -57,68 +67,51 @@ struct ModelEffortPicker: View {
         }
     }
 
+    /// Per-session catalog wins; fall through to the cross-launch
+    /// `ModelStore` cache only when the session hasn't replied yet.
     private var visibleModels: [ModelInfo] {
         let live = handle.availableModels
         return live.isEmpty ? store.models : live
     }
 
-    /// Resolve the model the picker should treat as "current" for
-    /// feature-flag lookups (fast mode, effort levels). When the user
-    /// hasn't explicitly picked one (`handle.model == nil`) we fall
-    /// back to the first entry in `visibleModels`, which the CLI lists
-    /// as the recommended default — otherwise the fast-mode toggle
-    /// reads as permanently disabled even though the default model
-    /// supports it.
     private var selectedModelInfo: ModelInfo? {
-        Self.resolveCurrentModel(value: handle.model, in: visibleModels)
+        guard let value = handle.model else { return nil }
+        return visibleModels.first(where: { $0.value == value })
     }
 
-    /// Pure resolver split out of the View body so it can be unit-
-    /// tested without standing up a SwiftUI hierarchy.
-    static func resolveCurrentModel(value: String?, in models: [ModelInfo]) -> ModelInfo? {
-        if let value, let exact = models.first(where: { $0.value == value }) {
-            return exact
-        }
-        return models.first
+    /// Effort to show as "selected" in trigger + popover. Real
+    /// `handle.effort` wins; otherwise the per-model default from
+    /// `EffortDefaultStore`. nil only when no model is selected or the
+    /// model declares no effort support.
+    private var effectiveEffort: Effort? {
+        if let effort = handle.effort { return effort }
+        guard let info = selectedModelInfo else { return nil }
+        return EffortDefaultStore.shared.effort(for: info)
+    }
+
+    /// Switching model: write the new value, then resolve the model's
+    /// remembered/default effort and push it through `setEffort` so
+    /// the CLI receives an effort consistent with what the UI shows.
+    private func applyModelSelection(_ value: String) {
+        handle.setModel(value)
+        guard let info = visibleModels.first(where: { $0.value == value }),
+            let resolved = EffortDefaultStore.shared.effort(for: info)
+        else { return }
+        handle.setEffort(resolved)
     }
 
     @ViewBuilder
     private var triggerLabel: some View {
         HStack(spacing: 4) {
-            Text(modelDisplay)
+            Text(handle.model ?? "Model")
                 .foregroundStyle(.primary)
-            if let effort = handle.effort {
+            if let effort = effectiveEffort {
                 Text("·")
                     .foregroundStyle(.secondary)
                 Text(effort.title)
                     .foregroundStyle(.secondary)
             }
         }
-    }
-
-    private var modelDisplay: String {
-        if let value = handle.model {
-            if let info = visibleModels.first(where: { $0.value == value }) {
-                return info.conciseDisplayName
-            }
-            return value
-        }
-        return "Default"
-    }
-
-    /// When the user picks a new model, drop the current effort if it
-    /// isn't in the new model's `supportedEffortLevels` and fall back to
-    /// the first level the new model does support. Keeps the popover
-    /// from ever showing a stale checked level.
-    private func reconcileEffortIfNeeded(forModelValue value: String) {
-        guard let effort = handle.effort,
-            let info = visibleModels.first(where: { $0.value == value }),
-            let levels = info.supportedEffortLevels,
-            !levels.isEmpty,
-            !levels.contains(effort.rawValue),
-            let firstSupported = levels.compactMap(Effort.init(rawValue:)).first
-        else { return }
-        handle.setEffort(firstSupported)
     }
 }
 
@@ -127,7 +120,6 @@ private struct ModelEffortPopoverContent: View {
     let selectedModelValue: String?
     let selectedEffort: Effort?
     let fastModeEnabled: Bool
-    let fastModeSupported: Bool
     let onSelectModel: (String) -> Void
     let onSelectEffort: (Effort) -> Void
     let onToggleFastMode: (Bool) -> Void
@@ -149,15 +141,20 @@ private struct ModelEffortPopoverContent: View {
                 .padding(.vertical, 6)
             } else {
                 ForEach(models, id: \.value) { info in
-                    PopoverRow(
-                        title: info.conciseDisplayName,
+                    ModelPopoverRow(
+                        title: info.value,
+                        subtitle: info.description,
                         isSelected: info.value == selectedModelValue,
                         onSelect: { onSelectModel(info.value) }
                     )
                 }
             }
 
-            if let levels = supportedEffortLevels, !levels.isEmpty {
+            // Effort section is strictly the active model's declared
+            // supportedEffortLevels (no SDK-wide fallback). When the
+            // model declares zero or the model itself doesn't support
+            // effort, the section is hidden.
+            if let levels = activeEffortLevels, !levels.isEmpty {
                 Divider().padding(.vertical, 4)
                 PopoverSectionHeader(title: "Effort")
                 ForEach(levels, id: \.rawValue) { effort in
@@ -173,7 +170,6 @@ private struct ModelEffortPopoverContent: View {
             PopoverSectionHeader(title: "Fast mode")
             FastModeToggleRow(
                 enabled: fastModeEnabled,
-                supported: fastModeSupported,
                 onToggle: onToggleFastMode
             )
         }
@@ -181,66 +177,89 @@ private struct ModelEffortPopoverContent: View {
         .frame(width: PopoverList.width)
     }
 
-    /// Levels declared supported by the currently-selected model — or
-    /// the full SDK set if the model didn't ship metadata. Returns nil
-    /// when the model explicitly lists zero (the section is then hidden).
-    private var supportedEffortLevels: [Effort]? {
+    /// Effort levels strictly from the active model's
+    /// `supportedEffortLevels`. Returns nil to hide the section when
+    /// no model is selected or the model declares no effort support.
+    private var activeEffortLevels: [Effort]? {
         guard let value = selectedModelValue,
-            let info = models.first(where: { $0.value == value })
-        else {
-            return [.low, .medium, .high, .xhigh, .max]
-        }
-        guard let raw = info.supportedEffortLevels else {
-            return [.low, .medium, .high, .xhigh, .max]
-        }
+            let info = models.first(where: { $0.value == value }),
+            info.supportsEffort == true,
+            let raw = info.supportedEffortLevels
+        else { return nil }
         let mapped = raw.compactMap(Effort.init(rawValue:))
         return mapped.isEmpty ? nil : mapped
     }
 }
 
-/// Toggle row inside the popover. Renders a `Toggle` with the row's
-/// hover/press background so it visually matches the model + effort
-/// rows. Disabled (and grayed) when the selected model doesn't declare
-/// `supportsFastMode == true`, matching Claude.app's "Enable fast mode"
-/// row that grays out on incompatible models.
+/// Two-line popover row: primary (CLI `value`) + secondary
+/// (`description`). Layout matches `PopoverRow` (same horizontal inset,
+/// same hover/press background) but the height grows for the second
+/// line.
+private struct ModelPopoverRow: View {
+    let title: String
+    let subtitle: String?
+    let isSelected: Bool
+    let onSelect: () -> Void
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 6) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.primary)
+                    if let subtitle, !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                }
+                Spacer(minLength: 0)
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, PopoverList.horizontalInset)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PopoverRowHoverStyle())
+    }
+}
+
+/// Toggle row inside the popover. Renders an always-enabled
+/// `Toggle` with the row's hover/press background so it visually
+/// matches the model + effort rows. Clicking the row toggles the
+/// switch — the whole row is the hit target, not just the (small,
+/// easy-to-miss) switch knob.
 private struct FastModeToggleRow: View {
     let enabled: Bool
-    let supported: Bool
     let onToggle: (Bool) -> Void
 
     var body: some View {
-        // Whole-row hit target — clicking the label flips the toggle,
-        // not just clicking the (small, easy-to-miss) switch knob. The
-        // earlier version only registered taps inside the .switch's
-        // hit shape, so the row felt "unclickable" when aiming at the
-        // label.
         Button(action: {
-            guard supported else { return }
             onToggle(!enabled)
         }) {
             HStack(spacing: 6) {
                 Text("Enable fast mode")
                     .font(.system(size: 13))
-                    .foregroundStyle(supported ? .primary : .secondary)
+                    .foregroundStyle(.primary)
                 Spacer(minLength: 0)
                 Toggle(
                     "",
                     isOn: Binding(
-                        get: { enabled && supported },
-                        set: { newValue in
-                            guard supported else { return }
-                            onToggle(newValue)
-                        }
+                        get: { enabled },
+                        set: { onToggle($0) }
                     )
                 )
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .controlSize(.mini)
-                .disabled(!supported)
-                // The toggle's hit testing is preserved so clicks on
-                // the knob still work; the Button wrapper just adds a
-                // larger label-area target.
-                .allowsHitTesting(supported)
             }
             .padding(.horizontal, PopoverList.horizontalInset)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -248,6 +267,5 @@ private struct FastModeToggleRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(!supported)
     }
 }

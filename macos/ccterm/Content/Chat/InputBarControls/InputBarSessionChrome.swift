@@ -1,3 +1,4 @@
+import AgentSDK
 import SwiftUI
 
 /// Row of per-session controls rendered directly under the input bar
@@ -29,11 +30,23 @@ struct InputBarSessionChrome: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            PermissionModePicker(handle: handle)
+            PermissionModePicker(handle: handle, activeModel: activeModel)
             Spacer(minLength: 0)
             ModelEffortPicker(handle: handle)
             ContextRingButton(handle: handle)
         }
         .padding(.leading, Self.pillLeadingInset)
+    }
+
+    /// Resolves `handle.model` to the matching `ModelInfo` from the
+    /// per-session catalog (preferred) or the cross-launch
+    /// `ModelStore` cache. Returned nil when the user hasn't picked
+    /// one yet OR the catalog hasn't arrived — the permission picker
+    /// uses this to decide whether the `auto` row is visible.
+    private var activeModel: ModelInfo? {
+        guard let value = handle.model else { return nil }
+        let live = handle.availableModels
+        let pool = live.isEmpty ? ModelStore.shared.models : live
+        return pool.first(where: { $0.value == value })
     }
 }

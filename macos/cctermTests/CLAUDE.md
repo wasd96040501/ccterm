@@ -114,6 +114,34 @@ open the xcresult and see what the view looks like under that test's
 fixture. We do **not** check golden images in or do bit-for-bit
 regression.
 
+### Run policy — opt-in only
+
+Snapshot tests do **not** run on the default-all suite, locally or on
+CI. The runner (`macos/scripts/test-unit.sh`) discovers any file
+named `*SnapshotTests.swift` and adds `-skip-testing:` for its class
+when `FILTER` is empty. They execute only when `FILTER` names them:
+
+```bash
+make test-unit                                # snapshot tests SKIPPED
+make test-unit FILTER=TranscriptDemoSnapshotTests              # runs
+make test-unit FILTER=TranscriptDemoSnapshotTests/testTranscriptDemoSnapshot   # runs
+```
+
+Two consequences:
+
+- **CI never gates on a snapshot test.** They're for human review, not
+  green-bar enforcement. The `test` workflow runs `make test-unit`
+  with no filter, so snapshot tests are skipped there too.
+- **Compilation is still gated.** The files are part of the
+  `cctermTests` target, so `xcodebuild test` still compiles them —
+  bit-rot is caught at build time even when the bodies don't execute.
+
+Filename ↔ class name **must match** — the skip injection is by
+filename. `TranscriptDemoSnapshotTests.swift` must contain
+`class TranscriptDemoSnapshotTests`. If you split a snapshot file
+into multiple classes, give each its own `*SnapshotTests.swift`
+file.
+
 ### File layout & naming
 
 - File: `macos/cctermTests/<ViewName>SnapshotTests.swift` — flat with
@@ -223,9 +251,11 @@ make test-unit FILTER=TranscriptDemoSnapshotTests
 open /tmp/ccterm-screenshots/TranscriptDemoView.png
 ```
 
-On CI, the PNG comes through as an xcresult attachment when the test
-fails (or on every run if you set `lifetime = .keepAlways`, which we
-do). Pull the bundle from the workflow artifacts to inspect.
+CI does not run snapshot tests (see [Run policy](#run-policy--opt-in-only)).
+To inspect a snapshot rendered on the CI runner — e.g. for a font /
+metrics difference you can't reproduce locally — push a temporary
+workflow that calls `make test-unit FILTER=<ClassName>` and download
+the xcresult; do not flip the default suite to include them.
 
 ## Running
 

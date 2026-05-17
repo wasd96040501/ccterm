@@ -1068,4 +1068,235 @@ enum BlockStyle: Sendable {
         }()
         return NSFont.monospacedSystemFont(ofSize: pointSize, weight: weight)
     }
+
+    // MARK: - Gutter geometry
+
+    /// Square hit zone for a single gutter glyph. Larger than the SF
+    /// Symbol it hosts so the click target is comfortable; the symbol
+    /// itself draws at `gutterSymbolPointSize` centered inside.
+    nonisolated static let gutterHitSize: CGFloat = 22
+
+    /// SF Symbol point size for the gutter glyph (`doc.on.doc` /
+    /// `checkmark`). Sits one notch above the codeblock header's 11pt
+    /// chrome glyph — the gutter is a standalone control in the margin,
+    /// not chrome inside another band, so it can read a touch heavier
+    /// without dominating.
+    nonisolated static let gutterSymbolPointSize: CGFloat = 12
+
+    /// Gap between the layout content's edge and the gutter hit zone's
+    /// near edge. Echoes `bubbleHorizontalPadding / 2` so the gutter
+    /// sits in the same visual rhythm as the bubble's internal padding.
+    nonisolated static let gutterMargin: CGFloat = 6
+
+    /// Rounded background drawn on hover. Tight enough to read as a
+    /// button hint rather than a chip.
+    nonisolated static let gutterHoverCornerRadius: CGFloat = 5
+
+    /// Hover background tint. Soft fill that tracks light/dark — `0.06`
+    /// on light, `0.10` on dark — matches the "this is an affordance"
+    /// hover weight Slack / Linear / Cursor settle on.
+    nonisolated static let gutterHoverBackground: NSColor = NSColor(name: nil) { appearance in
+        let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        return isDark
+            ? NSColor(white: 1, alpha: 0.10)
+            : NSColor(white: 0, alpha: 0.06)
+    }
+
+    /// Idle glyph tint. Same `secondaryLabelColor` family the codeblock
+    /// header copy glyph uses — gutter reads as chrome, not content.
+    nonisolated static let gutterIdleForeground: NSColor = .secondaryLabelColor
+
+    /// Hover glyph tint. Brightens to primary `labelColor` so the active
+    /// hover affordance reads clearly without changing hue.
+    nonisolated static let gutterHoverForeground: NSColor = .labelColor
+
+    /// Post-click checkmark feedback duration. Matches the codeblock
+    /// copy button's 1.5s so the two copy affordances time-lock.
+    nonisolated static let gutterCopiedFeedbackSeconds: Double = 1.5
+}
+
+// MARK: - Block gutters / copyable text
+
+extension Block {
+    /// Cell-level decorations declared for this block. **Not part of
+    /// the layout pipeline** — see `GutterSpec` for the contract.
+    ///
+    /// Side assignment is fixed per-kind: the right-aligned user bubble
+    /// emits a trailing-side copy gutter (right of the bubble); every
+    /// other text-bearing markdown block emits a leading-side copy
+    /// gutter (left of the centered content). Image / thematic break /
+    /// tool group / loading pill carry no gutters.
+    ///
+    /// Gutter id mirrors `Block.id` while there is at most one gutter
+    /// per block; if multiple gutters per block become a thing, the id
+    /// becomes a separately-allocated stable key.
+    var gutters: [GutterSpec] {
+        switch kind {
+        case .userBubble:
+            return [GutterSpec(id: id, side: .trailing, kind: .copy)]
+        case .paragraph, .heading, .codeBlock, .blockquote, .list, .table:
+            return [GutterSpec(id: id, side: .leading, kind: .copy)]
+        case .image, .thematicBreak, .toolGroup, .loadingPill:
+            return []
+        }
+    }
+
+    /// Plain-text rendering of the block, suitable for the system
+    /// pasteboard. Walks the entire payload — recursive lists and
+    /// large code blocks can be expensive. **Call off the main
+    /// thread**: `Transcript2Coordinator.handleGutter(_:on:)` dispatches
+    /// via `Task.detached(priority: .userInitiated)` so a 10 MB code
+    /// block doesn't stall a click.
+    ///
+    /// Output style is "lightly formatted plain text", not strict
+    /// markdown round-trip: headings drop the `#` prefix; lists use
+    /// `- ` / `1. ` bullets; tables use pipe rows; quotes prefix lines
+    /// with `> `. Good enough for paste into a chat / doc / shell;
+    /// callers who need a markdown source round-trip would round-trip
+    /// upstream of the IR.
+    nonisolated func copyableText() -> String {
+        switch kind {
+        case .userBubble(let text):
+            return text
+        case .paragraph(let inlines):
+            return Self.inlinesPlainText(inlines)
+        case .heading(_, let inlines):
+            return Self.inlinesPlainText(inlines)
+        case .blockquote(let inlines):
+            let body = Self.inlinesPlainText(inlines)
+            return
+                body
+                .split(separator: "\n", omittingEmptySubsequences: false)
+                .map { "> \($0)" }
+                .joined(separator: "\n")
+        case .codeBlock(_, let code):
+            return code
+        case .list(let list):
+            var out = ""
+            Self.appendListPlainText(list, depth: 0, into: &out)
+            return out.trimmingCharacters(in: .newlines)
+        case .table(let table):
+            return Self.tablePlainText(table)
+        case .image, .thematicBreak, .toolGroup, .loadingPill:
+            return ""
+        }
+    }
+
+    /// Flatten an inline tree to plain text. Emphasis / strong /
+    /// strikethrough drop their attributes (children only); code spans
+    /// emit verbatim; links emit child text — no URL. `lineBreak`
+    /// becomes `\n` so multi-line paragraphs survive the round-trip.
+    nonisolated private static func inlinesPlainText(_ nodes: [InlineNode]) -> String {
+        var out = ""
+        appendInlinesPlainText(nodes, into: &out)
+        return out
+    }
+
+    nonisolated private static func appendInlinesPlainText(
+        _ nodes: [InlineNode], into out: inout String
+    ) {
+        for node in nodes {
+            switch node {
+            case .text(let s): out += s
+            case .code(let s): out += s
+            case .strong(let cs), .emphasis(let cs), .strikethrough(let cs):
+                appendInlinesPlainText(cs, into: &out)
+            case .link(let cs, _):
+                appendInlinesPlainText(cs, into: &out)
+            case .lineBreak:
+                out += "\n"
+            }
+        }
+    }
+
+    /// Recursive list flattener. Each item gets one line, prefixed by
+    /// its marker (or `[ ]` / `[x]` for task-list items); nested lists
+    /// indent by 2 spaces per depth level. Multi-paragraph items emit
+    /// one line per paragraph at the same indent.
+    nonisolated private static func appendListPlainText(
+        _ list: ListBlock, depth: Int, into out: inout String
+    ) {
+        let indent = String(repeating: "  ", count: depth)
+        var ordered = list.startIndex
+        for item in list.items {
+            let marker: String
+            if let checked = item.checkbox {
+                marker = checked ? "[x]" : "[ ]"
+            } else if list.ordered {
+                marker = "\(ordered)."
+                ordered += 1
+            } else {
+                marker = "-"
+            }
+            var first = true
+            for content in item.content {
+                switch content {
+                case .paragraph(let inlines):
+                    let body = inlinesPlainText(inlines)
+                    if first {
+                        out += "\(indent)\(marker) \(body)\n"
+                        first = false
+                    } else {
+                        // Continuation paragraph inside the same item —
+                        // hangs under the marker column, no marker.
+                        let pad = String(
+                            repeating: " ", count: marker.count + 1)
+                        out += "\(indent)\(pad)\(body)\n"
+                    }
+                case .list(let nested):
+                    appendListPlainText(nested, depth: depth + 1, into: &out)
+                }
+            }
+            if first {
+                // Empty item — still emit the marker line.
+                out += "\(indent)\(marker)\n"
+            }
+        }
+    }
+
+    /// Pipe-table flattener. Header → `| h1 | h2 |`, separator →
+    /// `| --- | --- |`, body rows → `| c1 | c2 |`. Cell contents go
+    /// through `inlinesPlainText` so inline emphasis flattens too.
+    /// No column-width padding — pasteboard consumers re-layout
+    /// anyway, and unpadded pipe rows survive whatever editor or
+    /// markdown viewer they land in.
+    nonisolated private static func tablePlainText(_ table: TableBlock) -> String {
+        let columns = max(
+            table.header.count,
+            table.rows.map(\.count).max() ?? 0)
+        guard columns > 0 else { return "" }
+
+        func cell(_ inlines: [InlineNode]) -> String {
+            inlinesPlainText(inlines)
+                .replacingOccurrences(of: "|", with: "\\|")
+                .replacingOccurrences(of: "\n", with: " ")
+        }
+        func row(_ cells: [[InlineNode]]) -> String {
+            var parts: [String] = []
+            for i in 0..<columns {
+                parts.append(i < cells.count ? cell(cells[i]) : "")
+            }
+            return "| " + parts.joined(separator: " | ") + " |"
+        }
+        let separator: String = {
+            let parts = (0..<columns).map { i -> String in
+                guard i < table.alignments.count else { return "---" }
+                switch table.alignments[i] {
+                case .left: return ":---"
+                case .right: return "---:"
+                case .center: return ":---:"
+                case .none: return "---"
+                }
+            }
+            return "| " + parts.joined(separator: " | ") + " |"
+        }()
+
+        var lines: [String] = []
+        lines.append(row(table.header))
+        lines.append(separator)
+        for r in table.rows {
+            lines.append(row(r))
+        }
+        return lines.joined(separator: "\n")
+    }
 }

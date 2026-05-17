@@ -1060,6 +1060,9 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         }
         cell.layout = cellLayout
         cell.padTop = BlockStyle.blockPadding(for: block.kind).top
+        // Cell-margin gutters (copy button etc.). Sparse per kind —
+        // empty for image / thematic break / tool group / loading pill.
+        cell.gutters = block.gutters
         // Selection is keyed by block id, not by cell instance, so a
         // recycled cell scrolling onto a row that already had a selection
         // picks up the existing entry here. nil = no highlight.
@@ -1084,6 +1087,41 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         // scanning the superview chain.
         cell.coordinator = self
         return cell
+    }
+
+    // MARK: - Gutter dispatch
+
+    /// Run the action attached to `spec` for the block with `blockId`.
+    /// Heavy work (text serialization, pasteboard write) runs on a
+    /// detached `userInitiated` task so a click on a 10 MB code-block's
+    /// gutter never stalls the main thread. The cell's visual feedback
+    /// (checkmark flash) is fire-and-forget and doesn't wait on this
+    /// path — opportunistic UX.
+    ///
+    /// No-op when the block can't be resolved (raced removal) or the
+    /// serialized text is empty (block kind that doesn't expose copyable
+    /// content yet).
+    func handleGutter(_ spec: GutterSpec, blockId: UUID) {
+        guard let block = block(forId: blockId) else { return }
+        switch spec.kind {
+        case .copy:
+            // `Block` is `@unchecked Sendable` — the `Kind.image` NSImage
+            // is the only mutable field, and `.image` blocks emit no
+            // gutters, so the snapshot we hand to the detached task is
+            // effectively immutable for our purposes.
+            let snapshot = block
+            Task.detached(priority: .userInitiated) {
+                let text = snapshot.copyableText()
+                guard !text.isEmpty else { return }
+                // `NSPasteboard.general` is thread-safe for
+                // `clearContents` + `setString`; no need to hop back
+                // to main. AppKit documents the pasteboard as safe to
+                // use from any thread.
+                let pb = NSPasteboard.general
+                pb.clearContents()
+                pb.setString(text, forType: .string)
+            }
+        }
     }
 
     // MARK: - Selection helpers (consumed by SelectionCoordinator)

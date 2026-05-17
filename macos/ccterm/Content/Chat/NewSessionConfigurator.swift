@@ -313,14 +313,13 @@ struct NewSessionConfigurator: View {
 
     @ViewBuilder
     private var rightPanel: some View {
-        // Geometry: the card's corner radius is `cardCornerRadius` (16).
-        // The top-right corner arc's centre sits at (cornerRadius,
-        // cornerRadius) inset from that corner — (16, 16) from the
-        // top-right edge. To land the `+` button's *top-right corner*
-        // on that arc centre, inset the button by exactly
-        // `cornerRadius` from the top and trailing edges of the card.
-        // The button's hit area is `plusButtonSize` (18) square, which
-        // grows downward and leftward from that corner.
+        // Geometry: the top-right corner-arc centre sits at
+        // (cornerRadius, cornerRadius) = (16, 16) inset from the card's
+        // top-right edge. Visually anchoring the `+` directly on that
+        // centre reads as too tight against the corner, so nudge the
+        // button 2pt further inside (down + left from the arc centre).
+        // Inset from card edges = cornerRadius + 2 = 18.
+        let plusInset = Self.cardCornerRadius + 2
         VStack(alignment: .trailing, spacing: 0) {
             Button(action: presentFolderPicker) {
                 Image(systemName: "plus")
@@ -331,8 +330,8 @@ struct NewSessionConfigurator: View {
             }
             .buttonStyle(.plain)
             .help(String(localized: "Choose Folder…"))
-            .padding(.top, Self.cardCornerRadius)
-            .padding(.trailing, Self.cardCornerRadius)
+            .padding(.top, plusInset)
+            .padding(.trailing, plusInset)
 
             if recents.entries.isEmpty {
                 emptyRecents
@@ -519,15 +518,24 @@ struct NewSessionConfigurator: View {
 /// Invisible probe used as the `.background` of each recents row. Once
 /// SwiftUI installs the probe's `NSView` into the host `NSTableCellView`,
 /// `enclosingScrollView` returns the List's `NSScrollView`; we then
-/// force scrollers off AND switch to overlay style so the gutter
-/// doesn't reserve layout width even when macOS's global "Show scroll
-/// bars" preference is set to Always. `hasVerticalScroller = false`
-/// alone isn't enough on legacy scroller style — the gutter persists.
+/// force scrollers off AND switch to overlay style. SwiftUI re-applies
+/// `List`'s own scroller settings on every layout pass (e.g. when a
+/// row's selection state changes), undoing a one-shot disable — so we
+/// also observe the scroll view's `frameDidChange` / live-scroll
+/// notifications and re-apply on each, plus call `tile()` to force the
+/// scroll view to immediately re-lay out without a gutter. The combo
+/// of `scrollerStyle = .overlay` + `hasVerticalScroller = false` is
+/// the only one I've seen actually reclaim the gutter under macOS's
+/// "Always show scroll bars" preference.
 private struct HideEnclosingScrollerWidth: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { ScrollerHidingView() }
-    func updateNSView(_ nsView: NSView, context: Context) {}
+    func updateNSView(_ nsView: NSView, context: Context) {
+        (nsView as? ScrollerHidingView)?.applySettings()
+    }
 
     private final class ScrollerHidingView: NSView {
+        private weak var trackedScrollView: NSScrollView?
+
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             schedule()
@@ -538,21 +546,60 @@ private struct HideEnclosingScrollerWidth: NSViewRepresentable {
             schedule()
         }
 
+        deinit {
+            NotificationCenter.default.removeObserver(self)
+        }
+
         private func schedule() {
             DispatchQueue.main.async { [weak self] in
-                self?.hideScrollers()
+                self?.applySettings()
             }
         }
 
-        private func hideScrollers() {
+        fileprivate func applySettings() {
             guard let scrollView = enclosingScrollView else { return }
+            if trackedScrollView !== scrollView {
+                if let prev = trackedScrollView {
+                    NotificationCenter.default.removeObserver(self, name: nil, object: prev)
+                }
+                trackedScrollView = scrollView
+                scrollView.postsFrameChangedNotifications = true
+                NotificationCenter.default.addObserver(
+                    self,
+                    selector: #selector(reapply),
+                    name: NSView.frameDidChangeNotification,
+                    object: scrollView
+                )
+                NotificationCenter.default.addObserver(
+                    self,
+                    selector: #selector(reapply),
+                    name: NSScrollView.willStartLiveScrollNotification,
+                    object: scrollView
+                )
+                NotificationCenter.default.addObserver(
+                    self,
+                    selector: #selector(reapply),
+                    name: NSScrollView.didLiveScrollNotification,
+                    object: scrollView
+                )
+            }
             scrollView.scrollerStyle = .overlay
+            scrollView.autohidesScrollers = true
             scrollView.hasVerticalScroller = false
             scrollView.hasHorizontalScroller = false
+            scrollView.verticalScroller?.scrollerStyle = .overlay
             scrollView.verticalScroller?.alphaValue = 0
+            scrollView.verticalScroller?.isHidden = true
+            scrollView.horizontalScroller?.scrollerStyle = .overlay
             scrollView.horizontalScroller?.alphaValue = 0
-            scrollView.autohidesScrollers = true
-            scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+            scrollView.horizontalScroller?.isHidden = true
+            scrollView.contentInsets = NSEdgeInsets()
+            scrollView.scrollerInsets = NSEdgeInsets()
+            scrollView.tile()
+        }
+
+        @objc private func reapply() {
+            applySettings()
         }
     }
 }

@@ -16,7 +16,14 @@ import Observation
 final class SessionManager2 {
 
     @ObservationIgnored private let repository: any SessionRepository
-    @ObservationIgnored private var handles: [String: SessionHandle2] = [:]
+    /// Cache of per-`sessionId` handles. **Observation-tracked** so views
+    /// reading runtime-only state via `existingHandle(_:)` (sidebar rows
+    /// querying `isRunning` / `hasUnread`) get re-rendered when a handle
+    /// is first allocated. With `@ObservationIgnored`, the cold-path —
+    /// row body's first render sees `handle == nil`, never subscribes,
+    /// stays stale when the handle later flips `isRunning` — silently
+    /// breaks the indicator.
+    private var handles: [String: SessionHandle2] = [:]
 
     /// Non-archived session records, descending by `lastActiveAt`. Sidebar
     /// v2 observes this array directly. Populated once at init and
@@ -41,6 +48,20 @@ final class SessionManager2 {
         self.records = repository.findAll()
     }
 
+    /// macOS 26 SDK regression: a default class deinit on a `@MainActor`
+    /// type routes through `swift_task_deinitOnExecutorImpl`, which the
+    /// stricter Xcode 26 Concurrency runtime drives every time the
+    /// last reference drops. `TaskLocal::StopLookupScope::~StopLookupScope`
+    /// then frees an un-malloc'd pointer and libmalloc aborts
+    /// (`___BUG_IN_CLIENT_OF_LIBMALLOC_POINTER_BEING_FREED_WAS_NOT_ALLOCATED`).
+    /// `nonisolated deinit` skips the executor-hop path. Symptom on
+    /// CI's macos-26 runner: hosted XCTest crashed with SIGABRT when a
+    /// test method's last `SessionManager2` reference dropped at
+    /// function return; local Darwin 25 didn't reproduce. Same fix
+    /// `SessionHandle2`, `InMemorySessionRepository`, and
+    /// `CoreDataSessionRepository` already use.
+    nonisolated deinit {}
+
     func clearLaunchFailure() {
         lastLaunchFailure = nil
     }
@@ -56,6 +77,14 @@ final class SessionManager2 {
         wireHandleCallbacks(handle)
         handles[sessionId] = handle
         return handle
+    }
+
+    /// Non-creating lookup. Returns the cached handle if it exists,
+    /// nil otherwise — never allocates. Sidebar rows use this to read
+    /// runtime-only state (`isRunning` / `hasUnread`) without forcing
+    /// every record in the history list to spin up a handle.
+    func existingHandle(_ sessionId: String) -> SessionHandle2? {
+        handles[sessionId]
     }
 
     /// Prepare a handle for a NewSession draft. The db must have **no**

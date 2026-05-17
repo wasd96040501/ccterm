@@ -631,6 +631,10 @@ struct NewSessionConfigurator: View {
                 // Detached HEAD: branch row is hidden, so worktree must
                 // not stay accidentally enabled.
                 useWorktree = false
+            } else {
+                // Restore the user's last launch-time choice for this
+                // path; unseen projects start as Local.
+                useWorktree = recents.useWorktree(for: path) ?? false
             }
         } else {
             useWorktree = false

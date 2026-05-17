@@ -26,6 +26,11 @@ final class RecentProjectsStore {
     /// submits the first message in that draft. Used to pre-fill the next
     /// New Session card.
     private static let lastLaunchedKey = "RecentProjects.lastLaunched.v1"
+    /// UserDefaults key for the per-project worktree preference. Stored as
+    /// a JSON-encoded `[String: Bool]` keyed by absolute project path. Only
+    /// written on launch (so toggling without sending doesn't poison the
+    /// next visit), read back when the compose card pre-fills for a folder.
+    private static let worktreePrefsKey = "RecentProjects.worktreePrefs.v1"
 
     struct Entry: Codable, Hashable, Identifiable {
         let path: String
@@ -41,6 +46,10 @@ final class RecentProjectsStore {
     /// launches via UserDefaults; nil if no launch has happened yet or the
     /// stored path no longer exists on disk.
     private(set) var lastLaunchedPath: String?
+    /// Per-project worktree preference. Same lifecycle as
+    /// `lastLaunchedPath`: only written when the user actually launches a
+    /// session, read on every compose-card open.
+    @ObservationIgnored private var worktreePrefs: [String: Bool] = [:]
 
     @ObservationIgnored private let defaults: UserDefaults
 
@@ -48,6 +57,7 @@ final class RecentProjectsStore {
         self.defaults = defaults
         load()
         loadLastLaunched()
+        loadWorktreePrefs()
     }
 
     /// Insert or refresh `path` at the front of the list.
@@ -60,11 +70,21 @@ final class RecentProjectsStore {
 
     /// Record `path` as the last project that successfully launched a
     /// session. Also bumps it to the front of the recents list (a launched
-    /// project is by definition a recent one).
-    func markLaunched(_ path: String) {
+    /// project is by definition a recent one), and persists the user's
+    /// worktree choice for that path so the next compose-card visit
+    /// pre-fills it.
+    func markLaunched(_ path: String, useWorktree: Bool) {
         add(path)
         lastLaunchedPath = path
         defaults.set(path, forKey: Self.lastLaunchedKey)
+        worktreePrefs[path] = useWorktree
+        saveWorktreePrefs()
+    }
+
+    /// Look up the saved worktree preference for `path`. Returns `nil` when
+    /// the project has never been launched (caller decides the default).
+    func useWorktree(for path: String) -> Bool? {
+        worktreePrefs[path]
     }
 
     /// Remove `path` from the list. No-op if absent.
@@ -76,6 +96,9 @@ final class RecentProjectsStore {
         if lastLaunchedPath == path {
             lastLaunchedPath = nil
             defaults.removeObject(forKey: Self.lastLaunchedKey)
+        }
+        if worktreePrefs.removeValue(forKey: path) != nil {
+            saveWorktreePrefs()
         }
     }
 
@@ -119,5 +142,24 @@ final class RecentProjectsStore {
             lastLaunchedPath = nil
             defaults.removeObject(forKey: Self.lastLaunchedKey)
         }
+    }
+
+    private func loadWorktreePrefs() {
+        guard
+            let data = defaults.data(forKey: Self.worktreePrefsKey),
+            let decoded = try? JSONDecoder().decode([String: Bool].self, from: data)
+        else {
+            worktreePrefs = [:]
+            return
+        }
+        let fm = FileManager.default
+        let surviving = decoded.filter { fm.fileExists(atPath: $0.key) }
+        worktreePrefs = surviving
+        if surviving.count != decoded.count { saveWorktreePrefs() }
+    }
+
+    private func saveWorktreePrefs() {
+        guard let data = try? JSONEncoder().encode(worktreePrefs) else { return }
+        defaults.set(data, forKey: Self.worktreePrefsKey)
     }
 }

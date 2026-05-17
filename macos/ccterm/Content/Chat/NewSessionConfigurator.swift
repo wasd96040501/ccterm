@@ -52,6 +52,8 @@ struct NewSessionConfigurator: View {
     @Environment(RecentProjectsStore.self) private var recents
     @State private var branches: [String] = []
     @State private var currentBranch: String? = nil
+    @State private var remoteMainBranch: String? = nil
+    @State private var currentBranchStatus: String? = nil
     @State private var isGitRepo: Bool = false
     @State private var showBranchPicker: Bool = false
 
@@ -266,6 +268,8 @@ struct NewSessionConfigurator: View {
             BranchPickerView(
                 branches: branches,
                 currentBranch: currentBranch,
+                remoteMainBranch: remoteMainBranch,
+                currentBranchStatus: currentBranchStatus,
                 onSelect: { selected in
                     sourceBranch = selected
                     showBranchPicker = false
@@ -417,6 +421,8 @@ struct NewSessionConfigurator: View {
             isGitRepo = false
             branches = []
             currentBranch = nil
+            remoteMainBranch = nil
+            currentBranchStatus = nil
             useWorktree = false
             sourceBranch = nil
             return
@@ -429,6 +435,8 @@ struct NewSessionConfigurator: View {
             isGitRepo = false
             branches = []
             currentBranch = nil
+            remoteMainBranch = nil
+            currentBranchStatus = nil
             useWorktree = false
             sourceBranch = nil
             return
@@ -439,6 +447,8 @@ struct NewSessionConfigurator: View {
         isGitRepo = repo
         currentBranch = head
         branches = list
+        remoteMainBranch = repo ? Self.remoteMainBranch(at: path) : nil
+        currentBranchStatus = (repo && head != nil) ? Self.gitStatusSummary(at: path) : nil
         if repo {
             if resetOverride || sourceBranch == nil || !list.contains(sourceBranch ?? "") {
                 sourceBranch = head
@@ -466,6 +476,79 @@ struct NewSessionConfigurator: View {
             .split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
+    }
+
+    /// Resolve the remote's default branch (e.g. `origin/main`). Reads
+    /// `refs/remotes/origin/HEAD` purely from local refs — no network. Returns
+    /// `nil` when `origin/HEAD` isn't set, which is common for repos cloned
+    /// before git started writing it or after `git remote set-head --delete`.
+    private static func remoteMainBranch(at path: String) -> String? {
+        let result = Worktree.runGit(
+            ["symbolic-ref", "--short", "--quiet", "refs/remotes/origin/HEAD"],
+            cwd: path,
+            timeout: 5
+        )
+        guard result.exitCode == 0,
+            let stdout = result.stdout?.trimmingCharacters(in: .whitespacesAndNewlines),
+            !stdout.isEmpty
+        else {
+            return nil
+        }
+        return stdout
+    }
+
+    /// One-line status summary for the current branch: working-tree changes
+    /// plus ahead/behind tracking against the configured upstream. Returns
+    /// `nil` only when both are unknown (no upstream + porcelain failed);
+    /// returns `"Clean"` for a clean worktree on a branch with no upstream.
+    private static func gitStatusSummary(at path: String) -> String? {
+        var parts: [String] = []
+        let porcelain = Worktree.runGit(
+            ["status", "--porcelain"],
+            cwd: path,
+            timeout: 5
+        )
+        if porcelain.exitCode == 0, let out = porcelain.stdout {
+            var modified = 0
+            var untracked = 0
+            for raw in out.split(separator: "\n") {
+                let line = String(raw)
+                if line.hasPrefix("??") {
+                    untracked += 1
+                } else if !line.isEmpty {
+                    modified += 1
+                }
+            }
+            if modified == 0 && untracked == 0 {
+                parts.append(String(localized: "Clean"))
+            } else {
+                var subs: [String] = []
+                if modified > 0 { subs.append(String(localized: "\(modified) changed")) }
+                if untracked > 0 { subs.append(String(localized: "\(untracked) untracked")) }
+                parts.append(subs.joined(separator: ", "))
+            }
+        }
+
+        let tracking = Worktree.runGit(
+            ["rev-list", "--left-right", "--count", "@{upstream}...HEAD"],
+            cwd: path,
+            timeout: 5
+        )
+        if tracking.exitCode == 0,
+            let out = tracking.stdout?.trimmingCharacters(in: .whitespacesAndNewlines)
+        {
+            let cols = out.split(whereSeparator: { $0 == "\t" || $0 == " " }).map(String.init)
+            if cols.count == 2, let behind = Int(cols[0]), let ahead = Int(cols[1]) {
+                var arrows: [String] = []
+                if ahead > 0 { arrows.append("↑\(ahead)") }
+                if behind > 0 { arrows.append("↓\(behind)") }
+                if !arrows.isEmpty {
+                    parts.append(arrows.joined(separator: " "))
+                }
+            }
+        }
+
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }
 

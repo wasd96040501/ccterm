@@ -4,6 +4,16 @@ struct BranchPickerView: View {
 
     let branches: [String]
     let currentBranch: String?
+    /// Optional remote default branch name (e.g. `"origin/main"`). When non-nil,
+    /// the picker shows a "Remote Main" group above the current branch group.
+    /// Callers that don't care about remotes pass `nil` (or omit the argument)
+    /// and the section disappears entirely.
+    var remoteMainBranch: String? = nil
+    /// Short status summary rendered as a second line under the current
+    /// branch row (e.g. `"3 changes · ↑2"`). Nil means clean enough to skip;
+    /// the row collapses back to a single line and the selection circle
+    /// stays vertically centered with the branch label.
+    var currentBranchStatus: String? = nil
     let onSelect: (String) -> Void
 
     @State private var searchText = ""
@@ -21,6 +31,13 @@ struct BranchPickerView: View {
 
     private var filteredOtherBranches: [String] {
         filteredBranches.filter { $0 != currentBranch }
+    }
+
+    /// Remote main, but only when it matches the current search filter.
+    private var filteredRemoteMain: String? {
+        guard let remoteMainBranch else { return nil }
+        if searchText.isEmpty { return remoteMainBranch }
+        return remoteMainBranch.localizedCaseInsensitiveContains(searchText) ? remoteMainBranch : nil
     }
 
     // MARK: - Body
@@ -47,7 +64,7 @@ struct BranchPickerView: View {
 
     private var branchListSection: some View {
         Group {
-            if filteredBranches.isEmpty {
+            if filteredBranches.isEmpty && filteredRemoteMain == nil {
                 emptyView
             } else {
                 ScrollView {
@@ -58,10 +75,26 @@ struct BranchPickerView: View {
                                 branch: current,
                                 isCurrent: true,
                                 isSelected: current == selected,
+                                subtitle: currentBranchStatus,
                                 onTap: { selected = current },
                                 onDoubleTap: {
                                     selected = current
                                     onSelect(current)
+                                }
+                            )
+                        }
+
+                        if let remote = filteredRemoteMain {
+                            sectionHeader(String(localized: "Remote Main"))
+                            BranchRow(
+                                branch: remote,
+                                isCurrent: false,
+                                isSelected: remote == selected,
+                                subtitle: nil,
+                                onTap: { selected = remote },
+                                onDoubleTap: {
+                                    selected = remote
+                                    onSelect(remote)
                                 }
                             )
                         }
@@ -73,6 +106,7 @@ struct BranchPickerView: View {
                                     branch: branch,
                                     isCurrent: false,
                                     isSelected: branch == selected,
+                                    subtitle: nil,
                                     onTap: { selected = branch },
                                     onDoubleTap: {
                                         selected = branch
@@ -137,6 +171,10 @@ private struct BranchRow: View {
     let branch: String
     let isCurrent: Bool
     let isSelected: Bool
+    /// Optional second line under the branch label. When present, the row
+    /// grows vertically and the selection circle stays aligned with the
+    /// branch text (top line), not the row's geometric center.
+    let subtitle: String?
     let onTap: () -> Void
     let onDoubleTap: () -> Void
 
@@ -144,24 +182,39 @@ private struct BranchRow: View {
 
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 6) {
+            HStack(alignment: .top, spacing: 6) {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 12))
                     .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-                Text(branch)
-                    .font(.system(size: 12))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .foregroundStyle(.primary)
-                Spacer()
-                if isCurrent {
-                    Text("current")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 1)
-                        .background(Color.secondary.opacity(0.12))
-                        .cornerRadius(4)
+                    // Match the branch text's line box so the icon's vertical
+                    // center sits on the branch baseline even when the row
+                    // has a status subtitle underneath.
+                    .frame(width: 12, height: 16)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(branch)
+                            .font(.system(size: 12))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        if isCurrent {
+                            Text("current")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 1)
+                                .background(Color.secondary.opacity(0.12))
+                                .cornerRadius(4)
+                        }
+                    }
+                    if let subtitle, !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
                 }
             }
             .padding(.horizontal, 12)
@@ -177,37 +230,102 @@ private struct BranchRow: View {
 
 // MARK: - Preview
 
-#Preview("BranchPickerView") {
-    struct PreviewWrapper: View {
-        @State private var showPopover = false
+private struct BranchPickerPreviewWrapper: View {
+    let label: String
+    let branches: [String]
+    let currentBranch: String?
+    var remoteMainBranch: String? = nil
+    var currentBranchStatus: String? = nil
 
-        var body: some View {
-            Button("Select Branch") {
-                appLog(.debug, "BranchPickerView", "button tapped, showPopover=\(showPopover)")
-                showPopover = true
-            }
-            .popover(isPresented: $showPopover) {
-                BranchPickerView(
-                    branches: [
-                        "main",
-                        "develop",
-                        "feature/auth-login",
-                        "feature/settings-page",
-                        "fix/memory-leak",
-                        "release/v2.0",
-                    ],
-                    currentBranch: "main",
-                    onSelect: { branch in
-                        appLog(.debug, "BranchPickerView", "onSelect: \(branch)")
-                        showPopover = false
-                    }
-                )
-            }
-            .onChange(of: showPopover) { _, newValue in
-                appLog(.debug, "BranchPickerView", "showPopover changed to \(newValue)")
-            }
-            .frame(width: 300, height: 200)
+    @State private var showPopover = false
+
+    var body: some View {
+        Button(label) {
+            appLog(.debug, "BranchPickerView", "button tapped, showPopover=\(showPopover)")
+            showPopover = true
+        }
+        .popover(isPresented: $showPopover) {
+            BranchPickerView(
+                branches: branches,
+                currentBranch: currentBranch,
+                remoteMainBranch: remoteMainBranch,
+                currentBranchStatus: currentBranchStatus,
+                onSelect: { branch in
+                    appLog(.debug, "BranchPickerView", "onSelect: \(branch)")
+                    showPopover = false
+                }
+            )
+        }
+        .onChange(of: showPopover) { _, newValue in
+            appLog(.debug, "BranchPickerView", "showPopover changed to \(newValue)")
         }
     }
-    return PreviewWrapper()
+}
+
+private let previewBranches = [
+    "main",
+    "develop",
+    "feature/auth-login",
+    "feature/settings-page",
+    "fix/memory-leak",
+    "release/v2.0",
+]
+
+/// Full feature set: both `remoteMainBranch` and `currentBranchStatus` populated.
+#Preview("Remote + dirty status") {
+    BranchPickerPreviewWrapper(
+        label: "Remote + dirty status",
+        branches: previewBranches,
+        currentBranch: "feature/auth-login",
+        remoteMainBranch: "origin/main",
+        currentBranchStatus: "3 changed, 2 untracked · ↑2 ↓1"
+    )
+    .frame(width: 300, height: 200)
+}
+
+/// Clean tree on a tracked branch — exercises the `"Clean · ↑N"` shape.
+#Preview("Remote + clean status") {
+    BranchPickerPreviewWrapper(
+        label: "Remote + clean",
+        branches: previewBranches,
+        currentBranch: "main",
+        remoteMainBranch: "origin/main",
+        currentBranchStatus: "Clean · ↑1"
+    )
+    .frame(width: 300, height: 200)
+}
+
+/// Local-only repo with a dirty tree — no Remote Main section, but the
+/// current branch row still shows a status subtitle.
+#Preview("Status only (no remote)") {
+    BranchPickerPreviewWrapper(
+        label: "Status only",
+        branches: previewBranches,
+        currentBranch: "feature/auth-login",
+        currentBranchStatus: "5 changed"
+    )
+    .frame(width: 300, height: 200)
+}
+
+/// Remote known but status probe returned nothing — Remote Main shows,
+/// current branch row collapses back to a single line.
+#Preview("Remote only (no status)") {
+    BranchPickerPreviewWrapper(
+        label: "Remote only",
+        branches: previewBranches,
+        currentBranch: "feature/auth-login",
+        remoteMainBranch: "origin/main"
+    )
+    .frame(width: 300, height: 200)
+}
+
+/// Legacy callers that omit both optionals — must render identically to
+/// the pre-change layout (no Remote Main, no subtitle, single-line rows).
+#Preview("Legacy (no remote, no status)") {
+    BranchPickerPreviewWrapper(
+        label: "Legacy",
+        branches: previewBranches,
+        currentBranch: "main"
+    )
+    .frame(width: 300, height: 200)
 }

@@ -14,33 +14,25 @@ struct BranchPickerView: View {
         return branches.filter { $0.localizedCaseInsensitiveContains(searchText) }
     }
 
+    private var filteredCurrentBranch: String? {
+        guard let currentBranch else { return nil }
+        return filteredBranches.first { $0 == currentBranch }
+    }
+
+    private var filteredOtherBranches: [String] {
+        filteredBranches.filter { $0 != currentBranch }
+    }
+
     // MARK: - Body
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            headerSection
-            Divider()
             searchSection
-            Divider()
             branchListSection
-            Divider()
             bottomBar
         }
         .frame(width: 300)
         .onAppear { selected = currentBranch }
-    }
-
-    // MARK: - Header
-
-    private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Switch Branch")
-                .font(.headline)
-            Text("Select the target branch to switch to")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-        .padding(12)
     }
 
     // MARK: - Search
@@ -54,25 +46,40 @@ struct BranchPickerView: View {
     // MARK: - Branch List
 
     private var branchListSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            sectionHeader(String(localized: "Branches (\(branches.count))"))
-
+        Group {
             if filteredBranches.isEmpty {
                 emptyView
             } else {
                 ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(filteredBranches, id: \.self) { branch in
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        if let current = filteredCurrentBranch {
+                            sectionHeader(String(localized: "Current Branch"))
                             BranchRow(
-                                branch: branch,
-                                isCurrent: branch == currentBranch,
-                                isSelected: branch == selected,
-                                onTap: { selected = branch },
+                                branch: current,
+                                isCurrent: true,
+                                isSelected: current == selected,
+                                onTap: { selected = current },
                                 onDoubleTap: {
-                                    selected = branch
-                                    onSelect(branch)
+                                    selected = current
+                                    onSelect(current)
                                 }
                             )
+                        }
+
+                        if !filteredOtherBranches.isEmpty {
+                            sectionHeader(String(localized: "Branches (\(filteredOtherBranches.count))"))
+                            ForEach(filteredOtherBranches, id: \.self) { branch in
+                                BranchRow(
+                                    branch: branch,
+                                    isCurrent: false,
+                                    isSelected: branch == selected,
+                                    onTap: { selected = branch },
+                                    onDoubleTap: {
+                                        selected = branch
+                                        onSelect(branch)
+                                    }
+                                )
+                            }
                         }
                     }
                     .padding(.vertical, 2)
@@ -80,7 +87,7 @@ struct BranchPickerView: View {
                 .scrollIndicators(.automatic)
             }
         }
-        .frame(height: 156, alignment: .top)
+        .frame(height: 200, alignment: .top)
     }
 
     private func sectionHeader(_ text: String) -> some View {

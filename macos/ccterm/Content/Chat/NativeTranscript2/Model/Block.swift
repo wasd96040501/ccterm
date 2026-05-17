@@ -66,6 +66,13 @@ struct Block: Identifiable, Equatable, @unchecked Sendable {
         /// `ToolGroupBlock.Item` because every real-world diff arrives
         /// inside a tool-result envelope.
         case toolGroup(ToolGroupBlock)
+        /// Pill chip surfacing the session's "running" state at the
+        /// last row of the transcript. Inserted / removed by
+        /// `Transcript2Controller.setLoading(_:)`; payload-free
+        /// because the visual is fixed (three breathing dots + a
+        /// "Working" label). The bridge does not own this kind —
+        /// it is purely a controller-managed sentinel row.
+        case loadingPill
     }
 }
 
@@ -405,8 +412,54 @@ enum BlockStyle: Sendable {
             // wider top/bottom breathing room than text-edged kinds so
             // the rule doesn't visually attach to either neighbor.
             return (top: 12, bottom: 12)
+        case .loadingPill:
+            // Loading pill is a small chip floating at the end of the
+            // transcript. Matches the hard-edged tier (image / table /
+            // userBubble) so the visible gap above the preceding
+            // content reads at the same rhythm as a final bubble or
+            // tool group.
+            return (top: 8, bottom: 8)
         }
     }
+
+    // MARK: - Loading pill geometry
+
+    /// Three-dot animation diameter — matches the SwiftUI source we
+    /// migrated from (`LoadingPillView2.DotsRow.dotSize`) so the
+    /// visual identity carries across exactly.
+    nonisolated static let loadingPillDotSize: CGFloat = 3
+    /// Horizontal gap between dots.
+    nonisolated static let loadingPillDotGap: CGFloat = 4
+    /// Spacing between the dots row and the "Working" label.
+    nonisolated static let loadingPillDotsLabelGap: CGFloat = 6
+    /// Pill internal padding (horizontal, vertical).
+    nonisolated static let loadingPillHorizontalPadding: CGFloat = 10
+    nonisolated static let loadingPillVerticalPadding: CGFloat = 5
+    /// Pill corner radius — matches `LoadingPillView2.cornerRadius`.
+    nonisolated static let loadingPillCornerRadius: CGFloat = 12
+    /// Label typography — 11pt medium / `secondaryLabel`, mirroring
+    /// the SwiftUI source.
+    nonisolated static var loadingPillLabelFont: NSFont {
+        NSFont.systemFont(ofSize: 11, weight: .medium)
+    }
+    nonisolated static var loadingPillLabelForeground: NSColor {
+        .secondaryLabelColor
+    }
+    /// Dot color — same secondary-label tier so the chip reads as a
+    /// muted ambient indicator rather than a primary affordance.
+    nonisolated static var loadingPillDotColor: NSColor {
+        .secondaryLabelColor
+    }
+    /// Pill background fill. Tinted off the window background so the
+    /// chip lifts visibly without competing with the surrounding
+    /// transcript content.
+    nonisolated static let loadingPillFillColor: NSColor = NSColor(name: nil) { appearance in
+        let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        return isDark
+            ? NSColor(white: 1, alpha: 0.06)
+            : NSColor(white: 0, alpha: 0.035)
+    }
+    nonisolated static let loadingPillStrokeColor: NSColor = .separatorColor
 
     /// Cap for image height — wide-and-tall sources don't dominate the viewport.
     nonisolated static let imageMaxHeight: CGFloat = 360

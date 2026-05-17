@@ -322,12 +322,11 @@ struct RootView2: View {
 
 // MARK: - InputBarChrome
 
-/// Input bar chrome: LoadingPill (running) stacked above InputBarView2.
-///
-/// Owns the source of truth for `SessionHandle2.isRunning`, shared by the pill
-/// visibility and the bar's send↔stop button toggle. The pill floats at the
-/// bar's top-left via natural `VStack` layout; geometry reporting only reports
-/// the bar itself, so the scrim hole isn't enlarged by the pill.
+/// Thin wrapper around `InputBarView2` that resolves the per-session
+/// `SessionHandle2` so the bar can read `isRunning` (send↔stop swap)
+/// and call `interrupt()`. There is no longer a floating pill above
+/// the bar — the "running" indicator now lives at the tail of the
+/// transcript (driven by `Transcript2Controller.setLoading`).
 private struct InputBarChrome: View {
     let sessionId: String
     let coordSpace: String
@@ -340,23 +339,15 @@ private struct InputBarChrome: View {
     @State private var handle: SessionHandle2?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if handle?.isRunning == true {
-                LoadingPillView2()
-                    .padding(.leading, 4)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-            }
-            InputBarView2(
-                onSubmit: onSubmit,
-                onStop: { handle?.interrupt() },
-                isRunning: handle?.isRunning ?? false,
-                submitEnabled: submitEnabled,
-                coordSpace: coordSpace,
-                onAttachRect: onAttachRect,
-                onPillRect: onPillRect
-            )
-        }
-        .animation(.smooth(duration: 0.25), value: handle?.isRunning ?? false)
+        InputBarView2(
+            onSubmit: onSubmit,
+            onStop: { handle?.interrupt() },
+            isRunning: handle?.isRunning ?? false,
+            submitEnabled: submitEnabled,
+            coordSpace: coordSpace,
+            onAttachRect: onAttachRect,
+            onPillRect: onPillRect
+        )
         .task(id: sessionId) {
             // `prepareDraft` is idempotent get-or-create for both fresh and
             // historical sessions, returning the same handle instance that

@@ -57,6 +57,7 @@ enum RowLayout: @unchecked Sendable {
     case thematicBreak(ThematicBreakLayout)
     case userBubble(UserBubbleLayout)
     case toolGroup(ToolGroupLayout)
+    case loadingPill(LoadingPillLayout)
 
     var totalHeight: CGFloat {
         switch self {
@@ -69,6 +70,7 @@ enum RowLayout: @unchecked Sendable {
         case .thematicBreak(let l): return l.totalHeight
         case .userBubble(let l): return l.totalHeight
         case .toolGroup(let l): return l.totalHeight
+        case .loadingPill(let l): return l.totalHeight
         }
     }
 
@@ -83,6 +85,7 @@ enum RowLayout: @unchecked Sendable {
         case .thematicBreak(let l): return l.measuredWidth
         case .userBubble(let l): return l.measuredWidth
         case .toolGroup(let l): return l.measuredWidth
+        case .loadingPill(let l): return l.measuredWidth
         }
     }
 
@@ -121,6 +124,7 @@ enum RowLayout: @unchecked Sendable {
         case .userBubble(let l): l.draw(in: ctx, origin: origin)
         case .toolGroup(let l):
             l.draw(in: ctx, origin: origin, hoveredAction: hoveredAction)
+        case .loadingPill(let l): l.draw(in: ctx, origin: origin)
         }
     }
 
@@ -160,7 +164,7 @@ enum RowLayout: @unchecked Sendable {
         case .codeBlock(let l): links = l.links
         case .blockquote(let l): links = l.links
         case .toolGroup(let l): links = l.links
-        case .image, .thematicBreak, .userBubble: links = []
+        case .image, .thematicBreak, .userBubble, .loadingPill: links = []
         }
         hits.append(
             contentsOf: links.map {
@@ -200,6 +204,7 @@ enum RowLayout: @unchecked Sendable {
         case .thematicBreak: return nil
         case .userBubble(let l): return l.selectionAdapter
         case .toolGroup(let l): return l.selectionAdapter
+        case .loadingPill: return nil
         }
     }
 
@@ -228,6 +233,33 @@ enum RowLayout: @unchecked Sendable {
                 origin: origin,
                 hoveredAction: hoveredAction,
                 selection: selection)
+        case .loadingPill(let l):
+            // Pill background + label paint into the cell bitmap;
+            // dots are layer-hosted so their breathing opacity
+            // animation runs on the CoreAnimation thread (no
+            // `draw(_:)` invalidation per frame). Bundled as a
+            // distinct `SubviewPlan` field so the reconciler can
+            // own the same lazy-create / reuse / cleanup pattern
+            // as chevrons / shimmers — no special-casing on the
+            // layout enum in the cell.
+            return SubviewPlan(
+                chevrons: [],
+                entries: [],
+                shimmers: [],
+                loadingDots: l.dotRects.enumerated().map { idx, rect in
+                    SubviewPlan.LoadingDots(
+                        // Per-row id stays stable across re-layouts —
+                        // we synthesise from the cell's `padTop +
+                        // origin` neutral seed. The id is purely a
+                        // reuse handle on the cell side; multiple
+                        // pills never coexist in a row.
+                        index: idx,
+                        center: CGPoint(
+                            x: origin.x + rect.midX,
+                            y: origin.y + rect.midY),
+                        diameter: rect.width,
+                        color: BlockStyle.loadingPillDotColor)
+                })
         default:
             return .empty
         }

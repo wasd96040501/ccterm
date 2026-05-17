@@ -99,6 +99,26 @@ final class Transcript2Controller {
     /// Module-internal: handed to `NativeTranscript2View.makeCoordinator`.
     let coordinator: Transcript2Coordinator
 
+    /// Last `setLoading(_:)` intent. Source of truth for whether the
+    /// trailing pill row should be present. The actual block id (if
+    /// any) lives in `loadingPillId` — re-pinning the pill to the
+    /// last row after each external `apply` is what
+    /// `reconcileLoadingPill()` does.
+    private(set) var loadingPillVisible: Bool = false
+
+    /// Block id of the in-flight pill row, or `nil` when no pill is
+    /// installed. Reissued whenever the pill is removed and re-
+    /// inserted (e.g. an `applyAppend` from the bridge slipped real
+    /// blocks in after the pill — the reconciler tears the pill
+    /// down and re-installs it at the new tail).
+    private var loadingPillId: UUID?
+
+    /// Recursion guard for `reconcileLoadingPill()`. The reconciler
+    /// itself triggers `coordinator.apply`, which fires the
+    /// `onBlockCountChanged` hook that drives reconciliation again —
+    /// short-circuit reentry so the recursion ends at one level.
+    private var loadingPillReconciling: Bool = false
+
     /// `syntaxEngine` enables async syntax highlighting for code blocks.
     /// Pass `nil` (the default) for previews / tests / hosts without an
     /// engine — code blocks render as plain monospaced text. Hosts that
@@ -107,7 +127,14 @@ final class Transcript2Controller {
     init(syntaxEngine: SyntaxHighlightEngine? = nil) {
         coordinator = Transcript2Coordinator(syntaxEngine: syntaxEngine)
         coordinator.onBlockCountChanged = { [weak self] count in
-            self?.blockCount = count
+            guard let self else { return }
+            self.blockCount = count
+            // Reconcile after every structural change so a bridge-
+            // driven `.insert(after: lastRealBlock, ...)` that landed
+            // *before* the pill re-pins the pill to the new tail.
+            // The recursion guard inside ensures the pill insert /
+            // remove that reconciliation itself emits doesn't loop.
+            self.reconcileLoadingPill()
         }
         coordinator.onUserBubbleSheetRequested = { [weak self] id, text in
             self?.pendingUserBubbleSheet = UserBubbleSheetRequest(id: id, text: text)
@@ -164,6 +191,74 @@ final class Transcript2Controller {
     /// user deletes one).
     func apply(_ changes: Change..., scroll: ScrollState = .none) {
         coordinator.apply(changes, scroll: scroll)
+    }
+
+    // MARK: - Loading pill
+
+    /// Toggle the trailing "running" pill row. Idempotent — setting
+    /// the same value twice is a no-op.
+    ///
+    /// **Where the pill lives.** The pill is a regular `Block` in
+    /// `Transcript2Coordinator.blocks` (kind `.loadingPill`) sitting
+    /// at the last index. Routing through the normal `apply` /
+    /// `Change.insert` / `Change.remove` keeps every invariant the
+    /// coordinator relies on — single source of truth, `numberOfRows`
+    /// derives from `blocks.count`, no `pendingBlocks` side channel.
+    ///
+    /// **Pinning to the tail.** External structural changes (live
+    /// `.appended` blocks from the bridge, `loadInitial`'s viewport
+    /// batch consumed off a `pendingInitial` race) may slip in
+    /// *after* the pill if their `.insert(after:)` resolves to the
+    /// pill's id or relies on `coordinator.blockIds.last`. Every
+    /// `apply` fires `onBlockCountChanged` → `reconcileLoadingPill()`,
+    /// which sees the pill is no longer at the tail and re-pins it
+    /// by removing + re-inserting at the new tail in one beat.
+    func setLoading(_ visible: Bool) {
+        guard loadingPillVisible != visible else { return }
+        loadingPillVisible = visible
+        reconcileLoadingPill()
+    }
+
+    /// Bring the pill into compliance with `loadingPillVisible`:
+    ///   • visible = true and pill missing / mispositioned →
+    ///     remove (if it exists somewhere else) and insert at the
+    ///     tail with a fresh id.
+    ///   • visible = false and pill present → remove.
+    ///
+    /// Reentrant: every `coordinator.apply` here fires
+    /// `onBlockCountChanged` which calls back into this method.
+    /// The `loadingPillReconciling` flag short-circuits the inner
+    /// call so the outer call's remove-then-insert sequence runs
+    /// once, atomically from the caller's POV.
+    private func reconcileLoadingPill() {
+        if loadingPillReconciling { return }
+        loadingPillReconciling = true
+        defer { loadingPillReconciling = false }
+
+        let blockIds = coordinator.blockIds
+        let pillIdSnapshot = loadingPillId
+        let pillIsLast = pillIdSnapshot != nil && blockIds.last == pillIdSnapshot
+
+        if loadingPillVisible {
+            if pillIsLast { return }
+            // Pill exists but isn't at the tail (a real-block insert
+            // landed after it) — tear it out so the re-insert below
+            // lands at the actual tail and the row identity refreshes
+            // cleanly (no stale layout cache entry under the old id).
+            if let id = pillIdSnapshot, blockIds.contains(id) {
+                coordinator.apply([.remove(ids: [id])], scroll: .none)
+            }
+            let newId = UUID()
+            loadingPillId = newId
+            coordinator.apply(
+                [.insert(after: coordinator.blockIds.last, [Block(id: newId, kind: .loadingPill)])],
+                scroll: .none)
+        } else {
+            if let id = pillIdSnapshot, blockIds.contains(id) {
+                coordinator.apply([.remove(ids: [id])], scroll: .none)
+            }
+            loadingPillId = nil
+        }
     }
 
     // MARK: - Tool status

@@ -707,6 +707,13 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                     statusStates: statuses,
                     childHighlights: childHighlights,
                     maxWidth: contentWidth))
+        case .loadingPill:
+            // Intrinsic size — `contentWidth` is unused (pill is a
+            // small chip that doesn't fill the column). Kept
+            // `nonisolated static` so `applyInBackground`'s detached
+            // precompute can call it; the pill never appears in a
+            // Phase 2 prepend today, but the contract holds.
+            return .loadingPill(LoadingPillLayout.make())
         }
     }
 

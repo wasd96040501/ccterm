@@ -95,7 +95,7 @@ struct TranscriptStressView: View {
             case .heading(_, let inlines), .paragraph(let inlines):
                 return acc + InlineNode.charCount(inlines)
             case .image, .list, .table, .codeBlock, .blockquote,
-                .thematicBreak, .userBubble, .toolGroup:
+                .thematicBreak, .userBubble, .toolGroup, .loadingPill:
                 // Stress corpus only emits heading / paragraph today, so
                 // these cases are unreachable in practice. Listed for
                 // exhaustiveness; if any of these ever land in the

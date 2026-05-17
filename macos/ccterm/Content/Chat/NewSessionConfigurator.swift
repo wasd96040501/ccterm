@@ -56,6 +56,13 @@ struct NewSessionConfigurator: View {
     /// inset that lands its centre on the corner-arc centre
     /// (`cardCornerRadius - plusButtonSize/2`) stays a clean integer (7).
     private static let plusButtonSize: CGFloat = 18
+    /// Height of the fade-out scrim at the top of the recents list.
+    /// Sits over the List's natural top inset so the first row enters
+    /// the fade band as it scrolls up — content peeks through the
+    /// dissolving tail rather than slamming into a hard line. The `+`
+    /// button (anchored to the card corner) stays in z-order above the
+    /// scrim regardless.
+    private static let recentsTopScrimHeight: CGFloat = 32
 
     @Environment(RecentProjectsStore.self) private var recents
     @Environment(SessionManager2.self) private var manager
@@ -418,7 +425,31 @@ struct NewSessionConfigurator: View {
         // nudge 2pt further inside (down + left) so the glyph reads as
         // tucked into the corner rather than tangent to the arc.
         let plusInset = Self.cardCornerRadius - Self.plusButtonSize / 2 + 2
-        VStack(alignment: .trailing, spacing: 0) {
+        // Three-layer ZStack: list at the back, fade scrim in the
+        // middle (so scrolled rows pass behind a soft top edge), `+`
+        // button on top — the button stays in its corner regardless
+        // of list height, and the scrim never occludes its hit area.
+        ZStack(alignment: .topTrailing) {
+            if recents.entries.isEmpty {
+                emptyRecents
+            } else {
+                recentsList
+            }
+
+            // Only meaningful when there are entries scrolling past;
+            // over the empty state it would just dim the centered
+            // copy for no reason.
+            if !recents.entries.isEmpty {
+                // Fade to `.ultraThinMaterial` rather than a flat color
+                // so the opaque end of the gradient stacks naturally
+                // with the panel's own material surface — a plain
+                // `windowBackgroundColor` here would look like a paler
+                // patch sitting on top of the tinted material recess,
+                // and would mistrack light/dark transitions.
+                FadeScrim(.topToBottom, height: Self.recentsTopScrimHeight, style: .ultraThinMaterial)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }
+
             Button(action: presentFolderPicker) {
                 Image(systemName: "plus")
                     .font(.system(size: 11, weight: .semibold))
@@ -426,16 +457,10 @@ struct NewSessionConfigurator: View {
                     .frame(width: Self.plusButtonSize, height: Self.plusButtonSize)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(PlusHoverButtonStyle())
             .help(String(localized: "Choose Folder…"))
             .padding(.top, plusInset)
             .padding(.trailing, plusInset)
-
-            if recents.entries.isEmpty {
-                emptyRecents
-            } else {
-                recentsList
-            }
         }
     }
 
@@ -471,6 +496,12 @@ struct NewSessionConfigurator: View {
         // probes are idempotent. Beats inlining a 0-height probe row
         // because sidebar `List` enforces a ~28pt min row height that
         // would open a gap above the first real entry.
+        // The sidebar `List` already reserves enough top inset above
+        // the first row to clear the corner-anchored `+` button — a
+        // transparent spacer row + `defaultMinListRowHeight = 0` was
+        // tried and observed to have no effect (the natural inset
+        // absorbs the spacer regardless of explicit row height), so
+        // we rely on the built-in inset.
         List(selection: folderPathSelection) {
             ForEach(recents.entries) { entry in
                 recentRow(entry)
@@ -609,6 +640,29 @@ struct NewSessionConfigurator: View {
             .split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
+    }
+}
+
+/// Hover/press background for the `+` button on the recents header.
+/// Circular fill that matches the button's hit-target frame; uses
+/// `Color.primary` opacity so light/dark mode flip without needing an
+/// explicit per-appearance color. Pressed opacity sits one step
+/// above hover (same ladder as `HoverCapsuleStyle`'s 8% / 15%) so the
+/// click read-out is clearly distinguishable from the hover state.
+private struct PlusHoverButtonStyle: ButtonStyle {
+    @State private var isHovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                Circle()
+                    .fill(
+                        Color.primary.opacity(
+                            configuration.isPressed ? 0.15 : (isHovered ? 0.08 : 0)
+                        )
+                    )
+            )
+            .onHover { isHovered = $0 }
     }
 }
 

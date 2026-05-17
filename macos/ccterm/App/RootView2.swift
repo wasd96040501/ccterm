@@ -116,17 +116,8 @@ struct RootView2: View {
                     // transcript runs flush to the window's top edge (no
                     // contentInsets.top), so this softens the seam between
                     // window chrome and the first visible row.
-                    LinearGradient(
-                        colors: [
-                            Color(nsColor: .windowBackgroundColor),
-                            Color(nsColor: .windowBackgroundColor).opacity(0),
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: Self.topFadeScrimHeight)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .allowsHitTesting(false)
+                    FadeScrim(.topToBottom, height: Self.topFadeScrimHeight)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
                 .overlay(alignment: .bottom) {
                     // Fade scrim: a standalone gradient at the detail pane
@@ -138,37 +129,29 @@ struct RootView2: View {
                     // pill is intentionally NOT cut, so the scrim's
                     // gradient bridges them rather than leaving a
                     // hard-edged slot.
-                    LinearGradient(
-                        colors: [
-                            Color(nsColor: .windowBackgroundColor).opacity(0),
-                            Color(nsColor: .windowBackgroundColor),
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: 160)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                    .mask {
-                        Color.white
-                            .overlay {
-                                if attachRect != .zero {
-                                    Circle()
-                                        .fill(.black)
-                                        .frame(width: attachRect.width, height: attachRect.height)
-                                        .position(x: attachRect.midX, y: attachRect.midY)
-                                        .blendMode(.destinationOut)
+                    FadeScrim(.bottomToTop, height: 160)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                        .mask {
+                            Color.white
+                                .overlay {
+                                    if attachRect != .zero {
+                                        Circle()
+                                            .fill(.black)
+                                            .frame(width: attachRect.width, height: attachRect.height)
+                                            .position(x: attachRect.midX, y: attachRect.midY)
+                                            .blendMode(.destinationOut)
+                                    }
+                                    if pillRect != .zero {
+                                        RoundedRectangle(cornerRadius: InputBarView2.cornerRadius, style: .continuous)
+                                            .fill(.black)
+                                            .frame(width: pillRect.width, height: pillRect.height)
+                                            .position(x: pillRect.midX, y: pillRect.midY)
+                                            .blendMode(.destinationOut)
+                                    }
                                 }
-                                if pillRect != .zero {
-                                    RoundedRectangle(cornerRadius: InputBarView2.cornerRadius, style: .continuous)
-                                        .fill(.black)
-                                        .frame(width: pillRect.width, height: pillRect.height)
-                                        .position(x: pillRect.midX, y: pillRect.midY)
-                                        .blendMode(.destinationOut)
-                                }
-                            }
-                            .compositingGroup()
-                    }
-                    .allowsHitTesting(false)
+                                .compositingGroup()
+                        }
+                        .allowsHitTesting(false)
                 }
                 .overlay {
                     // Compose card sits centered in the detail pane, the

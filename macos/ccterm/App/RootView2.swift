@@ -116,17 +116,8 @@ struct RootView2: View {
                     // transcript runs flush to the window's top edge (no
                     // contentInsets.top), so this softens the seam between
                     // window chrome and the first visible row.
-                    LinearGradient(
-                        colors: [
-                            Color(nsColor: .windowBackgroundColor),
-                            Color(nsColor: .windowBackgroundColor).opacity(0),
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: Self.topFadeScrimHeight)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .allowsHitTesting(false)
+                    FadeScrim(.topToBottom, height: Self.topFadeScrimHeight)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
                 .overlay(alignment: .bottom) {
                     // Fade scrim: a standalone gradient at the detail pane
@@ -138,52 +129,38 @@ struct RootView2: View {
                     // pill is intentionally NOT cut, so the scrim's
                     // gradient bridges them rather than leaving a
                     // hard-edged slot.
-                    LinearGradient(
-                        colors: [
-                            Color(nsColor: .windowBackgroundColor).opacity(0),
-                            Color(nsColor: .windowBackgroundColor),
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: 160)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                    .mask {
-                        Color.white
-                            .overlay {
-                                if attachRect != .zero {
-                                    Circle()
-                                        .fill(.black)
-                                        .frame(width: attachRect.width, height: attachRect.height)
-                                        .position(x: attachRect.midX, y: attachRect.midY)
-                                        .blendMode(.destinationOut)
+                    FadeScrim(.bottomToTop, height: 160)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                        .mask {
+                            Color.white
+                                .overlay {
+                                    if attachRect != .zero {
+                                        Circle()
+                                            .fill(.black)
+                                            .frame(width: attachRect.width, height: attachRect.height)
+                                            .position(x: attachRect.midX, y: attachRect.midY)
+                                            .blendMode(.destinationOut)
+                                    }
+                                    if pillRect != .zero {
+                                        RoundedRectangle(cornerRadius: InputBarView2.cornerRadius, style: .continuous)
+                                            .fill(.black)
+                                            .frame(width: pillRect.width, height: pillRect.height)
+                                            .position(x: pillRect.midX, y: pillRect.midY)
+                                            .blendMode(.destinationOut)
+                                    }
                                 }
-                                if pillRect != .zero {
-                                    RoundedRectangle(cornerRadius: InputBarView2.cornerRadius, style: .continuous)
-                                        .fill(.black)
-                                        .frame(width: pillRect.width, height: pillRect.height)
-                                        .position(x: pillRect.midX, y: pillRect.midY)
-                                        .blendMode(.destinationOut)
-                                }
-                            }
-                            .compositingGroup()
-                    }
-                    .allowsHitTesting(false)
+                                .compositingGroup()
+                        }
+                        .allowsHitTesting(false)
                 }
                 .overlay {
-                    // Single GeometryReader hosts the configurator + input
-                    // bar in one stack. The configurator's presence and
-                    // the stack's bottom padding both react to
-                    // `isComposeMode` — flipping mode animates the bar's
-                    // y-position from "center of the detail pane" down to
-                    // "36pt above the bottom edge". The configurator's
-                    // own transition (opacity + slide) covers its
-                    // insert/remove.
-                    GeometryReader { geo in
-                        composeStack(sid: sid, detailHeight: geo.size.height)
-                            .frame(width: geo.size.width)
-                    }
-                    .allowsHitTesting(true)
+                    // Compose card sits centered in the detail pane, the
+                    // input bar is pinned to the same bottom resting
+                    // position used in chat mode. Splitting them keeps the
+                    // bar's structural identity AND its layout position
+                    // stable across the New Session → started-session
+                    // transition; only the centered card fades in/out.
+                    composeStack(sid: sid)
                 }
                 .coordinateSpace(name: Self.detailCoordSpace)
                 .ignoresSafeArea(edges: .top)
@@ -192,69 +169,61 @@ struct RootView2: View {
         }
     }
 
-    /// VStack hosting the optional compose configurator above the input
-    /// bar. The bar's structural position (second child of the VStack) is
-    /// stable across the conditional configurator, so SwiftUI keeps its
-    /// state (text, attachment) intact while the configurator slides in
-    /// and out.
+    /// ZStack hosting the centered compose card AND the bottom-anchored
+    /// input bar as independent siblings. Splitting them gives us two
+    /// guarantees the previous VStack design couldn't: the input bar's
+    /// structural identity is stable (its tree position never depends
+    /// on `isComposeMode`), AND its layout position is stable too — it
+    /// sits at the same 36pt-above-bottom resting height in both
+    /// modes, so flipping out of compose mode doesn't slide it down.
+    /// The centered card fades in/out via its own transition; the bar
+    /// just stays put.
     @ViewBuilder
-    private func composeStack(sid: String, detailHeight: CGFloat) -> some View {
-        VStack(spacing: 16) {
+    private func composeStack(sid: String) -> some View {
+        ZStack {
             if isComposeMode {
                 NewSessionConfigurator(
                     folderPath: $draftCwd,
                     useWorktree: $draftUseWorktree,
-                    sourceBranch: $draftSourceBranch
+                    sourceBranch: $draftSourceBranch,
+                    onResumeSession: { resumeSessionId in
+                        // Mirror `submit(...)`'s success path: animate the
+                        // compose card out via `isComposeMode`, then drop
+                        // the draft id so re-entering New Session next
+                        // time starts fresh.
+                        withAnimation(.smooth(duration: 0.42)) {
+                            selectedSessionId = resumeSessionId
+                            draftSessionId = nil
+                        }
+                    }
                 )
                 .frame(width: Self.composeCardWidth)
-                .transition(
-                    .asymmetric(
-                        insertion: .opacity.combined(with: .move(edge: .bottom)),
-                        removal: .opacity.combined(with: .scale(scale: 0.96))
-                    ))
+                .transition(.opacity)
             }
 
-            InputBarChrome(
-                sessionId: sid,
-                coordSpace: Self.detailCoordSpace,
-                // Compose mode requires a picked folder before send arms;
-                // chat mode never gates on this (the handle already owns
-                // its cwd from the first launch).
-                submitEnabled: !isComposeMode || draftCwd != nil,
-                onSubmit: { submission in submit(submission, sessionId: sid) },
-                onAttachRect: { rect in attachRect = rect },
-                onPillRect: { rect in pillRect = rect }
-            )
-            .frame(
-                minWidth: BlockStyle.minLayoutWidth,
-                maxWidth: Self.composeMaxWidth
-            )
-            .padding(.horizontal, 20)
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
+                InputBarChrome(
+                    sessionId: sid,
+                    coordSpace: Self.detailCoordSpace,
+                    // Compose mode requires a picked folder before send
+                    // arms; chat mode never gates on this (the handle
+                    // already owns its cwd from the first launch).
+                    submitEnabled: !isComposeMode || draftCwd != nil,
+                    onSubmit: { submission in submit(submission, sessionId: sid) },
+                    onAttachRect: { rect in attachRect = rect },
+                    onPillRect: { rect in pillRect = rect }
+                )
+                .frame(
+                    minWidth: BlockStyle.minLayoutWidth,
+                    maxWidth: Self.composeMaxWidth
+                )
+                .padding(.horizontal, 20)
+                .padding(.bottom, Self.chatBottomInset)
+            }
         }
-        // Width clamp so the GeometryReader's full-pane frame doesn't
-        // stretch the stack horizontally; the inner views set their own.
-        .frame(maxWidth: .infinity)
-        // Bottom-anchored stack: pad upward to land at the desired
-        // vertical position. In chat mode we sit 36pt above the bottom
-        // edge (the previous resting height); in compose mode the
-        // padding grows so the (configurator + bar) stack is centered
-        // in the detail pane.
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .padding(.bottom, bottomInset(detailHeight: detailHeight))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.smooth(duration: 0.42), value: isComposeMode)
-    }
-
-    /// Padding-from-bottom that lands the (configurator + bar) stack at
-    /// the right vertical position for the current mode. The compose
-    /// stack height is approximated rather than measured (configurator
-    /// + spacing + bar ≈ 300 + 16 + 60 = 376pt); the `max(...)` clamp
-    /// prevents the bar from drifting below its chat resting height on
-    /// tiny windows.
-    private func bottomInset(detailHeight: CGFloat) -> CGFloat {
-        guard isComposeMode else { return Self.chatBottomInset }
-        let stackApprox: CGFloat = NewSessionConfigurator.height + 16 + 60
-        let centered = (detailHeight - stackApprox) / 2
-        return max(Self.chatBottomInset, centered)
     }
 
     /// The currently displayed sessionId, derived from the tab + draft.

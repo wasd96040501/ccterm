@@ -33,6 +33,10 @@ struct NewSessionConfigurator: View {
     @Binding var folderPath: String?
     @Binding var useWorktree: Bool
     @Binding var sourceBranch: String?
+    /// Invoked when the user clicks the "Continue last session" card.
+    /// `RootView2` flips `selectedSessionId` to this value, swapping the
+    /// compose card out for the chosen session's history.
+    var onResumeSession: ((String) -> Void)? = nil
 
     /// Fixed visual height; the parent assumes this when computing the
     /// compose-mode vertical centering padding.
@@ -48,8 +52,20 @@ struct NewSessionConfigurator: View {
     /// Matches `InputBarView2.cornerRadius` so the compose card and the
     /// resting input bar read as one continuous chrome family.
     private static let cardCornerRadius: CGFloat = InputBarView2.cornerRadius
+    /// Hit-target for the "+" button in the recents header. Sized so the
+    /// inset that lands its centre on the corner-arc centre
+    /// (`cardCornerRadius - plusButtonSize/2`) stays a clean integer (7).
+    private static let plusButtonSize: CGFloat = 18
+    /// Height of the fade-out scrim at the top of the recents list.
+    /// Sits over the List's natural top inset so the first row enters
+    /// the fade band as it scrolls up — content peeks through the
+    /// dissolving tail rather than slamming into a hard line. The `+`
+    /// button (anchored to the card corner) stays in z-order above the
+    /// scrim regardless.
+    private static let recentsTopScrimHeight: CGFloat = 32
 
     @Environment(RecentProjectsStore.self) private var recents
+    @Environment(SessionManager2.self) private var manager
     @State private var branches: [String] = []
     @State private var currentBranch: String? = nil
     @State private var remoteMainBranch: String? = nil
@@ -120,24 +136,26 @@ struct NewSessionConfigurator: View {
     private var leftPanel: some View {
         let branchVisible = currentBranch != nil
         VStack(alignment: .leading, spacing: 0) {
-            eyebrowRow
-                .padding(.bottom, 16)
-
             titleRow
 
             subtitleView
                 .padding(.top, 6)
 
-            Rectangle()
-                .fill(Color(nsColor: .separatorColor).opacity(0.6))
-                .frame(maxWidth: 280, maxHeight: 1)
-                .padding(.top, 18)
-                .padding(.bottom, 14)
-
+            // `padding(.leading, -6)` pulls the metaRow out by exactly
+            // the HoverCapsule's internal hpad, so the visible content
+            // (folder icon) aligns with the title's text leading edge
+            // rather than the invisible capsule edge.
             metaRow
+                .padding(.leading, -6)
+                .padding(.top, 6)
                 .opacity(branchVisible ? 1 : 0)
                 .allowsHitTesting(branchVisible)
-                .animation(.smooth(duration: 0.25), value: branchVisible)
+
+            let recentSessions = recentSessionsForFolder
+            if !recentSessions.isEmpty {
+                resumeList(recentSessions)
+                    .padding(.top, 18)
+            }
 
             Spacer(minLength: 0)
 
@@ -146,18 +164,96 @@ struct NewSessionConfigurator: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private var eyebrowRow: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "wand.and.stars")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.tint)
-                .frame(width: 18, height: 18)
-            Text(String(localized: "New Session"))
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.tertiary)
-                .textCase(.uppercase)
-                .tracking(0.6)
+    /// Maximum rows the Continue section shows. Picked so the section
+    /// fits comfortably in the fixed `Self.height` left column without
+    /// pushing `hintRow` out of view. No scroll — extra sessions are
+    /// reachable via the sidebar.
+    private static let resumeRowLimit = 5
+
+    /// Top N non-archived sessions whose `groupingPath` matches the
+    /// picked folder, descending by `lastActiveAt`. `manager.records`
+    /// is `@Observable` and already sorted that way, so the prefix is
+    /// correct without an explicit sort.
+    private var recentSessionsForFolder: [SessionRecord] {
+        guard let folder = folderPath else { return [] }
+        return
+            manager.records
+            .lazy
+            .filter { $0.status != .archived && $0.groupingPath == folder }
+            .prefix(Self.resumeRowLimit)
+            .map { $0 }
+    }
+
+    /// Horizontal breathing room inside each resume row. Negative-padded
+    /// on the list container by the same amount so the row content
+    /// (title text) lines up with the title above, while the hover bg
+    /// extends outward into the leftPanel's outer padding to give the
+    /// row a comfortable hit-target — same alignment trick used by
+    /// `metaRow` for the worktree capsule.
+    private static let resumeRowHPad: CGFloat = 8
+
+    /// Flat list of recent sessions: no header, no surrounding chrome.
+    /// Rows expand to fill the left panel's width; content aligns to
+    /// the title above, hover bg extends `resumeRowHPad` past on each
+    /// side via the negative padding below.
+    @ViewBuilder
+    private func resumeList(_ records: [SessionRecord]) -> some View {
+        VStack(spacing: 0) {
+            ForEach(records) { record in
+                resumeRow(record)
+            }
         }
+        .padding(.horizontal, -Self.resumeRowHPad)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Single resume row: title flush-left, compact relative time
+    /// flush-right. Zero horizontal padding so the title's leading
+    /// edge sits at the same x as the title above; vertical padding
+    /// gives a comfortable click target and a subtle hover-bg breath.
+    @ViewBuilder
+    private func resumeRow(_ record: SessionRecord) -> some View {
+        let title = record.title.isEmpty ? String(localized: "Untitled") : record.title
+        Button {
+            onResumeSession?(record.sessionId)
+        } label: {
+            HStack(spacing: 8) {
+                Text(title)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Spacer(minLength: 8)
+
+                Text(Self.compactRelative(from: record.lastActiveAt))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                    .monospacedDigit()
+            }
+            .padding(.horizontal, Self.resumeRowHPad)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(ResumeRowButtonStyle())
+    }
+
+    /// Compact relative-time string. Caps everything ≥ 7 days at
+    /// ">7d" — beyond that the exact age stops being useful and the
+    /// row should read as "old, look elsewhere". Localised through the
+    /// `now` literal only; the suffix-letter forms (m / h / d) are
+    /// universal enough to leave as ASCII.
+    static func compactRelative(from date: Date, now: Date = Date()) -> String {
+        let seconds = Int(now.timeIntervalSince(date))
+        if seconds < 60 { return String(localized: "now") }
+        let minutes = seconds / 60
+        if minutes < 60 { return "\(minutes)m" }
+        let hours = minutes / 60
+        if hours < 24 { return "\(hours)h" }
+        let days = hours / 24
+        if days < 7 { return "\(days)d" }
+        return ">7d"
     }
 
     /// "Start Building <name>" with the project name in the accent
@@ -175,7 +271,7 @@ struct NewSessionConfigurator: View {
                     .truncationMode(.tail)
             }
         }
-        .font(.system(size: 22, weight: .semibold))
+        .font(.title.weight(.semibold))
     }
 
     /// Trimmed last path component of `folderPath`, or `nil` if no
@@ -188,9 +284,9 @@ struct NewSessionConfigurator: View {
     }
 
     /// Subtitle: abbreviated path when a folder is picked, otherwise a
-    /// short prompt directing the user to the recents list on the
-    /// right. Replaces the previous design's centered single-line
-    /// heading with real, useful context.
+    /// short prompt directing the user to the recents list on the right.
+    /// Replaces the previous design's centered single-line heading with
+    /// real, useful context.
     @ViewBuilder
     private var subtitleView: some View {
         if let path = folderPath {
@@ -215,16 +311,60 @@ struct NewSessionConfigurator: View {
         return path
     }
 
+    /// Meta row: worktree picker + branch picker, side by side. Each
+    /// inner pill carries its own hover background via
+    /// `HoverCapsuleStyle`; no shared container chrome.
     private var metaRow: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 2) {
+            worktreeMenu
             branchPill
-            Toggle(isOn: $useWorktree) {
-                Text(String(localized: "Worktree"))
-                    .font(.system(size: 12))
-            }
-            .toggleStyle(.checkbox)
-            .controlSize(.small)
         }
+        .fixedSize()
+    }
+
+    /// Worktree picker: hover-capsule menu with two options. Driving
+    /// `useWorktree` directly lets the rest of the submit pipeline stay
+    /// unchanged.
+    @ViewBuilder
+    private var worktreeMenu: some View {
+        Menu {
+            Button {
+                useWorktree = false
+            } label: {
+                Label {
+                    Text(String(localized: "Local"))
+                } icon: {
+                    if !useWorktree {
+                        Image(systemName: "checkmark")
+                    }
+                }
+            }
+            Button {
+                useWorktree = true
+            } label: {
+                Label {
+                    Text(String(localized: "New Worktree"))
+                } icon: {
+                    if useWorktree {
+                        Image(systemName: "checkmark")
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: useWorktree ? "folder.badge.plus" : "folder")
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 14, height: 14)
+                Text(useWorktree ? String(localized: "New Worktree") : String(localized: "Local"))
+                    .font(.system(size: 12))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(.secondary)
+        }
+        .menuStyle(.button)
+        .menuIndicator(.hidden)
+        .buttonStyle(HoverCapsuleStyle())
+        .fixedSize()
     }
 
     /// `⌘↩ to send` hint, anchored to the bottom-left of the left
@@ -282,31 +422,49 @@ struct NewSessionConfigurator: View {
 
     @ViewBuilder
     private var rightPanel: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text(String(localized: "Recent"))
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button(action: presentFolderPicker) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 18, height: 18)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(String(localized: "Choose Folder…"))
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, 12)
-            .padding(.bottom, 6)
-
+        // Geometry: the top-right corner-arc centre sits at
+        // (cornerRadius, cornerRadius) inset from the card's top-right
+        // edge. Align the button's *centre* on that arc centre — its
+        // top-left then sits at (cornerRadius - plusButtonSize/2). Then
+        // nudge 2pt further inside (down + left) so the glyph reads as
+        // tucked into the corner rather than tangent to the arc.
+        let plusInset = Self.cardCornerRadius - Self.plusButtonSize / 2 + 2
+        // Three-layer ZStack: list at the back, fade scrim in the
+        // middle (so scrolled rows pass behind a soft top edge), `+`
+        // button on top — the button stays in its corner regardless
+        // of list height, and the scrim never occludes its hit area.
+        ZStack(alignment: .topTrailing) {
             if recents.entries.isEmpty {
                 emptyRecents
             } else {
                 recentsList
             }
+
+            // Only meaningful when there are entries scrolling past;
+            // over the empty state it would just dim the centered
+            // copy for no reason.
+            if !recents.entries.isEmpty {
+                // Fade to `.ultraThinMaterial` rather than a flat color
+                // so the opaque end of the gradient stacks naturally
+                // with the panel's own material surface — a plain
+                // `windowBackgroundColor` here would look like a paler
+                // patch sitting on top of the tinted material recess,
+                // and would mistrack light/dark transitions.
+                FadeScrim(.topToBottom, height: Self.recentsTopScrimHeight, style: .ultraThinMaterial)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }
+
+            Button(action: presentFolderPicker) {
+                Image(systemName: "plus")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: Self.plusButtonSize, height: Self.plusButtonSize)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(PlusHoverButtonStyle())
+            .help(String(localized: "Choose Folder…"))
+            .padding(.top, plusInset)
+            .padding(.trailing, plusInset)
         }
     }
 
@@ -332,11 +490,27 @@ struct NewSessionConfigurator: View {
         // `List(selection:)` gives us the native sidebar selection
         // highlight at no cost; binding selection back to `folderPath`
         // means picking a row is a single round-trip into the same
-        // state RootView2 reads at submit time.
+        // state RootView2 reads at submit time. `.scrollIndicators` is
+        // ignored by macOS `List`, and SwiftUI doesn't add `.background`
+        // views as descendants of the List's `NSScrollView` —  so we
+        // stash an `enclosingScrollView`-based probe on EACH row's
+        // background. The probe's `NSView` lands inside a
+        // `NSTableCellView`, which IS inside the List's
+        // `NSScrollView`, so `enclosingScrollView` resolves; redundant
+        // probes are idempotent. Beats inlining a 0-height probe row
+        // because sidebar `List` enforces a ~28pt min row height that
+        // would open a gap above the first real entry.
+        // The sidebar `List` already reserves enough top inset above
+        // the first row to clear the corner-anchored `+` button — a
+        // transparent spacer row + `defaultMinListRowHeight = 0` was
+        // tried and observed to have no effect (the natural inset
+        // absorbs the spacer regardless of explicit row height), so
+        // we rely on the built-in inset.
         List(selection: folderPathSelection) {
             ForEach(recents.entries) { entry in
                 recentRow(entry)
                     .tag(entry.path as String?)
+                    .background(HideEnclosingScrollerWidth())
                     .contextMenu {
                         Button(String(localized: "Reveal in Finder")) {
                             revealInFinder(entry.path)
@@ -552,6 +726,165 @@ struct NewSessionConfigurator: View {
     }
 }
 
+/// Hover/press background for the `+` button on the recents header.
+/// Circular fill that matches the button's hit-target frame; uses
+/// `Color.primary` opacity so light/dark mode flip without needing an
+/// explicit per-appearance color. Pressed opacity sits one step
+/// above hover (same ladder as `HoverCapsuleStyle`'s 8% / 15%) so the
+/// click read-out is clearly distinguishable from the hover state.
+private struct PlusHoverButtonStyle: ButtonStyle {
+    @State private var isHovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                Circle()
+                    .fill(
+                        Color.primary.opacity(
+                            configuration.isPressed ? 0.15 : (isHovered ? 0.08 : 0)
+                        )
+                    )
+            )
+            .onHover { isHovered = $0 }
+    }
+}
+
+/// Hover/press background for a single Continue-section row. Flat
+/// (no border, no static fill) so the section reads as a list of
+/// links rather than a stack of cards. Same opacity ladder as
+/// `HoverCapsuleStyle` — 8% pressed, 6% hovered — to keep all
+/// hover affordances in this view family consistent.
+private struct ResumeRowButtonStyle: ButtonStyle {
+    @State private var isHovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+        return configuration.label
+            .background(
+                shape.fill(
+                    Color(nsColor: .labelColor).opacity(
+                        configuration.isPressed ? 0.08 : (isHovered ? 0.06 : 0)
+                    )
+                )
+            )
+            .onHover { isHovered = $0 }
+    }
+}
+
+/// Invisible probe used as the `.background` of each recents row. Once
+/// SwiftUI installs the probe's `NSView` into the host `NSTableCellView`,
+/// `enclosingScrollView` returns the List's `NSScrollView`; we then
+/// force scrollers off AND switch to overlay style. SwiftUI re-applies
+/// `List`'s own scroller settings on every layout pass (e.g. when a
+/// row's selection state changes), undoing a one-shot disable — so we
+/// also observe the scroll view's `frameDidChange` / live-scroll
+/// notifications and re-apply on each, plus call `tile()` to force the
+/// scroll view to immediately re-lay out without a gutter. The combo
+/// of `scrollerStyle = .overlay` + `hasVerticalScroller = false` is
+/// the only one I've seen actually reclaim the gutter under macOS's
+/// "Always show scroll bars" preference.
+private struct HideEnclosingScrollerWidth: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { ScrollerHidingView() }
+    func updateNSView(_ nsView: NSView, context: Context) {
+        (nsView as? ScrollerHidingView)?.applySettings()
+    }
+
+    private final class ScrollerHidingView: NSView {
+        private weak var trackedScrollView: NSScrollView?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            schedule()
+        }
+
+        override func viewDidMoveToSuperview() {
+            super.viewDidMoveToSuperview()
+            schedule()
+        }
+
+        deinit {
+            NotificationCenter.default.removeObserver(self)
+        }
+
+        private func schedule() {
+            DispatchQueue.main.async { [weak self] in
+                self?.applySettings()
+            }
+        }
+
+        fileprivate func applySettings() {
+            guard let scrollView = enclosingScrollView else { return }
+            if trackedScrollView !== scrollView {
+                if let prev = trackedScrollView {
+                    NotificationCenter.default.removeObserver(self, name: nil, object: prev)
+                    if let prevDoc = prev.documentView {
+                        NotificationCenter.default.removeObserver(self, name: nil, object: prevDoc)
+                    }
+                }
+                trackedScrollView = scrollView
+                scrollView.postsFrameChangedNotifications = true
+                NotificationCenter.default.addObserver(
+                    self,
+                    selector: #selector(reapply),
+                    name: NSView.frameDidChangeNotification,
+                    object: scrollView
+                )
+                NotificationCenter.default.addObserver(
+                    self,
+                    selector: #selector(reapply),
+                    name: NSScrollView.willStartLiveScrollNotification,
+                    object: scrollView
+                )
+                NotificationCenter.default.addObserver(
+                    self,
+                    selector: #selector(reapply),
+                    name: NSScrollView.didLiveScrollNotification,
+                    object: scrollView
+                )
+                // The document view is the `NSTableView`. Its bounds
+                // change when row selection updates, content grows /
+                // shrinks, or sidebar redraws — each of those is the
+                // moment AppKit re-tiles the scroll view and any
+                // previously-disabled scroller comes back. Catch the
+                // bounds notification and reapply.
+                if let documentView = scrollView.documentView {
+                    documentView.postsBoundsChangedNotifications = true
+                    documentView.postsFrameChangedNotifications = true
+                    NotificationCenter.default.addObserver(
+                        self,
+                        selector: #selector(reapply),
+                        name: NSView.boundsDidChangeNotification,
+                        object: documentView
+                    )
+                    NotificationCenter.default.addObserver(
+                        self,
+                        selector: #selector(reapply),
+                        name: NSView.frameDidChangeNotification,
+                        object: documentView
+                    )
+                }
+            }
+            scrollView.scrollerStyle = .overlay
+            scrollView.autohidesScrollers = true
+            scrollView.hasVerticalScroller = false
+            scrollView.hasHorizontalScroller = false
+            scrollView.verticalScroller?.scrollerStyle = .overlay
+            scrollView.verticalScroller?.alphaValue = 0
+            scrollView.verticalScroller?.isHidden = true
+            scrollView.horizontalScroller?.scrollerStyle = .overlay
+            scrollView.horizontalScroller?.alphaValue = 0
+            scrollView.horizontalScroller?.isHidden = true
+            scrollView.contentInsets = NSEdgeInsets()
+            scrollView.scrollerInsets = NSEdgeInsets()
+            scrollView.tile()
+        }
+
+        @objc private func reapply() {
+            applySettings()
+        }
+    }
+}
+
 #Preview {
     @Previewable @State var folder: String? = nil
     @Previewable @State var useWorktree: Bool = false
@@ -569,4 +902,5 @@ struct NewSessionConfigurator: View {
     }
     .frame(width: 720, height: 460)
     .environment(RecentProjectsStore())
+    .environment(SessionManager2())
 }

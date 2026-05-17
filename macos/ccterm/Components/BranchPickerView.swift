@@ -230,39 +230,102 @@ private struct BranchRow: View {
 
 // MARK: - Preview
 
-#Preview("BranchPickerView") {
-    struct PreviewWrapper: View {
-        @State private var showPopover = false
+private struct BranchPickerPreviewWrapper: View {
+    let label: String
+    let branches: [String]
+    let currentBranch: String?
+    var remoteMainBranch: String? = nil
+    var currentBranchStatus: String? = nil
 
-        var body: some View {
-            Button("Select Branch") {
-                appLog(.debug, "BranchPickerView", "button tapped, showPopover=\(showPopover)")
-                showPopover = true
-            }
-            .popover(isPresented: $showPopover) {
-                BranchPickerView(
-                    branches: [
-                        "main",
-                        "develop",
-                        "feature/auth-login",
-                        "feature/settings-page",
-                        "fix/memory-leak",
-                        "release/v2.0",
-                    ],
-                    currentBranch: "feature/auth-login",
-                    remoteMainBranch: "origin/main",
-                    currentBranchStatus: "3 changes · ↑2 ↓1",
-                    onSelect: { branch in
-                        appLog(.debug, "BranchPickerView", "onSelect: \(branch)")
-                        showPopover = false
-                    }
-                )
-            }
-            .onChange(of: showPopover) { _, newValue in
-                appLog(.debug, "BranchPickerView", "showPopover changed to \(newValue)")
-            }
-            .frame(width: 300, height: 200)
+    @State private var showPopover = false
+
+    var body: some View {
+        Button(label) {
+            appLog(.debug, "BranchPickerView", "button tapped, showPopover=\(showPopover)")
+            showPopover = true
+        }
+        .popover(isPresented: $showPopover) {
+            BranchPickerView(
+                branches: branches,
+                currentBranch: currentBranch,
+                remoteMainBranch: remoteMainBranch,
+                currentBranchStatus: currentBranchStatus,
+                onSelect: { branch in
+                    appLog(.debug, "BranchPickerView", "onSelect: \(branch)")
+                    showPopover = false
+                }
+            )
+        }
+        .onChange(of: showPopover) { _, newValue in
+            appLog(.debug, "BranchPickerView", "showPopover changed to \(newValue)")
         }
     }
-    return PreviewWrapper()
+}
+
+private let previewBranches = [
+    "main",
+    "develop",
+    "feature/auth-login",
+    "feature/settings-page",
+    "fix/memory-leak",
+    "release/v2.0",
+]
+
+/// Full feature set: both `remoteMainBranch` and `currentBranchStatus` populated.
+#Preview("Remote + dirty status") {
+    BranchPickerPreviewWrapper(
+        label: "Remote + dirty status",
+        branches: previewBranches,
+        currentBranch: "feature/auth-login",
+        remoteMainBranch: "origin/main",
+        currentBranchStatus: "3 changed, 2 untracked · ↑2 ↓1"
+    )
+    .frame(width: 300, height: 200)
+}
+
+/// Clean tree on a tracked branch — exercises the `"Clean · ↑N"` shape.
+#Preview("Remote + clean status") {
+    BranchPickerPreviewWrapper(
+        label: "Remote + clean",
+        branches: previewBranches,
+        currentBranch: "main",
+        remoteMainBranch: "origin/main",
+        currentBranchStatus: "Clean · ↑1"
+    )
+    .frame(width: 300, height: 200)
+}
+
+/// Local-only repo with a dirty tree — no Remote Main section, but the
+/// current branch row still shows a status subtitle.
+#Preview("Status only (no remote)") {
+    BranchPickerPreviewWrapper(
+        label: "Status only",
+        branches: previewBranches,
+        currentBranch: "feature/auth-login",
+        currentBranchStatus: "5 changed"
+    )
+    .frame(width: 300, height: 200)
+}
+
+/// Remote known but status probe returned nothing — Remote Main shows,
+/// current branch row collapses back to a single line.
+#Preview("Remote only (no status)") {
+    BranchPickerPreviewWrapper(
+        label: "Remote only",
+        branches: previewBranches,
+        currentBranch: "feature/auth-login",
+        remoteMainBranch: "origin/main"
+    )
+    .frame(width: 300, height: 200)
+}
+
+/// Legacy callers that omit both optionals — must render identically to
+/// the pre-change layout (no Remote Main, no subtitle, single-line rows).
+#Preview("Legacy (no remote, no status)") {
+    BranchPickerPreviewWrapper(
+        label: "Legacy",
+        branches: previewBranches,
+        currentBranch: "main"
+    )
+    .frame(width: 300, height: 200)
 }

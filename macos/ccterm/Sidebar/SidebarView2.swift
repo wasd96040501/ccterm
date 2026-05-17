@@ -202,16 +202,12 @@ struct SidebarFolderHeader: View {
     }
 }
 
-/// History entry inside a folder group. No leading icon — `SidebarIcon`
-/// is invoked with `nil` to reserve the icon column as transparent
-/// padding, so the title text aligns with the folder header's text
-/// above. Empty titles render as a faint italic "Untitled" placeholder.
-///
-/// The trailing slot mirrors the leading `SidebarIcon` column width
-/// (`slotWidth = 16`) and shows session runtime state via
+/// History entry inside a folder group. The leading icon column hosts
 /// `SidebarSessionStatusIndicator` — three breathing dots while the
 /// session is running, a small blue dot when there are unread messages
-/// and nothing is running, otherwise empty.
+/// and nothing is running, otherwise a transparent placeholder so the
+/// title text still aligns with the folder header's text above.
+/// Empty titles render as a faint italic "Untitled" placeholder.
 struct SidebarHistoryRow: View {
     let record: SessionRecord
     @Environment(SessionManager2.self) private var manager
@@ -219,7 +215,10 @@ struct SidebarHistoryRow: View {
     var body: some View {
         let handle = manager.existingHandle(record.sessionId)
         HStack(spacing: 6) {
-            SidebarIcon(systemImage: nil)
+            SidebarSessionStatusIndicator(
+                isRunning: handle?.isRunning ?? false,
+                hasUnread: handle?.hasUnread ?? false
+            )
             Group {
                 if record.title.isEmpty {
                     Text("Untitled")
@@ -231,20 +230,18 @@ struct SidebarHistoryRow: View {
             }
             .lineLimit(1)
             .truncationMode(.middle)
-            Spacer(minLength: 4)
-            SidebarSessionStatusIndicator(
-                isRunning: handle?.isRunning ?? false,
-                hasUnread: handle?.hasUnread ?? false
-            )
         }
     }
 }
 
 // MARK: - Status indicators
 
-/// Trailing-edge runtime-state slot for a history row. Sits in a frame
-/// matched to `SidebarIcon.slotWidth` so the column lines up with the
-/// leading icon column of New Session / folder header rows above.
+/// Leading icon-slot occupant for a history row. Drops into the same
+/// 16pt frame New Session / folder-header rows use for their SF
+/// Symbol, so the indicator column aligns vertically with the icon
+/// column above. When neither flag is set the slot stays transparent
+/// — same role the empty `SidebarIcon(systemImage: nil)` placeholder
+/// used to play.
 ///
 /// Precedence: running wins over unread — once a session goes idle and
 /// unread accumulates, the dot replaces the dots. They are never
@@ -277,11 +274,11 @@ struct SidebarSessionStatusIndicator: View {
 ///
 /// Geometry is squeezed to fit the 16pt `SidebarIcon.slotWidth` — dot
 /// size matches the transcript (3pt) but the inter-dot gap shrinks
-/// (4pt → 2.5pt) so 3 × 3 + 2 × 2.5 = 14pt sits comfortably inside
-/// the slot.
+/// (4pt → 1.5pt) so 3 × 3 + 2 × 1.5 = 12pt reads as a compact pip
+/// cluster inside the slot.
 struct SidebarLoadingDots: View {
     static let dotSize: CGFloat = 3
-    static let dotGap: CGFloat = 2.5
+    static let dotGap: CGFloat = 1.5
     /// Full breath cycle — matches transcript.
     static let period: Double = 1.2
     /// Per-dot phase offset — matches transcript.

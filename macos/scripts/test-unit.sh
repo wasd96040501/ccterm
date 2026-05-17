@@ -48,6 +48,13 @@ XCB_ARGS=(
   DEVELOPMENT_TEAM=
 )
 
+# Propagate `CI` into the test process. xcodebuild scrubs the env when
+# spawning XCTRunner, but any var prefixed `TEST_RUNNER_` is forwarded
+# with the prefix stripped. Tests that need to detect CI (e.g. to
+# `XCTSkip` cases that hang on the Xcode 26 CI image) read it via
+# `ProcessInfo.processInfo.environment["CI"]`.
+[ -n "${CI:-}" ] && export TEST_RUNNER_CI="$CI"
+
 # By default, restrict to the unit test target. With FILTER, allow ClassName or
 # ClassName/method scoping.
 #

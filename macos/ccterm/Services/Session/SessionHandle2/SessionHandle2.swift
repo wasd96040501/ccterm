@@ -141,7 +141,12 @@ class SessionHandle2 {
     internal(set) var contextUsedTokens: Int = 0
     internal(set) var contextWindowTokens: Int = 0
     internal(set) var slashCommands: [SlashCommand] = []
-    internal(set) var availableModels: [String] = []
+    /// Model catalog from the CLI's `InitializeResponse.models`. Source of
+    /// truth for the model picker — display name, supported effort levels,
+    /// and feature flags (auto / fast / adaptive thinking) per model. Set
+    /// once at bootstrap, then mirrored into `ModelStore` for sessions that
+    /// haven't started yet (the compose-mode picker reads the cache).
+    internal(set) var availableModels: [ModelInfo] = []
 
     // MARK: - Presence
 

@@ -78,6 +78,11 @@ struct InputBarView2: View {
     /// `onAttachRect` so the 8pt spacing between the two is NOT cut,
     /// letting the scrim's gradient bridge them naturally.
     var onPillRect: ((CGRect) -> Void)? = nil
+    /// Optional handle for the per-session footer chrome (permission mode
+    /// picker, model + effort picker, context ring). Wired by the chrome
+    /// wrapper that owns the handle. nil hides the footer row entirely —
+    /// keeps the standalone preview / non-session usage compiling.
+    var handle: SessionHandle2? = nil
 
     @State private var text: String = ""
     @State private var isFocused: Bool = false
@@ -122,9 +127,30 @@ struct InputBarView2: View {
                     .padding(.trailing, sendButtonInset)
                     .padding(.bottom, sendButtonInset)
             }
+            if let handle {
+                Divider()
+                footerRow(handle: handle)
+            }
         }
         .frame(minHeight: pillMinHeight)
         .barSurface(cornerRadius: Self.cornerRadius)
+    }
+
+    /// Bottom strip of session-scoped chrome: permission-mode pill on
+    /// the left, model + effort pill next to it, context ring on the
+    /// right. Hidden when the handle isn't injected (e.g. the
+    /// stand-alone preview). Mirrors Claude.app's compose footer in
+    /// information density — short summary on the trigger, full menu
+    /// in the popover.
+    private func footerRow(handle: SessionHandle2) -> some View {
+        HStack(spacing: 6) {
+            PermissionModePicker(handle: handle)
+            ModelEffortPicker(handle: handle)
+            Spacer(minLength: 0)
+            ContextRingButton(handle: handle)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
     }
 
     private var thumbnailStrip: some View {

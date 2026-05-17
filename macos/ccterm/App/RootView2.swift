@@ -315,7 +315,8 @@ private struct InputBarChrome: View {
             submitEnabled: submitEnabled,
             coordSpace: coordSpace,
             onAttachRect: onAttachRect,
-            onPillRect: onPillRect
+            onPillRect: onPillRect,
+            handle: handle
         )
         .task(id: sessionId) {
             // `prepareDraft` is idempotent get-or-create for both fresh and

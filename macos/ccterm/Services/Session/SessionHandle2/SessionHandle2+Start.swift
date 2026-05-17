@@ -503,6 +503,11 @@ extension SessionHandle2 {
             "[v2-send] bootstrap initialize-done sid=\(sessionId.prefix(8)) "
                 + "respNil=\(initResp == nil) status=\(status)")
 
+        if let models = initResp?.models, !models.isEmpty {
+            availableModels = models
+            ModelStore.update(models)
+        }
+
         status = .idle
         if fresh {
             repository.updateStatus(sessionId, to: .created)

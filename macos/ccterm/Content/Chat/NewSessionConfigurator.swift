@@ -194,24 +194,14 @@ struct NewSessionConfigurator: View {
         return path
     }
 
-    /// Concentric-capsule meta row: outer Capsule is a soft tinted
-    /// background that wraps the worktree menu + branch picker pills.
-    /// Both inner pills use `HoverCapsuleStyle` (radius derives from
-    /// content height); the outer capsule adds 2pt of padding so it
-    /// shares the inner pills' center but has a 2pt-larger radius,
-    /// giving the "concentric, one ring out" look. The outer fill is
-    /// `quaternaryLabel` — a builtin semantic gray subtle enough that
-    /// the inner pills' hover state (labelColor at 8%) still reads as
-    /// a distinct overlay rather than being washed out.
+    /// Meta row: worktree picker + branch picker, side by side. Each
+    /// inner pill carries its own hover background via
+    /// `HoverCapsuleStyle`; no shared container chrome.
     private var metaRow: some View {
         HStack(spacing: 6) {
             worktreeMenu
             branchPill
         }
-        .padding(2)
-        .background(
-            Capsule().fill(Color(nsColor: .quaternaryLabelColor))
-        )
         .fixedSize()
     }
 
@@ -314,12 +304,12 @@ struct NewSessionConfigurator: View {
     @ViewBuilder
     private var rightPanel: some View {
         // Geometry: the top-right corner-arc centre sits at
-        // (cornerRadius, cornerRadius) = (16, 16) inset from the card's
-        // top-right edge. Visually anchoring the `+` directly on that
-        // centre reads as too tight against the corner, so nudge the
-        // button 2pt further inside (down + left from the arc centre).
-        // Inset from card edges = cornerRadius + 2 = 18.
-        let plusInset = Self.cardCornerRadius + 2
+        // (cornerRadius, cornerRadius) inset from the card's top-right
+        // edge. Align the button's *centre* on that arc centre — its
+        // top-left then sits at (cornerRadius - plusButtonSize/2). Then
+        // nudge 2pt further inside (down + left) so the glyph reads as
+        // tucked into the corner rather than tangent to the arc.
+        let plusInset = Self.cardCornerRadius - Self.plusButtonSize / 2 + 2
         VStack(alignment: .trailing, spacing: 0) {
             Button(action: presentFolderPicker) {
                 Image(systemName: "plus")
@@ -377,7 +367,6 @@ struct NewSessionConfigurator: View {
             ForEach(recents.entries) { entry in
                 recentRow(entry)
                     .tag(entry.path as String?)
-                    .listRowInsets(EdgeInsets(top: 2, leading: 12, bottom: 2, trailing: 12))
                     .background(HideEnclosingScrollerWidth())
                     .contextMenu {
                         Button(String(localized: "Reveal in Finder")) {

@@ -9,12 +9,24 @@ import SwiftUI
 /// floating control panel at the bottom lets you grow / shrink the block
 /// list to verify diff animations and resize behavior under load.
 struct TranscriptDemoView: View {
-    @State private var controller = Transcript2Controller()
+    @State private var controller: Transcript2Controller
     /// Monotonic counter for extra-pool cycling. Decoupled from
     /// `blockCount` so deletions don't reset the cycle (which would
     /// otherwise pin every appended block to `extraPool[0]` once the live
     /// count dropped below `initialBlocks.count`).
     @State private var extraAddCount: Int = 0
+
+    /// Default initializer for production callers (sidebar selection).
+    /// Tests can pass a pre-seeded controller via `init(controller:)`
+    /// to bypass the `.task`-driven seed path — AppKit's appearance
+    /// signals are unreliable for offscreen hosted-test windows, so
+    /// state-injection is the supported test seam. The `.task` body
+    /// below is idempotent on `blockCount == 0`, so a pre-loaded
+    /// controller simply skips it.
+    @MainActor
+    init(controller: Transcript2Controller? = nil) {
+        _controller = State(initialValue: controller ?? Transcript2Controller())
+    }
 
     var body: some View {
         NativeTranscript2View(controller: controller)
@@ -85,8 +97,11 @@ struct TranscriptDemoView: View {
 
 extension TranscriptDemoView {
     /// Built once at first access. Stable `Block.id`s + stable `NSImage`
-    /// instances so the diff sees no churn across re-renders.
-    fileprivate static let initialBlocks: [Block] = makeInitialBlocks()
+    /// instances so the diff sees no churn across re-renders. Exposed
+    /// at module-internal scope so unit tests can pre-seed a
+    /// `Transcript2Controller` with the same payload the `.task`-
+    /// driven path would have installed.
+    static let initialBlocks: [Block] = makeInitialBlocks()
 
     /// Hardcoded extra entries appended by the "Add Message" button. Cycled
     /// through by `currentCount` so each click visibly adds something new.
@@ -1066,11 +1081,13 @@ extension TranscriptDemoView {
 
     /// Stable ids for the running-demo group + its children so the
     /// `.task` block can call `setToolStatus(...)` against known
-    /// surfaces without scanning the block list at runtime.
-    fileprivate static let runningGroupBlockId = UUID()
-    fileprivate static let runningReadChildId = UUID()
-    fileprivate static let runningGrepChildId = UUID()
-    fileprivate static let runningBashChildId = UUID()
+    /// surfaces without scanning the block list at runtime. Internal
+    /// scope so the snapshot test can replay the same status puts
+    /// after pre-seeding the controller from `initialBlocks`.
+    static let runningGroupBlockId = UUID()
+    static let runningReadChildId = UUID()
+    static let runningGrepChildId = UUID()
+    static let runningBashChildId = UUID()
 }
 
 /// SF Symbol → NSImage at a fixed point size. Held by the `initialBlocks`

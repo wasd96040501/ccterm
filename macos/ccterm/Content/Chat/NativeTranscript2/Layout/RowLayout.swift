@@ -89,6 +89,60 @@ enum RowLayout: @unchecked Sendable {
         }
     }
 
+    /// Layout-local y where a gutter glyph should be vertically centered
+    /// so it baseline-aligns with the first line of content. Defined as
+    /// the midpoint of the first text line's band (`baseline + (descent
+    /// - ascent) / 2`); for layouts without text first-line semantics
+    /// (image, thematic break, tool group header, loading pill) we
+    /// return `totalHeight / 2` — those layouts don't emit gutters
+    /// anyway, the value is only reached when the cell asks defensively.
+    var firstLineCenterY: CGFloat {
+        switch self {
+        case .text(let l):
+            guard let baseline = l.lineOrigins.first?.y,
+                let m = l.lineMetrics.first
+            else { return l.totalHeight / 2 }
+            return baseline + (m.descent - m.ascent) / 2
+        case .userBubble(let l):
+            guard let baseline = l.lineOrigins.first?.y,
+                let m = l.lineMetrics.first
+            else { return l.bubbleRect.midY }
+            // `textOriginInRow.y` is already in layout-local coords;
+            // `lineOrigins[0].y` is text-local. Sum + line-band midY.
+            return l.textOriginInRow.y + baseline
+                + (m.descent - m.ascent) / 2
+        case .blockquote(let l):
+            guard let baseline = l.text.lineOrigins.first?.y,
+                let m = l.text.lineMetrics.first
+            else { return l.totalHeight / 2 }
+            return l.textOriginInLayout.y + baseline
+                + (m.descent - m.ascent) / 2
+        case .codeBlock(let l):
+            // Align gutter to the **header band** rather than the first
+            // code line — the gutter sits in the row margin and reads
+            // as "this is a code block, copy it"; aligning to the
+            // chrome strip puts it at the same y as the in-header
+            // language label / copy glyph and reads as a sibling
+            // affordance.
+            return l.headerRect.midY
+        case .list(let l):
+            // Per-item `markerCenterY` is documented as "midY of the
+            // first content line"; the first item carries the global
+            // first line.
+            return l.items.first?.markerCenterY ?? l.totalHeight / 2
+        case .table(let l):
+            // First row is the header. Center on its band — the first
+            // cell's text is vertically padded by `tableCellVerticalPadding`
+            // but a header-row midY aligns visually well enough for a
+            // gutter glyph (the table cells stack uniformly).
+            return (l.rowHeights.first ?? l.totalHeight) / 2
+        case .image(let l): return l.totalHeight / 2
+        case .thematicBreak(let l): return l.totalHeight / 2
+        case .toolGroup(let l): return l.totalHeight / 2
+        case .loadingPill(let l): return l.totalHeight / 2
+        }
+    }
+
     /// Opaque chrome that must paint *before* the cell's selection band
     /// so the highlight composites on top, under the glyphs. Default is
     /// a no-op — only codeblock and toolGroup item bodies have an

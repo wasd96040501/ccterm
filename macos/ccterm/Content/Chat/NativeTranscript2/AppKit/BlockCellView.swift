@@ -163,6 +163,61 @@ final class BlockCellView: NSView {
     /// it sized correctly through scroll without manual reseating.
     private var trackingArea: NSTrackingArea?
 
+    // MARK: - Gutter state
+    //
+    // Gutters are cell-level decorations (copy button in the row
+    // margin, etc.). They are not part of the layout pipeline — see
+    // `GutterSpec` and `BlockCellView+Gutter.swift`. Stored here
+    // because Swift extensions cannot add stored properties.
+
+    /// Per-block gutter specs, set by `viewFor`. `didSet` invalidates
+    /// the cursor rect cache so the new gutters' pointing-hand zones
+    /// take effect on the next mouse motion, and forces a redraw so
+    /// reused cells repaint their gutters at the new geometry.
+    var gutters: [GutterSpec] = [] {
+        didSet {
+            if gutters != oldValue {
+                needsDisplay = true
+                window?.invalidateCursorRects(for: self)
+            }
+        }
+    }
+
+    /// `true` while this cell's block is the one under the cursor.
+    /// Drives gutter visibility: gutters fade in only when the row is
+    /// hovered, matching the Slack / Linear / Cursor convention of
+    /// "row-margin chrome is hidden until the row is the focus of
+    /// attention".
+    ///
+    /// **Sourced from the coordinator**, not stored per-cell. Cell
+    /// recycling cannot carry a stale `true` from a previously-hovered
+    /// row to a freshly-dequeued one because the truth lives on
+    /// `Transcript2Coordinator.hoveredBlockId`. Writes happen in
+    /// `mouseEntered` / `mouseExited` below; the coordinator's
+    /// `didSet` repaints the old and new cells.
+    var cellHovered: Bool {
+        guard let blockId, let coordinator else { return false }
+        return coordinator.hoveredBlockId == blockId
+    }
+
+    /// Gutter id currently under the cursor, or `nil`. Drives the
+    /// rounded hover background + the glyph's hover tint. Sibling to
+    /// `hoveredAction` — gutter hover and layout hover are tracked
+    /// separately because a gutter click is dispatched cell-side, not
+    /// through `HitAction`.
+    var hoveredGutterId: UUID? {
+        didSet {
+            if hoveredGutterId != oldValue { needsDisplay = true }
+        }
+    }
+
+    /// Per-gutter checkmark-feedback timestamps. Set on click, cleared
+    /// after `BlockStyle.gutterCopiedFeedbackSeconds`. Same identity-
+    /// stamped clear pattern as `copiedAt`: a quick second click
+    /// stamps a new value, the first click's pending clear sees the
+    /// mismatch and bails so the second flash isn't cut short.
+    var gutterCopiedAt: [UUID: Date] = [:]
+
     // MARK: - Subview-plan state
     //
     // Stored properties live in the main class declaration because
@@ -203,10 +258,19 @@ final class BlockCellView: NSView {
     var pendingFoldTransition: Bool = false
 
     /// Public reset hook for `viewFor` so a recycled cell never shows
-    /// a stale checkmark on a different block.
+    /// a stale checkmark on a different block. Clears both the
+    /// codeblock in-header copy flash and every gutter's copy flash.
     func resetCopiedFeedback() {
+        var changed = false
         if copiedAt != nil {
             copiedAt = nil
+            changed = true
+        }
+        if !gutterCopiedAt.isEmpty {
+            gutterCopiedAt.removeAll()
+            changed = true
+        }
+        if changed {
             needsDisplay = true
         }
     }
@@ -363,6 +427,13 @@ final class BlockCellView: NSView {
         if case .codeBlock(let l) = layout {
             l.drawCopyGlyph(in: ctx, origin: origin, checked: copiedAt != nil)
         }
+
+        // Gutters — cell-margin copy affordances, painted last so a
+        // hover background never sits under content. Self-drawn (no
+        // CALayer) because the only animation is a `needsDisplay`-
+        // driven swap between idle / hover / copied. See
+        // `BlockCellView+Gutter.swift`.
+        drawGutters(in: ctx)
     }
 
     // MARK: - Hover tracking
@@ -395,16 +466,36 @@ final class BlockCellView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        updateHover(at: convert(event.locationInWindow, from: nil))
+        let p = convert(event.locationInWindow, from: nil)
+        updateHover(at: p)
+        updateGutterHover(at: p)
     }
 
     override func mouseEntered(with event: NSEvent) {
-        updateHover(at: convert(event.locationInWindow, from: nil))
+        if let id = blockId {
+            coordinator?.hoveredBlockId = id
+        }
+        let p = convert(event.locationInWindow, from: nil)
+        updateHover(at: p)
+        updateGutterHover(at: p)
     }
 
     override func mouseExited(with event: NSEvent) {
+        // Only clear the global pointer if it's *this* cell that owns
+        // it. Without the guard, an `enter B → exit A` event order
+        // (NSTrackingArea doesn't promise temporal ordering across
+        // sibling areas) would wipe B's hover the instant after A set
+        // it. Keying on `blockId` keeps the invariant "the cell the
+        // pointer is over owns hoveredBlockId" no matter how the
+        // events interleave during cell recycle / fast scroll.
+        if let id = blockId, coordinator?.hoveredBlockId == id {
+            coordinator?.hoveredBlockId = nil
+        }
         if hoveredAction != nil {
             hoveredAction = nil
+        }
+        if hoveredGutterId != nil {
+            hoveredGutterId = nil
         }
     }
 
@@ -474,9 +565,28 @@ final class BlockCellView: NSView {
                 hit.rect.offsetBy(dx: origin.x, dy: origin.y),
                 cursor: .pointingHand)
         }
+        // Gutter pointing-hand rects — registered last so they win
+        // overlap with the I-beam over the layout content area.
+        // `visibleGutterRect` honors the "clip on narrow window"
+        // contract so a non-visible gutter doesn't register a stray
+        // cursor swap.
+        for spec in gutters {
+            if let r = visibleGutterRect(for: spec) {
+                addCursorRect(r, cursor: .pointingHand)
+            }
+        }
     }
 
     override func mouseDown(with event: NSEvent) {
+        // Gutter hits are tested first so a gutter click never falls
+        // through to selection drag (the table-forward path below).
+        // Gutters dispatch entirely cell-side — they don't go through
+        // `HitAction`, which is reserved for layout-internal hits.
+        let local = convert(event.locationInWindow, from: nil)
+        if let spec = gutterAt(local) {
+            handleGutterClick(spec)
+            return
+        }
         if let action = hitAction(at: event) {
             switch action {
             case .openURL(let url):

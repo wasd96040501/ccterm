@@ -1069,6 +1069,9 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         }
         cell.layout = cellLayout
         cell.padTop = BlockStyle.blockPadding(for: block.kind).top
+        // Cell-margin gutters (copy button etc.). Sparse per kind —
+        // empty for image / thematic break / tool group / loading pill.
+        cell.gutters = block.gutters
         // Selection is keyed by block id, not by cell instance, so a
         // recycled cell scrolling onto a row that already had a selection
         // picks up the existing entry here. nil = no highlight.
@@ -1093,6 +1096,41 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         // scanning the superview chain.
         cell.coordinator = self
         return cell
+    }
+
+    // MARK: - Gutter dispatch
+
+    /// Run the action attached to `spec` for the block with `blockId`.
+    /// Heavy work (text serialization, pasteboard write) runs on a
+    /// detached `userInitiated` task so a click on a 10 MB code-block's
+    /// gutter never stalls the main thread. The cell's visual feedback
+    /// (checkmark flash) is fire-and-forget and doesn't wait on this
+    /// path — opportunistic UX.
+    ///
+    /// No-op when the block can't be resolved (raced removal) or the
+    /// serialized text is empty (block kind that doesn't expose copyable
+    /// content yet).
+    func handleGutter(_ spec: GutterSpec, blockId: UUID) {
+        guard let block = block(forId: blockId) else { return }
+        switch spec.kind {
+        case .copy:
+            // `Block` is `@unchecked Sendable` — the `Kind.image` NSImage
+            // is the only mutable field, and `.image` blocks emit no
+            // gutters, so the snapshot we hand to the detached task is
+            // effectively immutable for our purposes.
+            let snapshot = block
+            Task.detached(priority: .userInitiated) {
+                let text = snapshot.copyableText()
+                guard !text.isEmpty else { return }
+                // `NSPasteboard.general` is thread-safe for
+                // `clearContents` + `setString`; no need to hop back
+                // to main. AppKit documents the pasteboard as safe to
+                // use from any thread.
+                let pb = NSPasteboard.general
+                pb.clearContents()
+                pb.setString(text, forType: .string)
+            }
+        }
     }
 
     // MARK: - Selection helpers (consumed by SelectionCoordinator)
@@ -1144,6 +1182,39 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     }
 
     // MARK: - Search-side helpers
+
+    // MARK: - Gutter hover (coordinator-owned single source of truth)
+
+    /// Block id whose cell is currently under the cursor, or `nil` when
+    /// no cell is. The gutter visibility check ([BlockCellView+Gutter.swift]
+    /// `drawGutters`) reads this through `cellHovered` — by living on
+    /// the coordinator rather than each `BlockCellView`, cell recycling
+    /// can't carry stale `true` from a previously-hovered row to a
+    /// freshly-dequeued one. The invariant "at most one block shows the
+    /// gutter at any instant" falls out of the type itself.
+    ///
+    /// Writes come from `BlockCellView.mouseEntered` / `mouseExited`;
+    /// `didSet` redraws the cell whose hover state actually flipped
+    /// (old → no gutter, new → gutter). Non-visible blocks are a no-op
+    /// because there is no cell to mark dirty.
+    var hoveredBlockId: UUID? {
+        didSet {
+            guard hoveredBlockId != oldValue else { return }
+            markGutterRedraw(blockId: oldValue)
+            markGutterRedraw(blockId: hoveredBlockId)
+        }
+    }
+
+    private func markGutterRedraw(blockId: UUID?) {
+        guard let blockId, let table = tableView,
+            let row = blocks.firstIndex(where: { $0.id == blockId })
+        else { return }
+        guard
+            let cell = table.view(atColumn: 0, row: row, makeIfNecessary: false)
+                as? BlockCellView
+        else { return }
+        cell.needsDisplay = true
+    }
 
     /// Search-coordinator equivalent of `markCellNeedsDisplay`. Pushes
     /// the latest hit specs for `blockId` to its visible cell so the

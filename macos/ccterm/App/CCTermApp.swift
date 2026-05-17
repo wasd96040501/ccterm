@@ -92,6 +92,26 @@ extension NSWindow {
     @objc fileprivate func _ccterm_noopMakeKeyAndOrderFront(_ sender: Any?) {}
     @objc fileprivate func _ccterm_noopOrderFront(_ sender: Any?) {}
     @objc fileprivate func _ccterm_noopOrderFrontRegardless() {}
+
+    /// Test-only escape hatch — invokes the real `makeKeyAndOrderFront(_:)`
+    /// even when `suppressOrderingForTesting()` has neutered it. Used by
+    /// `ViewSnapshot` (cctermTests) to wake an off-screen snapshot window
+    /// enough that SwiftUI's appearance lifecycle (`.task`, `.onAppear`)
+    /// fires on the hosted view.
+    ///
+    /// The swizzle exchanges implementations symmetrically: under
+    /// XCTest the real entry point lives at
+    /// `_ccterm_noopMakeKeyAndOrderFront:`, so we route there to bypass
+    /// the no-op stub. Outside XCTest there's nothing to bypass and we
+    /// just forward to the public selector.
+    func ccterm_orderFrontForTesting() {
+        let bypass = NSSelectorFromString("_ccterm_noopMakeKeyAndOrderFront:")
+        if responds(to: bypass) {
+            perform(bypass, with: nil)
+        } else {
+            makeKeyAndOrderFront(nil)
+        }
+    }
 }
 
 struct AppCommands: Commands {

@@ -400,13 +400,41 @@ extension Worktree {
     /// Copy every gitignored file under `<source>/.claude` into the
     /// worktree. Mirrors claude.app `Q0r` (slice lines 25-41). Overlaps
     /// with `copySettingsLocal` (`.claude/settings.local.json`); idempotent.
+    ///
+    /// `.claude/worktrees/**` is excluded — that's where ccterm provisions
+    /// its own worktrees. They're full source-tree copies (with build
+    /// products) that are by definition untracked-because-ignored, so the
+    /// raw `ls-files --others --ignored` enumeration would pick them up
+    /// and recursively copy every old worktree into the new one. On a repo
+    /// with N existing worktrees that turns a fast operation into a
+    /// quadratic copy + APFS-filename-length failures (the doubled path
+    /// `<new>/.claude/worktrees/<old>/.../<deeply-nested>.swift` blows past
+    /// the 255-byte limit and FileManager throws).
+    ///
+    /// We filter in Swift rather than via git pathspec because git
+    /// `ls-files --others --ignored` emits whole-ignored-directory entries
+    /// as `<dir>/` (no recursion into them); pathspec `:(exclude)` matches
+    /// individual entries, not the directory entry that wraps a gitignored
+    /// subtree, so it doesn't help here.
     static func copyGitignoredClaudeFiles(source: String, worktree: String) {
         let claudeDir = (source as NSString).appendingPathComponent(".claude")
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: claudeDir, isDirectory: &isDir), isDir.boolValue else {
             return
         }
-        copyGitignoredMatches(source: source, worktree: worktree, pathspecs: [".claude"], label: ".claude")
+        copyGitignoredMatches(
+            source: source,
+            worktree: worktree,
+            pathspecs: [".claude"],
+            label: ".claude",
+            relativeFilter: { rel in
+                // Drop our own worktree-management directory; see the
+                // doc-comment above for why.
+                !(rel == ".claude/worktrees"
+                    || rel == ".claude/worktrees/"
+                    || rel.hasPrefix(".claude/worktrees/"))
+            }
+        )
     }
 
     /// Standalone `.claude/settings.local.json` copy — for the `restore`
@@ -425,7 +453,8 @@ extension Worktree {
         source: String,
         worktree: String,
         pathspecs: [String],
-        label: String
+        label: String,
+        relativeFilter: ((String) -> Bool)? = nil
     ) {
         let args = ["ls-files", "--others", "--ignored", "--exclude-standard", "-z", "--"] + pathspecs
         let r = runGit(args, cwd: source, timeout: 10)
@@ -433,7 +462,17 @@ extension Worktree {
 
         // `-z` → NUL-separated (safe for filenames with newlines or
         // special characters)
-        let relatives = out.split(separator: "\0").map(String.init).filter { !$0.isEmpty }
+        var relatives = out.split(separator: "\0").map(String.init).filter { !$0.isEmpty }
+        if let filter = relativeFilter {
+            let before = relatives.count
+            relatives = relatives.filter(filter)
+            let dropped = before - relatives.count
+            if dropped > 0 {
+                appLog(
+                    .info, "Worktree",
+                    "copy \(label) filter dropped \(dropped) entr\(dropped == 1 ? "y" : "ies")")
+            }
+        }
         guard !relatives.isEmpty else { return }
 
         var copied = 0

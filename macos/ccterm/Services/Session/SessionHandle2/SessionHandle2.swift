@@ -61,10 +61,25 @@ class SessionHandle2 {
 
     internal(set) var title: String = ""
     internal(set) var originPath: String?
-    /// Branch name for worktree sessions. Set to the initial random name
-    /// (`<adj>-<sci>-<hex6>`) when fresh + isWorktree completes
-    /// `ensureStarted()`; never changes afterward. nil for non-worktree.
+    /// Branch name of the **actual provisioned worktree** (e.g. the random
+    /// `<adj>-<sci>-<hex6>` `Worktree.create` produced). Set in
+    /// `ensureStarted` when the eager-persist pre-computes the proposed
+    /// name; on the rare collision retry it's patched to the final name
+    /// once `Worktree.create` returns. Persisted; restored on resume. nil
+    /// for non-worktree sessions.
+    ///
+    /// Distinct from `sourceBranch` (the *parent* branch the worktree was
+    /// branched off — runtime-only, used once and discarded).
     internal(set) var worktreeBranch: String?
+
+    /// Branch the worktree should be branched off (passed as
+    /// `Worktree.create`'s `sourceBranch` argument). nil = use baseRepo's
+    /// current branch / HEAD. Compose-only runtime state: set by the
+    /// NewSession configurator before send, consumed once by
+    /// `ensureStarted`, never persisted. Resume sessions don't have a
+    /// source branch because they're attaching to an already-provisioned
+    /// worktree.
+    internal(set) var sourceBranch: String?
     /// True while title generation is running asynchronously. UI uses this
     /// for shimmer/loading. Triggered by `generateTitle(from:)`, reset when
     /// `Prompt.runTitleAndBranch` finishes.
@@ -118,6 +133,19 @@ class SessionHandle2 {
     /// Closure-injected like `onMessagesChange`, to keep UI types out of
     /// the handle. Weak handling lives in the subscriber's closure.
     @ObservationIgnored var onLaunchFailure: ((String) -> Void)?
+
+    /// Fresh-session persisted callback. Fires once, synchronously, right
+    /// after `repository.save(record)` writes the new row in
+    /// `persistConfiguration`'s `!hasRecord` branch. The subscriber
+    /// (SessionManager2) re-reads `records` so the sidebar surfaces the
+    /// new session.
+    ///
+    /// Needed because the worktree-provisioning path runs the save
+    /// asynchronously (after `Worktree.create` returns 10-20s later) — by
+    /// then RootView2's inline `refreshRecords()` call has already executed
+    /// against an empty repo, so without this callback the sidebar stays
+    /// stale until the next refresh-triggering event.
+    @ObservationIgnored var onRecordPersisted: (() -> Void)?
 
     /// Hook installed during the bootstrap init wait so
     /// `handleProcessExit` can route "died before init" back into the

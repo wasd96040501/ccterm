@@ -237,14 +237,14 @@ struct RootView2: View {
             // Fresh draft picks up the compose card's choices. Falls back
             // to home so `Process.run()`'s chdir always succeeds when the
             // user submits without picking a folder. Worktree provisioning
-            // reads `originPath` and `worktreeBranch` (used as the source
-            // branch) inside `ensureStarted`'s fresh path.
+            // reads `originPath` and `sourceBranch` inside `ensureStarted`'s
+            // fresh path.
             let chosen = draftCwd ?? FileManager.default.homeDirectoryForCurrentUser.path
             handle.setOriginPath(chosen)
             handle.setCwd(chosen)
             handle.setWorktree(draftUseWorktree)
             if draftUseWorktree {
-                handle.setWorktreeBranch(draftSourceBranch)
+                handle.setSourceBranch(draftSourceBranch)
             }
             // Surface the project in next session's recents list and
             // remember it as the default for the next New Session card.

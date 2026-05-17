@@ -139,10 +139,27 @@ extension SessionHandle2 {
         self.originPath = originPath
     }
 
-    /// Set the source branch for worktree provisioning. Read by
-    /// `Worktree.create(from:sourceBranch:)` at `ensureStarted` time; after
-    /// the worktree is created, `ensureStarted` overwrites this field with
-    /// the generated `<adj>-<sci>-<hex>` branch name. Non-active only.
+    /// Set the **source** branch — the parent that the worktree will be
+    /// branched off. Read once by `ensureStarted` and passed to
+    /// `Worktree.create(from:sourceBranch:)`; not persisted, not used after
+    /// provisioning. nil = use baseRepo's current branch / HEAD.
+    /// Non-active only.
+    ///
+    /// Distinct from `setWorktreeBranch` — that one stores the **actual**
+    /// provisioned worktree's branch name (typically set by
+    /// `ensureStarted` itself, not by external callers).
+    func setSourceBranch(_ branch: String?) {
+        guard !isAttached else {
+            appLog(.info, "SessionHandle2", "setSourceBranch ignored — attached \(sessionId)")
+            return
+        }
+        self.sourceBranch = branch
+    }
+
+    /// Set the actual provisioned worktree's branch name. Normally written
+    /// internally by `ensureStarted`; external callers should prefer
+    /// `setSourceBranch` for the pre-provision "branch to fork from"
+    /// intent. Persisted. Non-active only.
     func setWorktreeBranch(_ branch: String?) {
         guard !isAttached else {
             appLog(.info, "SessionHandle2", "setWorktreeBranch ignored — attached \(sessionId)")

@@ -129,9 +129,10 @@ struct NewSessionConfigurator: View {
     // MARK: - Left panel
 
     /// Left- and top-aligned hero stack with a bottom-anchored hint.
-    /// The branch row uses opacity-only show/hide so the rest of the
-    /// stack doesn't reflow when the picked folder switches between
-    /// git / non-git repos.
+    /// The meta row (worktree + branch pills) is only rendered when the
+    /// picked folder is a git repo with a real branch — non-git and
+    /// detached-HEAD folders skip it entirely so the stack below pulls
+    /// up rather than leaving a blank gap.
     @ViewBuilder
     private var leftPanel: some View {
         let branchVisible = currentBranch != nil
@@ -141,15 +142,15 @@ struct NewSessionConfigurator: View {
             subtitleView
                 .padding(.top, 6)
 
-            // `padding(.leading, -6)` pulls the metaRow out by exactly
-            // the HoverCapsule's internal hpad, so the visible content
-            // (folder icon) aligns with the title's text leading edge
-            // rather than the invisible capsule edge.
-            metaRow
-                .padding(.leading, -6)
-                .padding(.top, 6)
-                .opacity(branchVisible ? 1 : 0)
-                .allowsHitTesting(branchVisible)
+            if branchVisible {
+                // `padding(.leading, -6)` pulls the metaRow out by exactly
+                // the HoverCapsule's internal hpad, so the visible content
+                // (folder icon) aligns with the title's text leading edge
+                // rather than the invisible capsule edge.
+                metaRow
+                    .padding(.leading, -6)
+                    .padding(.top, 6)
+            }
 
             let recentSessions = recentSessionsForFolder
             if !recentSessions.isEmpty {
@@ -631,6 +632,10 @@ struct NewSessionConfigurator: View {
                 // Detached HEAD: branch row is hidden, so worktree must
                 // not stay accidentally enabled.
                 useWorktree = false
+            } else {
+                // Restore the user's last launch-time choice for this
+                // path; unseen projects start as Local.
+                useWorktree = recents.useWorktree(for: path) ?? false
             }
         } else {
             useWorktree = false

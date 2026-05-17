@@ -87,7 +87,7 @@ struct RootView2: View {
                 // disappeared mid-session, NewSessionConfigurator's git
                 // probe drops it again.
                 draftCwd = recents.lastLaunchedPath
-                draftUseWorktree = false
+                draftUseWorktree = draftCwd.flatMap { recents.useWorktree(for: $0) } ?? false
                 draftSourceBranch = nil
             }
         }
@@ -266,7 +266,7 @@ struct RootView2: View {
             // Only when the user explicitly picked a folder — home
             // fallback isn't a "project".
             if let picked = draftCwd {
-                recents.markLaunched(picked)
+                recents.markLaunched(picked, useWorktree: draftUseWorktree)
             }
         }
         if let image = submission.image {

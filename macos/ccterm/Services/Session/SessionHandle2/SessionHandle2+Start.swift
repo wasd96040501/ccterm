@@ -216,24 +216,65 @@ extension SessionHandle2 {
 
         let fresh = (repository.find(sessionId) == nil)
 
-        // For fresh + isWorktree, provision the worktree first and
-        // synchronously update cwd plus the initial branch (adj-sci-hex).
-        // Later LLM rename changes branch but not cwd. Failure takes the
-        // failure path (status → .stopped, no db write, no bootstrap).
+        // For fresh + isWorktree, provision the worktree on a background
+        // queue. `Worktree.create` shells out to `git fetch` (15s timeout)
+        // and `git worktree add` (60s), and `copyGitignoredClaudeFiles`
+        // can take tens of seconds on repos with many gitignored .claude
+        // assets — every git call uses `proc.waitUntilExit()` synchronously,
+        // so running this on main freezes the whole UI (input bar can't
+        // clear, compose card can't dismiss, watchdog logs 20+s stalls).
+        //
+        // GCD `DispatchQueue.global` is preferred over `Task.detached`
+        // here: empirically the detached-task variant still pinned main
+        // for the full duration (likely an actor-isolation inheritance
+        // quirk — main-stall watchdog confirmed it). GCD has no such
+        // ambiguity.
+        //
+        // The bootstrap dispatch was already async, so callers
+        // (`send` → `ensureStarted`) already handle the defer-flush path
+        // (agentSession == nil → message queued → flushed when bootstrap
+        // finishes).
         if fresh, isWorktree {
-            do {
-                let wt = try provisionWorktreeIfNeeded()
-                cwd = wt.path
-                worktreeBranch = wt.name
-            } catch {
-                appLog(.error, "SessionHandle2", "worktree provision FAILED \(sessionId) err=\(error)")
-                termination = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-                status = .stopped
-                failQueuedEntries(reason: "worktree provision failed")
-                return
+            let origin = originPath
+            let sourceBranch = worktreeBranch
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let outcome: Result<Worktree, Error>
+                do {
+                    guard let origin else {
+                        throw Worktree.Error.notGitRepository(path: "(nil originPath)")
+                    }
+                    outcome = .success(try Worktree.create(from: origin, sourceBranch: sourceBranch))
+                } catch {
+                    outcome = .failure(error)
+                }
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    switch outcome {
+                    case .success(let wt):
+                        self.cwd = wt.path
+                        self.worktreeBranch = wt.name
+                        self.continueStartup(fresh: fresh)
+                    case .failure(let error):
+                        appLog(
+                            .error, "SessionHandle2",
+                            "worktree provision FAILED \(self.sessionId) err=\(error)")
+                        self.termination =
+                            (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                        self.status = .stopped
+                        self.failQueuedEntries(reason: "worktree provision failed")
+                    }
+                }
             }
+            return
         }
 
+        continueStartup(fresh: fresh)
+    }
+
+    /// Tail of `ensureStarted`: persist the session config and launch the
+    /// bootstrap task. Split out so the worktree async path and the local
+    /// (sync) path share the same downstream handling.
+    fileprivate func continueStartup(fresh: Bool) {
         persistConfiguration(fresh: fresh)
 
         if skipBootstrapForTesting { return }
@@ -292,15 +333,6 @@ extension SessionHandle2 {
 // MARK: - Private impl
 
 extension SessionHandle2 {
-
-    // MARK: Worktree
-
-    fileprivate func provisionWorktreeIfNeeded() throws -> Worktree {
-        guard let origin = originPath else {
-            throw Worktree.Error.notGitRepository(path: "(nil originPath)")
-        }
-        return try Worktree.create(from: origin, sourceBranch: worktreeBranch)
-    }
 
     // MARK: Title generation
 

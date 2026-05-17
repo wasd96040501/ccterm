@@ -19,18 +19,60 @@ extension SessionHandle2 {
             .appendingPathComponent(".cache/ccterm/export")
     }
 
-    /// History JSONL URL for this session. Export takes priority, then falls
-    /// back to live, otherwise nil. Slug derives from the repository's cwd,
-    /// so even resume before `activate()` can locate it.
+    /// History JSONL URL for this session. Resolution order:
+    /// 1. ccterm's own export at `~/.cache/ccterm/export/<sessionId>.jsonl`.
+    /// 2. CLI's live file at `~/.claude/projects/<slug>/<sessionId>.jsonl`,
+    ///    where `slug` is derived from `record.cwd` and is intended to
+    ///    match Claude CLI's `sanitizePath`.
+    /// 3. Fallback scan of `~/.claude/projects/*/(sessionId).jsonl`. The
+    ///    CLI's on-disk layout is **exactly one level deep** (a flat
+    ///    list of slug directories, each containing JSONLs), so this is
+    ///    a single shallow loop — cheap. Catches any case where (2)
+    ///    misses (slug drift between our impl and the CLI's, a
+    ///    canonicalize/realpath divergence on the cwd, or a worktree
+    ///    JSONL the CLI wrote under a different slug than our record
+    ///    persisted).
     var historyJSONLURL: URL? {
         let export = Self.exportRoot.appendingPathComponent("\(sessionId).jsonl")
         if FileManager.default.fileExists(atPath: export.path) { return export }
 
-        guard let rec = repository.find(sessionId), let slug = rec.slug else { return nil }
-        let live = Self.claudeProjectsRoot
-            .appendingPathComponent(slug)
-            .appendingPathComponent("\(sessionId).jsonl")
-        return FileManager.default.fileExists(atPath: live.path) ? live : nil
+        if let rec = repository.find(sessionId), let slug = rec.slug {
+            let live = Self.claudeProjectsRoot
+                .appendingPathComponent(slug)
+                .appendingPathComponent("\(sessionId).jsonl")
+            if FileManager.default.fileExists(atPath: live.path) { return live }
+        }
+
+        return Self.scanProjectsForSession(sessionId)
+    }
+
+    /// Scan `~/.claude/projects/*/<sessionId>.jsonl`. Returns the first
+    /// hit. Used as a slug-mismatch safety net by `historyJSONLURL`.
+    nonisolated static func scanProjectsForSession(_ sessionId: String) -> URL? {
+        scanForSession(sessionId, under: claudeProjectsRoot)
+    }
+
+    /// Underlying scanner taking an explicit root, exposed so tests can
+    /// point it at a tmpdir instead of `~/.claude/projects/`. The CLI's
+    /// on-disk layout is exactly one level deep (a flat list of slug
+    /// directories, each containing JSONLs), so this is a single
+    /// shallow loop — no recursion required, no JSONL bytes read.
+    nonisolated static func scanForSession(_ sessionId: String, under root: URL) -> URL? {
+        let fm = FileManager.default
+        guard
+            let entries = try? fm.contentsOfDirectory(
+                at: root,
+                includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles])
+        else { return nil }
+        for entry in entries {
+            let isDir =
+                (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+            guard isDir else { continue }
+            let candidate = entry.appendingPathComponent("\(sessionId).jsonl")
+            if fm.fileExists(atPath: candidate.path) { return candidate }
+        }
+        return nil
     }
 }
 

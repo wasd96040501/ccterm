@@ -16,7 +16,14 @@ import Observation
 final class SessionManager2 {
 
     @ObservationIgnored private let repository: any SessionRepository
-    @ObservationIgnored private var handles: [String: SessionHandle2] = [:]
+    /// Cache of per-`sessionId` handles. **Observation-tracked** so views
+    /// reading runtime-only state via `existingHandle(_:)` (sidebar rows
+    /// querying `isRunning` / `hasUnread`) get re-rendered when a handle
+    /// is first allocated. With `@ObservationIgnored`, the cold-path —
+    /// row body's first render sees `handle == nil`, never subscribes,
+    /// stays stale when the handle later flips `isRunning` — silently
+    /// breaks the indicator.
+    private var handles: [String: SessionHandle2] = [:]
 
     /// Non-archived session records, descending by `lastActiveAt`. Sidebar
     /// v2 observes this array directly. Populated once at init and

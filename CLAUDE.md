@@ -93,32 +93,25 @@ make fmt         # Format code (xcstrings, ...)
 
 ## Tests
 
-**Unit tests only.** There is one test target — `cctermTests` — for
-pure-logic tests (bridge dispatch, history parsing, block builder,
-session-handle state transitions). Conventions and the parallel-safety
-rules live in [cctermTests/CLAUDE.md](macos/cctermTests/CLAUDE.md).
-
-> **No UI tests, by design.** We previously maintained a `cctermUITests`
-> XCUITest target. It was removed because XCUITest on macOS proved too
-> flaky and high-friction to be a useful merge gate: AX semantics shift
-> across OS / Xcode versions, the runner steals focus locally, and
-> writing / debugging a single test repeatedly cost more than the
-> regressions it caught. **There is no current plan to bring it back.**
-> Cover anything that requires a click / keystroke / window / focus
-> state by exercising the underlying handle, bridge, or controller
-> directly from a unit test; visual regressions are caught in review
-> and by running the app.
+**Unit tests only** — one target, `cctermTests`. Covers pure logic
+(bridge dispatch, history parsing, block builder, session-handle
+state transitions) **and** SwiftUI view snapshots rendered offscreen
+via `NSHostingController`. There is no XCUITest target; click /
+keystroke / focus flows are exercised by driving the underlying
+handle / bridge / controller directly. Conventions, parallel-safety
+rules, and **the snapshot-test SOP** live in
+[cctermTests/CLAUDE.md](macos/cctermTests/CLAUDE.md) — read it before
+adding any view-rendering test.
 
 ```bash
-make test-unit                                                  # full unit suite, parallel by class
+make test-unit                                                  # full suite, parallel by class
 make test-unit FILTER=MessageEntryBlockBuilderTests             # one class
 make test-unit FILTER=MessageEntryBlockBuilderTests/testAssistantTextProducesParagraph
 ```
 
-Unit tests do not steal focus and are safe to run locally during normal
-development. Pushing to any PR branch also triggers
-`.github/workflows/test.yml`, which runs `make test-unit` as the merge
-gate; `xcresult` artifacts upload on failure.
+Unit tests do not steal focus and are safe to run locally. Pushing to
+any PR branch triggers `.github/workflows/test.yml` (`make test-unit`)
+as the merge gate; `xcresult` artifacts upload on failure.
 
 ## CI
 

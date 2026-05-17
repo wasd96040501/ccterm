@@ -377,7 +377,12 @@ struct NewSessionConfigurator: View {
         // `List(selection:)` gives us the native sidebar selection
         // highlight at no cost; binding selection back to `folderPath`
         // means picking a row is a single round-trip into the same
-        // state RootView2 reads at submit time.
+        // state RootView2 reads at submit time. SwiftUI's
+        // `.scrollIndicators(.hidden)` is silently ignored by `List` on
+        // macOS (the underlying `NSScrollView`'s scroller visibility is
+        // owned by AppKit), so we drop a `HideEnclosingScrollers`
+        // background that walks up to the enclosing `NSScrollView` and
+        // turns its verticalScroller off directly.
         List(selection: folderPathSelection) {
             ForEach(recents.entries) { entry in
                 recentRow(entry)
@@ -394,7 +399,7 @@ struct NewSessionConfigurator: View {
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
-        .scrollIndicators(.hidden)
+        .background(HideEnclosingScrollers())
     }
 
     /// Wrap the binding so the row's `tag` (an optional path) can drive
@@ -516,6 +521,37 @@ struct NewSessionConfigurator: View {
             .split(separator: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
+    }
+}
+
+/// Drops an invisible `NSView` into the host SwiftUI view's hierarchy so
+/// we can walk up to the enclosing `NSScrollView` (the one AppKit creates
+/// for `List`) and force its vertical scroller off. SwiftUI's
+/// `.scrollIndicators(.hidden)` modifier doesn't reach `List`'s
+/// underlying `NSScrollView` on macOS — this is the standard AppKit
+/// escape hatch. `enclosingScrollView` walks the superview chain
+/// itself, so this stays robust if SwiftUI changes its inner wrapping
+/// layers.
+private struct HideEnclosingScrollers: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { ScrollerHidingView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class ScrollerHidingView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            DispatchQueue.main.async { [weak self] in
+                self?.hideScrollers()
+            }
+        }
+
+        private func hideScrollers() {
+            guard let scrollView = enclosingScrollView else { return }
+            scrollView.hasVerticalScroller = false
+            scrollView.hasHorizontalScroller = false
+            scrollView.verticalScroller?.alphaValue = 0
+            scrollView.horizontalScroller?.alphaValue = 0
+            scrollView.scrollerStyle = .overlay
+        }
     }
 }
 

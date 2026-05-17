@@ -1,25 +1,33 @@
 import SwiftUI
 
 /// Footer-row indicator: how much of the model's context window the
-/// running session has used. Hidden when `contextWindowTokens` is still
-/// zero (the CLI hasn't yet reported a window — usually before the first
-/// `.result`). Hover surfaces the absolute counts and percentage; the
-/// pill itself doesn't open a popover.
+/// running session has used. The ring is a clickable button — tapping
+/// it opens a popover with the absolute numbers and percentage; the
+/// label-less ring keeps the chrome row visually quiet at rest, in
+/// line with Claude.app's "metrics widget" treatment. Hidden when
+/// `contextWindowTokens` is still zero (the CLI hasn't yet reported a
+/// window — usually before the first `.result`).
 struct ContextRingButton: View {
     let handle: SessionHandle2
+    @State private var isPresented = false
 
     var body: some View {
         if handle.contextWindowTokens > 0 {
-            HStack(spacing: 5) {
+            Button(action: { isPresented.toggle() }) {
                 ProgressRingView(percent: percent)
-                Text("\(Int(percent))%")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .monospacedDigit()
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
             }
-            .padding(.horizontal, 6)
-            .frame(height: 22)
-            .help(tooltip)
+            .buttonStyle(.plain)
+            .popover(isPresented: $isPresented, arrowEdge: .top) {
+                ContextPopoverContent(
+                    used: handle.contextUsedTokens,
+                    total: handle.contextWindowTokens,
+                    percent: percent
+                )
+            }
+            .accessibilityLabel(String(localized: "Context usage"))
+            .accessibilityValue("\(Int(percent))%")
         }
     }
 
@@ -28,11 +36,44 @@ struct ContextRingButton: View {
         let total = Double(handle.contextWindowTokens)
         return min(max(used / total * 100, 0), 100)
     }
+}
 
-    private var tooltip: String {
-        let used = formatTokens(handle.contextUsedTokens)
-        let total = formatTokens(handle.contextWindowTokens)
-        return "\(used) / \(total) (\(Int(percent))%)"
+private struct ContextPopoverContent: View {
+    let used: Int
+    let total: Int
+    let percent: Double
+
+    var body: some View {
+        VStack(spacing: 0) {
+            PopoverSectionHeader(title: String(localized: "Context"))
+            HStack(alignment: .center, spacing: 10) {
+                ProgressRingView(percent: percent, size: 22)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(usageLine)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .monospacedDigit()
+                    Text(percentLine)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, PopoverList.horizontalInset)
+            .padding(.top, 2)
+            .padding(.bottom, 6)
+        }
+        .padding(PopoverList.outerPadding)
+        .frame(width: PopoverList.width)
+    }
+
+    private var usageLine: String {
+        "\(formatTokens(used)) / \(formatTokens(total))"
+    }
+
+    private var percentLine: String {
+        String(format: String(localized: "%lld%% used"), Int(percent))
     }
 
     private func formatTokens(_ count: Int) -> String {

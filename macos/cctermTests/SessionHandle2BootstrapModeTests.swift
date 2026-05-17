@@ -94,7 +94,7 @@ final class SessionHandle2BootstrapModeTests: XCTestCase {
             repository: InMemorySessionRepository())
         handle.setCwd("/tmp/fresh")
 
-        let config = handle.makeAgentConfig()
+        let config = handle.makeAgentConfig(customCommand: nil)
 
         XCTAssertEqual(
             config.sessionId, handle.sessionId,
@@ -131,7 +131,7 @@ final class SessionHandle2BootstrapModeTests: XCTestCase {
             ))
         let handle = SessionHandle2(sessionId: sid, repository: repo)
 
-        let config = handle.makeAgentConfig()
+        let config = handle.makeAgentConfig(customCommand: nil)
 
         XCTAssertEqual(
             config.sessionId, sid,
@@ -156,7 +156,7 @@ final class SessionHandle2BootstrapModeTests: XCTestCase {
             ))
         let handle = SessionHandle2(sessionId: sid, repository: repo)
 
-        let config = handle.makeAgentConfig()
+        let config = handle.makeAgentConfig(customCommand: nil)
 
         XCTAssertNil(
             config.sessionId,

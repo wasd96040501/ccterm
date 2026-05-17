@@ -333,7 +333,15 @@ extension SessionHandle2 {
 
         if skipBootstrapForTesting { return }
 
-        let config = makeAgentConfig()
+        // UserDefaults read kept at the call site, not inside
+        // `makeAgentConfig`. The tests in `SessionHandle2BootstrapModeTests`
+        // exercise `makeAgentConfig` directly; under hosted XCTest on CI
+        // (macos-26 runner, no full app launch), `UserDefaults.standard`
+        // reads can fault — see `cctermTests/CLAUDE.md` "No UserDefaults"
+        // rule. Hoisting the read here keeps the pure-derivation function
+        // safe to call from tests.
+        let customCommand = UserDefaults.standard.string(forKey: "customCLICommand")
+        let config = makeAgentConfig(customCommand: customCommand)
         Task { @MainActor [weak self] in
             await self?.bootstrap(configuration: config)
         }
@@ -483,13 +491,19 @@ extension SessionHandle2 {
     /// derived from one source of truth — no `fresh: Bool` parameter
     /// flowing in from the caller.
     ///
+    /// `customCommand` is injected rather than read from `UserDefaults`
+    /// inside the function so this stays a pure derivation of handle state
+    /// + caller-supplied environment. Production reads
+    /// `UserDefaults.standard["customCLICommand"]` in `continueStartup`;
+    /// tests pass `nil` and assert on the produced config without tripping
+    /// hosted-XCTest UserDefaults faults on CI.
+    ///
     /// `internal` rather than `fileprivate` so
     /// `SessionHandle2BootstrapModeTests` can assert directly on the
-    /// produced `SessionConfiguration` without the test having to run
-    /// AgentSDK or stand up a real CLI subprocess.
-    func makeAgentConfig() -> SessionConfiguration {
+    /// produced `SessionConfiguration` without standing up AgentSDK or a
+    /// real CLI subprocess.
+    func makeAgentConfig(customCommand: String?) -> SessionConfiguration {
         let useResume = Self.shouldResumeBootstrap(for: repository.find(sessionId))
-        let customCommand = UserDefaults.standard.string(forKey: "customCLICommand")
         let wd = URL(fileURLWithPath: cwd ?? originPath ?? FileManager.default.currentDirectoryPath)
         var config = SessionConfiguration(
             workingDirectory: wd,

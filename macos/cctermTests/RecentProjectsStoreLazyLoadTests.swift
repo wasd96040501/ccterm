@@ -17,46 +17,36 @@ import XCTest
 ///    pruned shape back to UserDefaults so the bad entries don't
 ///    resurface.
 ///
-/// We use a per-test `UserDefaults` suite (named with a UUID) so the
-/// developer's real defaults are never touched and tests can run in
-/// parallel.
+/// Each test is self-contained: it builds its own UUID-named
+/// `UserDefaults` suite, runs assertions, and removes the suite via
+/// `defer`. No shared `setUp` / `tearDown` state — that avoided a
+/// flaky CI failure on Xcode 26 where an IUO-backed shared `defaults`
+/// could `nil`-trap during tearDown.
 @MainActor
 final class RecentProjectsStoreLazyLoadTests: XCTestCase {
-
-    private var suiteName: String!
-    private var defaults: UserDefaults!
-
-    override func setUpWithError() throws {
-        continueAfterFailure = false
-        suiteName = "ccterm.recents-test-\(UUID().uuidString)"
-        defaults = UserDefaults(suiteName: suiteName)
-        XCTAssertNotNil(defaults)
-    }
-
-    override func tearDown() {
-        defaults.removePersistentDomain(forName: suiteName)
-    }
 
     // MARK: - init does no I/O
 
     func testInitDoesNotReadDefaults() throws {
+        let suite = try makeSuite()
+        let defaults = suite.defaults
+        defer { suite.cleanup() }
+
         // Pre-seed defaults with a path that does NOT exist on disk. If
         // `init` eagerly loaded, it would `fileExists` the path, fail,
         // and rewrite the key with an empty list.
-        let bogus = "/var/empty/ccterm-does-not-exist-\(UUID().uuidString)"
-        try seedEntries([entry(path: bogus)])
-        try seedLastLaunched(bogus)
-        try seedWorktreePrefs([bogus: true])
+        let bogus = bogusPath()
+        try seedEntries(in: defaults, [entry(path: bogus)])
+        defaults.set(bogus, forKey: "RecentProjects.lastLaunched.v1")
+        try seedWorktreePrefs(in: defaults, [bogus: true])
 
-        let store = RecentProjectsStore(defaults: defaults)
-        _ = store  // suppress unused-warning
+        _ = RecentProjectsStore(defaults: defaults)
 
         // All three keys must remain exactly as seeded — the store
         // hasn't touched them.
-        let entriesData = defaults.data(forKey: "RecentProjects.v1")
-        XCTAssertNotNil(entriesData)
         let decoded = try JSONDecoder().decode(
-            [RecentProjectsStore.Entry].self, from: XCTUnwrap(entriesData))
+            [RecentProjectsStore.Entry].self,
+            from: try XCTUnwrap(defaults.data(forKey: "RecentProjects.v1")))
         XCTAssertEqual(decoded.count, 1, "init must not have rewritten the entries array")
         XCTAssertEqual(decoded.first?.path, bogus)
 
@@ -71,37 +61,41 @@ final class RecentProjectsStoreLazyLoadTests: XCTestCase {
     // MARK: - first read triggers prune-and-write-back
 
     func testFirstEntriesReadPrunesNonexistentPathsFromDefaults() throws {
-        // Mix: one path that exists (the per-test temp dir) + one that
-        // doesn't.
-        let tmpDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ccterm-recents-real-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: tmpDir) }
+        let suite = try makeSuite()
+        let defaults = suite.defaults
+        defer { suite.cleanup() }
 
-        let bogus = "/var/empty/ccterm-does-not-exist-\(UUID().uuidString)"
-        try seedEntries([
-            entry(path: tmpDir.path, lastUsed: Date()),
-            entry(path: bogus, lastUsed: Date().addingTimeInterval(-10)),
-        ])
+        // Mix: one path that exists (per-test temp dir) + one that doesn't.
+        let realDir = try makeRealDir()
+        let bogus = bogusPath()
+        try seedEntries(
+            in: defaults,
+            [
+                entry(path: realDir.path, lastUsed: Date()),
+                entry(path: bogus, lastUsed: Date().addingTimeInterval(-10)),
+            ])
 
         let store = RecentProjectsStore(defaults: defaults)
 
         // First access — this is what triggers the load + prune + write-back.
         let observed = store.entries
-
-        XCTAssertEqual(observed.map(\.path), [tmpDir.path])
+        XCTAssertEqual(observed.map(\.path), [realDir.path])
 
         let persisted = try JSONDecoder().decode(
             [RecentProjectsStore.Entry].self,
-            from: XCTUnwrap(defaults.data(forKey: "RecentProjects.v1")))
+            from: try XCTUnwrap(defaults.data(forKey: "RecentProjects.v1")))
         XCTAssertEqual(
-            persisted.map(\.path), [tmpDir.path],
+            persisted.map(\.path), [realDir.path],
             "the bogus path must have been removed from UserDefaults, not just from the in-memory list")
     }
 
     func testFirstLastLaunchedReadDeletesStaleKeyFromDefaults() throws {
-        let bogus = "/var/empty/ccterm-does-not-exist-\(UUID().uuidString)"
-        try seedLastLaunched(bogus)
+        let suite = try makeSuite()
+        let defaults = suite.defaults
+        defer { suite.cleanup() }
+
+        let bogus = bogusPath()
+        defaults.set(bogus, forKey: "RecentProjects.lastLaunched.v1")
 
         let store = RecentProjectsStore(defaults: defaults)
 
@@ -112,43 +106,73 @@ final class RecentProjectsStoreLazyLoadTests: XCTestCase {
     }
 
     func testFirstWorktreePrefReadPrunesNonexistentKeysFromDefaults() throws {
-        let tmpDir = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ccterm-recents-real-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: tmpDir) }
+        let suite = try makeSuite()
+        let defaults = suite.defaults
+        defer { suite.cleanup() }
 
-        let bogus = "/var/empty/ccterm-does-not-exist-\(UUID().uuidString)"
-        try seedWorktreePrefs([tmpDir.path: true, bogus: false])
+        let realDir = try makeRealDir()
+        let bogus = bogusPath()
+        try seedWorktreePrefs(in: defaults, [realDir.path: true, bogus: false])
 
         let store = RecentProjectsStore(defaults: defaults)
 
-        XCTAssertEqual(store.useWorktree(for: tmpDir.path), true)
+        XCTAssertEqual(store.useWorktree(for: realDir.path), true)
         XCTAssertNil(store.useWorktree(for: bogus), "stale pref must not be returned")
 
         let persisted = try JSONDecoder().decode(
             [String: Bool].self,
-            from: XCTUnwrap(defaults.data(forKey: "RecentProjects.worktreePrefs.v1")))
+            from: try XCTUnwrap(defaults.data(forKey: "RecentProjects.worktreePrefs.v1")))
         XCTAssertEqual(
-            persisted, [tmpDir.path: true],
+            persisted, [realDir.path: true],
             "stale pref must have been removed from UserDefaults")
     }
 
     // MARK: - fixture helpers
 
+    /// A short-lived UserDefaults suite bound to a UUID-only name plus
+    /// its own `cleanup` closure. The closure removes the persistent
+    /// domain so the test never pollutes the host app's defaults.
+    private struct Suite {
+        let name: String
+        let defaults: UserDefaults
+        let cleanup: () -> Void
+    }
+
+    private func makeSuite() throws -> Suite {
+        let name = UUID().uuidString
+        let defaults = try XCTUnwrap(
+            UserDefaults(suiteName: name),
+            "UserDefaults(suiteName:) returned nil for \(name)")
+        return Suite(
+            name: name,
+            defaults: defaults,
+            cleanup: { defaults.removePersistentDomain(forName: name) })
+    }
+
+    private func makeRealDir() throws -> URL {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ccterm-recents-real-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: dir) }
+        return dir
+    }
+
+    private func bogusPath() -> String {
+        "/var/empty/ccterm-does-not-exist-\(UUID().uuidString)"
+    }
+
     private func entry(path: String, lastUsed: Date = Date()) -> RecentProjectsStore.Entry {
         RecentProjectsStore.Entry(path: path, lastUsed: lastUsed)
     }
 
-    private func seedEntries(_ entries: [RecentProjectsStore.Entry]) throws {
+    private func seedEntries(
+        in defaults: UserDefaults, _ entries: [RecentProjectsStore.Entry]
+    ) throws {
         let data = try JSONEncoder().encode(entries)
         defaults.set(data, forKey: "RecentProjects.v1")
     }
 
-    private func seedLastLaunched(_ path: String) throws {
-        defaults.set(path, forKey: "RecentProjects.lastLaunched.v1")
-    }
-
-    private func seedWorktreePrefs(_ prefs: [String: Bool]) throws {
+    private func seedWorktreePrefs(in defaults: UserDefaults, _ prefs: [String: Bool]) throws {
         let data = try JSONEncoder().encode(prefs)
         defaults.set(data, forKey: "RecentProjects.worktreePrefs.v1")
     }

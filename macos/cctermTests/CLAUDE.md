@@ -1,11 +1,18 @@
 # Unit tests
 
-`cctermTests` is the only test target. Use it for **pure-logic** tests
-— bridge dispatch, history parsing, block-builder output, session-handle
-state transitions. There is no separate UI-test target; cover anything
-that would otherwise require a click / keystroke / focus state by
-exercising the underlying handle, bridge, or controller directly. See
-the root [CLAUDE.md](../../CLAUDE.md#tests) for the rationale.
+`cctermTests` is the only test target. Two kinds of tests live here:
+
+1. **Pure-logic tests** — bridge dispatch, history parsing,
+   block-builder output, session-handle state transitions. Most tests
+   are this kind. Click / keystroke / focus flows are covered by
+   driving the handle / bridge / controller directly — there is no
+   XCUITest target.
+
+2. **View snapshot tests** — render a real SwiftUI view through
+   `NSHostingController` into an offscreen window and attach a PNG to
+   the xcresult. **For human review and PR diff context, not a
+   pixel-diff regression gate.** See [Snapshot tests](#snapshot-tests)
+   below before adding one.
 
 ## Parallel execution: hard rules
 
@@ -92,10 +99,191 @@ handle.loadHistory(overrideURL: url)
 | Bridge applies `.reset` → controller's blockIds match | Construct the bridge + controller, feed a `MessagesChange`, assert controller state |
 | Send-button enable state under various input | Drive `SessionHandle2.send` and inspect `isRunning` / `status` directly |
 | Sidebar selection routes to the right handle | Hold the manager, simulate the selection change in code, assert the resulting handle |
+| "What does this view look like today?" — visual review of a SwiftUI view | [Snapshot tests](#snapshot-tests) |
 
 If a test feels like it wants to "click a button," reach for the
 underlying method the button would invoke. The button click is `handle.send(...)`;
 the keystroke is `controller.handleKey(...)`. Test those.
+
+## Snapshot tests
+
+Render a real SwiftUI view through `NSHostingController` into an
+offscreen, alpha-0.01 window, capture the backing-store bitmap, write
+a PNG under `/tmp/ccterm-screenshots/`, and attach it to the xcresult.
+For **visual review only** — no golden-image diff, no CI gate.
+
+> **You changed a view and want to see how it renders right now —
+> skip to [I want to verify a view change](#i-want-to-verify-a-view-change).**
+
+### Existing snapshot tests
+
+Inventory — these are the views currently wired up. To verify any of
+them: `make test-unit FILTER=<class>` then `open <png>`.
+
+| View | Test class | PNG |
+|---|---|---|
+| `TranscriptDemoView` ([source](../ccterm/Content/TranscriptDemo/TranscriptDemoView.swift)) | `TranscriptDemoSnapshotTests` ([source](TranscriptDemoSnapshotTests.swift)) | `/tmp/ccterm-screenshots/TranscriptDemoView.png` |
+
+If your view isn't in this table, jump to [I want to add a snapshot
+test for a new view](#i-want-to-add-a-snapshot-test-for-a-new-view).
+
+### Run policy — opt-in only
+
+Snapshot tests do **not** execute on the default-all suite (locally or
+on CI). The runner discovers any file named `*SnapshotTests.swift`
+and injects `-skip-testing:<ClassName>` when `FILTER` is empty. Files
+stay in the test target so they're still **compiled** — bit-rot fails
+at build time, not at runtime.
+
+```bash
+make test-unit                                                   # snapshot tests SKIPPED
+make test-unit FILTER=TranscriptDemoSnapshotTests                # runs
+make test-unit FILTER=TranscriptDemoSnapshotTests/testFoo        # runs (one method)
+```
+
+Filename ↔ class name **must match** — the skip injection keys off
+the filename. `TranscriptDemoSnapshotTests.swift` must contain
+`class TranscriptDemoSnapshotTests`. Split files if you need multiple
+classes.
+
+---
+
+### I want to verify a view change
+
+Use this when you've edited a SwiftUI view and want a screenshot of
+how it renders, without launching the app.
+
+1. Find your view in the [Existing snapshot tests](#existing-snapshot-tests) table.
+2. Run the test and open the PNG:
+
+   ```bash
+   make test-unit FILTER=TranscriptDemoSnapshotTests
+   open /tmp/ccterm-screenshots/TranscriptDemoView.png
+   ```
+
+3. Look at the PNG. It's a real render under the test's fixture —
+   what you see is what a user sees after that view loads.
+4. If the view isn't in the table, **add one**: go to
+   [I want to add a snapshot test for a new view](#i-want-to-add-a-snapshot-test-for-a-new-view).
+5. If the PNG looks wrong, see [Troubleshooting](#troubleshooting).
+
+> **Why not just run the app?** Snapshots run in seconds, don't steal
+> focus, and capture deterministic fixture state — good for
+> tight-loop iteration while polishing a layout. Run the app for
+> interactive flows.
+
+---
+
+### I want to add a snapshot test for a new view
+
+Use this when the view you changed isn't yet in the inventory.
+
+**Decisions to make first** (1 minute of reading the view):
+
+- **How does the view get its initial state?**
+  - If state is passed in via `init` already → straightforward.
+  - If state is seeded in `.task` / `.onAppear` → those won't fire
+    reliably in an offscreen hosted-test window. **You'll need a
+    test seam**: an additional `init(controller:)` / `init(state:)`
+    overload that accepts a pre-built state object. Default init
+    stays the same; production behavior unchanged. See [Production
+    code rules](#production-code-rules) below.
+- **What constants does production seed from?** You'll reuse them
+  verbatim. If they're `fileprivate` static lets, widen to `internal`
+  — access modifier only, no logic change.
+- **What does the view pull from `.environment(...)`?** You'll need to
+  inject fresh in-memory instances (never `*.shared`).
+
+**Then do this:**
+
+1. Create `macos/cctermTests/<ViewName>SnapshotTests.swift` (file
+   name **must** match the class name; the runner skips by filename).
+2. Copy the [template](#template) below.
+3. Replace `MyView`, `MyController`, fixture constants, and the
+   environment injections with your view's.
+4. Run it: `make test-unit FILTER=<YourClass>`.
+5. `open /tmp/ccterm-screenshots/<name>.png` — inspect the actual
+   bitmap. CI won't catch a wrong-but-non-empty render; **you must
+   look at it**.
+6. Add a row to the [Existing snapshot tests](#existing-snapshot-tests)
+   table in this file so the next person finds it.
+
+### Template
+
+Drop this in `macos/cctermTests/MyViewSnapshotTests.swift` and edit
+the marked spots.
+
+```swift
+import AppKit
+import SwiftUI
+import XCTest
+
+@testable import ccterm
+
+@MainActor
+final class MyViewSnapshotTests: XCTestCase {
+
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+    }
+
+    func testDefaultState() throws {
+        // 1. Seed state the same way production's .task would.
+        //    Reuse production constants (widen `fileprivate` → `internal`
+        //    if needed — access modifier only).
+        let controller = MyController()
+        controller.loadInitial(MyView.initialFixture)
+
+        // 2. Mount via the test-seam init; inject fresh environment.
+        let view = MyView(controller: controller)
+            .environment(\.syntaxEngine, SyntaxHighlightEngine())
+
+        // 3. Render → write → attach.
+        let image = ViewSnapshot.render(
+            view, size: CGSize(width: 720, height: 720))
+        let url = ViewSnapshot.writePNG(image, name: "MyView")
+
+        let attachment = XCTAttachment(contentsOfFile: url)
+        attachment.name = "MyView.png"
+        attachment.lifetime = .keepAlways  // survives in xcresult
+        add(attachment)
+
+        // 4. Plausibility only — no golden-image comparison.
+        XCTAssertGreaterThanOrEqual(image.size.width, 700)
+        // Optional non-uniform check: see TranscriptDemoSnapshotTests.isUniform
+    }
+}
+```
+
+The helper functions are in [Helpers/ViewSnapshot.swift](Helpers/ViewSnapshot.swift) — don't reinvent.
+
+### Production code rules
+
+The point of snapshotting the real view is fidelity, so view
+behavior cannot drift to make tests work.
+
+| Allowed (no behavior change) | Forbidden |
+|---|---|
+| Adding a secondary initializer `init(controller: SomeController? = nil)` so tests can inject pre-built state. Default init unchanged. | `#if DEBUG` UI variants, env-var-gated layout / styling |
+| Widening `fileprivate` → `internal` on a static `let` fixture the test reuses verbatim (same bytes, modifier only) | `forceXxxForTest()` methods, exposing mutable internals for assertion |
+| Reading the same constants production's `.task` reads | Test-only seed paths that diverge from production fixture data |
+
+If the seam you need doesn't fit the "Allowed" column, snapshot is
+the wrong tool — assert on the underlying handle / controller
+instead.
+
+### Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| PNG is a single flat color | `.task` / `.onAppear` never ran offscreen, controller is empty | Seed manually via the test-seam init (see [add a snapshot test](#i-want-to-add-a-snapshot-test-for-a-new-view) step 1) |
+| PNG is mostly empty but right-sized | `settle` too short — async layout hadn't landed | Bump `settle:` from default `0.4` to `0.6`–`1.0` |
+| Test crashes in `bitmapImageRepForCachingDisplay returned nil` | `size` too small or zero | Pass a size ≥ the view's `minFrame` (typically ≥ 320×240) |
+| Window flashes onscreen during local runs | Window suppression bypassed | Always go through `ViewSnapshot.render` — it uses `ccterm_orderFrontForTesting()` which keeps the swizzle scoped |
+| Want to diff against a saved image | Not supported here | Snapshot tests are review-only by design. Propose golden-image infra explicitly before adding it |
+| Want to test a click / scroll / focus transition | Wrong tool | Drive `handle` / `controller` / bridge directly in a logic test |
+| View depends on `*.shared` singleton | Singleton leaks across parallel tests | Inject an in-memory replacement via `.environment(...)` (see [Parallel execution](#parallel-execution-hard-rules)) |
+| Test ran in CI but I want to see the CI-side PNG | CI skips snapshot tests entirely | Reproduce locally — CI cannot render them. If a CI-only metric matters, propose a one-off workflow change explicitly |
 
 ## Running
 

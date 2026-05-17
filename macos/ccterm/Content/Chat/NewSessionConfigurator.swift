@@ -248,14 +248,11 @@ struct NewSessionConfigurator: View {
                 Image(systemName: useWorktree ? "folder.badge.plus" : "folder")
                     .font(.system(size: 12, weight: .medium))
                     .frame(width: 14, height: 14)
-                    .contentTransition(.symbolEffect(.replace))
                 Text(useWorktree ? String(localized: "New Worktree") : String(localized: "Local"))
                     .font(.system(size: 12))
                     .lineLimit(1)
-                    .contentTransition(.opacity)
             }
             .foregroundStyle(.secondary)
-            .animation(.default, value: useWorktree)
         }
         .menuStyle(.button)
         .menuIndicator(.hidden)

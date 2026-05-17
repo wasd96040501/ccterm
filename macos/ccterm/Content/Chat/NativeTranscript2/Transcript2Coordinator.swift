@@ -572,6 +572,14 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// `clip.bounds.height - contentInsets.bottom`. The pre-fix
     /// implementation used just `clip.bounds.height`, which dropped the row
     /// into the bottom inset region (under the input-bar overlay).
+    ///
+    /// `target` is clamped to `-contentInsets.top` — the lowest origin
+    /// `NSClipView` treats as legal. Without the clamp, a transcript whose
+    /// total height is shorter than the viewport produces a strongly
+    /// negative target (rect.maxY is tiny, the visible-bottom term is
+    /// large), and `NSClipView.scroll(to:)` writes it through without
+    /// constraint, pushing the documentView down into the viewport and
+    /// leaving a gap above the first row.
     private func scrollRowToBottom(id: UUID, in tableView: NSTableView) {
         guard let row = blocks.firstIndex(where: { $0.id == id }),
             let scrollView = tableView.enclosingScrollView
@@ -579,7 +587,8 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let rect = tableView.rect(ofRow: row)
         let visibleBottomInClip =
             scrollView.contentView.bounds.height - scrollView.contentInsets.bottom
-        let target = rect.maxY - visibleBottomInClip
+        let raw = rect.maxY - visibleBottomInClip
+        let target = max(-scrollView.contentInsets.top, raw)
         scrollView.contentView.scroll(
             to: NSPoint(x: scrollView.contentView.bounds.origin.x, y: target))
     }

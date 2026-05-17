@@ -1174,6 +1174,39 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
 
     // MARK: - Search-side helpers
 
+    // MARK: - Gutter hover (coordinator-owned single source of truth)
+
+    /// Block id whose cell is currently under the cursor, or `nil` when
+    /// no cell is. The gutter visibility check ([BlockCellView+Gutter.swift]
+    /// `drawGutters`) reads this through `cellHovered` — by living on
+    /// the coordinator rather than each `BlockCellView`, cell recycling
+    /// can't carry stale `true` from a previously-hovered row to a
+    /// freshly-dequeued one. The invariant "at most one block shows the
+    /// gutter at any instant" falls out of the type itself.
+    ///
+    /// Writes come from `BlockCellView.mouseEntered` / `mouseExited`;
+    /// `didSet` redraws the cell whose hover state actually flipped
+    /// (old → no gutter, new → gutter). Non-visible blocks are a no-op
+    /// because there is no cell to mark dirty.
+    var hoveredBlockId: UUID? {
+        didSet {
+            guard hoveredBlockId != oldValue else { return }
+            markGutterRedraw(blockId: oldValue)
+            markGutterRedraw(blockId: hoveredBlockId)
+        }
+    }
+
+    private func markGutterRedraw(blockId: UUID?) {
+        guard let blockId, let table = tableView,
+            let row = blocks.firstIndex(where: { $0.id == blockId })
+        else { return }
+        guard
+            let cell = table.view(atColumn: 0, row: row, makeIfNecessary: false)
+                as? BlockCellView
+        else { return }
+        cell.needsDisplay = true
+    }
+
     /// Search-coordinator equivalent of `markCellNeedsDisplay`. Pushes
     /// the latest hit specs for `blockId` to its visible cell so the
     /// next draw frame reflects the new highlight state (added /

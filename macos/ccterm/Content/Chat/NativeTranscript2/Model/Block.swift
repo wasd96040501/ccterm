@@ -1071,26 +1071,30 @@ enum BlockStyle: Sendable {
 
     // MARK: - Gutter geometry
 
-    /// Square hit zone for a single gutter glyph. Larger than the SF
-    /// Symbol it hosts so the click target is comfortable; the symbol
-    /// itself draws at `gutterSymbolPointSize` centered inside.
-    nonisolated static let gutterHitSize: CGFloat = 22
-
     /// SF Symbol point size for the gutter glyph (`doc.on.doc` /
-    /// `checkmark`). Sits one notch above the codeblock header's 11pt
-    /// chrome glyph — the gutter is a standalone control in the margin,
-    /// not chrome inside another band, so it can read a touch heavier
-    /// without dominating.
-    nonisolated static let gutterSymbolPointSize: CGFloat = 12
+    /// `checkmark`). Matches `codeBlockHeaderFontSize` so every copy
+    /// affordance in the product (codeblock header + margin gutter)
+    /// renders at the same weight — chrome reads as one family, not
+    /// two slightly different ones.
+    nonisolated static let gutterSymbolPointSize: CGFloat = 11
+
+    /// Square hit zone hosting the symbol. Sized at
+    /// `round(symbol × φ) = 18pt` — golden ratio with the glyph, and
+    /// coincident with `paragraphFont`'s line height (~17pt), so the
+    /// gutter occupies exactly one line of body text vertically.
+    /// Larger than the symbol so the click target is comfortable
+    /// without dominating the margin.
+    nonisolated static let gutterHitSize: CGFloat = 18
 
     /// Gap between the layout content's edge and the gutter hit zone's
     /// near edge. Echoes `bubbleHorizontalPadding / 2` so the gutter
     /// sits in the same visual rhythm as the bubble's internal padding.
     nonisolated static let gutterMargin: CGFloat = 6
 
-    /// Rounded background drawn on hover. Tight enough to read as a
-    /// button hint rather than a chip.
-    nonisolated static let gutterHoverCornerRadius: CGFloat = 5
+    /// Rounded background drawn on hover. `hit / 4.5 ≈ 4` keeps the
+    /// rounding proportional to the new hit size — tight enough to read
+    /// as a button hint rather than a chip.
+    nonisolated static let gutterHoverCornerRadius: CGFloat = 4
 
     /// Hover background tint. Soft fill that tracks light/dark — `0.06`
     /// on light, `0.10` on dark — matches the "this is an affordance"

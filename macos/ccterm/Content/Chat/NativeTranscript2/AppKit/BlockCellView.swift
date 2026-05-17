@@ -183,16 +183,21 @@ final class BlockCellView: NSView {
         }
     }
 
-    /// `true` while the mouse is inside the cell's bounds, regardless
-    /// of whether a specific hit is under it. Drives gutter visibility:
-    /// gutters fade in only when the row is hovered, matching the
-    /// Slack / Linear / Cursor convention of "row-margin chrome is
-    /// hidden until the row is the focus of attention". Toggled by
-    /// `mouseEntered` / `mouseExited`.
-    var cellHovered: Bool = false {
-        didSet {
-            if cellHovered != oldValue { needsDisplay = true }
-        }
+    /// `true` while this cell's block is the one under the cursor.
+    /// Drives gutter visibility: gutters fade in only when the row is
+    /// hovered, matching the Slack / Linear / Cursor convention of
+    /// "row-margin chrome is hidden until the row is the focus of
+    /// attention".
+    ///
+    /// **Sourced from the coordinator**, not stored per-cell. Cell
+    /// recycling cannot carry a stale `true` from a previously-hovered
+    /// row to a freshly-dequeued one because the truth lives on
+    /// `Transcript2Coordinator.hoveredBlockId`. Writes happen in
+    /// `mouseEntered` / `mouseExited` below; the coordinator's
+    /// `didSet` repaints the old and new cells.
+    var cellHovered: Bool {
+        guard let blockId, let coordinator else { return false }
+        return coordinator.hoveredBlockId == blockId
     }
 
     /// Gutter id currently under the cursor, or `nil`. Drives the
@@ -467,14 +472,25 @@ final class BlockCellView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        cellHovered = true
+        if let id = blockId {
+            coordinator?.hoveredBlockId = id
+        }
         let p = convert(event.locationInWindow, from: nil)
         updateHover(at: p)
         updateGutterHover(at: p)
     }
 
     override func mouseExited(with event: NSEvent) {
-        cellHovered = false
+        // Only clear the global pointer if it's *this* cell that owns
+        // it. Without the guard, an `enter B → exit A` event order
+        // (NSTrackingArea doesn't promise temporal ordering across
+        // sibling areas) would wipe B's hover the instant after A set
+        // it. Keying on `blockId` keeps the invariant "the cell the
+        // pointer is over owns hoveredBlockId" no matter how the
+        // events interleave during cell recycle / fast scroll.
+        if let id = blockId, coordinator?.hoveredBlockId == id {
+            coordinator?.hoveredBlockId = nil
+        }
         if hoveredAction != nil {
             hoveredAction = nil
         }

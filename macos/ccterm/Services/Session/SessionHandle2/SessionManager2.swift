@@ -48,6 +48,20 @@ final class SessionManager2 {
         self.records = repository.findAll()
     }
 
+    /// macOS 26 SDK regression: a default class deinit on a `@MainActor`
+    /// type routes through `swift_task_deinitOnExecutorImpl`, which the
+    /// stricter Xcode 26 Concurrency runtime drives every time the
+    /// last reference drops. `TaskLocal::StopLookupScope::~StopLookupScope`
+    /// then frees an un-malloc'd pointer and libmalloc aborts
+    /// (`___BUG_IN_CLIENT_OF_LIBMALLOC_POINTER_BEING_FREED_WAS_NOT_ALLOCATED`).
+    /// `nonisolated deinit` skips the executor-hop path. Symptom on
+    /// CI's macos-26 runner: hosted XCTest crashed with SIGABRT when a
+    /// test method's last `SessionManager2` reference dropped at
+    /// function return; local Darwin 25 didn't reproduce. Same fix
+    /// `SessionHandle2`, `InMemorySessionRepository`, and
+    /// `CoreDataSessionRepository` already use.
+    nonisolated deinit {}
+
     func clearLaunchFailure() {
         lastLaunchFailure = nil
     }

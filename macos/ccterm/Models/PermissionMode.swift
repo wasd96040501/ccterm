@@ -9,24 +9,28 @@ enum PermissionMode: String, CaseIterable {
     case bypassPermissions = "bypassPermissions"
 
     /// Long label for the popover row (matches Claude.app's mode menu).
+    /// Permission-mode names mirror the CLI vocabulary verbatim and are
+    /// NOT localized — translating them obscures the underlying CLI flag
+    /// the user is toggling.
     var title: String {
         switch self {
-        case .default: return String(localized: "Ask permissions")
-        case .acceptEdits: return String(localized: "Accept edits")
-        case .plan: return String(localized: "Plan mode")
-        case .auto: return String(localized: "Auto mode")
-        case .bypassPermissions: return String(localized: "Bypass permissions")
+        case .default: return "Ask permissions"
+        case .acceptEdits: return "Accept edits"
+        case .plan: return "Plan mode"
+        case .auto: return "Auto mode"
+        case .bypassPermissions: return "Bypass permissions"
         }
     }
 
-    /// Short label rendered on the bar's trigger pill.
+    /// Short label rendered on the bar's trigger pill. Not localized
+    /// (see `title` above).
     var shortTitle: String {
         switch self {
-        case .default: return String(localized: "Ask")
-        case .acceptEdits: return String(localized: "Edit")
-        case .plan: return String(localized: "Plan")
-        case .auto: return String(localized: "Auto")
-        case .bypassPermissions: return String(localized: "Bypass")
+        case .default: return "Ask"
+        case .acceptEdits: return "Edit"
+        case .plan: return "Plan"
+        case .auto: return "Auto"
+        case .bypassPermissions: return "Bypass"
         }
     }
 

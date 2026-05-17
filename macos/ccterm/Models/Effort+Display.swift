@@ -2,14 +2,16 @@ import AgentSDK
 import Foundation
 
 extension AgentSDK.Effort {
-    /// Display label for the effort popover row and the bar's trigger pill.
+    /// Display label for the effort popover row and the bar's trigger
+    /// pill. Effort-level names mirror the CLI vocabulary and are NOT
+    /// localized — translating them obscures the underlying CLI value.
     var title: String {
         switch self {
-        case .low: return String(localized: "Low")
-        case .medium: return String(localized: "Medium")
-        case .high: return String(localized: "High")
-        case .xhigh: return String(localized: "Extra high")
-        case .max: return String(localized: "Max")
+        case .low: return "Low"
+        case .medium: return "Medium"
+        case .high: return "High"
+        case .xhigh: return "Extra high"
+        case .max: return "Max"
         }
     }
 }

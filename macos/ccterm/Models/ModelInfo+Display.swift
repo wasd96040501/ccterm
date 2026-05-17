@@ -2,6 +2,42 @@ import AgentSDK
 import Foundation
 
 extension ModelInfo {
+    /// True for the CLI's "default (recommended)" meta-entry. We hide
+    /// it from the picker — it's a pointer to whichever real model is
+    /// active by default, not a model the user picks themselves.
+    /// claude.app also omits it; mirroring that behavior lets the
+    /// trigger always show a real model name (Opus 4.7) rather than
+    /// the leaky "Default" label.
+    var isDefaultMeta: Bool {
+        value.lowercased() == "default"
+    }
+
+    /// Split the concise display name into a primary base and an
+    /// optional "dim suffix" — e.g.
+    /// `"Opus 4.7 1M"` → (`"Opus 4.7"`, `"1M"`),
+    /// `"Opus 4.6 Legacy"` → (`"Opus 4.6"`, `"Legacy"`).
+    /// The picker renders the base in `.primary` and the suffix in
+    /// `.secondary` so variants read as decorations on the main name,
+    /// matching claude.app's typography.
+    var displayParts: (base: String, dimSuffix: String?) {
+        let concise = conciseDisplayName
+        for marker in Self.dimSuffixes {
+            let needle = " " + marker
+            if concise.hasSuffix(needle) {
+                let base = String(concise.dropLast(needle.count))
+                if !base.isEmpty { return (base, marker) }
+            }
+        }
+        return (concise, nil)
+    }
+
+    /// Variant markers rendered with secondary color. Order matters:
+    /// match longest-first so `"Opus 4.6 Legacy"` doesn't break on a
+    /// hypothetical `"Lega"` marker. Keeping the list short and
+    /// hand-curated (not derived from the CLI shape) — a new marker
+    /// just goes here.
+    private static let dimSuffixes: [String] = ["Legacy", "1M"]
+
     /// Concise display string for the model picker. The CLI returns
     /// human labels like `"Opus 4.7 (1M context)"` and `"Default
     /// (recommended)"`; this trims the marketing noise so rows match

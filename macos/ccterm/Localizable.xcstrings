@@ -119,16 +119,6 @@
         }
       }
     },
-    "Accept edits": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "接受编辑"
-          }
-        }
-      }
-    },
     "Add \"%@\"": {
       "extractionState": "stale",
       "localizations": {
@@ -260,16 +250,6 @@
         }
       }
     },
-    "Ask": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "询问"
-          }
-        }
-      }
-    },
     "Ask Permission": {
       "extractionState": "stale",
       "localizations": {
@@ -288,16 +268,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "每次使用工具前询问"
-          }
-        }
-      }
-    },
-    "Ask permissions": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请求权限"
           }
         }
       }
@@ -413,6 +383,7 @@
       }
     },
     "Auto": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -451,16 +422,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "仅自动接受文件编辑"
-          }
-        }
-      }
-    },
-    "Auto mode": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "自动模式"
           }
         }
       }
@@ -509,16 +470,6 @@
         }
       }
     },
-    "Bypass": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "跳过"
-          }
-        }
-      }
-    },
     "Bypass Permissions": {
       "extractionState": "stale",
       "localizations": {
@@ -526,16 +477,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "跳过权限检查"
-          }
-        }
-      }
-    },
-    "Bypass permissions": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "跳过权限"
           }
         }
       }
@@ -789,16 +730,6 @@
       }
     },
     "Debug": {},
-    "Default": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "默认"
-          }
-        }
-      }
-    },
     "Delete": {
       "extractionState": "stale",
       "localizations": {
@@ -858,16 +789,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "完成"
-          }
-        }
-      }
-    },
-    "Edit": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "编辑"
           }
         }
       }
@@ -982,26 +903,6 @@
         }
       }
     },
-    "Effort": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "推理强度"
-          }
-        }
-      }
-    },
-    "Enable fast mode": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "启用高速模式"
-          }
-        }
-      }
-    },
     "Enter (↩)": {
       "extractionState": "stale",
       "localizations": {
@@ -1078,16 +979,6 @@
         }
       }
     },
-    "Extra high": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "超高"
-          }
-        }
-      }
-    },
     "Failed to launch CLI": {
       "localizations": {
         "zh-Hans": {
@@ -1104,16 +995,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "加载历史失败"
-          }
-        }
-      }
-    },
-    "Fast mode": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "高速模式"
           }
         }
       }
@@ -1426,6 +1307,7 @@
       }
     },
     "High": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1548,26 +1430,6 @@
         }
       }
     },
-    "Loading models": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "加载模型中"
-          }
-        }
-      }
-    },
-    "Loading models…": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "加载模型中…"
-          }
-        }
-      }
-    },
     "Loading stress corpus…": {
       "localizations": {
         "zh-Hans": {
@@ -1611,6 +1473,7 @@
     },
     "Logs": {},
     "Low": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1632,6 +1495,7 @@
       }
     },
     "Max": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -1642,31 +1506,12 @@
       }
     },
     "Medium": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "中等"
-          }
-        }
-      }
-    },
-    "Mode": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "权限模式"
-          }
-        }
-      }
-    },
-    "Models": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "模型"
           }
         }
       }
@@ -1732,16 +1577,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "无匹配"
-          }
-        }
-      }
-    },
-    "No models available yet": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "暂无可用模型"
           }
         }
       }
@@ -1832,21 +1667,12 @@
       }
     },
     "Plan": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "计划"
-          }
-        }
-      }
-    },
-    "Plan mode": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "计划模式"
           }
         }
       }

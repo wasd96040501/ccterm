@@ -43,7 +43,9 @@ private struct PermissionModePopoverContent: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PopoverSectionHeader(title: String(localized: "Mode"))
+            // Section header reads the same CLI vocabulary as the rows —
+            // do not localize.
+            PopoverSectionHeader(title: "Mode")
             ForEach(PermissionMode.allCases, id: \.rawValue) { mode in
                 PopoverRow(
                     title: mode.title,

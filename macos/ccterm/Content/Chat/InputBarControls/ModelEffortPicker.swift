@@ -20,6 +20,14 @@ struct ModelEffortPicker: View {
                 isPresented.toggle()
             }
             .popover(isPresented: $isPresented, arrowEdge: .top) {
+                // Model / effort selections close the popover on tap.
+                // This is both the standard menu-row affordance AND
+                // the cheapest fix for popover-anchor drift: the
+                // trigger's intrinsic width is allowed to update
+                // immediately (no "freeze" hack), but it only does so
+                // *after* the popover has dismissed — so the anchor
+                // never moves while the menu is on screen. Fast-mode
+                // is a switch, not a menu row, so it stays open.
                 ModelEffortPopoverContent(
                     models: visibleModels,
                     selectedModelValue: handle.model,
@@ -29,9 +37,11 @@ struct ModelEffortPicker: View {
                     onSelectModel: { value in
                         handle.setModel(value)
                         reconcileEffortIfNeeded(forModelValue: value)
+                        isPresented = false
                     },
                     onSelectEffort: { effort in
                         handle.setEffort(effort)
+                        isPresented = false
                     },
                     onToggleFastMode: { enabled in
                         handle.setFastMode(enabled)
@@ -42,7 +52,7 @@ struct ModelEffortPicker: View {
                 ProgressView()
                     .controlSize(.mini)
                     .scaleEffect(0.85)
-                    .accessibilityLabel(String(localized: "Loading models"))
+                    .accessibilityLabel("Loading models")
             }
         }
     }
@@ -52,9 +62,24 @@ struct ModelEffortPicker: View {
         return live.isEmpty ? store.models : live
     }
 
+    /// Resolve the model the picker should treat as "current" for
+    /// feature-flag lookups (fast mode, effort levels). When the user
+    /// hasn't explicitly picked one (`handle.model == nil`) we fall
+    /// back to the first entry in `visibleModels`, which the CLI lists
+    /// as the recommended default — otherwise the fast-mode toggle
+    /// reads as permanently disabled even though the default model
+    /// supports it.
     private var selectedModelInfo: ModelInfo? {
-        guard let value = handle.model else { return nil }
-        return visibleModels.first { $0.value == value }
+        Self.resolveCurrentModel(value: handle.model, in: visibleModels)
+    }
+
+    /// Pure resolver split out of the View body so it can be unit-
+    /// tested without standing up a SwiftUI hierarchy.
+    static func resolveCurrentModel(value: String?, in models: [ModelInfo]) -> ModelInfo? {
+        if let value, let exact = models.first(where: { $0.value == value }) {
+            return exact
+        }
+        return models.first
     }
 
     @ViewBuilder
@@ -78,7 +103,7 @@ struct ModelEffortPicker: View {
             }
             return value
         }
-        return String(localized: "Default")
+        return "Default"
     }
 
     /// When the user picks a new model, drop the current effort if it
@@ -109,11 +134,14 @@ private struct ModelEffortPopoverContent: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PopoverSectionHeader(title: String(localized: "Models"))
+            // Section headers mirror the CLI vocabulary and are NOT
+            // localized — see PermissionMode / Effort+Display for the
+            // same policy.
+            PopoverSectionHeader(title: "Models")
             if models.isEmpty {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.mini).scaleEffect(0.85)
-                    Text(String(localized: "Loading models…"))
+                    Text("Loading models…")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
@@ -131,7 +159,7 @@ private struct ModelEffortPopoverContent: View {
 
             if let levels = supportedEffortLevels, !levels.isEmpty {
                 Divider().padding(.vertical, 4)
-                PopoverSectionHeader(title: String(localized: "Effort"))
+                PopoverSectionHeader(title: "Effort")
                 ForEach(levels, id: \.rawValue) { effort in
                     PopoverRow(
                         title: effort.title,
@@ -142,7 +170,7 @@ private struct ModelEffortPopoverContent: View {
             }
 
             Divider().padding(.vertical, 4)
-            PopoverSectionHeader(title: String(localized: "Fast mode"))
+            PopoverSectionHeader(title: "Fast mode")
             FastModeToggleRow(
                 enabled: fastModeEnabled,
                 supported: fastModeSupported,
@@ -181,27 +209,45 @@ private struct FastModeToggleRow: View {
     let onToggle: (Bool) -> Void
 
     var body: some View {
-        HStack(spacing: 6) {
-            Text(String(localized: "Enable fast mode"))
-                .font(.system(size: 13))
-                .foregroundStyle(supported ? .primary : .secondary)
-            Spacer(minLength: 0)
-            Toggle(
-                "",
-                isOn: Binding(
-                    get: { enabled && supported },
-                    set: { newValue in
-                        guard supported else { return }
-                        onToggle(newValue)
-                    }
+        // Whole-row hit target — clicking the label flips the toggle,
+        // not just clicking the (small, easy-to-miss) switch knob. The
+        // earlier version only registered taps inside the .switch's
+        // hit shape, so the row felt "unclickable" when aiming at the
+        // label.
+        Button(action: {
+            guard supported else { return }
+            onToggle(!enabled)
+        }) {
+            HStack(spacing: 6) {
+                Text("Enable fast mode")
+                    .font(.system(size: 13))
+                    .foregroundStyle(supported ? .primary : .secondary)
+                Spacer(minLength: 0)
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { enabled && supported },
+                        set: { newValue in
+                            guard supported else { return }
+                            onToggle(newValue)
+                        }
+                    )
                 )
-            )
-            .labelsHidden()
-            .toggleStyle(.switch)
-            .controlSize(.mini)
-            .disabled(!supported)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .disabled(!supported)
+                // The toggle's hit testing is preserved so clicks on
+                // the knob still work; the Button wrapper just adds a
+                // larger label-area target.
+                .allowsHitTesting(supported)
+            }
+            .padding(.horizontal, PopoverList.horizontalInset)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: PopoverList.rowHeight)
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, PopoverList.horizontalInset)
-        .frame(height: PopoverList.rowHeight)
+        .buttonStyle(.plain)
+        .disabled(!supported)
     }
 }

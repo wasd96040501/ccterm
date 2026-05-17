@@ -69,21 +69,6 @@ struct BranchPickerView: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        if let remote = filteredRemoteMain {
-                            sectionHeader(String(localized: "Remote Main"))
-                            BranchRow(
-                                branch: remote,
-                                isCurrent: false,
-                                isSelected: remote == selected,
-                                subtitle: nil,
-                                onTap: { selected = remote },
-                                onDoubleTap: {
-                                    selected = remote
-                                    onSelect(remote)
-                                }
-                            )
-                        }
-
                         if let current = filteredCurrentBranch {
                             sectionHeader(String(localized: "Current Branch"))
                             BranchRow(
@@ -95,6 +80,21 @@ struct BranchPickerView: View {
                                 onDoubleTap: {
                                     selected = current
                                     onSelect(current)
+                                }
+                            )
+                        }
+
+                        if let remote = filteredRemoteMain {
+                            sectionHeader(String(localized: "Remote Main"))
+                            BranchRow(
+                                branch: remote,
+                                isCurrent: false,
+                                isSelected: remote == selected,
+                                subtitle: nil,
+                                onTap: { selected = remote },
+                                onDoubleTap: {
+                                    selected = remote
+                                    onSelect(remote)
                                 }
                             )
                         }

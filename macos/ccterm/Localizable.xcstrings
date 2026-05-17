@@ -962,6 +962,16 @@
         }
       }
     },
+    "Enable fast mode": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启用高速模式"
+          }
+        }
+      }
+    },
     "Enter (↩)": {
       "extractionState": "stale",
       "localizations": {
@@ -1064,6 +1074,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "加载历史失败"
+          }
+        }
+      }
+    },
+    "Fast mode": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高速模式"
           }
         }
       }
@@ -1494,6 +1514,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "启动命令"
+          }
+        }
+      }
+    },
+    "Loading models": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加载模型中"
+          }
+        }
+      }
+    },
+    "Loading models…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加载模型中…"
           }
         }
       }

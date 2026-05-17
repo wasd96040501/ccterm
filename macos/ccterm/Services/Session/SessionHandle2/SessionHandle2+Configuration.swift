@@ -76,6 +76,27 @@ extension SessionHandle2 {
             agentSession?.setPermissionMode(mode.toSDK())
         }
     }
+
+    /// Toggle "fast mode" for the current session. Memory-only (the CLI
+    /// flag is documented as not persisted across sessions), pushed to
+    /// the CLI via `applyFlagSettings.fastMode` when attached. Compose
+    /// mode writes are applied at the tail of `bootstrap` via
+    /// `flushDeferredFastMode()` so the user's pre-launch toggle is
+    /// honored on the first turn.
+    func setFastMode(_ enabled: Bool) {
+        fastModeEnabled = enabled
+        if isAttached {
+            agentSession?.setFastMode(enabled)
+        }
+    }
+
+    /// Called by `bootstrap` once the CLI hits `.idle`. Replays the
+    /// user's pre-start toggle (a no-op when off — the CLI's default is
+    /// off, so we don't have to send an extra RPC to confirm it).
+    internal func flushDeferredFastMode() {
+        guard fastModeEnabled else { return }
+        agentSession?.setFastMode(true)
+    }
 }
 
 // MARK: - Configuration: cwd / worktree / dirs (non-active only)

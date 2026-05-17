@@ -2,28 +2,24 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// V2 input bar (UI only, no session handle wiring).
+/// V2 input bar (UI only — `handle` is optional for the standalone
+/// preview).
 ///
-/// Layout: `HStack(attach, pill)` where `pill` is a squircle container that
-/// wraps either `HStack(text, sendButton)` (idle) or
-/// `VStack(thumbnailStrip, Divider, HStack(text, sendButton))` (image
-/// attached). Sizes are 20% smaller than the previous 40pt design, all on a
-/// 4pt grid:
+/// Layout is a single squircle pill: text area on top, an inline divider,
+/// and a footer row hosting all the session-scoped chrome (permission
+/// picker, attach `+`, model + effort picker, context ring). Mirrors
+/// Claude.app's compose surface — the user's choices and the textarea
+/// share one container instead of being scattered around it.
 ///
-/// - pill: 32pt min height, `cornerRadius = 16`. Send button is concentric
-///   with the bottom-right corner: button radius 12, shared center ⇒ 4pt
-///   from the right / bottom.
-/// - attach: standalone `AttachButton` — a 32pt circle anchored to the
-///   pill's bottom edge with 8pt spacing. Bottom-aligning (rather than
-///   centering) means the `+` stays glued to the text row even when the
-///   pill grows upward to host a thumbnail strip, instead of drifting up
-///   to the overall pill center.
+/// - pill: `cornerRadius = 16`. Send button anchored to the text row's
+///   bottom-right corner with a 4pt inset.
+/// - footer: 28pt tall strip below the divider; attach button is the
+///   22pt compact variant of `AttachButton`.
 struct InputBarView2: View {
     static let cornerRadius: CGFloat = 16
     private let pillMinHeight: CGFloat = 32
     private let sendButtonSize: CGFloat = 24
     private let sendButtonInset: CGFloat = 4
-    private let attachToPillSpacing: CGFloat = 8
     private let textLeadingPadding: CGFloat = 12
     private let textTrailingPadding: CGFloat = 4
     private let textVerticalPadding: CGFloat = 7.5
@@ -32,6 +28,7 @@ struct InputBarView2: View {
     private let thumbnailBottomPadding: CGFloat = 8
     private let thumbnailLeadingPadding: CGFloat = 12
     private let iconPointSize: CGFloat = 13
+    private let footerAttachSize: CGFloat = 22
     private let animationDuration: TimeInterval = 0.35
 
     /// Image attached to the next outgoing message. Cleared after a successful
@@ -66,17 +63,13 @@ struct InputBarView2: View {
     /// so the send button greys out until the user chooses a target — the
     /// draft would otherwise silently fall back to `$HOME` at submit.
     var submitEnabled: Bool = true
-    /// Coordinate space in which to report `onAttachRect` / `onPillRect`.
-    /// `nil` disables geometry reporting (e.g. previews).
+    /// Coordinate space in which to report `onPillRect`. `nil` disables
+    /// geometry reporting (e.g. previews).
     var coordSpace: String? = nil
-    /// Fired with the attach button's frame (in `coordSpace`). The bottom
-    /// scrim uses it to cut a *Circle* hole — bar chrome should never see
-    /// a gray gradient on top of the LG button.
-    var onAttachRect: ((CGRect) -> Void)? = nil
     /// Fired with the pill's frame (in `coordSpace`). The bottom scrim
-    /// uses it to cut a *RoundedRectangle* hole. Reported separately from
-    /// `onAttachRect` so the 8pt spacing between the two is NOT cut,
-    /// letting the scrim's gradient bridge them naturally.
+    /// uses it to cut a `RoundedRectangle` hole so the pill — and the
+    /// attach button it now contains — refracts the transcript directly
+    /// without a gray gradient on top.
     var onPillRect: ((CGRect) -> Void)? = nil
     /// Optional handle for the per-session footer chrome (permission mode
     /// picker, model + effort picker, context ring). Wired by the chrome
@@ -91,26 +84,15 @@ struct InputBarView2: View {
     @State private var isPresentingPreview: Bool = false
 
     var body: some View {
-        // `.bottom` (not `.center`) so the attach button always sits at
-        // the bottom 32pt of the pill where the text row lives. Without
-        // an attachment, pill and attach are both 32pt high → centers
-        // coincide. With an attachment, pill grows upward to host the
-        // thumbnail strip, but the text row stays anchored to the
-        // bottom — bottom-alignment keeps the `+` centered on the text
-        // row rather than drifting to the overall pill center.
-        HStack(alignment: .bottom, spacing: attachToPillSpacing) {
-            AttachButton(onPickImage: presentImagePicker)
-                .modifier(ReportFrame(coordSpace: coordSpace, action: onAttachRect))
-            pill
-                .modifier(ReportFrame(coordSpace: coordSpace, action: onPillRect))
-        }
-        .animation(.smooth(duration: animationDuration), value: isRunning)
-        .animation(.smooth(duration: animationDuration), value: attachment != nil)
-        .sheet(isPresented: $isPresentingPreview) {
-            if let attachment {
-                ImagePreviewView(thumbnail: attachment.thumbnail)
+        pill
+            .modifier(ReportFrame(coordSpace: coordSpace, action: onPillRect))
+            .animation(.smooth(duration: animationDuration), value: isRunning)
+            .animation(.smooth(duration: animationDuration), value: attachment != nil)
+            .sheet(isPresented: $isPresentingPreview) {
+                if let attachment {
+                    ImagePreviewView(thumbnail: attachment.thumbnail)
+                }
             }
-        }
     }
 
     // MARK: - Pill
@@ -136,17 +118,18 @@ struct InputBarView2: View {
         .barSurface(cornerRadius: Self.cornerRadius)
     }
 
-    /// Bottom strip of session-scoped chrome: permission-mode pill on
-    /// the left, model + effort pill next to it, context ring on the
-    /// right. Hidden when the handle isn't injected (e.g. the
-    /// stand-alone preview). Mirrors Claude.app's compose footer in
-    /// information density — short summary on the trigger, full menu
-    /// in the popover.
+    /// Bottom strip of session-scoped chrome. Layout mirrors
+    /// Claude.app's compose footer: permission picker + attach button on
+    /// the left, model + effort picker (with a small `ProgressView`
+    /// while the catalog is fetching) on the right, context ring at the
+    /// far right. Hidden when the handle isn't injected (e.g. the
+    /// stand-alone preview).
     private func footerRow(handle: SessionHandle2) -> some View {
         HStack(spacing: 6) {
             PermissionModePicker(handle: handle)
-            ModelEffortPicker(handle: handle)
+            AttachButton(onPickImage: presentImagePicker, size: footerAttachSize)
             Spacer(minLength: 0)
+            ModelEffortPicker(handle: handle)
             ContextRingButton(handle: handle)
         }
         .padding(.horizontal, 6)

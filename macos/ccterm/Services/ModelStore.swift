@@ -1,23 +1,101 @@
 import AgentSDK
 import Foundation
+import Observation
 
-/// Cross-session cache of the CLI's `[ModelInfo]` catalog, persisted to
-/// `UserDefaults`. The model picker reads the cache when no session has
-/// started yet (compose mode, fresh app launch), so the menu has rows
-/// before the first `initialize` round-trip completes. Updated whenever a
-/// `SessionHandle2` finishes bootstrap with a non-empty `models` array.
-enum ModelStore {
+/// Cross-session cache of the CLI's `[ModelInfo]` catalog. The model
+/// picker reads `models` directly so the popover has rows immediately
+/// after launch (compose mode, fresh app start), with a small
+/// `isLoading` flag the bar uses to render a `ProgressView` while the
+/// first fetch is in flight. A finished session bootstrap also writes
+/// the freshest catalog back through `update(_:)` so the cache stays
+/// current.
+@Observable
+@MainActor
+final class ModelStore {
+    static let shared = ModelStore()
+
+    private(set) var models: [ModelInfo] = []
+    /// True while the bootstrap fetch is running. UI binds this to the
+    /// progress indicator next to the model trigger.
+    private(set) var isLoading: Bool = false
+
     private static let cacheKey = "cachedModelList"
 
-    static var cached: [ModelInfo] {
+    private init() {
+        models = Self.cachedFromDisk()
+    }
+
+    /// Refresh from a session's `InitializeResponse.models` payload.
+    /// Idempotent — empty input is treated as "no update" rather than
+    /// "clear cache" (a transient init failure shouldn't blank the menu).
+    func update(_ newModels: [ModelInfo]) {
+        guard !newModels.isEmpty else { return }
+        models = newModels
+        Self.writeCache(newModels)
+        isLoading = false
+    }
+
+    /// Kick off a one-shot CLI session in a temp directory, harvest the
+    /// model catalog from its init response, and stop. Runs once per
+    /// app launch when the on-disk cache is empty — subsequent calls
+    /// no-op so the popover doesn't flash a spinner on every reopen.
+    func prefetchIfNeeded() {
+        guard models.isEmpty, !isLoading else { return }
+        isLoading = true
+        appLog(.info, "ModelStore", "prefetch starting")
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let fetched = await Self.fetchModels()
+            await MainActor.run {
+                guard let self else { return }
+                if !fetched.isEmpty {
+                    self.update(fetched)
+                    appLog(.info, "ModelStore", "prefetch loaded \(fetched.count) models")
+                } else {
+                    self.isLoading = false
+                    appLog(.warning, "ModelStore", "prefetch returned no models")
+                }
+            }
+        }
+    }
+
+    private static func fetchModels() async -> [ModelInfo] {
+        let tmpDir = NSTemporaryDirectory()
+        let customCommand = await MainActor.run {
+            UserDefaults.standard.string(forKey: "customCLICommand")
+        }
+        let config = SessionConfiguration(
+            workingDirectory: URL(fileURLWithPath: tmpDir),
+            customCommand: customCommand,
+            allowDangerouslySkipPermissions: true
+        )
+        let session = AgentSDK.Session(configuration: config)
+        do {
+            try await session.start()
+        } catch {
+            appLog(.warning, "ModelStore", "fetch session start failed: \(error)")
+            session.stop()
+            return []
+        }
+        let response: InitializeResponse? = await withCheckedContinuation { cont in
+            session.initialize(promptSuggestions: false) { resp in
+                cont.resume(returning: resp)
+            }
+        }
+        session.stop()
+        return response?.models ?? []
+    }
+
+    // MARK: - Disk cache
+
+    private static func cachedFromDisk() -> [ModelInfo] {
         guard let data = UserDefaults.standard.data(forKey: cacheKey),
             let raws = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
         else { return [] }
         return raws.compactMap { try? ModelInfo(json: $0) }
     }
 
-    static func update(_ models: [ModelInfo]) {
-        let raws = models.map(\._raw)
+    private static func writeCache(_ newModels: [ModelInfo]) {
+        let raws = newModels.map(\._raw)
         guard let data = try? JSONSerialization.data(withJSONObject: raws) else { return }
         UserDefaults.standard.set(data, forKey: cacheKey)
     }

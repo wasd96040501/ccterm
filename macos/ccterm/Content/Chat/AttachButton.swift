@@ -28,8 +28,10 @@ struct AttachButton: View {
     /// Fired when the user picks "Image" from the menu. The caller drives
     /// the `NSOpenPanel` flow so this view stays purely visual.
     var onPickImage: () -> Void
-
-    static let size: CGFloat = 32
+    /// Diameter. Default matches the legacy stand-alone use (a 32pt
+    /// circle anchored next to the pill); the input-bar footer drops it
+    /// to 22pt to sit alongside the other chrome controls.
+    var size: CGFloat = 32
 
     @State private var isHovered: Bool = false
     @Environment(\.colorScheme) private var colorScheme
@@ -48,17 +50,21 @@ struct AttachButton: View {
                 }
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: iconSize, weight: .semibold))
                     .foregroundStyle(.primary)
-                    .frame(width: Self.size, height: Self.size)
+                    .frame(width: size, height: size)
                     .contentShape(Circle())
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
         }
-        .frame(width: Self.size, height: Self.size)
+        .frame(width: size, height: size)
         .onHover { isHovered = $0 }
         .accessibilityLabel(String(localized: "Attach image or file"))
+    }
+
+    private var iconSize: CGFloat {
+        max(10, size * 0.5)
     }
 
     @ViewBuilder

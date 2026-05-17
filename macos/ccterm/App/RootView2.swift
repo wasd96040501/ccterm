@@ -25,13 +25,9 @@ struct RootView2: View {
     @State private var selectedSessionId: String? = SidebarView2.newSessionTag
     @State private var draftSessionId: String?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
-    /// Frame of the round attach button, in `detailCoordSpace`. The
-    /// bottom scrim cuts a *Circle* hole here.
-    @State private var attachRect: CGRect = .zero
-    /// Frame of the rounded-rectangle pill, in `detailCoordSpace`. The
-    /// bottom scrim cuts a *RoundedRectangle* hole here. Reported
-    /// separately from `attachRect` so the 8pt gap between attach and
-    /// pill is NOT cut — the gradient bridges them naturally there.
+    /// Frame of the pill, in `detailCoordSpace`. The bottom scrim cuts
+    /// a *RoundedRectangle* hole here so the pill (and the attach
+    /// button it now contains) refracts the transcript directly.
     @State private var pillRect: CGRect = .zero
     /// User-selected source folder for the draft. Becomes the handle's
     /// `originPath` (and `cwd` when not worktree). nil → home fallback at
@@ -120,27 +116,17 @@ struct RootView2: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
                 .overlay(alignment: .bottom) {
-                    // Fade scrim: a standalone gradient at the detail pane
-                    // bottom, z-ordered above the transcript and below the
-                    // input bar. Two holes are cut — a Circle for the
-                    // attach button and a RoundedRectangle for the pill —
-                    // so each control's glass/material refracts the
-                    // transcript directly. The 8pt gap between attach and
-                    // pill is intentionally NOT cut, so the scrim's
-                    // gradient bridges them rather than leaving a
-                    // hard-edged slot.
+                    // Fade scrim: a standalone gradient at the detail
+                    // pane bottom, z-ordered above the transcript and
+                    // below the input bar. One hole is cut — the pill's
+                    // `RoundedRectangle` — so the pill (and the attach
+                    // button it now contains) refracts the transcript
+                    // directly instead of through a gray gradient.
                     FadeScrim(.bottomToTop, height: 160)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                         .mask {
                             Color.white
                                 .overlay {
-                                    if attachRect != .zero {
-                                        Circle()
-                                            .fill(.black)
-                                            .frame(width: attachRect.width, height: attachRect.height)
-                                            .position(x: attachRect.midX, y: attachRect.midY)
-                                            .blendMode(.destinationOut)
-                                    }
                                     if pillRect != .zero {
                                         RoundedRectangle(cornerRadius: InputBarView2.cornerRadius, style: .continuous)
                                             .fill(.black)
@@ -211,7 +197,6 @@ struct RootView2: View {
                     // already owns its cwd from the first launch).
                     submitEnabled: !isComposeMode || draftCwd != nil,
                     onSubmit: { submission in submit(submission, sessionId: sid) },
-                    onAttachRect: { rect in attachRect = rect },
                     onPillRect: { rect in pillRect = rect }
                 )
                 .frame(
@@ -301,7 +286,6 @@ private struct InputBarChrome: View {
     let coordSpace: String
     let submitEnabled: Bool
     let onSubmit: (InputBarView2.Submission) -> Void
-    let onAttachRect: (CGRect) -> Void
     let onPillRect: (CGRect) -> Void
 
     @Environment(SessionManager2.self) private var manager
@@ -314,7 +298,6 @@ private struct InputBarChrome: View {
             isRunning: handle?.isRunning ?? false,
             submitEnabled: submitEnabled,
             coordSpace: coordSpace,
-            onAttachRect: onAttachRect,
             onPillRect: onPillRect,
             handle: handle
         )

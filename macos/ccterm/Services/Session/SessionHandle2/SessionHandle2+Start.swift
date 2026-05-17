@@ -505,13 +505,14 @@ extension SessionHandle2 {
 
         if let models = initResp?.models, !models.isEmpty {
             availableModels = models
-            ModelStore.update(models)
+            ModelStore.shared.update(models)
         }
 
         status = .idle
         if fresh {
             repository.updateStatus(sessionId, to: .created)
         }
+        flushDeferredFastMode()
         flushBootstrapBacklog()
         appLog(.info, "SessionHandle2", "[v2-send] bootstrap done sid=\(sessionId.prefix(8)) fresh=\(fresh)")
     }

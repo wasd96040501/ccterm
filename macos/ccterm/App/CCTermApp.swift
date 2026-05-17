@@ -54,6 +54,13 @@ struct CCTermApp: App {
         }
         CursorGuard.install()
         MainThreadWatchdog.start()
+        // First-launch model catalog fetch. The store is @MainActor;
+        // the prefetch task itself runs in the background. Subsequent
+        // launches read the on-disk cache synchronously and skip the
+        // spinner — only an empty cache triggers the bootstrap session.
+        Task { @MainActor in
+            ModelStore.shared.prefetchIfNeeded()
+        }
     }
 }
 

@@ -93,21 +93,38 @@ make fmt         # Format code (xcstrings, ...)
 
 ## Tests
 
-**Unit tests only** — one target, `cctermTests`. Covers pure logic
-(bridge dispatch, history parsing, block builder, session-handle
-state transitions) **and** SwiftUI view snapshots rendered offscreen
-via `NSHostingController`. There is no XCUITest target; click /
-keystroke / focus flows are exercised by driving the underlying
-handle / bridge / controller directly. Conventions, parallel-safety
-rules, and **the snapshot-test SOP** live in
-[cctermTests/CLAUDE.md](macos/cctermTests/CLAUDE.md) — read it before
-adding any view-rendering test.
+**Unit tests only** — one target, `cctermTests`. Two kinds of tests
+live there:
+
+- **Logic tests** (default) — bridge dispatch, history parsing, block
+  builder, session-handle state transitions. Run on every PR.
+- **Snapshot tests** — render a real SwiftUI view offscreen via
+  `NSHostingController` and write a PNG. **Skipped on the default
+  suite and on CI**; opt-in only. For visual review and self-check
+  after a view edit. Filename convention `*SnapshotTests.swift`.
+
+There is no XCUITest target — click / keystroke / focus flows are
+covered by driving the handle / bridge / controller directly from a
+logic test.
 
 ```bash
-make test-unit                                                  # full suite, parallel by class
-make test-unit FILTER=MessageEntryBlockBuilderTests             # one class
-make test-unit FILTER=MessageEntryBlockBuilderTests/testAssistantTextProducesParagraph
+make test-unit                                                  # logic tests only (snapshots skipped)
+make test-unit FILTER=MessageEntryBlockBuilderTests             # one logic class
+make test-unit FILTER=TranscriptDemoSnapshotTests               # opt-in: run a snapshot
 ```
+
+### Visually verifying a view change (LLM self-check workflow)
+
+After editing a SwiftUI view, render it and look at the PNG:
+
+1. Find or add a `*SnapshotTests` class for the view.
+2. `make test-unit FILTER=<ClassName>`
+3. `open /tmp/ccterm-screenshots/<ViewName>.png` and inspect.
+
+**Inventory of existing snapshots, how to add a new one, allowed
+production-code seams, and troubleshooting** all live in
+[cctermTests/CLAUDE.md § Snapshot tests](macos/cctermTests/CLAUDE.md#snapshot-tests).
+Read that before adding any view-rendering test.
 
 Unit tests do not steal focus and are safe to run locally. Pushing to
 any PR branch triggers `.github/workflows/test.yml` (`make test-unit`)

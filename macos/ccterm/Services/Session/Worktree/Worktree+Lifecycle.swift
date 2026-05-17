@@ -22,7 +22,8 @@ extension Worktree {
     ///    Mirrors slice line 142 `B0r(t, E)` / `Q0r(t, E)`.
     static func create(
         from repoPath: String,
-        sourceBranch: String? = nil
+        sourceBranch: String? = nil,
+        preferredName: String? = nil
     ) throws -> Worktree {
         guard GitUtils.isGitRepository(at: repoPath) else {
             throw Error.notGitRepository(path: repoPath)
@@ -42,10 +43,15 @@ extension Worktree {
         let lfsFlags = lfsFlagsIfUnavailable()
 
         // Initial name collisions are vanishingly rare (266M space); 5 retries.
+        // First attempt uses `preferredName` when supplied so the caller
+        // (SessionHandle2's eager-persist path) can pre-compute the worktree
+        // directory + branch and write a complete db row before this
+        // function ever runs. Collision retries fall back to fresh
+        // `generateName()` calls.
         let maxNameAttempts = 5
         var lastStderr = ""
-        for _ in 0..<maxNameAttempts {
-            let name = generateName()
+        for attempt in 0..<maxNameAttempts {
+            let name = (attempt == 0 ? preferredName : nil) ?? generateName()
             let path = worktreeDir(baseRepo: baseRepo, name: name)
             let parentDir = (path as NSString).deletingLastPathComponent
 

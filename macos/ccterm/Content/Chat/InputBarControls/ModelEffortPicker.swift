@@ -74,7 +74,7 @@ struct ModelEffortPicker: View {
     private var modelDisplay: String {
         if let value = handle.model {
             if let info = visibleModels.first(where: { $0.value == value }) {
-                return info.displayName
+                return info.conciseDisplayName
             }
             return value
         }
@@ -122,7 +122,7 @@ private struct ModelEffortPopoverContent: View {
             } else {
                 ForEach(models, id: \.value) { info in
                     PopoverRow(
-                        title: info.displayName,
+                        title: info.conciseDisplayName,
                         isSelected: info.value == selectedModelValue,
                         onSelect: { onSelectModel(info.value) }
                     )

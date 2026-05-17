@@ -1,9 +1,16 @@
+import AppKit
 import SwiftUI
 
 @main
 struct CCTermApp: App {
     @State private var appState = AppState()
     @State private var searchBus = TranscriptSearchBus()
+
+    // Hosted unit tests inject this env var. When present we keep NSApp alive
+    // (snapshot/AppKit rendering still needs it) but skip every Window scene
+    // so the host app never draws a window or steals focus.
+    private static let isUnderXCTest =
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 
     var body: some Scene {
         Window("ccterm", id: "main") {
@@ -34,9 +41,50 @@ struct CCTermApp: App {
 
     init() {
         UserDefaults.standard.set(0, forKey: "NSInitialToolTipDelay")
+        if Self.isUnderXCTest {
+            // Hosted unit tests need NSApp alive (snapshot/AppKit rendering
+            // depends on it), but should never display a window or steal
+            // focus. Accessory policy hides the Dock icon; swizzling the
+            // window-ordering selectors to no-ops prevents SwiftUI's auto-
+            // opened Window scenes from ever appearing on screen — closing
+            // them after the fact still produced a visible flash.
+            NSApplication.shared.setActivationPolicy(.accessory)
+            NSWindow.suppressOrderingForTesting()
+            return
+        }
         CursorGuard.install()
         MainThreadWatchdog.start()
     }
+}
+
+extension NSWindow {
+    fileprivate static func suppressOrderingForTesting() {
+        let pairs: [(Selector, Selector)] = [
+            (
+                #selector(NSWindow.makeKeyAndOrderFront(_:)),
+                #selector(NSWindow._ccterm_noopMakeKeyAndOrderFront(_:))
+            ),
+            (
+                #selector(NSWindow.orderFront(_:)),
+                #selector(NSWindow._ccterm_noopOrderFront(_:))
+            ),
+            (
+                #selector(NSWindow.orderFrontRegardless),
+                #selector(NSWindow._ccterm_noopOrderFrontRegardless)
+            ),
+        ]
+        for (original, replacement) in pairs {
+            guard
+                let m1 = class_getInstanceMethod(NSWindow.self, original),
+                let m2 = class_getInstanceMethod(NSWindow.self, replacement)
+            else { continue }
+            method_exchangeImplementations(m1, m2)
+        }
+    }
+
+    @objc fileprivate func _ccterm_noopMakeKeyAndOrderFront(_ sender: Any?) {}
+    @objc fileprivate func _ccterm_noopOrderFront(_ sender: Any?) {}
+    @objc fileprivate func _ccterm_noopOrderFrontRegardless() {}
 }
 
 struct AppCommands: Commands {

@@ -87,6 +87,8 @@ struct PermissionCardView: View {
             PermissionWebFetchCardBody(request: request)
         case .filesystemRead:
             PermissionFilesystemReadCardBody(request: request)
+        case .taskAgent:
+            PermissionTaskAgentCardBody(request: request)
         default:
             PermissionFallbackCardBody(request: request)
         }

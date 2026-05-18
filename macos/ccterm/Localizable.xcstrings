@@ -1557,6 +1557,16 @@
         }
       }
     },
+    "Isolated worktree": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隔离 worktree"
+          }
+        }
+      }
+    },
     "Just now": {
       "extractionState": "stale",
       "localizations": {
@@ -2335,12 +2345,32 @@
         }
       }
     },
+    "Run %@ agent": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行 %@ 子代理"
+          }
+        }
+      }
+    },
     "Run `macos/scripts/build-stress-corpus.py` and rebuild.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "请运行 `macos/scripts/build-stress-corpus.py` 后重新构建。"
+          }
+        }
+      }
+    },
+    "Run sub-task": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行子任务"
           }
         }
       }
@@ -3358,6 +3388,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "模式: %@"
+          }
+        }
+      }
+    },
+    "model: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型: %@"
           }
         }
       }

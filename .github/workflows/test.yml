@@ -24,6 +24,15 @@ jobs:
           cache: true
           cache-dependency-path: thirdparty/fzf/go.sum
 
+      - name: Setup Bun
+        # `make test-unit` chains through `make js-bundles`, which compiles
+        # JSCore bundles (hljs-jscore.js) from `js/` so the test host app can
+        # load them. Without this, `SyntaxHighlightEngine.load()` would trip
+        # its bundle-missing assertion during test-runner boot.
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - name: Xcode info
         run: |
           xcode-select -p

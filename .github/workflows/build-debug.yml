@@ -24,6 +24,14 @@ jobs:
           cache: true
           cache-dependency-path: thirdparty/fzf/go.sum
 
+      - name: Setup Bun
+        # JSCore bundles in `macos/ccterm/Resources/*.js` are compiled from
+        # `js/` by `make js-bundles`. Without this the downloadable Debug
+        # artifact would assert-fail on launch in `SyntaxHighlightEngine.load`.
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - name: Xcode info
         run: |
           xcode-select -p
@@ -50,6 +58,14 @@ jobs:
           key: dd-debug-${{ runner.os }}-${{ runner.arch }}-xc${{ steps.fp.outputs.xcode }}-fzf${{ steps.fp.outputs.fzf }}-salt${{ hashFiles('.github/cache-salt') }}-src${{ hashFiles('macos/**/*.swift', 'macos/ccterm.xcodeproj/project.pbxproj', 'macos/Config.xcconfig', 'macos/AgentSDK/Package.swift', 'macos/ccterm/Localizable.xcstrings') }}
           restore-keys: |
             dd-debug-${{ runner.os }}-${{ runner.arch }}-xc${{ steps.fp.outputs.xcode }}-fzf${{ steps.fp.outputs.fzf }}-salt${{ hashFiles('.github/cache-salt') }}-
+
+      - name: Compile JSCore bundles
+        # Produces `macos/ccterm/Resources/hljs-jscore.js` so the Xcode
+        # Resources copy phase has something to bundle. The xcodebuild call
+        # below stays explicit (custom -derivedDataPath shared with the cache
+        # step) instead of going through `make build`, so we run the
+        # js-bundles target standalone.
+        run: make js-bundles
 
       - name: Build (Debug)
         run: |

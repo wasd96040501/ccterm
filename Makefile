@@ -26,7 +26,7 @@ build: js-bundles ## Build ccterm (Debug)
 release: js-bundles ## Build ccterm (Release)
 	./macos/scripts/build.sh release
 
-test-unit: ## Run unit tests (cctermTests) — fast, parallel-safe
+test-unit: js-bundles ## Run unit tests (cctermTests) — fast, parallel-safe
 	./macos/scripts/test-unit.sh "$(FILTER)"
 
 dmg: ## Create DMG installer (usage: make dmg APP=/path/to/ccterm.app)

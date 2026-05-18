@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Read-only browser for soft-deleted sessions, opened from the sidebar's
 /// "Archive" item. The list is sourced from
-/// `SessionManager2.archivedRecords` — a lazily-populated observable
+/// `SessionManager.archivedRecords` — a lazily-populated observable
 /// snapshot that's refreshed on appear and after every archive /
 /// unarchive operation, so changes made while the page is visible
 /// (e.g. unarchive a row, archive a different session from elsewhere)
@@ -32,7 +32,7 @@ import SwiftUI
 ///   over-stretched on big windows. Centered horizontally so a 1600pt
 ///   window doesn't smear the column to either edge.
 struct ArchiveView: View {
-    @Environment(SessionManager2.self) private var manager
+    @Environment(SessionManager.self) private var manager
 
     /// Caller-supplied unarchive sink so selection can hop back to the
     /// restored session in `RootView2`. Receives the restored

@@ -5,15 +5,15 @@ import Foundation
 /// In-memory implementation of `SessionRepository`.
 ///
 /// **DEBUG build only.** Unit tests inject this so they can drive a
-/// `SessionManager2` / `SessionHandle2` without touching the on-disk
+/// `SessionManager` / `Session` without touching the on-disk
 /// CoreData store (`CDSessionRecord`). Lifetime is tied to a single
 /// process; everything is wiped on exit, no persistent side effects.
 ///
 /// Behavior contract matches `CoreDataSessionRepository`, so swapping does
-/// not require branching in `SessionManager2` / `SessionHandle2`.
+/// not require branching in `SessionManager` / `Session`.
 ///
-/// Not thread-safe; callers (mostly `@MainActor` `SessionHandle2` /
-/// `SessionManager2`) use it on the main thread.
+/// Not thread-safe; callers (mostly `@MainActor` `Session` /
+/// `SessionManager`) use it on the main thread.
 final class InMemorySessionRepository: SessionRepository {
 
     private var records: [String: SessionRecord] = [:]
@@ -30,7 +30,7 @@ final class InMemorySessionRepository: SessionRepository {
     ///   ___BUG_IN_CLIENT_OF_LIBMALLOC_POINTER_BEING_FREED_WAS_NOT_ALLOCATED
     ///
     /// Marking deinit `nonisolated` skips the executor-hop path. Same
-    /// workaround `SessionHandle2` and `CoreDataSessionRepository` use; see
+    /// workaround `Session` and `CoreDataSessionRepository` use; see
     /// their matching notes. Symptom on CI: `cctermTests` running on the
     /// macos-26 runner crashed mid-test when a `@MainActor` test method
     /// dropped its last reference to an `InMemorySessionRepository`. Local

@@ -2,7 +2,7 @@ import AgentSDK
 import AppKit
 import Foundation
 
-/// Translates entry-level instructions from `SessionHandle2.onMessagesChange`
+/// Translates entry-level instructions from `Session.onMessagesChange`
 /// into block-level commands for `Transcript2Controller`. **Purely imperative**
 /// — does not maintain a full `[Block]` mirror to diff against; just two
 /// reverse tables:
@@ -45,17 +45,22 @@ final class Transcript2EntryBridge {
     /// macOS 26 SDK workaround: a default `@MainActor` deinit routes
     /// through `swift_task_deinitOnExecutorImpl`, which hits a libmalloc
     /// abort while tearing down `TaskLocal`. `nonisolated deinit` skips
-    /// that executor hop. See `SessionHandle2.deinit` for the original
+    /// that executor hop. See `Session.deinit` for the original
     /// note — same fix, applied to every `@MainActor` class in this
     /// dealloc chain.
     nonisolated deinit {}
 
-    /// Bind to a handle: every change flows through this object's `apply(_:)`.
-    /// Weak capture decouples the handle's lifetime from the view-side bridge —
-    /// view dismantle deinits self, the handle's closure becomes weak-nil, and
+    /// Bind to a session: every change flows through this object's `apply(_:)`.
+    /// Weak capture decouples the session's lifetime from the view-side bridge —
+    /// view dismantle deinits self, the session's closure becomes weak-nil, and
     /// the sink deactivates automatically. No explicit unbind needed.
-    func attach(to handle: SessionHandle2) {
-        handle.onMessagesChange = { [weak self] change in
+    ///
+    /// `Session` is the UI-facing façade. During the draft → active phase
+    /// flip it re-wires the underlying runtime's sink to whatever closure
+    /// was last assigned here, so a single `attach(to:)` survives promotion
+    /// without event loss.
+    func attach(to session: Session) {
+        session.onMessagesChange = { [weak self] change in
             self?.apply(change)
         }
     }

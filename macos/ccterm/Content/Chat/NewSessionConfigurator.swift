@@ -71,7 +71,7 @@ struct NewSessionConfigurator: View {
     private static let recentsBottomScrimHeight: CGFloat = 32
 
     @Environment(RecentProjectsStore.self) private var recents
-    @Environment(SessionManager2.self) private var manager
+    @Environment(SessionManager.self) private var manager
     @State private var branches: [String] = []
     @State private var currentBranch: String? = nil
     @State private var remoteMainBranch: String? = nil
@@ -915,5 +915,5 @@ private struct HideEnclosingScrollerWidth: NSViewRepresentable {
     }
     .frame(width: 720, height: 460)
     .environment(RecentProjectsStore())
-    .environment(SessionManager2())
+    .environment(SessionManager())
 }

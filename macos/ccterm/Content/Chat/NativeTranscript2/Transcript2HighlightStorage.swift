@@ -104,7 +104,7 @@ final class Transcript2HighlightStorage {
     /// `swift::TaskLocal::StopLookupScope::~StopLookupScope()` (this
     /// class is the dealloc-chain leaf that owns the offending
     /// TaskLocal state in `cctermTests`' deinit chain). `nonisolated`
-    /// skips the executor hop. See `SessionHandle2.deinit`.
+    /// skips the executor hop. See `Session.deinit`.
     nonisolated deinit {}
 
     /// Late-binding entry point. Idempotent if `engine` is already set to

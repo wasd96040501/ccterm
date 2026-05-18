@@ -44,7 +44,7 @@ struct InputBarView2: View {
     }
 
     /// Payload handed to `onSubmit`. Either `text` is non-empty, or `image`
-    /// is non-nil, or both. Callers route to `SessionHandle2.send(text:)` /
+    /// is non-nil, or both. Callers route to `Session.send(text:)` /
     /// `send(image:mediaType:caption:)` accordingly.
     struct Submission {
         let text: String
@@ -55,7 +55,7 @@ struct InputBarView2: View {
     /// non-whitespace text OR an attached image.
     var onSubmit: (Submission) -> Void = { _ in }
     /// Fired when the stop button is pressed (only clickable while `isRunning`
-    /// shows stop). Callers typically forward to `SessionHandle2.interrupt()`.
+    /// shows stop). Callers typically forward to `Session.interrupt()`.
     var onStop: () -> Void = {}
     /// Running state from the handle. true → show stop button; false → send
     /// button gated by `canSend`. No local `@State` copy — avoids drift from

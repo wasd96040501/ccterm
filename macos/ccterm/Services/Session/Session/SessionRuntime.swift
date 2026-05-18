@@ -2,9 +2,20 @@ import AgentSDK
 import Foundation
 import Observation
 
+/// The runtime engine for one active chat session.
+///
+/// Owns everything bound to a live CLI subprocess: status, messages,
+/// pending turns / permissions, the CLI client itself, history load
+/// state, the model catalog. The runtime is constructed *after* the
+/// session has been promoted from draft (via the `fromDraft` factory) or
+/// hydrated from an existing record (regular init).
+///
+/// `Session` is the UI-facing façade that wraps either a `SessionDraft`
+/// or a `SessionRuntime` and forwards reads/writes appropriately; views
+/// should not interact with `SessionRuntime` directly.
 @Observable
 @MainActor
-class SessionHandle2 {
+final class SessionRuntime {
 
     enum Status {
         case notStarted
@@ -70,9 +81,13 @@ class SessionHandle2 {
     // All user-facing configuration (cwd / worktree / dirs / model /
     // effort / permission mode / additional+plugin dirs / fast mode)
     // lives on `config`. The accessors below preserve the historical
-    // `handle.cwd` / `handle.model` etc. read surface while routing
-    // every read/write through the single value-type field — which is
-    // what Phase 1's `SessionRuntime` will inherit verbatim.
+    // dot-property read surface (`runtime.cwd` / `runtime.model` etc.)
+    // while routing every read through the single value-type field.
+    // Mutation goes through `setModel(_:)` etc. (runtime-mutable
+    // setters in `SessionRuntime+Configuration.swift`); the cwd /
+    // worktree / source-branch / plugin-dir setters live exclusively
+    // on `SessionDraft` — at the runtime layer those values are
+    // launch-only and not user-editable.
     internal(set) var config: SessionConfig = SessionConfig()
 
     var cwd: String? {
@@ -148,7 +163,7 @@ class SessionHandle2 {
     /// `Process.run` throwing, or the CLI exiting before init completes)
     /// funnels into `failLaunch(reason:)`, which fires this synchronously
     /// once with the raw, unlocalized description. The subscriber
-    /// (SessionManager2) forwards it to the UI alert.
+    /// (SessionManager) forwards it to the UI alert.
     ///
     /// Closure-injected like `onMessagesChange`, to keep UI types out of
     /// the handle. Weak handling lives in the subscriber's closure.
@@ -157,7 +172,7 @@ class SessionHandle2 {
     /// Fresh-session persisted callback. Fires once, synchronously, right
     /// after `repository.save(record)` writes the new row in
     /// `persistConfiguration`'s `!hasRecord` branch. The subscriber
-    /// (SessionManager2) re-reads `records` so the sidebar surfaces the
+    /// (SessionManager) re-reads `records` so the sidebar surfaces the
     /// new session.
     ///
     /// Needed because the worktree-provisioning path runs the save
@@ -295,7 +310,7 @@ class SessionHandle2 {
     // MARK: - Lifecycle commands
 
     // `activate()` / `stop()` / `send(_:)` implementations and docs live in
-    // `SessionHandle2+Start.swift`.
+    // `SessionRuntime+Start.swift`.
 
     /// Load history messages into `messages` in the background. Idempotent,
     /// dispatched by `historyLoadState`.
@@ -311,7 +326,7 @@ class SessionHandle2 {
     /// The method does not block its caller; the UI observes
     /// `historyLoadState` for spinner / error display. Independent of
     /// `activate()` — stopped / notStarted sessions can still view history.
-    // impl in SessionHandle2+History.swift
+    // impl in SessionRuntime+History.swift
 
     // MARK: - Messaging commands
 
@@ -319,7 +334,7 @@ class SessionHandle2 {
     ///
     /// - `.responding`: `status` → `.interrupting`; → `.idle` after SDK ack.
     /// - Other statuses: no-op.
-    // impl in SessionHandle2+Messaging.swift
+    // impl in SessionRuntime+Messaging.swift
 
     /// Cancel an unsent or failed message.
     ///
@@ -327,7 +342,7 @@ class SessionHandle2 {
     /// - delivery is `.confirmed`: no-op (CLI is already processing; local
     ///   removal can't stop it).
     /// - id missing or not a user entry: no-op.
-    // impl in SessionHandle2+Messaging.swift
+    // impl in SessionRuntime+Messaging.swift
 
     // MARK: - Configuration commands
 
@@ -342,37 +357,37 @@ class SessionHandle2 {
     ///   3. The CLI's subsequent init/config replies are **authoritative**:
     ///      if they disagree with our local guess, the reply overwrites
     ///      memory (no rollback — reply is truth).
-    // impl in SessionHandle2+Configuration.swift
+    // impl in SessionRuntime+Configuration.swift
 
     /// Change effort. Same routing as `setModel` (optimistic write + RPC +
     /// reply-overrides).
-    // impl in SessionHandle2+Configuration.swift
+    // impl in SessionRuntime+Configuration.swift
 
     /// Change permission mode. Same routing as `setModel` (optimistic write
     /// + RPC + reply-overrides).
-    // impl in SessionHandle2+Configuration.swift
+    // impl in SessionRuntime+Configuration.swift
 
     /// Change working directory.
     ///
     /// - Non-active (`.notStarted` / `.stopped`): local write to `cwd`.
     /// - Active: no-op (CLI runtime can't change cwd; `stop()` first).
-    // impl in SessionHandle2+Configuration.swift
+    // impl in SessionRuntime+Configuration.swift
 
     /// Change worktree flag. Same routing as `setCwd` (cannot change at
     /// runtime).
-    // impl in SessionHandle2+Configuration.swift
+    // impl in SessionRuntime+Configuration.swift
 
     /// Change additional-directories list. **Mutable at runtime** —
     /// attached writes go through
     /// `applyFlagSettings.permissions.additionalDirectories`. UI layer
     /// adds/removes single entries with read-modify-write:
     /// `handle.setAdditionalDirectories(handle.additionalDirectories + [path])`.
-    // impl in SessionHandle2+Configuration.swift
+    // impl in SessionRuntime+Configuration.swift
 
     /// Change plugin-directories list. Same routing as `setCwd`
     /// (`--plugin-dir` is a CLI launch argument with no runtime RPC). UI
     /// uses `canSetPluginDirectories` to disable the entry point.
-    // impl in SessionHandle2+Configuration.swift
+    // impl in SessionRuntime+Configuration.swift
 
     // MARK: - Permission
 
@@ -381,7 +396,7 @@ class SessionHandle2 {
     /// - Found in `pendingPermissions`: call its respond closure (auto-
     ///   replies to CLI and removes from the array).
     /// - id missing: no-op.
-    // impl in SessionHandle2+Configuration.swift
+    // impl in SessionRuntime+Configuration.swift
 
     // MARK: - Presence
 
@@ -396,5 +411,5 @@ class SessionHandle2 {
     ///   handle, true on the new one.
     /// - `AppState` observing NSWindow lose/regain focus: write the
     ///   matching value on the currently-displayed handle.
-    // impl in SessionHandle2+Configuration.swift
+    // impl in SessionRuntime+Configuration.swift
 }

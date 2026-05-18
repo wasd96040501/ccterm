@@ -6,7 +6,7 @@ import XCTest
 /// Pins `PermissionModePicker.visibleModes(for:)` — the rule that the
 /// `auto` row is only surfaced when the active `ModelInfo` declares
 /// `supportsAutoMode == true`. Driven by the static helper so the test
-/// doesn't need to stand up a real `SessionHandle2` + `View`.
+/// doesn't need to stand up a real `SessionRuntime` + `View`.
 @MainActor
 final class PermissionModePickerVisibilityTests: XCTestCase {
 

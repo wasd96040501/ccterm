@@ -7,7 +7,7 @@ import Foundation
 /// this type is just the I/O path that wraps `Prompt.runTitleAndBranch`
 /// in a scratch temp directory.
 ///
-/// Split off `SessionHandle2` so the LLM call is testable: the `runner`
+/// Split off `Session` so the LLM call is testable: the `runner`
 /// parameter is injectable, so tests can assert on the path
 /// (firstMessage / customCLICommand forwarded, errors swallowed to nil)
 /// without firing a real CLI subprocess.

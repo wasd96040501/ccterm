@@ -66,7 +66,7 @@ enum Message2Fixtures {
     }
 
     /// JSONL line for `assistantText(...)` — useful when a test feeds bytes
-    /// into `SessionHandle2.loadHistory(overrideURL:)`.
+    /// into `SessionRuntime.loadHistory(overrideURL:)`.
     static func assistantTextJSONL(_ text: String) -> String {
         jsonl([
             "type": "assistant",

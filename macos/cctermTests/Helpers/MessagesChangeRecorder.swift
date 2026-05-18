@@ -9,7 +9,7 @@ import Foundation
 final class MessagesChangeRecorder {
     private(set) var events: [MessagesChange] = []
 
-    func attach(to handle: SessionHandle2) {
+    func attach(to handle: SessionRuntime) {
         handle.onMessagesChange = { [weak self] change in
             self?.events.append(change)
         }
@@ -17,7 +17,7 @@ final class MessagesChangeRecorder {
 
     /// Wait until `predicate(events)` is true or `timeout` elapses. Polls
     /// on the main runloop — safe because the recorder is `@MainActor` and
-    /// `SessionHandle2`'s `MainActor.run` hops interleave with this poll.
+    /// `SessionRuntime`'s `MainActor.run` hops interleave with this poll.
     func wait(
         timeout: TimeInterval = 5,
         until predicate: ([MessagesChange]) -> Bool

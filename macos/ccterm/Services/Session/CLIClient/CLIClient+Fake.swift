@@ -53,7 +53,7 @@ final class FakeCLIClient: CLIClient {
     init() {}
 
     /// Match the macOS 26 workaround used elsewhere in the codebase —
-    /// see `SessionHandle2.deinit` for the bug rationale.
+    /// see `Session.deinit` for the bug rationale.
     nonisolated deinit {}
 
     // MARK: - Lifecycle

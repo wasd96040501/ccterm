@@ -38,7 +38,7 @@ final class CoreDataStack {
 
     /// Workaround: macOS 26 SDK's `swift_task_deinitOnExecutorImpl` hits a libmalloc
     /// pointer-freed-but-not-allocated crash in the isolated deinit chain. Explicit
-    /// nonisolated deinit skips the executor-hop path. See SessionHandle2.swift for details.
+    /// nonisolated deinit skips the executor-hop path. See Session.swift for details.
     nonisolated deinit {}
 
     func saveContext() {

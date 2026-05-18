@@ -66,7 +66,7 @@ final class ArchiveViewSnapshotTests: XCTestCase {
         ]
         for record in records { repo.save(record) }
 
-        let manager = SessionManager2(
+        let manager = SessionManager(
             repository: repo,
             worktreeArchive: { _ in },
             worktreeRestore: { _ in })
@@ -93,7 +93,7 @@ final class ArchiveViewSnapshotTests: XCTestCase {
     /// Confirms the empty path is reachable and visually balanced
     /// (it's the first thing every new user sees).
     func testEmptyArchive() throws {
-        let manager = SessionManager2(
+        let manager = SessionManager(
             repository: InMemorySessionRepository(),
             worktreeArchive: { _ in },
             worktreeRestore: { _ in })

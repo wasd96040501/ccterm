@@ -3,7 +3,7 @@ import Foundation
 
 // MARK: - Messaging commands
 
-extension SessionHandle2 {
+extension SessionRuntime {
 
     /// Interrupt the current turn. Guards on `isRunning`
     /// (`pendingTurnCount > 0`), not `status == .responding` — `send()` bumps
@@ -25,17 +25,17 @@ extension SessionHandle2 {
     ///    already satisfies the semantics.
     func interrupt() {
         guard isRunning else {
-            appLog(.info, "SessionHandle2", "interrupt() ignored — not running status=\(status) \(sessionId)")
+            appLog(.info, "SessionRuntime", "interrupt() ignored — not running status=\(status) \(sessionId)")
             return
         }
-        appLog(.info, "SessionHandle2", "interrupt() begin status=\(status) \(sessionId)")
+        appLog(.info, "SessionRuntime", "interrupt() begin status=\(status) \(sessionId)")
         pendingTurnCount = 0
         if status == .responding {
             status = .interrupting
         }
         failQueuedEntries(reason: "interrupted")
         guard let cliClient else {
-            appLog(.info, "SessionHandle2", "interrupt() no cliClient — local-only \(sessionId)")
+            appLog(.info, "SessionRuntime", "interrupt() no cliClient — local-only \(sessionId)")
             return
         }
         cliClient.interrupt { [weak self] _ in
@@ -44,7 +44,7 @@ extension SessionHandle2 {
                 if self.status == .interrupting {
                     self.status = .idle
                 }
-                appLog(.info, "SessionHandle2", "interrupt() ack \(self.sessionId)")
+                appLog(.info, "SessionRuntime", "interrupt() ack \(self.sessionId)")
             }
         }
     }

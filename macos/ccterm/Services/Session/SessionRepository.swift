@@ -23,7 +23,7 @@ struct SessionExtraUpdate {
 ///
 /// SessionRecord is a persisted entity describing "one session record" —
 /// id, cwd, status, timestamps, etc. **It does not contain runtime state**
-/// (messages, process state); that lives on `SessionHandle2`.
+/// (messages, process state); that lives on `Session`.
 protocol SessionRepository: AnyObject {
 
     // MARK: Query
@@ -101,7 +101,7 @@ final class CoreDataSessionRepository: SessionRepository {
     /// Workaround: macOS 26 SDK's `swift_task_deinitOnExecutorImpl` hits a
     /// libmalloc pointer-freed-but-not-allocated crash in the isolated
     /// deinit chain. Explicit nonisolated deinit skips the executor-hop
-    /// path. See SessionHandle2.swift for the matching note.
+    /// path. See Session.swift for the matching note.
     nonisolated deinit {}
 
     // MARK: - Query

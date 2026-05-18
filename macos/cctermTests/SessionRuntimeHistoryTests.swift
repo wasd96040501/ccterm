@@ -3,15 +3,15 @@ import XCTest
 
 @testable import ccterm
 
-/// Covers `SessionHandle2.loadHistory`'s two-phase flow with the
+/// Covers `SessionRuntime.loadHistory`'s two-phase flow with the
 /// precomputed-blocks payload added in this PR. Each test:
 ///
 /// - Writes a unique tmp JSONL file (no shared FS paths under parallel
 ///   execution; see `cctermTests/CLAUDE.md`).
-/// - Constructs a fresh `SessionHandle2` against an in-memory repository.
+/// - Constructs a fresh `SessionRuntime` against an in-memory repository.
 /// - Attaches a `MessagesChangeRecorder` and drives `loadHistory(overrideURL:)`.
 @MainActor
-final class SessionHandle2HistoryTests: XCTestCase {
+final class SessionRuntimeHistoryTests: XCTestCase {
 
     private var tempFile: TempJSONLFile?
 
@@ -36,13 +36,13 @@ final class SessionHandle2HistoryTests: XCTestCase {
         ])
         tempFile = file
 
-        let handle = SessionHandle2(
+        let runtime = SessionRuntime(
             sessionId: UUID().uuidString,
             repository: InMemorySessionRepository())
         let recorder = MessagesChangeRecorder()
-        recorder.attach(to: handle)
+        recorder.attach(to: runtime)
 
-        handle.loadHistory(overrideURL: file.url, tailTarget: 80)
+        runtime.loadHistory(overrideURL: file.url, tailTarget: 80)
 
         let arrived = await recorder.wait { events in
             events.contains(where: { $0.asReset != nil })
@@ -77,13 +77,13 @@ final class SessionHandle2HistoryTests: XCTestCase {
         let file = try! TempJSONLFile([])
         tempFile = file
 
-        let handle = SessionHandle2(
+        let runtime = SessionRuntime(
             sessionId: UUID().uuidString,
             repository: InMemorySessionRepository())
         let recorder = MessagesChangeRecorder()
-        recorder.attach(to: handle)
+        recorder.attach(to: runtime)
 
-        handle.loadHistory(overrideURL: file.url, tailTarget: 80)
+        runtime.loadHistory(overrideURL: file.url, tailTarget: 80)
 
         let arrived = await recorder.wait { events in
             events.contains(where: { $0.asReset != nil })
@@ -111,13 +111,13 @@ final class SessionHandle2HistoryTests: XCTestCase {
         let file = try! TempJSONLFile(lines)
         tempFile = file
 
-        let handle = SessionHandle2(
+        let runtime = SessionRuntime(
             sessionId: UUID().uuidString,
             repository: InMemorySessionRepository())
         let recorder = MessagesChangeRecorder()
-        recorder.attach(to: handle)
+        recorder.attach(to: runtime)
 
-        handle.loadHistory(overrideURL: file.url, tailTarget: 2)
+        runtime.loadHistory(overrideURL: file.url, tailTarget: 2)
 
         let arrived = await recorder.wait { events in
             events.contains(where: { $0.asPrepended != nil })
@@ -151,13 +151,13 @@ final class SessionHandle2HistoryTests: XCTestCase {
         ])
         tempFile = file
 
-        let handle = SessionHandle2(
+        let runtime = SessionRuntime(
             sessionId: UUID().uuidString,
             repository: InMemorySessionRepository())
         let recorder = MessagesChangeRecorder()
-        recorder.attach(to: handle)
+        recorder.attach(to: runtime)
 
-        handle.loadHistory(overrideURL: file.url, tailTarget: 80)
+        runtime.loadHistory(overrideURL: file.url, tailTarget: 80)
 
         _ = await recorder.wait { events in
             events.contains(where: { $0.asReset != nil })

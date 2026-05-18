@@ -162,7 +162,7 @@ final class Transcript2Controller {
         }
     }
 
-    /// macOS 26 SDK workaround — see `SessionHandle2.deinit` for the
+    /// macOS 26 SDK workaround — see `Session.deinit` for the
     /// background. The default `@MainActor` deinit aborts inside
     /// `swift::TaskLocal::StopLookupScope::~StopLookupScope()` when the
     /// dealloc chain tears down our `Transcript2HighlightStorage`'s

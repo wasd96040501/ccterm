@@ -2,19 +2,19 @@ import XCTest
 
 @testable import ccterm
 
-/// End-to-end check that the production `SessionManager2.archive` /
+/// End-to-end check that the production `SessionManager.archive` /
 /// `unarchive` defaults (which call into real `Worktree.remove` /
 /// `Worktree.restore` via git) actually tear down and rebuild the
 /// worktree directory on disk.
 ///
 /// Each test stands up a self-contained temp git repo + a real ccterm
 /// worktree under `.claude/worktrees/`, then exercises the side-effect
-/// helpers `SessionManager2` wires by default. We invoke the helpers
+/// helpers `SessionManager` wires by default. We invoke the helpers
 /// **synchronously** (rather than going through the full
 /// `manager.archive(sid)` codepath which dispatches to a background
 /// queue) so the test can assert on disk state immediately — same git
 /// commands are issued, just on the test thread.
-final class SessionManager2ArchiveWorktreeTests: XCTestCase {
+final class SessionManagerArchiveWorktreeTests: XCTestCase {
 
     private var rootDir: URL?
 
@@ -47,13 +47,13 @@ final class SessionManager2ArchiveWorktreeTests: XCTestCase {
             FileManager.default.fileExists(atPath: worktree.path),
             "Provision must leave the worktree dir on disk before archive")
 
-        SessionManager2.invokeWorktreeArchiveSync(for: record)
+        SessionManager.invokeWorktreeArchiveSync(for: record)
 
         XCTAssertFalse(
             FileManager.default.fileExists(atPath: worktree.path),
             "Archive must remove the worktree dir")
 
-        SessionManager2.invokeWorktreeRestoreSync(for: record)
+        SessionManager.invokeWorktreeRestoreSync(for: record)
 
         XCTAssertTrue(
             FileManager.default.fileExists(atPath: worktree.path),
@@ -83,8 +83,8 @@ final class SessionManager2ArchiveWorktreeTests: XCTestCase {
         )
 
         // Must not throw, must not crash.
-        SessionManager2.invokeWorktreeArchiveSync(for: partial)
-        SessionManager2.invokeWorktreeRestoreSync(for: partial)
+        SessionManager.invokeWorktreeArchiveSync(for: partial)
+        SessionManager.invokeWorktreeRestoreSync(for: partial)
     }
 
     // MARK: - Provisioning

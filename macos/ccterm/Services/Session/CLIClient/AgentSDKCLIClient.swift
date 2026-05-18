@@ -12,7 +12,7 @@ final class AgentSDKCLIClient: CLIClient {
         self.session = AgentSDK.Session(configuration: configuration)
     }
 
-    /// Match the macOS 26 workaround used by `SessionHandle2` /
+    /// Match the macOS 26 workaround used by `Session` /
     /// `InMemorySessionRepository`: a default class deinit on instances
     /// dropped from a `@MainActor` context routes through
     /// `swift_task_deinitOnExecutorImpl` and hits the libmalloc abort.
@@ -127,7 +127,7 @@ final class AgentSDKCLIClient: CLIClient {
 
 extension AgentSDKCLIClient {
 
-    /// Default factory used by `SessionHandle2` when no injection is
+    /// Default factory used by `Session` when no injection is
     /// supplied. Production callers do not need to pass anything; tests
     /// override with `{ _ in FakeCLIClient() }`.
     @MainActor static let defaultFactory: CLIClientFactory = { configuration in

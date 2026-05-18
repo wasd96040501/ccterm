@@ -61,24 +61,27 @@ final class SidebarView2SnapshotTests: XCTestCase {
             repo.save(record)
         }
 
-        let manager = SessionManager2(repository: repo)
+        let manager = SessionManager(repository: repo)
 
-        // Allocate handles via the public surface and drive observable
-        // state directly. `pendingTurnCount` and `hasUnread` are
-        // `internal(set)` — `@testable import` lets the test reach them
-        // without adding production-only seams.
-        let running = try XCTUnwrap(manager.session(runningInProjectA.sessionId))
+        // Allocate sessions via the public surface and drive observable
+        // state directly through the underlying runtime. `pendingTurnCount`
+        // and `hasUnread` are `internal(set)` on `SessionRuntime` —
+        // `@testable import` lets the test reach them without adding
+        // production-only seams. `session(_:)` returns a façade in
+        // `.active` phase for any record-existing id, so `runtime` is
+        // non-nil here.
+        let running = try XCTUnwrap(manager.session(runningInProjectA.sessionId)?.runtime)
         running.pendingTurnCount = 1
 
-        let unread = try XCTUnwrap(manager.session(unreadInProjectA.sessionId))
+        let unread = try XCTUnwrap(manager.session(unreadInProjectA.sessionId)?.runtime)
         unread.hasUnread = true
 
-        let both = try XCTUnwrap(manager.session(runningAndUnreadInProjectB.sessionId))
+        let both = try XCTUnwrap(manager.session(runningAndUnreadInProjectB.sessionId)?.runtime)
         both.pendingTurnCount = 1
         both.hasUnread = true
 
         // `idleInProjectA` / `idleInProjectB` deliberately have no
-        // handle — sidebar reads them via `existingHandle` and shows no
+        // handle — sidebar reads them via `existingSession` and shows no
         // indicator, matching production behavior for sessions never
         // activated in this process lifetime.
 

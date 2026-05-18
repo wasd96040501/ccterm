@@ -11,7 +11,7 @@ import SwiftUI
 ///
 /// Layout: `[Permission] ────── [Model · Effort] [Context ring]`.
 struct InputBarSessionChrome: View {
-    let handle: SessionHandle2
+    let session: Session
 
     /// Vertical gap between the bar and this row. 10pt reads as a
     /// deliberate "second tier" without feeling detached from the bar.
@@ -30,22 +30,22 @@ struct InputBarSessionChrome: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            PermissionModePicker(handle: handle, activeModel: activeModel)
+            PermissionModePicker(session: session, activeModel: activeModel)
             Spacer(minLength: 0)
-            ModelEffortPicker(handle: handle)
-            ContextRingButton(handle: handle)
+            ModelEffortPicker(session: session)
+            ContextRingButton(session: session)
         }
         .padding(.leading, Self.pillLeadingInset)
     }
 
-    /// Resolves `handle.model` to the matching `ModelInfo` from the
+    /// Resolves `session.model` to the matching `ModelInfo` from the
     /// per-session catalog (preferred) or the cross-launch
     /// `ModelStore` cache. Returned nil when the user hasn't picked
     /// one yet OR the catalog hasn't arrived — the permission picker
     /// uses this to decide whether the `auto` row is visible.
     private var activeModel: ModelInfo? {
-        guard let value = handle.model else { return nil }
-        let live = handle.availableModels
+        guard let value = session.model else { return nil }
+        let live = session.availableModels
         let pool = live.isEmpty ? ModelStore.shared.models : live
         return pool.first(where: { $0.value == value })
     }

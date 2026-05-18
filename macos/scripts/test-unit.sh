@@ -24,7 +24,15 @@ SCHEME="ccterm"
 DESTINATION='platform=macOS,arch=arm64'
 TEST_TARGET="cctermTests"
 FILTER="${1:-}"
-DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-$PWD/build/test-dd}"
+# DerivedData must live outside the project tree. If a checkout sits inside
+# `~/Documents`, an in-tree DerivedData puts the test bundle under the TCC
+# "Documents" boundary; the host app's `Bundle.main` reads (e.g.
+# SyntaxHighlightEngine loading `hljs-jscore.js` from AppState.init) then
+# prompt for "ccterm 要访问文档" on every rebuild — the codesign hash changes
+# each Debug build so the consent never sticks. CI overrides this to
+# `macos/build/test-dd` (see .github/workflows/test.yml) so the cache action
+# can pick it up.
+DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-${HOME}/Library/Caches/ccterm-test-dd}"
 
 STAMP=$(date +%Y%m%d-%H%M%S)
 LOG_DIR="/tmp/ccterm-utest-$STAMP-$$"

@@ -60,6 +60,12 @@ jobs:
             dd-${{ runner.os }}-${{ runner.arch }}-xc${{ steps.fp.outputs.xcode }}-fzf${{ steps.fp.outputs.fzf }}-salt${{ hashFiles('.github/cache-salt') }}-
 
       - name: Run unit tests
+        # Pin DerivedData to the in-tree path the Cache step keys off. Local
+        # runs use the script's default (outside ~/Documents) to avoid the
+        # macOS TCC "Documents" prompt; CI doesn't share that constraint and
+        # wants the path to match the cache action.
+        env:
+          DERIVED_DATA_PATH: ${{ github.workspace }}/macos/build/test-dd
         run: make test-unit
 
       - name: Upload xcresult on failure

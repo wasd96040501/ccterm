@@ -243,12 +243,12 @@ final class BlockCellView: NSView {
     /// to its origin every status flip / hover transition).
     var shimmerLayers: [UUID: ShimmerLayerSet] = [:]
 
-    /// Per-index dot sublayers for the trailing "running" pill. Keyed
-    /// by `index` (0/1/2) so the layer survives `reloadData` /
-    /// resize re-layouts and the breathing opacity animation keeps
-    /// cycling without phase reset. Cleared when the plan emits no
-    /// `loadingDots` (pill gone / row recycled to another kind).
-    var loadingDotLayers: [Int: CAShapeLayer] = [:]
+    /// Trailing "running" pill subview hosting SF Symbol `ellipsis`
+    /// with a `.variableColor` symbol effect. Reused across
+    /// `reloadData(forRowIndexes:)` and resize so the symbol-effect
+    /// loop never restarts. Cleared when the plan's `loadingDots`
+    /// goes `nil` (pill gone / row recycled to another kind).
+    var loadingDotsImageView: NSImageView?
 
     /// Set by `beginFoldTransition` just before the coordinator's
     /// `reloadData`. Tells the upcoming `syncSubviewPlan()` to route
@@ -337,9 +337,6 @@ final class BlockCellView: NSView {
             set.imageKey = nil
         }
         for (_, layer) in chevronLayers {
-            layer.contentsScale = scale
-        }
-        for (_, layer) in loadingDotLayers {
             layer.contentsScale = scale
         }
         syncSubviewPlan()

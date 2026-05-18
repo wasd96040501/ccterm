@@ -427,14 +427,17 @@ enum BlockStyle: Sendable {
 
     // MARK: - Loading pill geometry
 
-    /// Three-dot animation diameter — matches the SwiftUI source we
-    /// migrated from (`LoadingPillView2.DotsRow.dotSize`) so the
-    /// breath visual carries across exactly.
-    nonisolated static let loadingPillDotSize: CGFloat = 3
-    /// Horizontal gap between dots.
-    nonisolated static let loadingPillDotGap: CGFloat = 4
-    /// Dot color — `secondaryLabel` so the indicator reads as a
-    /// muted ambient signal rather than a primary affordance.
+    /// `NSImageView` frame width for the trailing "running" pill.
+    /// Sized to match SF Symbol `ellipsis` at the symbol point size
+    /// chosen in the cell reconciler — wide enough to host the
+    /// natural-width glyph without proportional shrink.
+    nonisolated static let loadingPillWidth: CGFloat = 18
+    /// `NSImageView` frame height for the running pill. Matches the
+    /// approximate cap height of the symbol at its point size.
+    nonisolated static let loadingPillHeight: CGFloat = 8
+    /// Tint applied to the SF Symbol via `contentTintColor`.
+    /// `secondaryLabel` so the indicator reads as a muted ambient
+    /// signal rather than a primary affordance.
     nonisolated static var loadingPillDotColor: NSColor {
         .secondaryLabelColor
     }

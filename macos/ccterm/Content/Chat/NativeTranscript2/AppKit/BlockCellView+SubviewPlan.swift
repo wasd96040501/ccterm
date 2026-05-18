@@ -438,127 +438,57 @@ extension BlockCellView {
 
     // MARK: - Loading dots
 
-    /// Reconcile breathing-dot pip layers against `specs`. One
-    /// `CAShapeLayer` per index (0/1/2); each runs the same
-    /// `loadingDotsAnimationKey` opacity loop with a per-layer
-    /// `timeOffset` so the wave crest sweeps left-to-right.
-    ///
-    /// Reuse policy: layers survive `reloadData(forRowIndexes:)`
-    /// and resize; the breathing animation keeps cycling because
-    /// we never remove the animation key while the layer is in
-    /// the plan. The dot only resets if the spec drops out (pill
-    /// gone) or the cell is recycled to a non-loading-pill row.
-    private func applyLoadingDotsPlan(_ specs: [SubviewPlan.LoadingDots]) {
-        guard let hostLayer = self.layer else {
-            for (_, layer) in loadingDotLayers { layer.removeFromSuperlayer() }
-            loadingDotLayers.removeAll()
+    /// Reconcile the trailing "running" indicator against `spec`.
+    /// Hosts a single `NSImageView` rendering SF Symbol `ellipsis`
+    /// with `.variableColor.iterative.dimInactiveLayers.nonReversing`
+    /// — Apple-tuned three-dot sequencing where inactive dots stay
+    /// visible at a reduced opacity instead of disappearing
+    /// entirely, so the three-point identity reads continuously and
+    /// the active dot brightens out of an ambient row. Reduce Motion
+    /// fallback handled by the framework. The view is reused across
+    /// `reloadData(forRowIndexes:)` and resize so the symbol-effect
+    /// loop keeps cycling without a phase reset. Cleared when the
+    /// spec goes `nil`.
+    private func applyLoadingDotsPlan(_ spec: SubviewPlan.LoadingDots?) {
+        guard let spec else {
+            if let view = loadingDotsImageView {
+                view.removeAllSymbolEffects()
+                view.removeFromSuperview()
+                loadingDotsImageView = nil
+            }
             return
         }
-        var seen = Set<Int>()
-        let scale = max(hostLayer.contentsScale, 1)
-        for spec in specs {
-            seen.insert(spec.index)
-            let frame = CGRect(
-                x: spec.center.x - spec.diameter / 2,
-                y: spec.center.y - spec.diameter / 2,
-                width: spec.diameter, height: spec.diameter)
-            let layer: CAShapeLayer
-            if let existing = loadingDotLayers[spec.index] {
-                layer = existing
-            } else {
-                layer = makeLoadingDotShapeLayer(staggerIndex: spec.index)
-                loadingDotLayers[spec.index] = layer
-                hostLayer.addSublayer(layer)
-            }
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            if layer.frame != frame {
-                layer.frame = frame
-                layer.path = CGPath(
-                    ellipseIn: CGRect(origin: .zero, size: frame.size),
-                    transform: nil)
-            }
-            layer.fillColor = spec.color.cgColor
-            if layer.contentsScale != scale {
-                layer.contentsScale = scale
-            }
-            CATransaction.commit()
-            if layer.animation(forKey: Self.loadingDotsAnimationKey) == nil {
-                layer.add(
-                    Self.makeLoadingDotsAnimation(),
-                    forKey: Self.loadingDotsAnimationKey)
-            }
+        let view: NSImageView
+        if let existing = loadingDotsImageView {
+            view = existing
+        } else {
+            view = NSImageView()
+            view.imageScaling = .scaleProportionallyUpOrDown
+            view.imageAlignment = .alignCenter
+            view.symbolConfiguration = NSImage.SymbolConfiguration(
+                pointSize: Self.loadingDotsSymbolPointSize, weight: .regular)
+            view.image = NSImage(
+                systemSymbolName: "ellipsis",
+                accessibilityDescription: nil)
+            view.contentTintColor = spec.tintColor
+            addSubview(view)
+            loadingDotsImageView = view
+            view.addSymbolEffect(
+                .variableColor.iterative.dimInactiveLayers.nonReversing,
+                options: .repeating)
         }
-        for (idx, layer) in loadingDotLayers where !seen.contains(idx) {
-            layer.removeFromSuperlayer()
-            loadingDotLayers.removeValue(forKey: idx)
+        if view.frame != spec.frame {
+            view.frame = spec.frame
+        }
+        if view.contentTintColor != spec.tintColor {
+            view.contentTintColor = spec.tintColor
         }
     }
 
-    private func makeLoadingDotShapeLayer(staggerIndex: Int) -> CAShapeLayer {
-        let layer = CAShapeLayer()
-        layer.strokeColor = nil
-        // Sit above per-entry subview layers; matches the chevron /
-        // shimmer recipe so the dots composite on top of the cell
-        // bitmap reliably regardless of add-order.
-        layer.zPosition = 1
-        layer.contentsScale = self.layer?.contentsScale ?? 2
-        layer.actions = [
-            "bounds": NSNull(),
-            "frame": NSNull(),
-            "path": NSNull(),
-            "fillColor": NSNull(),
-            "position": NSNull(),
-            "opacity": NSNull(),
-        ]
-        // Stagger the breathing wave: dot 0 leads, dot 1 trails by
-        // `staggerSeconds`, dot 2 by `2 × staggerSeconds`. Sets the
-        // layer's local time so each dot enters the infinite opacity
-        // loop at a different phase without needing per-dot
-        // animations.
-        layer.timeOffset = Double(staggerIndex) * Self.loadingDotsStaggerSeconds
-        return layer
-    }
-
-    /// Infinite opacity breath. `keyTimes` sampled from a sine half-
-    /// cycle so the eye sees a smooth swell rather than a triangle
-    /// peak; linear interpolation between samples is good enough
-    /// for a 3pt dot.
-    nonisolated private static func makeLoadingDotsAnimation() -> CAKeyframeAnimation {
-        let anim = CAKeyframeAnimation(keyPath: "opacity")
-        // 16-sample sine half-wave (0 → π) mapped onto
-        // `[minOpacity, 1]`. Tail loops back to the head for the
-        // next cycle.
-        let minOpacity: CGFloat = 0.25
-        let samples = 16
-        var values: [Double] = []
-        var times: [NSNumber] = []
-        values.reserveCapacity(samples + 1)
-        times.reserveCapacity(samples + 1)
-        for i in 0...samples {
-            let t = Double(i) / Double(samples)
-            // Sine breath that starts/ends at minOpacity and peaks at
-            // 1 in the middle — `(1 - cos(2π t)) / 2` gives a smooth
-            // hump that matches the SwiftUI source's wave shape.
-            let s = (1 - cos(2 * .pi * t)) / 2
-            values.append(Double(minOpacity) + Double(1 - minOpacity) * s)
-            times.append(NSNumber(value: t))
-        }
-        anim.values = values
-        anim.keyTimes = times
-        anim.duration = Self.loadingDotsPeriodSeconds
-        anim.repeatCount = .infinity
-        anim.isRemovedOnCompletion = false
-        anim.timingFunction = CAMediaTimingFunction(name: .linear)
-        return anim
-    }
-
-    nonisolated private static let loadingDotsAnimationKey = "loadingDotsBreath"
-    /// Full cycle duration — matches `LoadingPillView2.DotsRow.period`.
-    nonisolated private static let loadingDotsPeriodSeconds: CFTimeInterval = 1.2
-    /// Per-dot phase offset — matches
-    /// `LoadingPillView2.DotsRow.phaseStagger`.
-    nonisolated private static let loadingDotsStaggerSeconds: CFTimeInterval = 0.18
+    /// SF Symbol point size for the running-indicator ellipsis. 13pt
+    /// renders a glyph whose natural bounding box (~17×4) lines up
+    /// with `BlockStyle.loadingPillWidth/Height`.
+    nonisolated private static let loadingDotsSymbolPointSize: CGFloat = 13
 
     private func applyEntryPlan(
         _ specs: [SubviewPlan.Entry], animateFrames: Bool

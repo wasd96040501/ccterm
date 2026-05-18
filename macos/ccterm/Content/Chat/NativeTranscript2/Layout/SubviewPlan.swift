@@ -38,17 +38,19 @@ struct SubviewPlan: @unchecked Sendable {
     /// across `layout` swaps. Empty by default.
     let shimmers: [Shimmer]
 
-    /// Breathing-dot pip overlays, one per dot. Emitted by
-    /// `LoadingPillLayout` so the trailing "running" pill's three
-    /// dots animate as `CAShapeLayer`s on the CoreAnimation thread —
-    /// keeping `BlockCellView.draw(_:)` invalidation-free while the
-    /// dots breathe. Reconciled by index (0/1/2) so per-dot phase
-    /// stagger survives `reloadData(forRowIndexes:)` and the layer
-    /// reuse keeps the wave coherent across re-layouts.
-    let loadingDots: [LoadingDots]
+    /// Trailing "running" indicator overlay. Emitted by
+    /// `LoadingPillLayout` and rendered as a single `NSImageView`
+    /// hosting the SF Symbol `ellipsis` driven by a
+    /// `.variableColor.iterative.hideInactiveLayers` symbol effect —
+    /// macOS 14+ ships the tuned three-dot sequence we need without
+    /// hand-rolled keyframes. Reconciled as a single subview that
+    /// survives `reloadData(forRowIndexes:)`, so the symbol-effect
+    /// loop never restarts across re-layouts. `nil` when no pill is
+    /// present.
+    let loadingDots: LoadingDots?
 
     static let empty = SubviewPlan(
-        chevrons: [], entries: [], shimmers: [], loadingDots: [])
+        chevrons: [], entries: [], shimmers: [], loadingDots: nil)
 
     /// One spinning glyph attached to a foldable header. The cell
     /// owns a `CAShapeLayer` keyed by `id`, snaps `transform.rotation.z`
@@ -129,25 +131,13 @@ struct SubviewPlan: @unchecked Sendable {
         let hovered: Bool
     }
 
-    /// One breathing-dot pip for the trailing "running" pill. The
-    /// cell hosts a `CAShapeLayer` keyed by `index` (0/1/2) so the
-    /// breathing opacity animation runs on the CoreAnimation thread
-    /// and survives `reloadData(forRowIndexes:)` — keying by index
-    /// is enough because at most one pill row exists in the
-    /// transcript at any time.
-    ///
-    /// Per-dot stagger: layer 0 leads, layer 1 trails by `phaseStagger`,
-    /// layer 2 by `2 × phaseStagger`. Achieved by setting
-    /// `layer.timeOffset` so each dot enters the same infinite
-    /// opacity loop at a different phase.
+    /// Trailing "running" indicator spec. The cell hosts a single
+    /// `NSImageView` showing SF Symbol `ellipsis` with a variable-
+    /// color symbol effect; `frame` is cell-local placement and
+    /// `tintColor` is the resolved symbol fill.
     struct LoadingDots: @unchecked Sendable {
-        /// 0, 1, or 2 — the dot's position in the row, also the
-        /// stagger index for the breathing wave.
-        let index: Int
-        /// Geometric centre in cell-local coords.
-        let center: CGPoint
-        let diameter: CGFloat
-        let color: NSColor
+        let frame: CGRect
+        let tintColor: NSColor
     }
 
     /// One layer-backed body subview. The cell hosts a

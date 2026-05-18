@@ -915,7 +915,7 @@ struct ToolGroupLayout: @unchecked Sendable {
             chevrons: chevrons,
             entries: entries,
             shimmers: shimmers,
-            loadingDots: [])
+            loadingDots: nil)
     }
 
     /// Build a shimmer spec covering the title rect of `header`.

@@ -9,13 +9,17 @@ import Foundation
 /// `Transcript2Controller.apply(.insert / .remove / .update)` or
 /// `loadInitial(...)`.
 ///
-/// Channel: the handle exposes a synchronous closure
-/// `onMessagesChange: ((MessagesChange) -> Void)?`; the bridge hooks it up in
-/// `attach(to:)`. This is the AppKit renderer's only outgoing sink —
-/// firing synchronously guarantees the mutation and `controller.apply` happen
-/// in the same call stack, with no extra hop through AsyncStream /
-/// @Observable. The SwiftUI renderer reads the handle's `@Observable` fields
-/// (`messages` / `status` / `isRunning` / ...) and does not use this channel.
+/// Channel: the runtime exposes a synchronous closure
+/// `onMessagesChange: ((MessagesChange) -> Void)?`. `Session.wireRuntimeMessagesSink`
+/// installs a multiplex closure on that field at session creation /
+/// promotion that calls `bridge.apply(change)` (always) then
+/// `session.onMessagesChange?(change)` (optional external observer).
+/// This is the AppKit renderer's only outgoing sink — firing
+/// synchronously guarantees the mutation and `controller.apply`
+/// happen in the same call stack, with no extra hop through
+/// AsyncStream / @Observable. The SwiftUI renderer reads the runtime's
+/// `@Observable` fields (`messages` / `status` / `isRunning` / ...) and
+/// does not use this channel.
 enum MessagesChange {
     /// Replace the view-side timeline wholesale (`loadHistory` Phase A
     /// completion / second entry into `.loaded`). `precomputedBlocks`

@@ -311,11 +311,26 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         completion: @MainActor @escaping () -> Void = {}
     ) {
         guard tableView != nil else {
+            // Detached path: a background-emitted change (Phase B prepend,
+            // loadInitial Phase 2) arrived while the table is not bound.
+            // The controller is now session-scoped (lives across view
+            // mount/dismount), so dropping the change would leave
+            // `blocks` out of sync with the underlying handle's messages
+            // for any session whose view isn't currently mounted. Route
+            // through sync `apply` so `blocks` stays authoritative;
+            // layouts compute lazily once a table re-attaches and
+            // `heightOfRow` is queried.
+            apply(changes, scroll: .none)
             completion()
             return
         }
         let width = layoutWidth
         guard width > 0 else {
+            // Table is attached but not yet tiled. Same posture as the
+            // no-table branch above — degrade to sync apply so `blocks`
+            // is current; the layout/scroll work can replay through
+            // `onLayoutReady` paths.
+            apply(changes, scroll: .none)
             completion()
             return
         }

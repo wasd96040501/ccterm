@@ -91,6 +91,8 @@ struct PermissionCardView: View {
             PermissionTaskAgentCardBody(request: request)
         case .skill:
             PermissionSkillCardBody(request: request)
+        case .mcp:
+            PermissionMcpCardBody(request: request)
         default:
             PermissionFallbackCardBody(request: request)
         }

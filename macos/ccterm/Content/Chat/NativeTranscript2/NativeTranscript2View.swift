@@ -168,6 +168,10 @@ private struct Transcript2NSViewBridge: NSViewRepresentable {
         // both answer correctly). Hosts wire `onWillDetach` to persist
         // the captured anchor; absent a wiring, snapshotting is a
         // zero-cost no-op.
+        appLog(
+            .info, "NativeTranscript2View",
+            "[anchor] dismantleNSView begin "
+                + "wired=\(coordinator.onWillDetach != nil)")
         let captured = coordinator.captureVisibleAnchor()
         coordinator.onWillDetach?(captured)
         NotificationCenter.default.removeObserver(coordinator)

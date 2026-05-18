@@ -196,7 +196,12 @@ final class Session {
     /// — falling through to `.bottom` on the next mount is the right
     /// behavior when there's nothing to remember.
     private func wireScrollAnchorPersistence() {
+        let sid = sessionId
         controller.coordinator.onWillDetach = { [weak self] captured in
+            appLog(
+                .info, "Session",
+                "[anchor] onWillDetach received sid=\(sid.prefix(8)) "
+                    + "captured=\(captured.map { "\($0.blockId.uuidString.prefix(8)),y=\($0.offsetFromClipTop)" } ?? "nil")")
             self?.lastVisibleAnchor = captured
         }
     }

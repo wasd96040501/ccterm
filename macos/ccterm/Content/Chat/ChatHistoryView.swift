@@ -143,6 +143,11 @@ struct ChatHistoryView: View {
             // being inserted.
             let anchor: Transcript2Controller.InitialAnchor =
                 s.lastVisibleAnchor.map { .preserved($0) } ?? .bottom
+            appLog(
+                .info, "ChatHistoryView",
+                "[anchor] task-mount sid=\(sessionId.prefix(8)) "
+                    + "saved=\(s.lastVisibleAnchor.map { "\($0.blockId.uuidString.prefix(8)),y=\($0.offsetFromClipTop)" } ?? "nil") "
+                    + "→ requestAnchor")
             s.controller.requestAnchor(anchor)
             // `.onChange(of: isRunning)` only fires on transitions, and
             // its `initial: true` invocation ran above with `session`

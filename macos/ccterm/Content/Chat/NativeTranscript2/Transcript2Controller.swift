@@ -465,7 +465,17 @@ final class Transcript2Controller {
     /// pending — `coordinator` may fire `onLayoutReady` on resize-time
     /// 0→positive sequences unrelated to a pending anchor.
     private func consumePendingAnchor() {
-        guard let anchor = pendingAnchor else { return }
+        guard let anchor = pendingAnchor else {
+            appLog(
+                .info, "Transcript2Controller",
+                "[anchor] consumePendingAnchor=nil (onLayoutReady fired with no pending)")
+            return
+        }
+        appLog(
+            .info, "Transcript2Controller",
+            "[anchor] consumePendingAnchor=\(Self.describe(anchor)) "
+                + "blocks=\(coordinator.blockIds.count) "
+                + "layoutWidth=\(coordinator.layoutWidth)")
         pendingAnchor = nil
         scrollToInitialAnchor(anchor)
     }
@@ -476,6 +486,11 @@ final class Transcript2Controller {
     /// through it directly with either `.bottom` (no saved position) or
     /// `.preserved(...)` (resume where the user left off).
     func requestAnchor(_ anchor: InitialAnchor) {
+        appLog(
+            .info, "Transcript2Controller",
+            "[anchor] requestAnchor=\(Self.describe(anchor)) "
+                + "blocks=\(coordinator.blockIds.count) "
+                + "layoutWidth=\(coordinator.layoutWidth)")
         pendingAnchor = anchor
     }
 
@@ -485,6 +500,19 @@ final class Transcript2Controller {
     /// pass it back as `.preserved`.
     func captureVisibleAnchor() -> Transcript2Coordinator.CapturedAnchor? {
         coordinator.captureVisibleAnchor()
+    }
+
+    /// Short stringification for debug logs. Avoids leaking full block
+    /// payloads — id prefix + offset is enough to correlate with
+    /// coordinator-side logs.
+    fileprivate static func describe(_ anchor: InitialAnchor) -> String {
+        switch anchor {
+        case .bottom: return ".bottom"
+        case .top(let id): return ".top(\(id.uuidString.prefix(8)))"
+        case .bottomTo(let id): return ".bottomTo(\(id.uuidString.prefix(8)))"
+        case .preserved(let c):
+            return ".preserved(\(c.blockId.uuidString.prefix(8)),y=\(c.offsetFromClipTop))"
+        }
     }
 
     /// Apply the deferred scroll-to-anchor. Resolves `.bottom` against the
@@ -498,16 +526,39 @@ final class Transcript2Controller {
     private func scrollToInitialAnchor(_ anchor: InitialAnchor) {
         switch anchor {
         case .bottom:
-            guard let lastId = coordinator.blockIds.last else { return }
+            guard let lastId = coordinator.blockIds.last else {
+                appLog(
+                    .info, "Transcript2Controller",
+                    "[anchor] scrollToInitialAnchor .bottom skipped (no blocks)")
+                return
+            }
+            appLog(
+                .info, "Transcript2Controller",
+                "[anchor] scrollToInitialAnchor → .bottom(\(lastId.uuidString.prefix(8)))")
             coordinator.apply([], scroll: .bottom(id: lastId))
         case .top(let id):
+            appLog(
+                .info, "Transcript2Controller",
+                "[anchor] scrollToInitialAnchor → .top(\(id.uuidString.prefix(8)))")
             coordinator.apply([], scroll: .top(id: id))
         case .bottomTo(let id):
+            appLog(
+                .info, "Transcript2Controller",
+                "[anchor] scrollToInitialAnchor → .bottomTo(\(id.uuidString.prefix(8)))")
             coordinator.apply([], scroll: .bottom(id: id))
         case .preserved(let captured):
-            if !coordinator.scrollToCapturedAnchor(captured) {
+            let ok = coordinator.scrollToCapturedAnchor(captured)
+            appLog(
+                .info, "Transcript2Controller",
+                "[anchor] scrollToInitialAnchor → .preserved("
+                    + "\(captured.blockId.uuidString.prefix(8)),"
+                    + "y=\(captured.offsetFromClipTop)) ok=\(ok)")
+            if !ok {
                 // Block is gone — degrade to bottom.
                 if let lastId = coordinator.blockIds.last {
+                    appLog(
+                        .info, "Transcript2Controller",
+                        "[anchor] .preserved fallback → .bottom(\(lastId.uuidString.prefix(8)))")
                     coordinator.apply([], scroll: .bottom(id: lastId))
                 }
             }

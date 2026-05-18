@@ -67,6 +67,11 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     weak var tableView: NSTableView? {
         didSet {
             if let table = tableView, oldValue !== tableView {
+                appLog(
+                    .info, "Transcript2Coordinator",
+                    "[anchor] tableView.didSet attach blocks=\(blocks.count) "
+                        + "prevLastLayoutWidth=\(lastLayoutWidth) → reset to -1, "
+                        + "table.bounds=\(table.bounds.size)")
                 // A new table attached. The previous mount left
                 // `lastLayoutWidth` at its terminal positive value; reset
                 // to the sentinel so the upcoming `tableFrameDidChange`
@@ -304,6 +309,12 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         } else {
             // Table not attached. Just mutate `blocks`; future attach will
             // `reloadData()`. Scroll state is meaningless without a table.
+            if case .none = scroll {} else {
+                appLog(
+                    .info, "Transcript2Coordinator",
+                    "[anchor] apply with no table — scroll intent dropped "
+                        + "(changes=\(changes.count) scroll=\(scroll))")
+            }
             for change in changes {
                 applyStructuralChange(change, in: nil)
             }
@@ -651,19 +662,47 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// treat that as "nothing to remember" and fall back to a default
     /// anchor (`.bottom`) on the next mount.
     func captureVisibleAnchor() -> CapturedAnchor? {
-        guard let table = tableView,
-            let scrollView = table.enclosingScrollView,
-            !blocks.isEmpty
-        else { return nil }
+        guard let table = tableView else {
+            appLog(
+                .info, "Transcript2Coordinator",
+                "[anchor] captureVisibleAnchor → nil (no tableView)")
+            return nil
+        }
+        guard let scrollView = table.enclosingScrollView else {
+            appLog(
+                .info, "Transcript2Coordinator",
+                "[anchor] captureVisibleAnchor → nil (no scrollView)")
+            return nil
+        }
+        guard !blocks.isEmpty else {
+            appLog(
+                .info, "Transcript2Coordinator",
+                "[anchor] captureVisibleAnchor → nil (no blocks)")
+            return nil
+        }
         let visible = table.rows(in: table.visibleRect)
         guard visible.location != NSNotFound, visible.length > 0,
             blocks.indices.contains(visible.location)
-        else { return nil }
+        else {
+            appLog(
+                .info, "Transcript2Coordinator",
+                "[anchor] captureVisibleAnchor → nil "
+                    + "(visible=\(visible) blocks=\(blocks.count) "
+                    + "visibleRect=\(table.visibleRect) bounds=\(table.bounds))")
+            return nil
+        }
         let rect = table.rect(ofRow: visible.location)
         let offset = rect.origin.y - scrollView.contentView.bounds.origin.y
-        return CapturedAnchor(
+        let captured = CapturedAnchor(
             blockId: blocks[visible.location].id,
             offsetFromClipTop: offset)
+        appLog(
+            .info, "Transcript2Coordinator",
+            "[anchor] captureVisibleAnchor → row=\(visible.location)/\(blocks.count) "
+                + "id=\(captured.blockId.uuidString.prefix(8)) "
+                + "rect.y=\(rect.origin.y) clip.y=\(scrollView.contentView.bounds.origin.y) "
+                + "offset=\(offset)")
+        return captured
     }
 
     /// Restore a captured anchor. Returns `false` when the block is no
@@ -672,14 +711,38 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// (typically `.bottom`).
     @discardableResult
     func scrollToCapturedAnchor(_ anchor: CapturedAnchor) -> Bool {
-        guard let table = tableView,
-            let scrollView = table.enclosingScrollView,
-            let row = blocks.firstIndex(where: { $0.id == anchor.blockId })
-        else { return false }
+        guard let table = tableView else {
+            appLog(
+                .info, "Transcript2Coordinator",
+                "[anchor] scrollToCapturedAnchor → false (no tableView)")
+            return false
+        }
+        guard let scrollView = table.enclosingScrollView else {
+            appLog(
+                .info, "Transcript2Coordinator",
+                "[anchor] scrollToCapturedAnchor → false (no scrollView)")
+            return false
+        }
+        guard let row = blocks.firstIndex(where: { $0.id == anchor.blockId }) else {
+            appLog(
+                .info, "Transcript2Coordinator",
+                "[anchor] scrollToCapturedAnchor → false "
+                    + "(block \(anchor.blockId.uuidString.prefix(8)) not in \(blocks.count) blocks)")
+            return false
+        }
         let rect = table.rect(ofRow: row)
         let target = rect.origin.y - anchor.offsetFromClipTop
+        let beforeY = scrollView.contentView.bounds.origin.y
         scrollView.contentView.scroll(
             to: NSPoint(x: scrollView.contentView.bounds.origin.x, y: target))
+        let afterY = scrollView.contentView.bounds.origin.y
+        appLog(
+            .info, "Transcript2Coordinator",
+            "[anchor] scrollToCapturedAnchor row=\(row)/\(blocks.count) "
+                + "rect.y=\(rect.origin.y) offset=\(anchor.offsetFromClipTop) "
+                + "target=\(target) clip.y \(beforeY)→\(afterY) "
+                + "clipBounds=\(scrollView.contentView.bounds.size) "
+                + "docBounds=\(table.bounds.size)")
         return true
     }
 
@@ -1008,7 +1071,15 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         // First 0→positive transition unblocks any deferred `loadInitial`
         // on the controller side.
         if prevWidth <= 0 && width > 0 {
+            appLog(
+                .info, "Transcript2Coordinator",
+                "[anchor] tableFrameDidChange prev=\(prevWidth) → \(width); "
+                    + "firing onLayoutReady (blocks=\(blocks.count))")
             onLayoutReady?()
+        } else {
+            appLog(
+                .debug, "Transcript2Coordinator",
+                "[anchor] tableFrameDidChange prev=\(prevWidth) → \(width); no fire")
         }
     }
 

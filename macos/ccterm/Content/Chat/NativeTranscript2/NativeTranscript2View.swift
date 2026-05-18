@@ -162,6 +162,14 @@ private struct Transcript2NSViewBridge: NSViewRepresentable {
         _ nsView: Transcript2ScrollView,
         coordinator: Transcript2Coordinator
     ) {
+        // Snapshot the visible-top row + sub-row offset BEFORE removing
+        // the frame-change observer (the table is still bound to its
+        // scroll view at this point — `rect(ofRow:)` and `visibleRect`
+        // both answer correctly). Hosts wire `onWillDetach` to persist
+        // the captured anchor; absent a wiring, snapshotting is a
+        // zero-cost no-op.
+        let captured = coordinator.captureVisibleAnchor()
+        coordinator.onWillDetach?(captured)
         NotificationCenter.default.removeObserver(coordinator)
     }
 }

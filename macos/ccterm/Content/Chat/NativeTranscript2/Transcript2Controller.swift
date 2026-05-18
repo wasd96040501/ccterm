@@ -56,7 +56,10 @@ final class Transcript2Controller {
         }
     }
 
-    /// Where to land scroll on first-screen load.
+    /// Where to land scroll when the next table-tile completes. Consumed
+    /// once via `consumePendingAnchor()` from `coordinator.onLayoutReady`,
+    /// which fires on every fresh `NSTableView` attach (cold load AND
+    /// view re-mount). Use `requestAnchor(_:)` to write.
     enum InitialAnchor: Sendable, Equatable {
         /// Default for chat: last block pinned to visual bottom.
         case bottom
@@ -65,6 +68,10 @@ final class Transcript2Controller {
         case top(id: UUID)
         /// Pin the block with `id` to the visual bottom.
         case bottomTo(id: UUID)
+        /// Restore a previously-captured visible position (visible-top
+        /// row + sub-row y-offset). Falls back to `.bottom` at consume
+        /// time if the block is no longer present.
+        case preserved(Transcript2Coordinator.CapturedAnchor)
     }
 
     /// Mirrored from the coordinator after every mutation so SwiftUI can
@@ -155,7 +162,7 @@ final class Transcript2Controller {
             self?.pendingUserBubbleSheet = UserBubbleSheetRequest(id: id, text: text)
         }
         coordinator.onLayoutReady = { [weak self] in
-            self?.consumePendingInitial()
+            self?.consumePendingAnchor()
         }
         coordinator.search.onStateChanged = { [weak self] in
             self?.refreshSearchState()
@@ -169,21 +176,21 @@ final class Transcript2Controller {
     /// `TaskLocal` state. `nonisolated` skips the executor hop.
     nonisolated deinit {}
 
-    /// Deferred scroll anchor when the coordinator's table isn't mounted
-    /// (or hasn't been tiled to a positive width) at `loadInitial` time.
-    /// Consumed by `consumePendingInitial`, which `coordinator.onLayoutReady`
-    /// invokes on the first 0→positive `layoutWidth` transition.
+    /// Scroll anchor waiting for the next table-tile completion. The
+    /// coordinator's `onLayoutReady` fires once per fresh `NSTableView`
+    /// attach (the `tableView.didSet` path resets `lastLayoutWidth` so
+    /// the 0→positive edge is re-crossed every remount), and consumes
+    /// this. Both cold-load (`loadInitial`'s no-width branch) and
+    /// view-mount (`ChatHistoryView.task → requestAnchor`) route through
+    /// this single field — last writer wins.
     ///
-    /// Blocks themselves are no longer cached here — they are inserted
-    /// into `coordinator.blocks` immediately even in the deferred path,
-    /// so subsequent `apply()` calls (e.g. live `.appended` events
+    /// Blocks themselves are not cached here — `loadInitial`'s deferred
+    /// branch inserts them into `coordinator.blocks` immediately so
+    /// subsequent `apply()` calls (e.g. live `.appended` events
     /// arriving on a session whose view isn't yet mounted) can resolve
     /// anchors correctly. Only the scroll/anchor intent has to wait for
     /// a real table.
-    private struct PendingInitial {
-        let anchor: InitialAnchor
-    }
-    private var pendingInitial: PendingInitial?
+    private var pendingAnchor: InitialAnchor?
 
     /// Late-bind a syntax engine. Pass-through to the coordinator. Safe
     /// to call repeatedly (idempotent on the same instance) and safe
@@ -351,12 +358,12 @@ final class Transcript2Controller {
                 changes.append(.insert(after: nil, blocks))
                 coordinator.apply(changes, scroll: .none)
             }
-            pendingInitial = PendingInitial(anchor: anchor)
+            pendingAnchor = anchor
             return
         }
         // Path reached the real-width branch — drop any stale pending so a
         // racing `onLayoutReady` after this point doesn't double-apply.
-        pendingInitial = nil
+        pendingAnchor = nil
 
         let slice = Self.sliceForViewport(
             blocks: blocks, anchor: anchor,
@@ -373,6 +380,13 @@ final class Transcript2Controller {
             phase2Side = .visualTop
         case .bottomTo(let id):
             phase1Scroll = .bottom(id: id)
+            phase2Side = .visualBottom
+        case .preserved:
+            // `.preserved` is a view-mount intent — cold-load callers
+            // (the bridge) never pass it. Treat as `.bottom` defensively
+            // if a future caller routes a captured anchor through
+            // `loadInitial` instead of `requestAnchor`.
+            phase1Scroll = .bottom(id: blocks[slice.viewportRange.upperBound - 1].id)
             phase2Side = .visualBottom
         }
 
@@ -444,16 +458,33 @@ final class Transcript2Controller {
 
     var blockIds: [UUID] { coordinator.blockIds }
 
-    /// Invoked by `coordinator.onLayoutReady` once the table tiles to a
-    /// positive width. Blocks are already in `coordinator.blocks` (the
-    /// `loadInitial` no-width branch pre-inserted them); this is purely
-    /// the deferred scroll-to-anchor step. No-op when nothing is pending
-    /// — `coordinator` may fire `onLayoutReady` on resize-time 0→positive
-    /// sequences unrelated to a deferred initial load.
-    private func consumePendingInitial() {
-        guard let pending = pendingInitial else { return }
-        pendingInitial = nil
-        scrollToInitialAnchor(pending.anchor)
+    /// Invoked by `coordinator.onLayoutReady` once a freshly-attached
+    /// table tiles to a positive width. Blocks are already in
+    /// `coordinator.blocks` (the bridge feeds them continuously); this
+    /// step purely lands the scroll position. No-op when nothing is
+    /// pending — `coordinator` may fire `onLayoutReady` on resize-time
+    /// 0→positive sequences unrelated to a pending anchor.
+    private func consumePendingAnchor() {
+        guard let anchor = pendingAnchor else { return }
+        pendingAnchor = nil
+        scrollToInitialAnchor(anchor)
+    }
+
+    /// Declare an anchor for the next time the table tiles. Last writer
+    /// wins. Cold load's `loadInitial` writes through this on its
+    /// no-width deferred path; view-mount hosts (`ChatHistoryView`) write
+    /// through it directly with either `.bottom` (no saved position) or
+    /// `.preserved(...)` (resume where the user left off).
+    func requestAnchor(_ anchor: InitialAnchor) {
+        pendingAnchor = anchor
+    }
+
+    /// Snapshot the topmost visible row + its sub-row y-offset. Returns
+    /// `nil` when the table isn't bound or no rows are visible. Hosts
+    /// persist the result into per-session state so the next mount can
+    /// pass it back as `.preserved`.
+    func captureVisibleAnchor() -> Transcript2Coordinator.CapturedAnchor? {
+        coordinator.captureVisibleAnchor()
     }
 
     /// Apply the deferred scroll-to-anchor. Resolves `.bottom` against the
@@ -461,29 +492,26 @@ final class Transcript2Controller {
     /// `loadInitial` payload — live `.appended` events arriving on a
     /// background session land here legitimately). For `.top(id:)` and
     /// `.bottomTo(id:)`, the anchor id is the original one supplied by
-    /// the caller.
+    /// the caller. `.preserved` restores the captured visible position;
+    /// if the anchor block was removed since capture, falls back to
+    /// `.bottom`.
     private func scrollToInitialAnchor(_ anchor: InitialAnchor) {
-        let scroll: ScrollState
         switch anchor {
         case .bottom:
             guard let lastId = coordinator.blockIds.last else { return }
-            scroll = .bottom(id: lastId)
+            coordinator.apply([], scroll: .bottom(id: lastId))
         case .top(let id):
-            scroll = .top(id: id)
+            coordinator.apply([], scroll: .top(id: id))
         case .bottomTo(let id):
-            scroll = .bottom(id: id)
+            coordinator.apply([], scroll: .bottom(id: id))
+        case .preserved(let captured):
+            if !coordinator.scrollToCapturedAnchor(captured) {
+                // Block is gone — degrade to bottom.
+                if let lastId = coordinator.blockIds.last {
+                    coordinator.apply([], scroll: .bottom(id: lastId))
+                }
+            }
         }
-        coordinator.apply([], scroll: scroll)
-    }
-
-    /// Scroll the transcript to its last block. Called by view-mount paths
-    /// that need to anchor a re-attached `NSTableView` to the conversation
-    /// tail — `coordinator.tableView`'s `didSet` runs `reloadData()`
-    /// automatically, but AppKit's default landing position after reload
-    /// is the top of the document, which reads as "lost the chat" for a
-    /// chat-style transcript.
-    func scrollToBottom() {
-        scrollToInitialAnchor(.bottom)
     }
 
     // MARK: - Slicing (private)
@@ -548,6 +576,13 @@ final class Transcript2Controller {
                 if height >= viewportHeight { break }
             }
             return Slice(viewportRange: first..<anchorIdx + 1)
+
+        case .preserved:
+            // Cold-load never receives `.preserved` (only view-mount does).
+            // Fall back to `.bottom` slicing if a future caller misroutes.
+            return sliceForViewport(
+                blocks: blocks, anchor: .bottom,
+                width: width, viewportHeight: viewportHeight)
         }
     }
 }

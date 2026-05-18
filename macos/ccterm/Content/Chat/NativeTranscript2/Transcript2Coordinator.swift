@@ -66,11 +66,25 @@ import AppKit
 final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     weak var tableView: NSTableView? {
         didSet {
-            // If `apply` was called before the table was attached, blocks
-            // already exist; the freshly-attached table starts at
-            // `numberOfRows = 0` until reloaded.
-            if let table = tableView, oldValue !== tableView, !blocks.isEmpty {
-                table.reloadData()
+            if let table = tableView, oldValue !== tableView {
+                // A new table attached. The previous mount left
+                // `lastLayoutWidth` at its terminal positive value; reset
+                // to the sentinel so the upcoming `tableFrameDidChange`
+                // crosses the 0→positive edge again and re-fires
+                // `onLayoutReady`. That callback is the controller's
+                // single hook for consuming `pendingAnchor` — both cold
+                // load and view re-mount route through it.
+                lastLayoutWidth = -1
+                // If `apply` was called before the table was attached,
+                // blocks already exist; the freshly-attached table starts
+                // at `numberOfRows = 0` until reloaded. The default
+                // landing position after `reloadData()` is the document
+                // top — `onLayoutReady → consumePendingAnchor` reanchors
+                // before the frame paints, so the user never sees the
+                // transient.
+                if !blocks.isEmpty {
+                    table.reloadData()
+                }
             }
         }
     }
@@ -81,13 +95,24 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
 
     /// Fires when `layoutWidth` first becomes > 0 — i.e. the table has
     /// been inserted into a scroll view and tiled. `Transcript2Controller`
-    /// hooks this to consume any `loadInitial` it had to defer because
+    /// hooks this to consume any pending anchor it had to defer because
     /// the table wasn't mounted yet (re-entry race: SwiftUI commits the
-    /// `NativeTranscript2View` *after* `.task` has already driven the
-    /// `.reset` mutation through the bridge into `loadInitial`). Fires at
-    /// most once per 0→positive transition; subsequent width changes
-    /// (live resize, etc.) don't re-fire.
+    /// `NativeTranscript2View` *after* `.task` has already declared an
+    /// anchor via `requestAnchor` / driven `.reset` through the bridge
+    /// into `loadInitial`). Re-fires on every fresh `NSTableView` attach
+    /// because `tableView.didSet` resets `lastLayoutWidth` to the
+    /// sentinel — so view re-mount, not just cold load, also gets a
+    /// chance to land its anchor.
     var onLayoutReady: (() -> Void)?
+
+    /// Fires from `NativeTranscript2View.dismantleNSView` with a snapshot
+    /// of the visible-top row + sub-row offset (or `nil` if nothing is
+    /// visible). `Session` wires this to persist the value into its
+    /// `lastVisibleAnchor` so the next mount can resume there. Stored
+    /// rather than driven through a delegate so callers can opt-in
+    /// independently — demos / previews that don't need scroll
+    /// persistence simply don't wire it.
+    var onWillDetach: ((CapturedAnchor?) -> Void)?
 
     /// Set by `Transcript2Controller` to forward chevron taps to the
     /// SwiftUI-owned sheet binding. The cell's mouseDown handler resolves
@@ -606,6 +631,56 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let target = max(-scrollView.contentInsets.top, raw)
         scrollView.contentView.scroll(
             to: NSPoint(x: scrollView.contentView.bounds.origin.x, y: target))
+    }
+
+    // MARK: - Visible-position capture / restore
+
+    /// A snapshot of the user's current scroll position, expressed as
+    /// (visible-top row, sub-row y-offset from the clip's top). Stable
+    /// across detach + new-table attach because the row id outlives the
+    /// `NSTableView` instance. `offsetFromClipTop` carries the sub-row
+    /// precision so a row that was scrolled halfway up the viewport
+    /// returns to the same half-up position.
+    struct CapturedAnchor: Sendable, Equatable {
+        let blockId: UUID
+        let offsetFromClipTop: CGFloat
+    }
+
+    /// Capture the topmost visible row + its y-offset. Returns `nil`
+    /// when there's no table bound or no rows visible — callers should
+    /// treat that as "nothing to remember" and fall back to a default
+    /// anchor (`.bottom`) on the next mount.
+    func captureVisibleAnchor() -> CapturedAnchor? {
+        guard let table = tableView,
+            let scrollView = table.enclosingScrollView,
+            !blocks.isEmpty
+        else { return nil }
+        let visible = table.rows(in: table.visibleRect)
+        guard visible.location != NSNotFound, visible.length > 0,
+            blocks.indices.contains(visible.location)
+        else { return nil }
+        let rect = table.rect(ofRow: visible.location)
+        let offset = rect.origin.y - scrollView.contentView.bounds.origin.y
+        return CapturedAnchor(
+            blockId: blocks[visible.location].id,
+            offsetFromClipTop: offset)
+    }
+
+    /// Restore a captured anchor. Returns `false` when the block is no
+    /// longer in `blocks` (e.g. the bridge removed it while the view
+    /// was unmounted) — caller is expected to resolve a fallback
+    /// (typically `.bottom`).
+    @discardableResult
+    func scrollToCapturedAnchor(_ anchor: CapturedAnchor) -> Bool {
+        guard let table = tableView,
+            let scrollView = table.enclosingScrollView,
+            let row = blocks.firstIndex(where: { $0.id == anchor.blockId })
+        else { return false }
+        let rect = table.rect(ofRow: row)
+        let target = rect.origin.y - anchor.offsetFromClipTop
+        scrollView.contentView.scroll(
+            to: NSPoint(x: scrollView.contentView.bounds.origin.x, y: target))
+        return true
     }
 
     // MARK: - Layout cache

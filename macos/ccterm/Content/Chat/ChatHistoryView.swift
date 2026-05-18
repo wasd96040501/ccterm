@@ -130,12 +130,20 @@ struct ChatHistoryView: View {
                     + "msgCount=\(s.messages.count) "
                     + "blockCount=\(s.controller.blockCount)")
             s.loadHistory()
-            // For re-entry (already loaded, blocks already populated by
-            // the continuous bridge), reload's default scroll position
-            // is the top; pin to the tail so the user lands where they
-            // left off. Cold loads still scroll to bottom via Phase A's
-            // `loadInitial(anchor: .bottom)`.
-            s.controller.scrollToBottom()
+            // Anchor decision is uniform across cold-load and re-entry:
+            // declare it now via `requestAnchor`, the coordinator's
+            // `onLayoutReady` consumes it after the freshly-attached
+            // table tiles (`tableView.didSet` resets `lastLayoutWidth`
+            // so the 0→positive edge re-fires on every remount). If the
+            // user has a captured position from a prior unmount, resume
+            // there; otherwise land at the conversation tail. On cold
+            // load, the bridge's subsequent `loadInitial` rewrites this
+            // to `.bottom` via its no-width deferred branch — which is
+            // the intended default for a session whose blocks are still
+            // being inserted.
+            let anchor: Transcript2Controller.InitialAnchor =
+                s.lastVisibleAnchor.map { .preserved($0) } ?? .bottom
+            s.controller.requestAnchor(anchor)
             // `.onChange(of: isRunning)` only fires on transitions, and
             // its `initial: true` invocation ran above with `session`
             // still nil (no-op via `session?`). If running ended while

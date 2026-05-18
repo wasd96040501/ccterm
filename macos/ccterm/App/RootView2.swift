@@ -26,6 +26,10 @@ struct RootView2: View {
     /// (`.padding(.horizontal, 20)` below) so neither layout reads
     /// "flush" against the sidebar divider or the window's right edge.
     fileprivate static let detailHorizontalInset: CGFloat = 20
+    /// Breathing room above and below the compose card so it doesn't
+    /// butt against the window's top chrome or the bottom edge of the
+    /// detail pane at the smallest allowed window height.
+    fileprivate static let detailVerticalInset: CGFloat = 20
 
     @State private var selectedSessionId: String? = SidebarView2.newSessionTag
     @State private var draftSessionId: String?
@@ -332,6 +336,7 @@ struct RootView2: View {
                     }
                 )
                 .padding(.horizontal, Self.detailHorizontalInset)
+                .padding(.vertical, Self.detailVerticalInset)
                 .transition(.opacity)
             } else {
                 VStack(spacing: 0) {

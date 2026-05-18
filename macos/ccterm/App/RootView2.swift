@@ -10,14 +10,26 @@ struct RootView2: View {
     /// of the scrim consistent regardless of window height.
     fileprivate static let topFadeScrimHeight: CGFloat = 80
     /// Width clamp for the resting input bar in chat mode — keeps the
-    /// bar visually recessed from the transcript column. Compose mode
-    /// renders its own (wider) bar embedded inside the configurator
-    /// card, so this constant applies to the chat-mode resting bar
-    /// only.
-    fileprivate static let composeMaxWidth: CGFloat = 544
+    /// bar visually recessed from the transcript column (which caps at
+    /// `BlockStyle.maxLayoutWidth = 780`). Also aligned with
+    /// `NewSessionConfigurator.minWidth` so the chat-mode bar's max
+    /// touches the compose card's min, giving the two modes a shared
+    /// upper / lower bound and a consistent "no-clip" handoff as the
+    /// window resizes. Compose mode renders its own bar embedded
+    /// inside the configurator card.
+    fileprivate static let composeMaxWidth: CGFloat = 640
     /// Bottom inset of the input bar in chat mode (matches the previous
     /// `.padding(.bottom, 36)`).
     fileprivate static let chatBottomInset: CGFloat = 36
+    /// Breathing room between the compose card / input bar and the
+    /// detail pane's left/right edges. Matched on the chat-mode bar
+    /// (`.padding(.horizontal, 20)` below) so neither layout reads
+    /// "flush" against the sidebar divider or the window's right edge.
+    fileprivate static let detailHorizontalInset: CGFloat = 20
+    /// Breathing room above and below the compose card so it doesn't
+    /// butt against the window's top chrome or the bottom edge of the
+    /// detail pane at the smallest allowed window height.
+    fileprivate static let detailVerticalInset: CGFloat = 20
 
     @State private var selectedSessionId: String? = SidebarView2.newSessionTag
     @State private var draftSessionId: String?
@@ -61,10 +73,33 @@ struct RootView2: View {
             SidebarView2(selection: $selectedSessionId)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 350)
         } detail: {
+            // `.frame(minWidth:)` on the detail *content* only constrains the
+            // content itself — NavigationSplitView keeps allocating whatever
+            // width it likes to the detail column. The only knob that actually
+            // pins the column's own minimum (and, with the app scene's
+            // `.windowResizability(.contentSize)`, propagates up to the
+            // window's minimum size) is `navigationSplitViewColumnWidth`.
+            //
+            // The min/ideal here = the compose card's own min/ideal
+            // (640 / 960 from `NewSessionConfigurator`) + the
+            // `detailHorizontalInset` on each side. The extra 40pt
+            // keeps the card from going flush against the sidebar
+            // divider or the window's right edge even at the smallest
+            // allowed window width.
             detailContent
-                .frame(minWidth: 400)
+                .navigationSplitViewColumnWidth(min: 680, ideal: 1000)
         }
-        .frame(minWidth: 800, minHeight: 480)
+        // The compose card lives in `ChatHistoryView`'s `.overlay { }`
+        // — overlays match the underlying view's size, so the card's
+        // intrinsic height (620) + `detailVerticalInset × 2` (40) is
+        // NOT propagated up to the window content size. Pin the
+        // SplitView's own `minHeight` to that total here so the
+        // scene's `.windowResizability(.contentSize)` sees the right
+        // floor and stops shrinking before the card touches an edge.
+        .frame(
+            minHeight: NewSessionConfigurator<EmptyView>.height
+                + Self.detailVerticalInset * 2
+        )
         .alert(
             "Failed to launch CLI",
             isPresented: Binding(
@@ -310,6 +345,8 @@ struct RootView2: View {
                         )
                     }
                 )
+                .padding(.horizontal, Self.detailHorizontalInset)
+                .padding(.vertical, Self.detailVerticalInset)
                 .transition(.opacity)
             } else {
                 VStack(spacing: 0) {
@@ -326,7 +363,7 @@ struct RootView2: View {
                         minWidth: BlockStyle.minLayoutWidth,
                         maxWidth: Self.composeMaxWidth
                     )
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, Self.detailHorizontalInset)
                     .padding(.bottom, Self.chatBottomInset)
                 }
             }

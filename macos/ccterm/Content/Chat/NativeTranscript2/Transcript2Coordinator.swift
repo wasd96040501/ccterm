@@ -151,7 +151,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// macOS 26 SDK workaround — `@MainActor` deinit routes through
     /// `swift_task_deinitOnExecutorImpl`, which aborts when tearing
     /// down `highlightStorage`'s `TaskLocal` state. `nonisolated`
-    /// skips the executor hop. See `SessionHandle2.deinit`.
+    /// skips the executor hop. See `Session.deinit`.
     nonisolated deinit {}
 
     /// Late-bind a syntax engine. Hosts that read `\.syntaxEngine` from

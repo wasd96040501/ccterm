@@ -23,7 +23,7 @@ protocol CLIClient: AnyObject {
     /// from `lastKnownSessionId` on the underlying SDK session.
     var lastKnownSessionId: String? { get set }
 
-    // MARK: Callbacks (assigned by SessionHandle2.attachCallbacks)
+    // MARK: Callbacks (assigned by Session.attachCallbacks)
 
     var onMessage: ((Message2) -> Void)? { get set }
     var onPermissionRequest: ((PermissionRequest, @escaping (PermissionDecision) -> Void) -> Void)?
@@ -63,7 +63,7 @@ protocol CLIClient: AnyObject {
 }
 
 /// Builds a `CLIClient` from a session configuration. Injected into
-/// `SessionHandle2` so bootstrap can construct the client without
+/// `Session` so bootstrap can construct the client without
 /// hard-wiring the `AgentSDK.Session` type. Production default lives on
 /// `AgentSDKCLIClient`; tests pass a closure that returns a
 /// `FakeCLIClient`.

@@ -1,6 +1,6 @@
 import Foundation
 
-/// Per-mutation imperative signal. `SessionHandle2` synchronously emits one
+/// Per-mutation imperative signal. `SessionRuntime` synchronously emits one
 /// `MessagesChange` at every site that writes `messages`, describing **what
 /// just happened** (not "what the current state is").
 ///

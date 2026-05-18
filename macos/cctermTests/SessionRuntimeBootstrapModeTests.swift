@@ -3,7 +3,7 @@ import XCTest
 
 @testable import ccterm
 
-/// Covers `SessionHandle2.shouldResumeBootstrap(for:)` and the closely-tied
+/// Covers `SessionRuntime.shouldResumeBootstrap(for:)` and the closely-tied
 /// `makeAgentConfig()` wiring that decides whether the next CLI launch
 /// uses `--session-id` (fresh) or `--resume` (resume).
 ///
@@ -22,7 +22,7 @@ import XCTest
 /// rule is what actually drives the SDK config that bootstrap hands to
 /// AgentSDK.
 @MainActor
-final class SessionHandle2BootstrapModeTests: XCTestCase {
+final class SessionRuntimeBootstrapModeTests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -33,7 +33,7 @@ final class SessionHandle2BootstrapModeTests: XCTestCase {
     /// No durable record → there is no CLI JSONL to resume from. Must use
     /// fresh mode.
     func testNoRecordIsFreshMode() {
-        XCTAssertFalse(SessionHandle2.shouldResumeBootstrap(for: nil))
+        XCTAssertFalse(SessionRuntime.shouldResumeBootstrap(for: nil))
     }
 
     /// Reproduces the worktree-fresh-session state at the exact moment the
@@ -53,7 +53,7 @@ final class SessionHandle2BootstrapModeTests: XCTestCase {
             worktreeBranch: "adoring-benz-b7353f"
         )
         XCTAssertFalse(
-            SessionHandle2.shouldResumeBootstrap(for: record),
+            SessionRuntime.shouldResumeBootstrap(for: record),
             "pending records have no CLI JSONL — must launch fresh, never resume")
     }
 
@@ -68,7 +68,7 @@ final class SessionHandle2BootstrapModeTests: XCTestCase {
             status: .created
         )
         XCTAssertTrue(
-            SessionHandle2.shouldResumeBootstrap(for: record),
+            SessionRuntime.shouldResumeBootstrap(for: record),
             "created records have a CLI JSONL — must resume, not start fresh")
     }
 
@@ -80,7 +80,7 @@ final class SessionHandle2BootstrapModeTests: XCTestCase {
             sessionId: UUID().uuidString,
             status: .archived
         )
-        XCTAssertFalse(SessionHandle2.shouldResumeBootstrap(for: record))
+        XCTAssertFalse(SessionRuntime.shouldResumeBootstrap(for: record))
     }
 
     // MARK: - Wired into makeAgentConfig
@@ -89,16 +89,19 @@ final class SessionHandle2BootstrapModeTests: XCTestCase {
     /// This is the path a brand-new non-worktree session walks the first
     /// time through bootstrap.
     func testMakeAgentConfigFreshWhenNoRecord() {
-        let handle = SessionHandle2(
+        let runtime = SessionRuntime(
             sessionId: UUID().uuidString,
             repository: InMemorySessionRepository())
-        handle.setCwd("/tmp/fresh")
+        // `setCwd` lives exclusively on `SessionDraft` now — tests poke
+        // `config` directly to simulate the post-promotion state where
+        // the runtime has already received a draft's cwd.
+        runtime.config.cwd = "/tmp/fresh"
 
-        let config = handle.makeAgentConfig(customCommand: nil)
+        let config = runtime.makeAgentConfig(customCommand: nil)
 
         XCTAssertEqual(
-            config.sessionId, handle.sessionId,
-            "fresh launches set --session-id to the handle id")
+            config.sessionId, runtime.sessionId,
+            "fresh launches set --session-id to the runtime's session id")
         XCTAssertNil(
             config.resume,
             "fresh launches must not set --resume")
@@ -129,9 +132,9 @@ final class SessionHandle2BootstrapModeTests: XCTestCase {
                 status: .pending,
                 worktreeBranch: "adoring-benz-b7353f"
             ))
-        let handle = SessionHandle2(sessionId: sid, repository: repo)
+        let runtime = SessionRuntime(sessionId: sid, repository: repo)
 
-        let config = handle.makeAgentConfig(customCommand: nil)
+        let config = runtime.makeAgentConfig(customCommand: nil)
 
         XCTAssertEqual(
             config.sessionId, sid,
@@ -154,9 +157,9 @@ final class SessionHandle2BootstrapModeTests: XCTestCase {
                 cwd: "/tmp/existing",
                 status: .created
             ))
-        let handle = SessionHandle2(sessionId: sid, repository: repo)
+        let runtime = SessionRuntime(sessionId: sid, repository: repo)
 
-        let config = handle.makeAgentConfig(customCommand: nil)
+        let config = runtime.makeAgentConfig(customCommand: nil)
 
         XCTAssertNil(
             config.sessionId,

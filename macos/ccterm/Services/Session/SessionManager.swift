@@ -1,11 +1,10 @@
 import Foundation
 import Observation
 
-/// `SessionHandle2` registry (v2 stack). Currently carries only the minimal
-/// responsibility for "read-only history browsing": lazily create and cache
-/// a `SessionHandle2` per `sessionId`. Does not handle launch / stop /
-/// archive / pin — those still live on the legacy `SessionService` and v2
-/// takes them over incrementally.
+/// `Session` registry. Lazily allocates and caches a `Session` façade
+/// per `sessionId`. The façade internally toggles between
+/// `.draft(SessionDraft)` and `.active(SessionRuntime)` — the manager
+/// is one layer above and doesn't care which phase the session is in.
 ///
 /// Holds its own `SessionRepository` instance: in production it's
 /// `CoreDataSessionRepository` (sharing `CoreDataStack.shared` with the
@@ -13,7 +12,7 @@ import Observation
 /// (DEBUG only) to avoid touching the real CoreData store.
 @Observable
 @MainActor
-final class SessionManager2 {
+final class SessionManager {
 
     /// Side effect performed when a worktree-backed session moves between
     /// archive and active state. Production wires
@@ -24,16 +23,21 @@ final class SessionManager2 {
     typealias WorktreeSideEffect = @Sendable (SessionRecord) -> Void
 
     @ObservationIgnored private let repository: any SessionRepository
+    /// CLI client factory injected at the manager level. Production wires
+    /// `AgentSDKCLIClient.defaultFactory`; tests wire a `FakeCLIClient`
+    /// factory once on the manager and every `Session` constructed by it
+    /// inherits the injection — no per-session rewiring in test setups.
+    @ObservationIgnored private let cliClientFactory: CLIClientFactory
     @ObservationIgnored private let worktreeArchive: WorktreeSideEffect
     @ObservationIgnored private let worktreeRestore: WorktreeSideEffect
-    /// Cache of per-`sessionId` handles. **Observation-tracked** so views
-    /// reading runtime-only state via `existingHandle(_:)` (sidebar rows
-    /// querying `isRunning` / `hasUnread`) get re-rendered when a handle
-    /// is first allocated. With `@ObservationIgnored`, the cold-path —
-    /// row body's first render sees `handle == nil`, never subscribes,
-    /// stays stale when the handle later flips `isRunning` — silently
-    /// breaks the indicator.
-    private var handles: [String: SessionHandle2] = [:]
+    /// Cache of per-`sessionId` `Session` façades. **Observation-tracked**
+    /// so views reading runtime-only state via `existingSession(_:)`
+    /// (sidebar rows querying `isRunning` / `hasUnread`) get re-rendered
+    /// when a session is first allocated. With `@ObservationIgnored`, the
+    /// cold path — row body's first render sees `session == nil`, never
+    /// subscribes, stays stale when the session later flips `isRunning`
+    /// — silently breaks the indicator.
+    private var sessions: [String: Session] = [:]
 
     /// Non-archived session records, descending by `lastActiveAt`. Sidebar
     /// v2 observes this array directly. Populated once at init and
@@ -62,10 +66,12 @@ final class SessionManager2 {
 
     init(
         repository: any SessionRepository = CoreDataSessionRepository(),
-        worktreeArchive: @escaping WorktreeSideEffect = SessionManager2.defaultWorktreeArchive,
-        worktreeRestore: @escaping WorktreeSideEffect = SessionManager2.defaultWorktreeRestore
+        cliClientFactory: @escaping CLIClientFactory = AgentSDKCLIClient.defaultFactory,
+        worktreeArchive: @escaping WorktreeSideEffect = SessionManager.defaultWorktreeArchive,
+        worktreeRestore: @escaping WorktreeSideEffect = SessionManager.defaultWorktreeRestore
     ) {
         self.repository = repository
+        self.cliClientFactory = cliClientFactory
         self.worktreeArchive = worktreeArchive
         self.worktreeRestore = worktreeRestore
         self.records = repository.findAll()
@@ -79,9 +85,9 @@ final class SessionManager2 {
     /// (`___BUG_IN_CLIENT_OF_LIBMALLOC_POINTER_BEING_FREED_WAS_NOT_ALLOCATED`).
     /// `nonisolated deinit` skips the executor-hop path. Symptom on
     /// CI's macos-26 runner: hosted XCTest crashed with SIGABRT when a
-    /// test method's last `SessionManager2` reference dropped at
+    /// test method's last `SessionManager` reference dropped at
     /// function return; local Darwin 25 didn't reproduce. Same fix
-    /// `SessionHandle2`, `InMemorySessionRepository`, and
+    /// `SessionRuntime`, `InMemorySessionRepository`, and
     /// `CoreDataSessionRepository` already use.
     nonisolated deinit {}
 
@@ -89,61 +95,88 @@ final class SessionManager2 {
         lastLaunchFailure = nil
     }
 
-    /// Get a `SessionHandle2` by `sessionId`. Returns nil when the db has
-    /// no matching record. First call creates and caches; subsequent calls
-    /// return the same instance (stable identity). Read-only browsing —
-    /// does not start a subprocess.
-    func session(_ sessionId: String) -> SessionHandle2? {
-        if let handle = handles[sessionId] { return handle }
-        guard repository.find(sessionId) != nil else { return nil }
-        let handle = SessionHandle2(sessionId: sessionId, repository: repository)
-        wireHandleCallbacks(handle)
-        handles[sessionId] = handle
-        return handle
+    /// Get a `Session` for an existing record. Returns nil when the db
+    /// has no matching record. First call creates and caches; subsequent
+    /// calls return the same instance (stable identity). Read-only
+    /// browsing — does not start a subprocess.
+    func session(_ sessionId: String) -> Session? {
+        if let session = sessions[sessionId] { return session }
+        guard let record = repository.find(sessionId) else { return nil }
+        let session = Session(
+            record: record,
+            repository: repository,
+            cliClientFactory: cliClientFactory,
+            onPromoted: { [weak self] _ in self?.refreshRecords() }
+        )
+        wireSessionCallbacks(session)
+        sessions[sessionId] = session
+        return session
     }
 
-    /// Non-creating lookup. Returns the cached handle if it exists,
+    /// Non-creating lookup. Returns the cached session if it exists,
     /// nil otherwise — never allocates. Sidebar rows use this to read
     /// runtime-only state (`isRunning` / `hasUnread`) without forcing
-    /// every record in the history list to spin up a handle.
-    func existingHandle(_ sessionId: String) -> SessionHandle2? {
-        handles[sessionId]
+    /// every record in the history list to spin up a session.
+    func existingSession(_ sessionId: String) -> Session? {
+        sessions[sessionId]
     }
 
-    /// Prepare a handle for a NewSession draft. The db must have **no**
-    /// matching record (identity comes from a fresh UI-generated UUID).
-    /// Differs from `session(_:)`: no repository read, pure in-memory
-    /// construction; the eventual `activate()` / `send(_:)` triggers
-    /// `ensureStarted`'s fresh path which writes the db.
-    func prepareDraft(_ sessionId: String) -> SessionHandle2 {
-        if let handle = handles[sessionId] { return handle }
-        let handle = SessionHandle2(sessionId: sessionId, repository: repository)
-        wireHandleCallbacks(handle)
-        handles[sessionId] = handle
-        return handle
+    /// Prepare a `Session` in `.draft` phase for a NewSession card. No
+    /// repository read; the db row appears the first time the user
+    /// sends a message and the underlying `SessionDraft` is promoted to
+    /// a `SessionRuntime`. Idempotent get-or-create — re-entering New
+    /// Session preserves the in-flight draft state.
+    func prepareDraftSession(_ sessionId: String) -> Session {
+        if let session = sessions[sessionId] { return session }
+        let session: Session
+        if let record = repository.find(sessionId) {
+            // A record already exists for this id (e.g. UI navigated to
+            // an existing session via the draft path) — start the
+            // façade in `.active` phase instead of `.draft`.
+            session = Session(
+                record: record,
+                repository: repository,
+                cliClientFactory: cliClientFactory,
+                onPromoted: { [weak self] _ in self?.refreshRecords() })
+        } else {
+            session = Session(
+                draftSessionId: sessionId,
+                repository: repository,
+                cliClientFactory: cliClientFactory,
+                onPromoted: { [weak self] _ in self?.refreshRecords() })
+        }
+        wireSessionCallbacks(session)
+        sessions[sessionId] = session
+        return session
     }
 
-    /// Wire the handle's manager-facing callbacks. Called once per handle
-    /// on creation:
+    /// Wire the session's manager-facing callbacks. Called once per
+    /// `Session` on creation.
     ///
     /// - `onLaunchFailure` → `lastLaunchFailure` so RootView2's `.alert`
     ///   surfaces CLI launch errors.
-    /// - `onRecordPersisted` → `refreshRecords()` so the sidebar picks up
-    ///   sessions whose db row is saved asynchronously (worktree-
-    ///   provisioning path; see comment on the handle's property).
-    private func wireHandleCallbacks(_ handle: SessionHandle2) {
-        let sid = handle.sessionId
-        handle.onLaunchFailure = { [weak self] reason in
-            // `reason` is the raw description the handle already produced;
+    /// - `onRecordPersisted` → `refreshRecords()` so the sidebar picks
+    ///   up sessions whose db row is saved asynchronously (worktree-
+    ///   provisioning collision-recovery patch fires this from inside
+    ///   the worktree-provision continuation, well after the initial
+    ///   `onPromoted` callback).
+    ///
+    /// The promotion-time `refreshRecords()` hook is injected through
+    /// `Session.init(onPromoted:)` (and fires exactly once, at the
+    /// draft → active phase flip).
+    private func wireSessionCallbacks(_ session: Session) {
+        let sid = session.sessionId
+        session.onLaunchFailure = { [weak self] reason in
+            // `reason` is the raw description the runtime already produced;
             // no localization or field reshuffle here.
             self?.lastLaunchFailure = LaunchFailure(
                 sessionId: sid,
                 message: reason
             )
         }
-        handle.onRecordPersisted = { [weak self] in
+        session.onRecordPersisted = { [weak self] in
             appLog(
-                .info, "SessionManager2",
+                .info, "SessionManager",
                 "onRecordPersisted fired sid=\(sid.prefix(8)) — refreshing records")
             self?.refreshRecords()
         }
@@ -177,8 +210,8 @@ final class SessionManager2 {
         // `repository.archive` is the only way to flip status; we need
         // the live record's worktree fields to drive the side effect.
         let snapshot = repository.find(sessionId)
-        handles[sessionId]?.stop()
-        handles.removeValue(forKey: sessionId)
+        sessions[sessionId]?.stop()
+        sessions.removeValue(forKey: sessionId)
         repository.archive(sessionId)
         refreshRecords()
         refreshArchivedRecords()
@@ -204,12 +237,12 @@ final class SessionManager2 {
     /// recoverable error.
     func unarchive(_ sessionId: String) {
         let snapshot = repository.find(sessionId)
-        // Defensive: any stale handle from before archive should be
+        // Defensive: any stale session from before archive should be
         // dropped so the next view-mount creates a fresh one against
         // the now-flipped record. In practice `archive` already does
         // this; the duplicate clear costs nothing.
-        handles[sessionId]?.stop()
-        handles.removeValue(forKey: sessionId)
+        sessions[sessionId]?.stop()
+        sessions.removeValue(forKey: sessionId)
         repository.unarchive(sessionId)
         refreshRecords()
         refreshArchivedRecords()
@@ -221,7 +254,7 @@ final class SessionManager2 {
 
 // MARK: - Default worktree side effects
 
-extension SessionManager2 {
+extension SessionManager {
 
     /// Background-dispatched `Worktree.remove` for the production
     /// `worktreeArchive` injection. `git worktree remove` typically
@@ -255,7 +288,7 @@ extension SessionManager2 {
     /// that the worktree will be torn down.
     ///
     /// `internal` rather than `private` so the integration test
-    /// (`SessionManager2ArchiveWorktreeTests`) can drive the same git
+    /// (`SessionManagerArchiveWorktreeTests`) can drive the same git
     /// commands the production background path runs, on the test
     /// thread, and assert disk state synchronously.
     ///
@@ -269,7 +302,7 @@ extension SessionManager2 {
             let origin = record.originPath
         else {
             appLog(
-                .warning, "SessionManager2",
+                .warning, "SessionManager",
                 "worktree archive skipped — missing cwd/originPath sid=\(record.sessionId.prefix(8))")
             return
         }
@@ -280,7 +313,7 @@ extension SessionManager2 {
             try wt.remove()
         } catch {
             appLog(
-                .warning, "SessionManager2",
+                .warning, "SessionManager",
                 "worktree.remove failed sid=\(record.sessionId.prefix(8)) err=\(error.localizedDescription)")
         }
     }
@@ -299,14 +332,14 @@ extension SessionManager2 {
             let branch = record.worktreeBranch
         else {
             appLog(
-                .warning, "SessionManager2",
+                .warning, "SessionManager",
                 "worktree unarchive skipped — missing cwd/origin/branch sid=\(record.sessionId.prefix(8))")
             return
         }
         let baseRepo = Worktree.resolveBaseRepo(origin)
         if Worktree.restore(at: cwd, baseRepo: baseRepo, branch: branch) == nil {
             appLog(
-                .warning, "SessionManager2",
+                .warning, "SessionManager",
                 "Worktree.restore failed sid=\(record.sessionId.prefix(8)) branch=\(branch)")
         }
     }

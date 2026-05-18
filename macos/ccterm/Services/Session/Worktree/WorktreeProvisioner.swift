@@ -6,7 +6,7 @@ import Foundation
 ///
 /// Stateless: the handle owns its own `cwd` / `worktreeBranch` /
 /// `status` writes — this type is just the I/O path. Pulled out of
-/// `SessionHandle2+Start.swift` so the wrapping logic (nil origin →
+/// `Session+Start.swift` so the wrapping logic (nil origin →
 /// notGitRepository, creator error → .failure) is testable without
 /// firing a real git subprocess.
 ///
@@ -14,7 +14,7 @@ import Foundation
 /// rather than `Task.detached`. The old code observed that
 /// detached-task isolation inheritance still pinned the main actor for
 /// the full duration of the git shell-outs — GCD has no such ambiguity.
-/// See the original comment in `SessionHandle2.ensureStarted`.
+/// See the original comment in `Session.ensureStarted`.
 enum WorktreeProvisioner {
 
     /// Underlying `git worktree add` call signature. Production wires

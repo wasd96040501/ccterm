@@ -5,7 +5,7 @@ import XCTest
 
 /// Pure-logic tests for `MessageEntryBlockBuilder`. Each test builds a
 /// throwaway `MessageEntry` and asserts on the resulting `[Block]` shape.
-/// No filesystem, no SessionHandle2, no MainActor — these can run in
+/// No filesystem, no SessionRuntime, no MainActor — these can run in
 /// fully parallel processes.
 final class MessageEntryBlockBuilderTests: XCTestCase {
 

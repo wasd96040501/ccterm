@@ -3,7 +3,7 @@ import Foundation
 
 // MARK: - JSONL path resolution
 
-extension SessionHandle2 {
+extension SessionRuntime {
 
     /// History JSONL URL for this session. Thin forwarder over
     /// `HistoryLoader.locate`, paired with the handle's own
@@ -17,7 +17,7 @@ extension SessionHandle2 {
 
 // MARK: - loadHistory
 
-extension SessionHandle2 {
+extension SessionRuntime {
 
     /// Two-phase history load:
     /// 1. **Phase A**: `JSONLTailReader` does a byte-level read of the last
@@ -69,7 +69,7 @@ extension SessionHandle2 {
 
         let resolved = url ?? historyJSONLURL
         appLog(
-            .info, "SessionHandle2",
+            .info, "SessionRuntime",
             "loadHistory begin \(sessionId) url=\(resolved?.path ?? "(none)") tailTarget=\(tailTarget)")
 
         Task.detached {
@@ -81,7 +81,7 @@ extension SessionHandle2 {
                 await MainActor.run { [weak self] in
                     self?.historyLoadState = .failed(err.localizedDescription)
                     appLog(
-                        .warning, "SessionHandle2",
+                        .warning, "SessionRuntime",
                         "loadHistory FAILED(tail) \(self?.sessionId ?? "?") err=\(err.localizedDescription)")
                 }
                 return
@@ -98,7 +98,7 @@ extension SessionHandle2 {
                     self.historyLoadState = .tailLoaded(count: count)
                     let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
                     appLog(
-                        .info, "SessionHandle2",
+                        .info, "SessionRuntime",
                         "loadHistory tail ingest done \(self.sessionId) count=\(count) ingest=\(ms)ms")
                     return self.messages
                 }
@@ -118,7 +118,7 @@ extension SessionHandle2 {
                     self.onMessagesChange?(
                         .reset(snapshot, precomputedBlocks: precomputed))
                     appLog(
-                        .info, "SessionHandle2",
+                        .info, "SessionRuntime",
                         "loadHistory tail reset fired \(self.sessionId) "
                             + "count=\(snapshot.count) precompute=\(precomputeMs)ms")
                 }
@@ -141,7 +141,7 @@ extension SessionHandle2 {
                 // visible. Just warn.
                 await MainActor.run { [weak self] in
                     appLog(
-                        .warning, "SessionHandle2",
+                        .warning, "SessionRuntime",
                         "loadHistory PREFIX_FAIL \(self?.sessionId ?? "?") err=\(err.localizedDescription) — keeping tailLoaded"
                     )
                 }
@@ -212,7 +212,7 @@ extension SessionHandle2 {
                     }
                     let ms = Int((CFAbsoluteTimeGetCurrent() - t0) * 1000)
                     appLog(
-                        .info, "SessionHandle2",
+                        .info, "SessionRuntime",
                         "loadHistory full done \(self.sessionId) prefix=\(snapshot.prefixEntries.count) "
                             + "tailReresolved=\(snapshot.updatedEntries.count) "
                             + "precompute=\(precomputeMs)ms merge=\(ms)ms")
@@ -236,8 +236,7 @@ extension SessionHandle2 {
         // handle on an in-memory SessionRepository, running receive, and
         // extracting the resulting entries.
         let repo = CoreDataSessionRepository(coreDataStack: CoreDataStack(inMemory: true))
-        let tmp = SessionHandle2(sessionId: "prefix-builder-\(UUID().uuidString)", repository: repo)
-        tmp.skipBootstrapForTesting = true
+        let tmp = SessionRuntime(sessionId: "prefix-builder-\(UUID().uuidString)", repository: repo)
         for m in messages { tmp.receive(m, mode: .replay) }
         return tmp.messages
     }

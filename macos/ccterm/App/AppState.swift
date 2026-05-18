@@ -4,12 +4,12 @@ import SwiftUI
 @Observable
 @MainActor
 final class AppState {
-    let sessionManager2: SessionManager2
+    let sessionManager: SessionManager
     let syntaxEngine = SyntaxHighlightEngine()
     let recentProjects = RecentProjectsStore()
 
     init() {
-        self.sessionManager2 = SessionManager2()
+        self.sessionManager = SessionManager()
 
         // Eagerly load the syntax highlight engine in the background so the
         // first `highlightBatch` call doesn't pay the JSCore / highlight.js

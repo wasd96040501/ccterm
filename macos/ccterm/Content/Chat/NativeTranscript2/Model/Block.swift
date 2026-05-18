@@ -97,7 +97,7 @@ struct ToolGroupBlock: Equatable, Sendable {
     /// Title shown when the group is `.running` **and folded** — the
     /// progressive fragment of the *last* tool in the group (e.g.
     /// `"Reading foo.swift"`). Mirrors
-    /// `GroupEntry.activeTitle` on the SessionHandle2 side.
+    /// `GroupEntry.activeTitle` on the Session side.
     let activeTitle: String
     /// Title shown when the group is `.running` **and expanded** — the
     /// aggregated progressive phrase (e.g.

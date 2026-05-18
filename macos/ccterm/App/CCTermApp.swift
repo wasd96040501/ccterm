@@ -15,7 +15,7 @@ struct CCTermApp: App {
     var body: some Scene {
         Window("ccterm", id: "main") {
             RootView2()
-                .environment(appState.sessionManager2)
+                .environment(appState.sessionManager)
                 .environment(appState.recentProjects)
                 .environment(\.syntaxEngine, appState.syntaxEngine)
                 .environment(searchBus)
@@ -61,7 +61,7 @@ struct CCTermApp: App {
         // this does not block init. Subsequent launches hit the
         // on-disk cache and short-circuit before fetching. Model
         // loading is intentionally NOT tied to session CLI bootstrap;
-        // see `SessionHandle2+Start.bootstrap` for the matching note.
+        // see `Session+Start.bootstrap` for the matching note.
         MainActor.assumeIsolated {
             ModelStore.shared.prefetchIfNeeded()
         }

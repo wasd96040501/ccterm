@@ -3,7 +3,7 @@ import Foundation
 
 // MARK: - Lifecycle (public)
 
-extension SessionHandle2 {
+extension SessionRuntime {
 
     /// Explicitly activate the session: make sure the CLI subprocess is up
     /// and has finished initialize (slashCommands / availableModels /
@@ -31,14 +31,14 @@ extension SessionHandle2 {
         default:
             break
         }
-        appLog(.info, "SessionHandle2", "stop() close agent \(sessionId)")
+        appLog(.info, "SessionRuntime", "stop() close agent \(sessionId)")
         cliClient?.close()
     }
 }
 
 // MARK: - Messaging (public)
 
-extension SessionHandle2 {
+extension SessionRuntime {
 
     /// Send a text message. See `enqueueAndSend(_:)` for semantics.
     /// `planContent` passes through to the CLI's `plan_content` field
@@ -74,20 +74,10 @@ extension SessionHandle2 {
     /// echoes it back verbatim under `--replay-user-messages`) so the match
     /// is exact.
     ///
-    /// Title generation is orthogonal — the caller (the fresh + first-text
-    /// flow) calls `generateTitle(from:)` explicitly.
+    /// Title-seeding on first-message is owned by the `Session` façade's
+    /// draft-to-runtime promotion path (the runtime receives an already-
+    /// titled draft); inside the runtime, `send` does not touch `title`.
     private func enqueueAndSend(_ input: LocalUserInput) {
-        // Fresh + first text → seed the persisted title from the user's
-        // message. `persistConfiguration` (called downstream by
-        // `ensureStarted`) reads `self.title` when writing the record, so
-        // setting it here is enough; no separate db write needed.
-        if !hasRecord, title.isEmpty, let firstText = input.text {
-            let derived = Self.deriveTitleFromFirstMessage(firstText)
-            if !derived.isEmpty {
-                title = derived
-            }
-        }
-
         let single = SingleEntry(
             id: UUID(),
             payload: .localUser(input),
@@ -97,7 +87,7 @@ extension SessionHandle2 {
         messages.append(.single(single))
         let entry = messages.last!
         appLog(
-            .info, "SessionHandle2",
+            .info, "SessionRuntime",
             "[v2-send] enqueue sid=\(sessionId.prefix(8)) entryId=\(single.id.uuidString.prefix(8)) "
                 + "status=\(status) hasRecord=\(hasRecord) cliClient=\(cliClient != nil) "
                 + "msgCount=\(messages.count) onChange=\(onMessagesChange != nil)")
@@ -117,12 +107,12 @@ extension SessionHandle2 {
 
         if let session = cliClient {
             appLog(
-                .info, "SessionHandle2",
+                .info, "SessionRuntime",
                 "[v2-send] write-immediate sid=\(sessionId.prefix(8)) entryId=\(single.id.uuidString.prefix(8))")
             writeUserEntryToCLI(single, session: session)
         } else {
             appLog(
-                .info, "SessionHandle2",
+                .info, "SessionRuntime",
                 "[v2-send] defer-flush sid=\(sessionId.prefix(8)) entryId=\(single.id.uuidString.prefix(8)) status=\(status)"
             )
         }
@@ -133,7 +123,7 @@ extension SessionHandle2 {
 
 // MARK: - Title generation (public)
 
-extension SessionHandle2 {
+extension SessionRuntime {
 
     /// Sole entry point for title generation. Orthogonal to `activate()` —
     /// the "fresh + empty title" policy lives in the caller (ChatRouter);
@@ -166,31 +156,76 @@ extension SessionHandle2 {
         isGeneratingTitle = false
         title = result.titleI18n
         repository.updateTitle(sessionId, title: result.titleI18n)
-        appLog(.info, "SessionHandle2", "title-gen done \(sessionId) title=\(result.titleI18n)")
+        appLog(.info, "SessionRuntime", "title-gen done \(sessionId) title=\(result.titleI18n)")
     }
+}
 
-    /// Normalize a user message into a single-line sidebar title:
-    /// collapse newlines into spaces, trim surrounding whitespace, and
-    /// truncate to `maxLength` characters (appending `…` when cut). Result
-    /// may be empty when the input is whitespace-only — callers should
-    /// guard against that.
-    static func deriveTitleFromFirstMessage(_ text: String, maxLength: Int = 80) -> String {
-        let oneLine =
-            text
-            .replacingOccurrences(of: "\r\n", with: " ")
-            .replacingOccurrences(of: "\n", with: " ")
-            .replacingOccurrences(of: "\r", with: " ")
-        let trimmed = oneLine.trimmingCharacters(in: .whitespaces)
-        if trimmed.count > maxLength {
-            return trimmed.prefix(maxLength) + "…"
+// MARK: - Promotion factory
+
+extension SessionRuntime {
+
+    /// Construct a runtime promoted from a `SessionDraft`. The draft's
+    /// `config` / `title` / presence flags are copied verbatim; if
+    /// `initialInput` is non-nil it is queued as a `.queued`
+    /// `.localUser` entry and `pendingTurnCount` is bumped so
+    /// `isRunning` flips immediately.
+    ///
+    /// **Does NOT kick off bootstrap.** The caller (`Session.send`) must:
+    /// 1. Assign the runtime's `onMessagesChange` / `onLaunchFailure` /
+    ///    `onRecordPersisted` subscribers BEFORE firing any event,
+    /// 2. Fire `onMessagesChange?(.appended(queuedEntry))` if non-nil,
+    /// 3. Swap its phase from `.draft` to `.active(runtime)`,
+    /// 4. Call `runtime.ensureStarted()` to begin the CLI launch.
+    ///
+    /// Splitting construction from bootstrap is what lets the manager-
+    /// registered `onRecordPersisted` survive the eager fresh-save:
+    /// `ensureStarted` fires that callback synchronously, so the sink
+    /// must already be attached by the time we kick it off.
+    static func fromDraft(
+        _ draft: SessionDraft,
+        cliClientFactory: @escaping CLIClientFactory,
+        initialInput: LocalUserInput? = nil
+    ) -> (runtime: SessionRuntime, queuedEntry: MessageEntry?) {
+        let runtime = SessionRuntime(
+            sessionId: draft.sessionId,
+            repository: draft.repository,
+            cliClientFactory: cliClientFactory
+        )
+        runtime.config = draft.config
+        runtime.title = draft.title
+        runtime.isFocused = draft.isFocused
+        runtime.hasUnread = draft.hasUnread
+
+        if let text = initialInput?.text, runtime.title.isEmpty {
+            let derived = deriveTitleFromFirstMessage(text)
+            if !derived.isEmpty {
+                runtime.title = derived
+            }
         }
-        return trimmed
+
+        var queuedEntry: MessageEntry? = nil
+        if let initialInput {
+            let single = SingleEntry(
+                id: UUID(),
+                payload: .localUser(initialInput),
+                delivery: .queued,
+                toolResults: [:]
+            )
+            runtime.messages.append(.single(single))
+            queuedEntry = runtime.messages.last
+            // Bump synchronously so `isRunning` is true the moment the
+            // façade flips phase. Matches the pre-split behavior where
+            // `enqueueAndSend` bumped before any side effect.
+            runtime.pendingTurnCount += 1
+        }
+
+        return (runtime, queuedEntry)
     }
 }
 
 // MARK: - Internal bootstrap
 
-extension SessionHandle2 {
+extension SessionRuntime {
 
     /// Idempotent startup entry. In `.notStarted` / `.stopped`, assembles
     /// configuration, provisions a worktree (fresh + isWorktree), persists
@@ -200,12 +235,12 @@ extension SessionHandle2 {
     func ensureStarted() {
         guard status == .notStarted || status == .stopped else {
             appLog(
-                .info, "SessionHandle2",
+                .info, "SessionRuntime",
                 "[v2-send] ensureStarted SKIP sid=\(sessionId.prefix(8)) status=\(status)")
             return
         }
         appLog(
-            .info, "SessionHandle2",
+            .info, "SessionRuntime",
             "[v2-send] ensureStarted begin sid=\(sessionId.prefix(8)) "
                 + "fresh=\(repository.find(sessionId) == nil) cwd=\(cwd ?? "(nil)") "
                 + "isWorktree=\(isWorktree)")
@@ -273,7 +308,7 @@ extension SessionHandle2 {
                     // with a different name than we proposed — rare.
                     if wt.name != proposedName {
                         appLog(
-                            .info, "SessionHandle2",
+                            .info, "SessionRuntime",
                             "worktree name collision recovered: proposed=\(proposedName) actual=\(wt.name)"
                         )
                         self.cwd = wt.path
@@ -291,7 +326,7 @@ extension SessionHandle2 {
                     self.continueStartup()
                 case .failure(let error):
                     appLog(
-                        .error, "SessionHandle2",
+                        .error, "SessionRuntime",
                         "worktree provision FAILED \(self.sessionId) err=\(error)")
                     let desc =
                         (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
@@ -321,10 +356,8 @@ extension SessionHandle2 {
     fileprivate func continueStartup() {
         persistConfiguration()
 
-        if skipBootstrapForTesting { return }
-
         // UserDefaults read kept at the call site, not inside
-        // `makeAgentConfig`. The tests in `SessionHandle2BootstrapModeTests`
+        // `makeAgentConfig`. The tests in `SessionRuntimeBootstrapModeTests`
         // exercise `makeAgentConfig` directly; under hosted XCTest on CI
         // (macos-26 runner, no full app launch), `UserDefaults.standard`
         // reads can fault — see `cctermTests/CLAUDE.md` "No UserDefaults"
@@ -345,7 +378,7 @@ extension SessionHandle2 {
     func flushBootstrapBacklog() {
         guard let session = cliClient else {
             appLog(
-                .warning, "SessionHandle2",
+                .warning, "SessionRuntime",
                 "[v2-send] flushBacklog SKIP cliClient=nil sid=\(sessionId.prefix(8))")
             return
         }
@@ -356,13 +389,13 @@ extension SessionHandle2 {
                 case .localUser = single.payload
             else { continue }
             appLog(
-                .info, "SessionHandle2",
+                .info, "SessionRuntime",
                 "[v2-send] flushBacklog write sid=\(sessionId.prefix(8)) entryId=\(single.id.uuidString.prefix(8))")
             writeUserEntryToCLI(single, session: session)
             flushed += 1
         }
         appLog(
-            .info, "SessionHandle2",
+            .info, "SessionRuntime",
             "[v2-send] flushBacklog done sid=\(sessionId.prefix(8)) flushed=\(flushed) msgCount=\(messages.count)")
     }
 
@@ -384,7 +417,7 @@ extension SessionHandle2 {
 
 // MARK: - Private impl
 
-extension SessionHandle2 {
+extension SessionRuntime {
 
     // MARK: Title generation
 
@@ -415,20 +448,11 @@ extension SessionHandle2 {
 
     fileprivate func persistConfiguration() {
         if !hasRecord {
-            let record = SessionRecord(
-                sessionId: sessionId,
-                title: title,
-                cwd: cwd,
-                isWorktree: isWorktree,
-                originPath: originPath,
-                status: .pending,
-                extra: currentExtra(),
-                worktreeBranch: worktreeBranch
-            )
+            let record = config.toSessionRecord(sessionId: sessionId, title: title)
             repository.save(record)
             hasRecord = true
             appLog(
-                .info, "SessionHandle2",
+                .info, "SessionRuntime",
                 "persistConfiguration fresh save sid=\(sessionId.prefix(8)) "
                     + "isWorktree=\(isWorktree) cwd=\(cwd ?? "(nil)") "
                     + "onRecordPersisted=\(onRecordPersisted != nil)")
@@ -449,18 +473,8 @@ extension SessionHandle2 {
                     model: model,
                     effort: effort?.rawValue
                 ))
-            appLog(.info, "SessionHandle2", "persistConfiguration resume overwrite \(sessionId)")
+            appLog(.info, "SessionRuntime", "persistConfiguration resume overwrite \(sessionId)")
         }
-    }
-
-    fileprivate func currentExtra() -> SessionExtra {
-        SessionExtra(
-            pluginDirs: pluginDirectories.isEmpty ? nil : pluginDirectories,
-            permissionMode: permissionMode.rawValue,
-            addDirs: additionalDirectories.isEmpty ? nil : additionalDirectories,
-            model: model,
-            effort: effort?.rawValue
-        )
     }
 
     /// Build the SDK config for the next CLI launch. Consults the durable
@@ -474,28 +488,13 @@ extension SessionHandle2 {
     /// `UserDefaults.standard["customCLICommand"]` in `continueStartup`;
     /// tests pass `nil` and assert on the produced config without tripping
     /// hosted-XCTest UserDefaults faults on CI.
-    ///
-    /// `internal` rather than `fileprivate` so
-    /// `SessionHandle2BootstrapModeTests` can assert directly on the
-    /// produced `SessionConfiguration` without standing up AgentSDK or a
-    /// real CLI subprocess.
     func makeAgentConfig(customCommand: String?) -> SessionConfiguration {
         let useResume = Self.shouldResumeBootstrap(for: repository.find(sessionId))
-        let wd = URL(fileURLWithPath: cwd ?? originPath ?? FileManager.default.currentDirectoryPath)
-        var config = SessionConfiguration(
-            workingDirectory: wd,
-            model: model,
-            permissionMode: permissionMode.toSDK(),
-            sessionId: useResume ? nil : sessionId,
-            resume: useResume ? sessionId : nil,
-            effort: effort,
-            addDirs: additionalDirectories,
-            plugins: pluginDirectories,
-            customCommand: customCommand,
-            allowDangerouslySkipPermissions: true
+        return config.toAgentSDKConfig(
+            sessionId: sessionId,
+            resume: useResume,
+            customCommand: customCommand
         )
-
-        return config
     }
 
     /// Whether the next CLI launch should resume an existing conversation
@@ -525,7 +524,7 @@ extension SessionHandle2 {
         // here keeps the function self-contained.)
         let wasFresh = !Self.shouldResumeBootstrap(for: repository.find(sessionId))
         appLog(
-            .info, "SessionHandle2",
+            .info, "SessionRuntime",
             "[v2-send] bootstrap enter sid=\(sessionId.prefix(8)) fresh=\(wasFresh) "
                 + "resume=\(configuration.resume ?? "(nil)") wd=\(configuration.workingDirectory.path)")
         let session: any CLIClient = cliClientFactory(configuration)
@@ -541,7 +540,7 @@ extension SessionHandle2 {
             return
         }
         appLog(
-            .info, "SessionHandle2",
+            .info, "SessionRuntime",
             "[v2-send] bootstrap start-ok sid=\(sessionId.prefix(8)) status-before-attach=\(status)")
 
         // Only expose `cliClient` once stdin is actually ready, so
@@ -576,13 +575,13 @@ extension SessionHandle2 {
         // .stopped); short-circuit here.
         guard status == .starting else {
             appLog(
-                .info, "SessionHandle2",
+                .info, "SessionRuntime",
                 "[v2-send] bootstrap aborted-during-init sid=\(sessionId.prefix(8)) status=\(status)")
             return
         }
 
         appLog(
-            .info, "SessionHandle2",
+            .info, "SessionRuntime",
             "[v2-send] bootstrap initialize-done sid=\(sessionId.prefix(8)) "
                 + "respNil=\(initResp == nil) status=\(status)")
 
@@ -602,7 +601,7 @@ extension SessionHandle2 {
         }
         flushDeferredFastMode()
         flushBootstrapBacklog()
-        appLog(.info, "SessionHandle2", "[v2-send] bootstrap done sid=\(sessionId.prefix(8)) fresh=\(wasFresh)")
+        appLog(.info, "SessionRuntime", "[v2-send] bootstrap done sid=\(sessionId.prefix(8)) fresh=\(wasFresh)")
     }
 
     /// Single sink for every CLI launch-time failure: sync `Process.run()`
@@ -611,7 +610,7 @@ extension SessionHandle2 {
     /// Side effects ordered for "make it visible to UI first":
     /// status / pendingTurnCount flip first, cliClient is detached,
     /// queued entries are failed, repo error is written, then
-    /// onLaunchFailure notifies the subscriber (SessionManager2) to show
+    /// onLaunchFailure notifies the subscriber (SessionManager) to show
     /// an alert.
     ///
     /// `reason` is surfaced directly — **no localization**.
@@ -619,7 +618,7 @@ extension SessionHandle2 {
     /// `process exited (code N): <stderr>` preserves the CLI's raw stderr.
     fileprivate func failLaunch(reason: String) {
         appLog(
-            .error, "SessionHandle2",
+            .error, "SessionRuntime",
             "[v2-send] failLaunch sid=\(sessionId.prefix(8)) reason=\(reason)")
         self.termination = reason
         self.status = .stopped
@@ -649,7 +648,7 @@ extension SessionHandle2 {
             case .system: kind = "system.other"
             default: kind = "other"
             }
-            appLog(.info, "SessionHandle2", "[v2-send] onMessage sid=\(sidPrefix) kind=\(kind)")
+            appLog(.info, "SessionRuntime", "[v2-send] onMessage sid=\(sidPrefix) kind=\(kind)")
             Task { @MainActor [weak self] in
                 self?.receive(msg, mode: .live)
             }
@@ -658,7 +657,7 @@ extension SessionHandle2 {
         session.onPermissionRequest = { [weak self] request, completion in
             Task { @MainActor [weak self] in
                 guard let self else {
-                    completion(.deny(reason: "SessionHandle2 deallocated"))
+                    completion(.deny(reason: "SessionRuntime deallocated"))
                     return
                 }
                 self.enqueuePermission(request, completion: completion)
@@ -712,7 +711,7 @@ extension SessionHandle2 {
             trimmed.map { "process exited (code \(code)): \($0)" }
             ?? "process exited (code \(code))"
         appLog(
-            .warning, "SessionHandle2",
+            .warning, "SessionRuntime",
             "[v2-send] processExit sid=\(sessionId.prefix(8)) code=\(code) stderr=\(trimmed ?? "(empty)")")
 
         // Died during bootstrap init wait → unblock the init continuation,
@@ -760,12 +759,12 @@ extension SessionHandle2 {
     fileprivate func writeUserEntryToCLI(_ entry: SingleEntry, session: any CLIClient) {
         guard case .localUser(let input) = entry.payload else {
             appLog(
-                .warning, "SessionHandle2",
+                .warning, "SessionRuntime",
                 "[v2-send] writeCLI SKIP not-localUser entryId=\(entry.id.uuidString.prefix(8))")
             return
         }
         appLog(
-            .info, "SessionHandle2",
+            .info, "SessionRuntime",
             "[v2-send] writeCLI sid=\(sessionId.prefix(8)) entryId=\(entry.id.uuidString.prefix(8)) "
                 + "textLen=\(input.text?.count ?? 0) hasImage=\(input.image != nil)")
         var extra: [String: Any] = ["uuid": entry.id.uuidString.lowercased()]

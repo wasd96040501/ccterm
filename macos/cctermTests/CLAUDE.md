@@ -23,7 +23,7 @@ run sequentially.
 
 This is fast — but only if no test can observe another's side effects. Two
 tests writing to `~/.claude/projects/foo.jsonl` race; two tests sharing a
-`SessionManager2` race; two tests calling `CoreDataStack.shared` race.
+`SessionManager` race; two tests calling `CoreDataStack.shared` race.
 
 ### Required practices
 
@@ -31,7 +31,7 @@ tests writing to `~/.claude/projects/foo.jsonl` race; two tests sharing a
    `InMemorySessionRepository` (or a fresh `CoreDataStack(inMemory: true)`
    if you need the real CoreData layer) inside `setUp` /
    `setUpWithError`. Never reach for `CoreDataStack.shared`,
-   `SessionManager2.shared`, or any other process-wide singleton.
+   `SessionManager.shared`, or any other process-wide singleton.
 
 2. **Unique on-disk artifacts.** When a test must hit the filesystem
    (e.g. a JSONL file for `loadHistory(overrideURL:)`), write it under
@@ -74,7 +74,7 @@ final class MyBridgeTests: XCTestCase {
 
     func testSomething() throws {
         let repo = InMemorySessionRepository()
-        let handle = SessionHandle2(sessionId: UUID().uuidString, repository: repo)
+        let handle = SessionRuntime(sessionId: UUID().uuidString, repository: repo)
         // ... drive handle, assert on its state ...
     }
 }
@@ -95,9 +95,9 @@ handle.loadHistory(overrideURL: url)
 | Scenario | Approach |
 |---|---|
 | Block builder produces correct ids for a parsed entry | Call the builder, assert on its output |
-| `SessionHandle2.loadHistory` fires `.reset` with prebuilt blocks | Wire up a closure on the handle, assert it fires with the expected payload |
+| `SessionRuntime.loadHistory` fires `.reset` with prebuilt blocks | Wire up a closure on the handle, assert it fires with the expected payload |
 | Bridge applies `.reset` → controller's blockIds match | Construct the bridge + controller, feed a `MessagesChange`, assert controller state |
-| Send-button enable state under various input | Drive `SessionHandle2.send` and inspect `isRunning` / `status` directly |
+| Send-button enable state under various input | Drive `SessionRuntime.send` and inspect `isRunning` / `status` directly |
 | Sidebar selection routes to the right handle | Hold the manager, simulate the selection change in code, assert the resulting handle |
 | "What does this view look like today?" — visual review of a SwiftUI view | [Snapshot tests](#snapshot-tests) |
 

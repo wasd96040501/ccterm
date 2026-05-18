@@ -5,10 +5,10 @@ import Foundation
 /// tail / prefix byte range, decode JSON lines into `Message2`. All
 /// `nonisolated static` — no actor isolation, no handle state.
 ///
-/// Split out of `SessionHandle2+History.swift` so the file-system and
+/// Split out of `Session+History.swift` so the file-system and
 /// parsing paths can be exercised in isolation. The two-phase
 /// orchestration (`loadHistory()`) that consumes these results still
-/// lives on `SessionHandle2` because it's tightly coupled to handle
+/// lives on `Session` because it's tightly coupled to handle
 /// state (`messages`, `historyLoadState`, `onMessagesChange`).
 enum HistoryLoader {
 

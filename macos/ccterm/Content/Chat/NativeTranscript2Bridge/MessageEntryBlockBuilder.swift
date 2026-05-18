@@ -198,7 +198,7 @@ enum MessageEntryBlockBuilder {
         }
         guard !children.isEmpty else { return nil }
         // Reuse the three title states already implemented on
-        // SessionHandle2's `GroupEntry`: `activeTitle` (last child
+        // Session's `GroupEntry`: `activeTitle` (last child
         // progressive), `expandedActiveTitle` (aggregated progressive),
         // `completedTitle` (aggregated past tense). Bridge just packages —
         // it doesn't re-implement aggregation.

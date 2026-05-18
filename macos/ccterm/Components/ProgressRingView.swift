@@ -3,7 +3,7 @@ import SwiftUI
 /// Circular ring progress indicator. Used by the input bar's context
 /// usage button — shows what fraction of the model's context window is
 /// already consumed, color stepping from accent → orange → red as the
-/// session nears the cap. Re-introduced after SessionHandle2 v2 migration
+/// session nears the cap. Re-introduced after Session v2 migration
 /// dropped the legacy chat stack.
 struct ProgressRingView: View {
     var percent: Double

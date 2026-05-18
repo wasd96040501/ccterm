@@ -11,7 +11,7 @@ import XCTest
 /// - successful creator → `.success`
 /// - thrown creator → `.failure` with the same error
 /// - collision-retry shape: creator can return a `Worktree` whose `name`
-///   differs from `preferredName`, and the caller (SessionHandle2)
+///   differs from `preferredName`, and the caller (SessionRuntime)
 ///   detects that by comparing `wt.name` against the proposed name
 final class WorktreeProvisionerTests: XCTestCase {
 
@@ -162,7 +162,7 @@ final class WorktreeProvisionerTests: XCTestCase {
         // Production: `Worktree.create` may pick a fresh name when the
         // preferred one collides on the branch ref. The provisioner is
         // transparent — it just returns whatever the creator built.
-        // The caller (SessionHandle2) then compares `wt.name` to its
+        // The caller (SessionRuntime) then compares `wt.name` to its
         // pre-computed `proposedName` to detect the mismatch.
         let outcome = await WorktreeProvisioner.provision(
             origin: "/repo",

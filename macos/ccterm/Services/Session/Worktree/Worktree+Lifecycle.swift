@@ -44,7 +44,7 @@ extension Worktree {
 
         // Initial name collisions are vanishingly rare (266M space); 5 retries.
         // First attempt uses `preferredName` when supplied so the caller
-        // (SessionHandle2's eager-persist path) can pre-compute the worktree
+        // (Session's eager-persist path) can pre-compute the worktree
         // directory + branch and write a complete db row before this
         // function ever runs. Collision retries fall back to fresh
         // `generateName()` calls.

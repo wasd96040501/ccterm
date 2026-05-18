@@ -14,7 +14,7 @@ import XCTest
 ///
 /// The handle is seeded directly via its `internal(set)` fields plus
 /// the public setters — no production-code seam. `InputBarChrome` is
-/// private to RootView2 and depends on `SessionManager2` from the
+/// private to RootView2 and depends on `SessionManager` from the
 /// environment + a `.task`-driven `prepareDraft`; neither fires
 /// reliably offscreen, so this test composes the two visible parts
 /// (`InputBarView2` and `InputBarSessionChrome`) in the same VStack
@@ -27,23 +27,23 @@ final class InputBarSnapshotTests: XCTestCase {
     }
 
     func testIdleStateSnapshot() throws {
-        let handle = Self.makeHandle(running: false, contextWindowTokens: 0, contextUsedTokens: 0)
-        capture(handle: handle, name: "InputBar-Idle", height: 140)
+        let session = Self.makeSession(running: false, contextWindowTokens: 0, contextUsedTokens: 0)
+        capture(session: session, name: "InputBar-Idle", height: 140)
     }
 
     func testRunningWithContextSnapshot() throws {
-        let handle = Self.makeHandle(
+        let session = Self.makeSession(
             running: true,
             contextWindowTokens: 200_000,
             contextUsedTokens: 142_000)
-        capture(handle: handle, name: "InputBar-Running", height: 140)
+        capture(session: session, name: "InputBar-Running", height: 140)
     }
 
     // MARK: - Helpers
 
-    private func capture(handle: SessionHandle2, name: String, height: CGFloat) {
+    private func capture(session: ccterm.Session, name: String, height: CGFloat) {
         let size = CGSize(width: 600, height: height)
-        let view = InputBarFixture(handle: handle)
+        let view = InputBarFixture(session: session)
             .frame(width: size.width, height: size.height)
             .background(Color(nsColor: .windowBackgroundColor))
 
@@ -58,24 +58,24 @@ final class InputBarSnapshotTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(image.size.width, size.width - 1)
     }
 
-    private static func makeHandle(
+    private static func makeSession(
         running: Bool,
         contextWindowTokens: Int,
         contextUsedTokens: Int
-    ) -> SessionHandle2 {
+    ) -> ccterm.Session {
         let repo = InMemorySessionRepository()
-        let handle = SessionHandle2(
+        let runtime = SessionRuntime(
             sessionId: UUID().uuidString, repository: repo)
-        handle.setPermissionMode(.auto)
-        handle.setModel("default")
-        handle.setEffort(.xhigh)
-        handle.availableModels = Self.mockModels
-        handle.contextWindowTokens = contextWindowTokens
-        handle.contextUsedTokens = contextUsedTokens
+        runtime.setPermissionMode(.auto)
+        runtime.setModel("default")
+        runtime.setEffort(.xhigh)
+        runtime.availableModels = Self.mockModels
+        runtime.contextWindowTokens = contextWindowTokens
+        runtime.contextUsedTokens = contextUsedTokens
         if running {
-            handle.pendingTurnCount = 1
+            runtime.pendingTurnCount = 1
         }
-        return handle
+        return ccterm.Session(runtime: runtime)
     }
 
     /// Hand-rolled `[ModelInfo]` mirroring what a current CLI's
@@ -116,17 +116,17 @@ final class InputBarSnapshotTests: XCTestCase {
 /// `.task` / environment plumbing the test can't satisfy. Keeps the
 /// production `barSpacing` so the snapshot reflects real geometry.
 private struct InputBarFixture: View {
-    let handle: SessionHandle2
+    let session: ccterm.Session
 
     var body: some View {
         VStack(alignment: .leading, spacing: InputBarSessionChrome.barSpacing) {
             InputBarView2(
                 onSubmit: { _ in },
                 onStop: {},
-                isRunning: handle.isRunning,
+                isRunning: session.isRunning,
                 submitEnabled: true
             )
-            InputBarSessionChrome(handle: handle)
+            InputBarSessionChrome(session: session)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)

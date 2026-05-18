@@ -3,7 +3,7 @@ import Foundation
 
 // MARK: - ReceiveMode
 
-extension SessionHandle2 {
+extension SessionRuntime {
 
     /// live = real-time CLI push; replay = JSONL history playback.
     /// Only difference: replay does not advance lifecycle and does not set hasUnread.
@@ -12,7 +12,7 @@ extension SessionHandle2 {
 
 // MARK: - receive
 
-extension SessionHandle2 {
+extension SessionRuntime {
 
     /// Single ingest entry point. Consumes one Message2 and updates the handle:
     /// - Synchronous side effects (usage, contextWindow, cwd, slashCommands, permissionMode, lifecycle)
@@ -40,7 +40,7 @@ extension SessionHandle2 {
             case .skip: actDesc = "skip"
             }
             appLog(
-                .info, "SessionHandle2",
+                .info, "SessionRuntime",
                 "[v2-send] receive sid=\(sessionId.prefix(8)) mode=live action=\(actDesc) status=\(status)")
         }
         // Each mutation helper returns the MessagesChange it produced (or nil), so this
@@ -66,7 +66,7 @@ extension SessionHandle2 {
 
 // MARK: - Dispatch
 
-extension SessionHandle2 {
+extension SessionRuntime {
 
     fileprivate enum Action {
         case merge(toolUseId: String, payload: ToolResultPayload)
@@ -103,7 +103,7 @@ extension SessionHandle2 {
             let echoId = UUID(uuidString: raw)
         else {
             appLog(
-                .info, "SessionHandle2",
+                .info, "SessionRuntime",
                 "[v2-send] matchQueued no-uuid echo.uuid=\(echo.uuid ?? "(nil)")")
             return nil
         }
@@ -120,7 +120,7 @@ extension SessionHandle2 {
                 return s.id.uuidString.prefix(8) + ""
             }
             appLog(
-                .warning, "SessionHandle2",
+                .warning, "SessionRuntime",
                 "[v2-send] matchQueued MISS echoUuid=\(raw.prefix(8)) queued=\(queued)")
         }
         return hit
@@ -129,7 +129,7 @@ extension SessionHandle2 {
 
 // MARK: - Timeline writes
 
-extension SessionHandle2 {
+extension SessionRuntime {
 
     fileprivate func appendToTimeline(_ message: Message2, mode: ReceiveMode) -> MessagesChange {
         let single = SingleEntry(id: UUID(), payload: .remote(message), delivery: nil, toolResults: [:])
@@ -200,7 +200,7 @@ extension SessionHandle2 {
 
 // MARK: - Effect application
 
-extension SessionHandle2 {
+extension SessionRuntime {
 
     fileprivate func noteUsage(_ usage: MessageUsage?) {
         guard let usage else { return }
@@ -216,7 +216,7 @@ extension SessionHandle2 {
         }
         if mode == .live {
             appLog(
-                .info, "SessionHandle2",
+                .info, "SessionRuntime",
                 "[v2-send] finishTurn sid=\(sessionId.prefix(8)) status-before=\(status) pendingTurnCount=\(pendingTurnCount)"
             )
             // turn end -- each .result corresponds to one turn previously +1'd by send().
@@ -238,7 +238,7 @@ extension SessionHandle2 {
         }
         if mode == .live {
             appLog(
-                .info, "SessionHandle2",
+                .info, "SessionRuntime",
                 "[v2-send] adopt-init sid=\(sessionId.prefix(8)) status-before=\(status) cwd=\(info.cwd ?? "(nil)")")
         }
         if mode == .live, case .starting = status {

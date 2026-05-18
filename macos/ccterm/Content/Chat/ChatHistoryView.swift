@@ -5,11 +5,11 @@ enum ChatHistoryRenderCase: Equatable {
     case error(String)
     /// Any non-failed state (`.notLoaded / .loadingTail / .tailLoaded / .loaded`)
     /// renders `NativeTranscript2View`. The bridge syncs content via
-    /// `handle.onMessagesChange`. No ProgressView — Phase A is typically
+    /// `session.onMessagesChange`. No ProgressView — Phase A is typically
     /// < 50 ms, and a flashed spinner reads worse than a brief blank.
     case transcript
 
-    static func classify(_ state: SessionHandle2.HistoryLoadState) -> ChatHistoryRenderCase {
+    static func classify(_ state: SessionRuntime.HistoryLoadState) -> ChatHistoryRenderCase {
         switch state {
         case .failed(let reason): return .error(reason)
         case .notLoaded, .loadingTail, .tailLoaded, .loaded: return .transcript
@@ -18,10 +18,10 @@ enum ChatHistoryRenderCase: Equatable {
 }
 
 /// Read-only history browser. Pure SwiftUI, no ViewModel: pulls
-/// `SessionManager2` from the environment, lazily acquires a `SessionHandle2`,
+/// `SessionManager` from the environment, lazily acquires a `Session`,
 /// and kicks `loadHistory()`.
 ///
-/// Consumes `SessionHandle2.onMessagesChange` — a synchronous sink. Each
+/// Consumes `Session.onMessagesChange` — a synchronous sink. Each
 /// `messages` write pushes one `MessagesChange`, which `Transcript2EntryBridge`
 /// translates into `Transcript2Controller.apply / loadInitial` calls.
 ///
@@ -49,9 +49,9 @@ enum ChatHistoryRenderCase: Equatable {
 ///   new session's first frame briefly renders the old session's content.
 struct ChatHistoryView: View {
     let sessionId: String
-    @Environment(SessionManager2.self) private var manager
+    @Environment(SessionManager.self) private var manager
     @Environment(TranscriptSearchBus.self) private var searchBus
-    @State private var handle: SessionHandle2?
+    @State private var session: Session?
     @State private var controller = Transcript2Controller()
     @State private var bridge: Transcript2EntryBridge?
     @State private var searchQuery: String = ""
@@ -59,8 +59,8 @@ struct ChatHistoryView: View {
 
     var body: some View {
         Group {
-            if let handle {
-                switch ChatHistoryRenderCase.classify(handle.historyLoadState) {
+            if let session {
+                switch ChatHistoryRenderCase.classify(session.historyLoadState) {
                 case .error(let reason):
                     ContentUnavailableView(
                         "Failed to load history",
@@ -102,35 +102,37 @@ struct ChatHistoryView: View {
         .onChange(of: searchBus.focusRequestCounter) { _, _ in
             isSearchFocused = true
         }
-        // `handle?.isRunning` is `@Observable`, so this fires
+        // `session?.isRunning` is `@Observable`, so this fires
         // whenever the session's turn count crosses 0. The pill is
         // the controller-managed sentinel row at the transcript's
         // tail — keep the view side strictly read-only against the
-        // handle and let the controller own block-level mutation.
-        // Also reacts to the initial nil → handle binding so a
+        // session and let the controller own block-level mutation.
+        // Also reacts to the initial nil → session binding so a
         // re-entered running session lights the pill immediately.
-        .onChange(of: handle?.isRunning ?? false, initial: true) { _, new in
+        .onChange(of: session?.isRunning ?? false, initial: true) { _, new in
             controller.setLoading(new)
         }
         .task(id: sessionId) {
-            // Use `prepareDraft` so a draft session (no record yet) still gets a
-            // handle and mounts `NativeTranscript2View` — this keeps the NSView
-            // identity stable across Start, so the chrome overlay's morph animation
-            // is visible proof that the transcript didn't rebuild. `prepareDraft`
-            // is idempotent get-or-create for existing-record session ids too.
-            let h = manager.prepareDraft(sessionId)
-            handle = h
+            // Use `prepareDraftSession` so a draft session (no record yet) still
+            // gets a Session façade and mounts `NativeTranscript2View` — this
+            // keeps the NSView identity stable across Start, so the chrome
+            // overlay's morph animation is visible proof that the transcript
+            // didn't rebuild. `prepareDraftSession` is idempotent get-or-create
+            // for existing-record session ids too (returns the same façade,
+            // possibly in `.active` phase).
+            let s = manager.prepareDraftSession(sessionId)
+            session = s
             // Bind the sink before calling loadHistory. The `.loaded` branch
             // synchronously emits `.reset`; reversed order loses the first frame.
             let b = Transcript2EntryBridge(controller: controller)
-            b.attach(to: h)
+            b.attach(to: s)
             bridge = b
             appLog(
                 .info, "ChatHistoryView",
                 "[history] task-inject session=\(sessionId.prefix(8))… "
-                    + "loadState=\(String(describing: h.historyLoadState)) "
-                    + "msgCount=\(h.messages.count)")
-            h.loadHistory()
+                    + "loadState=\(String(describing: s.historyLoadState)) "
+                    + "msgCount=\(s.messages.count)")
+            s.loadHistory()
         }
     }
 }

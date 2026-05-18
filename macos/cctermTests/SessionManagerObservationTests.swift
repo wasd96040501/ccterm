@@ -3,42 +3,42 @@ import XCTest
 
 @testable import ccterm
 
-/// `SessionManager2.handles` must be observation-tracked so SwiftUI views
-/// that read it via `existingHandle(_:)` get re-rendered when a handle is
+/// `SessionManager.handles` must be observation-tracked so SwiftUI views
+/// that read it via `existingSession(_:)` get re-rendered when a handle is
 /// later allocated.
 ///
 /// Regression target: a sidebar row's body reads
-/// `manager.existingHandle(sessionId)` to drive the per-row running /
+/// `manager.existingSession(sessionId)` to drive the per-row running /
 /// unread indicator. The first render of a cold-start row sees no cached
-/// handle (the user hasn't clicked the session yet), so `existingHandle`
+/// handle (the user hasn't clicked the session yet), so `existingSession`
 /// returns nil. If `handles` is `@ObservationIgnored`, that read never
 /// subscribes to the dict — and when the user later clicks the session
-/// and `prepareDraft(_:)` inserts a handle, no re-render fires. The row
+/// and `prepareDraftSession(_:)` inserts a handle, no re-render fires. The row
 /// continues to display "no handle" indefinitely, so the trailing
 /// running-pill never appears even when `pendingTurnCount > 0`.
 ///
 /// The fix is purely a property-level annotation flip on `handles`. The
 /// assertion here mirrors what SwiftUI does internally via
-/// `withObservationTracking` — calling `existingHandle` inside the
+/// `withObservationTracking` — calling `existingSession` inside the
 /// tracking block must register interest in the dict, so that a
 /// subsequent `prepareDraft` mutation fires `onChange`.
 @MainActor
-final class SessionManager2ObservationTests: XCTestCase {
+final class SessionManagerObservationTests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
     }
 
-    /// Sidebar's reading pattern: read `existingHandle(sid)` (returns
+    /// Sidebar's reading pattern: read `existingSession(sid)` (returns
     /// nil for a session that has never been opened in this process),
     /// then expect the read to register observation so a later
-    /// `prepareDraft(sid)` insertion triggers `onChange`.
+    /// `prepareDraftSession(sid)` insertion triggers `onChange`.
     ///
     /// Without observation on `handles`, the read goes through an
     /// `@ObservationIgnored` storage and `onChange` never fires — the
     /// sidebar row stays stuck on `isRunning: false`.
     func testExistingHandleReadRegistersObservationOnHandlesDict() {
-        let manager = SessionManager2(repository: InMemorySessionRepository())
+        let manager = SessionManager(repository: InMemorySessionRepository())
         let sid = UUID().uuidString
 
         let observed = XCTestExpectation(
@@ -48,7 +48,7 @@ final class SessionManager2ObservationTests: XCTestCase {
             // Same call site the sidebar's SidebarHistoryRow body uses.
             // Returns nil here — no handle has been created yet — but
             // the read itself must subscribe to the dict.
-            _ = manager.existingHandle(sid)
+            _ = manager.existingSession(sid)
         } onChange: {
             observed.fulfill()
         }
@@ -57,14 +57,14 @@ final class SessionManager2ObservationTests: XCTestCase {
         // or-create — for a fresh sid it allocates and inserts into the
         // handles dict, which is the production trigger that should
         // wake the sidebar row.
-        _ = manager.prepareDraft(sid)
+        _ = manager.prepareDraftSession(sid)
 
         wait(for: [observed], timeout: 1.0)
     }
 
     /// `session(_:)` is the other code path that mutates `handles` (the
     /// record-required variant used by `RootView2.onChange`). Same
-    /// observation contract: a prior `existingHandle` read must wake.
+    /// observation contract: a prior `existingSession` read must wake.
     func testSessionCreationAlsoTriggersObservation() {
         let repo = InMemorySessionRepository()
         let sid = UUID().uuidString
@@ -75,13 +75,13 @@ final class SessionManager2ObservationTests: XCTestCase {
                 cwd: "/tmp/some-existing",
                 status: .created
             ))
-        let manager = SessionManager2(repository: repo)
+        let manager = SessionManager(repository: repo)
 
         let observed = XCTestExpectation(
             description: "withObservationTracking onChange fires after session() mutates handles")
 
         withObservationTracking {
-            _ = manager.existingHandle(sid)
+            _ = manager.existingSession(sid)
         } onChange: {
             observed.fulfill()
         }

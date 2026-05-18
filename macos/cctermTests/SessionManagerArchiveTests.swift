@@ -2,7 +2,7 @@ import XCTest
 
 @testable import ccterm
 
-/// Core behavior of `SessionManager2.archive` / `unarchive`: DB state
+/// Core behavior of `SessionManager.archive` / `unarchive`: DB state
 /// transitions, observable list maintenance, handle-cache cleanup, and
 /// the worktree side-effect dispatch (verified via an injected
 /// recorder closure — see the "WorktreeSideEffectRouting" suite at the
@@ -12,7 +12,7 @@ import XCTest
 /// per case so they're parallel-safe; no test writes to disk or hits
 /// real git.
 @MainActor
-final class SessionManager2ArchiveTests: XCTestCase {
+final class SessionManagerArchiveTests: XCTestCase {
 
     private var repo: InMemorySessionRepository!
 
@@ -33,7 +33,7 @@ final class SessionManager2ArchiveTests: XCTestCase {
         let sid = UUID().uuidString
         let record = makeRecord(sid: sid, title: "About to archive", status: .created)
         repo.save(record)
-        let manager = SessionManager2(
+        let manager = SessionManager(
             repository: repo, worktreeArchive: noopSideEffect, worktreeRestore: noopSideEffect)
         manager.refreshArchivedRecords()
 
@@ -55,7 +55,7 @@ final class SessionManager2ArchiveTests: XCTestCase {
         let sid = UUID().uuidString
         let record = makeRecord(sid: sid, title: "Bring me back", status: .archived, archivedAt: Date())
         repo.save(record)
-        let manager = SessionManager2(
+        let manager = SessionManager(
             repository: repo, worktreeArchive: noopSideEffect, worktreeRestore: noopSideEffect)
         manager.refreshArchivedRecords()
 
@@ -82,7 +82,7 @@ final class SessionManager2ArchiveTests: XCTestCase {
             status: .created
         )
         repo.save(original)
-        let manager = SessionManager2(
+        let manager = SessionManager(
             repository: repo, worktreeArchive: noopSideEffect, worktreeRestore: noopSideEffect)
 
         manager.archive(sid)
@@ -102,7 +102,7 @@ final class SessionManager2ArchiveTests: XCTestCase {
     /// Archiving a sessionId that doesn't exist is a no-op: no crash,
     /// no spurious entries in `archivedRecords`.
     func testArchiveNonexistentSessionIsNoOp() {
-        let manager = SessionManager2(
+        let manager = SessionManager(
             repository: repo, worktreeArchive: noopSideEffect, worktreeRestore: noopSideEffect)
         manager.archive("does-not-exist")
         XCTAssertEqual(manager.records.count, 0)
@@ -111,7 +111,7 @@ final class SessionManager2ArchiveTests: XCTestCase {
 
     /// Unarchiving a sessionId that doesn't exist is a no-op.
     func testUnarchiveNonexistentSessionIsNoOp() {
-        let manager = SessionManager2(
+        let manager = SessionManager(
             repository: repo, worktreeArchive: noopSideEffect, worktreeRestore: noopSideEffect)
         manager.unarchive("does-not-exist")
         XCTAssertEqual(manager.records.count, 0)
@@ -139,7 +139,7 @@ final class SessionManager2ArchiveTests: XCTestCase {
         )
         repo.save(older)
         repo.save(newer)
-        let manager = SessionManager2(
+        let manager = SessionManager(
             repository: repo, worktreeArchive: noopSideEffect, worktreeRestore: noopSideEffect)
         manager.refreshArchivedRecords()
 
@@ -155,17 +155,17 @@ final class SessionManager2ArchiveTests: XCTestCase {
     func testArchiveClearsHandleCache() {
         let sid = UUID().uuidString
         repo.save(makeRecord(sid: sid, title: "Has cached handle", status: .created))
-        let manager = SessionManager2(
+        let manager = SessionManager(
             repository: repo, worktreeArchive: noopSideEffect, worktreeRestore: noopSideEffect)
 
         // Allocate the handle so it's in the cache.
         let handle = manager.session(sid)
         XCTAssertNotNil(handle)
-        XCTAssertNotNil(manager.existingHandle(sid))
+        XCTAssertNotNil(manager.existingSession(sid))
 
         manager.archive(sid)
 
-        XCTAssertNil(manager.existingHandle(sid), "Archive must drop the cached handle")
+        XCTAssertNil(manager.existingSession(sid), "Archive must drop the cached handle")
     }
 
     /// Unarchive defensively clears any stale cached handle so the next
@@ -178,7 +178,7 @@ final class SessionManager2ArchiveTests: XCTestCase {
     func testUnarchiveClearsHandleCache() {
         let sid = UUID().uuidString
         repo.save(makeRecord(sid: sid, title: "Archived row", status: .archived, archivedAt: Date()))
-        let manager = SessionManager2(
+        let manager = SessionManager(
             repository: repo, worktreeArchive: noopSideEffect, worktreeRestore: noopSideEffect)
 
         // Force-allocate a handle against the archived row (the InMemory
@@ -186,11 +186,11 @@ final class SessionManager2ArchiveTests: XCTestCase {
         // returns a handle even though production sidebar wouldn't show
         // the row). Verifies unarchive is defensive.
         _ = manager.session(sid)
-        XCTAssertNotNil(manager.existingHandle(sid))
+        XCTAssertNotNil(manager.existingSession(sid))
 
         manager.unarchive(sid)
 
-        XCTAssertNil(manager.existingHandle(sid), "Unarchive must drop any stale cached handle")
+        XCTAssertNil(manager.existingSession(sid), "Unarchive must drop any stale cached handle")
     }
 
     // MARK: - Worktree side-effect routing
@@ -202,7 +202,7 @@ final class SessionManager2ArchiveTests: XCTestCase {
         let sid = UUID().uuidString
         repo.save(makeRecord(sid: sid, title: "Plain folder", status: .created, isWorktree: false))
         let recorder = SideEffectRecorder()
-        let manager = SessionManager2(
+        let manager = SessionManager(
             repository: repo,
             worktreeArchive: recorder.record,
             worktreeRestore: noopSideEffect
@@ -230,7 +230,7 @@ final class SessionManager2ArchiveTests: XCTestCase {
                 worktreeBranch: "eager-curie-abcdef"
             ))
         let recorder = SideEffectRecorder()
-        let manager = SessionManager2(
+        let manager = SessionManager(
             repository: repo,
             worktreeArchive: recorder.record,
             worktreeRestore: noopSideEffect
@@ -259,7 +259,7 @@ final class SessionManager2ArchiveTests: XCTestCase {
                 isWorktree: false
             ))
         let recorder = SideEffectRecorder()
-        let manager = SessionManager2(
+        let manager = SessionManager(
             repository: repo,
             worktreeArchive: noopSideEffect,
             worktreeRestore: recorder.record
@@ -287,7 +287,7 @@ final class SessionManager2ArchiveTests: XCTestCase {
                 worktreeBranch: "jolly-pare-d40302"
             ))
         let recorder = SideEffectRecorder()
-        let manager = SessionManager2(
+        let manager = SessionManager(
             repository: repo,
             worktreeArchive: noopSideEffect,
             worktreeRestore: recorder.record
@@ -325,7 +325,7 @@ final class SessionManager2ArchiveTests: XCTestCase {
         // effect runs. The closure runs synchronously on the main actor
         // under the test injection, so direct reads are safe.
         let probe = StatusProbe(repo: repo, sessionId: sid)
-        let manager = SessionManager2(
+        let manager = SessionManager(
             repository: repo,
             worktreeArchive: probe.capture,
             worktreeRestore: noopSideEffect
@@ -394,5 +394,5 @@ final class SessionManager2ArchiveTests: XCTestCase {
 
     /// Discard the side effect — for tests that exercise the DB path
     /// without caring whether worktree teardown was invoked.
-    private let noopSideEffect: SessionManager2.WorktreeSideEffect = { _ in }
+    private let noopSideEffect: SessionManager.WorktreeSideEffect = { _ in }
 }

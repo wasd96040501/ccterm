@@ -1027,7 +1027,7 @@ extension TranscriptDemoView {
 
             // Running tool group — demonstrates the (status, fold)
             // title matrix. Group renders in the "primed" palette
-            // (brighter title + chevron) and follows the SessionHandle2
+            // (brighter title + chevron) and follows the Session
             // three-state rule:
             //   - collapsed → last child's progressive fragment
             //                 ("Running npm test")

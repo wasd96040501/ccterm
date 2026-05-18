@@ -2,7 +2,7 @@ import AgentSDK
 import SwiftUI
 
 /// Footer-row trigger that opens a stacked Models + Effort + Fast mode
-/// popover. Reads the current selection from the handle and writes back
+/// popover. Reads the current selection from the session and writes back
 /// via `setModel` / `setEffort` / `setFastMode`. The model catalog
 /// streams from `ModelStore.shared`, kicked off at app launch — the
 /// trigger renders a small `ProgressView` next to its label while the
@@ -25,14 +25,14 @@ import SwiftUI
 /// gate on; the CLI itself rejects fast-mode requests on unsupported
 /// models.
 struct ModelEffortPicker: View {
-    let handle: SessionHandle2
+    let session: Session
     @State private var isPresented = false
     @State private var store = ModelStore.shared
 
     var body: some View {
         // Hide the entire trigger until a catalog is available. Without
         // a catalog there's no honest single source — no `default` row
-        // to anchor `handle.model` to, no `supportedEffortLevels` to
+        // to anchor `session.model` to, no `supportedEffortLevels` to
         // gate the effort section. Showing a placeholder "Model" pill
         // implies the user picked something they didn't.
         if visibleModels.isEmpty {
@@ -53,22 +53,22 @@ struct ModelEffortPicker: View {
             .popover(isPresented: $isPresented, arrowEdge: .top) {
                 ModelEffortPopoverContent(
                     models: visibleModels,
-                    selectedModelValue: handle.model,
+                    selectedModelValue: session.model,
                     selectedEffort: effectiveEffort,
-                    fastModeEnabled: handle.fastModeEnabled,
+                    fastModeEnabled: session.fastModeEnabled,
                     onSelectModel: { value in
                         applyModelSelection(value)
                         isPresented = false
                     },
                     onSelectEffort: { effort in
-                        handle.setEffort(effort)
-                        if let value = handle.model {
+                        session.setEffort(effort)
+                        if let value = session.model {
                             EffortDefaultStore.shared.remember(effort, for: value)
                         }
                         isPresented = false
                     },
                     onToggleFastMode: { enabled in
-                        handle.setFastMode(enabled)
+                        session.setFastMode(enabled)
                     }
                 )
             }
@@ -87,31 +87,31 @@ struct ModelEffortPicker: View {
     /// Per-session catalog wins; fall through to the app-launch
     /// `ModelStore` snapshot when the session hasn't replied yet.
     private var visibleModels: [ModelInfo] {
-        let live = handle.availableModels
+        let live = session.availableModels
         return live.isEmpty ? store.models : live
     }
 
     private var selectedModelInfo: ModelInfo? {
-        guard let value = handle.model else { return nil }
+        guard let value = session.model else { return nil }
         return visibleModels.first(where: { $0.value == value })
     }
 
     /// Single-source backfill: as soon as a catalog is available and
-    /// the handle hasn't recorded a model yet, write `visibleModels.first`
+    /// the session hasn't recorded a model yet, write `visibleModels.first`
     /// (the CLI's `default` entry — head of `init.models[]`) back into
-    /// the handle. From that point on the trigger label, effort lookup,
-    /// and popover selection all read from `handle.model`.
+    /// the session. From that point on the trigger label, effort lookup,
+    /// and popover selection all read from `session.model`.
     private func backfillModelIfNeeded() {
-        guard handle.model == nil, let first = visibleModels.first else { return }
+        guard session.model == nil, let first = visibleModels.first else { return }
         applyModelSelection(first.value)
     }
 
     /// Effort to show as "selected" in trigger + popover. Real
-    /// `handle.effort` wins; otherwise the per-model default from
+    /// `session.effort` wins; otherwise the per-model default from
     /// `EffortDefaultStore`. nil only when no model is selected or the
     /// model declares no effort support.
     private var effectiveEffort: Effort? {
-        if let effort = handle.effort { return effort }
+        if let effort = session.effort { return effort }
         guard let info = selectedModelInfo else { return nil }
         return EffortDefaultStore.shared.effort(for: info)
     }
@@ -120,17 +120,17 @@ struct ModelEffortPicker: View {
     /// remembered/default effort and push it through `setEffort` so
     /// the CLI receives an effort consistent with what the UI shows.
     private func applyModelSelection(_ value: String) {
-        handle.setModel(value)
+        session.setModel(value)
         guard let info = visibleModels.first(where: { $0.value == value }),
             let resolved = EffortDefaultStore.shared.effort(for: info)
         else { return }
-        handle.setEffort(resolved)
+        session.setEffort(resolved)
     }
 
     @ViewBuilder
     private var triggerLabel: some View {
         HStack(spacing: 4) {
-            Text(handle.model ?? "Model")
+            Text(session.model ?? "Model")
                 .foregroundStyle(.primary)
             if let effort = effectiveEffort {
                 Text("·")

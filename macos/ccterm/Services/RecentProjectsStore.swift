@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 /// User-defaults-backed list of recently picked project folders shown in
-/// the New Session compose card. Independent of `SessionManager2.records`
+/// the New Session compose card. Independent of `SessionManager.records`
 /// (the Core Data session list) — recents are a lightweight UI affordance,
 /// not a record of session history, so they live in a place that's cheap
 /// to read, cheap to write, and cheap to wipe.

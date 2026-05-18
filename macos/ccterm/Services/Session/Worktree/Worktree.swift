@@ -2,14 +2,14 @@ import Foundation
 
 /// Identity of a git worktree. Value type, immutable; git-layer dynamic
 /// state (current branch, HEAD) is not tracked here — the caller
-/// (SessionHandle2 / SessionRecord) holds it.
+/// (Session / SessionRecord) holds it.
 ///
 /// Mirrors the `worktree` object claude.app's `p0r.createWorktree`
 /// produces (`{ name, path, baseRepo, sourceBranch, ... }`, slice lines
 /// 143-151), trimmed of sessionId / createdAt and other runtime fields —
 /// SessionRecord owns those in ccterm.
 ///
-/// Typical flow: `Worktree.create(from:)` → SessionHandle2 persists
+/// Typical flow: `Worktree.create(from:)` → Session persists
 /// path/name to db → LLM-generated rename → `wt.renameBranch(to:)` →
 /// `wt.remove()` on archive → `Worktree.restore(at:baseRepo:branch:)` on
 /// unarchive.

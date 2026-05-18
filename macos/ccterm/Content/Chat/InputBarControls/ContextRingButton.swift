@@ -10,7 +10,7 @@ import SwiftUI
 /// row to keep its shape between sessions rather than have a slot
 /// appear and disappear under it.
 struct ContextRingButton: View {
-    let handle: SessionHandle2
+    let session: Session
     @State private var isPresented = false
 
     var body: some View {
@@ -22,8 +22,8 @@ struct ContextRingButton: View {
         .buttonStyle(.plain)
         .popover(isPresented: $isPresented, arrowEdge: .top) {
             ContextPopoverContent(
-                used: handle.contextUsedTokens,
-                total: handle.contextWindowTokens,
+                used: session.contextUsedTokens,
+                total: session.contextWindowTokens,
                 percent: percent
             )
         }
@@ -32,9 +32,9 @@ struct ContextRingButton: View {
     }
 
     private var percent: Double {
-        let total = Double(handle.contextWindowTokens)
+        let total = Double(session.contextWindowTokens)
         guard total > 0 else { return 0 }
-        let used = Double(handle.contextUsedTokens)
+        let used = Double(session.contextUsedTokens)
         return min(max(used / total * 100, 0), 100)
     }
 }

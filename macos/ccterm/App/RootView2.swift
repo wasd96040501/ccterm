@@ -43,7 +43,7 @@ struct RootView2: View {
     /// Source branch fed into `Worktree.create`'s `sourceBranch` argument.
     /// nil → repo's current branch (Worktree falls back to detached check).
     @State private var draftSourceBranch: String?
-    @Environment(SessionManager2.self) private var manager
+    @Environment(SessionManager.self) private var manager
     @Environment(RecentProjectsStore.self) private var recents
     /// Compose mode is "the New Session tab is selected." Once `submit`
     /// flips `selectedSessionId` to the concrete draft UUID, this turns
@@ -93,14 +93,14 @@ struct RootView2: View {
         }
         .onChange(of: selectedSessionId, initial: false) { oldValue, newValue in
             // The sidebar's only signal for "session viewed" is selection.
-            // Drop focus on the previous handle and acquire it on the new one
-            // so `SessionHandle2.setFocused(true)` clears `hasUnread` (the blue
-            // dot in the sidebar status slot).
-            if let old = oldValue, let handle = manager.existingHandle(old) {
-                handle.setFocused(false)
+            // Drop focus on the previous session and acquire it on the new
+            // one so `Session.setFocused(true)` clears `hasUnread` (the
+            // blue dot in the sidebar status slot).
+            if let old = oldValue, let prev = manager.existingSession(old) {
+                prev.setFocused(false)
             }
-            if let new = newValue, let handle = manager.session(new) {
-                handle.setFocused(true)
+            if let new = newValue, let next = manager.session(new) {
+                next.setFocused(true)
             }
         }
     }
@@ -269,20 +269,25 @@ struct RootView2: View {
     /// trimmed text when both are present, otherwise the default `[image]`
     /// label from the handle.
     private func submit(_ submission: InputBarView2.Submission, sessionId: String) {
-        let handle = manager.prepareDraft(sessionId)
-        let isFirstStart = !handle.hasRecord
+        let session = manager.prepareDraftSession(sessionId)
+        let isFirstStart = !session.hasRecord
         if isFirstStart {
             // Fresh draft picks up the compose card's choices. Falls back
             // to home so `Process.run()`'s chdir always succeeds when the
             // user submits without picking a folder. Worktree provisioning
             // reads `originPath` and `sourceBranch` inside `ensureStarted`'s
-            // fresh path.
+            // fresh path. The draft-only setters live on `SessionDraft`,
+            // reached through the façade's `draft` accessor — non-nil
+            // while the session is still in `.draft` phase, which it is
+            // until the first `send(...)` below triggers promotion.
             let chosen = draftCwd ?? FileManager.default.homeDirectoryForCurrentUser.path
-            handle.setOriginPath(chosen)
-            handle.setCwd(chosen)
-            handle.setWorktree(draftUseWorktree)
-            if draftUseWorktree {
-                handle.setSourceBranch(draftSourceBranch)
+            if let draft = session.draft {
+                draft.setOriginPath(chosen)
+                draft.setCwd(chosen)
+                draft.setWorktree(draftUseWorktree)
+                if draftUseWorktree {
+                    draft.setSourceBranch(draftSourceBranch)
+                }
             }
             // Surface the project in next session's recents list and
             // remember it as the default for the next New Session card.
@@ -294,9 +299,9 @@ struct RootView2: View {
         }
         if let image = submission.image {
             let caption = submission.text.isEmpty ? nil : submission.text
-            handle.send(image: image.data, mediaType: image.mediaType, caption: caption)
+            session.send(image: image.data, mediaType: image.mediaType, caption: caption)
         } else {
-            handle.send(text: submission.text)
+            session.send(text: submission.text)
         }
         if isFirstStart {
             manager.refreshRecords()
@@ -315,7 +320,7 @@ struct RootView2: View {
 // MARK: - InputBarChrome
 
 /// Per-session wrapper around `InputBarView2`. Resolves the
-/// `SessionHandle2` so the bar can read `isRunning` (send↔stop swap)
+/// `Session` so the bar can read `isRunning` (send↔stop swap)
 /// and call `interrupt()`, and hosts the session-scoped chrome row
 /// (`InputBarSessionChrome`) directly below the bar — kept *outside*
 /// the pill so the bar itself stays "pure UI" and the chrome row can
@@ -330,30 +335,31 @@ private struct InputBarChrome: View {
     let onAttachRect: (CGRect) -> Void
     let onPillRect: (CGRect) -> Void
 
-    @Environment(SessionManager2.self) private var manager
+    @Environment(SessionManager.self) private var manager
 
-    /// Resolved synchronously per render. `prepareDraft` is idempotent
-    /// get-or-create (pure in-memory), and returns the same instance
-    /// `ChatHistoryView` holds. Caching it in `@State` + `.task(id:)`
-    /// caused a one-frame gap on session switch — the chrome row was
-    /// absent until the task fired, so it visibly popped in. With a
-    /// computed property the chrome is present on the first frame.
-    private var handle: SessionHandle2 {
-        manager.prepareDraft(sessionId)
+    /// Resolved synchronously per render. `prepareDraftSession` is
+    /// idempotent get-or-create (pure in-memory), and returns the same
+    /// instance `ChatHistoryView` holds. Caching it in `@State` +
+    /// `.task(id:)` caused a one-frame gap on session switch — the
+    /// chrome row was absent until the task fired, so it visibly popped
+    /// in. With a computed property the chrome is present on the first
+    /// frame.
+    private var session: Session {
+        manager.prepareDraftSession(sessionId)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: InputBarSessionChrome.barSpacing) {
             InputBarView2(
                 onSubmit: onSubmit,
-                onStop: { handle.interrupt() },
-                isRunning: handle.isRunning,
+                onStop: { session.interrupt() },
+                isRunning: session.isRunning,
                 submitEnabled: submitEnabled,
                 coordSpace: coordSpace,
                 onAttachRect: onAttachRect,
                 onPillRect: onPillRect
             )
-            InputBarSessionChrome(handle: handle)
+            InputBarSessionChrome(session: session)
         }
     }
 }

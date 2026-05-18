@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Sidebar: a fixed top group of utility items (New Session, demos) plus
-/// folder-grouped history below. Sourced directly from `SessionManager2.records`,
+/// folder-grouped history below. Sourced directly from `SessionManager.records`,
 /// grouped by `groupingFolderName`, sorted by `lastActiveAt` descending.
 ///
 /// Component tree (intentionally flat — no `Section` wrappers, no
@@ -23,7 +23,7 @@ import SwiftUI
 /// (text aligns with the folder header's text above).
 struct SidebarView2: View {
     @Binding var selection: String?
-    @Environment(SessionManager2.self) private var manager
+    @Environment(SessionManager.self) private var manager
     /// Folders the user has manually collapsed. Default is expanded; we
     /// track collapsed-set rather than expanded-set so newly-appearing
     /// folders (after a fresh session lands) are open by default.
@@ -216,14 +216,14 @@ struct SidebarFolderHeader: View {
 /// Empty titles render as a faint italic "Untitled" placeholder.
 struct SidebarHistoryRow: View {
     let record: SessionRecord
-    @Environment(SessionManager2.self) private var manager
+    @Environment(SessionManager.self) private var manager
 
     var body: some View {
-        let handle = manager.existingHandle(record.sessionId)
+        let session = manager.existingSession(record.sessionId)
         HStack(spacing: 6) {
             SidebarSessionStatusIndicator(
-                isRunning: handle?.isRunning ?? false,
-                hasUnread: handle?.hasUnread ?? false
+                isRunning: session?.isRunning ?? false,
+                hasUnread: session?.hasUnread ?? false
             )
             Group {
                 if record.title.isEmpty {

@@ -26,6 +26,14 @@ actor SyntaxHighlightEngine {
         guard let url = Bundle.main.url(forResource: "hljs-jscore", withExtension: "js"),
             let source = try? String(contentsOf: url, encoding: .utf8)
         else {
+            // `hljs-jscore.js` is produced by `make js-bundles` from `js/` and
+            // copied into the app bundle's Resources. Missing here means the
+            // build phase didn't run (clean clone without `make build`) or the
+            // gitignored artifact got purged. Hard-fail in debug so the next
+            // build wires it back up; release falls through to plain-text
+            // tokens so highlighting silently degrades rather than crashes.
+            assertionFailure(
+                "hljs-jscore.js missing from app bundle — run `make js-bundles`")
             NSLog("[SyntaxHighlightEngine] Failed to load hljs-jscore.js from bundle")
             return
         }

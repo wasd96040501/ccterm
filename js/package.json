@@ -1,0 +1,14 @@
+{
+  "name": "ccterm-js-bundles",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun run scripts/build.ts"
+  },
+  "dependencies": {
+    "highlight.js": "^11.10.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}

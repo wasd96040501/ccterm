@@ -161,16 +161,22 @@ struct DiffLayout: @unchecked Sendable {
 
         // Gutter + sign prefix sizing. Both columns are constant-width
         // within a body — gutter padded to the widest line number, sign
-        // is always " ± " (or zero in new-file mode). `prefixWidth` is
-        // what we subtract from `maxWidth` to size the content column,
-        // so wrap continuation lines align with the content column.
+        // is always " ± " in diff mode. `prefixWidth` is what we
+        // subtract from `maxWidth` to size the content column, so wrap
+        // continuation lines align with the content column.
         let maxLineNo = hunks.flatMap(\.lines).compactMap(\.lineNo).max() ?? 0
         let digits = max(2, String(maxLineNo).count)
         let gutterText = String(repeating: " ", count: digits + 2)  // " NNN "
         let gutterWidth = textWidth(gutterText, attrs: [.font: font])
-        // Sign column is always 3 mono-glyphs (" + " / " - " / "   "),
-        // dropped to 0 when there's no diff chrome to show.
-        let signWidth = suppressSign ? 0 : textWidth("   ", attrs: [.font: font])
+        // Sign column is 3 mono-glyphs (" + " / " - " / "   ") in diff
+        // mode. In new-file mode there's no `+`/`-` glyph to show, but
+        // we keep one glyph of width so the content doesn't butt up
+        // against the gutter — a single space matches the gutter's own
+        // internal padding and reads as a comfortable column gap.
+        let signWidth =
+            suppressSign
+            ? textWidth(" ", attrs: [.font: font])
+            : textWidth("   ", attrs: [.font: font])
         let prefixWidth = gutterWidth + signWidth
 
         // Content column width — the wrap budget for each row's

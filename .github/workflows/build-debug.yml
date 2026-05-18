@@ -1,0 +1,90 @@
+name: build-debug
+
+# Produces a downloadable Debug `ccterm.app` artifact for every PR so
+# reviewers can grab a runnable build without checking out the branch.
+# Triggers on PRs only (not pushes to main) — main is exercised by the
+# test workflow already.
+on:
+  pull_request:
+
+jobs:
+  build-debug:
+    runs-on: macos-26
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Go
+        # fzf submodule compiles from Go sources inside an Xcode build phase.
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+          cache-dependency-path: thirdparty/fzf/go.sum
+
+      - name: Xcode info
+        run: |
+          xcode-select -p
+          xcodebuild -version
+          sw_vers
+          go version
+
+      - name: Compute cache fingerprint
+        id: fp
+        run: |
+          XCODE=$(xcodebuild -version | head -n1 | awk '{print $2}')
+          FZF_SHA=$(git submodule status thirdparty/fzf | awk '{print $1}' | tr -d ' -+')
+          echo "xcode=$XCODE" >> "$GITHUB_OUTPUT"
+          echo "fzf=$FZF_SHA"  >> "$GITHUB_OUTPUT"
+
+      # Reuse the same DerivedData layout the test workflow uses so the
+      # Debug build can share `.swiftmodule` / `.o` outputs across runs.
+      # Separate cache key from `test.yml` because the Debug build script
+      # writes into a different DerivedData root.
+      - name: Cache DerivedData
+        uses: actions/cache@v4
+        with:
+          path: macos/build/debug-dd
+          key: dd-debug-${{ runner.os }}-${{ runner.arch }}-xc${{ steps.fp.outputs.xcode }}-fzf${{ steps.fp.outputs.fzf }}-salt${{ hashFiles('.github/cache-salt') }}-src${{ hashFiles('macos/**/*.swift', 'macos/ccterm.xcodeproj/project.pbxproj', 'macos/Config.xcconfig', 'macos/AgentSDK/Package.swift', 'macos/ccterm/Localizable.xcstrings') }}
+          restore-keys: |
+            dd-debug-${{ runner.os }}-${{ runner.arch }}-xc${{ steps.fp.outputs.xcode }}-fzf${{ steps.fp.outputs.fzf }}-salt${{ hashFiles('.github/cache-salt') }}-
+
+      - name: Build (Debug)
+        run: |
+          xcodebuild \
+            -project macos/ccterm.xcodeproj \
+            -scheme ccterm \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath macos/build/debug-dd \
+            build
+
+      - name: Locate built .app
+        id: app
+        run: |
+          APP_PATH=$(find macos/build/debug-dd/Build/Products/Debug -maxdepth 2 -name 'ccterm.app' -type d | head -n1)
+          if [ -z "$APP_PATH" ]; then
+            echo "Could not find ccterm.app under macos/build/debug-dd/Build/Products/Debug"
+            exit 1
+          fi
+          echo "path=$APP_PATH" >> "$GITHUB_OUTPUT"
+          du -sh "$APP_PATH"
+
+      # Zip preserves bundle structure + executable bits and is what
+      # GitHub's artifact UI gives you anyway when downloading a folder.
+      # Doing it explicitly keeps the artifact path predictable.
+      - name: Zip .app
+        run: |
+          cd "$(dirname '${{ steps.app.outputs.path }}')"
+          ditto -c -k --sequesterRsrc --keepParent "$(basename '${{ steps.app.outputs.path }}')" ccterm-debug.zip
+          mv ccterm-debug.zip "$GITHUB_WORKSPACE/ccterm-debug.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ccterm-debug-app
+          path: ccterm-debug.zip
+          retention-days: 14
+          if-no-files-found: error

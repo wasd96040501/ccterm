@@ -1,74 +1,69 @@
 import AppKit
 import SwiftUI
 
-/// "Compose" region shown above the input bar on the New Session tab.
-/// Deliberately *not* a card: the surface uses `.ultraThinMaterial`
-/// with no stroke and no shadow, so it reads as a softly-tinted segment
-/// of the window rather than a floating panel set on top of it. This
-/// inverts the chrome relationship with the input bar below — the bar
-/// keeps its full `barSurface` (stroke + shadow) because it's an action
-/// control, while the compose region above is "page", not "tool".
+/// "Compose" region shown on the New Session tab. A wide three-segment
+/// surface (existing app sidebar + this card's left column + right
+/// column) that fills the centre of the detail pane:
 ///
-/// Two columns inside the same surface:
-///
-/// - **Left**: a left- and top-aligned hero stack — eyebrow row (icon +
-///   "New Session"), title with the project name tinted, an abbreviated
-///   path subtitle, a hairline divider, a branch + Worktree meta row
-///   (opacity-faded so the layout above doesn't shift when the picked
-///   folder isn't a git repo), and a small `⌘↩ to send` hint anchored
-///   to the bottom edge. A soft radial tint glow in the top-left gives
-///   the region its visual weight on the left half so the right pane
-///   doesn't tip the balance, and echoes the accent color used by the
-///   eyebrow icon and the project name.
-/// - **Right**: a sidebar-styled list of recent project folders backed
-///   by `RecentProjectsStore` (UserDefaults). Selecting one writes back
-///   through `folderPath`. The right pane uses an almost-invisible (2.5%
-///   black) recess and a 0.5pt hairline separator so it reads as part
-///   of the same surface, not a second card glued on.
+/// - **Left column** — `RecentProjectsStore`-backed list of recent
+///   project folders with a "Projects" section header and a `+` button
+///   to add a new folder. Selecting a row writes back through
+///   `folderPath`. Light material recess + 0.5pt trailing hairline so
+///   it reads as a navigation strip belonging to the same card surface,
+///   not a panel glued on top.
+/// - **Right column** — main content stack: hero header (eyebrow icon,
+///   "Start Building <project>" title with the project name tinted),
+///   abbreviated path, branch + worktree meta pills, divider, a
+///   "Recent Sessions" list for the picked folder, divider, and the
+///   *embedded input bar* (passed in via `inputBar:` from `RootView2`,
+///   so the bar's structural identity and pill style are owned by
+///   `RootView2` — this view just decides where the bar lives).
 ///
 /// State for the chosen folder / branch / worktree flag is owned by the
-/// caller (RootView2) so the same values feed straight into the submit
-/// path — this view holds only derived caches (git probe results).
-struct NewSessionConfigurator: View {
+/// caller (`RootView2`) so the same values feed straight into the
+/// submit path — this view holds only derived caches (git probe
+/// results). The embedded input bar is a `@ViewBuilder` slot rather
+/// than a constructed child here so the bar's session-aware wiring
+/// (submit / stop / running state) stays at `RootView2`'s level.
+struct NewSessionConfigurator<InputBar: View>: View {
     @Binding var folderPath: String?
     @Binding var useWorktree: Bool
     @Binding var sourceBranch: String?
-    /// Invoked when the user clicks the "Continue last session" card.
-    /// `RootView2` flips `selectedSessionId` to this value, swapping the
-    /// compose card out for the chosen session's history.
+    /// Invoked when the user clicks a row in the "Recent Sessions"
+    /// section. `RootView2` flips `selectedSessionId` to this value,
+    /// swapping the compose card out for the chosen session's history.
     var onResumeSession: ((String) -> Void)? = nil
+    /// Embedded input bar. Provided by `RootView2` so the bar's
+    /// per-session wiring (submit / interrupt / running state) and pill
+    /// style live there — this view only owns the bar's *position*
+    /// inside the card.
+    @ViewBuilder var inputBar: () -> InputBar
 
-    /// Fixed visual height; the parent assumes this when computing the
-    /// compose-mode vertical centering padding.
-    static let height: CGFloat = 400
-    /// Right-column width. Left column takes the rest. ~36.8% of the
-    /// 680pt compose width — same proportion as the previous 200/544
-    /// design, scaled up so the card grows without changing its
-    /// L/R balance.
-    private static let recentColumnWidth: CGFloat = 250
+    /// Fixed visual width; `RootView2` sets the card's frame to this
+    /// (the centred ZStack lays it out at full width / height).
+    static var width: CGFloat { 960 }
+    /// Fixed visual height; tall enough that the right column can host
+    /// hero + meta + recents list + input bar without crowding, while
+    /// still leaving generous breathing room above and below in a
+    /// typical detail pane.
+    static var height: CGFloat { 620 }
+    /// Left-column width. Hosts the recent-projects nav. ~29% of the
+    /// 960pt card width — feels like a "sidebar inside the card", not
+    /// a near-50/50 split.
+    private static var projectsColumnWidth: CGFloat { 280 }
     /// Outer card corner radius. Shared by the unified surface, the
     /// content clip, and the stroke overlay so the geometry stays
     /// consistent regardless of platform branch in `BarSurfaceModifier`.
     /// Matches `InputBarView2.cornerRadius` so the compose card and the
     /// resting input bar read as one continuous chrome family.
-    private static let cardCornerRadius: CGFloat = InputBarView2.cornerRadius
-    /// Hit-target for the "+" button in the recents header. Sized so the
-    /// inset that lands its centre on the corner-arc centre
-    /// (`cardCornerRadius - plusButtonSize/2`) stays a clean integer (7).
-    private static let plusButtonSize: CGFloat = 18
-    /// Height of the fade-out scrim at the top of the recents list.
-    /// Sits over the List's natural top inset so the first row enters
-    /// the fade band as it scrolls up — content peeks through the
-    /// dissolving tail rather than slamming into a hard line. The `+`
-    /// button (anchored to the card corner) stays in z-order above the
-    /// scrim regardless.
-    private static let recentsTopScrimHeight: CGFloat = 32
-    /// Height of the fade-out scrim at the bottom of the recents list.
-    /// Mirrors the top scrim so the last row dissolves into the card's
-    /// bottom edge the same way the first row dissolves into the top —
-    /// the list reads as a soft band of content inside the card rather
-    /// than something clipped at both ends.
-    private static let recentsBottomScrimHeight: CGFloat = 32
+    private static var cardCornerRadius: CGFloat { InputBarView2.cornerRadius }
+    /// Hit-target for the "+" button in the Projects header.
+    private static var plusButtonSize: CGFloat { 22 }
+    /// Bottom-fade scrim so the last recent-projects row dissolves
+    /// into the card's bottom edge instead of slamming into a hard
+    /// line. The matching top scrim was dropped — the "Projects"
+    /// section header already creates a clear visual boundary.
+    private static var recentsBottomScrimHeight: CGFloat { 24 }
 
     @Environment(RecentProjectsStore.self) private var recents
     @Environment(SessionManager.self) private var manager
@@ -80,195 +75,241 @@ struct NewSessionConfigurator: View {
     @State private var showBranchPicker: Bool = false
 
     var body: some View {
-        // No `barSurface` — we deliberately skip the stroke + shadow
-        // chrome so this region doesn't look like a card glued on top
-        // of the window. The only surface treatment is a single
-        // `.ultraThinMaterial` background plus a soft tint glow.
         HStack(spacing: 0) {
-            leftPanel
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(.horizontal, 24)
-                .padding(.top, 22)
-                .padding(.bottom, 18)
-
-            rightPanel
-                .frame(width: Self.recentColumnWidth)
+            projectsColumn
+                .frame(width: Self.projectsColumnWidth)
                 .frame(maxHeight: .infinity)
-                .background(Color.black.opacity(0.025))
-                .overlay(alignment: .leading) {
+                // Slate-blue recess — desaturated cool gray with just
+                // enough blue to read as a navigation/structure zone.
+                // Indigo at 6% leaned visibly lavender on the
+                // `ultraThinMaterial` base in light mode; this hue
+                // sits closer to gray on the wheel so the column
+                // still reads as cool/recessive without becoming a
+                // tinted patch. The fixed RGB intentionally avoids
+                // `NSColor.systemIndigo` for the same reason — the
+                // system curve over-saturates in light mode.
+                .background(Color(red: 0.40, green: 0.47, blue: 0.60).opacity(0.05))
+                .overlay(alignment: .trailing) {
                     Rectangle()
                         .fill(Color(nsColor: .separatorColor))
                         .frame(width: 0.5)
                 }
+
+            mainColumn
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(atmosphericGlow)
         .background(
             RoundedRectangle(cornerRadius: Self.cardCornerRadius, style: .continuous)
                 .fill(.ultraThinMaterial)
         )
-        .frame(height: Self.height)
+        .overlay(
+            RoundedRectangle(cornerRadius: Self.cardCornerRadius, style: .continuous)
+                .strokeBorder(Color(nsColor: .separatorColor).opacity(0.6), lineWidth: 0.5)
+        )
+        .frame(width: Self.width, height: Self.height)
         .clipShape(RoundedRectangle(cornerRadius: Self.cardCornerRadius, style: .continuous))
         .task(id: folderPath) { refreshGitInfo(resetOverride: true) }
     }
 
     /// Radial tint glow anchored to the top-left, dissipating across
-    /// the region. This is what gives the compose surface its visual
-    /// weight on the left half so the right pane (recents) doesn't tip
-    /// the balance. It also gives the accent color a second presence on
-    /// the surface — the eyebrow icon and the project name in the
-    /// title both pick up this hue, so the tint is never "orphaned" the
-    /// way a single blue icon would be on an otherwise neutral panel.
-    /// Slightly dimmer than a fully-chromed card would need, because
-    /// without a stroke / shadow there's no chrome to compete with.
+    /// the region. Gives the card its visual weight on the left so the
+    /// right column doesn't tip the balance, and echoes the accent
+    /// color used by the eyebrow icon and the project name. Slightly
+    /// dimmer than a fully-chromed card would need.
     private var atmosphericGlow: some View {
         RadialGradient(
             gradient: Gradient(colors: [
-                Color.accentColor.opacity(0.14),
+                Color.accentColor.opacity(0.10),
                 Color.accentColor.opacity(0.0),
             ]),
-            center: UnitPoint(x: 0.10, y: 0.18),
+            center: UnitPoint(x: 0.18, y: 0.10),
             startRadius: 0,
-            endRadius: 360
+            endRadius: 420
         )
     }
 
-    // MARK: - Left panel
+    // MARK: - Left column (Projects)
 
-    /// Left- and top-aligned hero stack with a bottom-anchored hint.
-    /// The meta row (worktree + branch pills) is only rendered when the
-    /// picked folder is a git repo with a real branch — non-git and
-    /// detached-HEAD folders skip it entirely so the stack below pulls
-    /// up rather than leaving a blank gap.
+    /// Vertical stack: section header (with `+` button) at the top,
+    /// scrollable list of recents below. Empty state replaces the list
+    /// when the store has no entries.
     @ViewBuilder
-    private var leftPanel: some View {
-        let branchVisible = currentBranch != nil
+    private var projectsColumn: some View {
         VStack(alignment: .leading, spacing: 0) {
-            titleRow
+            projectsHeader
+                .padding(.horizontal, 16)
+                .padding(.top, 22)
+                .padding(.bottom, 8)
 
-            subtitleView
-                .padding(.top, 6)
-
-            if branchVisible {
-                // `padding(.leading, -6)` pulls the metaRow out by exactly
-                // the HoverCapsule's internal hpad, so the visible content
-                // (folder icon) aligns with the title's text leading edge
-                // rather than the invisible capsule edge.
-                metaRow
-                    .padding(.leading, -6)
-                    .padding(.top, 6)
+            if recents.entries.isEmpty {
+                emptyRecents
+            } else {
+                ZStack {
+                    recentsList
+                    // Bottom-only fade so the last row dissolves into
+                    // the card's bottom edge. The matching top scrim
+                    // was dropped — the section header already
+                    // creates a clear visual boundary at the top, so
+                    // a fade band there just dimmed the first entry.
+                    FadeScrim(.bottomToTop, height: Self.recentsBottomScrimHeight, style: .ultraThinMaterial)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                        .allowsHitTesting(false)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-
-            let recentSessions = recentSessionsForFolder
-            if !recentSessions.isEmpty {
-                resumeList(recentSessions)
-                    .padding(.top, 18)
-            }
-
-            Spacer(minLength: 0)
-
-            hintRow
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    /// Maximum rows the Continue section shows. Picked so the section
-    /// fits comfortably in the fixed `Self.height` left column without
-    /// pushing `hintRow` out of view. No scroll — extra sessions are
-    /// reachable via the sidebar.
-    private static let resumeRowLimit = 5
-
-    /// Top N non-archived sessions whose `groupingPath` matches the
-    /// picked folder, descending by `lastActiveAt`. `manager.records`
-    /// is `@Observable` and already sorted that way, so the prefix is
-    /// correct without an explicit sort.
-    private var recentSessionsForFolder: [SessionRecord] {
-        guard let folder = folderPath else { return [] }
-        return
-            manager.records
-            .lazy
-            .filter { $0.status != .archived && $0.groupingPath == folder }
-            .prefix(Self.resumeRowLimit)
-            .map { $0 }
+    /// Section label + `+` button. Uses an uppercase eyebrow style so
+    /// the header reads as a section divider rather than another title.
+    private var projectsHeader: some View {
+        HStack(alignment: .center, spacing: 6) {
+            Text(String(localized: "Projects"))
+                .font(.system(size: 11, weight: .semibold))
+                .textCase(.uppercase)
+                .tracking(0.6)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+            Button(action: presentFolderPicker) {
+                Image(systemName: "plus")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: Self.plusButtonSize, height: Self.plusButtonSize)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(PlusHoverButtonStyle())
+            .help(String(localized: "Choose Folder…"))
+        }
     }
 
-    /// Horizontal breathing room inside each resume row. Negative-padded
-    /// on the list container by the same amount so the row content
-    /// (title text) lines up with the title above, while the hover bg
-    /// extends outward into the leftPanel's outer padding to give the
-    /// row a comfortable hit-target — same alignment trick used by
-    /// `metaRow` for the worktree capsule.
-    private static let resumeRowHPad: CGFloat = 8
-
-    /// Flat list of recent sessions: no header, no surrounding chrome.
-    /// Rows expand to fill the left panel's width; content aligns to
-    /// the title above, hover bg extends `resumeRowHPad` past on each
-    /// side via the negative padding below.
     @ViewBuilder
-    private func resumeList(_ records: [SessionRecord]) -> some View {
-        VStack(spacing: 0) {
-            ForEach(records) { record in
-                resumeRow(record)
+    private var emptyRecents: some View {
+        VStack(spacing: 6) {
+            Spacer(minLength: 0)
+            Image(systemName: "folder.badge.questionmark")
+                .font(.system(size: 22))
+                .foregroundStyle(.tertiary)
+            Text(String(localized: "No recent projects"))
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            Text(String(localized: "Tap + above to add one"))
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 12)
+    }
+
+    @ViewBuilder
+    private var recentsList: some View {
+        List(selection: folderPathSelection) {
+            ForEach(recents.entries) { entry in
+                recentRow(entry)
+                    .tag(entry.path as String?)
+                    .background(HideEnclosingScrollerWidth())
+                    .contextMenu {
+                        Button(String(localized: "Reveal in Finder")) {
+                            revealInFinder(entry.path)
+                        }
+                        Button(String(localized: "Remove from Recents")) {
+                            removeFromRecents(entry.path)
+                        }
+                    }
             }
         }
-        .padding(.horizontal, -Self.resumeRowHPad)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
     }
 
-    /// Single resume row: title flush-left, compact relative time
-    /// flush-right. Zero horizontal padding so the title's leading
-    /// edge sits at the same x as the title above; vertical padding
-    /// gives a comfortable click target and a subtle hover-bg breath.
-    @ViewBuilder
-    private func resumeRow(_ record: SessionRecord) -> some View {
-        let title = record.title.isEmpty ? String(localized: "Untitled") : record.title
-        Button {
-            onResumeSession?(record.sessionId)
-        } label: {
-            HStack(spacing: 8) {
-                Text(title)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-
-                Spacer(minLength: 8)
-
-                Text(Self.compactRelative(from: record.lastActiveAt))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
-                    .monospacedDigit()
+    /// Wrap the binding so the row's `tag` (an optional path) can drive
+    /// `folderPath` without nilling it when the system clears selection
+    /// during list rebuilds.
+    private var folderPathSelection: Binding<String?> {
+        Binding(
+            get: { folderPath },
+            set: { new in
+                if let new { folderPath = new }
             }
-            .padding(.horizontal, Self.resumeRowHPad)
-            .padding(.vertical, 5)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(ResumeRowButtonStyle())
+        )
     }
 
-    /// Compact relative-time string. Caps everything ≥ 7 days at
-    /// ">7d" — beyond that the exact age stops being useful and the
-    /// row should read as "old, look elsewhere". Localised through the
-    /// `now` literal only; the suffix-letter forms (m / h / d) are
-    /// universal enough to leave as ASCII.
-    static func compactRelative(from date: Date, now: Date = Date()) -> String {
-        let seconds = Int(now.timeIntervalSince(date))
-        if seconds < 60 { return String(localized: "now") }
-        let minutes = seconds / 60
-        if minutes < 60 { return "\(minutes)m" }
-        let hours = minutes / 60
-        if hours < 24 { return "\(hours)h" }
-        let days = hours / 24
-        if days < 7 { return "\(days)d" }
-        return ">7d"
+    @ViewBuilder
+    private func recentRow(_ entry: RecentProjectsStore.Entry) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(entry.name)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+            Text(abbreviatedPath(entry.path))
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .padding(.vertical, 3)
+    }
+
+    // MARK: - Right column (Main content + embedded input bar)
+
+    /// Top-aligned hero + body + bottom-anchored input bar. The middle
+    /// "recent sessions" section absorbs the slack so the input bar
+    /// sits at the same Y regardless of how many recents the user has.
+    @ViewBuilder
+    private var mainColumn: some View {
+        let branchVisible = currentBranch != nil
+        let recentSessions = recentSessionsForFolder
+        VStack(alignment: .leading, spacing: 0) {
+            titleRow
+                .padding(.horizontal, 28)
+                .padding(.top, 26)
+
+            subtitleView
+                .padding(.horizontal, 28)
+                .padding(.top, 6)
+
+            if branchVisible {
+                metaRow
+                    .padding(.leading, 28 - 6)
+                    .padding(.top, 10)
+            }
+
+            Divider()
+                .padding(.horizontal, 28)
+                .padding(.top, 18)
+
+            recentSessionsHeader
+                .padding(.horizontal, 28)
+                .padding(.top, 14)
+
+            recentSessionsBody(recentSessions)
+                .padding(.horizontal, 28)
+                .padding(.top, 6)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+            // Input bar zone: the embedded bar provided by
+            // `RootView2`. The bar's own internal layout (pill,
+            // attach, chrome row) is untouched — this view only
+            // positions it. No divider above the bar; the pill's own
+            // stroke is the visual edge.
+            inputBar()
+                .padding(.horizontal, 28)
+                .padding(.top, 14)
+                .padding(.bottom, 18)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     /// "Start Building <name>" with the project name in the accent
-    /// color. Composed via HStack rather than `+` Text composition so
-    /// the project segment can use `.foregroundStyle(.tint)` (which is
-    /// not a Text-returning modifier).
+    /// color.
     private var titleRow: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.tint)
             Text(String(localized: "Start Building"))
                 .foregroundStyle(.primary)
             if let name = pickedFolderName {
@@ -277,6 +318,7 @@ struct NewSessionConfigurator: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
+            Spacer(minLength: 0)
         }
         .font(.title.weight(.semibold))
     }
@@ -291,9 +333,7 @@ struct NewSessionConfigurator: View {
     }
 
     /// Subtitle: abbreviated path when a folder is picked, otherwise a
-    /// short prompt directing the user to the recents list on the right.
-    /// Replaces the previous design's centered single-line heading with
-    /// real, useful context.
+    /// short prompt directing the user to the projects list on the left.
     @ViewBuilder
     private var subtitleView: some View {
         if let path = folderPath {
@@ -303,7 +343,7 @@ struct NewSessionConfigurator: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
         } else {
-            Text(String(localized: "Pick a project on the right to begin."))
+            Text(String(localized: "Pick a project on the left to begin."))
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
         }
@@ -319,19 +359,16 @@ struct NewSessionConfigurator: View {
     }
 
     /// Meta row: worktree picker + branch picker, side by side. Each
-    /// inner pill carries its own hover background via
-    /// `HoverCapsuleStyle`; no shared container chrome.
+    /// inner pill carries its own hover background; the static stroke
+    /// added here keeps them readable as buttons even before hover.
     private var metaRow: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 4) {
             worktreeMenu
             branchPill
         }
         .fixedSize()
     }
 
-    /// Worktree picker: hover-capsule menu with two options. Driving
-    /// `useWorktree` directly lets the rest of the submit pipeline stay
-    /// unchanged.
     @ViewBuilder
     private var worktreeMenu: some View {
         Menu {
@@ -371,28 +408,13 @@ struct NewSessionConfigurator: View {
         .menuStyle(.button)
         .menuIndicator(.hidden)
         .buttonStyle(HoverCapsuleStyle())
+        .overlay(
+            Capsule()
+                .strokeBorder(Color(nsColor: .separatorColor).opacity(0.7), lineWidth: 0.5)
+        )
         .fixedSize()
     }
 
-    /// `⌘↩ to send` hint, anchored to the bottom-left of the left
-    /// panel. Tertiary color, monospaced glyph for the shortcut so it
-    /// reads as a key cap. The shortcut is verified in
-    /// `InputBarView2.handleSend` (Cmd+Return submits regardless of
-    /// the user's Enter-to-send mode).
-    private var hintRow: some View {
-        HStack(spacing: 4) {
-            Text(verbatim: "⌘ ↩")
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-            Text(String(localized: "to send"))
-                .font(.system(size: 11))
-        }
-        .foregroundStyle(.tertiary)
-    }
-
-    /// Branch trigger: hover-capsule pill that opens the popover-based
-    /// `BranchPickerView` (the same reusable component the legacy chat
-    /// stack used). Confirming a branch in the popover writes
-    /// `sourceBranch` and dismisses.
     @ViewBuilder
     private var branchPill: some View {
         let displayBranch = sourceBranch ?? currentBranch ?? ""
@@ -411,6 +433,10 @@ struct NewSessionConfigurator: View {
             .foregroundStyle(.secondary)
         }
         .buttonStyle(HoverCapsuleStyle())
+        .overlay(
+            Capsule()
+                .strokeBorder(Color(nsColor: .separatorColor).opacity(0.7), lineWidth: 0.5)
+        )
         .popover(isPresented: $showBranchPicker, arrowEdge: .bottom) {
             BranchPickerView(
                 branches: branches,
@@ -425,140 +451,105 @@ struct NewSessionConfigurator: View {
         }
     }
 
-    // MARK: - Right panel (recents)
+    // MARK: - Recent sessions section
 
-    @ViewBuilder
-    private var rightPanel: some View {
-        // Geometry: the top-right corner-arc centre sits at
-        // (cornerRadius, cornerRadius) inset from the card's top-right
-        // edge. Align the button's *centre* on that arc centre — its
-        // top-left then sits at (cornerRadius - plusButtonSize/2). Then
-        // nudge 2pt further inside (down + left) so the glyph reads as
-        // tucked into the corner rather than tangent to the arc.
-        let plusInset = Self.cardCornerRadius - Self.plusButtonSize / 2 + 2
-        // Three-layer ZStack: list at the back, fade scrim in the
-        // middle (so scrolled rows pass behind a soft top edge), `+`
-        // button on top — the button stays in its corner regardless
-        // of list height, and the scrim never occludes its hit area.
-        ZStack(alignment: .topTrailing) {
-            if recents.entries.isEmpty {
-                emptyRecents
-            } else {
-                recentsList
-            }
+    /// Maximum rows the Continue section shows. Picked so the section
+    /// fits comfortably without scrolling; extra sessions are reachable
+    /// via the sidebar.
+    private static var resumeRowLimit: Int { 5 }
 
-            // Only meaningful when there are entries scrolling past;
-            // over the empty state it would just dim the centered
-            // copy for no reason.
-            if !recents.entries.isEmpty {
-                // Fade to `.ultraThinMaterial` rather than a flat color
-                // so the opaque end of the gradient stacks naturally
-                // with the panel's own material surface — a plain
-                // `windowBackgroundColor` here would look like a paler
-                // patch sitting on top of the tinted material recess,
-                // and would mistrack light/dark transitions.
-                FadeScrim(.topToBottom, height: Self.recentsTopScrimHeight, style: .ultraThinMaterial)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                FadeScrim(.bottomToTop, height: Self.recentsBottomScrimHeight, style: .ultraThinMaterial)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-            }
+    /// Top N non-archived sessions whose `groupingPath` matches the
+    /// picked folder, descending by `lastActiveAt`.
+    private var recentSessionsForFolder: [SessionRecord] {
+        guard let folder = folderPath else { return [] }
+        return
+            manager.records
+            .lazy
+            .filter { $0.status != .archived && $0.groupingPath == folder }
+            .prefix(Self.resumeRowLimit)
+            .map { $0 }
+    }
 
-            Button(action: presentFolderPicker) {
-                Image(systemName: "plus")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: Self.plusButtonSize, height: Self.plusButtonSize)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(PlusHoverButtonStyle())
-            .help(String(localized: "Choose Folder…"))
-            .padding(.top, plusInset)
-            .padding(.trailing, plusInset)
-        }
+    /// Section eyebrow for the recent-sessions list. Same uppercase
+    /// label family used by the Projects header on the left so both
+    /// columns share a visual rhythm.
+    private var recentSessionsHeader: some View {
+        Text(String(localized: "Recent Sessions"))
+            .font(.system(size: 11, weight: .semibold))
+            .textCase(.uppercase)
+            .tracking(0.6)
+            .foregroundStyle(.secondary)
     }
 
     @ViewBuilder
-    private var emptyRecents: some View {
-        VStack(spacing: 4) {
-            Spacer(minLength: 0)
-            Text(String(localized: "No recent projects"))
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-            Text(String(localized: "Tap + above to add one"))
-                .font(.system(size: 10))
+    private func recentSessionsBody(_ records: [SessionRecord]) -> some View {
+        if records.isEmpty {
+            VStack(spacing: 0) {
+                Text(
+                    folderPath == nil
+                        ? String(localized: "Pick a project to see its history.")
+                        : String(localized: "No recent sessions for this project.")
+                )
+                .font(.system(size: 12))
                 .foregroundStyle(.tertiary)
-            Spacer(minLength: 0)
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 4)
+        } else {
+            VStack(spacing: 0) {
+                ForEach(records) { record in
+                    resumeRow(record)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, -Self.resumeRowHPad)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 12)
-        .padding(.bottom, 12)
     }
+
+    private static var resumeRowHPad: CGFloat { 8 }
 
     @ViewBuilder
-    private var recentsList: some View {
-        // `List(selection:)` gives us the native sidebar selection
-        // highlight at no cost; binding selection back to `folderPath`
-        // means picking a row is a single round-trip into the same
-        // state RootView2 reads at submit time. `.scrollIndicators` is
-        // ignored by macOS `List`, and SwiftUI doesn't add `.background`
-        // views as descendants of the List's `NSScrollView` —  so we
-        // stash an `enclosingScrollView`-based probe on EACH row's
-        // background. The probe's `NSView` lands inside a
-        // `NSTableCellView`, which IS inside the List's
-        // `NSScrollView`, so `enclosingScrollView` resolves; redundant
-        // probes are idempotent. Beats inlining a 0-height probe row
-        // because sidebar `List` enforces a ~28pt min row height that
-        // would open a gap above the first real entry.
-        // The sidebar `List` already reserves enough top inset above
-        // the first row to clear the corner-anchored `+` button — a
-        // transparent spacer row + `defaultMinListRowHeight = 0` was
-        // tried and observed to have no effect (the natural inset
-        // absorbs the spacer regardless of explicit row height), so
-        // we rely on the built-in inset.
-        List(selection: folderPathSelection) {
-            ForEach(recents.entries) { entry in
-                recentRow(entry)
-                    .tag(entry.path as String?)
-                    .background(HideEnclosingScrollerWidth())
-                    .contextMenu {
-                        Button(String(localized: "Reveal in Finder")) {
-                            revealInFinder(entry.path)
-                        }
-                        Button(String(localized: "Remove from Recents")) {
-                            removeFromRecents(entry.path)
-                        }
-                    }
+    private func resumeRow(_ record: SessionRecord) -> some View {
+        let title = record.title.isEmpty ? String(localized: "Untitled") : record.title
+        Button {
+            onResumeSession?(record.sessionId)
+        } label: {
+            HStack(spacing: 8) {
+                Text(title)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Spacer(minLength: 8)
+
+                Text(Self.compactRelative(from: record.lastActiveAt))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
             }
+            .padding(.horizontal, Self.resumeRowHPad)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .listStyle(.sidebar)
-        .scrollContentBackground(.hidden)
+        .buttonStyle(ResumeRowButtonStyle())
     }
 
-    /// Wrap the binding so the row's `tag` (an optional path) can drive
-    /// `folderPath` without nilling it when the system clears selection
-    /// during list rebuilds.
-    private var folderPathSelection: Binding<String?> {
-        Binding(
-            get: { folderPath },
-            set: { new in
-                if let new { folderPath = new }
-            }
-        )
-    }
-
-    @ViewBuilder
-    private func recentRow(_ entry: RecentProjectsStore.Entry) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(entry.name)
-                .font(.system(size: 12, weight: .medium))
-                .lineLimit(1)
-            Text(entry.path)
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
-        .padding(.vertical, 2)
+    /// Compact relative-time string. Caps everything ≥ 7 days at
+    /// ">7d".
+    static func compactRelative(from date: Date, now: Date = Date()) -> String {
+        let seconds = Int(now.timeIntervalSince(date))
+        if seconds < 60 { return String(localized: "now") }
+        let minutes = seconds / 60
+        if minutes < 60 { return "\(minutes)m" }
+        let hours = minutes / 60
+        if hours < 24 { return "\(hours)h" }
+        let days = hours / 24
+        if days < 7 { return "\(days)d" }
+        return ">7d"
     }
 
     // MARK: - Folder picker / actions
@@ -591,14 +582,9 @@ struct NewSessionConfigurator: View {
     // MARK: - Git probing
 
     /// Cache `isGitRepo` / `currentBranch` / `branches` for the picked
-    /// folder. Called on appear and whenever `folderPath` changes (via
-    /// `.task(id:)`). If the picked path no longer exists on disk, the
-    /// recents entry is silently removed.
-    ///
+    /// folder. Called on appear and whenever `folderPath` changes.
     /// `resetOverride` forces `sourceBranch` back to the new repo's
-    /// current branch — needed when the folder changes, otherwise the
-    /// previous folder's branch selection would survive even if the new
-    /// repo happens to have a branch by the same name.
+    /// current branch — needed when the folder changes.
     private func refreshGitInfo(resetOverride: Bool) {
         guard let path = folderPath else {
             isGitRepo = false
@@ -610,8 +596,6 @@ struct NewSessionConfigurator: View {
             sourceBranch = nil
             return
         }
-        // Stale recents entry: folder no longer exists. Drop it and
-        // clear the selection so the user gets the no-folder UI.
         if !FileManager.default.fileExists(atPath: path) {
             recents.remove(path)
             folderPath = nil
@@ -637,12 +621,8 @@ struct NewSessionConfigurator: View {
                 sourceBranch = head
             }
             if head == nil {
-                // Detached HEAD: branch row is hidden, so worktree must
-                // not stay accidentally enabled.
                 useWorktree = false
             } else {
-                // Restore the user's last launch-time choice for this
-                // path; unseen projects start as Local.
                 useWorktree = recents.useWorktree(for: path) ?? false
             }
         } else {
@@ -665,10 +645,6 @@ struct NewSessionConfigurator: View {
             .filter { !$0.isEmpty }
     }
 
-    /// Resolve the remote's default branch (e.g. `origin/main`). Reads
-    /// `refs/remotes/origin/HEAD` purely from local refs — no network. Returns
-    /// `nil` when `origin/HEAD` isn't set, which is common for repos cloned
-    /// before git started writing it or after `git remote set-head --delete`.
     private static func remoteMainBranch(at path: String) -> String? {
         let result = Worktree.runGit(
             ["symbolic-ref", "--short", "--quiet", "refs/remotes/origin/HEAD"],
@@ -684,10 +660,6 @@ struct NewSessionConfigurator: View {
         return stdout
     }
 
-    /// One-line status summary for the current branch: working-tree changes
-    /// plus ahead/behind tracking against the configured upstream. Returns
-    /// `nil` only when both are unknown (no upstream + porcelain failed);
-    /// returns `"Clean"` for a clean worktree on a branch with no upstream.
     private static func gitStatusSummary(at path: String) -> String? {
         var parts: [String] = []
         let porcelain = Worktree.runGit(
@@ -739,12 +711,7 @@ struct NewSessionConfigurator: View {
     }
 }
 
-/// Hover/press background for the `+` button on the recents header.
-/// Circular fill that matches the button's hit-target frame; uses
-/// `Color.primary` opacity so light/dark mode flip without needing an
-/// explicit per-appearance color. Pressed opacity sits one step
-/// above hover (same ladder as `HoverCapsuleStyle`'s 8% / 15%) so the
-/// click read-out is clearly distinguishable from the hover state.
+/// Hover/press background for the `+` button on the Projects header.
 private struct PlusHoverButtonStyle: ButtonStyle {
     @State private var isHovered = false
 
@@ -762,11 +729,8 @@ private struct PlusHoverButtonStyle: ButtonStyle {
     }
 }
 
-/// Hover/press background for a single Continue-section row. Flat
-/// (no border, no static fill) so the section reads as a list of
-/// links rather than a stack of cards. Same opacity ladder as
-/// `HoverCapsuleStyle` — 8% pressed, 6% hovered — to keep all
-/// hover affordances in this view family consistent.
+/// Hover/press background for a single recent-session row. Flat (no
+/// border, no static fill) so the section reads as a list of links.
 private struct ResumeRowButtonStyle: ButtonStyle {
     @State private var isHovered = false
 
@@ -776,7 +740,7 @@ private struct ResumeRowButtonStyle: ButtonStyle {
             .background(
                 shape.fill(
                     Color(nsColor: .labelColor).opacity(
-                        configuration.isPressed ? 0.08 : (isHovered ? 0.06 : 0)
+                        configuration.isPressed ? 0.10 : (isHovered ? 0.06 : 0)
                     )
                 )
             )
@@ -784,18 +748,9 @@ private struct ResumeRowButtonStyle: ButtonStyle {
     }
 }
 
-/// Invisible probe used as the `.background` of each recents row. Once
-/// SwiftUI installs the probe's `NSView` into the host `NSTableCellView`,
-/// `enclosingScrollView` returns the List's `NSScrollView`; we then
-/// force scrollers off AND switch to overlay style. SwiftUI re-applies
-/// `List`'s own scroller settings on every layout pass (e.g. when a
-/// row's selection state changes), undoing a one-shot disable — so we
-/// also observe the scroll view's `frameDidChange` / live-scroll
-/// notifications and re-apply on each, plus call `tile()` to force the
-/// scroll view to immediately re-lay out without a gutter. The combo
-/// of `scrollerStyle = .overlay` + `hasVerticalScroller = false` is
-/// the only one I've seen actually reclaim the gutter under macOS's
-/// "Always show scroll bars" preference.
+/// Invisible probe used as the `.background` of each recents row, used
+/// to suppress the enclosing scroller width — see the original
+/// docs above for the AppKit interop details.
 private struct HideEnclosingScrollerWidth: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView { ScrollerHidingView() }
     func updateNSView(_ nsView: NSView, context: Context) {
@@ -854,12 +809,6 @@ private struct HideEnclosingScrollerWidth: NSViewRepresentable {
                     name: NSScrollView.didLiveScrollNotification,
                     object: scrollView
                 )
-                // The document view is the `NSTableView`. Its bounds
-                // change when row selection updates, content grows /
-                // shrinks, or sidebar redraws — each of those is the
-                // moment AppKit re-tiles the scroll view and any
-                // previously-disabled scroller comes back. Catch the
-                // bounds notification and reapply.
                 if let documentView = scrollView.documentView {
                     documentView.postsBoundsChangedNotifications = true
                     documentView.postsFrameChangedNotifications = true
@@ -908,12 +857,12 @@ private struct HideEnclosingScrollerWidth: NSViewRepresentable {
         NewSessionConfigurator(
             folderPath: $folder,
             useWorktree: $useWorktree,
-            sourceBranch: $sourceBranch
+            sourceBranch: $sourceBranch,
+            inputBar: { Color.clear.frame(height: 64) }
         )
-        .frame(width: 544)
         .padding(40)
     }
-    .frame(width: 720, height: 460)
+    .frame(width: 1080, height: 760)
     .environment(RecentProjectsStore())
     .environment(SessionManager())
 }

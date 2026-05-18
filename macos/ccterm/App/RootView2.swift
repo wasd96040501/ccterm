@@ -10,11 +10,14 @@ struct RootView2: View {
     /// of the scrim consistent regardless of window height.
     fileprivate static let topFadeScrimHeight: CGFloat = 80
     /// Width clamp for the resting input bar in chat mode — keeps the
-    /// bar visually recessed from the transcript column. Compose mode
-    /// renders its own (wider) bar embedded inside the configurator
-    /// card, so this constant applies to the chat-mode resting bar
-    /// only.
-    fileprivate static let composeMaxWidth: CGFloat = 544
+    /// bar visually recessed from the transcript column (which caps at
+    /// `BlockStyle.maxLayoutWidth = 780`). Also aligned with
+    /// `NewSessionConfigurator.minWidth` so the chat-mode bar's max
+    /// touches the compose card's min, giving the two modes a shared
+    /// upper / lower bound and a consistent "no-clip" handoff as the
+    /// window resizes. Compose mode renders its own bar embedded
+    /// inside the configurator card.
+    fileprivate static let composeMaxWidth: CGFloat = 640
     /// Bottom inset of the input bar in chat mode (matches the previous
     /// `.padding(.bottom, 36)`).
     fileprivate static let chatBottomInset: CGFloat = 36
@@ -62,9 +65,9 @@ struct RootView2: View {
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 350)
         } detail: {
             detailContent
-                .frame(minWidth: 400)
+                .frame(minWidth: 640)
         }
-        .frame(minWidth: 800, minHeight: 480)
+        .frame(minWidth: 880, minHeight: 480)
         .alert(
             "Failed to launch CLI",
             isPresented: Binding(

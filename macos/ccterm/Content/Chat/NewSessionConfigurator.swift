@@ -39,9 +39,19 @@ struct NewSessionConfigurator<InputBar: View>: View {
     /// inside the card.
     @ViewBuilder var inputBar: () -> InputBar
 
-    /// Fixed visual width; `RootView2` sets the card's frame to this
-    /// (the centred ZStack lays it out at full width / height).
-    static var width: CGFloat { 960 }
+    /// Card width band. The card grows with the detail pane up to
+    /// `maxWidth` and falls back to `minWidth` when the window is at
+    /// its lower limit — never wider, never narrower. `minWidth` is
+    /// chosen so the two-column layout (Projects + main) stays
+    /// readable at the smallest window size: Projects column is fixed
+    /// at 280pt, leaving ~360pt for the main column, enough for the
+    /// hero, recents list and the embedded input bar.
+    /// `RootView2.minWidth` (880) = sidebar min (220) + this `minWidth`
+    /// + a small buffer, guaranteeing the card never clips when the
+    /// user shrinks the window.
+    static var minWidth: CGFloat { 640 }
+    static var idealWidth: CGFloat { 960 }
+    static var maxWidth: CGFloat { 960 }
     /// Fixed visual height; tall enough that the right column can host
     /// hero + meta + recents list + input bar without crowding, while
     /// still leaving generous breathing room above and below in a
@@ -115,7 +125,14 @@ struct NewSessionConfigurator<InputBar: View>: View {
             RoundedRectangle(cornerRadius: Self.cardCornerRadius, style: .continuous)
                 .strokeBorder(Color(nsColor: .separatorColor).opacity(0.6), lineWidth: 0.5)
         )
-        .frame(width: Self.width, height: Self.height)
+        .frame(
+            minWidth: Self.minWidth,
+            idealWidth: Self.idealWidth,
+            maxWidth: Self.maxWidth,
+            minHeight: Self.height,
+            idealHeight: Self.height,
+            maxHeight: Self.height
+        )
         .clipShape(RoundedRectangle(cornerRadius: Self.cardCornerRadius, style: .continuous))
         .task(id: folderPath) { refreshGitInfo(resetOverride: true) }
         .onChange(of: showBranchPicker) { _, isOpen in

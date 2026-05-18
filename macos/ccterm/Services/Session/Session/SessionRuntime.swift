@@ -241,43 +241,47 @@ final class SessionRuntime {
 
     // MARK: - Init
 
-    /// Create the handle. **No separate fresh / resume init** —
-    /// `sessionId` is identity; the handle distinguishes new vs existing
-    /// sessions internally via `repository`.
+    /// Construct the runtime. `sessionId` is identity; if `repository`
+    /// already has a matching record, `apply(_:)` hydrates the runtime
+    /// from it (title / cwd / worktree / dirs / model / effort /
+    /// permission mode / pluginDirectories / termination) — that's the
+    /// resume path. Otherwise the runtime starts empty and waits for
+    /// `Session.fromDraft` to copy a config in.
     ///
-    /// Behavior:
-    /// - Synchronously reads `repository.find(sessionId)` and applies
-    ///   persisted fields: `title` / `cwd` / `isWorktree` / `originPath` /
-    ///   `worktreeBranch` / `termination` / `model` / `effort` /
-    ///   `permissionMode` / `additionalDirectories` / `pluginDirectories`
-    ///   (defaults when no record).
     /// - **Does not load history.** `messages` is empty,
     ///   `historyLoadState = .notLoaded`. The UI calls `loadHistory()`
-    ///   explicitly when entering the session view; this is decoupled from
-    ///   `activate()`.
-    /// - `status = .notStarted`.
+    ///   explicitly when entering the session view; this is decoupled
+    ///   from `activate()`.
+    /// - `status = .notStarted`. Bootstrap runs on the first
+    ///   `activate()` / `send(_:)` (or `ensureStarted()` from inside
+    ///   `Session.send`'s promotion path).
     ///
-    /// ## DB write timing (master rule for every method)
+    /// ## DB write timing (master rule for every runtime method)
     ///
     /// - `init`: **no db write** (pure in-memory construction; even when
     ///   the sessionId has no record, do not create an orphan).
-    /// - `set*` config commands while `.notStarted`: write fields only
-    ///   (in-memory draft), **no db**.
-    /// - First `ensureStarted()` (triggered by `activate()` or `send(_:)`):
-    ///   `save` the current full configuration to db in one shot.
-    /// - Field changes after start (CLI init reply / non-active edits):
-    ///   `didSet` triggers `repository.updateXxx` for an incremental update.
+    /// - First `ensureStarted()` (triggered by `activate()` or
+    ///   `send(_:)`): `save` the current full configuration to db in
+    ///   one shot.
+    /// - Field changes after start (CLI init reply / `setModel` /
+    ///   `setEffort` / `setPermissionMode` / `setAdditionalDirectories`):
+    ///   each setter calls `repository.updateXxx` for an incremental
+    ///   update.
     ///
-    /// ## Setter mutability matrix
+    /// ## Setter behavior on the runtime
     ///
-    /// | setter | while attached | exposed canSet* |
-    /// |---|---|---|
-    /// | `setModel` / `setEffort` / `setPermissionMode` | local + db + RPC | — (always callable) |
-    /// | `setAdditionalDirectories` | local + db + applyFlagSettings RPC | — (always callable) |
-    /// | `setCwd` / `setWorktree` | no-op (CLI runtime can't change it) | `canSetCwd` / `canSetWorktree` |
-    /// | `setPluginDirectories` | no-op (`--plugin-dir` is launch-only) | `canSetPluginDirectories` |
-    /// | `setFocused` | local (does not touch CLI) | — (always callable) |
-    /// | `respond(to:decision:)` | local (only effective when a pending matches) | — |
+    /// | setter | semantics |
+    /// |---|---|
+    /// | `setModel` / `setEffort` / `setPermissionMode` | local + db + RPC; CLI's init/config replies are authoritative |
+    /// | `setAdditionalDirectories` | local + db + `applyFlagSettings` RPC |
+    /// | `setFastMode` | local + (when attached) RPC |
+    /// | `setFocused` | local (does not touch CLI) |
+    /// | `respond(to:decision:)` | local (only effective when a pending matches) |
+    ///
+    /// **Draft-only setters** (`setCwd` / `setWorktree` /
+    /// `setOriginPath` / `setSourceBranch` / `setPluginDirectories`)
+    /// live on `SessionDraft` instead — the runtime cannot meaningfully
+    /// re-edit the CLI's launch arguments mid-flight.
     init(
         sessionId: String,
         repository: any SessionRepository,
@@ -348,7 +352,7 @@ final class SessionRuntime {
 
     /// Change model. **Optimistic write** semantics:
     ///
-    /// - `.notStarted` / `.stopped` (non-active): mutate memory only; used
+    /// - Detached (`.notStarted` / `.stopped`): mutate memory only; used
     ///   as a launch arg by the next `ensureStarted`.
     /// - Attached (`.idle` / `.responding` / `.interrupting` / `.starting`):
     ///   1. **Mutate memory immediately** (UI feedback now, avoiding the
@@ -367,26 +371,12 @@ final class SessionRuntime {
     /// + RPC + reply-overrides).
     // impl in SessionRuntime+Configuration.swift
 
-    /// Change working directory.
-    ///
-    /// - Non-active (`.notStarted` / `.stopped`): local write to `cwd`.
-    /// - Active: no-op (CLI runtime can't change cwd; `stop()` first).
-    // impl in SessionRuntime+Configuration.swift
-
-    /// Change worktree flag. Same routing as `setCwd` (cannot change at
-    /// runtime).
-    // impl in SessionRuntime+Configuration.swift
-
     /// Change additional-directories list. **Mutable at runtime** —
     /// attached writes go through
     /// `applyFlagSettings.permissions.additionalDirectories`. UI layer
     /// adds/removes single entries with read-modify-write:
-    /// `handle.setAdditionalDirectories(handle.additionalDirectories + [path])`.
+    /// `runtime.setAdditionalDirectories(runtime.additionalDirectories + [path])`.
     // impl in SessionRuntime+Configuration.swift
-
-    /// Change plugin-directories list. Same routing as `setCwd`
-    /// (`--plugin-dir` is a CLI launch argument with no runtime RPC). UI
-    /// uses `canSetPluginDirectories` to disable the entry point.
     // impl in SessionRuntime+Configuration.swift
 
     // MARK: - Permission

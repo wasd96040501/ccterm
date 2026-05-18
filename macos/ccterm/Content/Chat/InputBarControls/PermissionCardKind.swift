@@ -35,7 +35,7 @@ enum PermissionCardKind: Equatable {
         switch request.toolName {
         case "Bash":
             if let command = request.rawInput["command"] as? String,
-                isSedInPlaceEdit(command)
+                SedEditParser.parse(command) != nil
             {
                 return .sedEdit
             }
@@ -70,18 +70,4 @@ enum PermissionCardKind: Equatable {
         }
     }
 
-    /// Cheap heuristic for `sed -i '…' file` — enough to drive the
-    /// "show this Bash request as a file edit" branch. Full
-    /// substitution parsing (with flags + escapes) is deferred until
-    /// we actually render the diff; the upstream `parseSedEditCommand`
-    /// only matches simple single-substitution forms anyway.
-    private static func isSedInPlaceEdit(_ command: String) -> Bool {
-        let trimmed = command.trimmingCharacters(in: .whitespaces)
-        guard trimmed.hasPrefix("sed ") else { return false }
-        // Require the `-i` flag in any standard position. We do not
-        // try to be too clever — the rendering layer falls back to
-        // the shell body if the substitution can't be applied.
-        let tokens = trimmed.split(separator: " ", omittingEmptySubsequences: true)
-        return tokens.contains { $0 == "-i" || $0.hasPrefix("-i") }
-    }
 }

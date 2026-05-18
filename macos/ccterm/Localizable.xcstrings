@@ -807,6 +807,16 @@
         }
       }
     },
+    "Could not preview sed substitution": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法预览 sed 替换结果"
+          }
+        }
+      }
+    },
     "Create %@": {
       "localizations": {
         "zh-Hans": {

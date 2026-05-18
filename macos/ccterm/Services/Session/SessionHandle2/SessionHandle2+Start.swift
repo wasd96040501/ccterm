@@ -399,37 +399,24 @@ extension SessionHandle2 {
     // MARK: Title generation
 
     fileprivate func launchTitleGenerationTask(firstMessage: String) {
-        let sid = sessionId
+        // UserDefaults read kept on MainActor (not inside the detached
+        // task) so the LLM-call path stays pure for testability and so
+        // hosted XCTest on CI does not fault on a background
+        // `UserDefaults.standard` access — see cctermTests/CLAUDE.md.
         let customCLI = UserDefaults.standard.string(forKey: "customCLICommand")
 
         Task.detached { [weak self] in
-            let tmp = FileManager.default.temporaryDirectory
-                .appendingPathComponent("title-gen-\(UUID().uuidString.prefix(8))")
-            try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-            defer { try? FileManager.default.removeItem(at: tmp) }
-
-            let config = PromptConfiguration(
-                workingDirectory: tmp,
-                customCommand: customCLI
+            let result = await TitleGenerator.generate(
+                firstMessage: firstMessage,
+                customCLICommand: customCLI
             )
-            let result: Prompt.TitleAndBranch?
-            do {
-                result = try await Prompt.runTitleAndBranch(
-                    firstMessage: firstMessage,
-                    configuration: config
-                )
-            } catch {
-                appLog(.warning, "SessionHandle2", "title-gen failed \(sid): \(error.localizedDescription)")
-                result = nil
-            }
-
             await MainActor.run { [weak self] in
                 guard let self else { return }
-                guard let r = result else {
+                if let r = result {
+                    self.applyGeneratedTitle(r)
+                } else {
                     self.isGeneratingTitle = false
-                    return
                 }
-                self.applyGeneratedTitle(r)
             }
         }
     }

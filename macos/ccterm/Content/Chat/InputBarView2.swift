@@ -6,9 +6,9 @@ import UniformTypeIdentifiers
 ///
 /// Layout: `HStack(attach, pill)` where `pill` is a squircle container that
 /// wraps either `HStack(text, sendButton)` (idle) or
-/// `VStack(thumbnailStrip, Divider, HStack(text, sendButton))` (image or
-/// file attached). Sizes are 20% smaller than the previous 40pt design,
-/// all on a 4pt grid:
+/// `VStack(thumbnailStrip, Divider, HStack(text, sendButton))` (one or more
+/// attachments). Sizes are 20% smaller than the previous 40pt design, all
+/// on a 4pt grid:
 ///
 /// - pill: 32pt min height, `cornerRadius = 16`. Send button is concentric
 ///   with the bottom-right corner: button radius 12, shared center ⇒ 4pt
@@ -28,9 +28,10 @@ struct InputBarView2: View {
     private let textTrailingPadding: CGFloat = 4
     private let textVerticalPadding: CGFloat = 7.5
     private let thumbnailSize: CGFloat = 48
+    private let thumbnailSpacing: CGFloat = 8
     private let thumbnailTopPadding: CGFloat = 8
     private let thumbnailBottomPadding: CGFloat = 8
-    private let thumbnailLeadingPadding: CGFloat = 12
+    private let thumbnailHorizontalPadding: CGFloat = 12
     private let iconPointSize: CGFloat = 13
     private let animationDuration: TimeInterval = 0.35
 
@@ -41,9 +42,17 @@ struct InputBarView2: View {
         "png", "jpg", "jpeg", "gif", "webp", "heic", "bmp", "tiff", "tif",
     ]
 
-    /// Attachment payload for the next outgoing message. Single-slot
-    /// (drop / pick replaces an existing attachment).
-    struct Attachment: Equatable {
+    /// UTTypes accepted by `.onDrop`. We accept file URLs (Finder, code
+    /// editors, screenshot HUDs that *have* materialised the file) **and**
+    /// raw image UTTypes so screenshot HUD drags that only advertise
+    /// `public.png` (no URL conformance) still attach as in-memory images.
+    private static let acceptedDropTypes: [UTType] = [
+        .fileURL, .image, .png, .jpeg, .tiff, .heic, .gif, .bmp, .webP,
+    ]
+
+    /// One attached file or in-memory image. Identifiable so the thumbnail
+    /// strip can `ForEach` with stable per-card hover state.
+    struct Attachment: Equatable, Identifiable {
         enum Kind: Equatable {
             /// Decoded once at attach-time so we don't pay an `NSImage`
             /// decode each layout pass; sent via
@@ -54,6 +63,7 @@ struct InputBarView2: View {
             case file(path: String)
         }
 
+        let id: UUID
         let kind: Kind
         /// Image thumbnail or system file icon, used by the thumbnail
         /// strip; for files this is `NSWorkspace.shared.icon(forFile:)`.
@@ -61,18 +71,26 @@ struct InputBarView2: View {
         /// Display name for the file row (and tooltip for image rows).
         let filename: String
 
+        init(id: UUID = UUID(), kind: Kind, thumbnail: NSImage, filename: String) {
+            self.id = id
+            self.kind = kind
+            self.thumbnail = thumbnail
+            self.filename = filename
+        }
+
         static func == (lhs: Attachment, rhs: Attachment) -> Bool {
-            lhs.kind == rhs.kind && lhs.filename == rhs.filename
+            lhs.id == rhs.id && lhs.kind == rhs.kind && lhs.filename == rhs.filename
         }
     }
 
-    /// Payload handed to `onSubmit`. Either `text` is non-empty, an `image`
-    /// is attached, or a `filePath` is attached. Callers route to the
-    /// appropriate `Session.send(...)` overload.
+    /// Payload handed to `onSubmit`. Any combination of `text`, `images`,
+    /// and `filePaths` can be non-empty (at least one is, by `canSend`).
+    /// `RootView2.submit(_:sessionId:)` composes them into one or more
+    /// `Session.send(...)` calls.
     struct Submission {
         let text: String
-        let image: (data: Data, mediaType: String)?
-        let filePath: String?
+        let images: [(data: Data, mediaType: String)]
+        let filePaths: [String]
     }
 
     /// Injected by the caller. Only fired when the message has at least a
@@ -106,9 +124,8 @@ struct InputBarView2: View {
     @State private var text: String = ""
     @State private var isFocused: Bool = false
     @State private var desiredCursorPosition: Int?
-    @State var attachment: Attachment?
-    @State private var isPresentingPreview: Bool = false
-    @State private var isThumbHovered: Bool = false
+    @State var attachments: [Attachment] = []
+    @State private var previewImage: PreviewImage?
     /// True while a file drag is hovering anywhere over the bar. Drives the
     /// dashed accent stroke on the pill + attach button.
     @State private var isDropTargeted: Bool = false
@@ -117,7 +134,7 @@ struct InputBarView2: View {
         // `.bottom` (not `.center`) so the attach button always sits at
         // the bottom 32pt of the pill where the text row lives. Without
         // an attachment, pill and attach are both 32pt high → centers
-        // coincide. With an attachment, pill grows upward to host the
+        // coincide. With attachments, pill grows upward to host the
         // thumbnail strip, but the text row stays anchored to the
         // bottom — bottom-alignment keeps the `+` centered on the text
         // row rather than drifting to the overall pill center.
@@ -130,14 +147,12 @@ struct InputBarView2: View {
             pill
                 .modifier(ReportFrame(coordSpace: coordSpace, action: onPillRect))
         }
-        .onDrop(of: [.fileURL], isTargeted: $isDropTargeted, perform: handleDrop)
+        .onDrop(of: Self.acceptedDropTypes, isTargeted: $isDropTargeted, perform: handleDrop)
         .animation(.easeOut(duration: 0.12), value: isDropTargeted)
         .animation(.smooth(duration: animationDuration), value: isRunning)
-        .animation(.smooth(duration: animationDuration), value: attachment != nil)
-        .sheet(isPresented: $isPresentingPreview) {
-            if let attachment, case .image = attachment.kind {
-                ImagePreviewView(thumbnail: attachment.thumbnail)
-            }
+        .animation(.smooth(duration: animationDuration), value: attachments.isEmpty)
+        .sheet(item: $previewImage) { item in
+            ImagePreviewView(thumbnail: item.image)
         }
     }
 
@@ -145,7 +160,7 @@ struct InputBarView2: View {
 
     private var pill: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if attachment != nil {
+            if !attachments.isEmpty {
                 thumbnailStrip
                 Divider()
             }
@@ -169,72 +184,80 @@ struct InputBarView2: View {
         }
     }
 
-    @ViewBuilder
+    /// Horizontally scrollable strip — multiple attachments stack left-to-
+    /// right; once they overflow the pill width the strip scrolls (cards
+    /// keep their full size rather than shrinking). `.scrollIndicators(.never)`
+    /// matches Apple's compose-area aesthetic in Mail / Messages.
     private var thumbnailStrip: some View {
-        if let attachment {
-            HStack(spacing: 0) {
-                attachmentCard(for: attachment)
-                Spacer(minLength: 0)
+        ScrollView(.horizontal) {
+            HStack(spacing: thumbnailSpacing) {
+                ForEach(attachments) { attachment in
+                    attachmentCard(for: attachment)
+                }
             }
-            .padding(.top, thumbnailTopPadding)
-            .padding(.bottom, thumbnailBottomPadding)
-            .padding(.leading, thumbnailLeadingPadding)
+            .padding(.vertical, thumbnailTopPadding)
+            .padding(.horizontal, thumbnailHorizontalPadding)
         }
+        .scrollIndicators(.never)
+        .frame(maxHeight: thumbnailSize + thumbnailTopPadding + thumbnailBottomPadding)
     }
 
-    /// Card for one attachment in the thumbnail strip. Image attachments are
-    /// a clickable thumbnail; file attachments are icon + filename. Both
-    /// expose a top-trailing X button that fades in on hover.
+    /// Card for one attachment. Image kind shows a clickable thumbnail
+    /// (taps open the preview sheet); file kind shows icon + filename.
+    /// Each card owns its own hover state via `AttachmentCard`.
     @ViewBuilder
     private func attachmentCard(for attachment: Attachment) -> some View {
         switch attachment.kind {
         case .image:
-            imageCard(thumbnail: attachment.thumbnail)
+            AttachmentCard(
+                onRemove: { remove(attachment) },
+                content: {
+                    Button(action: { previewImage = PreviewImage(image: attachment.thumbnail) }) {
+                        Image(nsImage: attachment.thumbnail)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: thumbnailSize, height: thumbnailSize)
+                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .help(attachment.filename)
+                })
         case .file(let path):
-            fileCard(icon: attachment.thumbnail, filename: attachment.filename, path: path)
+            AttachmentCard(
+                onRemove: { remove(attachment) },
+                content: {
+                    HStack(spacing: 8) {
+                        Image(nsImage: attachment.thumbnail)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: thumbnailSize - 16, height: thumbnailSize - 16)
+                        Text(attachment.filename)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                    .padding(.horizontal, 8)
+                    .frame(height: thumbnailSize)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+                    )
+                    .help(path)
+                })
         }
     }
 
-    private func imageCard(thumbnail: NSImage) -> some View {
-        Button(action: { isPresentingPreview = true }) {
-            Image(nsImage: thumbnail)
-                .resizable()
-                .aspectRatio(contentMode: .fill)
-                .frame(width: thumbnailSize, height: thumbnailSize)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
-                )
-        }
-        .buttonStyle(.plain)
-        .modifier(AttachmentHoverRemove(isHovered: $isThumbHovered) { attachment = nil })
-    }
-
-    private func fileCard(icon: NSImage, filename: String, path: String) -> some View {
-        HStack(spacing: 8) {
-            Image(nsImage: icon)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: thumbnailSize - 16, height: thumbnailSize - 16)
-            Text(filename)
-                .font(.system(size: 12))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
-        .padding(.horizontal, 8)
-        .frame(height: thumbnailSize)
-        .background(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.6))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
-        )
-        .help(path)
-        .modifier(AttachmentHoverRemove(isHovered: $isThumbHovered) { attachment = nil })
+    private func remove(_ attachment: Attachment) {
+        attachments.removeAll { $0.id == attachment.id }
     }
 
     // MARK: - Text Area
@@ -285,25 +308,25 @@ struct InputBarView2: View {
     private var canSend: Bool {
         guard submitEnabled else { return false }
         let textOK = !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return textOK || attachment != nil
+        return textOK || !attachments.isEmpty
     }
 
     private func handleSend() {
         guard canSend else { return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        var image: (data: Data, mediaType: String)? = nil
-        var filePath: String? = nil
-        if let kind = attachment?.kind {
-            switch kind {
+        var images: [(data: Data, mediaType: String)] = []
+        var filePaths: [String] = []
+        for attachment in attachments {
+            switch attachment.kind {
             case .image(let data, let mediaType):
-                image = (data: data, mediaType: mediaType)
+                images.append((data: data, mediaType: mediaType))
             case .file(let path):
-                filePath = path
+                filePaths.append(path)
             }
         }
-        onSubmit(Submission(text: trimmed, image: image, filePath: filePath))
+        onSubmit(Submission(text: trimmed, images: images, filePaths: filePaths))
         text = ""
-        attachment = nil
+        attachments = []
     }
 
     // MARK: - Picker
@@ -313,13 +336,15 @@ struct InputBarView2: View {
     /// extension; same dispatch as the drag-and-drop path.
     fileprivate func presentPicker() {
         let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = false
+        panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
         panel.message = String(localized: "Choose a file to attach")
         panel.begin { [self] response in
-            guard response == .OK, let url = panel.url else { return }
-            attachPickedURL(url)
+            guard response == .OK else { return }
+            for url in panel.urls {
+                attachPickedURL(url)
+            }
         }
     }
 
@@ -342,11 +367,12 @@ struct InputBarView2: View {
     fileprivate func attachImage(at url: URL) {
         guard let data = try? Data(contentsOf: url) else { return }
         let thumb = NSImage(data: data) ?? NSImage()
-        attachment = Attachment(
-            kind: .image(data: data, mediaType: mediaType(for: url)),
-            thumbnail: thumb,
-            filename: url.lastPathComponent
-        )
+        appendAttachment(
+            Attachment(
+                kind: .image(data: data, mediaType: mediaType(for: url)),
+                thumbnail: thumb,
+                filename: url.lastPathComponent
+            ))
     }
 
     /// Attach the file at `url` as a non-image "mention" — its absolute path
@@ -355,11 +381,29 @@ struct InputBarView2: View {
     /// honors the file's type-derived icon (Finder-style).
     fileprivate func attachFile(at url: URL) {
         let icon = NSWorkspace.shared.icon(forFile: url.path)
-        attachment = Attachment(
-            kind: .file(path: url.path),
-            thumbnail: icon,
-            filename: url.lastPathComponent
-        )
+        appendAttachment(
+            Attachment(
+                kind: .file(path: url.path),
+                thumbnail: icon,
+                filename: url.lastPathComponent
+            ))
+    }
+
+    /// Image data dropped without an associated file URL (e.g. screenshot
+    /// HUD drag). `mediaType` lines up with what the provider advertised so
+    /// the wire format matches what the bytes actually are.
+    private func attachImageData(_ data: Data, mediaType: String, filename: String) {
+        let thumb = NSImage(data: data) ?? NSImage()
+        appendAttachment(
+            Attachment(
+                kind: .image(data: data, mediaType: mediaType),
+                thumbnail: thumb,
+                filename: filename
+            ))
+    }
+
+    private func appendAttachment(_ attachment: Attachment) {
+        attachments.append(attachment)
     }
 
     private func mediaType(for url: URL) -> String {
@@ -373,27 +417,40 @@ struct InputBarView2: View {
 
     // MARK: - Drag and drop
 
-    /// Single-attachment drop: take the first dropped file URL. If its
-    /// extension matches a known image type, route through `attachImage` so
-    /// the user gets the image-preview flow; otherwise treat it as a generic
-    /// file attachment.
+    /// Process every provider in the drop. Each one is tried as (1) a file
+    /// URL (Finder, code editors, materialised screenshot drags), then (2)
+    /// in-memory image data (screenshot HUD that only advertises
+    /// `public.png` etc.). Returns `true` if at least one provider was
+    /// scheduled to load — SwiftUI uses this to decide whether to play the
+    /// drop animation.
     private func handleDrop(providers: [NSItemProvider]) -> Bool {
-        guard let provider = providers.first else { return false }
-        guard provider.canLoadObject(ofClass: URL.self) else {
-            // Fall back to UTType.fileURL data representation for older
-            // sources that don't advertise URL conformance.
-            return loadFileURL(from: provider)
-        }
-        _ = provider.loadObject(ofClass: URL.self) { object, _ in
-            guard let url = object as? URL else { return }
-            DispatchQueue.main.async {
-                self.attachPickedURL(url)
+        var consumedAny = false
+        for provider in providers {
+            if loadAsURL(provider) {
+                consumedAny = true
+                continue
+            }
+            if loadAsImageData(provider) {
+                consumedAny = true
+                continue
             }
         }
-        return true
+        return consumedAny
     }
 
-    private func loadFileURL(from provider: NSItemProvider) -> Bool {
+    /// Try to coerce the provider into a `URL`. We probe two paths because
+    /// not every drag source registers URL conformance, but most still
+    /// expose `public.file-url` as a typed item.
+    private func loadAsURL(_ provider: NSItemProvider) -> Bool {
+        if provider.canLoadObject(ofClass: URL.self) {
+            _ = provider.loadObject(ofClass: URL.self) { object, _ in
+                guard let url = object as? URL else { return }
+                DispatchQueue.main.async {
+                    self.attachPickedURL(url)
+                }
+            }
+            return true
+        }
         let identifier = UTType.fileURL.identifier
         guard provider.hasItemConformingToTypeIdentifier(identifier) else { return false }
         provider.loadItem(forTypeIdentifier: identifier, options: nil) { item, _ in
@@ -411,6 +468,44 @@ struct InputBarView2: View {
             }
         }
         return true
+    }
+
+    /// Try to read raw image bytes from the provider. Walks the common
+    /// bitmap UTTypes in priority order (PNG first since the screenshot HUD
+    /// always advertises `public.png`). The provider's `suggestedName`
+    /// becomes the filename when present, otherwise we synthesise one with
+    /// the matched extension so it reads sensibly in the strip.
+    private func loadAsImageData(_ provider: NSItemProvider) -> Bool {
+        let candidates: [(UTType, String, String)] = [
+            (.png, "image/png", "png"),
+            (.jpeg, "image/jpeg", "jpg"),
+            (.heic, "image/heic", "heic"),
+            (.tiff, "image/tiff", "tiff"),
+            (.gif, "image/gif", "gif"),
+            (.bmp, "image/bmp", "bmp"),
+            (.webP, "image/webp", "webp"),
+        ]
+        for (type, mediaType, ext) in candidates {
+            guard provider.hasItemConformingToTypeIdentifier(type.identifier) else { continue }
+            let suggested = provider.suggestedName
+            provider.loadDataRepresentation(forTypeIdentifier: type.identifier) { data, _ in
+                guard let data, !data.isEmpty else { return }
+                let filename = Self.imageDropFilename(suggested: suggested, ext: ext)
+                DispatchQueue.main.async {
+                    self.attachImageData(data, mediaType: mediaType, filename: filename)
+                }
+            }
+            return true
+        }
+        return false
+    }
+
+    private static func imageDropFilename(suggested: String?, ext: String) -> String {
+        if let name = suggested, !name.isEmpty {
+            return ((name as NSString).pathExtension.isEmpty) ? "\(name).\(ext)" : name
+        }
+        let stamp = ISO8601DateFormatter().string(from: Date())
+        return "screenshot-\(stamp).\(ext)"
     }
 
     // MARK: - Helpers
@@ -450,19 +545,20 @@ private struct ReportFrame: ViewModifier {
     }
 }
 
-// MARK: - Attachment hover remove button
+// MARK: - Attachment card with hover-X
 
-/// Overlays a top-trailing X button that fades in while the attached row is
-/// hovered. The button has its own circular `xmark.circle.fill` glyph
-/// (already a white-on-dim circle in palette mode), positioned 2pt in from
-/// the top-right corner. The hover state is hoisted into the parent so
-/// removing the attachment doesn't leak per-card state.
-private struct AttachmentHoverRemove: ViewModifier {
-    @Binding var isHovered: Bool
+/// Wraps an attachment view (image thumbnail or file icon+name) and
+/// overlays a top-trailing X that fades in on hover. Each instance owns
+/// its own `@State`, so per-card hover doesn't bleed across siblings in
+/// the multi-attachment strip.
+private struct AttachmentCard<Content: View>: View {
     let onRemove: () -> Void
+    @ViewBuilder let content: () -> Content
 
-    func body(content: Content) -> some View {
-        content
+    @State private var isHovered: Bool = false
+
+    var body: some View {
+        content()
             .overlay(alignment: .topTrailing) {
                 Button(action: onRemove) {
                     Image(systemName: "xmark.circle.fill")
@@ -508,6 +604,14 @@ private struct ImagePreviewView: View {
             minHeight: 280, idealHeight: 420, maxHeight: 720
         )
     }
+}
+
+/// Wrapper that gives the preview sheet a value-type `id` source (the
+/// per-presentation UUID) and a typed `NSImage` payload. Avoids declaring
+/// a retroactive `Identifiable` conformance on `NSImage`.
+private struct PreviewImage: Identifiable {
+    let id = UUID()
+    let image: NSImage
 }
 
 // MARK: - Preview

@@ -21,6 +21,11 @@ struct RootView2: View {
     /// Bottom inset of the input bar in chat mode (matches the previous
     /// `.padding(.bottom, 36)`).
     fileprivate static let chatBottomInset: CGFloat = 36
+    /// Breathing room between the compose card / input bar and the
+    /// detail pane's left/right edges. Matched on the chat-mode bar
+    /// (`.padding(.horizontal, 20)` below) so neither layout reads
+    /// "flush" against the sidebar divider or the window's right edge.
+    fileprivate static let detailHorizontalInset: CGFloat = 20
 
     @State private var selectedSessionId: String? = SidebarView2.newSessionTag
     @State private var draftSessionId: String?
@@ -70,8 +75,15 @@ struct RootView2: View {
             // pins the column's own minimum (and, with the app scene's
             // `.windowResizability(.contentSize)`, propagates up to the
             // window's minimum size) is `navigationSplitViewColumnWidth`.
+            //
+            // The min/ideal here = the compose card's own min/ideal
+            // (640 / 960 from `NewSessionConfigurator`) + the
+            // `detailHorizontalInset` on each side. The extra 40pt
+            // keeps the card from going flush against the sidebar
+            // divider or the window's right edge even at the smallest
+            // allowed window width.
             detailContent
-                .navigationSplitViewColumnWidth(min: 640, ideal: 960)
+                .navigationSplitViewColumnWidth(min: 680, ideal: 1000)
         }
         .frame(minHeight: 480)
         .alert(
@@ -319,6 +331,7 @@ struct RootView2: View {
                         )
                     }
                 )
+                .padding(.horizontal, Self.detailHorizontalInset)
                 .transition(.opacity)
             } else {
                 VStack(spacing: 0) {
@@ -335,7 +348,7 @@ struct RootView2: View {
                         minWidth: BlockStyle.minLayoutWidth,
                         maxWidth: Self.composeMaxWidth
                     )
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, Self.detailHorizontalInset)
                     .padding(.bottom, Self.chatBottomInset)
                 }
             }

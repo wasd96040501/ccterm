@@ -16,6 +16,12 @@ import SwiftUI
 /// decision callbacks and renders the body. Wiring through to
 /// `session.respond(...)` lives in `InputBarChrome` — keeping this
 /// view free of session state so it stays snapshot-friendly.
+///
+/// The body shape varies per category — see `PermissionCardKind`.
+/// Each kind owns a small sibling view next to this file (e.g.
+/// `PermissionShellCardBody`); the parent renders the shared
+/// chrome (header / decision reason / buttons) and delegates the
+/// middle section to the per-kind body.
 struct PermissionCardView: View {
     let request: PermissionRequest
     let onAllowOnce: () -> Void
@@ -26,18 +32,12 @@ struct PermissionCardView: View {
     /// belongs to the same surface family as the pill.
     static let cornerRadius: CGFloat = 16
 
+    private var kind: PermissionCardKind { PermissionCardKind.kind(for: request) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
-            if let detail = PermissionCardCopy.parameter(for: request) {
-                Text(detail)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(.primary)
-                    .lineLimit(3)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            body(for: kind)
             if let reason = request.decisionReason?.reason, !reason.isEmpty {
                 Label {
                     Text(reason)
@@ -71,6 +71,16 @@ struct PermissionCardView: View {
     }
 
     @ViewBuilder
+    private func body(for kind: PermissionCardKind) -> some View {
+        switch kind {
+        case .bash, .powerShell:
+            PermissionShellCardBody(request: request, kind: kind)
+        default:
+            PermissionFallbackCardBody(request: request)
+        }
+    }
+
+    @ViewBuilder
     private var buttonRow: some View {
         HStack(spacing: 8) {
             PermissionDecisionButton(
@@ -100,12 +110,14 @@ enum PermissionCardCopy {
     /// One-line headline. Falls back to a generic verb when the tool
     /// isn't in the curated list.
     static func title(for request: PermissionRequest) -> String {
-        let verb = toolVerb(request.toolName)
+        let verb = toolVerb(request.toolName, kind: PermissionCardKind.kind(for: request))
         return String(localized: "Claude wants to \(verb)")
     }
 
     /// The most informative single field from `rawInput`, in the
     /// order Anthropic's CLI prefers for its own preview text.
+    /// Consumed by `PermissionFallbackCardBody` for kinds without a
+    /// dedicated renderer.
     static func parameter(for request: PermissionRequest) -> String? {
         let candidates = ["command", "file_path", "path", "pattern", "url"]
         for key in candidates {
@@ -116,18 +128,47 @@ enum PermissionCardCopy {
         return nil
     }
 
-    private static func toolVerb(_ name: String) -> String {
-        switch name {
-        case "Bash": return String(localized: "run a shell command")
-        case "Read": return String(localized: "read a file")
-        case "Write": return String(localized: "write a file")
-        case "Edit": return String(localized: "edit a file")
-        case "Glob": return String(localized: "search for files")
-        case "Grep": return String(localized: "search file contents")
-        case "Task": return String(localized: "run a sub-task")
-        case "ExitPlanMode": return String(localized: "exit plan mode")
-        case "WebFetch": return String(localized: "fetch a web page")
-        default: return String(localized: "use \(name)")
+    private static func toolVerb(_ name: String, kind: PermissionCardKind) -> String {
+        switch kind {
+        case .bash: return String(localized: "run a shell command")
+        case .powerShell: return String(localized: "run a PowerShell command")
+        case .sedEdit, .fileEdit: return String(localized: "edit a file")
+        case .fileWrite: return String(localized: "write a file")
+        case .notebookEdit: return String(localized: "edit a notebook")
+        case .filesystemRead:
+            switch name {
+            case "Glob": return String(localized: "search for files")
+            case "Grep": return String(localized: "search file contents")
+            default: return String(localized: "read a file")
+            }
+        case .webFetch: return String(localized: "fetch a web page")
+        case .enterPlanMode: return String(localized: "enter plan mode")
+        case .exitPlanMode: return String(localized: "exit plan mode")
+        case .taskAgent: return String(localized: "run a sub-task")
+        case .skill: return String(localized: "run a skill")
+        case .askUserQuestion: return String(localized: "ask you a question")
+        case .mcp: return String(localized: "use \(name)")
+        case .unknown: return String(localized: "use \(name)")
+        }
+    }
+}
+
+// MARK: - Fallback body
+
+/// Generic one-liner body used until each kind ships its own
+/// dedicated renderer. Same shape as before this file was split.
+private struct PermissionFallbackCardBody: View {
+    let request: PermissionRequest
+
+    var body: some View {
+        if let detail = PermissionCardCopy.parameter(for: request) {
+            Text(detail)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(.primary)
+                .lineLimit(3)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }

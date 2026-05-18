@@ -702,6 +702,16 @@
         }
       }
     },
+    "Compound command — \"Allow always\" will save %lld rules": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复合命令 — \"始终允许\" 将保存 %lld 条规则"
+          }
+        }
+      }
+    },
     "Confirm": {
       "extractionState": "stale",
       "localizations": {
@@ -3139,6 +3149,16 @@
         }
       }
     },
+    "ask you a question": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向你提问"
+          }
+        }
+      }
+    },
     "awaiting answer…": {
       "localizations": {
         "zh-Hans": {
@@ -3168,6 +3188,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "编辑文件"
+          }
+        }
+      }
+    },
+    "edit a notebook": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑 notebook"
+          }
+        }
+      }
+    },
+    "enter plan mode": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "进入 plan 模式"
           }
         }
       }
@@ -3233,12 +3273,32 @@
         }
       }
     },
+    "run a PowerShell command": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行 PowerShell 命令"
+          }
+        }
+      }
+    },
     "run a shell command": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "运行 shell 命令"
+          }
+        }
+      }
+    },
+    "run a skill": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行 skill"
           }
         }
       }

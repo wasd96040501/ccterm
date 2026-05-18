@@ -59,13 +59,10 @@ struct NewSessionConfigurator<InputBar: View>: View {
     private static var cardCornerRadius: CGFloat { InputBarView2.cornerRadius }
     /// Hit-target for the "+" button in the Projects header.
     private static var plusButtonSize: CGFloat { 22 }
-    /// Height of the fade-out scrim at the top of the recents list.
-    /// Sits over the List's natural top inset so the first row enters
-    /// the fade band as it scrolls up — content peeks through the
-    /// dissolving tail rather than slamming into a hard line.
-    private static var recentsTopScrimHeight: CGFloat { 24 }
-    /// Bottom-fade twin. Mirrors the top scrim so the last row
-    /// dissolves into the card's bottom edge the same way.
+    /// Bottom-fade scrim so the last recent-projects row dissolves
+    /// into the card's bottom edge instead of slamming into a hard
+    /// line. The matching top scrim was dropped — the "Projects"
+    /// section header already creates a clear visual boundary.
     private static var recentsBottomScrimHeight: CGFloat { 24 }
 
     @Environment(RecentProjectsStore.self) private var recents
@@ -82,7 +79,15 @@ struct NewSessionConfigurator<InputBar: View>: View {
             projectsColumn
                 .frame(width: Self.projectsColumnWidth)
                 .frame(maxHeight: .infinity)
-                .background(Color.black.opacity(0.035))
+                // Indigo recess — same blue family as the accent so
+                // the card still reads as one design language, but at
+                // ~6% opacity it lands as atmosphere rather than
+                // color. Visual psychology: cool indigo conveys
+                // focus / structure / memory, all of which suit a
+                // "navigation + history" panel, and the cool hue
+                // recedes against the warm accent glow on the right
+                // half instead of competing with it.
+                .background(Color.indigo.opacity(0.06))
                 .overlay(alignment: .trailing) {
                     Rectangle()
                         .fill(Color(nsColor: .separatorColor))
@@ -141,9 +146,11 @@ struct NewSessionConfigurator<InputBar: View>: View {
             } else {
                 ZStack {
                     recentsList
-                    FadeScrim(.topToBottom, height: Self.recentsTopScrimHeight, style: .ultraThinMaterial)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                        .allowsHitTesting(false)
+                    // Bottom-only fade so the last row dissolves into
+                    // the card's bottom edge. The matching top scrim
+                    // was dropped — the section header already
+                    // creates a clear visual boundary at the top, so
+                    // a fade band there just dimmed the first entry.
                     FadeScrim(.bottomToTop, height: Self.recentsBottomScrimHeight, style: .ultraThinMaterial)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                         .allowsHitTesting(false)
@@ -282,12 +289,11 @@ struct NewSessionConfigurator<InputBar: View>: View {
                 .padding(.top, 6)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
-            // Input bar zone: divider + the embedded bar provided by
-            // `RootView2`. The bar's own internal layout (pill, attach,
-            // chrome row) is untouched — this view only positions it.
-            Divider()
-                .padding(.horizontal, 28)
-
+            // Input bar zone: the embedded bar provided by
+            // `RootView2`. The bar's own internal layout (pill,
+            // attach, chrome row) is untouched — this view only
+            // positions it. No divider above the bar; the pill's own
+            // stroke is the visual edge.
             inputBar()
                 .padding(.horizontal, 28)
                 .padding(.top, 14)

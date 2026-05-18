@@ -8,12 +8,23 @@
 | `SessionHandle2+Start.swift` | `activate` / `stop` / `send` / bootstrap |
 | `SessionHandle2+Messaging.swift` | `interrupt` and other commands |
 | `SessionHandle2+Configuration.swift` | Local config: `setCwd`, `setWorktree`, `setModel`, ... |
-| `SessionHandle2+History.swift` | `loadHistory`, JSONL replay |
+| `SessionHandle2+History.swift` | `loadHistory` orchestration (Phase A/B), `historyJSONLURL` forwarder |
 | `SessionHandle2+Receive.swift` | Incoming-message path from the CLI |
 | `SessionHandle2+Types.swift` | `PendingPermission`, `SlashCommand`, ... |
 | `MessageEntry.swift` | Render-ready entries (`SingleEntry` / `GroupEntry`) |
 | `MessagesChange.swift` | Timeline change events that the bridge consumes |
 | `SessionManager2.swift` | Registry of `SessionHandle2`s, lazily created and cached by `sessionId` |
+
+The handle delegates I/O to four sibling services so the runtime state
+machine stays focused on `messages` / `status` / `pendingTurnCount` /
+config writes:
+
+| Service | Lives at | Responsibility |
+|---|---|---|
+| `CLIClient` protocol + `AgentSDKCLIClient` + `FakeCLIClient` | `CLIClient/` | Thin abstraction over `AgentSDK.Session`. Injected via `SessionHandle2.init(... cliClientFactory:)`; production defaults to `AgentSDKCLIClient.defaultFactory`, tests pass `{ _ in FakeCLIClient() }`. |
+| `TitleGenerator` | `TitleGenerator.swift` | Stateless one-shot LLM call (`Prompt.runTitleAndBranch`) inside a scratch dir. Handle's `generateTitle(from:)` calls into it; injectable `runner` seam for tests. |
+| `WorktreeProvisioner` | `Worktree/WorktreeProvisioner.swift` | Off-main `git worktree add` invocation via `DispatchQueue.global`. Wraps `Worktree.create`; injectable `creator` seam for tests. |
+| `HistoryLoader` | `HistoryLoader.swift` | Path resolution (`locate(sessionId:slug:)` with root-injected overload) + Phase A/B JSONL parsers. The two-phase orchestrator that consumes these stays on the handle in `SessionHandle2+History.swift`. |
 
 ## Talking to the renderer
 

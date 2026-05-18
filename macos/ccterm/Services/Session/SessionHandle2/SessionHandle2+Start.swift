@@ -32,7 +32,7 @@ extension SessionHandle2 {
             break
         }
         appLog(.info, "SessionHandle2", "stop() close agent \(sessionId)")
-        agentSession?.close()
+        cliClient?.close()
     }
 }
 
@@ -63,7 +63,7 @@ extension SessionHandle2 {
     /// 1. Immediately append a `.queued` `.localUser(input)` `SingleEntry`
     ///    (UI sees it right away).
     /// 2. Auto-trigger `ensureStarted()` if the session is unstarted/stopped.
-    /// 3. If the CLI is attached (`agentSession != nil`), write the message
+    /// 3. If the CLI is attached (`cliClient != nil`), write the message
     ///    to stdin immediately. The CLI handles its own queueing — Swift
     ///    does not gate flushes.
     /// 4. After the CLI consumes the message it echoes back a user message
@@ -99,7 +99,7 @@ extension SessionHandle2 {
         appLog(
             .info, "SessionHandle2",
             "[v2-send] enqueue sid=\(sessionId.prefix(8)) entryId=\(single.id.uuidString.prefix(8)) "
-                + "status=\(status) hasRecord=\(hasRecord) agentSession=\(agentSession != nil) "
+                + "status=\(status) hasRecord=\(hasRecord) cliClient=\(cliClient != nil) "
                 + "msgCount=\(messages.count) onChange=\(onMessagesChange != nil)")
         // Turn entry — bump before any side effect so the view's isRunning
         // is visible immediately. Synchronous on main; @Observable
@@ -115,7 +115,7 @@ extension SessionHandle2 {
 
         ensureStarted()
 
-        if let session = agentSession {
+        if let session = cliClient {
             appLog(
                 .info, "SessionHandle2",
                 "[v2-send] write-immediate sid=\(sessionId.prefix(8)) entryId=\(single.id.uuidString.prefix(8))")
@@ -232,7 +232,7 @@ extension SessionHandle2 {
         //
         // The bootstrap dispatch was already async, so callers
         // (`send` → `ensureStarted`) already handle the defer-flush path
-        // (agentSession == nil → message queued → flushed when bootstrap
+        // (cliClient == nil → message queued → flushed when bootstrap
         // finishes).
         if fresh, isWorktree {
             // Pre-compute the worktree name and path so the eager db row
@@ -260,58 +260,48 @@ extension SessionHandle2 {
             self.worktreeBranch = proposedName
             persistConfiguration()
 
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                let outcome: Result<Worktree, Error>
-                do {
-                    guard let origin else {
-                        throw Worktree.Error.notGitRepository(path: "(nil originPath)")
-                    }
-                    outcome = .success(
-                        try Worktree.create(
-                            from: origin,
-                            sourceBranch: source,
-                            preferredName: proposedName
-                        ))
-                } catch {
-                    outcome = .failure(error)
-                }
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    switch outcome {
-                    case .success(let wt):
-                        // Patch only if the collision-retry loop ended up
-                        // with a different name than we proposed — rare.
-                        if wt.name != proposedName {
-                            appLog(
-                                .info, "SessionHandle2",
-                                "worktree name collision recovered: proposed=\(proposedName) actual=\(wt.name)")
-                            self.cwd = wt.path
-                            self.worktreeBranch = wt.name
-                            self.repository.updateCwd(self.sessionId, cwd: wt.path)
-                            self.repository.updateWorktreeBranch(self.sessionId, branch: wt.name)
-                            self.onRecordPersisted?()
-                        }
-                        // The CLI conversation has never been created for
-                        // this session — `makeAgentConfig` will read the
-                        // `.pending` record and pick fresh mode. Do NOT
-                        // try to be clever about "skip resave" here: the
-                        // resume/fresh decision is owned by
-                        // `shouldResumeBootstrap`, not by a flag flowing in.
-                        self.continueStartup()
-                    case .failure(let error):
+            Task { @MainActor [weak self] in
+                let outcome = await WorktreeProvisioner.provision(
+                    origin: origin,
+                    sourceBranch: source,
+                    preferredName: proposedName
+                )
+                guard let self else { return }
+                switch outcome {
+                case .success(let wt):
+                    // Patch only if the collision-retry loop ended up
+                    // with a different name than we proposed — rare.
+                    if wt.name != proposedName {
                         appLog(
-                            .error, "SessionHandle2",
-                            "worktree provision FAILED \(self.sessionId) err=\(error)")
-                        let desc =
-                            (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-                        self.termination = desc
-                        self.status = .stopped
-                        // Persist the failure on the eagerly-saved row so
-                        // the user sees the error rather than a row that
-                        // silently never starts.
-                        self.repository.updateError(self.sessionId, error: desc)
-                        self.failQueuedEntries(reason: "worktree provision failed")
+                            .info, "SessionHandle2",
+                            "worktree name collision recovered: proposed=\(proposedName) actual=\(wt.name)"
+                        )
+                        self.cwd = wt.path
+                        self.worktreeBranch = wt.name
+                        self.repository.updateCwd(self.sessionId, cwd: wt.path)
+                        self.repository.updateWorktreeBranch(self.sessionId, branch: wt.name)
+                        self.onRecordPersisted?()
                     }
+                    // The CLI conversation has never been created for
+                    // this session — `makeAgentConfig` will read the
+                    // `.pending` record and pick fresh mode. Do NOT
+                    // try to be clever about "skip resave" here: the
+                    // resume/fresh decision is owned by
+                    // `shouldResumeBootstrap`, not by a flag flowing in.
+                    self.continueStartup()
+                case .failure(let error):
+                    appLog(
+                        .error, "SessionHandle2",
+                        "worktree provision FAILED \(self.sessionId) err=\(error)")
+                    let desc =
+                        (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                    self.termination = desc
+                    self.status = .stopped
+                    // Persist the failure on the eagerly-saved row so
+                    // the user sees the error rather than a row that
+                    // silently never starts.
+                    self.repository.updateError(self.sessionId, error: desc)
+                    self.failQueuedEntries(reason: "worktree provision failed")
                 }
             }
             return
@@ -348,15 +338,15 @@ extension SessionHandle2 {
     }
 
     /// Write every `.queued` `.localUser` entry to the CLI. Called once when
-    /// bootstrap just succeeded and `agentSession` becomes ready. After
+    /// bootstrap just succeeded and `cliClient` becomes ready. After
     /// that, `send(_:)` takes the "write CLI immediately" fast path. User
     /// messages are always `.single` (never grouped), so we only scan
     /// `.single`.
     func flushBootstrapBacklog() {
-        guard let session = agentSession else {
+        guard let session = cliClient else {
             appLog(
                 .warning, "SessionHandle2",
-                "[v2-send] flushBacklog SKIP agentSession=nil sid=\(sessionId.prefix(8))")
+                "[v2-send] flushBacklog SKIP cliClient=nil sid=\(sessionId.prefix(8))")
             return
         }
         var flushed = 0
@@ -399,37 +389,24 @@ extension SessionHandle2 {
     // MARK: Title generation
 
     fileprivate func launchTitleGenerationTask(firstMessage: String) {
-        let sid = sessionId
+        // UserDefaults read kept on MainActor (not inside the detached
+        // task) so the LLM-call path stays pure for testability and so
+        // hosted XCTest on CI does not fault on a background
+        // `UserDefaults.standard` access — see cctermTests/CLAUDE.md.
         let customCLI = UserDefaults.standard.string(forKey: "customCLICommand")
 
         Task.detached { [weak self] in
-            let tmp = FileManager.default.temporaryDirectory
-                .appendingPathComponent("title-gen-\(UUID().uuidString.prefix(8))")
-            try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-            defer { try? FileManager.default.removeItem(at: tmp) }
-
-            let config = PromptConfiguration(
-                workingDirectory: tmp,
-                customCommand: customCLI
+            let result = await TitleGenerator.generate(
+                firstMessage: firstMessage,
+                customCLICommand: customCLI
             )
-            let result: Prompt.TitleAndBranch?
-            do {
-                result = try await Prompt.runTitleAndBranch(
-                    firstMessage: firstMessage,
-                    configuration: config
-                )
-            } catch {
-                appLog(.warning, "SessionHandle2", "title-gen failed \(sid): \(error.localizedDescription)")
-                result = nil
-            }
-
             await MainActor.run { [weak self] in
                 guard let self else { return }
-                guard let r = result else {
+                if let r = result {
+                    self.applyGeneratedTitle(r)
+                } else {
                     self.isGeneratingTitle = false
-                    return
                 }
-                self.applyGeneratedTitle(r)
             }
         }
     }
@@ -551,7 +528,7 @@ extension SessionHandle2 {
             .info, "SessionHandle2",
             "[v2-send] bootstrap enter sid=\(sessionId.prefix(8)) fresh=\(wasFresh) "
                 + "resume=\(configuration.resume ?? "(nil)") wd=\(configuration.workingDirectory.path)")
-        let session = AgentSDK.Session(configuration: configuration)
+        let session: any CLIClient = cliClientFactory(configuration)
         session.lastKnownSessionId = sessionId
         attachCallbacks(to: session)
 
@@ -567,10 +544,10 @@ extension SessionHandle2 {
             .info, "SessionHandle2",
             "[v2-send] bootstrap start-ok sid=\(sessionId.prefix(8)) status-before-attach=\(status)")
 
-        // Only expose `agentSession` once stdin is actually ready, so
+        // Only expose `cliClient` once stdin is actually ready, so
         // `send()` can't write before `start()` completes (writeJSON does
         // guard nil pipes, but keeping the invariant tight is clearer).
-        self.agentSession = session
+        self.cliClient = session
 
         // Race: initialize completion vs process death. The CLI may start
         // and die instantly (e.g. `--resume` can't find the JSONL); in that
@@ -632,7 +609,7 @@ extension SessionHandle2 {
     /// throwing, or the CLI exiting non-zero before init completes.
     ///
     /// Side effects ordered for "make it visible to UI first":
-    /// status / pendingTurnCount flip first, agentSession is detached,
+    /// status / pendingTurnCount flip first, cliClient is detached,
     /// queued entries are failed, repo error is written, then
     /// onLaunchFailure notifies the subscriber (SessionManager2) to show
     /// an alert.
@@ -647,7 +624,7 @@ extension SessionHandle2 {
         self.termination = reason
         self.status = .stopped
         self.pendingTurnCount = 0
-        self.agentSession = nil
+        self.cliClient = nil
         self.stderrBuffer = ""
         for pending in pendingPermissions {
             pending.respond(.deny(reason: "Launch failed"))
@@ -660,7 +637,7 @@ extension SessionHandle2 {
 
     // MARK: Callbacks
 
-    fileprivate func attachCallbacks(to session: AgentSDK.Session) {
+    fileprivate func attachCallbacks(to session: any CLIClient) {
         let sidPrefix = sessionId.prefix(8)
         session.onMessage = { [weak self] msg in
             let kind: String
@@ -750,7 +727,7 @@ extension SessionHandle2 {
 
         // Died after running — normal cleanup (no alert).
         stderrBuffer = ""
-        agentSession = nil
+        cliClient = nil
         termination = desc
         status = .stopped
         // Process is dead — no `.result` will arrive for any in-flight turn,
@@ -780,7 +757,7 @@ extension SessionHandle2 {
     /// `entry.id` is sent as the `uuid` extra; the CLI echoes it back
     /// verbatim under `--replay-user-messages` for `confirmQueuedEntry`'s
     /// exact match.
-    fileprivate func writeUserEntryToCLI(_ entry: SingleEntry, session: AgentSDK.Session) {
+    fileprivate func writeUserEntryToCLI(_ entry: SingleEntry, session: any CLIClient) {
         guard case .localUser(let input) = entry.payload else {
             appLog(
                 .warning, "SessionHandle2",

@@ -51,7 +51,7 @@ extension SessionHandle2 {
             repository.updateExtra(sessionId, with: SessionExtraUpdate(model: model))
         }
         if isAttached, !model.isEmpty {
-            agentSession?.setModel(model)
+            cliClient?.setModel(model)
         }
     }
 
@@ -62,7 +62,7 @@ extension SessionHandle2 {
             repository.updateExtra(sessionId, with: SessionExtraUpdate(effort: effort.rawValue))
         }
         if isAttached {
-            agentSession?.setEffort(effort)
+            cliClient?.setEffort(effort)
         }
     }
 
@@ -73,7 +73,7 @@ extension SessionHandle2 {
             repository.updateExtra(sessionId, with: SessionExtraUpdate(permissionMode: mode.rawValue))
         }
         if isAttached {
-            agentSession?.setPermissionMode(mode.toSDK())
+            cliClient?.setPermissionMode(mode.toSDK())
         }
     }
 
@@ -86,7 +86,7 @@ extension SessionHandle2 {
     func setFastMode(_ enabled: Bool) {
         fastModeEnabled = enabled
         if isAttached {
-            agentSession?.setFastMode(enabled)
+            cliClient?.setFastMode(enabled)
         }
     }
 
@@ -95,7 +95,7 @@ extension SessionHandle2 {
     /// off, so we don't have to send an extra RPC to confirm it).
     internal func flushDeferredFastMode() {
         guard fastModeEnabled else { return }
-        agentSession?.setFastMode(true)
+        cliClient?.setFastMode(true)
     }
 }
 
@@ -204,7 +204,7 @@ extension SessionHandle2 {
             perms.additionalDirectories = dirs
             var settings = FlagSettings()
             settings.permissions = .set(perms)
-            agentSession?.applyFlagSettings(settings)
+            cliClient?.applyFlagSettings(settings)
         }
     }
 }

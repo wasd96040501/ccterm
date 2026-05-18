@@ -1,7 +1,7 @@
 import Foundation
 
 /// One-shot prompt configuration. Drives `claude -p` mode.
-public struct PromptConfiguration {
+public struct PromptConfiguration: Sendable {
     /// CLI working directory. Maps to `--cwd`.
     public var workingDirectory: URL
 

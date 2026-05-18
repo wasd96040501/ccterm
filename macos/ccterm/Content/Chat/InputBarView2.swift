@@ -123,8 +123,7 @@ struct InputBarView2: View {
         // row rather than drifting to the overall pill center.
         HStack(alignment: .bottom, spacing: attachToPillSpacing) {
             AttachButton(
-                onPickImage: presentImagePicker,
-                onPickFile: presentFilePicker,
+                onPick: presentPicker,
                 isDropTargeted: isDropTargeted
             )
             .modifier(ReportFrame(coordSpace: coordSpace, action: onAttachRect))
@@ -307,22 +306,12 @@ struct InputBarView2: View {
         attachment = nil
     }
 
-    // MARK: - Pickers
+    // MARK: - Picker
 
-    fileprivate func presentImagePicker() {
-        let panel = NSOpenPanel()
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.canChooseFiles = true
-        panel.allowedContentTypes = [.image]
-        panel.message = String(localized: "Choose an image to attach")
-        panel.begin { [self] response in
-            guard response == .OK, let url = panel.url else { return }
-            attachImage(at: url)
-        }
-    }
-
-    fileprivate func presentFilePicker() {
+    /// Single unified picker — any file. The thumbnail strip decides how
+    /// to render the result (image preview vs. file icon) based on the
+    /// extension; same dispatch as the drag-and-drop path.
+    fileprivate func presentPicker() {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
@@ -330,6 +319,18 @@ struct InputBarView2: View {
         panel.message = String(localized: "Choose a file to attach")
         panel.begin { [self] response in
             guard response == .OK, let url = panel.url else { return }
+            attachPickedURL(url)
+        }
+    }
+
+    /// Shared dispatch for picked / dropped URLs: image extensions take
+    /// the image flow (base64 send + preview); anything else becomes a
+    /// generic file mention (`@<absolute path>` in the outgoing text).
+    private func attachPickedURL(_ url: URL) {
+        let ext = url.pathExtension.lowercased()
+        if Self.imageExtensions.contains(ext) {
+            attachImage(at: url)
+        } else {
             attachFile(at: url)
         }
     }
@@ -386,7 +387,7 @@ struct InputBarView2: View {
         _ = provider.loadObject(ofClass: URL.self) { object, _ in
             guard let url = object as? URL else { return }
             DispatchQueue.main.async {
-                self.attachDroppedURL(url)
+                self.attachPickedURL(url)
             }
         }
         return true
@@ -406,19 +407,10 @@ struct InputBarView2: View {
             }
             guard let url else { return }
             DispatchQueue.main.async {
-                self.attachDroppedURL(url)
+                self.attachPickedURL(url)
             }
         }
         return true
-    }
-
-    private func attachDroppedURL(_ url: URL) {
-        let ext = url.pathExtension.lowercased()
-        if Self.imageExtensions.contains(ext) {
-            attachImage(at: url)
-        } else {
-            attachFile(at: url)
-        }
     }
 
     // MARK: - Helpers

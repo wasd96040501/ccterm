@@ -13,15 +13,23 @@ import SwiftUI
 ///
 /// ```
 /// ArchiveView (NavigationStack content)
-/// ├── Header (title + count chip)
+/// ├── Header (title only — leading-aligned with row text column)
 /// └── ScrollView
 ///     └── LazyVStack(spacing: 0)
-///         ├── if archivedRecords.isEmpty → EmptyState
+///         ├── if filteredRecords.isEmpty → EmptyState / NoMatchState
 ///         └── else ForEach(records) {
 ///                 ArchiveRow
 ///                 + Divider (between rows, never trailing)
 ///             }
 /// ```
+///
+/// Window toolbar:
+/// - `.searchable` for matching title / worktree branch (system search
+///   field, same chrome as the chat-history one).
+/// - A folder-filter button that opens `FolderFilterPickerView` in a
+///   popover. Filtering is in-memory over the already-fetched archived
+///   list, so there's no DB-side index work — the dataset is bounded by
+///   how many sessions the user has archived, typically dozens.
 ///
 /// Width policy:
 /// - Min width 480pt — matches the chat detail's `minWidth: 400` plus a
@@ -39,6 +47,12 @@ struct ArchiveView: View {
     /// `sessionId`; nil for the empty-state preview path.
     let onUnarchive: ((String) -> Void)?
 
+    @State private var searchQuery: String = ""
+    /// `nil` means "All Folders"; otherwise the canonical
+    /// `record.groupingPath` to match against.
+    @State private var selectedFolderPath: String? = nil
+    @State private var isFilterPopoverPresented: Bool = false
+
     init(onUnarchive: ((String) -> Void)? = nil) {
         self.onUnarchive = onUnarchive
     }
@@ -47,25 +61,7 @@ struct ArchiveView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 header
-                if manager.archivedRecords.isEmpty {
-                    ArchiveEmptyState()
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 80)
-                } else {
-                    LazyVStack(spacing: 0) {
-                        ForEach(Array(manager.archivedRecords.enumerated()), id: \.element.id) { index, record in
-                            ArchiveRow(
-                                record: record,
-                                onUnarchive: { unarchive(record) }
-                            )
-                            if index < manager.archivedRecords.count - 1 {
-                                Divider()
-                                    .padding(.leading, Self.rowHorizontalPadding)
-                            }
-                        }
-                    }
-                    .padding(.top, 12)
-                }
+                bodyContent
                 Spacer(minLength: 24)
             }
             .frame(
@@ -76,28 +72,121 @@ struct ArchiveView: View {
             .padding(.horizontal, 24)
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .searchable(
+            text: $searchQuery,
+            placement: .toolbar,
+            prompt: Text("Search archived sessions")
+        )
+        .toolbar {
+            ToolbarItem(placement: .automatic) {
+                filterButton
+            }
+        }
         .task { manager.refreshArchivedRecords() }
     }
 
+    @ViewBuilder
+    private var bodyContent: some View {
+        if manager.archivedRecords.isEmpty {
+            ArchiveEmptyState()
+                .frame(maxWidth: .infinity)
+                .padding(.top, 80)
+        } else {
+            let records = filteredRecords
+            if records.isEmpty {
+                ArchiveNoMatchState()
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 80)
+            } else {
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(records.enumerated()), id: \.element.id) { index, record in
+                        ArchiveRow(
+                            record: record,
+                            onUnarchive: { unarchive(record) }
+                        )
+                        if index < records.count - 1 {
+                            Divider()
+                                .padding(.leading, Self.rowHorizontalPadding)
+                        }
+                    }
+                }
+                .padding(.top, 12)
+            }
+        }
+    }
+
+    /// Header sits at the same leading inset as the row text column —
+    /// matches `ArchiveRow`'s `rowHorizontalPadding` so the "Archive"
+    /// title baseline and the first row's title share a vertical line.
     @ViewBuilder
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text("Archive")
                 .font(.system(size: 22, weight: .semibold))
-            if !manager.archivedRecords.isEmpty {
-                Text(verbatim: "\(manager.archivedRecords.count)")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(
-                        Capsule().fill(Color(nsColor: .labelColor).opacity(0.06))
-                    )
-            }
             Spacer(minLength: 0)
         }
+        .padding(.horizontal, Self.rowHorizontalPadding)
         .padding(.top, 40)
         .padding(.bottom, 16)
+    }
+
+    private var filterButton: some View {
+        Button {
+            isFilterPopoverPresented.toggle()
+        } label: {
+            Image(
+                systemName: selectedFolderPath == nil
+                    ? "line.3.horizontal.decrease.circle"
+                    : "line.3.horizontal.decrease.circle.fill"
+            )
+        }
+        .help(Text("Filter by folder"))
+        .popover(isPresented: $isFilterPopoverPresented, arrowEdge: .top) {
+            FolderFilterPickerView(
+                folders: folderOptions,
+                selectedPath: selectedFolderPath,
+                onSelect: { path in
+                    selectedFolderPath = path
+                    isFilterPopoverPresented = false
+                }
+            )
+        }
+    }
+
+    /// Distinct folder options drawn from the full archived list (not the
+    /// post-filter view), so the picker doesn't shrink as the user narrows
+    /// the search field. Records without a `groupingPath` are dropped —
+    /// they couldn't be folder-filtered anyway. Sorted alphabetically by
+    /// name for predictable scanning.
+    private var folderOptions: [FolderFilterPickerView.Folder] {
+        let buckets = Dictionary(grouping: manager.archivedRecords) { $0.groupingPath }
+        return buckets.compactMap { path, records -> FolderFilterPickerView.Folder? in
+            guard let path, !path.isEmpty, let first = records.first else { return nil }
+            let name = first.groupingFolderName ?? path
+            return FolderFilterPickerView.Folder(path: path, name: name)
+        }
+        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    /// Records after applying the in-memory folder and text filters.
+    /// Folder filter matches `groupingPath`; text filter matches the
+    /// title or `worktreeBranch` (case-insensitive substring on both).
+    private var filteredRecords: [SessionRecord] {
+        var records = manager.archivedRecords
+        if let path = selectedFolderPath {
+            records = records.filter { ($0.groupingPath ?? "") == path }
+        }
+        let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !q.isEmpty {
+            records = records.filter { record in
+                if record.title.localizedCaseInsensitiveContains(q) { return true }
+                if let branch = record.worktreeBranch, branch.localizedCaseInsensitiveContains(q) {
+                    return true
+                }
+                return false
+            }
+        }
+        return records
     }
 
     private func unarchive(_ record: SessionRecord) {
@@ -160,13 +249,29 @@ struct ArchiveRow: View {
         }
     }
 
+    /// Folder + (optional) worktree branch + archived-relative date.
+    /// The folder slot always renders with the `folder` SF Symbol — the
+    /// branch slot is what distinguishes a worktree row, rendered with
+    /// `arrow.triangle.branch` only when `isWorktree` and a branch name
+    /// is on hand.
     private var metadataStrip: some View {
         HStack(spacing: 6) {
             if let folder = folderLabel {
-                Image(systemName: record.isWorktree ? "arrow.triangle.branch" : "folder")
+                Image(systemName: "folder")
                     .font(.system(size: 10, weight: .regular))
                     .foregroundStyle(.tertiary)
                 Text(folder)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Text(verbatim: "·")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+            }
+            if record.isWorktree, let branch = record.worktreeBranch, !branch.isEmpty {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: 10, weight: .regular))
+                    .foregroundStyle(.tertiary)
+                Text(branch)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                 Text(verbatim: "·")
@@ -211,7 +316,7 @@ struct ArchiveRow: View {
     }
 }
 
-// MARK: - Empty state
+// MARK: - Empty / No-match state
 
 /// Centered message when nothing has been archived yet. The icon mirrors
 /// the sidebar entry so visual continuity holds when the user lands on
@@ -226,6 +331,28 @@ private struct ArchiveEmptyState: View {
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(.secondary)
             Text("Archive a session from its right-click menu in the sidebar.")
+                .font(.system(size: 12))
+                .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 320)
+        }
+    }
+}
+
+/// Centered message when the archive list is non-empty but the active
+/// search / folder filter excludes every row. Distinct from
+/// `ArchiveEmptyState` so the user knows the data is there — just hidden
+/// by the current query.
+private struct ArchiveNoMatchState: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 32, weight: .light))
+                .foregroundStyle(.tertiary)
+            Text("No matching sessions")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.secondary)
+            Text("Try clearing the search or folder filter.")
                 .font(.system(size: 12))
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)

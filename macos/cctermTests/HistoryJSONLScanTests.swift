@@ -2,7 +2,7 @@ import XCTest
 
 @testable import ccterm
 
-/// `SessionHandle2.scanForSession(_:under:)` is the slug-mismatch safety
+/// `HistoryLoader.scanForSession(_:under:)` is the slug-mismatch safety
 /// net for `historyJSONLURL`. The slug-based lookup remains the fast
 /// path; this scanner kicks in when the persisted cwd's sanitized slug
 /// doesn't match what the CLI actually wrote (canonicalize / realpath
@@ -41,7 +41,7 @@ final class HistoryJSONLScanTests: XCTestCase {
         let jsonl = slugDir.appendingPathComponent("\(sid).jsonl")
         try "".write(to: jsonl, atomically: true, encoding: .utf8)
 
-        let hit = SessionHandle2.scanForSession(sid, under: root)
+        let hit = HistoryLoader.scanForSession(sid, under: root)
         XCTAssertEqual(hit?.standardizedFileURL, jsonl.standardizedFileURL)
     }
 
@@ -58,7 +58,7 @@ final class HistoryJSONLScanTests: XCTestCase {
         let jsonl = slugDir.appendingPathComponent("\(sid).jsonl")
         try "".write(to: jsonl, atomically: true, encoding: .utf8)
 
-        let hit = SessionHandle2.scanForSession(sid, under: root)
+        let hit = HistoryLoader.scanForSession(sid, under: root)
         XCTAssertEqual(hit?.standardizedFileURL, jsonl.standardizedFileURL)
     }
 
@@ -72,7 +72,7 @@ final class HistoryJSONLScanTests: XCTestCase {
             encoding: .utf8)
 
         XCTAssertNil(
-            SessionHandle2.scanForSession(UUID().uuidString.lowercased(), under: root))
+            HistoryLoader.scanForSession(UUID().uuidString.lowercased(), under: root))
     }
 
     /// Skips entries that aren't directories (any stray file at the
@@ -89,7 +89,7 @@ final class HistoryJSONLScanTests: XCTestCase {
         let jsonl = slugDir.appendingPathComponent("\(sid).jsonl")
         try "".write(to: jsonl, atomically: true, encoding: .utf8)
 
-        let hit = SessionHandle2.scanForSession(sid, under: root)
+        let hit = HistoryLoader.scanForSession(sid, under: root)
         XCTAssertEqual(hit?.standardizedFileURL, jsonl.standardizedFileURL)
     }
 
@@ -112,7 +112,7 @@ final class HistoryJSONLScanTests: XCTestCase {
         let jsonl = hitDir.appendingPathComponent("\(target).jsonl")
         try "".write(to: jsonl, atomically: true, encoding: .utf8)
 
-        let hit = SessionHandle2.scanForSession(target, under: root)
+        let hit = HistoryLoader.scanForSession(target, under: root)
         XCTAssertEqual(hit?.standardizedFileURL, jsonl.standardizedFileURL)
     }
 
@@ -120,6 +120,6 @@ final class HistoryJSONLScanTests: XCTestCase {
     /// exist on a fresh install.
     func testReturnsNilWhenRootMissing() {
         let missing = root.appendingPathComponent("does-not-exist")
-        XCTAssertNil(SessionHandle2.scanForSession(UUID().uuidString, under: missing))
+        XCTAssertNil(HistoryLoader.scanForSession(UUID().uuidString, under: missing))
     }
 }

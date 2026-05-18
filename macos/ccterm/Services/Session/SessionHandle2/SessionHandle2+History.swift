@@ -5,74 +5,13 @@ import Foundation
 
 extension SessionHandle2 {
 
-    /// Claude CLI's live JSONL directory
-    /// (`~/.claude/projects/<slug>/<sessionId>.jsonl`).
-    nonisolated static var claudeProjectsRoot: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/projects")
-    }
-
-    /// CCTerm's own export JSONL directory (contains the full stdio stream).
-    /// Preferred over the live file.
-    nonisolated static var exportRoot: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".cache/ccterm/export")
-    }
-
-    /// History JSONL URL for this session. Resolution order:
-    /// 1. ccterm's own export at `~/.cache/ccterm/export/<sessionId>.jsonl`.
-    /// 2. CLI's live file at `~/.claude/projects/<slug>/<sessionId>.jsonl`,
-    ///    where `slug` is derived from `record.cwd` and is intended to
-    ///    match Claude CLI's `sanitizePath`.
-    /// 3. Fallback scan of `~/.claude/projects/*/(sessionId).jsonl`. The
-    ///    CLI's on-disk layout is **exactly one level deep** (a flat
-    ///    list of slug directories, each containing JSONLs), so this is
-    ///    a single shallow loop — cheap. Catches any case where (2)
-    ///    misses (slug drift between our impl and the CLI's, a
-    ///    canonicalize/realpath divergence on the cwd, or a worktree
-    ///    JSONL the CLI wrote under a different slug than our record
-    ///    persisted).
+    /// History JSONL URL for this session. Thin forwarder over
+    /// `HistoryLoader.locate`, paired with the handle's own
+    /// `repository` for slug lookup.
     var historyJSONLURL: URL? {
-        let export = Self.exportRoot.appendingPathComponent("\(sessionId).jsonl")
-        if FileManager.default.fileExists(atPath: export.path) { return export }
-
-        if let rec = repository.find(sessionId), let slug = rec.slug {
-            let live = Self.claudeProjectsRoot
-                .appendingPathComponent(slug)
-                .appendingPathComponent("\(sessionId).jsonl")
-            if FileManager.default.fileExists(atPath: live.path) { return live }
-        }
-
-        return Self.scanProjectsForSession(sessionId)
-    }
-
-    /// Scan `~/.claude/projects/*/<sessionId>.jsonl`. Returns the first
-    /// hit. Used as a slug-mismatch safety net by `historyJSONLURL`.
-    nonisolated static func scanProjectsForSession(_ sessionId: String) -> URL? {
-        scanForSession(sessionId, under: claudeProjectsRoot)
-    }
-
-    /// Underlying scanner taking an explicit root, exposed so tests can
-    /// point it at a tmpdir instead of `~/.claude/projects/`. The CLI's
-    /// on-disk layout is exactly one level deep (a flat list of slug
-    /// directories, each containing JSONLs), so this is a single
-    /// shallow loop — no recursion required, no JSONL bytes read.
-    nonisolated static func scanForSession(_ sessionId: String, under root: URL) -> URL? {
-        let fm = FileManager.default
-        guard
-            let entries = try? fm.contentsOfDirectory(
-                at: root,
-                includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsHiddenFiles])
-        else { return nil }
-        for entry in entries {
-            let isDir =
-                (try? entry.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
-            guard isDir else { continue }
-            let candidate = entry.appendingPathComponent("\(sessionId).jsonl")
-            if fm.fileExists(atPath: candidate.path) { return candidate }
-        }
-        return nil
+        HistoryLoader.locate(
+            sessionId: sessionId,
+            slug: repository.find(sessionId)?.slug)
     }
 }
 
@@ -135,7 +74,7 @@ extension SessionHandle2 {
 
         Task.detached {
             // ── Phase A: tail ────────────────────────────────────────────
-            let tailResult = Self.parseTail(at: resolved, targetLines: tailTarget)
+            let tailResult = HistoryLoader.parseTail(at: resolved, targetLines: tailTarget)
             var tailEndOffset = 0
             switch tailResult {
             case .failure(let err):
@@ -194,7 +133,7 @@ extension SessionHandle2 {
                 }
                 return
             }
-            let prefixResult = Self.parsePrefix(
+            let prefixResult = HistoryLoader.parsePrefix(
                 at: resolved, byteLimit: tailEndOffset)
             switch prefixResult {
             case .failure(let err):
@@ -282,75 +221,7 @@ extension SessionHandle2 {
         }
     }
 
-    // MARK: - Phase A/B parsers
-
-    struct TailParsed {
-        let messages: [Message2]
-        let tailStartByteOffset: Int
-    }
-
-    /// Phase A: byte tail + forward parse + per-file `Message2Resolver`.
-    nonisolated static func parseTail(
-        at url: URL?, targetLines: Int
-    ) -> Result<TailParsed, Error> {
-        guard let url else {
-            return .success(TailParsed(messages: [], tailStartByteOffset: 0))
-        }
-        if !FileManager.default.fileExists(atPath: url.path) {
-            return .success(TailParsed(messages: [], tailStartByteOffset: 0))
-        }
-        do {
-            let readerResult = try JSONLTailReader.readTail(
-                url: url, targetLines: targetLines)
-            let msgs = parseLines(readerResult.lines)
-            return .success(
-                TailParsed(
-                    messages: msgs,
-                    tailStartByteOffset: readerResult.tailStartByteOffset))
-        } catch {
-            return .failure(error)
-        }
-    }
-
-    /// Phase B: read `[0, byteLimit)` and parse into a prefix Message2 list,
-    /// using its own resolver. If the prefix's tool_use entries can cover any
-    /// unresolved tool_results in the tail, the backfill step handles them
-    /// together later.
-    nonisolated static func parsePrefix(
-        at url: URL, byteLimit: Int
-    ) -> Result<[Message2], Error> {
-        do {
-            let handle = try FileHandle(forReadingFrom: url)
-            defer { try? handle.close() }
-            try handle.seek(toOffset: 0)
-            let data = try handle.read(upToCount: byteLimit) ?? Data()
-            guard let text = String(data: data, encoding: .utf8) else {
-                return .failure(HistoryParseError.invalidUTF8)
-            }
-            let lines = text.components(separatedBy: "\n").filter { !$0.isEmpty }
-            return .success(parseLines(lines))
-        } catch {
-            return .failure(error)
-        }
-    }
-
-    /// Forward-parse JSONL text lines into `[Message2]`, dropping lines that
-    /// fail to parse.
-    nonisolated static func parseLines(_ lines: [String]) -> [Message2] {
-        let resolver = Message2Resolver()
-        var out: [Message2] = []
-        out.reserveCapacity(lines.count)
-        for line in lines {
-            guard let data = line.data(using: .utf8),
-                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                let msg = try? resolver.resolve(json)
-            else {
-                continue
-            }
-            out.append(msg)
-        }
-        return out
-    }
+    // MARK: - Phase B helpers (handle-state coupled)
 
     /// Run prefix `[Message2]` through `receive(...)`'s filter logic and
     /// collect the resulting `[MessageEntry]` for Phase B prepend.
@@ -389,16 +260,6 @@ extension SessionHandle2 {
             }
         }
         return out
-    }
-
-    enum HistoryParseError: LocalizedError {
-        case invalidUTF8
-
-        var errorDescription: String? {
-            switch self {
-            case .invalidUTF8: return "History JSONL is not valid UTF-8"
-            }
-        }
     }
 
     /// Phase B's first main hop returns this snapshot to the detached

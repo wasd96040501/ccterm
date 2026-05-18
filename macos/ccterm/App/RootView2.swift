@@ -331,29 +331,29 @@ private struct InputBarChrome: View {
     let onPillRect: (CGRect) -> Void
 
     @Environment(SessionManager2.self) private var manager
-    @State private var handle: SessionHandle2?
+
+    /// Resolved synchronously per render. `prepareDraft` is idempotent
+    /// get-or-create (pure in-memory), and returns the same instance
+    /// `ChatHistoryView` holds. Caching it in `@State` + `.task(id:)`
+    /// caused a one-frame gap on session switch — the chrome row was
+    /// absent until the task fired, so it visibly popped in. With a
+    /// computed property the chrome is present on the first frame.
+    private var handle: SessionHandle2 {
+        manager.prepareDraft(sessionId)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: InputBarSessionChrome.barSpacing) {
             InputBarView2(
                 onSubmit: onSubmit,
-                onStop: { handle?.interrupt() },
-                isRunning: handle?.isRunning ?? false,
+                onStop: { handle.interrupt() },
+                isRunning: handle.isRunning,
                 submitEnabled: submitEnabled,
                 coordSpace: coordSpace,
                 onAttachRect: onAttachRect,
                 onPillRect: onPillRect
             )
-            if let handle {
-                InputBarSessionChrome(handle: handle)
-            }
-        }
-        .task(id: sessionId) {
-            // `prepareDraft` is idempotent get-or-create for both fresh and
-            // historical sessions, returning the same handle instance that
-            // ChatHistoryView holds. @Observable on `isRunning` drives
-            // re-render automatically.
-            handle = manager.prepareDraft(sessionId)
+            InputBarSessionChrome(handle: handle)
         }
     }
 }

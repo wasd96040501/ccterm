@@ -81,6 +81,8 @@ struct PermissionCardView: View {
             PermissionShellCardBody(request: request, kind: kind)
         case .fileEdit, .fileWrite:
             PermissionFileWriteCardBody(request: request, kind: kind)
+        case .notebookEdit:
+            PermissionNotebookEditCardBody(request: request)
         default:
             PermissionFallbackCardBody(request: request)
         }

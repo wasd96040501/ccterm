@@ -542,6 +542,16 @@
         }
       }
     },
+    "Cell %1$@ · %2$@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cell %1$@ · %2$@"
+          }
+        }
+      }
+    },
     "Choose Folder…": {
       "localizations": {
         "zh-Hans": {
@@ -830,6 +840,16 @@
         }
       }
     },
+    "Delete cell from %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从 %@ 删除 cell"
+          }
+        }
+      }
+    },
     "Deleted": {
       "extractionState": "stale",
       "localizations": {
@@ -878,6 +898,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "编辑 %@"
+          }
+        }
+      }
+    },
+    "Edit cell in %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑 %@ 中的 cell"
           }
         }
       }
@@ -1433,6 +1463,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "进行中"
+          }
+        }
+      }
+    },
+    "Insert cell into %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向 %@ 插入 cell"
           }
         }
       }
@@ -3272,12 +3312,32 @@
         }
       }
     },
+    "markdown": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "markdown"
+          }
+        }
+      }
+    },
     "now": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "刚刚"
+          }
+        }
+      }
+    },
+    "python": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "python"
           }
         }
       }

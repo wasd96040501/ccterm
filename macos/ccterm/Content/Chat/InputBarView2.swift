@@ -6,9 +6,9 @@ import UniformTypeIdentifiers
 ///
 /// Layout: `HStack(attach, pill)` where `pill` is a squircle container that
 /// wraps either `HStack(text, sendButton)` (idle) or
-/// `VStack(thumbnailStrip, Divider, HStack(text, sendButton))` (image
-/// attached). Sizes are 20% smaller than the previous 40pt design, all on a
-/// 4pt grid:
+/// `VStack(thumbnailStrip, Divider, HStack(text, sendButton))` (image or
+/// file attached). Sizes are 20% smaller than the previous 40pt design,
+/// all on a 4pt grid:
 ///
 /// - pill: 32pt min height, `cornerRadius = 16`. Send button is concentric
 ///   with the bottom-right corner: button radius 12, shared center ⇒ 4pt
@@ -34,25 +34,49 @@ struct InputBarView2: View {
     private let iconPointSize: CGFloat = 13
     private let animationDuration: TimeInterval = 0.35
 
-    /// Image attached to the next outgoing message. Cleared after a successful
-    /// send. The thumbnail is derived from `data` once at attach-time so we
-    /// don't pay an `NSImage` decode each layout pass.
+    /// Image extensions that route a dropped/picked file through the image
+    /// path (base64 send + thumbnail preview) instead of the generic file
+    /// path (`@path` mention in the outgoing text).
+    private static let imageExtensions: Set<String> = [
+        "png", "jpg", "jpeg", "gif", "webp", "heic", "bmp", "tiff", "tif",
+    ]
+
+    /// Attachment payload for the next outgoing message. Single-slot
+    /// (drop / pick replaces an existing attachment).
     struct Attachment: Equatable {
-        let data: Data
-        let mediaType: String
+        enum Kind: Equatable {
+            /// Decoded once at attach-time so we don't pay an `NSImage`
+            /// decode each layout pass; sent via
+            /// `Session.send(image:mediaType:caption:)`.
+            case image(data: Data, mediaType: String)
+            /// Absolute path on disk; sent inline as `@<path>` in the
+            /// outgoing text so the CLI can read it on demand.
+            case file(path: String)
+        }
+
+        let kind: Kind
+        /// Image thumbnail or system file icon, used by the thumbnail
+        /// strip; for files this is `NSWorkspace.shared.icon(forFile:)`.
         let thumbnail: NSImage
+        /// Display name for the file row (and tooltip for image rows).
+        let filename: String
+
+        static func == (lhs: Attachment, rhs: Attachment) -> Bool {
+            lhs.kind == rhs.kind && lhs.filename == rhs.filename
+        }
     }
 
-    /// Payload handed to `onSubmit`. Either `text` is non-empty, or `image`
-    /// is non-nil, or both. Callers route to `Session.send(text:)` /
-    /// `send(image:mediaType:caption:)` accordingly.
+    /// Payload handed to `onSubmit`. Either `text` is non-empty, an `image`
+    /// is attached, or a `filePath` is attached. Callers route to the
+    /// appropriate `Session.send(...)` overload.
     struct Submission {
         let text: String
         let image: (data: Data, mediaType: String)?
+        let filePath: String?
     }
 
     /// Injected by the caller. Only fired when the message has at least a
-    /// non-whitespace text OR an attached image.
+    /// non-whitespace text OR an attachment.
     var onSubmit: (Submission) -> Void = { _ in }
     /// Fired when the stop button is pressed (only clickable while `isRunning`
     /// shows stop). Callers typically forward to `Session.interrupt()`.
@@ -84,6 +108,10 @@ struct InputBarView2: View {
     @State private var desiredCursorPosition: Int?
     @State var attachment: Attachment?
     @State private var isPresentingPreview: Bool = false
+    @State private var isThumbHovered: Bool = false
+    /// True while a file drag is hovering anywhere over the bar. Drives the
+    /// dashed accent stroke on the pill + attach button.
+    @State private var isDropTargeted: Bool = false
 
     var body: some View {
         // `.bottom` (not `.center`) so the attach button always sits at
@@ -94,15 +122,21 @@ struct InputBarView2: View {
         // bottom — bottom-alignment keeps the `+` centered on the text
         // row rather than drifting to the overall pill center.
         HStack(alignment: .bottom, spacing: attachToPillSpacing) {
-            AttachButton(onPickImage: presentImagePicker)
-                .modifier(ReportFrame(coordSpace: coordSpace, action: onAttachRect))
+            AttachButton(
+                onPickImage: presentImagePicker,
+                onPickFile: presentFilePicker,
+                isDropTargeted: isDropTargeted
+            )
+            .modifier(ReportFrame(coordSpace: coordSpace, action: onAttachRect))
             pill
                 .modifier(ReportFrame(coordSpace: coordSpace, action: onPillRect))
         }
+        .onDrop(of: [.fileURL], isTargeted: $isDropTargeted, perform: handleDrop)
+        .animation(.easeOut(duration: 0.12), value: isDropTargeted)
         .animation(.smooth(duration: animationDuration), value: isRunning)
         .animation(.smooth(duration: animationDuration), value: attachment != nil)
         .sheet(isPresented: $isPresentingPreview) {
-            if let attachment {
+            if let attachment, case .image = attachment.kind {
                 ImagePreviewView(thumbnail: attachment.thumbnail)
             }
         }
@@ -125,42 +159,83 @@ struct InputBarView2: View {
         }
         .frame(minHeight: pillMinHeight)
         .barSurface(cornerRadius: Self.cornerRadius)
-    }
-
-    private var thumbnailStrip: some View {
-        // Strip is only mounted while `attachment != nil`, so the fallback
-        // `NSImage()` keeps the Button label type unconditional —
-        // `_ConditionalContent` labels occasionally drop the parent's
-        // accessibility identifier under XCUI.
-        let thumb = attachment?.thumbnail ?? NSImage()
-        return HStack(spacing: 0) {
-            Button(action: { isPresentingPreview = true }) {
-                Image(nsImage: thumb)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: thumbnailSize, height: thumbnailSize)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+        .overlay {
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous)
+                    .strokeBorder(
+                        Color.accentColor,
+                        style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])
                     )
             }
-            .buttonStyle(.plain)
-            .overlay(alignment: .topTrailing) {
-                Button(action: { attachment = nil }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .symbolRenderingMode(.palette)
-                        .foregroundStyle(.white, Color.black.opacity(0.55))
-                        .font(.system(size: 14))
-                }
-                .buttonStyle(.plain)
-                .padding(2)
-            }
-            Spacer(minLength: 0)
         }
-        .padding(.top, thumbnailTopPadding)
-        .padding(.bottom, thumbnailBottomPadding)
-        .padding(.leading, thumbnailLeadingPadding)
+    }
+
+    @ViewBuilder
+    private var thumbnailStrip: some View {
+        if let attachment {
+            HStack(spacing: 0) {
+                attachmentCard(for: attachment)
+                Spacer(minLength: 0)
+            }
+            .padding(.top, thumbnailTopPadding)
+            .padding(.bottom, thumbnailBottomPadding)
+            .padding(.leading, thumbnailLeadingPadding)
+        }
+    }
+
+    /// Card for one attachment in the thumbnail strip. Image attachments are
+    /// a clickable thumbnail; file attachments are icon + filename. Both
+    /// expose a top-trailing X button that fades in on hover.
+    @ViewBuilder
+    private func attachmentCard(for attachment: Attachment) -> some View {
+        switch attachment.kind {
+        case .image:
+            imageCard(thumbnail: attachment.thumbnail)
+        case .file(let path):
+            fileCard(icon: attachment.thumbnail, filename: attachment.filename, path: path)
+        }
+    }
+
+    private func imageCard(thumbnail: NSImage) -> some View {
+        Button(action: { isPresentingPreview = true }) {
+            Image(nsImage: thumbnail)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: thumbnailSize, height: thumbnailSize)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+                )
+        }
+        .buttonStyle(.plain)
+        .modifier(AttachmentHoverRemove(isHovered: $isThumbHovered) { attachment = nil })
+    }
+
+    private func fileCard(icon: NSImage, filename: String, path: String) -> some View {
+        HStack(spacing: 8) {
+            Image(nsImage: icon)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: thumbnailSize - 16, height: thumbnailSize - 16)
+            Text(filename)
+                .font(.system(size: 12))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .padding(.horizontal, 8)
+        .frame(height: thumbnailSize)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.6))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+        )
+        .help(path)
+        .modifier(AttachmentHoverRemove(isHovered: $isThumbHovered) { attachment = nil })
     }
 
     // MARK: - Text Area
@@ -217,13 +292,22 @@ struct InputBarView2: View {
     private func handleSend() {
         guard canSend else { return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let image: (data: Data, mediaType: String)? = attachment.map { ($0.data, $0.mediaType) }
-        onSubmit(Submission(text: trimmed, image: image))
+        var image: (data: Data, mediaType: String)? = nil
+        var filePath: String? = nil
+        if let kind = attachment?.kind {
+            switch kind {
+            case .image(let data, let mediaType):
+                image = (data: data, mediaType: mediaType)
+            case .file(let path):
+                filePath = path
+            }
+        }
+        onSubmit(Submission(text: trimmed, image: image, filePath: filePath))
         text = ""
         attachment = nil
     }
 
-    // MARK: - Image Picker
+    // MARK: - Pickers
 
     fileprivate func presentImagePicker() {
         let panel = NSOpenPanel()
@@ -238,12 +322,43 @@ struct InputBarView2: View {
         }
     }
 
+    fileprivate func presentFilePicker() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.message = String(localized: "Choose a file to attach")
+        panel.begin { [self] response in
+            guard response == .OK, let url = panel.url else { return }
+            attachFile(at: url)
+        }
+    }
+
+    // MARK: - Attach helpers
+
     /// Read the file at `url`, derive a media type from its extension, and
     /// build a thumbnail.
     fileprivate func attachImage(at url: URL) {
         guard let data = try? Data(contentsOf: url) else { return }
         let thumb = NSImage(data: data) ?? NSImage()
-        attachment = Attachment(data: data, mediaType: mediaType(for: url), thumbnail: thumb)
+        attachment = Attachment(
+            kind: .image(data: data, mediaType: mediaType(for: url)),
+            thumbnail: thumb,
+            filename: url.lastPathComponent
+        )
+    }
+
+    /// Attach the file at `url` as a non-image "mention" — its absolute path
+    /// will be sent inline as `@<path>` in the next message. Thumbnail uses
+    /// the system file icon (`NSWorkspace.shared.icon(forFile:)`), which
+    /// honors the file's type-derived icon (Finder-style).
+    fileprivate func attachFile(at url: URL) {
+        let icon = NSWorkspace.shared.icon(forFile: url.path)
+        attachment = Attachment(
+            kind: .file(path: url.path),
+            thumbnail: icon,
+            filename: url.lastPathComponent
+        )
     }
 
     private func mediaType(for url: URL) -> String {
@@ -253,6 +368,57 @@ struct InputBarView2: View {
             return mime
         }
         return "image/png"
+    }
+
+    // MARK: - Drag and drop
+
+    /// Single-attachment drop: take the first dropped file URL. If its
+    /// extension matches a known image type, route through `attachImage` so
+    /// the user gets the image-preview flow; otherwise treat it as a generic
+    /// file attachment.
+    private func handleDrop(providers: [NSItemProvider]) -> Bool {
+        guard let provider = providers.first else { return false }
+        guard provider.canLoadObject(ofClass: URL.self) else {
+            // Fall back to UTType.fileURL data representation for older
+            // sources that don't advertise URL conformance.
+            return loadFileURL(from: provider)
+        }
+        _ = provider.loadObject(ofClass: URL.self) { object, _ in
+            guard let url = object as? URL else { return }
+            DispatchQueue.main.async {
+                self.attachDroppedURL(url)
+            }
+        }
+        return true
+    }
+
+    private func loadFileURL(from provider: NSItemProvider) -> Bool {
+        let identifier = UTType.fileURL.identifier
+        guard provider.hasItemConformingToTypeIdentifier(identifier) else { return false }
+        provider.loadItem(forTypeIdentifier: identifier, options: nil) { item, _ in
+            let url: URL?
+            if let directURL = item as? URL {
+                url = directURL
+            } else if let data = item as? Data {
+                url = URL(dataRepresentation: data, relativeTo: nil)
+            } else {
+                url = nil
+            }
+            guard let url else { return }
+            DispatchQueue.main.async {
+                self.attachDroppedURL(url)
+            }
+        }
+        return true
+    }
+
+    private func attachDroppedURL(_ url: URL) {
+        let ext = url.pathExtension.lowercased()
+        if Self.imageExtensions.contains(ext) {
+            attachImage(at: url)
+        } else {
+            attachFile(at: url)
+        }
     }
 
     // MARK: - Helpers
@@ -289,6 +455,36 @@ private struct ReportFrame: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+// MARK: - Attachment hover remove button
+
+/// Overlays a top-trailing X button that fades in while the attached row is
+/// hovered. The button has its own circular `xmark.circle.fill` glyph
+/// (already a white-on-dim circle in palette mode), positioned 2pt in from
+/// the top-right corner. The hover state is hoisted into the parent so
+/// removing the attachment doesn't leak per-card state.
+private struct AttachmentHoverRemove: ViewModifier {
+    @Binding var isHovered: Bool
+    let onRemove: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(alignment: .topTrailing) {
+                Button(action: onRemove) {
+                    Image(systemName: "xmark.circle.fill")
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, Color.black.opacity(0.65))
+                        .font(.system(size: 16))
+                }
+                .buttonStyle(.plain)
+                .padding(2)
+                .opacity(isHovered ? 1 : 0)
+                .animation(.easeOut(duration: 0.12), value: isHovered)
+                .accessibilityLabel(String(localized: "Remove attachment"))
+            }
+            .onHover { isHovered = $0 }
     }
 }
 

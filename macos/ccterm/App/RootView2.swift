@@ -351,9 +351,11 @@ struct RootView2: View {
     /// and forward directly to the handle.
     ///
     /// Image-bearing submissions take the `send(image:mediaType:caption:)`
-    /// route; text-only submissions take `send(text:)`. The caption is the
-    /// trimmed text when both are present, otherwise the default `[image]`
-    /// label from the handle.
+    /// route; file-bearing submissions splice an `@<absolute path>` mention
+    /// in front of the user's text and go through `send(text:)`; plain text
+    /// goes straight through. The caption is the trimmed text when both
+    /// image and text are present, otherwise the default `[image]` label
+    /// from the handle.
     private func submit(_ submission: InputBarView2.Submission, sessionId: String) {
         let session = manager.prepareDraftSession(sessionId)
         let isFirstStart = !session.hasRecord
@@ -383,11 +385,19 @@ struct RootView2: View {
                 recents.markLaunched(picked, useWorktree: draftUseWorktree)
             }
         }
+        let mention = submission.filePath.map { "@" + $0 }
+        let combinedText: String = {
+            switch (mention, submission.text.isEmpty) {
+            case (nil, _): return submission.text
+            case (let m?, true): return m
+            case (let m?, false): return m + "\n\n" + submission.text
+            }
+        }()
         if let image = submission.image {
-            let caption = submission.text.isEmpty ? nil : submission.text
+            let caption = combinedText.isEmpty ? nil : combinedText
             session.send(image: image.data, mediaType: image.mediaType, caption: caption)
         } else {
-            session.send(text: submission.text)
+            session.send(text: combinedText)
         }
         if isFirstStart {
             manager.refreshRecords()

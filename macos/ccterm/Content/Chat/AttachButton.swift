@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// Standalone `+` button for the input bar. Opens a menu of attachment
-/// types (Image today; structured as a `Menu` so future types — Files,
-/// snippets, etc. — drop in without restructuring this view).
+/// types (Image, File). Structured as a `Menu` so future types — snippets,
+/// links, etc. — drop in without restructuring this view.
 ///
 /// Three stacked layers in a 32×32 ZStack, matching the pill's height:
 ///
@@ -28,6 +28,12 @@ struct AttachButton: View {
     /// Fired when the user picks "Image" from the menu. The caller drives
     /// the `NSOpenPanel` flow so this view stays purely visual.
     var onPickImage: () -> Void
+    /// Fired when the user picks "File" from the menu. Same contract as
+    /// `onPickImage`; caller opens an unrestricted panel.
+    var onPickFile: () -> Void
+    /// When `true`, the surface stroke flips to accent + a dashed style to
+    /// echo the pill's drop-target highlight (driver lives in `InputBarView2`).
+    var isDropTargeted: Bool = false
 
     static let size: CGFloat = 32
 
@@ -45,6 +51,9 @@ struct AttachButton: View {
             Menu {
                 Button(action: onPickImage) {
                     Label(String(localized: "Image"), systemImage: "photo")
+                }
+                Button(action: onPickFile) {
+                    Label(String(localized: "File"), systemImage: "doc")
                 }
             } label: {
                 Image(systemName: "plus")
@@ -67,15 +76,25 @@ struct AttachButton: View {
             Color.clear
                 .glassEffect(.regular, in: Circle())
                 .overlay {
-                    Circle().stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+                    Circle().stroke(strokeColor, style: strokeStyle)
                 }
         } else {
             Circle()
                 .fill(colorScheme == .dark ? AnyShapeStyle(.thickMaterial) : AnyShapeStyle(.bar))
                 .overlay {
-                    Circle().stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+                    Circle().stroke(strokeColor, style: strokeStyle)
                 }
         }
+    }
+
+    private var strokeColor: Color {
+        isDropTargeted ? Color.accentColor : Color(nsColor: .separatorColor)
+    }
+
+    private var strokeStyle: StrokeStyle {
+        isDropTargeted
+            ? StrokeStyle(lineWidth: 1.5, dash: [4, 3])
+            : StrokeStyle(lineWidth: 0.5)
     }
 
     /// Tint strength tuned to read like the toolbar / sidebar hover state
@@ -92,7 +111,7 @@ struct AttachButton: View {
 #Preview {
     ZStack {
         Color(nsColor: .windowBackgroundColor).ignoresSafeArea()
-        AttachButton(onPickImage: {})
+        AttachButton(onPickImage: {}, onPickFile: {})
             .padding(40)
     }
     .frame(width: 200, height: 120)

@@ -470,5 +470,26 @@ private struct InputBarChrome: View {
             )
             InputBarSessionChrome(session: session)
         }
+        // Permission card floats on top of the bar+chrome stack:
+        // bottom-aligned with the chrome row, width pinned to this
+        // VStack (which spans attach `+` → pill trailing edge), and
+        // z-ordered above the input bar by virtue of being an overlay.
+        // Decision callbacks land in Step 3 — for now the buttons are
+        // wired to no-ops so the card surface can be reviewed in
+        // isolation.
+        .overlay(alignment: .bottom) {
+            if let pending = session.pendingPermissions.first {
+                PermissionCardView(
+                    request: pending.request,
+                    onAllowOnce: {},
+                    onAllowAlways: {},
+                    onDeny: {}
+                )
+                .transition(
+                    .scale(scale: 0.96, anchor: .bottom)
+                        .combined(with: .opacity))
+            }
+        }
+        .animation(.smooth(duration: 0.25), value: session.pendingPermissions.first?.id)
     }
 }

@@ -902,30 +902,38 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         if width == lastLayoutWidth { return }
         let prevWidth = lastLayoutWidth
         lastLayoutWidth = width
+
+        // Refresh row heights BEFORE `onLayoutReady?()`. The deferred branch
+        // of `Transcript2Controller.loadInitial` pre-inserts blocks into
+        // `coordinator.blocks` while `layoutWidth == 0`, which makes AppKit
+        // cache ~0 heights for every row. If the subsequent
+        // `consumePendingInitial → scrollRowToBottom` runs before the
+        // re-query, `rect(ofRow:)` returns geometry at ~0 and the scroll
+        // target collapses to the document top.
+        if !blocks.isEmpty {
+            if tableView.inLiveResize {
+                // Bounded per-frame layout work: only invalidate visible rows.
+                // Off-screen rows keep their stale heights and stale cached
+                // layouts — invisible to the user and repaired by the
+                // post-resize background prefetch.
+                let visible = tableView.rows(in: tableView.visibleRect)
+                if visible.location != NSNotFound, visible.length > 0 {
+                    invalidate(
+                        rows: IndexSet(visible.location..<visible.location + visible.length),
+                        in: tableView)
+                }
+            } else {
+                // Outside live resize, frame changes are programmatic / one-off
+                // (initial layout, window animation). Invalidate everything;
+                // AppKit re-queries lazily on next layout pass.
+                invalidate(rows: IndexSet(0..<blocks.count), in: tableView)
+            }
+        }
+
         // First 0→positive transition unblocks any deferred `loadInitial`
-        // on the controller side. Has to fire *before* the `blocks.isEmpty`
-        // guard below — when the controller is holding a pending payload,
-        // `blocks` is still empty here, so the original `guard` would
-        // short-circuit and the consume call would never happen.
+        // on the controller side.
         if prevWidth <= 0 && width > 0 {
             onLayoutReady?()
-        }
-        guard !blocks.isEmpty else { return }
-        if tableView.inLiveResize {
-            // Bounded per-frame layout work: only invalidate visible rows.
-            // Off-screen rows keep their stale heights and stale cached
-            // layouts — invisible to the user and repaired by the
-            // post-resize background prefetch.
-            let visible = tableView.rows(in: tableView.visibleRect)
-            guard visible.location != NSNotFound, visible.length > 0 else { return }
-            invalidate(
-                rows: IndexSet(visible.location..<visible.location + visible.length),
-                in: tableView)
-        } else {
-            // Outside live resize, frame changes are programmatic / one-off
-            // (initial layout, window animation). Invalidate everything;
-            // AppKit re-queries lazily on next layout pass.
-            invalidate(rows: IndexSet(0..<blocks.count), in: tableView)
         }
     }
 

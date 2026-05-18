@@ -111,6 +111,17 @@ struct RootView2: View {
             TranscriptDemoView()
         } else if selectedSessionId == SidebarView2.transcriptStressTag {
             TranscriptStressView()
+        } else if selectedSessionId == SidebarView2.archiveTag {
+            // Unarchive bounces the selection to the restored session so
+            // the user lands on the chat history they brought back. The
+            // record state has already flipped to `.created` inside
+            // `manager.unarchive`, so the regular `effectiveSessionId`
+            // path picks it up.
+            ArchiveView(onUnarchive: { sid in
+                withAnimation(.smooth(duration: 0.25)) {
+                    selectedSessionId = sid
+                }
+            })
         } else if let sid = effectiveSessionId {
             // `.id(sid)` pins ChatHistoryView identity across the NewSession →
             // History transition: sid is stable (the draft UUID becomes the

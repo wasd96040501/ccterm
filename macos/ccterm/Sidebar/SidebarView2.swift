@@ -31,6 +31,9 @@ struct SidebarView2: View {
 
     /// Sentinel selection value for the "New Session" tab.
     static let newSessionTag = "__new_session__"
+    /// Sentinel selection value for the Archive page (list of soft-deleted
+    /// sessions, recoverable via unarchive).
+    static let archiveTag = "__archive__"
     /// Sentinel selection value used by the dev-only Transcript Demo tab.
     /// Reserved by the double-underscore prefix; real session IDs are UUIDs.
     static let transcriptDemoTag = "__transcript_demo__"
@@ -41,6 +44,9 @@ struct SidebarView2: View {
         List(selection: $selection) {
             SidebarItemRow(title: "New Session", systemImage: "square.and.pencil")
                 .tag(Self.newSessionTag)
+                .listRowInsets(Self.fixedRowInsets)
+            SidebarItemRow(title: "Archive", systemImage: "archivebox")
+                .tag(Self.archiveTag)
                 .listRowInsets(Self.fixedRowInsets)
             SidebarItemRow(title: "Transcript Demo", systemImage: "doc.text.image")
                 .tag(Self.transcriptDemoTag)

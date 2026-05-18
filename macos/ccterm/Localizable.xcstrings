@@ -229,13 +229,22 @@
         }
       }
     },
-    "Archived": {
-      "extractionState": "stale",
+    "Archive a session from its right-click menu in the sidebar.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "已归档"
+            "value": "在侧边栏中右键单击会话进行归档。"
+          }
+        }
+      }
+    },
+    "Archived %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已归档 %@"
           }
         }
       }
@@ -1518,17 +1527,6 @@
         }
       }
     },
-    "No Archived Sessions": {
-      "extractionState": "stale",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "没有归档的会话"
-          }
-        }
-      }
-    },
     "No Matching Branches": {
       "extractionState": "stale",
       "localizations": {
@@ -1536,6 +1534,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "无匹配分支"
+          }
+        }
+      }
+    },
+    "No archived sessions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有归档的会话"
           }
         }
       }
@@ -2656,7 +2664,6 @@
       }
     },
     "Unarchive": {
-      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {

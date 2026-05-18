@@ -288,32 +288,17 @@ enum RowLayout: @unchecked Sendable {
                 hoveredAction: hoveredAction,
                 selection: selection)
         case .loadingPill(let l):
-            // Pill background + label paint into the cell bitmap;
-            // dots are layer-hosted so their breathing opacity
-            // animation runs on the CoreAnimation thread (no
-            // `draw(_:)` invalidation per frame). Bundled as a
-            // distinct `SubviewPlan` field so the reconciler can
-            // own the same lazy-create / reuse / cleanup pattern
-            // as chevrons / shimmers — no special-casing on the
-            // layout enum in the cell.
+            // The indicator hosts a single `NSImageView` running an
+            // SF Symbol `.variableColor` effect. The reconciler
+            // creates / reuses the view per cell; the symbol effect
+            // loop survives `reloadData(forRowIndexes:)` because the
+            // view itself is reused, not the spec.
             return SubviewPlan(
-                chevrons: [],
-                entries: [],
-                shimmers: [],
-                loadingDots: l.dotRects.enumerated().map { idx, rect in
-                    SubviewPlan.LoadingDots(
-                        // Per-row id stays stable across re-layouts —
-                        // we synthesise from the cell's `padTop +
-                        // origin` neutral seed. The id is purely a
-                        // reuse handle on the cell side; multiple
-                        // pills never coexist in a row.
-                        index: idx,
-                        center: CGPoint(
-                            x: origin.x + rect.midX,
-                            y: origin.y + rect.midY),
-                        diameter: rect.width,
-                        color: BlockStyle.loadingPillDotColor)
-                })
+                chevrons: [], entries: [], shimmers: [],
+                loadingDots: SubviewPlan.LoadingDots(
+                    frame: l.symbolFrame.offsetBy(
+                        dx: origin.x, dy: origin.y),
+                    tintColor: BlockStyle.loadingPillDotColor))
         default:
             return .empty
         }

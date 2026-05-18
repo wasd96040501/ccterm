@@ -80,17 +80,6 @@ final class Session {
     /// entire lifetime.
     let bridge: Transcript2EntryBridge
 
-    /// Captured visible-top row + sub-row y-offset from the last time
-    /// `ChatHistoryView` was unmounted. `NativeTranscript2View.dismantleNSView`
-    /// asks the controller for the snapshot and writes it here so the
-    /// next mount can restore the user's scroll position (`InitialAnchor
-    /// .preserved`). `nil` means "no remembered position" — first ever
-    /// open, no rows visible at unmount time, or the dismantling table
-    /// had already detached. Lives across mount/unmount cycles because
-    /// `Session` itself is cached in `SessionManager` for the whole app
-    /// lifetime.
-    @ObservationIgnored var lastVisibleAnchor: Transcript2Coordinator.CapturedAnchor?
-
     // MARK: - External hooks
 
     /// Optional **external** observer of `MessagesChange` events. The
@@ -142,7 +131,6 @@ final class Session {
         )
         self.phase = .active(runtime)
         wireRuntimeMessagesSink(runtime)
-        wireScrollAnchorPersistence()
     }
 
     /// Construct from a fresh sessionId (no record yet). `phase` is
@@ -162,7 +150,6 @@ final class Session {
         self.bridge = Transcript2EntryBridge(controller: controller)
         self.phase = .draft(
             SessionDraft(sessionId: draftSessionId, repository: repository))
-        wireScrollAnchorPersistence()
     }
 
     /// Wrap a pre-built `SessionRuntime` in `.active` phase. Lets
@@ -185,27 +172,9 @@ final class Session {
         self.bridge = Transcript2EntryBridge(controller: controller)
         self.phase = .active(runtime)
         wireRuntimeMessagesSink(runtime)
-        wireScrollAnchorPersistence()
     }
 
     nonisolated deinit {}
-
-    /// Bridge `NativeTranscript2View`'s detach hook into the session-level
-    /// `lastVisibleAnchor` field. Called once per `init`. `nil` from the
-    /// hook (no visible rows / table already detached) clears the field
-    /// — falling through to `.bottom` on the next mount is the right
-    /// behavior when there's nothing to remember.
-    private func wireScrollAnchorPersistence() {
-        let sid = sessionId
-        controller.coordinator.onWillDetach = { [weak self] captured in
-            appLog(
-                .info, "Session",
-                "[anchor] onWillDetach received sid=\(sid.prefix(8)) "
-                    + "captured=\(captured.map { "\($0.blockId.uuidString.prefix(8)),y=\($0.offsetFromClipTop)" } ?? "nil")"
-            )
-            self?.lastVisibleAnchor = captured
-        }
-    }
 
     /// Permanently attach the bridge (+ optional external observer) to
     /// `runtime.onMessagesChange`. Called from each `.active`-producing

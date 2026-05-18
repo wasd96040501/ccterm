@@ -203,7 +203,7 @@ final class Transcript2EntryBridge {
             }
             entryOrder = newOrder
             entryBlockIds = newMap
-            controller.coordinator.apply(changes, scroll: .none)
+            controller.coordinator.apply(changes)
             return
         }
 
@@ -212,7 +212,7 @@ final class Transcript2EntryBridge {
         entryBlockIds = newMap
         didLoadInitial = true
         guard !allBlocks.isEmpty else { return }
-        controller.loadInitial(allBlocks, anchor: .bottom)
+        controller.loadInitial(allBlocks)
     }
 
     // MARK: - Append (live message)
@@ -234,11 +234,11 @@ final class Transcript2EntryBridge {
         if !didLoadInitial {
             // Sink fired before reset: use the first message as cold-load seed.
             didLoadInitial = true
-            controller.loadInitial(blocks, anchor: .bottom)
+            controller.loadInitial(blocks)
             return
         }
         controller.coordinator.apply(
-            [.insert(after: anchor, blocks)], scroll: .none)
+            [.insert(after: anchor, blocks)])
     }
 
     /// Last block id of the entry preceding the insertion point. Returns nil
@@ -268,18 +268,20 @@ final class Transcript2EntryBridge {
         for (k, v) in newMap { entryBlockIds[k] = v }
 
         guard !prefixBlocks.isEmpty else { return }
-        // Prepend → `.saveVisible(.visualTop)` keeps the user's currently
-        // visible first line at the same visual position. Route through
-        // `applyInBackground` so the per-row layout precompute (paragraph
-        // wrap, code-block typeset, tool-group geometry) runs on a
-        // detached `userInitiated` task and not on the main thread —
-        // mirroring what `loadInitial`'s Phase 2 already does for the
-        // first-screen path. The bridge stays synchronous from the
-        // handle's perspective: the structural change still lands in a
-        // single main hop.
+        // Prepend → the coordinator's `reaffirmScrollMode` (running
+        // after every structural change) keeps the user's anchor row
+        // visually fixed: if `.stickyBottom`, last block stays last;
+        // if `.free(blockId, offset)`, the captured row's id-based
+        // anchor follows the prepend automatically. Route through
+        // `applyInBackground` so the per-row layout precompute
+        // (paragraph wrap, code-block typeset, tool-group geometry)
+        // runs on a detached `userInitiated` task and not on the
+        // main thread — mirroring what `loadInitial`'s Phase 2
+        // already does for the first-screen path. The bridge stays
+        // synchronous from the handle's perspective: the structural
+        // change still lands in a single main hop.
         controller.coordinator.applyInBackground(
-            [.insert(after: nil, prefixBlocks)],
-            scroll: .saveVisible(.visualTop))
+            [.insert(after: nil, prefixBlocks)])
     }
 
     // MARK: - Update (tool_result merge / confirm / group grew)
@@ -296,7 +298,7 @@ final class Transcript2EntryBridge {
             let changes: [Transcript2Controller.Change] = newBlocks.map {
                 .update(id: $0.id, kind: $0.kind)
             }
-            controller.coordinator.apply(changes, scroll: .none)
+            controller.coordinator.apply(changes)
             return
         }
 
@@ -314,7 +316,7 @@ final class Transcript2EntryBridge {
             entryOrder.append(entry.id)
         }
         guard !changes.isEmpty else { return }
-        controller.coordinator.apply(changes, scroll: .none)
+        controller.coordinator.apply(changes)
     }
 
     /// Update path: entry is still in entryOrder; return the predecessor's
@@ -331,6 +333,6 @@ final class Transcript2EntryBridge {
         entryBlockIds.removeValue(forKey: entry.id)
         entryOrder.removeAll { $0 == entry.id }
         guard !ids.isEmpty else { return }
-        controller.coordinator.apply([.remove(ids: ids)], scroll: .none)
+        controller.coordinator.apply([.remove(ids: ids)])
     }
 }

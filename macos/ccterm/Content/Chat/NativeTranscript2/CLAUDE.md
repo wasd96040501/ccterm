@@ -46,11 +46,11 @@ Every item below is load-bearing for either scroll FPS, layout-pass cost, or mem
 
 ### 2.6 `applyInBackground` (fire-and-forget) for large prepends
 
-For loadInitial Phase 2 and other large structural changes, `applyInBackground` ([:292-344](Transcript2Coordinator.swift:292)) computes layouts on a detached `userInitiated` Task, then a single main hop installs them and runs the structural change inside `withScrollAdjustment`. **Untracked, non-cancellable on purpose** — row-mutation is dataSource critical-path work; `Change.insert` resolves anchors by id at apply time, so landing is robust against any `apply`s in between. **Cost of making it sync**: 100+ ms freeze on every cold-load Phase 2 prepend.
+For loadInitial Phase 2 and other large structural changes, `applyInBackground` ([:292-344](Transcript2Coordinator.swift:292)) computes layouts on a detached `userInitiated` Task, then a single main hop installs them and runs the structural change followed by `reaffirmScrollMode`. **Untracked, non-cancellable on purpose** — row-mutation is dataSource critical-path work; `Change.insert` resolves anchors by id at apply time, so landing is robust against any `apply`s in between. **Cost of making it sync**: 100+ ms freeze on every cold-load Phase 2 prepend.
 
 ### 2.7 `refillLayoutCache` post-resize prefetch + `mutationCounter` guard
 
-After `viewDidEndLiveResize`, `refillLayoutCache` ([:866](Transcript2Coordinator.swift:866)) prefetches layouts for off-screen rows on a detached task, then under `.saveVisible(.visualTop)` installs them and runs `noteHeightOfRows`. `mutationCounter` ([:253](Transcript2Coordinator.swift:253), [:913](Transcript2Coordinator.swift:913)) drops the entire onMain block if any `apply` ran during the task — running `saveVisible` against AppKit's stale (deferred-re-query) heights would jitter the anchor row. **Cost of dropping the counter**: visible anchor jumps when an `apply` interleaves with a resize-prefetch. **Cost of dropping the prefetch**: off-screen rows lazy-layout one-at-a-time as user scrolls in, producing jank.
+After `viewDidEndLiveResize`, `refillLayoutCache` ([:866](Transcript2Coordinator.swift:866)) prefetches layouts for off-screen rows on a detached task, then on the main hop installs them, runs `noteHeightOfRows`, and `reaffirmScrollMode` (which honors whichever `scrollMode` is current). `mutationCounter` ([:253](Transcript2Coordinator.swift:253), [:913](Transcript2Coordinator.swift:913)) drops the entire onMain block if any `apply` ran during the task — running reaffirm against AppKit's stale (deferred-re-query) heights would jitter the anchor row. **Cost of dropping the counter**: visible anchor jumps when an `apply` interleaves with a resize-prefetch. **Cost of dropping the prefetch**: off-screen rows lazy-layout one-at-a-time as user scrolls in, producing jank.
 
 ### 2.8 Live-resize bounds work to visible rows only
 
@@ -119,7 +119,7 @@ row — search-as-you-type turns into a frame-budget killer.
 - **Single source of truth** is `Transcript2Coordinator.blocks: [Block]`. No `rows` mirror, no parallel diff structure. The only sync invariant is layout↔data, mediated by `layoutCache: [UUID: CachedLayout]`.
 - **Stable ids drive identity.** `Block.id: UUID` is caller-supplied. Never derive ids from content hashes — identical consecutive messages would collide and selection/highlight scope would drift across content-equivalent updates.
 - **Layout is a pure function**: `Self.makeLayout(for:width:highlights:folds:statuses:)` is `nonisolated static`. Cache entries are derived, not authoritative — `removeCachedLayout(for:)` is always safe; `heightOfRow` lazy-recomputes on miss.
-- **Two mutation entry points only.** `apply(_:scroll:)` (sync, lazy layout, incremental updates) and `applyInBackground(_:scroll:)` (off-main precompute, single main hop, large prepends). Both dispatch to `applyStructuralChange` per `Change` enum. No third channel; do not add a `pendingBlocks` side path.
+- **Two mutation entry points only.** `apply(_:)` (sync, lazy layout, incremental updates) and `applyInBackground(_:)` (off-main precompute, single main hop, large prepends). Both dispatch to `applyStructuralChange` per `Change` enum, then end with `reaffirmScrollMode`. No third channel; do not add a `pendingBlocks` side path.
 
 ### 3.2 Coordinator-held row state
 
@@ -173,6 +173,59 @@ The `Change` enum (emitted by `Transcript2Controller`) is the only shape `applyS
 | `.update(id, kind)` | `reloadData(forRowIndexes:) + noteHeightOfRows(withIndexesChanged:)` | `removeCachedLayout` + `highlightStorage.drop` + `highlightStorage.schedule(new)` + `selection.dropEntry` |
 
 All mutations run inside `beginUpdates` / `endUpdates` ([Transcript2Coordinator.swift:257-261](Transcript2Coordinator.swift:257)). Never `reloadData()` (see §2.11).
+
+### 3.5 Scroll mode
+
+Scroll position is **owned entirely by the coordinator**, exposed only through three high-level intents on the controller:
+
+```swift
+controller.loadInitial(_ blocks: [Block])   // chat cold-load: implicit sticky-bottom
+controller.scrollToBottom()                 // jump back to bottom + re-enter sticky
+// Search-nav scrolls via `coordinator.scrollBlockIntoView(blockId:)` directly.
+```
+
+There is no `requestAnchor` / `captureVisibleAnchor` / `restoreAnchor` API. Hosts (`ChatHistoryView`, `Session`, `NativeTranscript2View.dismantleNSView`) carry **no** scroll state. The coordinator is session-scoped, so its `scrollMode` persists across mount/unmount cycles automatically.
+
+**State machine.** Two modes, one private field:
+
+```swift
+enum ScrollMode {
+    case stickyBottom
+    case free(blockId: UUID, offsetFromClipTop: CGFloat)
+}
+private(set) var scrollMode: ScrollMode = .stickyBottom
+```
+
+Transitions:
+
+| Trigger | New mode |
+|---|---|
+| `loadInitial(_:)` | `.stickyBottom` |
+| `scrollToBottom()` | `.stickyBottom` |
+| `scrollBlockIntoView(blockId:)` | `.free(blockId, offsetFromClipTop: insets.top)` |
+| User wheel / trackpad / keyboard / scroller drag lands at the document bottom (within 1pt) | `.stickyBottom` |
+| Any other user scroll | `.free(topVisibleBlockId, capturedOffset)` |
+| `.free(id)` where `id` was removed | falls back to `.stickyBottom` at next reaffirm |
+
+**Reaffirm invariant.** Every layout-affecting operation ends in `reaffirmScrollMode`:
+
+- `apply(_:)` (after `endUpdates`)
+- `applyInBackground` main hop (after the structural change)
+- `tableFrameDidChange` for any positive width (initial attach AND every subsequent width change while SwiftUI's commit settles)
+- `refillLayoutCache` post-resize prefetch main hop
+
+`reaffirmScrollMode` derives the target clip.y from `scrollMode` + the coordinator's own layout cache (NOT `NSTableView.rect(ofRow:)`, which lags structural mutations until AppKit's next layout pass). It then synchronously runs `noteHeightOfRows` over every row + sizes `tableView.frame.size.height` to the freshly-summed document height — that way `NSClipView.constrainBoundsRect` clamps against the correct content size when we call `scroll(to:)`.
+
+**User-scroll detection.** The coordinator observes `NSClipView.boundsDidChangeNotification` on the documentView's clip view. Every programmatic scroll is bracketed by `isProgrammaticallyScrolling = true / false` so the observer skips its own work. For unbracketed bounds changes (genuine user input AND AppKit follow-up clamps), the observer compares the new position against what the current mode would target — a match (within `bottomDetectionEpsilon`) means it's an AppKit follow-up to our reaffirm and the mode stays put; a mismatch means the user actually moved and we capture a new mode.
+
+**Why we bypass `NSTableView.rect(ofRow:)`** in reaffirm: `insertRows` defers AppKit's per-row height re-query until its next layout pass, so `rect(ofRow: lastRow)` immediately after the insert returns the OLD row's geometry. Walking the coordinator's `layout(for:width:)` cache directly gives an authoritative document height before AppKit catches up.
+
+**Cost of removing this discipline.** Each mode transition or reaffirm omission produces a class of visible bugs:
+
+- Skipping reaffirm in `apply` → new messages stop tracking the bottom; sticky-bottom only holds across width changes.
+- Reaffirming with `rect(ofRow:)` instead of `documentHeight(width:)` → sticky-bottom lands at the PRE-insert document bottom, leaving new tail rows off-screen below the fold.
+- Omitting the user-scroll observer → mode becomes stale; new messages drag the user back to bottom unexpectedly.
+- Letting hosts capture/restore anchor → race-prone re-entry (the original architectural bug that motivated this rewrite).
 
 ## 4. Layout boundaries
 

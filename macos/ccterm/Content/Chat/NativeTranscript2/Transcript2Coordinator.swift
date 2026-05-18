@@ -9,31 +9,27 @@ import AppKit
 ///
 /// ### Mutation paths
 ///
-/// - **`apply(_:scroll:)`** — sync. Layouts compute lazily on `heightOfRow`
+/// - **`apply(_:)`** — sync. Layouts compute lazily on `heightOfRow`
 ///   queries. Used for incremental updates (live messages, single removals,
 ///   tool-result updates).
-/// - **`applyInBackground(_:scroll:)`** — layouts for the inserted blocks
+/// - **`applyInBackground(_:)`** — layouts for the inserted blocks
 ///   compute on a detached `Task`, then a main hop installs them and runs
 ///   the structural change in one shot. Used by `Controller.loadInitial`'s
 ///   Phase 2 (large prepend after the viewport batch is already visible).
 ///
-/// Both paths run their structural change inside `withScrollAdjustment`,
-/// which interprets `ScrollState`:
-/// - `.none` — no scroll work.
-/// - `.top(id)` / `.bottom(id)` — direct scroll-to-position after the change.
-/// - `.saveVisible(side)` — capture an anchor row's screen position before,
-///   compensate scroll origin after so the row stays visually fixed across
-///   the structural change. Same trick as Telegram's `saveScrollState` in
-///   `TableView.layoutItems()`.
+/// Both paths end with `reaffirmScrollMode()` so the post-mutation
+/// scroll position tracks the current `ScrollMode` (stickyBottom or a
+/// captured free-scroll anchor). The mode itself is the single source
+/// of truth for "where the user wants to be looking" — see the
+/// `ScrollMode` section near the top of the class.
 ///
 /// ### Width change (resize)
 ///
 /// `layoutCache` is keyed by `(id, width)`. When the table width changes,
 /// existing entries become misses and lazy-recompute. `tableFrameDidChange`
-/// invalidates rows; live resize bounds work to visible rows;
-/// `refillLayoutCache` (post-resize) reuses the same async pipeline
-/// (`precomputeLayoutsInBackground` → `cacheLayouts` → `noteHeightOfRows`
-/// under `.saveVisible(.visualTop)`).
+/// invalidates rows + reaffirms `scrollMode`; live resize bounds work to
+/// visible rows; `refillLayoutCache` (post-resize) precomputes off-screen
+/// layouts on a detached task and runs its own reaffirm on the main hop.
 ///
 /// ### Concurrency
 ///
@@ -58,35 +54,31 @@ import AppKit
 /// overwrite the authoritative fresh layout with its older snapshot.
 ///
 /// On top of that, a `mutationCounter` snapshot lets the refill task
-/// drop its entire onMain block (including `noteHeightOfRows` and
-/// `saveVisible`) when an `apply` ran during the task — running
-/// `saveVisible` against stale AppKit heights (deferred re-query) would
-/// otherwise jitter the anchor row.
+/// drop its entire onMain block (including `noteHeightOfRows` and the
+/// post-refill reaffirm) when an `apply` ran during the task — running
+/// reaffirm against AppKit's still-stale internal heights would jitter
+/// the anchor row when AppKit eventually re-queries.
 @MainActor
 final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     weak var tableView: NSTableView? {
         didSet {
             if let table = tableView, oldValue !== tableView {
-                appLog(
-                    .info, "Transcript2Coordinator",
-                    "[anchor] tableView.didSet attach blocks=\(blocks.count) "
-                        + "prevLastLayoutWidth=\(lastLayoutWidth) → reset to -1, "
-                        + "table.bounds=\(table.bounds.size)")
-                // A new table attached. The previous mount left
-                // `lastLayoutWidth` at its terminal positive value; reset
-                // to the sentinel so the upcoming `tableFrameDidChange`
-                // crosses the 0→positive edge again and re-fires
-                // `onLayoutReady`. That callback is the controller's
-                // single hook for consuming `pendingAnchor` — both cold
-                // load and view re-mount route through it.
+                // A new table attached. Reset `lastLayoutWidth` so the
+                // next `tableFrameDidChange` re-runs the invalidate +
+                // `reaffirmScrollMode` pipeline for the new geometry.
+                // `scrollMode` itself is session-scoped and survives the
+                // attach — its value (sticky-bottom by default, or the
+                // free-scroll position the user was last at) drives the
+                // reaffirm transparently to callers.
                 lastLayoutWidth = -1
-                // If `apply` was called before the table was attached,
-                // blocks already exist; the freshly-attached table starts
-                // at `numberOfRows = 0` until reloaded. The default
-                // landing position after `reloadData()` is the document
-                // top — `onLayoutReady → consumePendingAnchor` reanchors
-                // before the frame paints, so the user never sees the
-                // transient.
+                detachClipObserver()
+                // If `apply` ran before the table was attached, blocks
+                // already exist; the freshly-attached table starts at
+                // `numberOfRows = 0` until reloaded. The default landing
+                // position after `reloadData()` is the document top —
+                // `tableFrameDidChange` reaffirms the scroll mode as
+                // soon as the new width becomes positive, before the
+                // frame paints, so the user never sees the transient.
                 if !blocks.isEmpty {
                     table.reloadData()
                 }
@@ -98,29 +90,6 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// observers on `blockCount` see the new value.
     var onBlockCountChanged: ((Int) -> Void)?
 
-    /// Fires whenever the table tiles to a positive width that differs
-    /// from the previous one — i.e. on first attach (sentinel `-1` →
-    /// positive), but ALSO on every intermediate width-change after attach
-    /// while the layout is still settling (SwiftUI commonly cycles through
-    /// 1–2 transient widths during a session switch before landing on the
-    /// final column width). `Transcript2Controller` hooks this to consume
-    /// any pending anchor; the controller keeps `pendingAnchor` alive for
-    /// a short debounce window across multiple fires so the re-snap lands
-    /// against the FINAL width's geometry, not an intermediate one.
-    /// Computing the scroll target against an intermediate width and
-    /// dropping the anchor leaves the clip at a y that's no longer "at
-    /// bottom" once the table re-tiles to its terminal width.
-    var onLayoutReady: (() -> Void)?
-
-    /// Fires from `NativeTranscript2View.dismantleNSView` with a snapshot
-    /// of the visible-top row + sub-row offset (or `nil` if nothing is
-    /// visible). `Session` wires this to persist the value into its
-    /// `lastVisibleAnchor` so the next mount can resume there. Stored
-    /// rather than driven through a delegate so callers can opt-in
-    /// independently — demos / previews that don't need scroll
-    /// persistence simply don't wire it.
-    var onWillDetach: ((CapturedAnchor?) -> Void)?
-
     /// Set by `Transcript2Controller` to forward chevron taps to the
     /// SwiftUI-owned sheet binding. The cell's mouseDown handler resolves
     /// the chevron hit, looks up the source `Block.Kind.userBubble(text:)`,
@@ -128,6 +97,333 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// id + the original text) so neither side reaches into the other's
     /// internals.
     var onUserBubbleSheetRequested: ((UUID, String) -> Void)?
+
+    // MARK: - Scroll mode
+
+    /// What the transcript should be visually showing right now. Single
+    /// source of truth for scroll position, owned by the coordinator and
+    /// (because the coordinator is session-scoped) automatically
+    /// persisted across `ChatHistoryView` mount/unmount cycles. No upper
+    /// layer captures or restores — the transcript is self-stabilizing.
+    ///
+    /// Every layout-affecting operation (`apply`, `applyInBackground`'s
+    /// main hop, post-resize refill, `tableFrameDidChange` to a positive
+    /// width) ends in `reaffirmScrollMode()`, which derives the desired
+    /// clip-view y from the current mode and the just-settled geometry.
+    /// "Bottom" is not a fixed y; it's a target that follows row-height
+    /// reflows.
+    enum ScrollMode: Sendable, Equatable {
+        /// Pinned to the visual bottom of the document. Default for
+        /// cold-load (chat). Stays sticky as new blocks append and as
+        /// width changes reflow row heights — every reaffirm pulls the
+        /// clip back to bottom.
+        case stickyBottom
+        /// User has free-scrolled to an arbitrary position. `blockId`
+        /// names the row whose top edge was at `offsetFromClipTop`
+        /// pixels from the clip's bounds origin at the time the mode
+        /// was captured. Reaffirms compute
+        /// `clip.y = rect(blockId).origin.y - offsetFromClipTop` so
+        /// the same row stays visually fixed across reflows.
+        case free(blockId: UUID, offsetFromClipTop: CGFloat)
+    }
+
+    /// Current scroll mode. Writes go through `setScrollMode(_:)` or
+    /// `captureFreeScrollFromCurrentPosition()`. Readable for tests and
+    /// the controller's high-level public methods.
+    private(set) var scrollMode: ScrollMode = .stickyBottom
+
+    /// Bracket flag: `true` while we are inside our own programmatic
+    /// `scroll(to:)` call. The clip-view bounds observer reads this and
+    /// skips mode capture for our own scrolls — without it, every
+    /// reaffirm would immediately re-capture mode = .free at the
+    /// just-set position and the stickiness would dissolve on the next
+    /// layout change.
+    private var isProgrammaticallyScrolling = false
+
+    /// Clip view we have a `boundsDidChangeNotification` observer on.
+    /// Set by `attachClipObserver`, cleared by `detachClipObserver`.
+    /// Detached automatically when `tableView` changes, since the new
+    /// table has its own (possibly different) enclosing scroll view.
+    private weak var observedClipView: NSClipView?
+
+    /// Tolerance for "is clip.y at the document bottom?" — handles
+    /// CGFloat drift from `scroll(to:)` rounding (typically sub-pixel).
+    private static let bottomDetectionEpsilon: CGFloat = 1.0
+
+    /// Public entry for the controller / search nav. Sets the mode and
+    /// immediately reaffirms against current geometry. Idempotent for
+    /// equal modes — no-op when mode didn't change.
+    func setScrollMode(_ mode: ScrollMode) {
+        scrollMode = mode
+        reaffirmScrollMode()
+    }
+
+    /// Compute the clip.y target for the current scroll mode against
+    /// the current (table, scroll) geometry and apply it. Safe to call
+    /// when the table or scroll view isn't bound yet — the next attach
+    /// + `tableFrameDidChange` will reaffirm again. Bracketed by
+    /// `isProgrammaticallyScrolling` so the clip bounds observer
+    /// distinguishes this from user input.
+    private func reaffirmScrollMode() {
+        guard let table = tableView,
+            let scroll = table.enclosingScrollView,
+            scroll.contentView.bounds.height > 0
+        else { return }
+        let width = layoutWidth
+        guard width > 0 else { return }
+        // Force AppKit to re-query `heightOfRow:` for every row and
+        // update its internal document-height bookkeeping BEFORE we
+        // try to scroll. Two reasons this is necessary:
+        //
+        // - `insertRows` only schedules new rows for height-query; it
+        //   doesn't synchronously sum them into `table.frame.height`.
+        // - At the initial attach, NSTableView's documentView frame is
+        //   based on `numberOfRows × defaultRowHeight` (the cheap
+        //   default), not on per-row `heightOfRow:` results. Until
+        //   those are queried, AppKit thinks the document is much
+        //   shorter than it really is.
+        //
+        // `NSClipView.constrainBoundsRect:` (which `scroll(to:)` runs
+        // through) clamps our target against `documentView.frame.size
+        // .height`. With stale height, the clamp pins us at the
+        // pre-content bottom, and subsequent AppKit layout passes
+        // re-confirm that wrong position. `noteHeightOfRows` flushes
+        // those heights synchronously; the matching `setFrameSize`
+        // installs the resulting document height on the documentView,
+        // so the clip's constraint can let our scroll target through.
+        let indices = IndexSet(blocks.indices)
+        if !indices.isEmpty {
+            table.noteHeightOfRows(withIndexesChanged: indices)
+        }
+        let docHeight = documentHeight(width: width)
+        if abs(table.frame.size.height - docHeight) > 0.5 {
+            table.setFrameSize(
+                NSSize(width: table.frame.size.width, height: docHeight))
+        }
+        let target = computeClipY(for: scrollMode, table: table, scroll: scroll)
+        guard let target else { return }
+        applyClipY(target, scroll: scroll)
+    }
+
+    /// Pure compute-only: derive the clip.y target for `mode` against
+    /// the current document layout. Returns `nil` when blocks are empty
+    /// or the geometry isn't ready (caller should leave clip unchanged
+    /// in that case).
+    ///
+    /// Falls back gracefully: a `.free` mode whose block has since been
+    /// removed mutates `scrollMode` back to `.stickyBottom` and re-
+    /// computes.
+    ///
+    /// **Why we don't use `NSTableView.rect(ofRow:)`.** AppKit defers
+    /// re-querying `heightOfRow` for freshly-inserted rows until its
+    /// next layout pass, so `rect(ofRow: lastRow)` immediately after
+    /// `insertRows` returns the OLD geometry (the row that USED to be
+    /// last). Reaffirming against that target lands the clip at the
+    /// pre-insert bottom, leaving the new rows off-screen below the
+    /// fold. The coordinator's `layout(for:width:)` is the
+    /// authoritative source of row heights at this moment — it
+    /// lazy-computes against fresh content, no deferred re-query — so
+    /// we walk it directly to compute document-relative positions.
+    private func computeClipY(
+        for mode: ScrollMode,
+        table: NSTableView,
+        scroll: NSScrollView
+    ) -> CGFloat? {
+        guard !blocks.isEmpty else { return nil }
+        let width = layoutWidth
+        guard width > 0 else { return nil }
+        let visibleBottomInClip =
+            scroll.contentView.bounds.height - scroll.contentInsets.bottom
+        let lowerBound = -scroll.contentInsets.top
+
+        switch mode {
+        case .stickyBottom:
+            let docHeight = documentHeight(width: width)
+            let raw = docHeight - visibleBottomInClip
+            return max(lowerBound, raw)
+        case .free(let id, let offset):
+            guard let row = blocks.firstIndex(where: { $0.id == id }) else {
+                // Anchor block was removed (e.g. bridge dropped a transient
+                // tool block while we were detached). Degrade to bottom.
+                scrollMode = .stickyBottom
+                return computeClipY(
+                    for: scrollMode, table: table, scroll: scroll)
+            }
+            let rowY = rowTopY(row: row, width: width)
+            let raw = rowY - offset
+            let docHeight = documentHeight(width: width)
+            let maxValid = max(lowerBound, docHeight - visibleBottomInClip)
+            return max(lowerBound, min(raw, maxValid))
+        }
+    }
+
+    /// Sum of all row heights at the current width, computed from
+    /// `layout(for:width:)` rather than `NSTableView.bounds.height`.
+    /// The latter lags behind structural mutations until AppKit
+    /// re-tiles; this walks the coordinator's own layout cache (which
+    /// lazy-fills against fresh content) for an immediate, authoritative
+    /// total. Bounded by `blocks.count` × cache lookup — O(N) but
+    /// reaffirms are rare (per mutation / per frame-change) and N is
+    /// the same order as cold-load size.
+    private func documentHeight(width: CGFloat) -> CGFloat {
+        var total: CGFloat = 0
+        for block in blocks {
+            let pad = BlockStyle.blockPadding(for: block.kind)
+            total += layout(for: block, width: width).totalHeight + pad.top + pad.bottom
+        }
+        return total
+    }
+
+    /// y of the top edge of `row` in document coordinates, computed the
+    /// same way as `documentHeight` (sum of preceding row heights).
+    /// Matches what `NSTableView.rect(ofRow: row).origin.y` would
+    /// eventually return — but immediately, not after AppKit's next
+    /// layout pass.
+    private func rowTopY(row: Int, width: CGFloat) -> CGFloat {
+        var y: CGFloat = 0
+        for i in 0..<row {
+            guard blocks.indices.contains(i) else { break }
+            let pad = BlockStyle.blockPadding(for: blocks[i].kind)
+            y += layout(for: blocks[i], width: width).totalHeight + pad.top + pad.bottom
+        }
+        return y
+    }
+
+    /// Wraps `clip.scroll(to:)` with the programmatic-scroll bracket so
+    /// the bounds observer doesn't re-capture mode = .free at our own
+    /// target.
+    private func applyClipY(_ y: CGFloat, scroll: NSScrollView) {
+        isProgrammaticallyScrolling = true
+        defer { isProgrammaticallyScrolling = false }
+        let target = NSPoint(
+            x: scroll.contentView.bounds.origin.x, y: y)
+        scroll.contentView.scroll(to: target)
+    }
+
+    // MARK: - User-scroll observation
+
+    /// Begin observing `boundsDidChange` on this clip view. Detaches any
+    /// previous observation first so we never have two live observers
+    /// (would double-count user-scroll captures). Wired from
+    /// `tableFrameDidChange` the first time the table appears inside a
+    /// scroll view — by which point the clip view is stable.
+    private func attachClipObserver(_ clipView: NSClipView) {
+        if observedClipView === clipView { return }
+        detachClipObserver()
+        clipView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(clipBoundsDidChange(_:)),
+            name: NSView.boundsDidChangeNotification, object: clipView)
+        observedClipView = clipView
+    }
+
+    /// Tear down the clip observer. Called from `tableView.didSet` (new
+    /// table coming) and from `NativeTranscript2View.dismantleNSView`
+    /// (via `removeAllObservers`-equivalent in the dismantle path).
+    private func detachClipObserver() {
+        if let cv = observedClipView {
+            NotificationCenter.default.removeObserver(
+                self, name: NSView.boundsDidChangeNotification, object: cv)
+            observedClipView = nil
+        }
+    }
+
+    /// Clip-view bounds change. Three sources fire this:
+    ///
+    /// - Our own `applyClipY` → bracketed by `isProgrammaticallyScrolling`,
+    ///   skip; reaffirm is what put the clip here, so the mode already
+    ///   matches.
+    /// - AppKit follow-up adjustments after `tile()` (row heights settle,
+    ///   `tile` re-clamps clip into the valid range, etc.). These land
+    ///   asynchronously *after* our flag clears. To avoid mistaking them
+    ///   for user input, we re-derive what clip.y the current mode
+    ///   *would* land at and compare — a match (within an epsilon) means
+    ///   we're already where the mode wants us, no transition needed.
+    /// - User input (wheel, trackpad, keyboard, scroller drag) → the
+    ///   new position will diverge from what the current mode would
+    ///   pick. Fall through to `captureFreeScrollFromCurrentPosition`,
+    ///   which either transitions to `.stickyBottom` (user landed at
+    ///   the document bottom) or `.free(topVisibleRow, offset)`.
+    @objc private func clipBoundsDidChange(_ note: Notification) {
+        if isProgrammaticallyScrolling { return }
+        guard let table = tableView,
+            let scroll = table.enclosingScrollView
+        else { return }
+        let clipY = scroll.contentView.bounds.origin.y
+        if let expected = computeClipY(
+            for: scrollMode, table: table, scroll: scroll),
+            abs(clipY - expected) < Self.bottomDetectionEpsilon
+        {
+            // We're already at the position the current mode targets;
+            // this is an AppKit follow-up to our own reaffirm.
+            return
+        }
+        captureFreeScrollFromCurrentPosition()
+    }
+
+    /// Derive a new `scrollMode` from the clip view's current position.
+    /// Called only for user-initiated scrolls. Uses the coordinator's
+    /// own layout cache for row positions (same posture as
+    /// `computeClipY`) — `NSTableView.rect(ofRow:)` lags behind
+    /// structural mutations until AppKit re-tiles, which would
+    /// mis-classify positions immediately after `apply`.
+    private func captureFreeScrollFromCurrentPosition() {
+        guard let table = tableView,
+            let scroll = table.enclosingScrollView,
+            !blocks.isEmpty
+        else { return }
+        let width = layoutWidth
+        guard width > 0 else { return }
+        let clipY = scroll.contentView.bounds.origin.y
+        let docHeight = documentHeight(width: width)
+        let visibleBottomInClip =
+            scroll.contentView.bounds.height - scroll.contentInsets.bottom
+        let maxY = docHeight - visibleBottomInClip
+        if clipY >= maxY - Self.bottomDetectionEpsilon {
+            scrollMode = .stickyBottom
+            return
+        }
+        // Walk the document downward until we cross clipY: the row
+        // containing clipY (or the first row at or below it) is the
+        // visible-top row. `offsetFromClipTop = rowTopY - clipY`
+        // captures the sub-row precision so reaffirm puts the row back
+        // at exactly the same fractional position.
+        var y: CGFloat = 0
+        for (i, block) in blocks.enumerated() {
+            let pad = BlockStyle.blockPadding(for: block.kind)
+            let h = layout(for: block, width: width).totalHeight + pad.top + pad.bottom
+            if y + h > clipY {
+                scrollMode = .free(
+                    blockId: block.id,
+                    offsetFromClipTop: y - clipY)
+                return
+            }
+            y += h
+            _ = i
+        }
+        // All rows ended above clipY — clip is beyond the document.
+        // Treat as bottom (degenerate; clamp logic in computeClipY
+        // would have caught this if reaffirm produced it).
+        if let last = blocks.last {
+            scrollMode = .free(
+                blockId: last.id,
+                offsetFromClipTop: y - clipY)
+        }
+    }
+
+    // MARK: - View dismantle hook
+
+    /// Called from `NativeTranscript2View.dismantleNSView` before the
+    /// scroll view is torn down. Detaches our clip observer (the next
+    /// table attach re-attaches against the new clip view) and leaves
+    /// `scrollMode` intact for the next mount to consume. No explicit
+    /// "capture" step: every user scroll has already been recorded
+    /// continuously via `clipBoundsDidChange`, so the mode is already
+    /// up to date at dismantle time.
+    func willDismantleView() {
+        detachClipObserver()
+    }
 
     /// Cross-row text selection. Owns the selection dict; reads back into
     /// us through the helpers below (`block(atRow:)`, `textLayout(atRow:)`,
@@ -220,17 +516,17 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// by an unrelated cancel path.
     private var cacheRefillTask: Task<Void, Never>?
 
-    /// Bumped on every `apply`. The refill task captures it at start; if
-    /// it drifts during the task run, the entire onMain block (cache
-    /// writes, `noteHeightOfRows`, `saveVisible`) is dropped. Reason: the
-    /// `saveVisible` anchor math relies on AppKit re-querying heights for
-    /// rows we just `noteHeightOfRows`'d, but that re-query is deferred
-    /// to the next layout pass — so running `applyAnchor` immediately
-    /// after compensates against stale internal heights and the row
-    /// visually jumps when AppKit eventually catches up. Skipping refill
-    /// in this case is harmless: `apply`'s own scroll already settled the
-    /// post-mutation state, and `heightOfRow` lazy-fills missing layouts
-    /// on demand. `applyInBackground` doesn't bump because its own
+    /// Bumped on every `apply`. The refill task captures it at start;
+    /// if it drifts during the task run, the entire onMain block (cache
+    /// writes, `noteHeightOfRows`, reaffirm) is dropped. Reason: the
+    /// post-refill reaffirm reads `heightOfRow` to compute the target
+    /// clip.y, but `noteHeightOfRows` defers its re-query to the next
+    /// layout pass — running reaffirm immediately compensates against
+    /// stale internal heights and the row visually jumps when AppKit
+    /// eventually catches up. Skipping refill in this case is harmless:
+    /// `apply`'s own reaffirm already settled the post-mutation scroll
+    /// state, and `heightOfRow` lazy-fills missing layouts on demand.
+    /// `applyInBackground` doesn't bump because its own
     /// row-mutation is the change-event for its own scroll handling.
     private var mutationCounter: UInt64 = 0
 
@@ -251,7 +547,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// `bounds.width` is set synchronously inside `setFrameSize`, so a
     /// frame-driven `frameDidChange` and a downstream `layoutWidth` read
     /// see the same value on the same tick — no "small-width transient"
-    /// window for `onLayoutReady` → `consumePendingInitial` to trip on.
+    /// window for `reaffirmScrollMode` to trip on.
     ///
     /// Clamping here is the single source of truth: `makeLayout` sees the
     /// clamped width, `layoutCache` keys on it, and `CenteredRowView` /
@@ -287,37 +583,47 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
 
     // MARK: - Mutation: sync
 
-    func apply(
-        _ changes: [Transcript2Controller.Change],
-        scroll: Transcript2Controller.ScrollState = .none
-    ) {
-        // Bump so any inflight `cacheRefillTask` discards its onMain on
-        // hop. We don't cancel here: the counter is the actual guard, and
-        // `cacheRefillTask` polices its own lifetime via the next
-        // `refillLayoutCache`. Discarding refill in this window matters
-        // because its `saveVisible` would compensate against stale AppKit
-        // heights (deferred re-query) — running on top of `apply`'s own
-        // settled scroll would jitter the anchor row.
+    func apply(_ changes: [Transcript2Controller.Change]) {
+        // Bump so any inflight `cacheRefillTask` discards its onMain
+        // hop. We don't cancel here: the counter is the actual guard,
+        // and `cacheRefillTask` polices its own lifetime via the next
+        // `refillLayoutCache`. Skipping refill in this window matters
+        // because its post-resize reaffirm would compensate against
+        // stale AppKit heights (deferred re-query) — running on top of
+        // `apply`'s own reaffirm would jitter the anchor row.
         mutationCounter &+= 1
 
         if let table = tableView {
-            withScrollAdjustment(scroll, in: table) {
-                table.beginUpdates()
-                for change in changes {
-                    applyStructuralChange(change, in: table)
-                }
-                table.endUpdates()
+            // Disable implicit animations across the structural change
+            // and the reaffirm: the layer-backed `.never` clip view
+            // would otherwise animate its bounds origin from
+            // `contentView.scroll(to:)`, racing with the cell-redraw
+            // pass. Same suppression as the old `withScrollAdjustment`.
+            NSAnimationContext.beginGrouping()
+            NSAnimationContext.current.duration = 0
+            NSAnimationContext.current.allowsImplicitAnimation = false
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            table.beginUpdates()
+            for change in changes {
+                applyStructuralChange(change, in: table)
             }
+            table.endUpdates()
+            // Reaffirm sees fresh `rect(ofRow:)` values immediately
+            // because they lazy-recompute against the just-installed
+            // layouts. `table.bounds.height` may lag until the next
+            // tile pass, but `computeClipY` reads `rect(ofRow:)` of the
+            // last row directly to compute the bottom — so the target
+            // is correct without waiting for AppKit's deferred re-query.
+            // The subsequent `tableFrameDidChange` (when AppKit
+            // finalizes the height) reaffirms again as a safety net.
+            reaffirmScrollMode()
+            CATransaction.commit()
+            NSAnimationContext.endGrouping()
         } else {
-            // Table not attached. Just mutate `blocks`; future attach will
-            // `reloadData()`. Scroll state is meaningless without a table.
-            if case .none = scroll {
-            } else {
-                appLog(
-                    .info, "Transcript2Coordinator",
-                    "[anchor] apply with no table — scroll intent dropped "
-                        + "(changes=\(changes.count) scroll=\(scroll))")
-            }
+            // Table not attached. Just mutate `blocks`; the next attach
+            // will `reloadData()` and `tableFrameDidChange` will
+            // reaffirm scrollMode against the new geometry.
             for change in changes {
                 applyStructuralChange(change, in: nil)
             }
@@ -328,9 +634,10 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
 
     // MARK: - Mutation: off-main (Phase 2 of loadInitial, future use cases)
 
-    /// Layouts for the inserted blocks compute on a detached task; a single
-    /// main hop installs them and runs the structural changes under
-    /// `scroll`.
+    /// Layouts for the inserted blocks compute on a detached task; a
+    /// single main hop installs them and runs the structural changes,
+    /// then reaffirms the current scroll mode against the post-mutation
+    /// geometry.
     ///
     /// **Fire-and-forget.** The task is not tracked and not cancellable:
     /// row-mutation is `dataSource` critical-path work that must land.
@@ -346,7 +653,6 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// the async hop.
     func applyInBackground(
         _ changes: [Transcript2Controller.Change],
-        scroll: Transcript2Controller.ScrollState,
         completion: @MainActor @escaping () -> Void = {}
     ) {
         guard tableView != nil else {
@@ -357,9 +663,9 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             // `blocks` out of sync with the underlying handle's messages
             // for any session whose view isn't currently mounted. Route
             // through sync `apply` so `blocks` stays authoritative;
-            // layouts compute lazily once a table re-attaches and
-            // `heightOfRow` is queried.
-            apply(changes, scroll: .none)
+            // layouts compute lazily once a table re-attaches and the
+            // first `tableFrameDidChange` reaffirms scroll mode.
+            apply(changes)
             completion()
             return
         }
@@ -367,9 +673,8 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         guard width > 0 else {
             // Table is attached but not yet tiled. Same posture as the
             // no-table branch above — degrade to sync apply so `blocks`
-            // is current; the layout/scroll work can replay through
-            // `onLayoutReady` paths.
-            apply(changes, scroll: .none)
+            // is current; the next `tableFrameDidChange` will reaffirm.
+            apply(changes)
             completion()
             return
         }
@@ -410,16 +715,22 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             await MainActor.run { [entries] in
                 defer { completion() }
                 guard let self, let table = self.tableView else { return }
-                self.withScrollAdjustment(scroll, in: table) {
-                    if self.layoutWidth == width {
-                        self.cacheLayouts(entries, width: width)
-                    }
-                    table.beginUpdates()
-                    for change in changes {
-                        self.applyStructuralChange(change, in: table)
-                    }
-                    table.endUpdates()
+                NSAnimationContext.beginGrouping()
+                NSAnimationContext.current.duration = 0
+                NSAnimationContext.current.allowsImplicitAnimation = false
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                if self.layoutWidth == width {
+                    self.cacheLayouts(entries, width: width)
                 }
+                table.beginUpdates()
+                for change in changes {
+                    self.applyStructuralChange(change, in: table)
+                }
+                table.endUpdates()
+                self.reaffirmScrollMode()
+                CATransaction.commit()
+                NSAnimationContext.endGrouping()
                 self.onBlockCountChanged?(self.blocks.count)
             }
         }
@@ -514,260 +825,6 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         table.reloadData(
             forRowIndexes: IndexSet(integer: row),
             columnIndexes: IndexSet(integer: 0))
-    }
-
-    // MARK: - Scroll adjustment
-
-    /// Wraps a structural-change closure with the requested scroll behavior.
-    /// `.saveVisible` disables implicit animations so the height/insert
-    /// transition doesn't race with the scroll-origin compensation.
-    private func withScrollAdjustment(
-        _ scroll: Transcript2Controller.ScrollState,
-        in tableView: NSTableView,
-        body: () -> Void
-    ) {
-        switch scroll {
-        case .none:
-            body()
-        case .top(let id):
-            body()
-            scrollRowToTop(id: id, in: tableView)
-        case .bottom(let id):
-            body()
-            scrollRowToBottom(id: id, in: tableView)
-        case .saveVisible(let side):
-            let anchor = captureAnchor(side: side, in: tableView)
-            // Disable both NSAnimationContext (row-height transition) and
-            // CATransaction (layer-backed ClipView's bounds.origin animation
-            // from `scroll(to:)`) so they don't race.
-            NSAnimationContext.beginGrouping()
-            NSAnimationContext.current.duration = 0
-            NSAnimationContext.current.allowsImplicitAnimation = false
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            body()
-            if let anchor { applyAnchor(anchor, in: tableView) }
-            CATransaction.commit()
-            NSAnimationContext.endGrouping()
-        }
-    }
-
-    private struct ScrollAnchor {
-        let blockId: UUID
-        /// `rect.origin.y` for `.visualTop`, `rect.maxY` for `.visualBottom`.
-        let oldRefY: CGFloat
-        let oldScrollY: CGFloat
-        let side: Transcript2Controller.ScrollState.Side
-    }
-
-    private func captureAnchor(
-        side: Transcript2Controller.ScrollState.Side,
-        in tableView: NSTableView
-    ) -> ScrollAnchor? {
-        guard let scrollView = tableView.enclosingScrollView else { return nil }
-        let visible = tableView.rows(in: tableView.visibleRect)
-        guard visible.location != NSNotFound, visible.length > 0 else { return nil }
-
-        // NSTableView is flipped (default): smallest visible row index = top
-        // of viewport; largest = bottom.
-        let anchorRow: Int
-        switch side {
-        case .visualTop:
-            anchorRow = visible.location
-        case .visualBottom:
-            anchorRow = visible.location + visible.length - 1
-        }
-        guard blocks.indices.contains(anchorRow) else { return nil }
-        let rect = tableView.rect(ofRow: anchorRow)
-        let refY: CGFloat = (side == .visualTop) ? rect.origin.y : rect.maxY
-        return ScrollAnchor(
-            blockId: blocks[anchorRow].id,
-            oldRefY: refY,
-            oldScrollY: scrollView.contentView.bounds.origin.y,
-            side: side)
-    }
-
-    private func applyAnchor(_ anchor: ScrollAnchor, in tableView: NSTableView) {
-        guard let scrollView = tableView.enclosingScrollView else { return }
-        guard let newRow = blocks.firstIndex(where: { $0.id == anchor.blockId }) else {
-            return
-        }
-        let newRect = tableView.rect(ofRow: newRow)
-        let newRefY: CGFloat = (anchor.side == .visualTop) ? newRect.origin.y : newRect.maxY
-        let delta = newRefY - anchor.oldRefY
-        if abs(delta) > 0.5 {
-            scrollView.contentView.scroll(
-                to: NSPoint(
-                    x: scrollView.contentView.bounds.origin.x,
-                    y: anchor.oldScrollY + delta))
-        }
-    }
-
-    /// Scroll so `id`'s top aligns with the visible content area's top edge.
-    ///
-    /// `NSClipView.bounds.height` spans the full clip frame (NSScrollView's
-    /// `contentInsets` does *not* shrink it — insets only widen the allowed
-    /// scroll range), so visible-content-area-top in clip coords is at
-    /// `contentInsets.top`, not 0. Setting `bounds.origin.y = rect.minY -
-    /// contentInsets.top` lands the row's top there.
-    private func scrollRowToTop(id: UUID, in tableView: NSTableView) {
-        guard let row = blocks.firstIndex(where: { $0.id == id }),
-            let scrollView = tableView.enclosingScrollView
-        else { return }
-        let rect = tableView.rect(ofRow: row)
-        let target = rect.minY - scrollView.contentInsets.top
-        scrollView.contentView.scroll(
-            to: NSPoint(x: scrollView.contentView.bounds.origin.x, y: target))
-    }
-
-    /// Scroll so `id`'s bottom aligns with the visible content area's bottom
-    /// edge. Mirrors `scrollRowToTop`: clip bounds span the full frame, so
-    /// the visible content area's bottom in clip coords is at
-    /// `clip.bounds.height - contentInsets.bottom`. The pre-fix
-    /// implementation used just `clip.bounds.height`, which dropped the row
-    /// into the bottom inset region (under the input-bar overlay).
-    ///
-    /// `target` is clamped to `-contentInsets.top` — the lowest origin
-    /// `NSClipView` treats as legal. Without the clamp, a transcript whose
-    /// total height is shorter than the viewport produces a strongly
-    /// negative target (rect.maxY is tiny, the visible-bottom term is
-    /// large), and `NSClipView.scroll(to:)` writes it through without
-    /// constraint, pushing the documentView down into the viewport and
-    /// leaving a gap above the first row.
-    private func scrollRowToBottom(id: UUID, in tableView: NSTableView) {
-        guard let row = blocks.firstIndex(where: { $0.id == id }) else {
-            appLog(
-                .info, "Transcript2Coordinator",
-                "[anchor] scrollRowToBottom EARLY id=\(id.uuidString.prefix(8)) not in blocks=\(blocks.count)")
-            return
-        }
-        guard let scrollView = tableView.enclosingScrollView else {
-            appLog(
-                .info, "Transcript2Coordinator",
-                "[anchor] scrollRowToBottom EARLY enclosingScrollView=nil "
-                    + "id=\(id.uuidString.prefix(8)) row=\(row) "
-                    + "tableSuper=\(String(describing: tableView.superview))")
-            return
-        }
-        let rect = tableView.rect(ofRow: row)
-        let visibleBottomInClip =
-            scrollView.contentView.bounds.height - scrollView.contentInsets.bottom
-        let raw = rect.maxY - visibleBottomInClip
-        let target = max(-scrollView.contentInsets.top, raw)
-        let beforeY = scrollView.contentView.bounds.origin.y
-        scrollView.contentView.scroll(
-            to: NSPoint(x: scrollView.contentView.bounds.origin.x, y: target))
-        let afterY = scrollView.contentView.bounds.origin.y
-        appLog(
-            .info, "Transcript2Coordinator",
-            "[anchor] scrollRowToBottom row=\(row)/\(blocks.count) "
-                + "rect=\(rect) docHeight=\(tableView.bounds.height) "
-                + "clipH=\(scrollView.contentView.bounds.height) "
-                + "insetsBottom=\(scrollView.contentInsets.bottom) "
-                + "visibleBottomInClip=\(visibleBottomInClip) "
-                + "raw=\(raw) target=\(target) clip.y \(beforeY)→\(afterY)")
-    }
-
-    // MARK: - Visible-position capture / restore
-
-    /// A snapshot of the user's current scroll position, expressed as
-    /// (visible-top row, sub-row y-offset from the clip's top). Stable
-    /// across detach + new-table attach because the row id outlives the
-    /// `NSTableView` instance. `offsetFromClipTop` carries the sub-row
-    /// precision so a row that was scrolled halfway up the viewport
-    /// returns to the same half-up position.
-    struct CapturedAnchor: Sendable, Equatable {
-        let blockId: UUID
-        let offsetFromClipTop: CGFloat
-    }
-
-    /// Capture the topmost visible row + its y-offset. Returns `nil`
-    /// when there's no table bound or no rows visible — callers should
-    /// treat that as "nothing to remember" and fall back to a default
-    /// anchor (`.bottom`) on the next mount.
-    func captureVisibleAnchor() -> CapturedAnchor? {
-        guard let table = tableView else {
-            appLog(
-                .info, "Transcript2Coordinator",
-                "[anchor] captureVisibleAnchor → nil (no tableView)")
-            return nil
-        }
-        guard let scrollView = table.enclosingScrollView else {
-            appLog(
-                .info, "Transcript2Coordinator",
-                "[anchor] captureVisibleAnchor → nil (no scrollView)")
-            return nil
-        }
-        guard !blocks.isEmpty else {
-            appLog(
-                .info, "Transcript2Coordinator",
-                "[anchor] captureVisibleAnchor → nil (no blocks)")
-            return nil
-        }
-        let visible = table.rows(in: table.visibleRect)
-        guard visible.location != NSNotFound, visible.length > 0,
-            blocks.indices.contains(visible.location)
-        else {
-            appLog(
-                .info, "Transcript2Coordinator",
-                "[anchor] captureVisibleAnchor → nil "
-                    + "(visible=\(visible) blocks=\(blocks.count) "
-                    + "visibleRect=\(table.visibleRect) bounds=\(table.bounds))")
-            return nil
-        }
-        let rect = table.rect(ofRow: visible.location)
-        let offset = rect.origin.y - scrollView.contentView.bounds.origin.y
-        let captured = CapturedAnchor(
-            blockId: blocks[visible.location].id,
-            offsetFromClipTop: offset)
-        appLog(
-            .info, "Transcript2Coordinator",
-            "[anchor] captureVisibleAnchor → row=\(visible.location)/\(blocks.count) "
-                + "id=\(captured.blockId.uuidString.prefix(8)) "
-                + "rect.y=\(rect.origin.y) clip.y=\(scrollView.contentView.bounds.origin.y) "
-                + "offset=\(offset)")
-        return captured
-    }
-
-    /// Restore a captured anchor. Returns `false` when the block is no
-    /// longer in `blocks` (e.g. the bridge removed it while the view
-    /// was unmounted) — caller is expected to resolve a fallback
-    /// (typically `.bottom`).
-    @discardableResult
-    func scrollToCapturedAnchor(_ anchor: CapturedAnchor) -> Bool {
-        guard let table = tableView else {
-            appLog(
-                .info, "Transcript2Coordinator",
-                "[anchor] scrollToCapturedAnchor → false (no tableView)")
-            return false
-        }
-        guard let scrollView = table.enclosingScrollView else {
-            appLog(
-                .info, "Transcript2Coordinator",
-                "[anchor] scrollToCapturedAnchor → false (no scrollView)")
-            return false
-        }
-        guard let row = blocks.firstIndex(where: { $0.id == anchor.blockId }) else {
-            appLog(
-                .info, "Transcript2Coordinator",
-                "[anchor] scrollToCapturedAnchor → false "
-                    + "(block \(anchor.blockId.uuidString.prefix(8)) not in \(blocks.count) blocks)")
-            return false
-        }
-        let rect = table.rect(ofRow: row)
-        let target = rect.origin.y - anchor.offsetFromClipTop
-        let beforeY = scrollView.contentView.bounds.origin.y
-        scrollView.contentView.scroll(
-            to: NSPoint(x: scrollView.contentView.bounds.origin.x, y: target))
-        let afterY = scrollView.contentView.bounds.origin.y
-        appLog(
-            .info, "Transcript2Coordinator",
-            "[anchor] scrollToCapturedAnchor row=\(row)/\(blocks.count) "
-                + "rect.y=\(rect.origin.y) offset=\(anchor.offsetFromClipTop) "
-                + "target=\(target) clip.y \(beforeY)→\(afterY) "
-                + "clipBounds=\(scrollView.contentView.bounds.size) "
-                + "docBounds=\(table.bounds.size)")
-        return true
     }
 
     // MARK: - Layout cache
@@ -1057,60 +1114,68 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
 
     @objc func tableFrameDidChange(_ note: Notification) {
         guard let tableView else { return }
-        // Resizes inside the >max clamp band leave `layoutWidth` unchanged —
-        // `BlockCellView.layoutOrigin` re-centers content automatically from
-        // the new `bounds.width`, no row needs its layout invalidated.
+        // Resizes inside the >max clamp band leave `layoutWidth`
+        // unchanged — `BlockCellView.layoutOrigin` re-centers content
+        // automatically from the new `bounds.width`, no row needs its
+        // layout invalidated. But height-only changes (e.g. AppKit
+        // tile() catching up to a recent `noteHeightOfRows`) still
+        // reach this notification; we still want to reaffirm scroll
+        // mode for those, because "stickyBottom" may have moved.
         let width = layoutWidth
-        if width == lastLayoutWidth { return }
-        let prevWidth = lastLayoutWidth
-        lastLayoutWidth = width
-
-        // Refresh row heights BEFORE `onLayoutReady?()`. The deferred branch
-        // of `Transcript2Controller.loadInitial` pre-inserts blocks into
-        // `coordinator.blocks` while `layoutWidth == 0`, which makes AppKit
-        // cache ~0 heights for every row. If the subsequent
-        // `consumePendingInitial → scrollRowToBottom` runs before the
-        // re-query, `rect(ofRow:)` returns geometry at ~0 and the scroll
-        // target collapses to the document top.
-        if !blocks.isEmpty {
-            if tableView.inLiveResize {
-                // Bounded per-frame layout work: only invalidate visible rows.
-                // Off-screen rows keep their stale heights and stale cached
-                // layouts — invisible to the user and repaired by the
-                // post-resize background prefetch.
-                let visible = tableView.rows(in: tableView.visibleRect)
-                if visible.location != NSNotFound, visible.length > 0 {
-                    invalidate(
-                        rows: IndexSet(visible.location..<visible.location + visible.length),
-                        in: tableView)
+        if width != lastLayoutWidth {
+            lastLayoutWidth = width
+            if !blocks.isEmpty {
+                if tableView.inLiveResize {
+                    // Bounded per-frame layout work: only invalidate visible
+                    // rows. Off-screen rows keep their stale heights and
+                    // stale cached layouts — invisible to the user and
+                    // repaired by the post-resize background prefetch.
+                    let visible = tableView.rows(in: tableView.visibleRect)
+                    if visible.location != NSNotFound, visible.length > 0 {
+                        invalidate(
+                            rows: IndexSet(
+                                visible.location..<visible.location + visible.length),
+                            in: tableView)
+                    }
+                } else {
+                    // Outside live resize, frame changes are programmatic /
+                    // one-off (initial layout, window animation). Invalidate
+                    // everything; AppKit re-queries lazily on next layout pass.
+                    invalidate(rows: IndexSet(0..<blocks.count), in: tableView)
                 }
-            } else {
-                // Outside live resize, frame changes are programmatic / one-off
-                // (initial layout, window animation). Invalidate everything;
-                // AppKit re-queries lazily on next layout pass.
-                invalidate(rows: IndexSet(0..<blocks.count), in: tableView)
             }
         }
 
-        // Fire on EVERY positive width change, not just the initial
-        // 0→positive transition. SwiftUI's session-switch commit often
-        // cycles the table through one or more transient widths before
-        // landing on the final column width. If we only re-anchored on
-        // the first fire, the scroll target would be computed against
-        // the transient geometry and the clip ends up at a y that's no
-        // longer at the requested position after the table re-tiles.
-        // The controller debounces consumption so the LAST fire (final
-        // settled width) wins.
-        if width > 0 {
-            appLog(
-                .info, "Transcript2Coordinator",
-                "[anchor] tableFrameDidChange prev=\(prevWidth) → \(width); "
-                    + "firing onLayoutReady (blocks=\(blocks.count))")
-            onLayoutReady?()
-        } else {
-            appLog(
-                .debug, "Transcript2Coordinator",
-                "[anchor] tableFrameDidChange prev=\(prevWidth) → \(width); no fire")
+        guard width > 0 else { return }
+
+        // Reaffirm on EVERY positive frame change — not only the
+        // initial 0→positive transition. SwiftUI's session-switch
+        // commit can cycle the new table through transient widths
+        // before landing on the final column width; the last fire
+        // (terminal geometry) gives the authoritative scroll target,
+        // so we just reapply every time and let it converge.
+        //
+        // Reaffirm runs BEFORE wiring the clip observer on the very
+        // first frame change after attach. Reason: AppKit's
+        // scrollView/clipView setup may fire transient
+        // `boundsDidChange` notifications during initial layout that
+        // come from clamping logic, not user input. Observing them
+        // before our scroll target lands would let `computeClipY`
+        // compare against pre-reaffirm geometry and mis-classify the
+        // notification as user scroll, capturing a bogus `.free`
+        // anchor. Reaffirming first guarantees the clip is at the
+        // mode's target before any observer fires.
+        reaffirmScrollMode()
+
+        // Now wire (or keep) the clip-view observer for user-scroll
+        // capture. `enclosingScrollView` becomes non-nil only after
+        // `scroll.documentView = table` (assigned strictly after
+        // `coordinator.tableView = table`), so this is the earliest
+        // we can do it.
+        if observedClipView == nil,
+            let clip = tableView.enclosingScrollView?.contentView
+        {
+            attachClipObserver(clip)
         }
     }
 
@@ -1151,7 +1216,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     // MARK: - Background prefetch (post-live-resize)
 
     func refillLayoutCache() {
-        guard let tableView else { return }
+        guard tableView != nil else { return }
         let width = layoutWidth
         guard width > 0 else { return }
         let staleIdxs = indexesNeedingLayoutRefresh(at: width)
@@ -1198,12 +1263,12 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                 else { return }
                 // mutationCounter drift → an `apply` ran during the task.
                 // Skip the entire onMain (cache writes, noteHeightOfRows,
-                // saveVisible). Reason: noteHeightOfRows is deferred to
-                // the next layout pass, so `applyAnchor` would run
-                // against AppKit's still-stale internal heights and
-                // produce a wrong scroll compensation; the row visually
-                // jumps when AppKit eventually re-queries. `apply` has
-                // already settled its own scroll, and `heightOfRow` will
+                // reaffirm). Reason: noteHeightOfRows is deferred to the
+                // next layout pass, so reaffirm would run against
+                // AppKit's still-stale internal heights and produce a
+                // wrong scroll target; the row visually jumps when
+                // AppKit eventually re-queries. `apply` has already
+                // settled its own scroll, and `heightOfRow` will
                 // lazy-fill the layouts as needed.
                 guard self.mutationCounter == snapshotCounter else { return }
                 // applyInBackground (fire-and-forget, counter-untracked)
@@ -1212,12 +1277,18 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                 let idxs = entries.compactMap { (id, _) -> Int? in
                     self.blocks.firstIndex { $0.id == id }
                 }
-                self.withScrollAdjustment(.saveVisible(.visualTop), in: table) {
-                    self.cacheLayouts(entries, width: width)
-                    if !idxs.isEmpty {
-                        table.noteHeightOfRows(withIndexesChanged: IndexSet(idxs))
-                    }
+                NSAnimationContext.beginGrouping()
+                NSAnimationContext.current.duration = 0
+                NSAnimationContext.current.allowsImplicitAnimation = false
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                self.cacheLayouts(entries, width: width)
+                if !idxs.isEmpty {
+                    table.noteHeightOfRows(withIndexesChanged: IndexSet(idxs))
                 }
+                self.reaffirmScrollMode()
+                CATransaction.commit()
+                NSAnimationContext.endGrouping()
             }
         }
     }
@@ -1477,9 +1548,11 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     }
 
     /// Scroll so the row owning `blockId` is comfortably visible
-    /// (top-aligned with a one-row breathing margin under the
-    /// scroll-view's top inset). Used by search nav. No-op when the
-    /// row is already in the visible band.
+    /// (top-aligned with the scroll view's top content inset honored).
+    /// Used by search nav. No-op when the row is already in the visible
+    /// band. Sets `scrollMode = .free(blockId, offsetFromClipTop:
+    /// insets.top)` so subsequent layout reflows keep the hit visually
+    /// anchored at the top — only a user-driven scroll will move on.
     func scrollBlockIntoView(blockId: UUID) {
         guard let table = tableView,
             let scrollView = table.enclosingScrollView,
@@ -1491,17 +1564,10 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let visibleBottom = visible.maxY - scrollView.contentInsets.bottom
         // Already comfortably in view → don't disturb scroll state.
         if rect.minY >= visibleTop, rect.maxY <= visibleBottom { return }
-        // Otherwise scroll-to-top with the table's content inset
-        // honored — reuse the helper used by `.scrollState(.top)`.
-        scrollRowToTopPublic(id: blockId)
-    }
-
-    /// Public wrapper around the private `scrollRowToTop` helper so the
-    /// search coordinator can ask for a top-aligned scroll without
-    /// reaching into private API.
-    func scrollRowToTopPublic(id: UUID) {
-        guard let table = tableView else { return }
-        scrollRowToTop(id: id, in: table)
+        setScrollMode(
+            .free(
+                blockId: blockId,
+                offsetFromClipTop: scrollView.contentInsets.top))
     }
 
 }

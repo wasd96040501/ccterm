@@ -120,7 +120,13 @@ struct ChatHistoryView: View {
             // and existing-record session ids return the same cached
             // instance (possibly in `.active` phase). The session's
             // bridge has already been wired to its runtime; nothing for
-            // us to do besides kick `loadHistory` and scroll to the tail.
+            // us to do besides kick `loadHistory`.
+            //
+            // Scroll position is the controller's responsibility — its
+            // coordinator owns a `scrollMode` that persists across
+            // mount/unmount (the coordinator is session-scoped), so
+            // re-entry resumes wherever the user left off automatically.
+            // No anchor capture / restore here.
             let s = manager.prepareDraftSession(sessionId)
             session = s
             appLog(
@@ -130,25 +136,6 @@ struct ChatHistoryView: View {
                     + "msgCount=\(s.messages.count) "
                     + "blockCount=\(s.controller.blockCount)")
             s.loadHistory()
-            // Anchor decision is uniform across cold-load and re-entry:
-            // declare it now via `requestAnchor`, the coordinator's
-            // `onLayoutReady` consumes it after the freshly-attached
-            // table tiles (`tableView.didSet` resets `lastLayoutWidth`
-            // so the 0→positive edge re-fires on every remount). If the
-            // user has a captured position from a prior unmount, resume
-            // there; otherwise land at the conversation tail. On cold
-            // load, the bridge's subsequent `loadInitial` rewrites this
-            // to `.bottom` via its no-width deferred branch — which is
-            // the intended default for a session whose blocks are still
-            // being inserted.
-            let anchor: Transcript2Controller.InitialAnchor =
-                s.lastVisibleAnchor.map { .preserved($0) } ?? .bottom
-            appLog(
-                .info, "ChatHistoryView",
-                "[anchor] task-mount sid=\(sessionId.prefix(8)) "
-                    + "saved=\(s.lastVisibleAnchor.map { "\($0.blockId.uuidString.prefix(8)),y=\($0.offsetFromClipTop)" } ?? "nil") "
-                    + "→ requestAnchor")
-            s.controller.requestAnchor(anchor)
             // `.onChange(of: isRunning)` only fires on transitions, and
             // its `initial: true` invocation ran above with `session`
             // still nil (no-op via `session?`). If running ended while

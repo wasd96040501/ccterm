@@ -83,4 +83,5 @@ final class Transcript2ClipView: NSClipView {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
 }

@@ -91,10 +91,10 @@ enum ToolGroupChildLayout: @unchecked Sendable {
 
     /// `TextCardSection` stack underlying this body, when the kind is
     /// rendered as one or more rounded text cards. `nil` for kinds
-    /// that don't use that primitive — `fileEdit` (diff body, routed
-    /// through `LayoutPosition.diff`), `read` / `generic` (header-only
-    /// kinds with no body). Used by `ToolGroupLayout.selectionAdapter`
-    /// to thread `LayoutPosition.textCard(...)` positions through the
+    /// that don't use that primitive — `fileEdit` / `read` (both diff
+    /// bodies, routed through `LayoutPosition.diff`) and `generic`
+    /// (header-only). Used by `ToolGroupLayout.selectionAdapter` to
+    /// thread `LayoutPosition.textCard(...)` positions through the
     /// section's `TextLayout` without per-kind branches.
     var textCardSections: [TextCardSection]? {
         switch self {
@@ -120,7 +120,7 @@ enum ToolGroupChildLayout: @unchecked Sendable {
     ///
     /// `highlight` is whatever `Transcript2HighlightStorage` has filled
     /// in for this child's id. Each per-kind branch unpacks the
-    /// expected `HighlightValue` shape (`.lineMap` for fileEdit,
+    /// expected `HighlightValue` shape (`.lineMap` for fileEdit / read,
     /// `.tokens` for bash, …); child kinds that don't use highlight
     /// simply ignore it.
     nonisolated static func make(
@@ -142,9 +142,13 @@ enum ToolGroupChildLayout: @unchecked Sendable {
                     originX: originX, originY: originY,
                     maxWidth: maxWidth))
         case .read(let c):
+            let lineMap: [String: [SyntaxToken]]? = {
+                if case .lineMap(let m) = highlight { return m }
+                return nil
+            }()
             return .read(
                 ReadChildLayout.make(
-                    child: c,
+                    child: c, lineMap: lineMap,
                     originX: originX, originY: originY,
                     maxWidth: maxWidth))
         case .bash(let c):

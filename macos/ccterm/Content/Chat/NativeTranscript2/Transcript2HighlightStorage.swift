@@ -16,10 +16,10 @@ enum Transcript2HighlightScope: Hashable, Sendable {
     /// Per-item highlight scope for a `toolGroup` row. The associated
     /// `itemId` is `ToolGroupBlock.Child.id` so a single host block can
     /// carry independent highlight payloads for each of its children
-    /// without colliding. Today only `fileEdit` children consume this
-    /// scope (per-unique-line `.lineMap`); future child kinds that
-    /// want highlight can pick whichever `HighlightValue` shape fits
-    /// their draw model.
+    /// without colliding. `fileEdit` and `read` consume this scope as
+    /// per-unique-line `.lineMap`; `bash` consumes it as `.tokens` for
+    /// the command line. Future child kinds that want highlight can
+    /// pick whichever `HighlightValue` shape fits their draw model.
     case toolGroupChild(itemId: UUID)
 }
 

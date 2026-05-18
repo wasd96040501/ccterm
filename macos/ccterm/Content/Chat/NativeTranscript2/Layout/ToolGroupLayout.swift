@@ -165,7 +165,13 @@ struct ToolGroupLayout: @unchecked Sendable {
                 let d = l.body
                 guard !d.containerRect.isEmpty else { continue }
                 out.append(makeDiffRegion(childIndex: idx, body: d))
-            case .read, .generic:
+            case .read(let l):
+                // Read renders through `DiffLayout` in new-file mode;
+                // selection threads through the same diff path as
+                // `fileEdit`.
+                guard let d = l.body, !d.containerRect.isEmpty else { continue }
+                out.append(makeDiffRegion(childIndex: idx, body: d))
+            case .generic:
                 // Header-only — no body geometry to select.
                 continue
             case .bash, .grep, .glob, .webFetch, .webSearch,

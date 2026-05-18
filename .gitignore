@@ -43,10 +43,9 @@ docs/
 *~
 buildServer.json
 
-# Generated web bundles (built from web/)
+# JSCore bundles, compiled from js/ on `make build`. Sources are checked in
+# under js/; outputs land here and are rebuilt on every clone.
 macos/ccterm/Resources/*.js
-macos/ccterm/Resources/*.css
-macos/ccterm/Resources/*-react.html
 
 # Stress-test corpus fetch cache (raw Gutenberg downloads)
 macos/scripts/.stress_corpus_cache/

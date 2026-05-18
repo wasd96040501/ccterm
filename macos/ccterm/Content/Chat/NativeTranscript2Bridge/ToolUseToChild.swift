@@ -38,7 +38,8 @@ enum ToolUseToChild {
                     id: id,
                     label: label,
                     activeLabel: activeLabel,
-                    filePath: v.input?.filePath ?? ""))
+                    filePath: v.input?.filePath ?? "",
+                    content: stripCatNPrefix(extractText(from: result))))
 
         case .Edit(let v):
             return .fileEdit(
@@ -197,5 +198,55 @@ enum ToolUseToChild {
                 GenericChild(
                     id: id, label: label, activeLabel: activeLabel))
         }
+    }
+
+    /// Concatenate all text-bearing fragments out of a `ToolResultPayload`.
+    /// Returns `nil` when the result is missing or carries no text (image-
+    /// only / unknown shapes), so callers can distinguish "not landed yet"
+    /// from "landed empty".
+    private static func extractText(from result: ToolResultPayload?) -> String? {
+        guard let content = result?.item.content else { return nil }
+        switch content {
+        case .string(let s):
+            return s.isEmpty ? nil : s
+        case .array(let items):
+            let parts: [String] = items.compactMap { item in
+                if case .text(let t) = item, let s = t.text, !s.isEmpty {
+                    return s
+                }
+                return nil
+            }
+            guard !parts.isEmpty else { return nil }
+            return parts.joined(separator: "\n")
+        case .other:
+            return nil
+        }
+    }
+
+    /// Strip the `<lineNo>\t` prefix the CLI prepends to every Read
+    /// line (`cat -n` style). The diff renderer reconstructs its own
+    /// gutter numbers from the line index, so leaving the originals in
+    /// would print them twice. Returns `nil` when the input is nil so
+    /// callers can keep the "no body yet" signal.
+    private static func stripCatNPrefix(_ raw: String?) -> String? {
+        guard let raw, !raw.isEmpty else { return nil }
+        let lines = raw.split(separator: "\n", omittingEmptySubsequences: false)
+        let stripped = lines.map { line -> String in
+            let s = line
+            // Skip leading whitespace, then digits, then a single tab —
+            // the format used by the Read tool. Anything else leaves
+            // the line untouched (so non-Read shapes pass through).
+            var idx = s.startIndex
+            while idx < s.endIndex, s[idx] == " " { idx = s.index(after: idx) }
+            let digitsStart = idx
+            while idx < s.endIndex, s[idx].isASCII, s[idx].isNumber {
+                idx = s.index(after: idx)
+            }
+            guard idx > digitsStart, idx < s.endIndex, s[idx] == "\t" else {
+                return String(s)
+            }
+            return String(s[s.index(after: idx)...])
+        }
+        return stripped.joined(separator: "\n")
     }
 }

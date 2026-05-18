@@ -67,12 +67,20 @@ struct NewSessionConfigurator<InputBar: View>: View {
 
     @Environment(RecentProjectsStore.self) private var recents
     @Environment(SessionManager.self) private var manager
+    /// Branch list + remote main + current-branch status are only ever shown
+    /// inside `BranchPickerView`. They're loaded lazily when the picker
+    /// opens (see `loadHeavyGitInfo`) so the New Session card doesn't pay
+    /// the ~80ms subprocess cost on every mount.
     @State private var branches: [String] = []
     @State private var currentBranch: String? = nil
     @State private var remoteMainBranch: String? = nil
     @State private var currentBranchStatus: String? = nil
     @State private var isGitRepo: Bool = false
     @State private var showBranchPicker: Bool = false
+    /// Folder we've already cached heavy git info for. Lets the picker
+    /// reopen instantly without re-shelling. Nil while no folder has
+    /// been probed (yet) or right after a folder switch.
+    @State private var heavyGitLoadedForFolder: String? = nil
 
     var body: some View {
         HStack(spacing: 0) {
@@ -110,6 +118,13 @@ struct NewSessionConfigurator<InputBar: View>: View {
         .frame(width: Self.width, height: Self.height)
         .clipShape(RoundedRectangle(cornerRadius: Self.cardCornerRadius, style: .continuous))
         .task(id: folderPath) { refreshGitInfo(resetOverride: true) }
+        .onChange(of: showBranchPicker) { _, isOpen in
+            // Defer the subprocess-heavy probe until the user actually
+            // reaches for the picker. The async load runs off-main; if
+            // the popover animation is faster than the load (~80ms), the
+            // picker's `isLoading` flag bridges the gap with a spinner.
+            if isOpen { Task { await loadHeavyGitInfo() } }
+        }
     }
 
     /// Radial tint glow anchored to the top-left, dissipating across
@@ -581,8 +596,13 @@ struct NewSessionConfigurator<InputBar: View>: View {
 
     // MARK: - Git probing
 
-    /// Cache `isGitRepo` / `currentBranch` / `branches` for the picked
-    /// folder. Called on appear and whenever `folderPath` changes.
+    /// Refresh the cheap, mount-time git state for the picked folder.
+    /// Only does file-level work: `isGitRepository` (a `.git` existence
+    /// check) and `currentBranch` (reads `.git/HEAD` directly). The
+    /// expensive subprocess calls (`branches`, `remoteMainBranch`,
+    /// `currentBranchStatus`) are deferred to `loadHeavyGitInfo`, which
+    /// runs off-main when the branch picker opens.
+    ///
     /// `resetOverride` forces `sourceBranch` back to the new repo's
     /// current branch — needed when the folder changes.
     private func refreshGitInfo(resetOverride: Bool) {
@@ -592,6 +612,7 @@ struct NewSessionConfigurator<InputBar: View>: View {
             currentBranch = nil
             remoteMainBranch = nil
             currentBranchStatus = nil
+            heavyGitLoadedForFolder = nil
             useWorktree = false
             sourceBranch = nil
             return
@@ -604,20 +625,29 @@ struct NewSessionConfigurator<InputBar: View>: View {
             currentBranch = nil
             remoteMainBranch = nil
             currentBranchStatus = nil
+            heavyGitLoadedForFolder = nil
             useWorktree = false
             sourceBranch = nil
             return
         }
         let repo = GitUtils.isGitRepository(at: path)
         let head = repo ? GitUtils.currentBranch(at: path) : nil
-        let list = repo ? Self.listBranches(at: path) : []
         isGitRepo = repo
         currentBranch = head
-        branches = list
-        remoteMainBranch = repo ? Self.remoteMainBranch(at: path) : nil
-        currentBranchStatus = (repo && head != nil) ? Self.gitStatusSummary(at: path) : nil
+        // Drop any stale cached heavy info — it belongs to the previous
+        // folder. The picker's `.task(id: folderPath)` reloads on demand.
+        if heavyGitLoadedForFolder != path {
+            branches = []
+            remoteMainBranch = nil
+            currentBranchStatus = nil
+            heavyGitLoadedForFolder = nil
+        }
         if repo {
-            if resetOverride || sourceBranch == nil || !list.contains(sourceBranch ?? "") {
+            // Cheap path: we can't validate `sourceBranch` against the
+            // real branch list here (that's the heavy path). The picker
+            // open will reconcile a stale override against the loaded
+            // list. For everything else, fall back to HEAD.
+            if resetOverride || sourceBranch == nil {
                 sourceBranch = head
             }
             if head == nil {
@@ -628,6 +658,36 @@ struct NewSessionConfigurator<InputBar: View>: View {
         } else {
             useWorktree = false
             sourceBranch = nil
+        }
+    }
+
+    /// Async: fetch the branch list, remote-main, and current-branch
+    /// status via `git` subprocesses. Triggered when the branch picker
+    /// opens; results are cached per folder via `heavyGitLoadedForFolder`
+    /// so a second open within the same compose session is instant.
+    /// The work hops to a background queue (via `Task.detached`) so the
+    /// main thread keeps painting; only the resulting state writes hop
+    /// back to the MainActor.
+    private func loadHeavyGitInfo() async {
+        guard let path = folderPath, isGitRepo else { return }
+        if heavyGitLoadedForFolder == path { return }
+        let result = await Task.detached(priority: .userInitiated) {
+            let l = Self.listBranches(at: path)
+            let r = Self.remoteMainBranch(at: path)
+            let s = Self.gitStatusSummary(at: path)
+            return (l, r, s)
+        }.value
+        // Bail if the user switched folders while we were loading.
+        guard folderPath == path else { return }
+        branches = result.0
+        remoteMainBranch = result.1
+        currentBranchStatus = result.2
+        heavyGitLoadedForFolder = path
+        // Validate any saved branch override against the real list now
+        // that we have it. A stale ref (the branch was deleted on disk)
+        // falls back to HEAD.
+        if let sb = sourceBranch, !result.0.contains(sb) {
+            sourceBranch = currentBranch
         }
     }
 

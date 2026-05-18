@@ -609,10 +609,21 @@ extension SessionHandle2 {
             "[v2-send] bootstrap initialize-done sid=\(sessionId.prefix(8)) "
                 + "respNil=\(initResp == nil) status=\(status)")
 
+        // Per-session model catalog snapshot. We deliberately do NOT
+        // pipe this into `ModelStore.shared` — model-list discovery is
+        // an app-launch concern owned by `ModelStore.prefetchIfNeeded()`.
+        // Entangling it with session bootstrap caused the picker to
+        // appear "loading" again every time a new CLI subprocess
+        // started.
+        if let models = initResp?.models, !models.isEmpty {
+            availableModels = models
+        }
+
         status = .idle
         if wasFresh {
             repository.updateStatus(sessionId, to: .created)
         }
+        flushDeferredFastMode()
         flushBootstrapBacklog()
         appLog(.info, "SessionHandle2", "[v2-send] bootstrap done sid=\(sessionId.prefix(8)) fresh=\(wasFresh)")
     }

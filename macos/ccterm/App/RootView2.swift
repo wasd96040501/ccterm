@@ -314,11 +314,14 @@ struct RootView2: View {
 
 // MARK: - InputBarChrome
 
-/// Thin wrapper around `InputBarView2` that resolves the per-session
+/// Per-session wrapper around `InputBarView2`. Resolves the
 /// `SessionHandle2` so the bar can read `isRunning` (send↔stop swap)
-/// and call `interrupt()`. There is no longer a floating pill above
-/// the bar — the "running" indicator now lives at the tail of the
-/// transcript (driven by `Transcript2Controller.setLoading`).
+/// and call `interrupt()`, and hosts the session-scoped chrome row
+/// (`InputBarSessionChrome`) directly below the bar — kept *outside*
+/// the pill so the bar itself stays "pure UI" and the chrome row can
+/// align its left/right edges with the bar (attach button on the left,
+/// pill's trailing edge on the right). The running indicator now lives
+/// at the tail of the transcript (`Transcript2Controller.setLoading`).
 private struct InputBarChrome: View {
     let sessionId: String
     let coordSpace: String
@@ -331,15 +334,20 @@ private struct InputBarChrome: View {
     @State private var handle: SessionHandle2?
 
     var body: some View {
-        InputBarView2(
-            onSubmit: onSubmit,
-            onStop: { handle?.interrupt() },
-            isRunning: handle?.isRunning ?? false,
-            submitEnabled: submitEnabled,
-            coordSpace: coordSpace,
-            onAttachRect: onAttachRect,
-            onPillRect: onPillRect
-        )
+        VStack(alignment: .leading, spacing: InputBarSessionChrome.barSpacing) {
+            InputBarView2(
+                onSubmit: onSubmit,
+                onStop: { handle?.interrupt() },
+                isRunning: handle?.isRunning ?? false,
+                submitEnabled: submitEnabled,
+                coordSpace: coordSpace,
+                onAttachRect: onAttachRect,
+                onPillRect: onPillRect
+            )
+            if let handle {
+                InputBarSessionChrome(handle: handle)
+            }
+        }
         .task(id: sessionId) {
             // `prepareDraft` is idempotent get-or-create for both fresh and
             // historical sessions, returning the same handle instance that

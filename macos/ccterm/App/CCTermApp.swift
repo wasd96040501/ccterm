@@ -54,6 +54,17 @@ struct CCTermApp: App {
         }
         CursorGuard.install()
         MainThreadWatchdog.start()
+        // First-launch model catalog fetch — eagerly kicked off at
+        // app init so the picker has data ready by the time the user
+        // can interact with it. `prefetchIfNeeded` returns
+        // synchronously after spawning the background fetch Task, so
+        // this does not block init. Subsequent launches hit the
+        // on-disk cache and short-circuit before fetching. Model
+        // loading is intentionally NOT tied to session CLI bootstrap;
+        // see `SessionHandle2+Start.bootstrap` for the matching note.
+        MainActor.assumeIsolated {
+            ModelStore.shared.prefetchIfNeeded()
+        }
     }
 }
 

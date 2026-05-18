@@ -44,6 +44,16 @@
         }
       }
     },
+    "%lld%% used": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已使用 %lld%%"
+          }
+        }
+      }
+    },
     "%lldd ago": {
       "extractionState": "stale",
       "localizations": {
@@ -660,6 +670,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "包含：%@"
+          }
+        }
+      }
+    },
+    "Context": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上下文"
+          }
+        }
+      }
+    },
+    "Context usage": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上下文使用情况"
           }
         }
       }
@@ -1479,7 +1509,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "最高"
+            "value": "最大"
           }
         }
       }
@@ -1490,7 +1520,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "中"
+            "value": "中等"
           }
         }
       }

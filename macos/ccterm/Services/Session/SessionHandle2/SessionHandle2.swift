@@ -92,6 +92,13 @@ class SessionHandle2 {
     internal(set) var model: String?
     internal(set) var effort: Effort?
     internal(set) var permissionMode: PermissionMode = .default
+    /// Per-session "fast mode" opt-in. Applied at runtime via
+    /// `applyFlagSettings.fastMode`. Authoritative off-by-default. The
+    /// UI toggle is unconditionally enabled: CLI `init.models[]` no
+    /// longer carries a `supportsFastMode` capability, and the CLI
+    /// itself rejects fast-mode on incompatible models — there is no
+    /// client-side gate to apply.
+    internal(set) var fastModeEnabled: Bool = false
     internal(set) var additionalDirectories: [String] = []
     internal(set) var pluginDirectories: [String] = []
 
@@ -169,7 +176,12 @@ class SessionHandle2 {
     internal(set) var contextUsedTokens: Int = 0
     internal(set) var contextWindowTokens: Int = 0
     internal(set) var slashCommands: [SlashCommand] = []
-    internal(set) var availableModels: [String] = []
+    /// Model catalog from the CLI's `InitializeResponse.models`. Source of
+    /// truth for the model picker — display name, supported effort levels,
+    /// and feature flags (auto / fast / adaptive thinking) per model. Set
+    /// once at bootstrap, then mirrored into `ModelStore` for sessions that
+    /// haven't started yet (the compose-mode picker reads the cache).
+    internal(set) var availableModels: [ModelInfo] = []
 
     // MARK: - Presence
 

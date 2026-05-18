@@ -73,8 +73,14 @@ struct PermissionCardView: View {
     @ViewBuilder
     private func body(for kind: PermissionCardKind) -> some View {
         switch kind {
-        case .bash, .powerShell:
+        case .bash, .powerShell, .sedEdit:
+            // sed-in-Bash falls through to the shell body until a
+            // dedicated sed parser lands — the user still sees the
+            // exact command. Once a sed → DiffBlock pipeline exists
+            // this case moves to PermissionFileWriteCardBody.
             PermissionShellCardBody(request: request, kind: kind)
+        case .fileEdit, .fileWrite:
+            PermissionFileWriteCardBody(request: request, kind: kind)
         default:
             PermissionFallbackCardBody(request: request)
         }

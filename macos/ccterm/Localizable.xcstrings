@@ -787,6 +787,16 @@
         }
       }
     },
+    "Create %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创建 %@"
+          }
+        }
+      }
+    },
     "Create plan before making changes": {
       "extractionState": "stale",
       "localizations": {
@@ -1748,6 +1758,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "其他"
+          }
+        }
+      }
+    },
+    "Overwrite %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "覆盖写入 %@"
+          }
+        }
+      }
+    },
+    "Path missing — open the transcript to inspect": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未提供路径 — 请在会话主区查看详情"
           }
         }
       }

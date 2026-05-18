@@ -532,6 +532,16 @@
         }
       }
     },
+    "Choose a file to attach": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择要附加的文件"
+          }
+        }
+      }
+    },
     "Choose a folder for the new session": {
       "localizations": {
         "zh-Hans": {
@@ -1114,6 +1124,16 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "File": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件"
           }
         }
       }
@@ -2086,6 +2106,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "减少一条消息"
+          }
+        }
+      }
+    },
+    "Remove attachment": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除附件"
           }
         }
       }

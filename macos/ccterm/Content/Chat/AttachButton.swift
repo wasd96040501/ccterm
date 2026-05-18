@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// Standalone `+` button for the input bar. Opens a menu of attachment
-/// types (Image today; structured as a `Menu` so future types — Files,
-/// snippets, etc. — drop in without restructuring this view).
+/// Standalone `+` button for the input bar. A single tap opens the host's
+/// attachment picker (any file). The host decides how to display the
+/// picked file — image files get a thumbnail preview, everything else
+/// gets the Finder file icon.
 ///
 /// Three stacked layers in a 32×32 ZStack, matching the pill's height:
 ///
@@ -15,19 +16,21 @@ import SwiftUI
 ///    `.onHover`. Apple Developer Forums #742966 documents
 ///    `.onHover { hovering in ... }` + `@State` as the recommended
 ///    SwiftUI pattern for hover background highlights on macOS.
-///    `.borderlessButton` menu style doesn't paint a hover background
-///    of its own on macOS 26, and `.hoverEffect(.highlight)` changes
-///    the *pointer* shape rather than the view background — neither
-///    delivers the "subtle tint under the symbol on hover" Apple uses
-///    for toolbar / sidebar action buttons.
+///    `.borderlessButton` button style doesn't paint a hover background
+///    of its own; `.hoverEffect(.highlight)` changes the *pointer* shape
+///    rather than the view background — neither delivers the subtle tint
+///    Apple uses for toolbar / sidebar action buttons.
 ///
-/// 3. **Menu activator** on top — transparent at rest so the surface
-///    and hover overlay show through. `.menuStyle(.borderlessButton)`
-///    + `.menuIndicator(.hidden)` keeps it chrome-less.
+/// 3. **Activator** on top — a transparent `Button` so the surface and
+///    hover overlay show through. `.buttonStyle(.plain)` keeps it
+///    chrome-less.
 struct AttachButton: View {
-    /// Fired when the user picks "Image" from the menu. The caller drives
-    /// the `NSOpenPanel` flow so this view stays purely visual.
-    var onPickImage: () -> Void
+    /// Fired when the user taps the `+`. The caller drives the
+    /// `NSOpenPanel` flow so this view stays purely visual.
+    var onPick: () -> Void
+    /// When `true`, the surface stroke flips to accent + a dashed style to
+    /// echo the pill's drop-target highlight (driver lives in `InputBarView2`).
+    var isDropTargeted: Bool = false
 
     static let size: CGFloat = 32
 
@@ -38,23 +41,14 @@ struct AttachButton: View {
         ZStack {
             surface
             hoverOverlay
-            // SwiftUI `Menu` on macOS 26 renders as a `MenuButton` whose
-            // accessibility node swallows child identifiers. The stable
-            // handle is `.accessibilityLabel` on the Menu; tests query
-            // `app.menuButtons["Attach image or file"]`.
-            Menu {
-                Button(action: onPickImage) {
-                    Label(String(localized: "Image"), systemImage: "photo")
-                }
-            } label: {
+            Button(action: onPick) {
                 Image(systemName: "plus")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.primary)
                     .frame(width: Self.size, height: Self.size)
                     .contentShape(Circle())
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
+            .buttonStyle(.plain)
         }
         .frame(width: Self.size, height: Self.size)
         .onHover { isHovered = $0 }
@@ -67,15 +61,25 @@ struct AttachButton: View {
             Color.clear
                 .glassEffect(.regular, in: Circle())
                 .overlay {
-                    Circle().stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+                    Circle().stroke(strokeColor, style: strokeStyle)
                 }
         } else {
             Circle()
                 .fill(colorScheme == .dark ? AnyShapeStyle(.thickMaterial) : AnyShapeStyle(.bar))
                 .overlay {
-                    Circle().stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+                    Circle().stroke(strokeColor, style: strokeStyle)
                 }
         }
+    }
+
+    private var strokeColor: Color {
+        isDropTargeted ? Color.accentColor : Color(nsColor: .separatorColor)
+    }
+
+    private var strokeStyle: StrokeStyle {
+        isDropTargeted
+            ? StrokeStyle(lineWidth: 1.5, dash: [4, 3])
+            : StrokeStyle(lineWidth: 0.5)
     }
 
     /// Tint strength tuned to read like the toolbar / sidebar hover state
@@ -92,7 +96,7 @@ struct AttachButton: View {
 #Preview {
     ZStack {
         Color(nsColor: .windowBackgroundColor).ignoresSafeArea()
-        AttachButton(onPickImage: {})
+        AttachButton(onPick: {})
             .padding(40)
     }
     .frame(width: 200, height: 120)

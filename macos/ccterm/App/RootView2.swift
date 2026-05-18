@@ -350,10 +350,23 @@ struct RootView2: View {
     /// `ensureStarted` runs; on subsequent messages, take the same branch
     /// and forward directly to the handle.
     ///
-    /// Image-bearing submissions take the `send(image:mediaType:caption:)`
-    /// route; text-only submissions take `send(text:)`. The caption is the
-    /// trimmed text when both are present, otherwise the default `[image]`
-    /// label from the handle.
+    /// Attachment dispatch:
+    /// - File paths are joined as `@"<absolute path>"` mentions and
+    ///   spliced in front of the user's text. The quoted form is the
+    ///   contract the CLI's `extractAtMentionedFiles` parser expects for
+    ///   paths with spaces — the unquoted form truncates at the first
+    ///   whitespace (so any path under `/Users/<First Last>/…` would be
+    ///   silently mangled). Single-space separator between mentions and
+    ///   the user's text follows the same convention as the bridge's
+    ///   `resolveInboundAttachments`.
+    /// - If there are no images, the composed body goes through
+    ///   `send(text:)` as a single message.
+    /// - With images, each image goes through `send(image:mediaType:caption:)`.
+    ///   The first image carries the composed body as its caption; the
+    ///   rest are sent caption-less (the runtime's default `[image]`
+    ///   label kicks in) so the body isn't repeated. `LocalUserInput`
+    ///   only carries one image per message, so multi-image sends fan
+    ///   out into multiple `send(image:)` calls preserving drop order.
     private func submit(_ submission: InputBarView2.Submission, sessionId: String) {
         let session = manager.prepareDraftSession(sessionId)
         let isFirstStart = !session.hasRecord
@@ -383,11 +396,21 @@ struct RootView2: View {
                 recents.markLaunched(picked, useWorktree: draftUseWorktree)
             }
         }
-        if let image = submission.image {
-            let caption = submission.text.isEmpty ? nil : submission.text
-            session.send(image: image.data, mediaType: image.mediaType, caption: caption)
+        let mentions = submission.filePaths.map { "@\"\($0)\"" }.joined(separator: " ")
+        let composedBody: String = {
+            switch (mentions.isEmpty, submission.text.isEmpty) {
+            case (true, _): return submission.text
+            case (false, true): return mentions
+            case (false, false): return mentions + " " + submission.text
+            }
+        }()
+        if submission.images.isEmpty {
+            session.send(text: composedBody)
         } else {
-            session.send(text: submission.text)
+            for (index, image) in submission.images.enumerated() {
+                let caption = (index == 0 && !composedBody.isEmpty) ? composedBody : nil
+                session.send(image: image.data, mediaType: image.mediaType, caption: caption)
+            }
         }
         if isFirstStart {
             manager.refreshRecords()

@@ -2,13 +2,11 @@ import AgentSDK
 import Foundation
 import Observation
 
-/// Cross-session cache of the CLI's `[ModelInfo]` catalog. The model
-/// picker reads `models` directly so the popover has rows immediately
-/// after launch (compose mode, fresh app start), with a small
-/// `isLoading` flag the bar uses to render a `ProgressView` while the
-/// first fetch is in flight. A finished session bootstrap also writes
-/// the freshest catalog back through `update(_:)` so the cache stays
-/// current.
+/// In-memory snapshot of the CLI's `[ModelInfo]` catalog, refreshed
+/// on every app launch (no disk cache — a stale cache lets the picker
+/// show models the CLI no longer offers, or hide ones it just added).
+/// UI binds `isLoading` to a `ProgressView` while the first fetch is
+/// in flight.
 @Observable
 @MainActor
 final class ModelStore {
@@ -19,30 +17,23 @@ final class ModelStore {
     /// progress indicator next to the model trigger.
     private(set) var isLoading: Bool = false
 
-    private static let cacheKey = "cachedModelList"
-
-    private init() {
-        models = Self.cachedFromDisk()
-    }
+    private init() {}
 
     /// Refresh from a session's `InitializeResponse.models` payload.
     /// Idempotent — empty input is treated as "no update" rather than
-    /// "clear cache" (a transient init failure shouldn't blank the menu).
+    /// "clear" (a transient init failure shouldn't blank the menu).
     func update(_ newModels: [ModelInfo]) {
         guard !newModels.isEmpty else { return }
         models = newModels
-        Self.writeCache(newModels)
         isLoading = false
     }
 
     /// Kick off a one-shot CLI session in a temp directory, harvest the
     /// model catalog from its init response, and stop. Fires every
-    /// launch — the disk cache only seeds the UI for cold start; a
-    /// stale cache must not block a refresh, otherwise the user can
-    /// never see a model the CLI added since last run. The in-flight
-    /// dedupe is still load-bearing: callers that hit `.shared` twice
-    /// per launch (compose mode + a popover open before the first
-    /// fetch lands) would otherwise race a second CLI process.
+    /// launch. The in-flight dedupe is load-bearing: callers that hit
+    /// `.shared` twice per launch (compose mode + a popover open before
+    /// the first fetch lands) would otherwise race a second CLI
+    /// process.
     func prefetchIfNeeded() {
         guard !isLoading else { return }
         isLoading = true
@@ -87,20 +78,5 @@ final class ModelStore {
         }
         session.stop()
         return response?.models ?? []
-    }
-
-    // MARK: - Disk cache
-
-    private static func cachedFromDisk() -> [ModelInfo] {
-        guard let data = UserDefaults.standard.data(forKey: cacheKey),
-            let raws = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]]
-        else { return [] }
-        return raws.compactMap { try? ModelInfo(json: $0) }
-    }
-
-    private static func writeCache(_ newModels: [ModelInfo]) {
-        let raws = newModels.map(\._raw)
-        guard let data = try? JSONSerialization.data(withJSONObject: raws) else { return }
-        UserDefaults.standard.set(data, forKey: cacheKey)
     }
 }

@@ -30,6 +30,20 @@ struct ModelEffortPicker: View {
     @State private var store = ModelStore.shared
 
     var body: some View {
+        // Hide the entire trigger until a catalog is available. Without
+        // a catalog there's no honest single source — no `default` row
+        // to anchor `handle.model` to, no `supportedEffortLevels` to
+        // gate the effort section. Showing a placeholder "Model" pill
+        // implies the user picked something they didn't.
+        if visibleModels.isEmpty {
+            EmptyView()
+        } else {
+            content
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         HStack(spacing: 6) {
             BarChromeButton(label: {
                 triggerLabel
@@ -65,10 +79,13 @@ struct ModelEffortPicker: View {
                     .accessibilityLabel("Loading models")
             }
         }
+        .task(id: visibleModels.first?.value) {
+            backfillModelIfNeeded()
+        }
     }
 
-    /// Per-session catalog wins; fall through to the cross-launch
-    /// `ModelStore` cache only when the session hasn't replied yet.
+    /// Per-session catalog wins; fall through to the app-launch
+    /// `ModelStore` snapshot when the session hasn't replied yet.
     private var visibleModels: [ModelInfo] {
         let live = handle.availableModels
         return live.isEmpty ? store.models : live
@@ -77,6 +94,16 @@ struct ModelEffortPicker: View {
     private var selectedModelInfo: ModelInfo? {
         guard let value = handle.model else { return nil }
         return visibleModels.first(where: { $0.value == value })
+    }
+
+    /// Single-source backfill: as soon as a catalog is available and
+    /// the handle hasn't recorded a model yet, write `visibleModels.first`
+    /// (the CLI's `default` entry — head of `init.models[]`) back into
+    /// the handle. From that point on the trigger label, effort lookup,
+    /// and popover selection all read from `handle.model`.
+    private func backfillModelIfNeeded() {
+        guard handle.model == nil, let first = visibleModels.first else { return }
+        applyModelSelection(first.value)
     }
 
     /// Effort to show as "selected" in trigger + popover. Real

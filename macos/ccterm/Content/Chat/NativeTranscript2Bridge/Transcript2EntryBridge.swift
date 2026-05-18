@@ -50,21 +50,6 @@ final class Transcript2EntryBridge {
     /// dealloc chain.
     nonisolated deinit {}
 
-    /// Bind to a session: every change flows through this object's `apply(_:)`.
-    /// Weak capture decouples the session's lifetime from the view-side bridge —
-    /// view dismantle deinits self, the session's closure becomes weak-nil, and
-    /// the sink deactivates automatically. No explicit unbind needed.
-    ///
-    /// `Session` is the UI-facing façade. During the draft → active phase
-    /// flip it re-wires the underlying runtime's sink to whatever closure
-    /// was last assigned here, so a single `attach(to:)` survives promotion
-    /// without event loss.
-    func attach(to session: Session) {
-        session.onMessagesChange = { [weak self] change in
-            self?.apply(change)
-        }
-    }
-
     // MARK: - Dispatch
 
     func apply(_ change: MessagesChange) {

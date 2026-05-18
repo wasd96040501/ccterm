@@ -1,17 +1,29 @@
 # Session runtime
 
-`Session` (`@Observable @MainActor`) is the UI-facing façade for one chat session. It internally toggles between two phases:
+`Session` (`@Observable @MainActor`) is the UI-facing façade for one chat session. It carries **both** the business state (a phase that toggles between `.draft(SessionDraft)` and `.active(SessionRuntime)`) and the render-side state (the `Transcript2Controller` + `Transcript2EntryBridge` that translate `messages` into `NSTableView` rows).
 
 - `.draft(SessionDraft)` — the user is still configuring a New Session card; no CLI, no persisted record, no messages.
 - `.active(SessionRuntime)` — the session has been promoted; a `SessionRuntime` owns the CLI subprocess, the message timeline, history load state, etc.
 
-The phase flips **exactly once**: a draft session sending its first message constructs a `SessionRuntime` via `SessionRuntime.fromDraft(...)`, wires the bridge sinks onto the new runtime, then swaps `phase` to `.active`. After that, every `send` / `interrupt` / `setModel` etc. routes to the runtime. UI code reads forwarding properties (`session.title`, `session.messages`, `session.isRunning`, `session.status` …) and never inspects the phase directly.
+The phase flips **exactly once**: a draft session sending its first message constructs a `SessionRuntime` via `SessionRuntime.fromDraft(...)`, wires the bridge to the new runtime, then swaps `phase` to `.active`. After that, every `send` / `interrupt` / `setModel` etc. routes to the runtime. UI code reads forwarding properties (`session.title`, `session.messages`, `session.isRunning`, `session.status` …) and never inspects the phase directly.
+
+## Render-side state lives on `Session`
+
+`session.controller: Transcript2Controller` and `session.bridge: Transcript2EntryBridge` are eagerly created in **every** `Session.init` and have the **same lifetime as the session itself**. The bridge is permanently wired to `runtime.onMessagesChange` — at session creation for `.active`-from-record sessions, at promotion time for draft → active sessions — and processes events continuously. This has three knock-on consequences:
+
+1. **Live CLI events flow into `controller.blocks` even when no `ChatHistoryView` is mounted.** Switching the sidebar to a different session does not pause renderer-side processing for the one you left; tool results, streaming assistant text, and group rollups all keep applying.
+2. **Switch-away → switch-back is O(1) on the renderer side.** No JSONL re-read, no markdown reparse, no block-list rebuild. The new `NSTableView` rebinds to the same coordinator on mount; `Transcript2Coordinator.tableView.didSet` runs `reloadData()` once and the table is current.
+3. **`Transcript2Coordinator.applyInBackground` falls back to sync `apply` when no table is bound.** A Phase B prepend (or any other background-emitted change) that arrives on a session with no view still lands in `coordinator.blocks`; layouts compute lazily once a table re-attaches.
+
+`SessionRuntime.loadHistory()` is correspondingly simpler: `.loadingTail` / `.tailLoaded` / `.loaded` are all idempotent no-ops. There is no "switch-back re-emit `.reset`" path — the bridge has been processing all along.
+
+`session.onMessagesChange` remains as an **optional external fanout slot** (tests, debugging). It fires *after* the bridge has consumed the same event, inside the same call stack.
 
 Source lives in `Session/`:
 
 | File | Responsibility |
 |---|---|
-| `Session.swift` | The façade. `Phase` enum, forwarding accessors, `send(...)` (draft → runtime promotion), bridge-sink re-wiring. |
+| `Session.swift` | The façade. `Phase` enum, forwarding accessors, render-side state (`controller` + `bridge`), `send(...)` (draft → runtime promotion), `wireRuntimeMessagesSink` (one-shot bridge + external-fanout multiplex). |
 | `SessionDraft.swift` | Compose-card carrier. Holds `config` / `title` / presence; setters are unconditional writes (no `guard !isAttached`, no DB writes, no RPC). |
 | `SessionRuntime.swift` | CLI-bound engine. Class definition, `@Observable` properties, init. |
 | `SessionRuntime+Start.swift` | `activate` / `stop` / `send` / bootstrap / `fromDraft` factory. |
@@ -45,7 +57,7 @@ The notification channel depends on whether the renderer is AppKit or SwiftUI. P
 
 | Renderer | Channel | Notes |
 |---|---|---|
-| **AppKit-native** (e.g. `NativeTranscript2`, anything driving an `NSTableView`) | Synchronous closure callback → direct imperative controller call | The runtime mutates `messages` and fires the callback (`onMessagesChange`, ...) inside the same call stack. The bridge translates the event into `controller.apply(.insert / .remove / .update)` immediately. The `Session` façade re-wires the runtime's sink to whatever was assigned to `session.onMessagesChange` at promotion, so subscribers attach once and survive the phase flip. |
+| **AppKit-native** (e.g. `NativeTranscript2`, anything driving an `NSTableView`) | Synchronous closure callback → direct imperative controller call | The runtime mutates `messages` and fires `runtime.onMessagesChange` inside the same call stack. `Session.wireRuntimeMessagesSink` installs a single closure on that field that **first** calls `bridge.apply(change)` (always wired), **then** `session.onMessagesChange?(change)` (optional external observer — tests, debugging). Subscribers don't survive promotion by re-wiring; the bridge is the canonical consumer and was wired at `Session.init`. |
 | **SwiftUI** | `@Observable` field (for continuous state) or `AsyncStream` (for discrete side effects) | The view tracks `session.status` / `session.isRunning` directly; one-shot effects go through `eventStream()`. The forwarding accessors on `Session` route through `phase` so observation works in both `.draft` and `.active`. |
 
 The AppKit path deliberately skips `AsyncStream` and `@Observable`:
@@ -55,12 +67,12 @@ The AppKit path deliberately skips `AsyncStream` and `@Observable`:
 
 ## Rules
 
-- **AppKit channel** — declare a `@ObservationIgnored var onXxxChange: ((XxxChange) -> Void)?` on `SessionRuntime`, then forward it through `Session` via a `didSet` re-wire. The bridge wires its closure onto `session.onXxxChange` once; the façade keeps the runtime's sink in sync across promotion.
+- **AppKit channel** — declare a `@ObservationIgnored var onXxxChange: ((XxxChange) -> Void)?` on `SessionRuntime`. For `onMessagesChange` specifically, the wiring is **one-shot inside `Session`** (`wireRuntimeMessagesSink`): the closure fires `bridge.apply(change)` followed by `session.onMessagesChange?(change)`. For new sinks that don't have a bridge consumer, follow the `onLaunchFailure` / `onRecordPersisted` pattern — a `didSet` on the façade re-wires the runtime when phase is `.active`.
 - **Adding a new notification on the AppKit path** — add the closure on the runtime, fire it synchronously at the mutation site, expose a matching forwarder on `Session`, add a dispatch arm to the bridge, then call `controller.apply(...)`.
 - **Never emit a state change on both channels.** Pick one. `SessionRuntime.messages` is delivered only through `onMessagesChange`; there is no shadow snapshot.
-- **Views never cache session properties as their own state.** Read the `@Observable` field directly or expose a computed property.
+- **Views never cache session properties as their own state.** Read the `@Observable` field directly or expose a computed property. The transcript controller is owned by `Session` (`session.controller`) — `ChatHistoryView` reads it, never constructs one.
 - **Local actions** (`send` / `interrupt` / `setPermissionMode`) either issue a stdin request or perform a local state transition. They never write to observables behind the runtime's back.
-- **New change variants** — add a `case` to `MessagesChange`, fire `onMessagesChange?(...)` at the mutation site in `SessionRuntime`, add the matching arm in `Transcript2EntryBridge.apply`.
+- **New change variants** — add a `case` to `MessagesChange`, fire `onMessagesChange?(...)` at the mutation site in `SessionRuntime`, add the matching arm in `Transcript2EntryBridge.apply`. The bridge is wired once per session, so no view-side attach work is needed.
 
 ## Adding new runtime state
 

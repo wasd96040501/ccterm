@@ -23,6 +23,22 @@ import Observation
 /// hood. The escape hatches `session.draft` / `session.runtime` are
 /// available for callers that need to issue a draft-only setter
 /// (`session.draft?.setCwd(...)`) or talk to the runtime by name.
+///
+/// ## Render-side state
+///
+/// `Session` also owns the transcript's render-side state machine —
+/// `controller` (`Transcript2Controller`) and `bridge`
+/// (`Transcript2EntryBridge`) — and wires the bridge to the runtime
+/// at session creation / promotion. This makes the bridge a continuous
+/// consumer of `runtime.onMessagesChange`: live CLI events flow into
+/// the controller's block list **even when no `ChatHistoryView` is
+/// mounted**, so the user switching the sidebar to another session
+/// doesn't pause renderer-side processing for the session they left.
+/// `NativeTranscript2View` binds the controller's `coordinator`
+/// (which has a `weak NSTableView`) to a fresh `NSTableView` on each
+/// mount; when no table is bound, the coordinator still updates its
+/// `blocks` array and skips AppKit calls — a re-attach triggers an
+/// automatic `reloadData()` via the coordinator's `tableView.didSet`.
 @Observable
 @MainActor
 final class Session {
@@ -47,17 +63,32 @@ final class Session {
     /// the sidebar surfaces the newly persisted session immediately.
     @ObservationIgnored internal var onPromoted: ((SessionRuntime) -> Void)?
 
-    // MARK: - Bridge subscription
+    // MARK: - Render-side state (continuous lifetime)
 
-    /// AppKit-renderer message sink, forwarded to the underlying
-    /// runtime when one exists. Subscribers attach **once** to the
-    /// `Session`; the façade re-wires the runtime's sink on phase flip
-    /// so no event is lost across promotion.
-    @ObservationIgnored var onMessagesChange: ((MessagesChange) -> Void)? {
-        didSet {
-            runtime?.onMessagesChange = onMessagesChange
-        }
-    }
+    /// Imperative transcript controller. Lives as long as the session
+    /// does — survives `ChatHistoryView` mount/dismount cycles. Views
+    /// read `session.controller` and hand it to `NativeTranscript2View`;
+    /// they never construct their own.
+    let controller: Transcript2Controller
+
+    /// Renderer-side translator: subscribes to the runtime's
+    /// `onMessagesChange` and converts each `MessagesChange` into
+    /// `Transcript2Controller.apply / loadInitial` calls. The bridge
+    /// is wired to the runtime exactly once — at `Session.init` for
+    /// `.active`-from-record sessions, at promotion time for
+    /// draft → active sessions — and stays wired for the session's
+    /// entire lifetime.
+    let bridge: Transcript2EntryBridge
+
+    // MARK: - External hooks
+
+    /// Optional **external** observer of `MessagesChange` events. The
+    /// internal `bridge` is the primary consumer (always wired); this
+    /// is an additional fanout slot for tests / debugging that need to
+    /// observe what the bridge sees. The runtime's sink invokes
+    /// `bridge.apply` **then** this closure — both fire synchronously
+    /// inside the same `messages` write.
+    @ObservationIgnored var onMessagesChange: ((MessagesChange) -> Void)?
 
     /// Launch-failure sink, forwarded to the runtime when one exists.
     @ObservationIgnored var onLaunchFailure: ((String) -> Void)? {
@@ -91,12 +122,15 @@ final class Session {
         self.repository = repository
         self.cliClientFactory = cliClientFactory
         self.onPromoted = onPromoted
+        self.controller = Transcript2Controller()
+        self.bridge = Transcript2EntryBridge(controller: controller)
         let runtime = SessionRuntime(
             sessionId: record.sessionId,
             repository: repository,
             cliClientFactory: cliClientFactory
         )
         self.phase = .active(runtime)
+        wireRuntimeMessagesSink(runtime)
     }
 
     /// Construct from a fresh sessionId (no record yet). `phase` is
@@ -112,6 +146,8 @@ final class Session {
         self.repository = repository
         self.cliClientFactory = cliClientFactory
         self.onPromoted = onPromoted
+        self.controller = Transcript2Controller()
+        self.bridge = Transcript2EntryBridge(controller: controller)
         self.phase = .draft(
             SessionDraft(sessionId: draftSessionId, repository: repository))
     }
@@ -132,10 +168,28 @@ final class Session {
         self.repository = runtime.repository
         self.cliClientFactory = cliClientFactory
         self.onPromoted = onPromoted
+        self.controller = Transcript2Controller()
+        self.bridge = Transcript2EntryBridge(controller: controller)
         self.phase = .active(runtime)
+        wireRuntimeMessagesSink(runtime)
     }
 
     nonisolated deinit {}
+
+    /// Permanently attach the bridge (+ optional external observer) to
+    /// `runtime.onMessagesChange`. Called from each `.active`-producing
+    /// init, and from `promoteOrForward` at the draft → active flip.
+    /// The closure captures `self` weakly because the runtime is
+    /// owned by `Session` and would otherwise form a retain cycle.
+    private func wireRuntimeMessagesSink(_ runtime: SessionRuntime) {
+        runtime.onMessagesChange = { [weak self] change in
+            guard let self else { return }
+            self.bridge.apply(change)
+            self.onMessagesChange?(change)
+        }
+        runtime.onLaunchFailure = onLaunchFailure
+        runtime.onRecordPersisted = onRecordPersisted
+    }
 
     // MARK: - Phase accessors
 
@@ -372,9 +426,7 @@ final class Session {
             // path; `failLaunch` fires `onLaunchFailure`; the queued
             // entry needs `onMessagesChange` for the bridge to render it.
             // Wiring last would race those events into the void.
-            runtime.onMessagesChange = self.onMessagesChange
-            runtime.onLaunchFailure = self.onLaunchFailure
-            runtime.onRecordPersisted = self.onRecordPersisted
+            wireRuntimeMessagesSink(runtime)
             if let queuedEntry {
                 runtime.onMessagesChange?(.appended(queuedEntry))
             }

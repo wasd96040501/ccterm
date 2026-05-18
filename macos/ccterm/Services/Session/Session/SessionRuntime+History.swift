@@ -42,23 +42,15 @@ extension SessionRuntime {
     ///   viewports.
     func loadHistory(overrideURL url: URL? = nil, tailTarget: Int = 80) {
         switch historyLoadState {
-        case .loadingTail, .tailLoaded:
-            return
-        case .loaded:
-            // Already loaded (user switched away and back) — have the bridge
-            // reload everything.
-            //
-            // Synchronously emitting before the view is mounted is safe:
-            // bridge → `controller.loadInitial` has its own pending-cache
-            // path that buffers blocks while layoutWidth=0 and consumes them
-            // when the coordinator's `onLayoutReady` fires. So this layer
-            // doesn't have to care about SwiftUI commit ordering.
-            //
-            // No precomputed blocks here: the re-entry path is synchronous
-            // and we accept the same-frame Markdown parse cost. The slow
-            // path is the cold load (Phase A / Phase B), where precompute
-            // moves the parse off the main thread.
-            onMessagesChange?(.reset(messages, precomputedBlocks: nil))
+        case .loadingTail, .tailLoaded, .loaded:
+            // In-flight or already done — no-op. The bridge is wired to
+            // `runtime.onMessagesChange` for the session's full lifetime
+            // (lives on `Session`, not on `ChatHistoryView`), so live
+            // events have been streaming into the controller all along
+            // and any in-flight Phase A/B task will still fire its sink
+            // when it completes. A re-entered `.loaded` session needs no
+            // bridge replay; `controller.blocks` already matches
+            // `messages`, and the view-mount path scrolls to the tail.
             return
         case .failed:
             historyLoadState = .notLoaded

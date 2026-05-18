@@ -18,17 +18,27 @@ enum ChatHistoryRenderCase: Equatable {
 }
 
 /// Read-only history browser. Pure SwiftUI, no ViewModel: pulls
-/// `SessionManager` from the environment, lazily acquires a `Session`,
-/// and kicks `loadHistory()`.
+/// `SessionManager` from the environment, resolves a `Session`, and
+/// hands the session's controller to `NativeTranscript2View`.
 ///
-/// Consumes `Session.onMessagesChange` — a synchronous sink. Each
-/// `messages` write pushes one `MessagesChange`, which `Transcript2EntryBridge`
-/// translates into `Transcript2Controller.apply / loadInitial` calls.
+/// **Controller / bridge ownership.** Both `Transcript2Controller` and
+/// `Transcript2EntryBridge` live on `Session` (not on this view) and
+/// have the same lifetime as the session. The bridge subscribes to
+/// `runtime.onMessagesChange` permanently — live CLI events flow into
+/// the controller's block list even when no `ChatHistoryView` is
+/// mounted. This view simply rebinds the controller's coordinator to
+/// a fresh `NSTableView` per mount; the coordinator's `tableView.didSet`
+/// runs `reloadData()` automatically so the table picks up whatever
+/// block state accumulated while detached. **Switch-away → switch-back
+/// is O(1) on the renderer side** (no JSONL re-read, no re-derive of
+/// blocks, no markdown reparse).
 ///
 /// **Per-session NSView lifecycle**: the call site (RootView2) attaches
-/// `.id(sessionId)` to `ChatHistoryView`, so the whole struct rebuilds when
-/// `sessionId` changes and all `@State` resets. This prevents a new session's
-/// first frame from inheriting the old session's controller state.
+/// `.id(sessionId)` to `ChatHistoryView`, so the whole struct rebuilds
+/// when `sessionId` changes and `@State` resets. The view-local state
+/// is just `searchQuery` / `searchFocused` — the heavy renderer state
+/// (block list, layout cache, fold/status dicts) belongs to
+/// `session.controller` and survives the id flip.
 ///
 /// **Search bar lives in the window toolbar via `.searchable`** — the
 /// native macOS search field renders in the toolbar's trailing slot. ⌘F
@@ -40,20 +50,12 @@ enum ChatHistoryRenderCase: Equatable {
 /// **Navigation keys**: plain `Return` advances to the next match (wired
 /// through `.onSubmit(of: .search)` while the field has focus);
 /// `Shift+Return` steps to the previous match via `.onKeyPress(.return)`
-/// inspecting `KeyPress.modifiers`. There are no prev / next / counter
-/// chrome items — the user navigates entirely from the keyboard.
-///
-/// - Warning: Do not move `.id(sessionId)` inside `body` (e.g. on a Group).
-///   That only swaps the child subtree; `@State` belongs to the struct itself
-///   and doesn't cross the id boundary, so the bridge carries over and the
-///   new session's first frame briefly renders the old session's content.
+/// inspecting `KeyPress.modifiers`.
 struct ChatHistoryView: View {
     let sessionId: String
     @Environment(SessionManager.self) private var manager
     @Environment(TranscriptSearchBus.self) private var searchBus
     @State private var session: Session?
-    @State private var controller = Transcript2Controller()
-    @State private var bridge: Transcript2EntryBridge?
     @State private var searchQuery: String = ""
     @FocusState private var isSearchFocused: Bool
 
@@ -68,7 +70,7 @@ struct ChatHistoryView: View {
                         description: Text(reason)
                     )
                 case .transcript:
-                    NativeTranscript2View(controller: controller)
+                    NativeTranscript2View(controller: session.controller)
                 }
             } else {
                 Color.clear
@@ -85,7 +87,7 @@ struct ChatHistoryView: View {
                 ToolbarSpacer(.flexible)
             }
         }
-        .onSubmit(of: .search) { controller.nextSearchHit() }
+        .onSubmit(of: .search) { session?.controller.nextSearchHit() }
         // Shift+Return for previous match. `.onKeyPress` fires whenever
         // focus is on this view or any descendant — i.e. the search
         // field. Plain Return is left to `.onSubmit(of: .search)`; we
@@ -93,11 +95,11 @@ struct ChatHistoryView: View {
         // `phases:` overload is the one that exposes `KeyPress.modifiers`.
         .onKeyPress(keys: [.return], phases: .down) { keyPress in
             guard keyPress.modifiers.contains(.shift) else { return .ignored }
-            controller.previousSearchHit()
+            session?.controller.previousSearchHit()
             return .handled
         }
         .onChange(of: searchQuery) { _, new in
-            controller.runSearch(new)
+            session?.controller.runSearch(new)
         }
         .onChange(of: searchBus.focusRequestCounter) { _, _ in
             isSearchFocused = true
@@ -110,29 +112,30 @@ struct ChatHistoryView: View {
         // Also reacts to the initial nil → session binding so a
         // re-entered running session lights the pill immediately.
         .onChange(of: session?.isRunning ?? false, initial: true) { _, new in
-            controller.setLoading(new)
+            session?.controller.setLoading(new)
         }
         .task(id: sessionId) {
-            // Use `prepareDraftSession` so a draft session (no record yet) still
-            // gets a Session façade and mounts `NativeTranscript2View` — this
-            // keeps the NSView identity stable across Start, so the chrome
-            // overlay's morph animation is visible proof that the transcript
-            // didn't rebuild. `prepareDraftSession` is idempotent get-or-create
-            // for existing-record session ids too (returns the same façade,
-            // possibly in `.active` phase).
+            // `prepareDraftSession` is idempotent get-or-create — a
+            // draft session (no record yet) still gets a Session façade,
+            // and existing-record session ids return the same cached
+            // instance (possibly in `.active` phase). The session's
+            // bridge has already been wired to its runtime; nothing for
+            // us to do besides kick `loadHistory` and scroll to the tail.
             let s = manager.prepareDraftSession(sessionId)
             session = s
-            // Bind the sink before calling loadHistory. The `.loaded` branch
-            // synchronously emits `.reset`; reversed order loses the first frame.
-            let b = Transcript2EntryBridge(controller: controller)
-            b.attach(to: s)
-            bridge = b
             appLog(
                 .info, "ChatHistoryView",
                 "[history] task-inject session=\(sessionId.prefix(8))… "
                     + "loadState=\(String(describing: s.historyLoadState)) "
-                    + "msgCount=\(s.messages.count)")
+                    + "msgCount=\(s.messages.count) "
+                    + "blockCount=\(s.controller.blockCount)")
             s.loadHistory()
+            // For re-entry (already loaded, blocks already populated by
+            // the continuous bridge), reload's default scroll position
+            // is the top; pin to the tail so the user lands where they
+            // left off. Cold loads still scroll to bottom via Phase A's
+            // `loadInitial(anchor: .bottom)`.
+            s.controller.scrollToBottom()
         }
     }
 }

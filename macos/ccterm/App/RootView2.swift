@@ -9,15 +9,12 @@ struct RootView2: View {
     /// to the window's top, and a constant fade range keeps the visual weight
     /// of the scrim consistent regardless of window height.
     fileprivate static let topFadeScrimHeight: CGFloat = 80
-    /// Width clamp for the resting input bar — keeps the bar visually
-    /// recessed from the transcript column. The compose-mode
-    /// configurator above uses its own, wider width (`composeCardWidth`)
-    /// so the bar doesn't have to grow with it.
+    /// Width clamp for the resting input bar in chat mode — keeps the
+    /// bar visually recessed from the transcript column. Compose mode
+    /// renders its own (wider) bar embedded inside the configurator
+    /// card, so this constant applies to the chat-mode resting bar
+    /// only.
     fileprivate static let composeMaxWidth: CGFloat = 544
-    /// Width of the new-session compose region. Wider than the input
-    /// bar so the (hero + recents) layout has room to breathe, with
-    /// the bar staying narrower as a discrete control beneath it.
-    fileprivate static let composeCardWidth: CGFloat = 680
     /// Bottom inset of the input bar in chat mode (matches the previous
     /// `.padding(.bottom, 36)`).
     fileprivate static let chatBottomInset: CGFloat = 36
@@ -273,15 +270,15 @@ struct RootView2: View {
         }
     }
 
-    /// ZStack hosting the centered compose card AND the bottom-anchored
-    /// input bar as independent siblings. Splitting them gives us two
-    /// guarantees the previous VStack design couldn't: the input bar's
-    /// structural identity is stable (its tree position never depends
-    /// on `isComposeMode`), AND its layout position is stable too — it
-    /// sits at the same 36pt-above-bottom resting height in both
-    /// modes, so flipping out of compose mode doesn't slide it down.
-    /// The centered card fades in/out via its own transition; the bar
-    /// just stays put.
+    /// Compose mode embeds the input bar inside the configurator's
+    /// right column, so the bar reads as part of the card surface
+    /// instead of a floating control 100+ pt below it. Chat mode keeps
+    /// the resting bar bottom-anchored as before. The two branches
+    /// construct distinct `InputBarChrome` instances by design — the
+    /// mode flip happens once per session (on first send), text and
+    /// attachments are cleared on send, so there is no state to carry
+    /// across the boundary. The compose-mode bar passes no-op rect
+    /// callbacks (there is no transcript scrim to cut holes in).
     @ViewBuilder
     private func composeStack(sid: String) -> some View {
         ZStack {
@@ -299,31 +296,39 @@ struct RootView2: View {
                             selectedSessionId = resumeSessionId
                             draftSessionId = nil
                         }
+                    },
+                    inputBar: {
+                        InputBarChrome(
+                            sessionId: sid,
+                            coordSpace: Self.detailCoordSpace,
+                            // Compose mode requires a picked folder before send
+                            // arms; chat mode never gates on this.
+                            submitEnabled: draftCwd != nil,
+                            onSubmit: { submission in submit(submission, sessionId: sid) },
+                            onAttachRect: { _ in },
+                            onPillRect: { _ in }
+                        )
                     }
                 )
-                .frame(width: Self.composeCardWidth)
                 .transition(.opacity)
-            }
-
-            VStack(spacing: 0) {
-                Spacer(minLength: 0)
-                InputBarChrome(
-                    sessionId: sid,
-                    coordSpace: Self.detailCoordSpace,
-                    // Compose mode requires a picked folder before send
-                    // arms; chat mode never gates on this (the handle
-                    // already owns its cwd from the first launch).
-                    submitEnabled: !isComposeMode || draftCwd != nil,
-                    onSubmit: { submission in submit(submission, sessionId: sid) },
-                    onAttachRect: { rect in attachRect = rect },
-                    onPillRect: { rect in pillRect = rect }
-                )
-                .frame(
-                    minWidth: BlockStyle.minLayoutWidth,
-                    maxWidth: Self.composeMaxWidth
-                )
-                .padding(.horizontal, 20)
-                .padding(.bottom, Self.chatBottomInset)
+            } else {
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    InputBarChrome(
+                        sessionId: sid,
+                        coordSpace: Self.detailCoordSpace,
+                        submitEnabled: true,
+                        onSubmit: { submission in submit(submission, sessionId: sid) },
+                        onAttachRect: { rect in attachRect = rect },
+                        onPillRect: { rect in pillRect = rect }
+                    )
+                    .frame(
+                        minWidth: BlockStyle.minLayoutWidth,
+                        maxWidth: Self.composeMaxWidth
+                    )
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, Self.chatBottomInset)
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

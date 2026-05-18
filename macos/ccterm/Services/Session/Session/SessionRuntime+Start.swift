@@ -195,6 +195,13 @@ extension SessionRuntime {
         runtime.title = draft.title
         runtime.isFocused = draft.isFocused
         runtime.hasUnread = draft.hasUnread
+        // A draft-promoted runtime has no on-disk history that isn't
+        // already in memory — every message will arrive via live CLI
+        // events. Mark it `.loaded` so a later view-mount's
+        // `loadHistory()` skips Phase A's JSONL replay; otherwise the
+        // replay would re-`receive` echoes whose `.queued` window
+        // already closed and `.append` them as duplicate entries.
+        runtime.historyLoadState = .loaded
 
         if let text = initialInput?.text, runtime.title.isEmpty {
             let derived = deriveTitleFromFirstMessage(text)

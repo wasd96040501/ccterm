@@ -136,6 +136,13 @@ struct ChatHistoryView: View {
             // left off. Cold loads still scroll to bottom via Phase A's
             // `loadInitial(anchor: .bottom)`.
             s.controller.scrollToBottom()
+            // `.onChange(of: isRunning)` only fires on transitions, and
+            // its `initial: true` invocation ran above with `session`
+            // still nil (no-op via `session?`). If running ended while
+            // this view was unmounted, the controller's pill is still
+            // installed from the previous mount — explicitly sync to
+            // the current value here.
+            s.controller.setLoading(s.isRunning)
         }
     }
 }

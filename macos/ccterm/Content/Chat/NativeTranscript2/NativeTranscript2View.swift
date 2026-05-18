@@ -23,6 +23,14 @@ struct NativeTranscript2View: View {
 
     var body: some View {
         Transcript2NSViewBridge(controller: controller)
+            // Paint the SwiftUI-rendered `windowBackgroundColor` behind the
+            // transparent NSScrollView/NSTableView. In dark mode AppKit's
+            // direct `windowBackgroundColor` paint and SwiftUI's
+            // `Color(nsColor:)` render produce slightly different RGB after
+            // color-space conversion — without this, the transcript area
+            // (showing NSWindow's paint through) reads a few shades off the
+            // surrounding `FadeScrim` (SwiftUI-painted).
+            .background(Color(nsColor: .windowBackgroundColor))
             .sheet(item: $controller.pendingUserBubbleSheet) { request in
                 UserBubbleSheetView(text: request.text)
             }

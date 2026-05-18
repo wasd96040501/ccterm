@@ -207,6 +207,16 @@
     },
     "All": {},
     "All Categories": {},
+    "All Folders": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部文件夹"
+          }
+        }
+      }
+    },
     "Allow": {
       "extractionState": "stale",
       "localizations": {
@@ -1109,6 +1119,16 @@
       }
     },
     "Filter": {},
+    "Filter by folder": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按文件夹筛选"
+          }
+        }
+      }
+    },
     "Find": {
       "localizations": {
         "zh-Hans": {
@@ -1568,6 +1588,16 @@
         }
       }
     },
+    "No Matching Folders": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无匹配文件夹"
+          }
+        }
+      }
+    },
     "No archived sessions": {
       "localizations": {
         "zh-Hans": {
@@ -1589,6 +1619,16 @@
         }
       }
     },
+    "No matching sessions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无匹配会话"
+          }
+        }
+      }
+    },
     "No plugin directories": {
       "extractionState": "stale",
       "localizations": {
@@ -1606,6 +1646,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "暂无最近项目"
+          }
+        }
+      }
+    },
+    "No recent sessions for this project.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "该项目暂无最近会话。"
           }
         }
       }
@@ -1642,12 +1692,33 @@
         }
       }
     },
+    "Pick a project on the left to begin.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在左侧选择一个项目以开始。"
+          }
+        }
+      }
+    },
     "Pick a project on the right to begin.": {
+      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "在右侧选择一个项目以开始。"
+          }
+        }
+      }
+    },
+    "Pick a project to see its history.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择一个项目以查看其历史。"
           }
         }
       }
@@ -1714,6 +1785,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "主目录"
+          }
+        }
+      }
+    },
+    "Projects": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "项目"
           }
         }
       }
@@ -1964,6 +2045,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "最近项目"
+          }
+        }
+      }
+    },
+    "Recent Sessions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近会话"
           }
         }
       }
@@ -2245,6 +2336,16 @@
         }
       }
     },
+    "Search archived sessions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索归档的会话"
+          }
+        }
+      }
+    },
     "Search branches…": {
       "extractionState": "stale",
       "localizations": {
@@ -2257,7 +2358,6 @@
       }
     },
     "Search folders…": {
-      "extractionState": "stale",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
@@ -2678,6 +2778,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "渲染压测"
+          }
+        }
+      }
+    },
+    "Try clearing the search or folder filter.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "试着清空搜索词或文件夹筛选。"
           }
         }
       }

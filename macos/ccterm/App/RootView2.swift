@@ -89,7 +89,17 @@ struct RootView2: View {
             detailContent
                 .navigationSplitViewColumnWidth(min: 680, ideal: 1000)
         }
-        .frame(minHeight: 480)
+        // The compose card lives in `ChatHistoryView`'s `.overlay { }`
+        // — overlays match the underlying view's size, so the card's
+        // intrinsic height (620) + `detailVerticalInset × 2` (40) is
+        // NOT propagated up to the window content size. Pin the
+        // SplitView's own `minHeight` to that total here so the
+        // scene's `.windowResizability(.contentSize)` sees the right
+        // floor and stops shrinking before the card touches an edge.
+        .frame(
+            minHeight: NewSessionConfigurator<EmptyView>.height
+                + Self.detailVerticalInset * 2
+        )
         .alert(
             "Failed to launch CLI",
             isPresented: Binding(

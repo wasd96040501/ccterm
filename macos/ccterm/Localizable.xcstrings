@@ -3034,6 +3034,26 @@
         }
       }
     },
+    "Use skill": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用技能"
+          }
+        }
+      }
+    },
+    "Use skill \"%@\"": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用技能 \"%@\""
+          }
+        }
+      }
+    },
     "Used %lld tools": {
       "localizations": {
         "en": {

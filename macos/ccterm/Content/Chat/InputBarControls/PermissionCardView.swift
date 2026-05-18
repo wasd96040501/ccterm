@@ -89,6 +89,8 @@ struct PermissionCardView: View {
             PermissionFilesystemReadCardBody(request: request)
         case .taskAgent:
             PermissionTaskAgentCardBody(request: request)
+        case .skill:
+            PermissionSkillCardBody(request: request)
         default:
             PermissionFallbackCardBody(request: request)
         }

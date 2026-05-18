@@ -65,7 +65,17 @@ struct BranchPickerView: View {
     private var branchListSection: some View {
         Group {
             if filteredBranches.isEmpty && filteredRemoteMain == nil {
-                emptyView
+                // The "No Matching Branches" state only makes sense
+                // when the user has typed a query that returns zero
+                // results. When the picker opens before the async git
+                // probe has returned (`branches` still `[]`, search
+                // empty), render a blank slot — the real content
+                // backfills with the implicit animation below.
+                if searchText.isEmpty {
+                    Color.clear
+                } else {
+                    emptyView
+                }
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
@@ -122,6 +132,11 @@ struct BranchPickerView: View {
             }
         }
         .frame(height: 200, alignment: .top)
+        // Animate the blank → populated transition when the heavy git
+        // probe completes. We don't animate on `searchText` because
+        // those changes are user-driven and should feel instant.
+        .animation(.default, value: branches)
+        .animation(.default, value: remoteMainBranch)
     }
 
     private func sectionHeader(_ text: String) -> some View {

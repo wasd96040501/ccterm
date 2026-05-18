@@ -68,9 +68,11 @@ struct NewSessionConfigurator<InputBar: View>: View {
     @Environment(RecentProjectsStore.self) private var recents
     @Environment(SessionManager.self) private var manager
     /// Branch list + remote main + current-branch status are only ever shown
-    /// inside `BranchPickerView`. They're loaded lazily when the picker
-    /// opens (see `loadHeavyGitInfo`) so the New Session card doesn't pay
-    /// the ~80ms subprocess cost on every mount.
+    /// inside `BranchPickerView`. They're preloaded asynchronously when the
+    /// picked folder is a git repo (see `loadHeavyGitInfo`) so the popover
+    /// already has data the moment the user clicks the branch pill — the
+    /// subprocess cost is paid in the background while the user is reading
+    /// the rest of the card.
     @State private var branches: [String] = []
     @State private var currentBranch: String? = nil
     @State private var remoteMainBranch: String? = nil
@@ -117,13 +119,25 @@ struct NewSessionConfigurator<InputBar: View>: View {
         )
         .frame(width: Self.width, height: Self.height)
         .clipShape(RoundedRectangle(cornerRadius: Self.cardCornerRadius, style: .continuous))
-        .task(id: folderPath) { refreshGitInfo(resetOverride: true) }
-        .onChange(of: showBranchPicker) { _, isOpen in
-            // Defer the subprocess-heavy probe until the user actually
-            // reaches for the picker. The async load runs off-main; if
-            // the popover animation is faster than the load (~80ms), the
-            // picker's `isLoading` flag bridges the gap with a spinner.
-            if isOpen { Task { await loadHeavyGitInfo() } }
+        .task(id: folderPath) {
+            // Two-stage probe, both keyed off `folderPath`:
+            //   1) Cheap, synchronous — `isGitRepository` + reading
+            //      `.git/HEAD`. Resolves `currentBranch` / `isGitRepo`
+            //      before the first frame, so the branch pill renders
+            //      its label immediately.
+            //   2) Heavy, async — branch list, remote-main, status
+            //      summary. Runs on a detached background task so the
+            //      main thread keeps painting. Folder switches cancel
+            //      this `.task` via the `id:` parameter, and the inner
+            //      `loadHeavyGitInfo` re-checks `folderPath == path`
+            //      after `await` to drop any late-arriving result.
+            //
+            // The branch picker no longer triggers a load on open —
+            // by the time the user clicks the pill, `branches` is
+            // already populated (or actively loading; the picker shows
+            // a blank list slot and animates rows in when data lands).
+            refreshGitInfo(resetOverride: true)
+            await loadHeavyGitInfo()
         }
     }
 
@@ -600,8 +614,8 @@ struct NewSessionConfigurator<InputBar: View>: View {
     /// Only does file-level work: `isGitRepository` (a `.git` existence
     /// check) and `currentBranch` (reads `.git/HEAD` directly). The
     /// expensive subprocess calls (`branches`, `remoteMainBranch`,
-    /// `currentBranchStatus`) are deferred to `loadHeavyGitInfo`, which
-    /// runs off-main when the branch picker opens.
+    /// `currentBranchStatus`) live in `loadHeavyGitInfo`, which runs
+    /// right after this on a detached background task.
     ///
     /// `resetOverride` forces `sourceBranch` back to the new repo's
     /// current branch — needed when the folder changes.
@@ -635,7 +649,8 @@ struct NewSessionConfigurator<InputBar: View>: View {
         isGitRepo = repo
         currentBranch = head
         // Drop any stale cached heavy info — it belongs to the previous
-        // folder. The picker's `.task(id: folderPath)` reloads on demand.
+        // folder. The card's `.task(id: folderPath)` will call
+        // `loadHeavyGitInfo` right after this to refill from scratch.
         if heavyGitLoadedForFolder != path {
             branches = []
             remoteMainBranch = nil
@@ -662,12 +677,22 @@ struct NewSessionConfigurator<InputBar: View>: View {
     }
 
     /// Async: fetch the branch list, remote-main, and current-branch
-    /// status via `git` subprocesses. Triggered when the branch picker
-    /// opens; results are cached per folder via `heavyGitLoadedForFolder`
-    /// so a second open within the same compose session is instant.
-    /// The work hops to a background queue (via `Task.detached`) so the
-    /// main thread keeps painting; only the resulting state writes hop
-    /// back to the MainActor.
+    /// status via `git` subprocesses. Called from the card's
+    /// `.task(id: folderPath)` immediately after `refreshGitInfo`, so by
+    /// the time the user reaches the branch pill the popover already
+    /// has data. The work hops to a background queue (via
+    /// `Task.detached`) so the main thread keeps painting; only the
+    /// resulting state writes hop back to the MainActor.
+    ///
+    /// Gating (in order):
+    /// 1. No folder picked → bail.
+    /// 2. Not a git repo (cheap path already determined) → bail; we
+    ///    never shell out for plain folders.
+    /// 3. Already loaded for this folder → bail; the cache is reset by
+    ///    `refreshGitInfo` whenever `folderPath` changes, so this only
+    ///    short-circuits idempotent re-runs (e.g. a redundant probe).
+    /// 4. After `await` returns, drop the result if the user switched
+    ///    folders mid-load.
     private func loadHeavyGitInfo() async {
         guard let path = folderPath, isGitRepo else { return }
         if heavyGitLoadedForFolder == path { return }

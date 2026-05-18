@@ -1829,6 +1829,16 @@
         }
       }
     },
+    "No plan body — review the transcript before approving.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "方案正文为空 — 请先查看会话记录再批准。"
+          }
+        }
+      }
+    },
     "No plugin directories": {
       "extractionState": "stale",
       "localizations": {
@@ -1972,6 +1982,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "计划"
+          }
+        }
+      }
+    },
+    "Plan stored in a file; review it in the transcript before approving.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "方案保存在文件中，请先查看会话记录再批准。"
           }
         }
       }
@@ -2400,6 +2420,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "逐个审批每项变更"
+          }
+        }
+      }
+    },
+    "Review the plan to leave plan mode?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "审阅方案以退出规划模式？"
           }
         }
       }

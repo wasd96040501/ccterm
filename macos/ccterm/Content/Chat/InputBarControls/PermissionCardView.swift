@@ -95,6 +95,8 @@ struct PermissionCardView: View {
             PermissionMcpCardBody(request: request)
         case .enterPlanMode:
             PermissionEnterPlanModeCardBody(request: request)
+        case .exitPlanMode:
+            PermissionExitPlanModeCardBody(request: request)
         default:
             PermissionFallbackCardBody(request: request)
         }

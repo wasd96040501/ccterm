@@ -13,18 +13,20 @@ final class EffortDefaultStoreTests: XCTestCase {
 
     private var defaults: UserDefaults!
     private var store: EffortDefaultStore!
+    private var suiteName: String!
 
     override func setUpWithError() throws {
         continueAfterFailure = false
-        let suiteName = "EffortDefaultStoreTests-\(UUID().uuidString)"
+        suiteName = "EffortDefaultStoreTests-\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)!
         store = EffortDefaultStore(defaults: defaults)
     }
 
     override func tearDownWithError() throws {
-        defaults.removePersistentDomain(forName: defaults.dictionaryRepresentation().keys.first ?? "")
+        defaults.removePersistentDomain(forName: suiteName)
         defaults = nil
         store = nil
+        suiteName = nil
     }
 
     // MARK: First-time defaults

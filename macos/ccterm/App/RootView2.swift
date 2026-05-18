@@ -351,8 +351,14 @@ struct RootView2: View {
     /// and forward directly to the handle.
     ///
     /// Attachment dispatch:
-    /// - All `filePaths` are joined as `@<absolute path>` mentions and
-    ///   spliced in front of the user's text to form the "composed" body.
+    /// - File paths are joined as `@"<absolute path>"` mentions and
+    ///   spliced in front of the user's text. The quoted form is the
+    ///   contract the CLI's `extractAtMentionedFiles` parser expects for
+    ///   paths with spaces — the unquoted form truncates at the first
+    ///   whitespace (so any path under `/Users/<First Last>/…` would be
+    ///   silently mangled). Single-space separator between mentions and
+    ///   the user's text follows the same convention as the bridge's
+    ///   `resolveInboundAttachments`.
     /// - If there are no images, the composed body goes through
     ///   `send(text:)` as a single message.
     /// - With images, each image goes through `send(image:mediaType:caption:)`.
@@ -390,12 +396,12 @@ struct RootView2: View {
                 recents.markLaunched(picked, useWorktree: draftUseWorktree)
             }
         }
-        let mentions = submission.filePaths.map { "@" + $0 }.joined(separator: " ")
+        let mentions = submission.filePaths.map { "@\"\($0)\"" }.joined(separator: " ")
         let composedBody: String = {
             switch (mentions.isEmpty, submission.text.isEmpty) {
             case (true, _): return submission.text
             case (false, true): return mentions
-            case (false, false): return mentions + "\n\n" + submission.text
+            case (false, false): return mentions + " " + submission.text
             }
         }()
         if submission.images.isEmpty {

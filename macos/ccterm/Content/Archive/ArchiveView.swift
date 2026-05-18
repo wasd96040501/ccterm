@@ -290,6 +290,13 @@ struct ArchiveRow: View {
     /// Title text on the left, unarchive button on the right. The
     /// button stays in the layout (transparent when idle) so revealing
     /// it on hover doesn't reflow the row.
+    ///
+    /// `padding(.trailing, -capsuleHorizontalPadding)` shifts the button
+    /// rightward by exactly the capsule's internal padding so the
+    /// "Unarchive" text edge — not the capsule edge — sits flush with
+    /// the time text's right edge in the row below. The 6pt overflow
+    /// falls inside the row's 12pt horizontal padding, so nothing
+    /// clips.
     private var topRow: some View {
         HStack(spacing: 14) {
             titleText
@@ -299,8 +306,15 @@ struct ArchiveRow: View {
             unarchiveButton
                 .opacity(isHovered ? 1 : 0)
                 .allowsHitTesting(isHovered)
+                .padding(.trailing, -Self.capsuleHorizontalPadding)
         }
     }
+
+    /// Mirrors `HoverCapsuleStyle.HoverCapsuleModifier`'s
+    /// `.padding(.horizontal, 6)`. Pinned here as a constant so the
+    /// trailing-edge alignment math is explicit; if the capsule style
+    /// changes its padding, this value must follow.
+    private static let capsuleHorizontalPadding: CGFloat = 6
 
     /// Metadata (folder + optional branch) on the left, short
     /// relative-time on the right. Time stays put as the row's

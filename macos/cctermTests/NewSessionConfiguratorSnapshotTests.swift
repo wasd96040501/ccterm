@@ -171,4 +171,78 @@ final class NewSessionConfiguratorSnapshotTests: XCTestCase {
 
         XCTAssertGreaterThanOrEqual(image.size.width, 1000)
     }
+
+    /// Same fixture as the main test, but rendered in **light**
+    /// appearance. Catches issues where the left-column tint reads
+    /// as a saturated patch on the lighter `ultraThinMaterial` base.
+    func testNewSessionConfiguratorLightAppearance() throws {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ncs-snapshot-light-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: tmp) }
+
+        let projectA = tmp.appendingPathComponent("worldquant-brain")
+        let projectB = tmp.appendingPathComponent("ccterm")
+        try FileManager.default.createDirectory(at: projectA, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: projectB, withIntermediateDirectories: true)
+
+        let defaults = UserDefaults(suiteName: "ccterm.test.\(UUID().uuidString)")!
+        let recents = RecentProjectsStore(defaults: defaults)
+        recents.add(projectB.path)
+        recents.add(projectA.path)
+
+        let repo = InMemorySessionRepository()
+        let now = Date()
+        let titles = [
+            "Give me a story", "Are you still there?", "Hello?",
+            "Are you a pig?", "Are you dumb?",
+        ]
+        for (idx, title) in titles.enumerated() {
+            let record = SessionRecord(
+                sessionId: UUID().uuidString.lowercased(),
+                title: title,
+                cwd: projectA.path,
+                originPath: projectA.path,
+                lastActiveAt: now.addingTimeInterval(TimeInterval(-3600 * (10 + idx))),
+                status: .created
+            )
+            repo.save(record)
+        }
+        let manager = SessionManager(repository: repo)
+
+        let folderBinding = Binding<String?>.constant(projectA.path)
+        let worktreeBinding = Binding<Bool>.constant(false)
+        let branchBinding = Binding<String?>.constant(nil)
+
+        let view = ZStack {
+            Color(nsColor: .windowBackgroundColor).ignoresSafeArea()
+            NewSessionConfigurator(
+                folderPath: folderBinding,
+                useWorktree: worktreeBinding,
+                sourceBranch: branchBinding,
+                inputBar: {
+                    Color.gray.opacity(0.18)
+                        .frame(height: 64)
+                        .clipShape(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        )
+                }
+            )
+        }
+        .frame(width: 1100, height: 760)
+        .environment(recents)
+        .environment(manager)
+        .preferredColorScheme(.light)
+
+        let image = ViewSnapshot.render(
+            view, size: CGSize(width: 1100, height: 760), settle: 0.9)
+        let url = ViewSnapshot.writePNG(image, name: "NewSessionConfigurator-light")
+
+        let attachment = XCTAttachment(contentsOfFile: url)
+        attachment.name = "NewSessionConfigurator-light.png"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        XCTAssertGreaterThanOrEqual(image.size.width, 1000)
+    }
 }

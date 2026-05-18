@@ -79,15 +79,16 @@ struct NewSessionConfigurator<InputBar: View>: View {
             projectsColumn
                 .frame(width: Self.projectsColumnWidth)
                 .frame(maxHeight: .infinity)
-                // Indigo recess — same blue family as the accent so
-                // the card still reads as one design language, but at
-                // ~6% opacity it lands as atmosphere rather than
-                // color. Visual psychology: cool indigo conveys
-                // focus / structure / memory, all of which suit a
-                // "navigation + history" panel, and the cool hue
-                // recedes against the warm accent glow on the right
-                // half instead of competing with it.
-                .background(Color.indigo.opacity(0.06))
+                // Slate-blue recess — desaturated cool gray with just
+                // enough blue to read as a navigation/structure zone.
+                // Indigo at 6% leaned visibly lavender on the
+                // `ultraThinMaterial` base in light mode; this hue
+                // sits closer to gray on the wheel so the column
+                // still reads as cool/recessive without becoming a
+                // tinted patch. The fixed RGB intentionally avoids
+                // `NSColor.systemIndigo` for the same reason — the
+                // system curve over-saturates in light mode.
+                .background(Color(red: 0.40, green: 0.47, blue: 0.60).opacity(0.05))
                 .overlay(alignment: .trailing) {
                     Rectangle()
                         .fill(Color(nsColor: .separatorColor))

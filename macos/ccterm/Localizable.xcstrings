@@ -228,6 +228,26 @@
         }
       }
     },
+    "Allow always": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "始终允许"
+          }
+        }
+      }
+    },
+    "Allow once": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅此一次"
+          }
+        }
+      }
+    },
     "Always allow": {
       "extractionState": "stale",
       "localizations": {
@@ -580,6 +600,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Claude 有问题"
+          }
+        }
+      }
+    },
+    "Claude wants to %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude 想%@"
           }
         }
       }
@@ -3132,6 +3162,36 @@
         }
       }
     },
+    "edit a file": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑文件"
+          }
+        }
+      }
+    },
+    "exit plan mode": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出 plan 模式"
+          }
+        }
+      }
+    },
+    "fetch a web page": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "抓取网页"
+          }
+        }
+      }
+    },
     "file": {
       "localizations": {
         "zh-Hans": {
@@ -3152,6 +3212,16 @@
         }
       }
     },
+    "read a file": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取文件"
+          }
+        }
+      }
+    },
     "recent": {
       "extractionState": "stale",
       "localizations": {
@@ -3163,12 +3233,72 @@
         }
       }
     },
+    "run a shell command": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行 shell 命令"
+          }
+        }
+      }
+    },
+    "run a sub-task": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行子任务"
+          }
+        }
+      }
+    },
+    "search file contents": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索文件内容"
+          }
+        }
+      }
+    },
+    "search for files": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索文件"
+          }
+        }
+      }
+    },
     "to send": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "发送"
+          }
+        }
+      }
+    },
+    "use %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用 %@"
+          }
+        }
+      }
+    },
+    "write a file": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写入文件"
           }
         }
       }

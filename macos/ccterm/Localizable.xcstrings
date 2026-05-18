@@ -624,6 +624,16 @@
         }
       }
     },
+    "Claude wants to enter plan mode to explore and design an implementation approach.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude 想进入规划模式，先探索代码并设计实现方案。"
+          }
+        }
+      }
+    },
     "Claude wants to use this tool": {
       "extractionState": "stale",
       "localizations": {
@@ -882,6 +892,16 @@
         }
       }
     },
+    "Design an implementation strategy": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设计实现策略"
+          }
+        }
+      }
+    },
     "Done": {
       "localizations": {
         "zh-Hans": {
@@ -1084,6 +1104,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "执行，丢弃评论"
+          }
+        }
+      }
+    },
+    "Explore the codebase thoroughly": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "深入探索代码库"
           }
         }
       }
@@ -1466,6 +1496,16 @@
         }
       }
     },
+    "Identify existing patterns": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "识别已有模式"
+          }
+        }
+      }
+    },
     "Image": {
       "localizations": {
         "zh-Hans": {
@@ -1483,6 +1523,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "进行中"
+          }
+        }
+      }
+    },
+    "In plan mode, Claude will:": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在规划模式下，Claude 将："
           }
         }
       }
@@ -1748,6 +1798,16 @@
         }
       }
     },
+    "No code changes will be made until you approve the plan.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在你批准方案之前，不会改动任何代码。"
+          }
+        }
+      }
+    },
     "No matches": {
       "extractionState": "stale",
       "localizations": {
@@ -1934,6 +1994,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "插件"
+          }
+        }
+      }
+    },
+    "Present a plan for your approval": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提交方案供你审阅"
           }
         }
       }

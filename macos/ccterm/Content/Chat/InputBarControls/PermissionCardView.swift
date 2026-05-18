@@ -93,6 +93,8 @@ struct PermissionCardView: View {
             PermissionSkillCardBody(request: request)
         case .mcp:
             PermissionMcpCardBody(request: request)
+        case .enterPlanMode:
+            PermissionEnterPlanModeCardBody(request: request)
         default:
             PermissionFallbackCardBody(request: request)
         }

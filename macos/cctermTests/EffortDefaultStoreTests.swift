@@ -17,13 +17,23 @@ final class EffortDefaultStoreTests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
-        suiteName = "EffortDefaultStoreTests-\(UUID().uuidString)"
+        suiteName = "ccterm.tests.EffortDefaultStore.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)!
+        // Make sure the suite is empty even if a prior run aborted
+        // before tearDown removed it.
+        for key in defaults.dictionaryRepresentation().keys {
+            defaults.removeObject(forKey: key)
+        }
         store = EffortDefaultStore(defaults: defaults)
     }
 
     override func tearDownWithError() throws {
-        defaults.removePersistentDomain(forName: suiteName)
+        // Clean up keys individually. `removePersistentDomain(forName:)`
+        // on a suite-named instance aborts the process under macOS 26
+        // in CI; removing keys one by one is the safe equivalent.
+        for key in defaults.dictionaryRepresentation().keys {
+            defaults.removeObject(forKey: key)
+        }
         defaults = nil
         store = nil
         suiteName = nil

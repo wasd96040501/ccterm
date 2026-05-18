@@ -98,16 +98,18 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// observers on `blockCount` see the new value.
     var onBlockCountChanged: ((Int) -> Void)?
 
-    /// Fires when `layoutWidth` first becomes > 0 — i.e. the table has
-    /// been inserted into a scroll view and tiled. `Transcript2Controller`
-    /// hooks this to consume any pending anchor it had to defer because
-    /// the table wasn't mounted yet (re-entry race: SwiftUI commits the
-    /// `NativeTranscript2View` *after* `.task` has already declared an
-    /// anchor via `requestAnchor` / driven `.reset` through the bridge
-    /// into `loadInitial`). Re-fires on every fresh `NSTableView` attach
-    /// because `tableView.didSet` resets `lastLayoutWidth` to the
-    /// sentinel — so view re-mount, not just cold load, also gets a
-    /// chance to land its anchor.
+    /// Fires whenever the table tiles to a positive width that differs
+    /// from the previous one — i.e. on first attach (sentinel `-1` →
+    /// positive), but ALSO on every intermediate width-change after attach
+    /// while the layout is still settling (SwiftUI commonly cycles through
+    /// 1–2 transient widths during a session switch before landing on the
+    /// final column width). `Transcript2Controller` hooks this to consume
+    /// any pending anchor; the controller keeps `pendingAnchor` alive for
+    /// a short debounce window across multiple fires so the re-snap lands
+    /// against the FINAL width's geometry, not an intermediate one.
+    /// Computing the scroll target against an intermediate width and
+    /// dropping the anchor leaves the clip at a y that's no longer "at
+    /// bottom" once the table re-tiles to its terminal width.
     var onLayoutReady: (() -> Void)?
 
     /// Fires from `NativeTranscript2View.dismantleNSView` with a snapshot
@@ -309,7 +311,8 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         } else {
             // Table not attached. Just mutate `blocks`; future attach will
             // `reloadData()`. Scroll state is meaningless without a table.
-            if case .none = scroll {} else {
+            if case .none = scroll {
+            } else {
                 appLog(
                     .info, "Transcript2Coordinator",
                     "[anchor] apply with no table — scroll intent dropped "
@@ -1089,9 +1092,16 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             }
         }
 
-        // First 0→positive transition unblocks any deferred `loadInitial`
-        // on the controller side.
-        if prevWidth <= 0 && width > 0 {
+        // Fire on EVERY positive width change, not just the initial
+        // 0→positive transition. SwiftUI's session-switch commit often
+        // cycles the table through one or more transient widths before
+        // landing on the final column width. If we only re-anchored on
+        // the first fire, the scroll target would be computed against
+        // the transient geometry and the clip ends up at a y that's no
+        // longer at the requested position after the table re-tiles.
+        // The controller debounces consumption so the LAST fire (final
+        // settled width) wins.
+        if width > 0 {
             appLog(
                 .info, "Transcript2Coordinator",
                 "[anchor] tableFrameDidChange prev=\(prevWidth) → \(width); "

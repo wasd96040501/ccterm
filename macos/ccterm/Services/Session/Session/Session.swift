@@ -201,7 +201,8 @@ final class Session {
             appLog(
                 .info, "Session",
                 "[anchor] onWillDetach received sid=\(sid.prefix(8)) "
-                    + "captured=\(captured.map { "\($0.blockId.uuidString.prefix(8)),y=\($0.offsetFromClipTop)" } ?? "nil")")
+                    + "captured=\(captured.map { "\($0.blockId.uuidString.prefix(8)),y=\($0.offsetFromClipTop)" } ?? "nil")"
+            )
             self?.lastVisibleAnchor = captured
         }
     }

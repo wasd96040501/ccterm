@@ -178,11 +178,10 @@ final class Transcript2Controller {
 
     /// Scroll anchor waiting for the next table-tile completion. The
     /// coordinator's `onLayoutReady` fires once per fresh `NSTableView`
-    /// attach (the `tableView.didSet` path resets `lastLayoutWidth` so
-    /// the 0→positive edge is re-crossed every remount), and consumes
-    /// this. Both cold-load (`loadInitial`'s no-width branch) and
-    /// view-mount (`ChatHistoryView.task → requestAnchor`) route through
-    /// this single field — last writer wins.
+    /// attach AND on every subsequent positive width change while the
+    /// layout is still settling. Both cold-load (`loadInitial`'s no-width
+    /// branch) and view-mount (`ChatHistoryView.task → requestAnchor`)
+    /// route through this single field — last writer wins.
     ///
     /// Blocks themselves are not cached here — `loadInitial`'s deferred
     /// branch inserts them into `coordinator.blocks` immediately so
@@ -190,7 +189,30 @@ final class Transcript2Controller {
     /// arriving on a session whose view isn't yet mounted) can resolve
     /// anchors correctly. Only the scroll/anchor intent has to wait for
     /// a real table.
+    ///
+    /// **Lifetime is decoupled from consumption.** Each `onLayoutReady`
+    /// fire re-applies the scroll position; `pendingAnchor` itself only
+    /// drops after `pendingAnchorClearTask` elapses without a new fire.
+    /// That way the FINAL settled-width fire produces the authoritative
+    /// scroll target, instead of the first transient one.
     private var pendingAnchor: InitialAnchor?
+
+    /// Debounce timer that drops `pendingAnchor` once the layout has been
+    /// quiet for `pendingAnchorSettleSeconds`. Reset on every successful
+    /// `consumePendingAnchor` so the latest layout-ready fire wins.
+    /// Cancelled (without scheduling a new one) by `requestAnchor` and by
+    /// `loadInitial`'s real-width branch — both already settle scroll
+    /// state directly and don't want a stale debounce overwriting their
+    /// effect.
+    private var pendingAnchorClearTask: Task<Void, Never>?
+
+    /// How long the table has to stay at a fixed width before we trust
+    /// the scroll target as "final" and drop `pendingAnchor`. 250 ms
+    /// covers the typical SwiftUI session-switch settle (two frame
+    /// changes ~10 ms apart in observation logs) with margin for slower
+    /// commits, while staying well under the human reaction window for
+    /// post-mount scroll input.
+    private static let pendingAnchorSettleSeconds: Double = 0.25
 
     /// Late-bind a syntax engine. Pass-through to the coordinator. Safe
     /// to call repeatedly (idempotent on the same instance) and safe
@@ -363,7 +385,11 @@ final class Transcript2Controller {
         }
         // Path reached the real-width branch — drop any stale pending so a
         // racing `onLayoutReady` after this point doesn't double-apply.
+        // Cancel the settle-debounce too so it can't clear a fresh anchor
+        // set by some later `requestAnchor`.
         pendingAnchor = nil
+        pendingAnchorClearTask?.cancel()
+        pendingAnchorClearTask = nil
 
         let slice = Self.sliceForViewport(
             blocks: blocks, anchor: anchor,
@@ -458,12 +484,24 @@ final class Transcript2Controller {
 
     var blockIds: [UUID] { coordinator.blockIds }
 
-    /// Invoked by `coordinator.onLayoutReady` once a freshly-attached
-    /// table tiles to a positive width. Blocks are already in
-    /// `coordinator.blocks` (the bridge feeds them continuously); this
-    /// step purely lands the scroll position. No-op when nothing is
-    /// pending — `coordinator` may fire `onLayoutReady` on resize-time
-    /// 0→positive sequences unrelated to a pending anchor.
+    /// Invoked by `coordinator.onLayoutReady` whenever the table tiles
+    /// to a positive width that differs from the previous one. Blocks
+    /// are already in `coordinator.blocks` (the bridge feeds them
+    /// continuously); this step purely lands the scroll position.
+    /// No-op when nothing is pending — `coordinator` fires
+    /// `onLayoutReady` on every width transition, including normal
+    /// user-driven resizes that have no anchor to consume.
+    ///
+    /// **Re-applies on every fire.** SwiftUI's session-switch commit
+    /// often cycles the table through a transient intermediate width
+    /// before settling at the final column width. Computing the scroll
+    /// target against the intermediate geometry would land the clip at
+    /// a y that is no longer at the requested position after the table
+    /// re-tiles to its terminal width (e.g. `.bottom` lands above the
+    /// final bottom, `.preserved` lands above the captured row). To
+    /// avoid that, we re-apply the anchor on every fire and only drop
+    /// `pendingAnchor` after `pendingAnchorSettleSeconds` of layout
+    /// quiet — the last fire (final width) wins.
     private func consumePendingAnchor() {
         guard let anchor = pendingAnchor else {
             appLog(
@@ -475,16 +513,39 @@ final class Transcript2Controller {
             .info, "Transcript2Controller",
             "[anchor] consumePendingAnchor=\(Self.describe(anchor)) "
                 + "blocks=\(coordinator.blockIds.count) "
-                + "layoutWidth=\(coordinator.layoutWidth)")
-        pendingAnchor = nil
+                + "layoutWidth=\(coordinator.layoutWidth) "
+                + "(re-snap; clear after \(Self.pendingAnchorSettleSeconds)s of quiet)")
         scrollToInitialAnchor(anchor)
+        scheduleAnchorClear()
+    }
+
+    /// Restart the debounce timer that drops `pendingAnchor`. Each call
+    /// cancels the previous task so consecutive `onLayoutReady` fires
+    /// (e.g. transient + final width during a single mount) keep
+    /// extending the window — `pendingAnchor` only clears once a full
+    /// `pendingAnchorSettleSeconds` interval elapses without a new fire.
+    private func scheduleAnchorClear() {
+        pendingAnchorClearTask?.cancel()
+        pendingAnchorClearTask = Task { [weak self] in
+            try? await Task.sleep(
+                nanoseconds: UInt64(
+                    Self.pendingAnchorSettleSeconds * 1_000_000_000))
+            guard !Task.isCancelled, let self else { return }
+            appLog(
+                .info, "Transcript2Controller",
+                "[anchor] pendingAnchor cleared after settle window")
+            self.pendingAnchor = nil
+            self.pendingAnchorClearTask = nil
+        }
     }
 
     /// Declare an anchor for the next time the table tiles. Last writer
     /// wins. Cold load's `loadInitial` writes through this on its
     /// no-width deferred path; view-mount hosts (`ChatHistoryView`) write
     /// through it directly with either `.bottom` (no saved position) or
-    /// `.preserved(...)` (resume where the user left off).
+    /// `.preserved(...)` (resume where the user left off). Cancels any
+    /// in-flight settle-debounce so the next consume window starts fresh
+    /// against this anchor.
     func requestAnchor(_ anchor: InitialAnchor) {
         appLog(
             .info, "Transcript2Controller",
@@ -492,6 +553,8 @@ final class Transcript2Controller {
                 + "blocks=\(coordinator.blockIds.count) "
                 + "layoutWidth=\(coordinator.layoutWidth)")
         pendingAnchor = anchor
+        pendingAnchorClearTask?.cancel()
+        pendingAnchorClearTask = nil
     }
 
     /// Snapshot the topmost visible row + its sub-row y-offset. Returns

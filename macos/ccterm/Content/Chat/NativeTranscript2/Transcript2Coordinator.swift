@@ -632,16 +632,37 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// constraint, pushing the documentView down into the viewport and
     /// leaving a gap above the first row.
     private func scrollRowToBottom(id: UUID, in tableView: NSTableView) {
-        guard let row = blocks.firstIndex(where: { $0.id == id }),
-            let scrollView = tableView.enclosingScrollView
-        else { return }
+        guard let row = blocks.firstIndex(where: { $0.id == id }) else {
+            appLog(
+                .info, "Transcript2Coordinator",
+                "[anchor] scrollRowToBottom EARLY id=\(id.uuidString.prefix(8)) not in blocks=\(blocks.count)")
+            return
+        }
+        guard let scrollView = tableView.enclosingScrollView else {
+            appLog(
+                .info, "Transcript2Coordinator",
+                "[anchor] scrollRowToBottom EARLY enclosingScrollView=nil "
+                    + "id=\(id.uuidString.prefix(8)) row=\(row) "
+                    + "tableSuper=\(String(describing: tableView.superview))")
+            return
+        }
         let rect = tableView.rect(ofRow: row)
         let visibleBottomInClip =
             scrollView.contentView.bounds.height - scrollView.contentInsets.bottom
         let raw = rect.maxY - visibleBottomInClip
         let target = max(-scrollView.contentInsets.top, raw)
+        let beforeY = scrollView.contentView.bounds.origin.y
         scrollView.contentView.scroll(
             to: NSPoint(x: scrollView.contentView.bounds.origin.x, y: target))
+        let afterY = scrollView.contentView.bounds.origin.y
+        appLog(
+            .info, "Transcript2Coordinator",
+            "[anchor] scrollRowToBottom row=\(row)/\(blocks.count) "
+                + "rect=\(rect) docHeight=\(tableView.bounds.height) "
+                + "clipH=\(scrollView.contentView.bounds.height) "
+                + "insetsBottom=\(scrollView.contentInsets.bottom) "
+                + "visibleBottomInClip=\(visibleBottomInClip) "
+                + "raw=\(raw) target=\(target) clip.y \(beforeY)→\(afterY)")
     }
 
     // MARK: - Visible-position capture / restore

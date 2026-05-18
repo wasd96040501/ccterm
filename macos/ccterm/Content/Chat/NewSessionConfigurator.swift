@@ -120,9 +120,11 @@ struct NewSessionConfigurator<InputBar: View>: View {
         .task(id: folderPath) { refreshGitInfo(resetOverride: true) }
         .onChange(of: showBranchPicker) { _, isOpen in
             // Defer the subprocess-heavy probe until the user actually
-            // reaches for the picker. The async load runs off-main; if
-            // the popover animation is faster than the load (~80ms), the
-            // picker's `isLoading` flag bridges the gap with a spinner.
+            // reaches for the picker. The async load runs off-main;
+            // until it returns, BranchPickerView renders the list slot
+            // blank (not the "No Matching Branches" empty state — that
+            // would be misleading) and animates the real list in via
+            // its own implicit transition when `branches` arrives.
             if isOpen { Task { await loadHeavyGitInfo() } }
         }
     }

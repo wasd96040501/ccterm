@@ -20,7 +20,7 @@ extension SessionHandle2 {
     /// 3. Mark queued local user entries as failed, so a later
     ///    `flushBootstrapBacklog` (after bootstrap finishes) doesn't resend
     ///    them to the CLI — otherwise stop would still send the message.
-    /// 4. Send RPC if `agentSession` is alive; skip otherwise (bootstrap not
+    /// 4. Send RPC if `cliClient` is alive; skip otherwise (bootstrap not
     ///    attached yet) — no CLI means no turn to interrupt; local cleanup
     ///    already satisfies the semantics.
     func interrupt() {
@@ -34,11 +34,11 @@ extension SessionHandle2 {
             status = .interrupting
         }
         failQueuedEntries(reason: "interrupted")
-        guard let agentSession else {
-            appLog(.info, "SessionHandle2", "interrupt() no agentSession — local-only \(sessionId)")
+        guard let cliClient else {
+            appLog(.info, "SessionHandle2", "interrupt() no cliClient — local-only \(sessionId)")
             return
         }
-        agentSession.interrupt { [weak self] _ in
+        cliClient.interrupt { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 if self.status == .interrupting {

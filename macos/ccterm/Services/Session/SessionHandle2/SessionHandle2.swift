@@ -190,9 +190,17 @@ class SessionHandle2 {
 
     // MARK: - Internal runtime
 
-    /// Bound AgentSDK subprocess. Assigned after a successful
-    /// `session.start()` in bootstrap; cleared on process exit / stop.
-    internal var agentSession: AgentSDK.Session?
+    /// Bound CLI subprocess wrapper. Assigned after a successful
+    /// `client.start()` in bootstrap; cleared on process exit / stop.
+    /// Concrete type is decided by `cliClientFactory` — production wires
+    /// `AgentSDKCLIClient`, tests inject `FakeCLIClient`.
+    internal var cliClient: (any CLIClient)?
+
+    /// Factory used to construct the per-bootstrap CLI client from the
+    /// derived `SessionConfiguration`. Captured at init so the handle
+    /// stays agnostic of the underlying SDK type; default is
+    /// `AgentSDKCLIClient.defaultFactory`.
+    @ObservationIgnored internal let cliClientFactory: CLIClientFactory
 
     /// Accumulated stderr buffer. Written into `termination` on process
     /// exit. Not persisted.
@@ -243,9 +251,14 @@ class SessionHandle2 {
     /// | `setPluginDirectories` | no-op (`--plugin-dir` is launch-only) | `canSetPluginDirectories` |
     /// | `setFocused` | local (does not touch CLI) | — (always callable) |
     /// | `respond(to:decision:)` | local (only effective when a pending matches) | — |
-    init(sessionId: String, repository: any SessionRepository) {
+    init(
+        sessionId: String,
+        repository: any SessionRepository,
+        cliClientFactory: @escaping CLIClientFactory = AgentSDKCLIClient.defaultFactory
+    ) {
         self.sessionId = sessionId
         self.repository = repository
+        self.cliClientFactory = cliClientFactory
         if let record = repository.find(sessionId) {
             hasRecord = true
             apply(record)

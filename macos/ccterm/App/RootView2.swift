@@ -64,10 +64,16 @@ struct RootView2: View {
             SidebarView2(selection: $selectedSessionId)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 350)
         } detail: {
+            // `.frame(minWidth:)` on the detail *content* only constrains the
+            // content itself — NavigationSplitView keeps allocating whatever
+            // width it likes to the detail column. The only knob that actually
+            // pins the column's own minimum (and, with the app scene's
+            // `.windowResizability(.contentSize)`, propagates up to the
+            // window's minimum size) is `navigationSplitViewColumnWidth`.
             detailContent
-                .frame(minWidth: 640)
+                .navigationSplitViewColumnWidth(min: 640, ideal: 960)
         }
-        .frame(minWidth: 880, minHeight: 480)
+        .frame(minHeight: 480)
         .alert(
             "Failed to launch CLI",
             isPresented: Binding(

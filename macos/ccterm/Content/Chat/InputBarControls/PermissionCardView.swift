@@ -83,6 +83,8 @@ struct PermissionCardView: View {
             PermissionFileWriteCardBody(request: request, kind: kind)
         case .notebookEdit:
             PermissionNotebookEditCardBody(request: request)
+        case .webFetch:
+            PermissionWebFetchCardBody(request: request)
         default:
             PermissionFallbackCardBody(request: request)
         }

@@ -271,7 +271,7 @@ Children mirror this: each payload exposes `label` (past form) and `activeLabel`
 1. Create `Layout/ToolGroupChildren/<Kind>/<Kind>Child.swift` with the payload struct (must expose `id` / `label` / `activeLabel`; `id` drives fold state and highlight scope, `label` is the past form, `activeLabel` is the progressive form; `Child.headerLabel(for: ToolStatus)` selects). In `Block.swift`, add the enum case and one arm to each of the `id` / `label` / `activeLabel` / `hasExpandableBody` switches.
 2. Create `Layout/ToolGroupChildren/<Kind>/<Kind>ChildLayout.swift` implementing `make / totalHeight / draw / drawBackplate`. For multi-sub-card bodies, reuse `TextCardSection.build / drawBackplates / draw` rather than reimplementing sub-card geometry.
 3. Add the case to `ToolGroupChildLayout` plus four switch arms (`totalHeight`, `drawBackplate`, `draw`, `make`).
-4. Header-only kinds (`.read` / `.generic`): `hasExpandableBody = false`, layout `totalHeight == 0`, empty `draw` and `drawBackplate`. `ToolGroupLayout` skips chevron drawing and skips registering the fold hit automatically.
+4. Header-only kinds (`.generic`, plus `.read` until its tool_result lands): `hasExpandableBody = false`, layout `totalHeight == 0`, empty `draw` and `drawBackplate`. `ToolGroupLayout` skips chevron drawing and skips registering the fold hit automatically.
 5. If async highlighting is needed, add a case to `ToolGroupChildHighlight.requests(for:)` that returns a `Plan`.
 6. If the body should be selectable (`selectionAdapter`):
    - Bodies built on `TextCardSection` (bash / grep / glob / webFetch / webSearch / askUserQuestion / agent) are zero-effort — `ToolGroupChildLayout.textCardSections` already exposes the section list, and `ToolGroupLayout.selectionAdapter.buildRegions` produces one `LayoutPosition.textCard(childIndex:sectionIndex:char:)` region per section. Extend `LayoutPosition` only if your new kind isn't built on `TextCardSection`: add a concrete case and route it through a `buildRegions` arm.
@@ -281,7 +281,8 @@ Children mirror this: each payload exposes `label` (past form) and `activeLabel`
 
 | Kind | Body |
 |---|---|
-| `read` / `generic` | Header-only (no chevron) |
+| `generic` | Header-only (no chevron) |
+| `read` | New-file diff card (`DiffLayout` with `oldString == nil` — gutter line numbers, no `+/-` chrome). Header-only until the tool_result lands and carries text. |
 | `fileEdit` | Diff card (`DiffLayout` + per-line highlight) |
 | `bash` | Command / stdout / stderr — three monospaced sub-cards; stderr in red |
 | `grep` | Filenames + optional content preview, two sub-cards |
@@ -299,7 +300,7 @@ Children mirror this: each payload exposes `label` (past form) and `activeLabel`
 
 **New-file mode (`oldString == nil`)** — `.add` lines render as `.context` (no `+` sign, no add background); gutter line numbers + token highlight are preserved. The output reads as a "line-numbered code view", not a "diff with everything added".
 
-**Selection** — `fileEdit` uses `LayoutPosition.diff(childIndex:char:)`; the other seven kinds (bash / grep / glob / webFetch / webSearch / askUserQuestion / agent) use `LayoutPosition.textCard(childIndex:sectionIndex:char:)` with per-card granularity. `read` / `generic` are header-only with nothing to select.
+**Selection** — `fileEdit` and `read` (when expanded) use `LayoutPosition.diff(childIndex:char:)`; the other seven kinds (bash / grep / glob / webFetch / webSearch / askUserQuestion / agent) use `LayoutPosition.textCard(childIndex:sectionIndex:char:)` with per-card granularity. `generic` is header-only with nothing to select.
 
 #### `.userBubble` → `UserBubbleLayout`
 
@@ -333,7 +334,7 @@ NativeTranscript2/
 │   │   │   ├── FileEditChildHighlight.swift   Per-unique-line highlight requests + finalize
 │   │   │   ├── DiffBlock.swift                Diff payload (old/new + derived hunks)
 │   │   │   └── DiffLayout.swift               Hunks body (`codeBlock`-style rounded rect with per-line gutter / sign / content)
-│   │   ├── Read/                          Header-only: ReadChild + ReadChildLayout (totalHeight = 0)
+│   │   ├── Read/                          New-file diff body: ReadChild (+ content) + ReadChildLayout wraps DiffLayout, ReadChildHighlight schedules per-unique-line tokens
 │   │   ├── Generic/                       Header-only fallback: GenericChild + GenericChildLayout (totalHeight = 0)
 │   │   ├── Bash/                          Command + stdout + stderr, three sub-cards
 │   │   ├── Grep/                          Filenames + content preview, two sub-cards

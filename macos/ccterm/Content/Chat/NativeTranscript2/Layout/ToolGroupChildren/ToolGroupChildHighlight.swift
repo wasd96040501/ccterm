@@ -28,14 +28,16 @@ enum ToolGroupChildHighlight {
         switch child {
         case .fileEdit(let c):
             return FileEditChildHighlight.plan(c)
+        case .read(let c):
+            return ReadChildHighlight.plan(c)
         case .bash(let c):
             return BashChildHighlight.plan(c)
         case .grep, .glob, .webFetch, .webSearch,
             .askUserQuestion, .agent:
             // These bodies render plain text — no syntax highlight today.
             return nil
-        case .read, .generic:
-            // Header-only kinds — no body glyphs to tokenize.
+        case .generic:
+            // Header-only kind — no body glyphs to tokenize.
             return nil
         }
     }

@@ -1,27 +1,57 @@
 import AppKit
 
-/// Body layout for `Block.ToolGroupBlock.Child.read` — header-only,
-/// no body. The header band (title only, no chevron — gated by
-/// `ReadChild`'s `hasExpandableBody == false` on the parent enum) is
-/// painted by `ToolGroupLayout`; this layout exists purely so the
-/// dispatcher enum has a canonical place to land for `.read` children.
+/// Body layout for `Block.ToolGroupBlock.Child.read`. When the
+/// tool_result has landed and carries text (`ReadChild.content != nil`),
+/// the body renders the file as a new-file `DiffLayout` — gutter line
+/// numbers, no `+`/`-` chrome, per-line syntax highlighting. The header
+/// band is owned by `ToolGroupLayout`; this layout only renders the
+/// rounded card below it.
 ///
-/// `totalHeight == 0` is what tells `ToolGroupLayout.make` to keep the
-/// entry's `body == nil` after `make(...)` returns — the same path
-/// folded children take. Nothing else is rendered.
-struct ReadChildLayout: Sendable {
-    var totalHeight: CGFloat { 0 }
+/// While the tool is still running (or the result carried no text)
+/// `body == nil` and `totalHeight == 0`, so `ToolGroupLayout.make`
+/// keeps the entry collapsed — same path the chevron-less `read`
+/// previously took before it gained an expandable body.
+///
+/// `@unchecked Sendable`: holds `CTLine` references via the contained
+/// `DiffLayout`'s row array.
+struct ReadChildLayout: @unchecked Sendable {
+    let body: DiffLayout?
 
-    func drawBackplate(in ctx: CGContext, origin: CGPoint) {}
+    var totalHeight: CGFloat { body?.totalHeight ?? 0 }
 
-    func draw(in ctx: CGContext, origin: CGPoint) {}
+    func drawBackplate(in ctx: CGContext, origin: CGPoint) {
+        body?.drawBackplate(in: ctx, origin: origin)
+    }
+
+    func draw(in ctx: CGContext, origin: CGPoint) {
+        body?.draw(in: ctx, origin: origin)
+    }
 
     nonisolated static func make(
         child: ReadChild,
+        lineMap: [String: [SyntaxToken]]?,
         originX: CGFloat,
         originY: CGFloat,
         maxWidth: CGFloat
     ) -> ReadChildLayout {
-        ReadChildLayout()
+        guard let content = child.content, !content.isEmpty else {
+            return ReadChildLayout(body: nil)
+        }
+        // `oldString: nil` puts `DiffLayout` in new-file mode — every
+        // line is demoted to `.context`, the sign column is dropped,
+        // and the gutter is the only chrome left around the source
+        // text. The block reads as "a viewable copy of the file"
+        // rather than "a diff that's all additions".
+        let diff = DiffBlock(
+            filePath: child.filePath,
+            oldString: nil,
+            newString: content)
+        return ReadChildLayout(
+            body: DiffLayout.make(
+                diff: diff,
+                lineMap: lineMap,
+                originX: originX,
+                originY: originY,
+                maxWidth: maxWidth))
     }
 }

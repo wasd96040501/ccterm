@@ -39,8 +39,12 @@ import SwiftUI
 ///
 /// `diff.isNewFile == true` (the prior file didn't exist) demotes
 /// every `.add` line to `.context` at the draw stage — same gutter
-/// content, no green `+`, no insertion background. The body reads as a
-/// viewable copy of the new file rather than a sea of green.
+/// content, no green `+`, no insertion background — and drops the
+/// sign column from the prefix sizing so the content column reclaims
+/// the 3-glyph width that would otherwise sit empty. The body reads
+/// as a viewable copy of the new file rather than a sea of green.
+/// `ReadChildLayout` reuses this mode to surface the file body the
+/// CLI returns from a `Read` tool call.
 ///
 /// ### Selection
 ///
@@ -141,6 +145,11 @@ struct DiffLayout: @unchecked Sendable {
         }
 
         let suppressAdd = diff.isNewFile
+        // New-file mode never emits a `+`/`-` glyph (every line is
+        // demoted to `.context`), so reserving the 3-char sign column
+        // would print a permanently-blank gutter strip. Drop it; the
+        // content column reclaims the width and wraps tighter.
+        let suppressSign = diff.isNewFile
         let hunks = DiffEngine.computeHunks(
             old: diff.effectiveOldString, new: diff.newString)
         guard !hunks.isEmpty else {
@@ -152,15 +161,16 @@ struct DiffLayout: @unchecked Sendable {
 
         // Gutter + sign prefix sizing. Both columns are constant-width
         // within a body — gutter padded to the widest line number, sign
-        // is always " ± ". `prefixWidth` is what we subtract from
-        // `maxWidth` to size the content column, so wrap continuation
-        // lines align with the content column.
+        // is always " ± " (or zero in new-file mode). `prefixWidth` is
+        // what we subtract from `maxWidth` to size the content column,
+        // so wrap continuation lines align with the content column.
         let maxLineNo = hunks.flatMap(\.lines).compactMap(\.lineNo).max() ?? 0
         let digits = max(2, String(maxLineNo).count)
         let gutterText = String(repeating: " ", count: digits + 2)  // " NNN "
         let gutterWidth = textWidth(gutterText, attrs: [.font: font])
-        // Sign column is always 3 mono-glyphs (" + " / " - " / "   ").
-        let signWidth = textWidth("   ", attrs: [.font: font])
+        // Sign column is always 3 mono-glyphs (" + " / " - " / "   "),
+        // dropped to 0 when there's no diff chrome to show.
+        let signWidth = suppressSign ? 0 : textWidth("   ", attrs: [.font: font])
         let prefixWidth = gutterWidth + signWidth
 
         // Content column width — the wrap budget for each row's
@@ -212,12 +222,13 @@ struct DiffLayout: @unchecked Sendable {
                 let effectiveType: DiffEngine.Line.LineType =
                     (suppressAdd && line.type == .add) ? .context : line.type
 
-                // Prefix glyphs: gutter " NNN " + sign " ± ". Built as
-                // one CTLine so the per-row draw cost stays at one
-                // glyph pass instead of two.
+                // Prefix glyphs: gutter " NNN " + sign " ± " (or just
+                // " NNN " in new-file mode). Built as one CTLine so the
+                // per-row draw cost stays at one glyph pass instead of two.
                 let prefixAttr = buildPrefixAttributed(
                     line: line, effectiveType: effectiveType,
-                    digits: digits, font: font)
+                    digits: digits, font: font,
+                    suppressSign: suppressSign)
                 let prefixLine = CTLineCreateWithAttributedString(prefixAttr)
 
                 // Content TextLayout — wraps when the source line is
@@ -352,7 +363,8 @@ struct DiffLayout: @unchecked Sendable {
         line: DiffEngine.Line,
         effectiveType: DiffEngine.Line.LineType,
         digits: Int,
-        font: NSFont
+        font: NSFont,
+        suppressSign: Bool
     ) -> NSAttributedString {
         let lineNoStr = line.lineNo.map(String.init) ?? ""
         let padded =
@@ -367,6 +379,10 @@ struct DiffLayout: @unchecked Sendable {
                     .font: font,
                     .foregroundColor: BlockStyle.diffGutterForeground,
                 ]))
+
+        // New-file mode has no diff chrome to show — skip the sign
+        // glyph entirely so the caller's `signWidth = 0` matches.
+        guard !suppressSign else { return result }
 
         let sign: String
         let signColor: NSColor

@@ -228,15 +228,16 @@ struct ToolGroupBlock: Equatable, Sendable {
 
         /// `true` when this child has an expandable body. Drives
         /// `ToolGroupLayout`'s decision to draw a chevron + register
-        /// a fold hit on the header. Header-only kinds (`read`,
-        /// `generic`) return `false` so the header reads as a static
-        /// label rather than offering a no-op chevron.
+        /// a fold hit on the header. `read` only exposes a body once
+        /// the tool_result has landed (and carried text content);
+        /// `generic` is always header-only.
         var hasExpandableBody: Bool {
             switch self {
             case .fileEdit, .bash, .grep, .glob, .webFetch, .webSearch,
                 .askUserQuestion, .agent:
                 return true
-            case .read, .generic: return false
+            case .read(let c): return c.content != nil
+            case .generic: return false
             }
         }
     }

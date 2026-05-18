@@ -915,7 +915,17 @@ extension TranscriptDemoView {
                                     id: UUID(),
                                     label: String(localized: "Read \("Sources/main.swift")"),
                                     activeLabel: String(localized: "Reading \("Sources/main.swift")"),
-                                    filePath: "Sources/main.swift")),
+                                    filePath: "Sources/main.swift",
+                                    content: """
+                                        import Foundation
+
+                                        @main
+                                        struct App {
+                                            static func main() {
+                                                print("hello, world")
+                                            }
+                                        }
+                                        """)),
                             .bash(
                                 BashChild(
                                     id: UUID(),
@@ -1052,7 +1062,16 @@ extension TranscriptDemoView {
                                     id: TranscriptDemoView.runningReadChildId,
                                     label: String(localized: "Read \("package.json")"),
                                     activeLabel: String(localized: "Reading \("package.json")"),
-                                    filePath: "package.json")),
+                                    filePath: "package.json",
+                                    content: """
+                                        {
+                                          "name": "demo",
+                                          "version": "1.0.0",
+                                          "scripts": {
+                                            "test": "jest"
+                                          }
+                                        }
+                                        """)),
                             .grep(
                                 GrepChild(
                                     id: TranscriptDemoView.runningGrepChildId,

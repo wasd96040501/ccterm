@@ -260,58 +260,48 @@ extension SessionHandle2 {
             self.worktreeBranch = proposedName
             persistConfiguration()
 
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                let outcome: Result<Worktree, Error>
-                do {
-                    guard let origin else {
-                        throw Worktree.Error.notGitRepository(path: "(nil originPath)")
-                    }
-                    outcome = .success(
-                        try Worktree.create(
-                            from: origin,
-                            sourceBranch: source,
-                            preferredName: proposedName
-                        ))
-                } catch {
-                    outcome = .failure(error)
-                }
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    switch outcome {
-                    case .success(let wt):
-                        // Patch only if the collision-retry loop ended up
-                        // with a different name than we proposed — rare.
-                        if wt.name != proposedName {
-                            appLog(
-                                .info, "SessionHandle2",
-                                "worktree name collision recovered: proposed=\(proposedName) actual=\(wt.name)")
-                            self.cwd = wt.path
-                            self.worktreeBranch = wt.name
-                            self.repository.updateCwd(self.sessionId, cwd: wt.path)
-                            self.repository.updateWorktreeBranch(self.sessionId, branch: wt.name)
-                            self.onRecordPersisted?()
-                        }
-                        // The CLI conversation has never been created for
-                        // this session — `makeAgentConfig` will read the
-                        // `.pending` record and pick fresh mode. Do NOT
-                        // try to be clever about "skip resave" here: the
-                        // resume/fresh decision is owned by
-                        // `shouldResumeBootstrap`, not by a flag flowing in.
-                        self.continueStartup()
-                    case .failure(let error):
+            Task { @MainActor [weak self] in
+                let outcome = await WorktreeProvisioner.provision(
+                    origin: origin,
+                    sourceBranch: source,
+                    preferredName: proposedName
+                )
+                guard let self else { return }
+                switch outcome {
+                case .success(let wt):
+                    // Patch only if the collision-retry loop ended up
+                    // with a different name than we proposed — rare.
+                    if wt.name != proposedName {
                         appLog(
-                            .error, "SessionHandle2",
-                            "worktree provision FAILED \(self.sessionId) err=\(error)")
-                        let desc =
-                            (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-                        self.termination = desc
-                        self.status = .stopped
-                        // Persist the failure on the eagerly-saved row so
-                        // the user sees the error rather than a row that
-                        // silently never starts.
-                        self.repository.updateError(self.sessionId, error: desc)
-                        self.failQueuedEntries(reason: "worktree provision failed")
+                            .info, "SessionHandle2",
+                            "worktree name collision recovered: proposed=\(proposedName) actual=\(wt.name)"
+                        )
+                        self.cwd = wt.path
+                        self.worktreeBranch = wt.name
+                        self.repository.updateCwd(self.sessionId, cwd: wt.path)
+                        self.repository.updateWorktreeBranch(self.sessionId, branch: wt.name)
+                        self.onRecordPersisted?()
                     }
+                    // The CLI conversation has never been created for
+                    // this session — `makeAgentConfig` will read the
+                    // `.pending` record and pick fresh mode. Do NOT
+                    // try to be clever about "skip resave" here: the
+                    // resume/fresh decision is owned by
+                    // `shouldResumeBootstrap`, not by a flag flowing in.
+                    self.continueStartup()
+                case .failure(let error):
+                    appLog(
+                        .error, "SessionHandle2",
+                        "worktree provision FAILED \(self.sessionId) err=\(error)")
+                    let desc =
+                        (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                    self.termination = desc
+                    self.status = .stopped
+                    // Persist the failure on the eagerly-saved row so
+                    // the user sees the error rather than a row that
+                    // silently never starts.
+                    self.repository.updateError(self.sessionId, error: desc)
+                    self.failQueuedEntries(reason: "worktree provision failed")
                 }
             }
             return

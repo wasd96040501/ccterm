@@ -1302,6 +1302,16 @@
         }
       }
     },
+    "Glob": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查找文件"
+          }
+        }
+      }
+    },
     "Globbed \"%@\"": {
       "localizations": {
         "zh-Hans": {
@@ -1420,6 +1430,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "跳转到会话"
+          }
+        }
+      }
+    },
+    "Grep": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索内容"
           }
         }
       }
@@ -2065,6 +2085,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "运行了智能体 %@"
+          }
+        }
+      }
+    },
+    "Read": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取文件"
           }
         }
       }
@@ -3322,12 +3352,32 @@
         }
       }
     },
+    "mode: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模式: %@"
+          }
+        }
+      }
+    },
     "now": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "刚刚"
+          }
+        }
+      }
+    },
+    "path: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "路径: %@"
           }
         }
       }

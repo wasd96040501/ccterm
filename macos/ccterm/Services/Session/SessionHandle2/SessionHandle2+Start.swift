@@ -321,8 +321,6 @@ extension SessionHandle2 {
     fileprivate func continueStartup() {
         persistConfiguration()
 
-        if skipBootstrapForTesting { return }
-
         // UserDefaults read kept at the call site, not inside
         // `makeAgentConfig`. The tests in `SessionHandle2BootstrapModeTests`
         // exercise `makeAgentConfig` directly; under hosted XCTest on CI
@@ -415,16 +413,7 @@ extension SessionHandle2 {
 
     fileprivate func persistConfiguration() {
         if !hasRecord {
-            let record = SessionRecord(
-                sessionId: sessionId,
-                title: title,
-                cwd: cwd,
-                isWorktree: isWorktree,
-                originPath: originPath,
-                status: .pending,
-                extra: currentExtra(),
-                worktreeBranch: worktreeBranch
-            )
+            let record = config.toSessionRecord(sessionId: sessionId, title: title)
             repository.save(record)
             hasRecord = true
             appLog(
@@ -453,16 +442,6 @@ extension SessionHandle2 {
         }
     }
 
-    fileprivate func currentExtra() -> SessionExtra {
-        SessionExtra(
-            pluginDirs: pluginDirectories.isEmpty ? nil : pluginDirectories,
-            permissionMode: permissionMode.rawValue,
-            addDirs: additionalDirectories.isEmpty ? nil : additionalDirectories,
-            model: model,
-            effort: effort?.rawValue
-        )
-    }
-
     /// Build the SDK config for the next CLI launch. Consults the durable
     /// record state via `shouldResumeBootstrap` so resume vs fresh mode is
     /// derived from one source of truth — no `fresh: Bool` parameter
@@ -474,28 +453,13 @@ extension SessionHandle2 {
     /// `UserDefaults.standard["customCLICommand"]` in `continueStartup`;
     /// tests pass `nil` and assert on the produced config without tripping
     /// hosted-XCTest UserDefaults faults on CI.
-    ///
-    /// `internal` rather than `fileprivate` so
-    /// `SessionHandle2BootstrapModeTests` can assert directly on the
-    /// produced `SessionConfiguration` without standing up AgentSDK or a
-    /// real CLI subprocess.
     func makeAgentConfig(customCommand: String?) -> SessionConfiguration {
         let useResume = Self.shouldResumeBootstrap(for: repository.find(sessionId))
-        let wd = URL(fileURLWithPath: cwd ?? originPath ?? FileManager.default.currentDirectoryPath)
-        var config = SessionConfiguration(
-            workingDirectory: wd,
-            model: model,
-            permissionMode: permissionMode.toSDK(),
-            sessionId: useResume ? nil : sessionId,
-            resume: useResume ? sessionId : nil,
-            effort: effort,
-            addDirs: additionalDirectories,
-            plugins: pluginDirectories,
-            customCommand: customCommand,
-            allowDangerouslySkipPermissions: true
+        return config.toAgentSDKConfig(
+            sessionId: sessionId,
+            resume: useResume,
+            customCommand: customCommand
         )
-
-        return config
     }
 
     /// Whether the next CLI launch should resume an existing conversation

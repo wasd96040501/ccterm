@@ -24,6 +24,12 @@ final class SessionManager2 {
     typealias WorktreeSideEffect = @Sendable (SessionRecord) -> Void
 
     @ObservationIgnored private let repository: any SessionRepository
+    /// CLI client factory injected at the manager level (moved up from
+    /// `SessionHandle2`). Production wires `AgentSDKCLIClient.defaultFactory`;
+    /// tests wire a `FakeCLIClient` factory once on the manager and every
+    /// handle constructed by it inherits the injection — no per-handle
+    /// rewiring in test setups.
+    @ObservationIgnored private let cliClientFactory: CLIClientFactory
     @ObservationIgnored private let worktreeArchive: WorktreeSideEffect
     @ObservationIgnored private let worktreeRestore: WorktreeSideEffect
     /// Cache of per-`sessionId` handles. **Observation-tracked** so views
@@ -62,10 +68,12 @@ final class SessionManager2 {
 
     init(
         repository: any SessionRepository = CoreDataSessionRepository(),
+        cliClientFactory: @escaping CLIClientFactory = AgentSDKCLIClient.defaultFactory,
         worktreeArchive: @escaping WorktreeSideEffect = SessionManager2.defaultWorktreeArchive,
         worktreeRestore: @escaping WorktreeSideEffect = SessionManager2.defaultWorktreeRestore
     ) {
         self.repository = repository
+        self.cliClientFactory = cliClientFactory
         self.worktreeArchive = worktreeArchive
         self.worktreeRestore = worktreeRestore
         self.records = repository.findAll()
@@ -96,7 +104,10 @@ final class SessionManager2 {
     func session(_ sessionId: String) -> SessionHandle2? {
         if let handle = handles[sessionId] { return handle }
         guard repository.find(sessionId) != nil else { return nil }
-        let handle = SessionHandle2(sessionId: sessionId, repository: repository)
+        let handle = SessionHandle2(
+            sessionId: sessionId,
+            repository: repository,
+            cliClientFactory: cliClientFactory)
         wireHandleCallbacks(handle)
         handles[sessionId] = handle
         return handle
@@ -117,7 +128,10 @@ final class SessionManager2 {
     /// `ensureStarted`'s fresh path which writes the db.
     func prepareDraft(_ sessionId: String) -> SessionHandle2 {
         if let handle = handles[sessionId] { return handle }
-        let handle = SessionHandle2(sessionId: sessionId, repository: repository)
+        let handle = SessionHandle2(
+            sessionId: sessionId,
+            repository: repository,
+            cliClientFactory: cliClientFactory)
         wireHandleCallbacks(handle)
         handles[sessionId] = handle
         return handle

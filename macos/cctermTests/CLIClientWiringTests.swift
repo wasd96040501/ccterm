@@ -29,13 +29,17 @@ final class CLIClientWiringTests: XCTestCase {
     /// Pair a handle with a fake CLIClient. Captures the fake so a test
     /// can drive it (push messages, complete initialize, ...) and
     /// assert on recorded calls.
+    ///
+    /// Factory injection now lives on `SessionManager2`. Each test stands
+    /// up its own manager with the fake wired in, so handles produced by
+    /// the manager inherit the test client.
     private func makeHandle(sessionId: String = UUID().uuidString) -> (SessionHandle2, FakeCLIClient) {
         let fake = FakeCLIClient()
-        let handle = SessionHandle2(
-            sessionId: sessionId,
+        let manager = SessionManager2(
             repository: InMemorySessionRepository(),
             cliClientFactory: { _ in fake }
         )
+        let handle = manager.prepareDraft(sessionId)
         handle.setCwd("/tmp/cli-client-tests")
         return (handle, fake)
     }

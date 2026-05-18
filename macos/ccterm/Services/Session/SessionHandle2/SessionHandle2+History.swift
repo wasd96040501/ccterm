@@ -237,7 +237,6 @@ extension SessionHandle2 {
         // extracting the resulting entries.
         let repo = CoreDataSessionRepository(coreDataStack: CoreDataStack(inMemory: true))
         let tmp = SessionHandle2(sessionId: "prefix-builder-\(UUID().uuidString)", repository: repo)
-        tmp.skipBootstrapForTesting = true
         for m in messages { tmp.receive(m, mode: .replay) }
         return tmp.messages
     }

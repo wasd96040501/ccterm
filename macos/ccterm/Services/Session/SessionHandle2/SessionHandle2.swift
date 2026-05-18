@@ -60,47 +60,65 @@ class SessionHandle2 {
     // MARK: - Metadata
 
     internal(set) var title: String = ""
-    internal(set) var originPath: String?
-    /// Branch name of the **actual provisioned worktree** (e.g. the random
-    /// `<adj>-<sci>-<hex6>` `Worktree.create` produced). Set in
-    /// `ensureStarted` when the eager-persist pre-computes the proposed
-    /// name; on the rare collision retry it's patched to the final name
-    /// once `Worktree.create` returns. Persisted; restored on resume. nil
-    /// for non-worktree sessions.
-    ///
-    /// Distinct from `sourceBranch` (the *parent* branch the worktree was
-    /// branched off — runtime-only, used once and discarded).
-    internal(set) var worktreeBranch: String?
-
-    /// Branch the worktree should be branched off (passed as
-    /// `Worktree.create`'s `sourceBranch` argument). nil = use baseRepo's
-    /// current branch / HEAD. Compose-only runtime state: set by the
-    /// NewSession configurator before send, consumed once by
-    /// `ensureStarted`, never persisted. Resume sessions don't have a
-    /// source branch because they're attaching to an already-provisioned
-    /// worktree.
-    internal(set) var sourceBranch: String?
     /// True while title generation is running asynchronously. UI uses this
     /// for shimmer/loading. Triggered by `generateTitle(from:)`, reset when
     /// `Prompt.runTitleAndBranch` finishes.
     internal(set) var isGeneratingTitle: Bool = false
 
     // MARK: - Configuration
+    //
+    // All user-facing configuration (cwd / worktree / dirs / model /
+    // effort / permission mode / additional+plugin dirs / fast mode)
+    // lives on `config`. The accessors below preserve the historical
+    // `handle.cwd` / `handle.model` etc. read surface while routing
+    // every read/write through the single value-type field — which is
+    // what Phase 1's `SessionRuntime` will inherit verbatim.
+    internal(set) var config: SessionConfig = SessionConfig()
 
-    internal(set) var cwd: String?
-    internal(set) var isWorktree: Bool = false
-    internal(set) var model: String?
-    internal(set) var effort: Effort?
-    internal(set) var permissionMode: PermissionMode = .default
-    /// Per-session "fast mode" opt-in. Applied at runtime via
-    /// `applyFlagSettings.fastMode`. Authoritative off-by-default. The
-    /// UI toggle is unconditionally enabled: CLI `init.models[]` no
-    /// longer carries a `supportsFastMode` capability, and the CLI
-    /// itself rejects fast-mode on incompatible models — there is no
-    /// client-side gate to apply.
-    internal(set) var fastModeEnabled: Bool = false
-    internal(set) var additionalDirectories: [String] = []
-    internal(set) var pluginDirectories: [String] = []
+    var cwd: String? {
+        get { config.cwd }
+        set { config.cwd = newValue }
+    }
+    var isWorktree: Bool {
+        get { config.isWorktree }
+        set { config.isWorktree = newValue }
+    }
+    var originPath: String? {
+        get { config.originPath }
+        set { config.originPath = newValue }
+    }
+    var sourceBranch: String? {
+        get { config.sourceBranch }
+        set { config.sourceBranch = newValue }
+    }
+    var worktreeBranch: String? {
+        get { config.worktreeBranch }
+        set { config.worktreeBranch = newValue }
+    }
+    var model: String? {
+        get { config.model }
+        set { config.model = newValue }
+    }
+    var effort: Effort? {
+        get { config.effort }
+        set { config.effort = newValue }
+    }
+    var permissionMode: PermissionMode {
+        get { config.permissionMode }
+        set { config.permissionMode = newValue }
+    }
+    var fastModeEnabled: Bool {
+        get { config.fastModeEnabled }
+        set { config.fastModeEnabled = newValue }
+    }
+    var additionalDirectories: [String] {
+        get { config.additionalDirectories }
+        set { config.additionalDirectories = newValue }
+    }
+    var pluginDirectories: [String] {
+        get { config.pluginDirectories }
+        set { config.pluginDirectories = newValue }
+    }
 
     // MARK: - Runtime
 
@@ -206,12 +224,6 @@ class SessionHandle2 {
     /// exit. Not persisted.
     @ObservationIgnored internal var stderrBuffer: String = ""
 
-    /// Test-only hook: when true, `ensureStarted()` returns immediately
-    /// after the synchronous setup without launching the bootstrap Task or
-    /// touching the CLI. Used for pure DB / state assertions. Must not be
-    /// set by production code.
-    @ObservationIgnored internal var skipBootstrapForTesting: Bool = false
-
     // MARK: - Init
 
     /// Create the handle. **No separate fresh / resume init** —
@@ -276,20 +288,8 @@ class SessionHandle2 {
     /// touches fields; does not touch status / messages.
     private func apply(_ record: SessionRecord) {
         title = record.title
-        cwd = record.cwd
-        isWorktree = record.isWorktree
-        originPath = record.originPath
-        worktreeBranch = record.worktreeBranch
         termination = record.error
-        model = record.extra.model
-        effort = record.extra.effort.flatMap(Effort.init(rawValue:))
-        if let raw = record.extra.permissionMode,
-            let mapped = PermissionMode(rawValue: raw)
-        {
-            permissionMode = mapped
-        }
-        additionalDirectories = record.extra.addDirs ?? []
-        pluginDirectories = record.extra.pluginDirs ?? []
+        config = SessionConfig(from: record)
     }
 
     // MARK: - Lifecycle commands

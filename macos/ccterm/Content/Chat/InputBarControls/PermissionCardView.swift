@@ -27,6 +27,12 @@ struct PermissionCardView: View {
     let onAllowOnce: () -> Void
     let onAllowAlways: () -> Void
     let onDeny: () -> Void
+    /// Receives an `updatedInput` payload for kinds that gather answers
+    /// inside the body (today: `askUserQuestion`). The body composes the
+    /// dict (`questions` + `answers` per the AskUserQuestion contract)
+    /// and the host turns it into `request.allowOnce(updatedInput:)`.
+    /// Default is a no-op so existing call sites compile unchanged.
+    var onAllowWithInput: ([String: Any]?) -> Void = { _ in }
 
     /// Matches `InputBarView2.cornerRadius` so the card visually
     /// belongs to the same surface family as the pill.
@@ -34,11 +40,18 @@ struct PermissionCardView: View {
 
     private var kind: PermissionCardKind { PermissionCardKind.kind(for: request) }
 
+    /// `askUserQuestion` owns its full chrome (header / questions /
+    /// option rows / submit / cancel) — the generic header + reason +
+    /// button row are not rendered for it.
+    private var bodyOwnsChrome: Bool { kind == .askUserQuestion }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            header
+            if !bodyOwnsChrome { header }
             body(for: kind)
-            if let reason = request.decisionReason?.reason, !reason.isEmpty {
+            if !bodyOwnsChrome,
+                let reason = request.decisionReason?.reason, !reason.isEmpty
+            {
                 Label {
                     Text(reason)
                         .font(.system(size: 11))
@@ -49,7 +62,7 @@ struct PermissionCardView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            buttonRow
+            if !bodyOwnsChrome { buttonRow }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -96,7 +109,10 @@ struct PermissionCardView: View {
         case .exitPlanMode:
             PermissionExitPlanModeCardBody(request: request)
         case .askUserQuestion:
-            PermissionAskUserQuestionCardBody(request: request)
+            PermissionAskUserQuestionCardBody(
+                request: request,
+                onSubmit: onAllowWithInput,
+                onCancel: onDeny)
         default:
             PermissionFallbackCardBody(request: request)
         }

@@ -526,7 +526,12 @@ private struct InputBarChrome: View {
                     onAllowAlways: {
                         session.respond(to: pending.id, decision: pending.request.allowAlways())
                     },
-                    onDeny: { session.respond(to: pending.id, decision: pending.request.deny()) }
+                    onDeny: { session.respond(to: pending.id, decision: pending.request.deny()) },
+                    onAllowWithInput: { updated in
+                        session.respond(
+                            to: pending.id,
+                            decision: pending.request.allowOnce(updatedInput: updated))
+                    }
                 )
                 .transition(
                     .scale(scale: 0.96, anchor: .bottom)

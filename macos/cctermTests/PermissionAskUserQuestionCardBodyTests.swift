@@ -3,78 +3,69 @@ import XCTest
 
 @testable import ccterm
 
-/// Logic tests for the v1 AskUserQuestion body. The full upstream
-/// UI (multi-step, syntax-highlighted options, image paste) doesn't
-/// fit the input-bar overlay surface — v1 is a summary card only.
-/// Pin the summary derivation here: question count → headline,
-/// first question text exposed, more-question hint when N > 1.
+/// Logic tests for the AskUserQuestion permission card. The view
+/// itself is interactive (option vstack + Other input + per-question
+/// progression) — these tests exercise the payload decoder so
+/// malformed CLI inputs don't reach the view as half-formed data.
 final class PermissionAskUserQuestionCardBodyTests: XCTestCase {
 
-    func testSingleQuestionHeadline() {
-        let body = makeBody(input: [
-            "questions": [
-                [
-                    "question": "Which auth method should we use?",
-                    "options": [["label": "OIDC"], ["label": "SAML"]],
-                ]
-            ]
-        ])
-        XCTAssertEqual(body.questionCount, 1)
-        XCTAssertEqual(
-            body.headline,
-            String(localized: "Claude wants to ask you a question"))
-        XCTAssertEqual(body.firstQuestion, "Which auth method should we use?")
+    func testParsesSingleQuestionWithOptions() throws {
+        let raw = [
+            "question": "Which auth method should we use?",
+            "options": [["label": "OIDC"], ["label": "SAML"]],
+        ] as [String: Any]
+        let q = try XCTUnwrap(PermissionAskUserQuestionCardBody.Question(raw: raw))
+        XCTAssertEqual(q.question, "Which auth method should we use?")
+        XCTAssertEqual(q.multiSelect, false)
+        XCTAssertNil(q.header)
+        XCTAssertEqual(q.options.map(\.label), ["OIDC", "SAML"])
     }
 
-    func testMultipleQuestionHeadlineInterpolatesCount() {
-        let body = makeBody(input: [
-            "questions": [
-                ["question": "Which library?"],
-                ["question": "Which strategy?"],
-                ["question": "Which fallback?"],
-            ]
-        ])
-        XCTAssertEqual(body.questionCount, 3)
-        let count = 3
-        XCTAssertEqual(
-            body.headline,
-            String(localized: "Claude wants to ask you \(count) questions"))
-        let remaining = 2
-        XCTAssertEqual(
-            body.remainingHint,
-            String(localized: "\(remaining) more question(s) after this one"))
+    func testParsesHeaderAndMultiSelect() throws {
+        let raw = [
+            "question": "Which features should we enable?",
+            "header": "Features",
+            "multiSelect": true,
+            "options": [
+                ["label": "Diff view", "description": "Side-by-side patches"],
+                ["label": "Inline highlight"],
+            ],
+        ] as [String: Any]
+        let q = try XCTUnwrap(PermissionAskUserQuestionCardBody.Question(raw: raw))
+        XCTAssertEqual(q.header, "Features")
+        XCTAssertTrue(q.multiSelect)
+        XCTAssertEqual(q.options.count, 2)
+        XCTAssertEqual(q.options[0].description, "Side-by-side patches")
+        XCTAssertNil(q.options[1].description)
     }
 
-    func testNoQuestionsFallsBackToSingularHeadline() {
-        // Pathological — the agent shouldn't ship zero questions per
-        // the upstream schema (min: 1), but never let the surface
-        // crash on a bad payload.
-        let body = makeBody(input: [:])
-        XCTAssertEqual(body.questionCount, 0)
-        XCTAssertNil(body.firstQuestion)
-        XCTAssertEqual(
-            body.headline,
-            String(localized: "Claude wants to ask you a question"))
+    func testEmptyQuestionTextIsRejected() {
+        // Pin defensive nil-collapse — empty question text would
+        // render an empty header band; surface it as a parse failure
+        // so the view can fall through to its empty-state branch.
+        XCTAssertNil(PermissionAskUserQuestionCardBody.Question(raw: ["question": ""]))
+        XCTAssertNil(PermissionAskUserQuestionCardBody.Question(raw: [:]))
     }
 
-    func testEmptyQuestionTextIsTreatedAsNil() {
-        // Pin defensive nil-collapse — the view branches off this
-        // value, an empty string would render an empty preview row.
-        let body = makeBody(input: ["questions": [["question": ""]]])
-        XCTAssertNil(body.firstQuestion)
+    func testOptionsWithoutLabelAreSkipped() throws {
+        let raw = [
+            "question": "Pick one",
+            "options": [
+                ["label": "A"],
+                ["description": "no label"],
+                ["label": ""],
+                ["label": "B"],
+            ],
+        ] as [String: Any]
+        let q = try XCTUnwrap(PermissionAskUserQuestionCardBody.Question(raw: raw))
+        XCTAssertEqual(q.options.map(\.label), ["A", "B"])
     }
 
-    // MARK: - Helpers
-
-    private func makeBody(
-        input: [String: Any]
-    )
-        -> PermissionAskUserQuestionCardBody
-    {
-        let req = PermissionRequest.makePreview(
-            requestId: "ask-\(UUID().uuidString)",
-            toolName: "AskUserQuestion",
-            input: input)
-        return PermissionAskUserQuestionCardBody(request: req)
+    func testMissingOptionsArrayParsesAsEmpty() throws {
+        let q = try XCTUnwrap(
+            PermissionAskUserQuestionCardBody.Question(raw: ["question": "Free form?"]))
+        XCTAssertTrue(q.options.isEmpty)
+        // Even an empty-options question is parseable — the view will
+        // surface only the Other input row in that branch.
     }
 }

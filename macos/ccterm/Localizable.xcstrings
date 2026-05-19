@@ -1827,6 +1827,16 @@
         }
       }
     },
+    "Next question": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下一题"
+          }
+        }
+      }
+    },
     "No Matching Branches": {
       "extractionState": "stale",
       "localizations": {
@@ -1968,16 +1978,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "其他"
-          }
-        }
-      }
-    },
-    "Other (type your own answer…)": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "其他(输入自定义答案…)"
           }
         }
       }
@@ -3199,6 +3199,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "输入内容"
+          }
+        }
+      }
+    },
+    "Type your own answer…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入自定义答案…"
           }
         }
       }

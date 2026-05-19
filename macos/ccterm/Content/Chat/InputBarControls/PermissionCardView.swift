@@ -246,7 +246,10 @@ private struct PermissionCardSurface: ViewModifier {
 /// Compact decision button — 24pt tall, 8pt radius, three visual
 /// weights (primary / secondary / destructive). Hover lifts the fill
 /// by 8% so the affordance reads on top of the card surface.
-private struct PermissionDecisionButton: View {
+/// Shared across permission card body renderers (e.g.
+/// `PermissionAskUserQuestionCardBody` uses it for its Deny / Confirm
+/// row) so every kind's decision row reads as the same family.
+struct PermissionDecisionButton: View {
     enum Role {
         case primary, secondary, destructive
     }
@@ -412,10 +415,41 @@ private struct PermissionDecisionButton: View {
                 "questions": [
                     [
                         "question":
-                            "Should we keep backwards-compatibility shims for the old API?"
+                            "Should we keep backwards-compatibility shims for the old API?",
+                        "header": "Compat",
+                        "multiSelect": false,
+                        "options": [
+                            [
+                                "label": "Yes, keep them",
+                                "description": "Existing clients still depend on them",
+                            ],
+                            [
+                                "label": "No, remove them",
+                                "description": "Cleaner break, faster releases",
+                            ],
+                            [
+                                "label": "Defer to next milestone",
+                                "description": "Re-evaluate after the migration",
+                            ],
+                        ],
                     ],
-                    ["question": "Which timezone should the report default to?"],
-                    ["question": "Do we ship a migration script in this PR?"],
+                    [
+                        "question": "Which timezone should the report default to?",
+                        "header": "Timezone",
+                        "options": [
+                            ["label": "UTC"],
+                            ["label": "America/Los_Angeles"],
+                            ["label": "Asia/Shanghai"],
+                        ],
+                    ],
+                    [
+                        "question": "Do we ship a migration script in this PR?",
+                        "header": "Migration",
+                        "options": [
+                            ["label": "Yes — include it"],
+                            ["label": "No — handle ad hoc"],
+                        ],
+                    ],
                 ]
             ]),
         onAllowOnce: {},
@@ -423,7 +457,7 @@ private struct PermissionDecisionButton: View {
         onDeny: {}
     )
     .padding(16)
-    .frame(width: 560)
+    .frame(width: 600, height: 620)
     .background(Color(nsColor: .windowBackgroundColor))
 }
 

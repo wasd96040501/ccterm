@@ -10,10 +10,11 @@ import XCTest
 final class PermissionAskUserQuestionCardBodyTests: XCTestCase {
 
     func testParsesSingleQuestionWithOptions() throws {
-        let raw = [
-            "question": "Which auth method should we use?",
-            "options": [["label": "OIDC"], ["label": "SAML"]],
-        ] as [String: Any]
+        let raw =
+            [
+                "question": "Which auth method should we use?",
+                "options": [["label": "OIDC"], ["label": "SAML"]],
+            ] as [String: Any]
         let q = try XCTUnwrap(PermissionAskUserQuestionCardBody.Question(raw: raw))
         XCTAssertEqual(q.question, "Which auth method should we use?")
         XCTAssertEqual(q.multiSelect, false)
@@ -22,15 +23,16 @@ final class PermissionAskUserQuestionCardBodyTests: XCTestCase {
     }
 
     func testParsesHeaderAndMultiSelect() throws {
-        let raw = [
-            "question": "Which features should we enable?",
-            "header": "Features",
-            "multiSelect": true,
-            "options": [
-                ["label": "Diff view", "description": "Side-by-side patches"],
-                ["label": "Inline highlight"],
-            ],
-        ] as [String: Any]
+        let raw =
+            [
+                "question": "Which features should we enable?",
+                "header": "Features",
+                "multiSelect": true,
+                "options": [
+                    ["label": "Diff view", "description": "Side-by-side patches"],
+                    ["label": "Inline highlight"],
+                ],
+            ] as [String: Any]
         let q = try XCTUnwrap(PermissionAskUserQuestionCardBody.Question(raw: raw))
         XCTAssertEqual(q.header, "Features")
         XCTAssertTrue(q.multiSelect)
@@ -48,15 +50,16 @@ final class PermissionAskUserQuestionCardBodyTests: XCTestCase {
     }
 
     func testOptionsWithoutLabelAreSkipped() throws {
-        let raw = [
-            "question": "Pick one",
-            "options": [
-                ["label": "A"],
-                ["description": "no label"],
-                ["label": ""],
-                ["label": "B"],
-            ],
-        ] as [String: Any]
+        let raw =
+            [
+                "question": "Pick one",
+                "options": [
+                    ["label": "A"],
+                    ["description": "no label"],
+                    ["label": ""],
+                    ["label": "B"],
+                ],
+            ] as [String: Any]
         let q = try XCTUnwrap(PermissionAskUserQuestionCardBody.Question(raw: raw))
         XCTAssertEqual(q.options.map(\.label), ["A", "B"])
     }

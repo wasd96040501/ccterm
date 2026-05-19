@@ -211,11 +211,24 @@ struct RootView2: View {
 
     @ViewBuilder
     private var detailContent: some View {
+        #if DEBUG
         if selectedSessionId == SidebarView2.transcriptDemoTag {
             TranscriptDemoView()
         } else if selectedSessionId == SidebarView2.transcriptStressTag {
             TranscriptStressView()
-        } else if selectedSessionId == SidebarView2.archiveTag {
+        } else if selectedSessionId == SidebarView2.permissionCardsDemoTag {
+            PermissionCardsDemoView()
+        } else {
+            detailContentReleaseBranches
+        }
+        #else
+        detailContentReleaseBranches
+        #endif
+    }
+
+    @ViewBuilder
+    private var detailContentReleaseBranches: some View {
+        if selectedSessionId == SidebarView2.archiveTag {
             // Unarchive bounces the selection to the restored session so
             // the user lands on the chat history they brought back. The
             // record state has already flipped to `.created` inside

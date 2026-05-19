@@ -1,30 +1,35 @@
 import AgentSDK
 import SwiftUI
 
-/// Interactive AskUserQuestion picker shown in the floating
-/// permission card. Owns the full card chrome (header / question /
-/// option vstack / cancel ✕ / submit) — `PermissionCardView` skips
-/// its generic header + button row for this kind.
+/// Interactive AskUserQuestion picker shown in the floating permission
+/// card. Owns the full card chrome (question header + ✕, option vstack,
+/// Deny / Confirm row) — `PermissionCardView` skips its generic header /
+/// reason / button row for this kind.
 ///
-/// **Interaction model** (ported from ccmaster's `QuestionView`):
+/// **Interaction model**:
 ///
-/// - Options stack vertically as full-width rounded "buttons". Hover
-///   lightens the row, press darkens it; selected rows pick up the
-///   accent fill + a ✓.
+/// - The first row of the card is a single `HStack`: optional back
+///   arrow, optional progress chip ("1/3"), optional header chip
+///   ("Compat"), the question text (multi-line allowed), and the close
+///   ✕ pinned to the trailing edge. There is no separate "top bar"
+///   above the question.
+/// - Options stack vertically as full-width rounded buttons. Hover
+///   lightens the row; selected rows pick up an accent fill + ✓.
 /// - An auto-injected "Other" row sits at the bottom of every
-///   question. Clicking it focuses a free-form `TextField` rendered
-///   at the same row geometry (corner radius + height + insets), so
-///   the input visually reads as another option row that happens to
-///   accept text.
-/// - For single-select questions with no "Other" interest, clicking
-///   an option commits immediately and advances; for single-select +
-///   typed-Other, or any multi-select, a primary-filled "Submit" /
-///   "Next" row collects the choices at the bottom.
-/// - Multi-question lists step one-at-a-time. A left chevron in the
-///   top row jumps back. The right ✕ (or Esc) cancels the whole
-///   request via `pending.request.deny()`.
+///   question. Click it to reveal an inline `TextField` (same row
+///   geometry — 36pt tall, identical corner radius); type then move
+///   focus elsewhere to collapse it back to a labelled button that
+///   still shows the typed text + ✓.
+/// - Single-select and Other are mutually exclusive — picking an
+///   option clears any typed Other text; engaging Other clears the
+///   single selection. Multi-select lets Other coexist with the
+///   option toggles.
+/// - The bottom row carries two buttons reused from
+///   `PermissionDecisionButton`: **Deny** on the left (destructive),
+///   **Confirm** on the right (primary). The top-right ✕ is a second
+///   cancel affordance (Esc also fires it).
 ///
-/// **Payload contract**: on the final question's commit, the body
+/// **Payload contract**: on the final question's Confirm the body
 /// invokes `onSubmit({ "questions": <original>, "answers": [Q: A] })`.
 /// The host turns that into `request.allowOnce(updatedInput:)` so the
 /// CLI's `AskUserQuestionTool` resolves with the answers map.
@@ -32,6 +37,11 @@ struct PermissionAskUserQuestionCardBody: View {
 
     // MARK: - Geometry
 
+    /// Single row height shared by every option row and the Other
+    /// row. Kept fixed (not `minHeight`) for the Other row so its
+    /// button-state and editing-state both render at exactly this
+    /// height — eliminating the layout jump when Other transitions
+    /// between collapsed and expanded forms.
     static let rowHeight: CGFloat = 36
     static let rowCornerRadius: CGFloat = 8
     static let rowHPadding: CGFloat = 12
@@ -51,17 +61,19 @@ struct PermissionAskUserQuestionCardBody: View {
     /// CLI's expectation that the answers map round-trips through the
     /// original `question` string).
     @State private var answers: [String: String] = [:]
-    /// Single-select picks for the in-flight question (built-in
-    /// option index only — "Other" is tracked via `otherActive`).
+    /// Single-select pick for the in-flight question (built-in option
+    /// index only — "Other" is tracked via `otherActive`).
     @State private var singleSelectIndex: Int? = nil
     /// Multi-select toggled indices for the in-flight question.
     @State private var multiSelectIndices: Set<Int> = []
     /// Free-form text typed into the "Other" row.
     @State private var otherText: String = ""
-    /// Whether the user has engaged the Other row (focused it once or
-    /// toggled it on in multi-select). Drives whether `otherText`
-    /// contributes to the eventual answer.
+    /// Whether Other should be treated as part of the answer (the user
+    /// has focused it or typed into it at least once).
     @State private var otherActive: Bool = false
+    /// `true` while the Other row renders its TextField; `false` while
+    /// it renders as a plain option button.
+    @State private var otherEditing: Bool = false
     @FocusState private var otherFocused: Bool
 
     // MARK: - Decoded payload
@@ -84,81 +96,85 @@ struct PermissionAskUserQuestionCardBody: View {
             fallback
         } else {
             VStack(alignment: .leading, spacing: Self.groupSpacing) {
-                topRow
                 if let q = current {
                     questionHeader(q)
                     optionsVStack(q)
-                    if showsSubmitRow(for: q) {
-                        submitRow(for: q)
-                    }
                 }
+                decisionButtons
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(escapeKeyCapture)
         }
     }
 
-    // MARK: - Top row (progress + back + cancel)
+    // MARK: - Question header (first row)
 
-    @ViewBuilder
-    private var topRow: some View {
-        HStack(alignment: .center, spacing: 8) {
-            if currentIndex > 0 {
-                Button(action: goBack) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 18, height: 18)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help(String(localized: "Previous question"))
-            }
-            if questions.count > 1 {
-                Text("\(currentIndex + 1) / \(questions.count)")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background {
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(Color.primary.opacity(0.06))
-                    }
-            }
-            Spacer(minLength: 0)
-            Button(action: onCancel) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 20, height: 20)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .keyboardShortcut(.cancelAction)
-            .help(String(localized: "Cancel question"))
-        }
-    }
-
-    // MARK: - Question header
-
+    /// Two-row header: the chip row (back arrow + progress + header
+    /// chip) on top, then the question text on its own line below.
+    /// The chip row is omitted entirely when none of the three chips
+    /// are present (single question with no header chip), so a card
+    /// with the bare minimum payload doesn't leave a blank band.
+    /// The close ✕ has been retired — the bottom Cancel button is
+    /// the single cancel affordance, mirroring the other kinds.
+    ///
+    /// Animation: the back chevron is wrapped in a real `if` so
+    /// SwiftUI inserts / removes the view; `.transition(...)` on the
+    /// Button plus `withAnimation { … }` in `goBack` / `commitAnswer`
+    /// drive both the chevron's fade-in and the sibling progress
+    /// chip's layout shift. Since Xcode 11.2, `.animation(value:)`
+    /// does **not** trigger `.transition`, so an explicit
+    /// `withAnimation` block is required for the chevron to fade
+    /// rather than pop.
     @ViewBuilder
     private func questionHeader(_ q: Question) -> some View {
+        let hasChipRow =
+            currentIndex > 0 || questions.count > 1 || (q.header?.isEmpty == false)
         VStack(alignment: .leading, spacing: 6) {
-            if let header = q.header, !header.isEmpty {
-                Text(header)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.tint)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background {
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(Color.accentColor.opacity(0.12))
+            if hasChipRow {
+                HStack(alignment: .center, spacing: 8) {
+                    if currentIndex > 0 {
+                        Button(action: goBack) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 18, height: 18)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help(String(localized: "Previous question"))
+                        .transition(
+                            .opacity.combined(with: .move(edge: .leading)))
                     }
+                    if questions.count > 1 {
+                        Text("\(currentIndex + 1) / \(questions.count)")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background {
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .fill(Color.primary.opacity(0.06))
+                            }
+                    }
+                    if let header = q.header, !header.isEmpty {
+                        Text(header)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(.tint)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background {
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .fill(Color.accentColor.opacity(0.12))
+                            }
+                    }
+                    Spacer(minLength: 0)
+                }
             }
             Text(q.question)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.primary)
                 .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -179,140 +195,146 @@ struct PermissionAskUserQuestionCardBody: View {
     private func optionRow(question q: Question, index: Int, option: Option) -> some View {
         let selected = isOptionSelected(question: q, index: index)
         Button {
-            handleOptionTap(question: q, index: index, option: option)
+            handleOptionTap(question: q, index: index)
         } label: {
-            optionRowLabel(option: option, showsCheck: selected)
+            HStack(alignment: .center, spacing: 8) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(option.label)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.primary)
+                    if let desc = option.description, !desc.isEmpty {
+                        Text(desc)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+                Spacer(minLength: 0)
+                if selected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.tint)
+                }
+            }
         }
         .buttonStyle(AskOptionRowStyle(selected: selected))
     }
 
+    // MARK: - Other row
+
+    /// Two visual shapes that always render at `rowHeight` — no
+    /// height jump on focus/blur. Button shape (default) reads as one
+    /// more option row; editing shape exposes a `TextField`.
     @ViewBuilder
-    private func optionRowLabel(option: Option, showsCheck: Bool) -> some View {
-        HStack(alignment: .center, spacing: 8) {
-            VStack(alignment: .leading, spacing: 1) {
-                Text(option.label)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.primary)
-                if let desc = option.description, !desc.isEmpty {
-                    Text(desc)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-            }
-            Spacer(minLength: 0)
-            if showsCheck {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.tint)
-            }
+    private func otherRow(question q: Question) -> some View {
+        if otherEditing {
+            otherEditingRow(question: q)
+        } else {
+            otherButtonRow(question: q)
         }
     }
 
-    // MARK: - "Other" input row
+    @ViewBuilder
+    private func otherButtonRow(question q: Question) -> some View {
+        let showsTyped = !trimmedOther.isEmpty
+        Button {
+            otherEditing = true
+            // FocusState lands on the next runloop once the TextField
+            // is in the hierarchy.
+            DispatchQueue.main.async { otherFocused = true }
+            // Single-select: engaging Other clears the option pick so
+            // the two answer slots are mutually exclusive.
+            if !q.multiSelect { singleSelectIndex = nil }
+        } label: {
+            HStack(alignment: .center, spacing: 8) {
+                Text(
+                    showsTyped
+                        ? otherText
+                        : String(localized: "Other")
+                )
+                .font(.system(size: 13))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                Spacer(minLength: 0)
+                if otherActive {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.tint)
+                }
+            }
+        }
+        .buttonStyle(AskOptionRowStyle(selected: otherActive))
+    }
 
     @ViewBuilder
-    private func otherRow(question q: Question) -> some View {
-        let isSelected = otherActive
+    private func otherEditingRow(question q: Question) -> some View {
         HStack(alignment: .center, spacing: 8) {
             TextField(
-                String(localized: "Other (type your own answer…)"),
+                String(localized: "Type your own answer…"),
                 text: $otherText
             )
             .textFieldStyle(.plain)
             .font(.system(size: 13))
             .foregroundStyle(.primary)
             .focused($otherFocused)
-            .onSubmit { commitOtherIfPossible(question: q) }
             .onChange(of: otherText) { _, newValue in
-                // The first keystroke promotes Other to "active"
-                // — visually it picks up the selected fill so
-                // the user can see it counts as their choice.
                 if !newValue.isEmpty { otherActive = true }
             }
-            if otherFocused && !trimmedOther.isEmpty {
-                Image(systemName: "return")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background {
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(Color.primary.opacity(0.08))
-                    }
+            .onChange(of: otherFocused) { _, focused in
+                guard !focused else { return }
+                otherEditing = false
+                if trimmedOther.isEmpty { otherActive = false }
             }
         }
         .padding(.horizontal, Self.rowHPadding)
-        // Fixed height — input rows always carry a single line, so
-        // sharing the option-row 36pt floor keeps them in the same
-        // visual rhythm. minHeight would otherwise let the parent
-        // VStack stretch the row to absorb leftover vertical space.
         .frame(height: Self.rowHeight)
         .background {
             RoundedRectangle(cornerRadius: Self.rowCornerRadius, style: .continuous)
-                .fill(otherBackground(focused: otherFocused, selected: isSelected))
+                .fill(Color.accentColor.opacity(0.12))
         }
         .overlay {
             RoundedRectangle(cornerRadius: Self.rowCornerRadius, style: .continuous)
-                .strokeBorder(
-                    otherStroke(focused: otherFocused, selected: isSelected),
-                    lineWidth: otherFocused || isSelected ? 1 : 0.5)
+                .strokeBorder(Color.accentColor.opacity(0.55), lineWidth: 1)
         }
         .contentShape(Rectangle())
-        .onTapGesture {
-            otherFocused = true
-            otherActive = true
-        }
     }
 
     private var trimmedOther: String {
         otherText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private func otherBackground(focused: Bool, selected: Bool) -> Color {
-        if selected || focused {
-            return Color.accentColor.opacity(0.12)
-        }
-        return Color.primary.opacity(0.04)
-    }
+    // MARK: - Decision buttons (bottom row)
 
-    private func otherStroke(focused: Bool, selected: Bool) -> Color {
-        if focused || selected {
-            return Color.accentColor.opacity(0.55)
-        }
-        return Color(nsColor: .separatorColor)
-    }
-
-    // MARK: - Submit row
-
-    private func showsSubmitRow(for q: Question) -> Bool {
-        // A submit row is needed any time a single click can't carry
-        // the answer: multi-select, or single-select with the user
-        // engaged in the Other input.
-        q.multiSelect || otherActive
-    }
-
+    /// Two buttons that mirror the chrome shared by every other
+    /// permission card kind: destructive Cancel on the left, primary
+    /// Confirm / Next-question on the right. Confirm is disabled until
+    /// an answer is collectable.
     @ViewBuilder
-    private func submitRow(for q: Question) -> some View {
-        let label = isLastQuestion ? String(localized: "Submit") : String(localized: "Next")
-        let enabled = submitEnabled(for: q)
-        Button {
-            handleSubmitTap(question: q)
-        } label: {
-            HStack {
-                Spacer(minLength: 0)
-                Text(label)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(enabled ? Color.white : Color.white.opacity(0.7))
-                Spacer(minLength: 0)
-            }
+    private var decisionButtons: some View {
+        HStack(spacing: 8) {
+            PermissionDecisionButton(
+                title: String(localized: "Cancel"),
+                role: .destructive,
+                action: onCancel)
+            Spacer(minLength: 0)
+            PermissionDecisionButton(
+                title: confirmLabel,
+                role: .primary,
+                action: handleConfirm
+            )
+            .disabled(!confirmEnabled)
+            .opacity(confirmEnabled ? 1 : 0.5)
+            .keyboardShortcut(.defaultAction)
         }
-        .buttonStyle(AskSubmitRowStyle(enabled: enabled))
-        .disabled(!enabled)
-        .keyboardShortcut(.defaultAction)
     }
 
-    // MARK: - Logic
+    /// "Next question" when there's another question after this one,
+    /// "Confirm" on the final question.
+    private var confirmLabel: String {
+        isLastQuestion ? String(localized: "Confirm") : String(localized: "Next question")
+    }
+
+    // MARK: - Selection / submit logic
 
     private var isLastQuestion: Bool { currentIndex >= questions.count - 1 }
 
@@ -323,16 +345,16 @@ struct PermissionAskUserQuestionCardBody: View {
         return singleSelectIndex == index
     }
 
-    private func submitEnabled(for q: Question) -> Bool {
+    private var confirmEnabled: Bool {
+        guard let q = current else { return false }
         if q.multiSelect {
-            return !multiSelectIndices.isEmpty || !trimmedOther.isEmpty
+            return !multiSelectIndices.isEmpty || (otherActive && !trimmedOther.isEmpty)
         }
-        // Single-select branch is only reached with submit row when
-        // the user is composing Other. Require non-empty text.
-        return !trimmedOther.isEmpty
+        if singleSelectIndex != nil { return true }
+        return otherActive && !trimmedOther.isEmpty
     }
 
-    private func handleOptionTap(question q: Question, index: Int, option: Option) {
+    private func handleOptionTap(question q: Question, index: Int) {
         if q.multiSelect {
             if multiSelectIndices.contains(index) {
                 multiSelectIndices.remove(index)
@@ -341,42 +363,38 @@ struct PermissionAskUserQuestionCardBody: View {
             }
             return
         }
-        // Single-select: commit immediately.
+        // Single-select: pick the option and clear any Other state so
+        // the answer slots stay mutually exclusive.
         singleSelectIndex = index
-        otherActive = false  // user picked a real option, drop Other engagement
+        otherActive = false
+        otherEditing = false
+        otherFocused = false
         otherText = ""
-        commitAnswer(question: q, answer: option.label)
     }
 
-    private func handleSubmitTap(question q: Question) {
-        let pieces: [String]
+    private func handleConfirm() {
+        guard let q = current else { return }
+        let answer = composedAnswer(for: q)
+        guard !answer.isEmpty else { return }
+        commitAnswer(question: q, answer: answer)
+    }
+
+    private func composedAnswer(for q: Question) -> String {
         if q.multiSelect {
             var parts = multiSelectIndices.sorted().compactMap { idx -> String? in
                 guard idx < q.options.count else { return nil }
                 return q.options[idx].label
             }
-            if !trimmedOther.isEmpty { parts.append(trimmedOther) }
-            pieces = parts
-        } else {
-            pieces = [trimmedOther]
+            if otherActive, !trimmedOther.isEmpty { parts.append(trimmedOther) }
+            return parts.joined(separator: ", ")
         }
-        let joined = pieces.joined(separator: ", ")
-        commitAnswer(question: q, answer: joined)
-    }
-
-    private func commitOtherIfPossible(question q: Question) {
-        guard !trimmedOther.isEmpty else { return }
-        if q.multiSelect {
-            // Don't auto-submit on Enter in multi-select; the user may
-            // still want to tick more boxes. Treat Enter as "I'm done
-            // with this field, but Submit is still the explicit
-            // commit." Move focus off so the field commits its edit.
-            otherActive = true
-            otherFocused = false
-            return
+        if let idx = singleSelectIndex, idx < q.options.count {
+            return q.options[idx].label
         }
-        // Single-select + typed Other → Enter commits.
-        commitAnswer(question: q, answer: trimmedOther)
+        if otherActive, !trimmedOther.isEmpty {
+            return trimmedOther
+        }
+        return ""
     }
 
     private func commitAnswer(question q: Question, answer: String) {
@@ -385,17 +403,19 @@ struct PermissionAskUserQuestionCardBody: View {
             onSubmit(buildUpdatedInput())
             return
         }
-        currentIndex += 1
-        resetPerQuestionState()
+        withAnimation {
+            currentIndex += 1
+            resetPerQuestionState()
+        }
     }
 
     private func goBack() {
         guard currentIndex > 0 else { return }
-        currentIndex -= 1
-        resetPerQuestionState()
-        // Restore the previous answer into the picker so the user can
-        // see what they had picked. Single-select: try to match an
-        // option; otherwise treat as Other text.
+        withAnimation {
+            currentIndex -= 1
+            resetPerQuestionState()
+        }
+        // Re-hydrate the previous question's answer into the picker.
         if let q = current, let prior = answers[q.question] {
             if let idx = q.options.firstIndex(where: { $0.label == prior }) {
                 if q.multiSelect { multiSelectIndices = [idx] } else { singleSelectIndex = idx }
@@ -422,6 +442,7 @@ struct PermissionAskUserQuestionCardBody: View {
         multiSelectIndices = []
         otherText = ""
         otherActive = false
+        otherEditing = false
         otherFocused = false
     }
 
@@ -434,8 +455,8 @@ struct PermissionAskUserQuestionCardBody: View {
 
     // MARK: - Esc shortcut
 
-    /// Hidden zero-size button so `.keyboardShortcut(.cancelAction)`
-    /// reaches `onCancel` even when no focusable view is active.
+    /// Zero-size button so `.keyboardShortcut(.cancelAction)` routes
+    /// to `onCancel` even when the TextField doesn't hold focus.
     @ViewBuilder
     private var escapeKeyCapture: some View {
         Button(action: onCancel) { EmptyView() }
@@ -450,21 +471,24 @@ struct PermissionAskUserQuestionCardBody: View {
 
     @ViewBuilder
     private var fallback: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(String(localized: "Claude wants to ask you a question"))
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Text(String(localized: "No questions were provided. Cancel to dismiss."))
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            HStack {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(String(localized: "Claude wants to ask you a question"))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.primary)
+                Text(String(localized: "No questions were provided. Cancel to dismiss."))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            HStack(spacing: 8) {
+                PermissionDecisionButton(
+                    title: String(localized: "Cancel"),
+                    role: .destructive,
+                    action: onCancel)
                 Spacer(minLength: 0)
-                Button(String(localized: "Cancel"), action: onCancel)
-                    .keyboardShortcut(.cancelAction)
             }
         }
+        .background(escapeKeyCapture)
     }
 
     // MARK: - Models
@@ -500,9 +524,10 @@ struct PermissionAskUserQuestionCardBody: View {
 
 // MARK: - Option row button style
 
-/// Full-width row look shared by all option rows. Idle / hover /
-/// pressed / selected states are folded into the fill + stroke so the
-/// row reads as a native button (press deflation, hover brightening).
+/// Full-width row look shared by every option row and the collapsed
+/// Other row. Fill darkens on hover; selected pulls in the accent
+/// fill + stroke. No press-deflate scale — the row hugs its location
+/// even while the user is mid-click.
 private struct AskOptionRowStyle: ButtonStyle {
     let selected: Bool
 
@@ -536,7 +561,6 @@ private struct AskOptionRowStyle: ButtonStyle {
                     .strokeBorder(stroke, lineWidth: selected ? 1 : 0.5)
                 }
                 .contentShape(Rectangle())
-                .scaleEffect(configuration.isPressed ? 0.985 : 1.0)
                 .onHover { hovering = $0 }
                 .animation(.linear(duration: 0.08), value: hovering)
                 .animation(.linear(duration: 0.06), value: configuration.isPressed)
@@ -555,51 +579,6 @@ private struct AskOptionRowStyle: ButtonStyle {
 
         private var stroke: Color {
             selected ? Color.accentColor.opacity(0.55) : Color(nsColor: .separatorColor)
-        }
-    }
-}
-
-// MARK: - Submit row style
-
-/// Primary accent-filled row sharing the option-row geometry. Used by
-/// the bottom Submit/Next row so the "confirm" button visually
-/// belongs to the same row family as the option choices.
-private struct AskSubmitRowStyle: ButtonStyle {
-    let enabled: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        RowSurface(configuration: configuration, enabled: enabled)
-    }
-
-    private struct RowSurface: View {
-        let configuration: Configuration
-        let enabled: Bool
-        @State private var hovering = false
-
-        var body: some View {
-            configuration.label
-                .padding(.horizontal, PermissionAskUserQuestionCardBody.rowHPadding)
-                .frame(maxWidth: .infinity)
-                .frame(minHeight: PermissionAskUserQuestionCardBody.rowHeight)
-                .background {
-                    RoundedRectangle(
-                        cornerRadius: PermissionAskUserQuestionCardBody.rowCornerRadius,
-                        style: .continuous
-                    )
-                    .fill(fill(pressed: configuration.isPressed))
-                }
-                .contentShape(Rectangle())
-                .scaleEffect(configuration.isPressed ? 0.985 : 1.0)
-                .onHover { hovering = enabled && $0 }
-                .animation(.linear(duration: 0.08), value: hovering)
-                .animation(.linear(duration: 0.06), value: configuration.isPressed)
-        }
-
-        private func fill(pressed: Bool) -> Color {
-            if !enabled { return Color.accentColor.opacity(0.35) }
-            if pressed { return Color.accentColor.opacity(0.85) }
-            if hovering { return Color.accentColor.opacity(0.92) }
-            return Color.accentColor
         }
     }
 }
@@ -635,7 +614,7 @@ private struct AskSubmitRowStyle: ButtonStyle {
         onCancel: {}
     )
     .padding(14)
-    .frame(width: 520)
+    .frame(width: 600, height: 560)
     .background(Color(nsColor: .windowBackgroundColor))
 }
 
@@ -672,7 +651,7 @@ private struct AskSubmitRowStyle: ButtonStyle {
         onCancel: {}
     )
     .padding(14)
-    .frame(width: 520)
+    .frame(width: 600, height: 560)
     .background(Color(nsColor: .windowBackgroundColor))
 }
 
@@ -686,6 +665,6 @@ private struct AskSubmitRowStyle: ButtonStyle {
         onCancel: {}
     )
     .padding(14)
-    .frame(width: 520)
+    .frame(width: 600, height: 560)
     .background(Color(nsColor: .windowBackgroundColor))
 }

@@ -142,7 +142,20 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// fulfilled for the currently-attached table. Phase 2's later
     /// prepend uses `.saveVisible(...)` and does not move the visual
     /// anchor, so calling this between Phase 1 and Phase 2 is safe.
+    ///
+    /// Display-pass ordering with the settle flip — same constraint
+    /// as `consumeDesiredAnchor` (see its doc comment). Phase 1's
+    /// `coordinator.apply(scroll: phase1Scroll)` mutated
+    /// `clipView.bounds.origin` synchronously, but the cell-level
+    /// `.onSetNeedsDisplay` layer policy means the rendered bitmap
+    /// for the new visible range may not be committed yet. Force a
+    /// display flush before the settle so the bake-clear observer in
+    /// `RootView2` doesn't reveal a one-frame mismatch.
     func markAnchorSettled() {
+        if let table = tableView, let window = table.window {
+            window.viewsNeedDisplay = true
+            window.displayIfNeeded()
+        }
         setAnchorSettled(true)
     }
 
@@ -1038,6 +1051,25 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// `noteHeightOfRows` is async, so without this push the documentView
     /// frame.height may still trail the row-height total and
     /// `NSClipView.scroll(to:)` would be pinned by `constrainBoundsRect`.
+    ///
+    /// **Display-pass ordering w.r.t. `setAnchorSettled(true)`.** The
+    /// settle flip notifies external observers (`RootView2`'s bake-clear
+    /// hook fires synchronously when `isAnchorSettled` transitions to
+    /// true and starts an opacity fade on the bake overlay). The fade
+    /// animates over ~180 ms and reveals the underlying transcript
+    /// progressively — but if the just-applied `scroll(to:)` hasn't
+    /// reached AppKit's display pass yet, the layer composite shows the
+    /// table at its pre-scroll origin (row 0 for a fresh attach). The
+    /// user perceives that as "瞬间看到 transcript 开头的内容" — the
+    /// flicker the bake was supposed to mask.
+    ///
+    /// Force a synchronous display pass between the scroll and the
+    /// settle to push the new clip-view origin into the layer composite
+    /// BEFORE any observer reacts. `displayIfNeeded` walks the dirty
+    /// window region and runs draw/layer-content updates; pairs with
+    /// `tableView.window?.viewsNeedDisplay = true` so AppKit considers
+    /// the window's display state ready to flush rather than waiting
+    /// for the next runloop tick.
     private func consumeDesiredAnchor(in tableView: NSTableView) {
         tableView.layoutSubtreeIfNeeded()
         switch desiredAnchor {
@@ -1050,6 +1082,15 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         case .bottomTo(let id):
             scrollRowToBottom(id: id, in: tableView)
         }
+        // Flush AppKit's pending display work so the new scroll origin
+        // is composited into the layer NOW. Without this, the
+        // `setAnchorSettled(true)` flip below fires the bake-clear
+        // observer in the same runloop tick — its opacity transition
+        // starts immediately, but the cached table layer hasn't been
+        // re-rendered at the new origin yet, so the fade reveals the
+        // wrong content for one frame.
+        tableView.window?.viewsNeedDisplay = true
+        tableView.window?.displayIfNeeded()
         setAnchorSettled(true)
     }
 

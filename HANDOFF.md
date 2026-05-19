@@ -4,6 +4,13 @@ Branch: `worktree-splendid-marinating-music`
 PR: <https://github.com/wasd96040501/ccterm/pull/135>
 Base commit on entry: `6a9db75 docs: handoff notes — sidebar flicker investigation, open work`
 
+## Update — fix landed
+
+- New integration test [SidebarFlickerRealHistoryIntegrationTests](macos/cctermTests/SidebarFlickerRealHistoryIntegrationTests.swift) drives two real (redacted) Claude Code JSONLs from `~/.claude/projects/...` through the production `SessionRuntime.loadHistory(overrideURL:)` pipeline and a SwiftUI harness that mirrors `RootView2`'s detail-pane modifier chain (`.background(DetailBakeProbe)` + `.overlay(bakedImage)` + `.onChange(currentController?.isAnchorSettled ?? true)`).
+- The test hooks the bake-clear callback and asserts that at the **exact moment** `bakedImage = nil` is set (i.e. inside the onChange firing on `isAnchorSettled = true`), the underlying NSTableView's last row's `maxY - scrollY` already equals `clipH - bottomInset` (= "scrolled to tail"). The probe also asserts `bottomVisibleBlockId == blocks.last`.
+- Production fix in [Transcript2Coordinator.consumeDesiredAnchor](macos/ccterm/Content/Chat/NativeTranscript2/Transcript2Coordinator.swift:1041): after `scrollRowToBottom` mutates the clip-view origin, force `tableView.window?.viewsNeedDisplay = true` + `window.displayIfNeeded()` BEFORE `setAnchorSettled(true)` flips. The flip fires the bake-clear hook synchronously, which starts an opacity fade-out; without the display flush, the cached table layer still holds row-0 pixels and the fade reveals the wrong content for ~one frame — the "瞬间看到 transcript 开头的内容" the user reported.
+- `make test-unit` (251 cases) green.
+
 ## Commits on this branch (oldest → newest)
 
 | SHA | Subject |

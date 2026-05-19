@@ -78,21 +78,13 @@ struct NewSessionConfigurator<InputBar: View>: View {
     @Environment(RecentProjectsStore.self) private var recents
     @Environment(SessionManager.self) private var manager
     /// Branch list + remote main + current-branch status are only ever shown
-    /// inside `BranchPickerView`. They're preloaded asynchronously when the
-    /// picked folder is a git repo (see `loadHeavyGitInfo`) so the popover
+    /// inside `BranchPickerView`. The probe is preloaded asynchronously when
+    /// the picked folder is a git repo (see `GitProbe.loadHeavy`) so the popover
     /// already has data the moment the user clicks the branch pill — the
     /// subprocess cost is paid in the background while the user is reading
     /// the rest of the card.
-    @State private var branches: [String] = []
-    @State private var currentBranch: String? = nil
-    @State private var remoteMainBranch: String? = nil
-    @State private var currentBranchStatus: String? = nil
-    @State private var isGitRepo: Bool = false
+    @State private var probe: GitProbe
     @State private var showBranchPicker: Bool = false
-    /// Folder we've already cached heavy git info for. Lets the picker
-    /// reopen instantly without re-shelling. Nil while no folder has
-    /// been probed (yet) or right after a folder switch.
-    @State private var heavyGitLoadedForFolder: String? = nil
 
     init(
         folderPath: Binding<String?>,
@@ -108,15 +100,11 @@ struct NewSessionConfigurator<InputBar: View>: View {
         self.inputBar = inputBar
         // Seed the cheap probe synchronously so the branch pill renders on the
         // very first frame. Without this, `.task(id: folderPath)` only fires
-        // after the view appears — `currentBranch` is nil for one frame, the
-        // conditional `metaRow` pops in, and everything below it (divider,
+        // after the view appears — `probe.currentBranch` is nil for one frame,
+        // the conditional `metaRow` pops in, and everything below it (divider,
         // recents, input bar) gets shoved down a row. The heavy probe
         // (branches list / status / remote main) still runs async in `.task`.
-        let path = folderPath.wrappedValue
-        let repo = path.map { GitUtils.isGitRepository(at: $0) } ?? false
-        let head = repo ? path.flatMap { GitUtils.currentBranch(at: $0) } : nil
-        self._currentBranch = State(initialValue: head)
-        self._isGitRepo = State(initialValue: repo)
+        self._probe = State(initialValue: GitProbe(seedFolderPath: folderPath.wrappedValue))
     }
 
     var body: some View {
@@ -163,23 +151,34 @@ struct NewSessionConfigurator<InputBar: View>: View {
         .clipShape(RoundedRectangle(cornerRadius: Self.cardCornerRadius, style: .continuous))
         .task(id: folderPath) {
             // Two-stage probe, both keyed off `folderPath`:
-            //   1) Cheap, synchronous — `isGitRepository` + reading
-            //      `.git/HEAD`. Resolves `currentBranch` / `isGitRepo`
-            //      before the first frame, so the branch pill renders
-            //      its label immediately.
-            //   2) Heavy, async — branch list, remote-main, status
-            //      summary. Runs on a detached background task so the
-            //      main thread keeps painting. Folder switches cancel
-            //      this `.task` via the `id:` parameter, and the inner
-            //      `loadHeavyGitInfo` re-checks `folderPath == path`
-            //      after `await` to drop any late-arriving result.
+            //   1) Cheap, synchronous — `GitProbe.refresh` reads
+            //      `.git/HEAD` and the `.git` existence flag, resolving
+            //      `probe.currentBranch` / `probe.isGitRepo` before
+            //      the first frame so the branch pill renders its
+            //      label immediately.
+            //   2) Heavy, async — `GitProbe.loadHeavy` fans out three
+            //      git subprocesses on a detached background task so
+            //      the main thread keeps painting. Folder switches
+            //      cancel this `.task` via the `id:` parameter, and the
+            //      probe's post-`await` guard drops any late-arriving
+            //      result whose folder no longer matches.
             //
             // The branch picker no longer triggers a load on open —
-            // by the time the user clicks the pill, `branches` is
-            // already populated (or actively loading; the picker shows
-            // a blank list slot and animates rows in when data lands).
-            refreshGitInfo(resetOverride: true)
-            await loadHeavyGitInfo()
+            // by the time the user clicks the pill, `probe.branches`
+            // is already populated (or actively loading; the picker
+            // shows a blank list slot and animates rows in when data
+            // lands).
+            probe.refresh(folderPath: folderPath)
+            applyProbeBindings(resetOverride: true)
+            await probe.loadHeavy(folderPath: folderPath)
+            // Validate any saved branch override against the real list
+            // now that we have it. A stale ref (the branch was deleted
+            // on disk) falls back to HEAD.
+            if let sb = sourceBranch, !probe.branches.isEmpty,
+                !probe.branches.contains(sb)
+            {
+                sourceBranch = probe.currentBranch
+            }
         }
     }
 
@@ -331,7 +330,7 @@ struct NewSessionConfigurator<InputBar: View>: View {
     /// sits at the same Y regardless of how many recents the user has.
     @ViewBuilder
     private var mainColumn: some View {
-        let branchVisible = currentBranch != nil
+        let branchVisible = probe.currentBranch != nil
         let recentSessions = recentSessionsForFolder
         VStack(alignment: .leading, spacing: 0) {
             titleRow
@@ -488,7 +487,7 @@ struct NewSessionConfigurator<InputBar: View>: View {
 
     @ViewBuilder
     private var branchPill: some View {
-        let displayBranch = sourceBranch ?? currentBranch ?? ""
+        let displayBranch = sourceBranch ?? probe.currentBranch ?? ""
         Button {
             showBranchPicker = true
         } label: {
@@ -510,10 +509,10 @@ struct NewSessionConfigurator<InputBar: View>: View {
         )
         .popover(isPresented: $showBranchPicker, arrowEdge: .bottom) {
             BranchPickerView(
-                branches: branches,
-                currentBranch: currentBranch,
-                remoteMainBranch: remoteMainBranch,
-                currentBranchStatus: currentBranchStatus,
+                branches: probe.branches,
+                currentBranch: probe.currentBranch,
+                remoteMainBranch: probe.remoteMainBranch,
+                currentBranchStatus: probe.currentBranchStatus,
                 onSelect: { selected in
                     sourceBranch = selected
                     showBranchPicker = false
@@ -650,25 +649,19 @@ struct NewSessionConfigurator<InputBar: View>: View {
         }
     }
 
-    // MARK: - Git probing
+    // MARK: - Git probe ↔ binding glue
 
-    /// Refresh the cheap, mount-time git state for the picked folder.
-    /// Only does file-level work: `isGitRepository` (a `.git` existence
-    /// check) and `currentBranch` (reads `.git/HEAD` directly). The
-    /// expensive subprocess calls (`branches`, `remoteMainBranch`,
-    /// `currentBranchStatus`) live in `loadHeavyGitInfo`, which runs
-    /// right after this on a detached background task.
+    /// Maps `probe`'s post-`refresh` state into the configurator's
+    /// `sourceBranch` / `useWorktree` bindings, and handles the
+    /// recents-side cleanup when the picked folder no longer exists.
+    /// Called right after `probe.refresh(folderPath:)` from the card's
+    /// `.task`, before the heavy load awaits.
     ///
     /// `resetOverride` forces `sourceBranch` back to the new repo's
-    /// current branch — needed when the folder changes.
-    private func refreshGitInfo(resetOverride: Bool) {
+    /// current branch — passed `true` on folder change so a leftover
+    /// override from the previous folder doesn't survive the switch.
+    private func applyProbeBindings(resetOverride: Bool) {
         guard let path = folderPath else {
-            isGitRepo = false
-            branches = []
-            currentBranch = nil
-            remoteMainBranch = nil
-            currentBranchStatus = nil
-            heavyGitLoadedForFolder = nil
             useWorktree = false
             sourceBranch = nil
             return
@@ -676,38 +669,20 @@ struct NewSessionConfigurator<InputBar: View>: View {
         if !FileManager.default.fileExists(atPath: path) {
             recents.remove(path)
             folderPath = nil
-            isGitRepo = false
-            branches = []
-            currentBranch = nil
-            remoteMainBranch = nil
-            currentBranchStatus = nil
-            heavyGitLoadedForFolder = nil
             useWorktree = false
             sourceBranch = nil
             return
         }
-        let repo = GitUtils.isGitRepository(at: path)
-        let head = repo ? GitUtils.currentBranch(at: path) : nil
-        isGitRepo = repo
-        currentBranch = head
-        // Drop any stale cached heavy info — it belongs to the previous
-        // folder. The card's `.task(id: folderPath)` will call
-        // `loadHeavyGitInfo` right after this to refill from scratch.
-        if heavyGitLoadedForFolder != path {
-            branches = []
-            remoteMainBranch = nil
-            currentBranchStatus = nil
-            heavyGitLoadedForFolder = nil
-        }
-        if repo {
+        if probe.isGitRepo {
             // Cheap path: we can't validate `sourceBranch` against the
-            // real branch list here (that's the heavy path). The picker
-            // open will reconcile a stale override against the loaded
-            // list. For everything else, fall back to HEAD.
+            // real branch list here (that's the heavy path). The card's
+            // `.task` reconciles a stale override against the loaded
+            // list after `loadHeavy` returns. For everything else, fall
+            // back to HEAD.
             if resetOverride || sourceBranch == nil {
-                sourceBranch = head
+                sourceBranch = probe.currentBranch
             }
-            if head == nil {
+            if probe.currentBranch == nil {
                 useWorktree = false
             } else {
                 useWorktree = recents.useWorktree(for: path) ?? false
@@ -716,125 +691,6 @@ struct NewSessionConfigurator<InputBar: View>: View {
             useWorktree = false
             sourceBranch = nil
         }
-    }
-
-    /// Async: fetch the branch list, remote-main, and current-branch
-    /// status via `git` subprocesses. Called from the card's
-    /// `.task(id: folderPath)` immediately after `refreshGitInfo`, so by
-    /// the time the user reaches the branch pill the popover already
-    /// has data. The work hops to a background queue (via
-    /// `Task.detached`) so the main thread keeps painting; only the
-    /// resulting state writes hop back to the MainActor.
-    ///
-    /// Gating (in order):
-    /// 1. No folder picked → bail.
-    /// 2. Not a git repo (cheap path already determined) → bail; we
-    ///    never shell out for plain folders.
-    /// 3. Already loaded for this folder → bail; the cache is reset by
-    ///    `refreshGitInfo` whenever `folderPath` changes, so this only
-    ///    short-circuits idempotent re-runs (e.g. a redundant probe).
-    /// 4. After `await` returns, drop the result if the user switched
-    ///    folders mid-load.
-    private func loadHeavyGitInfo() async {
-        guard let path = folderPath, isGitRepo else { return }
-        if heavyGitLoadedForFolder == path { return }
-        let result = await Task.detached(priority: .userInitiated) {
-            let l = Self.listBranches(at: path)
-            let r = Self.remoteMainBranch(at: path)
-            let s = Self.gitStatusSummary(at: path)
-            return (l, r, s)
-        }.value
-        // Bail if the user switched folders while we were loading.
-        guard folderPath == path else { return }
-        branches = result.0
-        remoteMainBranch = result.1
-        currentBranchStatus = result.2
-        heavyGitLoadedForFolder = path
-        // Validate any saved branch override against the real list now
-        // that we have it. A stale ref (the branch was deleted on disk)
-        // falls back to HEAD.
-        if let sb = sourceBranch, !result.0.contains(sb) {
-            sourceBranch = currentBranch
-        }
-    }
-
-    private static func listBranches(at path: String) -> [String] {
-        let result = Worktree.runGit(
-            ["for-each-ref", "--format=%(refname:short)", "refs/heads"],
-            cwd: path,
-            timeout: 5
-        )
-        guard result.exitCode == 0, let stdout = result.stdout else { return [] }
-        return
-            stdout
-            .split(separator: "\n")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-    }
-
-    private static func remoteMainBranch(at path: String) -> String? {
-        let result = Worktree.runGit(
-            ["symbolic-ref", "--short", "--quiet", "refs/remotes/origin/HEAD"],
-            cwd: path,
-            timeout: 5
-        )
-        guard result.exitCode == 0,
-            let stdout = result.stdout?.trimmingCharacters(in: .whitespacesAndNewlines),
-            !stdout.isEmpty
-        else {
-            return nil
-        }
-        return stdout
-    }
-
-    private static func gitStatusSummary(at path: String) -> String? {
-        var parts: [String] = []
-        let porcelain = Worktree.runGit(
-            ["status", "--porcelain"],
-            cwd: path,
-            timeout: 5
-        )
-        if porcelain.exitCode == 0, let out = porcelain.stdout {
-            var modified = 0
-            var untracked = 0
-            for raw in out.split(separator: "\n") {
-                let line = String(raw)
-                if line.hasPrefix("??") {
-                    untracked += 1
-                } else if !line.isEmpty {
-                    modified += 1
-                }
-            }
-            if modified == 0 && untracked == 0 {
-                parts.append(String(localized: "Clean"))
-            } else {
-                var subs: [String] = []
-                if modified > 0 { subs.append(String(localized: "\(modified) changed")) }
-                if untracked > 0 { subs.append(String(localized: "\(untracked) untracked")) }
-                parts.append(subs.joined(separator: ", "))
-            }
-        }
-
-        let tracking = Worktree.runGit(
-            ["rev-list", "--left-right", "--count", "@{upstream}...HEAD"],
-            cwd: path,
-            timeout: 5
-        )
-        if tracking.exitCode == 0,
-            let out = tracking.stdout?.trimmingCharacters(in: .whitespacesAndNewlines)
-        {
-            let cols = out.split(whereSeparator: { $0 == "\t" || $0 == " " }).map(String.init)
-            if cols.count == 2, let behind = Int(cols[0]), let ahead = Int(cols[1]) {
-                var arrows: [String] = []
-                if ahead > 0 { arrows.append("↑\(ahead)") }
-                if behind > 0 { arrows.append("↓\(behind)") }
-                if !arrows.isEmpty {
-                    parts.append(arrows.joined(separator: " "))
-                }
-            }
-        }
-
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }
 

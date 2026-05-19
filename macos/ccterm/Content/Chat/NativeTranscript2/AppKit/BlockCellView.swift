@@ -420,10 +420,12 @@ final class BlockCellView: NSView {
 
         // Code-block copy glyph — layout owns the visual recipe
         // (symbol, tint, size, hover background); the cell hands
-        // through transient state: row-hover gating + icon-hover
-        // for the rounded background + `copiedAt` for the checkmark
-        // flash. Matches the cell-margin gutter pattern in
-        // `BlockCellView+Gutter.swift`.
+        // through transient state: icon-hover for the rounded
+        // background + `copiedAt` for the checkmark flash. The glyph
+        // is always visible (unlike the cell-margin gutter, which
+        // hides outside row-hover) — the codeblock's in-card copy
+        // affordance is the primary handle for "this is a code
+        // block, copy it" and should never disappear.
         if case .codeBlock(let l) = layout {
             let iconHovered: Bool = {
                 if case .copyText = hoveredAction { return true }
@@ -431,7 +433,6 @@ final class BlockCellView: NSView {
             }()
             l.drawCopyGlyph(
                 in: ctx, origin: origin,
-                cellHovered: cellHovered,
                 iconHovered: iconHovered,
                 checked: copiedAt != nil)
         }

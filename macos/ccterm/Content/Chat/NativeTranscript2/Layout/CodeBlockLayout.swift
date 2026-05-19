@@ -25,12 +25,11 @@ import AppKit
 ///   design chip (`codeBlockLanguageBadgeBackground`) with a 4pt
 ///   corner radius; text inside is `secondaryLabel` at
 ///   `codeBlockHeaderFontSize`.
-/// - **Copy icon** (right edge): visible only when the row is hovered
-///   — the same cell-margin-gutter convention from
-///   `BlockCellView+Gutter.swift`. On icon-hover a rounded
-///   background paints behind the glyph; on click the glyph flashes
-///   to a checkmark for 1.5s. Geometry uses `BlockStyle.gutterHitSize`
-///   so every copy affordance in the product renders as one shape.
+/// - **Copy icon** (right edge): always visible. On icon-hover a
+///   rounded background paints behind the glyph; on click the glyph
+///   flashes to a checkmark for 1.5s. Geometry uses
+///   `BlockStyle.gutterHitSize` so the in-card affordance shares the
+///   same 18pt-square shape as the cell-margin copy gutter.
 ///
 /// The copy button itself is **not drawn in `draw(in:origin:)`**.
 /// `BlockCellView` calls `drawCopyGlyph(...)` after `draw` so the
@@ -326,10 +325,9 @@ struct CodeBlockLayout: @unchecked Sendable {
     }
 
     /// Renders the copy glyph at `copyCenter` (offset by `origin`).
-    /// Mirrors the cell-margin gutter:
+    /// Always painted (no row-hover gate); the only conditional
+    /// visuals are:
     ///
-    /// - `cellHovered == false` → paint nothing (icon only surfaces
-    ///   when the row is the focus of attention).
     /// - `iconHovered == true` → paint a rounded hover background
     ///   behind the glyph (`gutterHoverBackground`).
     /// - `checked == true` → swap `doc.on.doc` ↔ `checkmark` for the
@@ -340,9 +338,8 @@ struct CodeBlockLayout: @unchecked Sendable {
     /// one place.
     func drawCopyGlyph(
         in ctx: CGContext, origin: CGPoint,
-        cellHovered: Bool, iconHovered: Bool, checked: Bool
+        iconHovered: Bool, checked: Bool
     ) {
-        guard cellHovered else { return }
         guard let center = copyCenter, let hit = copyHitRect else { return }
 
         if iconHovered {

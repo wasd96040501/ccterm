@@ -82,6 +82,26 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                     + "blocks=\(blocks.count) reload=\(didReload) "
                     + "newWidth=\(tableView?.bounds.width ?? -1) "
                     + "lastLayoutWidth=\(lastLayoutWidth)")
+            // Re-attach signal: fire on next runloop tick so
+            // `setDocumentView` has wired `enclosingScrollView` before any
+            // scroll attempt runs. Triggers on the `nil → non-nil` edge
+            // with content already present:
+            //  - re-entry (controller carries blocks from prior mount), and
+            //  - first-open under the deferred-swap (#111) which keeps the
+            //    OLD view mounted until Phase A populates this coordinator,
+            //    so `blocks` is non-empty on the very first didSet.
+            // Native `reloadData()` lands the table at top; this hook is
+            // what re-anchors the visible position to the tail. See
+            // `Transcript2Controller.init` for the subscriber.
+            if tableView != nil, oldValue == nil, !blocks.isEmpty {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    appLog(
+                        .info, "Transcript2Coordinator",
+                        "[scroll-bug] onTableAttached firing (deferred 1 tick) blocks=\(self.blocks.count)")
+                    self.onTableAttached?()
+                }
+            }
         }
     }
 
@@ -110,6 +130,19 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// most once per 0→positive transition; subsequent width changes
     /// (live resize, etc.) don't re-fire.
     var onLayoutReady: (() -> Void)?
+
+    /// Fires one runloop tick after `tableView` transitions from nil →
+    /// non-nil with `blocks` already populated. The deferred dispatch is
+    /// load-bearing: `NSScrollView.setDocumentView(_:)` resizes the table
+    /// (posting `frameDidChange`) *before* the table is actually a
+    /// subview of the clip view, so any `scrollRowToBottom` triggered
+    /// synchronously from this didSet or from the resulting
+    /// `frameDidChange → onLayoutReady` path finds
+    /// `tableView.enclosingScrollView == nil` and aborts. One main-queue
+    /// hop is enough for AppKit to finish the insertion. The
+    /// `Transcript2Controller` subscriber uses this to re-anchor scroll
+    /// to the conversation tail on every (re-)attach.
+    var onTableAttached: (() -> Void)?
 
     /// Set by `Transcript2Controller` to forward chevron taps to the
     /// SwiftUI-owned sheet binding. The cell's mouseDown handler resolves

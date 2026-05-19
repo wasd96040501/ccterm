@@ -157,6 +157,25 @@ final class Transcript2Controller {
         coordinator.onLayoutReady = { [weak self] in
             self?.consumePendingInitial()
         }
+        coordinator.onTableAttached = { [weak self] in
+            // Every (re-)attach lands the table at top after `reloadData()`
+            // — restore the tail anchor. Covers two paths:
+            //  - re-entry: bridge doesn't re-fire `.reset` for a `.loaded`
+            //    session, `pendingInitial` is nil, no other code path
+            //    would scroll.
+            //  - first-open under #111 deferred-swap: the
+            //    `frameDidChange → onLayoutReady → scrollRowToBottom`
+            //    path aborts mid-`setDocumentView` (no
+            //    `enclosingScrollView` yet); this hook is the recovery.
+            // No `pendingInitial` consult — re-anchoring to the tail on
+            // attach is the desired default regardless of whether there
+            // was a pending intent.
+            guard let self else { return }
+            appLog(
+                .info, "Transcript2Controller",
+                "[scroll-bug] onTableAttached → scrollToBottom blocks=\(self.coordinator.blockIds.count)")
+            self.scrollToBottom()
+        }
         coordinator.search.onStateChanged = { [weak self] in
             self?.refreshSearchState()
         }

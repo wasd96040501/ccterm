@@ -18,12 +18,16 @@ import SwiftUI
 /// consults the bridge's `sizeThatFits(_:nsView:context:)` for its
 /// ideal vertical size — `DiffView` returns its real height from
 /// that hook.
+///
+/// Scroll indicators are hidden: the permission card consumers want a
+/// clean code/diff block surface without a track painted alongside —
+/// scroll wheel / trackpad still scroll, the bar is just invisible.
 struct BoundedHeightScrollView<Content: View>: View {
     let maxHeight: CGFloat
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        ScrollView(.vertical) {
+        ScrollView(.vertical, showsIndicators: false) {
             content()
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -57,5 +61,28 @@ struct BoundedHeightScrollView<Content: View>: View {
     }
     .padding(14)
     .frame(width: 420)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("long diff scrolls inside the cap") {
+    // Real-world shape: a multi-line file edit that exceeds 240pt.
+    // The wrapper caps at 240, the diff scrolls inside. Use the
+    // preview to confirm there is no scroll bar painted (cards hide
+    // indicators) and that wheel/trackpad still scroll the content.
+    let oldText = (0..<25).map { i in
+        "    case option\(i): return \"option-\(i)\""
+    }.joined(separator: "\n")
+    let newText = (0..<25).map { i in
+        "    case option\(i): return String(localized: \"option-\(i)\")"
+    }.joined(separator: "\n")
+    return BoundedHeightScrollView(maxHeight: 240) {
+        DiffView(
+            diff: DiffBlock(
+                filePath: "Localized.swift",
+                oldString: oldText,
+                newString: newText))
+    }
+    .padding(14)
+    .frame(width: 480)
     .background(Color(nsColor: .windowBackgroundColor))
 }

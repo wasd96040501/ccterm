@@ -362,6 +362,30 @@ private struct PermissionDecisionButton: View {
     .background(Color(nsColor: .windowBackgroundColor))
 }
 
+#Preview("AskUserQuestion") {
+    PermissionCardView(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-ask",
+            toolName: "AskUserQuestion",
+            input: [
+                "questions": [
+                    [
+                        "question":
+                            "Should we keep backwards-compatibility shims for the old API?"
+                    ],
+                    ["question": "Which timezone should the report default to?"],
+                    ["question": "Do we ship a migration script in this PR?"],
+                ]
+            ]),
+        onAllowOnce: {},
+        onAllowAlways: {},
+        onDeny: {}
+    )
+    .padding(16)
+    .frame(width: 560)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
 #Preview("Fallback · unknown tool") {
     PermissionCardView(
         request: PermissionRequest.makePreview(

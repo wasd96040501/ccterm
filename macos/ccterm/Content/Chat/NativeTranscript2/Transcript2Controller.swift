@@ -329,6 +329,12 @@ final class Transcript2Controller {
 
         let width = coordinator.layoutWidth
         let viewportHeight = coordinator.viewportHeight
+        appLog(
+            .info, "Transcript2Controller",
+            "[scroll-bug] loadInitial blocks=\(blocks.count) anchor=\(anchor) "
+                + "width=\(width) viewportH=\(viewportHeight) "
+                + "tableBound=\(coordinator.debugHasTable) "
+                + "deferred=\(!(width > 0 && viewportHeight > 0))")
         guard width > 0, viewportHeight > 0 else {
             // Table not mounted / not yet tiled. **Insert the blocks into
             // `coordinator.blocks` immediately** so subsequent `apply()`s
@@ -451,7 +457,16 @@ final class Transcript2Controller {
     /// — `coordinator` may fire `onLayoutReady` on resize-time 0→positive
     /// sequences unrelated to a deferred initial load.
     private func consumePendingInitial() {
-        guard let pending = pendingInitial else { return }
+        guard let pending = pendingInitial else {
+            appLog(
+                .info, "Transcript2Controller",
+                "[scroll-bug] consumePendingInitial NO-OP (no pending)")
+            return
+        }
+        appLog(
+            .info, "Transcript2Controller",
+            "[scroll-bug] consumePendingInitial FIRES anchor=\(pending.anchor) "
+                + "blocks=\(coordinator.blockIds.count)")
         pendingInitial = nil
         scrollToInitialAnchor(pending.anchor)
     }
@@ -466,13 +481,23 @@ final class Transcript2Controller {
         let scroll: ScrollState
         switch anchor {
         case .bottom:
-            guard let lastId = coordinator.blockIds.last else { return }
+            guard let lastId = coordinator.blockIds.last else {
+                appLog(
+                    .info, "Transcript2Controller",
+                    "[scroll-bug] scrollToInitialAnchor(.bottom) NO-OP (blockIds empty)")
+                return
+            }
             scroll = .bottom(id: lastId)
         case .top(let id):
             scroll = .top(id: id)
         case .bottomTo(let id):
             scroll = .bottom(id: id)
         }
+        appLog(
+            .info, "Transcript2Controller",
+            "[scroll-bug] scrollToInitialAnchor anchor=\(anchor) → \(scroll) "
+                + "tableBound=\(coordinator.debugHasTable) "
+                + "blocks=\(coordinator.blockIds.count)")
         coordinator.apply([], scroll: scroll)
     }
 

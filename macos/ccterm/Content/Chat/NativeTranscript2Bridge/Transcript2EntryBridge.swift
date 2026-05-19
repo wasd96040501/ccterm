@@ -193,6 +193,10 @@ final class Transcript2EntryBridge {
         // blunt blocks-array swap would lose animation. Use remove-all +
         // insert in one batch — visually a reload, but on the apply channel.
         if didLoadInitial {
+            appLog(
+                .info, "Transcript2EntryBridge",
+                "[scroll-bug] applyReset SECOND-RESET path entries=\(entries.count) "
+                    + "newBlocks=\(allBlocks.count) (scroll=.none, no anchoring)")
             var changes: [Transcript2Controller.Change] = []
             let oldAllIds = entryOrder.flatMap { entryBlockIds[$0] ?? [] }
             if !oldAllIds.isEmpty {
@@ -208,6 +212,10 @@ final class Transcript2EntryBridge {
         }
 
         // First reset: take loadInitial's two-phase fast first-screen path.
+        appLog(
+            .info, "Transcript2EntryBridge",
+            "[scroll-bug] applyReset FIRST-RESET path entries=\(entries.count) "
+                + "blocks=\(allBlocks.count) → loadInitial(.bottom)")
         entryOrder = newOrder
         entryBlockIds = newMap
         didLoadInitial = true

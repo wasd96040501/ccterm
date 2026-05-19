@@ -150,6 +150,11 @@ private struct Transcript2NSViewBridge: NSViewRepresentable {
         coordinator.tableView = table
         table.coordinator = coordinator
         scroll.documentView = table
+        appLog(
+            .info, "NativeTranscript2View",
+            "[scroll-bug] makeNSView DONE controller=\(ObjectIdentifier(controller)) "
+                + "scrollFrame=\(scroll.frame.size) tableFrame=\(table.frame.size) "
+                + "tableBoundsW=\(table.bounds.width) blocks=\(controller.blockCount)")
         return scroll
     }
 
@@ -162,6 +167,9 @@ private struct Transcript2NSViewBridge: NSViewRepresentable {
         _ nsView: Transcript2ScrollView,
         coordinator: Transcript2Coordinator
     ) {
+        appLog(
+            .info, "NativeTranscript2View",
+            "[scroll-bug] dismantleNSView coordinator-tableBound-before=\(coordinator.debugHasTable)")
         NotificationCenter.default.removeObserver(coordinator)
     }
 }

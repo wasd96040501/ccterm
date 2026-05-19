@@ -135,7 +135,18 @@ struct ChatHistoryView: View {
             // is the top; pin to the tail so the user lands where they
             // left off. Cold loads still scroll to bottom via Phase A's
             // `loadInitial(anchor: .bottom)`.
+            appLog(
+                .info, "ChatHistoryView",
+                "[scroll-bug] task pre-scrollToBottom session=\(sessionId.prefix(8))… "
+                    + "tableViewBound=\(s.controller.coordinator.debugHasTable) "
+                    + "layoutWidth=\(s.controller.coordinator.layoutWidth) "
+                    + "blockCount=\(s.controller.blockCount)")
             s.controller.scrollToBottom()
+            appLog(
+                .info, "ChatHistoryView",
+                "[scroll-bug] task post-scrollToBottom session=\(sessionId.prefix(8))… "
+                    + "tableViewBound=\(s.controller.coordinator.debugHasTable) "
+                    + "scrollOriginY=\(s.controller.coordinator.debugScrollOriginY)")
             // `.onChange(of: isRunning)` only fires on transitions, and
             // its `initial: true` invocation ran above with `session`
             // still nil (no-op via `session?`). If running ended while

@@ -120,7 +120,12 @@ struct ChatHistoryView: View {
             // and existing-record session ids return the same cached
             // instance (possibly in `.active` phase). The session's
             // bridge has already been wired to its runtime; nothing for
-            // us to do besides kick `loadHistory` and scroll to the tail.
+            // us to do besides kick `loadHistory`. Tail anchoring on
+            // (re-)attach lives on the coordinator (`tryConsumeTail-
+            // AnchorOnAttach`), not here — at `.task` time SwiftUI
+            // hasn't committed the new `NativeTranscript2View`, so
+            // `coordinator.tableView` is nil and any scroll attempt
+            // would be silently dropped by `Coordinator.apply`.
             let s = manager.prepareDraftSession(sessionId)
             session = s
             appLog(
@@ -130,23 +135,6 @@ struct ChatHistoryView: View {
                     + "msgCount=\(s.messages.count) "
                     + "blockCount=\(s.controller.blockCount)")
             s.loadHistory()
-            // For re-entry (already loaded, blocks already populated by
-            // the continuous bridge), reload's default scroll position
-            // is the top; pin to the tail so the user lands where they
-            // left off. Cold loads still scroll to bottom via Phase A's
-            // `loadInitial(anchor: .bottom)`.
-            appLog(
-                .info, "ChatHistoryView",
-                "[scroll-bug] task pre-scrollToBottom session=\(sessionId.prefix(8))… "
-                    + "tableViewBound=\(s.controller.coordinator.debugHasTable) "
-                    + "layoutWidth=\(s.controller.coordinator.layoutWidth) "
-                    + "blockCount=\(s.controller.blockCount)")
-            s.controller.scrollToBottom()
-            appLog(
-                .info, "ChatHistoryView",
-                "[scroll-bug] task post-scrollToBottom session=\(sessionId.prefix(8))… "
-                    + "tableViewBound=\(s.controller.coordinator.debugHasTable) "
-                    + "scrollOriginY=\(s.controller.coordinator.debugScrollOriginY)")
             // `.onChange(of: isRunning)` only fires on transitions, and
             // its `initial: true` invocation ran above with `session`
             // still nil (no-op via `session?`). If running ended while

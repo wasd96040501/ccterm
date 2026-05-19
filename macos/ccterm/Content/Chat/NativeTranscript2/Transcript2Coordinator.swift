@@ -66,55 +66,60 @@ import AppKit
 final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     weak var tableView: NSTableView? {
         didSet {
-            let oldWas = oldValue != nil ? "nonNil" : "NIL"
-            let newIs = tableView != nil ? "nonNil" : "NIL"
             // If `apply` was called before the table was attached, blocks
             // already exist; the freshly-attached table starts at
             // `numberOfRows = 0` until reloaded.
-            var didReload = false
             if let table = tableView, oldValue !== tableView, !blocks.isEmpty {
                 table.reloadData()
-                didReload = true
             }
-            appLog(
-                .info, "Transcript2Coordinator",
-                "[scroll-bug] tableView didSet old=\(oldWas) new=\(newIs) "
-                    + "blocks=\(blocks.count) reload=\(didReload) "
-                    + "newWidth=\(tableView?.bounds.width ?? -1) "
-                    + "lastLayoutWidth=\(lastLayoutWidth)")
-            // Re-attach signal: fire on next runloop tick so
-            // `setDocumentView` has wired `enclosingScrollView` before any
-            // scroll attempt runs. Triggers on the `nil → non-nil` edge
-            // with content already present:
-            //  - re-entry (controller carries blocks from prior mount), and
-            //  - first-open under the deferred-swap (#111) which keeps the
-            //    OLD view mounted until Phase A populates this coordinator,
-            //    so `blocks` is non-empty on the very first didSet.
-            // Native `reloadData()` lands the table at top; this hook is
-            // what re-anchors the visible position to the tail. See
-            // `Transcript2Controller.init` for the subscriber.
+            // Re-attach signal: arm the tail-anchor consumed by
+            // `tryConsumeTailAnchorOnAttach()`. The consumer runs from two
+            // sites:
+            //  - `tableFrameDidChange` (sync, in-iteration) — best case,
+            //    the scroll change rides the same CATransaction as the
+            //    table's initial layout, so the first visible frame is
+            //    already at the tail.
+            //  - `DispatchQueue.main.async` (next runloop tick) — safety
+            //    net for sessions whose internal layout doesn't settle
+            //    until after SwiftUI's commit pass (long transcripts
+            //    where the reloadData above + heightOfRow eat time, so
+            //    the clip view is still 0-height by the time
+            //    setDocumentView fires its initial frameDidChange).
+            // Whichever site sees `tryConsume`'s geometry guard pass
+            // first wins; the loser is a no-op.
+            // Triggers on the `nil → non-nil` edge with content already
+            // present:
+            //  - re-entry: controller carries blocks from the prior mount.
+            //  - first-open under #111 deferred-swap: the OLD view stays
+            //    mounted until Phase A populates this coordinator, so
+            //    `blocks` is non-empty on the very first didSet.
             if tableView != nil, oldValue == nil, !blocks.isEmpty {
+                pendingTailAnchorOnAttach = true
                 DispatchQueue.main.async { [weak self] in
-                    guard let self else { return }
-                    appLog(
-                        .info, "Transcript2Coordinator",
-                        "[scroll-bug] onTableAttached firing (deferred 1 tick) blocks=\(self.blocks.count)")
-                    self.onTableAttached?()
+                    self?.tryConsumeTailAnchorOnAttach()
                 }
             }
         }
     }
 
-    /// Debug-only: surfaces whether the weak `tableView` is currently bound,
-    /// without leaking the table itself across actor / module boundaries.
-    /// Cheap and side-effect-free; safe to call from any logging site.
-    var debugHasTable: Bool { tableView != nil }
-
-    /// Debug-only: current `contentView.bounds.origin.y` (scroll offset), or
-    /// NaN when no scroll view is attached. Used by `[scroll-bug]` logging to
-    /// record before/after positions without a second back-channel.
-    var debugScrollOriginY: CGFloat {
-        tableView?.enclosingScrollView?.contentView.bounds.origin.y ?? .nan
+    /// Consume `pendingTailAnchorOnAttach` iff every scroll-geometry
+    /// precondition is satisfied. Otherwise leave the flag set so a
+    /// later call site (the next frameDidChange / the async safety
+    /// net) can retry. The guard is the load-bearing part — premature
+    /// firing in the middle of `setDocumentView` / SwiftUI's sizing
+    /// pass produces a wildly-wrong scroll target (clip height 0 →
+    /// `visibleBottomInClip` is negative → target lands past the end
+    /// of the document).
+    private func tryConsumeTailAnchorOnAttach() {
+        guard pendingTailAnchorOnAttach,
+            let table = tableView,
+            let scrollView = table.enclosingScrollView,
+            scrollView.contentView.bounds.height > 0,  // clip view sized
+            table.bounds.width >= BlockStyle.minLayoutWidth,  // table at a real layout width, not the NSTableView default
+            let lastId = blocks.last?.id
+        else { return }
+        pendingTailAnchorOnAttach = false
+        scrollRowToBottom(id: lastId, in: table)
     }
 
     /// Notifies the controller after every successful mutation so SwiftUI
@@ -131,18 +136,19 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// (live resize, etc.) don't re-fire.
     var onLayoutReady: (() -> Void)?
 
-    /// Fires one runloop tick after `tableView` transitions from nil →
-    /// non-nil with `blocks` already populated. The deferred dispatch is
-    /// load-bearing: `NSScrollView.setDocumentView(_:)` resizes the table
-    /// (posting `frameDidChange`) *before* the table is actually a
-    /// subview of the clip view, so any `scrollRowToBottom` triggered
-    /// synchronously from this didSet or from the resulting
-    /// `frameDidChange → onLayoutReady` path finds
-    /// `tableView.enclosingScrollView == nil` and aborts. One main-queue
-    /// hop is enough for AppKit to finish the insertion. The
-    /// `Transcript2Controller` subscriber uses this to re-anchor scroll
-    /// to the conversation tail on every (re-)attach.
-    var onTableAttached: (() -> Void)?
+    /// One-shot flag: armed by `tableView.didSet` on a fresh `nil →
+    /// non-nil` attach (with `blocks` already populated), consumed by
+    /// `tableFrameDidChange` on the first frame event where the scroll
+    /// view chain is actually wired. The two-stage handshake is required
+    /// because `NSScrollView.setDocumentView(_:)` posts the table's
+    /// initial frame change *before* inserting it into the clip view —
+    /// so a sync scroll from `didSet` or from the very first
+    /// `frameDidChange` would find `enclosingScrollView == nil` and
+    /// abort. Waiting for a frame event with the chain wired lets the
+    /// anchor land in the same runloop iteration (same CATransaction)
+    /// as the table's initial layout, so the first visible frame is
+    /// already at the tail — no top→tail snap.
+    private var pendingTailAnchorOnAttach: Bool = false
 
     /// Set by `Transcript2Controller` to forward chevron taps to the
     /// SwiftUI-owned sheet binding. The cell's mouseDown handler resolves
@@ -323,15 +329,6 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         // settled scroll would jitter the anchor row.
         mutationCounter &+= 1
 
-        if !changes.isEmpty || scroll != .none {
-            appLog(
-                .info, "Transcript2Coordinator",
-                "[scroll-bug] apply changes=\(changes.count) scroll=\(scroll) "
-                    + "tableBound=\(tableView != nil) "
-                    + "width=\(tableView?.bounds.width ?? -1) "
-                    + "blocks=\(blocks.count)")
-        }
-
         if let table = tableView {
             withScrollAdjustment(scroll, in: table) {
                 table.beginUpdates()
@@ -343,12 +340,6 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         } else {
             // Table not attached. Just mutate `blocks`; future attach will
             // `reloadData()`. Scroll state is meaningless without a table.
-            if scroll != .none {
-                appLog(
-                    .warning, "Transcript2Coordinator",
-                    "[scroll-bug] apply DROPPED scroll \(scroll) (tableView is nil) "
-                        + "changes=\(changes.count)")
-            }
             for change in changes {
                 applyStructuralChange(change, in: nil)
             }
@@ -644,23 +635,11 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     private func scrollRowToTop(id: UUID, in tableView: NSTableView) {
         guard let row = blocks.firstIndex(where: { $0.id == id }),
             let scrollView = tableView.enclosingScrollView
-        else {
-            appLog(
-                .warning, "Transcript2Coordinator",
-                "[scroll-bug] scrollRowToTop ABORTED idLookup or scrollView missing")
-            return
-        }
+        else { return }
         let rect = tableView.rect(ofRow: row)
         let target = rect.minY - scrollView.contentInsets.top
-        let preY = scrollView.contentView.bounds.origin.y
         scrollView.contentView.scroll(
             to: NSPoint(x: scrollView.contentView.bounds.origin.x, y: target))
-        appLog(
-            .info, "Transcript2Coordinator",
-            "[scroll-bug] scrollRowToTop row=\(row)/\(blocks.count) "
-                + "rect.y=\(rect.origin.y) rect.h=\(rect.size.height) "
-                + "insetTop=\(scrollView.contentInsets.top) target=\(target) "
-                + "preOrigin=\(preY) postOrigin=\(scrollView.contentView.bounds.origin.y)")
     }
 
     /// Scroll so `id`'s bottom aligns with the visible content area's bottom
@@ -680,32 +659,14 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     private func scrollRowToBottom(id: UUID, in tableView: NSTableView) {
         guard let row = blocks.firstIndex(where: { $0.id == id }),
             let scrollView = tableView.enclosingScrollView
-        else {
-            appLog(
-                .warning, "Transcript2Coordinator",
-                "[scroll-bug] scrollRowToBottom ABORTED "
-                    + "idLookupFound=\(blocks.firstIndex(where: { $0.id == id }) != nil) "
-                    + "scrollView=\(tableView.enclosingScrollView != nil)")
-            return
-        }
+        else { return }
         let rect = tableView.rect(ofRow: row)
         let visibleBottomInClip =
             scrollView.contentView.bounds.height - scrollView.contentInsets.bottom
         let raw = rect.maxY - visibleBottomInClip
         let target = max(-scrollView.contentInsets.top, raw)
-        let preY = scrollView.contentView.bounds.origin.y
         scrollView.contentView.scroll(
             to: NSPoint(x: scrollView.contentView.bounds.origin.x, y: target))
-        appLog(
-            .info, "Transcript2Coordinator",
-            "[scroll-bug] scrollRowToBottom row=\(row)/\(blocks.count) "
-                + "rect.y=\(rect.origin.y) rect.h=\(rect.size.height) rect.maxY=\(rect.maxY) "
-                + "clipH=\(scrollView.contentView.bounds.height) "
-                + "insetBottom=\(scrollView.contentInsets.bottom) "
-                + "insetTop=\(scrollView.contentInsets.top) "
-                + "visibleBottomInClip=\(visibleBottomInClip) "
-                + "raw=\(raw) target=\(target) "
-                + "preOrigin=\(preY) postOrigin=\(scrollView.contentView.bounds.origin.y)")
     }
 
     // MARK: - Layout cache
@@ -994,31 +955,25 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     // MARK: - Width-change driven invalidation
 
     @objc func tableFrameDidChange(_ note: Notification) {
-        guard let tableView else {
-            appLog(
-                .info, "Transcript2Coordinator",
-                "[scroll-bug] frameDidChange but tableView is NIL")
-            return
-        }
+        guard let tableView else { return }
+        // Sync fast-path for the tail-anchor on a fresh attach: pick up
+        // the first frame event where every geometry precondition is
+        // satisfied (scroll view wired, clip view sized, table at a real
+        // layout width). Same CATransaction as makeNSView, so a hit here
+        // means the first visible frame is already at the tail. If the
+        // preconditions aren't ready yet, the guard inside leaves the
+        // flag set; the next frame event (or the async safety net from
+        // `tableView.didSet`) tries again. Placed BEFORE the width-
+        // equality early-return so same-width frame events still drive
+        // a retry.
+        tryConsumeTailAnchorOnAttach()
         // Resizes inside the >max clamp band leave `layoutWidth` unchanged —
         // `BlockCellView.layoutOrigin` re-centers content automatically from
         // the new `bounds.width`, no row needs its layout invalidated.
         let width = layoutWidth
-        if width == lastLayoutWidth {
-            appLog(
-                .info, "Transcript2Coordinator",
-                "[scroll-bug] frameDidChange EARLY-RETURN "
-                    + "width=\(width) lastLayoutWidth=\(lastLayoutWidth) "
-                    + "(no invalidate, no onLayoutReady) blocks=\(blocks.count) "
-                    + "tableBoundsW=\(tableView.bounds.width)")
-            return
-        }
+        if width == lastLayoutWidth { return }
         let prevWidth = lastLayoutWidth
         lastLayoutWidth = width
-        appLog(
-            .info, "Transcript2Coordinator",
-            "[scroll-bug] frameDidChange RUN prevWidth=\(prevWidth) newWidth=\(width) "
-                + "blocks=\(blocks.count) inLiveResize=\(tableView.inLiveResize)")
 
         // Refresh row heights BEFORE `onLayoutReady?()`. The deferred branch
         // of `Transcript2Controller.loadInitial` pre-inserts blocks into
@@ -1050,9 +1005,6 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         // First 0→positive transition unblocks any deferred `loadInitial`
         // on the controller side.
         if prevWidth <= 0 && width > 0 {
-            appLog(
-                .info, "Transcript2Coordinator",
-                "[scroll-bug] frameDidChange firing onLayoutReady (0→positive)")
             onLayoutReady?()
         }
     }

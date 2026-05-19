@@ -66,16 +66,24 @@ struct TextCardSection: @unchecked Sendable {
         /// chrome (e.g. a single-line label card) without affecting
         /// the body-wide gap rhythm.
         let verticalPadding: CGFloat?
+        /// Extra inset to the left of the text column for a caller-
+        /// drawn chrome glyph (the bash prompt `$` lives here). The
+        /// text origin shifts right by this amount and the wrap
+        /// width shrinks accordingly; the caller is responsible for
+        /// painting whatever sits in the reserved column.
+        let leadingIndent: CGFloat
 
         init(
             text: String, color: NSColor = .labelColor,
             attributed: NSAttributedString? = nil,
-            verticalPadding: CGFloat? = nil
+            verticalPadding: CGFloat? = nil,
+            leadingIndent: CGFloat = 0
         ) {
             self.text = text
             self.color = color
             self.attributed = attributed
             self.verticalPadding = verticalPadding
+            self.leadingIndent = leadingIndent
         }
     }
 
@@ -96,7 +104,6 @@ struct TextCardSection: @unchecked Sendable {
     ) -> (sections: [TextCardSection], totalHeight: CGFloat) {
         guard maxWidth > 0 else { return ([], 0) }
         let hPad = horizontalPadding
-        let textWidth = max(1, maxWidth - 2 * hPad)
         let font = BlockStyle.codeBlockFont
 
         var sections: [TextCardSection] = []
@@ -104,6 +111,7 @@ struct TextCardSection: @unchecked Sendable {
 
         for spec in specs {
             let vPad = spec.verticalPadding ?? verticalPadding
+            let textWidth = max(1, maxWidth - 2 * hPad - spec.leadingIndent)
             let attr: NSAttributedString
             if let preset = spec.attributed {
                 attr = preset
@@ -125,7 +133,7 @@ struct TextCardSection: @unchecked Sendable {
             let cardRect = CGRect(
                 x: originX, y: y, width: maxWidth, height: cardH)
             let textOrigin = CGPoint(
-                x: originX + hPad, y: y + vPad)
+                x: originX + hPad + spec.leadingIndent, y: y + vPad)
             sections.append(
                 TextCardSection(
                     cardRect: cardRect,

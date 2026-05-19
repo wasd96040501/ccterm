@@ -278,14 +278,16 @@ enum RowLayout: @unchecked Sendable {
     func subviewPlan(
         origin: CGPoint,
         hoveredAction: HitAction?,
-        selection: SelectionRange?
+        selection: SelectionRange?,
+        flashingCopyTexts: Set<String> = []
     ) -> SubviewPlan {
         switch self {
         case .toolGroup(let l):
             return l.subviewPlan(
                 origin: origin,
                 hoveredAction: hoveredAction,
-                selection: selection)
+                selection: selection,
+                flashingCopyTexts: flashingCopyTexts)
         case .loadingPill(let l):
             // The indicator hosts a single `NSImageView` running an
             // SF Symbol `.variableColor` effect. The reconciler

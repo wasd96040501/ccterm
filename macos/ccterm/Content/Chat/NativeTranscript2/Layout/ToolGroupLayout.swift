@@ -549,6 +549,18 @@ struct ToolGroupLayout: @unchecked Sendable {
                     if h > 0 {
                         y = bodyY + h
                         body = layout
+                        // Body-level copy affordances (today only
+                        // bash's per-card icons) — emit one
+                        // `InteractiveHit` per button so the cell's
+                        // existing `HitAction.copyText` switch arm
+                        // dispatches the click without any new
+                        // toolGroup-specific plumbing.
+                        for button in layout.copyButtons {
+                            hits.append(
+                                InteractiveHit(
+                                    rect: button.hitRect,
+                                    action: .copyText(button.text)))
+                        }
                     } else {
                         // Empty body — treat like folded for layout
                         // purposes so the next child doesn't gain an
@@ -770,11 +782,18 @@ struct ToolGroupLayout: @unchecked Sendable {
     /// paint. Called from `subviewPlan`'s per-entry capture closure;
     /// `ToolGroupEntryView` itself is layout-agnostic and invokes the
     /// closure rather than reaching for this method directly.
+    ///
+    /// `hoveredCopyText` + `flashingCopyTexts` flow through to the
+    /// body's `draw` so per-card chrome (today only bash's copy
+    /// icons) can render hover-bg / checkmark feedback. Both are
+    /// nil / empty for entries whose body has no copy affordances.
     nonisolated private static func drawEntry(
         _ entry: Entry,
         hovered: Bool,
         selectionRects: [CGRect],
         selectionColor: NSColor,
+        hoveredCopyText: String?,
+        flashingCopyTexts: Set<String>,
         in ctx: CGContext
     ) {
         let dx = -entry.bandRect.minX
@@ -795,7 +814,10 @@ struct ToolGroupLayout: @unchecked Sendable {
         }
 
         // 3. Body glyphs.
-        entry.body?.draw(in: ctx, origin: originForBody)
+        entry.body?.draw(
+            in: ctx, origin: originForBody,
+            hoveredCopyText: hoveredCopyText,
+            flashingCopyTexts: flashingCopyTexts)
 
         // 4. Child header title.
         drawHeader(
@@ -825,12 +847,23 @@ struct ToolGroupLayout: @unchecked Sendable {
     /// re-building the plan on every hover / selection transition is
     /// cheap (just value composition over the already-laid-out
     /// `items`), and lets the reconcile path stay a single code path.
+    ///
+    /// `flashingCopyTexts` is the set of copy-button texts whose
+    /// post-click checkmark window is still open on the host cell.
+    /// Captured into every entry's draw closure so per-card icons
+    /// can render the feedback flash; empty for cells with no
+    /// recent click.
     func subviewPlan(
         origin: CGPoint,
         hoveredAction: HitAction?,
-        selection: SelectionRange?
+        selection: SelectionRange?,
+        flashingCopyTexts: Set<String> = []
     ) -> SubviewPlan {
         let hoveredId = Self.hoveredFoldId(in: hoveredAction)
+        let hoveredCopyText: String? = {
+            if case .copyText(let text) = hoveredAction { return text }
+            return nil
+        }()
 
         var chevrons: [SubviewPlan.Chevron] = []
         var shimmers: [SubviewPlan.Shimmer] = []
@@ -903,6 +936,8 @@ struct ToolGroupLayout: @unchecked Sendable {
             let capturedEntry = entry
             let capturedHovered = hoveredId == entry.header.foldId
             let capturedRects = selectionRects
+            let capturedHoveredCopyText = hoveredCopyText
+            let capturedFlashing = flashingCopyTexts
             entries.append(
                 SubviewPlan.Entry(
                     id: entry.childId,
@@ -913,6 +948,8 @@ struct ToolGroupLayout: @unchecked Sendable {
                             hovered: capturedHovered,
                             selectionRects: capturedRects,
                             selectionColor: selectionColor,
+                            hoveredCopyText: capturedHoveredCopyText,
+                            flashingCopyTexts: capturedFlashing,
                             in: ctx)
                     }))
         }

@@ -50,7 +50,8 @@ extension BlockCellView {
             layout?.subviewPlan(
                 origin: layoutOrigin,
                 hoveredAction: hoveredAction,
-                selection: selection) ?? .empty
+                selection: selection,
+                flashingCopyTexts: Set(copyFlashByText.keys)) ?? .empty
         let animateFrames = pendingFoldTransition
         pendingFoldTransition = false
         applyChevronPlan(plan.chevrons, allowSlide: animateFrames)

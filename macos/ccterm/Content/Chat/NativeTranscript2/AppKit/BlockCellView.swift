@@ -131,15 +131,31 @@ final class BlockCellView: NSView {
         }
     }
 
-    /// Timestamp of the most recent copy click on this cell's code
-    /// block, or `nil` when the button should display its idle
-    /// (`doc.on.doc`) glyph. Set on click; cleared 1.5s later by a
-    /// task that compares the timestamp before clearing (so a quick
-    /// second click doesn't get its checkmark cut short by the first
-    /// click's pending clear). Reset to `nil` on every `viewFor`
-    /// reuse — the feedback is opportunistic, missing it on a
-    /// scroll-recycled cell is fine.
-    private var copiedAt: Date?
+    /// Per-text post-click checkmark timestamps. One row may host
+    /// more than one copy icon (a `.toolGroup` row whose expanded
+    /// bash child has command + stdout + stderr cards exposes three),
+    /// so the flash state has to be per-button. Keyed by the
+    /// copied text — the `HitAction.copyText` payload already
+    /// guarantees uniqueness within one row (an empty / duplicate
+    /// section never produces an `InteractiveHit`). Cleared 1.5s
+    /// later by an identity-stamped task so a quick second click on
+    /// the same icon doesn't get its checkmark cut short by the
+    /// first click's pending clear. Reset to empty on every
+    /// `viewFor` reuse — the feedback is opportunistic, missing it
+    /// on a scroll-recycled cell is fine.
+    var copyFlashByText: [String: Date] = [:] {
+        didSet {
+            if copyFlashByText != oldValue {
+                needsDisplay = true
+                // Toolgroup rows render their copy icons inside per-
+                // entry `ToolGroupEntryView` subviews via captured
+                // draw closures — the flash state has to flow back
+                // through `syncSubviewPlan()` so the rebuilt closures
+                // see the latest set.
+                syncSubviewPlan()
+            }
+        }
+    }
 
     /// `HitAction` of the `InteractiveHit` currently under the cursor,
     /// or `nil` when no hit is hovered. Drives per-region hover
@@ -259,11 +275,12 @@ final class BlockCellView: NSView {
 
     /// Public reset hook for `viewFor` so a recycled cell never shows
     /// a stale checkmark on a different block. Clears both the
-    /// codeblock in-header copy flash and every gutter's copy flash.
+    /// in-card copy flash (codeblock + every bash sub-card) and
+    /// every cell-margin gutter's copy flash.
     func resetCopiedFeedback() {
         var changed = false
-        if copiedAt != nil {
-            copiedAt = nil
+        if !copyFlashByText.isEmpty {
+            copyFlashByText.removeAll()
             changed = true
         }
         if !gutterCopiedAt.isEmpty {
@@ -421,20 +438,22 @@ final class BlockCellView: NSView {
         // Code-block copy glyph — layout owns the visual recipe
         // (symbol, tint, size, hover background); the cell hands
         // through transient state: icon-hover for the rounded
-        // background + `copiedAt` for the checkmark flash. The glyph
+        // background + per-text flash for the checkmark. The glyph
         // is always visible (unlike the cell-margin gutter, which
         // hides outside row-hover) — the codeblock's in-card copy
         // affordance is the primary handle for "this is a code
         // block, copy it" and should never disappear.
         if case .codeBlock(let l) = layout {
             let iconHovered: Bool = {
-                if case .copyText = hoveredAction { return true }
+                if case .copyText(let text) = hoveredAction {
+                    return text == l.code
+                }
                 return false
             }()
             l.drawCopyGlyph(
                 in: ctx, origin: origin,
                 iconHovered: iconHovered,
-                checked: copiedAt != nil)
+                checked: copyFlashByText[l.code] != nil)
         }
 
         // Gutters — cell-margin copy affordances, painted last so a
@@ -676,15 +695,17 @@ final class BlockCellView: NSView {
         // Visual feedback: swap idle → checkmark, schedule a swap back
         // 1.5s later. Stamp identity prevents a quick second click's
         // checkmark from being cut short by the first click's
-        // pending clear.
+        // pending clear. Keyed by `text` so a row with multiple copy
+        // affordances (today: an expanded bash child's command +
+        // stdout + stderr cards) flashes only the clicked icon.
         let stamp = Date()
-        copiedAt = stamp
-        needsDisplay = true
+        copyFlashByText[text] = stamp
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 1_500_000_000)
-            guard let self, self.copiedAt == stamp else { return }
-            self.copiedAt = nil
-            self.needsDisplay = true
+            guard let self,
+                self.copyFlashByText[text] == stamp
+            else { return }
+            self.copyFlashByText.removeValue(forKey: text)
         }
     }
 }

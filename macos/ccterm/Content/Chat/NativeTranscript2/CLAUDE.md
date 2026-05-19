@@ -320,7 +320,7 @@ NativeTranscript2/
 │   ├── ListLayout.swift             Recursive list with self-drawn markers / checkboxes
 │   ├── TableLayout.swift            CSS-like min/max column allocation + self-drawn grid
 │   ├── UserBubbleLayout.swift       Right-aligned bubble + chevron + fade mask + selection clamp
-│   ├── CodeBlockLayout.swift        Header (lang + copy) + embedded TextLayout body + async token coloring
+│   ├── CodeBlockLayout.swift        Floating top-right chrome (lang badge + hover-gated copy icon) + embedded TextLayout body + async token coloring
 │   ├── BlockquoteLayout.swift       Left bar + embedded TextLayout
 │   ├── ThematicBreakLayout.swift    Single hairline
 │   ├── ToolGroupLayout.swift        Tool group row (group header + child headers + expanded body); dispatches into ToolGroupChildLayout

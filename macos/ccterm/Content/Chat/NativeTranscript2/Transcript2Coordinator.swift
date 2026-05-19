@@ -764,7 +764,9 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             return .codeBlock(
                 CodeBlockLayout.make(
                     code: code, language: language,
-                    tokens: codeTokens, maxWidth: contentWidth))
+                    tokens: codeTokens,
+                    copyButtonId: block.id,
+                    maxWidth: contentWidth))
         case .blockquote(let inlines):
             return .blockquote(BlockquoteLayout.make(inlines: inlines, maxWidth: contentWidth))
         case .thematicBreak:

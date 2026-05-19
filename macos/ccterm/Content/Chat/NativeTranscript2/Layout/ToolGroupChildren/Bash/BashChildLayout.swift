@@ -63,20 +63,11 @@ struct BashChildLayout: @unchecked Sendable {
     /// section's `TextLayout`, so it stays out of selection.
     let promptOrigin: CGPoint?
     /// One copy affordance per surviving card. Order matches
-    /// `sections`. `text` is the section's plain content as a
-    /// pasteboard-ready string; `hitRect` / `center` are in
-    /// layout-local coords. `iconHovered` / `checked` drawing state
-    /// flow in from the cell via `draw(...)` parameters.
-    let copyButtons: [CopyButton]
-
-    /// Per-card copy affordance — same geometry posture as
-    /// `CodeBlockLayout.copyHitRect` / `copyCenter`, repeated for
-    /// every sub-card.
-    struct CopyButton: @unchecked Sendable {
-        let hitRect: CGRect
-        let center: CGPoint
-        let text: String
-    }
+    /// `sections`. Each `CopyChrome` carries a per-card stable `id`
+    /// (derived deterministically from the child id + section index)
+    /// so the post-click flash on `BlockCellView.copyFlashByActionId`
+    /// survives token back-fill / width changes.
+    let copyChromes: [CopyChrome]
 
     var totalHeight: CGFloat { containerRect.height }
 
@@ -169,60 +160,48 @@ struct BashChildLayout: @unchecked Sendable {
             promptOrigin = nil
         }
 
-        // Copy buttons — top-right overlay per card, sized to the
-        // gutter hit rect (18pt) and inset 8pt from the card's right
-        // / top edges (same chrome posture as `CodeBlockLayout`).
-        // Text payload: the section's plain content, ready for the
-        // pasteboard.
-        let chromeHit = BlockStyle.gutterHitSize
-        let chromeInset = BlockStyle.codeBlockChromeRightInset
-        let chromeTop = BlockStyle.codeBlockChromeTopInset
-        var copyButtons: [CopyButton] = []
-        copyButtons.reserveCapacity(sections.count)
-        // The pasteboard text for the command card is the trimmed
-        // command (without the chrome `$`); for the stdout / stderr
-        // cards it's the trimmed stream content. The section's
-        // `attributed.string` already carries the same trimmed text
-        // we handed to `TextCardSection.build`, so reading it back
-        // from the section is the single source of truth.
-        for section in sections {
-            let cardRect = section.cardRect
-            let rightEdge = cardRect.maxX - chromeInset
-            let leftEdge = rightEdge - chromeHit
-            let hitRect = CGRect(
-                x: leftEdge, y: cardRect.minY + chromeTop,
-                width: chromeHit, height: chromeHit)
-            let center = CGPoint(
-                x: leftEdge + chromeHit / 2,
-                y: cardRect.minY + chromeTop + chromeHit / 2)
+        // Copy chromes — top-right overlay per card. The shared
+        // `CopyChrome.topRight` factory owns the 18pt-hit + 8pt-inset
+        // geometry (codeblock and diff use the same). Per-card stable
+        // id derived from `child.id + sectionIndex` so the post-click
+        // flash survives token back-fill / width changes for the same
+        // card. Pasteboard text comes from the section's attributed
+        // string (single source of truth — same trimmed content we
+        // handed to `TextCardSection.build`).
+        var copyChromes: [CopyChrome] = []
+        copyChromes.reserveCapacity(sections.count)
+        for (sectionIndex, section) in sections.enumerated() {
             let text = section.text.attributed.string
                 .replacingOccurrences(of: "\u{2028}", with: "\n")
-            copyButtons.append(
-                CopyButton(hitRect: hitRect, center: center, text: text))
+            let id = CopyChrome.derivedId(base: child.id, slot: sectionIndex)
+            if let chrome = CopyChrome.topRight(
+                of: section.cardRect, id: id, text: text)
+            {
+                copyChromes.append(chrome)
+            }
         }
 
         return BashChildLayout(
             containerRect: container, sections: sections,
             promptOrigin: promptOrigin,
-            copyButtons: copyButtons)
+            copyChromes: copyChromes)
     }
 
     func drawBackplate(in ctx: CGContext, origin: CGPoint) {
         TextCardSection.drawBackplates(sections, in: ctx, origin: origin)
     }
 
-    /// `hoveredCopyText` is the text payload of the copy button the
-    /// cursor is currently over (`nil` when no bash copy icon is
-    /// hovered); `flashingCopyTexts` is the set of texts whose
-    /// post-click checkmark window is still open. Both flow in from
-    /// the cell via `BlockCellView.hoveredAction` and
-    /// `copyFlashByText` — the cell rebuilds the entry subview's
-    /// draw closure on every transition so the captured values
-    /// stay fresh.
+    /// `hoveredCopyId` is the `CopyChrome.id` the cursor is currently
+    /// over (`nil` when no bash copy icon is hovered); `flashingCopyIds`
+    /// is the set of ids whose post-click checkmark window is still
+    /// open. Both flow in from the cell via `BlockCellView.hoveredAction`
+    /// and `copyFlashByActionId` — the cell rebuilds the entry subview's
+    /// draw closure on every transition so the captured values stay
+    /// fresh.
     func draw(
         in ctx: CGContext, origin: CGPoint,
-        hoveredCopyText: String?,
-        flashingCopyTexts: Set<String>
+        hoveredCopyId: UUID?,
+        flashingCopyIds: Set<UUID>
     ) {
         // Sections (rounded fills already painted by drawBackplate;
         // this is the glyph pass).
@@ -249,77 +228,14 @@ struct BashChildLayout: @unchecked Sendable {
             ctx.restoreGState()
         }
 
-        // Copy icons — one per card. Layout owns the visual recipe;
-        // cell decides hover / flash state via the parameters above.
-        for button in copyButtons {
-            let iconHovered = hoveredCopyText == button.text
-            let checked = flashingCopyTexts.contains(button.text)
-            Self.drawCopyGlyph(
+        // Copy icons — one per card. `CopyChrome` owns the visual
+        // recipe; cell decides hover / flash state via the parameters
+        // above.
+        for chrome in copyChromes {
+            chrome.draw(
                 in: ctx, origin: origin,
-                hit: button.hitRect, center: button.center,
-                iconHovered: iconHovered, checked: checked)
+                hovered: hoveredCopyId == chrome.id,
+                flashing: flashingCopyIds.contains(chrome.id))
         }
-    }
-
-    /// Renders one copy glyph. Static helper so the recipe is co-
-    /// located with bash's draw pass — same shape as
-    /// `CodeBlockLayout.drawCopyGlyph`, repeated here for the
-    /// per-card sites (a shared free function would mean exporting
-    /// gutter-style chrome constants under a new namespace; the
-    /// helper inside the layout is cheaper).
-    nonisolated private static func drawCopyGlyph(
-        in ctx: CGContext, origin: CGPoint,
-        hit: CGRect, center: CGPoint,
-        iconHovered: Bool, checked: Bool
-    ) {
-        if iconHovered {
-            let bg = hit.offsetBy(dx: origin.x, dy: origin.y)
-            let path = CGPath(
-                roundedRect: bg,
-                cornerWidth: BlockStyle.gutterHoverCornerRadius,
-                cornerHeight: BlockStyle.gutterHoverCornerRadius,
-                transform: nil)
-            ctx.setFillColor(BlockStyle.gutterHoverBackground.cgColor)
-            ctx.addPath(path)
-            ctx.fillPath()
-        }
-
-        let centerInRow = CGPoint(
-            x: center.x + origin.x, y: center.y + origin.y)
-        let name = checked ? "checkmark" : "doc.on.doc"
-        let tint: NSColor =
-            iconHovered
-            ? BlockStyle.gutterHoverForeground
-            : BlockStyle.gutterIdleForeground
-        let weight: NSFont.Weight = checked ? .semibold : .regular
-        let baseConfig = NSImage.SymbolConfiguration(
-            pointSize: BlockStyle.gutterSymbolPointSize, weight: weight)
-        let colorConfig = NSImage.SymbolConfiguration(paletteColors: [tint])
-        let config = baseConfig.applying(colorConfig)
-        guard
-            let symbol = NSImage(
-                systemSymbolName: name,
-                accessibilityDescription: nil)?
-                .withSymbolConfiguration(config)
-        else { return }
-
-        let size = symbol.size
-        let rect = CGRect(
-            x: centerInRow.x - size.width / 2,
-            y: centerInRow.y - size.height / 2,
-            width: size.width,
-            height: size.height)
-
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(
-            cgContext: ctx, flipped: true)
-        symbol.draw(
-            in: rect,
-            from: .zero,
-            operation: .sourceOver,
-            fraction: 1.0,
-            respectFlipped: true,
-            hints: nil)
-        NSGraphicsContext.restoreGraphicsState()
     }
 }

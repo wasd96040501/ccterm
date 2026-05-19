@@ -12,9 +12,8 @@ import AppKit
 /// CoreAnimation — they all snap on `needsDisplay`. Going through a
 /// `CALayer` would add `contentsScale` propagation, reconcile-by-id
 /// bookkeeping, and appearance-flip re-rasterization for no visible
-/// gain. The existing in-header copy glyph (`CodeBlockLayout.drawCopyGlyph`)
-/// already pioneers this pattern; gutters are the cell-margin
-/// generalisation.
+/// gain. The in-card copy glyph (`CopyChrome.draw`) already pioneers
+/// this pattern; gutters are the cell-margin generalisation.
 extension BlockCellView {
     // MARK: - Geometry
 
@@ -89,9 +88,9 @@ extension BlockCellView {
             ctx.fillPath()
         }
 
-        // SF Symbol — same configuration recipe as
-        // `CodeBlockLayout.drawCopyGlyph`. `doc.on.doc` idle, swap to
-        // `checkmark` while the post-click feedback flash is active.
+        // SF Symbol — same configuration recipe as `CopyChrome.draw`.
+        // `doc.on.doc` idle, swap to `checkmark` while the post-click
+        // feedback flash is active.
         let name = copied ? "checkmark" : "doc.on.doc"
         let tint: NSColor =
             hovered

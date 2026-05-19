@@ -34,6 +34,16 @@
         }
       }
     },
+    "%lld more question(s) after this one": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "之后还有 %lld 个问题"
+          }
+        }
+      }
+    },
     "%lld untracked": {
       "localizations": {
         "zh-Hans": {
@@ -224,6 +234,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "允许"
+          }
+        }
+      }
+    },
+    "Allow always": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "始终允许"
+          }
+        }
+      }
+    },
+    "Allow once": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅此一次"
           }
         }
       }
@@ -522,6 +552,16 @@
         }
       }
     },
+    "Cell %1$@ · %2$@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cell %1$@ · %2$@"
+          }
+        }
+      }
+    },
     "Choose Folder…": {
       "localizations": {
         "zh-Hans": {
@@ -580,6 +620,46 @@
           "stringUnit": {
             "state": "translated",
             "value": "Claude 有问题"
+          }
+        }
+      }
+    },
+    "Claude wants to %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude 想%@"
+          }
+        }
+      }
+    },
+    "Claude wants to ask you %lld questions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude 想问你 %lld 个问题"
+          }
+        }
+      }
+    },
+    "Claude wants to ask you a question": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude 想问你一个问题"
+          }
+        }
+      }
+    },
+    "Claude wants to enter plan mode to explore and design an implementation approach.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude 想进入规划模式，先探索代码并设计实现方案。"
           }
         }
       }
@@ -672,6 +752,16 @@
         }
       }
     },
+    "Compound command — \"Allow always\" will save %lld rules": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复合命令 — \"始终允许\" 将保存 %lld 条规则"
+          }
+        }
+      }
+    },
     "Confirm": {
       "extractionState": "stale",
       "localizations": {
@@ -747,6 +837,26 @@
         }
       }
     },
+    "Could not preview sed substitution": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法预览 sed 替换结果"
+          }
+        }
+      }
+    },
+    "Create %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "创建 %@"
+          }
+        }
+      }
+    },
     "Create plan before making changes": {
       "extractionState": "stale",
       "localizations": {
@@ -776,6 +886,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "删除 %@"
+          }
+        }
+      }
+    },
+    "Delete cell from %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从 %@ 删除 cell"
           }
         }
       }
@@ -812,6 +932,16 @@
         }
       }
     },
+    "Design an implementation strategy": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设计实现策略"
+          }
+        }
+      }
+    },
     "Done": {
       "localizations": {
         "zh-Hans": {
@@ -828,6 +958,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "编辑 %@"
+          }
+        }
+      }
+    },
+    "Edit cell in %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑 %@ 中的 cell"
           }
         }
       }
@@ -1004,6 +1144,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "执行，丢弃评论"
+          }
+        }
+      }
+    },
+    "Explore the codebase thoroughly": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "深入探索代码库"
           }
         }
       }
@@ -1222,6 +1372,16 @@
         }
       }
     },
+    "Glob": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查找文件"
+          }
+        }
+      }
+    },
     "Globbed \"%@\"": {
       "localizations": {
         "zh-Hans": {
@@ -1344,6 +1504,16 @@
         }
       }
     },
+    "Grep": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索内容"
+          }
+        }
+      }
+    },
     "Grepped %@": {},
     "Grepping %@": {
       "localizations": {
@@ -1366,6 +1536,16 @@
         }
       }
     },
+    "Identify existing patterns": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "识别已有模式"
+          }
+        }
+      }
+    },
     "Image": {
       "localizations": {
         "zh-Hans": {
@@ -1383,6 +1563,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "进行中"
+          }
+        }
+      }
+    },
+    "In plan mode, Claude will:": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在规划模式下，Claude 将："
+          }
+        }
+      }
+    },
+    "Insert cell into %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向 %@ 插入 cell"
           }
         }
       }
@@ -1443,6 +1643,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在检查仓库"
+          }
+        }
+      }
+    },
+    "Isolated worktree": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隔离 worktree"
           }
         }
       }
@@ -1628,6 +1838,16 @@
         }
       }
     },
+    "No code changes will be made until you approve the plan.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在你批准方案之前，不会改动任何代码。"
+          }
+        }
+      }
+    },
     "No matches": {
       "extractionState": "stale",
       "localizations": {
@@ -1645,6 +1865,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "无匹配会话"
+          }
+        }
+      }
+    },
+    "No plan body — review the transcript before approving.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "方案正文为空 — 请先查看会话记录再批准。"
           }
         }
       }
@@ -1708,6 +1938,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "其他"
+          }
+        }
+      }
+    },
+    "Overwrite %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "覆盖写入 %@"
+          }
+        }
+      }
+    },
+    "Path missing — open the transcript to inspect": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未提供路径 — 请在会话主区查看详情"
           }
         }
       }
@@ -1776,6 +2026,16 @@
         }
       }
     },
+    "Plan stored in a file; review it in the transcript before approving.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "方案保存在文件中，请先查看会话记录再批准。"
+          }
+        }
+      }
+    },
     "Please select a working directory first": {
       "extractionState": "stale",
       "localizations": {
@@ -1794,6 +2054,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "插件"
+          }
+        }
+      }
+    },
+    "Present a plan for your approval": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提交方案供你审阅"
           }
         }
       }
@@ -1955,6 +2225,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "运行了智能体 %@"
+          }
+        }
+      }
+    },
+    "Read": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取文件"
           }
         }
       }
@@ -2184,6 +2464,16 @@
         }
       }
     },
+    "Review the plan to leave plan mode?": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "审阅方案以退出规划模式？"
+          }
+        }
+      }
+    },
     "Revise": {
       "extractionState": "stale",
       "localizations": {
@@ -2195,12 +2485,32 @@
         }
       }
     },
+    "Run %@ agent": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行 %@ 子代理"
+          }
+        }
+      }
+    },
     "Run `macos/scripts/build-stress-corpus.py` and rebuild.": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "请运行 `macos/scripts/build-stress-corpus.py` 后重新构建。"
+          }
+        }
+      }
+    },
+    "Run sub-task": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行子任务"
           }
         }
       }
@@ -2864,6 +3174,26 @@
         }
       }
     },
+    "Use skill": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用技能"
+          }
+        }
+      }
+    },
+    "Use skill \"%@\"": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用技能 \"%@\""
+          }
+        }
+      }
+    },
     "Used %lld tools": {
       "localizations": {
         "en": {
@@ -3109,6 +3439,16 @@
         }
       }
     },
+    "ask you a question": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向你提问"
+          }
+        }
+      }
+    },
     "awaiting answer…": {
       "localizations": {
         "zh-Hans": {
@@ -3132,6 +3472,56 @@
         }
       }
     },
+    "edit a file": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑文件"
+          }
+        }
+      }
+    },
+    "edit a notebook": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑 notebook"
+          }
+        }
+      }
+    },
+    "enter plan mode": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "进入 plan 模式"
+          }
+        }
+      }
+    },
+    "exit plan mode": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "退出 plan 模式"
+          }
+        }
+      }
+    },
+    "fetch a web page": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "抓取网页"
+          }
+        }
+      }
+    },
     "file": {
       "localizations": {
         "zh-Hans": {
@@ -3142,12 +3532,72 @@
         }
       }
     },
+    "markdown": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "markdown"
+          }
+        }
+      }
+    },
+    "mode: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模式: %@"
+          }
+        }
+      }
+    },
+    "model: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型: %@"
+          }
+        }
+      }
+    },
     "now": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "刚刚"
+          }
+        }
+      }
+    },
+    "path: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "路径: %@"
+          }
+        }
+      }
+    },
+    "python": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "python"
+          }
+        }
+      }
+    },
+    "read a file": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取文件"
           }
         }
       }
@@ -3163,12 +3613,92 @@
         }
       }
     },
+    "run a PowerShell command": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行 PowerShell 命令"
+          }
+        }
+      }
+    },
+    "run a shell command": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行 shell 命令"
+          }
+        }
+      }
+    },
+    "run a skill": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行 skill"
+          }
+        }
+      }
+    },
+    "run a sub-task": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行子任务"
+          }
+        }
+      }
+    },
+    "search file contents": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索文件内容"
+          }
+        }
+      }
+    },
+    "search for files": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "搜索文件"
+          }
+        }
+      }
+    },
     "to send": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "发送"
+          }
+        }
+      }
+    },
+    "use %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用 %@"
+          }
+        }
+      }
+    },
+    "write a file": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写入文件"
           }
         }
       }

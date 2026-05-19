@@ -1,0 +1,173 @@
+import AgentSDK
+import Foundation
+import SwiftUI
+
+/// Body for `.mcp` permission requests (tools whose name starts
+/// with `mcp__`). Upstream has no dedicated component — these fall
+/// through to `FallbackPermissionRequest`.
+///
+/// We parse the canonical `mcp__<server>__<tool>` triple so the user
+/// can see both the originating MCP server (the trust boundary) and
+/// the bare tool name. The full `rawInput` is rendered as
+/// pretty-printed JSON inside a 200pt-cap monospace scroll —
+/// matching the shape of `taskAgent` / `notebook` bodies.
+///
+/// `description` (when the agent supplied one) is dimmed under the
+/// headline so a chatty MCP doesn't dilute the surface.
+struct PermissionMcpCardBody: View {
+    let request: PermissionRequest
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(toolDisplayName)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if let server = serverName {
+                    serverChip(server)
+                }
+                Spacer(minLength: 0)
+            }
+            if let description, !description.isEmpty {
+                Text(description)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if let json = inputJSON, !json.isEmpty {
+                ScrollView(.vertical, showsIndicators: true) {
+                    Text(json)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(.primary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 200)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - Data
+
+    /// Parsed triple from `mcp__<server>__<tool>`. Returns `nil` when
+    /// the tool name doesn't match the prefix — but `kind(for:)` only
+    /// routes here for names that do, so the body always has at
+    /// least a `server` and `tool` to render.
+    var components: (server: String, tool: String)? {
+        let name = request.toolName
+        guard name.hasPrefix("mcp__") else { return nil }
+        let stripped = String(name.dropFirst("mcp__".count))
+        let parts = stripped.components(separatedBy: "__")
+        switch parts.count {
+        case 0: return nil
+        case 1:
+            // No tool segment — server name alone. Surface the server
+            // as both pieces so the headline isn't blank.
+            return (parts[0], parts[0])
+        default:
+            // `mcp__server__a__b` — the upstream convention is that
+            // everything after the second `__` is the tool name,
+            // joined back with `__`.
+            let server = parts[0]
+            let tool = parts.dropFirst().joined(separator: "__")
+            return (server, tool)
+        }
+    }
+
+    var serverName: String? { components?.server }
+    var toolName: String? { components?.tool }
+
+    /// Display name for the tool. Falls back to the literal
+    /// `request.toolName` when parsing fails — better the user sees
+    /// `mcp__weird` than an empty headline.
+    var toolDisplayName: String {
+        toolName ?? request.toolName
+    }
+
+    var description: String? {
+        let raw = request.rawInput["description"] as? String
+        return raw?.isEmpty == false ? raw : nil
+    }
+
+    /// Pretty-printed JSON for the input map. Sorted keys so the
+    /// order is stable across renders — MCP servers don't guarantee
+    /// any particular key order. Returns `nil` when there's nothing
+    /// to show (empty rawInput) and `""` when serialisation fails so
+    /// the view collapses the row.
+    var inputJSON: String? {
+        let dict = request.rawInput
+        guard !dict.isEmpty else { return nil }
+        guard JSONSerialization.isValidJSONObject(dict) else {
+            return ""
+        }
+        do {
+            let data = try JSONSerialization.data(
+                withJSONObject: dict,
+                options: [.prettyPrinted, .sortedKeys])
+            return String(data: data, encoding: .utf8) ?? ""
+        } catch {
+            return ""
+        }
+    }
+
+    @ViewBuilder
+    private func serverChip(_ name: String) -> some View {
+        Text(name)
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.primary.opacity(0.06))
+            }
+    }
+}
+
+#Preview("Standard server__tool") {
+    PermissionMcpCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-1",
+            toolName: "mcp__linear__create_issue",
+            input: [
+                "description": "Create a Linear ticket from the failing test report.",
+                "title": "Investigate CI flake on snapshot tests",
+                "team": "ENG",
+                "priority": 2,
+            ])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("Nested tool name") {
+    PermissionMcpCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-2",
+            toolName: "mcp__chrome__tabs__create",
+            input: [
+                "url": "https://example.com",
+                "active": true,
+            ])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("Empty input") {
+    PermissionMcpCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-3",
+            toolName: "mcp__weather__current",
+            input: [:])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}

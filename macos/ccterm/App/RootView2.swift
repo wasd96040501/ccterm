@@ -1,3 +1,4 @@
+import AgentSDK
 import SwiftUI
 
 /// Root view: Sidebar + read-only ChatHistoryView. Selection is held locally,
@@ -507,5 +508,31 @@ private struct InputBarChrome: View {
             )
             InputBarSessionChrome(session: session)
         }
+        // Permission card floats on top of the bar+chrome stack:
+        // bottom-aligned with the chrome row, width pinned to this
+        // VStack (which spans attach `+` → pill trailing edge), and
+        // z-ordered above the input bar by virtue of being an overlay.
+        // Each button forwards through `Session.respond(to:decision:)`,
+        // which routes to `SessionRuntime.respond` → the per-request
+        // closure that completes the CLI's awaiting promise and pops
+        // the entry off `pendingPermissions`. `allowAlways` reuses the
+        // request's CLI-supplied `permissionSuggestions` so the rule
+        // matches what the agent itself proposed.
+        .overlay(alignment: .bottom) {
+            if let pending = session.pendingPermissions.first {
+                PermissionCardView(
+                    request: pending.request,
+                    onAllowOnce: { session.respond(to: pending.id, decision: pending.request.allowOnce()) },
+                    onAllowAlways: {
+                        session.respond(to: pending.id, decision: pending.request.allowAlways())
+                    },
+                    onDeny: { session.respond(to: pending.id, decision: pending.request.deny()) }
+                )
+                .transition(
+                    .scale(scale: 0.96, anchor: .bottom)
+                        .combined(with: .opacity))
+            }
+        }
+        .animation(.smooth(duration: 0.25), value: session.pendingPermissions.first?.id)
     }
 }

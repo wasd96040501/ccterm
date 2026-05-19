@@ -34,12 +34,6 @@ struct RootView2: View {
 
     @State private var selectedSessionId: String? = SidebarView2.newSessionTag
     @State private var draftSessionId: String?
-    /// The sessionId actually bound to `ChatHistoryView`. Trails
-    /// `effectiveSessionId` by the time it takes the target session to
-    /// become first-screen-ready, so the on-screen transcript only
-    /// updates once the next session has content to render. See
-    /// `syncVisibleSession(to:)` for the readiness rules.
-    @State private var visibleSessionId: String?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     /// Frame of the round attach button, in `detailCoordSpace`. The
     /// bottom scrim cuts a *Circle* hole here.
@@ -142,71 +136,6 @@ struct RootView2: View {
                 next.setFocused(true)
             }
         }
-        // Gate the transcript-view swap on first-screen readiness.
-        // Sidebar selection writes `selectedSessionId` (and through it
-        // `effectiveSessionId`) immediately — chrome, focus, input bar
-        // follow that. `visibleSessionId` is what `ChatHistoryView` is
-        // actually keyed on, and only flips once the target session has
-        // content the controller can paint (re-entered session: blocks
-        // already in the controller; cold load: Phase A done). The
-        // bridge has been wired since `Session.init`, so the target's
-        // controller is already populated when we get here for any
-        // session that's been visited before.
-        //
-        // `.task(id:)` auto-cancels on rapid resel — A → B → C skips B
-        // entirely. The poll runs on MainActor (16ms tick); a 500ms
-        // budget covers Phase A's typical < 50ms while bounding the
-        // worst case so the UI never appears stuck.
-        .task(id: effectiveSessionId) {
-            await syncVisibleSession(to: effectiveSessionId)
-        }
-    }
-
-    /// Bring `visibleSessionId` in line with `target` once the target
-    /// session is ready to paint a first screen. Cancels naturally when
-    /// the user picks a different session (the `.task(id:)` host re-runs).
-    private func syncVisibleSession(to target: String?) async {
-        if visibleSessionId == target { return }
-        guard let target else {
-            visibleSessionId = nil
-            return
-        }
-        let session = manager.prepareDraftSession(target)
-        // Trigger history load eagerly — without this, Phase A only
-        // starts once `ChatHistoryView.task` mounts, which under the
-        // deferred swap never fires until *after* we flip. Loading is
-        // idempotent for already-loaded sessions.
-        session.loadHistory()
-        if isReadyForDisplay(session) {
-            visibleSessionId = target
-            return
-        }
-        let deadline = ContinuousClock.now.advanced(by: .milliseconds(500))
-        while ContinuousClock.now < deadline {
-            do {
-                try await Task.sleep(for: .milliseconds(16))
-            } catch {
-                return  // cancelled — user picked a different session
-            }
-            if isReadyForDisplay(session) { break }
-        }
-        visibleSessionId = target
-    }
-
-    /// True when `session` has content the transcript view can render
-    /// without flashing an empty frame.
-    /// - Draft phase (no record): nothing to load, ready immediately.
-    /// - Re-entry / live-running: `controller.blockCount > 0` — the
-    ///   bridge has been streaming events for the session's whole life.
-    /// - Cold load: Phase A done (`.tailLoaded` / `.loaded`) or
-    ///   irrecoverable (`.failed`).
-    private func isReadyForDisplay(_ session: Session) -> Bool {
-        if !session.hasRecord { return true }
-        if session.controller.blockCount > 0 { return true }
-        switch session.historyLoadState {
-        case .tailLoaded, .loaded, .failed: return true
-        case .notLoaded, .loadingTail: return false
-        }
     }
 
     @ViewBuilder
@@ -240,25 +169,15 @@ struct RootView2: View {
                 }
             })
         } else if let sid = effectiveSessionId {
-            // `sid` is the user's intent (sidebar selection + draft).
-            // The chrome (overlays, composeStack, input bar) follows it
-            // immediately. The transcript view itself is keyed on
-            // `visibleSid` — same value most of the time, but during a
-            // session switch it lags behind until `syncVisibleSession`
-            // confirms the target has a first screen to show. The
-            // `?? sid` fallback covers the initial frame (visibleSession
-            // still nil) so we never render an empty detail.
-            //
-            // `.id(visibleSid)` pins ChatHistoryView identity across the
-            // NewSession → History transition: the draft UUID becomes
-            // the history sessionId after the first send, so SwiftUI
-            // doesn't rebuild the NSView. The bottom InputBarView2 plays
-            // both the "draft launcher" and "history continuation" roles
-            // — its onSubmit closure branches on `handle.hasRecord` to
-            // trigger the first-start side effects only when needed.
-            let visibleSid = visibleSessionId ?? sid
-            ChatHistoryView(sessionId: visibleSid)
-                .id(visibleSid)
+            // `.id(sid)` pins ChatHistoryView identity across the NewSession →
+            // History transition: sid is stable (the draft UUID becomes the
+            // history sessionId after the first send), so SwiftUI doesn't
+            // rebuild the NSView. The bottom InputBarView2 plays both the
+            // "draft launcher" and "history continuation" roles — its
+            // onSubmit closure branches on `handle.hasRecord` to trigger the
+            // first-start side effects only when needed.
+            ChatHistoryView(sessionId: sid)
+                .id(sid)
                 .overlay(alignment: .top) {
                     // Top fade scrim, mirror of the bottom one: same
                     // windowBackgroundColor LinearGradient, direction

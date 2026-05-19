@@ -38,6 +38,21 @@ final class Transcript2TableView: NSTableView, NSMenuItemValidation {
         super.setFrameSize(safe)
     }
 
+    /// `NSScrollView.setDocumentView` posts the table's initial
+    /// `frameDidChange` *before* it adds the table to the clip view, so
+    /// the frame-driven `tryFireLayoutReady` runs with
+    /// `enclosingScrollView == nil` and its chain gate fails. This is
+    /// the matching second trigger: AppKit calls
+    /// `viewDidMoveToSuperview` immediately after the `addSubview`
+    /// that completes the chain, giving the coordinator a deterministic
+    /// re-check at the exact moment the chain becomes wired. Idempotent
+    /// with the `tableFrameDidChange` trigger — whichever runs first
+    /// satisfies the gate, the loser short-circuits on `layoutReadyFired`.
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        if superview != nil { coordinator?.tryFireLayoutReady() }
+    }
+
     override func viewWillStartLiveResize() {
         super.viewWillStartLiveResize()
         liveResizeStartWidth = frame.width

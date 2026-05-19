@@ -66,11 +66,32 @@ import AppKit
 final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     weak var tableView: NSTableView? {
         didSet {
-            // If `apply` was called before the table was attached, blocks
-            // already exist; the freshly-attached table starts at
-            // `numberOfRows = 0` until reloaded.
-            if let table = tableView, oldValue !== tableView, !blocks.isEmpty {
-                table.reloadData()
+            // Coordinators are session-scoped (survive `ChatHistoryView`
+            // mount/dismount); the `NSTableView` is per-mount. Every
+            // attach edge resets the per-mount tracking so the new
+            // table's first geometry pass reliably crosses every "first
+            // time" threshold the controller depends on — without this
+            // reset, `lastLayoutWidth` from the prior mount carries over
+            // and the new table's frame transitions never re-enter the
+            // gate inside `tableFrameDidChange`.
+            guard oldValue !== tableView else { return }
+            lastLayoutWidth = -1
+            layoutReadyFired = false
+            // `reloadData` deliberately NOT called here. At `didSet`
+            // time the table's `bounds.width` is still 0 (SwiftUI's
+            // sizing pass hasn't run yet), and any `heightOfRow` query
+            // AppKit drives off the reload runs through `layoutWidth = 0`
+            // → 0-height layouts get cached in AppKit's row-position
+            // table. A later `noteHeightOfRows` at the real width only
+            // marks rows dirty for the next layout pass, so a sync
+            // `rect(ofRow:)` (e.g. the pending-initial scroll drain)
+            // reads the stale zero-heights and scrolls short of the
+            // true tail. The deferred reload lands inside
+            // `tableFrameDidChange`'s first `width >= minLayoutWidth`
+            // transition, where every `heightOfRow` resolves against
+            // the final width.
+            if tableView != nil {
+                onTableAttached?()
             }
         }
     }
@@ -79,15 +100,48 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// observers on `blockCount` see the new value.
     var onBlockCountChanged: ((Int) -> Void)?
 
-    /// Fires when `layoutWidth` first becomes > 0 — i.e. the table has
-    /// been inserted into a scroll view and tiled. `Transcript2Controller`
-    /// hooks this to consume any `loadInitial` it had to defer because
-    /// the table wasn't mounted yet (re-entry race: SwiftUI commits the
-    /// `NativeTranscript2View` *after* `.task` has already driven the
-    /// `.reset` mutation through the bridge into `loadInitial`). Fires at
-    /// most once per 0→positive transition; subsequent width changes
-    /// (live resize, etc.) don't re-fire.
+    /// Fires synchronously in `tableView.didSet` on every fresh attach
+    /// edge — `nil → non-nil` (first mount) or `oldTable → newTable`
+    /// (re-mount after session switch). The controller hooks this to
+    /// set a `.bottom` `pendingInitial` for the re-entry path (the
+    /// runtime is already `.loaded`, so the bridge will not re-fire
+    /// `.reset` and the controller has no other signal that a new view
+    /// is up). Cold-open paths set their own anchor through
+    /// `loadInitial`, which takes precedence (this hook leaves a
+    /// pre-existing `pendingInitial` untouched).
+    var onTableAttached: (() -> Void)?
+
+    /// Fires once per attach cycle, when the table is fully wired into
+    /// a sized scroll view at a real layout width. Gate (in
+    /// `tryFireLayoutReady`):
+    ///
+    /// - `tableView.enclosingScrollView != nil` — `setDocumentView`
+    ///   posts the table's initial `frameDidChange` *before* the
+    ///   `addSubview` that wires the scroll-view chain, so an early
+    ///   trigger here would see a nil chain and any scroll attempt
+    ///   would silently abort.
+    /// - `clipView.bounds.height > 0` — the viewport must be sized for
+    ///   `scrollRowToBottom`'s `clipH - insetBottom` target to be
+    ///   meaningful.
+    /// - `tableView.bounds.width >= BlockStyle.minLayoutWidth` — guards
+    ///   against firing on `NSTableView`'s default ~100pt initial
+    ///   frame, which would produce a scroll target computed against
+    ///   layouts at a non-final width.
+    ///
+    /// Triggered from two call sites — `tableFrameDidChange` (covers
+    /// the "scroll view sized → table resized" cascade) and
+    /// `Transcript2TableView.viewDidMoveToSuperview` (covers the
+    /// "table inserted into clip view" event from `setDocumentView`).
+    /// Whichever site sees the gate pass first wins; the loser is a
+    /// no-op via `layoutReadyFired`.
     var onLayoutReady: (() -> Void)?
+
+    /// One-shot, per-attach. Reset to `false` in `tableView.didSet`,
+    /// set to `true` the first time `tryFireLayoutReady` passes its
+    /// preconditions. Keeps the "drain `pendingInitial`" handshake
+    /// idempotent across the multiple triggers that race to satisfy
+    /// the gate first.
+    private var layoutReadyFired: Bool = false
 
     /// Set by `Transcript2Controller` to forward chevron taps to the
     /// SwiftUI-owned sheet binding. The cell's mouseDown handler resolves
@@ -285,6 +339,31 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         }
 
         onBlockCountChanged?(blocks.count)
+    }
+
+    // MARK: - Mutation: scroll-only
+
+    /// Pure scroll-to-anchor without a structural change. Used by the
+    /// controller's pending-initial drain — re-entry into a `.loaded`
+    /// session, or the cold-open deferred branch — where blocks are
+    /// already in `coordinator.blocks` and the only work left is to
+    /// move the scroll origin.
+    ///
+    /// `apply(_:scroll:)` is the wrong tool here: its `beginUpdates` /
+    /// `endUpdates` pair around an empty change list adds nothing
+    /// (the `insertRows` / `removeRows` calls that normally drive
+    /// AppKit's row-position recompute are absent), and a no-op apply
+    /// still bumps `mutationCounter`, which would discard an inflight
+    /// `cacheRefillTask`'s onMain hop unnecessarily.
+    ///
+    /// Callers must ensure AppKit's row-position table is settled
+    /// before invoking — see `tryFireLayoutReady`'s `DispatchQueue.main.async`
+    /// hop for the rationale. A `rect(ofRow:)` read mid-notification
+    /// returns geometry against AppKit's lazily-filled (visible-only)
+    /// row-position cache, and the scroll target undershoots.
+    func scrollToAnchor(_ scroll: Transcript2Controller.ScrollState) {
+        guard let table = tableView else { return }
+        withScrollAdjustment(scroll, in: table) {}
     }
 
     // MARK: - Mutation: off-main (Phase 2 of loadInitial, future use cases)
@@ -899,41 +978,95 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         // `BlockCellView.layoutOrigin` re-centers content automatically from
         // the new `bounds.width`, no row needs its layout invalidated.
         let width = layoutWidth
-        if width == lastLayoutWidth { return }
-        let prevWidth = lastLayoutWidth
-        lastLayoutWidth = width
+        // Degenerate widths (table not yet sized by SwiftUI / clip view
+        // still 0pt) carry no useful work: row layouts at `width=0`
+        // produce 0-height results, and writing them through
+        // `noteHeightOfRows` poisons AppKit's internal row-position cache
+        // with zeros that a later `width>0` invalidation only marks dirty
+        // — re-query is deferred to the next layout pass, so any
+        // intervening `rect(ofRow:)` (e.g. the post-attach
+        // `scrollRowToBottom`) lands on stale zero-heights. Skip
+        // entirely; the table is still in `setDocumentView` /
+        // pre-layout setup, and the next frame event at a real width
+        // is the legitimate first transition for the new mount.
+        guard width >= BlockStyle.minLayoutWidth else { return }
+        if width != lastLayoutWidth {
+            let prevWidth = lastLayoutWidth
+            lastLayoutWidth = width
 
-        // Refresh row heights BEFORE `onLayoutReady?()`. The deferred branch
-        // of `Transcript2Controller.loadInitial` pre-inserts blocks into
-        // `coordinator.blocks` while `layoutWidth == 0`, which makes AppKit
-        // cache ~0 heights for every row. If the subsequent
-        // `consumePendingInitial → scrollRowToBottom` runs before the
-        // re-query, `rect(ofRow:)` returns geometry at ~0 and the scroll
-        // target collapses to the document top.
-        if !blocks.isEmpty {
-            if tableView.inLiveResize {
-                // Bounded per-frame layout work: only invalidate visible rows.
-                // Off-screen rows keep their stale heights and stale cached
-                // layouts — invisible to the user and repaired by the
-                // post-resize background prefetch.
-                let visible = tableView.rows(in: tableView.visibleRect)
-                if visible.location != NSNotFound, visible.length > 0 {
-                    invalidate(
-                        rows: IndexSet(visible.location..<visible.location + visible.length),
-                        in: tableView)
+            if !blocks.isEmpty {
+                if prevWidth < 0 {
+                    // First real-width transition for this attach: do the
+                    // deferred `reloadData` here, where `layoutWidth` is
+                    // valid. AppKit's initial `heightOfRow` queries
+                    // resolve at the final width and populate its
+                    // row-position table with the correct values, so
+                    // any subsequent `rect(ofRow:)` (notably the
+                    // `pendingInitial` drain) reads up-to-date geometry.
+                    tableView.reloadData()
+                } else if tableView.inLiveResize {
+                    // Bounded per-frame layout work: only invalidate visible rows.
+                    // Off-screen rows keep their stale heights and stale cached
+                    // layouts — invisible to the user and repaired by the
+                    // post-resize background prefetch.
+                    let visible = tableView.rows(in: tableView.visibleRect)
+                    if visible.location != NSNotFound, visible.length > 0 {
+                        invalidate(
+                            rows: IndexSet(visible.location..<visible.location + visible.length),
+                            in: tableView)
+                    }
+                } else {
+                    // Outside live resize, frame changes are programmatic / one-off
+                    // (window animation, window resize while not in live resize).
+                    // Invalidate everything; AppKit re-queries lazily on next
+                    // layout pass.
+                    invalidate(rows: IndexSet(0..<blocks.count), in: tableView)
                 }
-            } else {
-                // Outside live resize, frame changes are programmatic / one-off
-                // (initial layout, window animation). Invalidate everything;
-                // AppKit re-queries lazily on next layout pass.
-                invalidate(rows: IndexSet(0..<blocks.count), in: tableView)
             }
         }
 
-        // First 0→positive transition unblocks any deferred `loadInitial`
-        // on the controller side.
-        if prevWidth <= 0 && width > 0 {
-            onLayoutReady?()
+        // Width-equal frame events still drive a `tryFireLayoutReady` —
+        // the scroll-view chain may finish wiring without the table's
+        // clamped width changing (e.g. `setDocumentView` already sized
+        // the table, the clip view's height arrives later).
+        tryFireLayoutReady()
+    }
+
+    /// Attempt to fire `onLayoutReady` if every scroll-chain
+    /// precondition holds; otherwise leave `layoutReadyFired` false so
+    /// the next call site can retry. See `onLayoutReady` for the
+    /// rationale behind each gate.
+    ///
+    /// `onLayoutReady` itself is dispatched on the next main-runloop
+    /// hop, not invoked synchronously. The reason is the consumer
+    /// (`Transcript2Controller.consumePendingInitial`) reads
+    /// `tableView.rect(ofRow:)` to compute a scroll target, and AppKit
+    /// fills its row-position cache lazily during a layout pass —
+    /// driven from the runloop, not from inside our notification
+    /// handler. Calling `onLayoutReady` synchronously from
+    /// `tableFrameDidChange` lands `rect(ofRow:)` against a
+    /// partially-filled cache (only the viewport-visible top rows
+    /// have been queried at the new width), the `maxY` undershoots
+    /// by the un-queried rows' total height, and
+    /// `NSClipView.constrainBoundsRect` clamps against the
+    /// undersized document. The async hop returns control to the
+    /// runloop so AppKit's layout pass can commit; on the next tick
+    /// the rect read sees the settled geometry. Cost is one frame
+    /// (~16 ms) of "table sits at row 0" before the anchor lands —
+    /// imperceptible in practice and only paid on re-entry / cold-
+    /// open's deferred branch, never on real-width cold open (which
+    /// scrolls inside Phase 1's `apply` and does not depend on this
+    /// path).
+    func tryFireLayoutReady() {
+        guard !layoutReadyFired,
+            let table = tableView,
+            let scrollView = table.enclosingScrollView,
+            scrollView.contentView.bounds.height > 0,
+            table.bounds.width >= BlockStyle.minLayoutWidth
+        else { return }
+        layoutReadyFired = true
+        DispatchQueue.main.async { [weak self] in
+            self?.onLayoutReady?()
         }
     }
 

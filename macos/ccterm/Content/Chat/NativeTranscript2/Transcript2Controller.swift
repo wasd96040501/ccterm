@@ -157,6 +157,9 @@ final class Transcript2Controller {
         coordinator.onLayoutReady = { [weak self] in
             self?.consumePendingInitial()
         }
+        coordinator.onTableAttached = { [weak self] in
+            self?.handleTableAttached()
+        }
         coordinator.search.onStateChanged = { [weak self] in
             self?.refreshSearchState()
         }
@@ -445,15 +448,41 @@ final class Transcript2Controller {
     var blockIds: [UUID] { coordinator.blockIds }
 
     /// Invoked by `coordinator.onLayoutReady` once the table tiles to a
-    /// positive width. Blocks are already in `coordinator.blocks` (the
-    /// `loadInitial` no-width branch pre-inserted them); this is purely
-    /// the deferred scroll-to-anchor step. No-op when nothing is pending
-    /// — `coordinator` may fire `onLayoutReady` on resize-time 0→positive
-    /// sequences unrelated to a deferred initial load.
+    /// positive width AND the scroll-view chain is fully wired. Blocks
+    /// are already in `coordinator.blocks` — either pre-inserted by
+    /// `loadInitial`'s no-width branch, populated by Phase 1 on the
+    /// real-width path, or carried over from a prior mount on re-entry.
+    /// This is purely the deferred scroll-to-anchor step. No-op when
+    /// nothing is pending — `coordinator` fires `onLayoutReady` exactly
+    /// once per attach cycle, but the controller may have nothing to
+    /// drain (e.g. real-width cold load where Phase 1 already scrolled).
     private func consumePendingInitial() {
         guard let pending = pendingInitial else { return }
         pendingInitial = nil
         scrollToInitialAnchor(pending.anchor)
+    }
+
+    /// Invoked by `coordinator.onTableAttached` on every `nil → non-nil`
+    /// (or `oldTable → newTable`) attach edge. When the coordinator is
+    /// session-scoped and the table is per-mount, this is the only
+    /// signal the controller gets that a fresh `NSTableView` is now
+    /// driving an already-populated `blocks` array.
+    ///
+    /// Re-entry semantics: a `.loaded` session re-opened in a new
+    /// `ChatHistoryView` mount never triggers `loadInitial` (the
+    /// runtime's load is idempotent and the bridge does not re-fire
+    /// `.reset`), so `pendingInitial` is otherwise nil and the new
+    /// table would land at `reloadData`'s default top. Setting `.bottom`
+    /// here arms the same handshake the cold-open deferred branch uses:
+    /// `onLayoutReady` will drain it once the chain is wired.
+    ///
+    /// Cold-open paths take precedence — the deferred branch of
+    /// `loadInitial` runs on the same mount and overwrites this with
+    /// the caller's anchor; the real-width branch clears `pendingInitial`
+    /// before Phase 1's `.bottom` scroll runs synchronously.
+    private func handleTableAttached() {
+        guard pendingInitial == nil, !coordinator.blockIds.isEmpty else { return }
+        pendingInitial = PendingInitial(anchor: .bottom)
     }
 
     /// Apply the deferred scroll-to-anchor. Resolves `.bottom` against the
@@ -462,6 +491,12 @@ final class Transcript2Controller {
     /// background session land here legitimately). For `.top(id:)` and
     /// `.bottomTo(id:)`, the anchor id is the original one supplied by
     /// the caller.
+    ///
+    /// Routes through `coordinator.scrollToAnchor`, not `apply([], scroll:)` —
+    /// the deferred-drain path doesn't mutate the block list, so the
+    /// `beginUpdates` / `endUpdates` and `mutationCounter` bump inside
+    /// `apply` would be wasted work (and the counter bump would
+    /// pointlessly discard any in-flight `cacheRefillTask`).
     private func scrollToInitialAnchor(_ anchor: InitialAnchor) {
         let scroll: ScrollState
         switch anchor {
@@ -473,17 +508,7 @@ final class Transcript2Controller {
         case .bottomTo(let id):
             scroll = .bottom(id: id)
         }
-        coordinator.apply([], scroll: scroll)
-    }
-
-    /// Scroll the transcript to its last block. Called by view-mount paths
-    /// that need to anchor a re-attached `NSTableView` to the conversation
-    /// tail — `coordinator.tableView`'s `didSet` runs `reloadData()`
-    /// automatically, but AppKit's default landing position after reload
-    /// is the top of the document, which reads as "lost the chat" for a
-    /// chat-style transcript.
-    func scrollToBottom() {
-        scrollToInitialAnchor(.bottom)
+        coordinator.scrollToAnchor(scroll)
     }
 
     // MARK: - Slicing (private)

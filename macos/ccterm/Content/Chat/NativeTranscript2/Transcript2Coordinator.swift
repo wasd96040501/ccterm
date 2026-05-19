@@ -72,58 +72,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             if let table = tableView, oldValue !== tableView, !blocks.isEmpty {
                 table.reloadData()
             }
-            // Re-attach signal: arm the tail-anchor consumed by
-            // `tryConsumeTailAnchorOnAttach()`. The consumer runs from two
-            // sites:
-            //  - `tableFrameDidChange` (sync, in-iteration) — best case,
-            //    the scroll change rides the same CATransaction as the
-            //    table's initial layout, so the first visible frame is
-            //    already at the tail.
-            //  - `DispatchQueue.main.async` (next runloop tick) — safety
-            //    net for sessions whose internal layout doesn't settle
-            //    until after SwiftUI's commit pass (long transcripts
-            //    where the reloadData above + heightOfRow eat time, so
-            //    the clip view is still 0-height by the time
-            //    setDocumentView fires its initial frameDidChange).
-            // Whichever site sees `tryConsume`'s geometry guard pass
-            // first wins; the loser is a no-op.
-            // Triggers on the `nil → non-nil` edge with content already
-            // present:
-            //  - re-entry: controller carries blocks from the prior mount.
-            //  - first-open under #111 deferred-swap: the OLD view stays
-            //    mounted until Phase A populates this coordinator, so
-            //    `blocks` is non-empty on the very first didSet.
-            if tableView != nil, oldValue == nil, !blocks.isEmpty {
-                pendingTailAnchorOnAttach = true
-                DispatchQueue.main.async { [weak self] in
-                    self?.tryConsumeTailAnchorOnAttach()
-                }
-            }
         }
-    }
-
-    /// Consume `pendingTailAnchorOnAttach` iff every scroll-geometry
-    /// precondition is satisfied. Otherwise leave the flag set so a
-    /// later call site (the next frameDidChange / the async safety
-    /// net) can retry. The guard is the load-bearing part — premature
-    /// firing in the middle of `setDocumentView` / SwiftUI's sizing
-    /// pass produces a wildly-wrong scroll target (clip height 0 →
-    /// `visibleBottomInClip` is negative → target lands past the end
-    /// of the document).
-    private func tryConsumeTailAnchorOnAttach() {
-        // Geometry preconditions: clip view sized (`bounds.height > 0`),
-        // and table at a real layout width (not the NSTableView default
-        // ~100pt initial frame). Skipping either lets the next retry
-        // run when the layout has actually settled.
-        guard pendingTailAnchorOnAttach,
-            let table = tableView,
-            let scrollView = table.enclosingScrollView,
-            scrollView.contentView.bounds.height > 0,
-            table.bounds.width >= BlockStyle.minLayoutWidth,
-            let lastId = blocks.last?.id
-        else { return }
-        pendingTailAnchorOnAttach = false
-        scrollRowToBottom(id: lastId, in: table)
     }
 
     /// Notifies the controller after every successful mutation so SwiftUI
@@ -139,20 +88,6 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// most once per 0→positive transition; subsequent width changes
     /// (live resize, etc.) don't re-fire.
     var onLayoutReady: (() -> Void)?
-
-    /// One-shot flag: armed by `tableView.didSet` on a fresh `nil →
-    /// non-nil` attach (with `blocks` already populated), consumed by
-    /// `tableFrameDidChange` on the first frame event where the scroll
-    /// view chain is actually wired. The two-stage handshake is required
-    /// because `NSScrollView.setDocumentView(_:)` posts the table's
-    /// initial frame change *before* inserting it into the clip view —
-    /// so a sync scroll from `didSet` or from the very first
-    /// `frameDidChange` would find `enclosingScrollView == nil` and
-    /// abort. Waiting for a frame event with the chain wired lets the
-    /// anchor land in the same runloop iteration (same CATransaction)
-    /// as the table's initial layout, so the first visible frame is
-    /// already at the tail — no top→tail snap.
-    private var pendingTailAnchorOnAttach: Bool = false
 
     /// Set by `Transcript2Controller` to forward chevron taps to the
     /// SwiftUI-owned sheet binding. The cell's mouseDown handler resolves
@@ -960,17 +895,6 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
 
     @objc func tableFrameDidChange(_ note: Notification) {
         guard let tableView else { return }
-        // Sync fast-path for the tail-anchor on a fresh attach: pick up
-        // the first frame event where every geometry precondition is
-        // satisfied (scroll view wired, clip view sized, table at a real
-        // layout width). Same CATransaction as makeNSView, so a hit here
-        // means the first visible frame is already at the tail. If the
-        // preconditions aren't ready yet, the guard inside leaves the
-        // flag set; the next frame event (or the async safety net from
-        // `tableView.didSet`) tries again. Placed BEFORE the width-
-        // equality early-return so same-width frame events still drive
-        // a retry.
-        tryConsumeTailAnchorOnAttach()
         // Resizes inside the >max clamp band leave `layoutWidth` unchanged —
         // `BlockCellView.layoutOrigin` re-centers content automatically from
         // the new `bounds.width`, no row needs its layout invalidated.

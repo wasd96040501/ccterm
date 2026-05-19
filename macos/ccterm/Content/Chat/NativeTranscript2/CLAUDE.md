@@ -20,6 +20,18 @@ SwiftUI: NativeTranscript2View (NSViewRepresentable)
 
 `Transcript2Coordinator.blocks: [Block]` is the single source of truth — no `rows` mirror, no parallel diff structure. Mutation enters via `Controller.Change` (`.insert(after:blocks:)` / `.remove(ids:)` / `.update(id:kind:)`) and dispatches to `apply` (sync, lazy layout) or `applyInBackground` (off-main precompute then a single main hop).
 
+### 1.1 Why two types: Controller vs. Coordinator
+
+`Transcript2Controller` (SwiftUI-facing) and `Transcript2Coordinator` (AppKit-facing) are kept apart on purpose; merging them was considered and rejected. They differ in three load-bearing ways:
+
+1. **Conformance constraints.** `Transcript2Coordinator` must be `NSObject` to satisfy `NSTableViewDataSource` / `NSTableViewDelegate`. `Transcript2Controller` is `@Observable` so SwiftUI hosts can observe `blockCount` / `isAnchorSettled` / `searchState` / `pendingUserBubbleSheet` / `loadingPillVisible` without reaching into AppKit state. A merged class would carry both surfaces; the public symbol table would include every `NSTableViewDataSource` callback alongside `setHistory` / `setLoading`, blurring the user-facing API.
+2. **File size.** Together the two files are ~2000 lines. Folding them produces one class that violates the project-wide rule against oversized bodies, and there is no natural axis of split inside a single class that's both the SwiftUI surface and the table delegate.
+3. **Controller carries real logic, not just forwarding.** `setHistory`'s viewport-slicing + Phase 1/Phase 2 scheduling, `setLoading`'s debounce + `reconcileLoadingPill`, and the `@Observable` mirroring are all Controller-side; they sit naturally one layer above the table delegate, not inside it. The remaining methods on Controller are thin forwards (`apply`, `setToolStatus`, `runSearch` / `nextSearchHit` / `previousSearchHit` / `endSearch`, `attachSyntaxEngine`), which is the price of keeping the SwiftUI surface flat.
+
+The split also matches the mount-vs-state-machine boundary: callers think in terms of `setHistory` / `append` / `setLoading` (Controller), not in terms of `tableView(_:numberOfRowsInSection:)` (Coordinator). Anchor settling, on the other hand, lives on the Coordinator because it's a function of the live `NSTableView` frame; Controller only mirrors `isAnchorSettled` for SwiftUI observation.
+
+**Don't merge.** If the forwarding feels redundant, the right move is to make the forwards thinner (e.g. expose `coordinator.search` as a property), not to collapse the layer.
+
 ## 2. Performance contract
 
 Every item below is load-bearing for either scroll FPS, layout-pass cost, or memory churn. Cited file:line is authoritative; the description summarizes. **Changing any of these requires user confirmation.**

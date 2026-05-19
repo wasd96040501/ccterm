@@ -276,7 +276,8 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// `bounds.width` is set synchronously inside `setFrameSize`, so a
     /// frame-driven `frameDidChange` and a downstream `layoutWidth` read
     /// see the same value on the same tick — no "small-width transient"
-    /// window for `onLayoutReady` → `consumePendingInitial` to trip on.
+    /// window for `tableFrameDidChange`'s 0→positive anchor consumer to
+    /// trip on.
     ///
     /// Clamping here is the single source of truth: `makeLayout` sees the
     /// clamped width, `layoutCache` keys on it, and `CenteredRowView` /
@@ -385,8 +386,9 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         guard width > 0 else {
             // Table is attached but not yet tiled. Same posture as the
             // no-table branch above — degrade to sync apply so `blocks`
-            // is current; the layout/scroll work can replay through
-            // `onLayoutReady` paths.
+            // is current; the layout/scroll work replays through
+            // `tableFrameDidChange`'s deferred anchor consumer once
+            // the table tiles.
             apply(changes, scroll: .none)
             completion()
             return

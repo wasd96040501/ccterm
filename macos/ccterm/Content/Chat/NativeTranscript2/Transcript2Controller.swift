@@ -219,9 +219,9 @@ final class Transcript2Controller {
     ///
     /// **Pinning to the tail.** External structural changes (live
     /// `.appended` blocks from the bridge, `setHistory`'s viewport
-    /// batch consumed off a `pendingInitial` race) may slip in
-    /// *after* the pill if their `.insert(after:)` resolves to the
-    /// pill's id or relies on `coordinator.blockIds.last`. Every
+    /// batch landing on a fresh attach) may slip in *after* the pill
+    /// if their `.insert(after:)` resolves to the pill's id or relies
+    /// on `coordinator.blockIds.last`. Every
     /// `apply` fires `onBlockCountChanged` → `reconcileLoadingPill()`,
     /// which sees the pill is no longer at the tail and re-pins it
     /// by removing + re-inserting at the new tail in one beat.

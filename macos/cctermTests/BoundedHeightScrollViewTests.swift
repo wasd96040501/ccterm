@@ -4,24 +4,19 @@ import XCTest
 
 @testable import ccterm
 
-/// Mount the real `BoundedHeightScrollView` in an `NSHostingView` and
-/// assert on the actual rendered height. Covers the two branches the
-/// permission cards depend on:
+/// Mount the real `BoundedHeightScrollView` in an offscreen window
+/// (same posture as `ViewSnapshot.render`), run one layout pass, then
+/// walk the bridged NSView tree to read the inner `NSScrollView`'s
+/// resolved frame. That frame is what `.frame(maxHeight:) +
+/// .fixedSize(...)` on the wrapper resolved to — the same height the
+/// user sees on screen.
 ///
-/// - Content intrinsic height < `maxHeight` → wrapper sizes to the
-///   intrinsic content (no wasted vertical space under the buttons).
-///   `ViewThatFits` picks the first (intrinsic) child.
-/// - Content intrinsic height > `maxHeight` → `ViewThatFits` falls
-///   back to the `ScrollView` branch and the wrapper caps at the
-///   max; the inner scroll view's scroller appears so the user can
-///   reach lines that would otherwise push the buttons off-screen.
-///
-/// The fixture sizes the host to a generous outer rect so the parent
-/// proposes ≥ `maxHeight` vertically — the `.frame(maxHeight:)`
-/// inside the wrapper then provides ViewThatFits the bounded
-/// available space it needs to compare against. Under XCTest's
-/// offscreen runloop, `NSHostingView.frame.height` reflects the
-/// resolved layout once `layoutSubtreeIfNeeded()` settles.
+/// With the `fixedSize + maxHeight` implementation, the wrapper's size
+/// resolves synchronously during the first layout pass (no preference
+/// round-trip), so a single `layoutSubtreeIfNeeded()` plus a short
+/// runloop drain — long enough for an `NSViewRepresentable` child
+/// (e.g. `DiffView`) to settle its `sizeThatFits` — is all the test
+/// needs.
 @MainActor
 final class BoundedHeightScrollViewTests: XCTestCase {
 
@@ -29,12 +24,13 @@ final class BoundedHeightScrollViewTests: XCTestCase {
         continueAfterFailure = false
     }
 
+    // MARK: - Native SwiftUI content
+
     func testShortContentSizesToIntrinsicHeight() {
         // Three monospaced lines at 12pt with 4pt spacing run to
-        // ~52pt total — well under the 240pt cap. ViewThatFits's
-        // first branch (intrinsic) fits, so the wrapper should size
-        // to the intrinsic content (no 240pt floor).
-        let height = renderedHostHeight(
+        // ~52pt total — well under the 240pt cap. The wrapper should
+        // shrink to that intrinsic height, not stay padded out to 240.
+        let height = resolvedWrapperHeight(
             content: { ShortFixtureContent() },
             cap: 240,
             width: 380)
@@ -45,15 +41,13 @@ final class BoundedHeightScrollViewTests: XCTestCase {
             "short content should size to intrinsic, got \(height)")
         XCTAssertGreaterThanOrEqual(
             height, 30,
-            "short content should still have at least intrinsic line height")
+            "short content should still cover at least one line of intrinsic height")
     }
 
     func testTallContentCapsAtMaxHeight() {
         // 80 lines at 12pt with 4pt spacing greatly exceeds 240pt.
-        // ViewThatFits's first branch doesn't fit, so it falls back
-        // to the ScrollView branch. The wrapper caps at exactly 240
-        // (allow 1pt for rounding).
-        let height = renderedHostHeight(
+        // The wrapper should cap at exactly 240 (allow 1pt rounding).
+        let height = resolvedWrapperHeight(
             content: { TallFixtureContent() },
             cap: 240,
             width: 380)
@@ -63,40 +57,93 @@ final class BoundedHeightScrollViewTests: XCTestCase {
             "tall content should cap at the maxHeight, got \(height)")
     }
 
-    func testTallContentMountsAnNSScrollView() {
-        // The fallback branch must really be a scrollable container,
-        // not a clipped frame — verify by walking the bridged AppKit
-        // tree for an `NSScrollView` once the wrapper has capped at
-        // `maxHeight`.
-        let host = mountedHost(
+    func testWrapperMountsAnNSScrollView() {
+        // SwiftUI's `ScrollView` always bridges to `NSScrollView`.
+        // The wrapper depends on this bridge for the cap-and-scroll
+        // behaviour; if a future refactor moved off `ScrollView`
+        // this assertion fires before the user ever sees a card
+        // without scroll affordance.
+        let (host, _) = renderAndInspect(
             content: { TallFixtureContent() }, cap: 240, width: 380)
         defer { host.window?.close() }
 
         XCTAssertNotNil(
             findScrollView(in: host),
-            "tall content should mount inside an NSScrollView fallback")
+            "wrapper should mount its content inside an NSScrollView")
     }
 
-    func testShortContentSkipsTheScrollView() {
-        // Inverse of the above: when content fits, `ViewThatFits`
-        // picks the intrinsic branch — no scroll chrome around the
-        // user's content.
-        let host = mountedHost(
-            content: { ShortFixtureContent() }, cap: 240, width: 380)
-        defer { host.window?.close() }
+    // MARK: - Real DiffView content (the actual user scenario)
 
-        XCTAssertNil(
-            findScrollView(in: host),
-            "short content should bypass the scroll fallback")
+    func testSingleLineDiffShrinksToIntrinsic() {
+        // The bug surface: bash permission card renders its command
+        // through `DiffView` (an `NSViewRepresentable`). A one-line
+        // command should not pad the card out to the 240pt cap — its
+        // intrinsic height is well under 100pt.
+        //
+        // `DiffView.sizeThatFits(_:nsView:context:)` returns the
+        // real height at a given width, so `.fixedSize(vertical:)`
+        // can read through the representable bridge.
+        let height = resolvedWrapperHeight(
+            content: { SingleLineDiffFixture() },
+            cap: 240,
+            width: 380)
+
+        XCTAssertGreaterThan(height, 0)
+        XCTAssertLessThan(
+            height, 100,
+            "one-line diff should shrink the wrapper well below 240, got \(height)")
     }
 
-    // MARK: - Mounting helpers
+    func testTallDiffCapsAtMaxHeight() {
+        // 40-line diff easily exceeds 240pt. Same code path as the
+        // single-line case but through the cap branch — verifies the
+        // `NSViewRepresentable` ideal height feeds the `maxHeight`
+        // clamp correctly.
+        let height = resolvedWrapperHeight(
+            content: { TallDiffFixture() },
+            cap: 240,
+            width: 380)
 
-    private func mountedHost<Content: View>(
+        XCTAssertEqual(
+            height, 240, accuracy: 1.0,
+            "tall diff should cap at the maxHeight, got \(height)")
+    }
+
+    // MARK: - Mounting + measurement
+
+    /// Mount the wrapper offscreen, force one layout pass with a short
+    /// drain (so any `NSViewRepresentable` child settles its
+    /// `sizeThatFits`), then return the inner `NSScrollView`'s frame
+    /// height.
+    private func resolvedWrapperHeight<Content: View>(
         @ViewBuilder content: () -> Content,
         cap: CGFloat,
         width: CGFloat
-    ) -> NSHostingView<some View> {
+    ) -> CGFloat {
+        let (host, _) = renderAndInspect(
+            content: content, cap: cap, width: width)
+        defer { host.window?.close() }
+        guard let scroll = findScrollView(in: host) else {
+            XCTFail("expected an inner NSScrollView in the wrapper tree")
+            return -1
+        }
+        return scroll.frame.height
+    }
+
+    /// Mount the wrapper through an `NSHostingView` in a borderless
+    /// offscreen window (alpha 0.01, parked at -30k,-30k), force a
+    /// layout pass, and return the host. The caller owns teardown;
+    /// the returned host's `.window` is open.
+    ///
+    /// The container is intentionally much taller than the cap so the
+    /// wrapper's intrinsic-vertical resolution is unconstrained from
+    /// above — if the wrapper resolved to less than `cap`, we see the
+    /// real shrunk height, not a clamp from the container.
+    private func renderAndInspect<Content: View>(
+        @ViewBuilder content: () -> Content,
+        cap: CGFloat,
+        width: CGFloat
+    ) -> (NSHostingView<some View>, NSImage) {
         let root = HostFixture(maxHeight: cap, width: width, content: content())
         let host = NSHostingView(rootView: root)
         let containerSize = CGSize(width: width + 40, height: max(cap * 4, 800))
@@ -113,28 +160,25 @@ final class BoundedHeightScrollViewTests: XCTestCase {
         window.alphaValue = 0.01
         window.contentView = host
         window.ccterm_orderFrontForTesting()
+
         host.layoutSubtreeIfNeeded()
-        let deadline = Date().addingTimeInterval(0.5)
+        // Short drain for any `NSViewRepresentable` child (e.g.
+        // `DiffView`) — the bridge's `makeNSView` / `updateNSView`
+        // and the first `sizeThatFits` call all need a runloop tick
+        // to land. With purely-SwiftUI content this is a no-op.
+        drainRunLoop(seconds: 0.2, host: host)
+        host.layoutSubtreeIfNeeded()
+
+        return (host, NSImage(size: host.bounds.size))
+    }
+
+    private func drainRunLoop(seconds: TimeInterval, host: NSView) {
+        let deadline = Date().addingTimeInterval(seconds)
         while Date() < deadline {
             RunLoop.main.run(
                 mode: .default, before: Date(timeIntervalSinceNow: 0.02))
             host.layoutSubtreeIfNeeded()
         }
-        return host
-    }
-
-    private func renderedHostHeight<Content: View>(
-        @ViewBuilder content: () -> Content,
-        cap: CGFloat,
-        width: CGFloat
-    ) -> CGFloat {
-        let host = mountedHost(content: content, cap: cap, width: width)
-        defer { host.window?.close() }
-        // The fixture pins width and lets vertical sizing fall out of
-        // the wrapper. `NSHostingView.frame` reflects the SwiftUI
-        // tree's resolved size once `layoutSubtreeIfNeeded()`
-        // settles.
-        return host.frame.height
     }
 
     private func findScrollView(in view: NSView) -> NSScrollView? {
@@ -146,10 +190,12 @@ final class BoundedHeightScrollViewTests: XCTestCase {
     }
 }
 
-/// Hosts the wrapper at a fixed width with vertical sizing pinned to
-/// the SwiftUI content. `fixedSize(vertical: true)` makes the host
-/// view's frame collapse to the wrapper's resolved height instead of
-/// padding out to the window's contentRect.
+// MARK: - Fixtures
+
+/// Hosts the wrapper at a fixed width. Vertical is left to the
+/// wrapper's own `.fixedSize(vertical:)` — the host doesn't constrain
+/// it, so the inner `NSScrollView` reports its real resolved height
+/// without interference from the container.
 private struct HostFixture<Content: View>: View {
     let maxHeight: CGFloat
     let width: CGFloat
@@ -160,7 +206,6 @@ private struct HostFixture<Content: View>: View {
             content
         }
         .frame(width: width)
-        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -187,5 +232,30 @@ private struct TallFixtureContent: View {
                     .font(.system(size: 12, design: .monospaced))
             }
         }
+    }
+}
+
+/// `DiffView` rendering a single-line bash command. Mirrors what
+/// `PermissionShellCardBody.commandDiffBlock` produces for the
+/// canonical "rm -rf node_modules" bash card.
+private struct SingleLineDiffFixture: View {
+    var body: some View {
+        DiffView(
+            diff: DiffBlock(
+                filePath: "command.sh",
+                oldString: nil,
+                newString: "rm -rf node_modules"))
+    }
+}
+
+/// `DiffView` rendering a 40-line block — well over the 240pt cap.
+/// Verifies the cap path through the representable bridge.
+private struct TallDiffFixture: View {
+    var body: some View {
+        DiffView(
+            diff: DiffBlock(
+                filePath: "command.sh",
+                oldString: nil,
+                newString: (0..<40).map { "echo line \($0)" }.joined(separator: "\n")))
     }
 }

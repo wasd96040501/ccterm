@@ -50,6 +50,26 @@ final class Transcript2EntryBridge {
     /// dealloc chain.
     nonisolated deinit {}
 
+    // MARK: - Fresh-mount reset
+
+    /// Restore the bridge to its post-init state so the next dispatched
+    /// `.reset` takes the cold-load (`loadInitial`) path instead of the
+    /// second-reset incremental path. Called by `Session.resetTranscript`
+    /// when an Ephemeral session is being torn down ahead of unmount;
+    /// pairs with `controller.resetFirstScreenReady()` and an empty
+    /// `coordinator.blocks` so the next remount looks identical to a
+    /// first-ever entry.
+    ///
+    /// Safe to call repeatedly. Never call on a Live session — the
+    /// bridge has been accumulating `entryOrder` / `entryBlockIds` from
+    /// live CLI events and clearing them mid-stream would break anchor
+    /// resolution for the next `.appended` / `.updated`.
+    func resetForFreshMount() {
+        didLoadInitial = false
+        entryOrder = []
+        entryBlockIds = [:]
+    }
+
     // MARK: - Dispatch
 
     func apply(_ change: MessagesChange) {
@@ -235,6 +255,16 @@ final class Transcript2EntryBridge {
             // Sink fired before reset: use the first message as cold-load seed.
             didLoadInitial = true
             controller.loadInitial(blocks, anchor: .bottom)
+            return
+        }
+        // Live append arriving while a `loadInitial` is queued waiting for
+        // layout-ready: the anchor block id lives in the pending payload,
+        // not in `coordinator.blocks`. Routing through `coordinator.apply`
+        // here would be a no-op (`.insert(after: unknownId)` per the
+        // controller's contract). Merge into the queued payload so consume
+        // picks it up.
+        if controller.hasPendingInitial {
+            controller.extendPendingInitial(blocks)
             return
         }
         controller.coordinator.apply(

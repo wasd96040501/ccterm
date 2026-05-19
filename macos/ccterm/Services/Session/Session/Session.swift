@@ -217,6 +217,34 @@ final class Session {
         return false
     }
 
+    /// True when this session's CLI subprocess is "alive" — either
+    /// currently driving messages or transitioning into / out of an idle
+    /// state but not stopped. `RootView2` routes live sessions into a
+    /// retainer container so their transcript view stays permanently
+    /// mounted across sidebar switches (no `.id` remount, no rebuild),
+    /// while ephemeral sessions fall through the normal remount path
+    /// and cold-load Phase 1/2 on each entry.
+    ///
+    /// | Phase   | Status                                       | isLive |
+    /// | ------- | -------------------------------------------- | ------ |
+    /// | .draft  | —                                            | false  |
+    /// | .active | .notStarted / .stopped                       | false  |
+    /// | .active | .starting / .idle / .responding / .interrupting | true |
+    ///
+    /// `SessionRuntime.status` is `@Observable`, so SwiftUI views
+    /// reading `session.isLive` re-evaluate on the upgrade
+    /// (Ephemeral → Live via first send / activate) and the downgrade
+    /// (Live → Ephemeral via stop / CLI exit) automatically.
+    var isLive: Bool {
+        guard let r = runtime else { return false }
+        switch r.status {
+        case .notStarted, .stopped:
+            return false
+        case .starting, .idle, .responding, .interrupting:
+            return true
+        }
+    }
+
     // MARK: - Forwarded state reads
 
     var title: String {
@@ -354,6 +382,42 @@ final class Session {
         case .draft(let d): return d.pluginDirectories
         case .active(let r): return r.pluginDirectories
         }
+    }
+
+    // MARK: - Transcript reset (Ephemeral teardown / remount)
+
+    /// Tear down the controller's transcript state back to an empty
+    /// "cold start" posture. Called by `ChatHistoryView` as it unmounts
+    /// for an Ephemeral session, so the next entry of the same session
+    /// runs a fresh Phase 1/2 cold-load — preserving the architectural
+    /// invariant that the "re-entry with blocks already in coordinator
+    /// + a new view mount" code path simply does not exist for
+    /// Ephemeral sessions. The bake double-buffer covers the swap, so
+    /// the user never sees the empty intermediate state.
+    ///
+    /// **Caller responsibility**: only invoke for Ephemeral sessions.
+    /// Live sessions live in the retainer and never unmount; invoking
+    /// this on a Live session would tear down state the bridge has been
+    /// accumulating from live CLI events.
+    func resetTranscript() {
+        let existing = controller.blockIds
+        if !existing.isEmpty {
+            controller.apply(.remove(ids: existing))
+        }
+        controller.resetFirstScreenReady()
+        bridge.resetForFreshMount()
+    }
+
+    /// Re-feed `runtime.messages` through the bridge as a synthetic
+    /// `.reset` so the controller picks the transcript back up. Used
+    /// after `resetTranscript()` when an Ephemeral session's view
+    /// remounts — `historyLoadState` is already `.loaded` so
+    /// `runtime.loadHistory()` is a no-op, but the in-memory
+    /// `messages` snapshot is still authoritative and avoids hitting
+    /// disk. No-op for a runtime with no messages.
+    func replayMessagesAsReset() {
+        guard let r = runtime, !r.messages.isEmpty else { return }
+        bridge.apply(.reset(r.messages, precomputedBlocks: nil))
     }
 
     // MARK: - Lifecycle

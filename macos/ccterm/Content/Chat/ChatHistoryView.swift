@@ -54,10 +54,7 @@ enum ChatHistoryRenderCase: Equatable {
 struct ChatHistoryView: View {
     let sessionId: String
     @Environment(SessionManager.self) private var manager
-    @Environment(TranscriptSearchBus.self) private var searchBus
     @State private var session: Session?
-    @State private var searchQuery: String = ""
-    @FocusState private var isSearchFocused: Bool
 
     var body: some View {
         Group {
@@ -76,34 +73,13 @@ struct ChatHistoryView: View {
                 Color.clear
             }
         }
-        .searchable(
-            text: $searchQuery,
-            placement: .toolbar,
-            prompt: Text("Find in transcript")
-        )
-        .searchFocused($isSearchFocused)
-        .toolbar {
-            if #available(macOS 26.0, *) {
-                ToolbarSpacer(.flexible)
-            }
-        }
-        .onSubmit(of: .search) { session?.controller.nextSearchHit() }
-        // Shift+Return for previous match. `.onKeyPress` fires whenever
-        // focus is on this view or any descendant — i.e. the search
-        // field. Plain Return is left to `.onSubmit(of: .search)`; we
-        // return `.ignored` so SwiftUI propagates the event. The
-        // `phases:` overload is the one that exposes `KeyPress.modifiers`.
-        .onKeyPress(keys: [.return], phases: .down) { keyPress in
-            guard keyPress.modifiers.contains(.shift) else { return .ignored }
-            session?.controller.previousSearchHit()
-            return .handled
-        }
-        .onChange(of: searchQuery) { _, new in
-            session?.controller.runSearch(new)
-        }
-        .onChange(of: searchBus.focusRequestCounter) { _, _ in
-            isSearchFocused = true
-        }
+        // Search field + `.searchable` live on `TranscriptSwapHost`, one
+        // level up. ChatHistoryView used to attach `.searchable` itself,
+        // but with the live retainer hosting multiple ChatHistoryViews
+        // simultaneously the duplicate `.searchable` modifiers raced
+        // for the same toolbar slot and bound to the wrong session's
+        // query state. The host now owns search query + focus and
+        // routes both to the visible session's controller.
         // `session?.isRunning` is `@Observable`, so this fires
         // whenever the session's turn count crosses 0. The pill is
         // the controller-managed sentinel row at the transcript's

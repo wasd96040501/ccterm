@@ -71,6 +71,29 @@ final class Transcript2Controller {
     /// observe count changes without reaching into AppKit state.
     private(set) var blockCount: Int = 0
 
+    /// Latch flipped to `true` once the controller has paint-ready first
+    /// screen content (or has nothing to paint). Source for the transcript
+    /// swap bake's release signal — `RootView2` snapshots the outgoing
+    /// session's view, mounts the incoming session underneath, then waits
+    /// for this flag on the incoming controller before dropping the bake.
+    ///
+    /// Fires:
+    /// - Synchronously at the end of `loadInitial`'s Phase 1 apply (the
+    ///   viewport batch is in place at its final scroll position).
+    /// - After `apply(_:)` lands blocks for a non-empty controller that
+    ///   wasn't yet ready (covers the Live-session "draft → first send →
+    ///   chat history mounts" path where there's no `loadInitial`,
+    ///   only an incremental insert for the user's first bubble).
+    /// - Synchronously when `loadInitial` is called with no blocks (empty
+    ///   session: nothing to paint, ready immediately).
+    /// - When `coordinator.onLayoutReady` consumes a queued `loadInitial`
+    ///   (deferred path: width tiles after the call) — Phase 1 runs and
+    ///   the flag flips at the same point.
+    ///
+    /// Resets to `false` via `resetFirstScreenReady()` on Ephemeral
+    /// teardown (controller blocks cleared, next mount cold-loads anew).
+    private(set) var firstScreenReady: Bool = false
+
     /// Pending request for the SwiftUI "show full user message" sheet,
     /// driven by chevron clicks inside `BlockCellView`. NSView-internal
     /// interactions (link click, selection drag, chevron tap) are normally
@@ -98,6 +121,16 @@ final class Transcript2Controller {
 
     /// Module-internal: handed to `NativeTranscript2View.makeCoordinator`.
     let coordinator: Transcript2Coordinator
+
+    /// Topmost `NSView` hosting this controller's transcript (the
+    /// `Transcript2ScrollView`). Resolved from the coordinator's table
+    /// reference at read time — no separate field to keep in sync.
+    /// `nil` when no `NativeTranscript2View` is currently mounted.
+    /// `TranscriptSwapHost` reads this to take a `cacheDisplay` bitmap
+    /// of the outgoing transcript before a sidebar swap.
+    var attachedRootView: NSView? {
+        coordinator.tableView?.enclosingScrollView
+    }
 
     /// Last `setLoading(_:)` intent. Source of truth for whether the
     /// trailing pill row should be present. The actual block id (if
@@ -169,18 +202,26 @@ final class Transcript2Controller {
     /// `TaskLocal` state. `nonisolated` skips the executor hop.
     nonisolated deinit {}
 
-    /// Deferred scroll anchor when the coordinator's table isn't mounted
-    /// (or hasn't been tiled to a positive width) at `loadInitial` time.
-    /// Consumed by `consumePendingInitial`, which `coordinator.onLayoutReady`
-    /// invokes on the first 0→positive `layoutWidth` transition.
+    /// Queued initial-load payload when the table isn't mounted or hasn't
+    /// tiled to a positive width at `loadInitial` time. Consumed by
+    /// `consumePendingInitial`, which `coordinator.onLayoutReady` invokes
+    /// on the first 0→positive `layoutWidth` transition.
     ///
-    /// Blocks themselves are no longer cached here — they are inserted
-    /// into `coordinator.blocks` immediately even in the deferred path,
-    /// so subsequent `apply()` calls (e.g. live `.appended` events
-    /// arriving on a session whose view isn't yet mounted) can resolve
-    /// anchors correctly. Only the scroll/anchor intent has to wait for
-    /// a real table.
+    /// **Unlike the pre-bake architecture, blocks are NOT pre-inserted
+    /// into `coordinator.blocks` while pending.** Pre-inserting forced
+    /// AppKit's lazy row-position cache to fill against width=0 layouts,
+    /// so a subsequent `rect(ofRow: lastIdx)` undershot and the cold-load
+    /// scroll-to-bottom landed mid-document. By holding blocks here
+    /// instead, the full Phase 1/2 path runs at real-width on consume —
+    /// the viewport batch is the only thing that ever lands in the
+    /// coordinator before the scroll, exactly as the synchronous
+    /// real-width path does.
+    ///
+    /// Live `.appended` events arriving while pending get merged into
+    /// `.blocks` through `extendPendingInitial(_:)` (the bridge funnels
+    /// them via `hasPendingInitial` check), so consumption picks them up.
     private struct PendingInitial {
+        var blocks: [Block]
         let anchor: InitialAnchor
     }
     private var pendingInitial: PendingInitial?
@@ -200,6 +241,44 @@ final class Transcript2Controller {
     /// user deletes one).
     func apply(_ changes: Change..., scroll: ScrollState = .none) {
         coordinator.apply(changes, scroll: scroll)
+        // Live-events / non-loadInitial entry path: a Live session being
+        // promoted from draft sees its first bubble land here (not via
+        // loadInitial), so the bake's release signal has to fire from
+        // this path too. Idempotent — `markFirstScreenReady` is a one-way
+        // latch.
+        if blockCount > 0 { markFirstScreenReady() }
+    }
+
+    /// True while a `loadInitial` is queued waiting for layout-ready.
+    /// The bridge funnels live-`.appended` blocks through
+    /// `extendPendingInitial(_:)` while this is true, so they merge into
+    /// the cold-load payload instead of disappearing into a no-op
+    /// `coordinator.apply(.insert(after: unknownId))` against an empty
+    /// `coordinator.blocks`.
+    var hasPendingInitial: Bool { pendingInitial != nil }
+
+    /// Append blocks to the queued initial-load payload. No-op when no
+    /// load is pending. Used by the bridge to merge live events that
+    /// arrive between `loadInitial` and `consumePendingInitial`.
+    func extendPendingInitial(_ blocks: [Block]) {
+        guard !blocks.isEmpty else { return }
+        pendingInitial?.blocks.append(contentsOf: blocks)
+    }
+
+    // MARK: - First-screen readiness
+
+    /// Latch the first-screen-ready signal. Idempotent — once true,
+    /// subsequent calls are no-ops. Reset via `resetFirstScreenReady()`.
+    private func markFirstScreenReady() {
+        if firstScreenReady { return }
+        firstScreenReady = true
+    }
+
+    /// Reset the first-screen-ready latch back to `false`. Called from
+    /// `Session.resetTranscript()` on Ephemeral session unmount so the
+    /// next mount's bake correctly waits for the fresh cold-load.
+    func resetFirstScreenReady() {
+        firstScreenReady = false
     }
 
     // MARK: - Loading pill
@@ -325,33 +404,29 @@ final class Transcript2Controller {
     /// the cold-load. Popped after Phase 1 (no-Phase-2 branch) or from
     /// Phase 2's completion (which `applyInBackground` guarantees to fire).
     func loadInitial(_ blocks: [Block], anchor: InitialAnchor = .bottom) {
-        guard !blocks.isEmpty else { return }
+        guard !blocks.isEmpty else {
+            // Empty session — nothing to paint, so the bake can drop
+            // immediately. Latch ready so the swap doesn't wait forever.
+            markFirstScreenReady()
+            return
+        }
 
         let width = coordinator.layoutWidth
         let viewportHeight = coordinator.viewportHeight
         guard width > 0, viewportHeight > 0 else {
-            // Table not mounted / not yet tiled. **Insert the blocks into
-            // `coordinator.blocks` immediately** so subsequent `apply()`s
-            // — live `.appended` events on background sessions whose view
-            // hasn't been mounted yet — can resolve anchors against a
-            // populated array. Only the scroll-to-anchor intent is
-            // deferred: when the coordinator's `onLayoutReady` fires,
-            // `consumePendingInitial` scrolls the (already-present)
-            // anchor row into view.
+            // Table not mounted / not yet tiled. Stash the FULL Phase 1/2
+            // intent on `pendingInitial`; **do not pre-insert blocks into
+            // `coordinator.blocks`**. Pre-inserting forced AppKit's lazy
+            // row-position cache to fill against width=0 layouts, which
+            // made the post-tile `rect(ofRow: lastIdx)` undershoot — the
+            // root cause of cold-open scroll jumps the bake architecture
+            // is designed to eliminate.
             //
-            // Idempotent on re-entry: if `coordinator.blocks` already
-            // matches `blocks` (e.g. a second `loadInitial(same payload)`
-            // — rare, mostly tests), skip the insert.
-            if coordinator.blockIds != blocks.map(\.id) {
-                let existing = coordinator.blockIds
-                var changes: [Transcript2Controller.Change] = []
-                if !existing.isEmpty {
-                    changes.append(.remove(ids: existing))
-                }
-                changes.append(.insert(after: nil, blocks))
-                coordinator.apply(changes, scroll: .none)
-            }
-            pendingInitial = PendingInitial(anchor: anchor)
+            // On `coordinator.onLayoutReady`, `consumePendingInitial`
+            // replays this with the real-width Phase 1/2 path; the bake
+            // (mounted above this view by `RootView2`) hides the empty
+            // coordinator window until then.
+            pendingInitial = PendingInitial(blocks: blocks, anchor: anchor)
             return
         }
         // Path reached the real-width branch — drop any stale pending so a
@@ -390,6 +465,15 @@ final class Transcript2Controller {
         coordinator.apply(
             [.insert(after: coordinator.blockIds.last, viewportBatch)],
             scroll: phase1Scroll)
+
+        // Bake release point — Phase 1 finished sync, the viewport batch
+        // is in `coordinator.blocks` at its final scroll position, and
+        // the next AppKit display pass will paint the correct first
+        // frame. Phase 2 is best-effort fill behind the now-stable
+        // viewport (`.saveVisible` keeps the anchor fixed) and must not
+        // perturb the visual position. Per design doc absolute constraint
+        // #3, the signal MUST fire here, not after Phase 2.
+        markFirstScreenReady()
 
         // Phase 2 — the rest, off-main layout. ID-based anchors mean
         // ordering between the two inserts no longer matters: each anchor
@@ -445,15 +529,16 @@ final class Transcript2Controller {
     var blockIds: [UUID] { coordinator.blockIds }
 
     /// Invoked by `coordinator.onLayoutReady` once the table tiles to a
-    /// positive width. Blocks are already in `coordinator.blocks` (the
-    /// `loadInitial` no-width branch pre-inserted them); this is purely
-    /// the deferred scroll-to-anchor step. No-op when nothing is pending
-    /// — `coordinator` may fire `onLayoutReady` on resize-time 0→positive
-    /// sequences unrelated to a deferred initial load.
+    /// positive width. Re-enters `loadInitial` with the queued payload so
+    /// the full Phase 1/2 path runs at real-width (the only legal route
+    /// to a precise cold-load scroll under the new architecture). No-op
+    /// when nothing is pending — `coordinator` may fire `onLayoutReady`
+    /// on resize-time 0→positive sequences unrelated to a deferred
+    /// initial load.
     private func consumePendingInitial() {
         guard let pending = pendingInitial else { return }
         pendingInitial = nil
-        scrollToInitialAnchor(pending.anchor)
+        loadInitial(pending.blocks, anchor: pending.anchor)
     }
 
     /// Apply the deferred scroll-to-anchor. Resolves `.bottom` against the

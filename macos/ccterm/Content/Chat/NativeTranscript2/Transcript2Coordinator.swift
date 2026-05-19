@@ -981,13 +981,16 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let prevWidth = lastLayoutWidth
         lastLayoutWidth = width
 
-        // Refresh row heights BEFORE `onLayoutReady?()`. The deferred branch
-        // of `Transcript2Controller.loadInitial` pre-inserts blocks into
-        // `coordinator.blocks` while `layoutWidth == 0`, which makes AppKit
-        // cache ~0 heights for every row. If the subsequent
-        // `consumePendingInitial → scrollRowToBottom` runs before the
-        // re-query, `rect(ofRow:)` returns geometry at ~0 and the scroll
-        // target collapses to the document top.
+        // Refresh row heights BEFORE `onLayoutReady?()`. Live-resize and
+        // any other 0→positive width change fires here; if blocks are
+        // present (i.e. a live, already-loaded session got its width
+        // re-tiled), invalidating rows now keeps `rect(ofRow:)` consistent
+        // with the new width on the next layout pass. With the bake
+        // architecture, `Transcript2Controller.loadInitial`'s deferred
+        // branch no longer pre-inserts blocks under width=0, so the
+        // historic "cache filled at width=0 → undershoot scroll" race
+        // can't trigger here — but invalidating still matters for the
+        // live-resize path.
         if !blocks.isEmpty {
             if tableView.inLiveResize {
                 // Bounded per-frame layout work: only invalidate visible rows.

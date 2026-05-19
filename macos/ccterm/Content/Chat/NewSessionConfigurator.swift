@@ -83,8 +83,29 @@ struct NewSessionConfigurator<InputBar: View>: View {
     /// already has data the moment the user clicks the branch pill — the
     /// subprocess cost is paid in the background while the user is reading
     /// the rest of the card.
-    @State private var probe = GitProbe()
+    @State private var probe: GitProbe
     @State private var showBranchPicker: Bool = false
+
+    init(
+        folderPath: Binding<String?>,
+        useWorktree: Binding<Bool>,
+        sourceBranch: Binding<String?>,
+        onResumeSession: ((String) -> Void)? = nil,
+        @ViewBuilder inputBar: @escaping () -> InputBar
+    ) {
+        self._folderPath = folderPath
+        self._useWorktree = useWorktree
+        self._sourceBranch = sourceBranch
+        self.onResumeSession = onResumeSession
+        self.inputBar = inputBar
+        // Seed the cheap probe synchronously so the branch pill renders on the
+        // very first frame. Without this, `.task(id: folderPath)` only fires
+        // after the view appears — `probe.currentBranch` is nil for one frame,
+        // the conditional `metaRow` pops in, and everything below it (divider,
+        // recents, input bar) gets shoved down a row. The heavy probe
+        // (branches list / status / remote main) still runs async in `.task`.
+        self._probe = State(initialValue: GitProbe(seedFolderPath: folderPath.wrappedValue))
+    }
 
     var body: some View {
         HStack(spacing: 0) {

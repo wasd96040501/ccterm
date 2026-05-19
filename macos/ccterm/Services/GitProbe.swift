@@ -21,7 +21,6 @@ import Observation
 /// (the configurator's `.task(id: folderPath)`) and keeps the probe
 /// directly testable — a unit test constructs one, calls these methods
 /// against a temp git repo, and asserts on the @Observable properties.
-@MainActor
 @Observable
 final class GitProbe {
 
@@ -52,7 +51,20 @@ final class GitProbe {
     /// since switched folders.
     @ObservationIgnored private var pendingFolder: String? = nil
 
-    init() {}
+    /// `seedFolderPath` runs the cheap probe (`.git/HEAD` read + `.git`
+    /// existence check) synchronously, so the consumer's first frame sees
+    /// `isGitRepo` / `currentBranch` already filled in. Without this seed
+    /// the branch pill in the New Session card pops in one frame later
+    /// when `.task(id: folderPath)` fires, shoving the divider, recents,
+    /// and input bar down by a row.
+    init(seedFolderPath: String? = nil) {
+        if let path = seedFolderPath, FileManager.default.fileExists(atPath: path) {
+            let repo = GitUtils.isGitRepository(at: path)
+            isGitRepo = repo
+            currentBranch = repo ? GitUtils.currentBranch(at: path) : nil
+            pendingFolder = path
+        }
+    }
 
     /// Synchronous, cheap probe. Updates `isGitRepo` and `currentBranch`,
     /// and resets the heavy cache when `folderPath` differs from the
@@ -116,7 +128,7 @@ final class GitProbe {
 
     // MARK: - Git subprocess helpers
 
-    nonisolated static func listBranches(at path: String) -> [String] {
+    static func listBranches(at path: String) -> [String] {
         let result = Worktree.runGit(
             ["for-each-ref", "--format=%(refname:short)", "refs/heads"],
             cwd: path,
@@ -130,7 +142,7 @@ final class GitProbe {
             .filter { !$0.isEmpty }
     }
 
-    nonisolated static func remoteMainBranchName(at path: String) -> String? {
+    static func remoteMainBranchName(at path: String) -> String? {
         let result = Worktree.runGit(
             ["symbolic-ref", "--short", "--quiet", "refs/remotes/origin/HEAD"],
             cwd: path,
@@ -145,7 +157,7 @@ final class GitProbe {
         return stdout
     }
 
-    nonisolated static func gitStatusSummary(at path: String) -> String? {
+    static func gitStatusSummary(at path: String) -> String? {
         var parts: [String] = []
         let porcelain = Worktree.runGit(
             ["status", "--porcelain"],

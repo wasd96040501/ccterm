@@ -167,6 +167,32 @@ struct Transcript2NSViewBridge: NSViewRepresentable {
         coordinator: Transcript2Coordinator
     ) {
         NotificationCenter.default.removeObserver(coordinator)
+        // Explicitly clear the coordinator's `tableView` weak ref. Without
+        // this the ref auto-nils silently during dealloc, which does NOT
+        // fire `willSet`/`didSet` — so the matched reset path in
+        // `Transcript2Coordinator.tableView.didSet` (setAnchorSettled(false),
+        // lastLayoutWidth=-1) only runs on attach, not on detach.
+        //
+        // The architectural contract `isAnchorSettled` carries — "first-
+        // screen anchor has landed for the **currently-attached**
+        // NSTableView" — requires that the flag flip to false the moment
+        // no NSTableView is bound. Consumers in `RootView2` watch this
+        // flag through `.onChange(of: currentController?.isAnchorSettled,
+        // initial: true)` to mask the sidebar-switch bake; a stale-`true`
+        // across an unmounted window means re-entry into the same session
+        // can see `true → true` (no transition) at the body re-eval, and
+        // the bake-clear fires on a body pass where the new tableView
+        // either isn't attached yet or hasn't tiled. The user-visible
+        // symptom: "瞬间看到 transcript 开头的内容" on re-entry.
+        //
+        // Identity guard against unusual SwiftUI lifecycles: only nil if
+        // the coordinator still points at the view we're dismantling. If
+        // a sibling makeNSView already reassigned (rare; only possible
+        // when a new make of the same coordinator races a stale dismantle
+        // of the old view), preserve the new bind.
+        if coordinator.tableView === (nsView.documentView as? NSTableView) {
+            coordinator.tableView = nil
+        }
     }
 }
 

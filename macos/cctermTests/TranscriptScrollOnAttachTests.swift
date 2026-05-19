@@ -161,6 +161,102 @@ final class TranscriptScrollOnAttachTests: XCTestCase {
             label: "re-entry into A")
     }
 
+    /// End-to-end regression for the session-swap double-buffer
+    /// pipeline. Drives the *real* `chatSwap` modifier (the one
+    /// `RootView2` applies) through a `TestSwapRoot` that mirrors the
+    /// chat branch of `detailContent`. Bug under test: when switching
+    /// back to an already-anchored session, the overlay used to
+    /// release on the very first `.onChange` evaluation because the
+    /// target controller's `firstScreenAnchored` was stale-true from
+    /// its prior attach cycle. The fix (`markPendingAttach` flipping
+    /// false before the swap) makes the later `false → true` reliably
+    /// fire the release observer.
+    ///
+    /// The test exercises sidA → sidB → sidA. The buggy path is the
+    /// last hop (re-entry into A). We assert three things:
+    ///
+    ///   1. Right after `nav.sid = sidA`, the bake is up AND A's
+    ///      controller is un-anchored. Without `markPendingAttach` the
+    ///      stale-anchored flag would either fire `release()`
+    ///      immediately or leave the overlay stuck.
+    ///   2. The overlay eventually releases (within the 500ms
+    ///      backstop's bound, but reactively — typically much faster).
+    ///   3. At release time, A's controller is anchored and the
+    ///      visible NSTableView has the last row at the visible bottom.
+    func testChatSwapHoldsOverlayUntilReAttachAnchors() throws {
+        let sidBLocal = UUID().uuidString
+        sidB = sidBLocal
+        let fb = try LargeJSONLFixture(sessionId: sidBLocal)
+        fixtureB = fb
+        repository.save(
+            SessionRecord(
+                sessionId: sidBLocal,
+                title: "fixture-B",
+                cwd: "/tmp/ccterm-test-\(UUID().uuidString)",
+                status: .created))
+
+        let sessionA = manager.prepareDraftSession(sidA)
+        let sessionB = manager.prepareDraftSession(sidBLocal)
+        sessionA.loadHistory(overrideURL: fixtureA.url, tailTarget: 80)
+        sessionB.loadHistory(overrideURL: fb.url, tailTarget: 80)
+
+        let chatTransition = ViewTransitionController()
+        let nav = TestNavBox(sid: sidA)
+        let host = mountSwapHarness(navBox: nav, transition: chatTransition)
+        defer { teardownHost(host) }
+
+        // Cold-open A settles → anchored, no overlay.
+        waitUntilLoaded(session: sessionA)
+        drainMainRunLoop(seconds: 0.6)
+        XCTAssertTrue(sessionA.controller.firstScreenAnchored)
+        XCTAssertNil(chatTransition.bakedImage, "No overlay after cold open settles")
+        assertLastRowAtVisibleBottom(
+            controller: sessionA.controller,
+            label: "cold A baseline")
+
+        // Switch to B, settle.
+        nav.sid = sidBLocal
+        waitUntilLoaded(session: sessionB)
+        drainMainRunLoop(seconds: 0.6)
+        XCTAssertTrue(sessionB.controller.firstScreenAnchored)
+        XCTAssertNil(chatTransition.bakedImage, "No overlay after B settles")
+
+        // Switch back to A — the buggy path. The harness's swap modifier
+        // synchronously runs `markPendingAttach + bake + visibleSessionId =
+        // sidA` when the @Observable nav.sid change propagates. Poll for
+        // the intermediate state to land (SwiftUI's @Observable propagation
+        // takes at least one runloop tick).
+        nav.sid = sidA
+        let bakeUpAndPending = runLoopUntil(timeout: 0.3) {
+            chatTransition.bakedImage != nil
+                && !sessionA.controller.firstScreenAnchored
+        }
+        XCTAssertTrue(
+            bakeUpAndPending,
+            "After nav.sid = A: overlay should be up AND A's controller "
+                + "should be in pending-attach state (flag false). Without "
+                + "`markPendingAttach`, A's stale-anchored flag would let "
+                + ".onChange fire release immediately — and the user would "
+                + "see a row-0 flash before the new NSTableView anchors.")
+
+        // Reactive release: the `.onChange(of: firstScreenAnchored)` in
+        // the modifier fires when `consumePendingInitial` flips the flag
+        // back to true on the new attach. No polling in production —
+        // this poll is only to give the test a deadline.
+        let released = runLoopUntil(timeout: 1.0) {
+            chatTransition.bakedImage == nil
+                && sessionA.controller.firstScreenAnchored
+        }
+        XCTAssertTrue(
+            released,
+            "Overlay should release reactively once A re-anchors. "
+                + "Final: bakedImage=\(chatTransition.bakedImage == nil ? "nil" : "set") "
+                + "firstScreenAnchored=\(sessionA.controller.firstScreenAnchored)")
+        assertLastRowAtVisibleBottom(
+            controller: sessionA.controller,
+            label: "post-release re-entry into A")
+    }
+
     /// First-screen load is two-phase by design: Phase 1 sync-applies a
     /// viewport-covering slice (`controller.apply`, `.bottom` scroll),
     /// then Phase 2 off-main precomputes the rest and lands it in a
@@ -394,6 +490,43 @@ final class TranscriptScrollOnAttachTests: XCTestCase {
         return controller
     }
 
+    /// Mount a `TestSwapRoot` — same chat tree as the production
+    /// `RootView2` chat branch (`ViewTransitionContainer` +
+    /// `ChatHistoryView` + the `chatSwap` modifier), driven by a
+    /// `TestNavBox` for the target sid. The supplied
+    /// `ViewTransitionController` is the same one the modifier reads
+    /// and writes, so tests can sample `bakedImage` to assert on the
+    /// overlay lifecycle.
+    private func mountSwapHarness(
+        navBox: TestNavBox,
+        transition: ViewTransitionController
+    ) -> NSHostingController<TestSwapRoot> {
+        let root = TestSwapRoot(
+            nav: navBox,
+            manager: manager,
+            searchBus: TranscriptSearchBus(),
+            syntaxEngine: SyntaxHighlightEngine(),
+            chatTransition: transition)
+        let controller = NSHostingController(rootView: root)
+        controller.view.frame = CGRect(origin: .zero, size: Self.viewSize)
+
+        let window = NSWindow(
+            contentRect: CGRect(
+                origin: CGPoint(x: -30_000, y: -30_000),
+                size: Self.viewSize),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false)
+        window.isReleasedWhenClosed = false
+        window.isExcludedFromWindowsMenu = true
+        window.alphaValue = 0.01
+        window.contentViewController = controller
+        window.ccterm_orderFrontForTesting()
+        controller.view.layoutSubtreeIfNeeded()
+        controller.testWindow = window
+        return controller
+    }
+
     // MARK: - Wait helpers
 
     /// Block until `historyLoadState == .loaded` (Phase B done) or
@@ -524,6 +657,39 @@ final class TestNavBox {
     var sid: String
     init(sid: String) { self.sid = sid }
     nonisolated deinit {}
+}
+
+/// Mirrors `RootView2`'s chat-branch tree: `ViewTransitionContainer`
+/// wrapping `ChatHistoryView`, with the production `chatSwap` modifier
+/// driving the double-buffered swap. Holds the same `@State
+/// visibleSessionId` and uses the same `ViewTransitionController` the
+/// test passes in. Exercises the real production code path — bug fixes
+/// in `ChatSwapModifier` / `ViewTransitionContainer` /
+/// `Transcript2Controller.markPendingAttach` are validated end-to-end.
+struct TestSwapRoot: View {
+    var nav: TestNavBox
+    let manager: SessionManager
+    let searchBus: TranscriptSearchBus
+    let syntaxEngine: SyntaxHighlightEngine
+    let chatTransition: ViewTransitionController
+    @State private var visibleSessionId: String?
+
+    var body: some View {
+        let visibleSid = visibleSessionId ?? nav.sid
+        ViewTransitionContainer(controller: chatTransition) {
+            ChatHistoryView(sessionId: visibleSid)
+                .id(visibleSid)
+        }
+        .chatSwap(
+            target: nav.sid,
+            visibleSessionId: $visibleSessionId,
+            transition: chatTransition,
+            manager: manager
+        )
+        .environment(manager)
+        .environment(searchBus)
+        .environment(\.syntaxEngine, syntaxEngine)
+    }
 }
 
 /// Minimal SwiftUI root that mounts the production

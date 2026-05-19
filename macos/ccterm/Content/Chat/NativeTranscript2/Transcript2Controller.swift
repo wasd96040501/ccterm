@@ -71,6 +71,24 @@ final class Transcript2Controller {
     /// observe count changes without reaching into AppKit state.
     private(set) var blockCount: Int = 0
 
+    /// True when the most recent `NSTableView` attach (or cold load) has
+    /// completed the anchor-to-tail handshake — content is on the table
+    /// and scroll position is correct. Drops to `false` during the
+    /// brief window between a fresh attach and the `onLayoutReady`
+    /// scroll-to-anchor; rises to `true` once Phase 1 sync scroll runs
+    /// (real-width cold load) or `consumePendingInitial` lands the
+    /// deferred scroll (re-entry / deferred cold load).
+    ///
+    /// Hosts use this to gate a transition overlay during session
+    /// switches: bake the previous view's pixels, swap the
+    /// `ChatHistoryView` to the target sid, wait for the new
+    /// controller's flag to flip true, then release the overlay. See
+    /// `ViewTransitionContainer`.
+    ///
+    /// Default `true` — a fresh controller with no content and no
+    /// attached table is trivially anchored.
+    private(set) var firstScreenAnchored: Bool = true
+
     /// Pending request for the SwiftUI "show full user message" sheet,
     /// driven by chevron clicks inside `BlockCellView`. NSView-internal
     /// interactions (link click, selection drag, chevron tap) are normally
@@ -194,6 +212,29 @@ final class Transcript2Controller {
     /// retroactively schedules already-installed blocks on first attach.
     func attachSyntaxEngine(_ engine: SyntaxHighlightEngine?) {
         coordinator.attachSyntaxEngine(engine)
+    }
+
+    /// Drop `firstScreenAnchored` to `false` in preparation for an
+    /// imminent `NSTableView` attach. Hosts driving a double-buffered
+    /// session swap call this *before* re-mounting the
+    /// `ChatHistoryView`. Without it, the `.onChange`-driven release
+    /// downstream sees the flag's stale-true from a prior attach cycle
+    /// and never gets a transition to fire on — the swap completes,
+    /// the new `NSTableView` anchors via `consumePendingInitial`, but
+    /// since the flag was already true, no transition occurs.
+    /// `markPendingAttach` injects an explicit `true → false` so the
+    /// later `false → true` (after the anchor handshake) reliably
+    /// fires the release observer.
+    ///
+    /// Always flips, regardless of current `blockIds`. The caller is
+    /// expected to gate on `session.hasRecord` and only invoke this
+    /// for sessions that have content (or will have content) to
+    /// anchor. Calling it on a draft/empty session would leave the
+    /// flag pinned `false` forever — no `handleTableAttached` arm
+    /// fires (early-returns on empty blocks), no `consumePendingInitial`
+    /// runs, no `loadInitial` runs.
+    func markPendingAttach() {
+        firstScreenAnchored = false
     }
 
     // MARK: - Mutation
@@ -355,6 +396,7 @@ final class Transcript2Controller {
                 coordinator.apply(changes, scroll: .none)
             }
             pendingInitial = PendingInitial(anchor: anchor)
+            firstScreenAnchored = false
             return
         }
         // Path reached the real-width branch — drop any stale pending so a
@@ -393,6 +435,11 @@ final class Transcript2Controller {
         coordinator.apply(
             [.insert(after: coordinator.blockIds.last, viewportBatch)],
             scroll: phase1Scroll)
+
+        // Phase 1's sync scroll already pinned the anchor row. Phase 2
+        // runs under `.saveVisible`, so it can't perturb the visible
+        // anchor — the view is anchored from this point on.
+        firstScreenAnchored = true
 
         // Phase 2 — the rest, off-main layout. ID-based anchors mean
         // ordering between the two inserts no longer matters: each anchor
@@ -460,6 +507,7 @@ final class Transcript2Controller {
         guard let pending = pendingInitial else { return }
         pendingInitial = nil
         scrollToInitialAnchor(pending.anchor)
+        firstScreenAnchored = true
     }
 
     /// Invoked by `coordinator.onTableAttached` on every `nil → non-nil`
@@ -481,8 +529,22 @@ final class Transcript2Controller {
     /// the caller's anchor; the real-width branch clears `pendingInitial`
     /// before Phase 1's `.bottom` scroll runs synchronously.
     private func handleTableAttached() {
-        guard pendingInitial == nil, !coordinator.blockIds.isEmpty else { return }
-        pendingInitial = PendingInitial(anchor: .bottom)
+        if coordinator.blockIds.isEmpty {
+            // Empty session — nothing to anchor; trivially "ready".
+            return
+        }
+        // Fresh `NSTableView` driving an already-populated block list:
+        // the scroll position resets to 0 on attach, so we are NOT
+        // anchored until `onLayoutReady` → `consumePendingInitial`
+        // lands the deferred scroll.
+        firstScreenAnchored = false
+        if pendingInitial == nil {
+            // Re-entry path. (Cold-open's `loadInitial(deferred)`
+            // already set `pendingInitial` and the flag above — skip
+            // re-arming so the caller's anchor isn't downgraded to
+            // `.bottom`.)
+            pendingInitial = PendingInitial(anchor: .bottom)
+        }
     }
 
     /// Apply the deferred scroll-to-anchor. Resolves `.bottom` against the

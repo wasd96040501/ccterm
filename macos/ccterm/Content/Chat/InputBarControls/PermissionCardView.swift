@@ -329,6 +329,31 @@ private struct PermissionDecisionButton: View {
     .background(Color(nsColor: .windowBackgroundColor))
 }
 
+#Preview("Edit · long diff scrolls") {
+    let oldText = (0..<25).map { i in
+        "    case option\(i): return \"option-\(i)\""
+    }.joined(separator: "\n")
+    let newText = (0..<25).map { i in
+        "    case option\(i): return String(localized: \"option-\(i)\")"
+    }.joined(separator: "\n")
+    return PermissionCardView(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-long-diff",
+            toolName: "Edit",
+            input: [
+                "file_path": "/Users/example/Project/Sources/Localized.swift",
+                "old_string": oldText,
+                "new_string": newText,
+            ]),
+        onAllowOnce: {},
+        onAllowAlways: {},
+        onDeny: {}
+    )
+    .padding(16)
+    .frame(width: 560)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
 #Preview("WebFetch") {
     PermissionCardView(
         request: PermissionRequest.makePreview(

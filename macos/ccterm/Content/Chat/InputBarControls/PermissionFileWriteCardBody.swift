@@ -20,11 +20,16 @@ import SwiftUI
 /// (`oldString = nil`), which `DiffLayout` paints as a line-numbered
 /// view of the new content without `+`-insertion chrome.
 ///
-/// The DiffView is wrapped in a 240pt-cap `ScrollView` so a runaway
-/// edit can't push the decision buttons off-screen.
+/// The DiffView is wrapped in `BoundedHeightScrollView` so a short
+/// diff sizes to its intrinsic height and a runaway edit caps at
+/// `diffMaxHeight` and scrolls — buttons always stay reachable.
 struct PermissionFileWriteCardBody: View {
     let request: PermissionRequest
     let kind: PermissionCardKind
+
+    /// Maximum visible height for the embedded `DiffView`. Hit it and
+    /// the wrapper switches from intrinsic sizing to scroll.
+    static let diffMaxHeight: CGFloat = 240
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -37,11 +42,9 @@ struct PermissionFileWriteCardBody: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             if let diff = diffBlock {
-                ScrollView(.vertical, showsIndicators: true) {
+                BoundedHeightScrollView(maxHeight: Self.diffMaxHeight) {
                     DiffView(diff: diff)
-                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxHeight: 240)
             } else {
                 Text(String(localized: "Path missing — open the transcript to inspect"))
                     .font(.system(size: 11))

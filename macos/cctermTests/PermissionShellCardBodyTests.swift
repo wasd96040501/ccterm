@@ -70,6 +70,60 @@ final class PermissionShellCardBodyTests: XCTestCase {
         XCTAssertTrue(hint?.contains("3") == true, "hint=\(hint ?? "nil")")
     }
 
+    // MARK: - DiffBlock command rendering
+
+    func testCommandDiffBlockIsNewFileMode() {
+        // `isNewFile == true` makes DiffLayout render the body as a
+        // code listing (gutter line numbers, no `+`/`-` sign column)
+        // instead of "a diff that's all additions" — the right shape
+        // for previewing a command before it runs.
+        let body = makeBody(
+            toolName: "Bash", input: ["command": "rm -rf node_modules"])
+        let diff = body.commandDiffBlock
+        XCTAssertTrue(diff.isNewFile)
+        XCTAssertNil(diff.oldString)
+        XCTAssertEqual(diff.newString, "rm -rf node_modules")
+    }
+
+    func testCommandDiffBlockUsesBashSyntheticPath() {
+        // The diff body keys its syntax-highlight language off
+        // `filePath`'s extension. Bash → `.sh` resolves to
+        // highlight.js's `bash` lexer in `LanguageDetection`.
+        let body = makeBody(toolName: "Bash", input: ["command": "echo hi"])
+        let diff = body.commandDiffBlock
+        XCTAssertEqual(LanguageDetection.language(for: diff.filePath), "bash")
+    }
+
+    func testCommandDiffBlockUsesPowerShellSyntheticPath() {
+        // PowerShell has no entry in highlight.js's extToLang map, so
+        // the language resolves to nil and the renderer skips coloring
+        // — same shape as plain monospaced text, which is fine for
+        // PowerShell today. The extension is still distinct so a
+        // future highlighter for `.ps1` would slot in without code
+        // changes here.
+        let body = makeBody(
+            toolName: "PowerShell", input: ["command": "Get-ChildItem"])
+        let diff = body.commandDiffBlock
+        XCTAssertTrue(diff.filePath.hasSuffix(".ps1"))
+    }
+
+    func testCommandDiffBlockPreservesMultilineHeredoc() {
+        // The diff renderer paginates one line per row; the multi-line
+        // command must arrive intact so the user sees every line.
+        let heredoc = "git commit -m \"$(cat <<'EOF'\nfeat: x\n\nbody\nEOF\n)\""
+        let body = makeBody(toolName: "Bash", input: ["command": heredoc])
+        let diff = body.commandDiffBlock
+        // Trailing newline (if any) is stripped to avoid a blank row.
+        XCTAssertFalse(diff.newString.hasSuffix("\n"))
+        XCTAssertTrue(diff.newString.contains("feat: x"))
+        XCTAssertTrue(diff.newString.contains("EOF"))
+    }
+
+    func testCommandDiffBlockFallsBackToEmDashWhenCommandMissing() {
+        let body = makeBody(toolName: "Bash", input: [:])
+        XCTAssertEqual(body.commandDiffBlock.newString, "—")
+    }
+
     func testCompoundHintCountsPowerShellRulesToo() {
         // The hint covers either shell — same UI surface.
         let req = makeRequest(

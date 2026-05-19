@@ -21,7 +21,11 @@ final class PermissionCardSnapshotTests: XCTestCase {
             toolName: "Bash",
             input: ["command": "rm -rf node_modules", "description": "Reset deps"])
 
-        let size = CGSize(width: 520, height: 220)
+        // 380 tall accommodates the new bash card layout: header +
+        // command DiffView (caps at 240pt) + description + buttons +
+        // padding. The previous 220pt fit the single-line Text-only
+        // command surface; the diff body is intrinsically larger.
+        let size = CGSize(width: 520, height: 380)
         let view = StandalonePermissionCardFixture(request: request)
             .frame(width: size.width, height: size.height)
             .background(Color(nsColor: .windowBackgroundColor))
@@ -42,7 +46,7 @@ final class PermissionCardSnapshotTests: XCTestCase {
             toolName: "Bash",
             input: ["command": "git push --force origin main"])
 
-        let size = CGSize(width: 600, height: 240)
+        let size = CGSize(width: 600, height: 460)
         let view = InputBarChromeMirrorFixture(session: session)
             .frame(width: size.width, height: size.height)
             .background(Color(nsColor: .windowBackgroundColor))

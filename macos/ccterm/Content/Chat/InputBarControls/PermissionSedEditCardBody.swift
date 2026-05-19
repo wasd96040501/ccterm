@@ -16,6 +16,10 @@ import SwiftUI
 struct PermissionSedEditCardBody: View {
     let request: PermissionRequest
 
+    /// Cap for the embedded `DiffView`. Short substitutions size to
+    /// their intrinsic height; long ones cap here and scroll.
+    static let diffMaxHeight: CGFloat = 240
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let subtitle {
@@ -27,11 +31,9 @@ struct PermissionSedEditCardBody: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             if let diff = diffBlock {
-                ScrollView(.vertical, showsIndicators: true) {
+                BoundedHeightScrollView(maxHeight: Self.diffMaxHeight) {
                     DiffView(diff: diff)
-                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxHeight: 240)
             } else {
                 Text(String(localized: "Could not preview sed substitution"))
                     .font(.system(size: 11))

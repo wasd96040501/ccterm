@@ -3,9 +3,16 @@ import SwiftUI
 
 /// Body for `.bash` and `.powerShell` permission requests. Mirrors
 /// the upstream `BashPermissionRequest` shape: full command rendered
-/// monospaced (multi-line preserved), `description` rendered dim
+/// in a code-block card (the same `DiffView` chrome the file-write
+/// body uses for its diff preview, in `isNewFile` mode so there is no
+/// `+`/`-` chrome — gives the command the same gutter / syntax
+/// highlight treatment as a file body), `description` rendered dim
 /// below, and a compact "compound command" hint when the CLI flagged
 /// the request as having per-subcommand rules.
+///
+/// The DiffView is wrapped in `BoundedHeightScrollView` so a short
+/// command sizes to its intrinsic height and a runaway heredoc caps
+/// at `commandMaxHeight` and scrolls — buttons always stay reachable.
 ///
 /// Sandboxing / classifier / destructive-warning surfacing from the
 /// upstream are intentionally deferred — the CLI doesn't ship those
@@ -15,9 +22,18 @@ struct PermissionShellCardBody: View {
     let request: PermissionRequest
     let kind: PermissionCardKind
 
+    /// Maximum visible height for the embedded command `DiffView`. The
+    /// command typically renders in a few lines; the cap is generous
+    /// enough to surface a typical multi-line heredoc without scroll,
+    /// and short enough that the decision buttons stay on-screen even
+    /// in a narrow window.
+    static let commandMaxHeight: CGFloat = 240
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            commandView
+            BoundedHeightScrollView(maxHeight: Self.commandMaxHeight) {
+                DiffView(diff: commandDiffBlock)
+            }
             if let description = description, !description.isEmpty {
                 Text(description)
                     .font(.system(size: 11))
@@ -81,19 +97,37 @@ struct PermissionShellCardBody: View {
             localized: "Compound command — \"Allow always\" will save \(n) rules")
     }
 
-    @ViewBuilder
-    private var commandView: some View {
-        // `.lineLimit(6)` lets multi-line heredocs / `&& \`-continued
-        // commands stay readable without letting a runaway shell
-        // script push the buttons off-screen. The text is selectable
-        // so users can copy a long command into a terminal to inspect.
-        Text(command.isEmpty ? "—" : command)
-            .font(.system(size: 12, design: .monospaced))
-            .foregroundStyle(.primary)
-            .lineLimit(6)
-            .truncationMode(.tail)
-            .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
+    /// `DiffBlock` wrapper around the command so `DiffView` can render
+    /// it as a code block with gutter line numbers + bash syntax
+    /// highlighting. `oldString == nil` puts `DiffLayout` into
+    /// `isNewFile` mode — no `+` sign column, no add-tinted background;
+    /// the body reads as "a code listing" rather than "a diff that is
+    /// all additions". `filePath` extension picks the highlight.js
+    /// language (`.sh` → `bash`, `.ps1` → no entry, falls through to
+    /// no highlighting — same shape as a plain monospaced block).
+    var commandDiffBlock: DiffBlock {
+        let displayed = command.isEmpty ? "—" : command
+        // Drop the trailing newline (if any) so the diff doesn't render
+        // a blank pseudo-line under the last real line.
+        let trimmed = displayed.hasSuffix("\n") ? String(displayed.dropLast()) : displayed
+        return DiffBlock(
+            filePath: commandSyntheticPath,
+            oldString: nil,
+            newString: trimmed)
+    }
+
+    /// Synthetic file path consumed by `LanguageDetection.language(for:)`
+    /// — the extension is the only thing that matters; the basename is
+    /// arbitrary. `command.sh` resolves to highlight.js's `bash` lexer
+    /// which already covers Bash and Zsh; `command.ps1` has no
+    /// highlight.js mapping in our `extToLang` table so PowerShell
+    /// falls through to plain text (acceptable; tokens would just be
+    /// `nil` and the renderer omits coloring).
+    private var commandSyntheticPath: String {
+        switch kind {
+        case .powerShell: return "command.ps1"
+        default: return "command.sh"
+        }
     }
 }
 

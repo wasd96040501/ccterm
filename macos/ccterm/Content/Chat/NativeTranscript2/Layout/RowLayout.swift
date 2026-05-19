@@ -123,13 +123,12 @@ enum RowLayout: @unchecked Sendable {
             return l.textOriginInLayout.y + baseline
                 + (m.descent - m.ascent) / 2
         case .codeBlock(let l):
-            // Align gutter to the **header band** rather than the first
+            // Align gutter to the **chrome row** rather than the first
             // code line — the gutter sits in the row margin and reads
             // as "this is a code block, copy it"; aligning to the
-            // chrome strip puts it at the same y as the in-header
-            // language label / copy glyph and reads as a sibling
-            // affordance.
-            return l.headerRect.midY
+            // in-card chrome puts it at the same y as the language
+            // badge / copy icon and reads as a sibling affordance.
+            return l.chromeRowMidY
         case .list(let l):
             // Per-item `markerCenterY` is documented as "midY of the
             // first content line"; the first item carries the global

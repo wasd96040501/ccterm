@@ -697,49 +697,71 @@ enum BlockStyle: Sendable {
             ])
     }
 
-    /// Header band height — sized to a 11pt SF Symbol with a 4–5pt
-    /// breathing margin top/bottom. Closer to Discord's compact
-    /// 24pt strip than GitHub's chunkier 32–36pt header; chat content
-    /// reads better with a low-profile chrome band.
-    nonisolated static let codeBlockHeaderHeight: CGFloat = 24
+    /// Top inset from the container edge to the chrome row (language
+    /// badge + copy icon). 8pt — past the structural 6pt corner curve
+    /// so the chrome reads as "floating inside the card" rather than
+    /// crowding the corner. Apple's own floating-inside-card chrome
+    /// (Photos, Music) lands in the same 8–10pt range.
+    ///
+    /// **Chrome is an overlay** — it does not reserve vertical space
+    /// in the layout. The code body starts at `codeBlockBodyVerticalPadding`
+    /// from the container top, and the chrome floats above the first
+    /// few lines. Long top-of-block lines therefore pass *under* the
+    /// badge / icon, matching the Slack / Cursor convention. The chip
+    /// background gives the badge enough contrast to stay legible
+    /// against the code's first glyphs.
+    nonisolated static let codeBlockChromeTopInset: CGFloat = 8
 
-    /// Reuses `tableHeaderBackground` so a code block's header band
-    /// reads at the same tonal level as a table's header row —
-    /// both are "this strip is chrome, content lives below it". The
-    /// color is dynamic-resolving (alpha-on-white in light mode,
-    /// alpha-on-black in dark mode), so it composites on top of
-    /// `codeBlockBackgroundColor` and tracks appearance without any
-    /// hand-tuned hex values.
-    nonisolated static var codeBlockHeaderOverlayColor: NSColor { tableHeaderBackground }
-    /// Body padding above and below the code text (inside the
-    /// container, *below* the header band). Smaller than user
-    /// bubble's 14pt — the header already eats the top visual weight,
-    /// so 12 around the body keeps the block from reading too tall.
+    /// Right inset from the container edge to the copy icon's hit
+    /// rect. Symmetric with `codeBlockChromeTopInset` so the chrome
+    /// row's top-right corner mirrors the container's structural
+    /// corner.
+    nonisolated static let codeBlockChromeRightInset: CGFloat = 8
+
+    /// Body padding above and below the code text. Symmetric: the
+    /// chrome is an overlay (does not occupy vertical space), so the
+    /// only top reserve is this padding, matching the bottom for a
+    /// balanced card.
     nonisolated static let codeBlockBodyVerticalPadding: CGFloat = 12
 
-    /// Header chrome label / glyph color. `secondaryLabel` so the band
-    /// reads as chrome rather than competing with the body's syntax
-    /// colors.
+    /// Chrome glyph / badge text color. `secondaryLabel` so the
+    /// affordance reads as chrome, not as code content.
     nonisolated static let codeBlockHeaderForeground: NSColor = .secondaryLabelColor
 
-    /// Header label / glyph point size. 11pt matches the SF Symbol
-    /// weight calibration `codeBlockHeaderHeight` was chosen for.
+    /// Chrome glyph / badge text point size. 11pt — same value the
+    /// gutter SF Symbol uses (`gutterSymbolPointSize`), so every copy
+    /// affordance in the product renders at one weight.
     nonisolated static let codeBlockHeaderFontSize: CGFloat = 11
 
-    /// Left inset for the language label inside the header. Aligned
-    /// with `bubbleHorizontalPadding` so the label sits in the same
-    /// vertical column as the body code beneath it — reads as a single
-    /// flush left edge running the full block.
-    nonisolated static var codeBlockHeaderLeftInset: CGFloat { bubbleHorizontalPadding }
+    /// Apple-design chip background for the language badge. Opaque
+    /// (not alpha-translucent) because the chrome is an overlay — the
+    /// chip sits on top of the code body's first line, and a
+    /// translucent chip would let glyphs bleed through and wash out
+    /// the label. Tones are pre-composited from `tableHeaderBackground`
+    /// over `codeBlockBackgroundColor`, so the chip lands on the same
+    /// chrome-tier shade as the rest of the codebase's chip family.
+    nonisolated static let codeBlockLanguageBadgeBackground: NSColor = NSColor(name: nil) {
+        appearance in
+        let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        // Light: 0xF5,F5,F7 base × (1-0.08) ≈ 0xE1,E1,E3
+        // Dark:  0x1F,1F,24 base × (1-0.14) + 0xFF×0.14 ≈ 0x3E,3E,43
+        return isDark
+            ? NSColor(srgbRed: 0x3E / 255.0, green: 0x3E / 255.0, blue: 0x43 / 255.0, alpha: 1)
+            : NSColor(srgbRed: 0xE1 / 255.0, green: 0xE1 / 255.0, blue: 0xE3 / 255.0, alpha: 1)
+    }
 
-    /// Right inset for the copy button hit zone. Anchored at the
-    /// corner-radius pivot so the hit rect's right edge lands exactly
-    /// where the rounded corner begins — the glyph itself (smaller than
-    /// the hit zone) then floats just inside the curve, hugging the
-    /// edge as the copy icon should as chrome.
-    nonisolated static var codeBlockCopyRightInset: CGFloat { structuralCornerRadius }
-    /// Hairline divider color between header and body.
-    nonisolated static let codeBlockDividerColor: NSColor = .separatorColor
+    /// Badge corner radius — matches `gutterHoverCornerRadius` so the
+    /// badge's curve reads as the same rounded-chip tier as the copy
+    /// icon's hover background.
+    nonisolated static let codeBlockLanguageBadgeCornerRadius: CGFloat = 4
+
+    /// Horizontal padding inside the language badge (left/right of
+    /// the label text).
+    nonisolated static let codeBlockLanguageBadgeHorizontalPadding: CGFloat = 6
+
+    /// Gap between the badge's right edge and the copy icon's left
+    /// edge.
+    nonisolated static let codeBlockChromeItemGap: CGFloat = 4
 
     // MARK: - Tool header geometry
     //
@@ -754,8 +776,8 @@ enum BlockStyle: Sendable {
     // 6pt title↔chevron gap.
 
     /// Tool-header row height — group header and item header both use
-    /// this. Matches `codeBlockHeaderHeight` so a header band tucked
-    /// against a code block downstream reads at one tier.
+    /// this. 24pt — matches the old codeblock header strip pitch so
+    /// adjacent tool rows and code-block rows read at one tier.
     nonisolated static let toolHeaderHeight: CGFloat = 24
 
     /// Title typography — 12pt medium / `secondaryLabel`, matching the

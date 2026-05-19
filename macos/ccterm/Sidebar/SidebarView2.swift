@@ -34,11 +34,16 @@ struct SidebarView2: View {
     /// Sentinel selection value for the Archive page (list of soft-deleted
     /// sessions, recoverable via unarchive).
     static let archiveTag = "__archive__"
+    #if DEBUG
     /// Sentinel selection value used by the dev-only Transcript Demo tab.
     /// Reserved by the double-underscore prefix; real session IDs are UUIDs.
     static let transcriptDemoTag = "__transcript_demo__"
     /// Sentinel for the Transcript Stress tab (long-document perf test).
     static let transcriptStressTag = "__transcript_stress__"
+    /// Sentinel for the Permission Cards preview grid — every
+    /// `PermissionCardKind` rendered side-by-side in a fixed grid.
+    static let permissionCardsDemoTag = "__permission_cards_demo__"
+    #endif
 
     var body: some View {
         List(selection: $selection) {
@@ -48,12 +53,19 @@ struct SidebarView2: View {
             SidebarItemRow(title: "Archive", systemImage: "archivebox")
                 .tag(Self.archiveTag)
                 .listRowInsets(Self.fixedRowInsets)
+            #if DEBUG
             SidebarItemRow(title: "Transcript Demo", systemImage: "doc.text.image")
                 .tag(Self.transcriptDemoTag)
                 .listRowInsets(Self.fixedRowInsets)
             SidebarItemRow(title: "Transcript Stress", systemImage: "speedometer")
                 .tag(Self.transcriptStressTag)
                 .listRowInsets(Self.fixedRowInsets)
+            SidebarItemRow(
+                title: "Permission Cards Demo", systemImage: "hand.raised.fill"
+            )
+            .tag(Self.permissionCardsDemoTag)
+            .listRowInsets(Self.fixedRowInsets)
+            #endif
 
             ForEach(groupedRecords) { group in
                 SidebarFolderHeader(

@@ -27,6 +27,12 @@ struct PermissionCardView: View {
     let onAllowOnce: () -> Void
     let onAllowAlways: () -> Void
     let onDeny: () -> Void
+    /// Receives an `updatedInput` payload for kinds that gather answers
+    /// inside the body (today: `askUserQuestion`). The body composes the
+    /// dict (`questions` + `answers` per the AskUserQuestion contract)
+    /// and the host turns it into `request.allowOnce(updatedInput:)`.
+    /// Default is a no-op so existing call sites compile unchanged.
+    var onAllowWithInput: ([String: Any]?) -> Void = { _ in }
 
     /// Matches `InputBarView2.cornerRadius` so the card visually
     /// belongs to the same surface family as the pill.
@@ -34,11 +40,18 @@ struct PermissionCardView: View {
 
     private var kind: PermissionCardKind { PermissionCardKind.kind(for: request) }
 
+    /// `askUserQuestion` owns its full chrome (header / questions /
+    /// option rows / submit / cancel) — the generic header + reason +
+    /// button row are not rendered for it.
+    private var bodyOwnsChrome: Bool { kind == .askUserQuestion }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            header
+            if !bodyOwnsChrome { header }
             body(for: kind)
-            if let reason = request.decisionReason?.reason, !reason.isEmpty {
+            if !bodyOwnsChrome,
+                let reason = request.decisionReason?.reason, !reason.isEmpty
+            {
                 Label {
                     Text(reason)
                         .font(.system(size: 11))
@@ -49,7 +62,7 @@ struct PermissionCardView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            buttonRow
+            if !bodyOwnsChrome { buttonRow }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -96,7 +109,10 @@ struct PermissionCardView: View {
         case .exitPlanMode:
             PermissionExitPlanModeCardBody(request: request)
         case .askUserQuestion:
-            PermissionAskUserQuestionCardBody(request: request)
+            PermissionAskUserQuestionCardBody(
+                request: request,
+                onSubmit: onAllowWithInput,
+                onCancel: onDeny)
         default:
             PermissionFallbackCardBody(request: request)
         }
@@ -230,7 +246,10 @@ private struct PermissionCardSurface: ViewModifier {
 /// Compact decision button — 24pt tall, 8pt radius, three visual
 /// weights (primary / secondary / destructive). Hover lifts the fill
 /// by 8% so the affordance reads on top of the card surface.
-private struct PermissionDecisionButton: View {
+/// Shared across permission card body renderers (e.g.
+/// `PermissionAskUserQuestionCardBody` uses it for its Deny / Confirm
+/// row) so every kind's decision row reads as the same family.
+struct PermissionDecisionButton: View {
     enum Role {
         case primary, secondary, destructive
     }
@@ -396,10 +415,41 @@ private struct PermissionDecisionButton: View {
                 "questions": [
                     [
                         "question":
-                            "Should we keep backwards-compatibility shims for the old API?"
+                            "Should we keep backwards-compatibility shims for the old API?",
+                        "header": "Compat",
+                        "multiSelect": false,
+                        "options": [
+                            [
+                                "label": "Yes, keep them",
+                                "description": "Existing clients still depend on them",
+                            ],
+                            [
+                                "label": "No, remove them",
+                                "description": "Cleaner break, faster releases",
+                            ],
+                            [
+                                "label": "Defer to next milestone",
+                                "description": "Re-evaluate after the migration",
+                            ],
+                        ],
                     ],
-                    ["question": "Which timezone should the report default to?"],
-                    ["question": "Do we ship a migration script in this PR?"],
+                    [
+                        "question": "Which timezone should the report default to?",
+                        "header": "Timezone",
+                        "options": [
+                            ["label": "UTC"],
+                            ["label": "America/Los_Angeles"],
+                            ["label": "Asia/Shanghai"],
+                        ],
+                    ],
+                    [
+                        "question": "Do we ship a migration script in this PR?",
+                        "header": "Migration",
+                        "options": [
+                            ["label": "Yes — include it"],
+                            ["label": "No — handle ad hoc"],
+                        ],
+                    ],
                 ]
             ]),
         onAllowOnce: {},
@@ -407,7 +457,7 @@ private struct PermissionDecisionButton: View {
         onDeny: {}
     )
     .padding(16)
-    .frame(width: 560)
+    .frame(width: 600, height: 620)
     .background(Color(nsColor: .windowBackgroundColor))
 }
 

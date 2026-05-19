@@ -552,6 +552,16 @@
         }
       }
     },
+    "Cancel question": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消提问"
+          }
+        }
+      }
+    },
     "Cell %1$@ · %2$@": {
       "localizations": {
         "zh-Hans": {
@@ -1807,6 +1817,26 @@
         }
       }
     },
+    "Next": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下一题"
+          }
+        }
+      }
+    },
+    "Next question": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下一题"
+          }
+        }
+      }
+    },
     "No Matching Branches": {
       "extractionState": "stale",
       "localizations": {
@@ -1886,6 +1916,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有插件目录"
+          }
+        }
+      }
+    },
+    "No questions were provided. Cancel to dismiss.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未提供任何问题,点击取消关闭。"
           }
         }
       }
@@ -2064,6 +2104,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "提交方案供你审阅"
+          }
+        }
+      }
+    },
+    "Previous question": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上一题"
           }
         }
       }
@@ -3070,6 +3120,16 @@
         }
       }
     },
+    "Submit": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提交"
+          }
+        }
+      }
+    },
     "Switch Branch": {
       "extractionState": "stale",
       "localizations": {
@@ -3139,6 +3199,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "输入内容"
+          }
+        }
+      }
+    },
+    "Type your own answer…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入自定义答案…"
           }
         }
       }

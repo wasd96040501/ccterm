@@ -109,6 +109,18 @@ enum ToolGroupChildLayout: @unchecked Sendable {
         }
     }
 
+    /// Underlying `DiffLayout` when this child renders a diff card
+    /// (`fileEdit` always, `read` once content has landed). `nil` for
+    /// any other kind. Exposed so `ToolGroupLayout` can surface the
+    /// copy-button hit zone + draw closure without per-kind branching.
+    var diffBody: DiffLayout? {
+        switch self {
+        case .fileEdit(let l): return l.body
+        case .read(let l): return l.body
+        default: return nil
+        }
+    }
+
     /// Factory called by `ToolGroupLayout` when an entry is expanded.
     /// Folded entries skip this entirely — the layout's `body` field
     /// stays `nil` and no per-kind work runs.

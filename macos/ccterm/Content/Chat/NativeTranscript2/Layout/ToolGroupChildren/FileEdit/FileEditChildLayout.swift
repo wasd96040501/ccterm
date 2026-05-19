@@ -35,6 +35,14 @@ struct FileEditChildLayout: @unchecked Sendable {
             body: DiffLayout.make(
                 diff: child.diff,
                 lineMap: lineMap,
+                // Per-child id keys cell-side hover / copied feedback.
+                // Stable across re-layouts because `FileEditChild.id`
+                // is caller-supplied, not derived from content.
+                copyButtonId: child.id,
+                // Copy payload = the post-edit content. Most useful
+                // for a user clicking "copy" on a diff — they want
+                // the file after the change, not the diff syntax.
+                copyText: child.diff.newString,
                 originX: originX,
                 originY: originY,
                 maxWidth: maxWidth))

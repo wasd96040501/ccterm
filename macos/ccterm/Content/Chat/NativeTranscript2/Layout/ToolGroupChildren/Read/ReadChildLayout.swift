@@ -50,6 +50,10 @@ struct ReadChildLayout: @unchecked Sendable {
             body: DiffLayout.make(
                 diff: diff,
                 lineMap: lineMap,
+                // Per-child id keys cell-side hover / copied feedback.
+                copyButtonId: child.id,
+                // Copy payload = the file contents the tool returned.
+                copyText: content,
                 originX: originX,
                 originY: originY,
                 maxWidth: maxWidth))

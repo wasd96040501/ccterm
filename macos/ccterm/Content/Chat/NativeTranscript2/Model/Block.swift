@@ -897,6 +897,67 @@ enum BlockStyle: Sendable {
         DiffColors.dynamicSignDel
     }
 
+    // MARK: - Diff card overlay chrome
+    //
+    // Language badge + copy button live in the diff card's top-right
+    // corner as **overlays** — they don't reserve a header band, so
+    // diff rows still flow up to the card's top edge (the `innerPad`
+    // air strip). The overlay floats on top of the first row(s)
+    // without disturbing the layout; chrome composites on top of
+    // content. Visual recipe matches the cell-margin gutter
+    // (`gutterHitSize`, `gutterHoverBackground`, …) so the
+    // affordance reads as one family.
+
+    /// Top inset for the overlay chrome — distance from the card's
+    /// top edge down to the top edge of the copy button's hit zone.
+    /// Matches `structuralCornerRadius` so the hit zone clears the
+    /// rounded top corner.
+    nonisolated static var diffOverlayTopInset: CGFloat {
+        structuralCornerRadius
+    }
+
+    /// Right inset for the copy button hit zone, measured from the
+    /// container's right edge to the hit zone's right edge. Same
+    /// pivot as `codeBlockCopyRightInset` so the icon sits just inside
+    /// the rounded corner.
+    nonisolated static var diffHeaderCopyRightInset: CGFloat {
+        structuralCornerRadius
+    }
+
+    /// Gap between the language badge's right edge and the copy
+    /// button's hit-zone left edge.
+    nonisolated static let diffHeaderBadgeToCopyGap: CGFloat = 6
+
+    /// Language badge typography. Monospace at 10pt reads as a small
+    /// tech tag — same spirit as GitHub / VS Code language pills.
+    nonisolated static var diffHeaderBadgeFont: NSFont {
+        NSFont.monospacedSystemFont(ofSize: 10, weight: .medium)
+    }
+
+    /// Horizontal padding inside the badge pill, on each side of the text.
+    nonisolated static let diffHeaderBadgeHorizontalPadding: CGFloat = 6
+
+    /// Badge pill height. Sized to fit the badge font with a small
+    /// breathing margin top/bottom and sit comfortably inside the
+    /// 24pt header band.
+    nonisolated static let diffHeaderBadgeHeight: CGFloat = 16
+
+    /// Badge corner radius. Tight curve, reads as a tech tag rather
+    /// than a soft chip.
+    nonisolated static let diffHeaderBadgeCornerRadius: CGFloat = 4
+
+    /// Badge background tint. Reuses `tableHeaderBackground` so the
+    /// badge sits at the same tonal weight as table header bands and
+    /// the code-block header overlay.
+    nonisolated static var diffHeaderBadgeBackground: NSColor {
+        tableHeaderBackground
+    }
+
+    /// Badge text foreground.
+    nonisolated static var diffHeaderBadgeForeground: NSColor {
+        .secondaryLabelColor
+    }
+
     // MARK: - Blockquote geometry
 
     /// Left accent bar. Tuned to the same values the prior renderer

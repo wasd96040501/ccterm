@@ -1,0 +1,257 @@
+import AppKit
+import SwiftUI
+import XCTest
+
+@testable import ccterm
+
+/// Exercises the `isAnchorSettled` state machine on the real
+/// `NativeTranscript2View` mounted through `NSHostingController` into a
+/// hidden offscreen window — the same scaffold the snapshot tests use to
+/// drive SwiftUI's real layout pipeline. No mocked `NSTableView`, no fake
+/// frame-change notifications: production code paths run end-to-end and
+/// the assertions read the resulting `Transcript2Controller` /
+/// `NSScrollView` state directly.
+///
+/// Three scenarios:
+///  - **Cold mount race**: `loadInitial` arrives while the view is not
+///    yet on the screen (width == 0). After the offscreen layout pass
+///    settles, `isAnchorSettled` must be `true` and the last block
+///    must be visually anchored at the bottom.
+///  - **Re-attach (session switch / view rebuild)**: a fresh
+///    `NSHostingController` mounts the same controller, replacing the
+///    coordinator's `tableView`. The flag must drop to `false` on
+///    re-attach and recover to `true` once the new table tiles.
+///  - **Routine append**: streaming `apply(.insert(...))` traffic on
+///    an already-stabilized transcript must **not** reset the flag.
+@MainActor
+final class Transcript2AnchorSettledTests: XCTestCase {
+
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+    }
+
+    // MARK: - Cold mount
+
+    func testColdMountSettlesAndAnchorsAtBottom() throws {
+        let controller = Transcript2Controller()
+        XCTAssertFalse(
+            controller.isAnchorSettled,
+            "fresh controller starts unsettled")
+
+        // Seed BEFORE mounting — this is the deferred branch:
+        // coordinator.layoutWidth == 0, blocks pre-insert, anchor pends.
+        let blocks = Self.makeParagraphBlocks(count: 60)
+        controller.loadInitial(blocks, anchor: .bottom)
+        XCTAssertEqual(
+            controller.blockCount, 60,
+            "loadInitial deferred branch must still pre-insert blocks")
+        XCTAssertFalse(
+            controller.isAnchorSettled,
+            "no table mounted → anchor still pending")
+
+        let host = mount(controller: controller)
+        defer { teardown(host) }
+
+        settle(host: host)
+
+        XCTAssertTrue(
+            controller.isAnchorSettled,
+            "tableFrameDidChange 0→positive must consume the deferred anchor")
+        assertLastRowVisible(
+            in: host,
+            "last block must be visible at the bottom of the scroll view")
+    }
+
+    // MARK: - Re-attach
+
+    func testReAttachResetsAndReSettlesAtBottom() throws {
+        let controller = Transcript2Controller()
+        let blocks = Self.makeParagraphBlocks(count: 60)
+        controller.loadInitial(blocks, anchor: .bottom)
+
+        let host1 = mount(controller: controller)
+        settle(host: host1)
+        XCTAssertTrue(
+            controller.isAnchorSettled,
+            "first mount must settle the anchor")
+        assertLastRowVisible(
+            in: host1, "first mount must anchor at the bottom")
+
+        // Tear down the first host, then mount the same controller on a
+        // fresh hosting / window. SwiftUI builds a new NSViewRepresentable
+        // → new `makeNSView` → `coordinator.tableView` reassigned → `didSet`
+        // flips `isAnchorSettled` to false.
+        teardown(host1)
+
+        let host2 = mount(controller: controller)
+        defer { teardown(host2) }
+
+        // Without intervening settle, the re-attach has already happened
+        // (makeNSView ran during SwiftUI commit) and didSet flipped the
+        // flag back. The new table's frame is still being tiled though, so
+        // the second settle is required to let `tableFrameDidChange`
+        // consume the anchor and flip back to true.
+        settle(host: host2)
+
+        XCTAssertTrue(
+            controller.isAnchorSettled,
+            "re-attach must re-settle after the new table tiles")
+        assertLastRowVisible(
+            in: host2, "re-attached table must land at the bottom anchor")
+    }
+
+    // MARK: - Append does not reset
+
+    func testRoutineAppendDoesNotResetSettled() throws {
+        let controller = Transcript2Controller()
+        controller.loadInitial(
+            Self.makeParagraphBlocks(count: 8), anchor: .bottom)
+
+        let host = mount(controller: controller)
+        defer { teardown(host) }
+        settle(host: host)
+        XCTAssertTrue(controller.isAnchorSettled)
+
+        // Streaming-style append after stabilization. Settled flag must
+        // stay true — appending one assistant message into an already-
+        // anchored transcript is not a first-screen event.
+        let tailId = controller.blockIds.last
+        let appended = Block(
+            id: UUID(),
+            kind: .paragraph(inlines: [.text("streamed reply")]))
+        controller.apply(.insert(after: tailId, [appended]))
+
+        XCTAssertTrue(
+            controller.isAnchorSettled,
+            "single-message append must not reset isAnchorSettled")
+
+        // A second append, prepend-style (after: nil) — same rule.
+        let prepended = Block(
+            id: UUID(),
+            kind: .paragraph(inlines: [.text("backfill")]))
+        controller.apply(.insert(after: nil, [prepended]))
+        XCTAssertTrue(
+            controller.isAnchorSettled,
+            "prepend on a settled transcript must not reset isAnchorSettled")
+    }
+
+    // MARK: - Helpers (real component fixture)
+
+    private struct Host {
+        let window: NSWindow
+        let hosting: NSHostingController<AnyView>
+    }
+
+    /// Mount `NativeTranscript2View` for `controller` inside a hidden
+    /// offscreen window, the same way `ViewSnapshot.render` does. Uses
+    /// the test-only `ccterm_orderFrontForTesting` so the window never
+    /// becomes visible.
+    private func mount(
+        controller: Transcript2Controller,
+        size: CGSize = CGSize(width: 600, height: 600)
+    ) -> Host {
+        let view = NativeTranscript2View(controller: controller)
+            .environment(\.syntaxEngine, SyntaxHighlightEngine())
+        let hosting = NSHostingController(rootView: AnyView(view))
+        hosting.view.frame = CGRect(origin: .zero, size: size)
+
+        let window = NSWindow(
+            contentRect: CGRect(
+                origin: CGPoint(x: -30_000, y: -30_000),
+                size: size),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false)
+        window.isReleasedWhenClosed = false
+        window.isExcludedFromWindowsMenu = true
+        window.alphaValue = 0.01
+        window.contentViewController = hosting
+        window.ccterm_orderFrontForTesting()
+        return Host(window: window, hosting: hosting)
+    }
+
+    private func teardown(_ host: Host) {
+        host.window.contentViewController = nil
+        host.window.close()
+    }
+
+    /// Drain the runloop so SwiftUI commits the view tree and AppKit's
+    /// deferred layout (frame-change notifications, `noteHeightOfRows`,
+    /// etc.) lands before the assertions run.
+    private func settle(host: Host, duration: TimeInterval = 0.6) {
+        host.hosting.view.layoutSubtreeIfNeeded()
+        let deadline = Date().addingTimeInterval(duration)
+        while Date() < deadline {
+            RunLoop.main.run(
+                mode: .default,
+                before: Date(timeIntervalSinceNow: 0.02))
+        }
+        host.hosting.view.layoutSubtreeIfNeeded()
+    }
+
+    /// Walks the host view hierarchy, finds the embedded `NSTableView`,
+    /// and asks the enclosing scroll view which rows are within
+    /// `documentVisibleRect` (inset-aware). The failure message carries
+    /// the geometry numbers verbatim so a regression reports the actual
+    /// scroll / row state without the next person having to re-add print
+    /// statements.
+    private func assertLastRowVisible(
+        in host: Host,
+        _ message: String,
+        file: StaticString = #file,
+        line: UInt = #line
+    ) {
+        let result = visibilityProbe(in: host)
+        XCTAssertTrue(
+            result.matched, "\(message); \(result.summary)",
+            file: file, line: line)
+    }
+
+    private func visibilityProbe(in host: Host) -> (matched: Bool, summary: String) {
+        guard let table = findTableView(in: host.hosting.view) else {
+            return (false, "no NSTableView in host")
+        }
+        guard let scrollView = table.enclosingScrollView else {
+            return (false, "no scroll view")
+        }
+        if table.numberOfRows == 0 {
+            return (false, "numberOfRows == 0")
+        }
+        let documentVisible = scrollView.documentVisibleRect
+        let visible = table.rows(in: documentVisible)
+        let lastRowRect = table.rect(ofRow: table.numberOfRows - 1)
+        let lastVisibleRow =
+            (visible.location == NSNotFound)
+            ? -1 : visible.location + visible.length - 1
+        let matched =
+            visible.location != NSNotFound && visible.length > 0
+            && lastVisibleRow == table.numberOfRows - 1
+        let summary =
+            "scrollOrigin=\(scrollView.contentView.bounds.origin) "
+            + "documentVisible=\(documentVisible) "
+            + "numberOfRows=\(table.numberOfRows) "
+            + "visibleRows={loc:\(visible.location), len:\(visible.length)} "
+            + "lastVisibleRow=\(lastVisibleRow) "
+            + "lastRowRect=\(lastRowRect) "
+            + "tableFrame=\(table.frame) "
+            + "clipBounds=\(scrollView.contentView.bounds) "
+            + "contentInsets={t:\(scrollView.contentInsets.top), b:\(scrollView.contentInsets.bottom)}"
+        return (matched, summary)
+    }
+
+    private func findTableView(in view: NSView) -> NSTableView? {
+        if let t = view as? NSTableView { return t }
+        for sub in view.subviews {
+            if let t = findTableView(in: sub) { return t }
+        }
+        return nil
+    }
+
+    private static func makeParagraphBlocks(count: Int) -> [Block] {
+        (0..<count).map { i in
+            Block(
+                id: UUID(),
+                kind: .paragraph(inlines: [.text("paragraph \(i)")]))
+        }
+    }
+}

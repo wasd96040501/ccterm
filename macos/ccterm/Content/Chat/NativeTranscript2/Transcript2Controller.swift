@@ -71,6 +71,23 @@ final class Transcript2Controller {
     /// observe count changes without reaching into AppKit state.
     private(set) var blockCount: Int = 0
 
+    /// "First-screen anchor has landed for the currently-attached
+    /// `NSTableView`." Mirrors `Transcript2Coordinator.isAnchorSettled`
+    /// so SwiftUI hosts can observe it directly — e.g. fade in the
+    /// transcript once the anchor is stable, or trigger an image-bake
+    /// after the first frame settles.
+    ///
+    /// Resets to false on every `loadInitial` and on every fresh table
+    /// attach (session switch / view rebuild). Flips to true once
+    /// `loadInitial`'s Phase 1 has scrolled to the requested anchor, or
+    /// — for the deferred no-width branch — once `tableFrameDidChange`
+    /// consumes the desired anchor on the first 0→positive transition.
+    ///
+    /// Routine `append` / `update` / `remove` traffic does **not** flip
+    /// this back to false; streaming a new message into an already-
+    /// stabilized transcript is not a first-screen event.
+    private(set) var isAnchorSettled: Bool = false
+
     /// Pending request for the SwiftUI "show full user message" sheet,
     /// driven by chevron clicks inside `BlockCellView`. NSView-internal
     /// interactions (link click, selection drag, chevron tap) are normally
@@ -154,8 +171,8 @@ final class Transcript2Controller {
         coordinator.onUserBubbleSheetRequested = { [weak self] id, text in
             self?.pendingUserBubbleSheet = UserBubbleSheetRequest(id: id, text: text)
         }
-        coordinator.onLayoutReady = { [weak self] in
-            self?.consumePendingInitial()
+        coordinator.onAnchorSettledChanged = { [weak self] settled in
+            self?.isAnchorSettled = settled
         }
         coordinator.search.onStateChanged = { [weak self] in
             self?.refreshSearchState()
@@ -168,22 +185,6 @@ final class Transcript2Controller {
     /// dealloc chain tears down our `Transcript2HighlightStorage`'s
     /// `TaskLocal` state. `nonisolated` skips the executor hop.
     nonisolated deinit {}
-
-    /// Deferred scroll anchor when the coordinator's table isn't mounted
-    /// (or hasn't been tiled to a positive width) at `loadInitial` time.
-    /// Consumed by `consumePendingInitial`, which `coordinator.onLayoutReady`
-    /// invokes on the first 0→positive `layoutWidth` transition.
-    ///
-    /// Blocks themselves are no longer cached here — they are inserted
-    /// into `coordinator.blocks` immediately even in the deferred path,
-    /// so subsequent `apply()` calls (e.g. live `.appended` events
-    /// arriving on a session whose view isn't yet mounted) can resolve
-    /// anchors correctly. Only the scroll/anchor intent has to wait for
-    /// a real table.
-    private struct PendingInitial {
-        let anchor: InitialAnchor
-    }
-    private var pendingInitial: PendingInitial?
 
     /// Late-bind a syntax engine. Pass-through to the coordinator. Safe
     /// to call repeatedly (idempotent on the same instance) and safe
@@ -327,6 +328,13 @@ final class Transcript2Controller {
     func loadInitial(_ blocks: [Block], anchor: InitialAnchor = .bottom) {
         guard !blocks.isEmpty else { return }
 
+        // Record the anchor on the coordinator and flip `isAnchorSettled`
+        // back to false up front. The settled flag stays false until either
+        // Phase 1 below scrolls (real-width branch) or
+        // `tableFrameDidChange`'s deferred consumer scrolls on the next
+        // 0→positive transition (zero-width branch).
+        coordinator.setDesiredAnchor(anchor)
+
         let width = coordinator.layoutWidth
         let viewportHeight = coordinator.viewportHeight
         guard width > 0, viewportHeight > 0 else {
@@ -334,10 +342,10 @@ final class Transcript2Controller {
             // `coordinator.blocks` immediately** so subsequent `apply()`s
             // — live `.appended` events on background sessions whose view
             // hasn't been mounted yet — can resolve anchors against a
-            // populated array. Only the scroll-to-anchor intent is
-            // deferred: when the coordinator's `onLayoutReady` fires,
-            // `consumePendingInitial` scrolls the (already-present)
-            // anchor row into view.
+            // populated array. Scroll-to-anchor is deferred to
+            // `tableFrameDidChange`'s 0→positive consumer, which reads
+            // `coordinator.desiredAnchor` once row heights re-query at
+            // the real width.
             //
             // Idempotent on re-entry: if `coordinator.blocks` already
             // matches `blocks` (e.g. a second `loadInitial(same payload)`
@@ -351,12 +359,8 @@ final class Transcript2Controller {
                 changes.append(.insert(after: nil, blocks))
                 coordinator.apply(changes, scroll: .none)
             }
-            pendingInitial = PendingInitial(anchor: anchor)
             return
         }
-        // Path reached the real-width branch — drop any stale pending so a
-        // racing `onLayoutReady` after this point doesn't double-apply.
-        pendingInitial = nil
 
         let slice = Self.sliceForViewport(
             blocks: blocks, anchor: anchor,
@@ -390,6 +394,12 @@ final class Transcript2Controller {
         coordinator.apply(
             [.insert(after: coordinator.blockIds.last, viewportBatch)],
             scroll: phase1Scroll)
+
+        // Phase 1's `scroll` has landed the table at the requested anchor;
+        // declare the first-screen contract fulfilled. Phase 2's prepend
+        // below uses `.saveVisible(...)` and does not move the visual
+        // anchor, so it's safe to settle here.
+        coordinator.markAnchorSettled()
 
         // Phase 2 — the rest, off-main layout. ID-based anchors mean
         // ordering between the two inserts no longer matters: each anchor
@@ -443,48 +453,6 @@ final class Transcript2Controller {
     // MARK: - Query
 
     var blockIds: [UUID] { coordinator.blockIds }
-
-    /// Invoked by `coordinator.onLayoutReady` once the table tiles to a
-    /// positive width. Blocks are already in `coordinator.blocks` (the
-    /// `loadInitial` no-width branch pre-inserted them); this is purely
-    /// the deferred scroll-to-anchor step. No-op when nothing is pending
-    /// — `coordinator` may fire `onLayoutReady` on resize-time 0→positive
-    /// sequences unrelated to a deferred initial load.
-    private func consumePendingInitial() {
-        guard let pending = pendingInitial else { return }
-        pendingInitial = nil
-        scrollToInitialAnchor(pending.anchor)
-    }
-
-    /// Apply the deferred scroll-to-anchor. Resolves `.bottom` against the
-    /// current last block id (which may have grown past the original
-    /// `loadInitial` payload — live `.appended` events arriving on a
-    /// background session land here legitimately). For `.top(id:)` and
-    /// `.bottomTo(id:)`, the anchor id is the original one supplied by
-    /// the caller.
-    private func scrollToInitialAnchor(_ anchor: InitialAnchor) {
-        let scroll: ScrollState
-        switch anchor {
-        case .bottom:
-            guard let lastId = coordinator.blockIds.last else { return }
-            scroll = .bottom(id: lastId)
-        case .top(let id):
-            scroll = .top(id: id)
-        case .bottomTo(let id):
-            scroll = .bottom(id: id)
-        }
-        coordinator.apply([], scroll: scroll)
-    }
-
-    /// Scroll the transcript to its last block. Called by view-mount paths
-    /// that need to anchor a re-attached `NSTableView` to the conversation
-    /// tail — `coordinator.tableView`'s `didSet` runs `reloadData()`
-    /// automatically, but AppKit's default landing position after reload
-    /// is the top of the document, which reads as "lost the chat" for a
-    /// chat-style transcript.
-    func scrollToBottom() {
-        scrollToInitialAnchor(.bottom)
-    }
 
     // MARK: - Slicing (private)
 

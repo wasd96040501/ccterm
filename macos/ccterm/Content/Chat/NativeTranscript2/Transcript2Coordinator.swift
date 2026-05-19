@@ -66,10 +66,24 @@ import AppKit
 final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     weak var tableView: NSTableView? {
         didSet {
+            guard oldValue !== tableView else { return }
+            // A new table view replaces the previous one (session switch,
+            // SwiftUI rebuild). Until this fresh table tiles to a positive
+            // width and consumes `desiredAnchor`, the first-screen anchor
+            // is *not* settled — flip back to false so external observers
+            // (fade-in, image-bake, …) can wait for re-stabilization.
+            setAnchorSettled(false)
+            // Reset the frame-change short-circuit so the new table's
+            // first 0→positive transition reaches `consumeDesiredAnchor`.
+            // Without this, an identically-sized re-mount (same window
+            // size as the previous attach) skips the transition entirely
+            // because `width == lastLayoutWidth` short-circuits the
+            // notification handler.
+            lastLayoutWidth = -1
             // If `apply` was called before the table was attached, blocks
             // already exist; the freshly-attached table starts at
             // `numberOfRows = 0` until reloaded.
-            if let table = tableView, oldValue !== tableView, !blocks.isEmpty {
+            if let table = tableView, !blocks.isEmpty {
                 table.reloadData()
             }
         }
@@ -79,15 +93,58 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// observers on `blockCount` see the new value.
     var onBlockCountChanged: ((Int) -> Void)?
 
-    /// Fires when `layoutWidth` first becomes > 0 — i.e. the table has
-    /// been inserted into a scroll view and tiled. `Transcript2Controller`
-    /// hooks this to consume any `loadInitial` it had to defer because
-    /// the table wasn't mounted yet (re-entry race: SwiftUI commits the
-    /// `NativeTranscript2View` *after* `.task` has already driven the
-    /// `.reset` mutation through the bridge into `loadInitial`). Fires at
-    /// most once per 0→positive transition; subsequent width changes
-    /// (live resize, etc.) don't re-fire.
-    var onLayoutReady: (() -> Void)?
+    /// Fires whenever `isAnchorSettled` toggles. `Transcript2Controller`
+    /// mirrors the value into its `@Observable` `isAnchorSettled` so
+    /// SwiftUI hosts can observe "first-screen anchor has landed for the
+    /// currently-attached table." Edge-triggered (only fires on actual
+    /// transitions), called on MainActor.
+    var onAnchorSettledChanged: ((Bool) -> Void)?
+
+    /// "Self-most-recent `loadInitial` anchor has been honored for the
+    /// currently-attached table." Resets to false on every `loadInitial`
+    /// and on every fresh `tableView` attach; flips to true once Phase 1
+    /// (real-width path) or the first 0→positive `tableFrameDidChange`
+    /// (deferred path) has scrolled the table to `desiredAnchor`.
+    ///
+    /// Routine `append` / `update` / `remove` traffic does **not** affect
+    /// this flag — appending a streaming message is not a first-screen
+    /// event. Re-attaches *do* reset it because the new table starts at
+    /// `bounds.width == 0` and the scroll origin sits at the document
+    /// top until tiling completes.
+    private(set) var isAnchorSettled: Bool = false
+
+    private func setAnchorSettled(_ value: Bool) {
+        guard isAnchorSettled != value else { return }
+        isAnchorSettled = value
+        onAnchorSettledChanged?(value)
+    }
+
+    /// Anchor written by `loadInitial`. Consumed by the deferred branch
+    /// of `tableFrameDidChange` when the table first tiles to a positive
+    /// width, and on `tableView` re-attach. Default `.bottom` covers the
+    /// "view mounted before any `loadInitial` arrived" case so re-entry
+    /// of a session whose history isn't yet loaded still lands at the
+    /// transcript tail.
+    private var desiredAnchor: Transcript2Controller.InitialAnchor = .bottom
+
+    /// Set by `loadInitial` before it dispatches phase 1 / phase 2. Pairs
+    /// with `setAnchorSettled(false)` so the deferred-anchor consumer
+    /// inside `tableFrameDidChange` knows the next 0→positive transition
+    /// must scroll. Callable while `tableView` is nil — the value persists
+    /// until a table attaches.
+    func setDesiredAnchor(_ anchor: Transcript2Controller.InitialAnchor) {
+        desiredAnchor = anchor
+        setAnchorSettled(false)
+    }
+
+    /// Real-width `loadInitial` Phase 1 has already scrolled the table to
+    /// the anchor; this just records that the first-screen contract is
+    /// fulfilled for the currently-attached table. Phase 2's later
+    /// prepend uses `.saveVisible(...)` and does not move the visual
+    /// anchor, so calling this between Phase 1 and Phase 2 is safe.
+    func markAnchorSettled() {
+        setAnchorSettled(true)
+    }
 
     /// Set by `Transcript2Controller` to forward chevron taps to the
     /// SwiftUI-owned sheet binding. The cell's mouseDown handler resolves
@@ -905,11 +962,11 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let prevWidth = lastLayoutWidth
         lastLayoutWidth = width
 
-        // Refresh row heights BEFORE `onLayoutReady?()`. The deferred branch
-        // of `Transcript2Controller.loadInitial` pre-inserts blocks into
-        // `coordinator.blocks` while `layoutWidth == 0`, which makes AppKit
-        // cache ~0 heights for every row. If the subsequent
-        // `consumePendingInitial → scrollRowToBottom` runs before the
+        // Refresh row heights BEFORE consuming `desiredAnchor`. The deferred
+        // branch of `Transcript2Controller.loadInitial` pre-inserts blocks
+        // into `coordinator.blocks` while `layoutWidth == 0`, which makes
+        // AppKit cache ~0 heights for every row. If the subsequent
+        // `consumeDesiredAnchor → scrollRowToBottom` runs before the
         // re-query, `rect(ofRow:)` returns geometry at ~0 and the scroll
         // target collapses to the document top.
         if !blocks.isEmpty {
@@ -932,11 +989,63 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             }
         }
 
-        // First 0→positive transition unblocks any deferred `loadInitial`
-        // on the controller side.
-        if prevWidth <= 0 && width > 0 {
-            onLayoutReady?()
+        // First 0→positive transition consumes any anchor that's still
+        // pending. Two scenarios:
+        //   1. Cold mount race — `loadInitial` ran while the table was
+        //      not yet tiled. `setDesiredAnchor` recorded the anchor and
+        //      blocks were pre-inserted; this is the deferred scroll.
+        //   2. Re-attach — `tableView.didSet` reset `isAnchorSettled` to
+        //      false. `desiredAnchor` carries the last-known intent
+        //      (`.bottom` by default); the new table tiles and we land
+        //      at the same anchor again.
+        if prevWidth <= 0 && width > 0 && !isAnchorSettled && !blocks.isEmpty {
+            scheduleDesiredAnchorConsumption()
         }
+    }
+
+    /// Tracks the pending `consumeDesiredAnchor` follow-up scheduled by
+    /// `tableFrameDidChange`. The actual scroll has to wait one runloop
+    /// tick after the 0→positive transition: AppKit's `noteHeightOfRows`
+    /// (inside `invalidate`) is async, and even after a forced
+    /// `layoutSubtreeIfNeeded` the SwiftUI / AppKit commit pass that
+    /// triggered the frame change will re-tile the clip view and reset
+    /// `NSClipView.bounds.origin` if we set it from inside the
+    /// notification handler. Hopping through `DispatchQueue.main.async`
+    /// lets the commit finish, then we land the scroll on a stable
+    /// geometry. Bool guards re-entry — a single hop per pending anchor.
+    private var anchorConsumptionScheduled: Bool = false
+
+    private func scheduleDesiredAnchorConsumption() {
+        guard !anchorConsumptionScheduled else { return }
+        anchorConsumptionScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.anchorConsumptionScheduled = false
+            guard let table = self.tableView, !self.blocks.isEmpty,
+                !self.isAnchorSettled
+            else { return }
+            self.consumeDesiredAnchor(in: table)
+        }
+    }
+
+    /// Internal scroll-to-anchor + settle. Forces an immediate layout
+    /// pass before sampling `rect(ofRow:)` — `invalidate`'s
+    /// `noteHeightOfRows` is async, so without this push the documentView
+    /// frame.height may still trail the row-height total and
+    /// `NSClipView.scroll(to:)` would be pinned by `constrainBoundsRect`.
+    private func consumeDesiredAnchor(in tableView: NSTableView) {
+        tableView.layoutSubtreeIfNeeded()
+        switch desiredAnchor {
+        case .bottom:
+            if let lastId = blocks.last?.id {
+                scrollRowToBottom(id: lastId, in: tableView)
+            }
+        case .top(let id):
+            scrollRowToTop(id: id, in: tableView)
+        case .bottomTo(let id):
+            scrollRowToBottom(id: id, in: tableView)
+        }
+        setAnchorSettled(true)
     }
 
     /// `reloadData(forRowIndexes:)` re-runs `viewFor` so the cell picks up

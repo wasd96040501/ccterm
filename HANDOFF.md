@@ -2,120 +2,84 @@
 
 Branch: `worktree-splendid-marinating-music`
 PR: <https://github.com/wasd96040501/ccterm/pull/135>
+Base commit on entry: `6a9db75 docs: handoff notes — sidebar flicker investigation, open work`
 
-## Commits
+## Commits on this branch (oldest → newest)
 
 | SHA | Subject |
 |---|---|
 | `ea670c2` | feat(sidebar): bake outgoing detail into overlay during history session switch |
 | `4bd5d8b` | test(transcript): repro .id swap flicker + frame-by-frame bake capture |
 | `493f621` | test(transcript): expand JSONL fixture to all child kinds + add Phase B capture |
+| `6a9db75` | docs: handoff notes (now superseded by this file) |
 
-## Files added / changed
+## Production changes made this session (uncommitted)
 
-Production:
-- `macos/ccterm/App/DetailBakeProbe.swift` — `DetailBakeSnapshotter` + `DetailBakeProbe` NSViewRepresentable. Walks up to largest same-width ancestor, `cacheDisplay(in:to:)`.
-- `macos/ccterm/App/RootView2.swift` — wraps `SidebarView2(selection:)` with a binding setter that snapshots + pre-creates target session before flipping `selectedSessionId`. `.overlay` reads `bakedImage`. `.onChange` clears on `currentSessionController?.isAnchorSettled` → true.
+| File | Change |
+|---|---|
+| [macos/ccterm/Content/Chat/NativeTranscript2/AppKit/Transcript2ScrollView.swift](macos/ccterm/Content/Chat/NativeTranscript2/AppKit/Transcript2ScrollView.swift) | `Transcript2ClipView.constrainBoundsRect` overridden. `docH` derived from `tableView.rect(ofRow: numberOfRows-1).maxY` (NSScrollView's `contentInsets` extends `documentView.frame` to fill the inset-adjusted area, so `frame.height` masks the short-content state). When `maxY < minY` (real row extent < visible content area), `bounds.origin.y` is pinned to `maxY` so the table sticks to the visible content area's bottom. |
+| [macos/ccterm/Content/Chat/NativeTranscript2/Transcript2Coordinator.swift](macos/ccterm/Content/Chat/NativeTranscript2/Transcript2Coordinator.swift) | `scrollRowToBottom` no longer clamps `target` at `-contentInsets.top`. The clamp made `NSClipView.scroll(to:)` short-circuit (proposed == current bounds.origin.y) before `constrainBoundsRect` could land the negative target. |
 
-Tests:
-- `macos/cctermTests/Helpers/Message2Fixtures.swift` — added `assistantToolUseJSONL`, `userTypedToolResultJSONL`, markdown statics (`assistantHeadingMarkdown` / `assistantCodeBlockMarkdown` / `assistantListMarkdown` / `assistantTableMarkdown` / `assistantBlockquoteMarkdown`). Rewrote `bulkAssortedJSONL` to rotate through paragraph / markdown variant / tool family (Read, Edit, Bash, Grep, Glob, WebFetch, WebSearch, Agent, AskUserQuestion).
-- `macos/cctermTests/BulkHistoryFixtureSnapshotTests.swift` — 50 lines, `tailTarget=30`. Asserts `historyLoadState == .loaded`, `isAnchorSettled == true`, last row visible. Writes PNG.
-- `macos/cctermTests/DetailBakeSnapshotterTests.swift` — probe + snapshotter against a coloured fixture. Asserts bitmap non-uniform, captured width matches detail-fixture frame.
-- `macos/cctermTests/HistorySwitchFlickerSnapshotTests.swift` — two-controller `.id(sid)` swap harness with NO bake. 20ms × 20 ticks of PNGs after the swap.
-- `macos/cctermTests/HistorySwitchBakeOverlayTests.swift` — same harness with `DetailBakeProbe` + overlay + bake state machine wired in.
-- `macos/cctermTests/HistoryPhaseBFlickerSnapshotTests.swift` — real `SessionRuntime.loadHistory(overrideURL:)` against the bulk fixture (120 lines, `tailTarget=40`). 100 ticks × 20ms = 2s window. PNGs annotated with `historyLoadState` + `blockCount` + `isAnchorSettled`.
+## Test changes made this session (uncommitted)
 
-## How to run
+| File | Purpose |
+|---|---|
+| [macos/cctermTests/Helpers/RowAnchorTracker.swift](macos/cctermTests/Helpers/RowAnchorTracker.swift) | Per-tick probe of the live `NSTableView`: top/bottom visible blockId, document-space minY/maxY, scrollY, viewport-relative y, fillRatio, pairwise drift. |
+| [macos/cctermTests/HistoryPhaseBAnchorDriftTests.swift](macos/cctermTests/HistoryPhaseBAnchorDriftTests.swift) | Two scenarios driving `Transcript2Controller` + `NativeTranscript2View` end-to-end (not through `SessionRuntime.loadHistory`): `testFilledTailAnchorStableAcrossPhaseBPrepend` (tail=30 + prefix=30) and `testShortTailAnchorStableAcrossPhaseBPrepend` (tail=1 + prefix=80). Asserts (a) the bottommost visible block is `tail.last`; (b) its `viewportMaxY` equals `clipH − bottomInset` (i.e. 420 at the 600×600 test fixture); (c) `viewportShift` between Phase A and Phase B ≤ 2pt. |
 
-```bash
-make test-unit FILTER=BulkHistoryFixtureSnapshotTests
-make test-unit FILTER=DetailBakeSnapshotterTests
-make test-unit FILTER=HistorySwitchFlickerSnapshotTests
-make test-unit FILTER=HistorySwitchBakeOverlayTests
-make test-unit FILTER=HistoryPhaseBFlickerSnapshotTests
+## Test status
+
+- `make test-unit` → 250 cases pass.
+- `HistoryPhaseBAnchorDriftTests/testShortTailAnchorStableAcrossPhaseBPrepend` is the regression net for the two production changes above: stashing **either** of the two changes makes that test fail with `bot.vpY ≈ 72.5` (expected 420).
+- Snapshot tests (`HistorySwitchFlickerSnapshotTests`, `HistorySwitchBakeOverlayTests`, `HistoryPhaseBFlickerSnapshotTests`, `BulkHistoryFixtureSnapshotTests`) all pass; PNGs unchanged from the base commit.
+
+## What the new tests measure
+
+`HistoryPhaseBAnchorDriftTests` drives the **controller** directly:
+
+```swift
+controller.setHistory(tail, anchor: .bottom)         // Phase A
+controller.coordinator.applyInBackground(
+    [.insert(after: nil, prefix)],
+    scroll: .saveVisible(.visualTop))                // Phase B (same call shape as bridge.applyPrepend)
 ```
 
-PNG output: `/tmp/ccterm-screenshots/` (override via `CCTERM_SCREENSHOT_DIR`).
+It does **not** drive the production `.id(sid)` SwiftUI swap (the case `HistorySwitchFlickerSnapshotTests` covers) nor `SessionRuntime.loadHistory` (the case `HistoryPhaseBFlickerSnapshotTests` covers). It exercises only the Controller / Coordinator / ClipView geometry pipeline.
 
-## Observations from the captured PNGs
+## What the user reports is still broken
 
-### `HistorySwitchFlickerSnapshotTests` (.id swap, no bake)
-- tick 00 (A settled): `AAA line 45-59` anchored at viewport bottom
-- tick 01-06 (settled=N): `BBB line 0-20` at viewport top
-- tick 07 (settled=Y): `BBB line 45-59` anchored at viewport bottom
+> "切换 sidebar，一瞬间看到了 transcript 开头的内容，然后才切到了最末尾。"
 
-### `HistorySwitchBakeOverlayTests` (.id swap, bake wired)
-- tick 00 (A settled): `AAA line 45-59` at bottom
-- tick 01-03 (bake=Y, settled=N): `AAA line 45-59` (bake overlay)
-- tick 04+ (bake=N, settled=Y): `BBB line 45-59` at bottom
+After launching the post-fix Debug build (`make build` + `open …/ccterm.app`), switching the sidebar to a history session produces a visible frame showing the **beginning** of that session's transcript before the view scrolls to the tail. The bake overlay introduced in `ea670c2` is intended to mask exactly this window, but it does not in the user's interactive run.
 
-### `HistoryPhaseBFlickerSnapshotTests` (real loadHistory, 120 lines / tailTarget=40)
-- tick 001: `loadingTail`, blocks=0, settled=N — empty
-- tick 002: `tailLoaded`, blocks=11, settled=Y — single block (`Turn 55 reply`) anchored at viewport bottom, large empty band above
-- tick 003: `loaded`, blocks=37, settled=Y — visually identical to tick 002
-- tick 004: `loaded`, blocks=110, settled=Y — `Turn 52-55` packed at the bottom, content filled into the previously-empty band
-- tick 005-100: stable at the tick-004 state
-
-`isAnchorSettled` stays `true` from tick 002 through tick 100. The visible content between tick 002 and tick 004 is non-identical pixel-wise but `Turn 55 reply` occupies the same viewport bottom region in both frames.
+The PNG sequences captured offscreen by `HistorySwitchBakeOverlayTests` show the bake covering ticks 1–N with the outgoing session's content until `controllerB.isAnchorSettled = true`. Whether those captured frames match what the user perceives in the live app has not been independently verified.
 
 ## Code references for the next investigation
 
 | Concern | File:line |
 |---|---|
-| `Transcript2Controller.setHistory` (Phase 1 + Phase 2 entry) | `macos/ccterm/Content/Chat/NativeTranscript2/Transcript2Controller.swift:341` |
-| `sliceForViewport` (Phase 1 batch sizing) | `…/Transcript2Controller.swift:492` |
-| `markAnchorSettled()` call site (Phase 1 sync settle) | `…/Transcript2Controller.swift:427` |
-| `applyInBackground` (Phase B prepend, off-main precompute + main hop) | `…/Transcript2Coordinator.swift:366` |
-| `withScrollAdjustment` dispatch | `…/Transcript2Coordinator.swift:544` |
-| `captureAnchor` (reads `tableView.rows(in: visibleRect)`) | `…/Transcript2Coordinator.swift:583` |
-| `applyAnchor` (finds `blockId` post-prepend, scrolls by `delta`) | `…/Transcript2Coordinator.swift:610` |
-| `setAnchorSettled` (flip site for `isAnchorSettled`) | `…/Transcript2Coordinator.swift:116` |
-| Bridge `.prepended` → `applyInBackground(scroll: .saveVisible(.visualTop))` | `macos/ccterm/Content/Chat/NativeTranscript2Bridge/Transcript2EntryBridge.swift:63, :280` |
-| `SessionRuntime.loadHistory` Phase A/B orchestrator | `macos/ccterm/Services/Session/Session/SessionRuntime+History.swift:43` |
-| `tailTarget` default `80` | `…/SessionRuntime+History.swift:43` |
-
-`captureAnchor` returns `nil` when:
-- `tableView.enclosingScrollView == nil`
-- `tableView.rows(in: visibleRect).location == NSNotFound`
-- `tableView.rows(in: visibleRect).length == 0`
-- `blocks.indices.contains(anchorRow) == false`
-
-`applyAnchor` is a no-op when:
-- `tableView.enclosingScrollView == nil`
-- `blocks.firstIndex(where: { $0.id == anchor.blockId }) == nil`
-- `abs(delta) <= 0.5`
-
-The fallback `apply(changes, scroll: .none)` paths inside `applyInBackground` fire when:
-- `tableView == nil` (`Transcript2Coordinator.swift:371`)
-- `layoutWidth <= 0` (`Transcript2Coordinator.swift:386`)
+| `RootView2.sidebarSelectionBinding` — snapshot + flip selectedSessionId | [macos/ccterm/App/RootView2.swift:118-137](macos/ccterm/App/RootView2.swift:118) |
+| `.overlay { if let img = bakedImage { ... } }` | [macos/ccterm/App/RootView2.swift:159-173](macos/ccterm/App/RootView2.swift:159) |
+| `.onChange(of: currentSessionController?.isAnchorSettled ?? true, initial: true)` clearing `bakedImage` | [macos/ccterm/App/RootView2.swift:180-189](macos/ccterm/App/RootView2.swift:180) |
+| `DetailBakeSnapshotter.snapshot()` (registers `probeView`, calls `cacheDisplay`) | [macos/ccterm/App/DetailBakeProbe.swift](macos/ccterm/App/DetailBakeProbe.swift) |
+| `currentSessionController` getter | [macos/ccterm/App/RootView2.swift:99-104](macos/ccterm/App/RootView2.swift:99) |
+| `setAnchorSettled` flip site | [macos/ccterm/Content/Chat/NativeTranscript2/Transcript2Coordinator.swift:116](macos/ccterm/Content/Chat/NativeTranscript2/Transcript2Coordinator.swift:116) |
+| `consumeDesiredAnchor` (deferred scroll after first 0→positive frame) | [macos/ccterm/Content/Chat/NativeTranscript2/Transcript2Coordinator.swift:1038](macos/ccterm/Content/Chat/NativeTranscript2/Transcript2Coordinator.swift:1038) |
+| `tableView.didSet` — `setAnchorSettled(false)`, `lastLayoutWidth = -1`, `reloadData` | [macos/ccterm/Content/Chat/NativeTranscript2/Transcript2Coordinator.swift:67-90](macos/ccterm/Content/Chat/NativeTranscript2/Transcript2Coordinator.swift:67) |
 
 ## Open work
 
-1. **Quantify anchor stability** — replace eyeballing PNGs with a `RowAnchorTracker` helper that records per tick:
-   - `tableView.rect(ofRow: lastVisibleRow)` in `documentVisibleRect` coordinates → `(blockId, maxY)`
-   - Whether the *same* `blockId`'s `maxY` shifts between consecutive ticks (anchor drift)
-   - `tableView.rows(in: documentVisibleRect)`'s total accumulated row height vs `viewportHeight` (Phase A fill ratio)
+1. Determine why the bake overlay is not visible in the interactive Debug build during the sidebar switch the user described. The offscreen-rendered PNGs from `HistorySwitchBakeOverlayTests` show the bake masking ticks 1–N; the live app evidently does not.
+2. If the bake is rendered but the underlying tableView paints through it for a frame, identify the AppKit / SwiftUI compositing path that allows that and remove the gap.
+3. The current automated coverage does not include the live `.id(sid)` swap composed with the bake overlay binding in `RootView2`. `HistorySwitchBakeOverlayTests` exercises the bake mechanism in isolation (synthetic harness with two pre-loaded controllers); it does not mount `RootView2` or assert on the on-screen pixel sequence.
 
-2. **Phase B `saveVisible` verification** — add diagnostic logs on the Phase B main hop in `applyInBackground` so the next test run reports, per call:
-   - whether `captureAnchor` returned non-nil
-   - the captured `blockId` + `oldRefY`
-   - whether `applyAnchor` found the row after prepend
-   - the computed `delta`
-   - whether the early-out `apply(scroll: .none)` fallback fired
+## How to run
 
-   Targets the three nil/fallback cases listed above.
-
-3. **Phase A viewport fill** — `sliceForViewport` slices the *available* `[Block]`. Phase A's `[Block]` count is whatever `tailTarget = 80` JSONL lines produced. There is no current check that the produced slice's accumulated height ≥ viewportHeight before `markAnchorSettled()` is called.
-
-4. **`HistoryPhaseBFlickerSnapshotTests` does not drive the `.id(sid)` re-mount** — it runs `loadHistory` against a single fresh-mount controller. The real flicker scenario combines `.id(sid)` swap + Phase A + Phase B in the same window. A combined harness test would cover the production path end-to-end.
-
-5. **Image diff helper** — listed as pending in TaskList but not implemented; current intent is to compute per-tick row-geometry deltas rather than pixel diff (less false-positive prone for text changes).
-
-## Open tasks at handoff time
-
+```bash
+make build      # Debug build of ccterm.app
+make test-unit  # all 250 cases (parallel)
+make test-unit FILTER=HistoryPhaseBAnchorDriftTests
+make test-unit FILTER=HistorySwitchBakeOverlayTests
 ```
-#11 [pending]    Add image-diff helper for automated flicker detection
-                 — see "Open work" item 5; consider row-geometry tracking instead
-#12 [in_progress] Investigate Phase B anchor-stable mechanism in real flow
-                 — see "Open work" items 1-2
-```
+
+PNG output (snapshot tests): `/tmp/ccterm-screenshots/` (override via `CCTERM_SCREENSHOT_DIR`).

@@ -647,13 +647,17 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// implementation used just `clip.bounds.height`, which dropped the row
     /// into the bottom inset region (under the input-bar overlay).
     ///
-    /// `target` is clamped to `-contentInsets.top` — the lowest origin
-    /// `NSClipView` treats as legal. Without the clamp, a transcript whose
-    /// total height is shorter than the viewport produces a strongly
-    /// negative target (rect.maxY is tiny, the visible-bottom term is
-    /// large), and `NSClipView.scroll(to:)` writes it through without
-    /// constraint, pushing the documentView down into the viewport and
-    /// leaving a gap above the first row.
+    /// Does **not** clamp `target` at `-contentInsets.top`. For a transcript
+    /// shorter than the viewport, `raw` is strongly negative; we want that
+    /// value to reach `Transcript2ClipView.constrainBoundsRect`, which
+    /// pins `bounds.origin.y` to the value that lands the last row at
+    /// the visible content area's bottom (chat-style "latest at bottom"
+    /// behavior, with the empty band above). If we clamped here, the
+    /// constrained value would silently equal `bounds.origin.y` (already
+    /// `-contentInsets.top` from initial setup) and `NSClipView.scroll(to:)`
+    /// would short-circuit before `constrainBoundsRect` ever ran — leaving
+    /// the table stuck at the top of the clip view with the empty band
+    /// below the latest message.
     private func scrollRowToBottom(id: UUID, in tableView: NSTableView) {
         guard let row = blocks.firstIndex(where: { $0.id == id }),
             let scrollView = tableView.enclosingScrollView
@@ -661,8 +665,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let rect = tableView.rect(ofRow: row)
         let visibleBottomInClip =
             scrollView.contentView.bounds.height - scrollView.contentInsets.bottom
-        let raw = rect.maxY - visibleBottomInClip
-        let target = max(-scrollView.contentInsets.top, raw)
+        let target = rect.maxY - visibleBottomInClip
         scrollView.contentView.scroll(
             to: NSPoint(x: scrollView.contentView.bounds.origin.x, y: target))
     }

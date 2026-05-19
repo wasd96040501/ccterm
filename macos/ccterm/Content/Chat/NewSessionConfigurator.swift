@@ -94,6 +94,31 @@ struct NewSessionConfigurator<InputBar: View>: View {
     /// been probed (yet) or right after a folder switch.
     @State private var heavyGitLoadedForFolder: String? = nil
 
+    init(
+        folderPath: Binding<String?>,
+        useWorktree: Binding<Bool>,
+        sourceBranch: Binding<String?>,
+        onResumeSession: ((String) -> Void)? = nil,
+        @ViewBuilder inputBar: @escaping () -> InputBar
+    ) {
+        self._folderPath = folderPath
+        self._useWorktree = useWorktree
+        self._sourceBranch = sourceBranch
+        self.onResumeSession = onResumeSession
+        self.inputBar = inputBar
+        // Seed the cheap probe synchronously so the branch pill renders on the
+        // very first frame. Without this, `.task(id: folderPath)` only fires
+        // after the view appears — `currentBranch` is nil for one frame, the
+        // conditional `metaRow` pops in, and everything below it (divider,
+        // recents, input bar) gets shoved down a row. The heavy probe
+        // (branches list / status / remote main) still runs async in `.task`.
+        let path = folderPath.wrappedValue
+        let repo = path.map { GitUtils.isGitRepository(at: $0) } ?? false
+        let head = repo ? path.flatMap { GitUtils.currentBranch(at: $0) } : nil
+        self._currentBranch = State(initialValue: head)
+        self._isGitRepo = State(initialValue: repo)
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             projectsColumn

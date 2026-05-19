@@ -65,3 +65,44 @@ struct PermissionWebFetchCardBody: View {
         return (raw?.isEmpty == false) ? raw : nil
     }
 }
+
+#Preview("URL · with prompt") {
+    PermissionWebFetchCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-1",
+            toolName: "WebFetch",
+            input: [
+                "url": "https://docs.swift.org/swift-book/documentation/the-swift-programming-language/",
+                "prompt": "Summarise the section on optionals and protocol extensions.",
+            ])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("URL · no prompt") {
+    PermissionWebFetchCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-2",
+            toolName: "WebFetch",
+            input: [
+                "url": "https://example.com/release-notes"
+            ])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("Missing URL") {
+    PermissionWebFetchCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-3",
+            toolName: "WebFetch",
+            input: [:])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}

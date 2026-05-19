@@ -127,3 +127,47 @@ struct PermissionMcpCardBody: View {
             }
     }
 }
+
+#Preview("Standard server__tool") {
+    PermissionMcpCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-1",
+            toolName: "mcp__linear__create_issue",
+            input: [
+                "description": "Create a Linear ticket from the failing test report.",
+                "title": "Investigate CI flake on snapshot tests",
+                "team": "ENG",
+                "priority": 2,
+            ])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("Nested tool name") {
+    PermissionMcpCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-2",
+            toolName: "mcp__chrome__tabs__create",
+            input: [
+                "url": "https://example.com",
+                "active": true,
+            ])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("Empty input") {
+    PermissionMcpCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-3",
+            toolName: "mcp__weather__current",
+            input: [:])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}

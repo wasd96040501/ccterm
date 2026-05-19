@@ -103,3 +103,56 @@ struct PermissionNotebookEditCardBody: View {
         return raw?.isEmpty == false ? raw : nil
     }
 }
+
+#Preview("replace · python cell") {
+    PermissionNotebookEditCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-1",
+            toolName: "NotebookEdit",
+            input: [
+                "notebook_path": "/Users/example/notebooks/analysis.ipynb",
+                "edit_mode": "replace",
+                "cell_type": "code",
+                "cell_id": "abc-123",
+                "new_source": "import pandas as pd\ndf = pd.read_csv('data.csv')\ndf.head()",
+            ])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("insert · markdown cell") {
+    PermissionNotebookEditCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-2",
+            toolName: "NotebookEdit",
+            input: [
+                "notebook_path": "/Users/example/notebooks/analysis.ipynb",
+                "edit_mode": "insert",
+                "cell_type": "markdown",
+                "cell_id": "intro",
+                "new_source": "## Overview\n\nThis notebook explores the dataset.",
+            ])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("delete · empty source") {
+    PermissionNotebookEditCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-3",
+            toolName: "NotebookEdit",
+            input: [
+                "notebook_path": "/Users/example/notebooks/analysis.ipynb",
+                "edit_mode": "delete",
+                "cell_type": "code",
+                "cell_id": "stale-cell-7",
+            ])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}

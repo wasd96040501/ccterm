@@ -133,3 +133,56 @@ struct PermissionTaskAgentCardBody: View {
             }
     }
 }
+
+#Preview("Explore agent · worktree") {
+    PermissionTaskAgentCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-1",
+            toolName: "Task",
+            input: [
+                "subagent_type": "Explore",
+                "description": "Find permission card body sites",
+                "prompt":
+                    "Locate every file under macos/ccterm/Content/Chat/InputBarControls that defines a PermissionXxxCardBody view and report their paths.",
+                "isolation": "worktree",
+                "model": "sonnet",
+            ])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("Generic sub-task · no chips") {
+    PermissionTaskAgentCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-2",
+            toolName: "Task",
+            input: [
+                "description": "Draft release notes",
+                "prompt":
+                    "Summarise the last five merged PRs into a customer-facing release note.",
+            ])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("Plan agent · model override") {
+    PermissionTaskAgentCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-3",
+            toolName: "Agent",
+            input: [
+                "subagent_type": "Plan",
+                "description": "Plan migration",
+                "prompt":
+                    "Plan the migration from the old permission dialog to the new card.",
+                "model": "opus",
+            ])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}

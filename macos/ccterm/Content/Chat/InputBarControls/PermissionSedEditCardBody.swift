@@ -95,3 +95,31 @@ struct PermissionSedEditCardBody: View {
             newString: newContent)
     }
 }
+
+#Preview("sed -i · readable file") {
+    PermissionSedEditCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-1",
+            toolName: "Bash",
+            input: [
+                "command": "sed -i '' 's/localhost/local-host/g' /etc/hosts"
+            ])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("sed -i · missing file") {
+    PermissionSedEditCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-2",
+            toolName: "Bash",
+            input: [
+                "command": "sed -i 's/foo/bar/g' /tmp/ccterm-preview-missing.txt"
+            ])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}

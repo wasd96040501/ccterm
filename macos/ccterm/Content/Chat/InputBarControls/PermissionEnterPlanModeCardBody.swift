@@ -76,3 +76,15 @@ struct PermissionEnterPlanModeCardBody: View {
         String(localized: "No code changes will be made until you approve the plan.")
     }
 }
+
+#Preview("EnterPlanMode") {
+    PermissionEnterPlanModeCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-1",
+            toolName: "EnterPlanMode",
+            input: [:])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}

@@ -135,3 +135,65 @@ struct PermissionFileWriteCardBody: View {
         return DiffBlock(filePath: filePath, oldString: oldContent, newString: newContent)
     }
 }
+
+#Preview("Edit · snippet diff") {
+    PermissionFileWriteCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-1",
+            toolName: "Edit",
+            input: [
+                "file_path": "/Users/example/Project/Sources/Greeter.swift",
+                "old_string": "print(\"hello\")",
+                "new_string": "print(\"hello, world\")",
+            ]),
+        kind: .fileEdit
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("Write · create new file") {
+    PermissionFileWriteCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-2",
+            toolName: "Write",
+            input: [
+                "file_path": "/tmp/ccterm-preview-new-file.txt",
+                "content": "Hello\nThis is a brand new file.\n",
+            ]),
+        kind: .fileWrite
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("Write · overwrite /etc/hosts") {
+    PermissionFileWriteCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-3",
+            toolName: "Write",
+            input: [
+                "file_path": "/etc/hosts",
+                "content": "127.0.0.1 localhost\n::1 localhost\n# updated by preview\n",
+            ]),
+        kind: .fileWrite
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("Edit · missing path") {
+    PermissionFileWriteCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-4",
+            toolName: "Edit",
+            input: [:]),
+        kind: .fileEdit
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}

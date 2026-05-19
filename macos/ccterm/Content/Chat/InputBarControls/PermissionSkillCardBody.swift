@@ -83,3 +83,44 @@ struct PermissionSkillCardBody: View {
         return base.isEmpty ? nil : base
     }
 }
+
+#Preview("Skill · with args") {
+    PermissionSkillCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-1",
+            toolName: "Skill",
+            input: [
+                "skill": "review",
+                "args": "--scope diff",
+            ])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("Skill · no args") {
+    PermissionSkillCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-2",
+            toolName: "Skill",
+            input: [
+                "skill": "commit"
+            ])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("Skill · missing name") {
+    PermissionSkillCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-3",
+            toolName: "Skill",
+            input: [:])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}

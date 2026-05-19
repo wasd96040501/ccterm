@@ -80,3 +80,53 @@ struct PermissionExitPlanModeCardBody: View {
         return String(localized: "No plan body — review the transcript before approving.")
     }
 }
+
+#Preview("ExitPlanMode · with plan") {
+    PermissionExitPlanModeCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-1",
+            toolName: "ExitPlanMode",
+            input: [
+                "plan": """
+                    ## Refactor permission cards
+
+                    1. Extract per-kind body views into their own files.
+                    2. Add #Preview to each body so designers can iterate.
+                    3. Wire the dispatch into PermissionCardView.
+                    4. Cover the new bodies with unit tests.
+
+                    ## Risks
+
+                    - Snapshot diffs may shift; re-bless after review.
+                    - Localisation keys need translation updates.
+                    """
+            ])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("ExitPlanModeV2 · file-backed") {
+    PermissionExitPlanModeCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-2",
+            toolName: "ExitPlanModeV2",
+            input: [:])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("ExitPlanMode · empty plan") {
+    PermissionExitPlanModeCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-3",
+            toolName: "ExitPlanMode",
+            input: [:])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}

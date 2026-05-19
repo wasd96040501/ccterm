@@ -125,3 +125,48 @@ struct PermissionFilesystemReadCardBody: View {
         return nil
     }
 }
+
+#Preview("Read") {
+    PermissionFilesystemReadCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-1",
+            toolName: "Read",
+            input: [
+                "file_path": "/Users/example/Project/Sources/Greeter.swift"
+            ])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("Glob") {
+    PermissionFilesystemReadCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-2",
+            toolName: "Glob",
+            input: [
+                "pattern": "**/*.swift",
+                "path": "/Users/example/Project/Sources",
+            ])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("Grep · with mode") {
+    PermissionFilesystemReadCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-3",
+            toolName: "Grep",
+            input: [
+                "pattern": "TODO|FIXME",
+                "path": "/Users/example/Project",
+                "output_mode": "files_with_matches",
+            ])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}

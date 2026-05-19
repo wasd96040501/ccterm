@@ -261,3 +261,90 @@ private struct PermissionDecisionButton: View {
         }
     }
 }
+
+#Preview("Bash") {
+    PermissionCardView(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-1",
+            toolName: "Bash",
+            input: [
+                "command": "git push --force origin main",
+                "description": "Force-push the rebased branch",
+            ]),
+        onAllowOnce: {},
+        onAllowAlways: {},
+        onDeny: {}
+    )
+    .padding(16)
+    .frame(width: 560)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("Edit · file") {
+    PermissionCardView(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-2",
+            toolName: "Edit",
+            input: [
+                "file_path": "/Users/example/Project/Sources/Greeter.swift",
+                "old_string": "print(\"hello\")",
+                "new_string": "print(\"hello, world\")",
+            ]),
+        onAllowOnce: {},
+        onAllowAlways: {},
+        onDeny: {}
+    )
+    .padding(16)
+    .frame(width: 560)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("WebFetch") {
+    PermissionCardView(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-3",
+            toolName: "WebFetch",
+            input: [
+                "url": "https://docs.swift.org/swift-book/",
+                "prompt": "Summarise the section on protocols.",
+            ]),
+        onAllowOnce: {},
+        onAllowAlways: {},
+        onDeny: {}
+    )
+    .padding(16)
+    .frame(width: 560)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("EnterPlanMode") {
+    PermissionCardView(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-4",
+            toolName: "EnterPlanMode",
+            input: [:]),
+        onAllowOnce: {},
+        onAllowAlways: {},
+        onDeny: {}
+    )
+    .padding(16)
+    .frame(width: 560)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("Fallback · unknown tool") {
+    PermissionCardView(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-5",
+            toolName: "MysteryTool",
+            input: [
+                "command": "do-something --important"
+            ]),
+        onAllowOnce: {},
+        onAllowAlways: {},
+        onDeny: {}
+    )
+    .padding(16)
+    .frame(width: 560)
+    .background(Color(nsColor: .windowBackgroundColor))
+}

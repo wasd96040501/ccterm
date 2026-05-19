@@ -84,3 +84,51 @@ struct PermissionAskUserQuestionCardBody: View {
         return String(localized: "\(extra) more question(s) after this one")
     }
 }
+
+#Preview("Single question") {
+    PermissionAskUserQuestionCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-1",
+            toolName: "AskUserQuestion",
+            input: [
+                "questions": [
+                    [
+                        "question": "Which database driver should we use for the new service?"
+                    ]
+                ]
+            ])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("Multiple questions") {
+    PermissionAskUserQuestionCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-2",
+            toolName: "AskUserQuestion",
+            input: [
+                "questions": [
+                    ["question": "Should we keep backwards-compatibility shims for the old API?"],
+                    ["question": "Which timezone should the report default to?"],
+                    ["question": "Do we ship a migration script in this PR?"],
+                ]
+            ])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("Empty questions") {
+    PermissionAskUserQuestionCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-3",
+            toolName: "AskUserQuestion",
+            input: [:])
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}

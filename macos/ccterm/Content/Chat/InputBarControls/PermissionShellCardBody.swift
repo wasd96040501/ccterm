@@ -96,3 +96,52 @@ struct PermissionShellCardBody: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
+
+#Preview("Bash · simple") {
+    PermissionShellCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-1",
+            toolName: "Bash",
+            input: [
+                "command": "rm -rf node_modules",
+                "description": "Reset deps",
+            ]),
+        kind: .bash
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("Bash · multi-line heredoc") {
+    PermissionShellCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-2",
+            toolName: "Bash",
+            input: [
+                "command":
+                    "git commit -m \"$(cat <<'EOF'\nfeat: add preview\n\nLong body explaining the change in detail.\nEOF\n)\"",
+                "description": "Commit current changes",
+            ]),
+        kind: .bash
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}
+
+#Preview("PowerShell") {
+    PermissionShellCardBody(
+        request: PermissionRequest.makePreview(
+            requestId: "preview-3",
+            toolName: "PowerShell",
+            input: [
+                "command": "Get-ChildItem -Recurse -Filter *.swift | Measure-Object",
+                "description": "Count Swift files",
+            ]),
+        kind: .powerShell
+    )
+    .padding(14)
+    .frame(width: 520)
+    .background(Color(nsColor: .windowBackgroundColor))
+}

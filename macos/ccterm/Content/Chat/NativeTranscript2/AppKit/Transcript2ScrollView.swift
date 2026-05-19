@@ -32,7 +32,7 @@ final class Transcript2ScrollView: NSScrollView {
         if scrollerHiddenCount == 1 {
             // Instant. Any animation here gives a 150ms window during which
             // the scroller is still partly opaque — and `insertRows` inside
-            // `loadInitial` lands in that window, so the scroller pops up
+            // `setHistory` lands in that window, so the scroller pops up
             // visibly before alpha finishes draining.
             verticalScroller?.alphaValue = 0
         }

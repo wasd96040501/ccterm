@@ -130,12 +130,14 @@ struct ChatHistoryView: View {
                     + "msgCount=\(s.messages.count) "
                     + "blockCount=\(s.controller.blockCount)")
             s.loadHistory()
-            // For re-entry (already loaded, blocks already populated by
-            // the continuous bridge), reload's default scroll position
-            // is the top; pin to the tail so the user lands where they
-            // left off. Cold loads still scroll to bottom via Phase A's
-            // `loadInitial(anchor: .bottom)`.
-            s.controller.scrollToBottom()
+            // Mounting / re-attaching the transcript view is handled
+            // entirely inside the coordinator: every fresh `NSTableView`
+            // attach resets `isAnchorSettled` and the next 0→positive
+            // `tableFrameDidChange` consumes `desiredAnchor` (default
+            // `.bottom`) before flipping `isAnchorSettled` back to true.
+            // Cold loads override the anchor through Phase A's
+            // `setHistory(anchor: .bottom)`; re-entry uses the carried-
+            // over default. The view no longer needs to push scroll.
             // `.onChange(of: isRunning)` only fires on transitions, and
             // its `initial: true` invocation ran above with `session`
             // still nil (no-op via `session?`). If running ended while

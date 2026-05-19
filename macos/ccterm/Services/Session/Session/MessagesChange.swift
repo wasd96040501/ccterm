@@ -7,7 +7,7 @@ import Foundation
 /// Intent: the view bridge does not need to scan the whole messages table to
 /// diff — it translates each case directly into
 /// `Transcript2Controller.apply(.insert / .remove / .update)` or
-/// `loadInitial(...)`.
+/// `setHistory(...)`.
 ///
 /// Channel: the runtime exposes a synchronous closure
 /// `onMessagesChange: ((MessagesChange) -> Void)?`. `Session.wireRuntimeMessagesSink`

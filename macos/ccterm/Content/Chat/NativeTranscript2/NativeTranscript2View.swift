@@ -8,7 +8,7 @@ import SwiftUI
 /// The view takes a caller-owned `Transcript2Controller` — there is no
 /// `[Block]` `State` parameter. Callers mutate transcript content
 /// imperatively via `controller.apply(.insert / .remove / .update)` for
-/// incremental changes, or `controller.loadInitial(_:)` for the cold-load
+/// incremental changes, or `controller.setHistory(_:)` for the cold-load
 /// path. SwiftUI's role is reduced to mounting the AppKit view, wiring
 /// the existing coordinator into it, and presenting the sheet driven by
 /// `controller.pendingUserBubbleSheet`; `updateNSView` is a no-op.
@@ -292,7 +292,7 @@ private struct PreviewWrapper: View {
         NativeTranscript2View(controller: controller)
             .task {
                 if controller.blockCount == 0 {
-                    controller.loadInitial(previewBlocks)
+                    controller.setHistory(previewBlocks)
                 }
             }
     }

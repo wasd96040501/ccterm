@@ -37,7 +37,7 @@ struct TranscriptDemoView: View {
                 // that would otherwise re-fire a side-effecting `@State`
                 // default closure.
                 if controller.blockCount == 0 {
-                    controller.loadInitial(Self.initialBlocks)
+                    controller.setHistory(Self.initialBlocks)
                     // Mark the third toolGroup live. Status flows through
                     // the dedicated `setToolStatus` channel so the rows
                     // already in the table refresh granularly — no

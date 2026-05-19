@@ -73,7 +73,7 @@ final class Session {
 
     /// Renderer-side translator: subscribes to the runtime's
     /// `onMessagesChange` and converts each `MessagesChange` into
-    /// `Transcript2Controller.apply / loadInitial` calls. The bridge
+    /// `Transcript2Controller.apply / setHistory` calls. The bridge
     /// is wired to the runtime exactly once — at `Session.init` for
     /// `.active`-from-record sessions, at promotion time for
     /// draft → active sessions — and stays wired for the session's

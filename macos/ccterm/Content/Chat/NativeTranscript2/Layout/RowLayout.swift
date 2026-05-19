@@ -284,7 +284,8 @@ enum RowLayout: @unchecked Sendable {
         origin: CGPoint,
         hoveredAction: HitAction?,
         selection: SelectionRange?,
-        copiedDiffIds: Set<UUID>
+        copiedDiffIds: Set<UUID> = [],
+        flashingCopyTexts: Set<String> = []
     ) -> SubviewPlan {
         switch self {
         case .toolGroup(let l):
@@ -292,7 +293,8 @@ enum RowLayout: @unchecked Sendable {
                 origin: origin,
                 hoveredAction: hoveredAction,
                 selection: selection,
-                copiedDiffIds: copiedDiffIds)
+                copiedDiffIds: copiedDiffIds,
+                flashingCopyTexts: flashingCopyTexts)
         case .loadingPill(let l):
             // The indicator hosts a single `NSImageView` running an
             // SF Symbol `.variableColor` effect. The reconciler

@@ -763,6 +763,35 @@ enum BlockStyle: Sendable {
     /// edge.
     nonisolated static let codeBlockChromeItemGap: CGFloat = 4
 
+    // MARK: - Bash sub-card chrome
+    //
+    // Three rounded sub-cards (command / stdout / stderr) each get a
+    // copy icon overlay at the top-right, mirroring the codeblock's
+    // chrome posture from PR #124. The command card additionally
+    // reserves a left column for a non-selectable terminal-prompt
+    // glyph ("$") rendered as chrome — it stays out of the selection
+    // range and out of the copied text.
+
+    /// Non-selectable prompt glyph drawn at the left edge of the
+    /// command card. Terminal convention; stays out of the selectable
+    /// `TextLayout` so a "Copy" / drag-select on the command picks up
+    /// just the command itself.
+    nonisolated static let bashPromptGlyph: String = "$"
+
+    /// Left-column width reserved for `bashPromptGlyph`. Sized to one
+    /// monospaced char advance + the 4pt gap that the prompt convention
+    /// asks for; computed from `codeBlockFont` so the column stays
+    /// aligned across point-size changes.
+    nonisolated static var bashPromptColumnWidth: CGFloat {
+        let font = codeBlockFont
+        // SF Mono's "$" advance ≈ font.pointSize * 0.6. We use
+        // `maximumAdvancement.width` which is the upper bound for any
+        // monospaced glyph in the font, so the column never under-
+        // reserves regardless of weight.
+        let advance = font.maximumAdvancement.width
+        return advance + 4
+    }
+
     // MARK: - Tool header geometry
     //
     // Shared header style for `toolGroup` rows. Used at two tiers:

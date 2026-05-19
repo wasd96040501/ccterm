@@ -549,6 +549,18 @@ struct ToolGroupLayout: @unchecked Sendable {
                     if h > 0 {
                         y = bodyY + h
                         body = layout
+                        // Body-level copy affordances (today only
+                        // bash's per-card icons) — emit one
+                        // `InteractiveHit` per button so the cell's
+                        // existing `HitAction.copyText` switch arm
+                        // dispatches the click without any new
+                        // toolGroup-specific plumbing.
+                        for button in layout.copyButtons {
+                            hits.append(
+                                InteractiveHit(
+                                    rect: button.hitRect,
+                                    action: .copyText(button.text)))
+                        }
                     } else {
                         // Empty body — treat like folded for layout
                         // purposes so the next child doesn't gain an
@@ -785,17 +797,24 @@ struct ToolGroupLayout: @unchecked Sendable {
     /// `ToolGroupEntryView` itself is layout-agnostic and invokes the
     /// closure rather than reaching for this method directly.
     ///
-    /// `hoveredCopyId` / `copiedDiffIds` carry the cell-side diff-copy
-    /// state (read once at plan-build time). When the entry's body is
-    /// a `DiffLayout`, its top-right copy chrome renders on top of
-    /// everything else so the hover background and glyph never get
-    /// covered by row tints or header retypesets.
+    /// `hoveredCopyText` + `flashingCopyTexts` flow through to the
+    /// body's `draw` so per-card chrome (today only bash's copy
+    /// icons) can render hover-bg / checkmark feedback. Both are
+    /// nil / empty for entries whose body has no such affordances.
+    ///
+    /// `hoveredDiffCopyId` / `copiedDiffIds` carry the cell-side
+    /// diff-copy state (read once at plan-build time). When the
+    /// entry's body is a `DiffLayout`, its top-right copy chrome
+    /// renders on top of everything else so the hover background and
+    /// glyph never get covered by row tints or header retypesets.
     nonisolated private static func drawEntry(
         _ entry: Entry,
         hovered: Bool,
         selectionRects: [CGRect],
         selectionColor: NSColor,
-        hoveredCopyId: UUID?,
+        hoveredCopyText: String?,
+        flashingCopyTexts: Set<String>,
+        hoveredDiffCopyId: UUID?,
         copiedDiffIds: Set<UUID>,
         in ctx: CGContext
     ) {
@@ -817,7 +836,10 @@ struct ToolGroupLayout: @unchecked Sendable {
         }
 
         // 3. Body glyphs.
-        entry.body?.draw(in: ctx, origin: originForBody)
+        entry.body?.draw(
+            in: ctx, origin: originForBody,
+            hoveredCopyText: hoveredCopyText,
+            flashingCopyTexts: flashingCopyTexts)
 
         // 4. Child header title.
         drawHeader(
@@ -832,7 +854,7 @@ struct ToolGroupLayout: @unchecked Sendable {
             diff.drawHeaderChrome(
                 in: ctx,
                 origin: originForBody,
-                hovered: hoveredCopyId == diff.copyButtonId,
+                hovered: hoveredDiffCopyId == diff.copyButtonId,
                 copied: copiedDiffIds.contains(diff.copyButtonId))
         }
     }
@@ -863,19 +885,30 @@ struct ToolGroupLayout: @unchecked Sendable {
     /// boundary.
     ///
     /// `origin` is the cell's `layoutOrigin` (row padding offset).
-    /// `hoveredAction` / `selection` / `copiedDiffIds` are the cell's
-    /// current state — re-building the plan on every hover / selection
-    /// transition (or diff-copy click) is cheap (just value composition
-    /// over the already-laid-out `items`), and lets the reconcile path
-    /// stay a single code path.
+    /// `hoveredAction` / `selection` are the cell's current state —
+    /// re-building the plan on every hover / selection transition is
+    /// cheap (just value composition over the already-laid-out
+    /// `items`), and lets the reconcile path stay a single code path.
+    ///
+    /// `copiedDiffIds` is the set of diff-card copy-button ids whose
+    /// post-click checkmark window is still open. `flashingCopyTexts`
+    /// is the same idea keyed by raw text (bash sub-card copies).
+    /// Both are captured into every entry's draw closure so per-card
+    /// icons render the feedback flash; empty for cells with no
+    /// recent click.
     func subviewPlan(
         origin: CGPoint,
         hoveredAction: HitAction?,
         selection: SelectionRange?,
-        copiedDiffIds: Set<UUID>
+        copiedDiffIds: Set<UUID> = [],
+        flashingCopyTexts: Set<String> = []
     ) -> SubviewPlan {
         let hoveredId = Self.hoveredFoldId(in: hoveredAction)
-        let hoveredCopyId = Self.hoveredCopyId(in: hoveredAction)
+        let hoveredDiffCopyId = Self.hoveredCopyId(in: hoveredAction)
+        let hoveredCopyText: String? = {
+            if case .copyText(let text) = hoveredAction { return text }
+            return nil
+        }()
 
         var chevrons: [SubviewPlan.Chevron] = []
         var shimmers: [SubviewPlan.Shimmer] = []
@@ -948,8 +981,10 @@ struct ToolGroupLayout: @unchecked Sendable {
             let capturedEntry = entry
             let capturedHovered = hoveredId == entry.header.foldId
             let capturedRects = selectionRects
-            let capturedHoveredCopyId = hoveredCopyId
-            let capturedCopiedIds = copiedDiffIds
+            let capturedHoveredCopyText = hoveredCopyText
+            let capturedFlashing = flashingCopyTexts
+            let capturedHoveredDiffCopyId = hoveredDiffCopyId
+            let capturedCopiedDiffIds = copiedDiffIds
             entries.append(
                 SubviewPlan.Entry(
                     id: entry.childId,
@@ -960,8 +995,10 @@ struct ToolGroupLayout: @unchecked Sendable {
                             hovered: capturedHovered,
                             selectionRects: capturedRects,
                             selectionColor: selectionColor,
-                            hoveredCopyId: capturedHoveredCopyId,
-                            copiedDiffIds: capturedCopiedIds,
+                            hoveredCopyText: capturedHoveredCopyText,
+                            flashingCopyTexts: capturedFlashing,
+                            hoveredDiffCopyId: capturedHoveredDiffCopyId,
+                            copiedDiffIds: capturedCopiedDiffIds,
                             in: ctx)
                     }))
         }

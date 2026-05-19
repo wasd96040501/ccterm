@@ -111,11 +111,15 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// `visibleBottomInClip` is negative → target lands past the end
     /// of the document).
     private func tryConsumeTailAnchorOnAttach() {
+        // Geometry preconditions: clip view sized (`bounds.height > 0`),
+        // and table at a real layout width (not the NSTableView default
+        // ~100pt initial frame). Skipping either lets the next retry
+        // run when the layout has actually settled.
         guard pendingTailAnchorOnAttach,
             let table = tableView,
             let scrollView = table.enclosingScrollView,
-            scrollView.contentView.bounds.height > 0,  // clip view sized
-            table.bounds.width >= BlockStyle.minLayoutWidth,  // table at a real layout width, not the NSTableView default
+            scrollView.contentView.bounds.height > 0,
+            table.bounds.width >= BlockStyle.minLayoutWidth,
             let lastId = blocks.last?.id
         else { return }
         pendingTailAnchorOnAttach = false

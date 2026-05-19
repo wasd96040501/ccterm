@@ -331,15 +331,14 @@ struct DiffLayout: @unchecked Sendable {
 
         // Copy button — **overlay** at the card's top-right corner.
         // Does not steal vertical space from the rows; sits on top of
-        // whatever lines flow underneath it. Same visual recipe as the
-        // cell-margin gutter (`BlockCellView+Gutter.swift`): 18pt hit
-        // zone hosting an 11pt SF Symbol, anchored at
-        // `diffHeaderCopyRightInset` (the corner-radius pivot).
-        // Vertical center sits one corner-radius below the top edge so
-        // the hit zone clears the rounded top corner.
+        // whatever lines flow underneath it. Geometry is shared with
+        // `CodeBlockLayout`'s top-right chrome: 18pt hit zone hosting
+        // an 11pt SF Symbol, anchored 8pt past the structural corner
+        // so the chrome reads as "floating inside the card" rather
+        // than crowding the corner curve.
         let copyHitSize = BlockStyle.gutterHitSize
-        let copyRightInset = BlockStyle.diffHeaderCopyRightInset
-        let overlayTopInset = BlockStyle.diffOverlayTopInset
+        let copyRightInset = BlockStyle.codeBlockChromeRightInset
+        let overlayTopInset = BlockStyle.codeBlockChromeTopInset
         let copyHit: CGRect?
         let copyCenterPt: CGPoint?
         if maxWidth >= copyHitSize + 2 * copyRightInset {
@@ -391,21 +390,24 @@ struct DiffLayout: @unchecked Sendable {
         overlayCenterY: CGFloat
     ) -> (text: String?, rect: CGRect?) {
         guard let name, !name.isEmpty else { return (nil, nil) }
-        let font = BlockStyle.diffHeaderBadgeFont
+        let font = NSFont.systemFont(
+            ofSize: BlockStyle.codeBlockHeaderFontSize, weight: .medium)
         let textW = textWidth(name, attrs: [.font: font])
-        let badgeW = textW + 2 * BlockStyle.diffHeaderBadgeHorizontalPadding
-        let badgeH = BlockStyle.diffHeaderBadgeHeight
+        let badgeW = textW + 2 * BlockStyle.codeBlockLanguageBadgeHorizontalPadding
+        // Badge height matches the chrome row (= `gutterHitSize`) so
+        // the badge and copy icon read as one row.
+        let badgeH = BlockStyle.gutterHitSize
         // Right edge: just left of the copy button's hit zone, or — if
         // the copy button was suppressed — flush against the same
         // pivot the copy button would have used.
         let rightEdge: CGFloat
         if let copyHitRect {
-            rightEdge = copyHitRect.minX - BlockStyle.diffHeaderBadgeToCopyGap
+            rightEdge = copyHitRect.minX - BlockStyle.codeBlockChromeItemGap
         } else {
-            rightEdge = container.maxX - BlockStyle.diffHeaderCopyRightInset
+            rightEdge = container.maxX - BlockStyle.codeBlockChromeRightInset
         }
         let badgeMinX = rightEdge - badgeW
-        guard badgeMinX >= container.minX + BlockStyle.diffHeaderCopyRightInset else {
+        guard badgeMinX >= container.minX + BlockStyle.codeBlockChromeRightInset else {
             return (nil, nil)
         }
         let rect = CGRect(
@@ -853,24 +855,27 @@ struct DiffLayout: @unchecked Sendable {
         ctx.addPath(clipPath)
         ctx.clip()
 
-        // Language badge pill — translucent fill + monospaced label.
+        // Language badge — opaque chip + system-font label. Shares
+        // the codeblock's badge recipe so diff card and codeblock
+        // read as one chip family.
         if let badge = langBadgeRect, let text = langText {
             let badgeAtScreen = badge.offsetBy(dx: origin.x, dy: origin.y)
             let badgePath = CGPath(
                 roundedRect: badgeAtScreen,
-                cornerWidth: BlockStyle.diffHeaderBadgeCornerRadius,
-                cornerHeight: BlockStyle.diffHeaderBadgeCornerRadius,
+                cornerWidth: BlockStyle.codeBlockLanguageBadgeCornerRadius,
+                cornerHeight: BlockStyle.codeBlockLanguageBadgeCornerRadius,
                 transform: nil)
-            ctx.setFillColor(BlockStyle.diffHeaderBadgeBackground.cgColor)
+            ctx.setFillColor(BlockStyle.codeBlockLanguageBadgeBackground.cgColor)
             ctx.addPath(badgePath)
             ctx.fillPath()
 
-            let font = BlockStyle.diffHeaderBadgeFont
+            let font = NSFont.systemFont(
+                ofSize: BlockStyle.codeBlockHeaderFontSize, weight: .medium)
             let attr = NSAttributedString(
                 string: text,
                 attributes: [
                     .font: font,
-                    .foregroundColor: BlockStyle.diffHeaderBadgeForeground,
+                    .foregroundColor: BlockStyle.codeBlockHeaderForeground,
                 ])
             let line = CTLineCreateWithAttributedString(attr)
             // Y-down baseline: visible glyph extent
@@ -880,7 +885,8 @@ struct DiffLayout: @unchecked Sendable {
             ctx.saveGState()
             ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
             ctx.textPosition = CGPoint(
-                x: origin.x + badge.minX + BlockStyle.diffHeaderBadgeHorizontalPadding,
+                x: origin.x + badge.minX
+                    + BlockStyle.codeBlockLanguageBadgeHorizontalPadding,
                 y: origin.y + baseline)
             CTLineDraw(line, ctx)
             ctx.restoreGState()

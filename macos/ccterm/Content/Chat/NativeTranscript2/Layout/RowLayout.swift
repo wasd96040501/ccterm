@@ -10,10 +10,9 @@ struct InteractiveHit: Sendable {
     let action: HitAction
 }
 
-/// What clicking an `InteractiveHit` does. Three cases for three
-/// independent behaviors — kept as a closed enum so the cell's
-/// dispatch stays an exhaustive switch. Adding a fourth interaction
-/// (e.g., "expand inline") = add a case here and a switch arm in
+/// What clicking an `InteractiveHit` does. Closed enum so the cell's
+/// dispatch stays an exhaustive switch. Adding a new interaction
+/// (e.g. "expand inline") = add a case here and a switch arm in
 /// `BlockCellView.mouseDown`.
 enum HitAction: Sendable, Equatable {
     /// `.link`-attributed run. Cell opens via `NSWorkspace.shared.open`.
@@ -26,6 +25,12 @@ enum HitAction: Sendable, Equatable {
     /// general pasteboard and triggers its transient checkmark
     /// feedback.
     case copyText(String)
+    /// Diff-card copy button (top-right of a `DiffLayout` card). The
+    /// `id` keys per-button hover + post-click checkmark feedback so
+    /// multiple cards inside one tool-group row stay independent.
+    /// `text` is the payload to copy (post-edit content for FileEdit,
+    /// file body for Read).
+    case copyDiff(id: UUID, text: String)
     /// Foldable header (toolGroup group or item header). Cell forwards
     /// to `Transcript2Coordinator.toggleFold(id:)`. The id may be the
     /// host block's own id (group header) or a nested child id
@@ -279,6 +284,7 @@ enum RowLayout: @unchecked Sendable {
         origin: CGPoint,
         hoveredAction: HitAction?,
         selection: SelectionRange?,
+        copiedDiffIds: Set<UUID> = [],
         flashingCopyTexts: Set<String> = []
     ) -> SubviewPlan {
         switch self {
@@ -287,6 +293,7 @@ enum RowLayout: @unchecked Sendable {
                 origin: origin,
                 hoveredAction: hoveredAction,
                 selection: selection,
+                copiedDiffIds: copiedDiffIds,
                 flashingCopyTexts: flashingCopyTexts)
         case .loadingPill(let l):
             // The indicator hosts a single `NSImageView` running an

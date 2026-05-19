@@ -16,7 +16,7 @@ import QuartzCore
 ///   transition alone gives a fade — only per-subview frame animation
 ///   produces the slide the user sees.
 ///
-/// `RowLayout.subviewPlan(origin:hoveredAction:selection:)` returns a
+/// `RowLayout.subviewPlan(origin:hoveredAction:selection:copiedDiffIds:)` returns a
 /// `SubviewPlan` describing what the cell should host. The cell's
 /// `syncSubviewPlan()` runs a generic reconcile against the plan — no
 /// knowledge of `ToolGroupLayout` or its `Entry` type leaks past the
@@ -51,6 +51,7 @@ extension BlockCellView {
                 origin: layoutOrigin,
                 hoveredAction: hoveredAction,
                 selection: selection,
+                copiedDiffIds: Set(diffCopiedAt.keys),
                 flashingCopyTexts: Set(copyFlashByText.keys)) ?? .empty
         let animateFrames = pendingFoldTransition
         pendingFoldTransition = false

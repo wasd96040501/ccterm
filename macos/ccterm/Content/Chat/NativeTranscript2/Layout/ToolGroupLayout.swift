@@ -582,6 +582,20 @@ struct ToolGroupLayout: @unchecked Sendable {
             }
         }
 
+        // Diff-card copy hits — one per expanded child whose body is a
+        // `DiffLayout`. The diff layout already laid the hit rect in
+        // toolGroup-layout-local coords, so we just lift it into the
+        // shared `interactiveHits` stream alongside the fold hits.
+        for entry in entries {
+            guard let diff = entry.body?.diffBody, let hitRect = diff.copyHitRect
+            else { continue }
+            hits.append(
+                InteractiveHit(
+                    rect: hitRect,
+                    action: .copyDiff(
+                        id: diff.copyButtonId, text: diff.copyText)))
+        }
+
         return ToolGroupLayout(
             blockId: blockId,
             isExpanded: groupExpanded,
@@ -786,7 +800,13 @@ struct ToolGroupLayout: @unchecked Sendable {
     /// `hoveredCopyText` + `flashingCopyTexts` flow through to the
     /// body's `draw` so per-card chrome (today only bash's copy
     /// icons) can render hover-bg / checkmark feedback. Both are
-    /// nil / empty for entries whose body has no copy affordances.
+    /// nil / empty for entries whose body has no such affordances.
+    ///
+    /// `hoveredDiffCopyId` / `copiedDiffIds` carry the cell-side
+    /// diff-copy state (read once at plan-build time). When the
+    /// entry's body is a `DiffLayout`, its top-right copy chrome
+    /// renders on top of everything else so the hover background and
+    /// glyph never get covered by row tints or header retypesets.
     nonisolated private static func drawEntry(
         _ entry: Entry,
         hovered: Bool,
@@ -794,6 +814,8 @@ struct ToolGroupLayout: @unchecked Sendable {
         selectionColor: NSColor,
         hoveredCopyText: String?,
         flashingCopyTexts: Set<String>,
+        hoveredDiffCopyId: UUID?,
+        copiedDiffIds: Set<UUID>,
         in ctx: CGContext
     ) {
         let dx = -entry.bandRect.minX
@@ -824,6 +846,17 @@ struct ToolGroupLayout: @unchecked Sendable {
             entry.header,
             hovered: hovered,
             in: ctx, origin: originForBody)
+
+        // 5. Diff copy chrome — hover background + SF Symbol glyph, on
+        // top of every preceding pass so it stays visible regardless
+        // of line tints / selection bands.
+        if let diff = entry.body?.diffBody {
+            diff.drawHeaderChrome(
+                in: ctx,
+                origin: originForBody,
+                hovered: hoveredDiffCopyId == diff.copyButtonId,
+                copied: copiedDiffIds.contains(diff.copyButtonId))
+        }
     }
 
     /// Extract the fold id from a hovered hit action, or `nil` if the
@@ -831,6 +864,15 @@ struct ToolGroupLayout: @unchecked Sendable {
     nonisolated private static func hoveredFoldId(in action: HitAction?) -> UUID? {
         guard let action else { return nil }
         if case .toggleFold(let id) = action { return id }
+        return nil
+    }
+
+    /// Extract the diff-copy button id from a hovered hit action, or
+    /// `nil` if the cursor is over an unrelated hit. Mirrors
+    /// `hoveredFoldId` for the per-card copy button.
+    nonisolated private static func hoveredCopyId(in action: HitAction?) -> UUID? {
+        guard let action else { return nil }
+        if case .copyDiff(let id, _) = action { return id }
         return nil
     }
 
@@ -848,18 +890,21 @@ struct ToolGroupLayout: @unchecked Sendable {
     /// cheap (just value composition over the already-laid-out
     /// `items`), and lets the reconcile path stay a single code path.
     ///
-    /// `flashingCopyTexts` is the set of copy-button texts whose
-    /// post-click checkmark window is still open on the host cell.
-    /// Captured into every entry's draw closure so per-card icons
-    /// can render the feedback flash; empty for cells with no
+    /// `copiedDiffIds` is the set of diff-card copy-button ids whose
+    /// post-click checkmark window is still open. `flashingCopyTexts`
+    /// is the same idea keyed by raw text (bash sub-card copies).
+    /// Both are captured into every entry's draw closure so per-card
+    /// icons render the feedback flash; empty for cells with no
     /// recent click.
     func subviewPlan(
         origin: CGPoint,
         hoveredAction: HitAction?,
         selection: SelectionRange?,
+        copiedDiffIds: Set<UUID> = [],
         flashingCopyTexts: Set<String> = []
     ) -> SubviewPlan {
         let hoveredId = Self.hoveredFoldId(in: hoveredAction)
+        let hoveredDiffCopyId = Self.hoveredCopyId(in: hoveredAction)
         let hoveredCopyText: String? = {
             if case .copyText(let text) = hoveredAction { return text }
             return nil
@@ -938,6 +983,8 @@ struct ToolGroupLayout: @unchecked Sendable {
             let capturedRects = selectionRects
             let capturedHoveredCopyText = hoveredCopyText
             let capturedFlashing = flashingCopyTexts
+            let capturedHoveredDiffCopyId = hoveredDiffCopyId
+            let capturedCopiedDiffIds = copiedDiffIds
             entries.append(
                 SubviewPlan.Entry(
                     id: entry.childId,
@@ -950,6 +997,8 @@ struct ToolGroupLayout: @unchecked Sendable {
                             selectionColor: selectionColor,
                             hoveredCopyText: capturedHoveredCopyText,
                             flashingCopyTexts: capturedFlashing,
+                            hoveredDiffCopyId: capturedHoveredDiffCopyId,
+                            copiedDiffIds: capturedCopiedDiffIds,
                             in: ctx)
                     }))
         }

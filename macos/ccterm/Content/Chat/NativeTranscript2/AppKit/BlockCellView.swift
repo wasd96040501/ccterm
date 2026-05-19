@@ -234,6 +234,16 @@ final class BlockCellView: NSView {
     /// mismatch and bails so the second flash isn't cut short.
     var gutterCopiedAt: [UUID: Date] = [:]
 
+    /// Per-diff-card checkmark-feedback timestamps. Keyed by the diff
+    /// child's UUID (the same `copyButtonId` the layout emits). Read
+    /// at `syncSubviewPlan` time and captured into the per-entry
+    /// `SubviewPlan.Entry.draw` closure, so the plan rebuild that
+    /// follows the click composites the checkmark glyph on the next
+    /// `draw(_:)` pass. Identity-stamped clear (same pattern as
+    /// `copiedAt` / `gutterCopiedAt`) so a fast second click doesn't
+    /// snap the first flash short.
+    var diffCopiedAt: [UUID: Date] = [:]
+
     // MARK: - Subview-plan state
     //
     // Stored properties live in the main class declaration because
@@ -274,9 +284,10 @@ final class BlockCellView: NSView {
     var pendingFoldTransition: Bool = false
 
     /// Public reset hook for `viewFor` so a recycled cell never shows
-    /// a stale checkmark on a different block. Clears both the
-    /// in-card copy flash (codeblock + every bash sub-card) and
-    /// every cell-margin gutter's copy flash.
+    /// a stale checkmark on a different block. Clears every transient
+    /// copy-flash state we keep: codeblock + bash sub-card in-card
+    /// flash (`copyFlashByText`), per-diff-card copy button flash
+    /// (`diffCopiedAt`), and cell-margin gutter flash (`gutterCopiedAt`).
     func resetCopiedFeedback() {
         var changed = false
         if !copyFlashByText.isEmpty {
@@ -287,8 +298,13 @@ final class BlockCellView: NSView {
             gutterCopiedAt.removeAll()
             changed = true
         }
+        if !diffCopiedAt.isEmpty {
+            diffCopiedAt.removeAll()
+            changed = true
+        }
         if changed {
             needsDisplay = true
+            syncSubviewPlan()
         }
     }
 
@@ -629,6 +645,8 @@ final class BlockCellView: NSView {
                 }
             case .copyText(let text):
                 copyToPasteboard(text)
+            case .copyDiff(let id, let text):
+                copyDiffPayload(id: id, text: text)
             case .toggleFold(let id):
                 coordinator?.toggleFold(id: id)
             }
@@ -706,6 +724,33 @@ final class BlockCellView: NSView {
                 self.copyFlashByText[text] == stamp
             else { return }
             self.copyFlashByText.removeValue(forKey: text)
+        }
+    }
+
+    /// Diff-card copy click. Writes to the pasteboard and stamps the
+    /// per-button feedback dict, then schedules an identity-checked
+    /// clear that matches the in-header / gutter affordance timing.
+    /// Plan rebuild is explicit because `diffCopiedAt` is a plain
+    /// dict (no didSet); we want both the immediate paint and the
+    /// post-clear paint to route through `syncSubviewPlan` so the
+    /// per-entry draw closure picks up the new state.
+    private func copyDiffPayload(id: UUID, text: String) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+
+        let stamp = Date()
+        diffCopiedAt[id] = stamp
+        needsDisplay = true
+        syncSubviewPlan()
+        let delayNs = UInt64(
+            BlockStyle.gutterCopiedFeedbackSeconds * 1_000_000_000)
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: delayNs)
+            guard let self, self.diffCopiedAt[id] == stamp else { return }
+            self.diffCopiedAt.removeValue(forKey: id)
+            self.needsDisplay = true
+            self.syncSubviewPlan()
         }
     }
 }

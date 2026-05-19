@@ -101,6 +101,16 @@ final class DiffNSView: NSView, NSUserInterfaceValidations {
     private var anchorChar: Int?
     private var cursorChar: Int?
 
+    /// Stable id for the in-card copy button — keyed per-view so the
+    /// hover / copied flags survive width-driven layout cache flushes
+    /// and don't collide across multiple `DiffNSView` instances on
+    /// screen at once.
+    private let copyButtonId = UUID()
+    private var copyButtonHovered = false
+    private var copyButtonCopied = false
+    private var copyButtonCopyStamp: Date?
+    private var trackingArea: NSTrackingArea?
+
     override init(frame: NSRect) {
         super.init(frame: frame)
         // Cache the CG-drawn bitmap; only redraw on explicit needsDisplay.
@@ -166,6 +176,11 @@ final class DiffNSView: NSView, NSUserInterfaceValidations {
         let made = DiffLayout.make(
             diff: diff,
             lineMap: lineMap,
+            // Standalone view: id is per-instance, payload is the
+            // post-edit content (same convention as the transcript's
+            // FileEdit copy button).
+            copyButtonId: copyButtonId,
+            copyText: diff.newString,
             originX: 0,
             originY: 0,
             maxWidth: max(0, width))
@@ -217,6 +232,10 @@ final class DiffNSView: NSView, NSUserInterfaceValidations {
             }
         }
         layout.draw(in: ctx, origin: origin)
+        layout.drawHeaderChrome(
+            in: ctx, origin: origin,
+            hovered: copyButtonHovered,
+            copied: copyButtonCopied)
     }
 
     // MARK: - Selection state
@@ -239,6 +258,10 @@ final class DiffNSView: NSView, NSUserInterfaceValidations {
         window?.makeFirstResponder(self)
         guard let layout = layout(at: bounds.width) else { return }
         let local = convert(event.locationInWindow, from: nil)
+        if let hit = layout.copyHitRect, hit.contains(local) {
+            handleCopyButtonClick(text: layout.copyText)
+            return
+        }
         switch event.clickCount {
         case 1:
             let char = layout.hitTest(point: local)
@@ -267,6 +290,81 @@ final class DiffNSView: NSView, NSUserInterfaceValidations {
         cursorChar = layout.hitTest(point: local)
         autoscroll(with: event)
         needsDisplay = true
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let area = trackingArea {
+            removeTrackingArea(area)
+        }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [
+                .mouseEnteredAndExited,
+                .mouseMoved,
+                .activeInKeyWindow,
+                .inVisibleRect,
+            ],
+            owner: self,
+            userInfo: nil)
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        updateCopyHover(at: convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        updateCopyHover(at: convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        if copyButtonHovered {
+            copyButtonHovered = false
+            needsDisplay = true
+        }
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        if let hit = layout(at: bounds.width)?.copyHitRect {
+            addCursorRect(hit, cursor: .pointingHand)
+        }
+    }
+
+    private func updateCopyHover(at local: NSPoint) {
+        guard let hit = layout(at: bounds.width)?.copyHitRect else {
+            if copyButtonHovered {
+                copyButtonHovered = false
+                needsDisplay = true
+            }
+            return
+        }
+        let nowHovered = hit.contains(local)
+        if nowHovered != copyButtonHovered {
+            copyButtonHovered = nowHovered
+            needsDisplay = true
+        }
+    }
+
+    private func handleCopyButtonClick(text: String) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+        let stamp = Date()
+        copyButtonCopyStamp = stamp
+        copyButtonCopied = true
+        needsDisplay = true
+        let delayNs = UInt64(
+            BlockStyle.gutterCopiedFeedbackSeconds * 1_000_000_000)
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: delayNs)
+            guard let self, self.copyButtonCopyStamp == stamp else { return }
+            self.copyButtonCopied = false
+            self.copyButtonCopyStamp = nil
+            self.needsDisplay = true
+        }
     }
 
     // MARK: - Standard responder actions

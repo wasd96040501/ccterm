@@ -4,17 +4,20 @@ import AppKit
 /// tokens, maxWidth)`.
 ///
 /// Container: a single rounded rectangle (no header band) hosting the
-/// monospaced source. Two chrome affordances float at the top-right
-/// corner, inset from the container edges by `codeBlockChromeTopInset`
-/// / `codeBlockChromeRightInset`:
+/// monospaced source. Two chrome affordances **overlay** the top-right
+/// corner — they do not reserve vertical space; the code body has
+/// symmetric `codeBlockBodyVerticalPadding` top/bottom, and long first
+/// lines pass *under* the badge / icon (Slack / Cursor convention).
+/// The badge's opaque chip background keeps the label legible against
+/// any underlying glyphs.
 ///
 ///   ┌──────────────────────────────────────────┐
-///   │                         ┌─────┐ ┌──┐     │
-///   │                         │swift│ │📋│     │  ← chrome row
-///   │                         └─────┘ └──┘     │
+///   │  func greet(_ na┌─────┐ ┌──┐             │
+///   │      print("Hell│swift│ │📋│ \(name)")   │  ← chrome overlay
+///   │  }              └─────┘ └──┘             │
 ///   │                                          │
-///   │  func greet(_ name: String) {            │
-///   │      print("Hello, \(name)")             │
+///   │  func farewell() {                       │
+///   │      print("Bye!")                       │
 ///   │  }                                       │
 ///   └──────────────────────────────────────────┘
 ///
@@ -113,13 +116,17 @@ struct CodeBlockLayout: @unchecked Sendable {
         let attributed = BlockStyle.codeBlockAttributed(code: code, tokens: tokens)
         let text = TextLayout.make(attributed: attributed, maxWidth: textMaxWidth)
 
-        let bodyTop = BlockStyle.codeBlockBodyTopInset
-        let bodyBottom = BlockStyle.codeBlockBodyBottomInset
-        let containerHeight = bodyTop + text.totalHeight + bodyBottom
+        // Chrome (badge + copy icon) is an overlay — it does not
+        // reserve vertical space. The code body has symmetric top /
+        // bottom padding; long first lines pass *under* the
+        // top-right chrome (chip background keeps the badge legible
+        // against the underlying glyphs).
+        let bodyVPad = BlockStyle.codeBlockBodyVerticalPadding
+        let containerHeight = bodyVPad + text.totalHeight + bodyVPad
         let container = CGRect(x: 0, y: 0, width: maxWidth, height: containerHeight)
         let textOrigin = CGPoint(
             x: BlockStyle.bubbleHorizontalPadding,
-            y: bodyTop)
+            y: bodyVPad)
 
         let chromeTop = BlockStyle.codeBlockChromeTopInset
         let chromeRight = BlockStyle.codeBlockChromeRightInset

@@ -702,6 +702,14 @@ enum BlockStyle: Sendable {
     /// so the chrome reads as "floating inside the card" rather than
     /// crowding the corner. Apple's own floating-inside-card chrome
     /// (Photos, Music) lands in the same 8–10pt range.
+    ///
+    /// **Chrome is an overlay** — it does not reserve vertical space
+    /// in the layout. The code body starts at `codeBlockBodyVerticalPadding`
+    /// from the container top, and the chrome floats above the first
+    /// few lines. Long top-of-block lines therefore pass *under* the
+    /// badge / icon, matching the Slack / Cursor convention. The chip
+    /// background gives the badge enough contrast to stay legible
+    /// against the code's first glyphs.
     nonisolated static let codeBlockChromeTopInset: CGFloat = 8
 
     /// Right inset from the container edge to the copy icon's hit
@@ -710,20 +718,11 @@ enum BlockStyle: Sendable {
     /// corner.
     nonisolated static let codeBlockChromeRightInset: CGFloat = 8
 
-    /// Gap between the chrome row and the first code line.
-    nonisolated static let codeBlockChromeBottomGap: CGFloat = 6
-
-    /// Body top inset (container top → first code line). Derived as
-    /// `chromeTopInset + gutterHitSize + chromeBottomGap = 8 + 18 + 6
-    /// = 32` — tight enough that the card doesn't read top-heavy,
-    /// loose enough that the always-visible language badge doesn't
-    /// brush against the code's first line.
-    nonisolated static var codeBlockBodyTopInset: CGFloat {
-        codeBlockChromeTopInset + gutterHitSize + codeBlockChromeBottomGap
-    }
-
-    /// Body bottom inset (last code line → container bottom).
-    nonisolated static let codeBlockBodyBottomInset: CGFloat = 12
+    /// Body padding above and below the code text. Symmetric: the
+    /// chrome is an overlay (does not occupy vertical space), so the
+    /// only top reserve is this padding, matching the bottom for a
+    /// balanced card.
+    nonisolated static let codeBlockBodyVerticalPadding: CGFloat = 12
 
     /// Chrome glyph / badge text color. `secondaryLabel` so the
     /// affordance reads as chrome, not as code content.
@@ -734,13 +733,21 @@ enum BlockStyle: Sendable {
     /// affordance in the product renders at one weight.
     nonisolated static let codeBlockHeaderFontSize: CGFloat = 11
 
-    /// Apple-design chip background for the language badge. Reuses
-    /// `tableHeaderBackground` (alpha-on-white in light, alpha-on-
-    /// black in dark) — already established in the codebase as the
-    /// "this is a chrome-tier surface" tone, so the badge sits in
-    /// the same chip family as the rest of the app.
-    nonisolated static var codeBlockLanguageBadgeBackground: NSColor {
-        tableHeaderBackground
+    /// Apple-design chip background for the language badge. Opaque
+    /// (not alpha-translucent) because the chrome is an overlay — the
+    /// chip sits on top of the code body's first line, and a
+    /// translucent chip would let glyphs bleed through and wash out
+    /// the label. Tones are pre-composited from `tableHeaderBackground`
+    /// over `codeBlockBackgroundColor`, so the chip lands on the same
+    /// chrome-tier shade as the rest of the codebase's chip family.
+    nonisolated static let codeBlockLanguageBadgeBackground: NSColor = NSColor(name: nil) {
+        appearance in
+        let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        // Light: 0xF5,F5,F7 base × (1-0.08) ≈ 0xE1,E1,E3
+        // Dark:  0x1F,1F,24 base × (1-0.14) + 0xFF×0.14 ≈ 0x3E,3E,43
+        return isDark
+            ? NSColor(srgbRed: 0x3E / 255.0, green: 0x3E / 255.0, blue: 0x43 / 255.0, alpha: 1)
+            : NSColor(srgbRed: 0xE1 / 255.0, green: 0xE1 / 255.0, blue: 0xE3 / 255.0, alpha: 1)
     }
 
     /// Badge corner radius — matches `gutterHoverCornerRadius` so the

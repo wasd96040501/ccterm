@@ -88,18 +88,18 @@ struct PermissionExitPlanModeCardBody: View {
             toolName: "ExitPlanMode",
             input: [
                 "plan": """
-                    ## Refactor permission cards
+                ## Refactor permission cards
 
-                    1. Extract per-kind body views into their own files.
-                    2. Add #Preview to each body so designers can iterate.
-                    3. Wire the dispatch into PermissionCardView.
-                    4. Cover the new bodies with unit tests.
+                1. Extract per-kind body views into their own files.
+                2. Add #Preview to each body so designers can iterate.
+                3. Wire the dispatch into PermissionCardView.
+                4. Cover the new bodies with unit tests.
 
-                    ## Risks
+                ## Risks
 
-                    - Snapshot diffs may shift; re-bless after review.
-                    - Localisation keys need translation updates.
-                    """
+                - Snapshot diffs may shift; re-bless after review.
+                - Localisation keys need translation updates.
+                """
             ])
     )
     .padding(14)

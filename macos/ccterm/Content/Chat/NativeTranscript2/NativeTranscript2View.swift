@@ -75,9 +75,13 @@ struct UserBubbleSheetView: View {
     }
 }
 
-/// `NSViewRepresentable` half — kept private so the SwiftUI-side sheet
-/// modifier composes cleanly above it.
-private struct Transcript2NSViewBridge: NSViewRepresentable {
+/// `NSViewRepresentable` half — internal (not `private`) so the
+/// dismount-contract unit test in `Transcript2AnchorSettledTests` can
+/// drive `dismantleNSView` directly without re-creating the SwiftUI
+/// hosting lifecycle. No behavior change vs. the previous `private`
+/// modifier; the only caller from outside this file is the test, and
+/// it calls the same static method SwiftUI does.
+struct Transcript2NSViewBridge: NSViewRepresentable {
     let controller: Transcript2Controller
 
     func makeCoordinator() -> Transcript2Coordinator { controller.coordinator }

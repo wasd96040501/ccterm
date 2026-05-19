@@ -100,6 +100,79 @@ final class Transcript2AnchorSettledTests: XCTestCase {
             in: host2, "re-attached table must land at the bottom anchor")
     }
 
+    // MARK: - Dismount contract
+
+    /// `isAnchorSettled` is documented as "first-screen anchor has
+    /// landed for the **currently-attached** `NSTableView`." When the
+    /// view is dismounted (sidebar switch, `.id`-driven SwiftUI
+    /// rebuild), no NSTableView is attached — the flag must reflect
+    /// that and read `false`.
+    ///
+    /// **Why this is load-bearing.** `RootView2` observes this flag
+    /// through `.onChange(of: currentController?.isAnchorSettled,
+    /// initial: true)` to drive the sidebar-switch bake-clear. If the
+    /// flag stays stale-`true` across a dismount, on re-entry the
+    /// watcher sees `true → true` (no transition) at body re-eval, so
+    /// the bake-clear can fire on a body pass where the new
+    /// NSTableView either isn't attached yet or hasn't tiled. The
+    /// user-visible symptom is the "瞬间看到 transcript 开头的内容"
+    /// flicker on re-entry into a previously visited history session.
+    ///
+    /// **Why `weak var tableView` alone isn't enough.** Swift `willSet`
+    /// / `didSet` do **not** fire when a weak reference goes to nil
+    /// via the referent's dealloc — only on explicit assignment. The
+    /// `Transcript2Coordinator.tableView.didSet` reset path therefore
+    /// only fires on attach, not on detach. The fix lives in
+    /// `Transcript2NSViewBridge.dismantleNSView`: explicitly nil the
+    /// `coordinator.tableView` so `didSet` runs on the detach leg too,
+    /// resetting `isAnchorSettled` to `false`.
+    ///
+    /// Test mechanics: drive the lifecycle through the SAME path
+    /// production uses — `Transcript2NSViewBridge.makeNSView` +
+    /// `dismantleNSView`. Mount once, mark anchor settled (the
+    /// post-Phase-1 entry to the `setAnchorSettled(true)` state),
+    /// then call `dismantleNSView` and assert. No SwiftUI hosting, no
+    /// runloop wait — the contract is fundamentally about whether
+    /// `dismantleNSView` resets the flag, period.
+    func testDismountResetsIsAnchorSettled() throws {
+        let controller = Transcript2Controller()
+        let coordinator = controller.coordinator
+
+        // Attach a fresh NSTableView the way `makeNSView` would.
+        let table = NSTableView()
+        coordinator.tableView = table
+        XCTAssertFalse(
+            coordinator.isAnchorSettled,
+            "didSet on attach must reset settled (fresh attach is not yet anchored)")
+
+        // Simulate Phase 1 completing: setHistory's `markAnchorSettled`
+        // path. The coordinator now reports settled=true.
+        coordinator.markAnchorSettled()
+        XCTAssertTrue(
+            controller.isAnchorSettled,
+            "markAnchorSettled must flip the flag")
+
+        // Dismount via the production codepath. This is the exact
+        // entry point SwiftUI invokes during `.id`-driven rebuilds
+        // and view teardown — we don't mock the SwiftUI side because
+        // we're testing the bridge's own contract.
+        let scroll = Transcript2ScrollView()
+        scroll.documentView = table
+        Transcript2NSViewBridge.dismantleNSView(
+            scroll, coordinator: coordinator)
+
+        // ── THE CONTRACT ──
+        // No table attached → "first-screen anchor has landed for the
+        // currently-attached NSTableView" is not satisfied (there is
+        // no current table). Must be false.
+        XCTAssertNil(
+            coordinator.tableView,
+            "dismantleNSView must explicitly clear tableView")
+        XCTAssertFalse(
+            controller.isAnchorSettled,
+            "dismount contract: isAnchorSettled must be false after dismantle")
+    }
+
     // MARK: - Snapshot replacement
 
     /// `setHistory` is a snapshot setter — calling it again replaces the

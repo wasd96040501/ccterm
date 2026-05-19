@@ -450,6 +450,206 @@ final class SidebarFlickerRealHistoryIntegrationTests: XCTestCase {
                 + "if non-nil, the onChange(isAnchorSettled) hook didn't fire")
     }
 
+    /// Re-entry repro: A → B → A. The user's live-app symptom after the
+    /// b94e42b fix landed: cold-load works, but switching AWAY from A and
+    /// then BACK to A still flickers — A's transcript briefly shows its
+    /// beginning before scrolling to the tail.
+    ///
+    /// The mechanism is `weak var tableView` on `Transcript2Coordinator`
+    /// not firing `didSet` when SwiftUI dismounts the view and the weak
+    /// ref auto-nils via dealloc. `isAnchorSettled` stays stale-true from
+    /// the previous visit, so when the bake-clear `.onChange(initial: true)`
+    /// hook evaluates on the re-entry render pass it sees `settled = true`
+    /// and clears the bake before the new `NSTableView` has tiled and
+    /// scrolled to the tail.
+    ///
+    /// Architecturally re-entry should be identical to first-entry — the
+    /// flag's contract ("first-screen anchor has landed for the
+    /// currently-attached NSTableView") is violated by the stale carry-
+    /// over. This test fails when that contract is broken and passes
+    /// once a fresh attach starts from `isAnchorSettled = false`.
+    func testReEntryFromAReproducesSidebarFlicker() async throws {
+        let urlA = fixtureURL("real-history-session-A.jsonl")
+        let urlB = fixtureURL("real-history-session-B.jsonl")
+        try XCTSkipUnless(
+            FileManager.default.fileExists(atPath: urlA.path),
+            "fixture missing: \(urlA.path)")
+        try XCTSkipUnless(
+            FileManager.default.fileExists(atPath: urlB.path),
+            "fixture missing: \(urlB.path)")
+
+        let sessionA = try await makeLoadedSession(jsonlURL: urlA)
+        let sessionB = try await makeLoadedSession(jsonlURL: urlB)
+
+        let state = HarnessState(sid: "A", sessionA: sessionA, sessionB: sessionB)
+        let view = Harness(state: state)
+
+        let size = CGSize(width: 600, height: 600)
+        let hosting = NSHostingController(rootView: AnyView(view))
+        hosting.view.frame = CGRect(origin: .zero, size: size)
+        let window = NSWindow(
+            contentRect: CGRect(
+                origin: CGPoint(x: -30_000, y: -30_000), size: size),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false)
+        window.isReleasedWhenClosed = false
+        window.alphaValue = 0.01
+        window.contentViewController = hosting
+        window.ccterm_orderFrontForTesting()
+        defer {
+            window.contentViewController = nil
+            window.close()
+        }
+
+        // Leg 1: settle A (cold-load).
+        await settle(hosting: hosting, duration: 1.0)
+        XCTAssertTrue(
+            sessionA.controller.isAnchorSettled,
+            "session A should settle on initial mount")
+        writePNG(hosting: hosting, name: "reentry-00-A-cold")
+
+        // Leg 2: A → B forward. Settle B.
+        state.switchTo("B")
+        // Drain the swap. Reuses the existing test's known-good window.
+        for _ in 1...30 {
+            try? await Task.sleep(nanoseconds: 33_000_000)
+            hosting.view.layoutSubtreeIfNeeded()
+        }
+        await settle(hosting: hosting, duration: 0.5)
+        XCTAssertTrue(
+            sessionB.controller.isAnchorSettled,
+            "session B should settle after forward switch")
+        writePNG(hosting: hosting, name: "reentry-01-B-settled")
+        // Forget the forward-leg bake-clear — the re-entry leg will
+        // populate a new record that the assertions below read.
+        state.bakeClearRecord = nil
+
+        // Leg 3: B → A re-entry. THIS is the bug surface.
+        //
+        // Pre-condition for the bug: A.isAnchorSettled is still TRUE
+        // from leg 1 (the dismount of leg-2 never reset it because
+        // `weak var tableView` nil-out from dealloc does not fire
+        // `didSet`). The buggy onChange `initial: true` evaluation
+        // fires the bake-clear immediately when sid flips back to A,
+        // before A's fresh NSTableView has attached and scrolled.
+        let preReentryATableView = sessionA.controller.coordinator.tableView != nil
+        let preReentryASettled = sessionA.controller.isAnchorSettled
+        print(
+            "[reentry-test] PRE-REENTRY: A.settled=\(preReentryASettled) "
+                + "A.tableView=\(preReentryATableView) "
+                + "(architectural contract assertions: see "
+                + "Transcript2AnchorSettledTests.testDismountResetsIsAnchorSettled)"
+        )
+
+        state.switchTo("A")
+        XCTAssertNotNil(
+            state.bakedImage,
+            "bake must be captured BEFORE the re-entry sid flip — snapshotter returned nil"
+        )
+
+        var probes: [TickProbe] = []
+        for i in 1...30 {
+            try? await Task.sleep(nanoseconds: 33_000_000)
+            hosting.view.layoutSubtreeIfNeeded()
+
+            // Reuse the existing probe shape; the "B" controller arg is
+            // misnamed for this leg but the probe is structurally the
+            // same — it samples whichever controller you pass.
+            let probe = sampleProbe(
+                tick: i, state: state, controllerB: sessionA.controller)
+            probes.append(probe)
+
+            writePNG(
+                hosting: hosting,
+                name: String(
+                    format:
+                        "reentry-%02d-tick-bake=%@-settled=%@-top=%@",
+                    i,
+                    probe.bakedImagePresent ? "Y" : "N",
+                    probe.currentSettled ? "Y" : "N",
+                    probe.topVisibleBlockId.map {
+                        String($0.uuidString.prefix(8))
+                    } ?? "nil"))
+        }
+
+        await settle(hosting: hosting, duration: 0.5)
+        XCTAssertTrue(
+            sessionA.controller.isAnchorSettled,
+            "session A should settle after re-entry")
+        writePNG(hosting: hosting, name: "reentry-99-A-resettled")
+
+        for p in probes {
+            print(
+                String(
+                    format:
+                        "[reentry-probe] tick=%02d bake=%@ settled=%@ top=%@ aFirst=%@ aLast=%@ userSeesBeginning=%@",
+                    p.tick,
+                    p.bakedImagePresent ? "Y" : "N",
+                    p.currentSettled ? "Y" : "N",
+                    p.topVisibleBlockId.map { String($0.uuidString.prefix(8)) }
+                        ?? "nil",
+                    p.bFirstBlockId.map { String($0.uuidString.prefix(8)) } ?? "nil",
+                    p.bLastBlockId.map { String($0.uuidString.prefix(8)) } ?? "nil",
+                    p.userSeesBeginning ? "YES (BUG)" : "no"))
+        }
+
+        // ── Regression assertions for the re-entry leg ────────────────
+
+        // 1. The bake-clear hook must have fired during the re-entry
+        //    window. If `bakeClearRecord` is still nil, the watcher
+        //    never saw the settle transition — degenerate.
+        guard let bakeClear = state.bakeClearRecord else {
+            XCTFail(
+                "re-entry: bake-clear hook never fired. "
+                    + "A.settled=\(sessionA.controller.isAnchorSettled) "
+                    + "bake=\(state.bakedImage != nil)"
+            )
+            return
+        }
+        print(
+            "[reentry-test] BAKE-CLEAR (re-entry leg): "
+                + "top=\(bakeClear.topVisibleBlockId?.uuidString.prefix(8) ?? "nil") "
+                + "bottom=\(bakeClear.bottomVisibleBlockId?.uuidString.prefix(8) ?? "nil") "
+                + "aFirst=\(bakeClear.bFirstBlockId?.uuidString.prefix(8) ?? "nil") "
+                + "aLast=\(bakeClear.bLastBlockId?.uuidString.prefix(8) ?? "nil") "
+                + "scrollY=\(bakeClear.scrollY) docH=\(bakeClear.docHeightFromLastRow) "
+                + "viewportH=\(bakeClear.viewportHeight) bottomInset=\(bakeClear.bottomInset)"
+        )
+
+        // 2. ── THE KEY ASSERTION ──
+        //    At the moment the bake clears on the re-entry leg, A's
+        //    NSTableView must already be at the tail (same invariant
+        //    the forward-swap test asserts). If `viewportHeight` is 0
+        //    or `docHeightFromLastRow` is 0, the bake cleared before
+        //    a tableView was even attached — that is THE buggy path.
+        XCTAssertGreaterThan(
+            bakeClear.viewportHeight, 0,
+            "re-entry: bake cleared before A's NSTableView attached "
+                + "(viewportHeight=0). The stale-flag bug fired the "
+                + "watcher on the first body pass."
+        )
+        let expectedBottomVisibleMaxY = bakeClear.viewportHeight - bakeClear.bottomInset
+        let actualBottomVisibleMaxY = bakeClear.docHeightFromLastRow - bakeClear.scrollY
+        XCTAssertEqual(
+            actualBottomVisibleMaxY, expectedBottomVisibleMaxY, accuracy: 2.0,
+            "re-entry: at bake-clear moment, A's last row's bottom edge must be at "
+                + "the visible content area's bottom. Got actual=\(actualBottomVisibleMaxY) "
+                + "expected=\(expectedBottomVisibleMaxY). The table is at the wrong "
+                + "scroll position when the bake fades → user-visible flicker."
+        )
+        if let bottomId = bakeClear.bottomVisibleBlockId {
+            XCTAssertEqual(
+                bottomId, bakeClear.bLastBlockId,
+                "re-entry: at bake-clear moment, the BOTTOM visible row must be A's last block."
+            )
+        }
+
+        XCTAssertNil(
+            state.bakedImage,
+            "re-entry: bake should have cleared by the end of the capture window")
+    }
+
     // MARK: - Helpers
 
     private func settle(

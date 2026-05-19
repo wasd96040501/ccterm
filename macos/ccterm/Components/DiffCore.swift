@@ -170,7 +170,11 @@ enum DiffColors {
         case (.add, .light): Color(.sRGB, red: 214 / 255, green: 236 / 255, blue: 222 / 255)
         case (.del, .dark): Color(.sRGB, red: 248 / 255, green: 81 / 255, blue: 73 / 255, opacity: 0.25)
         case (.del, .light): Color(.sRGB, red: 236 / 255, green: 214 / 255, blue: 216 / 255)
-        case (.context, .dark): Color.white.opacity(0.04)
+        // Context gutter in dark mode: bumped from 0.04 → 0.10 so the
+        // line-number column is visibly distinct from the card body
+        // (`tableBg` at `#1B1F26`). Same tier as `tableHeaderBackground`
+        // dark (~0.14) so chrome columns read at one density.
+        case (.context, .dark): Color.white.opacity(0.10)
         case (.context, .light): Color.black.opacity(0.04)
         default: .clear
         }
@@ -230,7 +234,9 @@ enum DiffColors {
         case (.add, false): NSColor(srgbRed: 214 / 255, green: 236 / 255, blue: 222 / 255, alpha: 1)
         case (.del, true): NSColor(srgbRed: 248 / 255, green: 81 / 255, blue: 73 / 255, alpha: 0.25)
         case (.del, false): NSColor(srgbRed: 236 / 255, green: 214 / 255, blue: 216 / 255, alpha: 1)
-        case (.context, true): NSColor(white: 1, alpha: 0.04)
+        // Dark-mode context gutter tracks the SwiftUI sibling — see the
+        // comment on `gutterBg(.context, .dark)`. Light mode unchanged.
+        case (.context, true): NSColor(white: 1, alpha: 0.10)
         case (.context, false): NSColor(white: 0, alpha: 0.04)
         }
     }

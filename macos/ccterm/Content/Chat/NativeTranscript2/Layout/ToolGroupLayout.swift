@@ -549,17 +549,17 @@ struct ToolGroupLayout: @unchecked Sendable {
                     if h > 0 {
                         y = bodyY + h
                         body = layout
-                        // Body-level copy affordances (today only
-                        // bash's per-card icons) — emit one
-                        // `InteractiveHit` per button so the cell's
-                        // existing `HitAction.copyText` switch arm
-                        // dispatches the click without any new
-                        // toolGroup-specific plumbing.
-                        for button in layout.copyButtons {
+                        // Body-level copy affordances (bash per-card,
+                        // diff card overlay, future) — one
+                        // `InteractiveHit` per chrome so the cell's
+                        // `HitAction.copy(id:text:)` switch arm
+                        // dispatches every click through a single path.
+                        for chrome in layout.copyChromes {
                             hits.append(
                                 InteractiveHit(
-                                    rect: button.hitRect,
-                                    action: .copyText(button.text)))
+                                    rect: chrome.hitRect,
+                                    action: .copy(
+                                        id: chrome.id, text: chrome.text)))
                         }
                     } else {
                         // Empty body — treat like folded for layout
@@ -580,20 +580,6 @@ struct ToolGroupLayout: @unchecked Sendable {
                         body: body,
                         bandRect: bandRect))
             }
-        }
-
-        // Diff-card copy hits — one per expanded child whose body is a
-        // `DiffLayout`. The diff layout already laid the hit rect in
-        // toolGroup-layout-local coords, so we just lift it into the
-        // shared `interactiveHits` stream alongside the fold hits.
-        for entry in entries {
-            guard let diff = entry.body?.diffBody, let hitRect = diff.copyHitRect
-            else { continue }
-            hits.append(
-                InteractiveHit(
-                    rect: hitRect,
-                    action: .copyDiff(
-                        id: diff.copyButtonId, text: diff.copyText)))
         }
 
         return ToolGroupLayout(
@@ -797,25 +783,18 @@ struct ToolGroupLayout: @unchecked Sendable {
     /// `ToolGroupEntryView` itself is layout-agnostic and invokes the
     /// closure rather than reaching for this method directly.
     ///
-    /// `hoveredCopyText` + `flashingCopyTexts` flow through to the
-    /// body's `draw` so per-card chrome (today only bash's copy
-    /// icons) can render hover-bg / checkmark feedback. Both are
-    /// nil / empty for entries whose body has no such affordances.
-    ///
-    /// `hoveredDiffCopyId` / `copiedDiffIds` carry the cell-side
-    /// diff-copy state (read once at plan-build time). When the
-    /// entry's body is a `DiffLayout`, its top-right copy chrome
-    /// renders on top of everything else so the hover background and
-    /// glyph never get covered by row tints or header retypesets.
+    /// `hoveredCopyId` + `flashingCopyIds` flow through to the body's
+    /// `draw` (bash) and to the diff card's top-right chrome paint
+    /// (fileEdit / read), so per-card icons render hover-bg /
+    /// checkmark feedback. Empty / nil for entries whose body has no
+    /// such affordances.
     nonisolated private static func drawEntry(
         _ entry: Entry,
         hovered: Bool,
         selectionRects: [CGRect],
         selectionColor: NSColor,
-        hoveredCopyText: String?,
-        flashingCopyTexts: Set<String>,
-        hoveredDiffCopyId: UUID?,
-        copiedDiffIds: Set<UUID>,
+        hoveredCopyId: UUID?,
+        flashingCopyIds: Set<UUID>,
         in ctx: CGContext
     ) {
         let dx = -entry.bandRect.minX
@@ -838,8 +817,8 @@ struct ToolGroupLayout: @unchecked Sendable {
         // 3. Body glyphs.
         entry.body?.draw(
             in: ctx, origin: originForBody,
-            hoveredCopyText: hoveredCopyText,
-            flashingCopyTexts: flashingCopyTexts)
+            hoveredCopyId: hoveredCopyId,
+            flashingCopyIds: flashingCopyIds)
 
         // 4. Child header title.
         drawHeader(
@@ -847,15 +826,14 @@ struct ToolGroupLayout: @unchecked Sendable {
             hovered: hovered,
             in: ctx, origin: originForBody)
 
-        // 5. Diff copy chrome — hover background + SF Symbol glyph, on
-        // top of every preceding pass so it stays visible regardless
-        // of line tints / selection bands.
+        // 5. Diff overlay chrome (language badge + CopyChrome) — on
+        // top of every preceding pass so the chip and the copy glyph
+        // stay legible above any line tints / selection bands.
         if let diff = entry.body?.diffBody {
             diff.drawHeaderChrome(
-                in: ctx,
-                origin: originForBody,
-                hovered: hoveredDiffCopyId == diff.copyButtonId,
-                copied: copiedDiffIds.contains(diff.copyButtonId))
+                in: ctx, origin: originForBody,
+                hoveredCopyId: hoveredCopyId,
+                flashingCopyIds: flashingCopyIds)
         }
     }
 
@@ -864,15 +842,6 @@ struct ToolGroupLayout: @unchecked Sendable {
     nonisolated private static func hoveredFoldId(in action: HitAction?) -> UUID? {
         guard let action else { return nil }
         if case .toggleFold(let id) = action { return id }
-        return nil
-    }
-
-    /// Extract the diff-copy button id from a hovered hit action, or
-    /// `nil` if the cursor is over an unrelated hit. Mirrors
-    /// `hoveredFoldId` for the per-card copy button.
-    nonisolated private static func hoveredCopyId(in action: HitAction?) -> UUID? {
-        guard let action else { return nil }
-        if case .copyDiff(let id, _) = action { return id }
         return nil
     }
 
@@ -890,23 +859,19 @@ struct ToolGroupLayout: @unchecked Sendable {
     /// cheap (just value composition over the already-laid-out
     /// `items`), and lets the reconcile path stay a single code path.
     ///
-    /// `copiedDiffIds` is the set of diff-card copy-button ids whose
-    /// post-click checkmark window is still open. `flashingCopyTexts`
-    /// is the same idea keyed by raw text (bash sub-card copies).
-    /// Both are captured into every entry's draw closure so per-card
-    /// icons render the feedback flash; empty for cells with no
-    /// recent click.
+    /// `flashingCopyIds` is the set of `CopyChrome.id`s whose post-
+    /// click checkmark window is still open. Captured into every
+    /// entry's draw closure so per-card icons render the feedback
+    /// flash; empty for cells with no recent click.
     func subviewPlan(
         origin: CGPoint,
         hoveredAction: HitAction?,
         selection: SelectionRange?,
-        copiedDiffIds: Set<UUID> = [],
-        flashingCopyTexts: Set<String> = []
+        flashingCopyIds: Set<UUID> = []
     ) -> SubviewPlan {
         let hoveredId = Self.hoveredFoldId(in: hoveredAction)
-        let hoveredDiffCopyId = Self.hoveredCopyId(in: hoveredAction)
-        let hoveredCopyText: String? = {
-            if case .copyText(let text) = hoveredAction { return text }
+        let hoveredCopyId: UUID? = {
+            if case .copy(let id, _) = hoveredAction { return id }
             return nil
         }()
 
@@ -981,10 +946,8 @@ struct ToolGroupLayout: @unchecked Sendable {
             let capturedEntry = entry
             let capturedHovered = hoveredId == entry.header.foldId
             let capturedRects = selectionRects
-            let capturedHoveredCopyText = hoveredCopyText
-            let capturedFlashing = flashingCopyTexts
-            let capturedHoveredDiffCopyId = hoveredDiffCopyId
-            let capturedCopiedDiffIds = copiedDiffIds
+            let capturedHoveredCopyId = hoveredCopyId
+            let capturedFlashing = flashingCopyIds
             entries.append(
                 SubviewPlan.Entry(
                     id: entry.childId,
@@ -995,10 +958,8 @@ struct ToolGroupLayout: @unchecked Sendable {
                             hovered: capturedHovered,
                             selectionRects: capturedRects,
                             selectionColor: selectionColor,
-                            hoveredCopyText: capturedHoveredCopyText,
-                            flashingCopyTexts: capturedFlashing,
-                            hoveredDiffCopyId: capturedHoveredDiffCopyId,
-                            copiedDiffIds: capturedCopiedDiffIds,
+                            hoveredCopyId: capturedHoveredCopyId,
+                            flashingCopyIds: capturedFlashing,
                             in: ctx)
                     }))
         }

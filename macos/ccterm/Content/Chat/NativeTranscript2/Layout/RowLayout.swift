@@ -21,16 +21,15 @@ enum HitAction: Sendable, Equatable {
     /// `Transcript2Coordinator.requestUserBubbleSheet(id:)` (the
     /// block id lives on the cell, not the layout).
     case openUserBubbleSheet
-    /// Code-block copy button. Cell writes the payload to the
-    /// general pasteboard and triggers its transient checkmark
-    /// feedback.
-    case copyText(String)
-    /// Diff-card copy button (top-right of a `DiffLayout` card). The
-    /// `id` keys per-button hover + post-click checkmark feedback so
-    /// multiple cards inside one tool-group row stay independent.
-    /// `text` is the payload to copy (post-edit content for FileEdit,
-    /// file body for Read).
-    case copyDiff(id: UUID, text: String)
+    /// Copy-button click — produced by every `CopyChrome` the layouts
+    /// emit (codeblock / bash sub-cards / diff card / future). The
+    /// `id` keys per-button hover + post-click checkmark feedback so a
+    /// row with multiple copy buttons (expanded bash child, multi-card
+    /// tool group) flashes only the clicked icon. `text` is the
+    /// pasteboard payload — verbatim source for codeblock, section
+    /// content for bash, post-edit content (FileEdit) / file body
+    /// (Read) for diff cards.
+    case copy(id: UUID, text: String)
     /// Foldable header (toolGroup group or item header). Cell forwards
     /// to `Transcript2Coordinator.toggleFold(id:)`. The id may be the
     /// host block's own id (group header) or a nested child id
@@ -234,8 +233,10 @@ enum RowLayout: @unchecked Sendable {
                 hits.append(InteractiveHit(rect: r, action: .openUserBubbleSheet))
             }
         case .codeBlock(let l):
-            if let r = l.copyHitRect {
-                hits.append(InteractiveHit(rect: r, action: .copyText(l.code)))
+            if let c = l.copy {
+                hits.append(
+                    InteractiveHit(
+                        rect: c.hitRect, action: .copy(id: c.id, text: c.text)))
             }
         case .toolGroup(let l):
             hits.append(contentsOf: l.interactiveHits)
@@ -284,8 +285,7 @@ enum RowLayout: @unchecked Sendable {
         origin: CGPoint,
         hoveredAction: HitAction?,
         selection: SelectionRange?,
-        copiedDiffIds: Set<UUID> = [],
-        flashingCopyTexts: Set<String> = []
+        flashingCopyIds: Set<UUID> = []
     ) -> SubviewPlan {
         switch self {
         case .toolGroup(let l):
@@ -293,8 +293,7 @@ enum RowLayout: @unchecked Sendable {
                 origin: origin,
                 hoveredAction: hoveredAction,
                 selection: selection,
-                copiedDiffIds: copiedDiffIds,
-                flashingCopyTexts: flashingCopyTexts)
+                flashingCopyIds: flashingCopyIds)
         case .loadingPill(let l):
             // The indicator hosts a single `NSImageView` running an
             // SF Symbol `.variableColor` effect. The reconciler

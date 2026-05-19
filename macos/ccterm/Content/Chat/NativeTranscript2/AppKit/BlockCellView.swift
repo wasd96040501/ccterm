@@ -131,21 +131,21 @@ final class BlockCellView: NSView {
         }
     }
 
-    /// Per-text post-click checkmark timestamps. One row may host
-    /// more than one copy icon (a `.toolGroup` row whose expanded
-    /// bash child has command + stdout + stderr cards exposes three),
-    /// so the flash state has to be per-button. Keyed by the
-    /// copied text — the `HitAction.copyText` payload already
-    /// guarantees uniqueness within one row (an empty / duplicate
-    /// section never produces an `InteractiveHit`). Cleared 1.5s
-    /// later by an identity-stamped task so a quick second click on
-    /// the same icon doesn't get its checkmark cut short by the
-    /// first click's pending clear. Reset to empty on every
-    /// `viewFor` reuse — the feedback is opportunistic, missing it
-    /// on a scroll-recycled cell is fine.
-    var copyFlashByText: [String: Date] = [:] {
+    /// Per-`CopyChrome.id` post-click checkmark timestamps. One row
+    /// may host more than one copy icon (a `.toolGroup` row whose
+    /// expanded bash child has command + stdout + stderr cards, or
+    /// one whose multiple FileEdit children each expose a diff-card
+    /// copy), so the flash state has to be per-button. Keyed by
+    /// `CopyChrome.id` (the same `id` the layout-emitted
+    /// `HitAction.copy(id:_:)` carries). Cleared 1.5s later by an
+    /// identity-stamped task so a quick second click on the same icon
+    /// doesn't get its checkmark cut short by the first click's
+    /// pending clear. Reset to empty on every `viewFor` reuse — the
+    /// feedback is opportunistic, missing it on a scroll-recycled
+    /// cell is fine.
+    var copyFlashByActionId: [UUID: Date] = [:] {
         didSet {
-            if copyFlashByText != oldValue {
+            if copyFlashByActionId != oldValue {
                 needsDisplay = true
                 // Toolgroup rows render their copy icons inside per-
                 // entry `ToolGroupEntryView` subviews via captured
@@ -234,16 +234,6 @@ final class BlockCellView: NSView {
     /// mismatch and bails so the second flash isn't cut short.
     var gutterCopiedAt: [UUID: Date] = [:]
 
-    /// Per-diff-card checkmark-feedback timestamps. Keyed by the diff
-    /// child's UUID (the same `copyButtonId` the layout emits). Read
-    /// at `syncSubviewPlan` time and captured into the per-entry
-    /// `SubviewPlan.Entry.draw` closure, so the plan rebuild that
-    /// follows the click composites the checkmark glyph on the next
-    /// `draw(_:)` pass. Identity-stamped clear (same pattern as
-    /// `copiedAt` / `gutterCopiedAt`) so a fast second click doesn't
-    /// snap the first flash short.
-    var diffCopiedAt: [UUID: Date] = [:]
-
     // MARK: - Subview-plan state
     //
     // Stored properties live in the main class declaration because
@@ -285,21 +275,17 @@ final class BlockCellView: NSView {
 
     /// Public reset hook for `viewFor` so a recycled cell never shows
     /// a stale checkmark on a different block. Clears every transient
-    /// copy-flash state we keep: codeblock + bash sub-card in-card
-    /// flash (`copyFlashByText`), per-diff-card copy button flash
-    /// (`diffCopiedAt`), and cell-margin gutter flash (`gutterCopiedAt`).
+    /// copy-flash state we keep: layout-emitted `CopyChrome` flashes
+    /// (`copyFlashByActionId`) and cell-margin gutter flashes
+    /// (`gutterCopiedAt`).
     func resetCopiedFeedback() {
         var changed = false
-        if !copyFlashByText.isEmpty {
-            copyFlashByText.removeAll()
+        if !copyFlashByActionId.isEmpty {
+            copyFlashByActionId.removeAll()
             changed = true
         }
         if !gutterCopiedAt.isEmpty {
             gutterCopiedAt.removeAll()
-            changed = true
-        }
-        if !diffCopiedAt.isEmpty {
-            diffCopiedAt.removeAll()
             changed = true
         }
         if changed {
@@ -451,25 +437,18 @@ final class BlockCellView: NSView {
 
         layout.draw(in: ctx, origin: origin, hoveredAction: hoveredAction)
 
-        // Code-block copy glyph — layout owns the visual recipe
-        // (symbol, tint, size, hover background); the cell hands
-        // through transient state: icon-hover for the rounded
-        // background + per-text flash for the checkmark. The glyph
-        // is always visible (unlike the cell-margin gutter, which
-        // hides outside row-hover) — the codeblock's in-card copy
-        // affordance is the primary handle for "this is a code
+        // Code-block copy glyph — `CopyChrome` owns the visual recipe;
+        // the cell only feeds transient state in: icon-hover for the
+        // rounded background + per-id flash for the checkmark. The
+        // glyph is always visible (unlike the cell-margin gutter,
+        // which hides outside row-hover) — the codeblock's in-card
+        // copy affordance is the primary handle for "this is a code
         // block, copy it" and should never disappear.
-        if case .codeBlock(let l) = layout {
-            let iconHovered: Bool = {
-                if case .copyText(let text) = hoveredAction {
-                    return text == l.code
-                }
-                return false
-            }()
-            l.drawCopyGlyph(
+        if case .codeBlock(let l) = layout, let chrome = l.copy {
+            chrome.draw(
                 in: ctx, origin: origin,
-                iconHovered: iconHovered,
-                checked: copyFlashByText[l.code] != nil)
+                hovered: isHovered(copyId: chrome.id),
+                flashing: copyFlashByActionId[chrome.id] != nil)
         }
 
         // Gutters — cell-margin copy affordances, painted last so a
@@ -643,10 +622,8 @@ final class BlockCellView: NSView {
                 if let id = blockId {
                     coordinator?.requestUserBubbleSheet(id: id)
                 }
-            case .copyText(let text):
-                copyToPasteboard(text)
-            case .copyDiff(let id, let text):
-                copyDiffPayload(id: id, text: text)
+            case .copy(let id, let text):
+                handleCopy(id: id, text: text)
             case .toggleFold(let id):
                 coordinator?.toggleFold(id: id)
             }
@@ -705,52 +682,36 @@ final class BlockCellView: NSView {
         return NSColor.systemOrange.withAlphaComponent(alpha)
     }
 
-    private func copyToPasteboard(_ text: String) {
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        pb.setString(text, forType: .string)
-
-        // Visual feedback: swap idle → checkmark, schedule a swap back
-        // 1.5s later. Stamp identity prevents a quick second click's
-        // checkmark from being cut short by the first click's
-        // pending clear. Keyed by `text` so a row with multiple copy
-        // affordances (today: an expanded bash child's command +
-        // stdout + stderr cards) flashes only the clicked icon.
-        let stamp = Date()
-        copyFlashByText[text] = stamp
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
-            guard let self,
-                self.copyFlashByText[text] == stamp
-            else { return }
-            self.copyFlashByText.removeValue(forKey: text)
-        }
-    }
-
-    /// Diff-card copy click. Writes to the pasteboard and stamps the
-    /// per-button feedback dict, then schedules an identity-checked
-    /// clear that matches the in-header / gutter affordance timing.
-    /// Plan rebuild is explicit because `diffCopiedAt` is a plain
-    /// dict (no didSet); we want both the immediate paint and the
-    /// post-clear paint to route through `syncSubviewPlan` so the
-    /// per-entry draw closure picks up the new state.
-    private func copyDiffPayload(id: UUID, text: String) {
+    /// Run a copy click for the `CopyChrome` keyed by `id`: write to
+    /// the pasteboard, stamp the per-button feedback dict, schedule an
+    /// identity-checked clear after `gutterCopiedFeedbackSeconds`. The
+    /// `didSet` on `copyFlashByActionId` already triggers
+    /// `needsDisplay = true` and `syncSubviewPlan()` for both the set
+    /// and the clear, so the in-cell glyph (codeblock) and the
+    /// captured per-entry draw closures (bash / diff) both pick up the
+    /// flash and the un-flash without an explicit reseed here.
+    private func handleCopy(id: UUID, text: String) {
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.setString(text, forType: .string)
 
         let stamp = Date()
-        diffCopiedAt[id] = stamp
-        needsDisplay = true
-        syncSubviewPlan()
+        copyFlashByActionId[id] = stamp
         let delayNs = UInt64(
             BlockStyle.gutterCopiedFeedbackSeconds * 1_000_000_000)
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: delayNs)
-            guard let self, self.diffCopiedAt[id] == stamp else { return }
-            self.diffCopiedAt.removeValue(forKey: id)
-            self.needsDisplay = true
-            self.syncSubviewPlan()
+            guard let self, self.copyFlashByActionId[id] == stamp else { return }
+            self.copyFlashByActionId.removeValue(forKey: id)
         }
+    }
+
+    /// `true` when the cell's `hoveredAction` is a `.copy` whose id
+    /// matches `copyId`. Lets each `CopyChrome` decide its own hover
+    /// state without making the cell or its draw paths aware of which
+    /// chrome it belongs to.
+    fileprivate func isHovered(copyId: UUID) -> Bool {
+        if case .copy(let id, _) = hoveredAction { return id == copyId }
+        return false
     }
 }

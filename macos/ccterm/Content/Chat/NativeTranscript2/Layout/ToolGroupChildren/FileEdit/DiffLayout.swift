@@ -62,30 +62,17 @@ import SwiftUI
 struct DiffLayout: @unchecked Sendable {
     /// Rounded `codeBlock`-style card rect in layout-local coords.
     let containerRect: CGRect
-    /// Stable id for the copy button, used by the cell to key per-
-    /// button hover state and post-click checkmark feedback. Equals
-    /// the owning child's UUID so the same id keys other per-child
-    /// state on the cell side.
-    let copyButtonId: UUID
-    /// Hit zone for the copy button, in layout-local coords. **Overlay
-    /// rect** — sits in the top-right corner of the card without
-    /// occupying row space; rows underneath continue to flow as if
-    /// the button weren't there. `nil` when the container is too
-    /// narrow to host the button without spilling past its corner, or
-    /// when `rows` is empty.
-    let copyHitRect: CGRect?
-    /// Glyph center for the copy SF Symbol. `nil` when `copyHitRect`
-    /// is also nil.
-    let copyCenter: CGPoint?
-    /// Payload copied to the pasteboard when the button is clicked.
-    /// Post-edit content for FileEdit, file body for Read. Captured
-    /// at make time so the cell's click handler doesn't have to
-    /// re-derive it.
-    let copyText: String
+    /// Top-right copy affordance — `nil` only when the container is
+    /// too narrow or `rows` is empty. The id is caller-supplied
+    /// (`FileEditChild.id` / `ReadChild.id` / standalone `DiffView`'s
+    /// per-instance UUID), so the post-click flash on
+    /// `BlockCellView.copyFlashByActionId` stays stable across
+    /// re-layouts.
+    let copy: CopyChrome?
     /// Language badge pill rect, in layout-local coords. **Overlay
-    /// rect**, same posture as `copyHitRect`. `nil` when the
-    /// language couldn't be inferred, the card is too narrow to host
-    /// the badge alongside the copy button, or `rows` is empty.
+    /// rect**, sits left of `copy?.hitRect`. `nil` when the language
+    /// couldn't be inferred, the card is too narrow to host the badge
+    /// alongside the copy button, or `rows` is empty.
     let langBadgeRect: CGRect?
     /// Badge text (highlight.js language name, lowercased). `nil`
     /// when no language was detected.
@@ -171,7 +158,7 @@ struct DiffLayout: @unchecked Sendable {
         maxWidth: CGFloat
     ) -> DiffLayout {
         guard maxWidth > 0 else {
-            return Self.empty(copyButtonId: copyButtonId, copyText: copyText)
+            return Self.empty()
         }
 
         let suppressAdd = diff.isNewFile
@@ -183,7 +170,7 @@ struct DiffLayout: @unchecked Sendable {
         let hunks = DiffEngine.computeHunks(
             old: diff.effectiveOldString, new: diff.newString)
         guard !hunks.isEmpty else {
-            return Self.empty(copyButtonId: copyButtonId, copyText: copyText)
+            return Self.empty()
         }
 
         let font = BlockStyle.diffBodyFont
@@ -331,49 +318,32 @@ struct DiffLayout: @unchecked Sendable {
 
         // Copy button — **overlay** at the card's top-right corner.
         // Does not steal vertical space from the rows; sits on top of
-        // whatever lines flow underneath it. Geometry is shared with
-        // `CodeBlockLayout`'s top-right chrome: 18pt hit zone hosting
-        // an 11pt SF Symbol, anchored 8pt past the structural corner
-        // so the chrome reads as "floating inside the card" rather
-        // than crowding the corner curve.
-        let copyHitSize = BlockStyle.gutterHitSize
-        let copyRightInset = BlockStyle.codeBlockChromeRightInset
-        let overlayTopInset = BlockStyle.codeBlockChromeTopInset
-        let copyHit: CGRect?
-        let copyCenterPt: CGPoint?
-        if maxWidth >= copyHitSize + 2 * copyRightInset {
-            let cx = container.maxX - copyRightInset - copyHitSize / 2
-            let cy = container.minY + overlayTopInset + copyHitSize / 2
-            copyCenterPt = CGPoint(x: cx, y: cy)
-            copyHit = CGRect(
-                x: cx - copyHitSize / 2,
-                y: cy - copyHitSize / 2,
-                width: copyHitSize,
-                height: copyHitSize)
-        } else {
-            copyCenterPt = nil
-            copyHit = nil
-        }
+        // whatever lines flow underneath it. Shares the
+        // `CopyChrome.topRight` factory with `CodeBlockLayout` so the
+        // diff card and codeblock chrome read as one family.
+        let copy = CopyChrome.topRight(
+            of: container, id: copyButtonId, text: copyText)
 
         // Language badge — overlay, left of the copy button at the
         // same vertical centre. `LanguageDetection.language(for:)`
         // returns lowercased highlight.js names; we render verbatim.
         // Dropped when the language is unknown or the available width
         // would force the pill to overlap the copy button.
+        let overlayCenterY =
+            copy?.center.y
+            ?? (container.minY
+                + BlockStyle.codeBlockChromeTopInset
+                + BlockStyle.gutterHitSize / 2)
         let langName = LanguageDetection.language(for: diff.filePath)
         let (langText, langBadgeRect) = makeLangBadge(
             name: langName,
             container: container,
-            copyHitRect: copyHit,
-            overlayCenterY: copyCenterPt?.y
-                ?? (container.minY + overlayTopInset + copyHitSize / 2))
+            copyHitRect: copy?.hitRect,
+            overlayCenterY: overlayCenterY)
 
         return DiffLayout(
             containerRect: container,
-            copyButtonId: copyButtonId,
-            copyHitRect: copyHit,
-            copyCenter: copyCenterPt,
-            copyText: copyText,
+            copy: copy,
             langBadgeRect: langBadgeRect,
             langText: langText,
             rows: rows,
@@ -418,15 +388,10 @@ struct DiffLayout: @unchecked Sendable {
         return (name, rect)
     }
 
-    nonisolated private static func empty(
-        copyButtonId: UUID, copyText: String
-    ) -> DiffLayout {
+    nonisolated private static func empty() -> DiffLayout {
         DiffLayout(
             containerRect: .zero,
-            copyButtonId: copyButtonId,
-            copyHitRect: nil,
-            copyCenter: nil,
-            copyText: copyText,
+            copy: nil,
             langBadgeRect: nil,
             langText: nil,
             rows: [],
@@ -830,21 +795,18 @@ struct DiffLayout: @unchecked Sendable {
 
     /// Top-right overlay chrome — language badge pill + copy button.
     /// Drawn after `draw(in:origin:)` so glyphs that would otherwise
-    /// flow under the badge / button stay legible (chrome composites
-    /// on top of content). The whole pass is clipped to the rounded
-    /// card so badge / hover bg never bleed past the corner.
+    /// flow under the chrome stay legible (chrome composites on top
+    /// of content). The whole pass is clipped to the rounded card so
+    /// badge / hover bg never bleed past the corner.
     ///
-    /// `hovered` toggles the gutter-style rounded hover background
-    /// behind the SF Symbol; `copied` swaps `doc.on.doc` → `checkmark`
-    /// for the post-click flash. The copy glyph itself is always
-    /// drawn — the affordance is persistently visible.
+    /// `hoveredCopyId` / `flashingCopyIds` flow in from the cell;
+    /// `CopyChrome.draw` consumes them, this method just gates on
+    /// `copy?.id`.
     func drawHeaderChrome(
         in ctx: CGContext, origin: CGPoint,
-        hovered: Bool, copied: Bool
+        hoveredCopyId: UUID?, flashingCopyIds: Set<UUID>
     ) {
         guard !containerRect.isEmpty else { return }
-        // Clip to the rounded card so a top-right overlay never spills
-        // past the corner curve.
         let containerAtScreen = containerRect.offsetBy(dx: origin.x, dy: origin.y)
         let clipPath = CGPath(
             roundedRect: containerAtScreen,
@@ -854,94 +816,52 @@ struct DiffLayout: @unchecked Sendable {
         ctx.saveGState()
         ctx.addPath(clipPath)
         ctx.clip()
-
-        // Language badge — opaque chip + system-font label. Shares
-        // the codeblock's badge recipe so diff card and codeblock
-        // read as one chip family.
-        if let badge = langBadgeRect, let text = langText {
-            let badgeAtScreen = badge.offsetBy(dx: origin.x, dy: origin.y)
-            let badgePath = CGPath(
-                roundedRect: badgeAtScreen,
-                cornerWidth: BlockStyle.codeBlockLanguageBadgeCornerRadius,
-                cornerHeight: BlockStyle.codeBlockLanguageBadgeCornerRadius,
-                transform: nil)
-            ctx.setFillColor(BlockStyle.codeBlockLanguageBadgeBackground.cgColor)
-            ctx.addPath(badgePath)
-            ctx.fillPath()
-
-            let font = NSFont.systemFont(
-                ofSize: BlockStyle.codeBlockHeaderFontSize, weight: .medium)
-            let attr = NSAttributedString(
-                string: text,
-                attributes: [
-                    .font: font,
-                    .foregroundColor: BlockStyle.codeBlockHeaderForeground,
-                ])
-            let line = CTLineCreateWithAttributedString(attr)
-            // Y-down baseline: visible glyph extent
-            // `[baseline - ascender, baseline - descender]` centred on
-            // `badge.midY` ⇒ baseline = midY + (asc + desc)/2.
-            let baseline = badge.midY + (font.ascender + font.descender) / 2
-            ctx.saveGState()
-            ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
-            ctx.textPosition = CGPoint(
-                x: origin.x + badge.minX
-                    + BlockStyle.codeBlockLanguageBadgeHorizontalPadding,
-                y: origin.y + baseline)
-            CTLineDraw(line, ctx)
-            ctx.restoreGState()
+        drawLangBadge(in: ctx, origin: origin)
+        if let copy {
+            copy.draw(
+                in: ctx, origin: origin,
+                hovered: hoveredCopyId == copy.id,
+                flashing: flashingCopyIds.contains(copy.id))
         }
+        ctx.restoreGState()
+    }
 
-        // Copy button — gutter-style chrome. Always visible; hover bg
-        // and glyph swap track the runtime state.
-        if let hitRect = copyHitRect, let center = copyCenter {
-            let hitAtScreen = hitRect.offsetBy(dx: origin.x, dy: origin.y)
-            if hovered {
-                let path = CGPath(
-                    roundedRect: hitAtScreen,
-                    cornerWidth: BlockStyle.gutterHoverCornerRadius,
-                    cornerHeight: BlockStyle.gutterHoverCornerRadius,
-                    transform: nil)
-                ctx.setFillColor(BlockStyle.gutterHoverBackground.cgColor)
-                ctx.addPath(path)
-                ctx.fillPath()
-            }
+    /// Paint the opaque chip + system-font label for the language
+    /// pill. No-op when no language was detected or the badge didn't
+    /// fit. Separated from `drawHeaderChrome` because the badge is a
+    /// diff-only affordance (`CopyChrome` is shared, the badge is not).
+    private func drawLangBadge(in ctx: CGContext, origin: CGPoint) {
+        guard let badge = langBadgeRect, let text = langText else { return }
+        let badgeAtScreen = badge.offsetBy(dx: origin.x, dy: origin.y)
+        let badgePath = CGPath(
+            roundedRect: badgeAtScreen,
+            cornerWidth: BlockStyle.codeBlockLanguageBadgeCornerRadius,
+            cornerHeight: BlockStyle.codeBlockLanguageBadgeCornerRadius,
+            transform: nil)
+        ctx.setFillColor(BlockStyle.codeBlockLanguageBadgeBackground.cgColor)
+        ctx.addPath(badgePath)
+        ctx.fillPath()
 
-            let name = copied ? "checkmark" : "doc.on.doc"
-            let tint: NSColor =
-                hovered
-                ? BlockStyle.gutterHoverForeground
-                : BlockStyle.gutterIdleForeground
-            let weight: NSFont.Weight = copied ? .semibold : .regular
-            let baseConfig = NSImage.SymbolConfiguration(
-                pointSize: BlockStyle.gutterSymbolPointSize, weight: weight)
-            let colorConfig = NSImage.SymbolConfiguration(paletteColors: [tint])
-            let config = baseConfig.applying(colorConfig)
-            if let symbol = NSImage(
-                systemSymbolName: name,
-                accessibilityDescription: nil)?
-                .withSymbolConfiguration(config)
-            {
-                let size = symbol.size
-                let drawRect = CGRect(
-                    x: origin.x + center.x - size.width / 2,
-                    y: origin.y + center.y - size.height / 2,
-                    width: size.width,
-                    height: size.height)
-                NSGraphicsContext.saveGraphicsState()
-                NSGraphicsContext.current = NSGraphicsContext(
-                    cgContext: ctx, flipped: true)
-                symbol.draw(
-                    in: drawRect,
-                    from: .zero,
-                    operation: .sourceOver,
-                    fraction: 1.0,
-                    respectFlipped: true,
-                    hints: nil)
-                NSGraphicsContext.restoreGraphicsState()
-            }
-        }
-
+        let font = NSFont.systemFont(
+            ofSize: BlockStyle.codeBlockHeaderFontSize, weight: .medium)
+        let attr = NSAttributedString(
+            string: text,
+            attributes: [
+                .font: font,
+                .foregroundColor: BlockStyle.codeBlockHeaderForeground,
+            ])
+        let line = CTLineCreateWithAttributedString(attr)
+        // Y-down baseline: visible glyph extent
+        // `[baseline - ascender, baseline - descender]` centred on
+        // `badge.midY` ⇒ baseline = midY + (asc + desc)/2.
+        let baseline = badge.midY + (font.ascender + font.descender) / 2
+        ctx.saveGState()
+        ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
+        ctx.textPosition = CGPoint(
+            x: origin.x + badge.minX
+                + BlockStyle.codeBlockLanguageBadgeHorizontalPadding,
+            y: origin.y + baseline)
+        CTLineDraw(line, ctx)
         ctx.restoreGState()
     }
 }

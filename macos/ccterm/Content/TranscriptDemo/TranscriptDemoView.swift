@@ -680,7 +680,7 @@ extension TranscriptDemoView {
                             let text: TextLayout
                             let code: String
                             let containerRect: CGRect
-                            let copyHitRect: CGRect?
+                            let copy: CopyChrome?
 
                             static func make(code: String, maxWidth: CGFloat) -> CodeBlockLayout {
                                 let attr = BlockStyle.codeBlockAttributed(code: code)

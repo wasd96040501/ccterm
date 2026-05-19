@@ -209,7 +209,7 @@ Adding a new layout kind = one new `RowLayout` case + one line in each of the th
 | Chevron rotation | `CAShapeLayer` sublayer | `transform.rotation.z` + `CABasicAnimation` is one line; self-drawing would redraw every frame. |
 | Slidable inline body | `NSView` subview (layer-backed) | Multiple body slabs on one row need to slide past each other during fold transitions. Only `view.animator().frame` expresses that; a single bitmap can only crossfade. |
 
-**Layouts declare decorations via `subviewPlan`.** `RowLayout` exposes `subviewPlan(origin:hoveredAction:selection:copiedDiffIds:) -> SubviewPlan`. Layouts that need none return an empty plan; only the ones that need decorations (today: `toolGroup`) return non-empty. `SubviewPlan` is a **struct + closures** — same shape as `SelectionAdapter`, never a protocol. The cell doesn't know which layout produced the plan; it runs the generic reconciler. `copiedDiffIds` carries the cell's per-diff-card checkmark-feedback state into each entry's `draw` closure so the chrome on the diff card's top-right copy button stays in sync without a separate dispatch path.
+**Layouts declare decorations via `subviewPlan`.** `RowLayout` exposes `subviewPlan(origin:hoveredAction:selection:flashingCopyIds:) -> SubviewPlan`. Layouts that need none return an empty plan; only the ones that need decorations (today: `toolGroup`) return non-empty. `SubviewPlan` is a **struct + closures** — same shape as `SelectionAdapter`, never a protocol. The cell doesn't know which layout produced the plan; it runs the generic reconciler. `flashingCopyIds` carries the cell's per-button checkmark-feedback state (keyed by `CopyChrome.id`) into each entry's `draw` closure so the chrome on bash sub-cards / diff cards stays in sync without a separate dispatch path.
 
 **Never use a protocol to mark "which layout needs decorations".** Enum dispatch gives exhaustiveness checking; protocols let you forget an implementation on some case.
 
@@ -320,7 +320,8 @@ NativeTranscript2/
 │   ├── ListLayout.swift             Recursive list with self-drawn markers / checkboxes
 │   ├── TableLayout.swift            CSS-like min/max column allocation + self-drawn grid
 │   ├── UserBubbleLayout.swift       Right-aligned bubble + chevron + fade mask + selection clamp
-│   ├── CodeBlockLayout.swift        Floating top-right chrome (lang badge + hover-gated copy icon) + embedded TextLayout body + async token coloring
+│   ├── CodeBlockLayout.swift        Floating top-right chrome (lang badge + CopyChrome) + embedded TextLayout body + async token coloring
+│   ├── CopyChrome.swift             Reusable copy-button primitive (id + hitRect + center + text + draw) — codeblock / bash / diff all emit one of these
 │   ├── BlockquoteLayout.swift       Left bar + embedded TextLayout
 │   ├── ThematicBreakLayout.swift    Single hairline
 │   ├── ToolGroupLayout.swift        Tool group row (group header + child headers + expanded body); dispatches into ToolGroupChildLayout

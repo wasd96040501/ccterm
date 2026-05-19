@@ -104,7 +104,8 @@ final class DiffNSView: NSView, NSUserInterfaceValidations {
     /// Stable id for the in-card copy button — keyed per-view so the
     /// hover / copied flags survive width-driven layout cache flushes
     /// and don't collide across multiple `DiffNSView` instances on
-    /// screen at once.
+    /// screen at once. Matches the `CopyChrome.id` the underlying
+    /// `DiffLayout` carries.
     private let copyButtonId = UUID()
     private var copyButtonHovered = false
     private var copyButtonCopied = false
@@ -234,8 +235,8 @@ final class DiffNSView: NSView, NSUserInterfaceValidations {
         layout.draw(in: ctx, origin: origin)
         layout.drawHeaderChrome(
             in: ctx, origin: origin,
-            hovered: copyButtonHovered,
-            copied: copyButtonCopied)
+            hoveredCopyId: copyButtonHovered ? copyButtonId : nil,
+            flashingCopyIds: copyButtonCopied ? [copyButtonId] : [])
     }
 
     // MARK: - Selection state
@@ -258,8 +259,8 @@ final class DiffNSView: NSView, NSUserInterfaceValidations {
         window?.makeFirstResponder(self)
         guard let layout = layout(at: bounds.width) else { return }
         let local = convert(event.locationInWindow, from: nil)
-        if let hit = layout.copyHitRect, hit.contains(local) {
-            handleCopyButtonClick(text: layout.copyText)
+        if let copy = layout.copy, copy.hitRect.contains(local) {
+            handleCopyButtonClick(text: copy.text)
             return
         }
         switch event.clickCount {
@@ -328,20 +329,20 @@ final class DiffNSView: NSView, NSUserInterfaceValidations {
 
     override func resetCursorRects() {
         super.resetCursorRects()
-        if let hit = layout(at: bounds.width)?.copyHitRect {
-            addCursorRect(hit, cursor: .pointingHand)
+        if let copy = layout(at: bounds.width)?.copy {
+            addCursorRect(copy.hitRect, cursor: .pointingHand)
         }
     }
 
     private func updateCopyHover(at local: NSPoint) {
-        guard let hit = layout(at: bounds.width)?.copyHitRect else {
+        guard let copy = layout(at: bounds.width)?.copy else {
             if copyButtonHovered {
                 copyButtonHovered = false
                 needsDisplay = true
             }
             return
         }
-        let nowHovered = hit.contains(local)
+        let nowHovered = copy.hitRect.contains(local)
         if nowHovered != copyButtonHovered {
             copyButtonHovered = nowHovered
             needsDisplay = true

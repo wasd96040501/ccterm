@@ -73,14 +73,15 @@ enum ToolGroupChildLayout: @unchecked Sendable {
         }
     }
 
-    /// Glyph pass. `hoveredCopyText` / `flashingCopyTexts` flow in
-    /// from the cell so per-card chrome (today only bash's copy
-    /// icons) can render hover-bg + checkmark feedback; non-bash
-    /// kinds ignore them.
+    /// Glyph pass. `hoveredCopyId` / `flashingCopyIds` flow in from
+    /// the cell so per-card chrome (today only bash's copy icons —
+    /// diff chromes paint on top via `ToolGroupLayout.drawEntry`'s
+    /// own pass) can render hover-bg + checkmark feedback; kinds
+    /// without `CopyChrome` ignore them.
     func draw(
         in ctx: CGContext, origin: CGPoint,
-        hoveredCopyText: String? = nil,
-        flashingCopyTexts: Set<String> = []
+        hoveredCopyId: UUID? = nil,
+        flashingCopyIds: Set<UUID> = []
     ) {
         switch self {
         case .fileEdit(let l): l.draw(in: ctx, origin: origin)
@@ -88,8 +89,8 @@ enum ToolGroupChildLayout: @unchecked Sendable {
         case .bash(let l):
             l.draw(
                 in: ctx, origin: origin,
-                hoveredCopyText: hoveredCopyText,
-                flashingCopyTexts: flashingCopyTexts)
+                hoveredCopyId: hoveredCopyId,
+                flashingCopyIds: flashingCopyIds)
         case .grep(let l): l.draw(in: ctx, origin: origin)
         case .glob(let l): l.draw(in: ctx, origin: origin)
         case .webFetch(let l): l.draw(in: ctx, origin: origin)
@@ -100,16 +101,18 @@ enum ToolGroupChildLayout: @unchecked Sendable {
         }
     }
 
-    /// Per-card copy affordances exposed by the body layout, in
-    /// layout-local coords (same space as `containerRect`). Empty
-    /// for kinds without copy icons today; only `.bash` opts in.
-    /// `ToolGroupLayout` reads this when building `interactiveHits`
-    /// so each card's hit lands on the same surface that the body's
-    /// `draw` paints.
-    var copyButtons: [BashChildLayout.CopyButton] {
+    /// Layout-emitted copy affordances, in layout-local coords (same
+    /// space as `containerRect`). `ToolGroupLayout` reads this when
+    /// building `interactiveHits` so each chrome's hit zone maps to
+    /// a `HitAction.copy(id:text:)`. Bash exposes one chrome per
+    /// surviving card; diff bodies (fileEdit / read) expose one for
+    /// the card-level top-right overlay; other kinds return empty.
+    var copyChromes: [CopyChrome] {
         switch self {
-        case .bash(let l): return l.copyButtons
-        case .fileEdit, .read, .grep, .glob, .webFetch, .webSearch,
+        case .bash(let l): return l.copyChromes
+        case .fileEdit(let l): return l.body.copy.map { [$0] } ?? []
+        case .read(let l): return l.body?.copy.map { [$0] } ?? []
+        case .grep, .glob, .webFetch, .webSearch,
             .askUserQuestion, .agent, .generic:
             return []
         }

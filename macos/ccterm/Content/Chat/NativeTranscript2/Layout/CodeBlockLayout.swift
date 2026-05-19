@@ -25,17 +25,14 @@ import AppKit
 ///   design chip (`codeBlockLanguageBadgeBackground`) with a 4pt
 ///   corner radius; text inside is `secondaryLabel` at
 ///   `codeBlockHeaderFontSize`.
-/// - **Copy icon** (right edge): always visible. On icon-hover a
-///   rounded background paints behind the glyph; on click the glyph
-///   flashes to a checkmark for 1.5s. Geometry uses
-///   `BlockStyle.gutterHitSize` so the in-card affordance shares the
-///   same 18pt-square shape as the cell-margin copy gutter.
+/// - **Copy icon** (right edge): always visible. The `CopyChrome`
+///   primitive owns symbol / hover bg / tint / flash; this layout
+///   only emits one via `CopyChrome.topRight(of:)`.
 ///
 /// The copy button itself is **not drawn in `draw(in:origin:)`**.
-/// `BlockCellView` calls `drawCopyGlyph(...)` after `draw` so the
+/// `BlockCellView` invokes `copy?.draw(...)` after `draw` so the
 /// icon paints on top of the body, matching the gutter's late-paint
-/// position. Layout exposes `copyCenter` / `copyHitRect` only so the
-/// cell knows where to paint and where to hit-test.
+/// position.
 ///
 /// `@unchecked Sendable` — same reason as `TextLayout` (embedded
 /// `CTLine` references).
@@ -69,22 +66,17 @@ struct CodeBlockLayout: @unchecked Sendable {
     /// layout-local coords. `nil` when `langLine` is `nil`.
     let badgeRect: CGRect?
 
-    /// Click target for the copy button — `nil` if the container is
-    /// pathologically narrow.
-    let copyHitRect: CGRect?
-    /// Center for the copy glyph — sits inside the chrome row,
-    /// right-anchored by `codeBlockChromeRightInset`.
-    let copyCenter: CGPoint?
+    /// The single copy-button affordance for this block — `nil` if
+    /// the container is pathologically narrow. Cell hit-tests against
+    /// `copy?.hitRect` (via `RowLayout.interactiveHits`) and paints it
+    /// via `copy?.draw(...)` after the main glyph pass.
+    let copy: CopyChrome?
 
     let totalHeight: CGFloat
     let measuredWidth: CGFloat
 
     /// Code blocks have no inline links (verbatim text).
     var links: [TextLayout.LinkHit] { [] }
-
-    /// Hit-zone size for the copy button. Reuses `gutterHitSize`
-    /// (18pt) so codeblock + gutter copy affordances share one shape.
-    nonisolated static var copyHitSize: CGFloat { BlockStyle.gutterHitSize }
 
     /// `language` is the info-string from the opening fence (`nil` for
     /// indented blocks); rendered as the chip-styled badge,
@@ -95,9 +87,14 @@ struct CodeBlockLayout: @unchecked Sendable {
     /// either way — a token swap-in does not change `totalHeight`, so
     /// the coordinator's tokens-filled callback only needs
     /// `reloadData(forRowIndexes:)`, no `noteHeightOfRows`.
+    ///
+    /// `copyButtonId` keys the post-click flash on `BlockCellView`. The
+    /// coordinator passes the host `Block.id`, which is caller-supplied
+    /// and stable across re-layouts — so the flash survives token
+    /// back-fill / width changes / hover transitions for the same block.
     nonisolated static func make(
         code: String, language: String?,
-        tokens: [SyntaxToken]?, maxWidth: CGFloat
+        tokens: [SyntaxToken]?, copyButtonId: UUID, maxWidth: CGFloat
     ) -> CodeBlockLayout {
         guard maxWidth > 0 else {
             return CodeBlockLayout(
@@ -107,7 +104,7 @@ struct CodeBlockLayout: @unchecked Sendable {
                 chromeRowMidY: 0,
                 langLine: nil, langOriginInLayout: .zero,
                 badgeRect: nil,
-                copyHitRect: nil, copyCenter: nil,
+                copy: nil,
                 totalHeight: 0, measuredWidth: 0)
         }
         let textMaxWidth = max(
@@ -128,27 +125,26 @@ struct CodeBlockLayout: @unchecked Sendable {
             y: bodyVPad)
 
         let chromeTop = BlockStyle.codeBlockChromeTopInset
-        let chromeRight = BlockStyle.codeBlockChromeRightInset
         let chromeHeight = BlockStyle.gutterHitSize
         let chromeMidY = chromeTop + chromeHeight / 2
 
-        // Copy icon — right-anchored. Hit rect's right edge sits
-        // `chromeRight` from the container's right edge.
-        let copyRightEdge = container.maxX - chromeRight
-        let copyLeftEdge = copyRightEdge - chromeHeight
-        let copyHit: CGRect?
-        let copyCenter: CGPoint?
-        if copyLeftEdge >= BlockStyle.bubbleHorizontalPadding {
-            copyHit = CGRect(
-                x: copyLeftEdge, y: chromeTop,
-                width: chromeHeight, height: chromeHeight)
-            copyCenter = CGPoint(
-                x: copyLeftEdge + chromeHeight / 2,
-                y: chromeMidY)
-        } else {
-            copyHit = nil
-            copyCenter = nil
-        }
+        // Copy icon — right-anchored via the shared `CopyChrome.topRight`
+        // factory. Returns `nil` when the container is too narrow to
+        // host the chrome past the right inset.
+        let copy = CopyChrome.topRight(
+            of: container, id: copyButtonId, text: code)
+        // Bail again on a "fits inset but not the body padding" edge —
+        // codeblock predates the shared factory and used to clamp
+        // against `bubbleHorizontalPadding` so the icon never crowded
+        // body glyphs on a pathologically narrow row.
+        let resolvedCopy: CopyChrome? = {
+            guard let copy else { return nil }
+            return copy.hitRect.minX >= BlockStyle.bubbleHorizontalPadding
+                ? copy : nil
+        }()
+        let copyLeftEdge =
+            resolvedCopy?.hitRect.minX
+            ?? (container.maxX - BlockStyle.codeBlockChromeRightInset)
 
         // Language badge — chip to the left of the icon. Baseline math
         // matches `TextLayout`'s flipped textMatrix draw path: in a
@@ -189,7 +185,7 @@ struct CodeBlockLayout: @unchecked Sendable {
             // icon room — keeps the badge visible on a degenerate
             // narrow row).
             let badgeRightEdge =
-                (copyHit != nil)
+                (resolvedCopy != nil)
                 ? copyLeftEdge - BlockStyle.codeBlockChromeItemGap
                 : container.maxX - BlockStyle.codeBlockChromeRightInset
             let badgeLeftEdge = badgeRightEdge - badgeWidth
@@ -219,7 +215,7 @@ struct CodeBlockLayout: @unchecked Sendable {
             langLine: langLine,
             langOriginInLayout: langOrigin,
             badgeRect: badgeRect,
-            copyHitRect: copyHit, copyCenter: copyCenter,
+            copy: resolvedCopy,
             totalHeight: containerHeight,
             measuredWidth: maxWidth)
     }
@@ -318,83 +314,9 @@ struct CodeBlockLayout: @unchecked Sendable {
                 y: origin.y + textOriginInLayout.y))
 
         // The copy glyph itself is dispatched by `BlockCellView` via
-        // `drawCopyGlyph(...)` after this method returns. Layout owns
-        // the visual recipe (symbol, tint, size, hover background);
-        // cell owns the trigger (its transient `copiedAt` state +
-        // `cellHovered` + `hoveredAction`).
-    }
-
-    /// Renders the copy glyph at `copyCenter` (offset by `origin`).
-    /// Always painted (no row-hover gate); the only conditional
-    /// visuals are:
-    ///
-    /// - `iconHovered == true` → paint a rounded hover background
-    ///   behind the glyph (`gutterHoverBackground`).
-    /// - `checked == true` → swap `doc.on.doc` ↔ `checkmark` for the
-    ///   post-click feedback flash.
-    ///
-    /// Cell decides when to call this; this method owns symbol name /
-    /// tint / size / draw orientation so future visual tweaks land in
-    /// one place.
-    func drawCopyGlyph(
-        in ctx: CGContext, origin: CGPoint,
-        iconHovered: Bool, checked: Bool
-    ) {
-        guard let center = copyCenter, let hit = copyHitRect else { return }
-
-        if iconHovered {
-            let bg = hit.offsetBy(dx: origin.x, dy: origin.y)
-            let path = CGPath(
-                roundedRect: bg,
-                cornerWidth: BlockStyle.gutterHoverCornerRadius,
-                cornerHeight: BlockStyle.gutterHoverCornerRadius,
-                transform: nil)
-            ctx.setFillColor(BlockStyle.gutterHoverBackground.cgColor)
-            ctx.addPath(path)
-            ctx.fillPath()
-        }
-
-        let centerInRow = CGPoint(
-            x: center.x + origin.x, y: center.y + origin.y)
-        let name = checked ? "checkmark" : "doc.on.doc"
-        // Tints mirror the gutter exactly: hover brightens to
-        // `gutterHoverForeground`, idle stays at `gutterIdleForeground`.
-        let tint: NSColor =
-            iconHovered
-            ? BlockStyle.gutterHoverForeground
-            : BlockStyle.gutterIdleForeground
-        let weight: NSFont.Weight = checked ? .semibold : .regular
-        let baseConfig = NSImage.SymbolConfiguration(
-            pointSize: BlockStyle.gutterSymbolPointSize, weight: weight)
-        let colorConfig = NSImage.SymbolConfiguration(paletteColors: [tint])
-        let config = baseConfig.applying(colorConfig)
-        guard
-            let symbol = NSImage(
-                systemSymbolName: name,
-                accessibilityDescription: nil)?
-                .withSymbolConfiguration(config)
-        else { return }
-
-        let size = symbol.size
-        let rect = CGRect(
-            x: centerInRow.x - size.width / 2,
-            y: centerInRow.y - size.height / 2,
-            width: size.width,
-            height: size.height)
-
-        // The cell view is flipped; pushing a graphics context with
-        // `flipped: true` lets `NSImage.draw(in:respectFlipped:)`
-        // composite the symbol upright.
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(
-            cgContext: ctx, flipped: true)
-        symbol.draw(
-            in: rect,
-            from: .zero,
-            operation: .sourceOver,
-            fraction: 1.0,
-            respectFlipped: true,
-            hints: nil)
-        NSGraphicsContext.restoreGraphicsState()
+        // `copy?.draw(...)` after this method returns. `CopyChrome`
+        // owns the visual recipe (symbol, tint, size, hover background);
+        // cell owns the trigger (its transient `copyFlashByActionId`
+        // dict + `hoveredAction`).
     }
 }

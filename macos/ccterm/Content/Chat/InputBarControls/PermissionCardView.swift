@@ -54,7 +54,7 @@ struct PermissionCardView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .barSurface(cornerRadius: Self.cornerRadius)
+        .modifier(PermissionCardSurface(cornerRadius: Self.cornerRadius))
     }
 
     @ViewBuilder
@@ -195,11 +195,41 @@ private struct PermissionFallbackCardBody: View {
     }
 }
 
+// MARK: - Surface
+
+/// Opaque card surface used by the floating permission card. Mirrors
+/// the rounded-rect + edge-stroke + soft-shadow chrome of
+/// `BarSurfaceModifier` but drops the translucent material — the
+/// permission card sits directly above the input bar and the bar's
+/// material was bleeding through, which made the diff/command preview
+/// hard to read. Solid `controlBackgroundColor` reads as a clear panel
+/// against any window backdrop.
+private struct PermissionCardSurface: ViewModifier {
+    let cornerRadius: CGFloat
+
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+            }
+            .shadow(
+                color: .black.opacity(colorScheme == .dark ? 0.35 : 0.12),
+                radius: 10, x: 0, y: 4)
+    }
+}
+
 // MARK: - Button
 
 /// Compact decision button — 24pt tall, 8pt radius, three visual
 /// weights (primary / secondary / destructive). Hover lifts the fill
-/// by 8% so the affordance reads on top of `.barSurface` material.
+/// by 8% so the affordance reads on top of the card surface.
 private struct PermissionDecisionButton: View {
     enum Role {
         case primary, secondary, destructive

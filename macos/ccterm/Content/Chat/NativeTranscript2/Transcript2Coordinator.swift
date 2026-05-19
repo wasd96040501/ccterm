@@ -14,7 +14,7 @@ import AppKit
 ///   tool-result updates).
 /// - **`applyInBackground(_:scroll:)`** — layouts for the inserted blocks
 ///   compute on a detached `Task`, then a main hop installs them and runs
-///   the structural change in one shot. Used by `Controller.loadInitial`'s
+///   the structural change in one shot. Used by `Controller.setHistory`'s
 ///   Phase 2 (large prepend after the viewport batch is already visible).
 ///
 /// Both paths run their structural change inside `withScrollAdjustment`,
@@ -100,8 +100,8 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// transitions), called on MainActor.
     var onAnchorSettledChanged: ((Bool) -> Void)?
 
-    /// "Self-most-recent `loadInitial` anchor has been honored for the
-    /// currently-attached table." Resets to false on every `loadInitial`
+    /// "Self-most-recent `setHistory` anchor has been honored for the
+    /// currently-attached table." Resets to false on every `setHistory`
     /// and on every fresh `tableView` attach; flips to true once Phase 1
     /// (real-width path) or the first 0→positive `tableFrameDidChange`
     /// (deferred path) has scrolled the table to `desiredAnchor`.
@@ -119,15 +119,15 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         onAnchorSettledChanged?(value)
     }
 
-    /// Anchor written by `loadInitial`. Consumed by the deferred branch
+    /// Anchor written by `setHistory`. Consumed by the deferred branch
     /// of `tableFrameDidChange` when the table first tiles to a positive
     /// width, and on `tableView` re-attach. Default `.bottom` covers the
-    /// "view mounted before any `loadInitial` arrived" case so re-entry
+    /// "view mounted before any `setHistory` arrived" case so re-entry
     /// of a session whose history isn't yet loaded still lands at the
     /// transcript tail.
     private var desiredAnchor: Transcript2Controller.InitialAnchor = .bottom
 
-    /// Set by `loadInitial` before it dispatches phase 1 / phase 2. Pairs
+    /// Set by `setHistory` before it dispatches phase 1 / phase 2. Pairs
     /// with `setAnchorSettled(false)` so the deferred-anchor consumer
     /// inside `tableFrameDidChange` knows the next 0→positive transition
     /// must scroll. Callable while `tableView` is nil — the value persists
@@ -137,7 +137,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         setAnchorSettled(false)
     }
 
-    /// Real-width `loadInitial` Phase 1 has already scrolled the table to
+    /// Real-width `setHistory` Phase 1 has already scrolled the table to
     /// the anchor; this just records that the first-screen contract is
     /// fulfilled for the currently-attached table. Phase 2's later
     /// prepend uses `.saveVisible(...)` and does not move the visual
@@ -344,7 +344,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         onBlockCountChanged?(blocks.count)
     }
 
-    // MARK: - Mutation: off-main (Phase 2 of loadInitial, future use cases)
+    // MARK: - Mutation: off-main (Phase 2 of setHistory, future use cases)
 
     /// Layouts for the inserted blocks compute on a detached task; a single
     /// main hop installs them and runs the structural changes under
@@ -369,7 +369,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     ) {
         guard tableView != nil else {
             // Detached path: a background-emitted change (Phase B prepend,
-            // loadInitial Phase 2) arrived while the table is not bound.
+            // setHistory Phase 2) arrived while the table is not bound.
             // The controller is now session-scoped (lives across view
             // mount/dismount), so dropping the change would leave
             // `blocks` out of sync with the underlying handle's messages
@@ -963,7 +963,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         lastLayoutWidth = width
 
         // Refresh row heights BEFORE consuming `desiredAnchor`. The deferred
-        // branch of `Transcript2Controller.loadInitial` pre-inserts blocks
+        // branch of `Transcript2Controller.setHistory` pre-inserts blocks
         // into `coordinator.blocks` while `layoutWidth == 0`, which makes
         // AppKit cache ~0 heights for every row. If the subsequent
         // `consumeDesiredAnchor → scrollRowToBottom` runs before the
@@ -991,7 +991,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
 
         // First 0→positive transition consumes any anchor that's still
         // pending. Two scenarios:
-        //   1. Cold mount race — `loadInitial` ran while the table was
+        //   1. Cold mount race — `setHistory` ran while the table was
         //      not yet tiled. `setDesiredAnchor` recorded the anchor and
         //      blocks were pre-inserted; this is the deferred scroll.
         //   2. Re-attach — `tableView.didSet` reset `isAnchorSettled` to

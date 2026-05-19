@@ -14,10 +14,12 @@ struct UserBubbleSheetRequest: Identifiable, Equatable, Sendable {
 /// 1. **Mutation** — `apply(_:scroll:)` accepts one or more `Change` values
 ///    (insert / remove / update) and a `ScrollState`. Granular only; no
 ///    diff, no `reloadData` escape hatch.
-/// 2. **First-screen load** — `loadInitial(_:anchor:)` is the dedicated
-///    cold-load path. Splits into a viewport-covering Phase 1 (sync, main)
-///    and a Phase 2 (off-main layout, main-hop insert) so 10k-row initial
-///    loads don't block the main thread.
+/// 2. **History snapshot** — `setHistory(_:anchor:)` declares the whole
+///    block list at once and an anchor. Idempotent and repeatable — every
+///    call resets `isAnchorSettled` to false until the new anchor lands.
+///    Internally splits large payloads into a viewport-covering Phase 1
+///    (sync, main) and a Phase 2 (off-main layout, main-hop insert) so
+///    10k-row snapshots don't block the main thread.
 /// 3. **Query** — read-only snapshot accessors.
 ///
 /// `@MainActor`-isolated. Background producers must hop before calling.
@@ -77,9 +79,9 @@ final class Transcript2Controller {
     /// transcript once the anchor is stable, or trigger an image-bake
     /// after the first frame settles.
     ///
-    /// Resets to false on every `loadInitial` and on every fresh table
+    /// Resets to false on every `setHistory` and on every fresh table
     /// attach (session switch / view rebuild). Flips to true once
-    /// `loadInitial`'s Phase 1 has scrolled to the requested anchor, or
+    /// `setHistory`'s Phase 1 has scrolled to the requested anchor, or
     /// — for the deferred no-width branch — once `tableFrameDidChange`
     /// consumes the desired anchor on the first 0→positive transition.
     ///
@@ -188,7 +190,7 @@ final class Transcript2Controller {
 
     /// Late-bind a syntax engine. Pass-through to the coordinator. Safe
     /// to call repeatedly (idempotent on the same instance) and safe
-    /// regardless of `loadInitial` ordering — the coordinator
+    /// regardless of `setHistory` ordering — the coordinator
     /// retroactively schedules already-installed blocks on first attach.
     func attachSyntaxEngine(_ engine: SyntaxHighlightEngine?) {
         coordinator.attachSyntaxEngine(engine)
@@ -216,7 +218,7 @@ final class Transcript2Controller {
     /// derives from `blocks.count`, no `pendingBlocks` side channel.
     ///
     /// **Pinning to the tail.** External structural changes (live
-    /// `.appended` blocks from the bridge, `loadInitial`'s viewport
+    /// `.appended` blocks from the bridge, `setHistory`'s viewport
     /// batch consumed off a `pendingInitial` race) may slip in
     /// *after* the pill if their `.insert(after:)` resolves to the
     /// pill's id or relies on `coordinator.blockIds.last`. Every
@@ -312,12 +314,19 @@ final class Transcript2Controller {
         coordinator.setStatus(id: id, status: status)
     }
 
-    // MARK: - First-screen load
+    // MARK: - History snapshot
 
-    /// Two-phase initial load. Phase 1 (sync) inserts a viewport-covering
-    /// slice so the user sees correct content immediately. Phase 2 (off-main
-    /// layout, main-hop insert) installs the rest with `.saveVisible` to
-    /// keep Phase 1 visually fixed.
+    /// Declare the transcript's contents as a snapshot — `blocks` becomes
+    /// the new full block list, `anchor` is the scroll position the table
+    /// must land at once layout settles. Resets `isAnchorSettled` to
+    /// false; flips back to true after Phase 1 scrolls (real-width
+    /// branch) or after `tableFrameDidChange`'s deferred consumer scrolls
+    /// (zero-width branch).
+    ///
+    /// Two-phase internally for large snapshots: Phase 1 (sync) inserts a
+    /// viewport-covering slice so the user sees correct content
+    /// immediately; Phase 2 (off-main layout, main-hop insert) installs
+    /// the rest with `.saveVisible` to keep Phase 1 visually fixed.
     ///
     /// The vertical scroller is push-hidden across both phases — Phase 1's
     /// scroll-to-anchor and Phase 2's insert+saveVisible both perturb the
@@ -325,7 +334,11 @@ final class Transcript2Controller {
     /// `contentSize` change would otherwise paint a bouncing knob across
     /// the cold-load. Popped after Phase 1 (no-Phase-2 branch) or from
     /// Phase 2's completion (which `applyInBackground` guarantees to fire).
-    func loadInitial(_ blocks: [Block], anchor: InitialAnchor = .bottom) {
+    ///
+    /// Repeatable: calling again replaces the snapshot. Idempotent in the
+    /// degenerate case where the same id list comes back through
+    /// (`coordinator.blockIds == blocks.map(\.id)` short-circuits).
+    func setHistory(_ blocks: [Block], anchor: InitialAnchor = .bottom) {
         guard !blocks.isEmpty else { return }
 
         // Record the anchor on the coordinator and flip `isAnchorSettled`
@@ -348,7 +361,7 @@ final class Transcript2Controller {
             // the real width.
             //
             // Idempotent on re-entry: if `coordinator.blocks` already
-            // matches `blocks` (e.g. a second `loadInitial(same payload)`
+            // matches `blocks` (e.g. a second `setHistory(same payload)`
             // — rare, mostly tests), skip the insert.
             if coordinator.blockIds != blocks.map(\.id) {
                 let existing = coordinator.blockIds
@@ -391,9 +404,21 @@ final class Transcript2Controller {
 
         // Phase 1 — viewport batch, sync. heightOfRow lazy-computes layouts
         // for the visible rows; cost is bounded by viewport size.
-        coordinator.apply(
-            [.insert(after: coordinator.blockIds.last, viewportBatch)],
-            scroll: phase1Scroll)
+        //
+        // `setHistory` is a snapshot setter — every call replaces the
+        // transcript's contents. If the coordinator already holds blocks
+        // (a second `setHistory` on a live session, a re-entry after the
+        // bridge dispatched `.reset`), remove them in the same atomic
+        // beginUpdates/endUpdates as the Phase 1 insert so AppKit doesn't
+        // composite an empty intermediate state. Equivalent to what the
+        // zero-width branch above does, just at real width.
+        var phase1Changes: [Transcript2Controller.Change] = []
+        let existing = coordinator.blockIds
+        if !existing.isEmpty {
+            phase1Changes.append(.remove(ids: existing))
+        }
+        phase1Changes.append(.insert(after: nil, viewportBatch))
+        coordinator.apply(phase1Changes, scroll: phase1Scroll)
 
         // Phase 1's `scroll` has landed the table at the requested anchor;
         // declare the first-screen contract fulfilled. Phase 2's prepend

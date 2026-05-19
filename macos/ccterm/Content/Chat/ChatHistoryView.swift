@@ -136,7 +136,7 @@ struct ChatHistoryView: View {
             // `tableFrameDidChange` consumes `desiredAnchor` (default
             // `.bottom`) before flipping `isAnchorSettled` back to true.
             // Cold loads override the anchor through Phase A's
-            // `loadInitial(anchor: .bottom)`; re-entry uses the carried-
+            // `setHistory(anchor: .bottom)`; re-entry uses the carried-
             // over default. The view no longer needs to push scroll.
             // `.onChange(of: isRunning)` only fires on transitions, and
             // its `initial: true` invocation ran above with `session`

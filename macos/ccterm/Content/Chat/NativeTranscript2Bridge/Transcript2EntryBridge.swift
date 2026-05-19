@@ -33,7 +33,7 @@ final class Transcript2EntryBridge {
     // whether the controller's table is real).
     private(set) var entryOrder: [UUID] = []
     private(set) var entryBlockIds: [UUID: [UUID]] = [:]
-    /// Tracks whether `loadInitial` has fired. Any append / update arriving
+    /// Tracks whether `setHistory` has fired. Any append / update arriving
     /// before it is the abnormal path (handle hasn't reset yet) — fall back
     /// by treating the entry as a reset seed so content isn't lost.
     private var didLoadInitial = false
@@ -171,7 +171,7 @@ final class Transcript2EntryBridge {
         return .completed
     }
 
-    // MARK: - Reset (loadInitial / re-entry)
+    // MARK: - Reset (setHistory / re-entry)
 
     private func applyReset(_ entries: [MessageEntry], precomputed: [UUID: [Block]]?) {
         // Rebuild reverse tables and collect blocks.
@@ -189,7 +189,7 @@ final class Transcript2EntryBridge {
 
         // Second reset (user navigated away then back / Phase A re-fires) goes
         // through the controller's incremental API rather than another
-        // `loadInitial`: the Coordinator has already viewport-rendered, and a
+        // `setHistory`: the Coordinator has already viewport-rendered, and a
         // blunt blocks-array swap would lose animation. Use remove-all +
         // insert in one batch — visually a reload, but on the apply channel.
         if didLoadInitial {
@@ -207,12 +207,12 @@ final class Transcript2EntryBridge {
             return
         }
 
-        // First reset: take loadInitial's two-phase fast first-screen path.
+        // First reset: take setHistory's two-phase fast first-screen path.
         entryOrder = newOrder
         entryBlockIds = newMap
         didLoadInitial = true
         guard !allBlocks.isEmpty else { return }
-        controller.loadInitial(allBlocks, anchor: .bottom)
+        controller.setHistory(allBlocks, anchor: .bottom)
     }
 
     // MARK: - Append (live message)
@@ -234,7 +234,7 @@ final class Transcript2EntryBridge {
         if !didLoadInitial {
             // Sink fired before reset: use the first message as cold-load seed.
             didLoadInitial = true
-            controller.loadInitial(blocks, anchor: .bottom)
+            controller.setHistory(blocks, anchor: .bottom)
             return
         }
         controller.coordinator.apply(
@@ -273,7 +273,7 @@ final class Transcript2EntryBridge {
         // `applyInBackground` so the per-row layout precompute (paragraph
         // wrap, code-block typeset, tool-group geometry) runs on a
         // detached `userInitiated` task and not on the main thread —
-        // mirroring what `loadInitial`'s Phase 2 already does for the
+        // mirroring what `setHistory`'s Phase 2 already does for the
         // first-screen path. The bridge stays synchronous from the
         // handle's perspective: the structural change still lands in a
         // single main hop.

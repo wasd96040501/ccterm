@@ -20,7 +20,7 @@ import Foundation
 /// `unknown` / `thinking` blocks are skipped and produce no Block.
 enum MessageEntryBlockBuilder {
 
-    /// Batch entry point. Used by `loadInitial` (reset). Internally walks each
+    /// Batch entry point. Used by `setHistory` (reset). Internally walks each
     /// entry through `entryBlocks` once and merges — guaranteeing that the
     /// blocks for one entry are identical between batch and incremental paths
     /// (no merge-only side computations).

@@ -8,7 +8,7 @@ import SwiftUI
 ///
 /// Corpus is bundled as `transcript_stress_corpus.txt` (built by
 /// `macos/scripts/build-stress-corpus.py`). Loading + parsing happens on a
-/// background task; `controller.loadInitial(...)` then drives a viewport-
+/// background task; `controller.setHistory(...)` then drives a viewport-
 /// first sync insert + off-main layout for the rest, which is itself part
 /// of the workload we're measuring.
 struct TranscriptStressView: View {
@@ -103,7 +103,7 @@ struct TranscriptStressView: View {
                 return acc
             }
         }
-        controller.loadInitial(loaded)
+        controller.setHistory(loaded)
         loadStatus = .ready(blockCount: loaded.count, charCount: chars)
     }
 

@@ -13,7 +13,7 @@ import XCTest
 /// `NSScrollView` state directly.
 ///
 /// Three scenarios:
-///  - **Cold mount race**: `loadInitial` arrives while the view is not
+///  - **Cold mount race**: `setHistory` arrives while the view is not
 ///    yet on the screen (width == 0). After the offscreen layout pass
 ///    settles, `isAnchorSettled` must be `true` and the last block
 ///    must be visually anchored at the bottom.
@@ -41,10 +41,10 @@ final class Transcript2AnchorSettledTests: XCTestCase {
         // Seed BEFORE mounting — this is the deferred branch:
         // coordinator.layoutWidth == 0, blocks pre-insert, anchor pends.
         let blocks = Self.makeParagraphBlocks(count: 60)
-        controller.loadInitial(blocks, anchor: .bottom)
+        controller.setHistory(blocks, anchor: .bottom)
         XCTAssertEqual(
             controller.blockCount, 60,
-            "loadInitial deferred branch must still pre-insert blocks")
+            "setHistory deferred branch must still pre-insert blocks")
         XCTAssertFalse(
             controller.isAnchorSettled,
             "no table mounted → anchor still pending")
@@ -67,7 +67,7 @@ final class Transcript2AnchorSettledTests: XCTestCase {
     func testReAttachResetsAndReSettlesAtBottom() throws {
         let controller = Transcript2Controller()
         let blocks = Self.makeParagraphBlocks(count: 60)
-        controller.loadInitial(blocks, anchor: .bottom)
+        controller.setHistory(blocks, anchor: .bottom)
 
         let host1 = mount(controller: controller)
         settle(host: host1)
@@ -100,11 +100,53 @@ final class Transcript2AnchorSettledTests: XCTestCase {
             in: host2, "re-attached table must land at the bottom anchor")
     }
 
+    // MARK: - Snapshot replacement
+
+    /// `setHistory` is a snapshot setter — calling it again replaces the
+    /// transcript's contents and re-anchors. This locks in the "history
+    /// snapshot is repeatable" half of the API contract that the rename
+    /// from `loadInitial` makes explicit. The first snapshot stabilizes;
+    /// the second snapshot must replace the block list and re-settle the
+    /// anchor against the new tail.
+    func testSecondSetHistoryReplacesContentsAndReAnchors() throws {
+        let controller = Transcript2Controller()
+        controller.setHistory(
+            Self.makeParagraphBlocks(count: 6), anchor: .bottom)
+
+        let host = mount(controller: controller)
+        defer { teardown(host) }
+        settle(host: host)
+        XCTAssertTrue(controller.isAnchorSettled)
+        XCTAssertEqual(controller.blockCount, 6)
+
+        // Second snapshot — fresh ids, larger payload. Must replace
+        // (no leftover ids from the first snapshot), re-anchor, and end
+        // up settled. Phase 2 lands async; the assertions after
+        // `settle()` see the final post-Phase-2 state.
+        let secondBlocks = Self.makeParagraphBlocks(count: 80)
+        controller.setHistory(secondBlocks, anchor: .bottom)
+
+        settle(host: host)
+
+        XCTAssertEqual(
+            controller.blockCount, 80,
+            "second setHistory must replace the block list once Phase 2 lands")
+        XCTAssertEqual(
+            controller.blockIds, secondBlocks.map(\.id),
+            "block ids must match the second snapshot exactly — no first-snapshot leftovers")
+        XCTAssertTrue(
+            controller.isAnchorSettled,
+            "second setHistory must re-settle once Phase 1 / deferred scroll runs")
+        assertLastRowVisible(
+            in: host,
+            "second setHistory must land at the bottom of the new snapshot")
+    }
+
     // MARK: - Append does not reset
 
     func testRoutineAppendDoesNotResetSettled() throws {
         let controller = Transcript2Controller()
-        controller.loadInitial(
+        controller.setHistory(
             Self.makeParagraphBlocks(count: 8), anchor: .bottom)
 
         let host = mount(controller: controller)

@@ -27,7 +27,7 @@ final class TranscriptDemoSnapshotTests: XCTestCase {
 
     func testTranscriptDemoSnapshot() throws {
         let controller = Transcript2Controller()
-        controller.loadInitial(TranscriptDemoView.initialBlocks)
+        controller.setHistory(TranscriptDemoView.initialBlocks)
         controller.setToolStatus(
             id: TranscriptDemoView.runningGroupBlockId, status: .running)
         controller.setToolStatus(

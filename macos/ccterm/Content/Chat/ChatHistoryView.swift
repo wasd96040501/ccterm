@@ -63,13 +63,46 @@ struct ChatHistoryView: View {
     @State private var session: Session?
     @State private var searchQuery: String = ""
     @FocusState private var isSearchFocused: Bool
+    /// `.git/HEAD` value at `session?.cwd`, refreshed by a `.task(id:)`
+    /// so we don't re-read the file on every body invocation. Nil means
+    /// "probe hasn't run, or HEAD wasn't a readable branch"; the toolbar
+    /// then falls back to the DB's `worktreeBranch`.
+    @State private var probedBranch: String?
 
     var body: some View {
         coreContent
             .toolbar {
-                ToolbarItem(placement: .navigation) {
-                    SessionToolbarInfo(session: session)
+                // Stacked layout — folder name on top (emphasized),
+                // branch name below (secondary). One ToolbarItem so the
+                // system pill wraps the whole block. Suppressed in
+                // compose mode (`showsSearch == false` from RootView2 on
+                // the New Session tab) and when neither value resolves.
+                if showsSearch, dirName != nil || branchName != nil {
+                    ToolbarItem(placement: .navigation) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            if let dirName {
+                                Text(dirName)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .frame(maxWidth: Self.toolbarChipMaxWidth, alignment: .leading)
+                            }
+                            if let branchName {
+                                Text(branchName)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .frame(maxWidth: Self.toolbarChipMaxWidth, alignment: .leading)
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                    }
                 }
+            }
+            .task(id: session?.cwd) {
+                probedBranch = session?.cwd.flatMap(GitUtils.currentBranch(at:))
             }
             .modifier(
                 TranscriptSearchToolbar(
@@ -82,6 +115,29 @@ struct ChatHistoryView: View {
                     focusRequestCounter: searchBus.focusRequestCounter
                 )
             )
+    }
+
+    private static let toolbarChipMaxWidth: CGFloat = 180
+
+    private var dirName: String? {
+        guard let path = session?.originPath, !path.isEmpty else { return nil }
+        let comp = (path as NSString).lastPathComponent
+        return comp.isEmpty ? nil : comp
+    }
+
+    /// Branch read directly from `.git/HEAD` at the session's `cwd`
+    /// via `GitUtils.currentBranch` (handles worktree `.git` files
+    /// natively). Falls back to the DB-persisted `worktreeBranch` when
+    /// the probe can't read HEAD — e.g. the worktree dir was deleted on
+    /// disk but the session record still remembers the branch name.
+    private var branchName: String? {
+        if let probed = probedBranch, !probed.isEmpty {
+            return probed
+        }
+        if let session, let b = session.worktreeBranch, !b.isEmpty {
+            return b
+        }
+        return nil
     }
 
     @ViewBuilder
@@ -157,66 +213,6 @@ extension View {
         } else {
             self
         }
-    }
-}
-
-/// Non-interactive toolbar chips that read the session's origin folder
-/// (last path component) and current branch. Both chips clamp to a
-/// max width with `.middle` truncation so long names degrade gracefully.
-/// Hidden entirely when the corresponding value is unavailable.
-private struct SessionToolbarInfo: View {
-    let session: Session?
-
-    /// Last seen `.git/HEAD` value for the session's `cwd`. Probed by a
-    /// `.task(id:)` so the toolbar doesn't re-read the file on every body
-    /// invocation, and re-runs only when `cwd` changes.
-    @State private var probedBranch: String?
-
-    private static let chipMaxWidth: CGFloat = 160
-
-    var body: some View {
-        HStack(spacing: 8) {
-            if let dirName {
-                chip(systemImage: "folder", text: dirName)
-            }
-            if let branch {
-                chip(systemImage: "arrow.triangle.branch", text: branch)
-            }
-        }
-        .task(id: cwdProbeKey) {
-            probedBranch = session?.cwd.flatMap(GitUtils.currentBranch(at:))
-        }
-    }
-
-    private func chip(systemImage: String, text: String) -> some View {
-        Label(text, systemImage: systemImage)
-            .labelStyle(.titleAndIcon)
-            .font(.system(size: 12))
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .truncationMode(.middle)
-            .frame(maxWidth: Self.chipMaxWidth, alignment: .leading)
-    }
-
-    private var dirName: String? {
-        guard let path = session?.originPath, !path.isEmpty else { return nil }
-        let comp = (path as NSString).lastPathComponent
-        return comp.isEmpty ? nil : comp
-    }
-
-    /// Prefer the persisted worktree branch (worktree sessions carry it
-    /// in `SessionConfig.worktreeBranch`); fall back to a synchronous
-    /// `.git/HEAD` read on the session's `cwd` (also handles worktree
-    /// `.git` files via `GitUtils.currentBranch`).
-    private var branch: String? {
-        if let session, let b = session.worktreeBranch, !b.isEmpty {
-            return b
-        }
-        return probedBranch
-    }
-
-    private var cwdProbeKey: String? {
-        session?.cwd
     }
 }
 

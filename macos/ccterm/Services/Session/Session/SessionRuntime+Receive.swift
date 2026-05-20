@@ -38,7 +38,21 @@ extension SessionRuntime {
             // tokens stream in.
             if mode == .live { isRunning = true }
         case .result(let r): finishTurn(with: r, mode: mode)
-        case .system(.`init`(let info)): adopt(info, mode: mode)
+        case .system(.`init`(let info)):
+            // `system.init` arriving *after* the first bootstrap (i.e.
+            // `status` is already past `.starting`) means the CLI is
+            // re-initialising for a follow-up turn — the dump shows
+            // this fires ~one frame before the next `.assistant`. Use
+            // it as the earlier wake-up so the spinner relights at the
+            // very start of the new turn rather than at first token.
+            // The bootstrap init keeps its normal path: `adopt` flips
+            // `.starting` → `.idle`; we do NOT touch `isRunning`
+            // (`send` either flipped it true already, or no message
+            // is in flight and the spinner should stay off).
+            if mode == .live, status != .starting {
+                isRunning = true
+            }
+            adopt(info, mode: mode)
         default: break
         }
 

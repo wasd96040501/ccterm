@@ -216,6 +216,52 @@ final class SessionRuntimeIsRunningTests: XCTestCase {
         XCTAssertFalse(runtime.isRunning, "failLaunch must clear isRunning")
     }
 
+    // MARK: - system.init wake-up
+
+    /// `.system(.init)` arriving past bootstrap (status >= .idle) is the
+    /// CLI announcing a new turn. It fires ~one frame before the
+    /// turn's first `.assistant`, so we use it as the earlier wake-up.
+    func testTurnBoundaryInitFlipsIsRunning() async {
+        let (runtime, fake) = makeRuntime()
+        await bootstrap(runtime, fake)
+
+        runtime.send(text: "go")
+        await push(Message2Fixtures.assistantText("a"), into: fake)
+        await push(Message2Fixtures.result(), into: fake)
+        XCTAssertFalse(runtime.isRunning, "turn 1 closed")
+
+        // CLI re-inits at the start of a spontaneous follow-up turn.
+        await push(Message2Fixtures.systemInit(), into: fake)
+        XCTAssertTrue(
+            runtime.isRunning,
+            "turn-boundary system.init must relight the spinner ahead of assistant")
+    }
+
+    /// The bootstrap `.system(.init)` arrives while `status == .starting`
+    /// and must NOT flip isRunning. If the user hasn't sent anything
+    /// yet, the spinner stays off; if they have, `send` flipped it
+    /// true already.
+    func testBootstrapInitDoesNotForceIsRunning() async {
+        let (runtime, fake) = makeRuntime()
+
+        // Drive bootstrap up to the initialize-response continuation,
+        // *without* sending a user message. status is .starting.
+        runtime.activate()
+        for _ in 0..<16 {
+            await Task.yield()
+            if !fake.initializeCalls.isEmpty { break }
+        }
+        XCTAssertEqual(runtime.status, .starting)
+        XCTAssertFalse(runtime.isRunning)
+
+        // Simulate the CLI pushing the bootstrap system.init.
+        await push(Message2Fixtures.systemInit(), into: fake)
+
+        XCTAssertFalse(
+            runtime.isRunning,
+            "bootstrap system.init (status == .starting) must not flip the spinner")
+    }
+
     // MARK: - Replay must not flip isRunning
 
     /// JSONL replay feeds `.assistant` / `.result` through `receive`

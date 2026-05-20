@@ -249,35 +249,46 @@ struct RootView2: View {
     private func composeStack(sid: String) -> some View {
         ZStack {
             if isComposeMode {
-                NewSessionConfigurator(
-                    folderPath: $draftCwd,
-                    useWorktree: $draftUseWorktree,
-                    sourceBranch: $draftSourceBranch,
-                    onResumeSession: { resumeSessionId in
-                        // Mirror `submit(...)`'s success path: animate the
-                        // compose card out via `isComposeMode`, then drop
-                        // the draft id so re-entering New Session next
-                        // time starts fresh.
-                        withAnimation(.smooth(duration: 0.42)) {
-                            selectedSessionId = resumeSessionId
-                            draftSessionId = nil
+                // Compose-mode backdrop: an ultra-faint dot grid over
+                // the default windowBackgroundColor gives the otherwise
+                // dead space a hint of structure. The card itself
+                // (rendered on top) carries its own near-imperceptible
+                // dot layer so the texture appears to *continue
+                // through* the translucent material, reinforcing the
+                // "floating panel" read rather than "window inside a
+                // window."
+                ZStack {
+                    DotGridBackground()
+                    NewSessionConfigurator(
+                        folderPath: $draftCwd,
+                        useWorktree: $draftUseWorktree,
+                        sourceBranch: $draftSourceBranch,
+                        onResumeSession: { resumeSessionId in
+                            // Mirror `submit(...)`'s success path: animate the
+                            // compose card out via `isComposeMode`, then drop
+                            // the draft id so re-entering New Session next
+                            // time starts fresh.
+                            withAnimation(.smooth(duration: 0.42)) {
+                                selectedSessionId = resumeSessionId
+                                draftSessionId = nil
+                            }
+                        },
+                        inputBar: {
+                            InputBarChrome(
+                                sessionId: sid,
+                                coordSpace: Self.detailCoordSpace,
+                                // Compose mode requires a picked folder before send
+                                // arms; chat mode never gates on this.
+                                submitEnabled: draftCwd != nil,
+                                onSubmit: { submission in submit(submission, sessionId: sid) },
+                                onAttachRect: { _ in },
+                                onPillRect: { _ in }
+                            )
                         }
-                    },
-                    inputBar: {
-                        InputBarChrome(
-                            sessionId: sid,
-                            coordSpace: Self.detailCoordSpace,
-                            // Compose mode requires a picked folder before send
-                            // arms; chat mode never gates on this.
-                            submitEnabled: draftCwd != nil,
-                            onSubmit: { submission in submit(submission, sessionId: sid) },
-                            onAttachRect: { _ in },
-                            onPillRect: { _ in }
-                        )
-                    }
-                )
-                .padding(.horizontal, Self.detailHorizontalInset)
-                .padding(.vertical, Self.detailVerticalInset)
+                    )
+                    .padding(.horizontal, Self.detailHorizontalInset)
+                    .padding(.vertical, Self.detailVerticalInset)
+                }
                 .transition(.opacity)
             } else {
                 VStack(spacing: 0) {

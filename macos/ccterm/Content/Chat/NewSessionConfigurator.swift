@@ -149,6 +149,11 @@ struct NewSessionConfigurator<InputBar: View>: View {
             maxHeight: Self.height
         )
         .clipShape(RoundedRectangle(cornerRadius: Self.cardCornerRadius, style: .continuous))
+        // Soft drop shadow so the card reads as a floating panel on the
+        // vibrancy backdrop instead of a flat slab sharing its plane.
+        // Tuned to be felt, not seen — small enough not to add visual
+        // weight to the otherwise restrained surface.
+        .shadow(color: .black.opacity(0.22), radius: 30, x: 0, y: 10)
         .task(id: folderPath) {
             // Two-stage probe, both keyed off `folderPath`:
             //   1) Cheap, synchronous — `GitProbe.refresh` reads

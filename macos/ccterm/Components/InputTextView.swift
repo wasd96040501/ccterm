@@ -21,7 +21,7 @@ struct TextInputView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> InputTextScrollView {
         let scrollView = InputTextScrollView()
-        scrollView.hasVerticalScroller = true
+        scrollView.hasVerticalScroller = false
         scrollView.hasHorizontalScroller = false
         scrollView.verticalScrollElasticity = .none
         scrollView.drawsBackground = false

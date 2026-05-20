@@ -100,21 +100,35 @@ extension BlockCellView {
             layer.add(anim, forKey: "rotate")
         }
 
-        // Cross-fade the cell's CGContext-drawn contents over the
-        // same duration. `CATransition` on the host layer is the
-        // AppKit-blessed way to do this — QuartzCore handles the
-        // bitmap diff between the layer's old snapshot and its
-        // post-redraw state. Chevron sublayers run their own
-        // `CABasicAnimation` independently.
-        if let hostLayer = self.layer {
-            let transition = CATransition()
-            transition.type = .fade
-            transition.duration = BlockStyle.foldAnimationDuration
-            transition.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            hostLayer.add(transition, forKey: "contentFade")
-        }
+        beginContentFadeTransition()
 
         pendingFoldTransition = true
+    }
+
+    /// Cross-fade the cell's CGContext-drawn contents on the next
+    /// redraw. `CATransition` on the host layer is the AppKit-blessed
+    /// way to do this — QuartzCore handles the bitmap diff between
+    /// the layer's old snapshot and its post-redraw state, so any
+    /// sublayer animations (chevron rotation, shimmer sweep) keep
+    /// running independently underneath.
+    ///
+    /// Must be called *before* the coordinator's `reloadData` for the
+    /// same row, so the transition is queued on the layer that the
+    /// upcoming `viewFor` will re-use. A no-op if the cell isn't
+    /// layer-backed yet (cold dequeue path).
+    ///
+    /// Used by both `beginFoldTransition` (fold-driven layout swap)
+    /// and the status-update path in `Transcript2Coordinator.setStatus`
+    /// (tool-group header title / colour swap on `.running ↔
+    /// .completed`). The duration matches `foldAnimationDuration` so
+    /// both kinds of content swap share the same beat.
+    func beginContentFadeTransition() {
+        guard let hostLayer = self.layer else { return }
+        let transition = CATransition()
+        transition.type = .fade
+        transition.duration = BlockStyle.foldAnimationDuration
+        transition.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        hostLayer.add(transition, forKey: "contentFade")
     }
 
     // MARK: - Reconcile

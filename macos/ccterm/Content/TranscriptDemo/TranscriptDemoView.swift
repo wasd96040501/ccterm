@@ -15,6 +15,14 @@ struct TranscriptDemoView: View {
     /// otherwise pin every appended block to `extraPool[0]` once the live
     /// count dropped below `initialBlocks.count`).
     @State private var extraAddCount: Int = 0
+    /// Current status of the running-demo tool group. Driven by the
+    /// "Toggle Status" control-bar button so a click flips the group
+    /// header title between the progressive form (`activeTitle`) and
+    /// the past-tense form (`completedTitle`). The transition runs
+    /// through `Transcript2Coordinator.setStatus`, which now queues a
+    /// `CATransition.fade` on the host cell layer — that's the change
+    /// this button is here to demonstrate.
+    @State private var runningGroupStatus: ToolStatus = .running
 
     /// Default initializer for production callers (sidebar selection).
     /// Tests can pass a pre-seeded controller via `init(controller:)`
@@ -76,6 +84,29 @@ struct TranscriptDemoView: View {
                 Label("Remove Message", systemImage: "minus.circle.fill")
             }
             .disabled(controller.blockCount <= 1)
+
+            Divider().frame(height: 16)
+
+            // Flips the running-demo tool group between `.running`
+            // and `.completed`, which swaps the group header's title
+            // (`activeTitle` ↔ `completedTitle`) and recolours the
+            // bash child. Both writes route through `setToolStatus`,
+            // which now queues a `CATransition.fade` on the host
+            // cell — the visible change should crossfade, not pop.
+            Button {
+                let next: ToolStatus =
+                    (runningGroupStatus == .running) ? .completed : .running
+                runningGroupStatus = next
+                controller.setToolStatus(
+                    id: Self.runningGroupBlockId, status: next)
+                controller.setToolStatus(
+                    id: Self.runningBashChildId, status: next)
+            } label: {
+                Label(
+                    runningGroupStatus == .running
+                        ? "Mark Completed" : "Mark Running",
+                    systemImage: "wand.and.stars")
+            }
 
             Divider().frame(height: 16)
 

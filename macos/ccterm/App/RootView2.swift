@@ -386,10 +386,13 @@ struct RootView2: View {
         if submission.images.isEmpty {
             session.send(text: composedBody)
         } else {
-            for (index, image) in submission.images.enumerated() {
-                let caption = (index == 0 && !composedBody.isEmpty) ? composedBody : nil
-                session.send(image: image.data, mediaType: image.mediaType, caption: caption)
-            }
+            // Single user message carrying caption + all images as a
+            // content array — matches the JSONL wire shape (one entry
+            // can have N base64 image blocks).
+            session.send(
+                images: submission.images,
+                caption: composedBody.isEmpty ? nil : composedBody
+            )
         }
         if isFirstStart {
             manager.refreshRecords()

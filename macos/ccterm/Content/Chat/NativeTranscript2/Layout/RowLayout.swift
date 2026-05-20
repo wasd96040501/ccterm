@@ -60,6 +60,7 @@ enum RowLayout: @unchecked Sendable {
     case blockquote(BlockquoteLayout)
     case thematicBreak(ThematicBreakLayout)
     case userBubble(UserBubbleLayout)
+    case userAttachments(UserAttachmentsLayout)
     case toolGroup(ToolGroupLayout)
     case loadingPill(LoadingPillLayout)
 
@@ -73,6 +74,7 @@ enum RowLayout: @unchecked Sendable {
         case .blockquote(let l): return l.totalHeight
         case .thematicBreak(let l): return l.totalHeight
         case .userBubble(let l): return l.totalHeight
+        case .userAttachments(let l): return l.totalHeight
         case .toolGroup(let l): return l.totalHeight
         case .loadingPill(let l): return l.totalHeight
         }
@@ -88,6 +90,7 @@ enum RowLayout: @unchecked Sendable {
         case .blockquote(let l): return l.measuredWidth
         case .thematicBreak(let l): return l.measuredWidth
         case .userBubble(let l): return l.measuredWidth
+        case .userAttachments(let l): return l.measuredWidth
         case .toolGroup(let l): return l.measuredWidth
         case .loadingPill(let l): return l.measuredWidth
         }
@@ -140,6 +143,7 @@ enum RowLayout: @unchecked Sendable {
             // gutter glyph (the table cells stack uniformly).
             return (l.rowHeights.first ?? l.totalHeight) / 2
         case .image(let l): return l.totalHeight / 2
+        case .userAttachments(let l): return l.totalHeight / 2
         case .thematicBreak(let l): return l.totalHeight / 2
         case .toolGroup(let l): return l.totalHeight / 2
         case .loadingPill(let l): return l.totalHeight / 2
@@ -179,6 +183,7 @@ enum RowLayout: @unchecked Sendable {
         case .blockquote(let l): l.draw(in: ctx, origin: origin)
         case .thematicBreak(let l): l.draw(in: ctx, origin: origin)
         case .userBubble(let l): l.draw(in: ctx, origin: origin)
+        case .userAttachments(let l): l.draw(in: ctx, origin: origin)
         case .toolGroup(let l):
             l.draw(in: ctx, origin: origin, hoveredAction: hoveredAction)
         case .loadingPill(let l): l.draw(in: ctx, origin: origin)
@@ -221,7 +226,7 @@ enum RowLayout: @unchecked Sendable {
         case .codeBlock(let l): links = l.links
         case .blockquote(let l): links = l.links
         case .toolGroup(let l): links = l.links
-        case .image, .thematicBreak, .userBubble, .loadingPill: links = []
+        case .image, .userAttachments, .thematicBreak, .userBubble, .loadingPill: links = []
         }
         hits.append(
             contentsOf: links.map {
@@ -260,6 +265,7 @@ enum RowLayout: @unchecked Sendable {
         case .codeBlock(let l): return l.selectionAdapter
         case .blockquote(let l): return l.selectionAdapter
         case .image: return nil
+        case .userAttachments: return nil
         case .thematicBreak: return nil
         case .userBubble(let l): return l.selectionAdapter
         case .toolGroup(let l): return l.selectionAdapter

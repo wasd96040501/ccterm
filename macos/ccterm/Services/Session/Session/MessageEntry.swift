@@ -58,10 +58,20 @@ struct SingleEntry: Identifiable {
 /// Snapshot of a user message we sent locally. Captured at the `send(_:)`
 /// entry so `writeUserEntryToCLI` can read the fields directly without
 /// stuffing them into a `Message2` only to extract them again.
+///
+/// `images` is plural to match the wire `content` array: a single message
+/// can carry text + N image blocks, encoded back-to-back. Empty `images`
+/// means a pure-text send; non-empty means at least one inline image.
 struct LocalUserInput {
     var text: String?
-    var image: (data: Data, mediaType: String)?
+    var images: [(data: Data, mediaType: String)]
     var planContent: String?
+
+    init(text: String?, images: [(data: Data, mediaType: String)] = [], planContent: String? = nil) {
+        self.text = text
+        self.images = images
+        self.planContent = planContent
+    }
 }
 
 /// Merged view of a tool_use's result: the raw tool_result block (text +

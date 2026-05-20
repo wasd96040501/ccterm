@@ -778,6 +778,9 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             return .thematicBreak(ThematicBreakLayout.make(maxWidth: contentWidth))
         case .userBubble(let text):
             return .userBubble(UserBubbleLayout.make(text: text, maxWidth: contentWidth))
+        case .userAttachments(let images):
+            return .userAttachments(
+                UserAttachmentsLayout.make(images: images, maxWidth: contentWidth))
         case .toolGroup(let group):
             // Pull every per-child highlight snapshot up front so the
             // off-main precompute path has no per-iteration dict

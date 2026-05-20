@@ -387,22 +387,24 @@ final class Session {
     /// `SessionRuntime.fromDraft(...)` and queues the message as the
     /// first turn. In `.active` phase, forwards to the runtime.
     func send(text: String, planContent: String? = nil) {
-        let input = LocalUserInput(text: text, image: nil, planContent: planContent)
+        let input = LocalUserInput(text: text, planContent: planContent)
         promoteOrForward(input: input) { runtime in
             runtime.send(text: text, planContent: planContent)
         }
     }
 
-    /// Send an image message (with optional caption). Same draft →
-    /// runtime promotion contract as `send(text:)`.
-    func send(image data: Data, mediaType: String, caption: String? = nil) {
+    /// Send a message with one or more inline images plus an optional
+    /// caption. Packed as a single user message (text + N image blocks
+    /// in one content array). Same draft → runtime promotion contract
+    /// as `send(text:)`.
+    func send(images: [(data: Data, mediaType: String)], caption: String? = nil) {
         let input = LocalUserInput(
             text: caption,
-            image: (data: data, mediaType: mediaType),
+            images: images,
             planContent: nil
         )
         promoteOrForward(input: input) { runtime in
-            runtime.send(image: data, mediaType: mediaType, caption: caption)
+            runtime.send(images: images, caption: caption)
         }
     }
 

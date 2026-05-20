@@ -48,6 +48,13 @@ struct Block: Identifiable, Equatable, @unchecked Sendable {
         /// concerns belong on the SwiftUI side; in-cell rendering stays
         /// stateless). Short messages render in full with no chevron.
         case userBubble(text: String)
+        /// Inline image attachments on a user message — a right-aligned
+        /// strip of 48×48 thumbnails matching the InputBar's attach chip
+        /// style. Emitted as a sibling block to the user's `userBubble`
+        /// (above the text) so the two surfaces stay independently
+        /// foldable / diffable. Multiple images wrap onto more rows when
+        /// the strip exceeds row width.
+        case userAttachments(images: [NSImage])
         /// Grouped tool calls (today: a batch of file edits). One row
         /// owns the group header + every item header + every expanded
         /// item body. Three independently-foldable layers:
@@ -409,6 +416,11 @@ enum BlockStyle: Sendable {
             // the row pad here is the gap between the bubble and the
             // adjacent row's content. 8/8 matches `image`/`table`'s
             // hard-edged spacing tier.
+            return (top: 8, bottom: 8)
+        case .userAttachments:
+            // Sits directly above (or alone, when caption is empty) the
+            // user bubble. Match bubble's hard-edged 8/8 so the chip
+            // strip and the bubble look like one stacked user-turn unit.
             return (top: 8, bottom: 8)
         case .thematicBreak:
             // Thematic break is a thin line with no glyphs — it needs
@@ -1195,7 +1207,7 @@ extension Block {
             return [GutterSpec(id: id, side: .trailing, kind: .copy)]
         case .paragraph, .heading, .codeBlock, .blockquote, .list, .table:
             return [GutterSpec(id: id, side: .leading, kind: .copy)]
-        case .image, .thematicBreak, .toolGroup, .loadingPill:
+        case .image, .userAttachments, .thematicBreak, .toolGroup, .loadingPill:
             return []
         }
     }
@@ -1236,7 +1248,7 @@ extension Block {
             return out.trimmingCharacters(in: .newlines)
         case .table(let table):
             return Self.tablePlainText(table)
-        case .image, .thematicBreak, .toolGroup, .loadingPill:
+        case .image, .userAttachments, .thematicBreak, .toolGroup, .loadingPill:
             return ""
         }
     }

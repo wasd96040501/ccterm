@@ -115,7 +115,7 @@ final class SessionPromotionTests: XCTestCase {
         }
 
         let data = Data([0xFF, 0xD8, 0xFF])
-        session.send(image: data, mediaType: "image/jpeg", caption: "a photo")
+        session.send(images: [(data: data, mediaType: "image/jpeg")], caption: "a photo")
 
         XCTAssertNotNil(session.runtime, "image send must promote too")
         XCTAssertTrue(session.isRunning)
@@ -126,8 +126,8 @@ final class SessionPromotionTests: XCTestCase {
             return XCTFail("expected localUser payload")
         }
         XCTAssertEqual(input.text, "a photo")
-        XCTAssertNotNil(input.image)
-        XCTAssertEqual(input.image?.mediaType, "image/jpeg")
+        XCTAssertEqual(input.images.count, 1)
+        XCTAssertEqual(input.images.first?.mediaType, "image/jpeg")
     }
 
     /// Picker setters (`setModel` / `setEffort` / `setPermissionMode`)

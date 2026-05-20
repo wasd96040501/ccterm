@@ -124,6 +124,18 @@ row — search-as-you-type turns into a frame-budget killer.
 
 `Block.id: UUID` is caller-supplied, never derived from content hash. The cache, diff, selection, highlight scope, fold state, and status state are all keyed by it. **Cost of content-hashed ids**: identical consecutive messages collapse to one row; selection and highlight scope drift across content-equivalent updates; `.update` events flood the cache and selection paths spuriously.
 
+### 2.19 First-screen anchor: alpha-gate + symmetric attach/detach reset
+
+A history session must always render with its tail visible on the first frame the user sees. The mount sequence (table created → AppKit tiles → `tableFrameDidChange` 0→positive → deferred consumer scrolls to anchor) spans multiple display refreshes; without an alpha gate the table composites at row 0 during the window between "tiled" and "scrolled". Three pieces hold the contract together; each is load-bearing.
+
+- **Alpha-0 birth in `makeNSView` ([NativeTranscript2View.swift:131](NativeTranscript2View.swift:131))** — the table is invisible until either `markAnchorSettled` (real-width Phase 1) or `consumeDesiredAnchor` (deferred / re-attach) flips `alphaValue = 1`. The empty-blocks branch of `tableView.didSet` is a third exit (nothing to scroll → no need to gate). **Cost of dropping alpha-0**: every cold load + every session switch flashes the top of history for one or more refreshes before snapping to the tail.
+
+- **Explicit `coordinator.tableView = nil` in `dismantleNSView` ([NativeTranscript2View.swift:191](NativeTranscript2View.swift:191))** — Swift `willSet` / `didSet` do not fire when a `weak` reference auto-nils during the referent's dealloc. The attach-leg reset in `Transcript2Coordinator.tableView.didSet` (clears `isAnchorSettled` and `lastLayoutWidth`) only runs on the detach leg if we set `nil` explicitly. **Cost of relying on auto-nil**: on re-entry the coordinator carries `isAnchorSettled = true` from the previous mount; the deferred consumer's `!isAnchorSettled` gate short-circuits and the new table never scrolls — the user lands at row 0.
+
+- **`lastLayoutWidth = -1` in the attach `didSet` ([Transcript2Coordinator.swift](Transcript2Coordinator.swift))** — `tableFrameDidChange` short-circuits on `width == lastLayoutWidth`. Without resetting the sentinel, a re-attach at the same window size as the previous mount produces no `0→positive` notification, so the deferred consumer doesn't fire even though the table needs an anchor scroll. **Cost of dropping the reset**: identically-sized re-mounts (the common case — user just swapped sessions, didn't resize) bypass the anchor consumer and stick at row 0.
+
+These three are paired by construction. Anyone changing one (e.g. moving the alpha gate, adding a new attach entry point, switching to a `strong` table reference) must trace whether the other two still hold. The architectural contract `isAnchorSettled` carries — "first-screen anchor has landed for the **currently-attached** `NSTableView`" — is enforced end-to-end by these three, plus the symmetric reset path in `Transcript2Coordinator.tableView.didSet`. See `Transcript2AnchorSettledTests` for the test fixture covering all four paths (cold mount, re-attach, dismount-reset, append-doesn't-reset).
+
 ## 3. Invariants
 
 ### 3.1 Data and state

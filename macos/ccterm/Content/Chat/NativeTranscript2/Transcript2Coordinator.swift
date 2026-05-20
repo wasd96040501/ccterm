@@ -64,35 +64,48 @@ import AppKit
 /// otherwise jitter the anchor row.
 @MainActor
 final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
+    /// The currently-attached `NSTableView`. `weak` because SwiftUI owns
+    /// the view's lifetime through `NSViewRepresentable`; we get rebound
+    /// on every `.id`-driven rebuild (session switch / sidebar swap /
+    /// view re-mount). The `didSet` runs the "fresh attach" reset that
+    /// pairs symmetrically with `dismantleNSView`'s explicit `nil`.
+    ///
+    /// **The reset is load-bearing for re-entry.** On every fresh attach
+    /// the new table starts at `bounds.width == 0` with the scroll origin
+    /// at the document top; the first-screen anchor has not yet landed.
+    /// The three side effects below restore that pre-anchor state so
+    /// `tableFrameDidChange`'s deferred consumer can run again the same
+    /// way it did on the very first cold mount:
+    ///
+    /// 1. `setAnchorSettled(false)` — the consumer is gated by
+    ///    `!isAnchorSettled` (see `tableFrameDidChange`). Without this
+    ///    reset a stale-`true` carried over from the previous attach
+    ///    would short-circuit the gate, the new table never scrolls to
+    ///    the desired anchor, and the user lands at row 0 on re-entry.
+    /// 2. `lastLayoutWidth = -1` — the consumer is also gated by a
+    ///    `width != lastLayoutWidth` check. Without this reset, a
+    ///    re-mount at the same window size as the previous attach hits
+    ///    the short-circuit, the consumer never sees a 0→positive
+    ///    transition, and again the table sticks at row 0.
+    /// 3. `reloadData()` (when blocks exist) — `blocks` survives the
+    ///    detach because the coordinator is session-scoped; the new
+    ///    NSTableView is born at `numberOfRows = 0` and needs to be
+    ///    told to query the data source. Without this the table renders
+    ///    empty until the next `apply` call.
+    ///
+    /// For the empty-blocks branch the user can never see a flicker
+    /// (nothing to scroll), so we unhide the alpha-0 table immediately;
+    /// otherwise an empty session would sit invisible waiting for an
+    /// anchor that never arrives.
     weak var tableView: NSTableView? {
         didSet {
             guard oldValue !== tableView else { return }
-            // A new table view replaces the previous one (session switch,
-            // SwiftUI rebuild). Until this fresh table tiles to a positive
-            // width and consumes `desiredAnchor`, the first-screen anchor
-            // is *not* settled — flip back to false so `tableFrameDidChange`'s
-            // deferred-anchor consumer runs on the next 0→positive transition.
             setAnchorSettled(false)
-            // Reset the frame-change short-circuit so the new table's
-            // first 0→positive transition reaches `consumeDesiredAnchor`.
-            // Without this, an identically-sized re-mount (same window
-            // size as the previous attach) skips the transition entirely
-            // because `width == lastLayoutWidth` short-circuits the
-            // notification handler.
             lastLayoutWidth = -1
             if let table = tableView {
                 if !blocks.isEmpty {
-                    // Re-entry / bridge-accumulated state: blocks exist
-                    // before any tile. The table is born hidden
-                    // (`alphaValue = 0` from `makeNSView`); the deferred
-                    // anchor consumer will unhide it after the scrolled
-                    // frame lands on screen.
                     table.reloadData()
                 } else {
-                    // Nothing to scroll → nothing can flicker. Unhide now
-                    // so empty / pre-`setHistory` sessions don't sit
-                    // invisible waiting for an anchor that will never
-                    // arrive.
                     table.alphaValue = 1
                 }
             }
@@ -153,9 +166,12 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// prepend uses `.saveVisible(...)` and does not move the visual
     /// anchor, so calling this between Phase 1 and Phase 2 is safe.
     ///
-    /// Unhides the table (`alphaValue = 1`) — it was born hidden in
-    /// `Transcript2NSViewBridge.makeNSView` so the user never sees the
-    /// pre-scroll frame (table at row 0).
+    /// Unhides the table (`alphaValue = 1`). The table is born hidden in
+    /// `Transcript2NSViewBridge.makeNSView` to cover the gap between
+    /// "table mounted at row 0" and "Phase 1 scroll committed". If we
+    /// skip the unhide here, every real-width `setHistory` would leave
+    /// the transcript permanently invisible — the alpha gate has no
+    /// other consumer.
     func markAnchorSettled() {
         tableView?.alphaValue = 1
         setAnchorSettled(true)
@@ -656,21 +672,23 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     }
 
     /// Scroll so `id`'s bottom aligns with the visible content area's bottom
-    /// edge. Mirrors `scrollRowToTop`: clip bounds span the full frame, so
-    /// the visible content area's bottom in clip coords is at
-    /// `clip.bounds.height - contentInsets.bottom`. The pre-fix
-    /// implementation used just `clip.bounds.height`, which dropped the row
-    /// into the bottom inset region (under the input-bar overlay).
+    /// edge. Mirrors `scrollRowToTop`: clip bounds span the full frame
+    /// (NSScrollView's `contentInsets` do *not* shrink them — insets only
+    /// widen the allowed scroll range), so the visible content area's
+    /// bottom in clip coords is at `clip.bounds.height -
+    /// contentInsets.bottom`. Using just `clip.bounds.height` instead
+    /// would drop the row into the inset region underneath the input-bar
+    /// overlay — visually hidden but selectable.
     ///
-    /// `target` is clamped to `-contentInsets.top` — the lowest origin
-    /// `NSClipView` treats as legal. Without the clamp, a transcript whose
-    /// total height is shorter than the viewport produces a strongly
-    /// negative target (`rect.maxY` is tiny, the visible-bottom term is
-    /// large), and `NSClipView.scroll(to:)` writes it through without
-    /// constraint, pushing the documentView down into the viewport and
-    /// leaving a gap above the first row. Clamping lands the short
-    /// transcript at the top of the visible content area with empty
-    /// space below it (chat-style top-aligned layout).
+    /// `target` is clamped to `-contentInsets.top`, the lowest origin
+    /// `NSClipView` treats as legal. For transcripts shorter than the
+    /// viewport, `rect.maxY - visibleBottomInClip` is strongly negative;
+    /// without the clamp, `NSClipView.scroll(to:)` writes the negative
+    /// value through and the documentView shifts down into the viewport
+    /// — the first row appears below the window's top inset with empty
+    /// space above it. Clamping lands the short transcript at the top
+    /// of the visible content area (chat-from-top); empty space falls
+    /// below the last row.
     private func scrollRowToBottom(id: UUID, in tableView: NSTableView) {
         guard let row = blocks.firstIndex(where: { $0.id == id }),
             let scrollView = tableView.enclosingScrollView
@@ -1047,14 +1065,24 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         }
     }
 
-    /// Internal scroll-to-anchor + settle. Forces an immediate layout pass
-    /// before sampling `rect(ofRow:)` — `invalidate`'s `noteHeightOfRows`
-    /// is async, so without this push the documentView frame.height may
-    /// still trail the row-height total and `NSClipView.scroll(to:)`
-    /// would be pinned by `constrainBoundsRect`.
+    /// Internal scroll-to-anchor + settle. The deferred branch of
+    /// `setHistory` (table not yet tiled) and every fresh re-attach
+    /// (session switch / view rebuild) both route through here when
+    /// `tableFrameDidChange` sees the first 0→positive width transition.
     ///
-    /// Unhides the table (`alphaValue = 1`) at the end — see
-    /// `markAnchorSettled` for the alpha-hide rationale.
+    /// `layoutSubtreeIfNeeded` forces a synchronous layout pass before
+    /// `rect(ofRow:)` is sampled. `invalidate`'s `noteHeightOfRows` is
+    /// async — AppKit defers the height re-query to the next layout
+    /// pass. Without forcing the pass here, `rect(ofRow:)` reads
+    /// pre-invalidation heights (~0 for blocks inserted while
+    /// `layoutWidth == 0`), `scrollRowToBottom`'s target collapses to
+    /// the document top, and the table sticks at row 0 even though the
+    /// data and width are now correct.
+    ///
+    /// Alpha-unhide is the second half of the alpha gate that begins
+    /// in `makeNSView` (`alphaValue = 0`). See `markAnchorSettled` for
+    /// the rationale; the consequence of skipping the unhide here is
+    /// the same — the transcript stays permanently invisible.
     private func consumeDesiredAnchor(in tableView: NSTableView) {
         tableView.layoutSubtreeIfNeeded()
         switch desiredAnchor {

@@ -122,12 +122,25 @@ struct Transcript2NSViewBridge: NSViewRepresentable {
         scroll.contentInsets = NSEdgeInsets(top: 44, left: 0, bottom: 180, right: 0)
 
         let table = Transcript2TableView()
-        // Born hidden. `Transcript2Coordinator.markAnchorSettled` /
-        // `consumeDesiredAnchor` unhide it (`alphaValue = 1`) once the
-        // first-screen anchor scroll has landed — guarantees the user
-        // never sees the pre-scroll frame (table at row 0). For sessions
-        // with no blocks at attach, `tableView.didSet` immediately sets
-        // this back to 1 (nothing to flicker).
+        // Born hidden. There is a multi-frame gap between "AppKit mounts
+        // and tiles the new table" and "Phase 1 / deferred consumer
+        // scrolls to the first-screen anchor": `tableFrameDidChange`'s
+        // anchor consumption is `DispatchQueue.main.async`-hopped (it
+        // runs after AppKit's current commit pass), and even Phase 1's
+        // synchronous scroll lives inside `setHistory` which the host
+        // calls from `.task`. During that window the table composites
+        // at its initial scroll origin — row 0 at the top — which is
+        // **not** where the user expects the transcript to be (history
+        // sessions always want the tail). Without alpha-0 birth, every
+        // first mount and every session switch flashes "top of history"
+        // for one or more refreshes before snapping to the tail.
+        //
+        // Three exits return alpha to 1: `markAnchorSettled` (real-width
+        // Phase 1), `consumeDesiredAnchor` (deferred / re-attach path),
+        // and `tableView.didSet` (empty-session shortcut). Adding a new
+        // entry path requires picking one of these exits or adding a
+        // matched unhide — leaving alpha at 0 means the transcript
+        // stays permanently invisible.
         table.alphaValue = 0
         table.headerView = nil
         table.backgroundColor = .clear
@@ -172,22 +185,32 @@ struct Transcript2NSViewBridge: NSViewRepresentable {
         coordinator: Transcript2Coordinator
     ) {
         NotificationCenter.default.removeObserver(coordinator)
-        // Explicitly clear the coordinator's `tableView` weak ref. Without
-        // this the ref auto-nils silently during dealloc, which does NOT
-        // fire `willSet`/`didSet` — so the matched reset path in
-        // `Transcript2Coordinator.tableView.didSet` (setAnchorSettled(false),
-        // lastLayoutWidth=-1) only runs on attach, not on detach. The new
-        // table on re-entry needs the same first-screen scroll path the
-        // cold mount takes; a stale-`true` `isAnchorSettled` would skip
-        // `tableFrameDidChange`'s deferred consumer (`!isAnchorSettled`
-        // guard) and the table would stay at row 0 instead of scrolling
-        // to the desired anchor.
+        // Explicit nil — load-bearing for re-entry.
         //
-        // Identity guard against unusual SwiftUI lifecycles: only nil if
-        // the coordinator still points at the view we're dismantling. If
-        // a sibling makeNSView already reassigned (rare; only possible
-        // when a new make of the same coordinator races a stale dismantle
-        // of the old view), preserve the new bind.
+        // Swift `willSet` / `didSet` do **not** fire when a weak
+        // reference goes to nil via the referent's dealloc (this is a
+        // documented Swift behavior, not an AppKit quirk). Relying on
+        // the auto-nil means `Transcript2Coordinator.tableView.didSet`
+        // only runs on the attach leg, never the detach leg — the
+        // coordinator carries `isAnchorSettled = true` and a stale
+        // `lastLayoutWidth` from the previous mount across the gap.
+        //
+        // On re-entry, the new table mounts and `tableFrameDidChange`'s
+        // deferred consumer evaluates its guards: `!isAnchorSettled` is
+        // false (stale) AND `width != lastLayoutWidth` is false (stale,
+        // when the new mount is at the same window size as the
+        // previous). Both short-circuits fire, the consumer never
+        // schedules, and the new table sits at row 0 instead of
+        // scrolling to the desired anchor — the "瞬间看到 transcript
+        // 开头的内容" symptom this nil-out exists to prevent.
+        //
+        // Identity guard against unusual SwiftUI lifecycles: only nil
+        // if the coordinator still points at the view we're dismantling.
+        // A sibling `makeNSView` can in principle reassign before the
+        // stale `dismantleNSView` runs (rare — only when a new make
+        // races an old dismantle on the same coordinator); without the
+        // guard, the dismantle would clear the freshly-attached table
+        // and the new mount would lose its binding.
         if coordinator.tableView === (nsView.documentView as? NSTableView) {
             coordinator.tableView = nil
         }

@@ -81,7 +81,9 @@ struct ChatHistoryView: View {
             placement: .toolbar,
             prompt: Text("Find in transcript")
         )
-        .searchFocused($isSearchFocused)
+        // `.searchFocused` is macOS 15+. On 14 the search field still works
+        // for typing — only the programmatic ⌘F-from-bus focus path degrades.
+        .searchFocusedIfAvailable($isSearchFocused)
         .toolbar {
             if #available(macOS 26.0, *) {
                 ToolbarSpacer(.flexible)
@@ -145,6 +147,17 @@ struct ChatHistoryView: View {
             // installed from the previous mount — explicitly sync to
             // the current value here.
             s.controller.setLoading(s.isRunning)
+        }
+    }
+}
+
+extension View {
+    @ViewBuilder
+    fileprivate func searchFocusedIfAvailable(_ binding: FocusState<Bool>.Binding) -> some View {
+        if #available(macOS 15.0, *) {
+            self.searchFocused(binding)
+        } else {
+            self
         }
     }
 }

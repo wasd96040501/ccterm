@@ -5,7 +5,7 @@ import AppKit
 /// Where inside a block highlight tokens belong. One block kind may emit
 /// multiple scopes (a future diff block emits one per hunk × side);
 /// adding a scope is two lines (enum case + switch arm in
-/// `Transcript2HighlightStorage.requests(for:)`).
+/// `Transcript2HighlightStorage.subPlans(for:)`).
 ///
 /// Declared at file scope so the `Hashable` / `Sendable` conformance is
 /// nonisolated — the storage class is `@MainActor`, but the off-main
@@ -37,7 +37,7 @@ struct Transcript2HighlightKey: Hashable, Sendable {
 /// New highlight-bearing layouts pick whichever shape matches their draw
 /// model — single contiguous text → `.tokens`; per-line independently-
 /// stylable text → `.lineMap`. Adding a third shape = one more case here +
-/// one more switch arm in `Storage.dispatchSchedule`.
+/// one more switch arm in `Storage.subPlans`.
 enum HighlightValue: Sendable {
     case tokens([SyntaxToken])
     case lineMap([String: [SyntaxToken]])
@@ -48,19 +48,25 @@ enum HighlightValue: Sendable {
 /// Per-block, async-filled side data backing syntax highlighting (and any
 /// future highlight-shaped derivative — diff hunks, inline annotations,
 /// etc.). Storage is keyed by `(blockId, Scope)` so a single block can
-/// carry multiple highlight regions (e.g. diff old/new sides) without
-/// extra dicts.
+/// carry multiple highlight regions (e.g. a tool group's per-child
+/// payloads) without extra dicts.
 ///
 /// ### Lifecycle
 ///
 /// - `schedule(_:)` — called from `Coordinator.applyStructuralChange` for
-///   `.insert` and `.update`. Looks at `block.kind`, emits the highlight
-///   requests for that kind, fires a single `engine.highlightBatch` over
-///   them, writes the results back, and notifies via `onDidFill(blockId)`
-///   so the coordinator can reload the row.
-/// - `drop(blockId:)` — called for `.remove` and at the head of `.update`.
-///   Wipes every entry whose id matches and bumps the generation counter
-///   so an in-flight schedule for the same id no longer commits.
+///   `.insert` and `.update`. Looks at `block.kind`, computes the per-scope
+///   sub-plans, **diffs each scope's source fingerprint** against what's
+///   already cached, and only kicks JS tokenisation for scopes whose
+///   payload actually changed. Stale scopes (children that disappeared
+///   from this block) are wiped. One `engine.highlightBatch` call covers
+///   the entire surviving set; `onDidFill(blockId)` fires once after the
+///   writeback if any scope landed.
+/// - `drop(blockId:)` — called for `.remove`. Wipes every scope this
+///   block carries, bumping each scope's generation so in-flight tasks
+///   targeting those scopes can no longer commit. `.update` does **not**
+///   route through here — `schedule(_:)` handles per-scope invalidation
+///   internally, which lets sibling children survive a partial update
+///   without their tokens flickering off.
 /// - `snapshot()` — read-only copy of the tokens map. Used by the
 ///   coordinator's off-main precompute paths (`applyInBackground`,
 ///   `refillLayoutCache`) so the detached task can call `makeLayout`
@@ -68,11 +74,24 @@ enum HighlightValue: Sendable {
 ///
 /// ### Generation guard
 ///
-/// `inflightGen[id]` is bumped on every `schedule` and on every `drop`.
-/// A task captures the generation at start; if it drifted by completion,
-/// the writeback is skipped. This prevents an older highlight (kicked
-/// before an `.update` replaced the code) from clobbering a newer one
-/// that finished sooner.
+/// `inflightGen[key]` is bumped per-scope on every schedule that
+/// targets the scope, and on every drop. A task captures the
+/// generation per scope at start; if a given scope's generation
+/// drifted by completion, that scope's writeback is skipped. This
+/// prevents an older highlight (kicked before an `.update` replaced
+/// the source) from clobbering a newer one that finished sooner.
+///
+/// ### Source-key dedup (why sibling tool_results don't flicker the
+/// other children)
+///
+/// `sourceKeys[key]` records the fingerprint of the payload that
+/// produced `values[key]` (or that's in flight to produce it). On
+/// `schedule`, sub-plans whose fingerprint matches the cached value
+/// are skipped entirely — no drop, no JS call, no `onDidFill`. The
+/// effect at the row level: a tool-group block whose `kind` changes
+/// because a *sibling* child got its `tool_result` no longer drops
+/// the unchanged children's tokens, so the rendered cell does not
+/// flash from coloured → plain → coloured during streaming.
 @MainActor
 final class Transcript2HighlightStorage {
     typealias Scope = Transcript2HighlightScope
@@ -84,13 +103,20 @@ final class Transcript2HighlightStorage {
     /// render plain. Reattach via `setEngine(_:)`.
     private var engine: SyntaxHighlightEngine?
     private var values: [Key: HighlightValue] = [:]
-    /// Per-block generation counter — see class doc. Sparse: an id with
-    /// no in-flight task simply has no entry.
-    private var inflightGen: [UUID: Int] = [:]
+    /// Per-scope content fingerprint of the payload that produced
+    /// `values[key]` (or that's in flight to produce it). Compared
+    /// against the new sub-plan's `sourceKey` inside `schedule(_:)`
+    /// to skip tokenisation for scopes whose payload didn't change.
+    /// Cleared together with `values` in `drop`.
+    private var sourceKeys: [Key: String] = [:]
+    /// Per-scope generation counter — see class doc. Sparse: a key
+    /// with no in-flight task simply has no entry.
+    private var inflightGen: [Key: Int] = [:]
 
-    /// Notified after a `schedule` writeback lands. Coordinator wires this
-    /// to a single-row reload (`removeCachedLayout` + `reloadData(forRowIndexes:)`).
-    /// `nil` while the storage isn't attached to a coordinator yet.
+    /// Notified after a `schedule` writeback lands tokens for at least
+    /// one scope. Coordinator wires this to a single-row reload
+    /// (`removeCachedLayout` + `reloadData(forRowIndexes:)`). `nil`
+    /// while the storage isn't attached to a coordinator yet.
     var onDidFill: ((UUID) -> Void)?
 
     var hasEngine: Bool { engine != nil }
@@ -138,103 +164,160 @@ final class Transcript2HighlightStorage {
 
     // MARK: - Lifecycle
 
-    /// Kick a highlight pass for `block` if its kind has any highlight
-    /// scopes. Multiple scopes from the same block batch into one
-    /// `engine.highlightBatch` call (one JSCore round-trip).
+    /// Diff a block's per-scope highlight payload against what's already
+    /// cached and only kick JS tokenisation for the scopes whose source
+    /// fingerprint changed. Scopes that no longer appear on the block
+    /// (e.g. a tool-group child was removed) are wiped. One
+    /// `engine.highlightBatch` call covers the surviving set;
+    /// `onDidFill(blockId)` fires after the writeback if at least one
+    /// scope landed.
     func schedule(_ block: Block) {
-        guard let plan = Self.plan(for: block), let engine else { return }
-
-        let gen = (inflightGen[block.id] ?? 0) &+ 1
-        inflightGen[block.id] = gen
+        let newSubs = Self.subPlans(for: block)
         let blockId = block.id
 
+        // Wipe scopes that no longer exist for this block. Bumps gen so
+        // any in-flight task targeting that scope drops its writeback.
+        let newKeys = Set(newSubs.map { Key(blockId: blockId, scope: $0.scope) })
+        let currentKeys = sourceKeys.keys.filter { $0.blockId == blockId }
+        for stale in currentKeys where !newKeys.contains(stale) {
+            inflightGen[stale, default: 0] &+= 1
+            values.removeValue(forKey: stale)
+            sourceKeys.removeValue(forKey: stale)
+        }
+
+        guard let engine, !newSubs.isEmpty else { return }
+
+        // Filter sub-plans to scopes whose source actually changed. For
+        // each changed scope: drop the stale value, bump its gen, record
+        // the new fingerprint, and queue it for the shared JS batch.
+        struct ScheduledScope {
+            let key: Key
+            let range: Range<Int>
+            let finalize: ([[SyntaxToken]]) -> HighlightValue?
+            let gen: Int
+        }
+        var flatPayload: [(code: String, lang: String?)] = []
+        var scheduled: [ScheduledScope] = []
+        for sub in newSubs {
+            let key = Key(blockId: blockId, scope: sub.scope)
+            if sourceKeys[key] == sub.sourceKey { continue }
+            inflightGen[key, default: 0] &+= 1
+            sourceKeys[key] = sub.sourceKey
+            values.removeValue(forKey: key)
+            let start = flatPayload.count
+            flatPayload.append(contentsOf: sub.payload)
+            let end = flatPayload.count
+            guard end > start else { continue }
+            scheduled.append(
+                ScheduledScope(
+                    key: key, range: start..<end,
+                    finalize: sub.finalize,
+                    gen: inflightGen[key]!))
+        }
+        guard !scheduled.isEmpty else { return }
+
+        // Strip our `lang` tuple label so the call matches the engine's
+        // `language`-labelled signature (purely syntactic — same values).
+        let enginePayload = flatPayload.map { ($0.code, $0.lang) }
         Task { [weak self] in
-            let payload = plan.payload.map { ($0.code, $0.lang) }
-            let results = await engine.highlightBatch(payload)
+            let results = await engine.highlightBatch(enginePayload)
             await MainActor.run {
                 guard let self else { return }
-                // Generation drift → a newer `schedule` or a `drop` ran
-                // between this task's launch and its completion. Discard
-                // the writeback so the newer pipeline owns the data.
-                guard self.inflightGen[blockId] == gen else { return }
-                for (scope, value) in plan.writeback(results) {
-                    self.values[Key(blockId: blockId, scope: scope)] = value
+                var anyLanded = false
+                for entry in scheduled {
+                    // Per-scope generation drift → a newer `schedule` or a
+                    // `drop` ran between launch and completion for *this*
+                    // scope. Sibling scopes can still land independently.
+                    guard self.inflightGen[entry.key] == entry.gen,
+                        let value = entry.finalize(Array(results[entry.range]))
+                    else { continue }
+                    self.values[entry.key] = value
+                    anyLanded = true
                 }
-                self.onDidFill?(blockId)
+                if anyLanded { self.onDidFill?(blockId) }
             }
         }
     }
 
-    /// Wipe every entry for `blockId` and bump the generation so an
-    /// in-flight task for the same id can't commit afterward.
+    /// Wipe every entry for `blockId` and bump each scope's generation
+    /// so in-flight tasks for those scopes can't commit afterward.
+    /// Called for `.remove`. `.update` no longer routes here —
+    /// `schedule(_:)` handles per-scope invalidation internally.
     func drop(blockId: UUID) {
-        inflightGen[blockId] = (inflightGen[blockId] ?? 0) &+ 1
+        let keys = sourceKeys.keys.filter { $0.blockId == blockId }
+        for key in keys {
+            inflightGen[key, default: 0] &+= 1
+            values.removeValue(forKey: key)
+            sourceKeys.removeValue(forKey: key)
+        }
+        // Defensive: also drop any value rows whose sourceKeys was
+        // already missing (would only happen if a future code path
+        // wrote `values` without touching `sourceKeys`).
         values = values.filter { $0.key.blockId != blockId }
     }
 
-    // MARK: - Per-kind dispatch
+    // MARK: - Per-scope plans
 
-    /// One block's highlight job: the JS payload to send and a writeback
-    /// closure that turns the per-request results into `(scope, value)`
-    /// pairs. Lets a kind decide whether each request becomes its own
-    /// `.tokens` scope (codeBlock) or rolls up into a single `.lineMap`
-    /// (diff) — both fit one round-trip.
-    private struct Plan {
+    /// One scope's highlight job: the JS payload, the writeback closure
+    /// that folds results into a `HighlightValue`, and the **source
+    /// fingerprint** used to skip rescheduling when the payload hasn't
+    /// changed since the last `schedule` call for this scope.
+    private struct SubPlan {
+        let scope: Scope
+        let sourceKey: String
         let payload: [(code: String, lang: String?)]
-        let writeback: ([[SyntaxToken]]) -> [(scope: Scope, value: HighlightValue)]
+        let finalize: ([[SyntaxToken]]) -> HighlightValue?
     }
 
     /// **The single switch a new highlight-bearing block kind has to
-    /// touch.** `nil` = no highlight contribution.
-    private static func plan(for block: Block) -> Plan? {
+    /// touch.** Returns an empty array for kinds without highlight
+    /// contribution.
+    private static func subPlans(for block: Block) -> [SubPlan] {
         switch block.kind {
         case .codeBlock(let language, let code):
-            return Plan(
-                payload: [(code, language)],
-                writeback: { results in
-                    [(.codeBlock, .tokens(results.first ?? []))]
-                })
+            return [
+                SubPlan(
+                    scope: .codeBlock,
+                    sourceKey: fingerprint(payload: [(code, language)]),
+                    payload: [(code, language)],
+                    finalize: { results in .tokens(results.first ?? []) }
+                )
+            ]
 
         case .toolGroup(let group):
             // Fan every child's highlight payload into one shared JS
             // round-trip. Each child decides its own request slice via
-            // `ToolGroupChildHighlight.requests(for:)`; the writeback
-            // walks the per-child ranges, asks each child to fold its
-            // tokens into a `HighlightValue`, and emits a `(scope,
-            // value)` pair keyed by `child.id`. Adding a new
-            // highlight-bearing child kind is one switch arm in
-            // `ToolGroupChildHighlight` — no work here.
-            var payload: [(code: String, lang: String?)] = []
-            var ranges:
-                [(
-                    itemId: UUID, range: Range<Int>,
-                    finalize: ([[SyntaxToken]]) -> HighlightValue?
-                )] = []
-            for child in group.children {
+            // `ToolGroupChildHighlight.requests(for:)`; the source
+            // fingerprint covers the full slice so changing one
+            // child's payload doesn't invalidate the others.
+            return group.children.compactMap { child -> SubPlan? in
                 guard let plan = ToolGroupChildHighlight.requests(for: child)
-                else { continue }
-                let start = payload.count
-                payload.append(contentsOf: plan.payload)
-                let end = payload.count
-                guard end > start else { continue }
-                ranges.append((child.id, start..<end, plan.finalize))
+                else { return nil }
+                return SubPlan(
+                    scope: .toolGroupChild(itemId: child.id),
+                    sourceKey: fingerprint(payload: plan.payload),
+                    payload: plan.payload,
+                    finalize: plan.finalize)
             }
-            guard !payload.isEmpty else { return nil }
-            return Plan(
-                payload: payload,
-                writeback: { results in
-                    var out: [(scope: Scope, value: HighlightValue)] = []
-                    for (itemId, range, finalize) in ranges {
-                        let slice = Array(results[range])
-                        guard let value = finalize(slice) else { continue }
-                        out.append((.toolGroupChild(itemId: itemId), value))
-                    }
-                    return out
-                })
 
         case .heading, .paragraph, .image, .userAttachments, .list, .table,
             .blockquote, .thematicBreak, .userBubble, .loadingPill:
-            return nil
+            return []
         }
+    }
+
+    /// Per-process content fingerprint for a sub-plan payload. Used as
+    /// the dedup key in `sourceKeys` — equality means "same content was
+    /// already scheduled, skip the work." `Hasher` is seeded per
+    /// process, which is fine: `sourceKeys` lives in memory only and
+    /// never crosses a launch boundary.
+    private static func fingerprint(payload: [(code: String, lang: String?)]) -> String {
+        var hasher = Hasher()
+        hasher.combine(payload.count)
+        for entry in payload {
+            hasher.combine(entry.code)
+            hasher.combine(entry.lang)
+        }
+        return String(hasher.finalize())
     }
 }

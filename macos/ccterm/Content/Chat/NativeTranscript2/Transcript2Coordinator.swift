@@ -520,12 +520,13 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             let updated = Block(id: id, kind: kind)
             blocks[i] = updated
             removeCachedLayout(for: id)
-            // Drop stale highlight tokens (the new kind may carry a
-            // different code or language, or no highlight at all). The
-            // generation guard inside `drop` also invalidates any
-            // in-flight task for the previous content, then `schedule`
-            // kicks the new pass for the replacement kind.
-            highlightStorage.drop(blockId: id)
+            // Per-scope diff: `schedule` compares each scope's payload
+            // fingerprint against `sourceKeys` and only re-tokenises the
+            // scopes whose payload actually changed. Unchanged sibling
+            // children (typical when a tool_result attaches to one
+            // child of a tool group) keep their cached tokens, so the
+            // visible row doesn't flicker plain → coloured. Drop is
+            // reserved for `.remove`.
             highlightStorage.schedule(updated)
             // Content replacement invalidates the prior selection range
             // (offsets no longer index into the same string). Drop now so

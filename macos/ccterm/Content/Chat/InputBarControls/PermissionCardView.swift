@@ -66,7 +66,7 @@ struct PermissionCardView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: BlockStyle.maxLayoutWidth, alignment: .leading)
         .modifier(PermissionCardSurface(cornerRadius: Self.cornerRadius))
     }
 

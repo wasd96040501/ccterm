@@ -120,6 +120,21 @@ struct InputBarView2: View {
     /// `onAttachRect` so the 8pt spacing between the two is NOT cut,
     /// letting the scrim's gradient bridge them naturally.
     var onPillRect: ((CGRect) -> Void)? = nil
+    /// Working directory for file mentions and slash command lookups.
+    /// Nil while still composing a draft with no folder picked — both
+    /// triggers display a "pick a folder first" hint in that state.
+    var directory: String? = nil
+    /// Extra workspace dirs joined with `directory` for multi-dir file
+    /// lookups (each match carries a `lastPathComponent` badge).
+    var additionalDirs: [String] = []
+    /// Plugin search dirs forwarded to `SlashCommandStore`'s cache key
+    /// (a different plugin set means a different command set).
+    var pluginDirs: [String] = []
+    /// Chat mode passes the session's already-resolved slash command
+    /// list to bypass `SlashCommandStore`'s temp-CLI fetch. Compose
+    /// mode leaves this `nil` so the store goes through its cache
+    /// (warmed by `CompletionPrewarmer`).
+    var knownSlashCommands: [SlashCommand]? = nil
 
     @State private var text: String = ""
     @State private var isFocused: Bool = false
@@ -129,6 +144,11 @@ struct InputBarView2: View {
     /// True while a file drag is hovering anywhere over the bar. Drives the
     /// dashed accent stroke on the pill + attach button.
     @State private var isDropTargeted: Bool = false
+    /// Drives the completion popup that sits directly above the
+    /// thumbnail strip (or directly above the text row when no
+    /// attachment is present). Created once per InputBarView2; the bar
+    /// rewires its provider closures every render via `triggerContext`.
+    @State private var completion = CompletionViewModel()
 
     var body: some View {
         // `.bottom` (not `.center`) so the attach button always sits at
@@ -160,6 +180,27 @@ struct InputBarView2: View {
 
     private var pill: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // Completion popup sits at the top of the pill, ABOVE the
+            // thumbnail strip. Priority: completion outranks attachments,
+            // so an open completion list stays anchored to the text row
+            // even when images are attached. No animation — popup show /
+            // hide should feel instant, not crossfade.
+            if completion.isActive {
+                CompletionListView(
+                    viewModel: completion,
+                    onConfirm: { item in confirmCompletion(item: item, keepSession: false) },
+                    onDrillDown: { item in confirmCompletion(item: item, keepSession: true) },
+                    onDeleteRecent: { item in
+                        guard let dirItem = item as? DirectoryCompletionItem else { return }
+                        DirectoryCompletionProvider.removeFromRecent(dirItem.path)
+                        completion.removeItem {
+                            ($0 as? DirectoryCompletionItem)?.path == dirItem.path
+                        }
+                    }
+                )
+                .padding(.vertical, 4)
+                Divider()
+            }
             if !attachments.isEmpty {
                 thumbnailStrip
                 Divider()
@@ -270,8 +311,34 @@ struct InputBarView2: View {
             font: .systemFont(ofSize: 14),
             minLines: 1,
             maxLines: 10,
-            onCommandReturn: { handleSend() },
-            onEscape: { if isRunning { onStop() } },
+            onTextChanged: { newText, cursor in
+                completion.checkTrigger(
+                    text: newText,
+                    cursorLocation: cursor,
+                    hasMarkedText: false,
+                    context: triggerContext
+                )
+            },
+            onCommandReturn: {
+                // Completion takes priority: hitting Enter / Cmd+Enter
+                // while the popup is open confirms the highlighted
+                // entry rather than sending the half-typed message.
+                if completion.isActive,
+                    let result = completion.confirmSelection(keepSession: false)
+                {
+                    applyReplacement(result)
+                    return
+                }
+                handleSend()
+            },
+            onEscape: {
+                if completion.isActive {
+                    completion.dismiss()
+                    return
+                }
+                if isRunning { onStop() }
+            },
+            keyInterceptor: handleCompletionKey,
             isFocused: $isFocused,
             desiredCursorPosition: $desiredCursorPosition
         )
@@ -327,6 +394,65 @@ struct InputBarView2: View {
         onSubmit(Submission(text: trimmed, images: images, filePaths: filePaths))
         text = ""
         attachments = []
+        completion.dismiss()
+    }
+
+    // MARK: - Completion glue
+
+    /// Built fresh per render so trigger rules see the latest
+    /// `directory` / `additionalDirs` / `knownSlashCommands` values
+    /// (e.g. after the configurator's folder switch or after the
+    /// session's initialize response lands).
+    private var triggerContext: CompletionTriggerContext {
+        CompletionTriggerContext(
+            directory: directory,
+            additionalDirs: additionalDirs,
+            pluginDirs: pluginDirs,
+            knownSlashCommands: knownSlashCommands
+        )
+    }
+
+    /// Keyboard navigation while the popup is open. Returns true when
+    /// the event is consumed; the underlying text view does nothing
+    /// further with it.
+    private func handleCompletionKey(_ event: NSEvent) -> Bool {
+        guard completion.isActive else { return false }
+        switch event.keyCode {
+        case 126:  // Up
+            completion.moveSelectionUp()
+            return true
+        case 125:  // Down
+            completion.moveSelectionDown()
+            return true
+        case 48:  // Tab
+            if let result = completion.confirmSelection(keepSession: true) {
+                applyReplacement(result)
+            }
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Run a completion replacement: splice `result.replacement` into
+    /// the text at `result.range` and move the cursor to the end of the
+    /// inserted text via `desiredCursorPosition`.
+    private func confirmCompletion(item: any CompletionItem, keepSession: Bool) {
+        guard completion.isActive else { return }
+        // Set selectedIndex by finding the item; CompletionListView taps
+        // already update selectedIndex before invoking the callback.
+        if let result = completion.confirmSelection(keepSession: keepSession) {
+            applyReplacement(result)
+        }
+    }
+
+    private func applyReplacement(_ result: (range: NSRange, replacement: String)) {
+        let ns = text as NSString
+        guard result.range.location >= 0,
+            result.range.location + result.range.length <= ns.length
+        else { return }
+        text = ns.replacingCharacters(in: result.range, with: result.replacement)
+        desiredCursorPosition = result.range.location + (result.replacement as NSString).length
     }
 
     // MARK: - Picker

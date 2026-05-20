@@ -330,9 +330,22 @@ struct NewSessionConfigurator<InputBar: View>: View {
 
     // MARK: - Right column (Main content + embedded input bar)
 
+    /// Reserved bottom space inside `mainColumn` so the recents list
+    /// stops above where the input bar lives. Sized for the bar at rest
+    /// (pill 32 + chrome spacing 10 + chrome row 22 + top/bottom
+    /// paddings 14+18). The bar is rendered as a z-axis overlay rather
+    /// than a VStack sibling so that completion popups expand upward
+    /// over the recents list instead of squeezing the pill's text row.
+    /// Computed (not stored) because Swift bans `static let` on generic
+    /// types.
+    private static var inputBarReservedHeight: CGFloat { 96 }
+
     /// Top-aligned hero + body + bottom-anchored input bar. The middle
     /// "recent sessions" section absorbs the slack so the input bar
     /// sits at the same Y regardless of how many recents the user has.
+    /// The bar itself is overlaid on the z-axis (see
+    /// `inputBarReservedHeight`) so an open completion popup can grow
+    /// upward over the recents list rather than compress the pill.
     @ViewBuilder
     private var mainColumn: some View {
         let branchVisible = probe.currentBranch != nil
@@ -363,19 +376,20 @@ struct NewSessionConfigurator<InputBar: View>: View {
             recentSessionsBody(recentSessions)
                 .padding(.horizontal, 28)
                 .padding(.top, 6)
+                .padding(.bottom, Self.inputBarReservedHeight)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-
-            // Input bar zone: the embedded bar provided by
-            // `RootView2`. The bar's own internal layout (pill,
-            // attach, chrome row) is untouched — this view only
-            // positions it. No divider above the bar; the pill's own
-            // stroke is the visual edge.
-            inputBar()
-                .padding(.horizontal, 28)
-                .padding(.top, 14)
-                .padding(.bottom, 18)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .overlay(alignment: .bottom) {
+            // Bar lives on the z-axis, not as a VStack sibling — its
+            // maximum height equals the whole card, so an open
+            // completion popup grows upward freely (clipped only by
+            // the card's outer `clipShape` at the top edge) instead
+            // of being squeezed by the recents list above.
+            inputBar()
+                .padding(.horizontal, 28)
+                .padding(.bottom, 18)
+        }
     }
 
     /// "Start Building <name>" with the project name in the accent

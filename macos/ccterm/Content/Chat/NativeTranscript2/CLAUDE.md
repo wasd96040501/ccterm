@@ -104,9 +104,11 @@ row — search-as-you-type turns into a frame-budget killer.
 
 `cacheLayouts(_:width:)` ([:540-545](Transcript2Coordinator.swift:540)) skips writes when the cache already has a fresh entry at the same width. An inflight background task that completes after a sync `apply` evicted + lazy-refilled the entry would otherwise overwrite the authoritative fresh layout with its older snapshot. **Cost of dropping the check**: cache poisoning under interleaved `apply` + `applyInBackground` / `refillLayoutCache` traffic.
 
-### 2.15 Generation guard in `Transcript2HighlightStorage`
+### 2.15 Per-scope dedup + generation guard in `Transcript2HighlightStorage`
 
-`schedule` / `drop` bump `inflightGen[blockId]`; a job compares generations on completion and discards on drift. **Cost of dropping**: an `.update` that replaces `oldCode` with `newCode` lets the in-flight job for the old version write back, painting stale tokens onto current content.
+`sourceKeys[Key] = fingerprint(payload)` records what produced (or is producing) each scope's tokens. On `schedule`, sub-plans whose fingerprint matches the cached value are skipped — no drop, no JS call, no `onDidFill`. **Cost of dropping**: a tool-group whose `kind` changes because one child got its `tool_result` (sibling-driven `.update`) would have its other children's tokens dropped and re-tokenised; visible row flashes plain → coloured during streaming.
+
+`inflightGen[Key]` is per-scope (not per-block): every `schedule` that targets a scope bumps that scope's gen, every `drop` bumps every scope on the block. A job compares per-scope generations on completion and discards individual scope writebacks on drift. **Cost of per-block gen**: a sibling `schedule` would invalidate every in-flight scope under that block, dropping legitimate writebacks for unrelated scopes.
 
 ### 2.16 Shimmer overlay: CALayer + CTLine + subpixel `xOffset` + image cache
 
@@ -182,7 +184,7 @@ The `Change` enum (emitted by `Transcript2Controller`) is the only shape `applyS
 |---|---|---|
 | `.insert(after, blocks)` | `insertRows(at:withAnimation:[.effectFade])` | None (lazy lookup on next `viewFor` / `heightOfRow`) |
 | `.remove(ids)` | `removeRows(at:withAnimation:[.effectFade])` | `removeCachedLayout(for: id)` + `selection.dropEntry` + `highlightStorage.drop` + remove from `foldStates` / `statusStates` |
-| `.update(id, kind)` | `reloadData(forRowIndexes:) + noteHeightOfRows(withIndexesChanged:)` | `removeCachedLayout` + `highlightStorage.drop` + `highlightStorage.schedule(new)` + `selection.dropEntry` |
+| `.update(id, kind)` | `reloadData(forRowIndexes:) + noteHeightOfRows(withIndexesChanged:)` | `removeCachedLayout` + `highlightStorage.schedule(new)` (per-scope diff — unchanged sibling scopes keep their tokens; see §2.15) + `selection.dropEntry` |
 
 All mutations run inside `beginUpdates` / `endUpdates` ([Transcript2Coordinator.swift:257-261](Transcript2Coordinator.swift:257)). Never `reloadData()` (see §2.11).
 

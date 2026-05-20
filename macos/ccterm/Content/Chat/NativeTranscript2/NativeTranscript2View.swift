@@ -163,12 +163,14 @@ private struct Transcript2NSViewBridge: NSViewRepresentable {
         scroll.contentInsets = NSEdgeInsets(top: 44, left: 0, bottom: 180, right: 0)
 
         let table = Transcript2TableView()
-        // Born hidden. `Transcript2Coordinator` flips alpha back to 1
-        // synchronously once the first-screen anchor scroll has landed
-        // (`markAnchorSettled` / `consumeDesiredAnchor`) — guarantees the
-        // user never sees the pre-scroll frame (table at row 0). For
-        // sessions with no blocks at attach, `tableView.didSet`
-        // immediately sets this back to 1 (nothing to flicker).
+        // Born hidden. `Transcript2Coordinator.markAnchorSettled` flips
+        // alpha back to 1 once the first-screen scroll has landed —
+        // either synchronously from `setHistory`'s Phase 1 (real-width
+        // path), or from `Transcript2Controller.handleFirstTile` on the
+        // first 0→positive tile (deferred path). Guarantees the user
+        // never sees the pre-scroll frame (table at row 0). For sessions
+        // with no blocks at attach, `tableView.didSet` immediately sets
+        // this back to 1 (nothing to flicker).
         table.alphaValue = 0
         table.headerView = nil
         table.backgroundColor = .clear

@@ -141,6 +141,13 @@ final class Transcript2Controller {
     /// Module-internal: handed to `NativeTranscript2View.makeCoordinator`.
     let coordinator: Transcript2Coordinator
 
+    /// First-tile work waiting for `layoutWidth > 0`. Set by `setHistory`
+    /// when called before the table has tiled; drained by `handleFirstTile`
+    /// on the next 0→positive transition. Survives `tableView` detach /
+    /// re-attach so a user who navigates away mid-load returns to the
+    /// requested anchor when they come back.
+    private var pendingFirstTile: InitialAnchor?
+
     /// Last `setLoading(_:)` intent. Source of truth for whether the
     /// trailing pill row should be present. The actual block id (if
     /// any) lives in `loadingPillId` — re-pinning the pill to the
@@ -201,6 +208,9 @@ final class Transcript2Controller {
         }
         coordinator.onAnchorSettledChanged = { [weak self] settled in
             self?.isAnchorSettled = settled
+        }
+        coordinator.onTableDidTile = { [weak self] in
+            self?.handleFirstTile()
         }
         coordinator.search.onStateChanged = { [weak self] in
             self?.refreshSearchState()
@@ -346,8 +356,8 @@ final class Transcript2Controller {
     /// the new full block list, `anchor` is the scroll position the table
     /// must land at once layout settles. Resets `isAnchorSettled` to
     /// false; flips back to true after Phase 1 scrolls (real-width
-    /// branch) or after `tableFrameDidChange`'s deferred consumer scrolls
-    /// (zero-width branch).
+    /// branch) or after `handleFirstTile` scrolls on the next 0→positive
+    /// `tableFrameDidChange` transition (zero-width branch).
     ///
     /// Two-phase internally for large snapshots: Phase 1 (sync) inserts a
     /// viewport-covering slice so the user sees correct content
@@ -367,12 +377,10 @@ final class Transcript2Controller {
     func setHistory(_ blocks: [Block], anchor: InitialAnchor = .bottom) {
         guard !blocks.isEmpty else { return }
 
-        // Record the anchor on the coordinator and flip `isAnchorSettled`
-        // back to false up front. The settled flag stays false until either
-        // Phase 1 below scrolls (real-width branch) or
-        // `tableFrameDidChange`'s deferred consumer scrolls on the next
-        // 0→positive transition (zero-width branch).
-        coordinator.setDesiredAnchor(anchor)
+        // Flip `isAnchorSettled` back to false up front. SwiftUI consumers
+        // see false→true on every new snapshot landing; Phase 1 (below) or
+        // `handleFirstTile` (after first tile) restores true.
+        coordinator.markAnchorUnsettled()
 
         let width = coordinator.layoutWidth
         let viewportHeight = coordinator.viewportHeight
@@ -382,13 +390,13 @@ final class Transcript2Controller {
             // — live `.appended` events on background sessions whose view
             // hasn't been mounted yet — can resolve anchors against a
             // populated array. Scroll-to-anchor is deferred to
-            // `tableFrameDidChange`'s 0→positive consumer, which reads
-            // `coordinator.desiredAnchor` once row heights re-query at
-            // the real width.
+            // `handleFirstTile`, fired by the coordinator's first
+            // 0→positive `tableFrameDidChange` after the real width tiles.
             //
             // Idempotent on re-entry: if `coordinator.blocks` already
             // matches `blocks` (e.g. a second `setHistory(same payload)`
             // — rare, mostly tests), skip the insert.
+            pendingFirstTile = anchor
             if coordinator.blockIds != blocks.map(\.id) {
                 let existing = coordinator.blockIds
                 var changes: [Transcript2Controller.Change] = []
@@ -400,6 +408,11 @@ final class Transcript2Controller {
             }
             return
         }
+
+        // Real-width path will scroll synchronously below; drop any
+        // pending first-tile from an earlier deferred-path call so the
+        // tile handler doesn't double-scroll on the same anchor landing.
+        pendingFirstTile = nil
 
         let slice = Self.sliceForViewport(
             blocks: blocks, anchor: anchor,
@@ -469,6 +482,31 @@ final class Transcript2Controller {
                 [weak coordinator] in coordinator?.popScrollerHidden()
             }
         }
+    }
+
+    /// Called by `Transcript2Coordinator` on the first 0→positive
+    /// `tableFrameDidChange` transition after a `tableView` attach.
+    /// Two scenarios resolved here:
+    ///
+    /// 1. **Pending `setHistory`** — `pendingFirstTile` carries the
+    ///    requested anchor. Blocks were already injected at width=0;
+    ///    only the scroll is left.
+    /// 2. **Plain re-attach** — controller already has blocks (bridge
+    ///    accumulated state or a prior `setHistory` landed) but no
+    ///    pending anchor. Default to `.bottom` so re-entering a
+    ///    session always lands at the latest message.
+    ///
+    /// `markAnchorSettled` runs in both branches — flips alpha to 1 and
+    /// fires the `@Observable` `isAnchorSettled` mirror.
+    private func handleFirstTile() {
+        let anchor: InitialAnchor? = {
+            if let pending = pendingFirstTile { return pending }
+            return coordinator.blockIds.isEmpty ? nil : .bottom
+        }()
+        pendingFirstTile = nil
+        guard let anchor else { return }
+        coordinator.scrollToInitialAnchor(anchor)
+        coordinator.markAnchorSettled()
     }
 
     // MARK: - Search

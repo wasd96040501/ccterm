@@ -3,11 +3,14 @@ import SwiftUI
 
 /// Row of per-session controls rendered directly under the input bar
 /// — outside the pill, with its left and right edges aligned to the
-/// **pill's** leading and trailing edges (NOT to the attach `+`
-/// floating to the bar's left). Visually the `+` is a discrete
-/// floating control beside the bar; the chrome row belongs to the bar
-/// proper, so it's inset past the attach button + the bar's internal
-/// gap to start where the pill starts.
+/// **flat** (non-rounded) portion of the pill's bottom edge (NOT to
+/// the attach `+` floating to the bar's left, nor to the pill's outer
+/// rect). Visually the `+` is a discrete floating control beside the
+/// bar; the chrome row belongs to the bar proper, so it's inset past
+/// the attach button + the bar's internal gap to start where the
+/// pill starts, then inset again by the pill's corner radius so the
+/// row aligns under the straight section of the pill rather than
+/// sitting under the rounded corners.
 ///
 /// Layout: `[Permission] ────── [Model · Effort] [Context ring]`.
 struct InputBarSessionChrome: View {
@@ -35,7 +38,8 @@ struct InputBarSessionChrome: View {
             ModelEffortPicker(session: session)
             ContextRingButton(session: session)
         }
-        .padding(.leading, Self.pillLeadingInset)
+        .padding(.leading, Self.pillLeadingInset + InputBarView2.cornerRadius)
+        .padding(.trailing, InputBarView2.cornerRadius)
     }
 
     /// Resolves `session.model` to the matching `ModelInfo` from the

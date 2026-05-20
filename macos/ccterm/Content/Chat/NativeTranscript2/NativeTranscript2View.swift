@@ -78,9 +78,7 @@ struct UserBubbleSheetView: View {
 /// `NSViewRepresentable` half — internal (not `private`) so the
 /// dismount-contract unit test in `Transcript2AnchorSettledTests` can
 /// drive `dismantleNSView` directly without re-creating the SwiftUI
-/// hosting lifecycle. No behavior change vs. the previous `private`
-/// modifier; the only caller from outside this file is the test, and
-/// it calls the same static method SwiftUI does.
+/// hosting lifecycle.
 struct Transcript2NSViewBridge: NSViewRepresentable {
     let controller: Transcript2Controller
 
@@ -124,12 +122,12 @@ struct Transcript2NSViewBridge: NSViewRepresentable {
         scroll.contentInsets = NSEdgeInsets(top: 44, left: 0, bottom: 180, right: 0)
 
         let table = Transcript2TableView()
-        // Born hidden. `Transcript2Coordinator.scheduleSettleAfterFrameLands`
-        // unhides it on the CADisplayLink tick after the first-screen
-        // anchor scroll lands — guarantees the user never sees the
-        // pre-scroll frame (table at row 0) even for one display refresh.
-        // For sessions with no blocks at attach, `tableView.didSet`
-        // immediately sets this back to 1 (nothing to flicker).
+        // Born hidden. `Transcript2Coordinator.markAnchorSettled` /
+        // `consumeDesiredAnchor` unhide it (`alphaValue = 1`) once the
+        // first-screen anchor scroll has landed — guarantees the user
+        // never sees the pre-scroll frame (table at row 0). For sessions
+        // with no blocks at attach, `tableView.didSet` immediately sets
+        // this back to 1 (nothing to flicker).
         table.alphaValue = 0
         table.headerView = nil
         table.backgroundColor = .clear
@@ -178,19 +176,12 @@ struct Transcript2NSViewBridge: NSViewRepresentable {
         // this the ref auto-nils silently during dealloc, which does NOT
         // fire `willSet`/`didSet` — so the matched reset path in
         // `Transcript2Coordinator.tableView.didSet` (setAnchorSettled(false),
-        // lastLayoutWidth=-1) only runs on attach, not on detach.
-        //
-        // The architectural contract `isAnchorSettled` carries — "first-
-        // screen anchor has landed for the **currently-attached**
-        // NSTableView" — requires that the flag flip to false the moment
-        // no NSTableView is bound. Consumers in `RootView2` watch this
-        // flag through `.onChange(of: currentController?.isAnchorSettled,
-        // initial: true)` to mask the sidebar-switch bake; a stale-`true`
-        // across an unmounted window means re-entry into the same session
-        // can see `true → true` (no transition) at the body re-eval, and
-        // the bake-clear fires on a body pass where the new tableView
-        // either isn't attached yet or hasn't tiled. The user-visible
-        // symptom: "瞬间看到 transcript 开头的内容" on re-entry.
+        // lastLayoutWidth=-1) only runs on attach, not on detach. The new
+        // table on re-entry needs the same first-screen scroll path the
+        // cold mount takes; a stale-`true` `isAnchorSettled` would skip
+        // `tableFrameDidChange`'s deferred consumer (`!isAnchorSettled`
+        // guard) and the table would stay at row 0 instead of scrolling
+        // to the desired anchor.
         //
         // Identity guard against unusual SwiftUI lifecycles: only nil if
         // the coordinator still points at the view we're dismantling. If

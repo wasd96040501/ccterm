@@ -76,8 +76,7 @@ final class Transcript2Controller {
     /// "First-screen anchor has landed for the currently-attached
     /// `NSTableView`." Mirrors `Transcript2Coordinator.isAnchorSettled`
     /// so SwiftUI hosts can observe it directly — e.g. fade in the
-    /// transcript once the anchor is stable, or trigger an image-bake
-    /// after the first frame settles.
+    /// transcript once the anchor is stable.
     ///
     /// Resets to false on every `setHistory` and on every fresh table
     /// attach (session switch / view rebuild). Flips to true once

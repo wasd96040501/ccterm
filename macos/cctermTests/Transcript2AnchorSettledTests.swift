@@ -108,15 +108,11 @@ final class Transcript2AnchorSettledTests: XCTestCase {
     /// rebuild), no NSTableView is attached — the flag must reflect
     /// that and read `false`.
     ///
-    /// **Why this is load-bearing.** `RootView2` observes this flag
-    /// through `.onChange(of: currentController?.isAnchorSettled,
-    /// initial: true)` to drive the sidebar-switch bake-clear. If the
-    /// flag stays stale-`true` across a dismount, on re-entry the
-    /// watcher sees `true → true` (no transition) at body re-eval, so
-    /// the bake-clear can fire on a body pass where the new
-    /// NSTableView either isn't attached yet or hasn't tiled. The
-    /// user-visible symptom is the "瞬间看到 transcript 开头的内容"
-    /// flicker on re-entry into a previously visited history session.
+    /// **Why this is load-bearing.** `tableFrameDidChange`'s deferred
+    /// anchor consumer is gated by `!isAnchorSettled` — a stale-`true`
+    /// across a dismount means the new table on re-entry skips the
+    /// first-screen scroll path, leaving it stuck at row 0 instead of
+    /// landing on the desired anchor.
     ///
     /// **Why `weak var tableView` alone isn't enough.** Swift `willSet`
     /// / `didSet` do **not** fire when a weak reference goes to nil

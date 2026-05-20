@@ -35,6 +35,18 @@ struct RootView2: View {
     @State private var selectedSessionId: String? = SidebarView2.newSessionTag
     @State private var draftSessionId: String?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    /// Bitmap of the outgoing detail content captured the instant the
+    /// user picks a different sidebar row. Overlaid on top of the new
+    /// detail until the incoming transcript's anchor settles, then
+    /// faded out — masks the brief mid-render flicker that's otherwise
+    /// visible during the `.id(sid)` rebuild + history reload.
+    @State private var bakedImage: NSImage?
+    /// Lives for the lifetime of `RootView2`. `DetailBakeProbe`
+    /// registers the detail's NSHostingView-internal container into
+    /// `snapshotter.probeView`; the binding-setter on the sidebar
+    /// calls `snapshotter.snapshot()` synchronously before flipping
+    /// `selectedSessionId`.
+    @State private var bakeSnapshotter = DetailBakeSnapshotter()
     /// Frame of the round attach button, in `detailCoordSpace`. The
     /// bottom scrim cuts a *Circle* hole here.
     @State private var attachRect: CGRect = .zero
@@ -63,9 +75,70 @@ struct RootView2: View {
         selectedSessionId == SidebarView2.newSessionTag
     }
 
+    /// Bake fires only when the *target* is a real history session that
+    /// uses the `ChatHistoryView` render path. Switching into compose,
+    /// archive, or a debug demo tab leaves their own enter animations
+    /// alone (the compose card already fades in via `withAnimation`).
+    private func isHistorySessionTarget(_ sid: String?) -> Bool {
+        guard let sid else { return false }
+        if sid == SidebarView2.newSessionTag { return false }
+        if sid == SidebarView2.archiveTag { return false }
+        #if DEBUG
+        if sid == SidebarView2.transcriptDemoTag { return false }
+        if sid == SidebarView2.transcriptStressTag { return false }
+        if sid == SidebarView2.permissionCardsDemoTag { return false }
+        #endif
+        return true
+    }
+
+    /// The currently displayed session's controller, or nil when the
+    /// detail pane is showing something other than a `ChatHistoryView`
+    /// (compose card, archive, demo). The `@Observable` read of
+    /// `controller.isAnchorSettled` inside `.onChange` below tracks
+    /// settle transitions through this accessor.
+    private var currentSessionController: Transcript2Controller? {
+        guard let sid = effectiveSessionId,
+            isHistorySessionTarget(sid)
+        else { return nil }
+        return manager.existingSession(sid)?.controller
+    }
+
+    /// Sidebar's `selection` binding. Wraps the setter so we can
+    /// **synchronously** snapshot the outgoing detail content before
+    /// `selectedSessionId` is reassigned (after which SwiftUI starts
+    /// dismantling the outgoing `.id(sid)` subtree and the bitmap would
+    /// no longer reflect what the user saw at click-time).
+    ///
+    /// Pre-creating the target `Session` here ensures the
+    /// `currentSessionController` accessor returns a non-nil controller
+    /// on the next body pass, so the `isAnchorSettled` observer wires up
+    /// without waiting for `ChatHistoryView.task` to call
+    /// `prepareDraftSession`. `prepareDraftSession` is idempotent
+    /// get-or-create.
+    private var sidebarSelectionBinding: Binding<String?> {
+        Binding(
+            get: { selectedSessionId },
+            set: { newValue in
+                if newValue != selectedSessionId,
+                    isHistorySessionTarget(newValue)
+                {
+                    bakedImage = bakeSnapshotter.snapshot()
+                    if let nv = newValue {
+                        _ = manager.prepareDraftSession(nv)
+                    }
+                } else if !isHistorySessionTarget(newValue) {
+                    // Switching *away* from history into compose / archive /
+                    // demo: drop any stale bake from a previous transition.
+                    bakedImage = nil
+                }
+                selectedSessionId = newValue
+            }
+        )
+    }
+
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            SidebarView2(selection: $selectedSessionId)
+            SidebarView2(selection: sidebarSelectionBinding)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 350)
         } detail: {
             // `.frame(minWidth:)` on the detail *content* only constrains the
@@ -82,6 +155,45 @@ struct RootView2: View {
             // divider or the window's right edge even at the smallest
             // allowed window width.
             detailContent
+                .background(DetailBakeProbe(snapshotter: bakeSnapshotter))
+                .overlay {
+                    if let img = bakedImage {
+                        // `aspectRatio(.fill)` keeps the bitmap centered
+                        // and clipped to the new detail bounds — if the
+                        // window resized between snapshot and overlay,
+                        // the image still fills the new container without
+                        // black bars or stretched chrome.
+                        //
+                        // No `.transition(.opacity)`. The transcript is
+                        // born `alphaValue = 0` and stays hidden until
+                        // `Transcript2Coordinator`'s CADisplayLink confirms
+                        // the scrolled frame is on screen; the same tick
+                        // flips `isAnchorSettled` and removes the bake.
+                        // Fading the bake would add a temporal overlap
+                        // during which any AppKit re-layout could leak
+                        // through — the alpha gate already covers the
+                        // pre-scroll frame, so an instant swap is correct.
+                        Image(nsImage: img)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .clipped()
+                            .allowsHitTesting(false)
+                    }
+                }
+                // `initial: true` lets the observer evaluate on the first
+                // body pass after a switch; if the incoming session was
+                // already settled (re-entry into a session that never had
+                // its NSTableView torn down — rare under `.id(sid)`, but
+                // possible if compose mode hosted the same id), the bake
+                // clears immediately.
+                .onChange(
+                    of: currentSessionController?.isAnchorSettled ?? true,
+                    initial: true
+                ) { _, settled in
+                    if settled, bakedImage != nil {
+                        bakedImage = nil
+                    }
+                }
                 .navigationSplitViewColumnWidth(min: 680, ideal: 1000)
         }
         // The compose card lives in `ChatHistoryView`'s `.overlay { }`

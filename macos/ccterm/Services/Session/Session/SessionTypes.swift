@@ -19,6 +19,18 @@ struct SlashCommand {
     let description: String?
 }
 
+/// Payload for "an assistant turn just ended on this session." Produced
+/// by `SessionRuntime` at the `.responding` → `.idle` edge and consumed
+/// by the notification service. Values are already user-display ready:
+/// `title` carries the session's display title with empty-state
+/// fallback already applied; `body` is the last assistant text snapshot
+/// (raw, not yet truncated — the consumer applies its own cap).
+struct TurnEndedNotice {
+    let sessionId: String
+    let title: String
+    let body: String
+}
+
 /// Normalize a user message into a single-line sidebar title:
 /// collapse newlines into spaces, trim surrounding whitespace, and
 /// truncate to `maxLength` characters (appending `…` when cut). Result

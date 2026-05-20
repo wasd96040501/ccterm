@@ -182,6 +182,15 @@ final class SessionRuntime {
     /// stale until the next refresh-triggering event.
     @ObservationIgnored var onRecordPersisted: (() -> Void)?
 
+    /// Fired once per live `.responding` → `.idle` edge — i.e. exactly
+    /// when an assistant turn the user kicked off has finished. Payload
+    /// is the session id + display title + a snapshot of the last
+    /// assistant text. Subscriber (SessionManager → NotificationService)
+    /// decides whether to actually post a banner (gated on app focus).
+    /// Closure-injected like the other AppKit-channel sinks so the
+    /// runtime stays UI-agnostic.
+    @ObservationIgnored var onTurnEnded: ((TurnEndedNotice) -> Void)?
+
     /// Hook installed during the bootstrap init wait so
     /// `handleProcessExit` can route "died before init" back into the
     /// bootstrap continuation. Without it, `initialize` would never

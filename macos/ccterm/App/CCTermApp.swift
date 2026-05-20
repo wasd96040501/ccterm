@@ -19,6 +19,7 @@ struct CCTermApp: App {
                 .environment(appState.recentProjects)
                 .environment(\.syntaxEngine, appState.syntaxEngine)
                 .environment(searchBus)
+                .environment(appState.notificationService)
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1200, height: 860)

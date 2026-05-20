@@ -120,6 +120,13 @@ private struct Transcript2NSViewBridge: NSViewRepresentable {
         scroll.contentInsets = NSEdgeInsets(top: 44, left: 0, bottom: 180, right: 0)
 
         let table = Transcript2TableView()
+        // Born hidden. `Transcript2Coordinator` flips alpha back to 1
+        // synchronously once the first-screen anchor scroll has landed
+        // (`markAnchorSettled` / `consumeDesiredAnchor`) — guarantees the
+        // user never sees the pre-scroll frame (table at row 0). For
+        // sessions with no blocks at attach, `tableView.didSet`
+        // immediately sets this back to 1 (nothing to flicker).
+        table.alphaValue = 0
         table.headerView = nil
         table.backgroundColor = .clear
         table.style = .plain
@@ -163,6 +170,25 @@ private struct Transcript2NSViewBridge: NSViewRepresentable {
         coordinator: Transcript2Coordinator
     ) {
         NotificationCenter.default.removeObserver(coordinator)
+        // Explicitly clear the coordinator's `tableView` weak ref. Without
+        // this the ref auto-nils silently during dealloc, which does NOT
+        // fire `willSet`/`didSet` — so the matched reset path in
+        // `Transcript2Coordinator.tableView.didSet`
+        // (`setAnchorSettled(false)`, `lastLayoutWidth = -1`, alpha reset)
+        // would run only on attach, not on detach. Re-entry into the
+        // same session needs the symmetric reset so the next attach
+        // re-runs the first-screen anchor + alpha-unhide path; without
+        // it the table can flash its old scroll position before the
+        // new anchor lands.
+        //
+        // Identity guard against unusual SwiftUI lifecycles: only nil if
+        // the coordinator still points at the view we're dismantling. If
+        // a sibling makeNSView already reassigned (rare; only possible
+        // when a new make of the same coordinator races a stale dismantle
+        // of the old view), preserve the new bind.
+        if coordinator.tableView === (nsView.documentView as? NSTableView) {
+            coordinator.tableView = nil
+        }
     }
 }
 

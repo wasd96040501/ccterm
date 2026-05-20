@@ -71,7 +71,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             // SwiftUI rebuild). Until this fresh table tiles to a positive
             // width and consumes `desiredAnchor`, the first-screen anchor
             // is *not* settled — flip back to false so external observers
-            // (fade-in, image-bake, …) can wait for re-stabilization.
+            // can wait for re-stabilization.
             setAnchorSettled(false)
             // Reset the frame-change short-circuit so the new table's
             // first 0→positive transition reaches `consumeDesiredAnchor`.
@@ -80,11 +80,20 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             // because `width == lastLayoutWidth` short-circuits the
             // notification handler.
             lastLayoutWidth = -1
-            // If `apply` was called before the table was attached, blocks
-            // already exist; the freshly-attached table starts at
-            // `numberOfRows = 0` until reloaded.
-            if let table = tableView, !blocks.isEmpty {
-                table.reloadData()
+            if let table = tableView {
+                if !blocks.isEmpty {
+                    // Re-entry / bridge-accumulated state: blocks exist
+                    // before any tile. The table is born hidden
+                    // (`alphaValue = 0` from `makeNSView`); the anchor
+                    // consumer unhides it after the scrolled frame lands.
+                    table.reloadData()
+                } else {
+                    // Nothing to scroll → nothing can flicker. Unhide now
+                    // so empty / pre-`setHistory` sessions don't sit
+                    // invisible waiting for an anchor that will never
+                    // arrive.
+                    table.alphaValue = 1
+                }
             }
         }
     }
@@ -138,11 +147,13 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     }
 
     /// Real-width `setHistory` Phase 1 has already scrolled the table to
-    /// the anchor; this just records that the first-screen contract is
-    /// fulfilled for the currently-attached table. Phase 2's later
-    /// prepend uses `.saveVisible(...)` and does not move the visual
-    /// anchor, so calling this between Phase 1 and Phase 2 is safe.
+    /// the anchor; this records that the first-screen contract is
+    /// fulfilled for the currently-attached table and unhides the table
+    /// (born `alphaValue = 0` in `makeNSView`). Phase 2's later prepend
+    /// uses `.saveVisible(...)` and does not move the visual anchor, so
+    /// calling this between Phase 1 and Phase 2 is safe.
     func markAnchorSettled() {
+        tableView?.alphaValue = 1
         setAnchorSettled(true)
     }
 
@@ -1047,6 +1058,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         case .bottomTo(let id):
             scrollRowToBottom(id: id, in: tableView)
         }
+        tableView.alphaValue = 1
         setAnchorSettled(true)
     }
 

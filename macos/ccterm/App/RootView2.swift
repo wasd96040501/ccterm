@@ -12,13 +12,11 @@ struct RootView2: View {
     fileprivate static let topFadeScrimHeight: CGFloat = 80
     /// Width clamp for the resting input bar in chat mode — keeps the
     /// bar visually recessed from the transcript column (which caps at
-    /// `BlockStyle.maxLayoutWidth = 780`). Also aligned with
-    /// `NewSessionConfigurator.minWidth` so the chat-mode bar's max
-    /// touches the compose card's min, giving the two modes a shared
-    /// upper / lower bound and a consistent "no-clip" handoff as the
-    /// window resizes. Compose mode renders its own bar embedded
-    /// inside the configurator card.
-    fileprivate static let composeMaxWidth: CGFloat = 640
+    /// `BlockStyle.maxLayoutWidth = 780`). Sits below
+    /// `NewSessionConfigurator.minWidth` (640) so the chat-mode bar
+    /// reads as a more compact control than the compose card. Compose
+    /// mode renders its own bar embedded inside the configurator card.
+    fileprivate static let composeMaxWidth: CGFloat = 512
     /// Bottom inset of the input bar in chat mode (matches the previous
     /// `.padding(.bottom, 36)`).
     fileprivate static let chatBottomInset: CGFloat = 36

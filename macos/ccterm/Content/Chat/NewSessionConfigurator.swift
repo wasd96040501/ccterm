@@ -442,28 +442,18 @@ struct NewSessionConfigurator<InputBar: View>: View {
     @ViewBuilder
     private var worktreeMenu: some View {
         Menu {
-            Button {
-                useWorktree = false
+            // Inline Picker so AppKit drives the menu-item state — the
+            // unselected row keeps the leading checkmark column reserved,
+            // keeping both labels vertically aligned. A pair of buttons
+            // with a conditionally-rendered checkmark icon collapses the
+            // icon column when absent and shifts the unselected label left.
+            Picker(selection: $useWorktree) {
+                Text(String(localized: "Local")).tag(false)
+                Text(String(localized: "New Worktree")).tag(true)
             } label: {
-                Label {
-                    Text(String(localized: "Local"))
-                } icon: {
-                    if !useWorktree {
-                        Image(systemName: "checkmark")
-                    }
-                }
+                EmptyView()
             }
-            Button {
-                useWorktree = true
-            } label: {
-                Label {
-                    Text(String(localized: "New Worktree"))
-                } icon: {
-                    if useWorktree {
-                        Image(systemName: "checkmark")
-                    }
-                }
-            }
+            .pickerStyle(.inline)
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: useWorktree ? "folder.badge.plus" : "folder")

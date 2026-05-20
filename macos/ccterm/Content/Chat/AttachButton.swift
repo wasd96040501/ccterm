@@ -1,32 +1,24 @@
 import SwiftUI
 
-/// Standalone `+` button for the input bar. A single tap opens the host's
-/// attachment picker (any file). The host decides how to display the
-/// picked file — image files get a thumbnail preview, everything else
-/// gets the Finder file icon.
+/// Standalone `+` button for the input bar. Clicking pops a single-item
+/// SwiftUI `Menu` — "Attach Image or File" — which then drives the host's
+/// `NSOpenPanel` flow. The host decides how to display the picked file —
+/// image files get a thumbnail preview, everything else gets the Finder
+/// file icon.
 ///
-/// Three stacked layers in a 32×32 ZStack, matching the pill's height:
+/// Structure mirrors `NewSessionConfigurator.worktreeMenu` + `HoverCapsuleStyle`:
 ///
-/// 1. **Static surface** (Circle) — mirrors `InputBarView2.barSurface`:
-///    - macOS 26+: `glassEffect(.regular, in: Circle())`.
-///    - macOS 14/15: `.thickMaterial` (dark) / `.bar` (light), clipped
-///      to a circle, with the same separator stroke as the pill.
-///
-/// 2. **Hover overlay** — a `Color.primary.opacity` fill driven by
-///    `.onHover`. Apple Developer Forums #742966 documents
-///    `.onHover { hovering in ... }` + `@State` as the recommended
-///    SwiftUI pattern for hover background highlights on macOS.
-///    `.borderlessButton` button style doesn't paint a hover background
-///    of its own; `.hoverEffect(.highlight)` changes the *pointer* shape
-///    rather than the view background — neither delivers the subtle tint
-///    Apple uses for toolbar / sidebar action buttons.
-///
-/// 3. **Activator** on top — a transparent `Button` so the surface and
-///    hover overlay show through. `.buttonStyle(.plain)` keeps it
-///    chrome-less.
+/// - `Menu { ... } label: { ... }` provides the popup behaviour.
+/// - `.menuStyle(.button)` lets a custom `ButtonStyle` sit underneath.
+/// - `.menuIndicator(.hidden)` drops the trailing chevron.
+/// - `.buttonStyle(AttachCircleStyle(...))` reads `configuration.isPressed`
+///   and tints the whole 32pt `Circle()`, so press feedback covers the full
+///   disc — and stays on while the menu is open, because SwiftUI keeps
+///   `isPressed = true` for the menu's lifetime.
 struct AttachButton: View {
-    /// Fired when the user taps the `+`. The caller drives the
-    /// `NSOpenPanel` flow so this view stays purely visual.
+    /// Fired when the user picks the "Attach Image or File" menu item.
+    /// The caller drives the `NSOpenPanel` flow so this view stays
+    /// purely visual.
     var onPick: () -> Void
     /// When `true`, the surface stroke flips to accent + a dashed style to
     /// echo the pill's drop-target highlight (driver lives in `InputBarView2`).
@@ -34,42 +26,95 @@ struct AttachButton: View {
 
     static let size: CGFloat = 32
 
-    @State private var isHovered: Bool = false
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        ZStack {
-            surface
-            hoverOverlay
+        Menu {
             Button(action: onPick) {
-                Image(systemName: "plus")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.primary)
-                    .frame(width: Self.size, height: Self.size)
-                    .contentShape(Circle())
+                Label(
+                    String(localized: "Attach Image or File"),
+                    systemImage: "paperclip"
+                )
             }
-            .buttonStyle(.plain)
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.primary)
         }
-        .frame(width: Self.size, height: Self.size)
-        .onHover { isHovered = $0 }
+        .menuStyle(.button)
+        .menuIndicator(.hidden)
+        .buttonStyle(
+            AttachCircleStyle(
+                isDropTargeted: isDropTargeted,
+                colorScheme: colorScheme
+            )
+        )
+        .fixedSize()
         .accessibilityLabel(String(localized: "Attach image or file"))
+    }
+}
+
+/// `ButtonStyle` for `AttachButton`. Delegates the actual visuals to
+/// `AttachCircleModifier` so `@State` (hover) lives in a real `View`
+/// context — `ButtonStyle` is not a `View`, so a `@State` declared on
+/// the style itself wouldn't get SwiftUI storage. Same pattern as
+/// `HoverCapsuleStyle` / `HoverCapsuleModifier`.
+private struct AttachCircleStyle: ButtonStyle {
+    let isDropTargeted: Bool
+    let colorScheme: ColorScheme
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .modifier(
+                AttachCircleModifier(
+                    isDropTargeted: isDropTargeted,
+                    colorScheme: colorScheme,
+                    isPressed: configuration.isPressed
+                )
+            )
+    }
+}
+
+private struct AttachCircleModifier: ViewModifier {
+    let isDropTargeted: Bool
+    let colorScheme: ColorScheme
+    let isPressed: Bool
+
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .frame(width: AttachButton.size, height: AttachButton.size)
+            .background {
+                ZStack {
+                    surface
+                    Circle()
+                        .fill(Color(nsColor: .labelColor).opacity(stateOpacity))
+                    Circle()
+                        .stroke(strokeColor, style: strokeStyle)
+                }
+            }
+            .contentShape(Circle())
+            .onHover { isHovered = $0 }
     }
 
     @ViewBuilder
     private var surface: some View {
         if #available(macOS 26.0, *) {
-            Color.clear
-                .glassEffect(.regular, in: Circle())
-                .overlay {
-                    Circle().stroke(strokeColor, style: strokeStyle)
-                }
+            Color.clear.glassEffect(.regular, in: Circle())
         } else {
             Circle()
                 .fill(colorScheme == .dark ? AnyShapeStyle(.thickMaterial) : AnyShapeStyle(.bar))
-                .overlay {
-                    Circle().stroke(strokeColor, style: strokeStyle)
-                }
         }
+    }
+
+    /// Press opacity matches `HoverCapsuleStyle.pressOpacity` (0.15); hover
+    /// uses the same hoverOpacity (0.08) for consistency with the worktree /
+    /// branch pills. Press wins over hover when both are active.
+    private var stateOpacity: Double {
+        if isPressed { return 0.15 }
+        if isHovered { return 0.08 }
+        return 0
     }
 
     private var strokeColor: Color {
@@ -80,16 +125,6 @@ struct AttachButton: View {
         isDropTargeted
             ? StrokeStyle(lineWidth: 1.5, dash: [4, 3])
             : StrokeStyle(lineWidth: 0.5)
-    }
-
-    /// Tint strength tuned to read like the toolbar / sidebar hover state
-    /// at the system's default control accent: visible against both dark
-    /// (where `.primary` is white) and light (where it's near-black)
-    /// schemes without overpowering the glass beneath.
-    private var hoverOverlay: some View {
-        Circle()
-            .fill(Color.primary.opacity(isHovered ? 0.10 : 0))
-            .animation(.easeOut(duration: 0.12), value: isHovered)
     }
 }
 

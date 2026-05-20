@@ -195,6 +195,21 @@ final class SessionManager {
         archivedRecords = repository.findArchived()
     }
 
+    /// Async variant used by the Archive page's first paint so the
+    /// CoreData fetch lands on a background context instead of blocking
+    /// the main thread. In-memory test repos fall back to the
+    /// synchronous read after a single `Task.yield()` — they're instant
+    /// but the yield still gives SwiftUI a frame to render the page
+    /// chrome before the records appear.
+    func refreshArchivedRecordsAsync() async {
+        if let coreDataRepo = repository as? CoreDataSessionRepository {
+            archivedRecords = await coreDataRepo.findArchivedAsync()
+        } else {
+            await Task.yield()
+            archivedRecords = repository.findArchived()
+        }
+    }
+
     /// Soft-delete: flip the record to `.archived` so it drops out of
     /// `records` / sidebar, while remaining recoverable from the Archive
     /// page. If the session has a live handle, stop the CLI subprocess

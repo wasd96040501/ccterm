@@ -141,6 +141,19 @@ struct RootView2: View {
         .task {
             notifications.bootstrap()
         }
+        // Compose-mode folder pick → draft.cwd. Done eagerly (not at
+        // submit time) so `Session.cwd` reflects the configurator's
+        // choice immediately — that's what the input bar's prewarm
+        // task keys off, and what completion's trigger context reads.
+        // The submit path still calls `setCwd` itself (with a home
+        // fallback), so this is a no-op overwrite there.
+        .task(id: draftCwd) {
+            guard isComposeMode,
+                let sid = draftSessionId,
+                let cwd = draftCwd
+            else { return }
+            manager.prepareDraftSession(sid).draft?.setCwd(cwd)
+        }
         // The user tapped a banner. Pull the corresponding session into
         // view and clear the request so a re-tap on the same id refires.
         .onChange(of: notifications.pendingActivationSessionId, initial: false) {
@@ -458,16 +471,16 @@ private struct InputBarChrome: View {
         manager.prepareDraftSession(sessionId)
     }
 
-    /// Joined view of cwd + additional dirs; used both as the input
-    /// bar's `directory` / `additionalDirs` payload and as the `.task`
-    /// key that prewarms the file index. A computed property (not
-    /// `@State`) so the warm task re-fires whenever the underlying
-    /// `@Observable` config flips.
-    private var warmDirectories: [String] {
-        var dirs: [String] = []
-        if let cwd = session.cwd { dirs.append(cwd) }
-        dirs.append(contentsOf: session.additionalDirectories)
-        return dirs
+    /// Cache key for the prewarm task. SwiftUI re-fires the `.task` only
+    /// when this value changes, so it ends up firing once per (cwd /
+    /// addDirs / pluginDirs) combination — both on the initial entry
+    /// into the session and on every folder switch.
+    private var prewarmKey: CompletionPrewarmer.Key {
+        CompletionPrewarmer.Key(
+            directory: session.cwd,
+            additionalDirs: session.additionalDirectories,
+            pluginDirs: session.pluginDirectories
+        )
     }
 
     var body: some View {
@@ -482,19 +495,24 @@ private struct InputBarChrome: View {
                 onPillRect: onPillRect,
                 directory: session.cwd,
                 additionalDirs: session.additionalDirectories,
-                slashCommandsProvider: { session.slashCommands }
+                pluginDirs: session.pluginDirectories,
+                // Chat-mode passes the live list so the rule short-circuits
+                // the temp-CLI fetch. Compose-mode leaves the array empty
+                // until promotion — that's the signal for `nil` here,
+                // routing through the prewarmed store cache instead.
+                knownSlashCommands: session.hasRecord ? session.slashCommands : nil
             )
             InputBarSessionChrome(session: session)
         }
-        // Async file-index prewarm. Mirrors the `GitProbe.loadHeavy`
-        // pattern used by the branch picker: kicks off the background
-        // load as soon as we know the cwd, so by the time the user
-        // types `@` the file list is already cached. The store is
-        // backed by a serial queue, so a `complete(...)` call that
-        // arrives before warm finishes naturally lands behind it
-        // rather than triggering a second load.
-        .task(id: warmDirectories) {
-            FileCompletionStore.shared.warm(directories: warmDirectories)
+        // Single async-prewarm convergence point. Mirrors the
+        // `GitProbe.loadHeavy` pattern used by the branch picker: kicks
+        // off the background loads as soon as we know the cwd, both on
+        // session entry and on every folder switch. The prewarmer fans
+        // out into the file-index and slash-command stores; both back
+        // their state with a serial queue so any `complete(...)` call
+        // that lands before warm finishes blocks behind it.
+        .task(id: prewarmKey) {
+            CompletionPrewarmer.prewarm(prewarmKey)
         }
         // Permission card floats on top of the bar+chrome stack:
         // bottom-aligned with the chrome row, width pinned to this

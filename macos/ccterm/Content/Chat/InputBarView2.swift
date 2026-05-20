@@ -120,22 +120,21 @@ struct InputBarView2: View {
     /// `onAttachRect` so the 8pt spacing between the two is NOT cut,
     /// letting the scrim's gradient bridge them naturally.
     var onPillRect: ((CGRect) -> Void)? = nil
-    /// Session cwd, fed to file-mention completion. Nil while still
-    /// composing a draft with no folder picked.
+    /// Working directory for file mentions and slash command lookups.
+    /// Nil while still composing a draft with no folder picked — both
+    /// triggers display a "pick a folder first" hint in that state.
     var directory: String? = nil
-    /// Extra workspace dirs joined with `directory` for the multi-dir
-    /// file lookup (multi-folder workspaces show a `lastPathComponent`
-    /// badge per match).
+    /// Extra workspace dirs joined with `directory` for multi-dir file
+    /// lookups (each match carries a `lastPathComponent` badge).
     var additionalDirs: [String] = []
-    /// Synchronous slash command list (already resolved from the CLI's
-    /// initialize response). The trigger rule reads this directly; the
-    /// closure form lets it stay live as the session populates after
-    /// promotion. Nil = no session attached yet.
-    var slashCommandsProvider: (() -> [SlashCommand])? = nil
-    /// Called when the user picks a directory via @-completion in
-    /// compose mode. Used by `DirectoryPickTriggerRule` so the
-    /// configurator's folder selection can be set from inside the bar.
-    var onDirectoryPicked: ((String) -> Void)? = nil
+    /// Plugin search dirs forwarded to `SlashCommandStore`'s cache key
+    /// (a different plugin set means a different command set).
+    var pluginDirs: [String] = []
+    /// Chat mode passes the session's already-resolved slash command
+    /// list to bypass `SlashCommandStore`'s temp-CLI fetch. Compose
+    /// mode leaves this `nil` so the store goes through its cache
+    /// (warmed by `CompletionPrewarmer`).
+    var knownSlashCommands: [SlashCommand]? = nil
 
     @State private var text: String = ""
     @State private var isFocused: Bool = false
@@ -401,18 +400,15 @@ struct InputBarView2: View {
     // MARK: - Completion glue
 
     /// Built fresh per render so trigger rules see the latest
-    /// `directory` / `additionalDirs` / `slashCommandsProvider` values
+    /// `directory` / `additionalDirs` / `knownSlashCommands` values
     /// (e.g. after the configurator's folder switch or after the
     /// session's initialize response lands).
     private var triggerContext: CompletionTriggerContext {
         CompletionTriggerContext(
             directory: directory,
             additionalDirs: additionalDirs,
-            slashCommandProvider: { query in
-                guard let provider = slashCommandsProvider else { return [] }
-                return SlashCommandCompleter.filter(query: query, commands: provider())
-            },
-            onDirectoryPicked: onDirectoryPicked
+            pluginDirs: pluginDirs,
+            knownSlashCommands: knownSlashCommands
         )
     }
 

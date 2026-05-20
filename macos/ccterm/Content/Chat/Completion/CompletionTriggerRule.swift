@@ -13,19 +13,28 @@ protocol CompletionTriggerRule {
     ) -> CompletionViewModel.CompletionSession?
 }
 
-/// Data and action closures passed to trigger rules each time `checkTrigger` runs.
+/// Data passed to each trigger rule. Built fresh per
+/// `checkTrigger` call so rule logic sees the latest config and
+/// directory choices without any stateful subscription dance.
 struct CompletionTriggerContext {
-    /// Session cwd. `nil` while still in compose-mode with no folder picked.
+    /// Working directory the bar should search files / slash commands
+    /// against. `nil` in compose-mode before the user picks a folder —
+    /// neither @ nor / completes anything in that state.
     let directory: String?
-    /// Extra workspace dirs (multi-dir worktree). Joined with `directory`
-    /// for the file mention lookup.
+    /// Extra workspace dirs joined with `directory` for the multi-dir
+    /// file lookup. Each match carries a `lastPathComponent` badge so
+    /// the user can tell sources apart.
     let additionalDirs: [String]
-    /// Synchronous provider over the session's slash command list (already
-    /// resolved from the CLI's initialize response — no subprocess needed).
-    /// Nil when no session is bound (compose mode with no folder).
-    let slashCommandProvider: ((_ query: String) -> [any CompletionItem])?
-    /// Called when a directory is picked via @-completion in compose mode.
-    let onDirectoryPicked: ((_ path: String) -> Void)?
+    /// Plugin search dirs forwarded to the slash command store so its
+    /// per-key cache differentiates configurations that change `plugins`
+    /// without changing `cwd`.
+    let pluginDirs: [String]
+    /// When non-nil, the slash rule short-circuits the store and filters
+    /// this list synchronously — chat-mode sessions already carry the
+    /// command list from the CLI's `initialize` response, so a temp-CLI
+    /// fetch would be wasted. Nil in compose-mode (the store goes
+    /// through `launchTempCLI`).
+    let knownSlashCommands: [SlashCommand]?
 }
 
 // MARK: - Helpers
@@ -59,55 +68,34 @@ struct SlashCommandTriggerRule: CompletionTriggerRule {
             (range: NSRange(location: 0, length: wordEnd), replacement: item.displayText + " ")
         }
 
-        if let slashProvider = context.slashCommandProvider {
+        // No cwd → no source to ask. The popup still mounts in a
+        // "noDirectory" empty state so the user gets a hint instead of
+        // silent dismissal.
+        guard let dir = context.directory else {
             return .init(
                 anchorLocation: 0,
-                provider: { query, cb in cb(slashProvider(query)) },
+                emptyReasonOverride: .noDirectory,
+                provider: { _, cb in cb([]) },
                 makeReplacement: makeReplacement
             )
         }
 
-        // No directory at all
-        return .init(
-            anchorLocation: 0, emptyReasonOverride: .noDirectory, provider: { _, cb in cb([]) },
-            makeReplacement: makeReplacement)
-    }
-}
-
-// MARK: - Directory Pick (@ when no directory)
-
-struct DirectoryPickTriggerRule: CompletionTriggerRule {
-    func match(
-        text: String, cursorLocation: Int, context: CompletionTriggerContext
-    ) -> CompletionViewModel.CompletionSession? {
-        guard context.directory == nil,
-            isTriggerPosition(text: text, cursorLocation: cursorLocation, for: "@")
-        else { return nil }
-
-        let anchorLoc = cursorLocation - 1
-        let onPicked = context.onDirectoryPicked
+        let pluginDirs = context.pluginDirs
+        let known = context.knownSlashCommands
 
         return .init(
-            anchorLocation: anchorLoc,
-            headerText: String(localized: "Pick a working directory first (search ~/) · Tab / Enter · → drill down"),
+            anchorLocation: 0,
             provider: { query, cb in
-                DirectoryCompletionProvider.provide(query: query, completion: cb)
-            },
-            makeReplacement: { item, _, wordEnd, keepSession in
-                let length = wordEnd - anchorLoc
-                let range = NSRange(location: anchorLoc, length: length)
-                if keepSession {
-                    // → drill down: 填入路径继续搜索子目录
-                    return (range: range, replacement: "@" + item.displayText + "/")
-                } else {
-                    // Tab / Enter: 最终确认
-                    return (range: range, replacement: "")
+                SlashCommandStore.shared.complete(
+                    query: query,
+                    path: dir,
+                    pluginDirs: pluginDirs,
+                    knownCommands: known
+                ) { matches in
+                    cb(matches)
                 }
             },
-            onItemConfirmed: { item in
-                guard let dirItem = item as? DirectoryCompletionItem else { return }
-                onPicked?(dirItem.path)
-            }
+            makeReplacement: makeReplacement
         )
     }
 }

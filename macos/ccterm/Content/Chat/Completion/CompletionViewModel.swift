@@ -48,7 +48,6 @@ final class CompletionViewModel {
 
     private let rules: [any CompletionTriggerRule] = [
         SlashCommandTriggerRule(),
-        DirectoryPickTriggerRule(),  // before FileMention: both match "@", directoryPick only when dir==nil
         FileMentionTriggerRule(),
     ]
 

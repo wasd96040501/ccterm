@@ -6,15 +6,15 @@ import SwiftUI
 /// image files get a thumbnail preview, everything else gets the Finder
 /// file icon.
 ///
-/// Structure mirrors `NewSessionConfigurator.worktreeMenu` + `HoverCapsuleStyle`:
+/// Structure:
 ///
 /// - `Menu { ... } label: { ... }` provides the popup behaviour.
-/// - `.menuStyle(.button)` lets a custom `ButtonStyle` sit underneath.
+/// - `.menuStyle(.button)` + `.buttonStyle(.plain)` — the built-in `.plain`
+///   style handles press feedback natively (icon dims while pressed), so
+///   we don't write any hover/press code ourselves.
+/// - The glass / material circle + stroke live inside the label as a
+///   `.background`, so they stay solid while `.plain` dims the icon.
 /// - `.menuIndicator(.hidden)` drops the trailing chevron.
-/// - `.buttonStyle(AttachCircleStyle(...))` reads `configuration.isPressed`
-///   and tints the whole 32pt `Circle()`, so press feedback covers the full
-///   disc — and stays on while the menu is open, because SwiftUI keeps
-///   `isPressed = true` for the menu's lifetime.
 struct AttachButton: View {
     /// Fired when the user picks the "Attach Image or File" menu item.
     /// The caller drives the `NSOpenPanel` flow so this view stays
@@ -40,62 +40,21 @@ struct AttachButton: View {
             Image(systemName: "plus")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.primary)
+                .frame(width: AttachButton.size, height: AttachButton.size)
+                .background {
+                    ZStack {
+                        surface
+                        Circle()
+                            .stroke(strokeColor, style: strokeStyle)
+                    }
+                }
+                .contentShape(Circle())
         }
         .menuStyle(.button)
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
-        .buttonStyle(
-            AttachCircleStyle(
-                isDropTargeted: isDropTargeted,
-                colorScheme: colorScheme
-            )
-        )
         .fixedSize()
         .accessibilityLabel(String(localized: "Attach image or file"))
-    }
-}
-
-/// `ButtonStyle` for `AttachButton`. Delegates the actual visuals to
-/// `AttachCircleModifier` so `@State` (hover) lives in a real `View`
-/// context — `ButtonStyle` is not a `View`, so a `@State` declared on
-/// the style itself wouldn't get SwiftUI storage. Same pattern as
-/// `HoverCapsuleStyle` / `HoverCapsuleModifier`.
-private struct AttachCircleStyle: ButtonStyle {
-    let isDropTargeted: Bool
-    let colorScheme: ColorScheme
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .modifier(
-                AttachCircleModifier(
-                    isDropTargeted: isDropTargeted,
-                    colorScheme: colorScheme,
-                    isPressed: configuration.isPressed
-                )
-            )
-    }
-}
-
-private struct AttachCircleModifier: ViewModifier {
-    let isDropTargeted: Bool
-    let colorScheme: ColorScheme
-    let isPressed: Bool
-
-    @State private var isHovered = false
-
-    func body(content: Content) -> some View {
-        content
-            .frame(width: AttachButton.size, height: AttachButton.size)
-            .background {
-                ZStack {
-                    surface
-                    Circle()
-                        .fill(Color(nsColor: .labelColor).opacity(stateOpacity))
-                    Circle()
-                        .stroke(strokeColor, style: strokeStyle)
-                }
-            }
-            .contentShape(Circle())
-            .onHover { isHovered = $0 }
     }
 
     @ViewBuilder
@@ -106,15 +65,6 @@ private struct AttachCircleModifier: ViewModifier {
             Circle()
                 .fill(colorScheme == .dark ? AnyShapeStyle(.thickMaterial) : AnyShapeStyle(.bar))
         }
-    }
-
-    /// Press opacity matches `HoverCapsuleStyle.pressOpacity` (0.15); hover
-    /// uses the same hoverOpacity (0.08) for consistency with the worktree /
-    /// branch pills. Press wins over hover when both are active.
-    private var stateOpacity: Double {
-        if isPressed { return 0.15 }
-        if isHovered { return 0.08 }
-        return 0
     }
 
     private var strokeColor: Color {

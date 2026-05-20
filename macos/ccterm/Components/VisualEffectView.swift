@@ -13,7 +13,7 @@ struct VisualEffectView: NSViewRepresentable {
     var state: NSVisualEffectView.State
 
     init(
-        material: NSVisualEffectView.Material = .windowBackground,
+        material: NSVisualEffectView.Material = .sidebar,
         blendingMode: NSVisualEffectView.BlendingMode = .behindWindow,
         state: NSVisualEffectView.State = .followsWindowActiveState
     ) {

@@ -11,9 +11,9 @@ import SwiftUI
 /// No motion, no animation — a controlled, restrained texture, not a
 /// decoration.
 struct DotGridBackground: View {
-    var pitch: CGFloat = 24
-    var dotDiameter: CGFloat = 1
-    var opacity: Double = 0.045
+    var pitch: CGFloat = 28
+    var dotDiameter: CGFloat = 2.0
+    var opacity: Double = 0.20
 
     var body: some View {
         Canvas { context, size in

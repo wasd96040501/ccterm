@@ -153,7 +153,7 @@ struct NewSessionConfigurator<InputBar: View>: View {
         // vibrancy backdrop instead of a flat slab sharing its plane.
         // Tuned to be felt, not seen — small enough not to add visual
         // weight to the otherwise restrained surface.
-        .shadow(color: .black.opacity(0.08), radius: 24, x: 0, y: 4)
+        .shadow(color: .black.opacity(0.22), radius: 30, x: 0, y: 10)
         .task(id: folderPath) {
             // Two-stage probe, both keyed off `folderPath`:
             //   1) Cheap, synchronous — `GitProbe.refresh` reads

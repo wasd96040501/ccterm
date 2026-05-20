@@ -249,14 +249,15 @@ struct RootView2: View {
     private func composeStack(sid: String) -> some View {
         ZStack {
             if isComposeMode {
-                // Compose-mode backdrop: vibrancy material lets the
-                // desktop/parent windows faintly bleed through, and the
-                // dot grid gives the otherwise dead space a hint of
-                // structure so the centered card reads as a floating
-                // panel on a textured surface instead of a window
-                // inside the window.
+                // Compose-mode backdrop: an ultra-faint dot grid over
+                // the default windowBackgroundColor gives the otherwise
+                // dead space a hint of structure. The card itself
+                // (rendered on top) carries its own near-imperceptible
+                // dot layer so the texture appears to *continue
+                // through* the translucent material, reinforcing the
+                // "floating panel" read rather than "window inside a
+                // window."
                 ZStack {
-                    VisualEffectView()
                     DotGridBackground()
                     NewSessionConfigurator(
                         folderPath: $draftCwd,

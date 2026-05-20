@@ -765,7 +765,22 @@ struct ToolGroupLayout: @unchecked Sendable {
     /// Paints the group header title only. Child entries are
     /// rendered by their own subviews via the `draw` closures their
     /// `SubviewPlan.Entry` specs carry.
-    func draw(in ctx: CGContext, origin: CGPoint, hoveredAction: HitAction?) {
+    ///
+    /// `dirtyRect` (cell-local) — when supplied, the CTLine retypeset
+    /// is skipped if the group header band sits entirely outside the
+    /// dirty region. Honours the `drawRect:` contract for the rare
+    /// case where the cell's own layer hits the IOSurface tile fallback
+    /// (a multi-screen-tall tool-group row) and AppKit issues a
+    /// tile-sized dirty band that misses the header.
+    func draw(
+        in ctx: CGContext, origin: CGPoint, hoveredAction: HitAction?,
+        dirtyRect: CGRect? = nil
+    ) {
+        if let dirtyRect {
+            let headerAtScreen =
+                groupHeader.rect.offsetBy(dx: origin.x, dy: origin.y)
+            if !headerAtScreen.intersects(dirtyRect) { return }
+        }
         let hoveredId = Self.hoveredFoldId(in: hoveredAction)
         Self.drawHeader(
             groupHeader,

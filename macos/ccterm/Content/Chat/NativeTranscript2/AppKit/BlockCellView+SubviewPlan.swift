@@ -54,6 +54,7 @@ extension BlockCellView {
                 flashingCopyIds: Set(copyFlashByActionId.keys)) ?? .empty
         let animateFrames = pendingFoldTransition
         pendingFoldTransition = false
+        #if DEBUG
         if Transcript2PerfLog.enabled, !plan.entries.isEmpty {
             // Driven by `BlockCellView.{layout,padTop,hoveredAction,selection,`
             // `copyFlashByActionId,searchHighlights,setFrameSize,viewDidChangeBackingProperties}`.
@@ -66,6 +67,7 @@ extension BlockCellView {
                     + "shimmers=\(plan.shimmers.count) "
                     + "animateFrames=\(animateFrames)")
         }
+        #endif
         applyChevronPlan(plan.chevrons, allowSlide: animateFrames)
         applyEntryPlan(plan.entries, animateFrames: animateFrames)
         applyShimmerPlan(plan.shimmers)
@@ -521,9 +523,11 @@ extension BlockCellView {
         _ specs: [SubviewPlan.Entry], animateFrames: Bool
     ) {
         var seen = Set<UUID>()
+        #if DEBUG
         var perfReassignedSpec = 0
         var perfNewView = 0
         var perfFrameChanged = 0
+        #endif
         for spec in specs {
             seen.insert(spec.id)
             if let view = entryViews[spec.id] {
@@ -533,16 +537,22 @@ extension BlockCellView {
                     } else {
                         view.frame = spec.frame
                     }
+                    #if DEBUG
                     perfFrameChanged += 1
+                    #endif
                 }
                 view.spec = spec
+                #if DEBUG
                 perfReassignedSpec += 1
+                #endif
             } else {
                 let view = ToolGroupEntryView(frame: spec.frame)
                 view.spec = spec
                 entryViews[spec.id] = view
                 addSubview(view)
+                #if DEBUG
                 perfNewView += 1
+                #endif
                 // Order: chevron sublayers live above subviews
                 // (`zPosition = 1` in `makeChevronShapeLayer`) so
                 // chevron glyphs paint on top of the body card.
@@ -550,12 +560,17 @@ extension BlockCellView {
                 // (their bands don't overlap).
             }
         }
+        #if DEBUG
         var perfRemoved = 0
+        #endif
         for (id, view) in entryViews where !seen.contains(id) {
             view.removeFromSuperview()
             entryViews.removeValue(forKey: id)
+            #if DEBUG
             perfRemoved += 1
+            #endif
         }
+        #if DEBUG
         if Transcript2PerfLog.enabled, !specs.isEmpty {
             // Spec reassignment counts surface "spec churn" cleanly:
             // every reassigned spec triggers `ToolGroupEntryView.spec`'s
@@ -569,6 +584,7 @@ extension BlockCellView {
                     + "frameChanged=\(perfFrameChanged) removed=\(perfRemoved) "
                     + "animateFrames=\(animateFrames)")
         }
+        #endif
     }
 
     // MARK: - Chevron layer construction
@@ -694,6 +710,7 @@ final class ToolGroupEntryView: NSView {
         // body's per-row clip skips every row outside the visible
         // strip rather than every row outside the tile band.
         let effectiveDirty = dirtyRect.intersection(visibleRect)
+        #if DEBUG
         // Entry-view repaint trace. This is the single biggest scroll-
         // cost path for a tool group whose expanded child overflows
         // the viewport — the entry view's CALayer-backed bitmap is the
@@ -716,6 +733,7 @@ final class ToolGroupEntryView: NSView {
                         + "ms=\(String(format: "%.2f", ms))")
             }
         }
+        #endif
         if effectiveDirty.isEmpty { return }
         // Selection colour depends on `window.isKeyWindow`, which is
         // a runtime cell-state — the plan can't bake it in at build

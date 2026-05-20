@@ -377,6 +377,7 @@ final class BlockCellView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let layout, let ctx = NSGraphicsContext.current?.cgContext else { return }
+        #if DEBUG
         // Scroll-cost trace: cell draw is the cached-bitmap repaint path
         // (`.onSetNeedsDisplay`). Under the perf-demo trace flag we
         // record every invocation so `log stream` can flag cells that
@@ -394,13 +395,14 @@ final class BlockCellView: NSView {
                         + "ms=\(String(format: "%.2f", ms))")
             }
         }
+        #endif
         let origin = layoutOrigin
 
         // Backplate: opaque chrome that must paint *before* the
         // selection band so the highlight composites on top of (not
         // under) the card. No-op for everything except codeblock,
         // which has an opaque editor-canvas fill.
-        layout.drawBackplate(in: ctx, origin: origin)
+        layout.drawBackplate(in: ctx, origin: origin, dirtyRect: dirtyRect)
 
         // Selection highlight: under glyphs, matching NSTextView ordering.
         // The adapter projects (start, end) → layout-local rects; what
@@ -452,7 +454,9 @@ final class BlockCellView: NSView {
             }
         }
 
-        layout.draw(in: ctx, origin: origin, hoveredAction: hoveredAction)
+        layout.draw(
+            in: ctx, origin: origin,
+            hoveredAction: hoveredAction, dirtyRect: dirtyRect)
 
         // Code-block copy glyph — `CopyChrome` owns the visual recipe;
         // the cell only feeds transient state in: icon-hover for the
@@ -738,9 +742,12 @@ final class BlockCellView: NSView {
         return false
     }
 
+    #if DEBUG
     /// Compact `CGSize` formatter used by perf-trace messages so log
     /// lines stay grep-friendly (`100x42` rather than `(100.0, 42.0)`).
+    /// DEBUG-only — sole consumer is the trace block above.
     nonisolated static func fmt(_ s: CGSize) -> String {
         "\(Int(s.width.rounded()))x\(Int(s.height.rounded()))"
     }
+    #endif
 }

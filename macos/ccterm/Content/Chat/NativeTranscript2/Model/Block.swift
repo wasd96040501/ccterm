@@ -84,10 +84,12 @@ struct Block: Identifiable, Equatable, @unchecked Sendable {
         case loadingPill
     }
 
+    #if DEBUG
     /// Short, stable tag used by perf-trace log lines so a `log stream`
     /// reader can correlate cell paint volume with which kind of row
-    /// drove it. Plain pattern match — exhaustiveness is checked by
-    /// the compiler against future `Kind` additions.
+    /// drove it. DEBUG-only — sole consumer is `Transcript2PerfLog`-
+    /// gated trace points in the cell / coordinator hot paths, which
+    /// vanish from Release builds.
     var kindLabel: String {
         switch kind {
         case .heading: return "heading"
@@ -104,6 +106,7 @@ struct Block: Identifiable, Equatable, @unchecked Sendable {
         case .loadingPill: return "loadingPill"
         }
     }
+    #endif
 }
 
 /// Grouped tool calls. The group renders as a single row containing:

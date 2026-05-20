@@ -74,10 +74,11 @@ enum RowLayout: @unchecked Sendable {
     case toolGroup(ToolGroupLayout)
     case loadingPill(LoadingPillLayout)
 
+    #if DEBUG
     /// Short tag used by perf-trace log lines so a `log stream` reader
     /// can correlate cell repaint volume with which layout kind owned
-    /// the row. Kept here (not derived inside the trace closure) so
-    /// the switch stays exhaustive against future case additions.
+    /// the row. DEBUG-only — sole consumer is `BlockCellView.draw`'s
+    /// `Transcript2PerfLog`-gated trace block; both vanish in Release.
     var kindLabel: String {
         switch self {
         case .text: return "text"
@@ -93,6 +94,7 @@ enum RowLayout: @unchecked Sendable {
         case .loadingPill: return "loadingPill"
         }
     }
+    #endif
 
     var totalHeight: CGFloat {
         switch self {
@@ -185,7 +187,19 @@ enum RowLayout: @unchecked Sendable {
     /// a no-op — only codeblock and toolGroup item bodies have an
     /// opaque card background that would otherwise hide the selection
     /// rect drawn by the cell.
-    func drawBackplate(in ctx: CGContext, origin: CGPoint) {
+    ///
+    /// `dirtyRect` is the cell-local clip AppKit handed to
+    /// `BlockCellView.draw(_:)`. Optional — call sites without a
+    /// dirty rect (snapshot test / programmatic export) pass `nil` and
+    /// receive the legacy "paint everything" behaviour. Layouts whose
+    /// body can outgrow the viewport (today: `toolGroup`'s drawEntry
+    /// chain, threaded separately via the subview plan) get a tighter
+    /// clip out of the entry view's own draw; this top-level forward
+    /// only carries the contract through to short layouts that paint
+    /// inside the cell bitmap itself.
+    func drawBackplate(
+        in ctx: CGContext, origin: CGPoint, dirtyRect: CGRect? = nil
+    ) {
         switch self {
         case .codeBlock(let l): l.drawBackplate(in: ctx, origin: origin)
         case .toolGroup(let l): l.drawBackplate(in: ctx, origin: origin)
@@ -203,7 +217,17 @@ enum RowLayout: @unchecked Sendable {
     /// `CAShapeLayer` per chevron from each header's `chevronCenter`
     /// and animates `transform.rotation.z` via `CABasicAnimation`.
     /// `ToolGroupLayout.draw` only emits header titles into the CGContext.
-    func draw(in ctx: CGContext, origin: CGPoint, hoveredAction: HitAction?) {
+    ///
+    /// `dirtyRect` — same shape as `drawBackplate(in:origin:dirtyRect:)`.
+    /// Forwarded only to `toolGroup` (whose cell-bitmap paint is the
+    /// group header band; the dirty clip lets it skip a CTLine
+    /// retypeset when the row's tile-redraw lands outside the header
+    /// band). Other layouts paint inside small bounded rects where
+    /// per-row clipping doesn't pay for itself.
+    func draw(
+        in ctx: CGContext, origin: CGPoint, hoveredAction: HitAction?,
+        dirtyRect: CGRect? = nil
+    ) {
         switch self {
         case .text(let l): l.draw(in: ctx, origin: origin)
         case .image(let l): l.draw(in: ctx, origin: origin)
@@ -216,7 +240,9 @@ enum RowLayout: @unchecked Sendable {
         case .userAttachments(let l):
             l.draw(in: ctx, origin: origin, hoveredAction: hoveredAction)
         case .toolGroup(let l):
-            l.draw(in: ctx, origin: origin, hoveredAction: hoveredAction)
+            l.draw(
+                in: ctx, origin: origin,
+                hoveredAction: hoveredAction, dirtyRect: dirtyRect)
         case .loadingPill(let l): l.draw(in: ctx, origin: origin)
         }
     }

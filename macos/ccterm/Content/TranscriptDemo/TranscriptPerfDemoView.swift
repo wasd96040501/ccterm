@@ -27,7 +27,9 @@ struct TranscriptPerfDemoView: View {
             .frame(minWidth: 320, minHeight: 240)
             .overlay(alignment: .bottom) { statusBar }
             .task {
+                #if DEBUG
                 Transcript2PerfLog.enabled = true
+                #endif
                 guard !seeded else { return }
                 seeded = true
                 let blocks = Self.makeBlocks()
@@ -42,10 +44,12 @@ struct TranscriptPerfDemoView: View {
                 controller.coordinator.toggleFold(id: Self.fileEditChildId)
             }
             .onDisappear {
+                #if DEBUG
                 // Leave the flag clean for any non-demo tab the user
                 // navigates to next; otherwise a real session's scroll
                 // path would inherit the trace volume.
                 Transcript2PerfLog.enabled = false
+                #endif
             }
     }
 

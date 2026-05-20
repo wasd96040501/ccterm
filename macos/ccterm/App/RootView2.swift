@@ -458,6 +458,18 @@ private struct InputBarChrome: View {
         manager.prepareDraftSession(sessionId)
     }
 
+    /// Joined view of cwd + additional dirs; used both as the input
+    /// bar's `directory` / `additionalDirs` payload and as the `.task`
+    /// key that prewarms the file index. A computed property (not
+    /// `@State`) so the warm task re-fires whenever the underlying
+    /// `@Observable` config flips.
+    private var warmDirectories: [String] {
+        var dirs: [String] = []
+        if let cwd = session.cwd { dirs.append(cwd) }
+        dirs.append(contentsOf: session.additionalDirectories)
+        return dirs
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: InputBarSessionChrome.barSpacing) {
             InputBarView2(
@@ -467,9 +479,22 @@ private struct InputBarChrome: View {
                 submitEnabled: submitEnabled,
                 coordSpace: coordSpace,
                 onAttachRect: onAttachRect,
-                onPillRect: onPillRect
+                onPillRect: onPillRect,
+                directory: session.cwd,
+                additionalDirs: session.additionalDirectories,
+                slashCommandsProvider: { session.slashCommands }
             )
             InputBarSessionChrome(session: session)
+        }
+        // Async file-index prewarm. Mirrors the `GitProbe.loadHeavy`
+        // pattern used by the branch picker: kicks off the background
+        // load as soon as we know the cwd, so by the time the user
+        // types `@` the file list is already cached. The store is
+        // backed by a serial queue, so a `complete(...)` call that
+        // arrives before warm finishes naturally lands behind it
+        // rather than triggering a second load.
+        .task(id: warmDirectories) {
+            FileCompletionStore.shared.warm(directories: warmDirectories)
         }
         // Permission card floats on top of the bar+chrome stack:
         // bottom-aligned with the chrome row, width pinned to this

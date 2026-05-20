@@ -2043,6 +2043,16 @@
         }
       }
     },
+    "Pick a working directory first (search ~/) · Tab / Enter · → drill down": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先选择工作目录（搜索 ~/ 下目录）· Tab / Enter · → 进入子目录"
+          }
+        }
+      }
+    },
     "Pin": {
       "extractionState": "stale",
       "localizations": {
@@ -3147,6 +3157,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "切换分支"
+          }
+        }
+      }
+    },
+    "Tab / Enter to confirm · → to drill down": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tab / Enter 确认 · → 进入子目录"
           }
         }
       }

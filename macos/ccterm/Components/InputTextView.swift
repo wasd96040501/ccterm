@@ -254,6 +254,15 @@ final class InputNSTextView: NSTextView {
             return
         }
 
+        // Custom key interceptor runs BEFORE the send-key switch so a
+        // completion popup can swallow plain Return / Tab / arrow keys
+        // regardless of `sendKeyBehavior`. Cmd+Return for send remains
+        // available — interceptors return false for it when completion
+        // isn't claiming the keystroke.
+        if !hasMarkedText(), let interceptor = onInterceptKeyDown, interceptor(event) {
+            return
+        }
+
         switch sendKeyBehavior {
         case .commandEnter:
             // Cmd+Return → send. Plain Return falls through to insertNewline (newline).
@@ -273,11 +282,6 @@ final class InputNSTextView: NSTextView {
                 onCommandReturn?()
                 return
             }
-        }
-
-        // Custom key interceptor (skip during IME composition)
-        if !hasMarkedText(), let interceptor = onInterceptKeyDown, interceptor(event) {
-            return
         }
 
         // Home / End key handling

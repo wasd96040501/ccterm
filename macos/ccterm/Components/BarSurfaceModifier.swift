@@ -29,6 +29,16 @@ struct BarSurfaceModifier: ViewModifier {
         if #available(macOS 26.0, *) {
             content
                 .glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                // `glassEffect(_:in:)` paints the glass *background* within
+                // the shape, but does NOT clip the content the modifier is
+                // applied to. Pre-completion this was invisible — bar
+                // chrome had enough inner padding that content never
+                // touched the corners. The completion list draws an
+                // edge-to-edge selection highlight, so without this clip
+                // its rows visibly spill out past the rounded edges (and,
+                // because the frame is unchanged, the .overlay stroke
+                // appears to "wrap" only the central region).
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)

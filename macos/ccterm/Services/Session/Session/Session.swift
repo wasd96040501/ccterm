@@ -246,10 +246,6 @@ final class Session {
         runtime?.messages ?? []
     }
 
-    var pendingTurnCount: Int {
-        runtime?.pendingTurnCount ?? 0
-    }
-
     var isRunning: Bool {
         runtime?.isRunning ?? false
     }

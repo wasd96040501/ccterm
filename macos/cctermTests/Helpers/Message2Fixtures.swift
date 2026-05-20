@@ -40,6 +40,39 @@ enum Message2Fixtures {
         ])
     }
 
+    /// A `Message2.system(.init)` — the CLI's session bootstrap /
+    /// turn-prologue blob. Emitted once at attach-time and again at
+    /// the start of every CLI-spawned follow-up turn (see
+    /// `AgentSDKMessageDumpSmokeTests`).
+    static func systemInit(sessionId: String = "s") -> Message2 {
+        resolve([
+            "type": "system",
+            "subtype": "init",
+            "uuid": UUID().uuidString,
+            "session_id": sessionId,
+            "cwd": "/tmp",
+            "permissionMode": "default",
+        ])
+    }
+
+    /// A `Message2.result` (turn-end) message. The default branch is
+    /// `success`; pass `subtype: "error_during_execution"` for the
+    /// error branch. The CLI emits exactly one of these per turn at
+    /// turn close — see `AgentSDKMessageDumpSmokeTests` for raw samples.
+    static func result(subtype: String = "success", sessionId: String = "s") -> Message2 {
+        resolve([
+            "type": "result",
+            "uuid": UUID().uuidString,
+            "session_id": sessionId,
+            "subtype": subtype,
+            "duration_ms": 100,
+            "duration_api_ms": 80,
+            "is_error": false,
+            "num_turns": 1,
+            "result": "ok",
+        ])
+    }
+
     /// Assistant message containing exactly one Read tool_use block. Useful
     /// for tool_group rendering tests.
     static func assistantRead(

@@ -13,8 +13,7 @@ import XCTest
 ///    part of the promotion — i.e. the user's first message kicks off
 ///    bootstrap; the session doesn't sit dormant.
 /// 3. The queued user entry shows up in `runtime.messages` as
-///    `.queued` `.localUser`, `pendingTurnCount` is 1 so `isRunning`
-///    flips immediately.
+///    `.queued` `.localUser` and `isRunning` flips true immediately.
 /// 4. The bridge sink wired ONTO the façade BEFORE `send` is re-wired
 ///    onto the runtime at promotion, so the `.appended` event for the
 ///    queued entry actually reaches the subscriber (no race / dropped
@@ -72,9 +71,8 @@ final class SessionPromotionTests: XCTestCase {
         XCTAssertNil(session.draft, "draft retired after promotion")
         XCTAssertNotNil(promotedRuntime, "onPromoted must fire")
 
-        // Queued entry is in runtime.messages, pendingTurnCount bumped
+        // Queued entry is in runtime.messages, isRunning flipped
         XCTAssertEqual(session.messages.count, 1)
-        XCTAssertEqual(session.pendingTurnCount, 1)
         XCTAssertTrue(session.isRunning)
 
         // The bridge sink received exactly one .appended for the
@@ -120,7 +118,7 @@ final class SessionPromotionTests: XCTestCase {
         session.send(image: data, mediaType: "image/jpeg", caption: "a photo")
 
         XCTAssertNotNil(session.runtime, "image send must promote too")
-        XCTAssertEqual(session.pendingTurnCount, 1)
+        XCTAssertTrue(session.isRunning)
         guard let single = captured else {
             return XCTFail("expected .appended single")
         }

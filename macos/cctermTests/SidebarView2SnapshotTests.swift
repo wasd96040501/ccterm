@@ -64,20 +64,20 @@ final class SidebarView2SnapshotTests: XCTestCase {
         let manager = SessionManager(repository: repo)
 
         // Allocate sessions via the public surface and drive observable
-        // state directly through the underlying runtime. `pendingTurnCount`
+        // state directly through the underlying runtime. `isRunning`
         // and `hasUnread` are `internal(set)` on `SessionRuntime` —
         // `@testable import` lets the test reach them without adding
         // production-only seams. `session(_:)` returns a façade in
         // `.active` phase for any record-existing id, so `runtime` is
         // non-nil here.
         let running = try XCTUnwrap(manager.session(runningInProjectA.sessionId)?.runtime)
-        running.pendingTurnCount = 1
+        running.isRunning = true
 
         let unread = try XCTUnwrap(manager.session(unreadInProjectA.sessionId)?.runtime)
         unread.hasUnread = true
 
         let both = try XCTUnwrap(manager.session(runningAndUnreadInProjectB.sessionId)?.runtime)
-        both.pendingTurnCount = 1
+        both.isRunning = true
         both.hasUnread = true
 
         // `idleInProjectA` / `idleInProjectB` deliberately have no

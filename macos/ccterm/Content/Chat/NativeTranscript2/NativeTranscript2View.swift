@@ -34,6 +34,9 @@ struct NativeTranscript2View: View {
             .sheet(item: $controller.pendingUserBubbleSheet) { request in
                 UserBubbleSheetView(text: request.text)
             }
+            .sheet(item: $controller.pendingImagePreview) { request in
+                ImagePreviewSheetView(image: request.image)
+            }
             .task(id: ObjectIdentifier(controller)) {
                 // Idempotent re-attach. Survives `controller` swap (rare,
                 // but `.task(id:)` makes the dependency explicit) and
@@ -42,6 +45,46 @@ struct NativeTranscript2View: View {
                 // gracefully via the per-block generation guard).
                 controller.attachSyntaxEngine(syntaxEngine)
             }
+    }
+}
+
+/// Modal preview for a tapped attachment chip. Aspect-fit the original
+/// `NSImage` inside a generously-sized window; click anywhere to
+/// dismiss (matches the Quick Look-style "tap to close" muscle memory
+/// users have for image previews on macOS). Escape and the default
+/// action key (Return) also close — covered by the SwiftUI button.
+struct ImagePreviewSheetView: View {
+    let image: NSImage
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // The image surface itself is the primary dismiss target —
+            // tapping the picture or the surrounding inset both close
+            // the sheet without grabbing focus. `.contentShape` on the
+            // ZStack ensures the empty padding catches hits too.
+            ZStack {
+                Color(nsColor: .windowBackgroundColor)
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+                    .padding(24)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { dismiss() }
+
+            Divider()
+            HStack {
+                Spacer()
+                Button("Done") { dismiss() }
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding(12)
+        }
+        .frame(
+            minWidth: 480, idealWidth: 880, maxWidth: 1400,
+            minHeight: 360, idealHeight: 660, maxHeight: 1050)
     }
 }
 

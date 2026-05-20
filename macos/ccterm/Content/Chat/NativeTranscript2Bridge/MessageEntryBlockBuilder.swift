@@ -88,11 +88,12 @@ enum MessageEntryBlockBuilder {
                     id: userAttachmentsBlockId(entryId: single.id),
                     kind: .userAttachments(images: images)))
         }
-        if let text = local.text, !text.isEmpty {
+        let stripped = strippedCaption(local.text)
+        if !stripped.isEmpty {
             out.append(
                 Block(
                     id: userBubbleBlockId(entryId: single.id),
-                    kind: .userBubble(text: text)))
+                    kind: .userBubble(text: stripped)))
         }
         return out
     }
@@ -141,13 +142,47 @@ enum MessageEntryBlockBuilder {
                     id: userAttachmentsBlockId(entryId: single.id),
                     kind: .userAttachments(images: images)))
         }
-        if !text.isEmpty {
+        let stripped = strippedCaption(text)
+        if !stripped.isEmpty {
             out.append(
                 Block(
                     id: userBubbleBlockId(entryId: single.id),
-                    kind: .userBubble(text: text)))
+                    kind: .userBubble(text: stripped)))
         }
         return out
+    }
+
+    /// Cosmetic: drop the `[Image #N]` placeholders the Claude CLI
+    /// inlines next to each image content block. The bubble already
+    /// renders alongside the attachments row, so the marker reads as
+    /// noise; removing it visually de-dupes the two surfaces.
+    ///
+    /// Display-only — the CLI's wire text is untouched (`LocalUserInput.text`
+    /// still carries the original form, so the next send round-trips
+    /// the user's verbatim string).
+    nonisolated private static let imageMarkerRegex: NSRegularExpression? = {
+        try? NSRegularExpression(pattern: "\\[Image\\s*#?\\s*\\d+\\s*\\]")
+    }()
+
+    nonisolated private static func strippedCaption(_ text: String?) -> String {
+        guard let raw = text, !raw.isEmpty else { return "" }
+        guard let regex = imageMarkerRegex else { return raw }
+        let range = NSRange(raw.startIndex..., in: raw)
+        let cleaned = regex.stringByReplacingMatches(
+            in: raw, options: [], range: range, withTemplate: "")
+        // Collapse the blank lines / spaces the placeholder left behind so
+        // the remaining body reads naturally — multi-line gaps get squashed
+        // to single newlines, runs of horizontal whitespace to one space.
+        let normalizedNewlines =
+            cleaned
+            .replacingOccurrences(
+                of: "\\n[\\t ]*\\n[\\t ]*\\n+",
+                with: "\n\n",
+                options: .regularExpression
+            )
+            .replacingOccurrences(
+                of: "[\\t ]{2,}", with: " ", options: .regularExpression)
+        return normalizedNewlines.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// The user bubble block id must stay constant across the

@@ -18,6 +18,11 @@ struct UserAttachmentsLayout: @unchecked Sendable {
     /// One drawable chip — pre-cropped to the target square via an
     /// aspect-fill source rect computed in `make`.
     struct Chip: @unchecked Sendable {
+        /// Original `NSImage` reference. Carried so the cell can match
+        /// the hovered `HitAction.openImagePreview(NSImage)` against
+        /// this chip (NSObject reference equality), and so click
+        /// routing can hand the same instance to the preview sheet.
+        let image: NSImage
         let cgImage: CGImage?
         /// Square frame in layout-local coords.
         let frame: CGRect
@@ -34,6 +39,10 @@ struct UserAttachmentsLayout: @unchecked Sendable {
     nonisolated static let chipSpacing: CGFloat = 8
     nonisolated static let chipCornerRadius: CGFloat = 6
     nonisolated static let chipStrokeWidth: CGFloat = 0.5
+    /// Stroke width swap on hover — slightly heavier than the resting
+    /// hairline so the cursor-targeted chip reads as "this is what
+    /// you'll click", without the row jumping height.
+    nonisolated static let chipHoverStrokeWidth: CGFloat = 1.5
 
     nonisolated static func make(images: [NSImage], maxWidth: CGFloat) -> UserAttachmentsLayout {
         guard maxWidth > 0, !images.isEmpty else {
@@ -82,7 +91,8 @@ struct UserAttachmentsLayout: @unchecked Sendable {
                     width: side,
                     height: side)
             }()
-            chips.append(Chip(cgImage: cg, frame: frame, sourceRect: sourceRect))
+            chips.append(
+                Chip(image: nsImage, cgImage: cg, frame: frame, sourceRect: sourceRect))
         }
 
         let totalHeight = CGFloat(rowCount) * chipSize + CGFloat(rowCount - 1) * chipSpacing
@@ -92,15 +102,38 @@ struct UserAttachmentsLayout: @unchecked Sendable {
             measuredWidth: maxWidth)
     }
 
+    /// Click targets in layout-local coords — one `InteractiveHit` per
+    /// chip, carrying the chip's `NSImage` so the cell can route the
+    /// click and so `hoveredAction` matching pinpoints the exact chip
+    /// under the cursor.
+    var interactiveHits: [InteractiveHit] {
+        chips.map { chip in
+            InteractiveHit(rect: chip.frame, action: .openImagePreview(chip.image))
+        }
+    }
+
     /// Draw into a flipped NSView. `origin` is layout-local top-left in
     /// view coords. Each chip:
     ///   1. clips to a rounded rect
     ///   2. draws the source crop into the square (flipped locally so the
     ///      bitmap stays upright in a y-down view)
     ///   3. strokes the rounded rect with a hairline separator
-    func draw(in ctx: CGContext, origin: CGPoint) {
+    ///
+    /// `hoveredAction` carries whatever hit is under the cursor right
+    /// now. When it names one of this layout's chips, that chip swaps
+    /// its hairline for the heavier hover stroke and gets a faint
+    /// white overlay so the eye locks on without the row's geometry
+    /// shifting.
+    func draw(in ctx: CGContext, origin: CGPoint, hoveredAction: HitAction?) {
         let strokeColor = NSColor.separatorColor.cgColor
+        let hoverStrokeColor = NSColor.labelColor.withAlphaComponent(0.55).cgColor
+        let hoverOverlay = NSColor.white.withAlphaComponent(0.12).cgColor
         let fallbackFill = NSColor.controlBackgroundColor.withAlphaComponent(0.6).cgColor
+
+        let hoveredImage: NSImage? = {
+            if case .openImagePreview(let img) = hoveredAction { return img }
+            return nil
+        }()
 
         for chip in chips {
             let target = CGRect(
@@ -113,6 +146,7 @@ struct UserAttachmentsLayout: @unchecked Sendable {
                 cornerWidth: Self.chipCornerRadius,
                 cornerHeight: Self.chipCornerRadius,
                 transform: nil)
+            let isHovered = hoveredImage === chip.image
 
             if let cgImage = chip.cgImage,
                 chip.sourceRect.width > 0, chip.sourceRect.height > 0
@@ -136,9 +170,17 @@ struct UserAttachmentsLayout: @unchecked Sendable {
                 ctx.restoreGState()
             }
 
+            if isHovered {
+                ctx.saveGState()
+                ctx.setFillColor(hoverOverlay)
+                ctx.addPath(path)
+                ctx.fillPath()
+                ctx.restoreGState()
+            }
+
             ctx.saveGState()
-            ctx.setStrokeColor(strokeColor)
-            ctx.setLineWidth(Self.chipStrokeWidth)
+            ctx.setStrokeColor(isHovered ? hoverStrokeColor : strokeColor)
+            ctx.setLineWidth(isHovered ? Self.chipHoverStrokeWidth : Self.chipStrokeWidth)
             ctx.addPath(path)
             ctx.strokePath()
             ctx.restoreGState()

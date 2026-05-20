@@ -9,6 +9,21 @@ struct UserBubbleSheetRequest: Identifiable, Equatable, Sendable {
     let text: String
 }
 
+/// Carries an attachment chip's `NSImage` from the AppKit click to the
+/// SwiftUI `.sheet(item:)`. `id` is allocated per request so consecutive
+/// taps on the **same** chip (NSImage instance) still re-present the
+/// sheet — `.sheet(item:)` only re-fires when `id` changes. Equatable so
+/// `@Observable` knows when to publish.
+struct ImagePreviewRequest: Identifiable, Equatable {
+    let id: UUID
+    let image: NSImage
+
+    init(image: NSImage) {
+        self.id = UUID()
+        self.image = image
+    }
+}
+
 /// Public, imperative API for `NativeTranscript2`. Three orthogonal channels:
 ///
 /// 1. **Mutation** — `apply(_:scroll:)` accepts one or more `Change` values
@@ -99,6 +114,14 @@ final class Transcript2Controller {
     /// field and clears it on dismiss.
     var pendingUserBubbleSheet: UserBubbleSheetRequest?
 
+    /// Pending request for the SwiftUI image preview sheet, driven by
+    /// chip clicks inside `BlockCellView`. Same escape-hatch contract as
+    /// `pendingUserBubbleSheet`: NSView-internal interactions stay
+    /// AppKit-closed-loop except for `.sheet(item:)` presentation, which
+    /// SwiftUI owns. `NativeTranscript2View` binds against this field
+    /// and clears it on dismiss.
+    var pendingImagePreview: ImagePreviewRequest?
+
     /// Observable snapshot of the in-transcript search state. Mirrored
     /// from `Transcript2SearchCoordinator` after every state change so
     /// SwiftUI hosts (search bar count, prev/next button enablement)
@@ -172,6 +195,9 @@ final class Transcript2Controller {
         }
         coordinator.onUserBubbleSheetRequested = { [weak self] id, text in
             self?.pendingUserBubbleSheet = UserBubbleSheetRequest(id: id, text: text)
+        }
+        coordinator.onImagePreviewRequested = { [weak self] image in
+            self?.pendingImagePreview = ImagePreviewRequest(image: image)
         }
         coordinator.onAnchorSettledChanged = { [weak self] settled in
             self?.isAnchorSettled = settled

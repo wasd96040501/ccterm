@@ -21,6 +21,16 @@ enum HitAction: Sendable, Equatable {
     /// `Transcript2Coordinator.requestUserBubbleSheet(id:)` (the
     /// block id lives on the cell, not the layout).
     case openUserBubbleSheet
+    /// User-attachment chip clicked. Cell forwards to
+    /// `Transcript2Coordinator.requestImagePreview(image:)` which
+    /// routes through `onImagePreviewRequested` to surface a SwiftUI
+    /// `.sheet(item:)` with the enlarged image. Same escape-hatch
+    /// pattern as `openUserBubbleSheet`. The carried `NSImage` is the
+    /// exact instance the layout holds — `==` falls back to reference
+    /// equality through NSObject, which is what we want for hover
+    /// matching (the cell knows which chip is hovered by comparing the
+    /// action against `hoveredAction`).
+    case openImagePreview(NSImage)
     /// Copy-button click — produced by every `CopyChrome` the layouts
     /// emit (codeblock / bash sub-cards / diff card / future). The
     /// `id` keys per-button hover + post-click checkmark feedback so a
@@ -183,7 +193,8 @@ enum RowLayout: @unchecked Sendable {
         case .blockquote(let l): l.draw(in: ctx, origin: origin)
         case .thematicBreak(let l): l.draw(in: ctx, origin: origin)
         case .userBubble(let l): l.draw(in: ctx, origin: origin)
-        case .userAttachments(let l): l.draw(in: ctx, origin: origin)
+        case .userAttachments(let l):
+            l.draw(in: ctx, origin: origin, hoveredAction: hoveredAction)
         case .toolGroup(let l):
             l.draw(in: ctx, origin: origin, hoveredAction: hoveredAction)
         case .loadingPill(let l): l.draw(in: ctx, origin: origin)
@@ -237,6 +248,8 @@ enum RowLayout: @unchecked Sendable {
             if let r = l.chevronHitRect {
                 hits.append(InteractiveHit(rect: r, action: .openUserBubbleSheet))
             }
+        case .userAttachments(let l):
+            hits.append(contentsOf: l.interactiveHits)
         case .codeBlock(let l):
             if let c = l.copy {
                 hits.append(

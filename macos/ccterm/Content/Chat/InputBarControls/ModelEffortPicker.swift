@@ -58,6 +58,9 @@ struct ModelEffortPicker: View {
                     fastModeEnabled: session.fastModeEnabled,
                     onSelectModel: { value in
                         applyModelSelection(value)
+                        if session.draft != nil {
+                            NewSessionDefaultsStore.shared.setModel(value)
+                        }
                         isPresented = false
                     },
                     onSelectEffort: { effort in
@@ -97,13 +100,24 @@ struct ModelEffortPicker: View {
     }
 
     /// Single-source backfill: as soon as a catalog is available and
-    /// the session hasn't recorded a model yet, write `visibleModels.first`
-    /// (the CLI's `default` entry — head of `init.models[]`) back into
-    /// the session. From that point on the trigger label, effort lookup,
-    /// and popover selection all read from `session.model`.
+    /// the session hasn't recorded a model yet, write a model value back
+    /// into the session. Draft sessions prefer the user's last-picked
+    /// model from `NewSessionDefaultsStore` when it's still in the
+    /// catalog; otherwise (and for active sessions whose record carried
+    /// no model) we fall back to `visibleModels.first` — the CLI's
+    /// `default` entry, head of `init.models[]`.
     private func backfillModelIfNeeded() {
         guard session.model == nil, let first = visibleModels.first else { return }
-        applyModelSelection(first.value)
+        let preferred: ModelInfo
+        if session.draft != nil,
+            let saved = NewSessionDefaultsStore.shared.model,
+            let match = visibleModels.first(where: { $0.value == saved })
+        {
+            preferred = match
+        } else {
+            preferred = first
+        }
+        applyModelSelection(preferred.value)
     }
 
     /// Effort to show as "selected" in trigger + popover. Real

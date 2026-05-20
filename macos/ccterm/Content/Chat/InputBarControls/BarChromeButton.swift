@@ -21,13 +21,10 @@ struct BarChromeButton<Content: View>: View {
                 .font(.system(size: 12, weight: .medium))
                 .padding(.horizontal, 8)
                 .frame(height: 22)
-                .background {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(hovering ? Color.primary.opacity(0.08) : .clear)
-                }
+                .barSurface(cornerRadius: 8)
                 .overlay {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+                        .fill(Color.primary.opacity(hovering ? 0.08 : 0))
                 }
                 .contentShape(Rectangle())
         }

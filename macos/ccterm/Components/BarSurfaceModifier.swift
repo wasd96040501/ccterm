@@ -1,9 +1,11 @@
 import SwiftUI
 
 /// Unified surface material for chrome floating at the bottom of the chat
-/// detail. Today's sole consumer is `InputBarView2`; the trailing
-/// "running" pill has moved into the transcript itself (no longer a
-/// floating SwiftUI overlay). Two branches:
+/// detail. Consumed by `InputBarView2` (the main pill) and
+/// `BarChromeButton` (the smaller permission / model·effort triggers
+/// under it), so the bar and its footer row share the same glass
+/// material, stroke, and shadow at different corner radii. Two
+/// branches:
 ///
 /// - macOS 26+: Liquid Glass (`glassEffect(_:in:)`) — system provides
 ///   translucency + edge highlight + refraction; adds a `separatorColor`

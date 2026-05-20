@@ -34,9 +34,21 @@ struct PermissionModePicker: View {
                 }
             )
         }
-        .task(id: session.sessionId) {
+        .task(id: SeedKey(sessionId: session.sessionId, supportsAuto: activeModel?.supportsAutoMode == true)) {
             seedFromDefaultsIfNeeded()
         }
+    }
+
+    /// Re-run `seedFromDefaultsIfNeeded` both when the session id changes
+    /// *and* when the model catalog flips `supportsAuto` from false to
+    /// true. The catalog arrives asynchronously (cold launch: `ModelStore`
+    /// is still fetching when the picker first renders), so a session-id
+    /// only id would miss the saved `.auto` case and leave the session on
+    /// `.default`. The seed body is idempotent — once `permissionMode`
+    /// has moved off `.default`, every later trigger is a no-op.
+    private struct SeedKey: Hashable {
+        let sessionId: String
+        let supportsAuto: Bool
     }
 
     /// Apply the user's last-picked permission mode from

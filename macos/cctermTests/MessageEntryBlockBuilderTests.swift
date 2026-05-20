@@ -64,7 +64,7 @@ final class MessageEntryBlockBuilderTests: XCTestCase {
             SingleEntry(
                 id: id,
                 payload: .localUser(
-                    LocalUserInput(text: "hi", image: nil, planContent: nil)),
+                    LocalUserInput(text: "hi")),
                 delivery: .queued,
                 toolResults: [:]))
         let remoteEntry = MessageEntry.single(

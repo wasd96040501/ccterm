@@ -408,9 +408,34 @@ extension TranscriptDemoView {
 
         return [
             Block(id: UUID(), kind: .userBubble(text: shortMessage)),
+            Block(
+                id: UUID(),
+                kind: .userAttachments(images: sampleAttachmentImages(count: 3))),
+            Block(id: UUID(), kind: .userBubble(text: "screenshots from the new build")),
+            Block(
+                id: UUID(),
+                kind: .userAttachments(images: sampleAttachmentImages(count: 1))),
             Block(id: UUID(), kind: .userBubble(text: longMessage)),
             Block(id: UUID(), kind: .userBubble(text: cjkMessage)),
         ]
+    }
+
+    /// Synthesize `count` SF-Symbol-backed `NSImage`s for the user
+    /// attachments strip — uses a rotating palette so each chip is
+    /// visually distinct in the snapshot.
+    fileprivate static func sampleAttachmentImages(count: Int) -> [NSImage] {
+        let palette: [NSColor] = [
+            .systemBlue, .systemPink, .systemOrange, .systemTeal, .systemPurple,
+        ]
+        let symbols = ["photo", "doc.richtext", "camera.macro", "paintpalette", "scribble"]
+        return (0..<count).map { i in
+            let cfg = NSImage.SymbolConfiguration(pointSize: 28, weight: .regular)
+                .applying(.init(paletteColors: [palette[i % palette.count]]))
+            let image =
+                NSImage(systemSymbolName: symbols[i % symbols.count], accessibilityDescription: nil)
+                ?? NSImage()
+            return image.withSymbolConfiguration(cfg) ?? image
+        }
     }
 
     /// Curated showcase of inline IR + heading levels. Sits at the top of

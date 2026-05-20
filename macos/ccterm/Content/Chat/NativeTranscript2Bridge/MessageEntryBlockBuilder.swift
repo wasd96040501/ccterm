@@ -1,4 +1,5 @@
 import AgentSDK
+import AppKit
 import Foundation
 
 /// `MessageEntry` → `[Block]` translation. Pure function, safe on any thread.
@@ -62,12 +63,7 @@ enum MessageEntryBlockBuilder {
     private static func singleBlocks(_ single: SingleEntry) -> [Block] {
         switch single.payload {
         case .localUser(let local):
-            guard let text = local.text, !text.isEmpty else { return [] }
-            return [
-                Block(
-                    id: userBubbleBlockId(entryId: single.id),
-                    kind: .userBubble(text: text))
-            ]
+            return localUserBlocks(local, single: single)
 
         case .remote(let m):
             switch m {
@@ -78,32 +74,115 @@ enum MessageEntryBlockBuilder {
         }
     }
 
+    private static func localUserBlocks(
+        _ local: LocalUserInput,
+        single: SingleEntry
+    ) -> [Block] {
+        var out: [Block] = []
+        let images = local.images.compactMap { (data, _) -> NSImage? in
+            NSImage(data: data)
+        }
+        if !images.isEmpty {
+            out.append(
+                Block(
+                    id: userAttachmentsBlockId(entryId: single.id),
+                    kind: .userAttachments(images: images)))
+        }
+        let stripped = strippedCaption(local.text)
+        if !stripped.isEmpty {
+            out.append(
+                Block(
+                    id: userBubbleBlockId(entryId: single.id),
+                    kind: .userBubble(text: stripped)))
+        }
+        return out
+    }
+
     private static func remoteUserBlocks(
         _ user: Message2User,
         single: SingleEntry
     ) -> [Block] {
         guard let content = user.message?.content else { return [] }
+        var images: [NSImage] = []
         let text: String
         switch content {
         case .string(let s):
             text = s
         case .array(let items):
-            // Drop tool_result items (already merged into the matching
-            // assistant's toolGroup); join remaining text items into one
-            // userBubble.
-            text = items.compactMap { item -> String? in
-                if case .text(let t) = item, let s = t.text, !s.isEmpty { return s }
-                return nil
-            }.joined(separator: "\n\n")
+            // Walk the content array once: text items concatenate into the
+            // bubble caption; image items decode their base64 data into
+            // NSImage for the attachments strip. tool_result items are
+            // dropped — they're already merged into the matching
+            // assistant's toolGroup.
+            var texts: [String] = []
+            for item in items {
+                switch item {
+                case .text(let t):
+                    if let s = t.text, !s.isEmpty { texts.append(s) }
+                case .image(let img):
+                    guard let source = img.source,
+                        source.type == "base64",
+                        let b64 = source.data,
+                        let data = Data(base64Encoded: b64),
+                        let ns = NSImage(data: data)
+                    else { continue }
+                    images.append(ns)
+                case .toolResult, .unknown:
+                    continue
+                }
+            }
+            text = texts.joined(separator: "\n\n")
         case .other:
             return []
         }
-        guard !text.isEmpty else { return [] }
-        return [
-            Block(
-                id: userBubbleBlockId(entryId: single.id),
-                kind: .userBubble(text: text))
-        ]
+        var out: [Block] = []
+        if !images.isEmpty {
+            out.append(
+                Block(
+                    id: userAttachmentsBlockId(entryId: single.id),
+                    kind: .userAttachments(images: images)))
+        }
+        let stripped = strippedCaption(text)
+        if !stripped.isEmpty {
+            out.append(
+                Block(
+                    id: userBubbleBlockId(entryId: single.id),
+                    kind: .userBubble(text: stripped)))
+        }
+        return out
+    }
+
+    /// Cosmetic: drop the `[Image #N]` placeholders the Claude CLI
+    /// inlines next to each image content block. The bubble already
+    /// renders alongside the attachments row, so the marker reads as
+    /// noise; removing it visually de-dupes the two surfaces.
+    ///
+    /// Display-only — the CLI's wire text is untouched (`LocalUserInput.text`
+    /// still carries the original form, so the next send round-trips
+    /// the user's verbatim string).
+    nonisolated private static let imageMarkerRegex: NSRegularExpression? = {
+        try? NSRegularExpression(pattern: "\\[Image\\s*#?\\s*\\d+\\s*\\]")
+    }()
+
+    nonisolated private static func strippedCaption(_ text: String?) -> String {
+        guard let raw = text, !raw.isEmpty else { return "" }
+        guard let regex = imageMarkerRegex else { return raw }
+        let range = NSRange(raw.startIndex..., in: raw)
+        let cleaned = regex.stringByReplacingMatches(
+            in: raw, options: [], range: range, withTemplate: "")
+        // Collapse the blank lines / spaces the placeholder left behind so
+        // the remaining body reads naturally — multi-line gaps get squashed
+        // to single newlines, runs of horizontal whitespace to one space.
+        let normalizedNewlines =
+            cleaned
+            .replacingOccurrences(
+                of: "\\n[\\t ]*\\n[\\t ]*\\n+",
+                with: "\n\n",
+                options: .regularExpression
+            )
+            .replacingOccurrences(
+                of: "[\\t ]{2,}", with: " ", options: .regularExpression)
+        return normalizedNewlines.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// The user bubble block id must stay constant across the
@@ -112,6 +191,13 @@ enum MessageEntryBlockBuilder {
     /// wipes animation / selection.
     private static func userBubbleBlockId(entryId: UUID) -> UUID {
         StableBlockID.derive("entry", entryId.uuidString, "userBubble")
+    }
+
+    /// Sibling stable id for the attachments strip — same survival
+    /// contract as the bubble id across the `.localUser → .remote.user`
+    /// transition. Distinct slug so both blocks coexist for one entry.
+    private static func userAttachmentsBlockId(entryId: UUID) -> UUID {
+        StableBlockID.derive("entry", entryId.uuidString, "userAttachments")
     }
 
     private static func assistantBlocks(

@@ -44,17 +44,19 @@ extension SessionRuntime {
     /// `planContent` passes through to the CLI's `plan_content` field
     /// (ExitPlanMode scenario).
     func send(text: String, planContent: String? = nil) {
-        enqueueAndSend(LocalUserInput(text: text, image: nil, planContent: planContent))
+        enqueueAndSend(LocalUserInput(text: text, planContent: planContent))
     }
 
-    /// Send an image message. `caption` becomes a companion text block
-    /// (default `"[image]"`); the image is packed as base64 into the content
-    /// array. See `enqueueAndSend(_:)` for semantics.
-    func send(image data: Data, mediaType: String, caption: String? = nil) {
+    /// Send a message with one or more inline images plus an optional
+    /// caption. The images are packed as base64 blocks alongside the
+    /// caption inside a single content array — one CLI write produces one
+    /// user message on the wire, matching the JSONL replay shape. See
+    /// `enqueueAndSend(_:)` for semantics.
+    func send(images: [(data: Data, mediaType: String)], caption: String? = nil) {
         enqueueAndSend(
             LocalUserInput(
                 text: caption,
-                image: (data: data, mediaType: mediaType),
+                images: images,
                 planContent: nil
             ))
     }
@@ -775,25 +777,27 @@ extension SessionRuntime {
         appLog(
             .info, "SessionRuntime",
             "[v2-send] writeCLI sid=\(sessionId.prefix(8)) entryId=\(entry.id.uuidString.prefix(8)) "
-                + "textLen=\(input.text?.count ?? 0) hasImage=\(input.image != nil)")
+                + "textLen=\(input.text?.count ?? 0) imageCount=\(input.images.count)")
         var extra: [String: Any] = ["uuid": entry.id.uuidString.lowercased()]
         if let plan = input.planContent {
             extra["plan_content"] = plan
         }
 
-        if let (data, mediaType) = input.image {
+        if !input.images.isEmpty {
             var blocks: [[String: Any]] = []
             if let text = input.text, !text.isEmpty {
                 blocks.append(["type": "text", "text": text])
             }
-            blocks.append([
-                "type": "image",
-                "source": [
-                    "type": "base64",
-                    "media_type": mediaType,
-                    "data": data.base64EncodedString(),
-                ],
-            ])
+            for (data, mediaType) in input.images {
+                blocks.append([
+                    "type": "image",
+                    "source": [
+                        "type": "base64",
+                        "media_type": mediaType,
+                        "data": data.base64EncodedString(),
+                    ],
+                ])
+            }
             session.sendMessage(contentBlocks: blocks, extra: extra)
         } else {
             session.sendMessage(input.text ?? "", extra: extra)

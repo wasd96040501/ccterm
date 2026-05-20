@@ -232,7 +232,7 @@ final class Transcript2HighlightStorage {
                     return out
                 })
 
-        case .heading, .paragraph, .image, .list, .table,
+        case .heading, .paragraph, .image, .userAttachments, .list, .table,
             .blockquote, .thematicBreak, .userBubble, .loadingPill:
             return nil
         }

@@ -622,6 +622,12 @@ final class BlockCellView: NSView {
                 if let id = blockId {
                     coordinator?.requestUserBubbleSheet(id: id)
                 }
+            case .openImagePreview(let image):
+                // Same SwiftUI escape-hatch as `openUserBubbleSheet` —
+                // hand the chip's `NSImage` to the coordinator, which
+                // wakes the bound `pendingImagePreview` field on the
+                // controller and lets `.sheet(item:)` present.
+                coordinator?.requestImagePreview(image: image)
             case .copy(let id, let text):
                 handleCopy(id: id, text: text)
             case .toggleFold(let id):

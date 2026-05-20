@@ -165,6 +165,14 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// internals.
     var onUserBubbleSheetRequested: ((UUID, String) -> Void)?
 
+    /// Set by `Transcript2Controller` to forward an attachment-chip
+    /// click to the SwiftUI-owned image preview sheet. The cell's
+    /// mouseDown handler resolves the chip hit via
+    /// `HitAction.openImagePreview(NSImage)` and fires this with the
+    /// same `NSImage` instance the layout holds — narrow contract,
+    /// symmetric with `onUserBubbleSheetRequested`.
+    var onImagePreviewRequested: ((NSImage) -> Void)?
+
     /// Cross-row text selection. Owns the selection dict; reads back into
     /// us through the helpers below (`block(atRow:)`, `textLayout(atRow:)`,
     /// `attributedString(forBlockId:)`, `markCellNeedsDisplay(blockId:)`).
@@ -778,6 +786,9 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             return .thematicBreak(ThematicBreakLayout.make(maxWidth: contentWidth))
         case .userBubble(let text):
             return .userBubble(UserBubbleLayout.make(text: text, maxWidth: contentWidth))
+        case .userAttachments(let images):
+            return .userAttachments(
+                UserAttachmentsLayout.make(images: images, maxWidth: contentWidth))
         case .toolGroup(let group):
             // Pull every per-child highlight snapshot up front so the
             // off-main precompute path has no per-iteration dict
@@ -973,6 +984,14 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             case .userBubble(let text) = blocks[i].kind
         else { return }
         onUserBubbleSheetRequested?(id, text)
+    }
+
+    /// Forwards an attachment-chip click to the SwiftUI image preview
+    /// sheet. The chip's `NSImage` is the same instance the layout
+    /// holds, handed off verbatim — no `.update` path, no row mutation;
+    /// presentation is SwiftUI's responsibility once the closure fires.
+    func requestImagePreview(image: NSImage) {
+        onImagePreviewRequested?(image)
     }
 
     // MARK: - Width-change driven invalidation

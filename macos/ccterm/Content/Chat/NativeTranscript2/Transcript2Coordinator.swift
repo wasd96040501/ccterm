@@ -1193,8 +1193,26 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         guard blocks.indices.contains(row) else { return 1 }
         let width = layoutWidth
         let pad = BlockStyle.blockPadding(for: blocks[row].kind)
-        return layout(for: blocks[row], width: width).totalHeight
+        #if DEBUG
+        let perfStart =
+            Transcript2PerfLog.enabled ? CFAbsoluteTimeGetCurrent() : 0
+        let perfCacheHit =
+            Transcript2PerfLog.enabled
+            ? (layoutCache[blocks[row].id]?.width == width) : false
+        #endif
+        let h =
+            layout(for: blocks[row], width: width).totalHeight
             + pad.top + pad.bottom
+        #if DEBUG
+        if Transcript2PerfLog.enabled {
+            let ms = (CFAbsoluteTimeGetCurrent() - perfStart) * 1000
+            Transcript2PerfLog.trace(
+                "heightOfRow row=\(row) kind=\(blocks[row].kindLabel) "
+                    + "cached=\(perfCacheHit) h=\(Int(h.rounded())) "
+                    + "ms=\(String(format: "%.2f", ms))")
+        }
+        #endif
+        return h
     }
 
     func tableView(
@@ -1220,7 +1238,21 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         guard blocks.indices.contains(row) else { return nil }
         let width = layoutWidth
         let block = blocks[row]
+        #if DEBUG
+        // Cache-hit snapshot taken BEFORE the lazy lookup below would
+        // populate it on miss — that way the trace shows whether scroll
+        // is hitting the memo or burning new layouts.
+        let perfCacheHit =
+            Transcript2PerfLog.enabled
+            ? (layoutCache[block.id]?.width == width) : false
+        #endif
         let cellLayout = layout(for: block, width: width)
+        #if DEBUG
+        if Transcript2PerfLog.enabled {
+            Transcript2PerfLog.trace(
+                "viewFor row=\(row) kind=\(block.kindLabel) cached=\(perfCacheHit)")
+        }
+        #endif
 
         let id = NSUserInterfaceItemIdentifier("BlockCell")
         let cell: BlockCellView

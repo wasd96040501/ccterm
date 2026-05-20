@@ -158,6 +158,8 @@ struct RootView2: View {
             TranscriptDemoView()
         } else if selectedSessionId == SidebarView2.transcriptStressTag {
             TranscriptStressView()
+        } else if selectedSessionId == SidebarView2.transcriptPerfTag {
+            TranscriptPerfDemoView()
         } else if selectedSessionId == SidebarView2.permissionCardsDemoTag {
             PermissionCardsDemoView()
         } else {

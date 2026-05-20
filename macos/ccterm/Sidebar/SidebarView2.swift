@@ -40,6 +40,12 @@ struct SidebarView2: View {
     static let transcriptDemoTag = "__transcript_demo__"
     /// Sentinel for the Transcript Stress tab (long-document perf test).
     static let transcriptStressTag = "__transcript_stress__"
+    /// Sentinel for the Transcript Perf tab — focused repro for the
+    /// "expanded diff scroll drops frames" bug. Renders one tool group
+    /// whose lone fileEdit child carries a many-screen diff body. See
+    /// `TranscriptPerfDemoView` + `Transcript2PerfLog` for the trace
+    /// scaffold the tab installs while mounted.
+    static let transcriptPerfTag = "__transcript_perf__"
     /// Sentinel for the Permission Cards preview grid — every
     /// `PermissionCardKind` rendered side-by-side in a fixed grid.
     static let permissionCardsDemoTag = "__permission_cards_demo__"
@@ -59,6 +65,9 @@ struct SidebarView2: View {
                 .listRowInsets(Self.fixedRowInsets)
             SidebarItemRow(title: "Transcript Stress", systemImage: "speedometer")
                 .tag(Self.transcriptStressTag)
+                .listRowInsets(Self.fixedRowInsets)
+            SidebarItemRow(title: "Transcript Perf", systemImage: "waveform.path.ecg")
+                .tag(Self.transcriptPerfTag)
                 .listRowInsets(Self.fixedRowInsets)
             SidebarItemRow(
                 title: "Permission Cards Demo", systemImage: "hand.raised.fill"

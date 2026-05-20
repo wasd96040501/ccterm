@@ -19,12 +19,14 @@ struct ReadChildLayout: @unchecked Sendable {
 
     var totalHeight: CGFloat { body?.totalHeight ?? 0 }
 
-    func drawBackplate(in ctx: CGContext, origin: CGPoint) {
-        body?.drawBackplate(in: ctx, origin: origin)
+    func drawBackplate(
+        in ctx: CGContext, origin: CGPoint, dirtyRect: CGRect? = nil
+    ) {
+        body?.drawBackplate(in: ctx, origin: origin, dirtyRect: dirtyRect)
     }
 
-    func draw(in ctx: CGContext, origin: CGPoint) {
-        body?.draw(in: ctx, origin: origin)
+    func draw(in ctx: CGContext, origin: CGPoint, dirtyRect: CGRect? = nil) {
+        body?.draw(in: ctx, origin: origin, dirtyRect: dirtyRect)
     }
 
     nonisolated static func make(

@@ -54,6 +54,20 @@ extension BlockCellView {
                 flashingCopyIds: Set(copyFlashByActionId.keys)) ?? .empty
         let animateFrames = pendingFoldTransition
         pendingFoldTransition = false
+        #if DEBUG
+        if Transcript2PerfLog.enabled, !plan.entries.isEmpty {
+            // Driven by `BlockCellView.{layout,padTop,hoveredAction,selection,`
+            // `copyFlashByActionId,searchHighlights,setFrameSize,viewDidChangeBackingProperties}`.
+            // We don't know the trigger here, but the call count alone
+            // tells us whether scroll-without-mutation is producing
+            // spurious plan rebuilds.
+            Transcript2PerfLog.trace(
+                "syncSubviewPlan entries=\(plan.entries.count) "
+                    + "chevrons=\(plan.chevrons.count) "
+                    + "shimmers=\(plan.shimmers.count) "
+                    + "animateFrames=\(animateFrames)")
+        }
+        #endif
         applyChevronPlan(plan.chevrons, allowSlide: animateFrames)
         applyEntryPlan(plan.entries, animateFrames: animateFrames)
         applyShimmerPlan(plan.shimmers)
@@ -509,6 +523,11 @@ extension BlockCellView {
         _ specs: [SubviewPlan.Entry], animateFrames: Bool
     ) {
         var seen = Set<UUID>()
+        #if DEBUG
+        var perfReassignedSpec = 0
+        var perfNewView = 0
+        var perfFrameChanged = 0
+        #endif
         for spec in specs {
             seen.insert(spec.id)
             if let view = entryViews[spec.id] {
@@ -518,13 +537,22 @@ extension BlockCellView {
                     } else {
                         view.frame = spec.frame
                     }
+                    #if DEBUG
+                    perfFrameChanged += 1
+                    #endif
                 }
                 view.spec = spec
+                #if DEBUG
+                perfReassignedSpec += 1
+                #endif
             } else {
                 let view = ToolGroupEntryView(frame: spec.frame)
                 view.spec = spec
                 entryViews[spec.id] = view
                 addSubview(view)
+                #if DEBUG
+                perfNewView += 1
+                #endif
                 // Order: chevron sublayers live above subviews
                 // (`zPosition = 1` in `makeChevronShapeLayer`) so
                 // chevron glyphs paint on top of the body card.
@@ -532,10 +560,31 @@ extension BlockCellView {
                 // (their bands don't overlap).
             }
         }
+        #if DEBUG
+        var perfRemoved = 0
+        #endif
         for (id, view) in entryViews where !seen.contains(id) {
             view.removeFromSuperview()
             entryViews.removeValue(forKey: id)
+            #if DEBUG
+            perfRemoved += 1
+            #endif
         }
+        #if DEBUG
+        if Transcript2PerfLog.enabled, !specs.isEmpty {
+            // Spec reassignment counts surface "spec churn" cleanly:
+            // every reassigned spec triggers `ToolGroupEntryView.spec`'s
+            // `didSet` → `needsDisplay = true`, even when the spec's
+            // observable content was unchanged. A high count on a pure
+            // scroll proves we're invalidating entry bitmaps for no
+            // visible reason.
+            Transcript2PerfLog.trace(
+                "applyEntryPlan specs=\(specs.count) "
+                    + "new=\(perfNewView) reused=\(perfReassignedSpec) "
+                    + "frameChanged=\(perfFrameChanged) removed=\(perfRemoved) "
+                    + "animateFrames=\(animateFrames)")
+        }
+        #endif
     }
 
     // MARK: - Chevron layer construction
@@ -649,6 +698,43 @@ final class ToolGroupEntryView: NSView {
         guard let spec, let ctx = NSGraphicsContext.current?.cgContext else {
             return
         }
+        // Effective draw region = AppKit's dirty ∩ the chunk of our
+        // bounds that's actually visible to the user through the
+        // scroll-view chain. `NSView.visibleRect` honours every clip
+        // ancestor (clip view / table / window content), so for a
+        // multi-screen-tall entry view it shrinks to "the diff strip
+        // currently inside the viewport". Passing this further-narrowed
+        // rect into the draw closure means even when CoreAnimation
+        // tile-fallback kicks in (oversized layer → AppKit issues a
+        // tile-sized `dirtyRect` instead of zero `draw(_:)` calls), the
+        // body's per-row clip skips every row outside the visible
+        // strip rather than every row outside the tile band.
+        let effectiveDirty = dirtyRect.intersection(visibleRect)
+        #if DEBUG
+        // Entry-view repaint trace. This is the single biggest scroll-
+        // cost path for a tool group whose expanded child overflows
+        // the viewport — the entry view's CALayer-backed bitmap is the
+        // diff body, sized to `entry.bandRect.height`. If this fires
+        // during scroll-without-mutation, the cached bitmap is missing
+        // (almost certainly because the layer's intrinsic size hit
+        // IOSurface limits and CoreAnimation fell back to tiled
+        // on-demand drawing). The dirtyRect.height vs bounds.height
+        // ratio + repaint count per scroll-frame surfaces that fast.
+        let perfStart =
+            Transcript2PerfLog.enabled ? CFAbsoluteTimeGetCurrent() : 0
+        defer {
+            if Transcript2PerfLog.enabled {
+                let ms = (CFAbsoluteTimeGetCurrent() - perfStart) * 1000
+                Transcript2PerfLog.trace(
+                    "ToolGroupEntryView.draw id=\(spec.id.uuidString.prefix(8)) "
+                        + "bounds=\(BlockCellView.fmt(bounds.size)) "
+                        + "dirty=\(BlockCellView.fmt(dirtyRect.size)) "
+                        + "effDirty=\(BlockCellView.fmt(effectiveDirty.size)) "
+                        + "ms=\(String(format: "%.2f", ms))")
+            }
+        }
+        #endif
+        if effectiveDirty.isEmpty { return }
         // Selection colour depends on `window.isKeyWindow`, which is
         // a runtime cell-state — the plan can't bake it in at build
         // time. The view supplies it here and the closure paints
@@ -658,7 +744,7 @@ final class ToolGroupEntryView: NSView {
             (window?.isKeyWindow == true)
             ? .selectedTextBackgroundColor
             : .unemphasizedSelectedTextBackgroundColor
-        spec.draw(ctx, selectionColor)
+        spec.draw(ctx, selectionColor, effectiveDirty)
     }
 }
 

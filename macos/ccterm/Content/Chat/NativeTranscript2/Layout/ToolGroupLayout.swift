@@ -765,7 +765,22 @@ struct ToolGroupLayout: @unchecked Sendable {
     /// Paints the group header title only. Child entries are
     /// rendered by their own subviews via the `draw` closures their
     /// `SubviewPlan.Entry` specs carry.
-    func draw(in ctx: CGContext, origin: CGPoint, hoveredAction: HitAction?) {
+    ///
+    /// `dirtyRect` (cell-local) — when supplied, the CTLine retypeset
+    /// is skipped if the group header band sits entirely outside the
+    /// dirty region. Honours the `drawRect:` contract for the rare
+    /// case where the cell's own layer hits the IOSurface tile fallback
+    /// (a multi-screen-tall tool-group row) and AppKit issues a
+    /// tile-sized dirty band that misses the header.
+    func draw(
+        in ctx: CGContext, origin: CGPoint, hoveredAction: HitAction?,
+        dirtyRect: CGRect? = nil
+    ) {
+        if let dirtyRect {
+            let headerAtScreen =
+                groupHeader.rect.offsetBy(dx: origin.x, dy: origin.y)
+            if !headerAtScreen.intersects(dirtyRect) { return }
+        }
         let hoveredId = Self.hoveredFoldId(in: hoveredAction)
         Self.drawHeader(
             groupHeader,
@@ -788,6 +803,14 @@ struct ToolGroupLayout: @unchecked Sendable {
     /// (fileEdit / read), so per-card icons render hover-bg /
     /// checkmark feedback. Empty / nil for entries whose body has no
     /// such affordances.
+    ///
+    /// `dirtyRect` is the view-local clip the caller has already
+    /// narrowed via `AppKit dirty ∩ visibleRect`. Forwarded to the
+    /// body's backplate / glyph passes so per-row work scales with
+    /// visible-row count rather than total-row count — the load-
+    /// bearing fix for oversized diff bodies that overflow the
+    /// CALayer / IOSurface texture cap and trigger tile-on-demand
+    /// redraws during scroll.
     nonisolated private static func drawEntry(
         _ entry: Entry,
         hovered: Bool,
@@ -795,14 +818,16 @@ struct ToolGroupLayout: @unchecked Sendable {
         selectionColor: NSColor,
         hoveredCopyId: UUID?,
         flashingCopyIds: Set<UUID>,
-        in ctx: CGContext
+        in ctx: CGContext,
+        dirtyRect: CGRect
     ) {
         let dx = -entry.bandRect.minX
         let dy = -entry.bandRect.minY
         let originForBody = CGPoint(x: dx, y: dy)
 
         // 1. Body backplate (rounded container + line/gutter bg).
-        entry.body?.drawBackplate(in: ctx, origin: originForBody)
+        entry.body?.drawBackplate(
+            in: ctx, origin: originForBody, dirtyRect: dirtyRect)
 
         // 2. Selection band — under glyphs, above backplate.
         let bandRect = entry.bandRect
@@ -818,7 +843,8 @@ struct ToolGroupLayout: @unchecked Sendable {
         entry.body?.draw(
             in: ctx, origin: originForBody,
             hoveredCopyId: hoveredCopyId,
-            flashingCopyIds: flashingCopyIds)
+            flashingCopyIds: flashingCopyIds,
+            dirtyRect: dirtyRect)
 
         // 4. Child header title.
         drawHeader(
@@ -952,7 +978,7 @@ struct ToolGroupLayout: @unchecked Sendable {
                 SubviewPlan.Entry(
                     id: entry.childId,
                     frame: frame,
-                    draw: { ctx, selectionColor in
+                    draw: { ctx, selectionColor, dirtyRect in
                         Self.drawEntry(
                             capturedEntry,
                             hovered: capturedHovered,
@@ -960,7 +986,8 @@ struct ToolGroupLayout: @unchecked Sendable {
                             selectionColor: selectionColor,
                             hoveredCopyId: capturedHoveredCopyId,
                             flashingCopyIds: capturedFlashing,
-                            in: ctx)
+                            in: ctx,
+                            dirtyRect: dirtyRect)
                     }))
         }
 

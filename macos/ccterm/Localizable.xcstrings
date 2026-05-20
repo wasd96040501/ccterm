@@ -421,6 +421,16 @@
         }
       }
     },
+    "Attach Image or File": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加图片或文件"
+          }
+        }
+      }
+    },
     "Attach image or file": {
       "localizations": {
         "zh-Hans": {

@@ -54,6 +54,18 @@ extension BlockCellView {
                 flashingCopyIds: Set(copyFlashByActionId.keys)) ?? .empty
         let animateFrames = pendingFoldTransition
         pendingFoldTransition = false
+        if Transcript2PerfLog.enabled, !plan.entries.isEmpty {
+            // Driven by `BlockCellView.{layout,padTop,hoveredAction,selection,`
+            // `copyFlashByActionId,searchHighlights,setFrameSize,viewDidChangeBackingProperties}`.
+            // We don't know the trigger here, but the call count alone
+            // tells us whether scroll-without-mutation is producing
+            // spurious plan rebuilds.
+            Transcript2PerfLog.trace(
+                "syncSubviewPlan entries=\(plan.entries.count) "
+                    + "chevrons=\(plan.chevrons.count) "
+                    + "shimmers=\(plan.shimmers.count) "
+                    + "animateFrames=\(animateFrames)")
+        }
         applyChevronPlan(plan.chevrons, allowSlide: animateFrames)
         applyEntryPlan(plan.entries, animateFrames: animateFrames)
         applyShimmerPlan(plan.shimmers)
@@ -509,6 +521,9 @@ extension BlockCellView {
         _ specs: [SubviewPlan.Entry], animateFrames: Bool
     ) {
         var seen = Set<UUID>()
+        var perfReassignedSpec = 0
+        var perfNewView = 0
+        var perfFrameChanged = 0
         for spec in specs {
             seen.insert(spec.id)
             if let view = entryViews[spec.id] {
@@ -518,13 +533,16 @@ extension BlockCellView {
                     } else {
                         view.frame = spec.frame
                     }
+                    perfFrameChanged += 1
                 }
                 view.spec = spec
+                perfReassignedSpec += 1
             } else {
                 let view = ToolGroupEntryView(frame: spec.frame)
                 view.spec = spec
                 entryViews[spec.id] = view
                 addSubview(view)
+                perfNewView += 1
                 // Order: chevron sublayers live above subviews
                 // (`zPosition = 1` in `makeChevronShapeLayer`) so
                 // chevron glyphs paint on top of the body card.
@@ -532,9 +550,24 @@ extension BlockCellView {
                 // (their bands don't overlap).
             }
         }
+        var perfRemoved = 0
         for (id, view) in entryViews where !seen.contains(id) {
             view.removeFromSuperview()
             entryViews.removeValue(forKey: id)
+            perfRemoved += 1
+        }
+        if Transcript2PerfLog.enabled, !specs.isEmpty {
+            // Spec reassignment counts surface "spec churn" cleanly:
+            // every reassigned spec triggers `ToolGroupEntryView.spec`'s
+            // `didSet` → `needsDisplay = true`, even when the spec's
+            // observable content was unchanged. A high count on a pure
+            // scroll proves we're invalidating entry bitmaps for no
+            // visible reason.
+            Transcript2PerfLog.trace(
+                "applyEntryPlan specs=\(specs.count) "
+                    + "new=\(perfNewView) reused=\(perfReassignedSpec) "
+                    + "frameChanged=\(perfFrameChanged) removed=\(perfRemoved) "
+                    + "animateFrames=\(animateFrames)")
         }
     }
 
@@ -648,6 +681,27 @@ final class ToolGroupEntryView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let spec, let ctx = NSGraphicsContext.current?.cgContext else {
             return
+        }
+        // Entry-view repaint trace. This is the single biggest scroll-
+        // cost path for a tool group whose expanded child overflows
+        // the viewport — the entry view's CALayer-backed bitmap is the
+        // diff body, sized to `entry.bandRect.height`. If this fires
+        // during scroll-without-mutation, the cached bitmap is missing
+        // (almost certainly because the layer's intrinsic size hit
+        // IOSurface limits and CoreAnimation fell back to tiled
+        // on-demand drawing). The dirtyRect.height vs bounds.height
+        // ratio + repaint count per scroll-frame surfaces that fast.
+        let perfStart =
+            Transcript2PerfLog.enabled ? CFAbsoluteTimeGetCurrent() : 0
+        defer {
+            if Transcript2PerfLog.enabled {
+                let ms = (CFAbsoluteTimeGetCurrent() - perfStart) * 1000
+                Transcript2PerfLog.trace(
+                    "ToolGroupEntryView.draw id=\(spec.id.uuidString.prefix(8)) "
+                        + "bounds=\(BlockCellView.fmt(bounds.size)) "
+                        + "dirty=\(BlockCellView.fmt(dirtyRect.size)) "
+                        + "ms=\(String(format: "%.2f", ms))")
+            }
         }
         // Selection colour depends on `window.isKeyWindow`, which is
         // a runtime cell-state — the plan can't bake it in at build

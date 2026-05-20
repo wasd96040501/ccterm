@@ -74,6 +74,26 @@ enum RowLayout: @unchecked Sendable {
     case toolGroup(ToolGroupLayout)
     case loadingPill(LoadingPillLayout)
 
+    /// Short tag used by perf-trace log lines so a `log stream` reader
+    /// can correlate cell repaint volume with which layout kind owned
+    /// the row. Kept here (not derived inside the trace closure) so
+    /// the switch stays exhaustive against future case additions.
+    var kindLabel: String {
+        switch self {
+        case .text: return "text"
+        case .image: return "image"
+        case .list: return "list"
+        case .table: return "table"
+        case .codeBlock: return "codeBlock"
+        case .blockquote: return "blockquote"
+        case .thematicBreak: return "thematicBreak"
+        case .userBubble: return "userBubble"
+        case .userAttachments: return "userAttachments"
+        case .toolGroup: return "toolGroup"
+        case .loadingPill: return "loadingPill"
+        }
+    }
+
     var totalHeight: CGFloat {
         switch self {
         case .text(let l): return l.totalHeight

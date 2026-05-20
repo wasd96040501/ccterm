@@ -377,6 +377,23 @@ final class BlockCellView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let layout, let ctx = NSGraphicsContext.current?.cgContext else { return }
+        // Scroll-cost trace: cell draw is the cached-bitmap repaint path
+        // (`.onSetNeedsDisplay`). Under the perf-demo trace flag we
+        // record every invocation so `log stream` can flag cells that
+        // repaint per-frame during pure scrolls (where `.onSetNeedsDisplay`
+        // should keep this at zero invocations on already-rendered cells).
+        let perfStart =
+            Transcript2PerfLog.enabled ? CFAbsoluteTimeGetCurrent() : 0
+        defer {
+            if Transcript2PerfLog.enabled {
+                let ms = (CFAbsoluteTimeGetCurrent() - perfStart) * 1000
+                Transcript2PerfLog.trace(
+                    "BlockCellView.draw kind=\(layout.kindLabel) "
+                        + "bounds=\(Self.fmt(bounds.size)) "
+                        + "dirty=\(Self.fmt(dirtyRect.size)) "
+                        + "ms=\(String(format: "%.2f", ms))")
+            }
+        }
         let origin = layoutOrigin
 
         // Backplate: opaque chrome that must paint *before* the
@@ -719,5 +736,11 @@ final class BlockCellView: NSView {
     fileprivate func isHovered(copyId: UUID) -> Bool {
         if case .copy(let id, _) = hoveredAction { return id == copyId }
         return false
+    }
+
+    /// Compact `CGSize` formatter used by perf-trace messages so log
+    /// lines stay grep-friendly (`100x42` rather than `(100.0, 42.0)`).
+    nonisolated static func fmt(_ s: CGSize) -> String {
+        "\(Int(s.width.rounded()))x\(Int(s.height.rounded()))"
     }
 }

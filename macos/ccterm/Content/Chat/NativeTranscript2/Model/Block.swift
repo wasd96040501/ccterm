@@ -83,6 +83,27 @@ struct Block: Identifiable, Equatable, @unchecked Sendable {
         /// sentinel row.
         case loadingPill
     }
+
+    /// Short, stable tag used by perf-trace log lines so a `log stream`
+    /// reader can correlate cell paint volume with which kind of row
+    /// drove it. Plain pattern match — exhaustiveness is checked by
+    /// the compiler against future `Kind` additions.
+    var kindLabel: String {
+        switch kind {
+        case .heading: return "heading"
+        case .paragraph: return "paragraph"
+        case .image: return "image"
+        case .list: return "list"
+        case .table: return "table"
+        case .codeBlock: return "codeBlock"
+        case .blockquote: return "blockquote"
+        case .thematicBreak: return "thematicBreak"
+        case .userBubble: return "userBubble"
+        case .userAttachments: return "userAttachments"
+        case .toolGroup: return "toolGroup"
+        case .loadingPill: return "loadingPill"
+        }
+    }
 }
 
 /// Grouped tool calls. The group renders as a single row containing:

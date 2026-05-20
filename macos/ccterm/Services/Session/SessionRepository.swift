@@ -137,6 +137,35 @@ final class CoreDataSessionRepository: SessionRepository {
         }
     }
 
+    /// Off-main archived-list fetch. Runs the query on a fresh
+    /// background context so a large archive doesn't block the UI
+    /// thread on the first paint of the Archive page. The returned
+    /// `[SessionRecord]` is a value-type snapshot, so it's safe to hand
+    /// back across the actor boundary.
+    func findArchivedAsync() async -> [SessionRecord] {
+        let container = coreDataStack.persistentContainer
+        return await withCheckedContinuation { continuation in
+            container.performBackgroundTask { context in
+                let request = NSFetchRequest<CDSessionRecord>(entityName: "CDSessionRecord")
+                request.predicate = NSPredicate(
+                    format: "status == %@", SessionStatus.archived.rawValue)
+                request.sortDescriptors = [
+                    NSSortDescriptor(key: "lastActiveAt", ascending: false)
+                ]
+                do {
+                    let results = try context.fetch(request)
+                    let records = results.compactMap { Self.session(from: $0) }
+                    continuation.resume(returning: records)
+                } catch {
+                    appLog(
+                        .error, "CoreDataSessionRepository",
+                        "findArchivedAsync failed: \(error.localizedDescription)")
+                    continuation.resume(returning: [])
+                }
+            }
+        }
+    }
+
     // MARK: - Create / Delete
 
     func save(_ session: SessionRecord) {

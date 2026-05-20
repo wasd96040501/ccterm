@@ -62,6 +62,19 @@ struct ArchiveView: View {
     /// for the filter pass.
     @State private var folderOptions: [FolderFilterPickerView.Folder] = []
 
+    /// Flips to `true` once the first async fetch has landed. Until
+    /// then the body renders an empty slot so the empty-state copy
+    /// doesn't flash before the records arrive.
+    @State private var isLoaded: Bool = false
+    /// Drives the header spinner. Decoupled from `isLoaded` so a fast
+    /// load skips the spinner entirely (anti-flicker debounce) and a
+    /// slow load keeps it visible for at least `progressMinVisibleMillis`.
+    @State private var showProgress: Bool = false
+    /// Wall-clock timestamp recorded when the spinner first appears.
+    /// Used to enforce the min-visible window so the spinner doesn't
+    /// blink in and out for borderline-fast loads.
+    @State private var progressShownAt: Date? = nil
+
     init(onUnarchive: ((String) -> Void)? = nil) {
         self.onUnarchive = onUnarchive
     }
@@ -70,6 +83,19 @@ struct ArchiveView: View {
     /// enough that the list reacts as fast as the eye registers a
     /// pause, long enough to skip mid-word filter passes.
     private static let searchDebounceMillis: UInt64 = 150
+
+    /// Loading shorter than this never shows the spinner. Picks up the
+    /// pathological "5k archived rows on a cold CoreData cache" path
+    /// without paying for it on the common "a dozen rows" case.
+    private static let progressShowDelayMillis: UInt64 = 250
+    /// Once visible, the spinner stays up at least this long so a load
+    /// that finishes 30ms after the spinner appears doesn't look like
+    /// a render glitch.
+    private static let progressMinVisibleMillis: UInt64 = 500
+    /// Spinner fade in/out.
+    private static let progressFadeDuration: Double = 0.18
+    /// List fade-in when records first land.
+    private static let contentFadeDuration: Double = 0.25
 
     var body: some View {
         ScrollView {
@@ -102,7 +128,7 @@ struct ArchiveView: View {
                 filterButton
             }
         }
-        .task { manager.refreshArchivedRecords() }
+        .task { await loadArchivedAsync() }
         .task(id: searchQueryRaw) {
             // `.task(id:)` cancels the previous body when the raw text
             // changes, so the debounce is "fire only when no keystroke
@@ -128,16 +154,24 @@ struct ArchiveView: View {
 
     @ViewBuilder
     private var bodyContent: some View {
-        if manager.archivedRecords.isEmpty {
+        if !isLoaded {
+            // Placeholder while the first fetch is in flight. Keeps the
+            // empty-state copy from flashing for one frame before the
+            // records land.
+            Color.clear
+                .frame(height: 1)
+        } else if manager.archivedRecords.isEmpty {
             ArchiveEmptyState()
                 .frame(maxWidth: .infinity)
                 .padding(.top, 80)
+                .transition(.opacity)
         } else {
             let records = filteredRecords
             if records.isEmpty {
                 ArchiveNoMatchState()
                     .frame(maxWidth: .infinity)
                     .padding(.top, 80)
+                    .transition(.opacity)
             } else {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(records.enumerated()), id: \.element.id) { index, record in
@@ -152,23 +186,95 @@ struct ArchiveView: View {
                     }
                 }
                 .padding(.top, 12)
+                .transition(.opacity)
             }
         }
     }
 
     /// Header sits at the same leading inset as the row text column —
     /// matches `ArchiveRow`'s `rowHorizontalPadding` so the "Archive"
-    /// title baseline and the first row's title share a vertical line.
+    /// title and the first row's title share a vertical line. Spinner
+    /// sits flush right of the title under `.center` alignment so the
+    /// 22pt cap height and the spinner glyph share a visual midline.
     @ViewBuilder
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
+        HStack(alignment: .center, spacing: 10) {
             Text("Archive")
                 .font(.system(size: 22, weight: .semibold))
+            if showProgress {
+                ProgressView()
+                    .controlSize(.small)
+                    .scaleEffect(0.85)
+                    .frame(width: 16, height: 16)
+                    .transition(.opacity)
+            }
             Spacer(minLength: 0)
         }
+        .animation(.easeInOut(duration: Self.progressFadeDuration), value: showProgress)
         .padding(.horizontal, Self.rowHorizontalPadding)
         .padding(.top, 40)
         .padding(.bottom, 16)
+    }
+
+    /// First-render async load. Sequence:
+    ///
+    /// 1. Schedule a deferred spinner show — only fires if the load is
+    ///    still running after `progressShowDelayMillis`. Keeps the
+    ///    spinner off-screen for the common "small archive, instant
+    ///    fetch" case.
+    /// 2. `Task.yield()` so SwiftUI lays out the header / chrome before
+    ///    we hit storage.
+    /// 3. `refreshArchivedRecordsAsync()` — CoreData repo fetches on a
+    ///    background context; in-memory test repo falls back to a sync
+    ///    read after a yield.
+    /// 4. Cancel the deferred spinner task.
+    /// 5. If the spinner did appear, enforce `progressMinVisibleMillis`
+    ///    before hiding it — avoids the "flicker on, blink off" look
+    ///    when the load lands a few ms after the spinner shows up.
+    /// 6. Fade the spinner out and flip `isLoaded` so the records
+    ///    crossfade in via `.transition(.opacity)`.
+    ///
+    /// Re-entry (view re-appears with `isLoaded` already true) skips
+    /// the loading choreography and just does a cheap synchronous
+    /// refresh so any out-of-band archive/unarchive lands in the list.
+    @MainActor
+    private func loadArchivedAsync() async {
+        guard !isLoaded else {
+            manager.refreshArchivedRecords()
+            return
+        }
+
+        let progressTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: Self.progressShowDelayMillis * 1_000_000)
+            guard !Task.isCancelled else { return }
+            progressShownAt = Date()
+            withAnimation(.easeInOut(duration: Self.progressFadeDuration)) {
+                showProgress = true
+            }
+        }
+
+        // Yield so the header / placeholder body get a frame before we
+        // start the CoreData fetch. Without this the first paint
+        // contains the records already and the fade-in is invisible.
+        await Task.yield()
+
+        await manager.refreshArchivedRecordsAsync()
+
+        progressTask.cancel()
+
+        if showProgress, let shownAt = progressShownAt {
+            let elapsedMs = UInt64(max(0, Date().timeIntervalSince(shownAt) * 1000))
+            if elapsedMs < Self.progressMinVisibleMillis {
+                let remainingMs = Self.progressMinVisibleMillis - elapsedMs
+                try? await Task.sleep(nanoseconds: remainingMs * 1_000_000)
+            }
+        }
+
+        withAnimation(.easeOut(duration: Self.contentFadeDuration)) {
+            showProgress = false
+            isLoaded = true
+        }
+        progressShownAt = nil
     }
 
     private var filterButton: some View {

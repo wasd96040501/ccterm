@@ -124,6 +124,13 @@ struct Transcript2NSViewBridge: NSViewRepresentable {
         scroll.contentInsets = NSEdgeInsets(top: 44, left: 0, bottom: 180, right: 0)
 
         let table = Transcript2TableView()
+        // Born hidden. `Transcript2Coordinator.scheduleSettleAfterFrameLands`
+        // unhides it on the CADisplayLink tick after the first-screen
+        // anchor scroll lands — guarantees the user never sees the
+        // pre-scroll frame (table at row 0) even for one display refresh.
+        // For sessions with no blocks at attach, `tableView.didSet`
+        // immediately sets this back to 1 (nothing to flicker).
+        table.alphaValue = 0
         table.headerView = nil
         table.backgroundColor = .clear
         table.style = .plain

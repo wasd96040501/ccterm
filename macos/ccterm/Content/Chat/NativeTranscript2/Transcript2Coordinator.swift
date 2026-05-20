@@ -67,6 +67,11 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     weak var tableView: NSTableView? {
         didSet {
             guard oldValue !== tableView else { return }
+            // Cancel any in-flight DisplayLink — it was bound to the
+            // outgoing table and its alpha-unhide callback would target
+            // a stale view.
+            pendingFrameLink?.invalidate()
+            pendingFrameLink = nil
             // A new table view replaces the previous one (session switch,
             // SwiftUI rebuild). Until this fresh table tiles to a positive
             // width and consumes `desiredAnchor`, the first-screen anchor
@@ -80,11 +85,21 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             // because `width == lastLayoutWidth` short-circuits the
             // notification handler.
             lastLayoutWidth = -1
-            // If `apply` was called before the table was attached, blocks
-            // already exist; the freshly-attached table starts at
-            // `numberOfRows = 0` until reloaded.
-            if let table = tableView, !blocks.isEmpty {
-                table.reloadData()
+            if let table = tableView {
+                if !blocks.isEmpty {
+                    // Re-entry / bridge-accumulated state: blocks exist
+                    // before any tile. The table is born hidden
+                    // (`alphaValue = 0` from `makeNSView`); the deferred
+                    // anchor consumer will unhide it after the scrolled
+                    // frame lands on screen.
+                    table.reloadData()
+                } else {
+                    // Nothing to scroll → nothing can flicker. Unhide now
+                    // so empty / pre-`setHistory` sessions don't sit
+                    // invisible waiting for an anchor that will never
+                    // arrive.
+                    table.alphaValue = 1
+                }
             }
         }
     }
@@ -138,25 +153,25 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     }
 
     /// Real-width `setHistory` Phase 1 has already scrolled the table to
-    /// the anchor; this just records that the first-screen contract is
+    /// the anchor; this records that the first-screen contract is
     /// fulfilled for the currently-attached table. Phase 2's later
     /// prepend uses `.saveVisible(...)` and does not move the visual
     /// anchor, so calling this between Phase 1 and Phase 2 is safe.
     ///
-    /// Display-pass ordering with the settle flip — same constraint
-    /// as `consumeDesiredAnchor` (see its doc comment). Phase 1's
-    /// `coordinator.apply(scroll: phase1Scroll)` mutated
-    /// `clipView.bounds.origin` synchronously, but the cell-level
-    /// `.onSetNeedsDisplay` layer policy means the rendered bitmap
-    /// for the new visible range may not be committed yet. Force a
-    /// display flush before the settle so the bake-clear observer in
-    /// `RootView2` doesn't reveal a one-frame mismatch.
+    /// The settle flip is deferred through `scheduleSettleAfterFrameLands`
+    /// — see that helper for the rationale. Phase 1's scroll has been
+    /// committed to the clip view by `withScrollAdjustment` before this
+    /// call; the DisplayLink gate ensures the bake overlay clear and
+    /// `tableView.alphaValue` unhide both happen on the same display
+    /// refresh the new scroll lands on.
     func markAnchorSettled() {
-        if let table = tableView, let window = table.window {
-            window.viewsNeedDisplay = true
-            window.displayIfNeeded()
+        guard let table = tableView else {
+            setAnchorSettled(true)
+            return
         }
-        setAnchorSettled(true)
+        table.window?.viewsNeedDisplay = true
+        table.window?.displayIfNeeded()
+        scheduleSettleAfterFrameLands(in: table)
     }
 
     /// Set by `Transcript2Controller` to forward chevron taps to the
@@ -1046,30 +1061,20 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         }
     }
 
-    /// Internal scroll-to-anchor + settle. Forces an immediate layout
-    /// pass before sampling `rect(ofRow:)` — `invalidate`'s
+    /// Internal scroll-to-anchor + deferred settle. Forces an immediate
+    /// layout pass before sampling `rect(ofRow:)` — `invalidate`'s
     /// `noteHeightOfRows` is async, so without this push the documentView
     /// frame.height may still trail the row-height total and
     /// `NSClipView.scroll(to:)` would be pinned by `constrainBoundsRect`.
     ///
-    /// **Display-pass ordering w.r.t. `setAnchorSettled(true)`.** The
-    /// settle flip notifies external observers (`RootView2`'s bake-clear
-    /// hook fires synchronously when `isAnchorSettled` transitions to
-    /// true and starts an opacity fade on the bake overlay). The fade
-    /// animates over ~180 ms and reveals the underlying transcript
-    /// progressively — but if the just-applied `scroll(to:)` hasn't
-    /// reached AppKit's display pass yet, the layer composite shows the
-    /// table at its pre-scroll origin (row 0 for a fresh attach). The
-    /// user perceives that as "瞬间看到 transcript 开头的内容" — the
-    /// flicker the bake was supposed to mask.
-    ///
-    /// Force a synchronous display pass between the scroll and the
-    /// settle to push the new clip-view origin into the layer composite
-    /// BEFORE any observer reacts. `displayIfNeeded` walks the dirty
-    /// window region and runs draw/layer-content updates; pairs with
-    /// `tableView.window?.viewsNeedDisplay = true` so AppKit considers
-    /// the window's display state ready to flush rather than waiting
-    /// for the next runloop tick.
+    /// The settle flip is deferred through `scheduleSettleAfterFrameLands`
+    /// so the bake-clear observer in `RootView2` and the table's own
+    /// `alphaValue = 1` unhide both wait until the CADisplayLink confirms
+    /// the scrolled frame is on screen. `displayIfNeeded` only updates
+    /// CALayer contents; the GPU composite to the display still happens
+    /// on the next display refresh, so flipping settle synchronously
+    /// here would race the composite and reveal the previous frame (table
+    /// at row 0) for ~one refresh interval.
     private func consumeDesiredAnchor(in tableView: NSTableView) {
         tableView.layoutSubtreeIfNeeded()
         switch desiredAnchor {
@@ -1082,15 +1087,37 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         case .bottomTo(let id):
             scrollRowToBottom(id: id, in: tableView)
         }
-        // Flush AppKit's pending display work so the new scroll origin
-        // is composited into the layer NOW. Without this, the
-        // `setAnchorSettled(true)` flip below fires the bake-clear
-        // observer in the same runloop tick — its opacity transition
-        // starts immediately, but the cached table layer hasn't been
-        // re-rendered at the new origin yet, so the fade reveals the
-        // wrong content for one frame.
         tableView.window?.viewsNeedDisplay = true
         tableView.window?.displayIfNeeded()
+        scheduleSettleAfterFrameLands(in: tableView)
+    }
+
+    /// In-flight DisplayLink scheduled by `scheduleSettleAfterFrameLands`.
+    /// Lives until the next display refresh fires `handleFrameLanded` or
+    /// `tableView.didSet` invalidates it when the table is replaced.
+    private var pendingFrameLink: CADisplayLink?
+
+    /// Wait for the next display refresh, then unhide the table
+    /// (`alphaValue = 1`) and flip `isAnchorSettled = true` in one tick.
+    /// Without this gate the unhide + bake clear happen synchronously
+    /// after `displayIfNeeded`, but `displayIfNeeded` only updates layer
+    /// contents — the GPU composite to the display happens on the next
+    /// CADisplayLink. Unhiding earlier would reveal the *previous*
+    /// composite (table at row 0 for a fresh attach) for one refresh
+    /// interval. The bake stays opaque on top of the still-hidden table
+    /// across this gap, so the user never sees the pre-scroll frame.
+    private func scheduleSettleAfterFrameLands(in tableView: NSTableView) {
+        pendingFrameLink?.invalidate()
+        let link = tableView.displayLink(
+            target: self, selector: #selector(handleFrameLanded(_:)))
+        link.add(to: .main, forMode: .common)
+        pendingFrameLink = link
+    }
+
+    @objc private func handleFrameLanded(_ link: CADisplayLink) {
+        link.invalidate()
+        pendingFrameLink = nil
+        tableView?.alphaValue = 1
         setAnchorSettled(true)
     }
 

@@ -163,12 +163,21 @@ struct RootView2: View {
                         // window resized between snapshot and overlay,
                         // the image still fills the new container without
                         // black bars or stretched chrome.
+                        //
+                        // No `.transition(.opacity)`. The transcript is
+                        // born `alphaValue = 0` and stays hidden until
+                        // `Transcript2Coordinator`'s CADisplayLink confirms
+                        // the scrolled frame is on screen; the same tick
+                        // flips `isAnchorSettled` and removes the bake.
+                        // Fading the bake would add a temporal overlap
+                        // during which any AppKit re-layout could leak
+                        // through — the alpha gate already covers the
+                        // pre-scroll frame, so an instant swap is correct.
                         Image(nsImage: img)
                             .resizable()
                             .aspectRatio(contentMode: .fill)
                             .clipped()
                             .allowsHitTesting(false)
-                            .transition(.opacity)
                     }
                 }
                 // `initial: true` lets the observer evaluate on the first
@@ -182,9 +191,7 @@ struct RootView2: View {
                     initial: true
                 ) { _, settled in
                     if settled, bakedImage != nil {
-                        withAnimation(.smooth(duration: 0.18)) {
-                            bakedImage = nil
-                        }
+                        bakedImage = nil
                     }
                 }
                 .navigationSplitViewColumnWidth(min: 680, ideal: 1000)

@@ -53,6 +53,11 @@ enum ChatHistoryRenderCase: Equatable {
 /// inspecting `KeyPress.modifiers`.
 struct ChatHistoryView: View {
     let sessionId: String
+    /// `false` suppresses the toolbar search field. Compose mode (the
+    /// New Session tab) keeps the transcript mounted as a backdrop but
+    /// covers it with `NewSessionConfigurator`, so an active search
+    /// field there reads as out-of-place chrome.
+    var showsSearch: Bool = true
     @Environment(SessionManager.self) private var manager
     @Environment(TranscriptSearchBus.self) private var searchBus
     @State private var session: Session?
@@ -60,6 +65,22 @@ struct ChatHistoryView: View {
     @FocusState private var isSearchFocused: Bool
 
     var body: some View {
+        coreContent
+            .modifier(
+                TranscriptSearchToolbar(
+                    enabled: showsSearch,
+                    query: $searchQuery,
+                    focused: $isSearchFocused,
+                    onNext: { session?.controller.nextSearchHit() },
+                    onPrevious: { session?.controller.previousSearchHit() },
+                    onQueryChange: { session?.controller.runSearch($0) },
+                    focusRequestCounter: searchBus.focusRequestCounter
+                )
+            )
+    }
+
+    @ViewBuilder
+    private var coreContent: some View {
         Group {
             if let session {
                 switch ChatHistoryRenderCase.classify(session.historyLoadState) {
@@ -75,36 +96,6 @@ struct ChatHistoryView: View {
             } else {
                 Color.clear
             }
-        }
-        .searchable(
-            text: $searchQuery,
-            placement: .toolbar,
-            prompt: Text("Find in transcript")
-        )
-        // `.searchFocused` is macOS 15+. On 14 the search field still works
-        // for typing — only the programmatic ⌘F-from-bus focus path degrades.
-        .searchFocusedIfAvailable($isSearchFocused)
-        .toolbar {
-            if #available(macOS 26.0, *) {
-                ToolbarSpacer(.flexible)
-            }
-        }
-        .onSubmit(of: .search) { session?.controller.nextSearchHit() }
-        // Shift+Return for previous match. `.onKeyPress` fires whenever
-        // focus is on this view or any descendant — i.e. the search
-        // field. Plain Return is left to `.onSubmit(of: .search)`; we
-        // return `.ignored` so SwiftUI propagates the event. The
-        // `phases:` overload is the one that exposes `KeyPress.modifiers`.
-        .onKeyPress(keys: [.return], phases: .down) { keyPress in
-            guard keyPress.modifiers.contains(.shift) else { return .ignored }
-            session?.controller.previousSearchHit()
-            return .handled
-        }
-        .onChange(of: searchQuery) { _, new in
-            session?.controller.runSearch(new)
-        }
-        .onChange(of: searchBus.focusRequestCounter) { _, _ in
-            isSearchFocused = true
         }
         // `session?.isRunning` is `@Observable`, so this fires
         // whenever the session's turn count crosses 0. The pill is
@@ -158,6 +149,59 @@ extension View {
             self.searchFocused(binding)
         } else {
             self
+        }
+    }
+}
+
+/// Conditionally applies the toolbar search field and its keyboard /
+/// navigation modifiers. `enabled=false` strips the entire chain so
+/// callers (compose mode) don't show a search field over a backdrop the
+/// user can't see. The modifier is the single mount point so callers
+/// only set one parameter to toggle the whole feature.
+private struct TranscriptSearchToolbar: ViewModifier {
+    let enabled: Bool
+    @Binding var query: String
+    @FocusState.Binding var focused: Bool
+    let onNext: () -> Void
+    let onPrevious: () -> Void
+    let onQueryChange: (String) -> Void
+    let focusRequestCounter: Int
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content
+                .searchable(
+                    text: $query,
+                    placement: .toolbar,
+                    prompt: Text("Find in transcript")
+                )
+                // `.searchFocused` is macOS 15+. On 14 the search field still works
+                // for typing — only the programmatic ⌘F-from-bus focus path degrades.
+                .searchFocusedIfAvailable($focused)
+                .toolbar {
+                    if #available(macOS 26.0, *) {
+                        ToolbarSpacer(.flexible)
+                    }
+                }
+                .onSubmit(of: .search) { onNext() }
+                // Shift+Return for previous match. `.onKeyPress` fires whenever
+                // focus is on this view or any descendant — i.e. the search
+                // field. Plain Return is left to `.onSubmit(of: .search)`; we
+                // return `.ignored` so SwiftUI propagates the event. The
+                // `phases:` overload is the one that exposes `KeyPress.modifiers`.
+                .onKeyPress(keys: [.return], phases: .down) { keyPress in
+                    guard keyPress.modifiers.contains(.shift) else { return .ignored }
+                    onPrevious()
+                    return .handled
+                }
+                .onChange(of: query) { _, new in
+                    onQueryChange(new)
+                }
+                .onChange(of: focusRequestCounter) { _, _ in
+                    focused = true
+                }
+        } else {
+            content
         }
     }
 }

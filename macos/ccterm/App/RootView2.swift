@@ -174,7 +174,11 @@ struct RootView2: View {
             // "draft launcher" and "history continuation" roles — its
             // onSubmit closure branches on `handle.hasRecord` to trigger the
             // first-start side effects only when needed.
-            ChatHistoryView(sessionId: sid)
+            // `showsSearch` is off in compose mode (New Session tab): the
+            // transcript sits as an unseen backdrop under the configurator
+            // card, so a live search field in the window toolbar would
+            // read as out-of-place chrome.
+            ChatHistoryView(sessionId: sid, showsSearch: !isComposeMode)
                 .id(sid)
                 .overlay(alignment: .top) {
                     // Top fade scrim, mirror of the bottom one: same

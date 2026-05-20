@@ -380,6 +380,13 @@ struct NewSessionConfigurator<InputBar: View>: View {
             Image(systemName: "sparkles")
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(.tint)
+                // Optical-center alignment: a 16pt SF Symbol baseline-aligned
+                // to 22pt (.title) CJK text sits ~2pt below the text's visual
+                // center because the em-box midpoints diverge with the size
+                // delta. Shift the symbol up by 2pt so the centers line up.
+                .alignmentGuide(.firstTextBaseline) { d in
+                    d[.firstTextBaseline] + 2
+                }
             Text(String(localized: "Start Building"))
                 .foregroundStyle(.primary)
             if let name = pickedFolderName {

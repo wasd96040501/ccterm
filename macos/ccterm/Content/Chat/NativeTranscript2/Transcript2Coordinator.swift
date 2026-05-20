@@ -942,6 +942,18 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         // Selection / highlight intentionally untouched — status
         // doesn't change glyph geometry inside any selectable body, so
         // current offsets remain valid.
+        //
+        // Queue a `CATransition.fade` on the visible cell *before*
+        // `reloadData(forRowIndexes:)`. AppKit reuses the same cell
+        // for the same row, so the transition carries through the
+        // `layout` swap that follows — title text + colour palette
+        // crossfade rather than pop on `.running ↔ .completed`.
+        // No-op when the row is off-screen (no cell to address).
+        if let cell = table.view(atColumn: 0, row: row, makeIfNecessary: false)
+            as? BlockCellView
+        {
+            cell.beginContentFadeTransition()
+        }
         table.reloadData(
             forRowIndexes: IndexSet(integer: row),
             columnIndexes: IndexSet(integer: 0))

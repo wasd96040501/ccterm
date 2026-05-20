@@ -64,6 +64,13 @@ final class SessionManager {
         let message: String
     }
 
+    /// Manager-level "turn ended on some session" sink. `AppState`
+    /// wires this to `NotificationService.handleTurnEnded` at startup
+    /// so every session the manager allocates gets the notification
+    /// behavior for free — without `SessionRuntime` needing to know the
+    /// notification service exists.
+    @ObservationIgnored var onTurnEndedNotice: ((TurnEndedNotice) -> Void)?
+
     init(
         repository: any SessionRepository = CoreDataSessionRepository(),
         cliClientFactory: @escaping CLIClientFactory = AgentSDKCLIClient.defaultFactory,
@@ -179,6 +186,9 @@ final class SessionManager {
                 .info, "SessionManager",
                 "onRecordPersisted fired sid=\(sid.prefix(8)) — refreshing records")
             self?.refreshRecords()
+        }
+        session.onTurnEnded = { [weak self] notice in
+            self?.onTurnEndedNotice?(notice)
         }
     }
 

@@ -254,7 +254,49 @@ extension SessionRuntime {
         }
         if mode == .live, case .responding = status {
             status = .idle
+            // The `.responding → .idle` edge is the "user-initiated turn
+            // just finished" signal. CLI-driven follow-ups (background
+            // bash continuations etc.) flip `isRunning` but never enter
+            // `.responding`, so they don't trip a duplicate notification.
+            let displayTitle =
+                title.isEmpty ? String(localized: "Untitled") : title
+            let body = snapshotLastAssistantText() ?? ""
+            onTurnEnded?(
+                TurnEndedNotice(
+                    sessionId: sessionId,
+                    title: displayTitle,
+                    body: body
+                ))
         }
+    }
+
+    /// Reverse-scan the timeline for the most recent assistant message
+    /// carrying visible text (skipping `.group` entries — those are pure
+    /// tool_use runs with no text — and skipping single assistants that
+    /// only carry thinking or tool_use blocks). Returns the concatenated
+    /// text of every `.text` block on that single, separated by blank
+    /// lines and trimmed.
+    fileprivate func snapshotLastAssistantText() -> String? {
+        for entry in messages.reversed() {
+            guard case .single(let s) = entry,
+                case .assistant(let a) = s.remoteMessage,
+                let blocks = a.message?.content
+            else { continue }
+            let parts: [String] = blocks.compactMap { block in
+                if case .text(let t) = block,
+                    let txt = t.text,
+                    !txt.isEmpty
+                {
+                    return txt
+                }
+                return nil
+            }
+            if !parts.isEmpty {
+                return parts.joined(separator: "\n\n")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+        return nil
     }
 
     fileprivate func adopt(_ info: Init, mode: ReceiveMode) {

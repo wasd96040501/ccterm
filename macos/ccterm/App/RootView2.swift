@@ -53,6 +53,7 @@ struct RootView2: View {
     @State private var draftSourceBranch: String?
     @Environment(SessionManager.self) private var manager
     @Environment(RecentProjectsStore.self) private var recents
+    @Environment(NotificationService.self) private var notifications
     /// Compose mode is "the New Session tab is selected." Once `submit`
     /// flips `selectedSessionId` to the concrete draft UUID, this turns
     /// false and the animated layout settles the input bar at the
@@ -133,6 +134,20 @@ struct RootView2: View {
             if let new = newValue, let next = manager.session(new) {
                 next.setFocused(true)
             }
+        }
+        // Wake the notification subsystem up exactly once on the
+        // main-window mount. `bootstrap()` is internally guarded
+        // against re-entry — re-mounting the root view is a no-op.
+        .task {
+            notifications.bootstrap()
+        }
+        // The user tapped a banner. Pull the corresponding session into
+        // view and clear the request so a re-tap on the same id refires.
+        .onChange(of: notifications.pendingActivationSessionId, initial: false) {
+            _, newValue in
+            guard let sid = newValue else { return }
+            selectedSessionId = sid
+            notifications.clearPendingActivation()
         }
     }
 

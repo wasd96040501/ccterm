@@ -107,6 +107,17 @@ final class Session {
         }
     }
 
+    /// Turn-end signal, forwarded to the runtime when one exists.
+    /// `SessionManager` wires this through to its own sink, which the
+    /// notification service subscribes to. Draft phase has no runtime,
+    /// so the setter is a no-op there; the wiring re-attaches in
+    /// `wireRuntimeMessagesSink` at promotion time.
+    @ObservationIgnored var onTurnEnded: ((TurnEndedNotice) -> Void)? {
+        didSet {
+            runtime?.onTurnEnded = onTurnEnded
+        }
+    }
+
     // MARK: - Init
 
     /// Construct from an existing record. `phase` is `.active` with a
@@ -189,6 +200,7 @@ final class Session {
         }
         runtime.onLaunchFailure = onLaunchFailure
         runtime.onRecordPersisted = onRecordPersisted
+        runtime.onTurnEnded = onTurnEnded
     }
 
     // MARK: - Phase accessors

@@ -91,10 +91,12 @@ extension SessionRuntime {
             "[v2-send] enqueue sid=\(sessionId.prefix(8)) entryId=\(single.id.uuidString.prefix(8)) "
                 + "status=\(status) hasRecord=\(hasRecord) cliClient=\(cliClient != nil) "
                 + "msgCount=\(messages.count) onChange=\(onMessagesChange != nil)")
-        // Turn entry — bump before any side effect so the view's isRunning
-        // is visible immediately. Synchronous on main; @Observable
-        // auto-notifies SwiftUI to re-render.
-        pendingTurnCount += 1
+        // Turn entry — flip isRunning before any side effect so the
+        // view shows the spinner immediately, even before the CLI's
+        // first message comes back. Synchronous on main; @Observable
+        // auto-notifies SwiftUI to re-render. `receive` then takes
+        // over once `.assistant` / `.result` start flowing.
+        isRunning = true
         // Notify the AppKit renderer — Transcript2EntryBridge is
         // onMessagesChange's only consumer. Must emit on enqueue, otherwise
         // the user bubble would only appear after the CLI echo (100-300ms
@@ -167,8 +169,8 @@ extension SessionRuntime {
     /// Construct a runtime promoted from a `SessionDraft`. The draft's
     /// `config` / `title` / presence flags are copied verbatim; if
     /// `initialInput` is non-nil it is queued as a `.queued`
-    /// `.localUser` entry and `pendingTurnCount` is bumped so
-    /// `isRunning` flips immediately.
+    /// `.localUser` entry and `isRunning` is set so the spinner shows
+    /// immediately at the moment the façade flips phase.
     ///
     /// **Does NOT kick off bootstrap.** The caller (`Session.send`) must:
     /// 1. Assign the runtime's `onMessagesChange` / `onLaunchFailure` /
@@ -220,10 +222,10 @@ extension SessionRuntime {
             )
             runtime.messages.append(.single(single))
             queuedEntry = runtime.messages.last
-            // Bump synchronously so `isRunning` is true the moment the
+            // Flip synchronously so `isRunning` is true the moment the
             // façade flips phase. Matches the pre-split behavior where
-            // `enqueueAndSend` bumped before any side effect.
-            runtime.pendingTurnCount += 1
+            // `enqueueAndSend` flipped before any side effect.
+            runtime.isRunning = true
         }
 
         return (runtime, queuedEntry)
@@ -615,7 +617,7 @@ extension SessionRuntime {
     /// throwing, or the CLI exiting non-zero before init completes.
     ///
     /// Side effects ordered for "make it visible to UI first":
-    /// status / pendingTurnCount flip first, cliClient is detached,
+    /// status / isRunning flip first, cliClient is detached,
     /// queued entries are failed, repo error is written, then
     /// onLaunchFailure notifies the subscriber (SessionManager) to show
     /// an alert.
@@ -629,7 +631,7 @@ extension SessionRuntime {
             "[v2-send] failLaunch sid=\(sessionId.prefix(8)) reason=\(reason)")
         self.termination = reason
         self.status = .stopped
-        self.pendingTurnCount = 0
+        self.isRunning = false
         self.cliClient = nil
         self.stderrBuffer = ""
         for pending in pendingPermissions {
@@ -737,8 +739,8 @@ extension SessionRuntime {
         termination = desc
         status = .stopped
         // Process is dead — no `.result` will arrive for any in-flight turn,
-        // so zero this out to keep `isRunning` from getting stuck.
-        pendingTurnCount = 0
+        // so clear isRunning explicitly to keep the spinner from getting stuck.
+        isRunning = false
 
         for pending in pendingPermissions {
             pending.respond(.deny(reason: "Process exited"))

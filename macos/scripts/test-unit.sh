@@ -66,20 +66,23 @@ XCB_ARGS=(
 # By default, restrict to the unit test target. With FILTER, allow ClassName or
 # ClassName/method scoping.
 #
-# Snapshot tests (files named `*SnapshotTests.swift`) are review-only — they
-# render real views via `NSHostingController` and exist to attach PNGs to the
-# xcresult for human inspection, not as a CI gate. They are skipped on the
-# default-all run (locally and on CI) and only execute when FILTER explicitly
-# names them, e.g. `FILTER=TranscriptDemoSnapshotTests`. See
-# `cctermTests/CLAUDE.md` § Snapshot tests.
+# Two filename patterns are skipped on the default-all run (locally and on CI):
+#
+# - `*SnapshotTests.swift` — review-only PNG renders via `NSHostingController`.
+#   See `cctermTests/CLAUDE.md` § Snapshot tests.
+# - `*SmokeTests.swift` — talks to the real `claude` CLI and spends real model
+#   tokens. Opt-in only via `FILTER=...SmokeTests` with `RUN_SMOKE=1` env var
+#   set in the calling shell (the tests themselves XCTSkip otherwise).
+#
+# Both are still compiled (bit-rot fails at build time) but not executed.
 if [ -n "$FILTER" ]; then
   XCB_ARGS+=(-only-testing:"$TEST_TARGET/$FILTER")
 else
   XCB_ARGS+=(-only-testing:"$TEST_TARGET")
-  while IFS= read -r snapshot_file; do
-    class_name=$(basename "$snapshot_file" .swift)
+  while IFS= read -r skip_file; do
+    class_name=$(basename "$skip_file" .swift)
     XCB_ARGS+=(-skip-testing:"$TEST_TARGET/$class_name")
-  done < <(find "$TEST_TARGET" -name '*SnapshotTests.swift' -type f 2>/dev/null)
+  done < <(find "$TEST_TARGET" \( -name '*SnapshotTests.swift' -o -name '*SmokeTests.swift' \) -type f 2>/dev/null)
 fi
 
 XCB_ARGS+=(test)

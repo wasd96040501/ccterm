@@ -5,16 +5,15 @@ import Foundation
 
 extension SessionRuntime {
 
-    /// Interrupt the current turn. Guards on `isRunning`
-    /// (`pendingTurnCount > 0`), not `status == .responding` — `send()` bumps
-    /// `pendingTurnCount` synchronously, but status only flips to
-    /// `.responding` after the CLI echo. During the 100-300ms gap the stop
-    /// button is already visible, so the old `.responding` guard would
-    /// reject the click and the user sees "click did nothing".
+    /// Interrupt the current turn. Guards on `isRunning`, not
+    /// `status == .responding` — `send()` flips `isRunning` synchronously,
+    /// but `status` only flips to `.responding` after the CLI echo.
+    /// During the 100-300ms gap the stop button is already visible, so
+    /// the old `.responding` guard would reject the click and the user
+    /// sees "click did nothing".
     ///
     /// Side effects ordered for "UI feedback first":
-    /// 1. `pendingTurnCount = 0`: isRunning flips false immediately, bar
-    ///    switches back to send state.
+    /// 1. `isRunning = false`: bar switches back to send state instantly.
     /// 2. `.responding` → `.interrupting` (other statuses untouched, so we
     ///    don't pollute `.starting` / `.idle` "echo not received yet" sub-states).
     /// 3. Mark queued local user entries as failed, so a later
@@ -29,7 +28,7 @@ extension SessionRuntime {
             return
         }
         appLog(.info, "SessionRuntime", "interrupt() begin status=\(status) \(sessionId)")
-        pendingTurnCount = 0
+        isRunning = false
         if status == .responding {
             status = .interrupting
         }

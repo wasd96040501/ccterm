@@ -189,21 +189,27 @@ final class SessionRuntime {
     /// wait.
     @ObservationIgnored internal var bootstrapExitHook: ((Int32) -> Void)?
 
-    /// In-flight turn count. `+1` on every `send(_:)` entry, `-1` on every
-    /// `.result`, reset to 0 on process abort or explicit interrupt.
-    /// `isRunning` derives from this — the view layer (loading pill,
-    /// InputBar's send↔stop) reads `isRunning` as the source of truth.
+    /// "Is something running?" — read this in the view layer (loading
+    /// pill, InputBar's send↔stop swap).
     ///
-    /// Why not derive from `status`: there's a ~200 ms gap between
-    /// `.idle` and `.responding` (send → CLI echo round trip), and a
-    /// message sent in that gap can't flip "running" via status alone.
-    /// The turn count is `+1` synchronously at send entry, with no delay.
-    internal(set) var pendingTurnCount: Int = 0
-
-    /// "Is something running?" — read this in the view layer. True between
-    /// `.send(_:)` and `.result` / `interrupt`. Counts overlapping turns
-    /// when multiple user messages are in flight.
-    var isRunning: Bool { pendingTurnCount > 0 }
+    /// Source of truth: `receive` flips it based on the CLI's actual
+    /// message stream (`.assistant` → true, `.result` → false), with
+    /// `send` flipping true synchronously to bridge the ~200ms gap
+    /// between dispatch and the first CLI message. Termination paths
+    /// (`interrupt` / `handleProcessExit` / `failLaunch`) clear it.
+    ///
+    /// **Why not a `pendingTurnCount` counter.** Earlier versions used
+    /// `+1` on send / `-1` on `.result`. Any drift (CLI merging two
+    /// sends into one turn → one fewer `.result` than sends; SDK
+    /// resolver dropping a `.result`; CLI spontaneously starting a
+    /// second turn after a background bash completes; …) wedged the
+    /// counter above zero and the loading pill never went away.
+    /// Mirroring the CLI's actual `.assistant` / `.result` stream is
+    /// self-healing: a stray late `.assistant` flips back to true; the
+    /// next `.result` clears it. See
+    /// `AgentSDKMessageDumpSmokeTests.testDumpBackgroundJobHaiku` for
+    /// the real-CLI background-bash scenario that motivated this.
+    internal(set) var isRunning: Bool = false
 
     internal(set) var pendingPermissions: [PendingPermission] = []
     internal(set) var contextUsedTokens: Int = 0

@@ -24,7 +24,19 @@ extension SessionRuntime {
     /// live and replay share the same path; `mode` only affects lifecycle advancement and hasUnread.
     func receive(_ message: Message2, mode: ReceiveMode = .live) {
         switch message {
-        case .assistant(let a): noteUsage(a.message?.usage)
+        case .assistant(let a):
+            noteUsage(a.message?.usage)
+            // CLI is producing assistant content → a turn is in progress.
+            // Self-heals two real scenarios surfaced by the SDK smoke
+            // dump:
+            //   1. `.result` arrived earlier than expected (stray /
+            //      reordered) but more assistant content follows.
+            //   2. CLI spontaneously starts a new turn after a closed
+            //      one (e.g. a background bash completes and the CLI
+            //      starts its own turn to surface the result).
+            // Either way, the spinner should be on while assistant
+            // tokens stream in.
+            if mode == .live { isRunning = true }
         case .result(let r): finishTurn(with: r, mode: mode)
         case .system(.`init`(let info)): adopt(info, mode: mode)
         default: break
@@ -217,11 +229,14 @@ extension SessionRuntime {
         if mode == .live {
             appLog(
                 .info, "SessionRuntime",
-                "[v2-send] finishTurn sid=\(sessionId.prefix(8)) status-before=\(status) pendingTurnCount=\(pendingTurnCount)"
+                "[v2-send] finishTurn sid=\(sessionId.prefix(8)) status-before=\(status) isRunning-before=\(isRunning)"
             )
-            // turn end -- each .result corresponds to one turn previously +1'd by send().
-            // Clamp to 0 so replay mode / spurious extras never go negative.
-            pendingTurnCount = max(0, pendingTurnCount - 1)
+            // `.result` is the CLI's only authoritative "turn ended"
+            // signal — flip the spinner off. If the CLI then starts
+            // another turn on its own (background-bash completion,
+            // continuation, …), the next `.assistant` in `receive`
+            // flips us back true.
+            isRunning = false
         }
         if mode == .live, case .responding = status {
             status = .idle

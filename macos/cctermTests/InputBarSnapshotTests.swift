@@ -73,7 +73,7 @@ final class InputBarSnapshotTests: XCTestCase {
         runtime.contextWindowTokens = contextWindowTokens
         runtime.contextUsedTokens = contextUsedTokens
         if running {
-            runtime.pendingTurnCount = 1
+            runtime.isRunning = true
         }
         return ccterm.Session(runtime: runtime)
     }

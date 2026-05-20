@@ -15,7 +15,7 @@ import XCTest
 /// subscribes to the dict — and when the user later clicks the session
 /// and `prepareDraftSession(_:)` inserts a handle, no re-render fires. The row
 /// continues to display "no handle" indefinitely, so the trailing
-/// running-pill never appears even when `pendingTurnCount > 0`.
+/// running-pill never appears even when `isRunning` is true.
 ///
 /// The fix is purely a property-level annotation flip on `handles`. The
 /// assertion here mirrors what SwiftUI does internally via

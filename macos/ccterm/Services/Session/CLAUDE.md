@@ -42,7 +42,7 @@ Source lives in `Session/`:
 
 ## Sibling services
 
-`SessionRuntime` delegates I/O to four sibling services so the runtime state machine stays focused on `messages` / `status` / `pendingTurnCount` / config writes:
+`SessionRuntime` delegates I/O to four sibling services so the runtime state machine stays focused on `messages` / `status` / `isRunning` / config writes:
 
 | Service | Lives at | Responsibility |
 |---|---|---|

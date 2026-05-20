@@ -27,10 +27,34 @@ struct PermissionModePicker: View {
                 selected: session.permissionMode,
                 onSelect: { mode in
                     session.setPermissionMode(mode)
+                    if session.draft != nil {
+                        NewSessionDefaultsStore.shared.setPermissionMode(mode)
+                    }
                     isPresented = false
                 }
             )
         }
+        .task(id: session.sessionId) {
+            seedFromDefaultsIfNeeded()
+        }
+    }
+
+    /// Apply the user's last-picked permission mode from
+    /// `NewSessionDefaultsStore` when this picker first surfaces for a
+    /// draft session. `SessionConfig.init` always starts at `.default`
+    /// — that's the "no user choice yet" signal we gate on. Active
+    /// sessions skip this path entirely (their `permissionMode` is
+    /// authoritative from the record).
+    private func seedFromDefaultsIfNeeded() {
+        guard session.draft != nil,
+            session.permissionMode == .default,
+            let saved = NewSessionDefaultsStore.shared.permissionMode,
+            saved != .default
+        else { return }
+        // Auto mode is model-gated — don't seed it when the active model
+        // doesn't advertise support, the popover would hide it anyway.
+        if saved == .auto, activeModel?.supportsAutoMode != true { return }
+        session.setPermissionMode(saved)
     }
 
     /// All cases minus `.auto` unless the active model declares

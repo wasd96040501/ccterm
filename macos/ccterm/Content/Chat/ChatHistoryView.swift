@@ -66,6 +66,11 @@ struct ChatHistoryView: View {
 
     var body: some View {
         coreContent
+            .toolbar {
+                ToolbarItem(placement: .navigation) {
+                    SessionToolbarInfo(session: session)
+                }
+            }
             .modifier(
                 TranscriptSearchToolbar(
                     enabled: showsSearch,
@@ -152,6 +157,66 @@ extension View {
         } else {
             self
         }
+    }
+}
+
+/// Non-interactive toolbar chips that read the session's origin folder
+/// (last path component) and current branch. Both chips clamp to a
+/// max width with `.middle` truncation so long names degrade gracefully.
+/// Hidden entirely when the corresponding value is unavailable.
+private struct SessionToolbarInfo: View {
+    let session: Session?
+
+    /// Last seen `.git/HEAD` value for the session's `cwd`. Probed by a
+    /// `.task(id:)` so the toolbar doesn't re-read the file on every body
+    /// invocation, and re-runs only when `cwd` changes.
+    @State private var probedBranch: String?
+
+    private static let chipMaxWidth: CGFloat = 160
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if let dirName {
+                chip(systemImage: "folder", text: dirName)
+            }
+            if let branch {
+                chip(systemImage: "arrow.triangle.branch", text: branch)
+            }
+        }
+        .task(id: cwdProbeKey) {
+            probedBranch = session?.cwd.flatMap(GitUtils.currentBranch(at:))
+        }
+    }
+
+    private func chip(systemImage: String, text: String) -> some View {
+        Label(text, systemImage: systemImage)
+            .labelStyle(.titleAndIcon)
+            .font(.system(size: 12))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .frame(maxWidth: Self.chipMaxWidth, alignment: .leading)
+    }
+
+    private var dirName: String? {
+        guard let path = session?.originPath, !path.isEmpty else { return nil }
+        let comp = (path as NSString).lastPathComponent
+        return comp.isEmpty ? nil : comp
+    }
+
+    /// Prefer the persisted worktree branch (worktree sessions carry it
+    /// in `SessionConfig.worktreeBranch`); fall back to a synchronous
+    /// `.git/HEAD` read on the session's `cwd` (also handles worktree
+    /// `.git` files via `GitUtils.currentBranch`).
+    private var branch: String? {
+        if let session, let b = session.worktreeBranch, !b.isEmpty {
+            return b
+        }
+        return probedBranch
+    }
+
+    private var cwdProbeKey: String? {
+        session?.cwd
     }
 }
 

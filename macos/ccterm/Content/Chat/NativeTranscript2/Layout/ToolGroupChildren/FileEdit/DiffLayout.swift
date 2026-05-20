@@ -723,9 +723,26 @@ struct DiffLayout: @unchecked Sendable {
     /// badge background. Painted by `BlockCellView` before the
     /// selection band. All passes clipped to the rounded card so long
     /// lines / extended top+bottom fills don't bleed past the corners.
-    func drawBackplate(in ctx: CGContext, origin: CGPoint) {
+    ///
+    /// `dirtyRect` is the destination-space clip the caller has already
+    /// resolved (e.g. `ToolGroupEntryView.draw` intersects
+    /// `dirtyRect ∩ visibleRect`). When supplied, per-row fills skip
+    /// rows whose painted rect doesn't intersect — load-bearing for a
+    /// diff body taller than the CALayer / IOSurface max-texture cap,
+    /// where CoreAnimation falls back to tile-on-demand drawing and
+    /// the per-tile redraw cost would otherwise scale with total row
+    /// count rather than visible row count.
+    /// `nil` keeps the legacy "paint everything" path for the few
+    /// call sites that don't have a dirty rect handy (snapshot tests,
+    /// programmatic export).
+    func drawBackplate(
+        in ctx: CGContext, origin: CGPoint, dirtyRect: CGRect? = nil
+    ) {
         guard !containerRect.isEmpty else { return }
         let containerAtScreen = containerRect.offsetBy(dx: origin.x, dy: origin.y)
+        // Whole-card backplate falls outside the dirty band? Nothing to
+        // do at all.
+        if let dirtyRect, !containerAtScreen.intersects(dirtyRect) { return }
         let path = CGPath(
             roundedRect: containerAtScreen,
             cornerWidth: BlockStyle.structuralCornerRadius,
@@ -739,26 +756,37 @@ struct DiffLayout: @unchecked Sendable {
         ctx.addPath(path)
         ctx.clip()
         // Pass 1 — line backgrounds (full width, full wrapped height).
+        // Skip rows entirely outside the dirty band so a 700-row diff
+        // hosted in an oversized layer only fills the ~30 rows that
+        // actually intersect the tile / visible strip.
         for row in rows where row.lineBg.alphaComponent > 0 {
+            let r = row.lineRect.offsetBy(dx: origin.x, dy: origin.y)
+            if let dirtyRect, !r.intersects(dirtyRect) { continue }
             ctx.setFillColor(row.lineBg.cgColor)
-            ctx.fill(row.lineRect.offsetBy(dx: origin.x, dy: origin.y))
+            ctx.fill(r)
         }
         // Pass 2 — gutter backgrounds layered over line backgrounds.
         // Gutter tint is first-visual-line only; continuation visual
         // lines fall through to the underlying lineBg.
         for row in rows where row.gutterBg.alphaComponent > 0 {
+            let r = row.gutterRect.offsetBy(dx: origin.x, dy: origin.y)
+            if let dirtyRect, !r.intersects(dirtyRect) { continue }
             ctx.setFillColor(row.gutterBg.cgColor)
-            ctx.fill(row.gutterRect.offsetBy(dx: origin.x, dy: origin.y))
+            ctx.fill(r)
         }
         ctx.restoreGState()
     }
 
-    func draw(in ctx: CGContext, origin: CGPoint) {
+    /// Glyph pass. `dirtyRect` (destination-space) — when supplied,
+    /// rows whose `lineRect` doesn't intersect it are skipped. See
+    /// `drawBackplate(in:origin:dirtyRect:)` for the rationale.
+    func draw(in ctx: CGContext, origin: CGPoint, dirtyRect: CGRect? = nil) {
         guard !containerRect.isEmpty else { return }
+        let containerAtScreen = containerRect.offsetBy(dx: origin.x, dy: origin.y)
+        if let dirtyRect, !containerAtScreen.intersects(dirtyRect) { return }
         // Clip glyphs to the rounded card so long lines don't bleed
         // past the corners.
         ctx.saveGState()
-        let containerAtScreen = containerRect.offsetBy(dx: origin.x, dy: origin.y)
         let clipPath = CGPath(
             roundedRect: containerAtScreen,
             cornerWidth: BlockStyle.structuralCornerRadius,
@@ -773,6 +801,8 @@ struct DiffLayout: @unchecked Sendable {
         ctx.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
         for row in rows {
             guard let prefix = row.prefixLine else { continue }
+            let r = row.lineRect.offsetBy(dx: origin.x, dy: origin.y)
+            if let dirtyRect, !r.intersects(dirtyRect) { continue }
             ctx.textPosition = CGPoint(
                 x: origin.x + row.prefixBaseline.x,
                 y: origin.y + row.prefixBaseline.y)
@@ -781,8 +811,10 @@ struct DiffLayout: @unchecked Sendable {
         ctx.restoreGState()
 
         // Content glyphs — wrapped TextLayout handles its own text
-        // matrix flip.
+        // matrix flip. Same row-level dirty filter as the prefix pass.
         for row in rows {
+            let r = row.lineRect.offsetBy(dx: origin.x, dy: origin.y)
+            if let dirtyRect, !r.intersects(dirtyRect) { continue }
             row.contentLayout.draw(
                 in: ctx,
                 origin: CGPoint(

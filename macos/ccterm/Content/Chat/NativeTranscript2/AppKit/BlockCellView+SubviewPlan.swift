@@ -682,6 +682,18 @@ final class ToolGroupEntryView: NSView {
         guard let spec, let ctx = NSGraphicsContext.current?.cgContext else {
             return
         }
+        // Effective draw region = AppKit's dirty ∩ the chunk of our
+        // bounds that's actually visible to the user through the
+        // scroll-view chain. `NSView.visibleRect` honours every clip
+        // ancestor (clip view / table / window content), so for a
+        // multi-screen-tall entry view it shrinks to "the diff strip
+        // currently inside the viewport". Passing this further-narrowed
+        // rect into the draw closure means even when CoreAnimation
+        // tile-fallback kicks in (oversized layer → AppKit issues a
+        // tile-sized `dirtyRect` instead of zero `draw(_:)` calls), the
+        // body's per-row clip skips every row outside the visible
+        // strip rather than every row outside the tile band.
+        let effectiveDirty = dirtyRect.intersection(visibleRect)
         // Entry-view repaint trace. This is the single biggest scroll-
         // cost path for a tool group whose expanded child overflows
         // the viewport — the entry view's CALayer-backed bitmap is the
@@ -700,9 +712,11 @@ final class ToolGroupEntryView: NSView {
                     "ToolGroupEntryView.draw id=\(spec.id.uuidString.prefix(8)) "
                         + "bounds=\(BlockCellView.fmt(bounds.size)) "
                         + "dirty=\(BlockCellView.fmt(dirtyRect.size)) "
+                        + "effDirty=\(BlockCellView.fmt(effectiveDirty.size)) "
                         + "ms=\(String(format: "%.2f", ms))")
             }
         }
+        if effectiveDirty.isEmpty { return }
         // Selection colour depends on `window.isKeyWindow`, which is
         // a runtime cell-state — the plan can't bake it in at build
         // time. The view supplies it here and the closure paints
@@ -712,7 +726,7 @@ final class ToolGroupEntryView: NSView {
             (window?.isKeyWindow == true)
             ? .selectedTextBackgroundColor
             : .unemphasizedSelectedTextBackgroundColor
-        spec.draw(ctx, selectionColor)
+        spec.draw(ctx, selectionColor, effectiveDirty)
     }
 }
 

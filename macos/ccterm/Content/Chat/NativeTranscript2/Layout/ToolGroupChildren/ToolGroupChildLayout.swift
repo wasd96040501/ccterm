@@ -58,10 +58,21 @@ enum ToolGroupChildLayout: @unchecked Sendable {
     /// Opaque chrome forwarded by the cell's pre-glyph draw pass.
     /// Forwards into the body layout so a selection band painted by
     /// the cell sits *on top of* (not under) the card fill.
-    func drawBackplate(in ctx: CGContext, origin: CGPoint) {
+    ///
+    /// `dirtyRect` is the destination-space draw region the caller has
+    /// already narrowed (entry view: `AppKit dirty ∩ visibleRect`).
+    /// Forwarded only to kinds whose body is large enough to benefit —
+    /// today the diff-bearing ones (`fileEdit`, `read`) — so the
+    /// signature stays uniform without dragging the arg through every
+    /// short-bodied child kind's primitive.
+    func drawBackplate(
+        in ctx: CGContext, origin: CGPoint, dirtyRect: CGRect? = nil
+    ) {
         switch self {
-        case .fileEdit(let l): l.drawBackplate(in: ctx, origin: origin)
-        case .read(let l): l.drawBackplate(in: ctx, origin: origin)
+        case .fileEdit(let l):
+            l.drawBackplate(in: ctx, origin: origin, dirtyRect: dirtyRect)
+        case .read(let l):
+            l.drawBackplate(in: ctx, origin: origin, dirtyRect: dirtyRect)
         case .bash(let l): l.drawBackplate(in: ctx, origin: origin)
         case .grep(let l): l.drawBackplate(in: ctx, origin: origin)
         case .glob(let l): l.drawBackplate(in: ctx, origin: origin)
@@ -78,14 +89,19 @@ enum ToolGroupChildLayout: @unchecked Sendable {
     /// diff chromes paint on top via `ToolGroupLayout.drawEntry`'s
     /// own pass) can render hover-bg + checkmark feedback; kinds
     /// without `CopyChrome` ignore them.
+    ///
+    /// `dirtyRect` — see `drawBackplate(in:origin:dirtyRect:)`.
     func draw(
         in ctx: CGContext, origin: CGPoint,
         hoveredCopyId: UUID? = nil,
-        flashingCopyIds: Set<UUID> = []
+        flashingCopyIds: Set<UUID> = [],
+        dirtyRect: CGRect? = nil
     ) {
         switch self {
-        case .fileEdit(let l): l.draw(in: ctx, origin: origin)
-        case .read(let l): l.draw(in: ctx, origin: origin)
+        case .fileEdit(let l):
+            l.draw(in: ctx, origin: origin, dirtyRect: dirtyRect)
+        case .read(let l):
+            l.draw(in: ctx, origin: origin, dirtyRect: dirtyRect)
         case .bash(let l):
             l.draw(
                 in: ctx, origin: origin,

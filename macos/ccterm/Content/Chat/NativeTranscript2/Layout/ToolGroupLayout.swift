@@ -788,6 +788,14 @@ struct ToolGroupLayout: @unchecked Sendable {
     /// (fileEdit / read), so per-card icons render hover-bg /
     /// checkmark feedback. Empty / nil for entries whose body has no
     /// such affordances.
+    ///
+    /// `dirtyRect` is the view-local clip the caller has already
+    /// narrowed via `AppKit dirty ∩ visibleRect`. Forwarded to the
+    /// body's backplate / glyph passes so per-row work scales with
+    /// visible-row count rather than total-row count — the load-
+    /// bearing fix for oversized diff bodies that overflow the
+    /// CALayer / IOSurface texture cap and trigger tile-on-demand
+    /// redraws during scroll.
     nonisolated private static func drawEntry(
         _ entry: Entry,
         hovered: Bool,
@@ -795,14 +803,16 @@ struct ToolGroupLayout: @unchecked Sendable {
         selectionColor: NSColor,
         hoveredCopyId: UUID?,
         flashingCopyIds: Set<UUID>,
-        in ctx: CGContext
+        in ctx: CGContext,
+        dirtyRect: CGRect
     ) {
         let dx = -entry.bandRect.minX
         let dy = -entry.bandRect.minY
         let originForBody = CGPoint(x: dx, y: dy)
 
         // 1. Body backplate (rounded container + line/gutter bg).
-        entry.body?.drawBackplate(in: ctx, origin: originForBody)
+        entry.body?.drawBackplate(
+            in: ctx, origin: originForBody, dirtyRect: dirtyRect)
 
         // 2. Selection band — under glyphs, above backplate.
         let bandRect = entry.bandRect
@@ -818,7 +828,8 @@ struct ToolGroupLayout: @unchecked Sendable {
         entry.body?.draw(
             in: ctx, origin: originForBody,
             hoveredCopyId: hoveredCopyId,
-            flashingCopyIds: flashingCopyIds)
+            flashingCopyIds: flashingCopyIds,
+            dirtyRect: dirtyRect)
 
         // 4. Child header title.
         drawHeader(
@@ -952,7 +963,7 @@ struct ToolGroupLayout: @unchecked Sendable {
                 SubviewPlan.Entry(
                     id: entry.childId,
                     frame: frame,
-                    draw: { ctx, selectionColor in
+                    draw: { ctx, selectionColor, dirtyRect in
                         Self.drawEntry(
                             capturedEntry,
                             hovered: capturedHovered,
@@ -960,7 +971,8 @@ struct ToolGroupLayout: @unchecked Sendable {
                             selectionColor: selectionColor,
                             hoveredCopyId: capturedHoveredCopyId,
                             flashingCopyIds: capturedFlashing,
-                            in: ctx)
+                            in: ctx,
+                            dirtyRect: dirtyRect)
                     }))
         }
 

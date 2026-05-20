@@ -152,9 +152,25 @@ struct SubviewPlan: @unchecked Sendable {
         /// View paints itself by invoking this closure from its own
         /// `draw(_:)`. `selectionColor` is supplied at draw time
         /// because it depends on `window.isKeyWindow`, which is a
-        /// runtime cell-state, not a layout-build property. The
-        /// closure captures the layout's immutable data and is safe
+        /// runtime cell-state, not a layout-build property.
+        ///
+        /// `dirtyRect` is the AppKit-supplied draw region intersected
+        /// with the view's `visibleRect`, expressed in **view-local**
+        /// coords (origin = top-left of the entry view). Layouts that
+        /// iterate per-row content (diff bodies, today) must skip rows
+        /// whose painted rect doesn't intersect it — without this, an
+        /// entry view whose total height exceeds the CALayer / IOSurface
+        /// max-texture cap (≈ 16384 px on Apple Silicon, hit at ~700
+        /// diff lines @ Retina) falls back to tile-on-demand drawing
+        /// during scroll, calling `draw(_:)` with a tile-sized dirty
+        /// rect on every scroll tick. A non-clipping body then repaints
+        /// all rows on every tile, costing 50 ms per call regardless of
+        /// dirty size, which caps the visible frame rate at ~17 fps.
+        ///
+        /// The closure captures the layout's immutable data and is safe
         /// to invoke from the view's draw path on the main thread.
-        let draw: (_ ctx: CGContext, _ selectionColor: NSColor) -> Void
+        let draw:
+            (_ ctx: CGContext, _ selectionColor: NSColor, _ dirtyRect: CGRect)
+                -> Void
     }
 }

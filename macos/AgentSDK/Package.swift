@@ -29,6 +29,10 @@ let package = Package(
             dependencies: ["AgentSDK"]
         ),
         .executableTarget(
+            name: "QueueTimingSmoke",
+            dependencies: ["AgentSDK"]
+        ),
+        .executableTarget(
             name: "TodoSmoke",
             dependencies: ["AgentSDK"]
         ),

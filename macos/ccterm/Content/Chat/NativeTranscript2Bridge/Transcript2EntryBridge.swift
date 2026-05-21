@@ -38,6 +38,31 @@ final class Transcript2EntryBridge {
     /// by treating the entry as a reset seed so content isn't lost.
     private var didLoadInitial = false
 
+    /// Entry id of the **first user-typed message that arrives live**
+    /// (via `.appended`) during this bridge's lifetime. UI-suppresses the
+    /// queued visual on that one bubble — the two scenarios this covers
+    /// are new-session start and session resume, both of which boot the
+    /// CLI from cold; the first send is always queued for a few seconds
+    /// while bootstrap runs and a "you just hit send" indicator there
+    /// reads as noise.
+    ///
+    /// History-load events (`.reset` / `.prepended`) intentionally do
+    /// **not** pin this — replayed messages already have
+    /// `delivery == .confirmed` so the suppression would be a no-op
+    /// anyway, but more importantly we want the *next live send after
+    /// a resume* to receive the pin, not some long-confirmed historical
+    /// turn.
+    ///
+    /// Same-session, already-bootstrapped sends (`.appended` after the
+    /// pin is taken) keep their truthful queued visual — that's the
+    /// "CLI is busy on the prior turn, you're really in queue" case
+    /// the indicator is useful for.
+    ///
+    /// The underlying `SingleEntry.delivery` stays truthful; only the
+    /// `Block.userBubble(isQueued:)` flag is rewritten when we emit
+    /// blocks for this entry.
+    private var firstUserEntryId: UUID?
+
     init(controller: Transcript2Controller) {
         self.controller = controller
     }
@@ -79,11 +104,52 @@ final class Transcript2EntryBridge {
     /// The fallback keeps every code path well-defined when a caller
     /// doesn't ship a precomputed payload — incremental writes
     /// (`.appended` / `.updated`) intentionally don't.
+    ///
+    /// Post-processes the result through `applyFirstUserSuppression` so a
+    /// single, central place owns the queued-visual override for the
+    /// session's first user message.
     private func blocks(for entry: MessageEntry, precomputed: [UUID: [Block]]?) -> [Block] {
+        let raw: [Block]
         if let cached = precomputed?[entry.id] {
-            return cached
+            raw = cached
+        } else {
+            raw = MessageEntryBlockBuilder.entryBlocks(entry)
         }
-        return MessageEntryBlockBuilder.entryBlocks(entry)
+        return applyFirstUserSuppression(raw, for: entry.id)
+    }
+
+    /// If `entryId` matches `firstUserEntryId`, rewrite every
+    /// `.userBubble(text:isQueued: true)` block in `blocks` to
+    /// `.userBubble(text:isQueued: false)`. Other block kinds and other
+    /// entries pass through untouched. No-op when the entry isn't the
+    /// first user message or none of its blocks are queued bubbles.
+    private func applyFirstUserSuppression(_ blocks: [Block], for entryId: UUID) -> [Block] {
+        guard entryId == firstUserEntryId else { return blocks }
+        return blocks.map { block in
+            if case .userBubble(let text, true) = block.kind {
+                return Block(id: block.id, kind: .userBubble(text: text, isQueued: false))
+            }
+            return block
+        }
+    }
+
+    // MARK: - First-user tracking
+
+    /// True when an entry represents a user-typed turn — either a local
+    /// `.localUser` input or a CLI-echoed `.remote(.user(_))` envelope.
+    /// Tool-result `.remote(.user(_))` envelopes (which carry a
+    /// `tool_use_id`) are intentionally still considered "user-typed"
+    /// here because the bridge collapses them into the matching assistant
+    /// entry — they never produce a userBubble block on their own, so
+    /// they're effectively invisible for the suppression purpose.
+    private static func isUserTyped(_ entry: MessageEntry) -> Bool {
+        guard case .single(let s) = entry else { return false }
+        switch s.payload {
+        case .localUser: return true
+        case .remote(let m):
+            if case .user = m { return true }
+            return false
+        }
     }
 
     // MARK: - Status push
@@ -174,6 +240,11 @@ final class Transcript2EntryBridge {
     // MARK: - Reset (setHistory / re-entry)
 
     private func applyReset(_ entries: [MessageEntry], precomputed: [UUID: [Block]]?) {
+        // History reset does NOT pin `firstUserEntryId`. We want the
+        // pin to land on the next *live* `.appended` (the first send
+        // into the freshly-booted CLI), not on some long-confirmed
+        // historical turn. See the field docs for why.
+
         // Rebuild reverse tables and collect blocks.
         var newOrder: [UUID] = []
         newOrder.reserveCapacity(entries.count)
@@ -218,7 +289,13 @@ final class Transcript2EntryBridge {
     // MARK: - Append (live message)
 
     private func applyAppend(_ entry: MessageEntry) {
-        let blocks = MessageEntryBlockBuilder.entryBlocks(entry)
+        // First user-typed entry to arrive after init wins the pin. Set
+        // **before** calling `self.blocks(for:)` so the suppression sees
+        // it on this same build.
+        if firstUserEntryId == nil, Self.isUserTyped(entry) {
+            firstUserEntryId = entry.id
+        }
+        let blocks = self.blocks(for: entry, precomputed: nil)
         if blocks.isEmpty {
             // Entry produced no block (empty user message / all-thinking
             // assistant) — still take an entryOrder slot so a future mutate
@@ -254,6 +331,9 @@ final class Transcript2EntryBridge {
     // MARK: - Prepend (loadHistory Phase B)
 
     private func applyPrepend(_ entries: [MessageEntry], precomputed: [UUID: [Block]]?) {
+        // Same reasoning as `applyReset`: older history doesn't take the
+        // pin. The live `.appended` path is the sole pin source.
+
         var prefixBlocks: [Block] = []
         var newOrder: [UUID] = []
         var newMap: [UUID: [UUID]] = [:]
@@ -286,7 +366,7 @@ final class Transcript2EntryBridge {
 
     private func applyUpdate(_ entry: MessageEntry) {
         let oldIds = entryBlockIds[entry.id] ?? []
-        let newBlocks = MessageEntryBlockBuilder.entryBlocks(entry)
+        let newBlocks = self.blocks(for: entry, precomputed: nil)
         let newIds = newBlocks.map(\.id)
 
         // Identical id sequence: the typical 95% case — per-block update.
@@ -330,6 +410,15 @@ final class Transcript2EntryBridge {
         let ids = entryBlockIds[entry.id] ?? []
         entryBlockIds.removeValue(forKey: entry.id)
         entryOrder.removeAll { $0 == entry.id }
+        // Releasing the pin when the first user message is removed lets
+        // the *next* still-queued user bubble keep its truthful queued
+        // visual. Not trying to promote a successor — removal of the
+        // first message is rare (cancelMessage on a queued send before
+        // the CLI echoes), and a truthful indicator on whatever follows
+        // is the right default.
+        if entry.id == firstUserEntryId {
+            firstUserEntryId = nil
+        }
         guard !ids.isEmpty else { return }
         controller.coordinator.apply([.remove(ids: ids)], scroll: .none)
     }

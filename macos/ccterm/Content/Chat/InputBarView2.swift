@@ -311,6 +311,11 @@ struct InputBarView2: View {
             font: .systemFont(ofSize: 14),
             minLines: 1,
             maxLines: 10,
+            // 7.5pt applied as `textContainerInset` inside NSTextView so the
+            // scroll view's frame fills the full 32pt pill — the click /
+            // I-beam region matches what users perceive as "the text field"
+            // even though the glyphs themselves remain visually centered.
+            verticalContentInset: textVerticalPadding,
             onTextChanged: { newText, cursor in
                 completion.checkTrigger(
                     text: newText,
@@ -344,9 +349,6 @@ struct InputBarView2: View {
         )
         .padding(.leading, textLeadingPadding)
         .padding(.trailing, textTrailingPadding)
-        // (32 - 17)/2 = 7.5: single-line case, 7.5 top + bottom centers the
-        // ~17pt line height (14pt system font) within the 32pt container.
-        .padding(.vertical, textVerticalPadding)
     }
 
     // MARK: - Send / Stop Button

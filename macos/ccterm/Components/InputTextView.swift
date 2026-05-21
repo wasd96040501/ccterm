@@ -10,6 +10,12 @@ struct TextInputView: NSViewRepresentable {
     var font: NSFont = .systemFont(ofSize: 13)
     var minLines: Int = 2
     var maxLines: Int = 10
+    /// Padding rendered inside the NSTextView via `textContainerInset` (top
+    /// and bottom). Use this instead of an outer SwiftUI `.padding(.vertical,…)`
+    /// so the scroll view's frame still covers the full visual area — that way
+    /// clicks on the padded strip focus the field and the I-beam shows
+    /// everywhere a user would expect to type.
+    var verticalContentInset: CGFloat = 0
     var onTextChanged: ((_ text: String, _ cursorLocation: Int) -> Void)?
     var onCommandReturn: (() -> Void)?
     var onEscape: (() -> Void)?
@@ -38,7 +44,7 @@ struct TextInputView: NSViewRepresentable {
         textView.isSelectable = true
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
-        textView.textContainerInset = NSSize(width: 0, height: 0)
+        textView.textContainerInset = NSSize(width: 0, height: verticalContentInset)
         textView.textContainer?.widthTracksTextView = true
         textView.textContainer?.lineFragmentPadding = 0
         textView.isAutomaticQuoteSubstitutionEnabled = false
@@ -339,15 +345,15 @@ final class InputTextScrollView: NSScrollView {
         scrollerStyle = .overlay
         autohidesScrollers = true
         setContentHuggingPriority(.required, for: .vertical)
-        CursorGuard.registerTextInput(self)
+        // Without this, AppKit briefly pushes the scroll view's default
+        // arrow cursor onto the cursor stack on mouseDown — visible as a
+        // single-frame flash from I-beam to arrow before NSTextView's
+        // own tracking area restores I-beam.
+        documentCursor = .iBeam
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
-
-    deinit {
-        CursorGuard.unregisterTextInput(self)
-    }
 
     override var intrinsicContentSize: NSSize {
         NSSize(width: NSView.noIntrinsicMetric, height: currentIntrinsicHeight)

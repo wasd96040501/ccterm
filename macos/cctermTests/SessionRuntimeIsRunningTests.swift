@@ -9,7 +9,7 @@ import XCTest
 /// - `.assistant` from the CLI flips it true (covers stray late
 ///   assistants and CLI-spontaneous follow-up turns — the real
 ///   background-bash scenario captured in
-///   `AgentSDKMessageDumpSmokeTests.testDumpBackgroundJobHaiku`).
+///   `swift run DumpSmoke` with `SMOKE_SCENARIO=bgjob`).
 /// - `.result` from the CLI flips it false.
 /// - `interrupt` / process exit / launch failure clear it.
 ///
@@ -85,8 +85,8 @@ final class SessionRuntimeIsRunningTests: XCTestCase {
 
     // MARK: - Stray late assistant (post-turn) self-heal
 
-    /// Mirrors the background-bash scenario from
-    /// `AgentSDKMessageDumpSmokeTests`: a turn closes with `.result`,
+    /// Mirrors the background-bash scenario captured by
+    /// `DumpSmoke` (SMOKE_SCENARIO=bgjob): a turn closes with `.result`,
     /// then later (5s in real life) the CLI streams a fresh `.assistant`
     /// for a follow-up turn it kicked off on its own. The spinner must
     /// come back on so the user sees something is happening; the next

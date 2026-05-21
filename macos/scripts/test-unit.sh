@@ -66,15 +66,14 @@ XCB_ARGS=(
 # By default, restrict to the unit test target. With FILTER, allow ClassName or
 # ClassName/method scoping.
 #
-# Two filename patterns are skipped on the default-all run (locally and on CI):
+# `*SnapshotTests.swift` files are skipped on the default-all run (locally and
+# on CI) — review-only PNG renders via `NSHostingController`, see
+# `cctermTests/CLAUDE.md` § Snapshot tests. They stay compiled (bit-rot fails
+# at build time) but are not executed.
 #
-# - `*SnapshotTests.swift` — review-only PNG renders via `NSHostingController`.
-#   See `cctermTests/CLAUDE.md` § Snapshot tests.
-# - `*SmokeTests.swift` — talks to the real `claude` CLI and spends real model
-#   tokens. Opt-in only via `FILTER=...SmokeTests` with `RUN_SMOKE=1` env var
-#   set in the calling shell (the tests themselves XCTSkip otherwise).
-#
-# Both are still compiled (bit-rot fails at build time) but not executed.
+# Smoke tests (real `claude` CLI) live as `executableTarget`s in
+# `macos/AgentSDK` (DumpSmoke / InterruptSmoke / SmokeTest) — NOT XCTests.
+# Run them with `cd macos/AgentSDK && swift run <name>`.
 if [ -n "$FILTER" ]; then
   XCB_ARGS+=(-only-testing:"$TEST_TARGET/$FILTER")
 else
@@ -82,7 +81,7 @@ else
   while IFS= read -r skip_file; do
     class_name=$(basename "$skip_file" .swift)
     XCB_ARGS+=(-skip-testing:"$TEST_TARGET/$class_name")
-  done < <(find "$TEST_TARGET" \( -name '*SnapshotTests.swift' -o -name '*SmokeTests.swift' \) -type f 2>/dev/null)
+  done < <(find "$TEST_TARGET" -name '*SnapshotTests.swift' -type f 2>/dev/null)
 fi
 
 XCB_ARGS+=(test)

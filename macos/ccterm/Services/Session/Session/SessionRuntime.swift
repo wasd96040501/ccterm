@@ -216,8 +216,8 @@ final class SessionRuntime {
     /// Mirroring the CLI's actual `.assistant` / `.result` stream is
     /// self-healing: a stray late `.assistant` flips back to true; the
     /// next `.result` clears it. See
-    /// `AgentSDKMessageDumpSmokeTests.testDumpBackgroundJobHaiku` for
-    /// the real-CLI background-bash scenario that motivated this.
+    /// `swift run DumpSmoke` (SMOKE_SCENARIO=bgjob) for the real-CLI
+    /// background-bash scenario that motivated this.
     internal(set) var isRunning: Bool = false
 
     internal(set) var pendingPermissions: [PendingPermission] = []

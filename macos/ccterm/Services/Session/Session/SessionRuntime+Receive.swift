@@ -96,8 +96,10 @@ extension SessionRuntime {
 
     fileprivate enum Action {
         case merge(toolUseId: String, payload: ToolResultPayload)
-        /// Local `.queued` entry matched by CLI echo (by uuid); flip to `.confirmed` and
-        /// replace payload from `.localUser` with `.remote(echo)`.
+        /// Local entry matched by CLI echo (by uuid); flip delivery to
+        /// `.confirmed` and swap payload to `.remote(echo)`. Idempotent
+        /// when the entry is already `.confirmed` (CLI replay during
+        /// interrupt).
         case confirm(entryId: UUID, echo: Message2)
         case append
         case skip
@@ -110,7 +112,7 @@ extension SessionRuntime {
                 let payload = ToolResultPayload(item: r, typed: u.toolUseResult)
                 return .merge(toolUseId: id, payload: payload)
             }
-            if u.isVisible, let entryId = matchQueuedEntry(for: u) {
+            if u.isVisible, let entryId = matchExistingEntry(for: u) {
                 return .confirm(entryId: entryId, echo: message)
             }
             return u.isVisible ? .append : .skip
@@ -121,23 +123,40 @@ extension SessionRuntime {
         }
     }
 
-    /// Find an entry in `messages` whose uuid matches this user echo and is still `.queued`.
-    /// The CLI echoes back the uuid we sent verbatim via `--replay-user-messages`, so we
-    /// pair exactly on entry.id ↔ echo.uuid — no text-based heuristics.
-    fileprivate func matchQueuedEntry(for echo: Message2User) -> UUID? {
+    /// Find an entry in `messages` whose uuid matches this user echo,
+    /// regardless of delivery state. The CLI echoes back the uuid we
+    /// sent verbatim under `--replay-user-messages`, so a match means
+    /// "we already represent this message" — convert / no-op rather
+    /// than append a duplicate. Three real scenarios hit non-`.queued`
+    /// states:
+    ///
+    /// - `.failed`: user clicked interrupt while the entry was still
+    ///   `.queued`; `failQueuedEntries` flipped it; CLI's echo lands
+    ///   afterward. We restore `.confirmed` so the bubble doesn't
+    ///   read as a failed delivery after the CLI actually accepted it.
+    /// - `.confirmed`: CLI replayed an already-confirmed user message
+    ///   (observed around interrupt boundaries). Drop it — we'd
+    ///   otherwise show two identical bubbles.
+    fileprivate func matchExistingEntry(for echo: Message2User) -> UUID? {
         guard let raw = echo.uuid,
             let echoId = UUID(uuidString: raw)
         else {
             appLog(
                 .info, "SessionRuntime",
-                "[v2-send] matchQueued no-uuid echo.uuid=\(echo.uuid ?? "(nil)")")
+                "[v2-send] matchExisting no-uuid echo.uuid=\(echo.uuid ?? "(nil)")")
             return nil
         }
         let hit = messages.first { entry in
-            entry.id == echoId && entry.delivery == .queued
+            guard entry.id == echoId else { return false }
+            guard case .single(let s) = entry else { return false }
+            switch s.payload {
+            case .localUser: return true
+            case .remote(let m):
+                if case .user = m { return true }
+                return false
+            }
         }?.id
         if hit == nil {
-            // List all queued user entry ids to see if there are none, or if the uuid simply doesn't match.
             let queued = messages.compactMap { entry -> String? in
                 guard case .single(let s) = entry,
                     case .localUser = s.payload,
@@ -147,7 +166,7 @@ extension SessionRuntime {
             }
             appLog(
                 .warning, "SessionRuntime",
-                "[v2-send] matchQueued MISS echoUuid=\(raw.prefix(8)) queued=\(queued)")
+                "[v2-send] matchExisting MISS echoUuid=\(raw.prefix(8)) queued=\(queued)")
         }
         return hit
     }
@@ -207,17 +226,26 @@ extension SessionRuntime {
         return nil
     }
 
-    /// CLI began processing a previously `send()`-ed message: swap payload from `.localUser`
-    /// to `.remote(echo)`, flip delivery to `.confirmed`, and advance status to `.responding`
-    /// (live only). Reuse the local entry for display — do not append a duplicate. Returns
-    /// the mutated entry so the caller can wrap it in `MessagesChange.updated`; id miss / non-single → nil.
+    /// CLI began processing a previously `send()`-ed message, OR is
+    /// replaying an already-confirmed one (observed around interrupt).
+    /// Swap payload to `.remote(echo)`, flip delivery to `.confirmed`,
+    /// and — only on the `.queued` → `.confirmed` edge in live mode —
+    /// advance status to `.responding`. Reuse the local entry; never
+    /// append a duplicate. A re-confirm of an already-`.confirmed`
+    /// entry returns nil so the bridge doesn't get a no-op `.updated`
+    /// (and so we don't thrash `.interrupting` → `.responding` if a
+    /// stray replay arrives mid-interrupt).
     fileprivate func confirmQueuedEntry(id: UUID, echo: Message2, mode: ReceiveMode) -> MessageEntry? {
         guard let idx = messages.firstIndex(where: { $0.id == id }) else { return nil }
         guard case .single(var single) = messages[idx] else { return nil }
+        if single.delivery == .confirmed {
+            return nil
+        }
+        let wasQueued = single.delivery == .queued
         single.payload = .remote(echo)
         single.delivery = .confirmed
         messages[idx] = .single(single)
-        if mode == .live, status == .idle {
+        if mode == .live, wasQueued, status == .idle {
             status = .responding
         }
         return messages[idx]

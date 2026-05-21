@@ -16,5 +16,13 @@ let package = Package(
             name: "SmokeTest",
             dependencies: ["AgentSDK"]
         ),
+        .executableTarget(
+            name: "DumpSmoke",
+            dependencies: ["AgentSDK"]
+        ),
+        .executableTarget(
+            name: "InterruptSmoke",
+            dependencies: ["AgentSDK"]
+        ),
     ]
 )

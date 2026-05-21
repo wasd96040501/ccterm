@@ -105,6 +105,35 @@ If a test feels like it wants to "click a button," reach for the
 underlying method the button would invoke. The button click is `handle.send(...)`;
 the keystroke is `controller.handleKey(...)`. Test those.
 
+## Smoke tests (real `claude` CLI)
+
+Smokes are **not** XCTests — they live as `executableTarget`s in
+`macos/AgentSDK` and run via `swift run`. They were originally
+`*SmokeTests.swift` files in this folder, but XCTest's host-app
+bundle-load triggers `CCTermApp` startup (including `GitProbe.loadHeavy`
+which can hang on misbehaving git folders), making the smoke take
+~6+ minutes to fail even when the smoke code itself is fine.
+Standalone executables bypass the host-app entirely.
+
+```bash
+cd macos/AgentSDK
+swift run DumpSmoke                      # one turn, dump JSONL + counts
+SMOKE_SCENARIO=bgjob swift run DumpSmoke # background-bash post-result drain
+swift run InterruptSmoke                 # interrupt mid-stream and report
+                                         #   whether the CLI's user echo
+                                         #   arrives AFTER our interrupt
+                                         #   (the bug-trigger condition)
+```
+
+Env: `CLAUDE_BINARY_PATH` (override path), `SMOKE_MODEL`
+(default `claude-haiku-4-5`), `SMOKE_PROMPT`, plus
+`INTERRUPT_AFTER_MS` (default 1500) for `InterruptSmoke`.
+
+Each smoke creates its work directory under
+`/tmp/ccterm-{dump,interrupt}-smoke-<timestamp>/` and writes the CLI's
+exported JSONL to `…/export/`. Both are kept after the run so you can
+inspect them.
+
 ## Snapshot tests
 
 Render a real SwiftUI view through `NSHostingController` into an

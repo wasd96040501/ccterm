@@ -7,23 +7,12 @@ import SwiftUI
 /// Folders" row clears the filter.
 ///
 /// The picker is intentionally folder-shaped (name + path subtitle)
-/// rather than fully generic — callers pass `[Folder]` directly. If a
-/// second site grows the same shape, lift this into a generic
-/// `title + subtitle` picker.
+/// rather than fully generic — callers pass `[SessionManager.ArchivedFolder]`
+/// directly. If a second site grows the same shape, lift this into a
+/// generic `title + subtitle` picker.
 struct FolderFilterPickerView: View {
 
-    /// A single folder entry. `path` is the canonical identity (the
-    /// caller's groupingPath); `name` is the leaf displayed as the row
-    /// title. Two folders with the same leaf but different paths are
-    /// distinct rows.
-    struct Folder: Identifiable, Hashable {
-        let path: String
-        let name: String
-
-        var id: String { path }
-    }
-
-    let folders: [Folder]
+    let folders: [SessionManager.ArchivedFolder]
     /// Currently-active folder filter, by `path`. nil means "All Folders".
     let selectedPath: String?
     /// Invoked with the new selection — `nil` for "All Folders", otherwise
@@ -33,7 +22,7 @@ struct FolderFilterPickerView: View {
 
     @State private var searchText = ""
 
-    private var filteredFolders: [Folder] {
+    private var filteredFolders: [SessionManager.ArchivedFolder] {
         if searchText.isEmpty { return folders }
         return folders.filter { folder in
             folder.name.localizedCaseInsensitiveContains(searchText)

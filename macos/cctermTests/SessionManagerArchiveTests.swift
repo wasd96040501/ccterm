@@ -193,6 +193,110 @@ final class SessionManagerArchiveTests: XCTestCase {
         XCTAssertNil(manager.existingSession(sid), "Unarchive must drop any stale cached handle")
     }
 
+    // MARK: - Archived folder options (derived state)
+
+    /// `archivedFolderOptions` is derived in lock-step with
+    /// `archivedRecords` on every refresh path. After
+    /// `refreshArchivedRecords()`, the list must reflect the distinct
+    /// `originPath` values of all archived rows, sorted alphabetically
+    /// by leaf name, with nil/empty paths silently dropped.
+    func testArchivedFolderOptionsDerivedFromSyncRefresh() {
+        repo.save(
+            makeRecord(
+                sid: "a", title: "A1",
+                cwd: "/Users/me/work/project-a", originPath: "/Users/me/work/project-a",
+                status: .archived, archivedAt: Date()))
+        repo.save(
+            makeRecord(
+                sid: "b", title: "B1",
+                cwd: "/Users/me/work/project-b", originPath: "/Users/me/work/project-b",
+                status: .archived, archivedAt: Date()))
+        // Second row at project-a — should not produce a duplicate folder.
+        repo.save(
+            makeRecord(
+                sid: "a2", title: "A2",
+                cwd: "/Users/me/work/project-a", originPath: "/Users/me/work/project-a",
+                status: .archived, archivedAt: Date()))
+        // Row with nil originPath — should be silently dropped from options.
+        repo.save(
+            makeRecord(
+                sid: "orphan", title: "No origin",
+                cwd: "/somewhere", originPath: nil,
+                status: .archived, archivedAt: Date()))
+        let manager = SessionManager(
+            repository: repo, worktreeArchive: noopSideEffect, worktreeRestore: noopSideEffect)
+
+        manager.refreshArchivedRecords()
+
+        XCTAssertEqual(
+            manager.archivedFolderOptions.map(\.path),
+            ["/Users/me/work/project-a", "/Users/me/work/project-b"],
+            "Distinct originPath buckets, sorted alphabetically by leaf name"
+        )
+        XCTAssertEqual(
+            manager.archivedFolderOptions.map(\.name),
+            ["project-a", "project-b"]
+        )
+    }
+
+    /// `refreshArchivedRecordsAsync()` must also refresh the derived
+    /// folder options — the Archive page's first paint goes through this
+    /// path and the popover would otherwise see a stale empty list.
+    func testArchivedFolderOptionsDerivedFromAsyncRefresh() async {
+        repo.save(
+            makeRecord(
+                sid: "a", title: "Async A",
+                cwd: "/Users/me/projects/alpha", originPath: "/Users/me/projects/alpha",
+                status: .archived, archivedAt: Date()))
+        let manager = SessionManager(
+            repository: repo, worktreeArchive: noopSideEffect, worktreeRestore: noopSideEffect)
+
+        await manager.refreshArchivedRecordsAsync()
+
+        XCTAssertEqual(manager.archivedFolderOptions.map(\.path), ["/Users/me/projects/alpha"])
+        XCTAssertEqual(manager.archivedFolderOptions.first?.name, "alpha")
+    }
+
+    /// Archiving a session updates `archivedFolderOptions` in the same
+    /// transaction as `archivedRecords`, so an Archive page open at the
+    /// moment of archive sees both lists move together.
+    func testArchivingSessionAddsToFolderOptions() {
+        let sid = UUID().uuidString
+        repo.save(
+            makeRecord(
+                sid: sid, title: "About to archive",
+                cwd: "/Users/me/repos/foo", originPath: "/Users/me/repos/foo",
+                status: .created))
+        let manager = SessionManager(
+            repository: repo, worktreeArchive: noopSideEffect, worktreeRestore: noopSideEffect)
+        XCTAssertEqual(manager.archivedFolderOptions.count, 0)
+
+        manager.archive(sid)
+
+        XCTAssertEqual(manager.archivedFolderOptions.map(\.path), ["/Users/me/repos/foo"])
+        XCTAssertEqual(manager.archivedFolderOptions.first?.name, "foo")
+    }
+
+    /// Unarchiving the last session in a folder removes that folder from
+    /// the picker options, so a stale-selection cleanup in the Archive
+    /// page has something concrete to compare against.
+    func testUnarchivingLastSessionInFolderRemovesItFromOptions() {
+        let sid = UUID().uuidString
+        repo.save(
+            makeRecord(
+                sid: sid, title: "Only one in folder",
+                cwd: "/Users/me/repos/bar", originPath: "/Users/me/repos/bar",
+                status: .archived, archivedAt: Date()))
+        let manager = SessionManager(
+            repository: repo, worktreeArchive: noopSideEffect, worktreeRestore: noopSideEffect)
+        manager.refreshArchivedRecords()
+        XCTAssertEqual(manager.archivedFolderOptions.count, 1)
+
+        manager.unarchive(sid)
+
+        XCTAssertEqual(manager.archivedFolderOptions.count, 0)
+    }
+
     // MARK: - Worktree side-effect routing
 
     /// A non-worktree archive does NOT call the worktree side-effect

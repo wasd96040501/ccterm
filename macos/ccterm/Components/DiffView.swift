@@ -21,16 +21,31 @@ import SwiftUI
 /// `DiffLayout` produces for the proposed width.
 struct DiffView: View {
     let diff: DiffBlock
+    /// Show the top-right language pill. Defaults to `true` so the
+    /// transcript's expanded diff card and `#Preview` callers keep the
+    /// existing chrome. The input-bar permission preview passes
+    /// `false` because the surrounding card already names the file.
+    var showsLangBadge: Bool = true
+    /// Show the top-right copy button. Defaults to `true`. The
+    /// permission preview suppresses it — there's nothing actionable
+    /// about copying a not-yet-applied edit's new content, and the
+    /// underlying selection / right-click-Copy paths still work.
+    var showsCopyIcon: Bool = true
 
     @Environment(\.syntaxEngine) private var engine
     @State private var lineMap: [String: [SyntaxToken]]?
 
     var body: some View {
-        DiffViewBridge(diff: diff, lineMap: lineMap)
-            .task(id: HighlightInput(diff: diff, hasEngine: engine != nil)) {
-                lineMap = nil
-                await runHighlight()
-            }
+        DiffViewBridge(
+            diff: diff,
+            lineMap: lineMap,
+            showsLangBadge: showsLangBadge,
+            showsCopyIcon: showsCopyIcon
+        )
+        .task(id: HighlightInput(diff: diff, hasEngine: engine != nil)) {
+            lineMap = nil
+            await runHighlight()
+        }
     }
 
     private func runHighlight() async {
@@ -67,11 +82,17 @@ struct DiffView: View {
 private struct DiffViewBridge: NSViewRepresentable {
     let diff: DiffBlock
     let lineMap: [String: [SyntaxToken]]?
+    let showsLangBadge: Bool
+    let showsCopyIcon: Bool
 
     func makeNSView(context: Context) -> DiffNSView { DiffNSView() }
 
     func updateNSView(_ nsView: DiffNSView, context: Context) {
-        nsView.update(diff: diff, lineMap: lineMap)
+        nsView.update(
+            diff: diff,
+            lineMap: lineMap,
+            showsLangBadge: showsLangBadge,
+            showsCopyIcon: showsCopyIcon)
     }
 
     func sizeThatFits(
@@ -94,6 +115,8 @@ private struct DiffViewBridge: NSViewRepresentable {
 final class DiffNSView: NSView, NSUserInterfaceValidations {
     private var diff: DiffBlock?
     private var lineMap: [String: [SyntaxToken]]?
+    private var showsLangBadge: Bool = true
+    private var showsCopyIcon: Bool = true
 
     private var cachedLayout: DiffLayout?
     private var cachedWidth: CGFloat = -1
@@ -133,16 +156,26 @@ final class DiffNSView: NSView, NSUserInterfaceValidations {
 
     // MARK: - SwiftUI-driven update
 
-    func update(diff: DiffBlock, lineMap: [String: [SyntaxToken]]?) {
+    func update(
+        diff: DiffBlock,
+        lineMap: [String: [SyntaxToken]]?,
+        showsLangBadge: Bool,
+        showsCopyIcon: Bool
+    ) {
         let diffChanged = self.diff != diff
         let lineMapChanged = !sameLineMap(self.lineMap, lineMap)
-        guard diffChanged || lineMapChanged else { return }
+        let chromeChanged =
+            self.showsLangBadge != showsLangBadge
+            || self.showsCopyIcon != showsCopyIcon
+        guard diffChanged || lineMapChanged || chromeChanged else { return }
         if diffChanged {
             anchorChar = nil
             cursorChar = nil
         }
         self.diff = diff
         self.lineMap = lineMap
+        self.showsLangBadge = showsLangBadge
+        self.showsCopyIcon = showsCopyIcon
         invalidateLayoutCache()
         invalidateIntrinsicContentSize()
         needsDisplay = true
@@ -184,7 +217,9 @@ final class DiffNSView: NSView, NSUserInterfaceValidations {
             copyText: diff.newString,
             originX: 0,
             originY: 0,
-            maxWidth: max(0, width))
+            maxWidth: max(0, width),
+            showsLangBadge: showsLangBadge,
+            showsCopyIcon: showsCopyIcon)
         cachedLayout = made
         cachedWidth = width
         return made

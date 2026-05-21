@@ -504,6 +504,9 @@ final class Transcript2Controller {
             return coordinator.blockIds.isEmpty ? nil : .bottom
         }()
         pendingFirstTile = nil
+        #if DEBUG
+        Transcript2ReentryStats.recordHandleFirstTile()
+        #endif
         guard let anchor else { return }
         coordinator.scrollToInitialAnchor(anchor)
         coordinator.markAnchorSettled()

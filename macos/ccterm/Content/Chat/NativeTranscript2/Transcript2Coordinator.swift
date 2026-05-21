@@ -67,6 +67,16 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     weak var tableView: NSTableView? {
         didSet {
             guard oldValue !== tableView else { return }
+            #if DEBUG
+            let perfDidSetStart =
+                Transcript2PerfLog.enabled ? CFAbsoluteTimeGetCurrent() : 0
+            if Transcript2PerfLog.enabled {
+                Transcript2PerfLog.trace(
+                    "reentry tableView.didSet attach=\(tableView != nil) "
+                        + "blocks=\(blocks.count) "
+                        + "width=\(tableView?.bounds.width ?? -1)")
+            }
+            #endif
             // A new table view replaces the previous one (session switch,
             // SwiftUI rebuild). Until this fresh table tiles to a positive
             // width and the Controller drains any pending first-tile work,
@@ -87,7 +97,20 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                     // (`alphaValue = 0` from `makeNSView`); the
                     // first-tile handler unhides it after the scrolled
                     // frame lands.
+                    #if DEBUG
+                    let perfReloadStart =
+                        Transcript2PerfLog.enabled ? CFAbsoluteTimeGetCurrent() : 0
+                    #endif
                     table.reloadData()
+                    #if DEBUG
+                    if Transcript2PerfLog.enabled {
+                        let ms = (CFAbsoluteTimeGetCurrent() - perfReloadStart) * 1000
+                        Transcript2PerfLog.trace(
+                            "reentry didSet.reloadData blocks=\(blocks.count) "
+                                + "width=\(table.bounds.width) "
+                                + "ms=\(String(format: "%.2f", ms))")
+                    }
+                    #endif
                 } else {
                     // Nothing to scroll → nothing can flicker. Unhide now
                     // so empty / pre-`setHistory` sessions don't sit
@@ -96,6 +119,13 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                     table.alphaValue = 1
                 }
             }
+            #if DEBUG
+            if Transcript2PerfLog.enabled {
+                let ms = (CFAbsoluteTimeGetCurrent() - perfDidSetStart) * 1000
+                Transcript2PerfLog.trace(
+                    "reentry tableView.didSet done ms=\(String(format: "%.2f", ms))")
+            }
+            #endif
         }
     }
 
@@ -158,6 +188,10 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// `.saveVisible(...)` and does not move the visual anchor, so
     /// calling this between Phase 1 and Phase 2 is safe.
     func markAnchorSettled() {
+        #if DEBUG
+        Transcript2PerfLog.trace(
+            "reentry markAnchorSettled fire blocks=\(blocks.count)")
+        #endif
         tableView?.alphaValue = 1
         setAnchorSettled(true)
     }
@@ -1008,6 +1042,17 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         // `BlockCellView.layoutOrigin` re-centers content automatically from
         // the new `bounds.width`, no row needs its layout invalidated.
         let width = layoutWidth
+        #if DEBUG
+        if Transcript2PerfLog.enabled {
+            Transcript2PerfLog.trace(
+                "reentry tableFrameDidChange "
+                    + "rawWidth=\(tableView.bounds.width) "
+                    + "clampedWidth=\(width) "
+                    + "lastLayoutWidth=\(lastLayoutWidth) "
+                    + "inLiveResize=\(tableView.inLiveResize) "
+                    + "shortCircuit=\(width == lastLayoutWidth)")
+        }
+        #endif
         if width == lastLayoutWidth { return }
         let prevWidth = lastLayoutWidth
         lastLayoutWidth = width
@@ -1096,6 +1141,16 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// `noteHeightOfRow(_:false)` path, which does the same suppression.
     private func invalidate(rows indexes: IndexSet, in tableView: NSTableView) {
         guard !indexes.isEmpty else { return }
+        #if DEBUG
+        let perfStart =
+            Transcript2PerfLog.enabled ? CFAbsoluteTimeGetCurrent() : 0
+        if Transcript2PerfLog.enabled {
+            Transcript2PerfLog.trace(
+                "reentry invalidate.start rows=\(indexes.count) "
+                    + "blocks=\(blocks.count) "
+                    + "width=\(layoutWidth)")
+        }
+        #endif
         NSAnimationContext.beginGrouping()
         NSAnimationContext.current.duration = 0
         NSAnimationContext.current.allowsImplicitAnimation = false
@@ -1109,6 +1164,14 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         tableView.endUpdates()
         CATransaction.commit()
         NSAnimationContext.endGrouping()
+        #if DEBUG
+        if Transcript2PerfLog.enabled {
+            let ms = (CFAbsoluteTimeGetCurrent() - perfStart) * 1000
+            Transcript2PerfLog.trace(
+                "reentry invalidate.done rows=\(indexes.count) "
+                    + "ms=\(String(format: "%.2f", ms))")
+        }
+        #endif
     }
 
     // MARK: - Background prefetch (post-live-resize)

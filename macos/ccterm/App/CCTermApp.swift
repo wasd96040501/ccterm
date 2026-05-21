@@ -55,6 +55,11 @@ struct CCTermApp: App {
             return
         }
         MainThreadWatchdog.start()
+        #if DEBUG
+        // Temporary: enabled so re-entry perf trace lands in os_log.
+        // Filter with category == "Transcript2Perf". Revert before merging.
+        Transcript2PerfLog.enabled = true
+        #endif
         // First-launch model catalog fetch — eagerly kicked off at
         // app init so the picker has data ready by the time the user
         // can interact with it. `prefetchIfNeeded` returns

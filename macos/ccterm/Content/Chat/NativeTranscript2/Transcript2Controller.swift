@@ -504,6 +504,13 @@ final class Transcript2Controller {
             return coordinator.blockIds.isEmpty ? nil : .bottom
         }()
         pendingFirstTile = nil
+        #if DEBUG
+        if Transcript2PerfLog.enabled {
+            Transcript2PerfLog.trace(
+                "reentry handleFirstTile anchor=\(anchor.map { String(describing: $0) } ?? "nil") "
+                    + "blocks=\(coordinator.blockIds.count)")
+        }
+        #endif
         guard let anchor else { return }
         coordinator.scrollToInitialAnchor(anchor)
         coordinator.markAnchorSettled()

@@ -67,6 +67,16 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     weak var tableView: NSTableView? {
         didSet {
             guard oldValue !== tableView else { return }
+            #if DEBUG
+            // Stamp the start of the SwiftUI rebuild gap on session
+            // switch: this didSet runs on the OLD coordinator with
+            // newValue == nil (Transcript2NSViewBridge.dismantleNSView
+            // clears the weak ref). The next coordinator's
+            // recordAttachStart pairs against it process-wide.
+            if oldValue != nil && tableView == nil {
+                Transcript2ReentryStats.recordDetach()
+            }
+            #endif
             // A new table view replaces the previous one (session switch,
             // SwiftUI rebuild). Until this fresh table tiles to a positive
             // width and the Controller drains any pending first-tile work,
@@ -80,6 +90,14 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             // because `width == lastLayoutWidth` short-circuits the
             // notification handler.
             lastLayoutWidth = -1
+            if tableView == nil {
+                // Detach (Transcript2NSViewBridge.dismantleNSView). No
+                // future materialize is meaningful; clear any pending
+                // gate so a re-attach to a different table starts clean.
+                pendingFirstAppear = false
+                materializeScheduled = false
+                return
+            }
             if let table = tableView {
                 if !blocks.isEmpty {
                     // Re-entry / bridge-accumulated state: blocks exist
@@ -90,17 +108,65 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                     #if DEBUG
                     Transcript2ReentryStats.recordAttachStart(blocks: blocks.count)
                     #endif
-                    table.reloadData()
+                    // Defer the attach `reloadData()` until the first
+                    // `tableFrameDidChange` with a positive width. SwiftUI's
+                    // mount cascade hands the table a placeholder rawWidth
+                    // (~100pt, clamped to `BlockStyle.minLayoutWidth`)
+                    // before the real window width arrives. Calling
+                    // `reloadData()` here would make AppKit run its
+                    // first layout pass at the placeholder width and
+                    // populate `layoutCache` with min-clamp-width
+                    // entries that the next real-width pass would
+                    // immediately overwrite — measured at ~30ms of
+                    // wasted Core Text typeset on a 360-block
+                    // transcript (PR #179 baseline).
+                    //
+                    // `numberOfRows(in:)` reports 0 throughout this
+                    // window so AppKit's placeholder layout pass sees an
+                    // empty table and skips `heightOfRow` entirely.
+                    // `tableFrameDidChange` arms `materializeScheduled`
+                    // on the first positive-width transition; the async
+                    // hop lets the placeholder→real cascade settle, and
+                    // `materializeFirstAppear` issues one `reloadData()`
+                    // at the final width.
+                    pendingFirstAppear = true
+                    materializeScheduled = false
                 } else {
                     // Nothing to scroll → nothing can flicker. Unhide now
                     // so empty / pre-`setHistory` sessions don't sit
                     // invisible waiting for a scroll that will never
                     // arrive.
+                    pendingFirstAppear = false
+                    materializeScheduled = false
                     table.alphaValue = 1
                 }
             }
         }
     }
+
+    /// `true` between `tableView.didSet` (re-entry / non-empty blocks
+    /// branch) and the first `tableFrameDidChange` with a positive width
+    /// having been processed by `materializeFirstAppear`. While true:
+    ///
+    /// - `numberOfRows(in:)` reports 0 so AppKit's placeholder-width
+    ///   layout pass has nothing to lay out (no `heightOfRow` calls at
+    ///   the wrong width).
+    /// - `apply` / `applyInBackground` route through the "no table"
+    ///   branch — they mutate `blocks` only; the materialize-time
+    ///   `reloadData()` picks up the cumulative state.
+    /// - `toggleFold` / `setStatus` no-op against the table (they still
+    ///   update their sparse-dict backing state; the upcoming
+    ///   materialize reload paints in the new visuals).
+    ///
+    /// Cleared in `materializeFirstAppear`, or in `tableView.didSet`
+    /// when the table is detached or replaced.
+    private var pendingFirstAppear: Bool = false
+
+    /// One-shot arm bit for the deferred `materializeFirstAppear`
+    /// dispatch. The placeholder→real frame cascade fires
+    /// `tableFrameDidChange` more than once within a single event cycle;
+    /// this flag prevents stacking duplicate async hops.
+    private var materializeScheduled: Bool = false
 
     /// Notifies the controller after every successful mutation so SwiftUI
     /// observers on `blockCount` see the new value.
@@ -356,7 +422,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         // settled scroll would jitter the anchor row.
         mutationCounter &+= 1
 
-        if let table = tableView {
+        if let table = tableView, !pendingFirstAppear {
             withScrollAdjustment(scroll, in: table) {
                 table.beginUpdates()
                 for change in changes {
@@ -365,8 +431,12 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                 table.endUpdates()
             }
         } else {
-            // Table not attached. Just mutate `blocks`; future attach will
-            // `reloadData()`. Scroll state is meaningless without a table.
+            // Either no table attached, or attached but still inside the
+            // first-appear window (rows not yet materialized to AppKit's
+            // view — `numberOfRows` reports 0). Mutate `blocks` only;
+            // `materializeFirstAppear`'s `reloadData()` will pick up the
+            // cumulative state. Scroll state is meaningless in either
+            // branch (no live geometry to compute against).
             for change in changes {
                 applyStructuralChange(change, in: nil)
             }
@@ -398,16 +468,18 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         scroll: Transcript2Controller.ScrollState,
         completion: @MainActor @escaping () -> Void = {}
     ) {
-        guard tableView != nil else {
+        guard tableView != nil, !pendingFirstAppear else {
             // Detached path: a background-emitted change (Phase B prepend,
-            // setHistory Phase 2) arrived while the table is not bound.
+            // setHistory Phase 2) arrived while the table is not bound,
+            // or the table is bound but still in the first-appear window.
             // The controller is now session-scoped (lives across view
             // mount/dismount), so dropping the change would leave
             // `blocks` out of sync with the underlying handle's messages
             // for any session whose view isn't currently mounted. Route
             // through sync `apply` so `blocks` stays authoritative;
-            // layouts compute lazily once a table re-attaches and
-            // `heightOfRow` is queried.
+            // `apply` itself takes the no-AppKit branch in both
+            // sub-cases, and layouts compute lazily once a table
+            // re-attaches / materialize lands and `heightOfRow` is queried.
             apply(changes, scroll: .none)
             completion()
             return
@@ -851,7 +923,16 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// so prior selection offsets no longer index into anything
     /// meaningful.
     func toggleFold(id: UUID) {
-        guard let table = tableView else { return }
+        // `pendingFirstAppear`: AppKit's row count is suppressed to 0
+        // until materialize runs `reloadData()`, so a single-row
+        // `noteHeightOfRows` / `reloadData(forRowIndexes:)` against a
+        // not-yet-materialized row would index out of bounds. In
+        // practice no user click can fire here (the table is
+        // `alphaValue = 0` until anchor settles), but the guard
+        // makes the invariant explicit. `foldStates` updates are
+        // still meaningful because the upcoming materialize reload
+        // reads them through `makeLayout`.
+        guard let table = tableView, !pendingFirstAppear else { return }
         // Find the owning row. `id` may be either a top-level
         // `Block.id` (the group header itself) or a
         // `ToolGroupBlock.Child.id` (an item header inside a group).
@@ -934,9 +1015,11 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// reloads the single row. Row height is status-independent, so we
     /// also skip `noteHeightOfRows`.
     func setStatus(id: UUID, status: ToolStatus) {
-        guard let table = tableView else {
-            // Table not attached yet — record the status so the future
-            // `reloadData()` after attach picks it up via `makeLayout`.
+        guard let table = tableView, !pendingFirstAppear else {
+            // Table not attached yet, or attached but still in the
+            // first-appear window. Record the status so the future
+            // `reloadData()` (on attach, or via `materializeFirstAppear`)
+            // picks it up through `makeLayout`'s `statuses` snapshot.
             if statusStates[id] != status { statusStates[id] = status }
             return
         }
@@ -1022,6 +1105,25 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let prevWidth = lastLayoutWidth
         lastLayoutWidth = width
 
+        if pendingFirstAppear {
+            // SwiftUI's mount cascade emits a placeholder-width frame
+            // (`rawWidth ~100pt → clampedLayoutWidth = minLayoutWidth`)
+            // synchronously followed by the real-width frame in the
+            // same event cycle. Arm a single async materialize on the
+            // first positive-width transition; subsequent transitions
+            // within the cycle no-op via `materializeScheduled`. By the
+            // time the async runs the frame cascade has settled, so
+            // `materializeFirstAppear`'s `reloadData()` lands once at
+            // the final width.
+            if width > 0, !materializeScheduled {
+                materializeScheduled = true
+                DispatchQueue.main.async { [weak self] in
+                    self?.materializeFirstAppear()
+                }
+            }
+            return
+        }
+
         // Refresh row heights BEFORE the Controller's first-tile handler
         // gets to scroll. The deferred branch of
         // `Transcript2Controller.setHistory` pre-inserts blocks into
@@ -1060,6 +1162,40 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                 self?.onTableDidTile?()
             }
         }
+    }
+
+    /// One runloop tick after the first positive-width
+    /// `tableFrameDidChange`. By now SwiftUI's placeholder→real frame
+    /// cascade has settled — `tableView.bounds.width` reflects the
+    /// final window width. Flip the pending gate off, issue a single
+    /// `reloadData()` so AppKit re-queries `numberOfRows` (now reporting
+    /// the real `blocks.count`) and lays out `heightOfRow` at the real
+    /// width, then fire `onTableDidTile` so the Controller drains its
+    /// first-tile work (scroll-to-anchor + `markAnchorSettled`).
+    ///
+    /// `pendingFirstAppear` may have been cleared in the interim by a
+    /// detach (table set to nil) — in that case the closure is a
+    /// no-op and the next attach starts a fresh cycle.
+    private func materializeFirstAppear() {
+        guard pendingFirstAppear, let table = tableView else {
+            materializeScheduled = false
+            return
+        }
+        pendingFirstAppear = false
+        materializeScheduled = false
+        // `reloadData()` here is the *intentional* reset of AppKit's row
+        // cache that we deferred from `tableView.didSet`. AppKit will
+        // synchronously query `numberOfRows` (now `blocks.count`) and
+        // then `heightOfRow` for visible rows on its next layout pass.
+        table.reloadData()
+        // The original `tableFrameDidChange` gate
+        // `prevWidth <= 0 && width > 0` would have dispatched this
+        // via `DispatchQueue.main.async`; here is the equivalent — the
+        // cell-layout pass driven by `reloadData()` lands inside the
+        // same runloop iteration as the closure that follows (the
+        // Controller's `handleFirstTile` forces it via
+        // `layoutSubtreeIfNeeded()` inside `scrollToInitialAnchor`).
+        onTableDidTile?()
     }
 
     /// Scroll the table to the initial anchor — used by
@@ -1207,7 +1343,16 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
 
     // MARK: - NSTableViewDataSource / Delegate
 
-    func numberOfRows(in tableView: NSTableView) -> Int { blocks.count }
+    func numberOfRows(in tableView: NSTableView) -> Int {
+        // Suppress row count during the SwiftUI-mount placeholder window
+        // (see `pendingFirstAppear` doc). AppKit's first layout pass at
+        // the placeholder width sees an empty table and skips
+        // `heightOfRow` entirely; the next `materializeFirstAppear`
+        // issues `reloadData()` which forces a re-query and lands the
+        // real count.
+        if pendingFirstAppear { return 0 }
+        return blocks.count
+    }
 
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
         guard blocks.indices.contains(row) else { return 1 }

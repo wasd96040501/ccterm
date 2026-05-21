@@ -3,6 +3,16 @@
   "strings": {
     "": {},
     "%lld": {},
+    "%lld active todos, %lld total": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 项进行中，共 %lld 项"
+          }
+        }
+      }
+    },
     "%lld background tasks": {
       "localizations": {
         "zh-Hans": {
@@ -33,6 +43,26 @@
         }
       }
     },
+    "%lld completed todos": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 项已完成"
+          }
+        }
+      }
+    },
+    "%lld done": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 已完成"
+          }
+        }
+      }
+    },
     "%lld min ago": {
       "extractionState": "stale",
       "localizations": {
@@ -50,6 +80,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "之后还有 %lld 个问题"
+          }
+        }
+      }
+    },
+    "%lld of %lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / %lld"
           }
         }
       }
@@ -1727,6 +1767,16 @@
         }
       }
     },
+    "In progress": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "进行中"
+          }
+        }
+      }
+    },
     "Insert cell into %@": {
       "localizations": {
         "zh-Hans": {
@@ -2178,6 +2228,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "未提供路径 — 请在会话主区查看详情"
+          }
+        }
+      }
+    },
+    "Pending": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待开始"
           }
         }
       }
@@ -3407,6 +3467,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "临时会话"
+          }
+        }
+      }
+    },
+    "To do": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待办"
           }
         }
       }

@@ -68,7 +68,9 @@ final class Transcript2CoordinatorAttachTests: XCTestCase {
     ///
     /// Returns both so the test can drive frame changes directly and
     /// observe the cumulative state.
-    private func attachTable(blocksCount: Int) -> (
+    private func attachTable(
+        blocksCount: Int
+    ) -> (
         Transcript2Coordinator, Transcript2TableView, [Block]
     ) {
         let coordinator = Transcript2Coordinator()

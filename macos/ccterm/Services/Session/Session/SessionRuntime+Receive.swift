@@ -25,6 +25,11 @@ extension SessionRuntime {
     func receive(_ message: Message2, mode: ReceiveMode = .live) {
         switch message {
         case .assistant(let a):
+            // Capture TaskCreate / TaskUpdate tool_use inputs so the
+            // pairing user.tool_result can materialize / patch the
+            // entry in `todos`. Runs in both live and replay so the
+            // popover list is correct after a JSONL reload.
+            captureTodoToolUses(in: a)
             noteUsage(a.message?.usage)
             // CLI is producing assistant content → a turn is in progress.
             // Self-heals two real scenarios surfaced by the SDK smoke
@@ -85,6 +90,10 @@ extension SessionRuntime {
             // its first byte to the spool file), so this is the earliest
             // reliable point to record where to tail from.
             if mode == .live { rememberOutputFileFromBashResult(u) }
+            // Fold any TaskCreate / TaskUpdate result into `todos`. Runs
+            // for both live and replay so the popover state survives a
+            // JSONL reload.
+            applyTodoToolResult(u)
         default: break
         }
 

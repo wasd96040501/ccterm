@@ -232,6 +232,23 @@ final class SessionRuntime {
     /// Ordered chronologically (oldest first); the popover groups them by
     /// running vs. terminal at render time.
     internal(set) var tasks: [BackgroundTask] = []
+
+    /// The assistant's live todo plan. Built from the CLI's `TaskCreate`
+    /// / `TaskUpdate` tool calls — see [Services/Session/SessionRuntime+Todos.swift]
+    /// for the merger. The matching tool_use / tool_result blocks remain
+    /// visible in the transcript; this collection is a structured
+    /// off-band projection so the input-bar popover can render the plan
+    /// without re-parsing the timeline.
+    internal(set) var todos: [TodoEntry] = []
+
+    /// Internal scratch — `TaskCreate` input keyed by `tool_use_id`,
+    /// captured the moment the assistant emits the tool_use so we can
+    /// pair it with the subsequent tool_result (which only echoes
+    /// `task.id` + `subject`, dropping the description / activeForm).
+    /// Entries are removed once consumed; the dict stays small even on
+    /// long sessions.
+    @ObservationIgnored internal var pendingTodoCreates: [String: TodoEntry.CreateScratch] = [:]
+    @ObservationIgnored internal var pendingTodoUpdates: [String: TodoEntry.UpdateScratch] = [:]
     /// Model catalog from the CLI's `InitializeResponse.models`. Source of
     /// truth for the model picker — display name, supported effort levels,
     /// and feature flags (auto / fast / adaptive thinking) per model. Set

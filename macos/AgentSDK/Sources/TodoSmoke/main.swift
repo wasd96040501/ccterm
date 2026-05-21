@@ -41,7 +41,7 @@ let env = ProcessInfo.processInfo.environment
 let model = env["SMOKE_MODEL"] ?? "claude-sonnet-4-6"
 let prompt =
     env["SMOKE_PROMPT"]
-    ?? """
+        ?? """
         Use the TodoWrite tool to plan the following pretend task:
 
         1) Read a README file

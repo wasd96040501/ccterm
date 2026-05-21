@@ -11,6 +11,7 @@ public enum System: JSONParseable, UnknownStrippable {
     case taskNotification(TaskNotification)
     case taskProgress(TaskProgress)
     case taskStarted(TaskStarted)
+    case taskUpdated(TaskUpdated)
     case turnDuration(TurnDuration)
     case unknown(name: String, raw: [String: Any])
 }

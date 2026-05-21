@@ -10,9 +10,9 @@ import Foundation
 //      + description + task_type
 //   3. `user.tool_result` — carries the absolute path of the spool file
 //      ("Output is being written to: …") + the backgroundTaskId
-//   4. `system.task_updated` (subtype the SDK does not model yet — comes
-//      in as `.system(.unknown("task_updated", raw))`) — patches status
-//      mid-flight and on completion
+//   4. `system.task_updated` — patches status / end_time / output_file /
+//      summary on the entry. Modeled as `TaskUpdated` + `TaskUpdatedPatch`
+//      alongside the other System variants.
 //   5. `system.task_notification` — terminal payload with status,
 //      output_file, summary, usage. Triggers a synthetic follow-up turn
 //      so the assistant can act on the result.
@@ -56,30 +56,27 @@ extension SessionRuntime {
         tasks[idx] = task
     }
 
-    /// `system.task_updated` is shaped as `{task_id, patch: {status,
-    /// end_time, …}}`. The SDK does not model it (it surfaces through
-    /// the `.unknown` arm of `System`), so we read the patch out of the
-    /// raw dict.
-    func handleTaskUpdated(raw: [String: Any]) {
-        guard let taskId = raw["task_id"] as? String,
+    /// `system.task_updated` carries a `patch` sub-record with whatever
+    /// fields the CLI is changing this tick — most commonly `status` +
+    /// `end_time` on the terminal transition. We apply each field
+    /// individually so partial patches (e.g. an interim status flip
+    /// with no end time yet) leave the rest of the entry untouched.
+    func handleTaskUpdated(_ updated: TaskUpdated) {
+        guard let taskId = updated.taskId,
             let idx = tasks.firstIndex(where: { $0.id == taskId })
         else { return }
         var task = tasks[idx]
-        if let patch = raw["patch"] as? [String: Any] {
-            if let statusStr = patch["status"] as? String,
-                let mapped = Self.statusFrom(string: statusStr)
-            {
+        if let patch = updated.patch {
+            if let mapped = Self.statusFrom(string: patch.status) {
                 task.status = mapped
             }
-            if let endTime = patch["end_time"] as? Double {
+            if let endTime = patch.endTime {
                 task.endedAt = Date(timeIntervalSince1970: endTime / 1000.0)
-            } else if let endTime = patch["end_time"] as? Int {
-                task.endedAt = Date(timeIntervalSince1970: TimeInterval(endTime) / 1000.0)
             }
-            if let outputFile = patch["output_file"] as? String {
+            if let outputFile = patch.outputFile {
                 task.outputFile = outputFile
             }
-            if let summary = patch["summary"] as? String {
+            if let summary = patch.summary {
                 task.summary = summary
             }
         }

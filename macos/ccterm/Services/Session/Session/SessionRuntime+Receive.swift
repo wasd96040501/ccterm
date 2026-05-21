@@ -57,8 +57,8 @@ extension SessionRuntime {
             handleTaskStarted(started)
         case .system(.taskNotification(let notif)) where mode == .live:
             handleTaskNotification(notif)
-        case .system(.unknown(let name, let raw)) where mode == .live && name == "task_updated":
-            handleTaskUpdated(raw: raw)
+        case .system(.taskUpdated(let updated)) where mode == .live:
+            handleTaskUpdated(updated)
         case .user(let u) where u.toolResultBlock?.toolUseId != nil:
             // Capture backgroundTaskId → outputFile mapping when the bash
             // tool's tool_result lands. system.task_started doesn't carry

@@ -31,6 +31,7 @@ struct InputBarSessionChrome: View {
     var body: some View {
         HStack(spacing: 8) {
             PermissionModePicker(session: session, activeModel: activeModel)
+            BackgroundTaskButton(session: session)
             Spacer(minLength: 0)
             ModelEffortPicker(session: session)
             ContextRingButton(session: session)

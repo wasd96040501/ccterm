@@ -166,56 +166,64 @@ private struct ModelEffortPopoverContent: View {
     let onToggleFastMode: (Bool) -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Section headers mirror the CLI vocabulary and are NOT
-            // localized — see PermissionMode / Effort+Display for the
-            // same policy.
-            PopoverSectionHeader(title: "Models")
-            if models.isEmpty {
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.mini).scaleEffect(0.85)
-                    Text("Loading models…")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+        ScrollView {
+            VStack(spacing: 0) {
+                // Section headers mirror the CLI vocabulary and are NOT
+                // localized — see PermissionMode / Effort+Display for the
+                // same policy.
+                PopoverSectionHeader(title: "Models")
+                if models.isEmpty {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.mini).scaleEffect(0.85)
+                        Text("Loading models…")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, PopoverList.horizontalInset)
+                    .padding(.vertical, 6)
+                } else {
+                    ForEach(models, id: \.value) { info in
+                        ModelPopoverRow(
+                            title: info.value,
+                            subtitle: info.description,
+                            isSelected: info.value == selectedModelValue,
+                            onSelect: { onSelectModel(info.value) }
+                        )
+                    }
                 }
-                .padding(.horizontal, PopoverList.horizontalInset)
-                .padding(.vertical, 6)
-            } else {
-                ForEach(models, id: \.value) { info in
-                    ModelPopoverRow(
-                        title: info.value,
-                        subtitle: info.description,
-                        isSelected: info.value == selectedModelValue,
-                        onSelect: { onSelectModel(info.value) }
-                    )
-                }
-            }
 
-            // Effort section is strictly the active model's declared
-            // supportedEffortLevels (no SDK-wide fallback). When the
-            // model declares zero or the model itself doesn't support
-            // effort, the section is hidden.
-            if let levels = activeEffortLevels, !levels.isEmpty {
+                // Effort section is strictly the active model's declared
+                // supportedEffortLevels (no SDK-wide fallback). When the
+                // model declares zero or the model itself doesn't support
+                // effort, the section is hidden.
+                if let levels = activeEffortLevels, !levels.isEmpty {
+                    Divider().padding(.vertical, 4)
+                    PopoverSectionHeader(title: "Effort")
+                    ForEach(levels, id: \.rawValue) { effort in
+                        PopoverRow(
+                            title: effort.title,
+                            isSelected: effort == selectedEffort,
+                            onSelect: { onSelectEffort(effort) }
+                        )
+                    }
+                }
+
                 Divider().padding(.vertical, 4)
-                PopoverSectionHeader(title: "Effort")
-                ForEach(levels, id: \.rawValue) { effort in
-                    PopoverRow(
-                        title: effort.title,
-                        isSelected: effort == selectedEffort,
-                        onSelect: { onSelectEffort(effort) }
-                    )
-                }
+                PopoverSectionHeader(title: "Fast mode")
+                FastModeToggleRow(
+                    enabled: fastModeEnabled,
+                    onToggle: onToggleFastMode
+                )
             }
-
-            Divider().padding(.vertical, 4)
-            PopoverSectionHeader(title: "Fast mode")
-            FastModeToggleRow(
-                enabled: fastModeEnabled,
-                onToggle: onToggleFastMode
-            )
+            .padding(PopoverList.outerPadding)
         }
-        .padding(PopoverList.outerPadding)
+        // Cap so the popover never overflows a stub-display Mac — anything
+        // past `PopoverList.maxHeight` scrolls inside instead of pushing
+        // the popover off the window. The natural content height (3–5
+        // models + effort + fast-mode toggle) sits well below the cap, so
+        // the cap is a defensive ceiling rather than a routine constraint.
         .frame(width: PopoverList.width)
+        .frame(maxHeight: PopoverList.maxHeight)
     }
 
     /// Effort levels strictly from the active model's

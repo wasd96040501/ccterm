@@ -271,6 +271,63 @@ private struct Seed {
         guard !seedToken.done else { return }
         seedToken.done = true
         controller.setHistory(TranscriptDemoView.initialBlocks)
+        seedBackgroundTasks()
+    }
+
+    /// Push a representative mix of background bash tasks onto the
+    /// runtime so the input-bar chrome's "task" button has something to
+    /// show. The long-running entry intentionally carries an oversized
+    /// command + output so the sheet exercises card expansion + the
+    /// stream view's max-height scroll behavior.
+    private func seedBackgroundTasks() {
+        guard let runtime = session.runtime else { return }
+        let oversizedCommand = """
+            for i in $(seq 1 200); do
+              echo "[ $(date +%H:%M:%S) ] tick $i — \
+            running a deliberately long background bash command so the demo \
+            can showcase how the BackgroundTaskCard handles wrapping, \
+            stable expansion, and the inline output tail across multiple \
+            paragraphs of monospaced content."
+              sleep 1
+            done
+            """
+        let running = BackgroundTask(
+            id: "demo-bg-running",
+            toolUseId: "toolu_demo_running",
+            description: "Long-running tick generator (200 iterations)",
+            taskType: "local_bash",
+            command: oversizedCommand,
+            outputFile: nil,
+            startedAt: Date().addingTimeInterval(-92),
+            endedAt: nil,
+            status: .running,
+            summary: nil
+        )
+        let completed = BackgroundTask(
+            id: "demo-bg-completed",
+            toolUseId: "toolu_demo_completed",
+            description: "Background sleep + echo",
+            taskType: "local_bash",
+            command: "sleep 5 && echo finished",
+            outputFile: "/private/tmp/demo/tasks/demo-bg-completed.output",
+            startedAt: Date().addingTimeInterval(-340),
+            endedAt: Date().addingTimeInterval(-330),
+            status: .completed,
+            summary: "Background command \"Background sleep + echo\" completed (exit code 0)"
+        )
+        let failed = BackgroundTask(
+            id: "demo-bg-failed",
+            toolUseId: "toolu_demo_failed",
+            description: "Migration smoke (rolled back)",
+            taskType: "local_bash",
+            command: "make test-unit FILTER=MigrationSmoke",
+            outputFile: "/private/tmp/demo/tasks/demo-bg-failed.output",
+            startedAt: Date().addingTimeInterval(-720),
+            endedAt: Date().addingTimeInterval(-680),
+            status: .failed,
+            summary: "Background command \"Migration smoke\" failed (exit code 1)"
+        )
+        runtime.tasks = [completed, failed, running]
     }
 }
 

@@ -72,6 +72,19 @@ extension SessionRuntime {
             // local write in setPermissionMode: this branch is the
             // self-heal that pulls UI state back to reality.
             adoptPermissionMode(s.permissionMode)
+        case .system(.taskStarted(let started)) where mode == .live:
+            handleTaskStarted(started)
+        case .system(.taskNotification(let notif)) where mode == .live:
+            handleTaskNotification(notif)
+        case .system(.taskUpdated(let updated)) where mode == .live:
+            handleTaskUpdated(updated)
+        case .user(let u) where u.toolResultBlock?.toolUseId != nil:
+            // Capture backgroundTaskId → outputFile mapping when the bash
+            // tool's tool_result lands. system.task_started doesn't carry
+            // the output path (it's allocated lazily when the CLI writes
+            // its first byte to the spool file), so this is the earliest
+            // reliable point to record where to tail from.
+            if mode == .live { rememberOutputFileFromBashResult(u) }
         default: break
         }
 
@@ -391,7 +404,17 @@ extension Message2User {
         guard parentToolUseId == nil,
             isSynthetic != true,
             isCompactSummary != true,
-            isVisibleInTranscriptOnly != true
+            isVisibleInTranscriptOnly != true,
+            // The CLI marks any user envelope whose turn was triggered
+            // by a background task notification with
+            // `origin.kind == "task-notification"`. Newer CLI builds may
+            // surface that as its own synthetic user record (the
+            // task-notification turn currently emits only a system.init
+            // + assistant block, but the CLI has shifted that contract
+            // before). Treat such envelopes as control signals so the
+            // tasks popover is the sole surface for completion-related
+            // chatter.
+            origin?.kind != "task-notification"
         else { return false }
         return hasVisibleText
     }

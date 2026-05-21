@@ -3,6 +3,16 @@
   "strings": {
     "": {},
     "%lld": {},
+    "%lld background tasks": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个后台任务"
+          }
+        }
+      }
+    },
     "%lld blocks · %lld KB": {
       "localizations": {
         "zh-Hans": {
@@ -40,6 +50,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "之后还有 %lld 个问题"
+          }
+        }
+      }
+    },
+    "%lld running, %lld total": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个运行中，共 %lld 个"
+          }
+        }
+      }
+    },
+    "%lld tasks": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 个任务"
           }
         }
       }
@@ -92,6 +122,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "（无分支）"
+          }
+        }
+      }
+    },
+    "(no output yet)": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "（暂无输出）"
+          }
+        }
+      }
+    },
+    "1 task": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 个任务"
+          }
+        }
+      }
+    },
+    "<1s": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "<1秒"
           }
         }
       }
@@ -518,6 +578,26 @@
         }
       }
     },
+    "Background task": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "后台任务"
+          }
+        }
+      }
+    },
+    "Background tasks": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "后台任务"
+          }
+        }
+      }
+    },
     "Branches (%lld)": {
       "extractionState": "stale",
       "localizations": {
@@ -746,6 +826,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "点击 + 添加文件夹"
+          }
+        }
+      }
+    },
+    "Command": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "命令"
           }
         }
       }
@@ -1092,6 +1182,16 @@
         }
       }
     },
+    "Ended": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结束"
+          }
+        }
+      }
+    },
     "Enter (↩)": {
       "extractionState": "stale",
       "localizations": {
@@ -1174,6 +1274,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "深入探索代码库"
+          }
+        }
+      }
+    },
+    "Failed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "失败"
           }
         }
       }
@@ -1709,6 +1819,26 @@
         }
       }
     },
+    "Live": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实时"
+          }
+        }
+      }
+    },
+    "Loading output…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在加载输出…"
+          }
+        }
+      }
+    },
     "Loading stress corpus…": {
       "localizations": {
         "zh-Hans": {
@@ -1724,7 +1854,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "加载中…"
+            "value": "正在加载…"
           }
         }
       }
@@ -1909,6 +2039,16 @@
         }
       }
     },
+    "No output file available": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有可用的输出文件"
+          }
+        }
+      }
+    },
     "No plan body — review the transcript before approving.": {
       "localizations": {
         "zh-Hans": {
@@ -1988,6 +2128,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "其他"
+          }
+        }
+      }
+    },
+    "Output": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输出"
           }
         }
       }
@@ -2498,6 +2648,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "恢复"
+          }
+        }
+      }
+    },
+    "Result": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结果"
           }
         }
       }
@@ -3140,6 +3300,46 @@
         }
       }
     },
+    "Started": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始"
+          }
+        }
+      }
+    },
+    "Stop": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止"
+          }
+        }
+      }
+    },
+    "Stop task": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止任务"
+          }
+        }
+      }
+    },
+    "Stopped": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已停止"
+          }
+        }
+      }
+    },
     "Submit": {
       "localizations": {
         "zh-Hans": {
@@ -3385,6 +3585,16 @@
         }
       }
     },
+    "Waiting for output…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待输出…"
+          }
+        }
+      }
+    },
     "Working Directory": {
       "extractionState": "stale",
       "localizations": {
@@ -3559,8 +3769,28 @@
         }
       }
     },
+    "bash": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "bash"
+          }
+        }
+      }
+    },
     "ccterm": {},
     "claude": {},
+    "completed · %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已完成 · %@"
+          }
+        }
+      }
+    },
     "current": {
       "extractionState": "stale",
       "localizations": {
@@ -3608,6 +3838,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "退出 plan 模式"
+          }
+        }
+      }
+    },
+    "failed · %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "失败 · %@"
           }
         }
       }
@@ -3753,6 +3993,16 @@
         }
       }
     },
+    "running · %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行中 · %@"
+          }
+        }
+      }
+    },
     "search file contents": {
       "localizations": {
         "zh-Hans": {
@@ -3769,6 +4019,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "搜索文件"
+          }
+        }
+      }
+    },
+    "stopped · %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已停止 · %@"
           }
         }
       }

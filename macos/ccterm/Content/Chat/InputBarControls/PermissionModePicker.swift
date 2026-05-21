@@ -86,19 +86,22 @@ private struct PermissionModePopoverContent: View {
     let onSelect: (PermissionMode) -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Section header reads the same CLI vocabulary as the rows —
-            // do not localize.
-            PopoverSectionHeader(title: "Mode")
-            ForEach(modes, id: \.rawValue) { mode in
-                PopoverRow(
-                    title: mode.title,
-                    isSelected: mode == selected,
-                    onSelect: { onSelect(mode) }
-                )
+        ScrollView {
+            VStack(spacing: 0) {
+                // Section header reads the same CLI vocabulary as the
+                // rows — do not localize.
+                PopoverSectionHeader(title: "Mode")
+                ForEach(modes, id: \.rawValue) { mode in
+                    PopoverRow(
+                        title: mode.title,
+                        isSelected: mode == selected,
+                        onSelect: { onSelect(mode) }
+                    )
+                }
             }
+            .padding(PopoverList.outerPadding)
         }
-        .padding(PopoverList.outerPadding)
         .frame(width: PopoverList.width)
+        .frame(maxHeight: PopoverList.maxHeight)
     }
 }

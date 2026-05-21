@@ -11,6 +11,11 @@ enum PopoverList {
     static let rowHeight: CGFloat = 28
     static let horizontalInset: CGFloat = 10
     static let outerPadding: CGFloat = 6
+    /// Soft cap shared by every chrome-row popover (model + effort,
+    /// permission, …). Content past this height routes through the
+    /// popover's inner `ScrollView`; below this, layout collapses to the
+    /// natural content height so a 3-row popover still pops up small.
+    static let maxHeight: CGFloat = 480
 }
 
 /// Header line for a popover section ("Mode", "Models", "Effort", ...).

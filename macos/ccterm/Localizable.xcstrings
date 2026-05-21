@@ -830,6 +830,16 @@
         }
       }
     },
+    "Command": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "命令"
+          }
+        }
+      }
+    },
     "Command Enter (⌘↩)": {
       "extractionState": "stale",
       "localizations": {
@@ -1172,6 +1182,16 @@
         }
       }
     },
+    "Ended": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结束"
+          }
+        }
+      }
+    },
     "Enter (↩)": {
       "extractionState": "stale",
       "localizations": {
@@ -1254,6 +1274,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "深入探索代码库"
+          }
+        }
+      }
+    },
+    "Failed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "失败"
           }
         }
       }
@@ -1789,6 +1819,16 @@
         }
       }
     },
+    "Live": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实时"
+          }
+        }
+      }
+    },
     "Loading output…": {
       "localizations": {
         "zh-Hans": {
@@ -1999,6 +2039,16 @@
         }
       }
     },
+    "No output file available": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有可用的输出文件"
+          }
+        }
+      }
+    },
     "No plan body — review the transcript before approving.": {
       "localizations": {
         "zh-Hans": {
@@ -2078,6 +2128,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "其他"
+          }
+        }
+      }
+    },
+    "Output": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输出"
           }
         }
       }
@@ -2588,6 +2648,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "恢复"
+          }
+        }
+      }
+    },
+    "Result": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "结果"
           }
         }
       }
@@ -3230,12 +3300,42 @@
         }
       }
     },
+    "Started": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "开始"
+          }
+        }
+      }
+    },
+    "Stop": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止"
+          }
+        }
+      }
+    },
     "Stop task": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "停止任务"
+          }
+        }
+      }
+    },
+    "Stopped": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已停止"
           }
         }
       }

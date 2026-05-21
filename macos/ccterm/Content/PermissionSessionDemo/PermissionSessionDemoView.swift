@@ -27,6 +27,7 @@ struct PermissionSessionDemoView: View {
                 .overlay(alignment: .bottom) {
                     ChatRestingBar(
                         sessionId: seed.sessionId,
+                        draftKey: seed.sessionId,
                         onSubmit: { _ in },
                         onAttachRect: { _ in },
                         onPillRect: { _ in }

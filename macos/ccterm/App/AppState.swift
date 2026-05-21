@@ -7,6 +7,7 @@ final class AppState {
     let sessionManager: SessionManager
     let syntaxEngine = SyntaxHighlightEngine()
     let recentProjects = RecentProjectsStore()
+    let inputDraftStore = InputDraftStore()
     let activationTracker: AppActivationTracker
     let notificationService: NotificationService
 

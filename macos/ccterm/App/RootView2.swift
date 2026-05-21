@@ -312,6 +312,12 @@ struct RootView2: View {
                         inputBar: {
                             InputBarChrome(
                                 sessionId: sid,
+                                // Compose mode shares one draft slot regardless of
+                                // the lazily-allocated `draftSessionId` — that UUID
+                                // gets regenerated on every fresh entry to the
+                                // New Session tab, so keying drafts on it would
+                                // lose the body across restarts.
+                                draftKey: InputDraftStore.newSessionKey,
                                 coordSpace: Self.detailCoordSpace,
                                 // Compose mode requires a picked folder before send
                                 // arms; chat mode never gates on this.
@@ -329,6 +335,7 @@ struct RootView2: View {
             } else {
                 ChatRestingBar(
                     sessionId: sid,
+                    draftKey: sid,
                     onSubmit: { submission in submit(submission, sessionId: sid) },
                     onAttachRect: { rect in attachRect = rect },
                     onPillRect: { rect in pillRect = rect }
@@ -445,6 +452,7 @@ struct RootView2: View {
 /// at the tail of the transcript (`Transcript2Controller.setLoading`).
 private struct InputBarChrome: View {
     let sessionId: String
+    let draftKey: String
     let coordSpace: String
     let submitEnabled: Bool
     let onSubmit: (InputBarView2.Submission) -> Void
@@ -493,7 +501,8 @@ private struct InputBarChrome: View {
                 // the temp-CLI fetch. Compose-mode leaves the array empty
                 // until promotion — that's the signal for `nil` here,
                 // routing through the prewarmed store cache instead.
-                knownSlashCommands: session.hasRecord ? session.slashCommands : nil
+                knownSlashCommands: session.hasRecord ? session.slashCommands : nil,
+                draftKey: draftKey
             )
             InputBarSessionChrome(session: session)
         }
@@ -539,6 +548,7 @@ private struct InputBarChrome: View {
 /// blocks don't accept.
 struct ChatRestingBar: View {
     let sessionId: String
+    let draftKey: String
     let onSubmit: (InputBarView2.Submission) -> Void
     let onAttachRect: (CGRect) -> Void
     let onPillRect: (CGRect) -> Void
@@ -551,6 +561,7 @@ struct ChatRestingBar: View {
             Spacer(minLength: 0)
             InputBarChrome(
                 sessionId: sessionId,
+                draftKey: draftKey,
                 coordSpace: RootView2.detailCoordSpace,
                 submitEnabled: true,
                 onSubmit: onSubmit,

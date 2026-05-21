@@ -17,6 +17,7 @@ struct CCTermApp: App {
             RootView2()
                 .environment(appState.sessionManager)
                 .environment(appState.recentProjects)
+                .environment(appState.inputDraftStore)
                 .environment(\.syntaxEngine, appState.syntaxEngine)
                 .environment(searchBus)
                 .environment(appState.notificationService)

@@ -135,7 +135,13 @@ struct InputBarView2: View {
     /// mode leaves this `nil` so the store goes through its cache
     /// (warmed by `CompletionPrewarmer`).
     var knownSlashCommands: [SlashCommand]? = nil
+    /// Storage key for the unsent draft. `nil` disables persistence
+    /// (used by `#Preview`). Chat mode passes the session id; compose
+    /// mode passes `InputDraftStore.newSessionKey` so the draft
+    /// survives the lazily-allocated `draftSessionId` regenerating.
+    var draftKey: String? = nil
 
+    @Environment(InputDraftStore.self) private var draftStore
     @State private var text: String = ""
     @State private var isFocused: Bool = false
     @State private var desiredCursorPosition: Int?
@@ -174,6 +180,51 @@ struct InputBarView2: View {
         .sheet(item: $previewImage) { item in
             ImagePreviewView(thumbnail: item.image)
         }
+        // Off-main load of the persisted draft. Re-fires on draftKey
+        // change (session switch). Only restores when the local state
+        // is still untouched — if the user started typing before the
+        // disk read returned, we throw the loaded value away rather
+        // than clobber in-flight input.
+        .task(id: draftKey) {
+            guard let key = draftKey else { return }
+            guard let draft = await draftStore.load(sessionId: key) else { return }
+            if text.isEmpty && attachments.isEmpty {
+                text = draft.text
+                attachments = draft.filePaths.map { Self.restoreFileAttachment(path: $0) }
+            }
+        }
+        .onChange(of: text) { _, _ in scheduleDraftSave() }
+        .onChange(of: attachments) { _, _ in scheduleDraftSave() }
+    }
+
+    /// Snapshot the bar's persistable state and hand it to the store.
+    /// Empty input routes through `save` too — the store turns an
+    /// empty draft into a `clear` so we never leave a zero-byte file
+    /// on disk.
+    private func scheduleDraftSave() {
+        guard let key = draftKey else { return }
+        let filePaths: [String] = attachments.compactMap { attachment in
+            if case .file(let path) = attachment.kind { return path }
+            return nil
+        }
+        draftStore.save(
+            InputDraft(text: text, filePaths: filePaths, updatedAt: Date()),
+            for: key
+        )
+    }
+
+    /// Rehydrate a `.file` attachment from a persisted path. The system
+    /// icon falls back to a generic file glyph when the file has moved
+    /// or been deleted since the draft was saved — the user can hit
+    /// the remove X to drop a stale entry.
+    private static func restoreFileAttachment(path: String) -> Attachment {
+        let url = URL(fileURLWithPath: path)
+        let icon = NSWorkspace.shared.icon(forFile: path)
+        return Attachment(
+            kind: .file(path: path),
+            thumbnail: icon,
+            filename: url.lastPathComponent
+        )
     }
 
     // MARK: - Pill
@@ -758,4 +809,7 @@ private struct PreviewImage: Identifiable {
         }
     }
     .frame(width: 800, height: 600)
+    .environment(
+        InputDraftStore(directory: URL(fileURLWithPath: NSTemporaryDirectory()))
+    )
 }

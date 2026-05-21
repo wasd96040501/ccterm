@@ -254,6 +254,71 @@ if initDone.wait(timeout: .now() + 30) == .timedOut {
     exit(1)
 }
 
+// SMOKE_WHILE_RESPONDING=1 — three-send scenario:
+//   1) send #1 with a long-running prompt
+//   2) wait until we see the first `assistant` event for turn 1
+//      (CLI is "responding", not idle)
+//   3) IMMEDIATELY queue send #2 and send #3 back-to-back
+// Then observe: do we get 1, 2, or 3 system.init events? If `system.init`
+// is per-CLI-batch we get 2 (#1 + a merged #2/#3); if it's per-turn we
+// get 3; etc.
+if env["SMOKE_WHILE_RESPONDING"] == "1" {
+    let longPrompt =
+        env["SMOKE_LONG_PROMPT"]
+        ?? "Write 8 short sentences about why the sky is blue. One per line."
+    let p2 = env["SMOKE_PROMPT2"] ?? "Reply with exactly: ok"
+    let p3 = env["SMOKE_PROMPT3"] ?? "Reply with exactly: done"
+
+    let uuid2 = UUID().uuidString.lowercased()
+    let uuid3 = UUID().uuidString.lowercased()
+    ourUuids.add(uuid2)
+    ourUuids.add(uuid3)
+
+    // Latch fires when the first assistant arrives for turn 1.
+    let firstAssistantOfTurn1 = DispatchSemaphore(value: 0)
+    var assistantSeen = false
+    let userMessageCb = session.onMessage  // existing labeler
+    session.onMessage = { msg in
+        userMessageCb?(msg)
+        if case .assistant = msg, !assistantSeen {
+            assistantSeen = true
+            firstAssistantOfTurn1.signal()
+        }
+    }
+
+    clock.mark()
+    log("send", "T0 — three-send: send #1 (uuid=\(userUuid.prefix(8)))")
+    session.sendMessage(longPrompt, extra: ["uuid": userUuid])
+
+    if firstAssistantOfTurn1.wait(timeout: .now() + 60) == .timedOut {
+        log("ERROR", "first assistant of turn 1 timeout")
+        session.close()
+        exit(1)
+    }
+    log("send", "  observed first assistant of turn 1 — CLI is responding")
+    log(
+        "send",
+        "T1 — three-send: send #2 (uuid=\(uuid2.prefix(8))), then #3 (uuid=\(uuid3.prefix(8)))")
+    session.sendMessage(p2, extra: ["uuid": uuid2])
+    Thread.sleep(forTimeInterval: 0.005)
+    session.sendMessage(p3, extra: ["uuid": uuid3])
+
+    // Wait for all three .result events.
+    let deadline = Date().addingTimeInterval(180)
+    while (marks.countByLabel["result"] ?? 0) < 3, Date() < deadline {
+        Thread.sleep(forTimeInterval: 0.05)
+    }
+    Thread.sleep(forTimeInterval: 1.0)
+
+    log("send", "—————— three-send summary ——————")
+    log("send", "  system.init count        : \(marks.countByLabel["system.init"] ?? 0)")
+    log("send", "  user.echo(ours) count    : \(marks.countByLabel["user.echo(ours)"] ?? 0)")
+    log("send", "  assistant count          : \(marks.countByLabel["assistant"] ?? 0)")
+    log("send", "  result count             : \(marks.countByLabel["result"] ?? 0)")
+    session.close()
+    exit(0)
+}
+
 // SMOKE_BACK_TO_BACK=1 — fire two sends in rapid succession (no wait
 // in between) and observe how many `system.init` events the CLI
 // emits. This tells us whether system.init is 1:1 with sendMessage

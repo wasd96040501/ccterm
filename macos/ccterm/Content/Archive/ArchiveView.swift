@@ -30,10 +30,12 @@ import SwiftUI
 ///   keystroke — the raw field text is read every keypress but the
 ///   filter only re-runs after the user pauses.
 /// - A folder-filter button that opens `FolderFilterPickerView` in a
-///   popover. The folder set is identity-derived from `originPath` (so
-///   worktree sessions group with their parent repo) and cached in
-///   `@State` — re-derived only when `manager.archivedRecords` changes,
-///   not on every keystroke / body invalidation.
+///   popover. The folder set is read from `manager.archivedFolderOptions`,
+///   which `SessionManager` derives (grouped by `originPath`, so worktree
+///   sessions roll into their parent repo) every time it refreshes
+///   `archivedRecords`. The page itself caches nothing: the popover
+///   re-reads the @Observable on present, so any archive / unarchive
+///   landing while the page is open shows up immediately.
 struct ArchiveView: View {
     @Environment(SessionManager.self) private var manager
 
@@ -55,12 +57,6 @@ struct ArchiveView: View {
     /// `record.originPath` to match against.
     @State private var selectedFolderPath: String? = nil
     @State private var isFilterPopoverPresented: Bool = false
-    /// Cached folder picker options — recomputed only when the archived
-    /// record set changes (see `.onChange(of: archivedRecordsFingerprint)`).
-    /// Computing it inline on every body call would re-group all rows
-    /// on every keystroke; with the cache the keystroke path only pays
-    /// for the filter pass.
-    @State private var folderOptions: [FolderFilterPickerView.Folder] = []
 
     /// Flips to `true` once the first async fetch has landed. Until
     /// then the body renders an empty slot so the empty-state copy
@@ -139,13 +135,13 @@ struct ArchiveView: View {
                 searchQuery = searchQueryRaw
             } catch {}
         }
-        .onChange(of: archivedRecordsFingerprint, initial: true) { _, _ in
-            folderOptions = computeFolderOptions()
+        .onChange(of: manager.archivedFolderOptions) { _, newOptions in
             // Drop a stale folder filter if the selected folder no
             // longer has any archived rows (user unarchived every row
-            // under it from elsewhere).
+            // under it from elsewhere). Direct read on the @Observable
+            // ensures observation tracking always fires.
             if let selected = selectedFolderPath,
-                !folderOptions.contains(where: { $0.path == selected })
+                !newOptions.contains(where: { $0.path == selected })
             {
                 selectedFolderPath = nil
             }
@@ -290,7 +286,7 @@ struct ArchiveView: View {
         .help(Text("Filter by folder"))
         .popover(isPresented: $isFilterPopoverPresented, arrowEdge: .top) {
             FolderFilterPickerView(
-                folders: folderOptions,
+                folders: manager.archivedFolderOptions,
                 selectedPath: selectedFolderPath,
                 onSelect: { path in
                     selectedFolderPath = path
@@ -298,34 +294,6 @@ struct ArchiveView: View {
                 }
             )
         }
-    }
-
-    /// Cheap fingerprint over `archivedRecords` so the `.onChange`
-    /// trigger fires when the record set actually changes without
-    /// allocating a 10k-element snapshot per body invalidation. Count
-    /// + first/last sessionId catches every realistic mutation
-    /// (archive, unarchive, refresh).
-    private var archivedRecordsFingerprint: String {
-        let records = manager.archivedRecords
-        let first = records.first?.sessionId ?? ""
-        let last = records.last?.sessionId ?? ""
-        return "\(records.count)|\(first)|\(last)"
-    }
-
-    /// Distinct folder options drawn from the full archived list,
-    /// keyed on `originPath` — worktree sessions group with their
-    /// parent repo rather than appearing as a separate per-worktree
-    /// row. Records without `originPath` aren't filterable and are
-    /// silently dropped. Sorted alphabetically for predictable
-    /// scanning.
-    private func computeFolderOptions() -> [FolderFilterPickerView.Folder] {
-        let buckets = Dictionary(grouping: manager.archivedRecords) { $0.originPath }
-        return buckets.compactMap { path, _ -> FolderFilterPickerView.Folder? in
-            guard let path, !path.isEmpty else { return nil }
-            let name = (path as NSString).lastPathComponent
-            return FolderFilterPickerView.Folder(path: path, name: name)
-        }
-        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     /// Records after applying the in-memory folder and text filters.

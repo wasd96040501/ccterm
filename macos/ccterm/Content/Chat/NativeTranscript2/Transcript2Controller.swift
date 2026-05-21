@@ -484,20 +484,36 @@ final class Transcript2Controller {
         }
     }
 
-    /// Called by `Transcript2Coordinator` on the first 0→positive
-    /// `tableFrameDidChange` transition after a `tableView` attach.
-    /// Two scenarios resolved here:
+    /// Called by `Transcript2Coordinator.materializeFirstAppear` on
+    /// the first 0→positive `tableFrameDidChange` transition after a
+    /// `tableView` attach. Coordinator's gate is currently
+    /// `.suppressed`; this handler decides between the phased
+    /// materialize rollout (the normal path, when viewport geometry
+    /// is available) and the all-or-nothing `materializeAsFull`
+    /// fallback.
     ///
-    /// 1. **Pending `setHistory`** — `pendingFirstTile` carries the
-    ///    requested anchor. Blocks were already injected at width=0;
-    ///    only the scroll is left.
-    /// 2. **Plain re-attach** — controller already has blocks (bridge
-    ///    accumulated state or a prior `setHistory` landed) but no
-    ///    pending anchor. Default to `.bottom` so re-entering a
-    ///    session always lands at the latest message.
+    /// **Phased rollout (Phase 1 + Phase 2):**
+    /// 1. Compute the viewport-covering slice via
+    ///    `Transcript2ViewportSlicer.slice`, anchored at
+    ///    `pendingFirstTile` (or `.bottom` for a plain re-attach).
+    /// 2. Phase 1: `coordinator.installPhase1Slice(slice)` flips the
+    ///    gate to `.visible(slice)` and reloads — AppKit's first
+    ///    layout pass typesets just `slice.count` rows synchronously.
+    /// 3. Scroll to the anchor (within the slice), then
+    ///    `markAnchorSettled` — first-screen contract fulfilled.
+    /// 4. Phase 2: `coordinator.runPhase2(...)` precomputes layouts
+    ///    for above + below on a detached task; main-hop installs the
+    ///    rest under `.saveVisible(...)` so the visible anchor doesn't
+    ///    move.
     ///
-    /// `markAnchorSettled` runs in both branches — flips alpha to 1 and
-    /// fires the `@Observable` `isAnchorSettled` mirror.
+    /// **Fallback (`materializeAsFull`)** runs when:
+    /// - viewport height is unknown (no scroll view, windowless test
+    ///   harness), or
+    /// - the controller has no blocks (`pendingFirstTile` is nil and
+    ///   `blockIds.isEmpty`) — nothing to do at all in that case.
+    ///
+    /// `markAnchorSettled` runs in both phased and fallback branches
+    /// so SwiftUI's `isAnchorSettled` observer flips on time.
     private func handleFirstTile() {
         let anchor: InitialAnchor? = {
             if let pending = pendingFirstTile { return pending }
@@ -507,9 +523,34 @@ final class Transcript2Controller {
         #if DEBUG
         Transcript2ReentryStats.recordHandleFirstTile()
         #endif
-        guard let anchor else { return }
-        coordinator.scrollToInitialAnchor(anchor)
-        coordinator.markAnchorSettled()
+        guard let anchor else {
+            // No anchor → empty session attach. Coordinator's gate
+            // stayed `.full` (empty branch in `tableView.didSet`); no
+            // materialize to drive. The `onTableDidTile` path only
+            // fires for non-empty attaches anyway, but stay defensive.
+            return
+        }
+
+        let width = coordinator.layoutWidth
+        let viewportHeight = coordinator.viewportHeight
+        if width > 0, viewportHeight > 0 {
+            // Phased rollout: slice + install + scroll + Phase 2.
+            let slice = Transcript2ViewportSlicer.slice(
+                blocks: coordinator.blocksSnapshot(),
+                anchor: anchor,
+                width: width,
+                viewportHeight: viewportHeight)
+            coordinator.installPhase1Slice(slice)
+            coordinator.scrollToInitialAnchor(anchor)
+            coordinator.markAnchorSettled()
+            coordinator.runPhase2()
+        } else {
+            // Fallback: no viewport geometry → can't slice. Issue the
+            // single-step materialize matching PR #179's behavior.
+            coordinator.materializeAsFull()
+            coordinator.scrollToInitialAnchor(anchor)
+            coordinator.markAnchorSettled()
+        }
     }
 
     // MARK: - Search

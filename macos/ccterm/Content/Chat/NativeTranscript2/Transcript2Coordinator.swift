@@ -94,7 +94,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                 // Detach (Transcript2NSViewBridge.dismantleNSView). No
                 // future materialize is meaningful; clear any pending
                 // gate so a re-attach to a different table starts clean.
-                pendingFirstAppear = false
+                gate = .full
                 materializeScheduled = false
                 return
             }
@@ -122,21 +122,23 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                     // transcript (PR #179 baseline).
                     //
                     // `numberOfRows(in:)` reports 0 throughout this
-                    // window so AppKit's placeholder layout pass sees an
-                    // empty table and skips `heightOfRow` entirely.
+                    // window (gate `.suppressed`) so AppKit's
+                    // placeholder layout pass sees an empty table and
+                    // skips `heightOfRow` entirely.
                     // `tableFrameDidChange` arms `materializeScheduled`
                     // on the first positive-width transition; the async
                     // hop lets the placeholder→real cascade settle, and
-                    // `materializeFirstAppear` issues one `reloadData()`
-                    // at the final width.
-                    pendingFirstAppear = true
+                    // `materializeFirstAppear` transitions the gate
+                    // through `.visible(viewport-slice)` (Phase 1) into
+                    // `.full` (Phase 2 lands the rest).
+                    gate = .suppressed
                     materializeScheduled = false
                 } else {
                     // Nothing to scroll → nothing can flicker. Unhide now
                     // so empty / pre-`setHistory` sessions don't sit
                     // invisible waiting for a scroll that will never
                     // arrive.
-                    pendingFirstAppear = false
+                    gate = .full
                     materializeScheduled = false
                     table.alphaValue = 1
                 }
@@ -144,23 +146,25 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         }
     }
 
-    /// `true` between `tableView.didSet` (re-entry / non-empty blocks
-    /// branch) and the first `tableFrameDidChange` with a positive width
-    /// having been processed by `materializeFirstAppear`. While true:
+    /// Governs how much of `blocks` AppKit currently sees — the unified
+    /// successor to PR #179's `pendingFirstAppear: Bool`. See
+    /// `Transcript2MaterializationGate` for the three-state semantics.
     ///
-    /// - `numberOfRows(in:)` reports 0 so AppKit's placeholder-width
-    ///   layout pass has nothing to lay out (no `heightOfRow` calls at
-    ///   the wrong width).
-    /// - `apply` / `applyInBackground` route through the "no table"
-    ///   branch — they mutate `blocks` only; the materialize-time
-    ///   `reloadData()` picks up the cumulative state.
-    /// - `toggleFold` / `setStatus` no-op against the table (they still
-    ///   update their sparse-dict backing state; the upcoming
-    ///   materialize reload paints in the new visuals).
+    /// In short:
+    /// - `.full` (default / steady state) — AppKit sees all of `blocks`.
+    /// - `.suppressed` — placeholder window (between `tableView.didSet`
+    ///   and `materializeFirstAppear`). `numberOfRows(in:)` reports 0
+    ///   so AppKit's placeholder-width layout pass has nothing to lay
+    ///   out.
+    /// - `.visible(slice)` — phased rollout intermediate. AppKit sees
+    ///   only `slice` of `blocks`; Phase 2's main hop expands the gate
+    ///   back to `.full` and `insertRows`-installs the rest.
     ///
-    /// Cleared in `materializeFirstAppear`, or in `tableView.didSet`
-    /// when the table is detached or replaced.
-    private var pendingFirstAppear: Bool = false
+    /// While `gate != .full`, mutation paths (`apply` /
+    /// `applyInBackground` / `toggleFold` / `setStatus`) route through
+    /// their "no-AppKit" branches — they mutate the data layer only;
+    /// the rollout's next phase transition catches AppKit up.
+    private var gate: Transcript2MaterializationGate = .full
 
     /// One-shot arm bit for the deferred `materializeFirstAppear`
     /// dispatch. The placeholder→real frame cascade fires
@@ -359,6 +363,14 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
 
     var blockIds: [UUID] { blocks.map(\.id) }
 
+    /// Read-only snapshot of the current `blocks` array. Used by the
+    /// Controller's `handleFirstTile` to drive the viewport slicer
+    /// against the same data the upcoming Phase 1 / Phase 2 will
+    /// operate on. Returns a copy (Swift array CoW makes this cheap
+    /// at hand-off; the array is mutated only on the coordinator's
+    /// MainActor, so the caller's snapshot stays consistent).
+    func blocksSnapshot() -> [Block] { blocks }
+
     /// Width that rows are laid out at — clamped to
     /// `BlockStyle.[min,max]LayoutWidth`. Sourced from `tableView.bounds.width`,
     /// the same source `CenteredRowView` uses for row geometry — so this and
@@ -422,7 +434,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         // settled scroll would jitter the anchor row.
         mutationCounter &+= 1
 
-        if let table = tableView, !pendingFirstAppear {
+        if let table = tableView, gate.isFull {
             withScrollAdjustment(scroll, in: table) {
                 table.beginUpdates()
                 for change in changes {
@@ -431,12 +443,16 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                 table.endUpdates()
             }
         } else {
-            // Either no table attached, or attached but still inside the
-            // first-appear window (rows not yet materialized to AppKit's
-            // view — `numberOfRows` reports 0). Mutate `blocks` only;
-            // `materializeFirstAppear`'s `reloadData()` will pick up the
-            // cumulative state. Scroll state is meaningless in either
-            // branch (no live geometry to compute against).
+            // Either no table attached, or attached but the
+            // materialization gate is not `.full` (suppressed during
+            // the placeholder window, or visible-slice during the
+            // phased rollout's Phase 1→2 interval). In all these
+            // cases AppKit's row indexing doesn't match `blocks` —
+            // mutate the data layer only; the next gate transition
+            // (`materializeFirstAppear` → `.visible(slice)`, Phase 2
+            // → `.full`) catches AppKit up. Scroll state is
+            // meaningless in either branch (no live AppKit-indexed
+            // geometry to compute against).
             for change in changes {
                 applyStructuralChange(change, in: nil)
             }
@@ -468,7 +484,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         scroll: Transcript2Controller.ScrollState,
         completion: @MainActor @escaping () -> Void = {}
     ) {
-        guard tableView != nil, !pendingFirstAppear else {
+        guard tableView != nil, gate.isFull else {
             // Detached path: a background-emitted change (Phase B prepend,
             // setHistory Phase 2) arrived while the table is not bound,
             // or the table is bound but still in the first-appear window.
@@ -923,16 +939,16 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// so prior selection offsets no longer index into anything
     /// meaningful.
     func toggleFold(id: UUID) {
-        // `pendingFirstAppear`: AppKit's row count is suppressed to 0
-        // until materialize runs `reloadData()`, so a single-row
-        // `noteHeightOfRows` / `reloadData(forRowIndexes:)` against a
-        // not-yet-materialized row would index out of bounds. In
-        // practice no user click can fire here (the table is
-        // `alphaValue = 0` until anchor settles), but the guard
-        // makes the invariant explicit. `foldStates` updates are
+        // `gate.isFull`: AppKit's row count is suppressed (`.suppressed`)
+        // or sliced (`.visible(slice)`) outside the steady state, so a
+        // single-row `noteHeightOfRows` / `reloadData(forRowIndexes:)`
+        // against a not-yet-materialized row would index out of bounds.
+        // In practice no user click can fire during these windows (the
+        // table is `alphaValue = 0` until anchor settles), but the
+        // guard makes the invariant explicit. `foldStates` updates are
         // still meaningful because the upcoming materialize reload
         // reads them through `makeLayout`.
-        guard let table = tableView, !pendingFirstAppear else { return }
+        guard let table = tableView, gate.isFull else { return }
         // Find the owning row. `id` may be either a top-level
         // `Block.id` (the group header itself) or a
         // `ToolGroupBlock.Child.id` (an item header inside a group).
@@ -1015,7 +1031,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// reloads the single row. Row height is status-independent, so we
     /// also skip `noteHeightOfRows`.
     func setStatus(id: UUID, status: ToolStatus) {
-        guard let table = tableView, !pendingFirstAppear else {
+        guard let table = tableView, gate.isFull else {
             // Table not attached yet, or attached but still in the
             // first-appear window. Record the status so the future
             // `reloadData()` (on attach, or via `materializeFirstAppear`)
@@ -1105,7 +1121,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let prevWidth = lastLayoutWidth
         lastLayoutWidth = width
 
-        if pendingFirstAppear {
+        if gate.isSuppressed {
             // SwiftUI's mount cascade emits a placeholder-width frame
             // (`rawWidth ~100pt → clampedLayoutWidth = minLayoutWidth`)
             // synchronously followed by the real-width frame in the
@@ -1167,35 +1183,210 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// One runloop tick after the first positive-width
     /// `tableFrameDidChange`. By now SwiftUI's placeholder→real frame
     /// cascade has settled — `tableView.bounds.width` reflects the
-    /// final window width. Flip the pending gate off, issue a single
-    /// `reloadData()` so AppKit re-queries `numberOfRows` (now reporting
-    /// the real `blocks.count`) and lays out `heightOfRow` at the real
-    /// width, then fire `onTableDidTile` so the Controller drains its
-    /// first-tile work (scroll-to-anchor + `markAnchorSettled`).
+    /// final window width. The gate is still `.suppressed`; the
+    /// Controller's `onTableDidTile` handler (`handleFirstTile`) reads
+    /// `pendingFirstTile` (or defaults to `.bottom` for a plain
+    /// re-attach), computes the viewport slice via
+    /// `Transcript2ViewportSlicer.slice`, and calls back into the
+    /// Coordinator's phased primitives —
+    /// `installPhase1Slice(_:)` followed by `runPhase2(scroll:)` — to
+    /// transition the gate through `.visible(slice)` into `.full` while
+    /// shifting the synchronous Core Text typeset cost from main
+    /// thread to a detached task.
     ///
-    /// `pendingFirstAppear` may have been cleared in the interim by a
-    /// detach (table set to nil) — in that case the closure is a
-    /// no-op and the next attach starts a fresh cycle.
+    /// Why the Controller drives both phases (rather than the
+    /// Coordinator doing it internally): the slicer needs the anchor,
+    /// which lives on the Controller (`pendingFirstTile`). Pulling the
+    /// orchestration into one place lets the same Phase 1 + Phase 2
+    /// primitives back the real-width `setHistory` path too.
+    ///
+    /// Gate may have been cleared in the interim by a detach (table
+    /// set to nil), in which case the closure is a no-op and the next
+    /// attach starts a fresh cycle.
     private func materializeFirstAppear() {
-        guard pendingFirstAppear, let table = tableView else {
+        guard gate.isSuppressed, tableView != nil else {
             materializeScheduled = false
             return
         }
-        pendingFirstAppear = false
         materializeScheduled = false
-        // `reloadData()` here is the *intentional* reset of AppKit's row
-        // cache that we deferred from `tableView.didSet`. AppKit will
-        // synchronously query `numberOfRows` (now `blocks.count`) and
-        // then `heightOfRow` for visible rows on its next layout pass.
-        table.reloadData()
-        // The original `tableFrameDidChange` gate
-        // `prevWidth <= 0 && width > 0` would have dispatched this
-        // via `DispatchQueue.main.async`; here is the equivalent — the
-        // cell-layout pass driven by `reloadData()` lands inside the
-        // same runloop iteration as the closure that follows (the
-        // Controller's `handleFirstTile` forces it via
-        // `layoutSubtreeIfNeeded()` inside `scrollToInitialAnchor`).
+        // Hand off to the Controller's first-tile handler. It decides
+        // whether to go through `installPhase1Slice` + `runPhase2` (the
+        // normal path, when geometry is ready) or fall back to
+        // `materializeAsFull` (no scroll view → no viewport height →
+        // can't slice).
         onTableDidTile?()
+        // Safety net: if no handler is wired (bare-coordinator tests
+        // that don't construct a `Transcript2Controller`) or the
+        // handler chose not to transition the gate, force the
+        // single-step materialize so AppKit's view doesn't stay
+        // pinned at "0 rows visible" forever. In production the
+        // controller's `handleFirstTile` always transitions the gate;
+        // the safety net is harmless there because `gate.isSuppressed`
+        // is false on re-entry.
+        if gate.isSuppressed {
+            materializeAsFull()
+        }
+    }
+
+    /// Phase 1 of the phased materialize rollout: install the
+    /// viewport-covering `slice` into AppKit visibility. Transitions
+    /// the gate from `.suppressed` to `.visible(slice)` and issues one
+    /// `reloadData()` so AppKit's first layout pass queries
+    /// `heightOfRow` for **only** the slice's rows — viewport-bounded
+    /// work on the main thread.
+    ///
+    /// The Controller calls this from its `handleFirstTile` after
+    /// computing `slice` via `Transcript2ViewportSlicer.slice`. After
+    /// this returns, the Controller scrolls to the anchor within the
+    /// slice (`scrollToInitialAnchor`) and then schedules
+    /// `runPhase2(scroll:)` to install the remainder.
+    ///
+    /// **Why direct `reloadData()` here rather than `insertRows`:**
+    /// the previous gate state was `.suppressed` (`numberOfRows == 0`);
+    /// AppKit's row cache is empty. `reloadData()` is the cheapest way
+    /// to surface the slice — AppKit sees `slice.count` rows and lays
+    /// out `heightOfRow` for them. Using `insertRows` would require
+    /// the same number of queries plus the begin/endUpdates animation
+    /// machinery, with no benefit at this transition.
+    ///
+    /// No-op if the table is detached or the gate is already past
+    /// `.suppressed`.
+    func installPhase1Slice(_ slice: Range<Int>) {
+        guard let table = tableView, gate.isSuppressed else { return }
+        gate = .visible(slice: slice)
+        table.reloadData()
+    }
+
+    /// Fallback path: skip phased rollout and reveal the full `blocks`
+    /// array to AppKit in one step. Used when the viewport slice can't
+    /// be computed (zero `layoutWidth` or `viewportHeight`) and as the
+    /// empty-transcript shortcut. Matches PR #179's
+    /// pre-phased-materialize behavior.
+    ///
+    /// No-op if the table is detached or the gate is already `.full`.
+    func materializeAsFull() {
+        guard let table = tableView, !gate.isFull else { return }
+        gate = .full
+        table.reloadData()
+    }
+
+    /// Phase 2 of the phased materialize rollout: precompute layouts
+    /// for the rows outside the Phase 1 slice on a detached task, then
+    /// on a single main hop expand the gate to `.full` and issue
+    /// `insertRows` for the above + below remainder under
+    /// `withScrollAdjustment(scroll, ...)` (typically
+    /// `.saveVisible(.visualBottom)` so Phase 1's visible anchor stays
+    /// put).
+    ///
+    /// Fire-and-forget — the detached task is not tracked and not
+    /// cancellable: row-mutation is data-source critical-path work.
+    /// `completion` fires on main exactly once in every outcome
+    /// (succeeded, table-detached, gate-not-visible, zero-width).
+    ///
+    /// Pre-condition: gate is `.visible(slice)` when called. The slice
+    /// is read from the gate at task-start; the main hop re-resolves
+    /// against current `blocks` for two reasons: (a) bridge `.apply`
+    /// calls during the rollout window mutate `blocks` and could
+    /// shift the slice, and (b) cleaner anchor math when above /
+    /// below are derived from current state.
+    func runPhase2(
+        scroll: Transcript2Controller.ScrollState = .saveVisible(.visualBottom),
+        completion: @MainActor @escaping () -> Void = {}
+    ) {
+        guard case .visible(let slice) = gate, tableView != nil else {
+            completion()
+            return
+        }
+        let width = layoutWidth
+        guard width > 0 else {
+            // Geometry not ready — degrade to full materialize without
+            // off-main precompute. heightOfRow lazy-fills on next
+            // layout pass.
+            materializeAsFull()
+            completion()
+            return
+        }
+
+        // Snapshot the slice IDs so we can identify "outside-slice"
+        // blocks at main-hop time, even if `blocks` shifted via bridge
+        // inserts during the off-main precompute window.
+        let sliceIds: Set<UUID> = Set(blocks[slice].map(\.id))
+        // Snapshot the actual block payloads outside the slice for
+        // off-main precompute.
+        let outsideBlocks: [Block] =
+            Array(blocks[..<slice.lowerBound])
+            + Array(blocks[slice.upperBound...])
+        let highlightSnapshot = highlightStorage.snapshot()
+        let foldsSnapshot = foldStates
+        let statusesSnapshot = statusStates
+
+        pushScrollerHidden()
+
+        Task.detached(priority: .userInitiated) { [weak self] in
+            var entries: [(UUID, RowLayout)] = []
+            entries.reserveCapacity(outsideBlocks.count)
+            for block in outsideBlocks {
+                entries.append(
+                    (
+                        block.id,
+                        Self.makeLayout(
+                            for: block, width: width,
+                            highlights: highlightSnapshot,
+                            folds: foldsSnapshot,
+                            statuses: statusesSnapshot)
+                    ))
+            }
+            await MainActor.run { [entries] in
+                defer {
+                    self?.popScrollerHidden()
+                    completion()
+                }
+                guard let self, let table = self.tableView else { return }
+                // Re-verify width hasn't drifted; if it has, drop the
+                // cache write (heights would be wrong) but still
+                // transition the gate so AppKit can render.
+                let widthStable = self.layoutWidth == width
+
+                self.withScrollAdjustment(scroll, in: table) {
+                    if widthStable {
+                        self.cacheLayouts(entries, width: width)
+                    }
+                    // Compute the set of AppKit row indices that need
+                    // to be inserted: every position in current
+                    // `blocks` that ISN'T in `sliceIds`. Bridge
+                    // `.insert` calls during the off-main window land
+                    // naturally — they're in `blocks` but not in
+                    // `sliceIds`, so they're treated as "above" /
+                    // "below" / "mid-slice" inserts uniformly by their
+                    // data-array index.
+                    //
+                    // Post-gate-flip, AppKit's row index == data
+                    // index, so the indices we collect here are the
+                    // exact AppKit positions where new rows should
+                    // land. `insertRows(at:)` with a batched index set
+                    // interprets each index as "row at this index
+                    // after the batched insert is new" — so passing
+                    // all non-slice data indices at once produces the
+                    // correct final ordering.
+                    let nonSliceIndices = self.blocks.indices.filter {
+                        !sliceIds.contains(self.blocks[$0].id)
+                    }
+
+                    // Transition gate to .full *before* `insertRows` so
+                    // AppKit's post-`endUpdates` `numberOfRows` query
+                    // sees the new total (`blocks.count`).
+                    self.gate = .full
+
+                    table.beginUpdates()
+                    if !nonSliceIndices.isEmpty {
+                        table.insertRows(
+                            at: IndexSet(nonSliceIndices),
+                            withAnimation: [])
+                    }
+                    table.endUpdates()
+                }
+            }
+        }
     }
 
     /// Scroll the table to the initial anchor — used by
@@ -1344,36 +1535,44 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     // MARK: - NSTableViewDataSource / Delegate
 
     func numberOfRows(in tableView: NSTableView) -> Int {
-        // Suppress row count during the SwiftUI-mount placeholder window
-        // (see `pendingFirstAppear` doc). AppKit's first layout pass at
-        // the placeholder width sees an empty table and skips
-        // `heightOfRow` entirely; the next `materializeFirstAppear`
-        // issues `reloadData()` which forces a re-query and lands the
-        // real count.
-        if pendingFirstAppear { return 0 }
-        return blocks.count
+        // Route through the materialization gate so the row count
+        // matches what AppKit is currently allowed to see:
+        //   - `.full` → `blocks.count`
+        //   - `.suppressed` → 0 (placeholder window)
+        //   - `.visible(slice)` → `slice.count` (Phase 1 of phased
+        //     materialize, before Phase 2's main-hop expansion to
+        //     `.full`)
+        return gate.numberOfRows(blocksCount: blocks.count)
     }
 
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-        guard blocks.indices.contains(row) else { return 1 }
+        // AppKit's row index maps through the gate to a data index.
+        // During `.visible(slice)`, this folds in the
+        // `slice.lowerBound` offset; during `.full`, the mapping is
+        // identity.
+        guard
+            let dataIdx = gate.dataIndex(
+                forRow: row, blocksCount: blocks.count)
+        else { return 1 }
+        let block = blocks[dataIdx]
         let width = layoutWidth
-        let pad = BlockStyle.blockPadding(for: blocks[row].kind)
+        let pad = BlockStyle.blockPadding(for: block.kind)
         #if DEBUG
         let perfActive =
             Transcript2PerfLog.enabled || Transcript2ReentryStats.enabled
         let perfStart = perfActive ? CFAbsoluteTimeGetCurrent() : 0
         let perfCacheHit =
-            perfActive ? (layoutCache[blocks[row].id]?.width == width) : false
+            perfActive ? (layoutCache[block.id]?.width == width) : false
         #endif
         let h =
-            layout(for: blocks[row], width: width).totalHeight
+            layout(for: block, width: width).totalHeight
             + pad.top + pad.bottom
         #if DEBUG
         if perfActive {
             let ms = (CFAbsoluteTimeGetCurrent() - perfStart) * 1000
             if Transcript2PerfLog.enabled {
                 Transcript2PerfLog.trace(
-                    "heightOfRow row=\(row) kind=\(blocks[row].kindLabel) "
+                    "heightOfRow row=\(row) kind=\(block.kindLabel) "
                         + "cached=\(perfCacheHit) h=\(Int(h.rounded())) "
                         + "ms=\(String(format: "%.2f", ms))")
             }
@@ -1406,9 +1605,12 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         viewFor tableColumn: NSTableColumn?,
         row: Int
     ) -> NSView? {
-        guard blocks.indices.contains(row) else { return nil }
+        guard
+            let dataIdx = gate.dataIndex(
+                forRow: row, blocksCount: blocks.count)
+        else { return nil }
         let width = layoutWidth
-        let block = blocks[row]
+        let block = blocks[dataIdx]
         #if DEBUG
         // Cache-hit snapshot taken BEFORE the lazy lookup below would
         // populate it on miss — that way the trace shows whether scroll
@@ -1507,12 +1709,22 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
 
     // MARK: - Selection helpers (consumed by SelectionCoordinator)
 
-    /// Block at `row`, or `nil` if out of bounds. Selection-side reads
-    /// must accept "no block here" because `applyInBackground`'s
-    /// fire-and-forget hop can shrink `blocks` between the caller's
-    /// row resolution and this read.
+    /// Block at AppKit row index `row`, or `nil` if out of bounds.
+    /// Routes through the materialization gate so callers
+    /// (selection / search) that hold an AppKit row index get the
+    /// right block during the phased materialize rollout's
+    /// `.visible(slice)` window — AppKit row N maps to
+    /// `blocks[slice.lowerBound + N]`, not `blocks[N]`.
+    ///
+    /// Selection-side reads must accept "no block here" because
+    /// `applyInBackground`'s fire-and-forget hop can shrink `blocks`
+    /// between the caller's row resolution and this read.
     func block(atRow row: Int) -> Block? {
-        blocks.indices.contains(row) ? blocks[row] : nil
+        guard
+            let dataIdx = gate.dataIndex(
+                forRow: row, blocksCount: blocks.count)
+        else { return nil }
+        return blocks[dataIdx]
     }
 
     /// Block by id. Linear scan — selection paths touch ≤ N blocks, the

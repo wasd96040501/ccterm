@@ -106,9 +106,29 @@ final class Transcript2CoordinatorAttachTests: XCTestCase {
         return (coordinator, table, blocks)
     }
 
-    /// Drain pending `DispatchQueue.main.async` work. `materializeFirstAppear`
-    /// is queued from `tableFrameDidChange`; one or two yields is enough
-    /// in practice but loop a few times for resilience under CI load.
+    /// Drain pending `DispatchQueue.main.async` work — the one we
+    /// care about is `materializeFirstAppear`, queued from
+    /// `tableFrameDidChange`.
+    ///
+    /// `await Task.yield()` in an `async @MainActor` test method
+    /// yields control to the main executor (== main dispatch queue),
+    /// which then drains one item from the queue. Loop a few times
+    /// so any chain of dispatches lands. This is the same idiom PR
+    /// #179 shipped with — it works because XCTest's async test
+    /// support runs the method on the main executor and properly
+    /// pumps the queue around each `await`.
+    ///
+    /// **Caveat — XCTest host process race.** The test host is the
+    /// full `ccterm.app`; `@main` init spawns a `claude` CLI
+    /// subprocess and queues setup work onto the main queue. If
+    /// claude's work happens to land ahead of our materialize, the
+    /// yields process it first and the test can run long. The
+    /// existing yield count (4) is empirically enough for the
+    /// host-app cold-start state; if we observe a flake under
+    /// heavier system load, bump this — but do NOT switch to a
+    /// non-async pump: bare `CFRunLoopRunInMode` /
+    /// `RunLoop.current.run(...)` from a sync test method fail to
+    /// drain the main queue at all (verified 2026-05-22).
     private func pumpMainRunloop() async {
         for _ in 0..<4 {
             await Task.yield()

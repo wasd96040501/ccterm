@@ -91,34 +91,24 @@ final class Transcript2ReentryCostBaselineTests: XCTestCase {
         return (coordinator, table, blocks)
     }
 
-    /// Drains queued `DispatchQueue.main.async` work — `materializeFirstAppear`
-    /// is the one we care about, scheduled by the first positive-width
-    /// `tableFrameDidChange` notification.
+    /// Drain pending `DispatchQueue.main.async` work — the one we
+    /// care about is `materializeFirstAppear`, queued from
+    /// `tableFrameDidChange`.
     ///
-    /// **Why `RunLoop.current.run(mode:before:)` instead of `Task.yield()`:**
-    /// the XCTest host is the full `ccterm.app`, whose `@main` entry
-    /// boots up `SessionManager` and spawns a `claude` CLI subprocess.
-    /// That subprocess setup queues unbounded work onto the main
-    /// `DispatchQueue` during host-app startup. An unbounded
-    /// `await Task.yield()` here can yield to claude's queued work and
-    /// never return for tens of seconds, hanging the test.
-    ///
-    /// Pumping the runloop with a bounded deadline (`maxSeconds`) caps
-    /// the wait: even if claude's work is queued ahead of our
-    /// materialize closure, the runloop returns after `maxSeconds` —
-    /// our test moves on. 0.2s is enough to land
-    /// `DispatchQueue.main.async` callbacks in practice without
-    /// noticeably extending the test suite.
-    private func pumpMainRunloop(maxSeconds: TimeInterval = 0.2) {
-        let deadline = Date(timeIntervalSinceNow: maxSeconds)
-        while Date() < deadline {
-            // One inner tick = a few ms of runloop processing. The
-            // mode-default loop returns on the first event or when its
-            // own inner deadline elapses; we re-enter until our outer
-            // deadline.
-            RunLoop.current.run(
-                mode: .default,
-                before: Date(timeIntervalSinceNow: 0.01))
+    /// `await Task.yield()` in an `async @MainActor` test method
+    /// yields control to the main executor (== main dispatch queue),
+    /// which then drains one item from the queue. Loop a few times
+    /// so any chain of dispatches lands. Bare
+    /// `CFRunLoopRunInMode(.defaultMode, ...)` and
+    /// `RunLoop.current.run(...)` from a sync test method both fail
+    /// to drain the main queue under XCTest's test-host lifecycle
+    /// (verified 2026-05-22 — `CFRunLoopRunInMode` returns
+    /// `kCFRunLoopRunTimedOut` without processing any source; a
+    /// `wait(for:[exp], timeout:)` expectation scheduled via
+    /// `DispatchQueue.main.asyncAfter` also times out).
+    private func pumpMainRunloop() async {
+        for _ in 0..<4 {
+            await Task.yield()
         }
     }
 
@@ -128,13 +118,13 @@ final class Transcript2ReentryCostBaselineTests: XCTestCase {
     private func driveAttachCascade(
         on table: Transcript2TableView,
         realWidth: CGFloat = 1200
-    ) {
+    ) async {
         // Placeholder width — clamps to `BlockStyle.minLayoutWidth` (460).
         table.setFrameSize(NSSize(width: 100, height: 600))
         // Real width — exceeds `maxLayoutWidth` so `clampedLayoutWidth`
         // lands at the ceiling (780), distinct from the placeholder.
         table.setFrameSize(NSSize(width: realWidth, height: 600))
-        pumpMainRunloop()
+        await pumpMainRunloop()
     }
 
     // MARK: - Tests
@@ -150,7 +140,7 @@ final class Transcript2ReentryCostBaselineTests: XCTestCase {
     /// The viewport slicer computes its slice against `layoutWidth` and
     /// `viewportHeight`; this test pins that those two values are
     /// already-final at the moment the slicer would run.
-    func testMaterializeReadsSettledRealWidth() {
+    func testMaterializeReadsSettledRealWidth() async {
         let (coordinator, table, blocks) =
             attachWithPrepopulatedBlocks(blocksCount: 5)
 
@@ -188,7 +178,7 @@ final class Transcript2ReentryCostBaselineTests: XCTestCase {
         // size. This is a test-environment artifact (a real
         // `NSScrollView` would keep retiling at the document's outer
         // width) and is not load-bearing for the slicer claim above.
-        pumpMainRunloop()
+        await pumpMainRunloop()
 
         XCTAssertEqual(
             coordinator.numberOfRows(in: table), blocks.count,
@@ -208,14 +198,14 @@ final class Transcript2ReentryCostBaselineTests: XCTestCase {
     /// Until then: nailing the binary transition down with a test
     /// guards against accidental regressions of `pendingFirstAppear`
     /// semantics during refactor.
-    func testMaterializeIsAllOrNothingToday() {
+    func testMaterializeIsAllOrNothingToday() async {
         let (coordinator, table, blocks) =
             attachWithPrepopulatedBlocks(blocksCount: 30)
 
         // Before materialize: `pendingFirstAppear` suppresses everything.
         XCTAssertEqual(coordinator.numberOfRows(in: table), 0)
 
-        driveAttachCascade(on: table)
+        await driveAttachCascade(on: table)
 
         // After one materialize hop: AppKit sees ALL rows. There is no
         // intermediate "viewport-size only" state today.
@@ -249,12 +239,12 @@ final class Transcript2ReentryCostBaselineTests: XCTestCase {
     /// Phased rollouts in the upcoming optimization will preserve this
     /// fast path — no point slicing zero blocks. This test catches a
     /// regression where the new path forgets to short-circuit.
-    func testEmptyAttachSkipsMaterialize() {
+    func testEmptyAttachSkipsMaterialize() async {
         let (coordinator, table, _) =
             attachWithPrepopulatedBlocks(blocksCount: 0)
 
         XCTAssertEqual(coordinator.numberOfRows(in: table), 0)
-        driveAttachCascade(on: table)
+        await driveAttachCascade(on: table)
         XCTAssertEqual(
             coordinator.numberOfRows(in: table), 0,
             "an empty session must remain 0-rows after the cascade")

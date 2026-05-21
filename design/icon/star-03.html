@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Icon · 比例对比</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400;1,500&family=JetBrains+Mono:wght@400;500&family=Spectral:ital,wght@0,300;0,400;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #F2EDE2; --paper: #FAF6EC;
+    --ink: #1A1814; --ink-2: #4A463E; --ink-3: #7E7869; --ink-4: #BFB8A8;
+    --coral: #C44A1F; --coral-soft: rgba(196, 74, 31, 0.10);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: var(--bg); color: var(--ink);
+    font-family: 'Spectral', Georgia, serif;
+    font-weight: 300; line-height: 1.55;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    background-image:
+      radial-gradient(circle at 20% 80%, rgba(196,74,31,0.025) 0%, transparent 50%),
+      radial-gradient(circle at 80% 20%, rgba(196,74,31,0.02) 0%, transparent 40%);
+  }
+  .page { max-width: 1320px; margin: 0 auto; padding: 56px 48px 64px; }
+  header {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    border-bottom: 1px solid var(--ink); padding-bottom: 20px; margin-bottom: 40px;
+  }
+  .title-zh {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 40px; font-weight: 500;
+    letter-spacing: -0.005em; line-height: 1;
+  }
+  .title-en {
+    font-family: 'Cormorant Garamond', serif;
+    font-style: italic; font-weight: 400; font-size: 18px;
+    color: var(--ink-3); margin-top: 8px;
+  }
+  .meta {
+    text-align: right;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--ink-3);
+    text-transform: uppercase; letter-spacing: 0.14em; line-height: 1.8;
+  }
+  .meta .formula {
+    font-family: 'Cormorant Garamond', serif;
+    font-style: italic; font-size: 16px;
+    text-transform: none; letter-spacing: 0;
+    color: var(--coral); margin-top: 4px;
+  }
+
+  .compare-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 32px;
+    margin-bottom: 56px;
+  }
+  @media (max-width: 1000px) {
+    .compare-grid { grid-template-columns: 1fr; }
+    .page { padding: 32px 20px 48px; }
+    .title-zh { font-size: 30px; }
+    header { flex-direction: column; align-items: flex-start; gap: 16px; }
+    .meta { text-align: left; }
+  }
+
+  .compare-cell { display: flex; flex-direction: column; gap: 16px; }
+
+  .diagram-frame {
+    background: var(--paper); padding: 24px;
+    border: 1px solid var(--ink); position: relative;
+    aspect-ratio: 1;
+  }
+  .diagram-frame::before, .diagram-frame::after,
+  .diagram-frame > .corner-tl, .diagram-frame > .corner-tr {
+    content: ''; position: absolute;
+    width: 7px; height: 7px; background: var(--coral);
+  }
+  .diagram-frame::before { top: -4px; left: -4px; }
+  .diagram-frame::after { bottom: -4px; right: -4px; }
+  .diagram-frame .corner-tl { top: -4px; right: -4px; }
+  .diagram-frame .corner-tr { bottom: -4px; left: -4px; }
+
+  svg.diagram { width: 100%; height: 100%; display: block; overflow: visible; }
+
+  .canvas-square { fill: none; stroke: var(--ink-4); stroke-width: 0.8; opacity: 0.7; }
+  .squircle { fill: none; stroke: var(--ink-4); stroke-width: 0.7; stroke-dasharray: 4 4; opacity: 0.45; }
+  .golden-rect { fill: none; stroke: var(--ink-4); stroke-width: 0.5; stroke-dasharray: 2 3; opacity: 0.35; }
+  .axis { stroke: var(--ink-3); stroke-width: 0.7; stroke-dasharray: 5 4; fill: none; opacity: 0.5; }
+  .spiral { stroke: var(--coral); stroke-width: 0.8; stroke-dasharray: 3 3; fill: none; opacity: 0.30; }
+  .endpoint-ring { fill: none; stroke: var(--ink-4); stroke-width: 0.6; opacity: 0.5; }
+  .endpoint { fill: var(--ink-4); opacity: 0.6; }
+
+  .star { fill: var(--coral); }
+
+  .pole-ring { fill: none; stroke: var(--paper); stroke-width: 1.0; opacity: 0.9; }
+  .pole-dot { fill: var(--paper); }
+
+  .cell-label {
+    display: flex; flex-direction: column; gap: 6px;
+    padding: 8px 4px 0;
+  }
+  .cell-label .name {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 22px; font-weight: 500;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+  }
+  .cell-label .ratio {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.06em;
+    color: var(--coral); font-weight: 500;
+  }
+  .cell-label .symmetry {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    padding: 2px 6px;
+    border: 1px solid var(--ink-4);
+    border-radius: 2px;
+    align-self: flex-start;
+    margin-top: 4px;
+  }
+  .cell-label .tagline {
+    font-family: 'Spectral', Georgia, serif;
+    font-style: italic; font-weight: 300;
+    font-size: 13.5px; line-height: 1.5;
+    color: var(--ink-2); margin-top: 6px;
+  }
+
+  .compare-panel {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 56px;
+  }
+  @media (max-width: 1000px) {
+    .compare-panel { grid-template-columns: 1fr; gap: 32px; }
+  }
+
+  .panel-section { margin-bottom: 32px; }
+
+  .section-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.16em;
+    color: var(--ink-3); margin-bottom: 14px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--ink-4);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .section-label .num {
+    font-style: italic; text-transform: none;
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 14px; color: var(--ink-4);
+  }
+
+  .note-text {
+    font-family: 'Spectral', Georgia, serif;
+    font-weight: 300;
+    font-size: 14.5px;
+    line-height: 1.7;
+    color: var(--ink-2);
+    margin-bottom: 12px;
+  }
+  .note-text em {
+    color: var(--ink);
+    font-weight: 400;
+    font-style: italic;
+    font-family: 'Cormorant Garamond', serif;
+  }
+  .note-text code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--coral);
+    background: var(--coral-soft);
+    padding: 1px 5px;
+    border-radius: 2px;
+  }
+
+  table.compare-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+  }
+  table.compare-table th {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--ink-3);
+    text-align: right;
+    padding: 8px 6px;
+    border-bottom: 1px solid var(--ink);
+    font-weight: 500;
+  }
+  table.compare-table th:first-child { text-align: left; }
+  table.compare-table td {
+    text-align: right;
+    padding: 8px 6px;
+    color: var(--coral);
+    font-weight: 500;
+    border-bottom: 1px dotted var(--ink-4);
+  }
+  table.compare-table td:first-child {
+    text-align: left;
+    color: var(--ink-3);
+    font-size: 9.5px;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    font-weight: 400;
+  }
+  table.compare-table tr:last-child td { border-bottom: none; }
+  table.compare-table tr.sum td { color: var(--ink); font-weight: 600; }
+
+  footer {
+    margin-top: 48px; padding-top: 20px;
+    border-top: 1px solid var(--ink-4);
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-family: 'Cormorant Garamond', serif;
+    font-style: italic; font-size: 14px;
+    color: var(--ink-3); gap: 24px;
+  }
+  footer .right {
+    font-family: 'JetBrains Mono', monospace;
+    font-style: normal; font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--coral);
+  }
+
+  @media (max-width: 600px) {
+    footer { flex-direction: column; gap: 8px; }
+  }
+
+  /* 共用骨架 SVG 片段 */
+  .skeleton-defs { display: none; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div>
+      <div class="title-zh">三种比例对比</div>
+      <div class="title-en">Three ratio variants — equal arms, φ:1, strict spiral</div>
+    </div>
+    <div class="meta">
+      Iteration 03 · ratios
+      <div class="formula">1 : 1 &nbsp; · &nbsp; φ : 1 &nbsp; · &nbsp; 1 : φ : φ² : φ³</div>
+    </div>
+  </header>
+
+  <div class="compare-grid">
+    <!-- ============ Variant A: 1:1 ============ -->
+    <div class="compare-cell">
+      <div class="diagram-frame">
+        <div class="corner-tl"></div>
+        <div class="corner-tr"></div>
+        <svg class="diagram" viewBox="-10 -10 420 420" xmlns="http://www.w3.org/2000/svg">
+          <rect class="canvas-square" x="0" y="0" width="400" height="400"/>
+          <rect class="squircle" x="0" y="0" width="400" height="400" rx="90"/>
+          <rect class="golden-rect" x="0" y="76.393" width="400" height="247.214"/>
+          <line class="axis" x1="0" y1="323.607" x2="400" y2="76.393"/>
+          <line class="axis" x1="0" y1="76.393" x2="200" y2="400"/>
+          <path class="spiral" d="
+            M 400,323.607
+            A 247.214,247.214 0 0 0 152.786,76.393
+            A 152.786,152.786 0 0 0 0,229.180
+            A 94.427,94.427 0 0 0 94.428,323.607
+            A 58.359,58.359 0 0 0 152.786,265.247
+            A 36.068,36.068 0 0 0 116.718,229.180
+            A 22.291,22.291 0 0 0 94.428,251.470
+            A 13.777,13.777 0 0 0 108.205,265.247
+            A 8.514,8.514 0 0 0 116.718,256.733
+            A 5.263,5.263 0 0 0 111.455,251.470
+            A 3.252,3.252 0 0 0 108.205,254.722
+          "/>
+          <circle class="endpoint-ring" cx="400" cy="76.393" r="4"/>
+          <circle class="endpoint"      cx="400" cy="76.393" r="1.6"/>
+          <circle class="endpoint-ring" cx="0"   cy="76.393" r="4"/>
+          <circle class="endpoint"      cx="0"   cy="76.393" r="1.6"/>
+          <circle class="endpoint-ring" cx="0"   cy="323.607" r="4"/>
+          <circle class="endpoint"      cx="0"   cy="323.607" r="1.6"/>
+          <circle class="endpoint-ring" cx="200" cy="400" r="4"/>
+          <circle class="endpoint"      cx="200" cy="400" r="1.6"/>
+
+          <!-- Variant A: 1:1, L = 0.20, r_v = 0.083, u_c = 0.117 -->
+          <path class="star" d="
+            M 178.609,213.221
+            Q 150.494,230.594 142.870,262.910
+            Q 135.242,295.216 152.615,323.331
+            Q 135.242,295.216 102.929,287.589
+            Q  70.620,279.964  42.505,297.337
+            Q  70.620,279.964  78.245,247.646
+            Q  85.872,215.342  68.499,187.227
+            Q  85.872,215.342 118.188,222.969
+            Q 150.494,230.594 178.609,213.221
+            Z
+          "/>
+
+          <circle class="pole-ring" cx="110.557" cy="255.279" r="2.5"/>
+          <circle class="pole-dot"  cx="110.557" cy="255.279" r="1.3"/>
+        </svg>
+      </div>
+      <div class="cell-label">
+        <span class="name">等臂 · A</span>
+        <span class="ratio">1 : 1 : 1 : 1</span>
+        <span class="symmetry">4-fold (90°)</span>
+        <span class="tagline">规整、平衡，传统四芒星气质——但 axis 1 / axis 2 被视作同物，
+        螺线的方向感和 φ 的代数韵律全被抹平。</span>
+      </div>
+    </div>
+
+    <!-- ============ Variant B: φ:1 ============ -->
+    <div class="compare-cell">
+      <div class="diagram-frame">
+        <div class="corner-tl"></div>
+        <div class="corner-tr"></div>
+        <svg class="diagram" viewBox="-10 -10 420 420" xmlns="http://www.w3.org/2000/svg">
+          <rect class="canvas-square" x="0" y="0" width="400" height="400"/>
+          <rect class="squircle" x="0" y="0" width="400" height="400" rx="90"/>
+          <rect class="golden-rect" x="0" y="76.393" width="400" height="247.214"/>
+          <line class="axis" x1="0" y1="323.607" x2="400" y2="76.393"/>
+          <line class="axis" x1="0" y1="76.393" x2="200" y2="400"/>
+          <path class="spiral" d="
+            M 400,323.607
+            A 247.214,247.214 0 0 0 152.786,76.393
+            A 152.786,152.786 0 0 0 0,229.180
+            A 94.427,94.427 0 0 0 94.428,323.607
+            A 58.359,58.359 0 0 0 152.786,265.247
+            A 36.068,36.068 0 0 0 116.718,229.180
+            A 22.291,22.291 0 0 0 94.428,251.470
+            A 13.777,13.777 0 0 0 108.205,265.247
+            A 8.514,8.514 0 0 0 116.718,256.733
+            A 5.263,5.263 0 0 0 111.455,251.470
+            A 3.252,3.252 0 0 0 108.205,254.722
+          "/>
+          <circle class="endpoint-ring" cx="400" cy="76.393" r="4"/>
+          <circle class="endpoint"      cx="400" cy="76.393" r="1.6"/>
+          <circle class="endpoint-ring" cx="0"   cy="76.393" r="4"/>
+          <circle class="endpoint"      cx="0"   cy="76.393" r="1.6"/>
+          <circle class="endpoint-ring" cx="0"   cy="323.607" r="4"/>
+          <circle class="endpoint"      cx="0"   cy="323.607" r="1.6"/>
+          <circle class="endpoint-ring" cx="200" cy="400" r="4"/>
+          <circle class="endpoint"      cx="200" cy="400" r="1.6"/>
+
+          <!-- Variant B: φ:1, L_long = 0.27, L_short = 0.167 -->
+          <path class="star" d="
+            M 167.354,220.173
+            Q 150.494,230.594 142.870,262.910
+            Q 135.242,295.216 167.365,347.187
+            Q 135.242,295.216 102.929,287.589
+            Q  70.620,279.964  53.760,290.385
+            Q  70.620,279.964  78.245,247.646
+            Q  85.872,215.342  53.749,163.371
+            Q  85.872,215.342 118.188,222.969
+            Q 150.494,230.594 167.354,220.173
+            Z
+          "/>
+
+          <circle class="pole-ring" cx="110.557" cy="255.279" r="2.5"/>
+          <circle class="pole-dot"  cx="110.557" cy="255.279" r="1.3"/>
+        </svg>
+      </div>
+      <div class="cell-label">
+        <span class="name">中心对称 · B</span>
+        <span class="ratio">φ : 1 : φ : 1</span>
+        <span class="symmetry">2-fold (180°)</span>
+        <span class="tagline">长臂沿轴 2、短臂沿轴 1，比 φ。邻边结构 *与螺线同构*，
+        但被中心对称折叠成两值振荡——稳定的星，带 φ 的内在韵律。</span>
+      </div>
+    </div>
+
+    <!-- ============ Variant C: 1:φ:φ²:φ³ ============ -->
+    <div class="compare-cell">
+      <div class="diagram-frame">
+        <div class="corner-tl"></div>
+        <div class="corner-tr"></div>
+        <svg class="diagram" viewBox="-10 -10 420 420" xmlns="http://www.w3.org/2000/svg">
+          <rect class="canvas-square" x="0" y="0" width="400" height="400"/>
+          <rect class="squircle" x="0" y="0" width="400" height="400" rx="90"/>
+          <rect class="golden-rect" x="0" y="76.393" width="400" height="247.214"/>
+          <line class="axis" x1="0" y1="323.607" x2="400" y2="76.393"/>
+          <line class="axis" x1="0" y1="76.393" x2="200" y2="400"/>
+          <path class="spiral" d="
+            M 400,323.607
+            A 247.214,247.214 0 0 0 152.786,76.393
+            A 152.786,152.786 0 0 0 0,229.180
+            A 94.427,94.427 0 0 0 94.428,323.607
+            A 58.359,58.359 0 0 0 152.786,265.247
+            A 36.068,36.068 0 0 0 116.718,229.180
+            A 22.291,22.291 0 0 0 94.428,251.470
+            A 13.777,13.777 0 0 0 108.205,265.247
+            A 8.514,8.514 0 0 0 116.718,256.733
+            A 5.263,5.263 0 0 0 111.455,251.470
+            A 3.252,3.252 0 0 0 108.205,254.722
+          "/>
+          <circle class="endpoint-ring" cx="400" cy="76.393" r="4"/>
+          <circle class="endpoint"      cx="400" cy="76.393" r="1.6"/>
+          <circle class="endpoint-ring" cx="0"   cy="76.393" r="4"/>
+          <circle class="endpoint"      cx="0"   cy="76.393" r="1.6"/>
+          <circle class="endpoint-ring" cx="0"   cy="323.607" r="4"/>
+          <circle class="endpoint"      cx="0"   cy="323.607" r="1.6"/>
+          <circle class="endpoint-ring" cx="200" cy="400" r="4"/>
+          <circle class="endpoint"      cx="200" cy="400" r="1.6"/>
+
+          <!-- Variant C: 1:φ:φ²:φ³, 沿螺线单向递增, r_v = 0.035 (smaller) -->
+          <path class="star" d="
+            M 167.365,347.187
+            Q 120.972,272.131 107.340,268.904
+            Q  93.706,265.694  88.780,268.738
+            Q  93.706,265.694  96.932,252.062
+            Q 100.142,238.427  88.897,220.232
+            Q 100.142,238.427 113.774,241.654
+            Q 127.408,244.864 167.354,220.173
+            Q 127.408,244.864 124.182,258.496
+            Q 120.972,272.131 167.365,347.187
+            Z
+          "/>
+
+          <circle class="pole-ring" cx="110.557" cy="255.279" r="2.5"/>
+          <circle class="pole-dot"  cx="110.557" cy="255.279" r="1.3"/>
+        </svg>
+      </div>
+      <div class="cell-label">
+        <span class="name">严格沿螺线 · C</span>
+        <span class="ratio">1 : φ : φ² : φ³</span>
+        <span class="symmetry">No symmetry</span>
+        <span class="tagline">4 个尖端 *就是* 螺线最外 4 个圆心，按 φⁿ 单向递增。
+        彗星 / 风车气质——带方向感和动势，但无对称。</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="compare-panel">
+    <div>
+      <div class="panel-section">
+        <div class="section-label">尖端距 P · 对比 <span class="num">i</span></div>
+        <table class="compare-table">
+          <thead>
+            <tr>
+              <th>方向</th>
+              <th>A · 1:1</th>
+              <th>B · φ:1</th>
+              <th>C · 螺线</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>+e₂ · 右下</td><td>0.200</td><td>0.270</td><td>0.270</td></tr>
+            <tr><td>+e₁ · 右上</td><td>0.200</td><td>0.167</td><td>0.167</td></tr>
+            <tr><td>−e₂ · 左上</td><td>0.200</td><td>0.270</td><td>0.103</td></tr>
+            <tr><td>−e₁ · 左下</td><td>0.200</td><td>0.167</td><td>0.064</td></tr>
+            <tr class="sum"><td>极差</td><td>1.0×</td><td>1.618×</td><td>4.236× (φ³)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="panel-section">
+        <div class="section-label">对称性 <span class="num">ii</span></div>
+        <table class="compare-table">
+          <thead>
+            <tr>
+              <th>变体</th>
+              <th>旋转</th>
+              <th>反射</th>
+              <th>螺线</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>A · 1:1</td><td>90°×4</td><td>2 轴</td><td>无关</td></tr>
+            <tr><td>B · φ:1</td><td>180°</td><td>2 轴</td><td>邻边匹配</td></tr>
+            <tr><td>C · 螺线</td><td>无</td><td>无</td><td>严格同构</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="panel-section">
+        <div class="section-label">参数细节 <span class="num">iii</span></div>
+        <table class="compare-table">
+          <thead>
+            <tr>
+              <th>项</th>
+              <th>A</th>
+              <th>B</th>
+              <th>C</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>r_v</td><td>0.083</td><td>0.083</td><td>0.035</td></tr>
+            <tr><td>u_c</td><td>0.117</td><td>0.117</td><td>0.050</td></tr>
+            <tr><td>最近边距</td><td>0.106</td><td>0.132</td><td>0.222</td></tr>
+            <tr><td>谷端连续</td><td>G²</td><td>G²</td><td>G²</td></tr>
+            <tr><td>尖端</td><td>4 cusp</td><td>4 cusp</td><td>4 cusp</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel-section">
+        <div class="section-label">气质对比 <span class="num">iv</span></div>
+        <p class="note-text">
+          <em>A · 等臂</em>：传统四芒星 / 罗盘玫瑰。所有方向被同等对待——
+          意指"中性、静止、平衡"。从底层骨架角度看，相当于把 axis 1 和 axis 2
+          当成同一个东西，丢掉了 φ 的代数韵律和螺线的方向感。
+        </p>
+        <p class="note-text">
+          <em>B · 中心对称 φ:1</em>：长臂沿轴 2，短臂沿轴 1，比 φ。
+          *邻边*结构与螺线 *完全一致*（交替轴 + φ 缩放），
+          但被中心对称约束折叠成两值振荡——丢掉了螺线的单向性，
+          换来了视觉重心的稳定。"螺线的中心对称化身"。
+        </p>
+        <p class="note-text">
+          <em>C · 严格沿螺线</em>：4 个尖端 *就是* 螺线最外 4 个圆心，
+          按 φⁿ 单向递增。星形有了明确的"展开方向"——
+          从最小的左下 (T₄ = 0.064) 一路扫到最大的右下 (T₁ = 0.270)。
+          像一颗 *带方向的彗星* 或风车。没有对称性，
+          视觉重心强烈偏向右下。
+        </p>
+      </div>
+
+      <div class="panel-section">
+        <div class="section-label">建议 <span class="num">v</span></div>
+        <p class="note-text">
+          作 *icon* 用，**B** 是最稳的——既有 φ 的内在韵律，
+          又有中心对称的视觉稳定，不会在任何场景下"看起来歪了"。
+        </p>
+        <p class="note-text">
+          <em>A</em> 适合：希望 icon *中性、不指向任何方向*（纯工具类应用）。
+          代价：放弃"和底层几何有关系"这条线。
+        </p>
+        <p class="note-text">
+          <em>C</em> 适合：希望 icon *有强烈方向感和动势*（launcher / 入口 / CLI 工具的"展开"隐喻）。
+          需要 squircle 边框给它框住——单独看它已经从"星"过渡到"星形装饰"。
+        </p>
+        <p class="note-text">
+          作为 CC（Claude Code）的入口图标：
+          B 偏"稳重的工具"，C 偏"动态的代理"，A 偏"中性的方块"。
+          看你想强调哪个面。
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <span>三种比例 — 等臂、φ:1、严格沿螺线。选一种作下一轮的底子。</span>
+    <span class="right">iteration 03 · ratios</span>
+  </footer>
+</div>
+</body>
+</html>

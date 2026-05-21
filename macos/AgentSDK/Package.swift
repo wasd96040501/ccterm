@@ -24,5 +24,9 @@ let package = Package(
             name: "InterruptSmoke",
             dependencies: ["AgentSDK"]
         ),
+        .executableTarget(
+            name: "PermissionModeProbe",
+            dependencies: ["AgentSDK"]
+        ),
     ]
 )

@@ -46,14 +46,32 @@ enum Message2Fixtures {
     /// turn-prologue blob. Emitted once at attach-time and again at
     /// the start of every CLI-spawned follow-up turn (see
     /// `AgentSDKMessageDumpSmokeTests`).
-    static func systemInit(sessionId: String = "s") -> Message2 {
+    static func systemInit(sessionId: String = "s", permissionMode: String = "default") -> Message2 {
         resolve([
             "type": "system",
             "subtype": "init",
             "uuid": UUID().uuidString,
             "session_id": sessionId,
             "cwd": "/tmp",
-            "permissionMode": "default",
+            "permissionMode": permissionMode,
+        ])
+    }
+
+    /// A `Message2.system(.status)` — CLI's broadcast for session-side
+    /// state changes (today: `permissionMode`). Triggered whenever the
+    /// CLI flips its `toolPermissionContext.mode`: EnterPlanMode runs,
+    /// a permission_request is answered with a `setMode` suggestion,
+    /// or the CLI silently corrects a requested mode it cannot honour.
+    /// PermissionModeProbe captures all three forms.
+    static func systemStatus(
+        permissionMode: String, sessionId: String = "s"
+    ) -> Message2 {
+        resolve([
+            "type": "system",
+            "subtype": "status",
+            "uuid": UUID().uuidString,
+            "session_id": sessionId,
+            "permissionMode": permissionMode,
         ])
     }
 

@@ -85,8 +85,8 @@ final class NotificationService: NSObject {
 
     private func post(notice: TurnEndedNotice) {
         let content = UNMutableNotificationContent()
-        content.title = notice.title
-        content.body = Self.truncated(notice.body)
+        content.title = Self.flattened(notice.title)
+        content.body = Self.truncated(Self.flattened(notice.body))
         content.sound = .default
         content.userInfo = ["sessionId": notice.sessionId]
         let request = UNNotificationRequest(
@@ -108,6 +108,28 @@ final class NotificationService: NSObject {
         guard trimmed.count > bodyMaxChars else { return trimmed }
         let cut = trimmed.index(trimmed.startIndex, offsetBy: bodyMaxChars)
         return trimmed[..<cut] + "\u{2026}"
+    }
+
+    /// Collapse all runs of whitespace (newlines, tabs, multi-space) into a
+    /// single space and trim the ends. macOS' notification banner is tiny —
+    /// internal newlines waste vertical room without adding meaning once the
+    /// body is already truncated to a few hundred chars.
+    private static func flattened(_ s: String) -> String {
+        var out = ""
+        out.reserveCapacity(s.count)
+        var lastWasSpace = false
+        for scalar in s.unicodeScalars {
+            if CharacterSet.whitespacesAndNewlines.contains(scalar) {
+                if !lastWasSpace {
+                    out.append(" ")
+                    lastWasSpace = true
+                }
+            } else {
+                out.unicodeScalars.append(scalar)
+                lastWasSpace = false
+            }
+        }
+        return out.trimmingCharacters(in: .whitespaces)
     }
 
     /// Used from the nonisolated delegate callback to hop back onto

@@ -159,10 +159,17 @@ struct ToolGroupBlock: Equatable, Sendable {
     /// Pick the right title for the current `(status, fold)` pair.
     /// Single-source-of-truth for the three-state logic so layouts
     /// and any future consumers don't reimplement the switch.
+    ///
+    /// When `.running` + folded with an empty `activeTitle`, falls back
+    /// to a localized "Running" so the header never collapses to a
+    /// chevron-only row before upstream resolves the progressive fragment.
     func resolvedTitle(status: ToolStatus, isExpanded: Bool) -> String {
         switch status {
         case .running:
-            return isExpanded ? expandedActiveTitle : activeTitle
+            if isExpanded {
+                return expandedActiveTitle
+            }
+            return activeTitle.isEmpty ? String(localized: "Running") : activeTitle
         case .completed, .failed, .cancelled:
             return completedTitle
         }

@@ -27,11 +27,13 @@ enum Message2Fixtures {
         ])
     }
 
-    /// One user message containing a plain text content array.
-    static func userText(_ text: String) -> Message2 {
+    /// One user message containing a plain text content array. `uuid` is
+    /// settable so tests can pretend the CLI is echoing back a specific
+    /// `SingleEntry.id`.
+    static func userText(_ text: String, uuid: String = UUID().uuidString) -> Message2 {
         resolve([
             "type": "user",
-            "uuid": UUID().uuidString,
+            "uuid": uuid,
             "session_id": "s",
             "message": [
                 "role": "user",

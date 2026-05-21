@@ -698,18 +698,26 @@ final class ToolGroupEntryView: NSView {
         guard let spec, let ctx = NSGraphicsContext.current?.cgContext else {
             return
         }
-        // Effective draw region = AppKit's dirty ∩ the chunk of our
-        // bounds that's actually visible to the user through the
-        // scroll-view chain. `NSView.visibleRect` honours every clip
-        // ancestor (clip view / table / window content), so for a
-        // multi-screen-tall entry view it shrinks to "the diff strip
-        // currently inside the viewport". Passing this further-narrowed
-        // rect into the draw closure means even when CoreAnimation
-        // tile-fallback kicks in (oversized layer → AppKit issues a
-        // tile-sized `dirtyRect` instead of zero `draw(_:)` calls), the
-        // body's per-row clip skips every row outside the visible
-        // strip rather than every row outside the tile band.
-        let effectiveDirty = dirtyRect.intersection(visibleRect)
+        // Trust AppKit's `dirtyRect` verbatim. Intersecting with
+        // `visibleRect` first was unsafe under the tile-on-demand
+        // fallback that kicks in when the entry view's layer exceeds
+        // the IOSurface single-texture cap (~16 384 px): AppKit/
+        // CoreAnimation can issue `draw(_:)` for tiles that haven't
+        // entered `visibleRect` yet (pre-render ahead of scroll, or
+        // a draw cycle whose visibleRect cache hasn't caught up with
+        // the clipview's current scroll position). Intersecting with
+        // `visibleRect` collapsed those calls to an empty rect, the
+        // early-return skipped the tile, and CoreAnimation cached an
+        // empty bitmap for it — when the user scrolled into that
+        // band, blank pixels showed for several seconds until some
+        // later invalidation forced a redraw.
+        //
+        // The per-row dirty filter inside `DiffLayout.draw` /
+        // `drawBackplate` already collapses per-call work to
+        // O(rows ∩ dirtyRect), which is what the perf measurement in
+        // PR #156 actually relied on. In tile mode `dirtyRect` is
+        // already tile-sized, so removing the `visibleRect` narrowing
+        // is a no-op for scroll cost.
         #if DEBUG
         // Entry-view repaint trace. This is the single biggest scroll-
         // cost path for a tool group whose expanded child overflows
@@ -729,12 +737,11 @@ final class ToolGroupEntryView: NSView {
                     "ToolGroupEntryView.draw id=\(spec.id.uuidString.prefix(8)) "
                         + "bounds=\(BlockCellView.fmt(bounds.size)) "
                         + "dirty=\(BlockCellView.fmt(dirtyRect.size)) "
-                        + "effDirty=\(BlockCellView.fmt(effectiveDirty.size)) "
                         + "ms=\(String(format: "%.2f", ms))")
             }
         }
         #endif
-        if effectiveDirty.isEmpty { return }
+        if dirtyRect.isEmpty { return }
         // Selection colour depends on `window.isKeyWindow`, which is
         // a runtime cell-state — the plan can't bake it in at build
         // time. The view supplies it here and the closure paints
@@ -744,7 +751,7 @@ final class ToolGroupEntryView: NSView {
             (window?.isKeyWindow == true)
             ? .selectedTextBackgroundColor
             : .unemphasizedSelectedTextBackgroundColor
-        spec.draw(ctx, selectionColor, effectiveDirty)
+        spec.draw(ctx, selectionColor, dirtyRect)
     }
 }
 

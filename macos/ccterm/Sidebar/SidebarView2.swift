@@ -49,6 +49,10 @@ struct SidebarView2: View {
     /// Sentinel for the Permission Cards preview grid — every
     /// `PermissionCardKind` rendered side-by-side in a fixed grid.
     static let permissionCardsDemoTag = "__permission_cards_demo__"
+    /// Sentinel for the Permission Session demo — real transcript +
+    /// input bar with a floating control panel that flips the permission
+    /// card on/off against the mocked session's runtime.
+    static let permissionSessionDemoTag = "__permission_session_demo__"
     #endif
 
     var body: some View {
@@ -73,6 +77,12 @@ struct SidebarView2: View {
                 title: "Permission Cards Demo", systemImage: "hand.raised.fill"
             )
             .tag(Self.permissionCardsDemoTag)
+            .listRowInsets(Self.fixedRowInsets)
+            SidebarItemRow(
+                title: "Permission Session Demo",
+                systemImage: "hand.raised.app.fill"
+            )
+            .tag(Self.permissionSessionDemoTag)
             .listRowInsets(Self.fixedRowInsets)
             #endif
 

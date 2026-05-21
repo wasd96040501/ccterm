@@ -3,18 +3,23 @@ import SwiftUI
 
 /// Floating decision card shown above the input bar when the CLI is
 /// waiting on a permission request. Mount as
-/// `.overlay(alignment: .bottom)` on `InputBarChrome`:
+/// `.overlay(alignment: .bottom)` on `ChatRestingBar` — the
+/// detail-pane-wide VStack that contains `InputBarChrome`, NOT on
+/// `InputBarChrome` itself:
 ///
 /// - Bottom edge sits flush with the chrome row (permission mode /
-///   model+effort), so the card visually extends *up* from there.
-/// - Width inherits the chrome wrapper's frame — same span as the
-///   attach button + pill of `InputBarView2`.
+///   model+effort) by way of the same `chatBottomInset` padding the
+///   bar uses, so the card visually extends *up* from there.
+/// - The host is the detail-wide VStack, not the bar's 512pt-capped
+///   frame, so the card's `.frame(maxWidth: BlockStyle.maxLayoutWidth)`
+///   can actually reach 780 (the transcript column width) instead of
+///   silently clipping to the bar's width.
 /// - Z-order is above the input bar; the bar surface fades through
 ///   the card's material as the card expands upward.
 ///
 /// Pure UI: the card receives a `PermissionRequest` plus three
 /// decision callbacks and renders the body. Wiring through to
-/// `session.respond(...)` lives in `InputBarChrome` — keeping this
+/// `session.respond(...)` lives in `ChatRestingBar` — keeping this
 /// view free of session state so it stays snapshot-friendly.
 ///
 /// The body shape varies per category — see `PermissionCardKind`.

@@ -175,6 +175,8 @@ struct RootView2: View {
             TranscriptPerfDemoView()
         } else if selectedSessionId == SidebarView2.permissionCardsDemoTag {
             PermissionCardsDemoView()
+        } else if selectedSessionId == SidebarView2.permissionSessionDemoTag {
+            PermissionSessionDemoView()
         } else {
             detailContentReleaseBranches
         }
@@ -325,23 +327,12 @@ struct RootView2: View {
                 }
                 .transition(.opacity)
             } else {
-                VStack(spacing: 0) {
-                    Spacer(minLength: 0)
-                    InputBarChrome(
-                        sessionId: sid,
-                        coordSpace: Self.detailCoordSpace,
-                        submitEnabled: true,
-                        onSubmit: { submission in submit(submission, sessionId: sid) },
-                        onAttachRect: { rect in attachRect = rect },
-                        onPillRect: { rect in pillRect = rect }
-                    )
-                    .frame(
-                        minWidth: BlockStyle.minLayoutWidth,
-                        maxWidth: Self.composeMaxWidth
-                    )
-                    .padding(.horizontal, Self.detailHorizontalInset)
-                    .padding(.bottom, Self.chatBottomInset)
-                }
+                ChatRestingBar(
+                    sessionId: sid,
+                    onSubmit: { submission in submit(submission, sessionId: sid) },
+                    onAttachRect: { rect in attachRect = rect },
+                    onPillRect: { rect in pillRect = rect }
+                )
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -516,16 +507,80 @@ private struct InputBarChrome: View {
         .task(id: prewarmKey) {
             CompletionPrewarmer.prewarm(prewarmKey)
         }
-        // Permission card floats on top of the bar+chrome stack:
-        // bottom-aligned with the chrome row, width pinned to this
-        // VStack (which spans attach `+` → pill trailing edge), and
-        // z-ordered above the input bar by virtue of being an overlay.
-        // Each button forwards through `Session.respond(to:decision:)`,
-        // which routes to `SessionRuntime.respond` → the per-request
-        // closure that completes the CLI's awaiting promise and pops
-        // the entry off `pendingPermissions`. `allowAlways` reuses the
-        // request's CLI-supplied `permissionSuggestions` so the rule
-        // matches what the agent itself proposed.
+    }
+}
+
+// MARK: - ChatRestingBar
+
+/// Chat-mode resting input region: bottom-anchored `InputBarChrome`
+/// plus the floating `PermissionCardView` overlay.
+///
+/// The card is hosted *here* — outside `InputBarChrome`'s own
+/// `.frame(maxWidth: composeMaxWidth = 512)` — so its `.frame(maxWidth:
+/// BlockStyle.maxLayoutWidth = 780)` is no longer silently clipped to
+/// 512 by the bar's host frame. `ChatRestingBar`'s own host is the
+/// detail-pane-wide ZStack from `composeStack`, so the overlay's
+/// proposed width is the full detail width and the 780 cap can take
+/// effect on a wide enough window.
+///
+/// Vertical alignment is preserved bit-for-bit. The pre-refactor
+/// position was `.overlay(.bottom)` on `InputBarChrome`'s inner VStack,
+/// whose bottom equals `InputBarChrome`'s visible bottom — i.e. the
+/// detail bottom minus `chatBottomInset`. Here we attach the overlay to
+/// the outer VStack (which extends to the detail bottom) and apply the
+/// same `chatBottomInset` padding, producing the identical Y. Horizontal
+/// centering also matches: `InputBarChrome` is centered in this VStack
+/// (default `.center`), so its midX equals the VStack's midX, which is
+/// also where the overlay's default horizontal alignment lands the card.
+///
+/// We must lift this into a separate `View` (rather than inlining in
+/// `composeStack`'s `@ViewBuilder`) because resolving `session`
+/// requires a non-`if`/`switch` `let` binding, which `@ViewBuilder`
+/// blocks don't accept.
+struct ChatRestingBar: View {
+    let sessionId: String
+    let onSubmit: (InputBarView2.Submission) -> Void
+    let onAttachRect: (CGRect) -> Void
+    let onPillRect: (CGRect) -> Void
+
+    @Environment(SessionManager.self) private var manager
+
+    var body: some View {
+        let session = manager.prepareDraftSession(sessionId)
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            InputBarChrome(
+                sessionId: sessionId,
+                coordSpace: RootView2.detailCoordSpace,
+                submitEnabled: true,
+                onSubmit: onSubmit,
+                onAttachRect: onAttachRect,
+                onPillRect: onPillRect
+            )
+            .frame(
+                minWidth: BlockStyle.minLayoutWidth,
+                maxWidth: RootView2.composeMaxWidth
+            )
+            .padding(.horizontal, RootView2.detailHorizontalInset)
+            .padding(.bottom, RootView2.chatBottomInset)
+        }
+        // Force the VStack to span the full detail width so the
+        // permission card overlay's host width = detail width, not
+        // `composeMaxWidth + padding`. Without this, VStack collapses to
+        // `max(child intrinsic width)` ≈ 552, and the card's
+        // `.frame(maxWidth: 780)` ends up clipped to ~512 again.
+        // `InputBarChrome` itself stays centered in the (now wider) VStack
+        // because VStack's default horizontal alignment is `.center`.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Permission card overlay. Host is this full-detail-wide VStack,
+        // not the 512-capped `InputBarChrome` — that's the entire point
+        // of the extraction. Each button forwards through
+        // `Session.respond(to:decision:)`, which routes to
+        // `SessionRuntime.respond` → the per-request closure that
+        // completes the CLI's awaiting promise and pops the entry off
+        // `pendingPermissions`. `allowAlways` reuses the request's
+        // CLI-supplied `permissionSuggestions` so the rule matches what
+        // the agent itself proposed.
         .overlay(alignment: .bottom) {
             if let pending = session.pendingPermissions.first {
                 PermissionCardView(
@@ -541,6 +596,9 @@ private struct InputBarChrome: View {
                             decision: pending.request.allowOnce(updatedInput: updated))
                     }
                 )
+                .frame(maxWidth: BlockStyle.maxLayoutWidth)
+                .padding(.horizontal, RootView2.detailHorizontalInset)
+                .padding(.bottom, RootView2.chatBottomInset)
                 .transition(
                     .scale(scale: 0.96, anchor: .bottom)
                         .combined(with: .opacity))

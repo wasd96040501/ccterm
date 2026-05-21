@@ -627,7 +627,16 @@ extension BlockCellView {
     }
 
     private func applyChevronStyle(_ layer: CAShapeLayer, spec: SubviewPlan.Chevron) {
-        layer.strokeColor = spec.strokeColor.cgColor
+        // Resolve under the cell's effective appearance so dynamic
+        // colours (`labelColor` / `secondaryLabelColor` / …) pick the
+        // right RGB for Light vs Dark. `CAShapeLayer.strokeColor` is a
+        // static `CGColor` — without this hook a chevron created in
+        // Light mode keeps its Light RGB when the user flips to Dark.
+        // `viewDidChangeEffectiveAppearance` re-runs `syncSubviewPlan`
+        // which lands back here under the new appearance.
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer.strokeColor = spec.strokeColor.cgColor
+        }
         layer.opacity = Float(spec.alpha)
     }
 

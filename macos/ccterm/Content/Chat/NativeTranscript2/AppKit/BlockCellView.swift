@@ -361,6 +361,21 @@ final class BlockCellView: NSView {
         syncSubviewPlan()
     }
 
+    /// Light ↔ Dark flip (system appearance toggle, window joining a
+    /// different appearance context). The cell-bitmap title repaints
+    /// via `needsDisplay`, but `CAShapeLayer.strokeColor` is a static
+    /// `CGColor` — chevron sublayers keep their pre-flip RGB unless we
+    /// re-resolve. `syncSubviewPlan` re-enters `applyChevronStyle`
+    /// which now resolves `NSColor.cgColor` under
+    /// `effectiveAppearance.performAsCurrentDrawingAppearance`, so the
+    /// new appearance's RGB lands on the layer. Cheap — outside the
+    /// 60fps scroll path; fires only on actual appearance change.
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+        syncSubviewPlan()
+    }
+
     /// Layout-local origin where the row's `RowLayout` paints. The
     /// cell's frame spans the row's full width (NSTableView's
     /// view-based contract); we shift content here so it lands at the

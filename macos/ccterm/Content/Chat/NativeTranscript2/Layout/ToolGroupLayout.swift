@@ -642,23 +642,17 @@ struct ToolGroupLayout: @unchecked Sendable {
         let titleOrigin = CGPoint(x: 0, y: titleBaseline)
 
         // Chevron sits immediately after the title (gestalt: attached
-        // to the title it discloses).
-        //
-        // `visualCompensation = max(0, (capHeight - xHeight) / 2)` is
-        // the same nudge the old `GroupComponent` applied so the
-        // chevron's bounding-box centre lands on the title's *visual*
-        // midline (the glyphs' x-height band) rather than the band's
-        // geometric midline. Without it the chevron reads as floating
-        // slightly above the title.
+        // to the title it discloses). Centred on the band's geometric
+        // midline, which lands on the title's cap-band optical centre
+        // for title-case strings — the convention Apple uses for
+        // disclosure / cell chevrons. An x-height anchor pulls the
+        // glyph visibly below the title for mixed-case labels.
         let chevronCenter: CGPoint
         if hasChevron {
-            let visualCompensation = max(0, (font.capHeight - font.xHeight) / 2)
             let chevronX = min(
                 titleWidth + gap + chevron / 2,
                 maxWidth - chevron / 2)
-            chevronCenter = CGPoint(
-                x: chevronX,
-                y: midY + visualCompensation)
+            chevronCenter = CGPoint(x: chevronX, y: midY)
         } else {
             chevronCenter = .zero
         }

@@ -378,110 +378,59 @@ final class Transcript2Controller {
         guard !blocks.isEmpty else { return }
 
         // Flip `isAnchorSettled` back to false up front. SwiftUI consumers
-        // see false→true on every new snapshot landing; Phase 1 (below) or
-        // `handleFirstTile` (after first tile) restores true.
+        // see false→true on every new snapshot landing; the eventual
+        // `handleFirstTile` (deferred path) or our explicit call below
+        // (real-width path) restores true via `markAnchorSettled`.
         coordinator.markAnchorUnsettled()
 
         let width = coordinator.layoutWidth
         let viewportHeight = coordinator.viewportHeight
-        guard width > 0, viewportHeight > 0 else {
-            // Table not mounted / not yet tiled. **Insert the blocks into
-            // `coordinator.blocks` immediately** so subsequent `apply()`s
-            // — live `.appended` events on background sessions whose view
-            // hasn't been mounted yet — can resolve anchors against a
-            // populated array. Scroll-to-anchor is deferred to
-            // `handleFirstTile`, fired by the coordinator's first
-            // 0→positive `tableFrameDidChange` after the real width tiles.
-            //
-            // Idempotent on re-entry: if `coordinator.blocks` already
-            // matches `blocks` (e.g. a second `setHistory(same payload)`
-            // — rare, mostly tests), skip the insert.
-            pendingFirstTile = anchor
-            if coordinator.blockIds != blocks.map(\.id) {
-                let existing = coordinator.blockIds
-                var changes: [Transcript2Controller.Change] = []
-                if !existing.isEmpty {
-                    changes.append(.remove(ids: existing))
-                }
-                changes.append(.insert(after: nil, blocks))
-                coordinator.apply(changes, scroll: .none)
-            }
-            return
+        let canDriveImmediately = width > 0 && viewportHeight > 0
+
+        if canDriveImmediately {
+            // Real-width path: enter `.suppressed` BEFORE swapping data
+            // so the upcoming `apply` routes through the no-AppKit
+            // branch — AppKit never sees the intermediate
+            // "old transcript empty, viewport-only inserted" state.
+            // After the swap, `handleFirstTile` drives the same Phase 1
+            // / Phase 2 rollout the reentry path uses, sharing the
+            // exact downstream pipeline.
+            coordinator.suppressForSetHistory()
         }
 
-        // Real-width path will scroll synchronously below; drop any
-        // pending first-tile from an earlier deferred-path call so the
-        // tile handler doesn't double-scroll on the same anchor landing.
-        pendingFirstTile = nil
-
-        let slice = Self.sliceForViewport(
-            blocks: blocks, anchor: anchor,
-            width: width, viewportHeight: viewportHeight)
-
-        let phase1Scroll: ScrollState
-        let phase2Side: ScrollState.Side
-        switch anchor {
-        case .bottom:
-            phase1Scroll = .bottom(id: blocks[slice.viewportRange.upperBound - 1].id)
-            phase2Side = .visualBottom
-        case .top(let id):
-            phase1Scroll = .top(id: id)
-            phase2Side = .visualTop
-        case .bottomTo(let id):
-            phase1Scroll = .bottom(id: id)
-            phase2Side = .visualBottom
-        }
-
-        let viewportBatch = Array(blocks[slice.viewportRange])
-        let above = Array(blocks[..<slice.viewportRange.lowerBound])
-        let below =
-            slice.viewportRange.upperBound < blocks.count
-            ? Array(blocks[slice.viewportRange.upperBound...])
-            : []
-
-        coordinator.pushScrollerHidden()
-
-        // Phase 1 — viewport batch, sync. heightOfRow lazy-computes layouts
-        // for the visible rows; cost is bounded by viewport size.
+        // Data swap: replace the current `blocks` with the new payload.
+        // While `gate` is `.suppressed` (either entered just above for
+        // the real-width path, or already from `tableView.didSet`'s
+        // re-entry branch for the deferred path), this routes through
+        // the no-AppKit branch and only mutates `coordinator.blocks`.
         //
-        // `setHistory` is a snapshot setter — every call replaces the
-        // transcript's contents. If the coordinator already holds blocks
-        // (a second `setHistory` on a live session, a re-entry after the
-        // bridge dispatched `.reset`), remove them in the same atomic
-        // beginUpdates/endUpdates as the Phase 1 insert so AppKit doesn't
-        // composite an empty intermediate state. Equivalent to what the
-        // zero-width branch above does, just at real width.
-        var phase1Changes: [Transcript2Controller.Change] = []
-        let existing = coordinator.blockIds
-        if !existing.isEmpty {
-            phase1Changes.append(.remove(ids: existing))
-        }
-        phase1Changes.append(.insert(after: nil, viewportBatch))
-        coordinator.apply(phase1Changes, scroll: phase1Scroll)
-
-        // Phase 1's `scroll` has landed the table at the requested anchor;
-        // declare the first-screen contract fulfilled. Phase 2's prepend
-        // below uses `.saveVisible(...)` and does not move the visual
-        // anchor, so it's safe to settle here.
-        coordinator.markAnchorSettled()
-
-        // Phase 2 — the rest, off-main layout. ID-based anchors mean
-        // ordering between the two inserts no longer matters: each anchor
-        // resolves at apply-time independently of the other change.
-        var phase2: [Change] = []
-        if !below.isEmpty {
-            phase2.append(.insert(after: viewportBatch.last?.id, below))
-        }
-        if !above.isEmpty {
-            phase2.append(.insert(after: nil, above))
-        }
-        if phase2.isEmpty {
-            coordinator.popScrollerHidden()
-        } else {
-            coordinator.applyInBackground(phase2, scroll: .saveVisible(phase2Side)) {
-                [weak coordinator] in coordinator?.popScrollerHidden()
+        // Idempotent on a same-payload re-call (rare, mostly tests):
+        // if the id list already matches, skip the structural change
+        // entirely.
+        pendingFirstTile = anchor
+        if coordinator.blockIds != blocks.map(\.id) {
+            let existing = coordinator.blockIds
+            var changes: [Transcript2Controller.Change] = []
+            if !existing.isEmpty {
+                changes.append(.remove(ids: existing))
             }
+            changes.append(.insert(after: nil, blocks))
+            coordinator.apply(changes, scroll: .none)
         }
+
+        if canDriveImmediately {
+            // Drive the phased rollout immediately. `handleFirstTile`
+            // reads `pendingFirstTile` for the anchor, computes the
+            // slice via `Transcript2ViewportSlicer`, and runs Phase 1
+            // (`installPhase1Slice` + scroll + `markAnchorSettled`)
+            // followed by Phase 2 (`runPhase2`'s off-main precompute
+            // + main-hop `insertRows` of the rest under `.saveVisible`).
+            handleFirstTile()
+        }
+        // Deferred path (`!canDriveImmediately`): `pendingFirstTile`
+        // is set; the next `tableFrameDidChange` → `materializeFirstAppear`
+        // → `onTableDidTile` → `handleFirstTile` picks it up when the
+        // first positive-width transition lands.
     }
 
     /// Called by `Transcript2Coordinator.materializeFirstAppear` on
@@ -586,69 +535,4 @@ final class Transcript2Controller {
     // MARK: - Query
 
     var blockIds: [UUID] { coordinator.blockIds }
-
-    // MARK: - Slicing (private)
-
-    private struct Slice {
-        /// Range into the original `blocks` array covering the viewport.
-        let viewportRange: Range<Int>
-    }
-
-    /// Walks `blocks` from the anchor outward, accumulating row heights
-    /// until viewport is covered. Pure: only reads `Coordinator.makeLayout`
-    /// (a `nonisolated static` function); does not mutate cache.
-    private static func sliceForViewport(
-        blocks: [Block],
-        anchor: InitialAnchor,
-        width: CGFloat,
-        viewportHeight: CGFloat
-    ) -> Slice {
-        func rowHeight(_ block: Block) -> CGFloat {
-            let pad = BlockStyle.blockPadding(for: block.kind)
-            return Transcript2Coordinator.makeLayout(for: block, width: width).totalHeight
-                + pad.top + pad.bottom
-        }
-
-        switch anchor {
-        case .bottom:
-            var height: CGFloat = 0
-            var first = blocks.count
-            for i in stride(from: blocks.count - 1, through: 0, by: -1) {
-                height += rowHeight(blocks[i])
-                first = i
-                if height >= viewportHeight { break }
-            }
-            return Slice(viewportRange: first..<blocks.count)
-
-        case .top(let id):
-            guard let anchorIdx = blocks.firstIndex(where: { $0.id == id }) else {
-                return sliceForViewport(
-                    blocks: blocks, anchor: .bottom,
-                    width: width, viewportHeight: viewportHeight)
-            }
-            var height: CGFloat = 0
-            var last = anchorIdx
-            for i in anchorIdx..<blocks.count {
-                height += rowHeight(blocks[i])
-                last = i
-                if height >= viewportHeight { break }
-            }
-            return Slice(viewportRange: anchorIdx..<last + 1)
-
-        case .bottomTo(let id):
-            guard let anchorIdx = blocks.firstIndex(where: { $0.id == id }) else {
-                return sliceForViewport(
-                    blocks: blocks, anchor: .bottom,
-                    width: width, viewportHeight: viewportHeight)
-            }
-            var height: CGFloat = 0
-            var first = anchorIdx
-            for i in stride(from: anchorIdx, through: 0, by: -1) {
-                height += rowHeight(blocks[i])
-                first = i
-                if height >= viewportHeight { break }
-            }
-            return Slice(viewportRange: first..<anchorIdx + 1)
-        }
-    }
 }

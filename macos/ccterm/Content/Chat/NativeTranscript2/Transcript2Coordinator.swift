@@ -1228,6 +1228,22 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         }
     }
 
+    /// Transition the gate from `.full` to `.suppressed` ahead of a
+    /// `setHistory`-style data swap. Lets the Controller's
+    /// `setHistory` real-width path run its `apply([.remove(existing),
+    /// .insert(new)])` through the "no-AppKit" branch (data only),
+    /// then drive the phased rollout primitives (`installPhase1Slice`
+    /// → `runPhase2`) over the new data — sharing the same downstream
+    /// pipeline as the reentry path.
+    ///
+    /// No-op if the gate is already `.suppressed` or
+    /// `.visible(...)` — both states already route mutations through
+    /// no-AppKit, so the data swap will land as needed.
+    func suppressForSetHistory() {
+        guard case .full = gate else { return }
+        gate = .suppressed
+    }
+
     /// Phase 1 of the phased materialize rollout: install the
     /// viewport-covering `slice` into AppKit visibility. Transitions
     /// the gate from `.suppressed` to `.visible(slice)` and issues one

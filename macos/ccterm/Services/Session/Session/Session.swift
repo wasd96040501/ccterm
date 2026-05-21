@@ -274,6 +274,10 @@ final class Session {
         runtime?.slashCommands ?? []
     }
 
+    var tasks: [BackgroundTask] {
+        runtime?.tasks ?? []
+    }
+
     var contextUsedTokens: Int {
         runtime?.contextUsedTokens ?? 0
     }

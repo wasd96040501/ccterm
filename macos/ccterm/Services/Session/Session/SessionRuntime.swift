@@ -224,6 +224,14 @@ final class SessionRuntime {
     internal(set) var contextUsedTokens: Int = 0
     internal(set) var contextWindowTokens: Int = 0
     internal(set) var slashCommands: [SlashCommand] = []
+
+    /// Background bash tasks the CLI is tracking for this session. Updated
+    /// in receive() from system.task_started / task_updated /
+    /// task_notification — these events are otherwise dropped from the
+    /// transcript timeline (they are control signals, not user content).
+    /// Ordered chronologically (oldest first); the popover groups them by
+    /// running vs. terminal at render time.
+    internal(set) var tasks: [BackgroundTask] = []
     /// Model catalog from the CLI's `InitializeResponse.models`. Source of
     /// truth for the model picker — display name, supported effort levels,
     /// and feature flags (auto / fast / adaptive thinking) per model. Set

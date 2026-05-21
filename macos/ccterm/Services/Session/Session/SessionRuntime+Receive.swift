@@ -414,9 +414,39 @@ extension Message2User {
             // before). Treat such envelopes as control signals so the
             // tasks popover is the sole surface for completion-related
             // chatter.
-            origin?.kind != "task-notification"
+            origin?.kind != "task-notification",
+            // Content-prefix fallback: older CLI builds (observed in
+            // smoke dumps as early as 2026-02) injected the synthetic
+            // task-notification user turn without the `origin` field at
+            // all. The `<task-notification>` XML envelope itself has
+            // been stable across every CLI version we have on file, so
+            // a string body that starts with it is a CLI control signal
+            // regardless of envelope metadata.
+            !startsWithTaskNotificationEnvelope
         else { return false }
         return hasVisibleText
+    }
+
+    /// Whether `message.content` begins with the `<task-notification>`
+    /// XML envelope. Backstop for legacy CLI builds that don't set
+    /// `origin.kind`. Checks both string-shaped content and the first
+    /// text block of array-shaped content; non-text content shapes
+    /// (e.g. tool_result, image) return false.
+    fileprivate var startsWithTaskNotificationEnvelope: Bool {
+        let marker = "<task-notification>"
+        switch message?.content {
+        case .string(let s)?:
+            return s.hasPrefix(marker)
+        case .array(let items)?:
+            for item in items {
+                if case .text(let t) = item, let txt = t.text {
+                    return txt.hasPrefix(marker)
+                }
+            }
+            return false
+        default:
+            return false
+        }
     }
 
     fileprivate var hasVisibleText: Bool {

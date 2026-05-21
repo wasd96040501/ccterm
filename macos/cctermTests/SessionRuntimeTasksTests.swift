@@ -330,6 +330,89 @@ final class SessionRuntimeTasksTests: XCTestCase {
         )
     }
 
+    /// New-protocol shape: synthetic `task-notification` user turn
+    /// stamped with `origin.kind == "task-notification"`. Must not land
+    /// in the transcript — the tasks popover is the only surface for
+    /// completion chatter.
+    func testTaskNotificationUserMessageWithOriginIsSuppressed() {
+        let runtime = makeRuntime()
+        let baseline = runtime.messages.count
+
+        runtime.receive(
+            taskNotificationUserMessage(
+                xml: "<task-notification>\n<task-id>bx1</task-id>\n</task-notification>",
+                includeOrigin: true
+            ))
+
+        XCTAssertEqual(
+            runtime.messages.count,
+            baseline,
+            "user message with origin.kind=task-notification must not append a bubble"
+        )
+    }
+
+    /// Legacy-protocol shape: the synthetic user turn carries the
+    /// `<task-notification>` XML envelope but no `origin` field at all
+    /// (observed in 2026-02 smoke dumps and still occasionally surfaces
+    /// on certain CLI paths). The content-prefix fallback in
+    /// `Message2User.isVisible` must catch it; without that fallback
+    /// the bubble leaks into the transcript.
+    func testTaskNotificationUserMessageWithoutOriginIsSuppressed() {
+        let runtime = makeRuntime()
+        let baseline = runtime.messages.count
+        let envelope =
+            "<task-notification>\n<task-id>bkw8rhbr3</task-id>\n"
+            + "<tool-use-id>toolu_01W41r88y71CQwMYHbk35UHK</tool-use-id>\n"
+            + "<status>completed</status>\n"
+            + "<summary>Background command completed (exit code 0)</summary>\n"
+            + "</task-notification>\n"
+            + "Read the output file to retrieve the result: /tmp/x.output"
+
+        runtime.receive(
+            taskNotificationUserMessage(xml: envelope, includeOrigin: false))
+
+        XCTAssertEqual(
+            runtime.messages.count,
+            baseline,
+            "legacy task-notification user envelope (no origin field) must still be suppressed"
+        )
+    }
+
+    /// Negative case: a normal user message whose text happens to start
+    /// with something that isn't the task-notification envelope must
+    /// still produce a bubble — the prefix check must not over-match.
+    func testNormalUserMessageStillAppends() {
+        let runtime = makeRuntime()
+        let baseline = runtime.messages.count
+
+        runtime.receive(Message2Fixtures.userText("hello there"))
+
+        XCTAssertEqual(
+            runtime.messages.count,
+            baseline + 1,
+            "normal user text must continue to produce a timeline entry"
+        )
+    }
+
+    private func taskNotificationUserMessage(
+        xml: String,
+        includeOrigin: Bool
+    ) -> Message2 {
+        var dict: [String: Any] = [
+            "type": "user",
+            "uuid": UUID().uuidString,
+            "session_id": "s",
+            "message": [
+                "role": "user",
+                "content": xml,
+            ],
+        ]
+        if includeOrigin {
+            dict["origin"] = ["kind": "task-notification"]
+        }
+        return resolve(dict)
+    }
+
     // MARK: - Local stop
 
     func testMarkTaskStoppedLocally() {

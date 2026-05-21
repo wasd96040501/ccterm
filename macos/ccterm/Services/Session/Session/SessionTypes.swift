@@ -88,6 +88,44 @@ struct BackgroundTask: Identifiable, Equatable {
     }
 }
 
+/// One row in the CLI's running todo plan. The current CLI (2.1.x)
+/// surfaces this through the `TaskCreate` / `TaskUpdate` tool pair —
+/// `TodoWrite` is no longer produced. Each entry is created when an
+/// assistant `TaskCreate` tool_use lands and the matching tool_result
+/// echoes back `task.id`; subsequent `TaskUpdate` calls patch the same
+/// row in place. We deliberately track these off the transcript so the
+/// popover surfaces the live list without us having to suppress the
+/// matching tool_use/tool_result bubbles (those remain in the timeline
+/// as the assistant's own visible reasoning).
+struct TodoEntry: Identifiable, Equatable {
+
+    /// CLI-assigned task id. The current CLI hands out short numeric
+    /// strings ("1", "2", …) per session.
+    let id: String
+    /// Free-form imperative title (`subject` in TaskCreate input;
+    /// `task.subject` in the create result).
+    var subject: String
+    /// Optional longer description supplied at create time.
+    var description: String?
+    /// Present-continuous form ("Running tests"). Shown in the row when
+    /// the entry is `in_progress` so the assistant's intent reads as a
+    /// live verb. Falls back to `subject` when missing.
+    var activeForm: String?
+    /// Status string as the CLI emits it: `pending` / `in_progress` /
+    /// `completed`. Mapped to the enum below.
+    var status: Status
+    /// Wall-clock time of the originating TaskCreate.
+    let createdAt: Date
+    /// Last status / field patch we saw.
+    var updatedAt: Date
+
+    enum Status: String, Equatable {
+        case pending
+        case inProgress = "in_progress"
+        case completed
+    }
+}
+
 /// Normalize a user message into a single-line sidebar title:
 /// collapse newlines into spaces, trim surrounding whitespace, and
 /// truncate to `maxLength` characters (appending `…` when cut). Result

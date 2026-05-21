@@ -54,6 +54,26 @@
         }
       }
     },
+    "%lld of %lld": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / %lld"
+          }
+        }
+      }
+    },
+    "%lld of %lld todos completed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / %lld 项已完成"
+          }
+        }
+      }
+    },
     "%lld running, %lld total": {
       "localizations": {
         "zh-Hans": {
@@ -1072,16 +1092,6 @@
         }
       }
     },
-    "Done": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "完成"
-          }
-        }
-      }
-    },
     "Edit %@": {
       "localizations": {
         "zh-Hans": {
@@ -1727,6 +1737,16 @@
         }
       }
     },
+    "In progress": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "进行中"
+          }
+        }
+      }
+    },
     "Insert cell into %@": {
       "localizations": {
         "zh-Hans": {
@@ -2178,6 +2198,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "未提供路径 — 请在会话主区查看详情"
+          }
+        }
+      }
+    },
+    "Pending": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待开始"
           }
         }
       }

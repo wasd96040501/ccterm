@@ -272,6 +272,7 @@ private struct Seed {
         seedToken.done = true
         controller.setHistory(TranscriptDemoView.initialBlocks)
         seedBackgroundTasks()
+        seedTodos()
     }
 
     /// Push a representative mix of background bash tasks onto the
@@ -328,6 +329,72 @@ private struct Seed {
             summary: "Background command \"Migration smoke\" failed (exit code 1)"
         )
         runtime.tasks = [completed, failed, running]
+    }
+
+    /// Push a representative todo plan onto the runtime so the chrome's
+    /// todo button + popover have something to render. The mix is one
+    /// `inProgress` row at the top, one `pending` follower, and three
+    /// `completed` rows underneath — enough to exercise the active /
+    /// completed grouping and the dimmed-row styling.
+    private func seedTodos() {
+        guard let runtime = session.runtime else { return }
+        let now = Date()
+        runtime.todos = [
+            TodoEntry(
+                id: "1",
+                subject: "Read the existing transcript renderer doc",
+                description: "Skim NativeTranscript2/CLAUDE.md to understand the diff path before editing.",
+                activeForm: nil,
+                status: .completed,
+                createdAt: now.addingTimeInterval(-720),
+                updatedAt: now.addingTimeInterval(-650)
+            ),
+            TodoEntry(
+                id: "2",
+                subject: "Audit existing popover row spacing tokens",
+                description: nil,
+                activeForm: nil,
+                status: .completed,
+                createdAt: now.addingTimeInterval(-700),
+                updatedAt: now.addingTimeInterval(-540)
+            ),
+            TodoEntry(
+                id: "3",
+                subject: "Sketch the memo-style todo popover",
+                description: "Leading status circle, grouped Active / Done sections, completed rows dimmed.",
+                activeForm: "Drafting the todo popover layout",
+                status: .inProgress,
+                createdAt: now.addingTimeInterval(-480),
+                updatedAt: now.addingTimeInterval(-120)
+            ),
+            TodoEntry(
+                id: "4",
+                subject: "Wire the chrome button visibility rules",
+                description: "Hidden when no todos; stays mounted once any row exists.",
+                activeForm: nil,
+                status: .pending,
+                createdAt: now.addingTimeInterval(-360),
+                updatedAt: now.addingTimeInterval(-360)
+            ),
+            TodoEntry(
+                id: "5",
+                subject: "Add a snapshot test for the popover",
+                description: nil,
+                activeForm: nil,
+                status: .pending,
+                createdAt: now.addingTimeInterval(-300),
+                updatedAt: now.addingTimeInterval(-300)
+            ),
+            TodoEntry(
+                id: "6",
+                subject: "Localize all new strings (zh-Hans)",
+                description: nil,
+                activeForm: nil,
+                status: .completed,
+                createdAt: now.addingTimeInterval(-640),
+                updatedAt: now.addingTimeInterval(-440)
+            ),
+        ]
     }
 }
 

@@ -278,6 +278,10 @@ final class Session {
         runtime?.tasks ?? []
     }
 
+    var todos: [TodoEntry] {
+        runtime?.todos ?? []
+    }
+
     var contextUsedTokens: Int {
         runtime?.contextUsedTokens ?? 0
     }

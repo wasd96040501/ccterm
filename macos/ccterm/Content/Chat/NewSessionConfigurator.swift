@@ -281,23 +281,37 @@ struct NewSessionConfigurator<InputBar: View>: View {
 
     @ViewBuilder
     private var recentsList: some View {
-        List(selection: folderPathSelection) {
-            ForEach(recents.entries) { entry in
-                recentRow(entry)
-                    .tag(entry.path as String?)
-                    .background(HideEnclosingScrollerWidth())
-                    .contextMenu {
-                        Button(String(localized: "Reveal in Finder")) {
-                            revealInFinder(entry.path)
+        ScrollViewReader { proxy in
+            List(selection: folderPathSelection) {
+                ForEach(recents.entries) { entry in
+                    recentRow(entry)
+                        .tag(entry.path as String?)
+                        .background(HideEnclosingScrollerWidth())
+                        .contextMenu {
+                            Button(String(localized: "Reveal in Finder")) {
+                                revealInFinder(entry.path)
+                            }
+                            Button(String(localized: "Remove from Recents")) {
+                                removeFromRecents(entry.path)
+                            }
                         }
-                        Button(String(localized: "Remove from Recents")) {
-                            removeFromRecents(entry.path)
-                        }
-                    }
+                }
+            }
+            .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
+            // Prepended entries (RecentProjectsStore.add / markLaunched)
+            // leave the sidebar List's NSScrollView with a stale top
+            // contentInset that clips row 0 by a few pixels until the
+            // user scrolls. A no-animation scrollTo on the new first
+            // row drives HideEnclosingScrollerWidth's willStartLiveScroll
+            // reapply, zeroing the inset immediately.
+            .onChange(of: recents.entries.first?.id) { _, newId in
+                guard let newId else { return }
+                withAnimation(.none) {
+                    proxy.scrollTo(newId, anchor: .top)
+                }
             }
         }
-        .listStyle(.sidebar)
-        .scrollContentBackground(.hidden)
     }
 
     /// Wrap the binding so the row's `tag` (an optional path) can drive

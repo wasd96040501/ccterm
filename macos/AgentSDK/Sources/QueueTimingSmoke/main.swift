@@ -254,6 +254,44 @@ if initDone.wait(timeout: .now() + 30) == .timedOut {
     exit(1)
 }
 
+// SMOKE_BACK_TO_BACK=1 — fire two sends in rapid succession (no wait
+// in between) and observe how many `system.init` events the CLI
+// emits. This tells us whether system.init is 1:1 with sendMessage
+// (per stdin write) or 1:1 with turn-actually-started (per CLI batch).
+if env["SMOKE_BACK_TO_BACK"] == "1" {
+    let secondPromptBB = env["SMOKE_PROMPT2"] ?? "Reply with exactly: ok"
+    let secondUuid = UUID().uuidString.lowercased()
+    ourUuids.add(secondUuid)
+    clock.mark()
+    log("send", "T0 — back-to-back: send #1 (uuid=\(userUuid.prefix(8)))")
+    session.sendMessage(prompt, extra: ["uuid": userUuid])
+    // Small but real gap so the second send arrives while the CLI is
+    // still ingesting the first. 5ms is more than enough on a unix
+    // socket / pipe; pick larger to be safe.
+    Thread.sleep(forTimeInterval: 0.005)
+    log("send", "T0+ — back-to-back: send #2 (uuid=\(secondUuid.prefix(8)))")
+    session.sendMessage(secondPromptBB, extra: ["uuid": secondUuid])
+
+    // Wait for both turns to complete. We need TWO .result events.
+    var resultsToWait = 2
+    // Reuse `firstResult` semaphore but re-arm via resultFired counter
+    // … actually simpler: wait for the per-label `result` count.
+    let deadline = Date().addingTimeInterval(180)
+    while (marks.countByLabel["result"] ?? 0) < 2, Date() < deadline {
+        Thread.sleep(forTimeInterval: 0.05)
+    }
+    _ = resultsToWait
+    Thread.sleep(forTimeInterval: 1.0)
+
+    log("send", "—————— back-to-back summary ——————")
+    log("send", "  system.init count        : \(marks.countByLabel["system.init"] ?? 0)")
+    log("send", "  user.echo(ours) count    : \(marks.countByLabel["user.echo(ours)"] ?? 0)")
+    log("send", "  assistant count          : \(marks.countByLabel["assistant"] ?? 0)")
+    log("send", "  result count             : \(marks.countByLabel["result"] ?? 0)")
+    session.close()
+    exit(0)
+}
+
 // T0: the exact moment ccterm would set `delivery = .queued` and emit
 // the user bubble. Everything below is the "wall clock" gap the user
 // perceives between hitting send and seeing the queued visual clear.

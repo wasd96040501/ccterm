@@ -445,6 +445,13 @@ final class Session {
             // entry is in `runtime.messages` ready to be flushed by
             // `flushBootstrapBacklog` once the CLI hits `.idle`.
             runtime.ensureStarted()
+            // Async LLM title-gen against the first user message. Until
+            // it lands the row shows the first-message-derived title set
+            // inside `fromDraft`; success overwrites the title and fires
+            // `onRecordPersisted` so the sidebar re-reads `records`.
+            if let firstText = input.text {
+                runtime.generateTitle(from: firstText)
+            }
             onPromoted?(runtime)
         case .active(let runtime):
             forward(runtime)

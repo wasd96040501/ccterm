@@ -160,6 +160,10 @@ extension SessionRuntime {
         isGeneratingTitle = false
         title = result.titleI18n
         repository.updateTitle(sessionId, title: result.titleI18n)
+        // SidebarHistoryRow reads `record.title` off `manager.records`,
+        // so the db write alone is invisible to the UI — `onRecordPersisted`
+        // is what nudges the manager to re-read the table.
+        onRecordPersisted?()
         appLog(.info, "SessionRuntime", "title-gen done \(sessionId) title=\(result.titleI18n)")
     }
 }

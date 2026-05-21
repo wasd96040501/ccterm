@@ -254,9 +254,12 @@ struct CodeBlockLayout: @unchecked Sendable {
     //   1. `drawBackplate` — opaque card chrome (rounded fill).
     //      Painted *before* selection.
     //   2. selection rects (cell-driven, using `selectionAdapter`).
-    //   3. `draw` — language badge + body glyphs. Painted *after*
-    //      selection so glyphs land on top of the highlight band,
-    //      the same ordering NSTextView uses.
+    //   3. `draw` — body glyphs, then language badge overlay.
+    //      Painted *after* selection so glyphs land on top of the
+    //      highlight band, the same ordering NSTextView uses; within
+    //      this pass the badge is painted *after* the body so its
+    //      opaque chip stays legible when a long first line passes
+    //      under the chrome.
     //
     // Codeblock background is opaque (Xcode editor canvas), so a
     // single-pass `draw` would re-cover the selection band drawn by
@@ -282,7 +285,19 @@ struct CodeBlockLayout: @unchecked Sendable {
     }
 
     func draw(in ctx: CGContext, origin: CGPoint) {
-        // Language badge — always visible chrome. Chip background
+        // Code body text first — the badge / copy icon overlay the
+        // top-right corner; long first lines pass *under* them, and
+        // the badge's opaque chip + the icon (dispatched by
+        // `BlockCellView`) need to land on top of any glyphs sharing
+        // their horizontal band. Painting body first matches the
+        // chrome-over-content ordering documented on the type.
+        text.draw(
+            in: ctx,
+            origin: CGPoint(
+                x: origin.x + textOriginInLayout.x,
+                y: origin.y + textOriginInLayout.y))
+
+        // Language badge — overlay on top of body. Chip background
         // first, then the label glyphs on top.
         if let badgeRect, let langLine {
             ctx.saveGState()
@@ -305,13 +320,6 @@ struct CodeBlockLayout: @unchecked Sendable {
             CTLineDraw(langLine, ctx)
             ctx.restoreGState()
         }
-
-        // Code body text.
-        text.draw(
-            in: ctx,
-            origin: CGPoint(
-                x: origin.x + textOriginInLayout.x,
-                y: origin.y + textOriginInLayout.y))
 
         // The copy glyph itself is dispatched by `BlockCellView` via
         // `copy?.draw(...)` after this method returns. `CopyChrome`

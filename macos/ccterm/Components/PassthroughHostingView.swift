@@ -24,6 +24,12 @@ struct PassthroughHostingView<Content: View>: NSViewRepresentable {
     func makeNSView(context: Context) -> PassthroughHostingContainer {
         let container = PassthroughHostingContainer()
         let hosting = NSHostingView(rootView: content())
+        // The transcript pane runs flush to the window's top edge under
+        // `fullSizeContentView`, so the title bar shows up as a non-zero
+        // top safe-area inset. `NSHostingView` honors that by default,
+        // which would push our top scrim down by the title bar height.
+        // Match the pre-wrap SwiftUI overlay behavior by opting out.
+        hosting.safeAreaRegions = []
         hosting.autoresizingMask = [.width, .height]
         hosting.frame = container.bounds
         container.addSubview(hosting)

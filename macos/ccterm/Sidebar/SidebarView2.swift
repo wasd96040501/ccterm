@@ -293,11 +293,10 @@ struct SidebarSessionStatusIndicator: View {
 
 /// SwiftUI port of the transcript's `LoadingPillLayout` — three
 /// breathing dots whose opacities cycle in a left-to-right wave. The
-/// timing constants (`period`, `phaseStagger`, `minOpacity`,
-/// `dotSize`) are copied verbatim from
-/// `BlockCellView+SubviewPlan.swift` so the sidebar pill and the
-/// transcript pill breathe in lockstep when the same session is
-/// visible in both places.
+/// timing constants (`period`, `phaseStagger`, `dotSize`) are copied
+/// verbatim from `BlockCellView+SubviewPlan.swift` so the sidebar pill
+/// and the transcript pill breathe in lockstep when the same session
+/// is visible in both places.
 ///
 /// Geometry is squeezed to fit the 16pt `SidebarIcon.slotWidth` — dot
 /// size matches the transcript (3pt) but the inter-dot gap shrinks
@@ -310,7 +309,10 @@ struct SidebarLoadingDots: View {
     static let period: Double = 1.2
     /// Per-dot phase offset — matches transcript.
     static let phaseStagger: Double = 0.18
-    static let minOpacity: Double = 0.25
+    /// Higher than transcript's 0.25: at 3pt the dots need a larger
+    /// floor or the breath's low point falls below ~1.6:1 contrast in
+    /// dark mode and the dots visibly disappear.
+    static let minOpacity: Double = 0.45
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
@@ -318,7 +320,7 @@ struct SidebarLoadingDots: View {
             HStack(spacing: Self.dotGap) {
                 ForEach(0..<3, id: \.self) { index in
                     Circle()
-                        .fill(Color.secondary)
+                        .fill(Color.primary)
                         .frame(width: Self.dotSize, height: Self.dotSize)
                         .opacity(Self.opacity(at: t, staggerIndex: index))
                 }

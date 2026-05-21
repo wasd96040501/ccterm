@@ -70,12 +70,24 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             #if DEBUG
             let perfDidSetStart =
                 Transcript2PerfLog.enabled ? CFAbsoluteTimeGetCurrent() : 0
+            var perfStepStart = perfDidSetStart
+            @inline(__always)
+            func perfStep(_ label: String) {
+                guard Transcript2PerfLog.enabled else { return }
+                let now = CFAbsoluteTimeGetCurrent()
+                let ms = (now - perfStepStart) * 1000
+                perfStepStart = now
+                Transcript2PerfLog.trace(
+                    "reentry didSet.step label=\(label) "
+                        + "ms=\(String(format: "%.3f", ms))")
+            }
             if Transcript2PerfLog.enabled {
                 Transcript2PerfLog.trace(
                     "reentry tableView.didSet attach=\(tableView != nil) "
                         + "blocks=\(blocks.count) "
                         + "width=\(tableView?.bounds.width ?? -1)")
             }
+            perfStep("after-entry-trace")
             #endif
             // A new table view replaces the previous one (session switch,
             // SwiftUI rebuild). Until this fresh table tiles to a positive
@@ -83,6 +95,9 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             // the first-screen anchor is *not* settled — flip back to false
             // so external observers can wait for re-stabilization.
             setAnchorSettled(false)
+            #if DEBUG
+            perfStep("setAnchorSettled")
+            #endif
             // Reset the frame-change short-circuit so the new table's
             // first 0→positive transition still fires `onTableDidTile`.
             // Without this, an identically-sized re-mount (same window
@@ -90,6 +105,9 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             // because `width == lastLayoutWidth` short-circuits the
             // notification handler.
             lastLayoutWidth = -1
+            #if DEBUG
+            perfStep("lastLayoutWidth=-1")
+            #endif
             if let table = tableView {
                 if !blocks.isEmpty {
                     // Re-entry / bridge-accumulated state: blocks exist
@@ -108,8 +126,10 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                         Transcript2PerfLog.trace(
                             "reentry didSet.reloadData blocks=\(blocks.count) "
                                 + "width=\(table.bounds.width) "
-                                + "ms=\(String(format: "%.2f", ms))")
+                                + "ms=\(String(format: "%.3f", ms))")
                     }
+                    perfStepStart = CFAbsoluteTimeGetCurrent()
+                    perfStep("after-reloadData")
                     #endif
                 } else {
                     // Nothing to scroll → nothing can flicker. Unhide now
@@ -117,13 +137,16 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                     // invisible waiting for a scroll that will never
                     // arrive.
                     table.alphaValue = 1
+                    #if DEBUG
+                    perfStep("alphaValue=1")
+                    #endif
                 }
             }
             #if DEBUG
             if Transcript2PerfLog.enabled {
                 let ms = (CFAbsoluteTimeGetCurrent() - perfDidSetStart) * 1000
                 Transcript2PerfLog.trace(
-                    "reentry tableView.didSet done ms=\(String(format: "%.2f", ms))")
+                    "reentry tableView.didSet done ms=\(String(format: "%.3f", ms))")
             }
             #endif
         }

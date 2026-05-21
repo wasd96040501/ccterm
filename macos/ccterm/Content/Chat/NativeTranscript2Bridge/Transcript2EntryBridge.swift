@@ -38,13 +38,29 @@ final class Transcript2EntryBridge {
     /// by treating the entry as a reset seed so content isn't lost.
     private var didLoadInitial = false
 
-    /// Entry id of the **first user-typed message** in the current session.
-    /// Used to UI-suppress the queued visual on that one bubble — when the
-    /// CLI is bootstrapping the very first send is always queued for a few
-    /// seconds, and a "you just hit send" indicator there reads as noise.
+    /// Entry id of the **first user-typed message that arrives live**
+    /// (via `.appended`) during this bridge's lifetime. UI-suppresses the
+    /// queued visual on that one bubble — the two scenarios this covers
+    /// are new-session start and session resume, both of which boot the
+    /// CLI from cold; the first send is always queued for a few seconds
+    /// while bootstrap runs and a "you just hit send" indicator there
+    /// reads as noise.
+    ///
+    /// History-load events (`.reset` / `.prepended`) intentionally do
+    /// **not** pin this — replayed messages already have
+    /// `delivery == .confirmed` so the suppression would be a no-op
+    /// anyway, but more importantly we want the *next live send after
+    /// a resume* to receive the pin, not some long-confirmed historical
+    /// turn.
+    ///
+    /// Same-session, already-bootstrapped sends (`.appended` after the
+    /// pin is taken) keep their truthful queued visual — that's the
+    /// "CLI is busy on the prior turn, you're really in queue" case
+    /// the indicator is useful for.
+    ///
     /// The underlying `SingleEntry.delivery` stays truthful; only the
-    /// `Block.userBubble(isQueued:)` flag is rewritten when we emit blocks
-    /// for this entry.
+    /// `Block.userBubble(isQueued:)` flag is rewritten when we emit
+    /// blocks for this entry.
     private var firstUserEntryId: UUID?
 
     init(controller: Transcript2Controller) {
@@ -136,14 +152,6 @@ final class Transcript2EntryBridge {
         }
     }
 
-    /// First user-typed entry id in document order, or nil if none.
-    private static func firstUserEntryId(in entries: [MessageEntry]) -> UUID? {
-        for entry in entries where isUserTyped(entry) {
-            return entry.id
-        }
-        return nil
-    }
-
     // MARK: - Status push
     //
     // Pure command-style status routing: walk the entry's tool surfaces,
@@ -232,10 +240,10 @@ final class Transcript2EntryBridge {
     // MARK: - Reset (setHistory / re-entry)
 
     private func applyReset(_ entries: [MessageEntry], precomputed: [UUID: [Block]]?) {
-        // Recompute the first-user-entry pin from the full new timeline
-        // before walking entries — `self.blocks(for:)` consults
-        // `firstUserEntryId` per entry to decide suppression.
-        firstUserEntryId = Self.firstUserEntryId(in: entries)
+        // History reset does NOT pin `firstUserEntryId`. We want the
+        // pin to land on the next *live* `.appended` (the first send
+        // into the freshly-booted CLI), not on some long-confirmed
+        // historical turn. See the field docs for why.
 
         // Rebuild reverse tables and collect blocks.
         var newOrder: [UUID] = []
@@ -323,12 +331,8 @@ final class Transcript2EntryBridge {
     // MARK: - Prepend (loadHistory Phase B)
 
     private func applyPrepend(_ entries: [MessageEntry], precomputed: [UUID: [Block]]?) {
-        // Prepended entries are older than everything already in the
-        // timeline. If any of them are user-typed, the earliest one
-        // becomes the new "first user" — override the existing pin.
-        if let earlier = Self.firstUserEntryId(in: entries) {
-            firstUserEntryId = earlier
-        }
+        // Same reasoning as `applyReset`: older history doesn't take the
+        // pin. The live `.appended` path is the sole pin source.
 
         var prefixBlocks: [Block] = []
         var newOrder: [UUID] = []

@@ -25,6 +25,20 @@ final class SessionRuntimeTodosTests: XCTestCase {
 
     // MARK: - Fixtures
 
+    /// The `ToolUseResultObject` is created `.unknown(name: "unresolved")`
+    /// when first parsed, and only resolves to its typed variant
+    /// (`.TaskCreate(...)` etc.) once the resolver has previously seen
+    /// the matching assistant `tool_use` and stitches the two together.
+    /// Production wires a single `Message2Resolver` per session;
+    /// reuse one here so the dispatch path inside `applyTodoToolResult`
+    /// sees a properly-resolved result envelope.
+    private var resolver: Message2Resolver!
+
+    override func setUp() {
+        super.setUp()
+        resolver = Message2Resolver()
+    }
+
     private func makeRuntime() -> SessionRuntime {
         SessionRuntime(
             sessionId: UUID().uuidString,
@@ -153,7 +167,7 @@ final class SessionRuntimeTodosTests: XCTestCase {
     }
 
     private func resolve(_ dict: [String: Any]) -> Message2 {
-        try! Message2Resolver().resolve(dict)
+        try! resolver.resolve(dict)
     }
 
     // MARK: - Materialization

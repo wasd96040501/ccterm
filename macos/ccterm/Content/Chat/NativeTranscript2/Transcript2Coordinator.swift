@@ -67,37 +67,12 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     weak var tableView: NSTableView? {
         didSet {
             guard oldValue !== tableView else { return }
-            #if DEBUG
-            let perfDidSetStart =
-                Transcript2PerfLog.enabled ? CFAbsoluteTimeGetCurrent() : 0
-            var perfStepStart = perfDidSetStart
-            @inline(__always)
-            func perfStep(_ label: String) {
-                guard Transcript2PerfLog.enabled else { return }
-                let now = CFAbsoluteTimeGetCurrent()
-                let ms = (now - perfStepStart) * 1000
-                perfStepStart = now
-                Transcript2PerfLog.trace(
-                    "reentry didSet.step label=\(label) "
-                        + "ms=\(String(format: "%.3f", ms))")
-            }
-            if Transcript2PerfLog.enabled {
-                Transcript2PerfLog.trace(
-                    "reentry tableView.didSet attach=\(tableView != nil) "
-                        + "blocks=\(blocks.count) "
-                        + "width=\(tableView?.bounds.width ?? -1)")
-            }
-            perfStep("after-entry-trace")
-            #endif
             // A new table view replaces the previous one (session switch,
             // SwiftUI rebuild). Until this fresh table tiles to a positive
             // width and the Controller drains any pending first-tile work,
             // the first-screen anchor is *not* settled — flip back to false
             // so external observers can wait for re-stabilization.
             setAnchorSettled(false)
-            #if DEBUG
-            perfStep("setAnchorSettled")
-            #endif
             // Reset the frame-change short-circuit so the new table's
             // first 0→positive transition still fires `onTableDidTile`.
             // Without this, an identically-sized re-mount (same window
@@ -105,9 +80,6 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             // because `width == lastLayoutWidth` short-circuits the
             // notification handler.
             lastLayoutWidth = -1
-            #if DEBUG
-            perfStep("lastLayoutWidth=-1")
-            #endif
             if let table = tableView {
                 if !blocks.isEmpty {
                     // Re-entry / bridge-accumulated state: blocks exist
@@ -116,39 +88,17 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                     // first-tile handler unhides it after the scrolled
                     // frame lands.
                     #if DEBUG
-                    let perfReloadStart =
-                        Transcript2PerfLog.enabled ? CFAbsoluteTimeGetCurrent() : 0
+                    Transcript2ReentryStats.recordAttachStart(blocks: blocks.count)
                     #endif
                     table.reloadData()
-                    #if DEBUG
-                    if Transcript2PerfLog.enabled {
-                        let ms = (CFAbsoluteTimeGetCurrent() - perfReloadStart) * 1000
-                        Transcript2PerfLog.trace(
-                            "reentry didSet.reloadData blocks=\(blocks.count) "
-                                + "width=\(table.bounds.width) "
-                                + "ms=\(String(format: "%.3f", ms))")
-                    }
-                    perfStepStart = CFAbsoluteTimeGetCurrent()
-                    perfStep("after-reloadData")
-                    #endif
                 } else {
                     // Nothing to scroll → nothing can flicker. Unhide now
                     // so empty / pre-`setHistory` sessions don't sit
                     // invisible waiting for a scroll that will never
                     // arrive.
                     table.alphaValue = 1
-                    #if DEBUG
-                    perfStep("alphaValue=1")
-                    #endif
                 }
             }
-            #if DEBUG
-            if Transcript2PerfLog.enabled {
-                let ms = (CFAbsoluteTimeGetCurrent() - perfDidSetStart) * 1000
-                Transcript2PerfLog.trace(
-                    "reentry tableView.didSet done ms=\(String(format: "%.3f", ms))")
-            }
-            #endif
         }
     }
 
@@ -212,8 +162,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// calling this between Phase 1 and Phase 2 is safe.
     func markAnchorSettled() {
         #if DEBUG
-        Transcript2PerfLog.trace(
-            "reentry markAnchorSettled fire blocks=\(blocks.count)")
+        Transcript2ReentryStats.recordMarkAnchorSettled()
         #endif
         tableView?.alphaValue = 1
         setAnchorSettled(true)
@@ -1066,15 +1015,8 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         // the new `bounds.width`, no row needs its layout invalidated.
         let width = layoutWidth
         #if DEBUG
-        if Transcript2PerfLog.enabled {
-            Transcript2PerfLog.trace(
-                "reentry tableFrameDidChange "
-                    + "rawWidth=\(tableView.bounds.width) "
-                    + "clampedWidth=\(width) "
-                    + "lastLayoutWidth=\(lastLayoutWidth) "
-                    + "inLiveResize=\(tableView.inLiveResize) "
-                    + "shortCircuit=\(width == lastLayoutWidth)")
-        }
+        Transcript2ReentryStats.recordFrameDidChange(
+            shortCircuit: width == lastLayoutWidth)
         #endif
         if width == lastLayoutWidth { return }
         let prevWidth = lastLayoutWidth
@@ -1166,13 +1108,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         guard !indexes.isEmpty else { return }
         #if DEBUG
         let perfStart =
-            Transcript2PerfLog.enabled ? CFAbsoluteTimeGetCurrent() : 0
-        if Transcript2PerfLog.enabled {
-            Transcript2PerfLog.trace(
-                "reentry invalidate.start rows=\(indexes.count) "
-                    + "blocks=\(blocks.count) "
-                    + "width=\(layoutWidth)")
-        }
+            Transcript2ReentryStats.enabled ? CFAbsoluteTimeGetCurrent() : 0
         #endif
         NSAnimationContext.beginGrouping()
         NSAnimationContext.current.duration = 0
@@ -1188,11 +1124,9 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         CATransaction.commit()
         NSAnimationContext.endGrouping()
         #if DEBUG
-        if Transcript2PerfLog.enabled {
+        if Transcript2ReentryStats.enabled {
             let ms = (CFAbsoluteTimeGetCurrent() - perfStart) * 1000
-            Transcript2PerfLog.trace(
-                "reentry invalidate.done rows=\(indexes.count) "
-                    + "ms=\(String(format: "%.2f", ms))")
+            Transcript2ReentryStats.recordInvalidate(width: layoutWidth, ms: ms)
         }
         #endif
     }
@@ -1280,22 +1214,28 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let width = layoutWidth
         let pad = BlockStyle.blockPadding(for: blocks[row].kind)
         #if DEBUG
-        let perfStart =
-            Transcript2PerfLog.enabled ? CFAbsoluteTimeGetCurrent() : 0
+        let perfActive =
+            Transcript2PerfLog.enabled || Transcript2ReentryStats.enabled
+        let perfStart = perfActive ? CFAbsoluteTimeGetCurrent() : 0
         let perfCacheHit =
-            Transcript2PerfLog.enabled
-            ? (layoutCache[blocks[row].id]?.width == width) : false
+            perfActive ? (layoutCache[blocks[row].id]?.width == width) : false
         #endif
         let h =
             layout(for: blocks[row], width: width).totalHeight
             + pad.top + pad.bottom
         #if DEBUG
-        if Transcript2PerfLog.enabled {
+        if perfActive {
             let ms = (CFAbsoluteTimeGetCurrent() - perfStart) * 1000
-            Transcript2PerfLog.trace(
-                "heightOfRow row=\(row) kind=\(blocks[row].kindLabel) "
-                    + "cached=\(perfCacheHit) h=\(Int(h.rounded())) "
-                    + "ms=\(String(format: "%.2f", ms))")
+            if Transcript2PerfLog.enabled {
+                Transcript2PerfLog.trace(
+                    "heightOfRow row=\(row) kind=\(blocks[row].kindLabel) "
+                        + "cached=\(perfCacheHit) h=\(Int(h.rounded())) "
+                        + "ms=\(String(format: "%.2f", ms))")
+            }
+            if Transcript2ReentryStats.enabled {
+                Transcript2ReentryStats.recordHeightOfRow(
+                    cached: perfCacheHit, ms: ms)
+            }
         }
         #endif
         return h
@@ -1328,15 +1268,21 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         // Cache-hit snapshot taken BEFORE the lazy lookup below would
         // populate it on miss — that way the trace shows whether scroll
         // is hitting the memo or burning new layouts.
+        let perfActive =
+            Transcript2PerfLog.enabled || Transcript2ReentryStats.enabled
         let perfCacheHit =
-            Transcript2PerfLog.enabled
-            ? (layoutCache[block.id]?.width == width) : false
+            perfActive ? (layoutCache[block.id]?.width == width) : false
         #endif
         let cellLayout = layout(for: block, width: width)
         #if DEBUG
-        if Transcript2PerfLog.enabled {
-            Transcript2PerfLog.trace(
-                "viewFor row=\(row) kind=\(block.kindLabel) cached=\(perfCacheHit)")
+        if perfActive {
+            if Transcript2PerfLog.enabled {
+                Transcript2PerfLog.trace(
+                    "viewFor row=\(row) kind=\(block.kindLabel) cached=\(perfCacheHit)")
+            }
+            if Transcript2ReentryStats.enabled {
+                Transcript2ReentryStats.recordViewFor(cached: perfCacheHit)
+            }
         }
         #endif
 

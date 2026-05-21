@@ -164,7 +164,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
 
     /// Set by `Transcript2Controller` to forward chevron taps to the
     /// SwiftUI-owned sheet binding. The cell's mouseDown handler resolves
-    /// the chevron hit, looks up the source `Block.Kind.userBubble(text:)`,
+    /// the chevron hit, looks up the source `Block.Kind.userBubble(text:_:)`,
     /// and fires this — keeping the cross-layer signal narrow (one block
     /// id + the original text) so neither side reaches into the other's
     /// internals.
@@ -790,8 +790,10 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             return .blockquote(BlockquoteLayout.make(inlines: inlines, maxWidth: contentWidth))
         case .thematicBreak:
             return .thematicBreak(ThematicBreakLayout.make(maxWidth: contentWidth))
-        case .userBubble(let text):
-            return .userBubble(UserBubbleLayout.make(text: text, maxWidth: contentWidth))
+        case .userBubble(let text, let isQueued):
+            return .userBubble(
+                UserBubbleLayout.make(
+                    text: text, isQueued: isQueued, maxWidth: contentWidth))
         case .userAttachments(let images):
             return .userAttachments(
                 UserAttachmentsLayout.make(images: images, maxWidth: contentWidth))
@@ -987,7 +989,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// at a `userBubble`.
     func requestUserBubbleSheet(id: UUID) {
         guard let i = blocks.firstIndex(where: { $0.id == id }),
-            case .userBubble(let text) = blocks[i].kind
+            case .userBubble(let text, _) = blocks[i].kind
         else { return }
         onUserBubbleSheetRequested?(id, text)
     }

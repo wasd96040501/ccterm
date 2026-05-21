@@ -47,7 +47,13 @@ struct Block: Identifiable, Equatable, @unchecked Sendable {
         /// surfaces the full message in a SwiftUI sheet (presentation
         /// concerns belong on the SwiftUI side; in-cell rendering stays
         /// stateless). Short messages render in full with no chevron.
-        case userBubble(text: String)
+        ///
+        /// `isQueued` reflects `SingleEntry.delivery == .queued` — the
+        /// message has been appended locally but the CLI hasn't echoed
+        /// it back yet. Bubble paints with a dimmer fill and gets a
+        /// small `clock` SF Symbol pinned to the bottom-right corner.
+        /// Flips to `false` via `Change.update` once the echo lands.
+        case userBubble(text: String, isQueued: Bool = false)
         /// Inline image attachments on a user message — a right-aligned
         /// strip of 48×48 thumbnails matching the InputBar's attach chip
         /// style. Emitted as a sibling block to the user's `userBubble`
@@ -647,6 +653,63 @@ enum BlockStyle: Sendable {
     /// the user's selected accent color and dark/light appearance.
     nonisolated static let bubbleFillColor: NSColor =
         NSColor.controlAccentColor.withAlphaComponent(0.15)
+
+    /// Bubble background for messages still in the `.queued` delivery
+    /// state (locally appended, CLI hasn't echoed yet). Dimmer than the
+    /// confirmed fill so the row reads as "in flight". Drops the accent
+    /// tint and uses an appearance-neutral muted gray so the bubble
+    /// loses its primary-affordance weight while the user waits.
+    ///
+    /// Tuning: light mode `black @ 5%` lands one tier above the chat
+    /// surface (which itself sits one tier above the window) — visible
+    /// as a card but reads quieter than the 15% accent tint. Dark mode
+    /// `white @ 7%` matches the same perceived elevation against the
+    /// darker window. Both attenuate to roughly half the confirmed fill's
+    /// chromatic weight, matching the typing-indicator / shimmer family's
+    /// "alive but secondary" tone.
+    nonisolated static let bubbleQueuedFillColor: NSColor = NSColor(name: nil) { appearance in
+        let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        return isDark
+            ? NSColor(white: 1, alpha: 0.07)
+            : NSColor(white: 0, alpha: 0.05)
+    }
+
+    // MARK: - Queued bubble badge (clock SF Symbol)
+    //
+    // A small `clock` glyph pinned at the bubble's bottom-right corner.
+    // Center sits on the rounded-corner arc at its 45° midpoint, so the
+    // badge straddles the boundary — half inside the bubble, half hanging
+    // off — like a card-corner annotation. Only painted when the bubble's
+    // `isQueued` flag is true.
+
+    /// SF Symbol point size for the queued bubble's `clock` glyph.
+    /// `cornerRadius - 4 = 10pt` — large enough to read at a glance,
+    /// small enough that the symbol's outer extent (after the badge halo
+    /// padding) stays within the corner's optical breathing room.
+    nonisolated static var queuedBadgeSymbolPointSize: CGFloat { bubbleCornerRadius - 4 }
+
+    /// Background-halo radius around the symbol — gives the badge a
+    /// continuous disc shape that floats above the bubble's rounded
+    /// edge instead of looking like a glyph stuck on the corner.
+    /// `symbol + 2pt` matches the gutter-hover chip's halo proportion.
+    nonisolated static var queuedBadgeDiscRadius: CGFloat {
+        queuedBadgeSymbolPointSize / 2 + 3
+    }
+
+    /// Foreground tint for the queued badge glyph. `secondaryLabel`
+    /// pairs with the dimmed `bubbleQueuedFillColor` so the badge reads
+    /// as ambient chrome, not as a primary affordance.
+    nonisolated static let queuedBadgeForeground: NSColor = .secondaryLabelColor
+
+    /// Disc fill behind the badge glyph. Sits over the bubble's queued
+    /// fill at the bottom-right corner; opaque enough to register as a
+    /// distinct chip but kept on the same neutral chrome tier.
+    nonisolated static let queuedBadgeDiscFill: NSColor = NSColor(name: nil) { appearance in
+        let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        return isDark
+            ? NSColor(white: 1, alpha: 0.18)
+            : NSColor(white: 0, alpha: 0.10)
+    }
 
     /// Lines at and above this count *may* fold (subject to `userBubbleMinHiddenLines`).
     nonisolated static let userBubbleCollapseThreshold: Int = 12
@@ -1261,7 +1324,7 @@ extension Block {
     /// upstream of the IR.
     nonisolated func copyableText() -> String {
         switch kind {
-        case .userBubble(let text):
+        case .userBubble(let text, _):
             return text
         case .paragraph(let inlines):
             return Self.inlinesPlainText(inlines)

@@ -53,6 +53,25 @@ extension SessionRuntime {
                 isRunning = true
             }
             adopt(info, mode: mode)
+        case .system(.status(let s)):
+            // CLI broadcasts a `system.status` whenever the
+            // session-side permission mode changes. Three triggers
+            // observed in PermissionModeProbe:
+            //   1. EnterPlanMode runs (no permission_request) → CLI
+            //      pushes `permissionMode=plan`.
+            //   2. User responds to a permission_request with
+            //      allowAlways + `setMode` suggestion (Edit/Write
+            //      default to `setMode=acceptEdits`) → CLI pushes the
+            //      new mode after applying the update.
+            //   3. The CLI silently rejects a requested mode (e.g.
+            //      `bypassPermissions` when --allow-dangerously-skip is
+            //      off, or `plan` from ExitPlanMode which must leave
+            //      plan mode) → CLI pushes the corrected mode
+            //      (typically `default`).
+            // Case 3 is why we must trust the CLI, not the optimistic
+            // local write in setPermissionMode: this branch is the
+            // self-heal that pulls UI state back to reality.
+            adoptPermissionMode(s.permissionMode)
         case .system(.taskStarted(let started)) where mode == .live:
             handleTaskStarted(started)
         case .system(.taskNotification(let notif)) where mode == .live:
@@ -340,11 +359,27 @@ extension SessionRuntime {
         return nil
     }
 
+    /// Receive-side permission mode sync. Idempotent: same mode is a
+    /// no-op (no observable churn, no DB write). DB write skipped for
+    /// pre-record sessions (first bootstrap before persistence). Does
+    /// **not** call `setPermissionMode` — that path issues a
+    /// `set_permission_mode` RPC to the CLI, which would loop back as
+    /// another `system.status`.
+    fileprivate func adoptPermissionMode(_ raw: String?) {
+        guard let raw,
+            let mapped = PermissionMode(rawValue: raw),
+            mapped != permissionMode
+        else { return }
+        permissionMode = mapped
+        if repository.find(sessionId) != nil {
+            repository.updateExtra(
+                sessionId, with: SessionExtraUpdate(permissionMode: raw))
+        }
+    }
+
     fileprivate func adopt(_ info: Init, mode: ReceiveMode) {
         if let c = info.cwd { cwd = c }
-        if let raw = info.permissionMode, let mapped = PermissionMode(rawValue: raw) {
-            permissionMode = mapped
-        }
+        adoptPermissionMode(info.permissionMode)
         if let cmds = info.slashCommands {
             slashCommands = cmds.map { SlashCommand(name: $0, description: nil) }
         }

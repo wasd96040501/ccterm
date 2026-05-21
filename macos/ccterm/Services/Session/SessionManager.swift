@@ -51,6 +51,14 @@ final class SessionManager {
     /// unarchive triggered while the page is visible refreshes the list.
     private(set) var archivedRecords: [SessionRecord] = []
 
+    /// Distinct folders represented in `archivedRecords`, keyed on
+    /// `originPath` (so worktree sessions group with their parent repo).
+    /// Refreshed in lock-step with `archivedRecords` so the Archive page's
+    /// folder-filter popover always reads a derived value that matches the
+    /// current row set — no view-side caching, no per-keystroke recompute,
+    /// no observation-tracking trap.
+    private(set) var archivedFolderOptions: [ArchivedFolder] = []
+
     /// Most recent CLI launch failure from any handle. RootView2 binds to
     /// this field with `.alert`: non-nil triggers the alert, and confirming
     /// calls `clearLaunchFailure()` to reset. New failures overwrite old
@@ -62,6 +70,16 @@ final class SessionManager {
         let id = UUID()
         let sessionId: String
         let message: String
+    }
+
+    /// One option in the Archive page's folder-filter popover. `path` is
+    /// the canonical identity (a `SessionRecord.originPath`); `name` is
+    /// the leaf displayed as the row title. Two folders sharing the
+    /// same leaf at different paths are distinct rows.
+    struct ArchivedFolder: Identifiable, Hashable {
+        let path: String
+        let name: String
+        var id: String { path }
     }
 
     /// Manager-level "turn ended on some session" sink. `AppState`
@@ -200,9 +218,13 @@ final class SessionManager {
 
     /// Re-read the archived list from the repository. Called by the
     /// Archive page on appear and after any archive/unarchive operation
-    /// that mutates archived state.
+    /// that mutates archived state. The derived `archivedFolderOptions`
+    /// list is refreshed in the same call so observers see a consistent
+    /// pair.
     func refreshArchivedRecords() {
-        archivedRecords = repository.findArchived()
+        let fresh = repository.findArchived()
+        archivedRecords = fresh
+        archivedFolderOptions = Self.deriveFolderOptions(from: fresh)
     }
 
     /// Async variant used by the Archive page's first paint so the
@@ -210,14 +232,34 @@ final class SessionManager {
     /// the main thread. In-memory test repos fall back to the
     /// synchronous read after a single `Task.yield()` — they're instant
     /// but the yield still gives SwiftUI a frame to render the page
-    /// chrome before the records appear.
+    /// chrome before the records appear. The folder-options derivation
+    /// runs on the same hop so the Archive page sees both updates land
+    /// atomically.
     func refreshArchivedRecordsAsync() async {
+        let fresh: [SessionRecord]
         if let coreDataRepo = repository as? CoreDataSessionRepository {
-            archivedRecords = await coreDataRepo.findArchivedAsync()
+            fresh = await coreDataRepo.findArchivedAsync()
         } else {
             await Task.yield()
-            archivedRecords = repository.findArchived()
+            fresh = repository.findArchived()
         }
+        archivedRecords = fresh
+        archivedFolderOptions = Self.deriveFolderOptions(from: fresh)
+    }
+
+    /// Group `records` by `originPath` and produce a sorted, deduped
+    /// `[ArchivedFolder]` for the Archive page's folder-filter popover.
+    /// Records without an `originPath` are silently dropped — they can't
+    /// be filtered into a single bucket. Sorted alphabetically by leaf
+    /// name for predictable scanning.
+    static func deriveFolderOptions(from records: [SessionRecord]) -> [ArchivedFolder] {
+        let buckets = Dictionary(grouping: records) { $0.originPath }
+        return buckets.compactMap { path, _ -> ArchivedFolder? in
+            guard let path, !path.isEmpty else { return nil }
+            let name = (path as NSString).lastPathComponent
+            return ArchivedFolder(path: path, name: name)
+        }
+        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     /// Soft-delete: flip the record to `.archived` so it drops out of

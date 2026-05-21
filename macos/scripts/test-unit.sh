@@ -9,9 +9,11 @@
 #   ./scripts/test-unit.sh ClassName             # one class
 #   ./scripts/test-unit.sh ClassName/method      # one method
 #
-# DerivedData is cached under macos/build/test-dd by default; override with
-# DERIVED_DATA_PATH if needed. CI restores the same path from cache so the
-# first run after a cache hit is incremental.
+# DerivedData defaults to ~/Library/Caches/ccterm-test-dd-<worktree-hash>;
+# the hash on the path means sibling git worktrees don't share a build
+# database (which would deadlock concurrent xcodebuild invocations). CI
+# overrides DERIVED_DATA_PATH to a stable workspace-relative location so
+# the GitHub Actions cache can save/restore it across runs.
 #
 # Exit codes:
 #   0 success / 1 test failure / 2 build failure.
@@ -32,7 +34,20 @@ FILTER="${1:-}"
 # each Debug build so the consent never sticks. CI overrides this to
 # `macos/build/test-dd` (see .github/workflows/test.yml) so the cache action
 # can pick it up.
-DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-${HOME}/Library/Caches/ccterm-test-dd}"
+#
+# The default path is also suffixed with a per-worktree hash so two
+# `make test-unit` runs from sibling worktrees don't fight for the
+# same DerivedData. xcodebuild takes an exclusive lock on the build
+# database; two instances against the same path will *deadlock* between
+# "build done" and "spawn test runner" — both processes go 0% CPU and
+# the test phase never starts. Hashing on the worktree root keeps each
+# checkout isolated while still letting repeated runs from the *same*
+# worktree reuse the incremental swiftmodule cache.
+if [ -z "${DERIVED_DATA_PATH:-}" ]; then
+  WORKTREE_ROOT="$(cd .. && pwd -P)"
+  WORKTREE_HASH=$(printf '%s' "$WORKTREE_ROOT" | shasum -a 256 | cut -c1-8)
+  DERIVED_DATA_PATH="${HOME}/Library/Caches/ccterm-test-dd-${WORKTREE_HASH}"
+fi
 
 STAMP=$(date +%Y%m%d-%H%M%S)
 LOG_DIR="/tmp/ccterm-utest-$STAMP-$$"
@@ -41,6 +56,23 @@ RAW_LOG="$LOG_DIR/raw.log"
 SUMMARY_LOG="$LOG_DIR/summary.log"
 XCRESULT="$LOG_DIR/result.xcresult"
 
+# Parallel testing is *off* locally by default. The test host is the full
+# ccterm.app — every XCTRunner worker reboots the @main entry point, which
+# in turn launches a `claude` CLI subprocess. With 4 parallel workers, the
+# workers race on TCC, the claude CLI's lockfile under `~/.claude`, and
+# LaunchServices registration; the slow ones hang for minutes between
+# `RegisterWithLaunchServices` and the first `Test Suite started` event
+# while their host bundle blocks on subprocess startup.
+#
+# CI sets `PARALLEL_TESTING=YES` to keep the suite throughput it depends
+# on — CI runners are clean per-job VMs, so the subprocess race doesn't
+# trigger there. Locally, set the env var to opt back in for a one-off.
+if [ "${PARALLEL_TESTING:-NO}" = "YES" ]; then
+  PARALLEL_ARGS=(-parallel-testing-enabled YES -parallel-testing-worker-count 4)
+else
+  PARALLEL_ARGS=(-parallel-testing-enabled NO)
+fi
+
 XCB_ARGS=(
   -project ccterm.xcodeproj
   -scheme "$SCHEME"
@@ -48,8 +80,7 @@ XCB_ARGS=(
   -destination "$DESTINATION"
   -derivedDataPath "$DERIVED_DATA_PATH"
   -resultBundlePath "$XCRESULT"
-  -parallel-testing-enabled YES
-  -parallel-testing-worker-count 4
+  "${PARALLEL_ARGS[@]}"
   CODE_SIGNING_ALLOWED=NO
   CODE_SIGNING_REQUIRED=NO
   CODE_SIGN_IDENTITY=-

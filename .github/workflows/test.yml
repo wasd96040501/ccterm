@@ -73,8 +73,15 @@ jobs:
         # runs use the script's default (outside ~/Documents) to avoid the
         # macOS TCC "Documents" prompt; CI doesn't share that constraint and
         # wants the path to match the cache action.
+        #
+        # `PARALLEL_TESTING=YES` re-enables xcodebuild's parallel test
+        # workers — they're off by default in the local script because the
+        # ccterm.app test host spawns a `claude` CLI subprocess at @main
+        # init, and multiple workers race on it; CI runners are clean
+        # per-job VMs so the race doesn't trigger.
         env:
           DERIVED_DATA_PATH: ${{ github.workspace }}/macos/build/test-dd
+          PARALLEL_TESTING: "YES"
         run: make test-unit
 
       - name: Upload xcresult on failure

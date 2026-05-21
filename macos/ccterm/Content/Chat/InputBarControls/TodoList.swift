@@ -2,9 +2,9 @@ import SwiftUI
 
 /// Popover body for the todo plan. Memo-style — soft notepad surface,
 /// status glyph on the leading edge, todo text spanning the rest of
-/// the row. Two groups: **Active** (pending + in_progress) and
-/// **Completed** (de-emphasized so the eye lands on what's still
-/// open). No detail sheet — the row is the surface.
+/// the row. Items render in **creation order** with no grouping: a
+/// status flip dims the row in place without shifting any other row
+/// up or down, so the eye doesn't lose its place between updates.
 ///
 /// Sizing — 340pt wide (slightly tighter than the task popover so
 /// long subjects stay readable on two lines), content height capped
@@ -18,10 +18,9 @@ struct TodoList: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                let groups = Self.group(todos: session.todos)
-                ForEach(groups) { group in
-                    section(group)
+            VStack(spacing: 2) {
+                ForEach(session.todos) { todo in
+                    TodoRow(todo: todo)
                 }
             }
             .padding(.horizontal, 14)
@@ -31,77 +30,21 @@ struct TodoList: View {
         .frame(width: popoverWidth)
         .frame(maxHeight: popoverMaxHeight)
     }
-
-    private func section(_ group: TodoGroup) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Text(group.title)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                Text("\(group.todos.count)")
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(.tertiary)
-                    .monospacedDigit()
-            }
-            .padding(.horizontal, 4)
-            VStack(spacing: 2) {
-                ForEach(group.todos) { todo in
-                    TodoRow(todo: todo, dimmed: group.id == "completed")
-                }
-            }
-        }
-    }
-
-    private struct TodoGroup: Identifiable {
-        let id: String
-        let title: String
-        let todos: [TodoEntry]
-    }
-
-    private static func group(todos: [TodoEntry]) -> [TodoGroup] {
-        // In-progress floats above pending inside the Active group —
-        // the row the assistant is *currently* on should sit at the
-        // top so the eye lands there first; pending items remain in
-        // creation order beneath.
-        let active = todos.filter { $0.status != .completed }
-        let activeSorted = active.sorted { lhs, _ in lhs.status == .inProgress }
-        let completed = todos.filter { $0.status == .completed }
-
-        var out: [TodoGroup] = []
-        if !activeSorted.isEmpty {
-            out.append(
-                TodoGroup(
-                    id: "active",
-                    title: String(localized: "To do"),
-                    todos: activeSorted
-                ))
-        }
-        if !completed.isEmpty {
-            out.append(
-                TodoGroup(
-                    id: "completed",
-                    title: String(localized: "Done"),
-                    todos: completed
-                ))
-        }
-        return out
-    }
 }
 
 /// One memo line. Leading status glyph + the todo's display text.
-/// `dimmed` is set for the Completed group so the whole row sits at
-/// secondary text weight and the glyph fades — completed work stays
-/// available for reference but doesn't compete with active items.
+/// Completed rows render at secondary text weight + a strikethrough
+/// so the row stays in place but reads as finished work; the glyph
+/// keeps the same outer size across states so the row's leading
+/// edge doesn't jitter on a flip.
 struct TodoRow: View {
 
     let todo: TodoEntry
-    let dimmed: Bool
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             TodoStatusGlyph(status: todo.status)
                 .frame(width: 14, height: 14)
-                .opacity(dimmed ? 0.55 : 1.0)
                 // Pull the glyph down a smidge so it visually centers
                 // against the cap-height of the first line of text.
                 // (firstTextBaseline alignment puts the glyph at the
@@ -110,14 +53,19 @@ struct TodoRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(displayText)
                     .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(dimmed ? Color.secondary : Color.primary)
-                    .strikethrough(dimmed, color: Color.secondary)
+                    .foregroundStyle(isCompleted ? Color.secondary : Color.primary)
+                    .strikethrough(isCompleted, color: Color.secondary)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
-                if let detail = todo.description, !detail.isEmpty, !dimmed {
+                // Description renders for every state when present —
+                // hiding it on completion would collapse a two-line
+                // row to one and shift every neighbor up. When
+                // completed, the description is also dimmed (already
+                // .secondary) so the whole row reads as finished.
+                if let detail = todo.description, !detail.isEmpty {
                     Text(detail)
                         .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(isCompleted ? Color.secondary.opacity(0.6) : Color.secondary)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
@@ -131,6 +79,8 @@ struct TodoRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel)
     }
+
+    private var isCompleted: Bool { todo.status == .completed }
 
     /// `activeForm` reads as a live verb when the assistant is mid-task
     /// ("Running tests"); falls back to `subject` for pending /

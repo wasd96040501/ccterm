@@ -30,30 +30,34 @@ struct TodoButton: View {
         }
     }
 
-    /// Visual cue mirroring the row leading glyph at button scale —
-    /// an empty ring while at least one todo is still active, a
-    /// filled ring once every item is completed. Sits at the same
-    /// 6pt size as `BackgroundTaskButton`'s status dot so the chrome
-    /// row reads as a single rhythm of small status badges.
+    /// Visual cue mirroring the row's leading glyph at button scale.
+    /// Picks the most "live" state present so the button reflects
+    /// what the user would actually find inside the popover:
+    /// in_progress > pending > completed.
     private func leadingIcon(forTodos todos: [TodoEntry]) -> some View {
-        let hasActive = todos.contains { $0.status != .completed }
-        return TodoStatusGlyph(status: hasActive ? .pending : .completed)
+        let glyphStatus: TodoEntry.Status
+        if todos.contains(where: { $0.status == .inProgress }) {
+            glyphStatus = .inProgress
+        } else if todos.contains(where: { $0.status == .pending }) {
+            glyphStatus = .pending
+        } else {
+            glyphStatus = .completed
+        }
+        return TodoStatusGlyph(status: glyphStatus, muted: true)
             .frame(width: 10, height: 10)
     }
 
+    /// Counts read as **完成 / 总数** — the standard "how much of the
+    /// plan is done" reading. The fraction lives in the chrome row
+    /// whether or not there's still work to do; once everything is
+    /// done the figures collapse to N/N which still reads correctly.
     private func buttonLabel(todos: [TodoEntry]) -> String {
-        let active = todos.filter { $0.status != .completed }.count
-        if active > 0 {
-            return String(localized: "\(active) of \(todos.count)")
-        }
-        return String(localized: "\(todos.count) done")
+        let completed = todos.filter { $0.status == .completed }.count
+        return String(localized: "\(completed) of \(todos.count)")
     }
 
     private func accessibilityLabel(todos: [TodoEntry]) -> String {
-        let active = todos.filter { $0.status != .completed }.count
-        if active > 0 {
-            return String(localized: "\(active) active todos, \(todos.count) total")
-        }
-        return String(localized: "\(todos.count) completed todos")
+        let completed = todos.filter { $0.status == .completed }.count
+        return String(localized: "\(completed) of \(todos.count) todos completed")
     }
 }

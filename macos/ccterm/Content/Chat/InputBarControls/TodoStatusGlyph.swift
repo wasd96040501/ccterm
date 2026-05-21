@@ -1,61 +1,122 @@
 import SwiftUI
 
 /// Leading status glyph used in the todo popover rows and the chrome
-/// button. Three states:
+/// button. Three states, all rendered at the **same outer footprint**
+/// so a status flip never shifts the row's leading edge:
 ///
-///   - `.pending` — hollow ring (Apple Reminders' "unchecked" affordance).
-///   - `.inProgress` — hollow ring + concentric inner dot (live verb,
-///     still being worked on).
-///   - `.completed` — solid-filled ring (the row counts as done; the
-///     surrounding row also dims).
+///   - `.pending` — hollow ring.
+///   - `.inProgress` — dotted hollow ring. In the popover it slowly
+///     rotates to read as "still working"; in the chrome row it
+///     stays static and grey (see `muted`) so the chrome doesn't
+///     pull focus away from the transcript.
+///   - `.completed` — hollow ring + concentric filled inner dot
+///     (Apple Reminders' "marked" affordance).
 ///
-/// The ring stroke is heavier than a generic Circle().stroke because at
-/// small sizes a 1pt line reads as a smudge and fights the row's text
-/// weight. 1.4pt is the smallest line width that survives sub-pixel
-/// rasterization at 10pt without softening into gray.
+/// All three are drawn with `Circle().strokeBorder(...)` so the stroke
+/// stays inside the bounding frame — that's what keeps the outer
+/// footprint stable across states.
 struct TodoStatusGlyph: View {
 
     let status: TodoEntry.Status
+    /// Quiet variant for the input-bar chrome button: `inProgress`
+    /// renders in the same secondary grey as the other states and
+    /// skips the rotation animation. The popover keeps the default
+    /// (`muted == false`), which is where the live verb belongs.
+    var muted: Bool = false
+
+    /// Solid SwiftUI stroke width. 1.4pt is the smallest weight that
+    /// survives sub-pixel rasterization at 10–14pt without softening
+    /// into gray.
+    private static let strokeWidth: CGFloat = 1.4
 
     var body: some View {
-        Canvas { ctx, size in
-            let strokeWidth: CGFloat = 1.4
-            let frame = CGRect(origin: .zero, size: size)
-                .insetBy(dx: strokeWidth / 2, dy: strokeWidth / 2)
-            let ring = Path(ellipseIn: frame)
+        ZStack {
             switch status {
             case .pending:
-                ctx.stroke(ring, with: .color(strokeColor), lineWidth: strokeWidth)
+                ring(style: solidStyle)
             case .inProgress:
-                ctx.stroke(ring, with: .color(strokeColor), lineWidth: strokeWidth)
-                let innerInset = size.width * 0.30
-                let innerFrame = CGRect(origin: .zero, size: size)
-                    .insetBy(dx: innerInset, dy: innerInset)
-                ctx.fill(Path(ellipseIn: innerFrame), with: .color(strokeColor))
-            case .completed:
-                ctx.fill(
-                    Path(ellipseIn: CGRect(origin: .zero, size: size)),
-                    with: .color(strokeColor.opacity(0.85)))
-                // Inner check using two short strokes; cheap to draw
-                // and avoids the SF Symbol overlay flicker on dark mode.
-                let check = Path { p in
-                    let w = size.width
-                    let h = size.height
-                    p.move(to: CGPoint(x: w * 0.28, y: h * 0.55))
-                    p.addLine(to: CGPoint(x: w * 0.45, y: h * 0.70))
-                    p.addLine(to: CGPoint(x: w * 0.74, y: h * 0.36))
+                if muted {
+                    // Chrome button stays maximally quiet: the
+                    // in-progress glyph is identical to pending —
+                    // a plain ring — so the chrome row doesn't
+                    // animate or attract focus. The live verb
+                    // lives inside the popover.
+                    ring(style: solidStyle)
+                } else {
+                    RotatingDottedRing(strokeWidth: Self.strokeWidth)
                 }
-                ctx.stroke(check, with: .color(.white), lineWidth: strokeWidth)
+            case .completed:
+                ring(style: solidStyle)
+                innerDot
             }
         }
+        .foregroundStyle(strokeColor)
         .accessibilityHidden(true)
     }
 
+    private func ring(style: StrokeStyle) -> some View {
+        Circle()
+            .strokeBorder(style: style)
+    }
+
+    /// Concentric filled inner circle — matches Apple Reminders'
+    /// "completed" affordance: a generous inner dot that nearly fills
+    /// the ring, leaving only a thin ring-shaped gap. 0.62 of the
+    /// outer box reads as "this is a marked item" at a glance.
+    private var innerDot: some View {
+        Circle()
+            .scale(0.62)
+    }
+
+    /// Round dots, not line segments. `dash: [0, gap]` with a round
+    /// cap collapses each "dash" to a zero-length segment that the
+    /// round-cap then renders as a circular dot of diameter
+    /// `lineWidth`. Spacing scales with stroke so the rhythm reads
+    /// the same at any glyph size.
+    private var dottedStyle: StrokeStyle {
+        StrokeStyle(
+            lineWidth: Self.strokeWidth,
+            lineCap: .round,
+            dash: [0, Self.strokeWidth * 2.2]
+        )
+    }
+
+    private var solidStyle: StrokeStyle {
+        StrokeStyle(lineWidth: Self.strokeWidth)
+    }
+
     private var strokeColor: Color {
+        if muted { return Color.secondary }
         switch status {
         case .pending: return Color.secondary
         case .inProgress: return Color.accentColor
         case .completed: return Color.secondary
         }
+    }
+}
+
+/// Dotted ring that rotates ~one revolution every 6 seconds. Calm
+/// enough to read as "still working" without becoming a distraction
+/// against text rows. Used only in the popover; the chrome button
+/// renders the static `muted` variant instead.
+private struct RotatingDottedRing: View {
+    let strokeWidth: CGFloat
+    @State private var rotation: Double = 0
+
+    var body: some View {
+        Circle()
+            .strokeBorder(
+                style: StrokeStyle(
+                    lineWidth: strokeWidth,
+                    lineCap: .round,
+                    dash: [0, strokeWidth * 2.2]
+                )
+            )
+            .rotationEffect(.degrees(rotation))
+            .onAppear {
+                withAnimation(.linear(duration: 6).repeatForever(autoreverses: false)) {
+                    rotation = 360
+                }
+            }
     }
 }

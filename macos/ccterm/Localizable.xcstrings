@@ -3,16 +3,6 @@
   "strings": {
     "": {},
     "%lld": {},
-    "%lld active todos, %lld total": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld 项进行中，共 %lld 项"
-          }
-        }
-      }
-    },
     "%lld background tasks": {
       "localizations": {
         "zh-Hans": {
@@ -39,26 +29,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld 项更改"
-          }
-        }
-      }
-    },
-    "%lld completed todos": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld 项已完成"
-          }
-        }
-      }
-    },
-    "%lld done": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld 已完成"
           }
         }
       }
@@ -90,6 +60,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld / %lld"
+          }
+        }
+      }
+    },
+    "%lld of %lld todos completed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld / %lld 项已完成"
           }
         }
       }
@@ -1108,16 +1088,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "设计实现策略"
-          }
-        }
-      }
-    },
-    "Done": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "完成"
           }
         }
       }
@@ -3467,16 +3437,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "临时会话"
-          }
-        }
-      }
-    },
-    "To do": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "待办"
           }
         }
       }

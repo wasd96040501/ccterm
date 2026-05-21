@@ -244,7 +244,11 @@ struct SidebarFolderHeader: View {
 /// session is running, a small blue dot when there are unread messages
 /// and nothing is running, otherwise a transparent placeholder so the
 /// title text still aligns with the folder header's text above.
-/// Empty titles render as a faint italic "Untitled" placeholder.
+///
+/// The title `Text` is shimmered while the session is generating its
+/// LLM-derived title (the row already shows the first-message-derived
+/// placeholder, so there is always something to shimmer). When the
+/// generated title lands, the text crossfades into the new value.
 struct SidebarHistoryRow: View {
     let record: SessionRecord
     @Environment(SessionManager.self) private var manager
@@ -256,17 +260,11 @@ struct SidebarHistoryRow: View {
                 isRunning: session?.isRunning ?? false,
                 hasUnread: session?.hasUnread ?? false
             )
-            Group {
-                if record.title.isEmpty {
-                    Text("Untitled")
-                        .italic()
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text(record.title)
-                }
-            }
-            .lineLimit(1)
-            .truncationMode(.middle)
+            Text(record.title)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .shimmer(active: session?.isGeneratingTitle == true)
+                .animation(.easeIn(duration: 0.25), value: record.title)
         }
     }
 }

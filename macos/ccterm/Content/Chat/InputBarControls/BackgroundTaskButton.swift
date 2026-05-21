@@ -18,6 +18,13 @@ struct BackgroundTaskButton: View {
 
     let session: Session
     @State private var isPresented = false
+    /// Selected task id for the detail sheet. Lives at the button level
+    /// (not inside `BackgroundTaskList`) because `.sheet` presents
+    /// inside the **enclosing window** — and a popover is its own
+    /// window. Hosting the sheet here means it lands centered in the
+    /// app window like an Apple Settings sheet, not stacked on top of
+    /// the popover bubble.
+    @State private var selectedTaskId: String?
 
     var body: some View {
         let tasks = session.tasks
@@ -32,9 +39,48 @@ struct BackgroundTaskButton: View {
                 isPresented.toggle()
             }
             .popover(isPresented: $isPresented, arrowEdge: .top) {
-                BackgroundTaskList(session: session)
+                BackgroundTaskList(session: session) { taskId in
+                    // Tear the popover down before flipping the sheet
+                    // on — SwiftUI dismisses popovers when their
+                    // anchoring view re-presents in a new way, and a
+                    // racing `selectedTaskId = …` would otherwise leave
+                    // the popover hanging behind the sheet.
+                    isPresented = false
+                    selectedTaskId = taskId
+                }
+            }
+            .sheet(item: detailBinding) { task in
+                BackgroundTaskDetailSheet(
+                    task: task,
+                    now: Date(),
+                    onStop: stopAction,
+                    onDismiss: { selectedTaskId = nil }
+                )
             }
             .accessibilityLabel(accessibilityLabel(tasks: tasks))
+        }
+    }
+
+    /// `.sheet(item:)` re-reads the live `BackgroundTask` off the
+    /// session each time it samples — so the sheet observes
+    /// status flips that happen while it's open (CLI completing a task
+    /// behind the user's back, the stop button updating .status).
+    private var detailBinding: Binding<BackgroundTask?> {
+        Binding(
+            get: {
+                guard let id = selectedTaskId else { return nil }
+                return session.tasks.first(where: { $0.id == id })
+            },
+            set: { newValue in
+                selectedTaskId = newValue?.id
+            }
+        )
+    }
+
+    private var stopAction: ((String) -> Void)? {
+        guard let runtime = session.runtime else { return nil }
+        return { taskId in
+            runtime.markTaskStoppedLocally(taskId: taskId)
         }
     }
 

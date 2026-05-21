@@ -13,12 +13,15 @@ import SwiftUI
 struct BackgroundTaskList: View {
 
     let session: Session
+    /// Selection escape hatch — the popover surfaces a tap on a row by
+    /// invoking this with the task id; the caller (`BackgroundTaskButton`)
+    /// owns the detail sheet and decides when to dismiss the popover.
+    let onSelectTask: (String) -> Void
 
     /// Tick on a 1s timer while the popover is open so rows re-render
     /// their elapsed-time counters. The runtime would otherwise only
     /// publish on task state transitions and the counter would freeze.
     @State private var now: Date = Date()
-    @State private var selectedTaskId: String?
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private let popoverWidth: CGFloat = 360
@@ -38,14 +41,6 @@ struct BackgroundTaskList: View {
         .frame(width: popoverWidth)
         .frame(maxHeight: popoverMaxHeight)
         .onReceive(timer) { tick in now = tick }
-        .sheet(item: detailBinding) { task in
-            BackgroundTaskDetailSheet(
-                task: task,
-                now: now,
-                onStop: stopAction,
-                onDismiss: { selectedTaskId = nil }
-            )
-        }
     }
 
     private func section(_ group: TaskGroup) -> some View {
@@ -63,40 +58,10 @@ struct BackgroundTaskList: View {
             VStack(spacing: 4) {
                 ForEach(group.tasks) { task in
                     BackgroundTaskRow(task: task, now: now) {
-                        selectedTaskId = task.id
+                        onSelectTask(task.id)
                     }
                 }
             }
-        }
-    }
-
-    /// `.sheet(item:)` needs a `Binding<BackgroundTask?>`. We don't
-    /// store the task itself — only its id — so the binding looks
-    /// up the live record off the session each time it's read. That
-    /// way mid-sheet status flips (CLI completes the task while the
-    /// sheet is open) propagate without rebuilding the binding.
-    private var detailBinding: Binding<BackgroundTask?> {
-        Binding(
-            get: {
-                guard let id = selectedTaskId else { return nil }
-                return session.tasks.first(where: { $0.id == id })
-            },
-            set: { newValue in
-                selectedTaskId = newValue?.id
-            }
-        )
-    }
-
-    /// Forwards a row's stop affordance into the runtime, which flips the
-    /// task to `.stopped` immediately so the sheet reads as terminal
-    /// without waiting for the CLI's task_notification round-trip. The
-    /// CLI's notification eventually arrives and re-confirms the
-    /// terminal state (idempotent — markTaskStoppedLocally is a no-op
-    /// for non-running tasks).
-    private var stopAction: ((String) -> Void)? {
-        guard let runtime = session.runtime else { return nil }
-        return { taskId in
-            runtime.markTaskStoppedLocally(taskId: taskId)
         }
     }
 

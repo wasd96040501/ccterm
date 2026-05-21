@@ -24,7 +24,7 @@ final class BackgroundTaskSheetSnapshotTests: XCTestCase {
     func testPopoverListRunningAndCompleted() throws {
         let session = Self.makeSession(tasks: Self.fixtureTasks())
         let size = CGSize(width: 360, height: 280)
-        let view = BackgroundTaskList(session: session)
+        let view = BackgroundTaskList(session: session, onSelectTask: { _ in })
             .frame(width: size.width, height: size.height)
             .background(Color(nsColor: .windowBackgroundColor))
 

@@ -116,6 +116,29 @@ extension TranscriptPerfDemoView {
                                 + "see Transcript2PerfLog.swift for the predicate.")
                     ])))
 
+        // One `.codeBlock` near the top so the markdown code-block chrome
+        // (language badge + copy button + syntax-highlight tokens) sits
+        // alongside the diff card below, letting an eyeball compare the
+        // two card families. `.codeBlock` renders through `BlockCellView`
+        // directly — independent of `ToolGroupEntryView`, which is the
+        // path the perf demo otherwise exercises.
+        blocks.append(
+            Block(
+                id: UUID(),
+                kind: .codeBlock(
+                    language: "swift",
+                    code: """
+                        // CTLine retypeset is the single biggest scroll-cost path
+                        // on a row that overflows the IOSurface texture cap.
+                        func draw(_ dirtyRect: NSRect) {
+                            guard let spec, let ctx = NSGraphicsContext.current?.cgContext else {
+                                return
+                            }
+                            if dirtyRect.isEmpty { return }
+                            spec.draw(ctx, selectionColor, dirtyRect)
+                        }
+                        """)))
+
         for i in 0..<leadingParagraphCount {
             blocks.append(paragraph(index: i, prefix: "lead"))
         }

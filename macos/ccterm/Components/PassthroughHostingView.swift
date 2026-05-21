@@ -21,22 +21,25 @@ import SwiftUI
 struct PassthroughHostingView<Content: View>: NSViewRepresentable {
     @ViewBuilder var content: () -> Content
 
-    func makeNSView(context: Context) -> Container {
-        let container = Container()
+    func makeNSView(context: Context) -> PassthroughHostingContainer {
+        let container = PassthroughHostingContainer()
         let hosting = NSHostingView(rootView: content())
         hosting.autoresizingMask = [.width, .height]
         hosting.frame = container.bounds
-        container.hostingView = hosting
         container.addSubview(hosting)
         return container
     }
 
-    func updateNSView(_ nsView: Container, context: Context) {
-        nsView.hostingView.rootView = content()
+    func updateNSView(_ nsView: PassthroughHostingContainer, context: Context) {
+        guard let hosting = nsView.subviews.first as? NSHostingView<Content> else { return }
+        hosting.rootView = content()
     }
+}
 
-    final class Container: NSView {
-        var hostingView: NSHostingView<Content>!
-        override func hitTest(_ point: NSPoint) -> NSView? { nil }
-    }
+// Lives at file scope (not nested in the generic struct) so its
+// implicit deinit isn't specialized per `Content`. That sidesteps a
+// Swift 6.3.1 SIL EarlyPerfInliner crash on Release builds — see
+// https://github.com/swiftlang/swift/issues/88173.
+final class PassthroughHostingContainer: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

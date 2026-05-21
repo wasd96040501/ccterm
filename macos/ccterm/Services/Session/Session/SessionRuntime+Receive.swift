@@ -53,6 +53,19 @@ extension SessionRuntime {
                 isRunning = true
             }
             adopt(info, mode: mode)
+            // Flush queued local-user entries now that CLI has signalled
+            // "turn starting". `system.init` arrives ~5-20 ms after the
+            // matching `sendMessage`, while the `--replay-user-messages`
+            // echo doesn't land until ~2 s later (in lockstep with the
+            // first assistant token). Using init as the confirm trigger
+            // shaves ~2 s off the queued visual without losing the FIFO
+            // semantics — CLI bundles every send that's in its stdin
+            // buffer at turn-start into one turn, so flushing every
+            // currently-queued entry on init matches CLI behaviour. See
+            // `AgentSDK/Sources/QueueTimingSmoke` for the measurements.
+            if mode == .live {
+                flushQueuedOnInit()
+            }
         case .system(.status(let s)):
             // CLI broadcasts a `system.status` whenever the
             // session-side permission mode changes. Three triggers
@@ -263,14 +276,24 @@ extension SessionRuntime {
     /// Swap payload to `.remote(echo)`, flip delivery to `.confirmed`,
     /// and — only on the `.queued` → `.confirmed` edge in live mode —
     /// advance status to `.responding`. Reuse the local entry; never
-    /// append a duplicate. A re-confirm of an already-`.confirmed`
-    /// entry returns nil so the bridge doesn't get a no-op `.updated`
-    /// (and so we don't thrash `.interrupting` → `.responding` if a
-    /// stray replay arrives mid-interrupt).
+    /// append a duplicate.
+    ///
+    /// Two prior states are both fine to land on:
+    ///   1. `.localUser` + `.queued`  — echo arrived before init flush
+    ///      (rare; happens when init is skipped or delayed). Flip
+    ///      delivery and swap payload.
+    ///   2. `.localUser` + `.confirmed` — `flushQueuedOnInit` already
+    ///      ran. Delivery is already correct; still swap the payload
+    ///      so the entry adopts the CLI-canonical form. Returns the
+    ///      updated entry so the bridge re-renders the bubble.
+    ///
+    /// Re-confirm of an already-`.remote` entry (CLI replay during
+    /// interrupt) returns nil — the entry has already adopted the
+    /// CLI form once; don't thrash payload or status.
     fileprivate func confirmQueuedEntry(id: UUID, echo: Message2, mode: ReceiveMode) -> MessageEntry? {
         guard let idx = messages.firstIndex(where: { $0.id == id }) else { return nil }
         guard case .single(var single) = messages[idx] else { return nil }
-        if single.delivery == .confirmed {
+        if case .remote = single.payload {
             return nil
         }
         let wasQueued = single.delivery == .queued
@@ -281,6 +304,37 @@ extension SessionRuntime {
             status = .responding
         }
         return messages[idx]
+    }
+
+    /// Walk `messages`, flip every locally-queued user entry to
+    /// `.confirmed`, and emit one `MessagesChange.updated` per flipped
+    /// entry. Payload stays as `.localUser` — the canonical-form swap
+    /// to `.remote(echo)` still happens later when the echo lands
+    /// (`confirmQueuedEntry`). Only the *delivery* flag — and the
+    /// status transition `.idle` → `.responding` — moves here.
+    ///
+    /// Called from the `system.init` arm of `receive`. CLI buffers
+    /// every send that's sitting in its stdin queue at turn-start into
+    /// a single follow-up turn, so flushing every currently-queued
+    /// entry on each init is correct in both single-send and
+    /// burst-send scenarios. The narrow race where a `.queued` entry
+    /// arrives *between* init-fire and CLI's actual stdin read would
+    /// land here optimistically; in practice the window is sub-ms and
+    /// echoes still arrive later to do the payload swap.
+    fileprivate func flushQueuedOnInit() {
+        var anyFlushed = false
+        for i in messages.indices {
+            guard case .single(var single) = messages[i] else { continue }
+            guard case .localUser = single.payload else { continue }
+            guard single.delivery == .queued else { continue }
+            single.delivery = .confirmed
+            messages[i] = .single(single)
+            anyFlushed = true
+            onMessagesChange?(.updated(messages[i]))
+        }
+        if anyFlushed, status == .idle {
+            status = .responding
+        }
     }
 }
 

@@ -93,7 +93,9 @@ enum MessageEntryBlockBuilder {
             out.append(
                 Block(
                     id: userBubbleBlockId(entryId: single.id),
-                    kind: .userBubble(text: stripped)))
+                    kind: .userBubble(
+                        text: stripped,
+                        isQueued: single.delivery == .queued)))
         }
         return out
     }

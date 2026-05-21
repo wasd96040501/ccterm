@@ -677,17 +677,18 @@ enum BlockStyle: Sendable {
         NSFont.monospacedSystemFont(ofSize: paragraphFont.pointSize, weight: .regular)
     }
 
-    /// Background fill — Xcode "Default" canvas tone with a light-mode
-    /// nudge for separation: `#F5F5F7` light / `#1F1F24` dark. Dark uses
-    /// the editor's `DVTSourceTextBackground` verbatim (already darker
-    /// than the chat window). Light shifts off pure `#FFFFFF` so the
-    /// card edge is visible against an otherwise white transcript —
-    /// `#F5F5F7` is the same off-white Apple's developer docs use for
-    /// inline samples, so it still reads as "Xcode-adjacent."
+    /// Background fill — `#F5F5F7` light / `#2A2A2E` dark. Both sit one
+    /// elevation tier above `NSColor.windowBackgroundColor` (light
+    /// `#ECECEC` → +9pt; dark `#1E1E1E` → +12pt) so the card reads as a
+    /// raised surface in either mode. Light uses the off-white Apple's
+    /// developer docs use for inline samples; dark lands between the
+    /// window and the gutter column (dark gutter ≈ `#3A3D44` after the
+    /// `white α=0.10` overlay), keeping the chrome layer ordering
+    /// "window < container < gutter < chip" intact.
     nonisolated static let codeBlockBackgroundColor: NSColor = NSColor(name: nil) { appearance in
         let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         return isDark
-            ? NSColor(srgbRed: 0x1F / 255.0, green: 0x1F / 255.0, blue: 0x24 / 255.0, alpha: 1)
+            ? NSColor(srgbRed: 0x2A / 255.0, green: 0x2A / 255.0, blue: 0x2E / 255.0, alpha: 1)
             : NSColor(srgbRed: 0xF5 / 255.0, green: 0xF5 / 255.0, blue: 0xF7 / 255.0, alpha: 1)
     }
 
@@ -780,7 +781,7 @@ enum BlockStyle: Sendable {
         appearance in
         let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         // Light: 0xF5,F5,F7 base × (1-0.08) ≈ 0xE1,E1,E3
-        // Dark:  0x1F,1F,24 base × (1-0.14) + 0xFF×0.14 ≈ 0x3E,3E,43
+        // Dark:  0x2A,2A,2E base × (1-0.09) + 0xFF×0.09 ≈ 0x3E,3E,43
         return isDark
             ? NSColor(srgbRed: 0x3E / 255.0, green: 0x3E / 255.0, blue: 0x43 / 255.0, alpha: 1)
             : NSColor(srgbRed: 0xE1 / 255.0, green: 0xE1 / 255.0, blue: 0xE3 / 255.0, alpha: 1)
@@ -956,8 +957,10 @@ enum BlockStyle: Sendable {
     }
 
     /// Container background tint behind every line — DiffColors' table
-    /// background. Slightly darker than the surrounding chat surface so
-    /// the line backgrounds read against it.
+    /// background. One elevation tier above the surrounding chat surface
+    /// (lighter than `windowBackgroundColor` in both modes) so the card
+    /// reads as raised, and the per-line add/del/context backgrounds
+    /// still register against the container.
     nonisolated static var diffContainerBackground: NSColor {
         DiffColors.dynamicTableBg
     }

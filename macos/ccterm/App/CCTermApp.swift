@@ -53,7 +53,6 @@ struct CCTermApp: App {
             NSWindow.suppressOrderingForTesting()
             return
         }
-        CursorGuard.install()
         MainThreadWatchdog.start()
         // First-launch model catalog fetch — eagerly kicked off at
         // app init so the picker has data ready by the time the user

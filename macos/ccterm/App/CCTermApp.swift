@@ -39,6 +39,12 @@ struct CCTermApp: App {
             LogWindowView()
         }
         .defaultSize(width: 900, height: 500)
+
+        Window("About ccterm", id: "about") {
+            AboutView()
+        }
+        .windowResizability(.contentSize)
+        .windowStyle(.hiddenTitleBar)
     }
 
     init() {
@@ -124,6 +130,11 @@ struct AppCommands: Commands {
     let searchBus: TranscriptSearchBus
 
     var body: some Commands {
+        CommandGroup(replacing: .appInfo) {
+            Button("About ccterm") {
+                openWindow(id: "about")
+            }
+        }
         CommandGroup(replacing: .appSettings) {
             Button(action: { openWindow(id: "settings") }) {
                 Label("Settings", systemImage: "gear")

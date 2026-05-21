@@ -135,7 +135,7 @@ enum SyntaxTheme {
 
     static func plainColor(_ scheme: ColorScheme) -> Color {
         // xcode.syntax.plain — Xcode draws this at alpha 0.85; flattened
-        // against the canvas (#1F1F24 dark / #F5F5F7 light) for a single
+        // against the canvas (#2A2A2E dark / #F5F5F7 light) for a single
         // opaque hex.
         scheme == .dark ? color(0xdbdbdb) : color(0x262626)
     }

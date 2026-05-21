@@ -684,32 +684,14 @@ enum BlockStyle: Sendable {
 
     /// SF Symbol point size for the queued bubble's `clock` glyph.
     /// `cornerRadius - 4 = 10pt` — large enough to read at a glance,
-    /// small enough that the symbol's outer extent (after the badge halo
-    /// padding) stays within the corner's optical breathing room.
+    /// small enough that the symbol stays within the corner's optical
+    /// breathing room.
     nonisolated static var queuedBadgeSymbolPointSize: CGFloat { bubbleCornerRadius - 4 }
-
-    /// Background-halo radius around the symbol — gives the badge a
-    /// continuous disc shape that floats above the bubble's rounded
-    /// edge instead of looking like a glyph stuck on the corner.
-    /// `symbol + 2pt` matches the gutter-hover chip's halo proportion.
-    nonisolated static var queuedBadgeDiscRadius: CGFloat {
-        queuedBadgeSymbolPointSize / 2 + 3
-    }
 
     /// Foreground tint for the queued badge glyph. `secondaryLabel`
     /// pairs with the dimmed `bubbleQueuedFillColor` so the badge reads
     /// as ambient chrome, not as a primary affordance.
     nonisolated static let queuedBadgeForeground: NSColor = .secondaryLabelColor
-
-    /// Disc fill behind the badge glyph. Sits over the bubble's queued
-    /// fill at the bottom-right corner; opaque enough to register as a
-    /// distinct chip but kept on the same neutral chrome tier.
-    nonisolated static let queuedBadgeDiscFill: NSColor = NSColor(name: nil) { appearance in
-        let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        return isDark
-            ? NSColor(white: 1, alpha: 0.18)
-            : NSColor(white: 0, alpha: 0.10)
-    }
 
     /// Lines at and above this count *may* fold (subject to `userBubbleMinHiddenLines`).
     nonisolated static let userBubbleCollapseThreshold: Int = 12

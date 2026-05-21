@@ -437,22 +437,11 @@ struct UserBubbleLayout: @unchecked Sendable {
         }
     }
 
-    /// Paint the queued-state `clock` SF Symbol on a small disc halo.
+    /// Paint the queued-state `clock` SF Symbol on the bubble corner.
     /// The center is supplied in the cell's coordinate space (already
-    /// offset by `origin`). Disc first, then the symbol on top — both
-    /// rendered into the cell's bitmap so the cached layer composites
-    /// without per-frame redraw.
+    /// offset by `origin`). Rendered into the cell's bitmap so the
+    /// cached layer composites without per-frame redraw.
     private func drawQueuedBadge(in ctx: CGContext, centerInRow center: CGPoint) {
-        let discR = BlockStyle.queuedBadgeDiscRadius
-        let discRect = CGRect(
-            x: center.x - discR, y: center.y - discR,
-            width: discR * 2, height: discR * 2)
-
-        ctx.saveGState()
-        ctx.setFillColor(BlockStyle.queuedBadgeDiscFill.cgColor)
-        ctx.fillEllipse(in: discRect)
-        ctx.restoreGState()
-
         let pointSize = BlockStyle.queuedBadgeSymbolPointSize
         let baseConfig = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .medium)
         let palette = NSImage.SymbolConfiguration(

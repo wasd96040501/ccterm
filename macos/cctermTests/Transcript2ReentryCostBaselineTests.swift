@@ -249,4 +249,121 @@ final class Transcript2ReentryCostBaselineTests: XCTestCase {
             coordinator.numberOfRows(in: table), 0,
             "an empty session must remain 0-rows after the cascade")
     }
+
+    // MARK: - End-to-end metrics verification
+
+    /// **End-to-end gate: phased materialize reduces synchronous
+    /// heightOfRow work to viewport size.**
+    ///
+    /// This is the headline test the optimization is built for.
+    /// Construct a real `Transcript2Controller` + `Coordinator` +
+    /// table inside an `NSScrollView` (so `coordinator.viewportHeight`
+    /// is non-zero and the slicer kicks in). Feed it N=200 blocks via
+    /// `setHistory`'s deferred branch (matching the production cold-
+    /// load flow where blocks arrive before the table tiles), drive
+    /// the placeholder→real frame cascade, pump the runloop so the
+    /// materialize fires.
+    ///
+    /// Then iterate `heightOfRow` for every row that AppKit currently
+    /// sees and check the stats counter. The phased rollout
+    /// guarantees:
+    ///
+    /// 1. Phase 1's `installPhase1Slice` exposes only the viewport-
+    ///    covering slice to AppKit. AppKit's first layout pass after
+    ///    materialize queries `heightOfRow` for `slice.count` rows
+    ///    (synchronous main-thread typeset). For a typical viewport
+    ///    (~600pt) and ~20pt paragraphs, that's ~30 rows.
+    /// 2. Phase 2's off-main precompute installs cached layouts for
+    ///    every block outside the slice BEFORE the main hop runs
+    ///    `insertRows`. By the time AppKit asks `heightOfRow` for
+    ///    those (during the insertRows' implicit layout pass), the
+    ///    cache is warm — every query is `cached == true`.
+    ///
+    /// So: total `heightOfRow_uncached <= slice.count` (just the
+    /// viewport rows, the only cold cache misses in the entire
+    /// materialize path). For N=200 with viewportHeight ≈ 600pt,
+    /// expect ≤ 40 uncached. Way below the post-#179 baseline of
+    /// ~360 for N=361 (which scales linearly).
+    ///
+    /// **Why this is a regression gate, not a perf benchmark:** we
+    /// don't time anything. The counter assertion is deterministic
+    /// against the slicer's output. If a future change re-introduces
+    /// the all-at-once `reloadData()` (e.g., by skipping Phase 1 and
+    /// going straight to `materializeAsFull`), `heightOfRow_uncached`
+    /// would jump to `blocks.count` and this test fails.
+    func testPhased_materializeKeepsUncachedAtViewportSize() async {
+        let controller = Transcript2Controller()
+        let coordinator = controller.coordinator
+        observedCoordinators.append(coordinator)
+
+        let blocks = makeBlocks(count: 200)
+
+        // Wire the table inside a real `NSScrollView` so
+        // `viewportHeight` (the slicer's denominator) reads non-zero.
+        let scrollView = NSScrollView()
+        scrollView.frame = NSRect(x: 0, y: 0, width: 1200, height: 600)
+        scrollView.contentView.frame = NSRect(
+            x: 0, y: 0, width: 1200, height: 600)
+        let table = Transcript2TableView()
+        let column = NSTableColumn(
+            identifier: NSUserInterfaceItemIdentifier("col"))
+        column.minWidth = 0
+        column.maxWidth = .greatestFiniteMagnitude
+        table.addTableColumn(column)
+        table.dataSource = coordinator
+        table.delegate = coordinator
+        table.postsFrameChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            coordinator,
+            selector: #selector(Transcript2Coordinator.tableFrameDidChange(_:)),
+            name: NSView.frameDidChangeNotification, object: table)
+        scrollView.documentView = table
+
+        // Production order: `setHistory` runs first (deferred branch,
+        // width=0 at this moment), blocks land in
+        // `coordinator.blocks` + `pendingFirstTile` is armed. Then the
+        // table attaches; `tableView.didSet` enters `.suppressed`.
+        controller.setHistory(blocks, anchor: .bottom)
+        coordinator.tableView = table
+        table.coordinator = coordinator
+
+        // Reset stats so the cascade's accounting starts fresh.
+        Transcript2ReentryStats.reset()
+        Transcript2ReentryStats.enabled = true
+
+        await driveAttachCascade(on: table)
+
+        // Pump a second time to let Phase 2's main-hop insertRows
+        // land (the detached task queues its main hop, which the
+        // first pump may not have caught).
+        await pumpMainRunloop()
+
+        // Sanity: AppKit now sees all 200 rows (Phase 2 expanded
+        // the gate to `.full`).
+        XCTAssertEqual(
+            coordinator.numberOfRows(in: table), blocks.count,
+            "Phase 2 must have expanded the gate to `.full`; AppKit "
+                + "should see every block")
+
+        // Count heightOfRow work done since the reset:
+        let snap = Transcript2ReentryStats.snapshot()
+        let totalUncached = snap.heightOfRowUncached
+        let totalCached = snap.heightOfRowCached
+        print(
+            "PHASED-E2E: blocks=\(blocks.count) "
+                + "uncached=\(totalUncached) cached=\(totalCached)")
+
+        // For viewportHeight=600pt and ~20pt paragraphs, the slicer
+        // produces ~30-row slices. Allow generous headroom (up to N/4)
+        // for variations in font metrics across systems while still
+        // demonstrating the order-of-magnitude reduction. A failure
+        // here likely means the phased rollout has degraded back to
+        // `reloadData(all)`-style materialize.
+        XCTAssertLessThan(
+            totalUncached, blocks.count / 4,
+            "Phased materialize should cap uncached heightOfRow at "
+                + "roughly viewport-size (~\(blocks.count / 4)); got "
+                + "\(totalUncached). If this approaches `blocks.count` "
+                + "the optimization has regressed to a full materialize.")
+    }
 }

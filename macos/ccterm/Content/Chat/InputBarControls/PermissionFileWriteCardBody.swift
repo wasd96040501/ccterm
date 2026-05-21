@@ -43,7 +43,16 @@ struct PermissionFileWriteCardBody: View {
             }
             if let diff = diffBlock {
                 BoundedHeightScrollView(maxHeight: Self.diffMaxHeight) {
-                    DiffView(diff: diff)
+                    // The card's own subtitle already names the file
+                    // (Edit / Create / Overwrite <basename>) and the
+                    // diff is not yet applied — there's nothing useful
+                    // to copy out of a pending edit. Strip both chrome
+                    // affordances so the preview reads as a clean
+                    // change summary.
+                    DiffView(
+                        diff: diff,
+                        showsLangBadge: false,
+                        showsCopyIcon: false)
                 }
             } else {
                 Text(String(localized: "Path missing — open the transcript to inspect"))

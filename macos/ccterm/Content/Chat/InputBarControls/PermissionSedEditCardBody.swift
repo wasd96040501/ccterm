@@ -32,7 +32,14 @@ struct PermissionSedEditCardBody: View {
             }
             if let diff = diffBlock {
                 BoundedHeightScrollView(maxHeight: Self.diffMaxHeight) {
-                    DiffView(diff: diff)
+                    // Same rationale as `PermissionFileWriteCardBody`:
+                    // the subtitle already names the file, and the
+                    // diff hasn't been applied — chrome would only add
+                    // noise.
+                    DiffView(
+                        diff: diff,
+                        showsLangBadge: false,
+                        showsCopyIcon: false)
                 }
             } else {
                 Text(String(localized: "Could not preview sed substitution"))

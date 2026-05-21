@@ -28,5 +28,9 @@ let package = Package(
             name: "PermissionModeProbe",
             dependencies: ["AgentSDK"]
         ),
+        .executableTarget(
+            name: "QueueTimingSmoke",
+            dependencies: ["AgentSDK"]
+        ),
     ]
 )

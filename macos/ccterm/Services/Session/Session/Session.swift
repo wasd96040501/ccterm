@@ -198,6 +198,9 @@ final class Session {
             self.bridge.apply(change)
             self.onMessagesChange?(change)
         }
+        runtime.onTurnFinishedLive = { [weak self] in
+            self?.bridge.handleTurnFinished()
+        }
         runtime.onLaunchFailure = onLaunchFailure
         runtime.onRecordPersisted = onRecordPersisted
         runtime.onTurnEnded = onTurnEnded

@@ -350,6 +350,21 @@ final class Transcript2Controller {
         coordinator.setStatus(id: id, status: status)
     }
 
+    /// Read the current `ToolStatus` for a tool surface. Defaults to
+    /// `.completed` for ids the coordinator hasn't seen — matches the
+    /// layout-side "absent = completed" convention.
+    func toolStatus(for id: UUID) -> ToolStatus {
+        coordinator.status(for: id)
+    }
+
+    /// Sweep every `.running` entry to `.completed` in one pass. Wired
+    /// up from `Transcript2EntryBridge.handleTurnFinished()`, which the
+    /// runtime calls inside `finishTurn` (live `.result`). `.failed` /
+    /// `.cancelled` survive — only the spinning-but-unresolved ones flip.
+    func clearAllRunningStatuses() {
+        coordinator.clearAllRunningStatuses()
+    }
+
     // MARK: - History snapshot
 
     /// Declare the transcript's contents as a snapshot — `blocks` becomes

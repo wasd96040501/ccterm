@@ -191,6 +191,17 @@ final class SessionRuntime {
     /// runtime stays UI-agnostic.
     @ObservationIgnored var onTurnEnded: ((TurnEndedNotice) -> Void)?
 
+    /// Fired once per live `.result` arrival — the CLI's only
+    /// authoritative "turn is over" signal. Unlike `onTurnEnded`, this
+    /// fires on **every** live turn close (CLI-initiated continuations
+    /// included), not just `.responding → .idle`. The subscriber
+    /// (`Session.wireRuntimeMessagesSink` → bridge) uses it to flip any
+    /// still-`.running` tool surfaces to `.completed`, so abandoned
+    /// shimmer doesn't outlive the turn. Replay (`mode == .replay`)
+    /// does not fire this — historical entries never enter `.running`
+    /// in the first place.
+    @ObservationIgnored var onTurnFinishedLive: (() -> Void)?
+
     /// Hook installed during the bootstrap init wait so
     /// `handleProcessExit` can route "died before init" back into the
     /// bootstrap continuation. Without it, `initialize` would never

@@ -19,28 +19,32 @@ struct ShimmerModifier: ViewModifier {
     /// Alpha applied to the content when the highlight is not over it.
     static let baseOpacity: Double = 0.55
 
-    @ViewBuilder
+    /// Always apply `.mask(...)` — branching on `active` at the outer view
+    /// level would change the wrapped content's identity in SwiftUI's tree,
+    /// which kills `.contentTransition` and other in-place animations on the
+    /// masked content. Switch the *mask content* instead.
     func body(content: Content) -> some View {
-        if active {
-            content.mask(shimmerMask)
-        } else {
-            content
-        }
+        content.mask(maskBody)
     }
 
-    private var shimmerMask: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
-            let t = context.date.timeIntervalSinceReferenceDate
-            let phase = t.truncatingRemainder(dividingBy: Self.period) / Self.period
-            LinearGradient(
-                colors: [
-                    .white.opacity(Self.baseOpacity),
-                    .white,
-                    .white.opacity(Self.baseOpacity),
-                ],
-                startPoint: UnitPoint(x: phase * 2 - 1, y: 0.5),
-                endPoint: UnitPoint(x: phase * 2, y: 0.5)
-            )
+    @ViewBuilder
+    private var maskBody: some View {
+        if active {
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+                let t = context.date.timeIntervalSinceReferenceDate
+                let phase = t.truncatingRemainder(dividingBy: Self.period) / Self.period
+                LinearGradient(
+                    colors: [
+                        .white.opacity(Self.baseOpacity),
+                        .white,
+                        .white.opacity(Self.baseOpacity),
+                    ],
+                    startPoint: UnitPoint(x: phase * 2 - 1, y: 0.5),
+                    endPoint: UnitPoint(x: phase * 2, y: 0.5)
+                )
+            }
+        } else {
+            Color.white
         }
     }
 }

@@ -42,7 +42,9 @@ struct PermissionSessionDemoView: View {
                 isCurrentShown: isCurrentShown,
                 hasAny: !seed.session.pendingPermissions.isEmpty,
                 onShow: showCurrent,
-                onHide: hideAll
+                onHide: hideAll,
+                onMarkToolsRunning: markToolsRunning,
+                onEndTurn: endTurn
             )
             .padding(20)
         }
@@ -76,6 +78,29 @@ struct PermissionSessionDemoView: View {
 
     private func hideAll() {
         seed.session.runtime?.pendingPermissions.removeAll()
+    }
+
+    // MARK: - Tool-status testing
+
+    /// Flip the seeded demo's running tool group + its bash child to
+    /// `.running` via `setToolStatus`. Same id pair `TranscriptDemoView`
+    /// uses on cold-load, so the shimmer + progressive label appear on
+    /// the row that `initialBlocks` already laid down.
+    private func markToolsRunning() {
+        let controller = seed.controller
+        controller.setToolStatus(
+            id: TranscriptDemoView.runningGroupBlockId, status: .running)
+        controller.setToolStatus(
+            id: TranscriptDemoView.runningBashChildId, status: .running)
+    }
+
+    /// Fire the same closure `SessionRuntime.finishTurn` fires on live
+    /// `.result` — `Session.wireRuntimeMessagesSink` connects it to
+    /// `bridge.handleTurnFinished()` → `controller.clearAllRunningStatuses()`.
+    /// Exercises the full runtime → bridge → controller chain without
+    /// needing a `Message2.result` fixture in app code.
+    private func endTurn() {
+        seed.session.runtime?.onTurnFinishedLive?()
     }
 
     // MARK: - Fixture pool
@@ -183,6 +208,8 @@ private struct ControlPanel: View {
     let hasAny: Bool
     let onShow: () -> Void
     let onHide: () -> Void
+    let onMarkToolsRunning: () -> Void
+    let onEndTurn: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -207,6 +234,23 @@ private struct ControlPanel: View {
                     Label("Hide", systemImage: "eye.slash")
                 }
                 .disabled(!hasAny)
+                Spacer(minLength: 0)
+            }
+            .font(.system(size: 11))
+
+            Divider()
+
+            Text("Tool Status")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+            HStack(spacing: 8) {
+                Button(action: onMarkToolsRunning) {
+                    Label("Mark Running", systemImage: "wand.and.stars")
+                }
+                Button(action: onEndTurn) {
+                    Label("End Turn", systemImage: "checkmark.circle")
+                }
                 Spacer(minLength: 0)
             }
             .font(.system(size: 11))

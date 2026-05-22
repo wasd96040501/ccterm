@@ -81,21 +81,28 @@ final class Transcript2EntryBridge {
         switch change {
         case .reset(let entries, let precomputed):
             applyReset(entries, precomputed: precomputed)
-            for entry in entries { pushStatuses(for: entry) }
+            for entry in entries { pushStatuses(for: entry, mode: .historical) }
         case .appended(let entry):
             applyAppend(entry)
-            pushStatuses(for: entry)
+            pushStatuses(for: entry, mode: .live)
         case .prepended(let entries, let precomputed):
             applyPrepend(entries, precomputed: precomputed)
-            for entry in entries { pushStatuses(for: entry) }
+            for entry in entries { pushStatuses(for: entry, mode: .historical) }
         case .updated(let entry):
             applyUpdate(entry)
-            pushStatuses(for: entry)
+            pushStatuses(for: entry, mode: .live)
         case .removed(let entry):
             // Block is gone — nothing to push. `Coordinator.applyStructuralChange`
             // already evicted the entry's `statusStates` slots.
             applyRemove(entry)
         }
+    }
+
+    /// Runtime saw `.result` — turn ended. Clear any tool surface still
+    /// stuck in `.running`. Called from `Session.wireRuntimeMessagesSink`
+    /// after the runtime fires its turn-finished sink.
+    func handleTurnFinished() {
+        controller.clearAllRunningStatuses()
     }
 
     /// Pull the blocks for an entry from the precomputed map (off-main
@@ -162,32 +169,47 @@ final class Transcript2EntryBridge {
     //
     // **No mirror state.** We don't diff against a previous status map;
     // we re-derive the current status from the entry every time the
-    // entry changes. Status derivation is pure:
+    // entry changes.
     //
-    // - `tool_result` with `isError == true`  →  `.failed(message: nil)`
-    // - `tool_result` present                 →  `.completed`
-    // - no `tool_result` yet                  →  `.running`
+    // Mode-sensitive status derivation:
     //
-    // Group status follows the "running == any child running" rule the
-    // user spec'd:
+    // | mode         | nil result          | isError == true       | result OK    |
+    // |--------------|---------------------|-----------------------|--------------|
+    // | `.live`      | `.running`          | `.failed(message:)`   | `.completed` |
+    // | `.historical`| `.completed`        | `.failed(message:)`   | `.completed` |
+    //
+    // `.historical` is used for `.reset` and `.prepended` (JSONL replay
+    // paths). An incomplete tool_use in history is an abandoned run from
+    // a long-finished session — the spinner affordance only makes sense
+    // for live in-flight calls. `.failed` survives the mode flip because
+    // the past failure is still meaningful color.
+    //
+    // Group status follows the "running == any child running" rule:
     //
     // - single-tool host (`entry|<id>|tg|<idx>`) — one child, so group
     //   status == child status.
     // - `.group` host (`group|<id>`) — `.running` if any nested child is
-    //   `.running`, otherwise `.completed`. (No special `.failed` /
-    //   `.cancelled` aggregation today; the row reads "completed even if
-    //   one child errored" — children carry their own per-row palette.)
+    //   `.running`, otherwise `.completed`. In `.historical` mode no
+    //   child is ever `.running`, so the group always settles
+    //   `.completed`.
 
-    private func pushStatuses(for entry: MessageEntry) {
+    /// Status-derivation mode. `.live` treats missing `tool_result` as
+    /// `.running`; `.historical` treats it as `.completed`.
+    enum StatusMode {
+        case live
+        case historical
+    }
+
+    private func pushStatuses(for entry: MessageEntry, mode: StatusMode) {
         switch entry {
         case .single(let single):
-            pushSingleEntryStatuses(single)
+            pushSingleEntryStatuses(single, mode: mode)
         case .group(let group):
-            pushGroupEntryStatuses(group)
+            pushGroupEntryStatuses(group, mode: mode)
         }
     }
 
-    private func pushSingleEntryStatuses(_ single: SingleEntry) {
+    private func pushSingleEntryStatuses(_ single: SingleEntry, mode: StatusMode) {
         guard case .remote(let m) = single.payload,
             case .assistant(let a) = m,
             let blocks = a.message?.content
@@ -197,7 +219,7 @@ final class Transcript2EntryBridge {
             let toolUseId = tu.id ?? "tu|\(single.id.uuidString)|\(idx)"
             let childId = StableBlockID.derive("tool", toolUseId)
             let result = tu.id.flatMap { single.toolResults[$0] }
-            let status = Self.status(for: result)
+            let status = Self.status(for: result, mode: mode)
             controller.setToolStatus(id: childId, status: status)
             // Single-tool host group: group has exactly one child, so
             // group status mirrors that child's status.
@@ -207,7 +229,7 @@ final class Transcript2EntryBridge {
         }
     }
 
-    private func pushGroupEntryStatuses(_ group: GroupEntry) {
+    private func pushGroupEntryStatuses(_ group: GroupEntry, mode: StatusMode) {
         var anyRunning = false
         for (itemIdx, item) in group.items.enumerated() {
             guard case .remote(let m) = item.payload,
@@ -221,7 +243,7 @@ final class Transcript2EntryBridge {
                     ?? "tu|\(group.id.uuidString)|\(itemIdx)|\(blockIdx)"
                 let childId = StableBlockID.derive("tool", toolUseId)
                 let result = tu.id.flatMap { item.toolResults[$0] }
-                let status = Self.status(for: result)
+                let status = Self.status(for: result, mode: mode)
                 if case .running = status { anyRunning = true }
                 controller.setToolStatus(id: childId, status: status)
             }
@@ -231,8 +253,17 @@ final class Transcript2EntryBridge {
             id: groupId, status: anyRunning ? .running : .completed)
     }
 
-    private static func status(for result: ToolResultPayload?) -> ToolStatus {
-        guard let result else { return .running }
+    private static func status(
+        for result: ToolResultPayload?, mode: StatusMode
+    )
+        -> ToolStatus
+    {
+        guard let result else {
+            switch mode {
+            case .live: return .running
+            case .historical: return .completed
+            }
+        }
         if result.isError == true { return .failed(message: nil) }
         return .completed
     }

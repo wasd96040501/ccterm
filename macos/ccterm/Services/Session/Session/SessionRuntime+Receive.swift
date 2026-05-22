@@ -374,6 +374,11 @@ extension SessionRuntime {
             // continuation, …), the next `.assistant` in `receive`
             // flips us back true.
             isRunning = false
+            // Notify the renderer so any tool surface still in
+            // `.running` (no matching `tool_result` arrived before
+            // turn-close) flips to `.completed`. Fires on every live
+            // turn close, not just `.responding → .idle`.
+            onTurnFinishedLive?()
         }
         if mode == .live, case .responding = status {
             status = .idle

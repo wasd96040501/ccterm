@@ -1069,6 +1069,52 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         // bands' colour palette; total row height is unchanged.
     }
 
+    /// Read-only view into the sparse status dict. Returns `.completed`
+    /// for absent ids — matches the layout-side default (`statusStates`
+    /// absent = `.completed`). Symmetric with `setStatus(id:status:)`.
+    func status(for id: UUID) -> ToolStatus {
+        statusStates[id] ?? .completed
+    }
+
+    /// Bulk-clear every `.running` entry to `.completed`. `.failed` and
+    /// `.cancelled` entries are left alone. Fired by the bridge when the
+    /// runtime sees `.result` (turn end) — any tool that hadn't received
+    /// a `tool_result` by then is abandoned, and leaving it shimmering
+    /// is misleading.
+    ///
+    /// Same single-row-reload pattern as `setStatus`: evict each affected
+    /// host's cached layout, batch one `reloadData(forRowIndexes:)`. Row
+    /// height is unchanged, so no `noteHeightOfRows`.
+    func clearAllRunningStatuses() {
+        let runningIds = statusStates.compactMap { (id, status) -> UUID? in
+            if case .running = status { return id }
+            return nil
+        }
+        guard !runningIds.isEmpty else { return }
+        var affectedRows = IndexSet()
+        for id in runningIds {
+            statusStates[id] = .completed
+            let hostRow = blocks.firstIndex { block in
+                if block.id == id { return true }
+                switch block.kind {
+                case .toolGroup(let group):
+                    return group.children.contains(where: { $0.id == id })
+                default:
+                    return false
+                }
+            }
+            guard let row = hostRow else { continue }
+            let hostId = blocks[row].id
+            removeCachedLayout(for: hostId)
+            affectedRows.insert(row)
+        }
+        guard let table = tableView, !pendingFirstAppear, !affectedRows.isEmpty
+        else { return }
+        table.reloadData(
+            forRowIndexes: affectedRows,
+            columnIndexes: IndexSet(integer: 0))
+    }
+
     // MARK: - User bubble sheet
 
     /// Forwards a chevron click on the user bubble at `id` to the SwiftUI

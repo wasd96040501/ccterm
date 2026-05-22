@@ -1,6 +1,9 @@
 import AppKit
 import SwiftUI
 
+// TODO(appkit-host): main window will move to an AppKit-rooted setup
+// (NSApplicationDelegateAdaptor + NSSplitViewController). Sidebar /
+// input bar / overlays remain SwiftUI hosted via NSHostingController.
 @main
 struct CCTermApp: App {
     @State private var appState = AppState()

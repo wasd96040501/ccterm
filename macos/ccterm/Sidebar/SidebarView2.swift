@@ -255,16 +255,21 @@ struct SidebarHistoryRow: View {
 
     var body: some View {
         let session = manager.existingSession(record.sessionId)
+        // Prefer the live runtime's title — it's `@Observable`, so the LLM-
+        // generated title lands here first and SwiftUI re-renders this row
+        // immediately. `record.title` is the fallback for sessions whose
+        // runtime hasn't been instantiated yet (cold rows in the sidebar).
         HStack(spacing: 6) {
             SidebarSessionStatusIndicator(
                 isRunning: session?.isRunning ?? false,
                 hasUnread: session?.hasUnread ?? false
             )
-            Text(record.title)
+            Text(session?.title ?? record.title)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .shimmer(active: session?.isGeneratingTitle == true)
-                .animation(.easeIn(duration: 0.25), value: record.title)
+                .contentTransition(.opacity)
+                .animation(.easeIn(duration: 0.25), value: session?.title)
         }
     }
 }
@@ -289,13 +294,17 @@ struct SidebarSessionStatusIndicator: View {
         ZStack {
             if isRunning {
                 SidebarLoadingDots()
+                    .transition(.opacity)
             } else if hasUnread {
                 Circle()
                     .fill(Color.accentColor)
                     .frame(width: 6, height: 6)
+                    .transition(.opacity)
             }
         }
         .frame(width: SidebarIcon.slotWidth, height: SidebarIcon.slotWidth)
+        .animation(.easeInOut(duration: 0.2), value: isRunning)
+        .animation(.easeInOut(duration: 0.2), value: hasUnread)
     }
 }
 

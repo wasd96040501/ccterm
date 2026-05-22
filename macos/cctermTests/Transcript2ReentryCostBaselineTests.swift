@@ -112,6 +112,32 @@ final class Transcript2ReentryCostBaselineTests: XCTestCase {
         }
     }
 
+    /// Spin-wait until `condition` returns true OR `timeout` elapses.
+    /// Used by tests that exercise asynchronous coordinator paths
+    /// (`runPhase2`'s detached-task → main-hop chain in particular)
+    /// where a single `pumpMainRunloop` can race the off-main work
+    /// and miss its main hop.
+    ///
+    /// Returns `true` if the condition fired in time, `false` on
+    /// timeout. Caller asserts on the return value with a
+    /// diagnostic message.
+    private func waitUntil(
+        timeout: TimeInterval,
+        condition: @MainActor () -> Bool
+    ) async -> Bool {
+        let deadline = Date(timeIntervalSinceNow: timeout)
+        while Date() < deadline {
+            if condition() { return true }
+            // Yield to let MainActor work run.
+            await Task.yield()
+            // Brief sleep gives off-main detached tasks wall-clock
+            // time to make progress; the sleep itself is a yield
+            // point on Swift Concurrency.
+            try? await Task.sleep(nanoseconds: 5_000_000)
+        }
+        return condition()
+    }
+
     /// Drives the placeholder→real frame cascade the way SwiftUI's mount
     /// path delivers it: two `setFrameSize` calls in succession, then a
     /// runloop pump so the async materialize fires.
@@ -333,17 +359,23 @@ final class Transcript2ReentryCostBaselineTests: XCTestCase {
 
         await driveAttachCascade(on: table)
 
-        // Pump a second time to let Phase 2's main-hop insertRows
-        // land (the detached task queues its main hop, which the
-        // first pump may not have caught).
-        await pumpMainRunloop()
-
-        // Sanity: AppKit now sees all 200 rows (Phase 2 expanded
-        // the gate to `.full`).
-        XCTAssertEqual(
-            coordinator.numberOfRows(in: table), blocks.count,
-            "Phase 2 must have expanded the gate to `.full`; AppKit "
-                + "should see every block")
+        // Wait for Phase 2 to complete. Phase 2 is fire-and-forget:
+        // `Task.detached` precomputes layouts off-main (real wall-
+        // clock time, ~5-20ms for N=200), then `await MainActor.run`
+        // queues a main hop that flips the gate to `.full` and runs
+        // `insertRows`. Pumping the runloop once isn't enough —
+        // we'd race the off-main precompute. Spin until AppKit sees
+        // the full row count, with a generous timeout.
+        let phase2Landed = await waitUntil(timeout: 2.0) {
+            coordinator.numberOfRows(in: table) == blocks.count
+        }
+        XCTAssertTrue(
+            phase2Landed,
+            "Phase 2 must expand the gate to `.full` within 2s; "
+                + "got numberOfRows=\(coordinator.numberOfRows(in: table)) "
+                + "expected \(blocks.count). Phase 2's detached task may "
+                + "have failed to queue its main hop, or the test's "
+                + "runloop pump never delivered it.")
 
         // Count heightOfRow work done since the reset:
         let snap = Transcript2ReentryStats.snapshot()

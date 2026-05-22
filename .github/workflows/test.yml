@@ -70,9 +70,9 @@ jobs:
 
       - name: Run unit tests
         # Pin DerivedData to the in-tree path the Cache step keys off. Local
-        # runs use the script's default (outside ~/Documents) to avoid the
-        # macOS TCC "Documents" prompt; CI doesn't share that constraint and
-        # wants the path to match the cache action.
+        # runs leave this unset and let xcodebuild use its default location
+        # (~/Library/Developer/Xcode/DerivedData/ccterm-<hash>), which gives
+        # each worktree its own cache via the project-path hash.
         env:
           DERIVED_DATA_PATH: ${{ github.workspace }}/macos/build/test-dd
         run: make test-unit

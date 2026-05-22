@@ -126,83 +126,9 @@ private struct Transcript2NSViewBridge: NSViewRepresentable {
     func makeCoordinator() -> Transcript2Coordinator { controller.coordinator }
 
     func makeNSView(context: Context) -> Transcript2ScrollView {
-        let scroll = Transcript2ScrollView()
-        scroll.hasVerticalScroller = true
-        scroll.hasHorizontalScroller = false
-        scroll.drawsBackground = false
-        scroll.borderType = .noBorder
-        scroll.autohidesScrollers = true
-        scroll.scrollerStyle = .overlay
-        scroll.wantsLayer = true
-        scroll.layerContentsRedrawPolicy = .never
-        scroll.automaticallyAdjustsContentInsets = false
-        // Swap to our layer-backed `.never`-redraw clip *before* writing
-        // `contentInsets`. NSScrollView stores the insets on its current
-        // contentView; replacing the contentView afterwards drops to a
-        // fresh NSClipView with zero insets and our value is silently
-        // lost. Result: scroll-to-bottom landed at clip frame bottom
-        // rather than at the visible-content-area bottom.
-        scroll.contentView = Transcript2ClipView()
-        // Top inset reserves a strip of empty space above the natural content
-        // start so the first row never crowds the window's top chrome when
-        // the transcript is scrolled all the way up. The scroll view itself
-        // still sits flush to the window's top edge — the 80pt top fade-blur
-        // scrim (RootView2) keeps softening the seam — but the first visible
-        // row lands ~44pt below that edge, clear of the `.unifiedCompact`
-        // toolbar band (~28pt under hidden title bar) with a small breathing
-        // margin.
-        //
-        // Bottom inset reserves space below the natural content end so the
-        // last message never crowds the input bar, and so the user can
-        // scroll the transcript up further to expose empty room beneath it
-        // (avoiding a "suffocating" final message). Breakdown:
-        // - 40pt input bar + 36pt bottom padding ≈ 76pt overlapped by chrome.
-        // - 28pt loading pill above the bar when running.
-        // - 76pt fixed breathing room so non-running state has a comfortable
-        //   gap and running state still leaves the pill clear of content.
-        scroll.contentInsets = NSEdgeInsets(top: 44, left: 0, bottom: 180, right: 0)
-
-        let table = Transcript2TableView()
-        // Born hidden. `Transcript2Coordinator.markAnchorSettled` flips
-        // alpha back to 1 once the first-screen scroll has landed —
-        // either synchronously from `setHistory`'s Phase 1 (real-width
-        // path), or from `Transcript2Controller.handleFirstTile` on the
-        // first 0→positive tile (deferred path). Guarantees the user
-        // never sees the pre-scroll frame (table at row 0). For sessions
-        // with no blocks at attach, `tableView.didSet` immediately sets
-        // this back to 1 (nothing to flicker).
-        table.alphaValue = 0
-        table.headerView = nil
-        table.backgroundColor = .clear
-        table.style = .plain
-        table.selectionHighlightStyle = .none
-        table.intercellSpacing = NSSize(width: 0, height: 0)
-        table.usesAutomaticRowHeights = false
-        table.gridStyleMask = []
-        table.allowsColumnResizing = false
-        table.allowsColumnReordering = false
-        table.allowsColumnSelection = false
-        table.allowsMultipleSelection = false
-        table.allowsEmptySelection = true
-
-        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("col"))
-        column.minWidth = 0
-        column.maxWidth = .greatestFiniteMagnitude
-        table.addTableColumn(column)
-
-        let coordinator = context.coordinator
-        table.dataSource = coordinator
-        table.delegate = coordinator
-        table.postsFrameChangedNotifications = true
-        NotificationCenter.default.addObserver(
-            coordinator,
-            selector: #selector(Transcript2Coordinator.tableFrameDidChange(_:)),
-            name: NSView.frameDidChangeNotification, object: table)
-
-        coordinator.tableView = table
-        table.coordinator = coordinator
-        scroll.documentView = table
-        return scroll
+        // AppKit setup is shared with the AppKit-rooted host
+        // (`TranscriptDetailViewController`) via the factory below.
+        TranscriptScrollViewFactory.make(controller: controller)
     }
 
     func updateNSView(_ nsView: Transcript2ScrollView, context: Context) {
@@ -214,23 +140,10 @@ private struct Transcript2NSViewBridge: NSViewRepresentable {
         _ nsView: Transcript2ScrollView,
         coordinator: Transcript2Coordinator
     ) {
+        // Symmetric teardown — removes the frameDidChange observer
+        // and breaks the coordinator's weak ref so re-attach paths
+        // see a fresh table.
         NotificationCenter.default.removeObserver(coordinator)
-        // Explicitly clear the coordinator's `tableView` weak ref. Without
-        // this the ref auto-nils silently during dealloc, which does NOT
-        // fire `willSet`/`didSet` — so the matched reset path in
-        // `Transcript2Coordinator.tableView.didSet`
-        // (`setAnchorSettled(false)`, `lastLayoutWidth = -1`, alpha reset)
-        // would run only on attach, not on detach. Re-entry into the
-        // same session needs the symmetric reset so the next attach
-        // re-runs the first-screen anchor + alpha-unhide path; without
-        // it the table can flash its old scroll position before the
-        // new anchor lands.
-        //
-        // Identity guard against unusual SwiftUI lifecycles: only nil if
-        // the coordinator still points at the view we're dismantling. If
-        // a sibling makeNSView already reassigned (rare; only possible
-        // when a new make of the same coordinator races a stale dismantle
-        // of the old view), preserve the new bind.
         if coordinator.tableView === (nsView.documentView as? NSTableView) {
             coordinator.tableView = nil
         }

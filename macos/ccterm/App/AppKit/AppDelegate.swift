@@ -8,9 +8,12 @@ import SwiftUI
 /// SwiftUI's commit pass.
 ///
 /// Auxiliary windows (Settings / Logs / About) stay as SwiftUI `Window`
-/// scenes declared in `CCTermApp`; their openWindow actions are
-/// dispatched through `OpenWindowBridge` from the AppKit menu items
-/// installed in `AppKitMenuBuilder`.
+/// scenes declared in `CCTermApp`; their menu items (and the ⌘F bus
+/// hook for transcript search) live in `AppCommands` — a SwiftUI
+/// `Commands` block attached to the Settings scene. SwiftUI merges
+/// those into the app's main menu, so cold-start menu clicks resolve
+/// `@Environment(\.openWindow)` correctly without needing an AppKit
+/// bridge.
 ///
 /// The delegate also owns the app-scope state (`AppState`,
 /// `TranscriptSearchBus`). Previously these were `@State` on
@@ -27,8 +30,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if Self.isUnderXCTest { return }
-
-        AppKitMenuBuilder.install(searchBus: searchBus)
 
         let controller = MainWindowController(
             model: selectionModel, appState: appState, searchBus: searchBus)

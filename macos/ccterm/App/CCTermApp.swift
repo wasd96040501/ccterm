@@ -3,9 +3,10 @@ import SwiftUI
 
 /// Main window is rooted in AppKit (see `AppDelegate` /
 /// `MainWindowController`). The remaining SwiftUI `Window` scenes
-/// declared below are auxiliary: Settings, Logs, About. They install
-/// `OpenWindowBridge` so the AppKit-side menu items in
-/// `AppKitMenuBuilder` can drive `openWindow(id:)`.
+/// declared below are auxiliary: Settings, Logs, About. Their menu
+/// items + ⌘F come from the SwiftUI `Commands` DSL attached to the
+/// Settings scene so cold-start menu clicks (before any auxiliary
+/// scene has mounted) still resolve `@Environment(\.openWindow)`.
 @main
 struct CCTermApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -19,20 +20,20 @@ struct CCTermApp: App {
     var body: some Scene {
         Window("Settings", id: "settings") {
             SettingsView()
-                .installOpenWindowBridge()
         }
         .defaultSize(width: 830, height: 534)
         .windowResizability(.contentSize)
+        .commands {
+            AppCommands(searchBus: appDelegate.searchBus)
+        }
 
         Window("Logs", id: "logs") {
             LogWindowView()
-                .installOpenWindowBridge()
         }
         .defaultSize(width: 900, height: 500)
 
         Window("About ccterm", id: "about") {
             AboutView()
-                .installOpenWindowBridge()
         }
         .windowResizability(.contentSize)
         .windowStyle(.hiddenTitleBar)
@@ -119,6 +120,48 @@ extension NSWindow {
             perform(bypass, with: nil)
         } else {
             makeKeyAndOrderFront(nil)
+        }
+    }
+}
+
+/// SwiftUI command bar attached to the Settings scene. Survives the
+/// AppKit-host migration: SwiftUI's command system installs these as
+/// NSMenuItem instances on the merged main menu, so the AppKit main
+/// window keeps full menu coverage without an
+/// `applicationDidFinishLaunching`-side NSMenu rebuild. ⌘F focus
+/// routes through `TranscriptSearchBus.requestFocus()`, which the
+/// AppKit toolbar's `TranscriptSearchToolbarBridge` picks up
+/// reactively via `withObservationTracking`.
+struct AppCommands: Commands {
+    @Environment(\.openWindow) private var openWindow
+    let searchBus: TranscriptSearchBus
+
+    var body: some Commands {
+        CommandGroup(replacing: .appInfo) {
+            Button("About ccterm") {
+                openWindow(id: "about")
+            }
+        }
+        CommandGroup(replacing: .appSettings) {
+            Button(action: { openWindow(id: "settings") }) {
+                Label("Settings", systemImage: "gear")
+            }
+            .keyboardShortcut(",", modifiers: .command)
+        }
+        // Top-level Find menu — gives ⌘F a stable AppKit responder-chain
+        // route. Routed via `TranscriptSearchBus` so the per-window
+        // subscriber lives behind a stable observation channel.
+        CommandMenu("Find") {
+            Button(action: { searchBus.requestFocus() }) {
+                Text("Find in Transcript")
+            }
+            .keyboardShortcut("f", modifiers: .command)
+        }
+        CommandMenu("Debug") {
+            Button("Logs") {
+                openWindow(id: "logs")
+            }
+            .keyboardShortcut("L", modifiers: [.command, .shift])
         }
     }
 }

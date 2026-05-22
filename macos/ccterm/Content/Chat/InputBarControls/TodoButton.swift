@@ -35,12 +35,11 @@ struct TodoButton: View {
     /// what the user would actually find inside the popover:
     /// in_progress > pending > completed.
     ///
-    /// Renders at the same 14pt footprint the popover row uses. A
-    /// smaller chrome glyph reads at a different visual weight than
-    /// the popover one — the ring's narrow stroke band gets more
-    /// antialiasing dilution than the inner completed dot, so the
-    /// dot looks denser than the ring at chrome scale. Matching the
-    /// popover size sidesteps that.
+    /// 12pt is the smallest size where the completed glyph's ring and
+    /// inner dot still read at the same visual weight — below that the
+    /// thin ring stroke picks up enough antialiasing dilution that the
+    /// dot looks denser. (Compared side-by-side in
+    /// `TodoStatusGlyphSnapshotTests`.)
     private func leadingIcon(forTodos todos: [TodoEntry]) -> some View {
         let glyphStatus: TodoEntry.Status
         if todos.contains(where: { $0.status == .inProgress }) {
@@ -51,7 +50,7 @@ struct TodoButton: View {
             glyphStatus = .completed
         }
         return TodoStatusGlyph(status: glyphStatus, muted: true)
-            .frame(width: 14, height: 14)
+            .frame(width: 12, height: 12)
     }
 
     /// Counts read as **完成 / 总数** — the standard "how much of the

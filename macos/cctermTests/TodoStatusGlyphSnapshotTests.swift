@@ -15,19 +15,14 @@ final class TodoStatusGlyphSnapshotTests: XCTestCase {
     }
 
     func testCompletedGlyphSizes() throws {
-        let size = CGSize(width: 360, height: 90)
-        let view = HStack(spacing: 28) {
-            labeled("Popover 14×14") {
-                TodoStatusGlyph(status: .completed)
-                    .frame(width: 14, height: 14)
-            }
-            labeled("Chrome 10×10") {
-                TodoStatusGlyph(status: .completed, muted: true)
-                    .frame(width: 10, height: 10)
-            }
-            labeled("Chrome 14×14") {
-                TodoStatusGlyph(status: .completed, muted: true)
-                    .frame(width: 14, height: 14)
+        let size = CGSize(width: 560, height: 90)
+        let sizes: [CGFloat] = [10, 11, 12, 13, 14]
+        let view = HStack(spacing: 24) {
+            ForEach(sizes, id: \.self) { side in
+                self.labeled("\(Int(side))×\(Int(side))") {
+                    TodoStatusGlyph(status: .completed, muted: true)
+                        .frame(width: side, height: side)
+                }
             }
         }
         .padding(20)

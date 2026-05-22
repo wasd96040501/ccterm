@@ -1,10 +1,15 @@
 import AppKit
 import SwiftUI
 
+/// Main window is rooted in AppKit (see `AppDelegate` /
+/// `MainWindowController`). The remaining SwiftUI `Window` scenes
+/// declared below are auxiliary: Settings, Logs, About. Their menu
+/// items + ⌘F come from the SwiftUI `Commands` DSL attached to the
+/// Settings scene so cold-start menu clicks (before any auxiliary
+/// scene has mounted) still resolve `@Environment(\.openWindow)`.
 @main
 struct CCTermApp: App {
-    @State private var appState = AppState()
-    @State private var searchBus = TranscriptSearchBus()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     // Hosted unit tests inject this env var. When present we keep NSApp alive
     // (snapshot/AppKit rendering still needs it) but skip every Window scene
@@ -13,27 +18,14 @@ struct CCTermApp: App {
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 
     var body: some Scene {
-        Window("ccterm", id: "main") {
-            RootView2()
-                .environment(appState.sessionManager)
-                .environment(appState.recentProjects)
-                .environment(appState.inputDraftStore)
-                .environment(\.syntaxEngine, appState.syntaxEngine)
-                .environment(searchBus)
-                .environment(appState.notificationService)
-        }
-        .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 1200, height: 860)
-        .windowResizability(.contentSize)
-        .commands {
-            AppCommands(searchBus: searchBus)
-        }
-
         Window("Settings", id: "settings") {
             SettingsView()
         }
         .defaultSize(width: 830, height: 534)
         .windowResizability(.contentSize)
+        .commands {
+            AppCommands(searchBus: appDelegate.searchBus)
+        }
 
         Window("Logs", id: "logs") {
             LogWindowView()
@@ -132,6 +124,14 @@ extension NSWindow {
     }
 }
 
+/// SwiftUI command bar attached to the Settings scene. Survives the
+/// AppKit-host migration: SwiftUI's command system installs these as
+/// NSMenuItem instances on the merged main menu, so the AppKit main
+/// window keeps full menu coverage without an
+/// `applicationDidFinishLaunching`-side NSMenu rebuild. ⌘F focus
+/// routes through `TranscriptSearchBus.requestFocus()`, which the
+/// AppKit toolbar's `TranscriptSearchToolbarBridge` picks up
+/// reactively via `withObservationTracking`.
 struct AppCommands: Commands {
     @Environment(\.openWindow) private var openWindow
     let searchBus: TranscriptSearchBus
@@ -148,19 +148,9 @@ struct AppCommands: Commands {
             }
             .keyboardShortcut(",", modifiers: .command)
         }
-        // Top-level Find menu — the entry is guaranteed present in
-        // the menu bar regardless of whether SwiftUI auto-installed
-        // the Edit menu, and gives ⌘F a stable AppKit responder-chain
-        // route (`typeKey(_:modifierFlags:)` does not reliably
-        // synthesize the shortcut through window-local monitors).
-        //
-        // The transcript's search field is always visible in the
-        // window toolbar (rendered by `.searchable` on
-        // `ChatHistoryView`); ⌘F's job is purely to hand keyboard
-        // focus to that field. Routed via `TranscriptSearchBus` —
-        // an `@Observable` counter — instead of `NotificationCenter`,
-        // because the per-view subscriber lives behind a SwiftUI
-        // `.id(sessionId)` boundary.
+        // Top-level Find menu — gives ⌘F a stable AppKit responder-chain
+        // route. Routed via `TranscriptSearchBus` so the per-window
+        // subscriber lives behind a stable observation channel.
         CommandMenu("Find") {
             Button(action: { searchBus.requestFocus() }) {
                 Text("Find in Transcript")

@@ -10,11 +10,13 @@ import SwiftUI
 ///     stays static and grey (see `muted`) so the chrome doesn't
 ///     pull focus away from the transcript.
 ///   - `.completed` — hollow ring + concentric filled inner dot
-///     (Apple Reminders' "marked" affordance).
+///     (Apple Reminders' "marked" affordance), drawn as a single
+///     even-odd filled path so the ring band and the inner dot share
+///     one rasterizer pass (see `CompletedRingAndDotShape`).
 ///
-/// All three are drawn with `Circle().strokeBorder(...)` so the stroke
-/// stays inside the bounding frame — that's what keeps the outer
-/// footprint stable across states.
+/// The ring uses `Circle().strokeBorder(...)` so the stroke stays
+/// inside the bounding frame — that's what keeps the outer footprint
+/// stable across states.
 struct TodoStatusGlyph: View {
 
     let status: TodoEntry.Status
@@ -33,7 +35,7 @@ struct TodoStatusGlyph: View {
         ZStack {
             switch status {
             case .pending:
-                ring(style: solidStyle)
+                ring
             case .inProgress:
                 if muted {
                     // Chrome button stays maximally quiet: the
@@ -41,48 +43,32 @@ struct TodoStatusGlyph: View {
                     // a plain ring — so the chrome row doesn't
                     // animate or attract focus. The live verb
                     // lives inside the popover.
-                    ring(style: solidStyle)
+                    ring
                 } else {
-                    RotatingDottedRing(strokeWidth: Self.strokeWidth)
+                    RotatingDottedRing(strokeWidth: Self.strokeWidth, color: strokeColor)
                 }
             case .completed:
-                ring(style: solidStyle)
-                innerDot
+                completedRingAndDot
             }
         }
-        .foregroundStyle(strokeColor)
         .accessibilityHidden(true)
     }
 
-    private func ring(style: StrokeStyle) -> some View {
+    private var ring: some View {
         Circle()
-            .strokeBorder(style: style)
+            .strokeBorder(strokeColor, lineWidth: Self.strokeWidth)
     }
 
-    /// Concentric filled inner circle — matches Apple Reminders'
-    /// "completed" affordance: a generous inner dot that nearly fills
-    /// the ring, leaving only a thin ring-shaped gap. 0.62 of the
-    /// outer box reads as "this is a marked item" at a glance.
-    private var innerDot: some View {
-        Circle()
-            .scale(0.62)
-    }
-
-    /// Round dots, not line segments. `dash: [0, gap]` with a round
-    /// cap collapses each "dash" to a zero-length segment that the
-    /// round-cap then renders as a circular dot of diameter
-    /// `lineWidth`. Spacing scales with stroke so the rhythm reads
-    /// the same at any glyph size.
-    private var dottedStyle: StrokeStyle {
-        StrokeStyle(
-            lineWidth: Self.strokeWidth,
-            lineCap: .round,
-            dash: [0, Self.strokeWidth * 2.2]
-        )
-    }
-
-    private var solidStyle: StrokeStyle {
-        StrokeStyle(lineWidth: Self.strokeWidth)
+    /// Hollow ring + concentric filled dot rendered as a **single**
+    /// even-odd filled path: outer disc, ring's inner edge, then the
+    /// inner dot. Stroked and filled circles go through separate
+    /// rasterizers in SwiftUI and at chrome scale (10pt) the inner
+    /// dot rendered visibly darker / denser than the ring's stroke
+    /// band. One path, one fill operation = identical antialiasing
+    /// for both elements at any size.
+    private var completedRingAndDot: some View {
+        CompletedRingAndDotShape(strokeWidth: Self.strokeWidth)
+            .fill(strokeColor, style: FillStyle(eoFill: true))
     }
 
     private var strokeColor: Color {
@@ -95,17 +81,44 @@ struct TodoStatusGlyph: View {
     }
 }
 
+/// Donut + concentric dot as one path. Even-odd fill rule: outside
+/// outer = 0 (skip), ring band = 1 (fill), inner hole = 2 (skip),
+/// inner dot = 3 (fill).
+private struct CompletedRingAndDotShape: Shape {
+    let strokeWidth: CGFloat
+    /// Inner dot diameter as a fraction of the outer bounding box —
+    /// matches Apple Reminders' generous "marked" affordance.
+    private let dotScale: CGFloat = 0.62
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.addEllipse(in: rect)
+        path.addEllipse(in: rect.insetBy(dx: strokeWidth, dy: strokeWidth))
+        let dotSize = min(rect.width, rect.height) * dotScale
+        let dotRect = CGRect(
+            x: rect.midX - dotSize / 2,
+            y: rect.midY - dotSize / 2,
+            width: dotSize,
+            height: dotSize
+        )
+        path.addEllipse(in: dotRect)
+        return path
+    }
+}
+
 /// Dotted ring that rotates ~one revolution every 6 seconds. Calm
 /// enough to read as "still working" without becoming a distraction
 /// against text rows. Used only in the popover; the chrome button
 /// renders the static `muted` variant instead.
 private struct RotatingDottedRing: View {
     let strokeWidth: CGFloat
+    let color: Color
     @State private var rotation: Double = 0
 
     var body: some View {
         Circle()
             .strokeBorder(
+                color,
                 style: StrokeStyle(
                     lineWidth: strokeWidth,
                     lineCap: .round,

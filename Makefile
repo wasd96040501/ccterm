@@ -54,4 +54,3 @@ fmt-check: ## Check formatting (CI)
 
 clean: ## Remove all build artifacts
 	rm -rf ~/Library/Developer/Xcode/DerivedData/ccterm-*
-	rm -rf ~/Library/Caches/ccterm-test-dd

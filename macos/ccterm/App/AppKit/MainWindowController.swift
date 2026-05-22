@@ -17,6 +17,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
     /// Bridge object that pipes SwiftUI `TranscriptSearchBus` →
     /// AppKit `NSSearchField` focus + query plumbing.
     private var searchBridge: TranscriptSearchToolbarBridge?
+    private var selectionObservationTask: Task<Void, Never>?
 
     private enum ItemID {
         static let projectChip = NSToolbarItem.Identifier("ccterm.projectChip")
@@ -39,17 +40,11 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
         window.title = "ccterm"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.toolbarStyle = .unifiedCompact
+        window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 880, height: 540)
         window.contentViewController = splitController
         window.setFrameAutosaveName("MainWindow")
-        // The transcript runs flush to the window's top edge. Pair
-        // `hiddenTitleBar` + `.unifiedCompact` toolbar style + hidden
-        // toolbar background so the toolbar band doesn't paint a strip
-        // over the transcript. See `NativeTranscript2/CLAUDE.md`
-        // (§6.5 Search) for the matching SwiftUI modifier set.
-        window.styleMask.insert(.fullSizeContentView)
 
         super.init(window: window)
         installToolbar()
@@ -58,6 +53,8 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
+    deinit { selectionObservationTask?.cancel() }
+
     private func installToolbar() {
         let toolbar = NSToolbar(identifier: "ccterm.main")
         toolbar.delegate = self
@@ -65,6 +62,77 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
         toolbar.allowsUserCustomization = false
         toolbar.showsBaselineSeparator = false
         window?.toolbar = toolbar
+        // Project chip is conditionally present (only for history
+        // sessions). Sync initial state then re-evaluate on selection
+        // changes via Observation.
+        updateProjectChipPresence()
+        startSelectionObservation()
+    }
+
+    /// Whether the current sidebar selection is a real history session,
+    /// as opposed to one of the sentinel tabs (New Session / Archive /
+    /// DEBUG demos). Listed explicitly against `SidebarView2`'s
+    /// constants so adding a new tab requires a deliberate update here.
+    private var isHistorySession: Bool {
+        guard let sid = model.selectedSessionId else { return false }
+        return !Self.sentinelTags.contains(sid)
+    }
+
+    private static let sentinelTags: Set<String> = {
+        var tags: Set<String> = [
+            SidebarView2.newSessionTag,
+            SidebarView2.archiveTag,
+        ]
+        #if DEBUG
+        tags.formUnion([
+            SidebarView2.transcriptDemoTag,
+            SidebarView2.transcriptStressTag,
+            SidebarView2.transcriptPerfTag,
+            SidebarView2.permissionCardsDemoTag,
+            SidebarView2.permissionSessionDemoTag,
+        ])
+        #endif
+        return tags
+    }()
+
+    /// Insert or remove the project-chip toolbar item to match the
+    /// current selection. NSToolbar caches the hosted SwiftUI's
+    /// measured size and won't re-query on content change, so when
+    /// transitioning into a (different) history session we always
+    /// remove-then-insert to force a fresh measurement of the new
+    /// session's content. Wrapped in a zero-duration animation context
+    /// so NSToolbar's default fade-in/out doesn't fire.
+    private func updateProjectChipPresence() {
+        guard let toolbar = window?.toolbar else { return }
+        let currentIndex = toolbar.items.firstIndex {
+            $0.itemIdentifier == ItemID.projectChip
+        }
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0
+            ctx.allowsImplicitAnimation = false
+            if let idx = currentIndex {
+                toolbar.removeItem(at: idx)
+            }
+            if isHistorySession {
+                toolbar.insertItem(withItemIdentifier: ItemID.projectChip, at: 0)
+            }
+        }
+    }
+
+    private func startSelectionObservation() {
+        selectionObservationTask?.cancel()
+        selectionObservationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await withCheckedContinuation { cont in
+                withObservationTracking {
+                    _ = self.model.selectedSessionId
+                } onChange: {
+                    Task { @MainActor in cont.resume() }
+                }
+            }
+            self.updateProjectChipPresence()
+            self.startSelectionObservation()
+        }
     }
 
     func makeSearchBridgeIfNeeded(field: NSSearchField) -> TranscriptSearchToolbarBridge {
@@ -85,7 +153,10 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
     // MARK: - NSToolbarDelegate
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [ItemID.projectChip, .flexibleSpace, ItemID.search]
+        // Project chip is inserted/removed imperatively by
+        // `updateProjectChipPresence()` based on the current selection,
+        // so it's NOT in the default identifiers — only search is.
+        [.flexibleSpace, ItemID.search]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
@@ -105,12 +176,14 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
                     model: model,
                     sessionManager: appState.sessionManager
                 )
-                .frame(maxWidth: 200, alignment: .leading)
             )
-            host.frame.size = NSSize(width: 200, height: 36)
+            host.translatesAutoresizingMaskIntoConstraints = false
+            // `intrinsicContentSize` makes the hosting view's natural
+            // size track the SwiftUI body's `fittingSize`. Toolbar
+            // auto-measures via this; do NOT set the deprecated
+            // `item.minSize` / `item.maxSize`.
+            host.sizingOptions = [.intrinsicContentSize]
             item.view = host
-            item.minSize = NSSize(width: 80, height: 28)
-            item.maxSize = NSSize(width: 220, height: 36)
             item.visibilityPriority = .high
             return item
         case ItemID.search:
@@ -131,16 +204,18 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
 
 // MARK: - Project chip view
 
-/// SwiftUI view hosted inside the leading toolbar item. Mirrors the
-/// `dirName` / `branchName` pair `ChatHistoryView`'s `.toolbar`
-/// modifier used to surface in the SwiftUI version.
+/// Leading toolbar item: dirName (semibold) over branchName (secondary).
+/// SwiftUI inside an `NSHostingView` — the body's `fittingSize`
+/// drives the hosting view's `intrinsicContentSize`, so the toolbar
+/// slot auto-resizes to content. `.animation()` makes the width change
+/// smoothly when switching sessions, and gates the whole VStack to an
+/// empty body for non-history sessions so the slot collapses entirely.
 private struct TranscriptProjectChip: View {
     @Bindable var model: MainSelectionModel
     let sessionManager: SessionManager
-    @State private var probedBranch: String?
 
     private var session: Session? {
-        guard let sid = model.effectiveSessionId else { return nil }
+        guard let sid = model.selectedSessionId else { return nil }
         return sessionManager.existingSession(sid)
     }
 
@@ -150,8 +225,18 @@ private struct TranscriptProjectChip: View {
         return comp.isEmpty ? nil : comp
     }
 
+    /// Synchronous branch lookup — `.git/HEAD` is a small file read,
+    /// so doing it during body evaluation keeps the chip's first
+    /// measurement correct. Doing it via `.task` (async) would cause
+    /// the toolbar to measure the chip BEFORE the branch line was
+    /// added, leaving the slot at the no-branch width.
     private var branchName: String? {
-        if let probed = probedBranch, !probed.isEmpty { return probed }
+        if let cwd = session?.cwd,
+            let probed = GitUtils.currentBranch(at: cwd),
+            !probed.isEmpty
+        {
+            return probed
+        }
         if let session, let b = session.worktreeBranch, !b.isEmpty { return b }
         return nil
     }
@@ -174,9 +259,7 @@ private struct TranscriptProjectChip: View {
             }
         }
         .padding(.horizontal, 12)
-        .task(id: session?.cwd) {
-            probedBranch = session?.cwd.flatMap(GitUtils.currentBranch(at:))
-        }
+        .frame(maxWidth: 220, alignment: .leading)
     }
 }
 

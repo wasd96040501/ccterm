@@ -426,12 +426,19 @@ final class TranscriptDetailViewController: NSViewController {
     // MARK: - SwiftUI overlay builders
 
     private func makeTopScrim() -> some View {
+        // `.ignoresSafeArea()` is essential: with `fullSizeContentView`,
+        // the detail view extends behind the toolbar, but NSHostingView
+        // forwards the parent's safe-area insets to its SwiftUI content
+        // by default — without this, the gradient draws *below* the
+        // toolbar instead of behind it.
         FadeScrim(.topToBottom, height: Self.topFadeScrimHeight)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .ignoresSafeArea()
     }
 
     private func makeBottomScrim() -> some View {
         TranscriptDetailBottomScrim(model: model, height: Self.bottomFadeScrimHeight)
+            .ignoresSafeArea()
     }
 
     private func makeComposeOrBarStack() -> some View {

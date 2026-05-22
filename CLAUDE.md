@@ -4,8 +4,8 @@ Native macOS client for Claude Code. SwiftUI + AppKit, minimum target macOS 14 (
 
 ## Architecture at a glance
 
-- **UI**: SwiftUI everywhere except the chat transcript, which is `NSTableView` + Core Text self-drawn. Bridged through `NSViewRepresentable` (e.g. `NativeTranscript2View`, `InputTextView`). No XIB / Storyboard / `NSHostingController`.
-- **Entry point**: `@main CCTermApp` → `Window` scene → `RootView2` (a `NavigationSplitView`) → `SidebarView2` + detail. `RootView2` owns `selectedSessionId` / `draftSessionId` locally; there is no global router.
+- **UI**: SwiftUI for the sidebar, input bar, overlays, configurator, etc. The chat transcript itself is AppKit-native (`NSTableView` + Core Text self-drawn). The main window is rooted in AppKit (`MainWindowController` + `NSSplitViewController`) so the transcript's mount + `frameDidChange` cascade runs in AppKit's source phase, not in SwiftUI's commit pass. SwiftUI is hosted via `NSHostingController` (sidebar, side branches like Archive / DEBUG demos) and `NSHostingView` (overlays).
+- **Entry point**: `@main CCTermApp` → `@NSApplicationDelegateAdaptor(AppDelegate.self)` → `MainWindowController` → `MainSplitViewController` (sidebar item + detail item) → `TranscriptDetailViewController`. Selection / draft state lives on `MainSelectionModel` (`@Observable`), shared between the hosted `SidebarView2` and the AppKit detail VC. Settings / Logs / About remain SwiftUI `Window` scenes; the AppKit menu items dispatch into them via `OpenWindowBridge`.
 - **Layers**:
   - **Model** — plain data, `struct` first, `Codable` where it crosses a boundary.
   - **View** — SwiftUI structs, declarative.
@@ -27,7 +27,7 @@ Detailed conventions live next to the code they govern. When you touch one of th
 
 | Area | Doc |
 |---|---|
-| Chat UI assembly (RootView2 / Sidebar / ChatHistory / InputBar / pill) | [Content/Chat/CLAUDE.md](macos/ccterm/Content/Chat/CLAUDE.md) |
+| Chat UI assembly (MainWindow / Sidebar / Detail VC / InputBar / pill) | [Content/Chat/CLAUDE.md](macos/ccterm/Content/Chat/CLAUDE.md) |
 | `SessionHandle2` runtime, render-side comms, mutation rules | [Services/Session/CLAUDE.md](macos/ccterm/Services/Session/CLAUDE.md) |
 | Native transcript internals (layouts, diff, tool rendering) | [Content/Chat/NativeTranscript2/CLAUDE.md](macos/ccterm/Content/Chat/NativeTranscript2/CLAUDE.md) |
 | Unit test conventions (parallel safety, in-memory fixtures) | [cctermTests/CLAUDE.md](macos/cctermTests/CLAUDE.md) |
@@ -39,7 +39,7 @@ ccterm/
 ├── macos/                    # macOS platform
 │   ├── ccterm.xcodeproj/
 │   ├── ccterm/               # App sources
-│   │   ├── App/              # CCTermApp, AppState, RootView2
+│   │   ├── App/              # CCTermApp, AppState; AppKit/ holds AppDelegate + MainWindowController + split + detail VC
 │   │   ├── Sidebar/          # SidebarView2
 │   │   ├── Components/       # Reusable SwiftUI / AppKit components
 │   │   │   └── Markdown/     # GFM parser → internal IR (consumed by NativeTranscript2)

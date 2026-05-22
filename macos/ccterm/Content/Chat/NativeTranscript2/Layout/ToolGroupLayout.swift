@@ -705,6 +705,16 @@ struct ToolGroupLayout: @unchecked Sendable {
 
     /// Trim leading path components until the remainder fits `budget`
     /// at `font`. Prepends `…/` once a trim happens.
+    ///
+    /// If path-aware shortening exhausts (no slash in `path`, or even
+    /// the basename alone is wider than `budget`), falls back to a
+    /// character-level head truncation that keeps the longest suffix
+    /// of the basename whose `…` + suffix still fits. This is the
+    /// load-bearing invariant: the returned string's typographic width
+    /// is always ≤ `budget`. `makeHeader` clamps the numeric
+    /// `titleWidth` to `titleBudget` but `drawHeader` retypesets the
+    /// raw `header.title` at draw time — without this guarantee the
+    /// glyphs spill past the title band and overlap the chevron.
     nonisolated private static func truncateHead(
         _ path: String, budget: CGFloat, font: NSFont
     ) -> String {
@@ -712,15 +722,32 @@ struct ToolGroupLayout: @unchecked Sendable {
         if textWidth(path, attrs: attrs) <= budget { return path }
 
         let parts = path.split(separator: "/")
-        guard parts.count > 1 else { return path }
-        for drop in 1..<parts.count {
-            let kept = parts[drop...].joined(separator: "/")
-            let candidate = "…/" + kept
-            if textWidth(candidate, attrs: attrs) <= budget {
-                return candidate
+        if parts.count > 1 {
+            for drop in 1..<parts.count {
+                let kept = parts[drop...].joined(separator: "/")
+                let candidate = "…/" + kept
+                if textWidth(candidate, attrs: attrs) <= budget {
+                    return candidate
+                }
             }
         }
-        return "…/" + (parts.last.map(String.init) ?? path)
+
+        let basename = parts.last.map(String.init) ?? path
+        let ellipsis = "…"
+        if textWidth(ellipsis, attrs: attrs) > budget { return "" }
+        let chars = Array(basename)
+        var lo = 0
+        var hi = chars.count
+        while lo < hi {
+            let mid = (lo + hi + 1) / 2
+            let candidate = ellipsis + String(chars.suffix(mid))
+            if textWidth(candidate, attrs: attrs) <= budget {
+                lo = mid
+            } else {
+                hi = mid - 1
+            }
+        }
+        return ellipsis + String(chars.suffix(lo))
     }
 
     nonisolated private static func textWidth(

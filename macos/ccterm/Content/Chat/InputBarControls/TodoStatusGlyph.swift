@@ -43,20 +43,24 @@ struct TodoStatusGlyph: View {
                     // lives inside the popover.
                     ring(style: solidStyle)
                 } else {
-                    RotatingDottedRing(strokeWidth: Self.strokeWidth)
+                    RotatingDottedRing(strokeWidth: Self.strokeWidth, color: strokeColor)
                 }
             case .completed:
                 ring(style: solidStyle)
                 innerDot
             }
         }
-        .foregroundStyle(strokeColor)
         .accessibilityHidden(true)
     }
 
+    // Both shapes take `strokeColor` explicitly. Relying on a single
+    // `.foregroundStyle(.secondary)` on the ZStack lets SwiftUI treat
+    // the filled inner dot as a lower hierarchy tier than the stroked
+    // ring, so the dot rendered visibly lighter than the ring in the
+    // chrome glyph — most obvious when every todo is done.
     private func ring(style: StrokeStyle) -> some View {
         Circle()
-            .strokeBorder(style: style)
+            .strokeBorder(strokeColor, style: style)
     }
 
     /// Concentric filled inner circle — matches Apple Reminders'
@@ -66,19 +70,7 @@ struct TodoStatusGlyph: View {
     private var innerDot: some View {
         Circle()
             .scale(0.62)
-    }
-
-    /// Round dots, not line segments. `dash: [0, gap]` with a round
-    /// cap collapses each "dash" to a zero-length segment that the
-    /// round-cap then renders as a circular dot of diameter
-    /// `lineWidth`. Spacing scales with stroke so the rhythm reads
-    /// the same at any glyph size.
-    private var dottedStyle: StrokeStyle {
-        StrokeStyle(
-            lineWidth: Self.strokeWidth,
-            lineCap: .round,
-            dash: [0, Self.strokeWidth * 2.2]
-        )
+            .fill(strokeColor)
     }
 
     private var solidStyle: StrokeStyle {
@@ -101,11 +93,13 @@ struct TodoStatusGlyph: View {
 /// renders the static `muted` variant instead.
 private struct RotatingDottedRing: View {
     let strokeWidth: CGFloat
+    let color: Color
     @State private var rotation: Double = 0
 
     var body: some View {
         Circle()
             .strokeBorder(
+                color,
                 style: StrokeStyle(
                     lineWidth: strokeWidth,
                     lineCap: .round,

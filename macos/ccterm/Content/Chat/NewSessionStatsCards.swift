@@ -112,12 +112,20 @@ struct OverviewStatsCard: View {
         .statsCardSurface()
     }
 
+    /// Headline "Total tokens" matches Claude desktop: sum of
+    /// `input_tokens + output_tokens` across all models. The
+    /// `cache_read_input_tokens` and `cache_creation_input_tokens`
+    /// fields are *not* included — every turn re-reads the whole
+    /// prior context from cache, so adding them inflates the
+    /// headline by ~200× and disagrees with the per-model `in · out`
+    /// numbers below the chart on the Models card. The aggregator
+    /// still stores all four fields separately on
+    /// `ClaudeCodeStats.ModelUsage`; the decision to exclude cache
+    /// lives at the display boundary so future consumers (e.g. a
+    /// detail panel) can still surface cache cost on demand.
     private var totalTokens: Int {
         guard let usage = result?.modelUsage else { return 0 }
-        return usage.values.reduce(0) {
-            $0 + $1.inputTokens + $1.outputTokens
-                + $1.cacheReadInputTokens + $1.cacheCreationInputTokens
-        }
+        return usage.values.reduce(0) { $0 + $1.inputTokens + $1.outputTokens }
     }
 
     /// Compact integer formatter — short ("1.2k", "168.5k", "12M")

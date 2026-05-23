@@ -135,9 +135,11 @@ final class TranscriptScrollFirstFrameSnapshotTests: XCTestCase {
     /// `noteNumberOfRowsChanged` was called.
     ///
     /// Implication: the `noteNumberOfRowsChanged` call added by #199 is
-    /// a no-op on this code path. If the user still observes a
-    /// "top-then-snap" glitch in the running app, the cause is something
-    /// other than what #199's commit message describes.
+    /// a no-op on this code path. The "top-then-snap" glitch users
+    /// observed turned out to be `NSScrollView.verticalScroller.doubleValue`
+    /// staying stale because `NSClipView.scroll(to:)` doesn't auto-call
+    /// `reflectScrolledClipView(_:)` — that's guarded by
+    /// `testScrollerKnobLandsAtTailAfterScrollToTail` below.
     func testWithoutNoteNumberOfRowsStillLandsAtTail() throws {
         let controller = prepopulatedController()
 
@@ -174,33 +176,33 @@ final class TranscriptScrollFirstFrameSnapshotTests: XCTestCase {
 
     // MARK: - Test 2.5: scroller knob position after scrollToTail
     //
-    // Found in production via live `log stream` probe (May 2026): the
-    // user reported a re-entry glitch where the transcript content
+    // Regression gate for the bug where the transcript content
     // correctly lands at the tail but the **scrollbar thumb** flashes
     // at the top before fading out (overlay scrollers' brief
-    // visibility on content change). Probes confirmed:
+    // visibility on content change makes the wrong thumb position
+    // user-visible for one fade cycle).
     //
-    //   clip.bounds.origin.y = tail (correct)
-    //   verticalScroller.doubleValue = 0 (WRONG — pre-scroll value)
+    // Root cause: `NSClipView.scroll(to:)` writes the clip's bounds
+    // origin but does **not** auto-call `reflectScrolledClipView(_:)`
+    // on its enclosing scroll view — that's the documented contract.
+    // Without the follow-up, the scroll view's scrollers stay synced
+    // with the *previous* clip origin. `Transcript2Coordinator`'s
+    // `scrollRowToBottom` / `scrollRowToTop` call `scroll(to:)`
+    // directly and now explicitly call `reflectScrolledClipView` —
+    // this test guards that they keep doing so.
     //
-    // Root cause: `NSClipView.scroll(to:)` doesn't call
-    // `reflectScrolledClipView(_:)` on its enclosing scroll view — the
-    // documented contract — so the scroll view's scrollers stay
-    // synced with the *previous* clip origin. The transcript's
-    // `Transcript2Coordinator.scrollRowToBottom` (and `scrollRowToTop`)
-    // call `scroll(to:)` directly without that follow-up. The bug
-    // never surfaced in the offscreen scaffolds in this file because
-    // none of them probed `verticalScroller.doubleValue`.
-    //
-    // This test fails on the buggy version (scroller.doubleValue ≈ 0
-    // while clip origin is at tail) and is the regression gate for
-    // whatever fix lands.
+    // The earlier `clip.bounds.origin.y` / `presentation` scaffolds in
+    // this file all probed the content origin and report the scroll as
+    // "correctly at tail" — they're necessary but not sufficient.
+    // `verticalScroller.doubleValue` is the dimension that exposes
+    // this class of bug.
 
     /// Asserts that after `controller.scrollToTail()`, the vertical
     /// scroller's knob is at the tail (`doubleValue ≈ 1`), not stuck
     /// at the pre-scroll position. Uses the production attach path —
     /// the `Transcript2Coordinator.scrollRowToBottom` codepath — so
-    /// any fix to that function will land first-class here.
+    /// any regression of the `reflectScrolledClipView` follow-up lands
+    /// first-class here.
     func testScrollerKnobLandsAtTailAfterScrollToTail() throws {
         let controller = prepopulatedController()
         let scroll = TranscriptScrollViewFactory.make(controller: controller)
@@ -268,14 +270,13 @@ final class TranscriptScrollFirstFrameSnapshotTests: XCTestCase {
     //                 source-phase scroll write reach the layer's
     //                 *presentation* tree on the same tick?
 
-    /// PR #205 open-TODO probe (1/2). The offscreen tests above prove
-    /// `clip.bounds.origin.y` (the **model** layer) lands at the tail on
-    /// the very first observable source-phase tick. That tells us nothing
-    /// about what the render server has actually composited — the user's
-    /// "first paint at top, snap to tail" glitch could still be real if
-    /// the CATransaction commit (which CoreAnimation runs at beforeWaiting)
-    /// hasn't reached the presentation tree by the time the window paints
-    /// its first frame.
+    /// Content-layer presentation-timing probe. The offscreen tests
+    /// above prove `clip.bounds.origin.y` (the **model** layer) lands
+    /// at the tail on the very first observable source-phase tick.
+    /// That tells us nothing about what the render server has actually
+    /// composited — a CATransaction commit hypothetically lagging
+    /// would surface here as `presentation` staying at the prior
+    /// origin even after a synchronous flush.
     ///
     /// This test samples both `bounds.origin.y` (model) and
     /// `layer.presentation()?.bounds.origin.y` (presentation) at three

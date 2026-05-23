@@ -222,15 +222,24 @@ specific window for compositing. The flush probe (`testCATransactionFlushPresent
 in the sibling file) already proved that the render server DOES composite
 this window — `presentation()` returns the post-flush value at tail.
 
-This scaffold falsified the user-reported "top-then-snap" glitch on the
-clean attach path: the timeline shows `nil → tail` on consecutive
-refresh ticks with no intermediate `top-clamp` frame. If a future report
-narrows the repro to a specific session-switch / draft-promote /
-sidebar-route path, copy this scaffold and drive that path instead —
-the assertion (`first non-nil presentation == tail`) is portable.
+This scaffold confirms the **content layer** lands at tail on the first
+composited frame — `nil → tail` on consecutive refresh ticks, no
+intermediate `top-clamp` frame. That's necessary but not sufficient: an
+earlier investigation chased a content-origin hypothesis here and missed
+the real bug, which lived in
+`NSScrollView.verticalScroller.doubleValue` (the scroller-knob
+position, *not* the clip origin). The lesson is general: when a
+user-reported visual glitch doesn't reproduce here, expand the sampled
+dimensions before declaring the bug falsified. See
+`TranscriptScrollFirstFrameSnapshotTests.testScrollerKnobLandsAtTailAfterScrollToTail`
+for the scroller-knob regression gate that caught it.
 
 What this scaffold **still can't** observe:
 
+- **NSScrollView non-content state.** The scroller's `doubleValue` /
+  `knobProportion` / fade-in alpha are separate dimensions; sample them
+  explicitly if a glitch is reported in the chrome (the sibling test
+  above does this).
 - **Production sibling-view interactions.** In the real app the same
   attach tick also lays out the top scrim, bottom scrim, and compose
   host (all `NSHostingView`s). Any of those committing on the same

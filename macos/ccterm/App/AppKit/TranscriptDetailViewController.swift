@@ -71,17 +71,6 @@ final class TranscriptDetailViewController: NSViewController {
     /// Sink for `model.draftCwd` → `Session.draft.setCwd`.
     private var draftCwdObservationTask: Task<Void, Never>?
 
-    // MARK: - Attach probe (TEMPORARY — investigating PR #205 top-then-snap)
-    private var attachProbeStart: CFAbsoluteTime?
-    private var attachProbeDeadline: CFAbsoluteTime?
-    private var attachProbeRunLoopObserver: CFRunLoopObserver?
-    private var attachProbeBoundaryCounter: Int = 0
-    private var attachProbeLastModel: CGFloat?
-    private var attachProbeLastPresentation: CGFloat?
-    private var attachProbeLastTableH: CGFloat?
-    private var attachProbeLastScrollerKnob: Double?
-    private var attachProbeLastScrollerAlphaQuanta: Int?
-
     init(
         model: MainSelectionModel,
         sessionManager: SessionManager,
@@ -373,24 +362,9 @@ final class TranscriptDetailViewController: NSViewController {
         if currentSession?.sessionId == sessionId, transcriptScroll != nil {
             return
         }
-        let isReEntry = currentSession != nil
-        startAttachProbe()
-        appLog(
-            .info, "TranscriptAttachProbe",
-            "P0 attach.enter sid=\(sessionId.prefix(8)) reEntry=\(isReEntry) "
-                + "priorBlocks=\(currentSession?.controller.blockCount ?? -1) "
-                + "newBlocks=\(session.controller.blockCount)")
-        appLog(.info, "TranscriptAttachProbe", "T0 tearDown.enter")
         tearDownTranscript()
-        appLog(.info, "TranscriptAttachProbe", "T1 tearDown.exit")
 
         let scroll = TranscriptScrollViewFactory.make(controller: session.controller)
-        let probeTable = scroll.documentView as? NSTableView
-        appLog(
-            .info, "TranscriptAttachProbe",
-            "P1 factory.make insets={t=\(scroll.contentInsets.top),b=\(scroll.contentInsets.bottom)} "
-                + "tableFrame=\(probeTable?.frame ?? .zero) "
-                + "tableRows=\(probeTable?.numberOfRows ?? -1)")
         scroll.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(scroll, positioned: .below, relativeTo: topScrimHost)
         NSLayoutConstraint.activate([
@@ -399,25 +373,12 @@ final class TranscriptDetailViewController: NSViewController {
             scroll.topAnchor.constraint(equalTo: view.topAnchor),
             scroll.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
-        appLog(
-            .info, "TranscriptAttachProbe",
-            "P2 addSubview scrollFrame=\(scroll.frame) "
-                + "clipFrame=\(scroll.contentView.frame) "
-                + "tableFrame=\(probeTable?.frame ?? .zero)")
         // Pull layout into the current call stack so the table reaches
         // its real width before any downstream work (history load, scroll
         // anchor, setLoading) runs. Without this, attachSession would
         // return with width=0 and every "first tile" piece downstream
         // would have to defer through `tableFrameDidChange` + async hops.
         view.layoutSubtreeIfNeeded()
-        appLog(
-            .info, "TranscriptAttachProbe",
-            "P3 postLayout scrollFrame=\(scroll.frame) "
-                + "clipFrame=\(scroll.contentView.frame) "
-                + "clipBounds.origin.y=\(scroll.contentView.bounds.origin.y) "
-                + "tableFrame=\(probeTable?.frame ?? .zero) "
-                + "tableRows=\(probeTable?.numberOfRows ?? -1) "
-                + scrollerDump(scroll, tag: "P3"))
         transcriptScroll = scroll
         currentSession = session
 
@@ -426,13 +387,6 @@ final class TranscriptDetailViewController: NSViewController {
         // idempotent and short-circuits). Anchor to the tail synchronously
         // now that the table has real width.
         session.controller.scrollToTail()
-        appLog(
-            .info, "TranscriptAttachProbe",
-            "P4 postScrollToTail clipBounds.origin.y=\(scroll.contentView.bounds.origin.y) "
-                + "presentation.origin.y="
-                + "\(scroll.contentView.layer?.presentation()?.bounds.origin.y.description ?? "nil") "
-                + "tableFrame=\(probeTable?.frame ?? .zero) "
-                + scrollerDump(scroll, tag: "P4"))
 
         // Attach syntax engine (idempotent).
         session.controller.attachSyntaxEngine(searchEngine)
@@ -445,44 +399,11 @@ final class TranscriptDetailViewController: NSViewController {
                 + "loadState=\(String(describing: session.historyLoadState)) "
                 + "msgCount=\(session.messages.count) "
                 + "blockCount=\(session.controller.blockCount)")
-        appLog(
-            .info, "TranscriptAttachProbe",
-            "P5a preLoadHistory clip.origin.y=\(scroll.contentView.bounds.origin.y)")
         session.loadHistory()
-        appLog(
-            .info, "TranscriptAttachProbe",
-            "P5b postLoadHistory clip.origin.y=\(scroll.contentView.bounds.origin.y)")
         session.controller.setLoading(session.isRunning)
-        appLog(
-            .info, "TranscriptAttachProbe",
-            "P5c postSetLoading clip.origin.y=\(scroll.contentView.bounds.origin.y) "
-                + "tableH=\(probeTable?.frame.height ?? 0)")
 
         // Re-arm the `isRunning` → `setLoading` sink.
         startRunningObservation(for: session)
-        appLog(
-            .info, "TranscriptAttachProbe",
-            "P6 attach.exit clip.origin.y=\(scroll.contentView.bounds.origin.y) "
-                + "presentation.origin.y="
-                + "\(scroll.contentView.layer?.presentation()?.bounds.origin.y.description ?? "nil") "
-                + "tableH=\(probeTable?.frame.height ?? 0) "
-                + scrollerDump(scroll, tag: "P6"))
-    }
-
-    /// Dumps the vertical NSScroller's current state — knob position,
-    /// knob proportion, alpha, hidden flag, presentation alpha (for
-    /// fade-in/out animation tracking). The user-reported "thumb at
-    /// top while content at bottom" glitch should surface here as
-    /// `doubleValue ≈ 0` while `clip.origin` is at tail.
-    private func scrollerDump(_ scroll: NSScrollView, tag: String) -> String {
-        guard let s = scroll.verticalScroller else { return "[\(tag) scroller=nil]" }
-        let pres = s.layer?.presentation()?.opacity
-        return
-            "[\(tag) scroller dv=\(String(format: "%.3f", s.doubleValue)) "
-            + "knobProp=\(String(format: "%.3f", s.knobProportion)) "
-            + "alpha=\(String(format: "%.2f", s.alphaValue)) "
-            + "hidden=\(s.isHidden) "
-            + "presAlpha=\(pres.map { String(format: "%.2f", $0) } ?? "nil")]"
     }
 
     private func tearDownTranscript() {
@@ -494,108 +415,6 @@ final class TranscriptDetailViewController: NSViewController {
         currentSession = nil
         runningObservationTask?.cancel()
         runningObservationTask = nil
-    }
-
-    // MARK: - Attach probe (TEMPORARY)
-
-    /// Installs a CFRunLoopObserver that logs at every `.beforeWaiting`
-    /// (after CoreAnimation's commit — order 3,000,000 places us after
-    /// CA's own 2,000,000 commit observer) and `.afterWaiting` (new
-    /// tick wake) boundary, so we can confirm whether the 143ms attach
-    /// crosses multiple runloop iterations and therefore commits
-    /// `clip.bounds.origin.y = 0` to the render server before our
-    /// `scrollToTail` writes the real value.
-    ///
-    /// Logging is gated on `attachProbeDeadline` so the stream isn't
-    /// noisy outside an active attach window.
-    private func startAttachProbe() {
-        ensureAttachProbeObserver()
-        attachProbeStart = CFAbsoluteTimeGetCurrent()
-        attachProbeDeadline = (attachProbeStart ?? 0) + 1.0
-        attachProbeBoundaryCounter = 0
-        attachProbeLastModel = nil
-        attachProbeLastPresentation = nil
-        attachProbeLastTableH = nil
-        attachProbeLastScrollerKnob = nil
-        attachProbeLastScrollerAlphaQuanta = nil
-    }
-
-    private func ensureAttachProbeObserver() {
-        if attachProbeRunLoopObserver != nil { return }
-        let mask = CFRunLoopActivity.beforeWaiting.rawValue
-            | CFRunLoopActivity.afterWaiting.rawValue
-        let observer = CFRunLoopObserverCreateWithHandler(
-            kCFAllocatorDefault, mask, true, 3_000_000
-        ) { [weak self] _, activity in
-            guard let self else { return }
-            MainActor.assumeIsolated {
-                self.handleAttachProbeRunLoopFire(activity: activity)
-            }
-        }
-        if let observer {
-            CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
-            attachProbeRunLoopObserver = observer
-        }
-    }
-
-    private func handleAttachProbeRunLoopFire(activity: CFRunLoopActivity) {
-        guard let deadline = attachProbeDeadline,
-            let start = attachProbeStart,
-            CFAbsoluteTimeGetCurrent() < deadline
-        else { return }
-        let scroll = transcriptScroll
-        let model = scroll?.contentView.bounds.origin.y
-        let pres = scroll?.contentView.layer?.presentation()?.bounds.origin.y
-        let tableH = (scroll?.documentView as? NSTableView)?.frame.height
-        let scroller = scroll?.verticalScroller
-        let knob = scroller?.doubleValue
-        // Quantize alpha to 10 buckets to avoid noise on every fade
-        // animation frame; still catches 0→visible, visible→hidden
-        // transitions.
-        let alphaQ = scroller.map { Int($0.alphaValue * 10) }
-        let presAlpha = scroller?.layer?.presentation()?.opacity
-
-        // Filter: only log when any tracked value changed (incl scroller
-        // knob doubleValue and quantized alpha). Breaks the appLog feedback
-        // loop while preserving the signal we care about — *especially*
-        // scroller-knob and scroller-alpha transitions, since the user
-        // reports the glitch IS in the scroller, not the content.
-        if model == attachProbeLastModel,
-            pres == attachProbeLastPresentation,
-            tableH == attachProbeLastTableH,
-            knob == attachProbeLastScrollerKnob,
-            alphaQ == attachProbeLastScrollerAlphaQuanta
-        {
-            return
-        }
-        attachProbeLastModel = model
-        attachProbeLastPresentation = pres
-        attachProbeLastTableH = tableH
-        attachProbeLastScrollerKnob = knob
-        attachProbeLastScrollerAlphaQuanta = alphaQ
-
-        attachProbeBoundaryCounter += 1
-        let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
-        let tag: String
-        if activity.contains(.beforeWaiting) {
-            tag = "BW"
-        } else if activity.contains(.afterWaiting) {
-            tag = "AW"
-        } else {
-            tag = "??"
-        }
-        let m = model.map { String(format: "%.2f", $0) } ?? "nil"
-        let p = pres.map { String(format: "%.2f", $0) } ?? "nil"
-        let h = tableH.map { String(format: "%.2f", $0) } ?? "nil"
-        let kStr = knob.map { String(format: "%.3f", $0) } ?? "nil"
-        let aStr = scroller.map { String(format: "%.2f", $0.alphaValue) } ?? "nil"
-        let paStr = presAlpha.map { String(format: "%.2f", $0) } ?? "nil"
-        let hiddenStr = scroller?.isHidden.description ?? "nil"
-        appLog(
-            .info, "TranscriptAttachProbe",
-            "[\(tag)#\(attachProbeBoundaryCounter)] t+\(String(format: "%.1f", elapsed))ms "
-                + "model=\(m) pres=\(p) tableH=\(h) | "
-                + "knob=\(kStr) alpha=\(aStr) presAlpha=\(paStr) hidden=\(hiddenStr)")
     }
 
     private func startRunningObservation(for session: Session) {

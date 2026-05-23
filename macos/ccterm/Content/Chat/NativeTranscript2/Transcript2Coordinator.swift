@@ -567,6 +567,9 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let target = rect.minY - scrollView.contentInsets.top
         scrollView.contentView.scroll(
             to: NSPoint(x: scrollView.contentView.bounds.origin.x, y: target))
+        // See note in `scrollRowToBottom` — `NSClipView.scroll(to:)` does
+        // not auto-update the enclosing scroll view's scrollers.
+        scrollView.reflectScrolledClipView(scrollView.contentView)
     }
 
     /// Scroll so `id`'s bottom aligns with the visible content area's bottom
@@ -592,15 +595,14 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             scrollView.contentView.bounds.height - scrollView.contentInsets.bottom
         let raw = rect.maxY - visibleBottomInClip
         let target = max(-scrollView.contentInsets.top, raw)
-        appLog(
-            .info, "TranscriptAttachProbe",
-            "Q2.5 scrollRowToBottom row=\(row) rowRect=\(rect) "
-                + "clipHeight=\(scrollView.contentView.bounds.height) "
-                + "insets={t=\(scrollView.contentInsets.top),b=\(scrollView.contentInsets.bottom)} "
-                + "visibleBottomInClip=\(visibleBottomInClip) raw=\(raw) target=\(target) "
-                + "currentClipOrigin.y=\(scrollView.contentView.bounds.origin.y)")
         scrollView.contentView.scroll(
             to: NSPoint(x: scrollView.contentView.bounds.origin.x, y: target))
+        // `NSClipView.scroll(to:)` writes the bounds origin but does NOT
+        // auto-call `reflectScrolledClipView(_:)`. Without this follow-up
+        // the enclosing scroll view's scroller stays synced to the *prior*
+        // clip origin, so the thumb flashes at the top while content is at
+        // the tail — visible on every populated-session re-attach.
+        scrollView.reflectScrolledClipView(scrollView.contentView)
     }
 
     // MARK: - Layout cache
@@ -968,12 +970,6 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         // `BlockCellView.layoutOrigin` re-centers content automatically from
         // the new `bounds.width`, no row needs its layout invalidated.
         let width = layoutWidth
-        appLog(
-            .info, "TranscriptAttachProbe",
-            "R1 tableFrameDidChange tableFrame=\(tableView.frame) "
-                + "layoutWidth=\(width) lastLayoutWidth=\(lastLayoutWidth) "
-                + "inLiveResize=\(tableView.inLiveResize) blocks=\(blocks.count) "
-                + "rows=\(tableView.numberOfRows)")
         if width == lastLayoutWidth { return }
         lastLayoutWidth = width
 
@@ -1007,22 +1003,8 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     ///
     /// No-op when `tableView` is nil.
     func scrollToInitialAnchor(_ anchor: Transcript2Controller.InitialAnchor) {
-        guard let tableView else {
-            appLog(
-                .info, "TranscriptAttachProbe",
-                "Q0 scrollToInitialAnchor.skip tableView=nil anchor=\(anchor)")
-            return
-        }
-        appLog(
-            .info, "TranscriptAttachProbe",
-            "Q1 scrollToInitialAnchor.enter anchor=\(anchor) blocks=\(blocks.count) "
-                + "tableFrame=\(tableView.frame) rows=\(tableView.numberOfRows) "
-                + "lastRowRect=\(blocks.isEmpty ? .zero : tableView.rect(ofRow: blocks.count - 1))")
+        guard let tableView else { return }
         tableView.layoutSubtreeIfNeeded()
-        appLog(
-            .info, "TranscriptAttachProbe",
-            "Q2 postTableLayout tableFrame=\(tableView.frame) "
-                + "lastRowRect=\(blocks.isEmpty ? .zero : tableView.rect(ofRow: blocks.count - 1))")
         switch anchor {
         case .bottom:
             if let lastId = blocks.last?.id {
@@ -1032,13 +1014,6 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             scrollRowToTop(id: id, in: tableView)
         case .bottomTo(let id):
             scrollRowToBottom(id: id, in: tableView)
-        }
-        if let sv = tableView.enclosingScrollView {
-            appLog(
-                .info, "TranscriptAttachProbe",
-                "Q3 postScroll clipBounds.origin.y=\(sv.contentView.bounds.origin.y) "
-                    + "presentation.origin.y="
-                    + "\(sv.contentView.layer?.presentation()?.bounds.origin.y.description ?? "nil")")
         }
     }
 

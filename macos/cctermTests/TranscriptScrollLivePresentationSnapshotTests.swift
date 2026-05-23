@@ -71,16 +71,12 @@ final class TranscriptScrollLivePresentationSnapshotTests: XCTestCase {
     /// `attachSession`-equivalent sequence has `presentation.origin.y`
     /// at the tail, not at the `-contentInsets.top` clamp.
     ///
-    /// If this test fails, the user-reported "top-then-snap" glitch is
-    /// real and reproducible without leaving the test process — the
-    /// failure message includes the full frame-by-frame timeline so the
-    /// fix can target the exact frame that paints at top.
-    ///
-    /// If this test passes, we've ruled out the render-server-side
-    /// hypothesis at the offscreen-window level (with the caveat that
-    /// production has additional sibling views — top scrim, bottom
-    /// scrim, compose host — laying out in the same tick, any of which
-    /// could perturb the commit timing).
+    /// Guards the **content layer** specifically. Scrollbar /
+    /// scroller-chrome regressions live in
+    /// `TranscriptScrollFirstFrameSnapshotTests.testScrollerKnobLandsAtTailAfterScrollToTail`
+    /// — sample both dimensions when a visual glitch is reported,
+    /// since the content layer landing at tail does not by itself
+    /// rule out a desynced scroller.
     func testFirstCompositedFramePresentationLandsAtTail() throws {
         let controller = prepopulatedController()
         let scroll = TranscriptScrollViewFactory.make(controller: controller)

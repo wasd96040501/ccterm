@@ -5,15 +5,17 @@ import SwiftUI
 /// — creating it from `applicationDidFinishLaunching` instead of
 /// declaring a SwiftUI `Window` scene — so the transcript's mount and
 /// frame-change handlers run in the source phase, decoupled from
-/// SwiftUI's commit pass.
+/// SwiftUI's commit pass. Also owns the Settings window's lifecycle
+/// (lazy `SettingsWindowController`) so the OS can't resurface it
+/// from saved state at the next launch.
 ///
-/// Auxiliary windows (Settings / Logs / About) stay as SwiftUI `Window`
-/// scenes declared in `CCTermApp`; their menu items (and the ⌘F bus
-/// hook for transcript search) live in `AppCommands` — a SwiftUI
-/// `Commands` block attached to the Settings scene. SwiftUI merges
-/// those into the app's main menu, so cold-start menu clicks resolve
-/// `@Environment(\.openWindow)` correctly without needing an AppKit
-/// bridge.
+/// Logs / About stay as SwiftUI `Window` scenes declared in
+/// `CCTermApp`; their menu items (and the ⌘F bus hook for transcript
+/// search, plus ⌘, → `showSettingsWindow()`) live in `AppCommands` —
+/// a SwiftUI `Commands` block attached to the Logs scene. SwiftUI
+/// merges those into the app's main menu, so cold-start menu clicks
+/// resolve `@Environment(\.openWindow)` correctly without needing an
+/// AppKit bridge.
 ///
 /// The delegate also owns the app-scope state (`AppState`,
 /// `TranscriptSearchBus`). Previously these were `@State` on
@@ -27,6 +29,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private(set) var mainWindowController: MainWindowController?
     let selectionModel = MainSelectionModel()
+
+    /// Lazy AppKit-rooted Settings window. Created on the first
+    /// `showSettingsWindow()` call (⌘, or App > Settings… menu item)
+    /// — never at launch, so the OS cannot resurface it from saved
+    /// state.
+    private var settingsWindowController: SettingsWindowController?
+
+    func showSettingsWindow() {
+        let controller =
+            settingsWindowController
+            ?? {
+                let c = SettingsWindowController()
+                settingsWindowController = c
+                return c
+            }()
+        controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if Self.isUnderXCTest { return }

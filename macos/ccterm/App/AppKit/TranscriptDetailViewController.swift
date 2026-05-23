@@ -650,6 +650,17 @@ struct TranscriptDetailComposeStack: View {
                 if model.isComposeMode {
                     composeBody(sid: sid)
                 } else {
+                    // `.id(sid)` resets `InputBarView2`'s `@State`
+                    // (text, attachments, focus, completion) on every
+                    // session switch. Without it, the bar's local state
+                    // persists across sessions — the bar's `.task(id:
+                    // draftKey)` restore is gated on `text.isEmpty &&
+                    // attachments.isEmpty`, so a non-empty bar would
+                    // both display the previous session's body and
+                    // overwrite the new session's draft on the next
+                    // keystroke. Pre-#195 this reset came for free from
+                    // `.id(sid)` on `ChatHistoryView`, which used to
+                    // bracket the overlay-hosted input bar.
                     ChatRestingBar(
                         sessionId: sid,
                         draftKey: sid,
@@ -657,6 +668,7 @@ struct TranscriptDetailComposeStack: View {
                         onAttachRect: { model.attachRect = $0 },
                         onPillRect: { model.pillRect = $0 }
                     )
+                    .id(sid)
                 }
             } else {
                 Color.clear

@@ -8,6 +8,7 @@ struct CompletionListView: View {
     var onDeleteRecent: ((any CompletionItem) -> Void)?
 
     private let rowHeight: CGFloat = 24
+    private let verticalInset: CGFloat = 4
     private let maxVisibleItems = 10
 
     var body: some View {
@@ -26,16 +27,24 @@ struct CompletionListView: View {
                             Spacer()
                         }
                         .frame(height: rowHeight)
+                        .padding(.top, verticalInset)
+                        .padding(.bottom, viewModel.items.isEmpty ? verticalInset : 0)
                     }
 
                     if viewModel.items.isEmpty {
                         if viewModel.headerText == nil {
                             emptyRow
+                                .padding(.vertical, verticalInset)
                         }
                     } else {
                         ForEach(Array(viewModel.items.enumerated()), id: \.offset) { index, item in
-                            completionRow(item: item, index: index)
-                                .id(index)
+                            completionRow(
+                                item: item,
+                                index: index,
+                                isFirst: viewModel.headerText == nil && index == 0,
+                                isLast: index == viewModel.items.count - 1
+                            )
+                            .id(index)
                         }
                     }
                 }
@@ -92,7 +101,11 @@ struct CompletionListView: View {
     }
 
     @ViewBuilder
-    private func completionRow(item: any CompletionItem, index: Int) -> some View {
+    private func completionRow(
+        item: any CompletionItem, index: Int, isFirst: Bool, isLast: Bool
+    )
+        -> some View
+    {
         HStack(spacing: 0) {
             if let icon = item.displayIcon {
                 Image(nsImage: icon)
@@ -152,6 +165,8 @@ struct CompletionListView: View {
             }
         }
         .frame(height: rowHeight)
+        .padding(.top, isFirst ? verticalInset : 0)
+        .padding(.bottom, isLast ? verticalInset : 0)
         .background(index == viewModel.selectedIndex ? Color.accentColor.opacity(0.2) : Color.clear)
         .contentShape(Rectangle())
         .onTapGesture {
@@ -179,9 +194,6 @@ struct CompletionListView: View {
     private var listHeight: CGFloat {
         let headerH: CGFloat = viewModel.headerText != nil ? rowHeight : 0
         let contentH = CGFloat(displayCount) * rowHeight
-        if viewModel.headerText != nil && viewModel.items.isEmpty {
-            return headerH
-        }
-        return headerH + contentH
+        return headerH + contentH + 2 * verticalInset
     }
 }

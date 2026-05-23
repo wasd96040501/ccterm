@@ -157,6 +157,7 @@ them: `make test-unit FILTER=<class>` then `open <png>`.
 | `DiffView` standalone diff card (modified + new file) ([source](../ccterm/Components/DiffView.swift)) | `DiffViewSnapshotTests` ([source](DiffViewSnapshotTests.swift)) | `/tmp/ccterm-screenshots/DiffView.png` |
 | Transcript attach sequence — first-frame scroll origin / row geometry ([source](../ccterm/Content/Chat/NativeTranscript2/AppKit/TranscriptScrollViewFactory.swift)) | `TranscriptScrollFirstFrameSnapshotTests` ([source](TranscriptScrollFirstFrameSnapshotTests.swift)) | `/tmp/ccterm-screenshots/TranscriptScrollFirstFrame-Production.png` + `…-NoNote.png` |
 | Transcript attach sequence — first **composited** frame on a live render pipeline (CADisplayLink + `CALayer.presentation()`) ([source](../ccterm/Content/Chat/NativeTranscript2/AppKit/TranscriptScrollViewFactory.swift)) | `TranscriptScrollLivePresentationSnapshotTests` ([source](TranscriptScrollLivePresentationSnapshotTests.swift)) | none — text-only timeline attachment |
+| Transcript attach sequence — `layoutCache` write-trace probe (each block typeset at how many distinct widths inside one source-phase tick) ([source](../ccterm/Content/Chat/NativeTranscript2/AppKit/TranscriptScrollViewFactory.swift)) | `TranscriptReentryLayoutCacheSnapshotTests` ([source](TranscriptReentryLayoutCacheSnapshotTests.swift)) | none — text-only `(writes, widths, stages)` attachment |
 
 If your view isn't in this table, jump to [I want to add a snapshot
 test for a new view](#i-want-to-add-a-snapshot-test-for-a-new-view).
@@ -168,12 +169,13 @@ SwiftUI snapshot tests above and worth understanding before you write
 your own. It's a measurement harness: it drives the exact AppKit attach
 sequence used in production (`TranscriptScrollViewFactory.make` →
 `addSubview` + constraints → `view.layoutSubtreeIfNeeded()` →
-`controller.scrollToTail()`) inside an offscreen window, and samples
-state — `clip.bounds.origin.y`, `documentView.frame.height`,
-`numberOfRows`, `rect(ofRow:)` — at four named transition points: after
-factory.make, after layoutSubtreeIfNeeded, after scrollToTail (still
-source phase), and after one runloop drain. Each measurement is attached
-to the xcresult as a text report alongside a final-frame PNG.
+`TranscriptScrollViewFactory.bindData` → `controller.scrollToTail()`)
+inside an offscreen window, and samples state —
+`clip.bounds.origin.y`, `documentView.frame.height`, `numberOfRows`,
+`rect(ofRow:)` — at four named transition points: after factory.make,
+after layoutSubtreeIfNeeded+bindData, after scrollToTail (still source
+phase), and after one runloop drain. Each measurement is attached to the
+xcresult as a text report alongside a final-frame PNG.
 
 What this scaffold is good for:
 
@@ -182,12 +184,11 @@ What this scaffold is good for:
   launching the app.
 - A/B'ing two variants of the same attach sequence: one with the
   production factory, one with a duplicated factory-minus-some-call.
-  That's how the (now-removed) `noteNumberOfRowsChanged` call in
-  `TranscriptScrollViewFactory.make` was proved to be a no-op — the
-  two variants produced identical numbers.
-- Verifying tick-model claims — test 3 of that file falsified the
-  prior CLAUDE.md claim that `view.layoutSubtreeIfNeeded()` doesn't
-  drive NSTableView's row tile.
+- Verifying tick-model claims — `testTickModelLayoutDoesForceRowTileOnFrameChange`
+  examines whether `layoutSubtreeIfNeeded` cascades into NSTableView's
+  tile (it does, but only when `dataSource` is bound — the production
+  factory now defers that bind, which is exactly the point this test
+  is calibrated against).
 
 What it **cannot** observe:
 

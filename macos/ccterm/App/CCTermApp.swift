@@ -2,11 +2,13 @@ import AppKit
 import SwiftUI
 
 /// Main window is rooted in AppKit (see `AppDelegate` /
-/// `MainWindowController`). The remaining SwiftUI `Window` scenes
-/// declared below are auxiliary: Settings, Logs, About. Their menu
-/// items + ⌘F come from the SwiftUI `Commands` DSL attached to the
-/// Settings scene so cold-start menu clicks (before any auxiliary
-/// scene has mounted) still resolve `@Environment(\.openWindow)`.
+/// `MainWindowController`). The remaining SwiftUI scenes declared
+/// below are auxiliary: a `Settings` scene (which never auto-opens
+/// at launch and auto-installs the App > Settings… menu item) plus
+/// `Window` scenes for Logs and About. Their menu items + ⌘F come
+/// from the SwiftUI `Commands` DSL attached to the Settings scene so
+/// cold-start menu clicks (before any auxiliary scene has mounted)
+/// still resolve `@Environment(\.openWindow)`.
 @main
 struct CCTermApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -18,11 +20,18 @@ struct CCTermApp: App {
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 
     var body: some Scene {
-        Window("Settings", id: "settings") {
+        // Use SwiftUI's dedicated `Settings` scene rather than a generic
+        // `Window`: `Settings` does NOT auto-open at launch, while
+        // `Window` does (SwiftUI auto-opens the first `Window` scene
+        // declared in `body`). Since the main window is now AppKit-rooted
+        // and created in `applicationDidFinishLaunching`, a generic
+        // `Window("Settings", …)` here would surface as the launch
+        // window. `Settings` also auto-installs the standard
+        // App > Settings… (⌘,) menu item, so `AppCommands` no longer
+        // needs to replace `.appSettings`.
+        Settings {
             SettingsView()
         }
-        .defaultSize(width: 830, height: 534)
-        .windowResizability(.contentSize)
         .commands {
             AppCommands(searchBus: appDelegate.searchBus)
         }
@@ -135,12 +144,8 @@ struct AppCommands: Commands {
                 openWindow(id: "about")
             }
         }
-        CommandGroup(replacing: .appSettings) {
-            Button(action: { openWindow(id: "settings") }) {
-                Label("Settings", systemImage: "gear")
-            }
-            .keyboardShortcut(",", modifiers: .command)
-        }
+        // The Settings… (⌘,) menu item is installed automatically by
+        // the `Settings { … }` scene declared in `CCTermApp.body`.
         // Top-level Find menu — gives ⌘F a stable AppKit responder-chain
         // route. Routed via `TranscriptSearchBus` so the per-window
         // subscriber lives behind a stable observation channel.

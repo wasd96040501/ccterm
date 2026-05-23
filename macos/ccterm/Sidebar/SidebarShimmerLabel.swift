@@ -1,42 +1,6 @@
 import AppKit
 import QuartzCore
 
-/// NSTextField that crossfades its `stringValue` change when the
-/// `animated` argument is set. Implemented as an opacity autoreverse:
-/// fade out to ~0, swap text, fade back in. Matches the SwiftUI
-/// `.contentTransition(.opacity) + .animation(.easeIn, value: title)`
-/// the prior sidebar used.
-final class CrossfadingTextField: NSTextField {
-
-    private static let halfDuration: TimeInterval = 0.12
-
-    /// Set the field's text, optionally crossfading the transition.
-    /// The incoming value is normalized via
-    /// `String.collapsedSingleLineForDisplay()` so an upstream title
-    /// with embedded newlines / tabs / formatting controls can't blow
-    /// the cell past its row height. See the extension's doc comment
-    /// for the full sanitization rules.
-    func setStringValue(_ value: String, animated: Bool) {
-        let sanitized = value.collapsedSingleLineForDisplay()
-        guard sanitized != stringValue else { return }
-        guard animated, window != nil, !stringValue.isEmpty else {
-            stringValue = sanitized
-            return
-        }
-        wantsLayer = true
-        let fade = CABasicAnimation(keyPath: "opacity")
-        fade.fromValue = 1.0
-        fade.toValue = 0.0
-        fade.duration = Self.halfDuration
-        fade.timingFunction = CAMediaTimingFunction(name: .easeIn)
-        fade.autoreverses = true
-        layer?.add(fade, forKey: "crossfade")
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.halfDuration) { [weak self] in
-            self?.stringValue = sanitized
-        }
-    }
-}
-
 /// Skeleton-loading shimmer painted directly on a host `NSTextField`
 /// by installing a `CAGradientLayer` as the field's `layer.mask`. The
 /// gradient's alpha stops form an opaque → translucent → opaque band;
@@ -53,9 +17,9 @@ final class ShimmerOverlay {
     static let period: CFTimeInterval = 1.6
 
     /// Alpha of the dim stripe at the middle of the sweep. Lower =
-    /// stronger flash. `0.1` gives a clearly visible pulse without
-    /// fully erasing the glyphs as the stripe passes over them.
-    private static let dimAlpha: CGFloat = 0.1
+    /// stronger flash. `0.5` reads as a gentle pulse — enough to see
+    /// the title is still resolving without strobing the user.
+    private static let dimAlpha: CGFloat = 0.5
 
     /// `locations` value when the dim stripe is parked off-screen to
     /// the left of the host — i.e. the resting / animation-start state.

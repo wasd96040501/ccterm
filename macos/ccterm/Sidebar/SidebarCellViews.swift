@@ -213,7 +213,8 @@ final class SidebarFolderCellView: SidebarCellViewBase {
 
 /// Per-session history entry. The leading status indicator (running
 /// dots / unread dot / placeholder) sits in the 16pt slot; the title
-/// follows after the standard 6pt gap and can shimmer + crossfade.
+/// follows after the standard 6pt gap and can shimmer while the LLM
+/// is still generating the title.
 final class SidebarHistoryCellView: SidebarCellViewBase {
 
     private let statusIndicator = SidebarStatusIndicatorView(
@@ -221,7 +222,7 @@ final class SidebarHistoryCellView: SidebarCellViewBase {
             x: 0, y: 0,
             width: SidebarLayout.iconSlotWidth,
             height: SidebarLayout.iconSlotWidth))
-    private let title = CrossfadingTextField(labelWithString: "")
+    private let title = NSTextField(labelWithString: "")
     private var shimmerOverlay: ShimmerOverlay?
 
     /// Identity of the session this cell is currently observing. Set by
@@ -274,7 +275,7 @@ final class SidebarHistoryCellView: SidebarCellViewBase {
         hasUnread: Bool,
         isGeneratingTitle: Bool
     ) {
-        title.setStringValue(newTitle, animated: window != nil)
+        title.stringValue = newTitle.collapsedSingleLineForDisplay()
         statusIndicator.update(isRunning: isRunning, hasUnread: hasUnread)
         if isGeneratingTitle {
             if shimmerOverlay == nil {

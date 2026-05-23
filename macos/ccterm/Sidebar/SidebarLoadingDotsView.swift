@@ -1,30 +1,33 @@
 import AppKit
 import QuartzCore
 
-/// AppKit port of the prior SwiftUI `SidebarLoadingDots`: three small
-/// dots whose opacities cycle in a left-to-right wave. The frame timer
-/// is `NSView.displayLink(target:selector:)` so the cadence matches the
-/// host display; opacities are sampled from the absolute wall-clock
-/// (`Date.timeIntervalSinceReferenceDate`), so multiple instances —
-/// including the transcript's pill — breathe in lockstep.
+/// Three dots that pulse one-after-the-other left-to-right, then
+/// rest for a beat before repeating — the "typing indicator" rhythm.
 ///
-/// Timing constants (`period`, `phaseStagger`, geometry) are copied
-/// verbatim from the prior SwiftUI implementation so the visual rhythm
-/// is unchanged.
+/// Each dot gets its own `CAKeyframeAnimation` on `opacity` whose
+/// whole cycle is the same `cycleDuration`. The differences live in
+/// `keyTimes`: each dot's "dim then restore" window sits in a
+/// different third of the cycle's first half, and the cycle's second
+/// half is held at full opacity for every dot — that flat tail is
+/// what gives the animation its breath-and-rest feel rather than a
+/// continuous wave.
+///
+/// Using a keyframe animation (instead of `autoreverses` +
+/// `beginTime` staggering) keeps every dot on the same shared cycle,
+/// so the pause is genuinely a pause for all three at once.
 final class SidebarLoadingDotsView: NSView {
 
     static let dotSize: CGFloat = 3
     static let dotGap: CGFloat = 1.5
-    /// Full breath cycle (seconds).
-    static let period: Double = 1.2
-    /// Per-dot phase offset.
-    static let phaseStagger: Double = 0.18
-    /// Floor opacity — keeps the breath visible in dark mode without
-    /// dropping below ~1.6:1 contrast at the trough.
-    static let minOpacity: Double = 0.45
+    /// Full cycle including the post-sweep pause (seconds).
+    static let cycleDuration: Double = 1.8
+    /// How long each individual dot's dim → restore takes.
+    static let dotActiveDuration: Double = 0.35
+    /// Floor opacity at each dot's trough — keeps the trough visible
+    /// in dark mode without dropping below ~1.6:1 contrast.
+    static let dimAlpha: Float = 0.35
 
     private var dotLayers: [CALayer] = []
-    private var displayLink: CADisplayLink?
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -41,9 +44,9 @@ final class SidebarLoadingDotsView: NSView {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if window != nil {
-            startAnimating()
+            attachBreath()
         } else {
-            stopAnimating()
+            detachBreath()
         }
     }
 
@@ -82,42 +85,41 @@ final class SidebarLoadingDotsView: NSView {
         for dot in dotLayers { dot.backgroundColor = resolved }
     }
 
-    private func startAnimating() {
-        guard displayLink == nil else { return }
-        let link = displayLink(target: self, selector: #selector(displayLinkTick(_:)))
-        link.add(to: .main, forMode: .common)
-        displayLink = link
-        // Paint one frame immediately so the dots aren't all at the
-        // floor opacity until the first vsync arrives.
-        tick()
-    }
-
-    private func stopAnimating() {
-        displayLink?.invalidate()
-        displayLink = nil
-    }
-
-    @objc private func displayLinkTick(_ sender: CADisplayLink) {
-        tick()
-    }
-
-    private func tick() {
-        let t = Date().timeIntervalSinceReferenceDate
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
+    private func attachBreath() {
+        let now = CACurrentMediaTime()
         for (idx, dot) in dotLayers.enumerated() {
-            dot.opacity = Float(Self.opacity(at: t, staggerIndex: idx))
+            // Each dot's dim window slots into a different third at
+            // the front of the cycle; the tail of the cycle is held
+            // flat at 1.0 across all dots, producing the "pause" beat.
+            let baseStart = Double(idx) * Self.dotActiveDuration
+            // `keyTimes` must be strictly monotonically increasing —
+            // bump `idx == 0`'s start off zero by a frame's-worth so
+            // it doesn't collide with the leading `0.0` keyTime.
+            let activeStart = max(1.0 / 60.0, baseStart) / Self.cycleDuration
+            let activeMid = (baseStart + Self.dotActiveDuration / 2) / Self.cycleDuration
+            let activeEnd = (baseStart + Self.dotActiveDuration) / Self.cycleDuration
+
+            let anim = CAKeyframeAnimation(keyPath: "opacity")
+            anim.values = [1.0, 1.0, Self.dimAlpha, 1.0, 1.0]
+            anim.keyTimes =
+                [
+                    0.0,
+                    activeStart,
+                    activeMid,
+                    activeEnd,
+                    1.0,
+                ] as [NSNumber]
+            anim.duration = Self.cycleDuration
+            anim.repeatCount = .infinity
+            anim.calculationMode = .cubic
+            // Sync all three dots to the same wall-clock phase so the
+            // cycle stays in lockstep across cell reuse / remount.
+            anim.beginTime = now - now.truncatingRemainder(dividingBy: Self.cycleDuration)
+            dot.add(anim, forKey: "breath")
         }
-        CATransaction.commit()
     }
 
-    /// Smooth sine breath in `[minOpacity, 1]`. Per-dot `staggerIndex`
-    /// shifts the phase so the wave crest sweeps left-to-right.
-    static func opacity(at time: Double, staggerIndex: Int) -> Double {
-        let shifted = time - Double(staggerIndex) * phaseStagger
-        let normalized = shifted.truncatingRemainder(dividingBy: period) / period
-        let nonNegative = normalized < 0 ? normalized + 1 : normalized
-        let s = (1 - cos(2 * .pi * nonNegative)) / 2
-        return minOpacity + (1 - minOpacity) * s
+    private func detachBreath() {
+        for dot in dotLayers { dot.removeAnimation(forKey: "breath") }
     }
 }

@@ -53,13 +53,6 @@ struct CCTermApp: App {
             return
         }
         MainThreadWatchdog.start()
-        #if DEBUG
-        // Temporary: aggregate session-switch perf counters and emit one
-        // summary line per attach (category == "Transcript2Reentry").
-        // Hot-path call sites push counters in-memory only — no os_log
-        // per event. Revert before merging.
-        Transcript2ReentryStats.enabled = true
-        #endif
         // First-launch model catalog fetch — eagerly kicked off at
         // app init so the picker has data ready by the time the user
         // can interact with it. `prefetchIfNeeded` returns

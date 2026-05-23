@@ -31,13 +31,20 @@ enum NewSessionStatsCardsLayout {
     /// vertical insets) with a few points of buffer.
     static let cardHeight: CGFloat = 180
 
-    /// Wider card (Overview).
-    static let overviewWidth: CGFloat = 608
+    /// Overview card width. Snapped to the heatmap's natural width
+    /// (`26 cells × 12pt + 25 gaps × 2pt = 362`) plus the card's
+    /// 14pt horizontal padding on each side, so the heatmap sits
+    /// edge-to-edge with the card frame instead of leaving a wide
+    /// right-side gutter.
+    static let overviewWidth: CGFloat = 390
 
-    /// Narrower card (Models). Sums with `overviewWidth + spacing`
-    /// to the configurator's `maxWidth` (960) so the three cards
-    /// share a left/right edge.
-    static let modelsWidth: CGFloat = 336
+    /// Models card width. Auto-fills the remaining width budget so
+    /// the three cards still share a left/right edge with the main
+    /// configurator card: `960 - 390 - 16 = 554`. The extra width
+    /// (vs the previous 336pt) gives each of the 90 bar slots ~5.8pt
+    /// (was 3.4pt), so the chart reads as a chart instead of as a
+    /// haze of pixels, and the model-row labels have room to breathe.
+    static let modelsWidth: CGFloat = 554
 
     /// Horizontal spacing between the two top cards AND vertical
     /// spacing from the top row to the main card. Same value so the
@@ -85,19 +92,19 @@ struct OverviewStatsCard: View {
                 StatTile(
                     label: String(localized: "Sessions"),
                     value: Double(result?.totalSessions ?? 0),
-                    text: Self.compactInt(result?.totalSessions ?? 0))
+                    text: Self.compactNumber(result?.totalSessions ?? 0))
                 StatTile(
                     label: String(localized: "Messages"),
                     value: Double(result?.totalMessages ?? 0),
-                    text: Self.compactInt(result?.totalMessages ?? 0))
+                    text: Self.compactNumber(result?.totalMessages ?? 0))
                 StatTile(
                     label: String(localized: "Total tokens"),
                     value: Double(totalTokens),
-                    text: Self.compactTokens(totalTokens))
+                    text: Self.compactNumber(totalTokens))
                 StatTile(
                     label: String(localized: "Active days"),
                     value: Double(result?.activeDays ?? 0),
-                    text: Self.compactInt(result?.activeDays ?? 0))
+                    text: Self.compactNumber(result?.activeDays ?? 0))
             }
 
             ActivityHeatmap(result: result)
@@ -128,27 +135,22 @@ struct OverviewStatsCard: View {
         return usage.values.reduce(0) { $0 + $1.inputTokens + $1.outputTokens }
     }
 
-    /// Compact integer formatter — short ("1.2k", "168.5k", "12M")
-    /// once values cross 10k, raw with thousands separator below.
-    static func compactInt(_ n: Int) -> String {
-        if n < 10_000 {
-            return n.formatted(.number.grouping(.automatic))
-        }
-        return n.formatted(.number.notation(.compactName).precision(.fractionLength(0...1)))
-    }
-
-    /// Token-specific compact formatter. Adds "M" / "k" with one
-    /// decimal so the headline number doesn't jitter between "999k"
-    /// and "1M" on small data deltas.
-    static func compactTokens(_ n: Int) -> String {
+    /// One compact two-decimal formatter shared by every numeric
+    /// reading across the stats cards: stat tiles, the heatmap +
+    /// chart hover bubbles, the per-model row tooltips. Below 1000
+    /// the number is raw (no suffix, no decimals — `922`, `71`);
+    /// at or above 1000 it switches to `x.xxK / x.xxM / x.xxB` with
+    /// two decimal places (`168.55K`, `69.50M`, `1.23B`). Uppercase
+    /// suffixes throughout for visual consistency.
+    static func compactNumber(_ n: Int) -> String {
         if n < 1_000 { return "\(n)" }
         if n < 1_000_000 {
-            return String(format: "%.1fk", Double(n) / 1_000)
+            return String(format: "%.2fK", Double(n) / 1_000)
         }
         if n < 1_000_000_000 {
-            return String(format: "%.1fM", Double(n) / 1_000_000)
+            return String(format: "%.2fM", Double(n) / 1_000_000)
         }
-        return String(format: "%.1fB", Double(n) / 1_000_000_000)
+        return String(format: "%.2fB", Double(n) / 1_000_000_000)
     }
 }
 
@@ -457,7 +459,7 @@ private struct ActivityHeatmapBody: View {
         if tokens == 0 { return String(localized: "No activity") }
         return String(
             format: String(localized: "%@ tokens"),
-            OverviewStatsCard.compactTokens(tokens))
+            OverviewStatsCard.compactNumber(tokens))
     }
 }
 
@@ -752,7 +754,7 @@ private struct TokensChart: View {
         if tokens == 0 { return String(localized: "No activity") }
         return String(
             format: String(localized: "%@ tokens"),
-            OverviewStatsCard.compactTokens(tokens))
+            OverviewStatsCard.compactNumber(tokens))
     }
 }
 
@@ -845,8 +847,8 @@ private struct ModelRow: View {
     }
 
     private static func usageLabel(in inTok: Int, out outTok: Int) -> String {
-        let inS = OverviewStatsCard.compactTokens(inTok)
-        let outS = OverviewStatsCard.compactTokens(outTok)
+        let inS = OverviewStatsCard.compactNumber(inTok)
+        let outS = OverviewStatsCard.compactNumber(outTok)
         return String(format: String(localized: "%@ in · %@ out"), inS, outS)
     }
 }

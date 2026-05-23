@@ -1,9 +1,10 @@
-.PHONY: build release dmg clean fmt fmt-check test-unit js-bundles help
+.PHONY: build release install dmg clean fmt fmt-check test-unit js-bundles help
 
 XCSTRINGS := macos/ccterm/Localizable.xcstrings
 FMT_XCSTRINGS := python3 macos/scripts/fmt-xcstrings.py
 SWIFT_FORMAT := swift-format
 SWIFT_SRC := macos/ccterm macos/cctermTests macos/AgentSDK/Sources
+PREFIX ?= /Applications
 
 # JSCore bundles — compiled from js/ on demand. Outputs are gitignored; the
 # `js-bundles` target rebuilds them when sources / lockfile change, so
@@ -25,6 +26,9 @@ build: js-bundles ## Build ccterm (Debug)
 
 release: js-bundles ## Build ccterm (Release)
 	./macos/scripts/build.sh release
+
+install: release ## Install Release build to $(PREFIX) (default: /Applications)
+	./macos/scripts/install.sh "$(PREFIX)"
 
 test-unit: js-bundles ## Run unit tests (cctermTests) — fast, parallel-safe
 	./macos/scripts/test-unit.sh "$(FILTER)"

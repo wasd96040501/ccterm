@@ -28,9 +28,14 @@ struct ContextRingButton: View {
             )
         }
         .accessibilityLabel(String(localized: "Context usage"))
-        .accessibilityValue("\(Int(percent))%")
+        .accessibilityValue("\(Int(percent.rounded()))%")
     }
 
+    /// Raw 0..100 value used by the ring fill animation. We keep the
+    /// fractional precision here so the stroke arc moves smoothly
+    /// between integer ticks; the popover and accessibility label
+    /// rounds it before display (matches the JS reference's
+    /// `Math.round(used / total * 100)`).
     private var percent: Double {
         let total = Double(session.contextWindowTokens)
         guard total > 0 else { return 0 }
@@ -74,7 +79,7 @@ private struct ContextPopoverContent: View {
     }
 
     private var percentLine: String {
-        String(format: String(localized: "%lld%% used"), Int(percent))
+        String(format: String(localized: "%lld%% used"), Int(percent.rounded()))
     }
 
     private func formatTokens(_ count: Int) -> String {

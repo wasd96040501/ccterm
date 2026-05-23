@@ -172,6 +172,98 @@ final class TranscriptScrollFirstFrameSnapshotTests: XCTestCase {
         capturePNG(scroll: scroll, name: "TranscriptScrollFirstFrame-NoNote")
     }
 
+    // MARK: - Test 2.5: scroller knob position after scrollToTail
+    //
+    // Found in production via live `log stream` probe (May 2026): the
+    // user reported a re-entry glitch where the transcript content
+    // correctly lands at the tail but the **scrollbar thumb** flashes
+    // at the top before fading out (overlay scrollers' brief
+    // visibility on content change). Probes confirmed:
+    //
+    //   clip.bounds.origin.y = tail (correct)
+    //   verticalScroller.doubleValue = 0 (WRONG — pre-scroll value)
+    //
+    // Root cause: `NSClipView.scroll(to:)` doesn't call
+    // `reflectScrolledClipView(_:)` on its enclosing scroll view — the
+    // documented contract — so the scroll view's scrollers stay
+    // synced with the *previous* clip origin. The transcript's
+    // `Transcript2Coordinator.scrollRowToBottom` (and `scrollRowToTop`)
+    // call `scroll(to:)` directly without that follow-up. The bug
+    // never surfaced in the offscreen scaffolds in this file because
+    // none of them probed `verticalScroller.doubleValue`.
+    //
+    // This test fails on the buggy version (scroller.doubleValue ≈ 0
+    // while clip origin is at tail) and is the regression gate for
+    // whatever fix lands.
+
+    /// Asserts that after `controller.scrollToTail()`, the vertical
+    /// scroller's knob is at the tail (`doubleValue ≈ 1`), not stuck
+    /// at the pre-scroll position. Uses the production attach path —
+    /// the `Transcript2Coordinator.scrollRowToBottom` codepath — so
+    /// any fix to that function will land first-class here.
+    func testScrollerKnobLandsAtTailAfterScrollToTail() throws {
+        let controller = prepopulatedController()
+        let scroll = TranscriptScrollViewFactory.make(controller: controller)
+        let (window, container) = makeOffscreenWindow(content: scroll)
+        defer { dismantleWindow(window) }
+
+        container.layoutSubtreeIfNeeded()
+        controller.scrollToTail()
+
+        let m = measure(scroll: scroll)
+        let visibleBottomInClip = m.clipHeight - m.contentInsets.bottom
+        let expectedTailOrigin = m.documentHeight - visibleBottomInClip
+
+        guard let vScroller = scroll.verticalScroller else {
+            XCTFail("scroll view has no verticalScroller")
+            return
+        }
+        let knob = vScroller.doubleValue
+        let knobProportion = vScroller.knobProportion
+
+        attachString(
+            """
+            scroller-knob-after-scrollToTail
+            ────────────────────────────────────────────────────────────
+            clip.bounds.origin.y = \(m.clipOriginY)
+            expected tail origin = \(expectedTailOrigin)
+            documentHeight       = \(m.documentHeight)
+            clipHeight           = \(m.clipHeight)
+
+            verticalScroller
+              doubleValue        = \(knob)     ← thumb position [0..1]
+              knobProportion     = \(knobProportion)
+              alphaValue         = \(vScroller.alphaValue)
+              isHidden           = \(vScroller.isHidden)
+
+            Reading the result:
+              · clip origin at tail + knob ≈ 1.0  → scroller is consistent
+              · clip origin at tail + knob ≈ 0    → BUG: NSClipView.scroll(to:)
+                doesn't auto-call reflectScrolledClipView, so the scroller's
+                thumb position is stuck at the value it had before the scroll.
+                User-visible as "content at bottom but scrollbar at top".
+            """, name: "scroller-knob")
+
+        // Sanity: content origin should be at tail (matched by the
+        // other tests in this file).
+        XCTAssertEqual(
+            m.clipOriginY, expectedTailOrigin, accuracy: 2.0,
+            "fixture sanity: clip should be at tail")
+
+        // The regression assertion: the scroller's knob should be at
+        // the tail. With NSClipView.scroll(to:) called without
+        // reflectScrolledClipView, the knob stays at 0.
+        XCTAssertGreaterThan(
+            knob, 0.9,
+            "FIRST-FRAME SCROLLER THUMB STUCK AT TOP. "
+                + "scroller.doubleValue=\(knob), expected ≈ 1.0 (tail). "
+                + "Content (clip.bounds.origin.y) IS at tail "
+                + "(\(m.clipOriginY) ≈ \(expectedTailOrigin)) but the "
+                + "scroller thinks we're scrolled to the top. Caller of "
+                + "NSClipView.scroll(to:) must follow up with "
+                + "enclosingScrollView.reflectScrolledClipView(self).")
+    }
+
     // MARK: - Test 3: CATransaction.flush() vs runloop drain — does the
     //                 source-phase scroll write reach the layer's
     //                 *presentation* tree on the same tick?

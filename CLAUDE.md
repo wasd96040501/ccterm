@@ -6,13 +6,14 @@ Native macOS client for Claude Code. SwiftUI + AppKit, minimum target macOS 14 (
 
 - **UI framework — SwiftUI by default, AppKit by exception.** Reach for AppKit only when SwiftUI cannot meet the requirement (performance, lifecycle timing, or a missing capability). The current AppKit footprint is:
   - **Chat transcript** — `NSTableView` + Core Text self-drawn (`NativeTranscript2`). SwiftUI's `List` / `LazyVStack` cannot keep up with the row count, custom layout, and selection semantics.
+  - **Sidebar** — `NSOutlineView` source-list (`SidebarViewController` + cells). SwiftUI's `.listStyle(.sidebar)` was an NSOutlineView under the hood anyway; going direct gives us deterministic row heights, click-to-toggle folder headers, and animated insert/remove for collapse, without fighting the wrapper.
   - **Main window root** — `MainWindowController` + `MainSplitViewController` + `TranscriptDetailViewController`. The transcript's mount and `frameDidChange` cascade must run in AppKit's source phase, not SwiftUI's commit pass.
   - **Window toolbar** — `NSToolbar` + `NSSearchToolbarItem`; `.searchable` doesn't give the first-responder + ⌘F semantics the transcript search needs.
   - **App lifecycle** — `AppDelegate` (via `@NSApplicationDelegateAdaptor`) owns app-scope state and creates the main window in `applicationDidFinishLaunching`.
 
-  Everything else — sidebar, input bar, configurator, overlays, Settings / Logs / About windows, every reusable component — is SwiftUI, hosted via `NSHostingController` (full panes) or `NSHostingView` (toolbar items / overlays). New code lands in SwiftUI unless it fits one of the exceptions above; introducing a new AppKit surface needs an explicit reason (perf measurement, missing API, lifecycle ordering).
+  Everything else — input bar, configurator, overlays, Settings / Logs / About windows, every reusable component — is SwiftUI, hosted via `NSHostingController` (full panes) or `NSHostingView` (toolbar items / overlays). New code lands in SwiftUI unless it fits one of the exceptions above; introducing a new AppKit surface needs an explicit reason (perf measurement, missing API, lifecycle ordering).
 
-- **Entry point**: `@main CCTermApp` (SwiftUI `App`) → `@NSApplicationDelegateAdaptor(AppDelegate.self)` → `MainWindowController` → `MainSplitViewController` (sidebar item + detail item) → `TranscriptDetailViewController`. Selection / draft state lives on `MainSelectionModel` (`@Observable`), shared between the hosted `SidebarView2` and the AppKit detail VC. Settings / Logs / About remain SwiftUI `Window` scenes; their menu items + ⌘F binding come from `AppCommands` (a SwiftUI `Commands` block on the Settings scene) so cold-start clicks resolve `@Environment(\.openWindow)` cleanly.
+- **Entry point**: `@main CCTermApp` (SwiftUI `App`) → `@NSApplicationDelegateAdaptor(AppDelegate.self)` → `MainWindowController` → `MainSplitViewController` (sidebar item + detail item) → `TranscriptDetailViewController`. Selection / draft state lives on `MainSelectionModel` (`@Observable`), shared between the AppKit `SidebarViewController` and the detail VC. Settings / Logs / About remain SwiftUI `Window` scenes; their menu items + ⌘F binding come from `AppCommands` (a SwiftUI `Commands` block on the Settings scene) so cold-start clicks resolve `@Environment(\.openWindow)` cleanly.
 - **Layers**:
   - **Model** — plain data, `struct` first, `Codable` where it crosses a boundary.
   - **View** — SwiftUI structs, declarative.
@@ -47,7 +48,7 @@ ccterm/
 │   ├── ccterm.xcodeproj/
 │   ├── ccterm/               # App sources
 │   │   ├── App/              # CCTermApp, AppState; AppKit/ holds AppDelegate + MainWindowController + split + detail VC
-│   │   ├── Sidebar/          # SidebarView2
+│   │   ├── Sidebar/          # SidebarViewController + cells (AppKit NSOutlineView)
 │   │   ├── Components/       # Reusable SwiftUI / AppKit components
 │   │   │   └── Markdown/     # GFM parser → internal IR (consumed by NativeTranscript2)
 │   │   ├── Content/          # Top-level content panes

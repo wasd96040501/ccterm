@@ -252,7 +252,7 @@ final class TranscriptDetailViewController: NSViewController {
 
     private func handleSelectionChanged() {
         // Lazy-allocate draftSessionId on entering New Session.
-        if model.selectedSessionId == SidebarView2.newSessionTag, model.draftSessionId == nil {
+        if model.selectedSessionId == SidebarSentinel.newSession, model.draftSessionId == nil {
             model.draftSessionId = UUID().uuidString.lowercased()
             model.draftCwd = recentProjects.lastLaunchedPath
             model.draftUseWorktree =
@@ -298,7 +298,7 @@ final class TranscriptDetailViewController: NSViewController {
 
     private func sideBranchView(for sid: String?) -> AnyView? {
         guard let sid else { return nil }
-        if sid == SidebarView2.archiveTag {
+        if sid == SidebarSentinel.archive {
             return AnyView(
                 ArchiveView(onUnarchive: { [weak self] resumeSid in
                     self?.model.selectedSessionId = resumeSid
@@ -313,15 +313,15 @@ final class TranscriptDetailViewController: NSViewController {
         }
         #if DEBUG
         switch sid {
-        case SidebarView2.transcriptDemoTag:
+        case SidebarSentinel.transcriptDemo:
             return AnyView(injectingEnvironment(TranscriptDemoView()))
-        case SidebarView2.transcriptStressTag:
+        case SidebarSentinel.transcriptStress:
             return AnyView(injectingEnvironment(TranscriptStressView()))
-        case SidebarView2.transcriptPerfTag:
+        case SidebarSentinel.transcriptPerf:
             return AnyView(injectingEnvironment(TranscriptPerfDemoView()))
-        case SidebarView2.permissionCardsDemoTag:
+        case SidebarSentinel.permissionCardsDemo:
             return AnyView(injectingEnvironment(PermissionCardsDemoView()))
-        case SidebarView2.permissionSessionDemoTag:
+        case SidebarSentinel.permissionSessionDemo:
             return AnyView(injectingEnvironment(PermissionSessionDemoView()))
         default: break
         }

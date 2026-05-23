@@ -1,20 +1,14 @@
 import AppKit
-import SwiftUI
 import XCTest
 
 @testable import ccterm
 
-/// Snapshot for the sidebar's history-row chrome plus the runtime-state
-/// indicators added to each row (three breathing dots when the session
-/// is running, a small blue dot when unread, both hidden otherwise).
-///
-/// `SidebarView2` itself is rendered through SwiftUI's
-/// `.listStyle(.sidebar)`, which is backed by `NSOutlineView` and
-/// refuses to lay out rows in an offscreen test window — so the full
-/// view comes out blank. The view's individual row types are exposed
-/// at internal access purely so this test can compose them into a
-/// `VStack` and visualize the indicator slot. Production wiring is
-/// unchanged (production still goes through `SidebarView2`'s List).
+/// Snapshot for the AppKit-native sidebar (`SidebarViewController`). The
+/// previous SwiftUI sidebar test composed individual row types into a
+/// `VStack` because `.listStyle(.sidebar)` refused to render under the
+/// offscreen XCTest window; the AppKit `NSOutlineView` has no such
+/// limitation, so we can mount the real controller and capture the
+/// production layout end-to-end.
 ///
 /// The PNG is attached to the xcresult for human review; there is no
 /// golden-image comparison. Open `/tmp/ccterm-screenshots/SidebarView2.png`
@@ -63,13 +57,11 @@ final class SidebarView2SnapshotTests: XCTestCase {
 
         let manager = SessionManager(repository: repo)
 
-        // Allocate sessions via the public surface and drive observable
-        // state directly through the underlying runtime. `isRunning`
-        // and `hasUnread` are `internal(set)` on `SessionRuntime` —
-        // `@testable import` lets the test reach them without adding
-        // production-only seams. `session(_:)` returns a façade in
-        // `.active` phase for any record-existing id, so `runtime` is
-        // non-nil here.
+        // Drive runtime indicator state directly: `isRunning` /
+        // `hasUnread` are `internal(set)` on `SessionRuntime`, reached
+        // via `@testable import`. Records without a runtime show no
+        // indicator (matches production behavior for sessions never
+        // activated in this process lifetime).
         let running = try XCTUnwrap(manager.session(runningInProjectA.sessionId)?.runtime)
         running.isRunning = true
 
@@ -80,60 +72,13 @@ final class SidebarView2SnapshotTests: XCTestCase {
         both.isRunning = true
         both.hasUnread = true
 
-        // `idleInProjectA` / `idleInProjectB` deliberately have no
-        // handle — sidebar reads them via `existingSession` and shows no
-        // indicator, matching production behavior for sessions never
-        // activated in this process lifetime.
-
-        // Compose the same rows the production List would, in a plain
-        // VStack with sidebar-style padding. Backgrounded with
-        // `windowBackgroundColor` so the secondary-label text reads.
-        let preview = VStack(alignment: .leading, spacing: 0) {
-            SidebarItemRow(
-                title: "New Session", systemImage: "square.and.pencil"
-            )
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            SidebarItemRow(
-                title: "Transcript Demo", systemImage: "doc.text.image"
-            )
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-
-            SidebarFolderHeader(
-                name: "project-a", isExpanded: true, onToggle: {}
-            )
-            .padding(.horizontal, 8)
-            .padding(.top, 10)
-            .padding(.bottom, 4)
-
-            SidebarHistoryRow(record: runningInProjectA)
-                .padding(.horizontal, 8).padding(.vertical, 1)
-            SidebarHistoryRow(record: unreadInProjectA)
-                .padding(.horizontal, 8).padding(.vertical, 1)
-            SidebarHistoryRow(record: idleInProjectA)
-                .padding(.horizontal, 8).padding(.vertical, 1)
-
-            SidebarFolderHeader(
-                name: "project-b", isExpanded: true, onToggle: {}
-            )
-            .padding(.horizontal, 8)
-            .padding(.top, 10)
-            .padding(.bottom, 4)
-
-            SidebarHistoryRow(record: runningAndUnreadInProjectB)
-                .padding(.horizontal, 8).padding(.vertical, 1)
-            SidebarHistoryRow(record: idleInProjectB)
-                .padding(.horizontal, 8).padding(.vertical, 1)
-
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color(nsColor: .windowBackgroundColor))
-        .environment(manager)
+        let model = MainSelectionModel()
+        let controller = SidebarViewController(model: model, sessionManager: manager)
 
         let image = ViewSnapshot.render(
-            preview, size: CGSize(width: 260, height: 360), settle: 0.8)
+            controller: controller,
+            size: CGSize(width: 260, height: 360),
+            settle: 0.8)
         let url = ViewSnapshot.writePNG(image, name: "SidebarView2")
 
         let attachment = XCTAttachment(contentsOfFile: url)

@@ -919,6 +919,14 @@ struct NewSessionComposeStack<InputBar: View>: View {
             )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Shift the whole stack up by 22pt. The frame above takes
+        // all available height and centres its children; adding
+        // 44pt of bottom padding here trims the frame's bottom by
+        // 44, so the new centre sits 22pt above the original one.
+        // Cleaner than `.offset(y:)` because the cards still respect
+        // layout bounds — no risk of clipping into the toolbar at
+        // small window heights.
+        .padding(.bottom, 44)
         .task {
             // Re-fire on every mount. The service short-circuits
             // overlapping work (refreshTask cancels its predecessor),

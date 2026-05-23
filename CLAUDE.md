@@ -4,17 +4,24 @@ Native macOS client for Claude Code. SwiftUI + AppKit, minimum target macOS 14 (
 
 ## Architecture at a glance
 
-- **UI**: SwiftUI for the sidebar, input bar, overlays, configurator, etc. The chat transcript itself is AppKit-native (`NSTableView` + Core Text self-drawn). The main window is rooted in AppKit (`MainWindowController` + `NSSplitViewController`) so the transcript's mount + `frameDidChange` cascade runs in AppKit's source phase, not in SwiftUI's commit pass. SwiftUI is hosted via `NSHostingController` (sidebar, side branches like Archive / DEBUG demos) and `NSHostingView` (overlays).
-- **Entry point**: `@main CCTermApp` → `@NSApplicationDelegateAdaptor(AppDelegate.self)` → `MainWindowController` → `MainSplitViewController` (sidebar item + detail item) → `TranscriptDetailViewController`. Selection / draft state lives on `MainSelectionModel` (`@Observable`), shared between the hosted `SidebarView2` and the AppKit detail VC. Settings / Logs / About remain SwiftUI `Window` scenes; their menu items + ⌘F binding come from `AppCommands` (a SwiftUI `Commands` block on the Settings scene) so cold-start clicks resolve `@Environment(\.openWindow)` cleanly.
+- **UI framework — SwiftUI by default, AppKit by exception.** Reach for AppKit only when SwiftUI cannot meet the requirement (performance, lifecycle timing, or a missing capability). The current AppKit footprint is:
+  - **Chat transcript** — `NSTableView` + Core Text self-drawn (`NativeTranscript2`). SwiftUI's `List` / `LazyVStack` cannot keep up with the row count, custom layout, and selection semantics.
+  - **Main window root** — `MainWindowController` + `MainSplitViewController` + `TranscriptDetailViewController`. The transcript's mount and `frameDidChange` cascade must run in AppKit's source phase, not SwiftUI's commit pass.
+  - **Window toolbar** — `NSToolbar` + `NSSearchToolbarItem`; `.searchable` doesn't give the first-responder + ⌘F semantics the transcript search needs.
+  - **App lifecycle** — `AppDelegate` (via `@NSApplicationDelegateAdaptor`) owns app-scope state and creates the main window in `applicationDidFinishLaunching`.
+
+  Everything else — sidebar, input bar, configurator, overlays, Settings / Logs / About windows, every reusable component — is SwiftUI, hosted via `NSHostingController` (full panes) or `NSHostingView` (toolbar items / overlays). New code lands in SwiftUI unless it fits one of the exceptions above; introducing a new AppKit surface needs an explicit reason (perf measurement, missing API, lifecycle ordering).
+
+- **Entry point**: `@main CCTermApp` (SwiftUI `App`) → `@NSApplicationDelegateAdaptor(AppDelegate.self)` → `MainWindowController` → `MainSplitViewController` (sidebar item + detail item) → `TranscriptDetailViewController`. Selection / draft state lives on `MainSelectionModel` (`@Observable`), shared between the hosted `SidebarView2` and the AppKit detail VC. Settings / Logs / About remain SwiftUI `Window` scenes; their menu items + ⌘F binding come from `AppCommands` (a SwiftUI `Commands` block on the Settings scene) so cold-start clicks resolve `@Environment(\.openWindow)` cleanly.
 - **Layers**:
   - **Model** — plain data, `struct` first, `Codable` where it crosses a boundary.
   - **View** — SwiftUI structs, declarative.
   - **Service** — `@Observable`, injected via initializer or `.environment()`. Views never construct services themselves.
-  - **AppState** — a thin global container that only holds `SessionManager2` and `SyntaxHighlightEngine`, injected through `.environment()`.
+  - **AppState** — process-scope container owned by `AppDelegate`, injected through `.environment()`. Currently holds `SessionManager`, `SyntaxHighlightEngine`, `RecentProjectsStore`, `InputDraftStore`, `AppActivationTracker`, `NotificationService`.
 
 ### SwiftUI rules
 
-- `@Observable` for state shared across views (e.g. `SessionHandle2`); `@State` for view-private UI state; `@Binding` for writable references from a parent.
+- `@Observable` for state shared across views (e.g. `Session`); `@State` for view-private UI state; `@Binding` for writable references from a parent.
 - Put reusable SwiftUI components under `Components/`.
 - If a `body` runs past ~40 lines, split it: child views with their own state become separate `View` structs (and usually their own files); pure layout becomes a computed property or `@ViewBuilder` helper.
 - No expensive work inside `body`. Long lists use `NativeTranscript2`, never `List` / `LazyVStack`.
@@ -28,7 +35,7 @@ Detailed conventions live next to the code they govern. When you touch one of th
 | Area | Doc |
 |---|---|
 | Chat UI assembly (MainWindow / Sidebar / Detail VC / InputBar / pill) | [Content/Chat/CLAUDE.md](macos/ccterm/Content/Chat/CLAUDE.md) |
-| `SessionHandle2` runtime, render-side comms, mutation rules | [Services/Session/CLAUDE.md](macos/ccterm/Services/Session/CLAUDE.md) |
+| `Session` / `SessionRuntime` runtime, render-side comms, mutation rules | [Services/Session/CLAUDE.md](macos/ccterm/Services/Session/CLAUDE.md) |
 | Native transcript internals (layouts, diff, tool rendering) | [Content/Chat/NativeTranscript2/CLAUDE.md](macos/ccterm/Content/Chat/NativeTranscript2/CLAUDE.md) |
 | Unit test conventions (parallel safety, in-memory fixtures) | [cctermTests/CLAUDE.md](macos/cctermTests/CLAUDE.md) |
 
@@ -44,7 +51,7 @@ ccterm/
 │   │   ├── Components/       # Reusable SwiftUI / AppKit components
 │   │   │   └── Markdown/     # GFM parser → internal IR (consumed by NativeTranscript2)
 │   │   ├── Content/          # Top-level content panes
-│   │   │   ├── Chat/         # ChatHistoryView / InputBarView2 / LoadingPillView2
+│   │   │   ├── Chat/         # InputBarView2 / NewSessionConfigurator / InputBarControls / Completion
 │   │   │   │   ├── NativeTranscript2/        # NSTableView-based transcript
 │   │   │   │   └── NativeTranscript2Bridge/  # MessageEntry → Block translation
 │   │   │   ├── TranscriptDemo/   # Offline demos and stress harness
@@ -52,7 +59,7 @@ ccterm/
 │   │   │   └── LogViewer/        # Log window
 │   │   ├── Models/           # Data models (SyntaxToken, PermissionMode, ...)
 │   │   ├── Services/         # Service layer
-│   │   │   ├── Session/      # SessionHandle2 / SessionManager2 / SessionRepository / Worktree
+│   │   │   ├── Session/      # Session / SessionRuntime / SessionManager / SessionRepository / Worktree
 │   │   │   └── Logging/      # AppLogger / MainThreadWatchdog
 │   │   ├── Extensions/       # Foundation / AppKit extensions
 │   │   └── Resources/        # Assets.xcassets and other resources
@@ -97,14 +104,14 @@ make fmt         # Format code (xcstrings, ...)
 live there:
 
 - **Logic tests** (default) — bridge dispatch, history parsing, block
-  builder, session-handle state transitions. Run on every PR.
+  builder, `Session` / `SessionRuntime` state transitions. Run on every PR.
 - **Snapshot tests** — render a real SwiftUI view offscreen via
   `NSHostingController` and write a PNG. **Skipped on the default
   suite and on CI**; opt-in only. For visual review and self-check
   after a view edit. Filename convention `*SnapshotTests.swift`.
 
 There is no XCUITest target — click / keystroke / focus flows are
-covered by driving the handle / bridge / controller directly from a
+covered by driving the session / bridge / controller directly from a
 logic test.
 
 ```bash
@@ -148,7 +155,7 @@ Two workflows run on every PR:
 Use `appLog()` (`Services/Logging/AppLogger.swift`). Never `NSLog` or `print` directly.
 
 ```swift
-appLog(.info, "SessionHandle2", "send() queued — status=\(status)")
+appLog(.info, "SessionRuntime", "send() queued — status=\(status)")
 ```
 
 | Level | Use for |
@@ -158,7 +165,7 @@ appLog(.info, "SessionHandle2", "send() queued — status=\(status)")
 | `.warning` | Recoverable anomalies |
 | `.error` | Failures that affect features |
 
-- Category = class name without module prefix (`"SessionHandle2"`, `"ChatHistoryView"`).
+- Category = class name without module prefix (`"SessionRuntime"`, `"ChatHistoryView"`).
 - Never log secrets (tokens, passwords, API keys).
 - Live tail: Window → Logs (⌘⇧L). Also mirrored to `os.Logger`, visible in Console.app for history.
 

@@ -44,11 +44,27 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 880, height: 540)
         window.contentViewController = splitController
-        window.setFrameAutosaveName("MainWindow")
 
         super.init(window: window)
+        // NSWindowController defaults `shouldCascadeWindows` to true,
+        // which moves the window on `showWindow(_:)` based on the last
+        // displayed window's origin — racing with the autosaved frame.
+        // Disable so the saved frame is the only source of truth.
+        shouldCascadeWindows = false
+        // Probe defaults before turning autosave on so we can detect a
+        // first launch (no saved frame) and center the default frame.
+        // `setFrameAutosaveName` synchronously reads the saved frame
+        // and applies it; nothing to do here if it landed.
+        let autosaveKey = "NSWindow Frame \(Self.frameAutosaveName)"
+        let hadSavedFrame = UserDefaults.standard.string(forKey: autosaveKey) != nil
+        window.setFrameAutosaveName(Self.frameAutosaveName)
+        if !hadSavedFrame {
+            window.center()
+        }
         installToolbar()
     }
+
+    private static let frameAutosaveName = "MainWindow"
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }

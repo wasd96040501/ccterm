@@ -141,13 +141,6 @@ final class Transcript2Controller {
     /// Module-internal: handed to `NativeTranscript2View.makeCoordinator`.
     let coordinator: Transcript2Coordinator
 
-    /// First-tile work waiting for `layoutWidth > 0`. Set by `setHistory`
-    /// when called before the table has tiled; drained by `handleFirstTile`
-    /// on the next 0→positive transition. Survives `tableView` detach /
-    /// re-attach so a user who navigates away mid-load returns to the
-    /// requested anchor when they come back.
-    private var pendingFirstTile: InitialAnchor?
-
     /// Last `setLoading(_:)` intent. Source of truth for whether the
     /// trailing pill row should be present. The actual block id (if
     /// any) lives in `loadingPillId` — re-pinning the pill to the
@@ -208,9 +201,6 @@ final class Transcript2Controller {
         }
         coordinator.onAnchorSettledChanged = { [weak self] settled in
             self?.isAnchorSettled = settled
-        }
-        coordinator.onTableDidTile = { [weak self] in
-            self?.handleFirstTile()
         }
         coordinator.search.onStateChanged = { [weak self] in
             self?.refreshSearchState()
@@ -404,14 +394,14 @@ final class Transcript2Controller {
             // `coordinator.blocks` immediately** so subsequent `apply()`s
             // — live `.appended` events on background sessions whose view
             // hasn't been mounted yet — can resolve anchors against a
-            // populated array. Scroll-to-anchor is deferred to
-            // `handleFirstTile`, fired by the coordinator's first
-            // 0→positive `tableFrameDidChange` after the real width tiles.
+            // populated array. Scroll-to-anchor is the host's
+            // responsibility on first attach (e.g.
+            // `TranscriptDetailVC.attachSession` calls `scrollToTail()`
+            // after `layoutSubtreeIfNeeded`).
             //
             // Idempotent on re-entry: if `coordinator.blocks` already
-            // matches `blocks` (e.g. a second `setHistory(same payload)`
-            // — rare, mostly tests), skip the insert.
-            pendingFirstTile = anchor
+            // matches `blocks` (a second `setHistory(same payload)` —
+            // rare, mostly tests), skip the insert.
             if coordinator.blockIds != blocks.map(\.id) {
                 let existing = coordinator.blockIds
                 var changes: [Transcript2Controller.Change] = []
@@ -423,11 +413,6 @@ final class Transcript2Controller {
             }
             return
         }
-
-        // Real-width path will scroll synchronously below; drop any
-        // pending first-tile from an earlier deferred-path call so the
-        // tile handler doesn't double-scroll on the same anchor landing.
-        pendingFirstTile = nil
 
         let slice = Self.sliceForViewport(
             blocks: blocks, anchor: anchor,
@@ -499,31 +484,14 @@ final class Transcript2Controller {
         }
     }
 
-    /// Called by `Transcript2Coordinator` on the first 0→positive
-    /// `tableFrameDidChange` transition after a `tableView` attach.
-    /// Two scenarios resolved here:
-    ///
-    /// 1. **Pending `setHistory`** — `pendingFirstTile` carries the
-    ///    requested anchor. Blocks were already injected at width=0;
-    ///    only the scroll is left.
-    /// 2. **Plain re-attach** — controller already has blocks (bridge
-    ///    accumulated state or a prior `setHistory` landed) but no
-    ///    pending anchor. Default to `.bottom` so re-entering a
-    ///    session always lands at the latest message.
-    ///
-    /// `markAnchorSettled` runs in both branches — flips alpha to 1 and
-    /// fires the `@Observable` `isAnchorSettled` mirror.
-    private func handleFirstTile() {
-        let anchor: InitialAnchor? = {
-            if let pending = pendingFirstTile { return pending }
-            return coordinator.blockIds.isEmpty ? nil : .bottom
-        }()
-        pendingFirstTile = nil
-        #if DEBUG
-        Transcript2ReentryStats.recordHandleFirstTile()
-        #endif
-        guard let anchor else { return }
-        coordinator.scrollToInitialAnchor(anchor)
+    /// Scroll the table so the tail (latest block) sits at the visual
+    /// bottom. Used by the host (`TranscriptDetailVC`) immediately
+    /// after `view.layoutSubtreeIfNeeded()` to anchor a re-attached
+    /// session at its most recent message. No-op when there are no
+    /// blocks or no table attached.
+    func scrollToTail() {
+        guard !coordinator.blockIds.isEmpty else { return }
+        coordinator.scrollToInitialAnchor(.bottom)
         coordinator.markAnchorSettled()
     }
 

@@ -105,18 +105,6 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// transitions), called on MainActor.
     var onAnchorSettledChanged: ((Bool) -> Void)?
 
-    /// Fires once on every `tableView` attach's first 0→positive
-    /// `layoutWidth` transition. The Controller owns "what to do at
-    /// first tile" (drain pending `setHistory`, or scroll to tail on a
-    /// plain re-attach); the Coordinator just emits the signal.
-    ///
-    /// Dispatched through `DispatchQueue.main.async` because AppKit's
-    /// commit pass that triggered the frame change will re-tile the
-    /// clip view *after* the notification handler returns; setting
-    /// `bounds.origin` from inside the handler would be reset by the
-    /// re-tile. Hopping one runloop tick lets the commit finish.
-    var onTableDidTile: (() -> Void)?
-
     /// "Self-most-recent `setHistory` anchor has been honored for the
     /// currently-attached table." Resets to false on every `setHistory`
     /// and on every fresh `tableView` attach; flips to true once
@@ -1056,7 +1044,6 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             shortCircuit: width == lastLayoutWidth)
         #endif
         if width == lastLayoutWidth { return }
-        let prevWidth = lastLayoutWidth
         lastLayoutWidth = width
 
         if !blocks.isEmpty {
@@ -1076,17 +1063,6 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                 // (initial layout, window animation). Invalidate everything;
                 // AppKit re-queries lazily on next layout pass.
                 invalidate(rows: IndexSet(0..<blocks.count), in: tableView)
-            }
-        }
-
-        // First 0→positive transition: hand off to the Controller's
-        // first-tile handler. Hopped through `DispatchQueue.main.async`
-        // because AppKit's commit pass that triggered this notification
-        // will re-tile the clip view and reset `NSClipView.bounds.origin`
-        // if we scroll synchronously here.
-        if prevWidth <= 0 && width > 0 {
-            DispatchQueue.main.async { [weak self] in
-                self?.onTableDidTile?()
             }
         }
     }

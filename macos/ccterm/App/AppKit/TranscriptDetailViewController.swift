@@ -382,6 +382,12 @@ final class TranscriptDetailViewController: NSViewController {
         transcriptScroll = scroll
         currentSession = session
 
+        // Re-attach scroll: bridge-accumulated blocks from a previous
+        // mount land here with no setHistory follow-up (loadHistory is
+        // idempotent and short-circuits). Anchor to the tail synchronously
+        // now that the table has real width.
+        session.controller.scrollToTail()
+
         // Attach syntax engine (idempotent).
         session.controller.attachSyntaxEngine(searchEngine)
 

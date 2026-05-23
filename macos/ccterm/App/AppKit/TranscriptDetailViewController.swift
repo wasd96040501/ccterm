@@ -92,8 +92,6 @@ final class TranscriptDetailViewController: NSViewController {
     private var launchFailureObservationTask: Task<Void, Never>?
     /// Sink for `notifications.pendingActivationSessionId`.
     private var pendingActivationObservationTask: Task<Void, Never>?
-    /// Sink for `model.draftCwd` → `Session.draft.setCwd`.
-    private var draftCwdObservationTask: Task<Void, Never>?
 
     init(
         model: MainSelectionModel,
@@ -190,7 +188,6 @@ final class TranscriptDetailViewController: NSViewController {
         startSelectionObservation()
         startLaunchFailureObservation()
         startPendingActivationObservation()
-        startDraftCwdObservation()
         startScrimRectObservation()
     }
 
@@ -279,30 +276,6 @@ final class TranscriptDetailViewController: NSViewController {
         }
     }
 
-    private func startDraftCwdObservation() {
-        draftCwdObservationTask?.cancel()
-        draftCwdObservationTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            await withCheckedContinuation { cont in
-                withObservationTracking {
-                    _ = self.model.draftCwd
-                } onChange: {
-                    Task { @MainActor in cont.resume() }
-                }
-            }
-            self.applyDraftCwdIfNeeded()
-            self.startDraftCwdObservation()
-        }
-    }
-
-    private func applyDraftCwdIfNeeded() {
-        guard model.isComposeMode,
-            let sid = model.draftSessionId,
-            let cwd = model.draftCwd
-        else { return }
-        sessionManager.prepareDraftSession(sid).draft?.setCwd(cwd)
-    }
-
     private func presentLaunchFailureAlertIfNeeded() {
         guard let failure = sessionManager.lastLaunchFailure else { return }
         let alert = NSAlert()
@@ -321,13 +294,22 @@ final class TranscriptDetailViewController: NSViewController {
     }
 
     private func handleSelectionChanged() {
-        // Lazy-allocate draftSessionId on entering New Session.
+        // Lazy-allocate draftSessionId on entering New Session, and
+        // seed the draft's `cwd` / `originPath` synchronously here so
+        // `session.cwd` is non-nil by the time `NewSessionConfigurator`
+        // and the input bar's completion context first read it.
+        // `useWorktree` / `sourceBranch` are left to
+        // `NewSessionConfigurator.applyProbeBindings(...)` to fill in
+        // off the git probe.
         if model.selectedSessionId == SidebarSentinel.newSession, model.draftSessionId == nil {
-            model.draftSessionId = UUID().uuidString.lowercased()
-            model.draftCwd = recentProjects.lastLaunchedPath
-            model.draftUseWorktree =
-                model.draftCwd.flatMap { recentProjects.useWorktree(for: $0) } ?? false
-            model.draftSourceBranch = nil
+            let sid = UUID().uuidString.lowercased()
+            model.draftSessionId = sid
+            if let cwd = recentProjects.lastLaunchedPath,
+                let draft = sessionManager.prepareDraftSession(sid).draft
+            {
+                draft.setCwd(cwd)
+                draft.setOriginPath(cwd)
+            }
         }
 
         // Focus tracking — keep `Session.setFocused` in sync with the
@@ -379,11 +361,18 @@ final class TranscriptDetailViewController: NSViewController {
     private func sideBranchContent(for sid: String?) -> SideBranchContent? {
         guard let sid else { return nil }
         if sid == SidebarSentinel.archive {
+            let folderBinding = Binding<String?>(
+                get: { [weak self] in self?.model.archiveSelectedFolderPath },
+                set: { [weak self] in self?.model.archiveSelectedFolderPath = $0 }
+            )
             return .swiftUI(
                 AnyView(
-                    ArchiveView(onUnarchive: { [weak self] resumeSid in
-                        self?.model.selectedSessionId = resumeSid
-                    })
+                    ArchiveView(
+                        selectedFolderPath: folderBinding,
+                        onUnarchive: { [weak self] resumeSid in
+                            self?.model.selectedSessionId = resumeSid
+                        }
+                    )
                     .environment(sessionManager)
                     .environment(recentProjects)
                     .environment(inputDraftStore)
@@ -591,17 +580,18 @@ final class TranscriptDetailViewController: NSViewController {
         let session = sessionManager.prepareDraftSession(sessionId)
         let isFirstStart = !session.hasRecord
         if isFirstStart {
-            let chosen = model.draftCwd ?? FileManager.default.homeDirectoryForCurrentUser.path
-            if let draft = session.draft {
-                draft.setOriginPath(chosen)
-                draft.setCwd(chosen)
-                draft.setWorktree(model.draftUseWorktree)
-                if model.draftUseWorktree {
-                    draft.setSourceBranch(model.draftSourceBranch)
-                }
+            // The configurator's bindings have already written cwd /
+            // originPath / useWorktree / sourceBranch onto `session.draft`,
+            // so promotion picks them up verbatim. Only the
+            // `recentProjects` bookkeeping and the home-fallback for users
+            // who somehow submit with no folder picked live here now.
+            if session.cwd == nil, let draft = session.draft {
+                let home = FileManager.default.homeDirectoryForCurrentUser.path
+                draft.setCwd(home)
+                draft.setOriginPath(home)
             }
-            if let picked = model.draftCwd {
-                recentProjects.markLaunched(picked, useWorktree: model.draftUseWorktree)
+            if let picked = session.cwd {
+                recentProjects.markLaunched(picked, useWorktree: session.isWorktree)
             }
         }
         let mentions = submission.filePaths.map { "@\"\($0)\"" }.joined(separator: " ")
@@ -632,7 +622,6 @@ final class TranscriptDetailViewController: NSViewController {
         selectionObservationTask?.cancel()
         launchFailureObservationTask?.cancel()
         pendingActivationObservationTask?.cancel()
-        draftCwdObservationTask?.cancel()
         scrimRectObservationTask?.cancel()
     }
 }
@@ -657,6 +646,17 @@ struct TranscriptDetailComposeStack: View {
                 if model.isComposeMode {
                     composeBody(sid: sid)
                 } else {
+                    // `.id(sid)` resets `InputBarView2`'s `@State`
+                    // (text, attachments, focus, completion) on every
+                    // session switch. Without it, the bar's local state
+                    // persists across sessions — the bar's `.task(id:
+                    // draftKey)` restore is gated on `text.isEmpty &&
+                    // attachments.isEmpty`, so a non-empty bar would
+                    // both display the previous session's body and
+                    // overwrite the new session's draft on the next
+                    // keystroke. Pre-#195 this reset came for free from
+                    // `.id(sid)` on `ChatHistoryView`, which used to
+                    // bracket the overlay-hosted input bar.
                     ChatRestingBar(
                         sessionId: sid,
                         draftKey: sid,
@@ -664,6 +664,7 @@ struct TranscriptDetailComposeStack: View {
                         onAttachRect: { model.attachRect = $0 },
                         onPillRect: { model.pillRect = $0 }
                     )
+                    .id(sid)
                 }
             } else {
                 Color.clear
@@ -676,7 +677,8 @@ struct TranscriptDetailComposeStack: View {
 
     @ViewBuilder
     private func composeBody(sid: String) -> some View {
-        let bindings = composeBindings()
+        let session = manager.prepareDraftSession(sid)
+        let bindings = composeBindings(for: session)
         ZStack {
             DotGridBackground()
             NewSessionConfigurator(
@@ -689,7 +691,7 @@ struct TranscriptDetailComposeStack: View {
                         sessionId: sid,
                         draftKey: InputDraftStore.newSessionKey,
                         coordSpace: TranscriptDetailViewController.detailCoordSpace,
-                        submitEnabled: model.draftCwd != nil,
+                        submitEnabled: session.cwd != nil,
                         onSubmit: { submission in onSubmit(submission, sid) },
                         onAttachRect: { _ in },
                         onPillRect: { _ in }
@@ -708,19 +710,28 @@ struct TranscriptDetailComposeStack: View {
         let sourceBranch: Binding<String?>
     }
 
-    private func composeBindings() -> ComposeBindings {
+    /// Bind the configurator's three controls straight to
+    /// `session.draft.config`. There is no parallel storage on the
+    /// selection model — the draft itself is the single source of
+    /// truth, so the input bar's completion context and the submit
+    /// path both observe the same values without a sync hop.
+    private func composeBindings(for session: Session) -> ComposeBindings {
         ComposeBindings(
             folder: Binding(
-                get: { model.draftCwd },
-                set: { model.draftCwd = $0 }
+                get: { session.cwd },
+                set: { new in
+                    guard let new, let draft = session.draft else { return }
+                    draft.setCwd(new)
+                    draft.setOriginPath(new)
+                }
             ),
             useWorktree: Binding(
-                get: { model.draftUseWorktree },
-                set: { model.draftUseWorktree = $0 }
+                get: { session.isWorktree },
+                set: { session.draft?.setWorktree($0) }
             ),
             sourceBranch: Binding(
-                get: { model.draftSourceBranch },
-                set: { model.draftSourceBranch = $0 }
+                get: { session.sourceBranch },
+                set: { session.draft?.setSourceBranch($0) }
             )
         )
     }

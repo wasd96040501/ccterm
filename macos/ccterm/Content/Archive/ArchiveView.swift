@@ -23,26 +23,35 @@ import SwiftUI
 ///             }
 /// ```
 ///
-/// Window toolbar (pinned to the trailing edge via `ToolbarSpacer` on
-/// macOS 26+, naturally trailing on older releases):
-/// - `.searchable` for matching title / worktree branch. Backed by a
-///   `Task.sleep(150ms)` debounce so a 10k-row dataset doesn't lag per
-///   keystroke — the raw field text is read every keypress but the
-///   filter only re-runs after the user pauses.
-/// - A folder-filter button that opens `FolderFilterPickerView` in a
-///   popover. The folder set is read from `manager.archivedFolderOptions`,
-///   which `SessionManager` derives (grouped by `originPath`, so worktree
-///   sessions roll into their parent repo) every time it refreshes
-///   `archivedRecords`. The page itself caches nothing: the popover
-///   re-reads the @Observable on present, so any archive / unarchive
-///   landing while the page is open shows up immediately.
+/// The folder-filter button lives in the window's AppKit `NSToolbar`
+/// (see `MainWindowController.installArchiveFilterItem`) because the
+/// window host is AppKit-rooted — a SwiftUI `.toolbar { }` block here
+/// would be silently dropped. The button reads/writes the same
+/// `selectedFolderPath` binding the view does, so picking a folder
+/// updates the list immediately. The folder set is read from
+/// `manager.archivedFolderOptions`, which `SessionManager` derives
+/// (grouped by `originPath`, so worktree sessions roll into their
+/// parent repo) every time it refreshes `archivedRecords`. The page
+/// itself caches nothing: the popover re-reads the @Observable on
+/// present, so any archive / unarchive landing while the page is open
+/// shows up immediately.
+///
+/// Window toolbar search via `.searchable` was lost in the same AppKit
+/// migration; in-page search is currently dormant.
 struct ArchiveView: View {
     @Environment(SessionManager.self) private var manager
 
     /// Caller-supplied unarchive sink so selection can hop back to the
-    /// restored session in `RootView2`. Receives the restored
+    /// restored session in the host VC. Receives the restored
     /// `sessionId`; nil for the empty-state preview path.
     let onUnarchive: ((String) -> Void)?
+
+    /// `nil` means "All Folders"; otherwise the canonical
+    /// `record.originPath` to match against. Owned by
+    /// `MainSelectionModel` in production so the AppKit toolbar's
+    /// filter button and this view share state; tests pass
+    /// `.constant(nil)`.
+    @Binding var selectedFolderPath: String?
 
     /// What the user is currently typing — fed by `.searchable`, read
     /// every keystroke. Distinct from `searchQuery` (the debounced
@@ -53,10 +62,6 @@ struct ArchiveView: View {
     /// the last keystroke. `filteredRecords` reads this, not the raw
     /// field.
     @State private var searchQuery: String = ""
-    /// `nil` means "All Folders"; otherwise the canonical
-    /// `record.originPath` to match against.
-    @State private var selectedFolderPath: String? = nil
-    @State private var isFilterPopoverPresented: Bool = false
 
     /// Flips to `true` once the first async fetch has landed. Until
     /// then the body renders an empty slot so the empty-state copy
@@ -71,7 +76,11 @@ struct ArchiveView: View {
     /// blink in and out for borderline-fast loads.
     @State private var progressShownAt: Date? = nil
 
-    init(onUnarchive: ((String) -> Void)? = nil) {
+    init(
+        selectedFolderPath: Binding<String?> = .constant(nil),
+        onUnarchive: ((String) -> Void)? = nil
+    ) {
+        self._selectedFolderPath = selectedFolderPath
         self.onUnarchive = onUnarchive
     }
 
@@ -113,17 +122,6 @@ struct ArchiveView: View {
             placement: .toolbar,
             prompt: Text("Search archived sessions")
         )
-        .toolbar {
-            // ToolbarSpacer is macOS 26+; on older releases the default
-            // layout already trails our items to the right edge of the
-            // detail-pane toolbar.
-            if #available(macOS 26.0, *) {
-                ToolbarSpacer(.flexible)
-            }
-            ToolbarItem(placement: .automatic) {
-                filterButton
-            }
-        }
         .task { await loadArchivedAsync() }
         .task(id: searchQueryRaw) {
             // `.task(id:)` cancels the previous body when the raw text
@@ -271,29 +269,6 @@ struct ArchiveView: View {
             isLoaded = true
         }
         progressShownAt = nil
-    }
-
-    private var filterButton: some View {
-        Button {
-            isFilterPopoverPresented.toggle()
-        } label: {
-            Image(
-                systemName: selectedFolderPath == nil
-                    ? "line.3.horizontal.decrease.circle"
-                    : "line.3.horizontal.decrease.circle.fill"
-            )
-        }
-        .help(Text("Filter by folder"))
-        .popover(isPresented: $isFilterPopoverPresented, arrowEdge: .top) {
-            FolderFilterPickerView(
-                folders: manager.archivedFolderOptions,
-                selectedPath: selectedFolderPath,
-                onSelect: { path in
-                    selectedFolderPath = path
-                    isFilterPopoverPresented = false
-                }
-            )
-        }
     }
 
     /// Records after applying the in-memory folder and text filters.

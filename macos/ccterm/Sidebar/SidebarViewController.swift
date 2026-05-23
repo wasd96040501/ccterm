@@ -103,8 +103,7 @@ final class SidebarViewController: NSViewController {
         // fire after launch would treat every existing group as
         // newly-appeared and prepend them in iteration order.
         lastSeenGroups = currentGroupSet()
-        rebuildItems()
-        expandAllFolders(animated: false)
+        rebuildItems()  // also runs expandAllFolders + restores selection
         applyModelSelection()
         startRecordsObservation()
         startSelectionObservation()
@@ -130,14 +129,11 @@ final class SidebarViewController: NSViewController {
         // headers (alignment relies on the shared 16pt icon slot, not
         // on outline indent).
         outlineView.indentationPerLevel = 0
-        outlineView.floatsGroupRows = false
-        outlineView.autoresizesOutlineColumn = false
         // Pin per-row heights to `heightOfRowByItem` instead of letting
         // the source-list style fall back to intrinsic-size auto sizing
         // — auto sizing would let a long title's intrinsic content size
         // stretch the row and bleed into adjacent rows.
         outlineView.usesAutomaticRowHeights = false
-        outlineView.rowHeight = SidebarLayout.fixedRowHeight
         outlineView.dataSource = self
         outlineView.delegate = self
         outlineView.target = self
@@ -177,7 +173,7 @@ final class SidebarViewController: NSViewController {
         let previousSelectionTag = currentSelectionTag()
         rootChildren = buildRootChildren()
         outlineView.reloadData()
-        expandAllFolders(animated: false)
+        expandAllFolders()
         if let tag = previousSelectionTag {
             selectRow(for: tag)
         }
@@ -266,20 +262,14 @@ final class SidebarViewController: NSViewController {
         }
     }
 
-    private func expandAllFolders(animated: Bool) {
-        let work = {
-            for node in self.rootChildren where node.isFolder {
-                self.outlineView.expandItem(node)
-            }
-        }
-        if animated {
-            work()
-        } else {
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0
-                ctx.allowsImplicitAnimation = false
-                work()
-            }
+    /// Expand every folder synchronously without animation.
+    /// `outlineView.expandItem(_:)` (the non-animator form) is already
+    /// non-animated by default; an earlier attempt wrapped this in
+    /// `NSAnimationContext.runAnimationGroup { duration:0 }` to be safe,
+    /// but the wrapper was pure ceremony.
+    private func expandAllFolders() {
+        for node in rootChildren where node.isFolder {
+            outlineView.expandItem(node)
         }
     }
 
@@ -516,11 +506,11 @@ extension SidebarViewController: NSOutlineViewDelegate {
         }
     }
 
-    func outlineView(_ outlineView: NSOutlineView, shouldSelectItem item: Any) -> Bool {
-        guard let node = item as? SidebarItemNode else { return false }
-        return !node.isFolder
-    }
-
+    /// Filter folder rows out of any proposed selection (click, keyboard
+    /// navigation, programmatic). When this delegate method is
+    /// implemented, NSOutlineView skips the older per-item
+    /// `outlineView(_:shouldSelectItem:)` path entirely, so it lives
+    /// here alone.
     func outlineView(
         _ outlineView: NSOutlineView,
         selectionIndexesForProposedSelection proposed: IndexSet

@@ -39,14 +39,16 @@ final class SidebarView2SnapshotTests: XCTestCase {
             title: "我想给我们的 7 层网关系统加一个限流中间件，他都有哪些功能模块需要修改？",
             originPath: "/Users/me/work/project-a",
             lastActiveAt: now.addingTimeInterval(-30))
-        // Embedded newlines — reproduces the title-from-first-message
-        // case where the user's prompt was multi-paragraph. NSTextField
-        // `usesSingleLineMode = true` changes input layout, NOT the
-        // rendering of an already-set string carrying `\n` characters.
-        // The cell has to collapse newlines itself, or every row of
-        // this style stretches into a 2+ line block.
-        let multilineInProjectA = makeRecord(
-            title: "Investigate the failing deploy\nrerun the canary across all regions",
+        // Combined "weird" title — newlines, tabs, leading/trailing
+        // whitespace, a zero-width space, and a U+FFFC object
+        // replacement character. Reproduces the title-from-first-
+        // message case where the user's prompt was multi-paragraph
+        // and/or pasted from a rich source. The cell has to collapse
+        // these into a single visually-clean line, or the row blows
+        // past its `heightOfRowByItem` and bleeds into neighbors.
+        let weirdInProjectA = makeRecord(
+            title:
+                "  Investigate\nthe\tfailing deploy\u{200B} pipeline\u{FFFC} across all regions  ",
             originPath: "/Users/me/work/project-a",
             lastActiveAt: now.addingTimeInterval(-20))
         let unreadInProjectA = makeRecord(
@@ -74,7 +76,7 @@ final class SidebarView2SnapshotTests: XCTestCase {
             lastActiveAt: now.addingTimeInterval(-180))
 
         for record in [
-            runningInProjectA, longChineseInProjectA, multilineInProjectA, unreadInProjectA,
+            runningInProjectA, longChineseInProjectA, weirdInProjectA, unreadInProjectA,
             idleInProjectA,
             longEnglishInProjectB, runningAndUnreadInProjectB, idleInProjectB,
         ] {

@@ -30,8 +30,9 @@ struct NewSessionConfigurator<InputBar: View>: View {
     @Binding var useWorktree: Bool
     @Binding var sourceBranch: String?
     /// Invoked when the user clicks a row in the "Recent Sessions"
-    /// section. `RootView2` flips `selectedSessionId` to this value,
-    /// swapping the compose card out for the chosen session's history.
+    /// section. The detail VC flips `MainSelectionModel.selection` to
+    /// `.session(id)`, swapping the compose card out for the chosen
+    /// session's history.
     var onResumeSession: ((String) -> Void)? = nil
     /// Embedded input bar. Provided by `RootView2` so the bar's
     /// per-session wiring (submit / interrupt / running state) and pill

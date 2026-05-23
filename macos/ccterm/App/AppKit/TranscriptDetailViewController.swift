@@ -14,7 +14,9 @@ import SwiftUI
 /// - bottom scrim (with model-driven cut-outs for the attach button +
 ///   pill)
 /// - input bar / compose configurator (one host, contents switch on
-///   `model.isComposeMode`)
+///   `model.selection` via `TranscriptDetailComposeStack.content(...)`
+///   — `.archive` / `.demo` collapse to `EmptyView`, so side-branch
+///   pages have no input chrome floating on top of them)
 ///
 /// Side branches (archive page, DEBUG transcript demos) are hosted via
 /// child `NSHostingController`s that take over the detail area when
@@ -54,12 +56,17 @@ final class TranscriptDetailViewController: NSViewController {
     /// attach (same lifecycle as `transcriptScroll`); nil for
     /// archive / demo branches (those VCs own their own presenter).
     private var transcriptSheetPresenter: Transcript2SheetPresenter?
-    /// Hosted SwiftUI overlays. All three are added to `view` once and
-    /// stay mounted for the lifetime of the VC — the SwiftUI content
-    /// they render reads from `model` and reactively switches form.
-    private var topScrimHost: NSHostingView<AnyView>!
-    private var bottomScrimHost: NSHostingView<AnyView>!
-    private var composeOrBarHost: NSHostingView<AnyView>!
+    /// Hosted SwiftUI overlays that make up the chat-pane chrome
+    /// (top fade scrim, bottom fade scrim with attach/pill cut-outs,
+    /// input-bar / compose configurator). All three mount together via
+    /// `mountChatChromeIfNeeded()` when the selection routes to a
+    /// transcript, and unmount together via `tearDownChatChrome()` when
+    /// the selection routes to a side branch (Archive / demo) — so
+    /// side-branch pages aren't sitting under any chat-only overlay
+    /// that could intercept clicks or draw a scrim cut-out into them.
+    private var topScrimHost: NSHostingView<AnyView>?
+    private var bottomScrimHost: NSHostingView<AnyView>?
+    private var composeOrBarHost: NSHostingView<AnyView>?
 
     /// Side-branch (archive / demo) child VC, mounted via
     /// `addChild` + `view.addSubview`. nil while a session is shown.
@@ -101,37 +108,60 @@ final class TranscriptDetailViewController: NSViewController {
     override func loadView() {
         // The NSWindow paints `windowBackgroundColor` behind the
         // transcript scroll view (which sets `drawsBackground = false`)
-        // — we just need a plain container view here.
+        // — we just need a plain container view here. Chat chrome
+        // (scrims + input bar) and the transcript itself mount lazily
+        // via `rebuildBackingContent()` so side-branch selections
+        // (Archive / demo) don't carry any chat-only overlay.
         view = NSView()
+    }
 
-        topScrimHost = NSHostingView(rootView: AnyView(makeTopScrim()))
-        topScrimHost.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(topScrimHost)
+    /// Lazily mount the three SwiftUI chat-pane overlays. Idempotent
+    /// (no-op if they're already attached). Must run before
+    /// `attachSession(_:)` because the transcript scroll view is
+    /// positioned `.below` `topScrimHost`.
+    private func mountChatChromeIfNeeded() {
+        guard topScrimHost == nil else { return }
 
-        bottomScrimHost = NSHostingView(rootView: AnyView(makeBottomScrim()))
-        bottomScrimHost.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(bottomScrimHost)
+        let top = NSHostingView(rootView: AnyView(makeTopScrim()))
+        top.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(top)
+        topScrimHost = top
 
-        composeOrBarHost = NSHostingView(rootView: AnyView(makeComposeOrBarStack()))
-        composeOrBarHost.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(composeOrBarHost)
+        let bottom = NSHostingView(rootView: AnyView(makeBottomScrim()))
+        bottom.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(bottom)
+        bottomScrimHost = bottom
+
+        let bar = NSHostingView(rootView: AnyView(makeComposeOrBarStack()))
+        bar.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(bar)
+        composeOrBarHost = bar
 
         NSLayoutConstraint.activate([
-            topScrimHost.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            topScrimHost.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            topScrimHost.topAnchor.constraint(equalTo: view.topAnchor),
-            topScrimHost.heightAnchor.constraint(equalToConstant: Self.topFadeScrimHeight),
+            top.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            top.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            top.topAnchor.constraint(equalTo: view.topAnchor),
+            top.heightAnchor.constraint(equalToConstant: Self.topFadeScrimHeight),
 
-            bottomScrimHost.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            bottomScrimHost.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            bottomScrimHost.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            bottomScrimHost.heightAnchor.constraint(equalToConstant: Self.bottomFadeScrimHeight),
+            bottom.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            bottom.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            bottom.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            bottom.heightAnchor.constraint(equalToConstant: Self.bottomFadeScrimHeight),
 
-            composeOrBarHost.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            composeOrBarHost.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            composeOrBarHost.topAnchor.constraint(equalTo: view.topAnchor),
-            composeOrBarHost.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            bar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            bar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            bar.topAnchor.constraint(equalTo: view.topAnchor),
+            bar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
+    }
+
+    private func tearDownChatChrome() {
+        topScrimHost?.removeFromSuperview()
+        topScrimHost = nil
+        bottomScrimHost?.removeFromSuperview()
+        bottomScrimHost = nil
+        composeOrBarHost?.removeFromSuperview()
+        composeOrBarHost = nil
     }
 
     override func viewDidLoad() {
@@ -139,7 +169,7 @@ final class TranscriptDetailViewController: NSViewController {
         // Run the initial selection handler so the lazy
         // `draftSessionId` allocation + focus tracking + side-branch
         // mount happens for the model's initial value. Mirrors
-        // `RootView2`'s `.task(id: selectedSessionId)` which fired once
+        // `RootView2`'s `.task(id: selection)` which fired once
         // on mount in addition to firing on every change.
         handleSelectionChanged()
         installObservations()
@@ -166,9 +196,8 @@ final class TranscriptDetailViewController: NSViewController {
             // tracking closure so re-arm happens on any change.
             await withCheckedContinuation { cont in
                 withObservationTracking {
-                    _ = self.model.selectedSessionId
+                    _ = self.model.selection
                     _ = self.model.draftSessionId
-                    _ = self.model.isComposeMode
                 } onChange: {
                     Task { @MainActor in cont.resume() }
                 }
@@ -206,7 +235,7 @@ final class TranscriptDetailViewController: NSViewController {
                 }
             }
             if let sid = self.notifications.pendingActivationSessionId {
-                self.model.selectedSessionId = sid
+                self.model.selection = .session(sid)
                 self.notifications.clearPendingActivation()
             }
             self.startPendingActivationObservation()
@@ -238,7 +267,7 @@ final class TranscriptDetailViewController: NSViewController {
         // `useWorktree` / `sourceBranch` are left to
         // `NewSessionConfigurator.applyProbeBindings(...)` to fill in
         // off the git probe.
-        if model.selectedSessionId == SidebarSentinel.newSession, model.draftSessionId == nil {
+        if model.selection == .newSession, model.draftSessionId == nil {
             let sid = UUID().uuidString.lowercased()
             model.draftSessionId = sid
             if let cwd = recentProjects.lastLaunchedPath,
@@ -267,27 +296,50 @@ final class TranscriptDetailViewController: NSViewController {
     // MARK: - Backing content rebuild
 
     private func rebuildBackingContent() {
-        let sid = model.selectedSessionId
-
-        // Side branch path (archive / demo views). Two variants — a
-        // SwiftUI surface hosted via `NSHostingController`, or a
-        // pre-built AppKit `NSViewController`. Demos that mount their
-        // own transcript take the VC path so the canonical
-        // make → addSubview → layoutSubtreeIfNeeded → bindData attach
-        // pattern can run in AppKit's source phase, same as the
-        // production transcript below.
-        if let sideBranch = sideBranchContent(for: sid) {
+        // Detail-pane router. Switch on the typed selection so the
+        // compiler enforces that every case has a deliberate route —
+        // transcript + chat chrome, side-branch view (archive / demo)
+        // with no chat chrome at all, or nothing (no selection).
+        if let kind = Self.sideBranchKind(for: model.selection) {
             tearDownTranscript()
-            mountSideBranch(sideBranch)
+            tearDownChatChrome()
+            mountSideBranch(makeSideBranch(kind: kind))
             return
         }
         tearDownSideBranch()
 
         guard let active = model.effectiveSessionId else {
             tearDownTranscript()
+            tearDownChatChrome()
             return
         }
+        mountChatChromeIfNeeded()
         attachSession(active)
+    }
+
+    /// Pure routing decision: which side-branch view (if any) the
+    /// `selection` should mount under the detail pane's overlays.
+    /// Returning `nil` means the detail pane should mount the
+    /// transcript instead. Static + pure so it's directly unit-testable
+    /// — see `TranscriptDetailRoutingTests`.
+    static func sideBranchKind(for selection: MainSelection) -> SideBranchKind? {
+        switch selection {
+        case .none, .newSession, .session:
+            return nil
+        case .archive:
+            return .archive
+        #if DEBUG
+        case .demo(let kind):
+            return .demo(kind)
+        #endif
+        }
+    }
+
+    enum SideBranchKind: Equatable {
+        case archive
+        #if DEBUG
+        case demo(DemoKind)
+        #endif
     }
 
     private enum SideBranchContent {
@@ -295,9 +347,9 @@ final class TranscriptDetailViewController: NSViewController {
         case viewController(NSViewController)
     }
 
-    private func sideBranchContent(for sid: String?) -> SideBranchContent? {
-        guard let sid else { return nil }
-        if sid == SidebarSentinel.archive {
+    private func makeSideBranch(kind: SideBranchKind) -> SideBranchContent {
+        switch kind {
+        case .archive:
             let folderBinding = Binding<String?>(
                 get: { [weak self] in self?.model.archiveSelectedFolderPath },
                 set: { [weak self] in self?.model.archiveSelectedFolderPath = $0 }
@@ -307,7 +359,7 @@ final class TranscriptDetailViewController: NSViewController {
                     ArchiveView(
                         selectedFolderPath: folderBinding,
                         onUnarchive: { [weak self] resumeSid in
-                            self?.model.selectedSessionId = resumeSid
+                            self?.model.selection = .session(resumeSid)
                         }
                     )
                     .environment(sessionManager)
@@ -317,27 +369,26 @@ final class TranscriptDetailViewController: NSViewController {
                     .environment(searchBus)
                     .environment(notifications)
                 ))
-        }
         #if DEBUG
-        switch sid {
-        case SidebarSentinel.transcriptDemo:
-            return .viewController(
-                TranscriptDemoViewController(syntaxEngine: searchEngine))
-        case SidebarSentinel.transcriptStress:
-            return .viewController(
-                TranscriptStressViewController(syntaxEngine: searchEngine))
-        case SidebarSentinel.transcriptPerf:
-            return .viewController(
-                TranscriptPerfDemoViewController(syntaxEngine: searchEngine))
-        case SidebarSentinel.permissionCardsDemo:
-            return .swiftUI(AnyView(injectingEnvironment(PermissionCardsDemoView())))
-        case SidebarSentinel.permissionSessionDemo:
-            return .viewController(
-                PermissionSessionDemoViewController(syntaxEngine: searchEngine))
-        default: break
-        }
+        case .demo(let demoKind):
+            switch demoKind {
+            case .transcript:
+                return .viewController(
+                    TranscriptDemoViewController(syntaxEngine: searchEngine))
+            case .transcriptStress:
+                return .viewController(
+                    TranscriptStressViewController(syntaxEngine: searchEngine))
+            case .transcriptPerf:
+                return .viewController(
+                    TranscriptPerfDemoViewController(syntaxEngine: searchEngine))
+            case .permissionCards:
+                return .swiftUI(AnyView(injectingEnvironment(PermissionCardsDemoView())))
+            case .permissionSession:
+                return .viewController(
+                    PermissionSessionDemoViewController(syntaxEngine: searchEngine))
+            }
         #endif
-        return nil
+        }
     }
 
     private func mountSideBranch(_ content: SideBranchContent) {
@@ -351,11 +402,10 @@ final class TranscriptDetailViewController: NSViewController {
         }
         host.view.translatesAutoresizingMaskIntoConstraints = false
         addChild(host)
-        // Insert at index 0 so the side-branch view sits under the
-        // overlays (scrim / input bar / compose card). Side branches
-        // bring their own chrome but still benefit from the top
-        // scrim's softening.
-        view.addSubview(host.view, positioned: .below, relativeTo: topScrimHost)
+        // Chat chrome has been torn down by the time we reach here
+        // (see `rebuildBackingContent`), so the side branch can simply
+        // attach at the top of the subview stack — no z-ordering needed.
+        view.addSubview(host.view)
         NSLayoutConstraint.activate([
             host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -383,6 +433,10 @@ final class TranscriptDetailViewController: NSViewController {
 
         let scroll = TranscriptScrollViewFactory.make(controller: session.controller)
         scroll.translatesAutoresizingMaskIntoConstraints = false
+        // `mountChatChromeIfNeeded()` was just called by
+        // `rebuildBackingContent`, so `topScrimHost` is non-nil here —
+        // place the transcript under it so the top fade sits over the
+        // first row of content.
         view.addSubview(scroll, positioned: .below, relativeTo: topScrimHost)
         NSLayoutConstraint.activate([
             scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -492,7 +546,7 @@ final class TranscriptDetailViewController: NSViewController {
             },
             onResumeSession: { [weak self] resumeSid in
                 guard let self else { return }
-                self.model.selectedSessionId = resumeSid
+                self.model.selection = .session(resumeSid)
                 self.model.draftSessionId = nil
             }
         )
@@ -555,7 +609,7 @@ final class TranscriptDetailViewController: NSViewController {
         }
         if isFirstStart {
             sessionManager.refreshRecords()
-            model.selectedSessionId = sessionId
+            model.selection = .session(sessionId)
             model.draftSessionId = nil
         }
     }
@@ -625,35 +679,65 @@ struct TranscriptDetailComposeStack: View {
 
     @Environment(SessionManager.self) private var manager
 
+    /// Routing decision for this overlay. Static + pure so the
+    /// "which selection shows what input chrome" invariant is
+    /// directly unit-testable — see `TranscriptDetailRoutingTests`.
+    /// In particular, `.archive` / `.demo` / `.none` all collapse to
+    /// `.none` here, which is what keeps the input bar from rendering
+    /// on top of (and intercepting clicks on) the Archive page.
+    enum Content: Equatable {
+        case none
+        case compose(draftSessionId: String)
+        case chat(sessionId: String)
+    }
+
+    static func content(for selection: MainSelection, draftSessionId: String?) -> Content {
+        switch selection {
+        case .none, .archive:
+            return .none
+        #if DEBUG
+        case .demo:
+            return .none
+        #endif
+        case .newSession:
+            // No draft allocated yet (briefly true on first entry
+            // before `handleSelectionChanged` lazy-allocates one) →
+            // render nothing rather than fabricating a session id.
+            guard let did = draftSessionId else { return .none }
+            return .compose(draftSessionId: did)
+        case .session(let sid):
+            return .chat(sessionId: sid)
+        }
+    }
+
     var body: some View {
-        let sid = model.effectiveSessionId
+        let content = Self.content(for: model.selection, draftSessionId: model.draftSessionId)
         ZStack {
-            if let sid {
-                if model.isComposeMode {
-                    composeBody(sid: sid)
-                } else {
-                    // `.id(sid)` resets `InputBarView2`'s `@State`
-                    // (text, attachments, focus, completion) on every
-                    // session switch. Without it, the bar's local state
-                    // persists across sessions — the bar's `.task(id:
-                    // draftKey)` restore is gated on `text.isEmpty &&
-                    // attachments.isEmpty`, so a non-empty bar would
-                    // both display the previous session's body and
-                    // overwrite the new session's draft on the next
-                    // keystroke. Pre-#195 this reset came for free from
-                    // `.id(sid)` on `ChatHistoryView`, which used to
-                    // bracket the overlay-hosted input bar.
-                    ChatRestingBar(
-                        sessionId: sid,
-                        draftKey: sid,
-                        onSubmit: { submission in onSubmit(submission, sid) },
-                        onAttachRect: { model.attachRect = $0 },
-                        onPillRect: { model.pillRect = $0 }
-                    )
-                    .id(sid)
-                }
-            } else {
-                Color.clear
+            switch content {
+            case .none:
+                EmptyView()
+            case .compose(let sid):
+                composeBody(sid: sid)
+            case .chat(let sid):
+                // `.id(sid)` resets `InputBarView2`'s `@State`
+                // (text, attachments, focus, completion) on every
+                // session switch. Without it, the bar's local state
+                // persists across sessions — the bar's `.task(id:
+                // draftKey)` restore is gated on `text.isEmpty &&
+                // attachments.isEmpty`, so a non-empty bar would
+                // both display the previous session's body and
+                // overwrite the new session's draft on the next
+                // keystroke. Pre-#195 this reset came for free from
+                // `.id(sid)` on `ChatHistoryView`, which used to
+                // bracket the overlay-hosted input bar.
+                ChatRestingBar(
+                    sessionId: sid,
+                    draftKey: sid,
+                    onSubmit: { submission in onSubmit(submission, sid) },
+                    onAttachRect: { model.attachRect = $0 },
+                    onPillRect: { model.pillRect = $0 }
+                )
+                .id(sid)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

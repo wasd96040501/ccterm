@@ -99,7 +99,7 @@ final class TranscriptHostReentryLayoutCacheTests: XCTestCase {
     /// End-to-end exercise of the production sidebar-switch path:
     /// in-memory `SessionManager` with two pre-seeded sessions, mount
     /// `TranscriptDetailViewController` on session 1, settle, flip
-    /// `MainSelectionModel.selectedSessionId` to session 2, drain.
+    /// `MainSelectionModel.selection` to session 2, drain.
     /// The probe is installed on session 2's coordinator AFTER session
     /// 1 settles, so it captures EXACTLY the writes produced by
     /// `attachSession(sessionId2)`. Pass means every block typeset at
@@ -145,9 +145,9 @@ final class TranscriptHostReentryLayoutCacheTests: XCTestCase {
 
         let model = MainSelectionModel()
         // Start at session 1 so the VC's initial handleSelectionChanged
-        // attaches to it. The default `__new_session__` would route to
-        // the compose UI instead.
-        model.selectedSessionId = sessionId1
+        // attaches to it. The default `.newSession` would route to the
+        // compose UI instead.
+        model.selection = .session(sessionId1)
 
         let vc = TranscriptDetailViewController(
             model: model,
@@ -207,7 +207,7 @@ final class TranscriptHostReentryLayoutCacheTests: XCTestCase {
         // and `await Task.sleep` alone does not flush AppKit's runloop
         // observers. If we skip the Task.sleep hops the observer never
         // starts tracking, the subsequent
-        // `model.selectedSessionId = sessionId2` write goes untracked,
+        // `model.selection = .session(sessionId2)` write goes untracked,
         // `handleSelectionChanged()` never fires, and the probe captures
         // zero writes — making the test pass silently regardless of
         // regression. The sanity gate near the end catches that failure
@@ -233,7 +233,7 @@ final class TranscriptHostReentryLayoutCacheTests: XCTestCase {
         // tearDownTranscript + attachSession on session 2 — all inside
         // one source-phase tick.
         currentStage = "switch"
-        model.selectedSessionId = sessionId2
+        model.selection = .session(sessionId2)
 
         // Drive both schedulers until session 2's table is bound (the
         // signal that `attachSession` ran) or we time out.

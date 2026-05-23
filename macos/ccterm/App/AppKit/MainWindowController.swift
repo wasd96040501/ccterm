@@ -90,16 +90,17 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
     /// Whether the current sidebar selection is the Archive tab.
     /// Controls visibility of the folder-filter toolbar item.
     private var isArchiveSelected: Bool {
-        model.selectedSessionId == SidebarSentinel.archive
+        model.selection == .archive
     }
 
     /// Whether the current sidebar selection is a real history session,
-    /// as opposed to one of the sentinel tabs (New Session / Archive /
-    /// DEBUG demos). Sentinel set lives on `SidebarSentinel` so adding
-    /// a new tab requires a deliberate update there.
+    /// as opposed to one of the sidebar tabs (New Session / Archive /
+    /// DEBUG demos). The `MainSelection` enum makes this a direct case
+    /// match — the compiler enforces that any new selection case is
+    /// considered here.
     private var isHistorySession: Bool {
-        guard let sid = model.selectedSessionId else { return false }
-        return !SidebarSentinel.all.contains(sid)
+        if case .session = model.selection { return true }
+        return false
     }
 
     /// Insert or remove the project-chip toolbar item to match the
@@ -146,7 +147,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
             guard let self else { return }
             await withCheckedContinuation { cont in
                 withObservationTracking {
-                    _ = self.model.selectedSessionId
+                    _ = self.model.selection
                 } onChange: {
                     Task { @MainActor in cont.resume() }
                 }
@@ -338,7 +339,7 @@ private struct TranscriptProjectChip: View {
     let sessionManager: SessionManager
 
     private var session: Session? {
-        guard let sid = model.selectedSessionId else { return nil }
+        guard case .session(let sid) = model.selection else { return nil }
         return sessionManager.existingSession(sid)
     }
 

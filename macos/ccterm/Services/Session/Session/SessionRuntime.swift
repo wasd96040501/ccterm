@@ -234,6 +234,24 @@ final class SessionRuntime {
     internal(set) var pendingPermissions: [PendingPermission] = []
     internal(set) var contextUsedTokens: Int = 0
     internal(set) var contextWindowTokens: Int = 0
+
+    /// Most-recent typed `get_context_usage` response from the CLI. `nil`
+    /// until the popover has fetched at least once. The popover reads
+    /// this directly so the panel can render synchronously on re-open;
+    /// the request is fired-and-forgotten by the UI when the user opens
+    /// the popover.
+    internal(set) var contextUsage: ContextUsage?
+
+    /// When the cached `contextUsage` was last refreshed.
+    internal(set) var contextUsageFetchedAt: Date?
+
+    /// True while a `getContextUsage` request is in flight. Lets the
+    /// popover show a spinner instead of stale numbers during a refresh.
+    internal(set) var isFetchingContextUsage: Bool = false
+
+    /// Completions queued while a `getContextUsage` is in flight. All
+    /// fire with the same outcome when the in-flight request settles.
+    @ObservationIgnored internal var contextUsagePendingCallbacks: [(ContextUsageOutcome) -> Void] = []
     internal(set) var slashCommands: [SlashCommand] = []
 
     /// Background bash tasks the CLI is tracking for this session. Updated

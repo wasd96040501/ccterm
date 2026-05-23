@@ -296,6 +296,35 @@ final class Session {
         runtime?.contextWindowTokens ?? 0
     }
 
+    /// Most recent typed `get_context_usage` breakdown, if one has been
+    /// fetched. Always `nil` for `.draft` sessions and for `.active`
+    /// sessions before the popover ever opened.
+    var contextUsage: ContextUsage? {
+        runtime?.contextUsage
+    }
+
+    var contextUsageFetchedAt: Date? {
+        runtime?.contextUsageFetchedAt
+    }
+
+    var isFetchingContextUsage: Bool {
+        runtime?.isFetchingContextUsage ?? false
+    }
+
+    /// Fire a `get_context_usage` request for the running CLI. No-op on
+    /// `.draft` sessions; `.unsupported` is delivered to the completion
+    /// when the CLI is too old to respond.
+    func requestContextUsage(
+        timeout: TimeInterval = 3.0,
+        completion: ((ContextUsageOutcome) -> Void)? = nil
+    ) {
+        guard let runtime else {
+            completion?(.unsupported)
+            return
+        }
+        runtime.requestContextUsage(timeout: timeout, completion: completion)
+    }
+
     var isFocused: Bool {
         switch phase {
         case .draft(let d): return d.isFocused

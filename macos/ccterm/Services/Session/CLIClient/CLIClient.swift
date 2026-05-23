@@ -56,6 +56,14 @@ protocol CLIClient: AnyObject {
     )
     func interrupt(completion: @escaping ([String: Any]) -> Void)
 
+    /// Requests a context-window-usage breakdown. Falls through to
+    /// `.unsupported` on old CLIs (no response within `timeout` seconds).
+    /// Always invokes `completion` exactly once.
+    func getContextUsage(
+        timeout: TimeInterval,
+        completion: @escaping (ContextUsageOutcome) -> Void
+    )
+
     // MARK: Messaging
 
     func sendMessage(_ text: String, extra: [String: Any])

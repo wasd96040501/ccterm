@@ -75,9 +75,6 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                 Transcript2ReentryStats.recordAttachStart(blocks: blocks.count)
             }
             #endif
-            // Reset the frame-change short-circuit so a same-sized
-            // re-mount still processes its first positive-width tick.
-            lastLayoutWidth = -1
         }
     }
 

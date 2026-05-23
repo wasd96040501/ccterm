@@ -155,9 +155,52 @@ them: `make test-unit FILTER=<class>` then `open <png>`.
 | `SidebarView2` row chrome + per-row state indicators ([source](../ccterm/Sidebar/SidebarView2.swift)) | `SidebarView2SnapshotTests` ([source](SidebarView2SnapshotTests.swift)) | `/tmp/ccterm-screenshots/SidebarView2.png` |
 | `NewSessionConfigurator` three-column compose card ([source](../ccterm/Content/Chat/NewSessionConfigurator.swift)) | `NewSessionConfiguratorSnapshotTests` ([source](NewSessionConfiguratorSnapshotTests.swift)) | `/tmp/ccterm-screenshots/NewSessionConfigurator.png` + `…-empty.png` |
 | `DiffView` standalone diff card (modified + new file) ([source](../ccterm/Components/DiffView.swift)) | `DiffViewSnapshotTests` ([source](DiffViewSnapshotTests.swift)) | `/tmp/ccterm-screenshots/DiffView.png` |
+| Transcript attach sequence — first-frame scroll origin / row geometry ([source](../ccterm/Content/Chat/NativeTranscript2/AppKit/TranscriptScrollViewFactory.swift)) | `TranscriptScrollFirstFrameSnapshotTests` ([source](TranscriptScrollFirstFrameSnapshotTests.swift)) | `/tmp/ccterm-screenshots/TranscriptScrollFirstFrame-Production.png` + `…-NoNote.png` |
 
 If your view isn't in this table, jump to [I want to add a snapshot
 test for a new view](#i-want-to-add-a-snapshot-test-for-a-new-view).
+
+### Probing AppKit attach sequences offscreen
+
+`TranscriptScrollFirstFrameSnapshotTests` is a different shape from the
+SwiftUI snapshot tests above and worth understanding before you write
+your own. It's a measurement harness: it drives the exact AppKit attach
+sequence used in production (`TranscriptScrollViewFactory.make` →
+`addSubview` + constraints → `view.layoutSubtreeIfNeeded()` →
+`controller.scrollToTail()`) inside an offscreen window, and samples
+state — `clip.bounds.origin.y`, `documentView.frame.height`,
+`numberOfRows`, `rect(ofRow:)` — at four named transition points: after
+factory.make, after layoutSubtreeIfNeeded, after scrollToTail (still
+source phase), and after one runloop drain. Each measurement is attached
+to the xcresult as a text report alongside a final-frame PNG.
+
+What this scaffold is good for:
+
+- Asserting on **model state** that a one-tick visual glitch should
+  show up in — clip origin, document height, row geometry — without
+  launching the app.
+- A/B'ing two variants of the same attach sequence: one with the
+  production factory, one with a duplicated factory-minus-some-call.
+  That's how the (now-removed) `noteNumberOfRowsChanged` call in
+  `TranscriptScrollViewFactory.make` was proved to be a no-op — the
+  two variants produced identical numbers.
+- Verifying tick-model claims — test 3 of that file falsified the
+  prior CLAUDE.md claim that `view.layoutSubtreeIfNeeded()` doesn't
+  drive NSTableView's row tile.
+
+What it **cannot** observe:
+
+- **Live-window render-pipeline timing.** The PNG comes from
+  `bitmapImageRepForCachingDisplay`, which is a synchronous re-draw,
+  not an actual frame the render server composited. If the bug is
+  "the rendered first frame on a live window paints stale because the
+  prior CATransaction commit was already in flight," this scaffold
+  will pass while the live app still glitches. For that class of bug,
+  reach for `CADisplayLink` + `CALayer.presentation()` sampling on a
+  live window, or video capture, instead.
+- Anything that needs a key window / first responder / cursor flashing
+  — the test window has `alphaValue = 0.01` and goes through
+  `ccterm_orderFrontForTesting()` which skips the responder activation.
 
 ### Run policy — opt-in only
 

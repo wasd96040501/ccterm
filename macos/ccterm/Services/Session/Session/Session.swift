@@ -34,11 +34,12 @@ import Observation
 /// the controller's block list **even when no `ChatHistoryView` is
 /// mounted**, so the user switching the sidebar to another session
 /// doesn't pause renderer-side processing for the session they left.
-/// `NativeTranscript2View` binds the controller's `coordinator`
+/// `TranscriptDetailViewController` binds the controller's `coordinator`
 /// (which has a `weak NSTableView`) to a fresh `NSTableView` on each
-/// mount; when no table is bound, the coordinator still updates its
-/// `blocks` array and skips AppKit calls — a re-attach triggers an
-/// automatic `reloadData()` via the coordinator's `tableView.didSet`.
+/// mount via `TranscriptScrollViewFactory.make`; when no table is bound,
+/// the coordinator still updates its `blocks` array and skips AppKit
+/// calls — a re-attach syncs the new table to the accumulated state
+/// via the factory's `noteNumberOfRowsChanged` call.
 @Observable
 @MainActor
 final class Session {

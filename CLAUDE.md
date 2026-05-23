@@ -29,6 +29,50 @@ Native macOS client for Claude Code. SwiftUI + AppKit, minimum target macOS 14 (
 - `ForEach` ids must be stable.
 - Load data with `.task { }`; react to dependency changes with `.task(id:)` or `.onChange(of:)`. Never trigger side effects from the body construction path.
 
+## macOS runloop tick model
+
+Most "why is this one tick off" puzzles in AppKit + SwiftUI code resolve once you remember the order AppKit, SwiftUI, and CoreAnimation share a single runloop iteration. Every invariant below the "must run in AppKit's source phase" / "races with SwiftUI's commit pass" wording in the architecture section above is written against this diagram:
+
+```
+┌─ source phase ─────────────── your code runs here ──────────┐
+│  · NSEvent dispatch              (mouse / key / wheel)      │
+│  · DispatchQueue.main.async      drained block-by-block     │
+│  · Observation @MainActor Tasks  resumed                    │
+│  · NotificationCenter posts                                 │
+│  · Timer fires                                              │
+│  · NSResponder selectors         (IBAction, performSelector)│
+│                                                             │
+│  setNeedsLayout / setNeedsDisplay / frame writes / bounds   │
+│  writes land NOW — actual layout + draw + commit happen     │
+│  in the next phase.                                         │
+├─ beforeWaiting observer ─── AppKit + CoreAnimation flush ──┤
+│  · SwiftUI body re-eval for invalidated views               │
+│      (Observation registers a runloop observer here)        │
+│  · NSWindow.update                                          │
+│  · updateConstraints → layout → display walks the view tree │
+│  · NSTableView's first display pass lazily queries          │
+│    numberOfRows / heightOfRow and runs tile()               │
+│  · CATransaction implicit commit → render server (IPC)      │
+├─ sleep ──── thread blocks waiting for next event ───────────┤
+│  render server animates on its own clock                    │
+└─ afterWaiting ─ process the event that woke us → next tick ─┘
+```
+
+Load-bearing consequences:
+
+- **Source-phase scroll / frame writes don't see beforeWaiting layout.** Anything in source phase that depends on lazy AppKit geometry (NSTableView row tile, NSClipView `constrainBoundsRect` against documentView.frame, NSScrollView tile) must either force the geometry inline (`noteNumberOfRowsChanged` / `insertRows` / `reloadData`) or defer the dependent write to the next tick. Writing first and waiting hands you a one-frame visual glitch.
+- **`view.layoutSubtreeIfNeeded()` runs autolayout NOW, but it does not force every AppKit subsystem.** NSTableView's row layout, for example, is not an autolayout product — `layoutSubtreeIfNeeded` won't move it. Same caveat for any view whose internal layout is gated on its own dataSource / notifications.
+- **`@Observable` writes don't reach SwiftUI bodies in the same tick.** Bodies re-evaluate in beforeWaiting. Reading `model.foo` from a SwiftUI view that observes the source-of-truth right after your AppKit code wrote it won't show the new value until the next display.
+- **`.task { }` / `withObservationTracking` re-arm hops are async.** They post a Task that resumes on a future source phase — never inside the same tick as the change that fired them. Anything order-sensitive must be done inline, not through one of these hops.
+- **Implicit CALayer animations commit at beforeWaiting too.** Multiple model writes during one source phase coalesce into one transaction; wrap them in `CATransaction.setDisableActions(true)` + `NSAnimationContext.allowsImplicitAnimation = false` if you need them composited without animation rather than crossfaded.
+
+Two stack-trace aliases worth memorising:
+
+- `__CFRUNLOOP_IS_CALLING_OUT_TO_AN_OBSERVER_CALLBACK_FUNCTION__` → you're inside a runloop observer (almost always CoreAnimation's beforeWaiting flush or SwiftUI's invalidation observer).
+- `__CFRUNLOOP_IS_SERVICING_THE_MAIN_DISPATCH_QUEUE__` → source phase, draining `DispatchQueue.main`.
+
+Subsystem-specific corollaries (e.g. the transcript's `clip.scroll` / NSTableView tile choreography) live next to the code; the diagram above is the only thing that's truly global.
+
 ## Where to read more
 
 Detailed conventions live next to the code they govern. When you touch one of these areas, read its `CLAUDE.md` first.

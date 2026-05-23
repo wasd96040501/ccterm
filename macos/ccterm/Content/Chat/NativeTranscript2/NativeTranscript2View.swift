@@ -128,7 +128,15 @@ private struct Transcript2NSViewBridge: NSViewRepresentable {
     func makeNSView(context: Context) -> Transcript2ScrollView {
         // AppKit setup is shared with the AppKit-rooted host
         // (`TranscriptDetailViewController`) via the factory below.
-        TranscriptScrollViewFactory.make(controller: controller)
+        // SwiftUI's NSViewRepresentable contract gives us no hook
+        // between makeNSView and the first layout pass, so we bind
+        // immediately. The host-driven defer pattern (see
+        // `TranscriptDetailViewController.attachSession`) is only
+        // available to AppKit-rooted callers; preview / demo paths
+        // pay the small pre-layout typeset cost.
+        let scroll = TranscriptScrollViewFactory.make(controller: controller)
+        TranscriptScrollViewFactory.bindData(scroll, controller: controller)
+        return scroll
     }
 
     func updateNSView(_ nsView: Transcript2ScrollView, context: Context) {

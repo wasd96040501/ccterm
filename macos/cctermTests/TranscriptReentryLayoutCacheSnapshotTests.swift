@@ -39,14 +39,16 @@ final class TranscriptReentryLayoutCacheSnapshotTests: XCTestCase {
         let coordinator = controller.coordinator
 
         var writes: [Write] = []
-        var currentStage = "pre-mount"
+        // `currentStage` names the step CURRENTLY executing — set before
+        // each call so a write fired during that call is attributed
+        // correctly.
+        var currentStage = "factory.make"
         coordinator.onLayoutCacheWriteForDebug = { id, width in
             writes.append(Write(id: id, width: width, stage: currentStage))
         }
         defer { coordinator.onLayoutCacheWriteForDebug = nil }
 
         let scroll = TranscriptScrollViewFactory.make(controller: controller)
-        currentStage = "after-factory.make"
 
         let window = NSWindow(
             contentRect: NSRect(
@@ -66,15 +68,18 @@ final class TranscriptReentryLayoutCacheSnapshotTests: XCTestCase {
             scroll.topAnchor.constraint(equalTo: container.topAnchor),
             scroll.bottomAnchor.constraint(equalTo: container.bottomAnchor),
         ])
+        currentStage = "addSubview"
         window.contentView = container
         window.ccterm_orderFrontForTesting()
-        currentStage = "after-addSubview"
 
+        currentStage = "layoutSubtreeIfNeeded"
         container.layoutSubtreeIfNeeded()
-        currentStage = "after-layoutSubtreeIfNeeded"
 
+        currentStage = "bindData"
+        TranscriptScrollViewFactory.bindData(scroll, controller: controller)
+
+        currentStage = "scrollToTail"
         controller.scrollToTail()
-        currentStage = "after-scrollToTail"
 
         let oneTickWrites = writes
 

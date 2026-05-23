@@ -71,6 +71,28 @@ enum TranscriptScrollViewFactory {
         coordinator.tableView = table
         table.coordinator = coordinator
         scroll.documentView = table
+
+        // Source-phase row-count sync. The coordinator's `blocks` may
+        // already hold a complete transcript (re-entry — the continuous
+        // bridge populated it while no table was attached); a freshly
+        // constructed NSTableView doesn't auto-query a newly-bound
+        // dataSource. Without this call, `numberOfRows == 0` and
+        // `documentView.frame.height == 0` throughout the host's
+        // addSubview → layoutSubtreeIfNeeded → scrollToTail sequence,
+        // and the upcoming `clip.scroll(to:)` gets clamped to origin=0
+        // by `NSClipView.constrainBoundsRect`. AppKit's first display
+        // pass in beforeWaiting then updates the documentView frame on
+        // its own, but bounds.origin is already pinned at 0 — the
+        // documentView paints at the top for one tick before the next
+        // layout corrects it. See §1.2 in NativeTranscript2/CLAUDE.md.
+        //
+        // `noteNumberOfRowsChanged` is the targeted sync: it re-queries
+        // count, runs the internal row tile (heightOfRow for each row,
+        // documentView frame update), and stops short of cell creation
+        // (viewFor still runs lazily on display, same as steady state).
+        // For a brand-new draft session whose `blocks` is empty, it's a
+        // no-op (count 0 → 0).
+        table.noteNumberOfRowsChanged()
         return scroll
     }
 

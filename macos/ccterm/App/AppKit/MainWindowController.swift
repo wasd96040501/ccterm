@@ -22,6 +22,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
     private enum ItemID {
         static let projectChip = NSToolbarItem.Identifier("ccterm.projectChip")
         static let search = NSToolbarItem.Identifier("ccterm.transcriptSearch")
+        static let archiveFilter = NSToolbarItem.Identifier("ccterm.archiveFilter")
     }
 
     init(model: MainSelectionModel, appState: AppState, searchBus: TranscriptSearchBus) {
@@ -78,11 +79,18 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
         toolbar.allowsUserCustomization = false
         toolbar.showsBaselineSeparator = false
         window?.toolbar = toolbar
-        // Project chip is conditionally present (only for history
-        // sessions). Sync initial state then re-evaluate on selection
-        // changes via Observation.
+        // Project chip + archive filter are both conditional — driven
+        // by the current selection. Sync initial state, then re-evaluate
+        // on selection changes via Observation.
         updateProjectChipPresence()
+        updateArchiveFilterPresence()
         startSelectionObservation()
+    }
+
+    /// Whether the current sidebar selection is the Archive tab.
+    /// Controls visibility of the folder-filter toolbar item.
+    private var isArchiveSelected: Bool {
+        model.selectedSessionId == SidebarSentinel.archive
     }
 
     /// Whether the current sidebar selection is a real history session,
@@ -144,7 +152,39 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
                 }
             }
             self.updateProjectChipPresence()
+            self.updateArchiveFilterPresence()
             self.startSelectionObservation()
+        }
+    }
+
+    /// Insert or remove the archive folder-filter toolbar item to match
+    /// the current selection. Mirrors `updateProjectChipPresence` —
+    /// placed after the `.sidebarTrackingSeparator` so it belongs to
+    /// the detail half of the toolbar, and wrapped in a zero-duration
+    /// animation context so NSToolbar's default fade-in/out doesn't
+    /// fire when the user flips into / out of the Archive tab.
+    private func updateArchiveFilterPresence() {
+        guard let toolbar = window?.toolbar else { return }
+        let currentIndex = toolbar.items.firstIndex {
+            $0.itemIdentifier == ItemID.archiveFilter
+        }
+        let shouldShow = isArchiveSelected
+        if shouldShow == (currentIndex != nil) { return }
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0
+            ctx.allowsImplicitAnimation = false
+            if let idx = currentIndex {
+                toolbar.removeItem(at: idx)
+            }
+            if shouldShow {
+                // Insert immediately before the search item so the
+                // filter button sits to the search field's left.
+                let searchIndex = toolbar.items.firstIndex {
+                    $0.itemIdentifier == ItemID.search
+                }
+                let insertAt = searchIndex ?? toolbar.items.count
+                toolbar.insertItem(withItemIdentifier: ItemID.archiveFilter, at: insertAt)
+            }
         }
     }
 
@@ -184,6 +224,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
             .sidebarTrackingSeparator,
             ItemID.projectChip,
             ItemID.search,
+            ItemID.archiveFilter,
             .flexibleSpace,
             .space,
         ]
@@ -222,8 +263,64 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
             item.searchField.action = #selector(TranscriptSearchToolbarBridge.searchAction(_:))
             searchToolbarItem = item
             return item
+        case ItemID.archiveFilter:
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            let host = NSHostingView(
+                rootView: ArchiveFilterToolbarButton(
+                    model: model,
+                    sessionManager: appState.sessionManager
+                )
+            )
+            host.translatesAutoresizingMaskIntoConstraints = false
+            // Toolbar auto-measures via the hosted view's
+            // `intrinsicContentSize`, which SwiftUI drives off the
+            // body's `fittingSize`. Same pattern as the project chip
+            // above.
+            host.sizingOptions = [.intrinsicContentSize]
+            item.view = host
+            item.label = String(localized: "Filter by folder")
+            item.toolTip = String(localized: "Filter by folder")
+            item.visibilityPriority = .high
+            return item
         default:
             return nil
+        }
+    }
+}
+
+// MARK: - Archive filter button
+
+/// Trailing toolbar item shown only when the Archive tab is selected.
+/// SwiftUI Button + popover hosted via `NSHostingView`. Reads/writes
+/// `MainSelectionModel.archiveSelectedFolderPath` so picking a folder
+/// in the popover updates `ArchiveView`'s filtered list immediately;
+/// reads `SessionManager.archivedFolderOptions` for the popover rows.
+private struct ArchiveFilterToolbarButton: View {
+    @Bindable var model: MainSelectionModel
+    let sessionManager: SessionManager
+
+    @State private var isPopoverPresented: Bool = false
+
+    var body: some View {
+        Button {
+            isPopoverPresented.toggle()
+        } label: {
+            Image(
+                systemName: model.archiveSelectedFolderPath == nil
+                    ? "line.3.horizontal.decrease.circle"
+                    : "line.3.horizontal.decrease.circle.fill"
+            )
+        }
+        .help(Text("Filter by folder"))
+        .popover(isPresented: $isPopoverPresented, arrowEdge: .top) {
+            FolderFilterPickerView(
+                folders: sessionManager.archivedFolderOptions,
+                selectedPath: model.archiveSelectedFolderPath,
+                onSelect: { path in
+                    model.archiveSelectedFolderPath = path
+                    isPopoverPresented = false
+                }
+            )
         }
     }
 }

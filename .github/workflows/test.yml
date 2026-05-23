@@ -11,8 +11,23 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
+
+      - name: Init submodules (with retry)
+        # actions/checkout's recursive submodule fetch uses --depth=1 and has
+        # no retry; transient network hiccups manifest as "Fetched in
+        # submodule path, but it did not contain <sha>" + "could not read
+        # Username" and fail the whole job. See actions/checkout#748. Do it
+        # ourselves with a small retry loop.
+        run: |
+          for attempt in 1 2 3; do
+            if git submodule update --init --recursive; then
+              exit 0
+            fi
+            echo "::warning::git submodule update failed on attempt $attempt"
+            git submodule deinit -f --all || true
+            sleep $((attempt * 5))
+          done
+          exit 1
 
       - name: Setup Go
         # fzf submodule is compiled from Go sources inside an Xcode build phase.

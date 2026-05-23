@@ -31,6 +31,14 @@ final class SidebarView2SnapshotTests: XCTestCase {
             title: "Refactor login screen",
             originPath: "/Users/me/work/project-a",
             lastActiveAt: now)
+        // Long Chinese title — reproduces the real-world bug where a
+        // session title overflows the sidebar column. Must render as
+        // ONE line with a tail ellipsis (`…`); MUST NOT wrap, and MUST
+        // NOT stretch the row height past `historyRowHeight = 22pt`.
+        let longChineseInProjectA = makeRecord(
+            title: "我想给我们的 7 层网关系统加一个限流中间件，他都有哪些功能模块需要修改？",
+            originPath: "/Users/me/work/project-a",
+            lastActiveAt: now.addingTimeInterval(-30))
         let unreadInProjectA = makeRecord(
             title: "Investigate flaky test",
             originPath: "/Users/me/work/project-a",
@@ -39,6 +47,13 @@ final class SidebarView2SnapshotTests: XCTestCase {
             title: "Notes & TODOs",
             originPath: "/Users/me/work/project-a",
             lastActiveAt: now.addingTimeInterval(-120))
+        // Long English title — second representative overflow case to
+        // make sure the ellipsis lands on a word boundary cleanly.
+        let longEnglishInProjectB = makeRecord(
+            title:
+                "Investigate the failing deploy pipeline and rerun the canary across all regions",
+            originPath: "/Users/me/work/project-b",
+            lastActiveAt: now.addingTimeInterval(-15))
         let runningAndUnreadInProjectB = makeRecord(
             title: "Deploy pipeline",
             originPath: "/Users/me/work/project-b",
@@ -49,8 +64,8 @@ final class SidebarView2SnapshotTests: XCTestCase {
             lastActiveAt: now.addingTimeInterval(-180))
 
         for record in [
-            runningInProjectA, unreadInProjectA, idleInProjectA,
-            runningAndUnreadInProjectB, idleInProjectB,
+            runningInProjectA, longChineseInProjectA, unreadInProjectA, idleInProjectA,
+            longEnglishInProjectB, runningAndUnreadInProjectB, idleInProjectB,
         ] {
             repo.save(record)
         }

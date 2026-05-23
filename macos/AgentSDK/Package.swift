@@ -36,5 +36,9 @@ let package = Package(
             name: "TodoSmoke",
             dependencies: ["AgentSDK"]
         ),
+        .executableTarget(
+            name: "ContextUsageSmoke",
+            dependencies: ["AgentSDK"]
+        ),
     ]
 )

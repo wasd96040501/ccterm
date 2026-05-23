@@ -24,8 +24,15 @@ final class TranscriptDetailViewController: NSViewController {
     /// `PreferenceKey` callbacks that report the attach button +
     /// pill rects. Mirrors `RootView2.detailCoordSpace`.
     static let detailCoordSpace = "TranscriptDetailViewController.detail"
-    private static let topFadeScrimHeight: CGFloat = 80
-    private static let bottomFadeScrimHeight: CGFloat = 160
+    /// Top fade band height. Sized to match the unified toolbar so the
+    /// gradient fades in exactly the strip the toolbar visually covers.
+    private static let topFadeScrimHeight: CGFloat = 52
+    /// Bottom fade band height. Sized to match the input bar's top
+    /// edge, so the gradient stops where the bar begins. Derived from
+    /// `chatBottomInset` (36) + `InputBarSessionChrome` row (~22) +
+    /// `InputBarSessionChrome.barSpacing` (10) + `InputBarView2` pill
+    /// (32) = 100. Hardcoded — those constants don't change at runtime.
+    private static let bottomFadeScrimHeight: CGFloat = 100
     static let composeMaxWidth: CGFloat = 512
     static let chatBottomInset: CGFloat = 36
     static let detailHorizontalInset: CGFloat = 20
@@ -60,7 +67,7 @@ final class TranscriptDetailViewController: NSViewController {
     /// compose card stays SwiftUI-hosted.
     private var topScrim: TranscriptScrimView!
     private var bottomScrim: TranscriptBottomScrimView!
-    private var composeOrBarHost: PassthroughHostingView<AnyView>!
+    private var composeOrBarHost: NSHostingView<AnyView>!
 
     /// Sink for `model.attachRect` / `pillRect` → `bottomScrim` cutout
     /// path. Re-arms on every fire.
@@ -119,25 +126,24 @@ final class TranscriptDetailViewController: NSViewController {
         bottomScrim.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(bottomScrim)
 
-        composeOrBarHost = PassthroughHostingView(rootView: AnyView(makeComposeOrBarStack()))
+        composeOrBarHost = NSHostingView(rootView: AnyView(makeComposeOrBarStack()))
         composeOrBarHost.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(composeOrBarHost)
 
-        // Scrims are full-bleed: the bottom scrim's cutout coordinates
-        // arrive in the detail-pane coordinate space (whole `view`), so
-        // its bounds must match that space exactly — pinning to all four
-        // edges is what keeps `attachRect` / `pillRect` valid as-is
-        // without translating them into a smaller local frame.
+        // Each scrim is sized to its visible band, anchored to its edge.
+        // Cutout coordinates arrive in `composeOrBarHost`'s SwiftUI
+        // coord space; `applyScrimCutouts` translates them into the
+        // bottom scrim's local coord via `convert(_:from:)`.
         NSLayoutConstraint.activate([
             topScrim.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             topScrim.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             topScrim.topAnchor.constraint(equalTo: view.topAnchor),
-            topScrim.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            topScrim.heightAnchor.constraint(equalToConstant: Self.topFadeScrimHeight),
 
             bottomScrim.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             bottomScrim.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            bottomScrim.topAnchor.constraint(equalTo: view.topAnchor),
             bottomScrim.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            bottomScrim.heightAnchor.constraint(equalToConstant: Self.bottomFadeScrimHeight),
 
             composeOrBarHost.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             composeOrBarHost.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -188,8 +194,14 @@ final class TranscriptDetailViewController: NSViewController {
     }
 
     private func applyScrimCutouts() {
-        bottomScrim.attachRect = model.attachRect
-        bottomScrim.pillRect = model.pillRect
+        // Rects are reported in `composeOrBarHost`'s SwiftUI coord
+        // space (top-left origin, full pane via `.ignoresSafeArea`).
+        // `bottomScrim` lives in a smaller frame at the bottom of the
+        // pane, so translate into its local coord with AppKit's
+        // built-in conversion — handles both views' `isFlipped` and
+        // the frame-origin offset in one call.
+        bottomScrim.attachRect = bottomScrim.convert(model.attachRect, from: composeOrBarHost)
+        bottomScrim.pillRect = bottomScrim.convert(model.pillRect, from: composeOrBarHost)
     }
 
     private func startSelectionObservation() {

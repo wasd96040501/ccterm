@@ -3,38 +3,22 @@ import AppKit
 /// AppKit-native fade scrim used between the chat transcript and the
 /// window chrome (top toolbar / bottom input bar).
 ///
-/// Replaces the prior `NSHostingView<FadeScrim>` overlays for two
-/// reasons:
+/// Replaces the prior `NSHostingView<FadeScrim>` overlays because the
+/// bottom scrim's attach + pill cutouts needed to live in the same
+/// coordinate system as the input bar's reported rects. With the old
+/// per-region `NSHostingView`s, each scrim's SwiftUI tree was its own
+/// canvas — `.position(x:y:)` on a 160pt-tall canvas couldn't draw a
+/// cutout at a y reported in the full detail-pane coord space, so the
+/// holes landed off-canvas after #195 split the overlays.
 ///
-/// 1. **Mouse + cursor passthrough.** SwiftUI's `.allowsHitTesting(false)`
-///    only removes a view from SwiftUI's own hit-test chain. AppKit's
-///    `NSView.hitTest(_:)` still resolves the hosting view first, so a
-///    SwiftUI overlay over the transcript's `NSTableView` swallowed
-///    scroll / click events. The earlier fix wrapped the hosting view
-///    in an `NSView` with `hitTest(_:) → nil` (PR #181) — events
-///    forwarded fine, but the inner `NSHostingView` still registered
-///    cursor rects (default arrow), shadowing the I-beam / pointing-hand
-///    rects that `BlockCellView.resetCursorRects` installs on the table
-///    below. That regression got reverted in #190 and we lost mouse
-///    passthrough again.
-///
-///    Going pure `NSView` (no `NSHostingView` anywhere inside) closes
-///    both holes. We override `hitTest(_:)` to return `nil` for the
-///    mouse path, and we never call `addCursorRect(_:cursor:)`, so the
-///    cursor system walks past this view entirely and finds the table's
-///    rects underneath.
-///
-/// 2. **Cutout coordinate space.** The old SwiftUI bottom scrim lived
-///    in its own 160pt-tall `NSHostingView` SwiftUI subtree, but the
-///    cutout rects (`attachRect`, `pillRect`) are reported in the
-///    detail-pane coordinate space (full pane height). SwiftUI's
-///    `.position(x:y:)` is local to its hosting tree, so the cutouts
-///    landed off the canvas after #195 split the overlays into separate
-///    hosting views. This view is constrained full-bleed to the detail
-///    pane, so the cutout coordinates align directly.
-///
-/// Both scrims share an `isFlipped` top-left coordinate system so the
-/// cutout rects (originating in SwiftUI) drop in without flipping.
+/// Drawing in pure `NSView` lets us share the cutout coord space with
+/// the AppKit `view` via `convert(_:from:)` from the input bar's host,
+/// and lets us style the gradient with `NSGradient` directly (no
+/// `LinearGradient` mask + `compositingGroup` round-trip). The view is
+/// `isFlipped = true` so SwiftUI's top-left-origin rects map in
+/// without manual y inversion, and `hitTest(_:)` returns `nil` so the
+/// scrim doesn't absorb clicks within its band — a decorative overlay
+/// should never claim mouse events.
 @MainActor
 class TranscriptScrimView: NSView {
     /// Where the gradient sits relative to the view's bounds and which

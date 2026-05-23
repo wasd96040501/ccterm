@@ -477,6 +477,16 @@ extension SidebarViewController: NSOutlineViewDataSource {
 // MARK: - Delegate
 
 extension SidebarViewController: NSOutlineViewDelegate {
+    /// Custom row view that fills its selection with a solid accent
+    /// color. The default source-list row renders selection with a
+    /// translucent / vibrant blend that comes out noticeably lighter
+    /// and more saturated-blue than SwiftUI's `.listStyle(.sidebar)`,
+    /// which draws the selection as a solid (darker, deeper) accent
+    /// fill — see `SidebarSolidSelectionRowView` for details.
+    func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
+        SidebarSolidSelectionRowView()
+    }
+
     func outlineView(
         _ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any
     ) -> NSView? {

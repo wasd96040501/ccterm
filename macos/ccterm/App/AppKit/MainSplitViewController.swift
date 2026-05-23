@@ -44,6 +44,10 @@ final class MainSplitViewController: NSSplitViewController {
         let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebarViewController)
         sidebarItem.minimumThickness = 220
         sidebarItem.maximumThickness = 350
+        // First-launch width when no autosaved divider position exists.
+        // 0.22 of a 1200pt default window → 264pt, inside [220, 350].
+        // Once autosave kicks in this is ignored.
+        sidebarItem.preferredThicknessFraction = 0.22
         sidebarItem.canCollapse = true
         sidebarItem.titlebarSeparatorStyle = .automatic
         addSplitViewItem(sidebarItem)
@@ -55,5 +59,9 @@ final class MainSplitViewController: NSSplitViewController {
         addSplitViewItem(detailItem)
 
         splitView.dividerStyle = .thin
+        // Persist the user's divider position (and collapsed state)
+        // across launches. Set after both items are added — AppKit
+        // restores the saved frames on the next layout pass.
+        splitView.autosaveName = "ccterm.mainSplit"
     }
 }

@@ -11,9 +11,17 @@ final class CrossfadingTextField: NSTextField {
     private static let halfDuration: TimeInterval = 0.12
 
     func setStringValue(_ value: String, animated: Bool) {
-        guard value != stringValue else { return }
+        // `usesSingleLineMode = true` on NSTextField / NSTextFieldCell
+        // changes input layout — it does NOT strip embedded newlines
+        // from a string assigned via `stringValue`. A session title
+        // derived from a multi-paragraph first user message will carry
+        // real `\n` characters; without collapsing them here, every
+        // newline blows the cell past its `heightOfRowByItem` height
+        // and the row overlaps its neighbors.
+        let sanitized = Self.collapseLineBreaks(value)
+        guard sanitized != stringValue else { return }
         guard animated, window != nil, !stringValue.isEmpty else {
-            stringValue = value
+            stringValue = sanitized
             return
         }
         wantsLayer = true
@@ -25,8 +33,15 @@ final class CrossfadingTextField: NSTextField {
         fade.autoreverses = true
         layer?.add(fade, forKey: "crossfade")
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.halfDuration) { [weak self] in
-            self?.stringValue = value
+            self?.stringValue = sanitized
         }
+    }
+
+    /// Replace any sequence of `\n` / `\r` (and stray U+2028 / U+2029
+    /// line / paragraph separators that occasionally slip through
+    /// Chinese punctuation handling) with single spaces.
+    private static func collapseLineBreaks(_ s: String) -> String {
+        s.components(separatedBy: .newlines).joined(separator: " ")
     }
 }
 

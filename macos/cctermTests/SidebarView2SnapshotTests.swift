@@ -39,6 +39,16 @@ final class SidebarView2SnapshotTests: XCTestCase {
             title: "我想给我们的 7 层网关系统加一个限流中间件，他都有哪些功能模块需要修改？",
             originPath: "/Users/me/work/project-a",
             lastActiveAt: now.addingTimeInterval(-30))
+        // Embedded newlines — reproduces the title-from-first-message
+        // case where the user's prompt was multi-paragraph. NSTextField
+        // `usesSingleLineMode = true` changes input layout, NOT the
+        // rendering of an already-set string carrying `\n` characters.
+        // The cell has to collapse newlines itself, or every row of
+        // this style stretches into a 2+ line block.
+        let multilineInProjectA = makeRecord(
+            title: "Investigate the failing deploy\nrerun the canary across all regions",
+            originPath: "/Users/me/work/project-a",
+            lastActiveAt: now.addingTimeInterval(-20))
         let unreadInProjectA = makeRecord(
             title: "Investigate flaky test",
             originPath: "/Users/me/work/project-a",
@@ -64,7 +74,8 @@ final class SidebarView2SnapshotTests: XCTestCase {
             lastActiveAt: now.addingTimeInterval(-180))
 
         for record in [
-            runningInProjectA, longChineseInProjectA, unreadInProjectA, idleInProjectA,
+            runningInProjectA, longChineseInProjectA, multilineInProjectA, unreadInProjectA,
+            idleInProjectA,
             longEnglishInProjectB, runningAndUnreadInProjectB, idleInProjectB,
         ] {
             repo.save(record)

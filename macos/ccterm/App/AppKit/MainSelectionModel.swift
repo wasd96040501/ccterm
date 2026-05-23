@@ -20,21 +20,15 @@ final class MainSelectionModel {
     /// Mirrors `RootView2`'s `draftSessionId` — lazily allocated when
     /// the user enters the "New Session" tab, becomes the real
     /// `sessionId` after the first send.
+    ///
+    /// Compose-time configuration (cwd / useWorktree / sourceBranch /
+    /// originPath) is **not** mirrored here — it lives on
+    /// `Session.draft.config` directly, reached through
+    /// `sessionManager.prepareDraftSession(draftSessionId)`. The
+    /// `NewSessionConfigurator` bindings, the input bar's completion
+    /// context, and the submit path all read the same `Session.draft`,
+    /// so there's no second copy to keep in sync.
     var draftSessionId: String?
-
-    /// Folder picked in `NewSessionConfigurator`. Becomes the
-    /// session's `originPath` (and `cwd` unless worktree is on) at
-    /// first-send time.
-    var draftCwd: String?
-
-    /// Compose-time worktree-provisioning flag. Ignored when the
-    /// chosen folder isn't a git repo (the configurator disables it).
-    var draftUseWorktree: Bool = false
-
-    /// Source branch fed into `Worktree.create`'s `sourceBranch`.
-    /// nil → repo's current branch (Worktree falls back to detached
-    /// check).
-    var draftSourceBranch: String?
 
     /// Archive page's folder-filter selection. `nil` means "All
     /// Folders." Lifted out of `ArchiveView`'s local `@State` because

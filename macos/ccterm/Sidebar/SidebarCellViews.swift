@@ -1,41 +1,5 @@
 import AppKit
 
-/// Row view used by the sidebar outline. Draws selection as a solid
-/// accent-color fill with rounded corners. The stock source-list row
-/// renders selection through a vibrancy blend whose output is visibly
-/// lighter / more saturated than SwiftUI's `.listStyle(.sidebar)`
-/// equivalent — SwiftUI fills with a solid accent color and that reads
-/// as "deeper" / "darker." Match that by drawing the selection
-/// directly here.
-final class SidebarSolidSelectionRowView: NSTableRowView {
-
-    /// Horizontal inset around the rounded selection pill. Matches the
-    /// inset SwiftUI's source-list row uses so the selection background
-    /// fully encloses the cell's icon + title.
-    private static let selectionInset: CGFloat = 6
-    private static let selectionCornerRadius: CGFloat = 6
-
-    override var isOpaque: Bool { false }
-
-    override func drawSelection(in dirtyRect: NSRect) {
-        guard selectionHighlightStyle != .none else { return }
-        let rect = bounds.insetBy(dx: Self.selectionInset, dy: 1)
-        let path = NSBezierPath(
-            roundedRect: rect,
-            xRadius: Self.selectionCornerRadius,
-            yRadius: Self.selectionCornerRadius)
-        // Active (window key + table firstResponder) draws the full
-        // accent; inactive draws a muted grey to match the system idle
-        // selection convention.
-        if isEmphasized {
-            NSColor.controlAccentColor.setFill()
-        } else {
-            NSColor.unemphasizedSelectedContentBackgroundColor.setFill()
-        }
-        path.fill()
-    }
-}
-
 /// Shared base for the three sidebar row types. Adds a fixed-width
 /// "icon slot" anchored at the leading edge so heterogeneous rows
 /// align icon-to-icon and text-to-text. The slot is vertically

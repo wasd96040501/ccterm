@@ -14,25 +14,21 @@ enum SidebarLayout {
     static let iconSlotWidth: CGFloat = 16
     /// Gap between icon column and title.
     static let iconTextSpacing: CGFloat = 6
-    /// Leading inset before the icon column. Matches the source-list
-    /// selection background's left inset on macOS 14 so the icon sits
-    /// inside the highlight rather than spilling out the leading edge.
-    static let leadingInset: CGFloat = 10
+    /// Leading inset before the icon column. Sits inside the source-list
+    /// selection background's left inset on macOS 14, so a selected row's
+    /// highlight still fully encloses the icon.
+    static let leadingInset: CGFloat = 6
     /// Trailing inset after the title (or chevron, for folder rows).
     /// Mirrors `leadingInset` so the highlight is symmetric.
-    static let trailingInset: CGFloat = 10
+    static let trailingInset: CGFloat = 6
 
-    /// Per-type row heights. Source-list style resets `rowHeight` after
-    /// `style = .sourceList` is assigned, so we override per-row via
-    /// `outlineView(_:heightOfRowByItem:)`. Numbers reproduce the prior
-    /// SwiftUI sidebar's *rendered* row pitch (≈ 32pt across all rows
-    /// on macOS Sonoma — SwiftUI's `.listStyle(.sidebar)` overrides
-    /// `listRowInsets` with its own minimum cell padding, so even the
-    /// 1pt top/bottom inset the old code asked for on history rows
-    /// came out at ~32pt in practice).
-    static let fixedRowHeight: CGFloat = 32
-    static let folderRowHeight: CGFloat = 36
-    static let historyRowHeight: CGFloat = 30
+    /// Uniform 32pt height across every row type. Source-list style
+    /// resets `rowHeight` after `style = .sourceList` is assigned, so
+    /// the value still has to come through `outlineView(_:heightOfRowByItem:)`.
+    static let rowHeight: CGFloat = 32
+    static let fixedRowHeight: CGFloat = rowHeight
+    static let folderRowHeight: CGFloat = rowHeight
+    static let historyRowHeight: CGFloat = rowHeight
 
     /// 14pt — matches what SwiftUI's `.listStyle(.sidebar)` renders rows
     /// at on macOS Sonoma. `NSFont.systemFont(ofSize: NSFont.systemFontSize)`

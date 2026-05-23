@@ -67,7 +67,12 @@ final class TranscriptDetailViewController: NSViewController {
     /// compose card stays SwiftUI-hosted.
     private var topScrim: TranscriptScrimView!
     private var bottomScrim: TranscriptBottomScrimView!
-    private var composeOrBarHost: NSHostingView<AnyView>!
+    private var composeOrBarHost: PassthroughHostingView<AnyView>!
+
+    /// DEBUG ONLY — visualises which subview wins each hit-test cell.
+    /// Mounted as the front-most subview; hidden from hit-testing
+    /// itself via `hitTest → nil`.
+    private var hitTestHeatmap: HitTestHeatmapView?
 
     /// Sink for `model.attachRect` / `pillRect` → `bottomScrim` cutout
     /// path. Re-arms on every fire.
@@ -126,7 +131,7 @@ final class TranscriptDetailViewController: NSViewController {
         bottomScrim.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(bottomScrim)
 
-        composeOrBarHost = NSHostingView(rootView: AnyView(makeComposeOrBarStack()))
+        composeOrBarHost = PassthroughHostingView(rootView: AnyView(makeComposeOrBarStack()))
         composeOrBarHost.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(composeOrBarHost)
 
@@ -150,6 +155,19 @@ final class TranscriptDetailViewController: NSViewController {
             composeOrBarHost.topAnchor.constraint(equalTo: view.topAnchor),
             composeOrBarHost.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
+
+        #if DEBUG
+        let heatmap = HitTestHeatmapView()
+        heatmap.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(heatmap)
+        NSLayoutConstraint.activate([
+            heatmap.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            heatmap.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            heatmap.topAnchor.constraint(equalTo: view.topAnchor),
+            heatmap.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+        hitTestHeatmap = heatmap
+        #endif
     }
 
     override func viewDidLoad() {
@@ -194,12 +212,12 @@ final class TranscriptDetailViewController: NSViewController {
     }
 
     private func applyScrimCutouts() {
-        // Rects are reported in `composeOrBarHost`'s SwiftUI coord
-        // space (top-left origin, full pane via `.ignoresSafeArea`).
-        // `bottomScrim` lives in a smaller frame at the bottom of the
-        // pane, so translate into its local coord with AppKit's
-        // built-in conversion — handles both views' `isFlipped` and
-        // the frame-origin offset in one call.
+        appLog(
+            .info, "TranscriptDetailVC",
+            "[scrim-measure] view.h=\(view.bounds.height) "
+                + "safeAreaTop=\(composeOrBarHost.safeAreaInsets.top) "
+                + "pill=\(model.pillRect) attach=\(model.attachRect) "
+                + "barTopFromBottom=\(view.bounds.height - model.pillRect.minY)")
         bottomScrim.attachRect = bottomScrim.convert(model.attachRect, from: composeOrBarHost)
         bottomScrim.pillRect = bottomScrim.convert(model.pillRect, from: composeOrBarHost)
     }

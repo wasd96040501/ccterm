@@ -35,7 +35,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             model: selectionModel, appState: appState, searchBus: searchBus)
         mainWindowController = controller
         controller.showWindow(nil)
-        controller.window?.center()
         controller.window?.makeKeyAndOrderFront(nil)
     }
 

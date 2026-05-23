@@ -249,7 +249,6 @@ struct InputBarView2: View {
                         }
                     }
                 )
-                .padding(.vertical, 4)
                 Divider()
             }
             if !attachments.isEmpty {
@@ -264,6 +263,7 @@ struct InputBarView2: View {
             }
         }
         .frame(minHeight: pillMinHeight)
+        .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
         .barSurface(cornerRadius: Self.cornerRadius)
         .overlay {
             if isDropTargeted {

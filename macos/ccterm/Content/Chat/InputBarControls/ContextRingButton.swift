@@ -159,9 +159,11 @@ private struct ContextBreakdownView: View {
         VStack(alignment: .leading, spacing: 6) {
             header
             barTrack
-            VStack(spacing: 2) { ForEach(Array(ordered.enumerated()), id: \.element.name) { idx, cat in
-                CategoryRow(category: cat, rankInActive: rankInActive(at: idx), rawMaxTokens: usage.rawMaxTokens)
-            } }
+            VStack(spacing: 2) {
+                ForEach(Array(ordered.enumerated()), id: \.element.name) { idx, cat in
+                    CategoryRow(category: cat, rankInActive: rankInActive(at: idx), rawMaxTokens: usage.rawMaxTokens)
+                }
+            }
             if !usage.memoryFiles.isEmpty {
                 ExpandableGroup(
                     label: String(localized: "Memory files"),

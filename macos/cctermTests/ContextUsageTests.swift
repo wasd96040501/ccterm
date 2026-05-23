@@ -67,10 +67,10 @@ final class ContextUsageTests: XCTestCase {
                 ["path": "~/.claude/CLAUDE.md", "tokens": 382],
             ],
             "mcpTools": [
-                ["name": "browser__navigate", "serverName": "browser", "tokens": 320, "isLoaded": false],
+                ["name": "browser__navigate", "serverName": "browser", "tokens": 320, "isLoaded": false]
             ],
             "agents": [
-                ["agentType": "Explore", "source": "built-in", "tokens": 250],
+                ["agentType": "Explore", "source": "built-in", "tokens": 250]
             ],
             "isAutoCompactEnabled": false,
         ]

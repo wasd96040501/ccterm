@@ -156,6 +156,7 @@ them: `make test-unit FILTER=<class>` then `open <png>`.
 | `NewSessionConfigurator` three-column compose card ([source](../ccterm/Content/Chat/NewSessionConfigurator.swift)) | `NewSessionConfiguratorSnapshotTests` ([source](NewSessionConfiguratorSnapshotTests.swift)) | `/tmp/ccterm-screenshots/NewSessionConfigurator.png` + `…-empty.png` |
 | `DiffView` standalone diff card (modified + new file) ([source](../ccterm/Components/DiffView.swift)) | `DiffViewSnapshotTests` ([source](DiffViewSnapshotTests.swift)) | `/tmp/ccterm-screenshots/DiffView.png` |
 | Transcript attach sequence — first-frame scroll origin / row geometry ([source](../ccterm/Content/Chat/NativeTranscript2/AppKit/TranscriptScrollViewFactory.swift)) | `TranscriptScrollFirstFrameSnapshotTests` ([source](TranscriptScrollFirstFrameSnapshotTests.swift)) | `/tmp/ccterm-screenshots/TranscriptScrollFirstFrame-Production.png` + `…-NoNote.png` |
+| Transcript attach sequence — first **composited** frame on a live render pipeline (CADisplayLink + `CALayer.presentation()`) ([source](../ccterm/Content/Chat/NativeTranscript2/AppKit/TranscriptScrollViewFactory.swift)) | `TranscriptScrollLivePresentationSnapshotTests` ([source](TranscriptScrollLivePresentationSnapshotTests.swift)) | none — text-only timeline attachment |
 
 If your view isn't in this table, jump to [I want to add a snapshot
 test for a new view](#i-want-to-add-a-snapshot-test-for-a-new-view).
@@ -196,11 +197,51 @@ What it **cannot** observe:
   "the rendered first frame on a live window paints stale because the
   prior CATransaction commit was already in flight," this scaffold
   will pass while the live app still glitches. For that class of bug,
-  reach for `CADisplayLink` + `CALayer.presentation()` sampling on a
-  live window, or video capture, instead.
+  reach for the live-presentation scaffold below.
 - Anything that needs a key window / first responder / cursor flashing
   — the test window has `alphaValue = 0.01` and goes through
   `ccterm_orderFrontForTesting()` which skips the responder activation.
+
+### Probing the live render pipeline — display-link + `CALayer.presentation()`
+
+`TranscriptScrollLivePresentationSnapshotTests` is the next rung up.
+Same fixture as the offscreen scaffold above, plus a `CADisplayLink`
+attached to `NSScreen.main` that samples
+`(clip.bounds.origin.y, clip.layer?.presentation()?.bounds.origin.y)`
+on every screen refresh tick for ~30 frames. The first sample where
+`presentation` is non-nil is the first frame the render server actually
+composited — its origin is what a user would have seen.
+
+The display link runs off `NSScreen.main` (not `NSView.displayLink`) on
+purpose: the view's own link only fires when the view is visible on a
+screen, but the test window is at `(-30_000, -30_000)` with `alphaValue
+= 0.01`. The screen-level link fires unconditionally at the screen's
+refresh rate, which is what we want — we're sampling state every
+refresh tick, independent of whether the render server picked our
+specific window for compositing. The flush probe (`testCATransactionFlushPresentationTimeline`
+in the sibling file) already proved that the render server DOES composite
+this window — `presentation()` returns the post-flush value at tail.
+
+This scaffold falsified the user-reported "top-then-snap" glitch on the
+clean attach path: the timeline shows `nil → tail` on consecutive
+refresh ticks with no intermediate `top-clamp` frame. If a future report
+narrows the repro to a specific session-switch / draft-promote /
+sidebar-route path, copy this scaffold and drive that path instead —
+the assertion (`first non-nil presentation == tail`) is portable.
+
+What this scaffold **still can't** observe:
+
+- **Production sibling-view interactions.** In the real app the same
+  attach tick also lays out the top scrim, bottom scrim, and compose
+  host (all `NSHostingView`s). Any of those committing on the same
+  CATransaction could perturb timing in ways the bare-scroll harness
+  doesn't reproduce. To rule this out you would need to host
+  `TranscriptDetailViewController` directly in a test window — feasible
+  but a larger lift.
+- **WindowServer scheduling under load.** The render server can delay
+  compositing a window if its parent process is busy on the GPU /
+  another window is occluding etc. None of those reproduce in a quiet
+  test environment.
 
 ### Run policy — opt-in only
 

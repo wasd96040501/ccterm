@@ -172,7 +172,134 @@ final class TranscriptScrollFirstFrameSnapshotTests: XCTestCase {
         capturePNG(scroll: scroll, name: "TranscriptScrollFirstFrame-NoNote")
     }
 
-    // MARK: - Test 3: CLAUDE.md tick model verification
+    // MARK: - Test 3: CATransaction.flush() vs runloop drain — does the
+    //                 source-phase scroll write reach the layer's
+    //                 *presentation* tree on the same tick?
+
+    /// PR #205 open-TODO probe (1/2). The offscreen tests above prove
+    /// `clip.bounds.origin.y` (the **model** layer) lands at the tail on
+    /// the very first observable source-phase tick. That tells us nothing
+    /// about what the render server has actually composited — the user's
+    /// "first paint at top, snap to tail" glitch could still be real if
+    /// the CATransaction commit (which CoreAnimation runs at beforeWaiting)
+    /// hasn't reached the presentation tree by the time the window paints
+    /// its first frame.
+    ///
+    /// This test samples both `bounds.origin.y` (model) and
+    /// `layer.presentation()?.bounds.origin.y` (presentation) at three
+    /// points after `scrollToTail`:
+    ///
+    /// 1. **immediately after source-phase scroll** — model should be at
+    ///    tail; presentation is whatever was last composited (likely `nil`
+    ///    on a freshly attached layer that hasn't been rendered yet).
+    /// 2. **after `CATransaction.flush()`** — forces the implicit commit
+    ///    synchronously. If presentation now matches model, the commit is
+    ///    sync after a flush — the only remaining asynchrony is the render
+    ///    server, and the test scaffold can't observe that.
+    /// 3. **after one runloop drain** — beforeWaiting flushes whatever the
+    ///    explicit flush didn't catch.
+    ///
+    /// The XCTAttachment is the artefact; assertions are loose (model
+    /// already known to be at tail by tests 1–2). Read the timeline to
+    /// decide whether the next probe (CADisplayLink + presentation
+    /// sampling on a live window — see
+    /// `TranscriptScrollLivePresentationSnapshotTests`) is needed.
+    func testCATransactionFlushPresentationTimeline() throws {
+        let controller = prepopulatedController()
+        let scroll = TranscriptScrollViewFactory.make(controller: controller)
+        let (window, container) = makeOffscreenWindow(content: scroll)
+        defer { dismantleWindow(window) }
+
+        container.layoutSubtreeIfNeeded()
+        let clip = scroll.contentView
+
+        // Source phase: scrollToTail — same call as production attach.
+        controller.scrollToTail()
+        let afterScroll = sampleOrigins(clipView: clip)
+
+        // Force the implicit CATransaction commit synchronously. If
+        // CoreAnimation is sitting on a pending commit (the typical case
+        // after a source-phase frame / bounds write), this drains it now
+        // instead of waiting for beforeWaiting.
+        CATransaction.flush()
+        let afterFlush = sampleOrigins(clipView: clip)
+
+        drainOnce()
+        let afterDrain = sampleOrigins(clipView: clip)
+
+        let m = measure(scroll: scroll)
+        let visibleBottomInClip = m.clipHeight - m.contentInsets.bottom
+        let expectedTailOrigin = m.documentHeight - visibleBottomInClip
+
+        let report = """
+            timing-probe: source-phase scroll → flush → drain
+            ────────────────────────────────────────────────────────────
+            expected tail origin = \(expectedTailOrigin)
+            top-clamp            = \(-m.contentInsets.top)
+
+            after source-phase scrollToTail (no flush, no drain)
+              model.origin.y        = \(afterScroll.modelOrigin)
+              presentation.origin.y = \(format(afterScroll.presentationOrigin))
+              presentation present? = \(afterScroll.presentationOrigin != nil)
+
+            after CATransaction.flush()
+              model.origin.y        = \(afterFlush.modelOrigin)
+              presentation.origin.y = \(format(afterFlush.presentationOrigin))
+              presentation present? = \(afterFlush.presentationOrigin != nil)
+
+            after one runloop drain
+              model.origin.y        = \(afterDrain.modelOrigin)
+              presentation.origin.y = \(format(afterDrain.presentationOrigin))
+              presentation present? = \(afterDrain.presentationOrigin != nil)
+
+            Reading the timeline:
+              · model at tail in source-phase sample        → source-phase
+                write reaches the model layer immediately.
+              · presentation == nil in all three samples    → render server
+                hasn't composited this layer at all (likely: offscreen
+                window not promoted to a surface). Re-run with a live
+                window via the display-link test for a real signal.
+              · presentation at tail after flush            → CoreAnimation
+                commits the write synchronously when flushed; only render
+                server scheduling delays a frame.
+              · presentation at top-clamp after flush AND
+                drain                                       → commit IS
+                landing the wrong value. The user-reported "top-then-snap"
+                glitch is reproducible here and worth chasing.
+            """
+        attachString(report, name: "flush-presentation-timeline")
+
+        // Model assertions only — the goal of this test is the timeline,
+        // not a presentation-side gate (which depends on whether the
+        // render server is willing to composite an alpha=0.01 window).
+        XCTAssertEqual(
+            afterScroll.modelOrigin, expectedTailOrigin, accuracy: 2.0,
+            "source-phase model origin should land at tail (got \(afterScroll.modelOrigin))")
+        XCTAssertEqual(
+            afterFlush.modelOrigin, expectedTailOrigin, accuracy: 2.0,
+            "model origin should still be at tail after flush (got \(afterFlush.modelOrigin))")
+        XCTAssertEqual(
+            afterDrain.modelOrigin, expectedTailOrigin, accuracy: 2.0,
+            "model origin should still be at tail after drain (got \(afterDrain.modelOrigin))")
+    }
+
+    private struct OriginSample {
+        let modelOrigin: CGFloat
+        let presentationOrigin: CGFloat?
+    }
+
+    private func sampleOrigins(clipView: NSClipView) -> OriginSample {
+        OriginSample(
+            modelOrigin: clipView.bounds.origin.y,
+            presentationOrigin: clipView.layer?.presentation()?.bounds.origin.y)
+    }
+
+    private func format(_ v: CGFloat?) -> String {
+        guard let v else { return "nil" }
+        return String(format: "%.3f", v)
+    }
+
+    // MARK: - Test 4: CLAUDE.md tick model verification
 
     /// **Finding:** the tick model in
     /// `NativeTranscript2/CLAUDE.md §1.2` (and the corollary in the root

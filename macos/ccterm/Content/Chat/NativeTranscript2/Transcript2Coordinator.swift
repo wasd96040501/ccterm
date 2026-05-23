@@ -64,19 +64,7 @@ import AppKit
 /// otherwise jitter the anchor row.
 @MainActor
 final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
-    weak var tableView: NSTableView? {
-        didSet {
-            guard oldValue !== tableView else { return }
-            #if DEBUG
-            if oldValue != nil && tableView == nil {
-                Transcript2ReentryStats.recordDetach()
-            }
-            if tableView != nil, !blocks.isEmpty {
-                Transcript2ReentryStats.recordAttachStart(blocks: blocks.count)
-            }
-            #endif
-        }
-    }
+    weak var tableView: NSTableView?
 
     /// Notifies the controller after every successful mutation so SwiftUI
     /// observers on `blockCount` see the new value.
@@ -973,10 +961,6 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         // `BlockCellView.layoutOrigin` re-centers content automatically from
         // the new `bounds.width`, no row needs its layout invalidated.
         let width = layoutWidth
-        #if DEBUG
-        Transcript2ReentryStats.recordFrameDidChange(
-            shortCircuit: width == lastLayoutWidth)
-        #endif
         if width == lastLayoutWidth { return }
         lastLayoutWidth = width
 
@@ -1043,10 +1027,6 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// `noteHeightOfRow(_:false)` path, which does the same suppression.
     private func invalidate(rows indexes: IndexSet, in tableView: NSTableView) {
         guard !indexes.isEmpty else { return }
-        #if DEBUG
-        let perfStart =
-            Transcript2ReentryStats.enabled ? CFAbsoluteTimeGetCurrent() : 0
-        #endif
         NSAnimationContext.beginGrouping()
         NSAnimationContext.current.duration = 0
         NSAnimationContext.current.allowsImplicitAnimation = false
@@ -1060,12 +1040,6 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         tableView.endUpdates()
         CATransaction.commit()
         NSAnimationContext.endGrouping()
-        #if DEBUG
-        if Transcript2ReentryStats.enabled {
-            let ms = (CFAbsoluteTimeGetCurrent() - perfStart) * 1000
-            Transcript2ReentryStats.recordInvalidate(width: layoutWidth, ms: ms)
-        }
-        #endif
     }
 
     // MARK: - Background prefetch (post-live-resize)
@@ -1153,28 +1127,21 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let width = layoutWidth
         let pad = BlockStyle.blockPadding(for: blocks[row].kind)
         #if DEBUG
-        let perfActive =
-            Transcript2PerfLog.enabled || Transcript2ReentryStats.enabled
-        let perfStart = perfActive ? CFAbsoluteTimeGetCurrent() : 0
+        let perfStart = Transcript2PerfLog.enabled ? CFAbsoluteTimeGetCurrent() : 0
         let perfCacheHit =
-            perfActive ? (layoutCache[blocks[row].id]?.width == width) : false
+            Transcript2PerfLog.enabled
+            ? (layoutCache[blocks[row].id]?.width == width) : false
         #endif
         let h =
             layout(for: blocks[row], width: width).totalHeight
             + pad.top + pad.bottom
         #if DEBUG
-        if perfActive {
+        if Transcript2PerfLog.enabled {
             let ms = (CFAbsoluteTimeGetCurrent() - perfStart) * 1000
-            if Transcript2PerfLog.enabled {
-                Transcript2PerfLog.trace(
-                    "heightOfRow row=\(row) kind=\(blocks[row].kindLabel) "
-                        + "cached=\(perfCacheHit) h=\(Int(h.rounded())) "
-                        + "ms=\(String(format: "%.2f", ms))")
-            }
-            if Transcript2ReentryStats.enabled {
-                Transcript2ReentryStats.recordHeightOfRow(
-                    cached: perfCacheHit, ms: ms)
-            }
+            Transcript2PerfLog.trace(
+                "heightOfRow row=\(row) kind=\(blocks[row].kindLabel) "
+                    + "cached=\(perfCacheHit) h=\(Int(h.rounded())) "
+                    + "ms=\(String(format: "%.2f", ms))")
         }
         #endif
         return h
@@ -1207,21 +1174,15 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         // Cache-hit snapshot taken BEFORE the lazy lookup below would
         // populate it on miss — that way the trace shows whether scroll
         // is hitting the memo or burning new layouts.
-        let perfActive =
-            Transcript2PerfLog.enabled || Transcript2ReentryStats.enabled
         let perfCacheHit =
-            perfActive ? (layoutCache[block.id]?.width == width) : false
+            Transcript2PerfLog.enabled
+            ? (layoutCache[block.id]?.width == width) : false
         #endif
         let cellLayout = layout(for: block, width: width)
         #if DEBUG
-        if perfActive {
-            if Transcript2PerfLog.enabled {
-                Transcript2PerfLog.trace(
-                    "viewFor row=\(row) kind=\(block.kindLabel) cached=\(perfCacheHit)")
-            }
-            if Transcript2ReentryStats.enabled {
-                Transcript2ReentryStats.recordViewFor(cached: perfCacheHit)
-            }
+        if Transcript2PerfLog.enabled {
+            Transcript2PerfLog.trace(
+                "viewFor row=\(row) kind=\(block.kindLabel) cached=\(perfCacheHit)")
         }
         #endif
 

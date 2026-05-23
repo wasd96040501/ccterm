@@ -1,141 +1,19 @@
 import AppKit
-import SwiftUI
-
-/// Sandbox tab for exercising `NativeTranscript2` with realistic content.
-///
-/// Holds a deliberately mixed feed (English + Chinese tech-news prose, several
-/// images) so the renderer is hit with multi-script line-breaking,
-/// vertically-tall paragraphs, and aspect-fit images at the same time. A
-/// floating control panel at the bottom lets you grow / shrink the block
-/// list to verify diff animations and resize behavior under load.
-struct TranscriptDemoView: View {
-    @State private var controller: Transcript2Controller
-    /// Monotonic counter for extra-pool cycling. Decoupled from
-    /// `blockCount` so deletions don't reset the cycle (which would
-    /// otherwise pin every appended block to `extraPool[0]` once the live
-    /// count dropped below `initialBlocks.count`).
-    @State private var extraAddCount: Int = 0
-    /// Current status of the running-demo tool group. Driven by the
-    /// "Toggle Status" control-bar button so a click flips the group
-    /// header title between the progressive form (`activeTitle`) and
-    /// the past-tense form (`completedTitle`). The transition runs
-    /// through `Transcript2Coordinator.setStatus`, which now queues a
-    /// `CATransition.fade` on the host cell layer — that's the change
-    /// this button is here to demonstrate.
-    @State private var runningGroupStatus: ToolStatus = .running
-
-    /// Default initializer for production callers (sidebar selection).
-    /// Tests can pass a pre-seeded controller via `init(controller:)`
-    /// to bypass the `.task`-driven seed path — AppKit's appearance
-    /// signals are unreliable for offscreen hosted-test windows, so
-    /// state-injection is the supported test seam. The `.task` body
-    /// below is idempotent on `blockCount == 0`, so a pre-loaded
-    /// controller simply skips it.
-    @MainActor
-    init(controller: Transcript2Controller? = nil) {
-        _controller = State(initialValue: controller ?? Transcript2Controller())
-    }
-
-    var body: some View {
-        NativeTranscript2View(controller: controller)
-            .frame(minWidth: 320, minHeight: 240)
-            .overlay(alignment: .bottom) { controlPanel }
-            .task {
-                // Idempotent: only seed once. Survives Preview re-renders
-                // that would otherwise re-fire a side-effecting `@State`
-                // default closure.
-                if controller.blockCount == 0 {
-                    controller.setHistory(Self.initialBlocks)
-                    // Mark the third toolGroup live. Status flows through
-                    // the dedicated `setToolStatus` channel so the rows
-                    // already in the table refresh granularly — no
-                    // Block.Kind replacement, no highlight invalidation.
-                    // Mixed per-child statuses prove sibling rendering
-                    // stays independent: only the bash row picks up the
-                    // running palette + progressive label.
-                    controller.setToolStatus(
-                        id: Self.runningGroupBlockId, status: .running)
-                    controller.setToolStatus(
-                        id: Self.runningReadChildId, status: .completed)
-                    controller.setToolStatus(
-                        id: Self.runningGrepChildId, status: .completed)
-                    controller.setToolStatus(
-                        id: Self.runningBashChildId, status: .running)
-                }
-            }
-    }
-
-    private var controlPanel: some View {
-        HStack(spacing: 10) {
-            Button {
-                let next = Self.extraBlock(at: extraAddCount)
-                controller.apply(.insert(after: controller.blockIds.last, [next]))
-                extraAddCount += 1
-            } label: {
-                Label("Add Message", systemImage: "plus.circle.fill")
-            }
-            Button {
-                if controller.blockCount > 1,
-                    let lastId = controller.blockIds.last
-                {
-                    controller.apply(.remove(ids: [lastId]))
-                }
-            } label: {
-                Label("Remove Message", systemImage: "minus.circle.fill")
-            }
-            .disabled(controller.blockCount <= 1)
-
-            Divider().frame(height: 16)
-
-            // Flips the running-demo tool group between `.running`
-            // and `.completed`, which swaps the group header's title
-            // (`activeTitle` ↔ `completedTitle`) and recolours the
-            // bash child. Both writes route through `setToolStatus`,
-            // which now queues a `CATransition.fade` on the host
-            // cell — the visible change should crossfade, not pop.
-            Button {
-                let next: ToolStatus =
-                    (runningGroupStatus == .running) ? .completed : .running
-                runningGroupStatus = next
-                controller.setToolStatus(
-                    id: Self.runningGroupBlockId, status: next)
-                controller.setToolStatus(
-                    id: Self.runningBashChildId, status: next)
-            } label: {
-                Label(
-                    runningGroupStatus == .running
-                        ? "Mark Completed" : "Mark Running",
-                    systemImage: "wand.and.stars")
-            }
-
-            Divider().frame(height: 16)
-
-            Text("\(controller.blockCount)")
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .font(.callout)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(.regularMaterial, in: Capsule())
-        .overlay(Capsule().strokeBorder(.separator, lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.18), radius: 8, y: 2)
-        .padding(.bottom, 20)
-    }
-}
 
 // MARK: - Demo content
+//
+// Production fixture data driven by `TranscriptDemoViewController`'s
+// `viewDidLoad` seed step. Internal so unit tests can pre-seed a
+// controller with the same payload the demo's seed closure installs.
 
-extension TranscriptDemoView {
+extension TranscriptDemoViewController {
     /// Built once at first access. Stable `Block.id`s + stable `NSImage`
-    /// instances so the diff sees no churn across re-renders. Exposed
-    /// at module-internal scope so unit tests can pre-seed a
-    /// `Transcript2Controller` with the same payload the `.task`-
-    /// driven path would have installed.
+    /// instances so the diff sees no churn across re-renders.
     static let initialBlocks: [Block] = makeInitialBlocks()
 
-    /// Hardcoded extra entries appended by the "Add Message" button. Cycled
-    /// through by `currentCount` so each click visibly adds something new.
+    /// Hardcoded extra entries appended by the "Add Message" button.
+    /// Cycled through by `currentCount` so each click visibly adds
+    /// something new.
     fileprivate static let extraPool: [Block.Kind] = [
         .paragraph(
             inlines: plain(
@@ -163,7 +41,7 @@ extension TranscriptDemoView {
             )),
     ]
 
-    fileprivate static func extraBlock(at addIndex: Int) -> Block {
+    static func extraBlock(at addIndex: Int) -> Block {
         let kind = extraPool[addIndex % extraPool.count]
         return Block(id: UUID(), kind: kind)
     }
@@ -375,14 +253,15 @@ extension TranscriptDemoView {
         Block(id: UUID(), kind: .image(image))
     }
 
-    /// Trivial wrapper used wherever a String literal is the entire content —
-    /// keeps construction sites readable while every value site still goes
-    /// through `[InlineNode]`. Lifted to file scope (vs. inline `[.text(s)]`)
-    /// so updating the demo to richer IR is a one-line edit per call site.
+    /// Trivial wrapper used wherever a String literal is the entire
+    /// content — keeps construction sites readable while every value
+    /// site still goes through `[InlineNode]`. Lifted to file scope
+    /// (vs. inline `[.text(s)]`) so updating the demo to richer IR is
+    /// a one-line edit per call site.
     fileprivate static func plain(_ text: String) -> [InlineNode] { [.text(text)] }
 
-    /// Three user bubbles at the top of the demo so the chevron + collapse
-    /// + selection paths are visible immediately on open:
+    /// Three user bubbles at the top of the demo so the chevron +
+    /// collapse + selection paths are visible immediately on open:
     /// - one short bubble (no chevron — under threshold)
     /// - one bubble exactly at the threshold + min-hidden boundary
     /// - one long bubble that folds by default
@@ -438,9 +317,9 @@ extension TranscriptDemoView {
         }
     }
 
-    /// Curated showcase of inline IR + heading levels. Sits at the top of
-    /// `initialBlocks` so opening the demo immediately exercises the new
-    /// markdown rendering path.
+    /// Curated showcase of inline IR + heading levels. Sits at the top
+    /// of `initialBlocks` so opening the demo immediately exercises
+    /// the markdown rendering path.
     fileprivate static func markdownShowcase() -> [Block] {
         let docsURL = URL(string: "https://example.com/docs")!
         let issueURL = URL(string: "https://example.com/issues/42")!
@@ -1103,10 +982,9 @@ extension TranscriptDemoView {
             // + label colour); the earlier Read / Grep children stay
             // at `.completed` so the row demonstrates per-child
             // status mixing in a single group. State pushes are wired
-            // in `body.task` via `controller.setToolStatus`, so the
-            // running palette is applied as the rows mount.
+            // by the VC's seed step via `controller.setToolStatus`.
             Block(
-                id: TranscriptDemoView.runningGroupBlockId,
+                id: TranscriptDemoViewController.runningGroupBlockId,
                 kind: .toolGroup(
                     ToolGroupBlock(
                         activeTitle: String(localized: "Running \("npm test")"),
@@ -1115,7 +993,7 @@ extension TranscriptDemoView {
                         children: [
                             .read(
                                 ReadChild(
-                                    id: TranscriptDemoView.runningReadChildId,
+                                    id: TranscriptDemoViewController.runningReadChildId,
                                     label: String(localized: "Read \("package.json")"),
                                     activeLabel: String(localized: "Reading \("package.json")"),
                                     filePath: "package.json",
@@ -1130,7 +1008,7 @@ extension TranscriptDemoView {
                                         """)),
                             .grep(
                                 GrepChild(
-                                    id: TranscriptDemoView.runningGrepChildId,
+                                    id: TranscriptDemoViewController.runningGrepChildId,
                                     label: String(localized: "Searched \("describe(")"),
                                     activeLabel: String(localized: "Searching \("describe(")"),
                                     pattern: "describe(",
@@ -1141,7 +1019,7 @@ extension TranscriptDemoView {
                                     content: nil)),
                             .bash(
                                 BashChild(
-                                    id: TranscriptDemoView.runningBashChildId,
+                                    id: TranscriptDemoViewController.runningBashChildId,
                                     label: String(localized: "Ran \("npm test")"),
                                     activeLabel: String(localized: "Running \("npm test")"),
                                     command: "npm test",
@@ -1155,7 +1033,7 @@ extension TranscriptDemoView {
     }
 
     /// Stable ids for the running-demo group + its children so the
-    /// `.task` block can call `setToolStatus(...)` against known
+    /// VC's seed closure can call `setToolStatus(...)` against known
     /// surfaces without scanning the block list at runtime. Internal
     /// scope so the snapshot test can replay the same status puts
     /// after pre-seeding the controller from `initialBlocks`.
@@ -1165,8 +1043,9 @@ extension TranscriptDemoView {
     static let runningBashChildId = UUID()
 }
 
-/// SF Symbol → NSImage at a fixed point size. Held by the `initialBlocks`
-/// closure so the same instances persist across renders.
+/// SF Symbol → NSImage at a fixed point size. Held by the
+/// `initialBlocks` closure so the same instances persist across
+/// renders.
 private struct DemoIcons {
     let cpu: NSImage
     let network: NSImage
@@ -1189,10 +1068,4 @@ private struct DemoIcons {
             .withSymbolConfiguration(config)
             ?? NSImage(size: NSSize(width: 240, height: 140))
     }
-}
-
-#Preview {
-    TranscriptDemoView()
-        .frame(width: 720, height: 720)
-        .environment(\.syntaxEngine, SyntaxHighlightEngine())
 }

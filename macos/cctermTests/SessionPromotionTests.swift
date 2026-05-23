@@ -171,8 +171,9 @@ final class SessionPromotionTests: XCTestCase {
     /// A draft-promoted runtime starts in `.loaded` history state and
     /// a subsequent `loadHistory()` is a no-op — no `.reset` reaches the
     /// bridge. Regression net for: switching away from a running fresh
-    /// session and coming back triggers `ChatHistoryView`'s `.task` to
-    /// call `loadHistory()`. Without this guarantee, Phase A re-parses
+    /// session and coming back triggers
+    /// `TranscriptDetailViewController.attachSession`'s `loadHistory()`
+    /// call. Without this guarantee, Phase A re-parses
     /// the JSONL the CLI has been writing live and `receive(_:.replay)`
     /// re-`.append`s every echo (the original entries have already
     /// flipped from `.queued` to `.confirmed`, so `matchQueuedEntry`
@@ -194,7 +195,7 @@ final class SessionPromotionTests: XCTestCase {
 
         XCTAssertEqual(session.historyLoadState, .loaded)
 
-        // Re-entry from ChatHistoryView's perspective: calling
+        // Re-entry from the transcript host's perspective: calling
         // `loadHistory()` again must be a no-op — no `.reset` fired.
         session.loadHistory()
         XCTAssertEqual(resetCount, 0, "loadHistory on a draft-promoted session must not fire .reset")

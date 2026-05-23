@@ -4,8 +4,20 @@ import XCTest
 
 @testable import ccterm
 
+/// Asserts the "single source-phase tick = single width per id"
+/// property against the canonical `TranscriptScrollViewFactory` attach
+/// sequence (bare NSView container — no production VC, no demo VC).
+/// Sibling tests in `TranscriptHostReentryLayoutCacheTests` drive the
+/// production `TranscriptDetailViewController` and the AppKit demo VCs
+/// through the same property; the three together guard both the
+/// factory itself AND every caller's adherence to the documented
+/// attach order.
+///
+/// Not a snapshot — text-only `(writes, widths, stages)` attachment —
+/// so the file no longer carries the `Snapshot` suffix and runs on the
+/// default CI suite as a merge gate.
 @MainActor
-final class TranscriptReentryLayoutCacheSnapshotTests: XCTestCase {
+final class TranscriptReentryLayoutCacheTests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false

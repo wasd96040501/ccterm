@@ -43,7 +43,7 @@ struct SidebarView2: View {
     /// Sentinel for the Transcript Perf tab — focused repro for the
     /// "expanded diff scroll drops frames" bug. Renders one tool group
     /// whose lone fileEdit child carries a many-screen diff body. See
-    /// `TranscriptPerfDemoView` + `Transcript2PerfLog` for the trace
+    /// `TranscriptPerfDemoViewController` + `Transcript2PerfLog` for the trace
     /// scaffold the tab installs while mounted.
     static let transcriptPerfTag = "__transcript_perf__"
     /// Sentinel for the Permission Cards preview grid — every

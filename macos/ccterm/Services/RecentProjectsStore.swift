@@ -66,6 +66,13 @@ final class RecentProjectsStore {
         self.defaults = defaults
     }
 
+    /// macOS 26 SDK workaround — see `Session.deinit` for the
+    /// background. The default `@MainActor` deinit routes through
+    /// `swift_task_deinitOnExecutorImpl` and traps; `nonisolated`
+    /// skips that path. The host-aware reentry test deallocates this
+    /// store on test teardown, which is when the trap fires.
+    nonisolated deinit {}
+
     var entries: [Entry] {
         loadIfNeeded()
         return _entries

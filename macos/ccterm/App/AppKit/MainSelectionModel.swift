@@ -36,6 +36,14 @@ final class MainSelectionModel {
     /// check).
     var draftSourceBranch: String?
 
+    /// Archive page's folder-filter selection. `nil` means "All
+    /// Folders." Lifted out of `ArchiveView`'s local `@State` because
+    /// the filter button now lives in the AppKit `NSToolbar` (the
+    /// SwiftUI `.toolbar { }` modifier inside an `NSHostingController`
+    /// child VC is silently dropped) — the button and `ArchiveView`
+    /// share this field via the model.
+    var archiveSelectedFolderPath: String?
+
     /// Frame of the round attach button, in the detail-pane
     /// coordinate space. The bottom scrim cuts a `Circle` hole here.
     var attachRect: CGRect = .zero

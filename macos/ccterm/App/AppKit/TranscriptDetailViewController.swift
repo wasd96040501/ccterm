@@ -316,11 +316,18 @@ final class TranscriptDetailViewController: NSViewController {
     private func sideBranchContent(for sid: String?) -> SideBranchContent? {
         guard let sid else { return nil }
         if sid == SidebarSentinel.archive {
+            let folderBinding = Binding<String?>(
+                get: { [weak self] in self?.model.archiveSelectedFolderPath },
+                set: { [weak self] in self?.model.archiveSelectedFolderPath = $0 }
+            )
             return .swiftUI(
                 AnyView(
-                    ArchiveView(onUnarchive: { [weak self] resumeSid in
-                        self?.model.selectedSessionId = resumeSid
-                    })
+                    ArchiveView(
+                        selectedFolderPath: folderBinding,
+                        onUnarchive: { [weak self] resumeSid in
+                            self?.model.selectedSessionId = resumeSid
+                        }
+                    )
                     .environment(sessionManager)
                     .environment(recentProjects)
                     .environment(inputDraftStore)

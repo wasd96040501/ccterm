@@ -210,6 +210,7 @@ final class TranscriptScrollFirstFrameSnapshotTests: XCTestCase {
         defer { dismantleWindow(window) }
 
         container.layoutSubtreeIfNeeded()
+        TranscriptScrollViewFactory.bindData(scroll, controller: controller)
         controller.scrollToTail()
 
         let m = measure(scroll: scroll)
@@ -304,6 +305,7 @@ final class TranscriptScrollFirstFrameSnapshotTests: XCTestCase {
         defer { dismantleWindow(window) }
 
         container.layoutSubtreeIfNeeded()
+        TranscriptScrollViewFactory.bindData(scroll, controller: controller)
         let clip = scroll.contentView
 
         // Source phase: scrollToTail — same call as production attach.
@@ -521,8 +523,13 @@ final class TranscriptScrollFirstFrameSnapshotTests: XCTestCase {
 
         // Mirror TranscriptDetailViewController.attachSession's
         // forced-layout pass — autolayout sizes the scroll view, clip
-        // view, and table column to real width.
+        // view, and table column to real width. dataSource is NOT bound
+        // yet, so no `heightOfRow` queries fire here.
         container.layoutSubtreeIfNeeded()
+        // Production binds the table to the coordinator after the host's
+        // forced layout — `noteNumberOfRowsChanged` inside `bindData`
+        // is what drives the (single) heightOfRow pass at the final width.
+        TranscriptScrollViewFactory.bindData(scroll, controller: controller)
         let m1 = measure(scroll: scroll)
 
         // Same source phase — scrollToTail is the very next call in

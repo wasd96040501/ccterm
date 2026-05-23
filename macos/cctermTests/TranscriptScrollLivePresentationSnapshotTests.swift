@@ -102,6 +102,7 @@ final class TranscriptScrollLivePresentationSnapshotTests: XCTestCase {
         // TranscriptDetailViewController.attachSession + #199's
         // scrollToTail anchor — same as the model-only test).
         container.layoutSubtreeIfNeeded()
+        TranscriptScrollViewFactory.bindData(scroll, controller: controller)
         let modelAfterLayout = scroll.contentView.bounds.origin.y
         controller.scrollToTail()
         let modelAfterScroll = scroll.contentView.bounds.origin.y

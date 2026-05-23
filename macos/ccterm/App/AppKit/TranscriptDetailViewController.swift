@@ -374,11 +374,13 @@ final class TranscriptDetailViewController: NSViewController {
             scroll.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         // Pull layout into the current call stack so the table reaches
-        // its real width before any downstream work (history load, scroll
-        // anchor, setLoading) runs. Without this, attachSession would
-        // return with width=0 and every "first tile" piece downstream
-        // would have to defer through `tableFrameDidChange` + async hops.
+        // its real width before we bind the dataSource — with the bind
+        // deferred until now, AppKit has no rows to query and the
+        // autolayout pass settles without any `heightOfRow` queries at
+        // transient widths. The downstream `scrollToTail` and history
+        // load can then run in the same source phase.
         view.layoutSubtreeIfNeeded()
+        TranscriptScrollViewFactory.bindData(scroll, controller: session.controller)
         transcriptScroll = scroll
         currentSession = session
 

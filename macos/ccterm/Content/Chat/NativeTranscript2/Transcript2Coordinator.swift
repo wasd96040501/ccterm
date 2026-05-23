@@ -170,6 +170,15 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let layout: RowLayout
     }
 
+    #if DEBUG
+    /// Test-only observer: fires on every effective write into `layoutCache`,
+    /// from both the batch path (`cacheLayouts`) and the lazy path
+    /// (`layout(for:width:)`). Used by `TranscriptReentryLayoutCacheTests` to
+    /// detect same-id re-layouts at different widths inside one source phase.
+    /// Production never sets this; Release builds don't compile the hook.
+    var onLayoutCacheWriteForDebug: ((UUID, CGFloat) -> Void)?
+    #endif
+
     /// Tracks the `tableFrameDidChange` post-resize layout refill task.
     /// Superseded only by the next `refillLayoutCache`. `applyInBackground`'s
     /// detached task is intentionally *not* stored here — it's
@@ -622,6 +631,9 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         for (id, layout) in entries {
             if layoutCache[id]?.width == width { continue }
             layoutCache[id] = CachedLayout(width: width, layout: layout)
+            #if DEBUG
+            onLayoutCacheWriteForDebug?(id, width)
+            #endif
         }
     }
 
@@ -645,6 +657,9 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             folds: foldStates,
             statuses: statusStates)
         layoutCache[block.id] = CachedLayout(width: width, layout: layout)
+        #if DEBUG
+        onLayoutCacheWriteForDebug?(block.id, width)
+        #endif
         return layout
     }
 

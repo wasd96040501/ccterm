@@ -7,10 +7,33 @@ import AppKit
 /// place — content insets, `.never` layer policies, table column,
 /// dataSource/delegate wiring, frameDidChange observer.
 ///
+/// **Two-step attach.** `make(controller:)` builds the scroll view
+/// shell (clip, table, column, layer policy, content insets) but does
+/// NOT bind the table's `dataSource` / `delegate` to the coordinator —
+/// that is `bindData(_:controller:)`'s job. The split exists because
+/// `NSTableView` answers `numberOfRows` and `heightOfRow` lazily off
+/// the dataSource; if we bound it inside `make`, then any autolayout
+/// pass that runs before the host's geometry has settled (the host's
+/// `addSubview` + `layoutSubtreeIfNeeded` cascade) would query
+/// `heightOfRow` at a transient table width — once at the column's
+/// default 100pt (clamped to `BlockStyle.minLayoutWidth = 460`), and
+/// again at every intermediate width autolayout walks through — and
+/// every block's row layout would be typeset, cached, and immediately
+/// invalidated. With the bind deferred to after `layoutSubtreeIfNeeded`,
+/// the first query lands at the final, settled width and every block
+/// is typeset exactly once. Measured by
+/// `TranscriptReentryLayoutCacheSnapshotTests`.
+///
 /// Caller is responsible for placing the returned scroll view into a
-/// hierarchy and (eventually) tearing down via
-/// `dismantle(_:coordinator:)` — symmetric with the SwiftUI bridge's
-/// `dismantleNSView`.
+/// hierarchy, calling `bindData(_:controller:)` AFTER autolayout has
+/// settled (host runs `layoutSubtreeIfNeeded` on its own view in
+/// between), and tearing down via `dismantle(_:controller:)` —
+/// symmetric with the SwiftUI bridge's `dismantleNSView`.
+///
+/// SwiftUI hosts (`NativeTranscript2View`) cannot interleave their own
+/// layout call between `makeNSView` and `updateNSView`, so they call
+/// `make` + `bindData` back-to-back from `makeNSView`. They keep the
+/// pre-mount typeset cost; that path is preview / demo only.
 enum TranscriptScrollViewFactory {
 
     /// The fixed transcript content insets: `top` reserves room for the
@@ -19,6 +42,11 @@ enum TranscriptScrollViewFactory {
     /// `Transcript2NSViewBridge.makeNSView` for the original derivation.
     static let contentInsets = NSEdgeInsets(top: 44, left: 0, bottom: 180, right: 0)
 
+    /// Builds the scroll/clip/table/column shell. The table is added to
+    /// the scroll view as document view, but its `dataSource` /
+    /// `delegate` remain nil — see the type doc for why. Call
+    /// `bindData(_:controller:)` after the scroll view has been mounted
+    /// and the host has run `layoutSubtreeIfNeeded`.
     @MainActor
     static func make(controller: Transcript2Controller) -> Transcript2ScrollView {
         let scroll = Transcript2ScrollView()
@@ -59,6 +87,26 @@ enum TranscriptScrollViewFactory {
         column.maxWidth = .greatestFiniteMagnitude
         table.addTableColumn(column)
 
+        scroll.documentView = table
+        return scroll
+    }
+
+    /// Binds the table to its coordinator: `dataSource`, `delegate`,
+    /// `frameDidChange` observer, and the coordinator's weak `tableView`
+    /// ref. Triggers `noteNumberOfRowsChanged` at the end so AppKit
+    /// queries `heightOfRow` at the table's current (settled) width.
+    /// No-op if called twice — the observer is re-registered on the
+    /// same notification center and the coordinator's `tableView` is
+    /// re-pointed to the same table.
+    @MainActor
+    static func bindData(
+        _ scroll: Transcript2ScrollView,
+        controller: Transcript2Controller
+    ) {
+        guard let table = scroll.documentView as? Transcript2TableView else {
+            assertionFailure("bindData called on a scroll view without a Transcript2TableView")
+            return
+        }
         let coordinator = controller.coordinator
         table.dataSource = coordinator
         table.delegate = coordinator
@@ -70,8 +118,13 @@ enum TranscriptScrollViewFactory {
 
         coordinator.tableView = table
         table.coordinator = coordinator
-        scroll.documentView = table
-        return scroll
+        // Setting `dataSource` already triggers NSTableView's internal
+        // "fresh attach" path — it lazily queries `numberOfRows` and
+        // `heightOfRow` on the next layout pass. We do NOT call
+        // `noteNumberOfRowsChanged` here: experimentally that produces
+        // a double-count (`table.numberOfRows` lands at 2 × blocks.count)
+        // because AppKit treats the dataSource set + explicit note as
+        // two independent "rows appeared" signals.
     }
 
     /// Symmetric teardown — call from the host's `viewWillDisappear` /

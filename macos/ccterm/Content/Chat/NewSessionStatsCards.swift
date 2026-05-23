@@ -454,10 +454,17 @@ private struct HoveredHeatmapCell: Equatable {
 
 // MARK: - Models card
 
-/// Narrower top card: tiny per-day bar chart of recent token usage
-/// on top, top-3 models list with proportion bars below.
+/// Narrower top card: per-day bar chart of token usage on top,
+/// top-3 models list with proportion bars below.
 struct ModelsStatsCard: View {
     let result: ClaudeCodeStats.Result?
+
+    /// 90 days ≈ 1 quarter. The 308pt-wide card inner area gives
+    /// each day ~3.4pt of horizontal slot; Swift Charts allocates
+    /// ~70% of that to the bar (~2.4pt), still legible on a Retina
+    /// display. 60 days (5pt per bar) was the fallback if 90 felt
+    /// too dense; in practice 90 looks fine and shows more history.
+    static let chartDays = 90
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -488,10 +495,13 @@ struct ModelsStatsCard: View {
         .statsCardSurface()
     }
 
-    /// Last 30 days of total tokens, oldest → newest. Always 30
-    /// entries so the chart frame doesn't snap-grow when data lands.
+    /// Last `chartDays` days of total tokens, oldest → newest. Always
+    /// `chartDays` entries so the chart frame doesn't snap-grow when
+    /// data lands. `tokensByModel.values.sum` is already `input +
+    /// output` only — cache fields are tracked separately on
+    /// `ModelUsage`.
     private var chartData: [TokenDay] {
-        let days = 30
+        let days = Self.chartDays
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = .current
         let today = calendar.startOfDay(for: Date())
@@ -599,17 +609,32 @@ private struct ModelRowData {
     var total: Int { inTokens + outTokens }
 }
 
+/// 90-day bar chart of summed daily tokens. Hover (zero-delay) is
+/// wired through `.chartOverlay` + `ChartProxy.value(atX:)` so the
+/// cursor's x position resolves to a date, the nearest `TokenDay`
+/// in the data feeds an overlay bubble (`date · tokens`), and a
+/// `RuleMark` paints a thin dashed cursor through the bar to anchor
+/// the bubble visually. Same delay-free pattern as the heatmap.
 private struct TokensChart: View {
     let data: [TokenDay]
 
+    @State private var hovered: HoveredBar?
+
     var body: some View {
-        Chart(data) { d in
-            BarMark(
-                x: .value("Date", d.date, unit: .day),
-                y: .value("Tokens", d.tokens)
-            )
-            .foregroundStyle(Color.accentColor.opacity(0.85))
-            .cornerRadius(1.5)
+        Chart {
+            ForEach(data) { d in
+                BarMark(
+                    x: .value("Date", d.date, unit: .day),
+                    y: .value("Tokens", d.tokens)
+                )
+                .foregroundStyle(Color.accentColor.opacity(0.85))
+                .cornerRadius(1)
+            }
+            if let h = hovered {
+                RuleMark(x: .value("Date", h.day.date, unit: .day))
+                    .foregroundStyle(Color.white.opacity(0.35))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [2, 2]))
+            }
         }
         .chartXAxis(.hidden)
         .chartYAxis(.hidden)
@@ -617,6 +642,102 @@ private struct TokensChart: View {
             plot.background(Color.primary.opacity(0.04))
                 .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
         }
+        .chartOverlay { proxy in
+            GeometryReader { geo in
+                let plotFrame = geo[proxy.plotAreaFrame]
+                Rectangle()
+                    .fill(Color.clear)
+                    .contentShape(Rectangle())
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case .active(let location):
+                            updateHover(
+                                location: location, plotFrame: plotFrame, proxy: proxy)
+                        case .ended:
+                            hovered = nil
+                        }
+                    }
+                if let h = hovered {
+                    tooltipBubble(for: h, plotFrame: plotFrame)
+                }
+            }
+        }
+    }
+
+    private func updateHover(location: CGPoint, plotFrame: CGRect, proxy: ChartProxy) {
+        let xInPlot = location.x - plotFrame.minX
+        guard xInPlot >= 0, xInPlot <= plotFrame.width,
+            let date: Date = proxy.value(atX: xInPlot)
+        else {
+            hovered = nil
+            return
+        }
+        let cal = Calendar.current
+        let day = cal.startOfDay(for: date)
+        guard let match = data.first(where: { cal.isDate($0.date, inSameDayAs: day) })
+        else {
+            hovered = nil
+            return
+        }
+        // Bar's centre x in chart-overlay coords (chartOverlay's
+        // geometry is the chart's full frame; plotAreaFrame is the
+        // plot's offset from that origin).
+        let barCenterInPlot = proxy.position(forX: match.date) ?? xInPlot
+        let barX = plotFrame.minX + barCenterInPlot
+        hovered = HoveredBar(day: match, barX: barX)
+    }
+
+    /// Tooltip sits above the bar inside the plot's vertical band;
+    /// horizontal centre clamps so the bubble doesn't spill off the
+    /// chart's left / right edge. Estimated half-width (60) accounts
+    /// for the two-line content at this font size.
+    @ViewBuilder
+    private func tooltipBubble(for h: HoveredBar, plotFrame: CGRect) -> some View {
+        let estimatedHalfWidth: CGFloat = 60
+        let clampedX = min(
+            max(h.barX, plotFrame.minX + estimatedHalfWidth),
+            plotFrame.maxX - estimatedHalfWidth)
+        let y = plotFrame.minY + 14
+
+        VStack(alignment: .leading, spacing: 1) {
+            Text(Self.dateLabel(for: h.day.date))
+                .font(.system(size: 9.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.85))
+            Text(Self.tokensLabel(for: h.day.tokens))
+                .font(.system(size: 10, weight: .semibold).monospacedDigit())
+                .foregroundStyle(.white)
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(Color.black.opacity(0.85))
+        )
+        .fixedSize()
+        .position(x: clampedX, y: y)
+        .allowsHitTesting(false)
+    }
+
+    private static func dateLabel(for date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale.current
+        f.setLocalizedDateFormatFromTemplate("EEE MMMd")
+        return f.string(from: date)
+    }
+
+    private static func tokensLabel(for tokens: Int) -> String {
+        if tokens == 0 { return String(localized: "No activity") }
+        return String(
+            format: String(localized: "%@ tokens"),
+            OverviewStatsCard.compactTokens(tokens))
+    }
+}
+
+private struct HoveredBar: Equatable {
+    let day: TokenDay
+    let barX: CGFloat
+    static func == (lhs: HoveredBar, rhs: HoveredBar) -> Bool {
+        lhs.day.date == rhs.day.date
     }
 }
 
@@ -624,8 +745,26 @@ private struct ModelRow: View {
     let row: ModelRowData
     let maxTotal: Int
 
+    @State private var isHovered = false
+
     var body: some View {
         let fraction = Double(row.total) / Double(maxTotal)
+        rowContent(fraction: fraction)
+            .overlay(alignment: .topTrailing) {
+                if isHovered, row.total > 0 {
+                    rowTooltip
+                }
+            }
+            .onContinuousHover { phase in
+                switch phase {
+                case .active: isHovered = true
+                case .ended: isHovered = false
+                }
+            }
+    }
+
+    @ViewBuilder
+    private func rowContent(fraction: Double) -> some View {
         HStack(spacing: 8) {
             RoundedRectangle(cornerRadius: 2, style: .continuous)
                 .fill(Color.accentColor.opacity(0.75))
@@ -652,6 +791,27 @@ private struct ModelRow: View {
                 .contentTransition(.numericText(value: fraction))
         }
         .frame(height: 18)
+        .contentShape(Rectangle())
+    }
+
+    /// Zero-delay tooltip with the row's input / output split.
+    /// Pinned at the row's trailing edge and offset upward so it
+    /// floats over the row band above; `.allowsHitTesting(false)`
+    /// keeps the cursor on the row itself (otherwise the bubble
+    /// would steal hover events and flicker on cell boundaries).
+    private var rowTooltip: some View {
+        Text(Self.usageLabel(in: row.inTokens, out: row.outTokens))
+            .font(.system(size: 10, weight: .semibold).monospacedDigit())
+            .foregroundStyle(.white)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(Color.black.opacity(0.85))
+            )
+            .fixedSize()
+            .offset(x: 4, y: -24)
+            .allowsHitTesting(false)
     }
 
     private func percentText(_ f: Double) -> String {
@@ -659,6 +819,12 @@ private struct ModelRow: View {
         if f < 0.001 { return "<0.1%" }
         if f < 0.1 { return String(format: "%.1f%%", f * 100) }
         return String(format: "%.0f%%", f * 100)
+    }
+
+    private static func usageLabel(in inTok: Int, out outTok: Int) -> String {
+        let inS = OverviewStatsCard.compactTokens(inTok)
+        let outS = OverviewStatsCard.compactTokens(outTok)
+        return String(format: String(localized: "%@ in · %@ out"), inS, outS)
     }
 }
 

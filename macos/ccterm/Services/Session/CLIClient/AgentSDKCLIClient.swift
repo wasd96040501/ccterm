@@ -79,6 +79,12 @@ final class AgentSDKCLIClient: CLIClient {
         session.close()
     }
 
+    func closeAsync() async {
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            session.close { cont.resume() }
+        }
+    }
+
     // MARK: Control requests
 
     func initialize(

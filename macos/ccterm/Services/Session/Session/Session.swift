@@ -389,6 +389,14 @@ final class Session {
         runtime?.stop()
     }
 
+    /// Async variant of `stop()` used by the app-quit shutdown path —
+    /// returns only after the CLI has actually exited (or after the
+    /// SDK's per-process graceful-shutdown timeout fires SIGTERM). On
+    /// a draft session, no runtime exists and this is a no-op.
+    func closeAsync() async {
+        await runtime?.closeAsync()
+    }
+
     func interrupt() {
         runtime?.interrupt()
     }

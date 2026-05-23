@@ -40,6 +40,14 @@ protocol CLIClient: AnyObject {
     func start() async throws
     func close()
 
+    /// Graceful shutdown that completes only after the subprocess has
+    /// actually exited (or after the underlying SDK's per-process
+    /// timeout forces SIGTERM). Used by the app-quit path so all CLIs
+    /// can be shut down in parallel before `NSApplication` finishes
+    /// terminating. The synchronous `close()` remains fire-and-forget
+    /// for the usual stop-button path.
+    func closeAsync() async
+
     // MARK: Control requests
 
     func initialize(

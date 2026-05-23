@@ -69,11 +69,6 @@ final class TranscriptDetailViewController: NSViewController {
     private var bottomScrim: TranscriptBottomScrimView!
     private var composeOrBarHost: PassthroughHostingView<AnyView>!
 
-    /// DEBUG ONLY — visualises which subview wins each hit-test cell.
-    /// Mounted as the front-most subview; hidden from hit-testing
-    /// itself via `hitTest → nil`.
-    private var hitTestHeatmap: HitTestHeatmapView?
-
     /// Sink for `model.attachRect` / `pillRect` → `bottomScrim` cutout
     /// path. Re-arms on every fire.
     private var scrimRectObservationTask: Task<Void, Never>?
@@ -153,19 +148,6 @@ final class TranscriptDetailViewController: NSViewController {
             composeOrBarHost.topAnchor.constraint(equalTo: view.topAnchor),
             composeOrBarHost.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
-
-        #if DEBUG
-        let heatmap = HitTestHeatmapView()
-        heatmap.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(heatmap)
-        NSLayoutConstraint.activate([
-            heatmap.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            heatmap.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            heatmap.topAnchor.constraint(equalTo: view.topAnchor),
-            heatmap.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ])
-        hitTestHeatmap = heatmap
-        #endif
     }
 
     override func viewDidLoad() {
@@ -209,12 +191,6 @@ final class TranscriptDetailViewController: NSViewController {
     }
 
     private func applyScrimCutouts() {
-        appLog(
-            .info, "TranscriptDetailVC",
-            "[scrim-measure] view.h=\(view.bounds.height) "
-                + "safeAreaTop=\(composeOrBarHost.safeAreaInsets.top) "
-                + "pill=\(model.pillRect) attach=\(model.attachRect) "
-                + "barTopFromBottom=\(view.bounds.height - model.pillRect.minY)")
         bottomScrim.attachRect = bottomScrim.convert(model.attachRect, from: composeOrBarHost)
         bottomScrim.pillRect = bottomScrim.convert(model.pillRect, from: composeOrBarHost)
     }

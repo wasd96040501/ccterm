@@ -77,16 +77,6 @@ class TranscriptScrimView: NSView {
         // → angle = 90 (gradient goes downward).
         let angle: CGFloat = edge == .bottom ? -90 : 90
         gradient.draw(in: band, angle: angle)
-
-        // DEBUG: red guide at the band's inner edge (top scrim → bottom
-        // edge; bottom scrim → top edge), so the user can eyeball where
-        // the gradient terminates relative to the toolbar / input bar.
-        ctx.setStrokeColor(NSColor.systemRed.cgColor)
-        ctx.setLineWidth(1)
-        let guideY: CGFloat = edge == .top ? band.maxY - 0.5 : band.minY + 0.5
-        ctx.move(to: CGPoint(x: 0, y: guideY))
-        ctx.addLine(to: CGPoint(x: bounds.width, y: guideY))
-        ctx.strokePath()
     }
 
     private func bandRect() -> NSRect {

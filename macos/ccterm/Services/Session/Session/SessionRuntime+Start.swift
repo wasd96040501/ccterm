@@ -34,6 +34,24 @@ extension SessionRuntime {
         appLog(.info, "SessionRuntime", "stop() close agent \(sessionId)")
         cliClient?.close()
     }
+
+    /// Async sibling of `stop()`: waits for the CLI to actually exit
+    /// before returning, so the app-quit path can fan multiple sessions
+    /// out in parallel and only proceed once every subprocess has wound
+    /// down (or the underlying SDK's per-process timeout has forced
+    /// SIGTERM). `stop()` is unchanged so the stop-button path stays
+    /// fire-and-forget.
+    func closeAsync() async {
+        switch status {
+        case .notStarted, .stopped:
+            return
+        default:
+            break
+        }
+        guard let client = cliClient else { return }
+        appLog(.info, "SessionRuntime", "closeAsync() close agent \(sessionId)")
+        await client.closeAsync()
+    }
 }
 
 // MARK: - Messaging (public)

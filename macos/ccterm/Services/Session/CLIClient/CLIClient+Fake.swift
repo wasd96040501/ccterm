@@ -69,6 +69,18 @@ final class FakeCLIClient: CLIClient {
         closeCalls += 1
     }
 
+    func closeAsync() async {
+        closeCalls += 1
+        closeAsyncCalls += 1
+        await closeAsyncHook?()
+    }
+
+    /// Optional async hook fired by `closeAsync`. Tests use it to
+    /// gate the continuation on an explicit signal so the parallel-
+    /// shutdown test can observe overlap rather than serial completion.
+    var closeAsyncHook: (@Sendable () async -> Void)?
+    private(set) var closeAsyncCalls: Int = 0
+
     // MARK: - Control requests
 
     func initialize(

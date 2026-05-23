@@ -120,6 +120,32 @@ final class SessionManager {
         lastLaunchFailure = nil
     }
 
+    /// Gracefully shut down every cached `Session` in parallel and only
+    /// return after each one has actually exited (or its SDK-level
+    /// timeout has fired SIGTERM). The app-quit path
+    /// (`applicationShouldTerminate`) awaits this so total shutdown
+    /// time is bounded by the slowest CLI, not by their sum — running
+    /// N sessions serially would scale linearly with N.
+    ///
+    /// Snapshots the values up front so the iteration is stable even if
+    /// a callback mutates the cache during shutdown. Sessions in
+    /// `.draft` phase (no runtime) and runtimes in `.notStarted` /
+    /// `.stopped` self-skip inside `closeAsync()`, so we don't need to
+    /// pre-filter here.
+    func shutdownAllAsync() async {
+        let active = Array(sessions.values)
+        guard !active.isEmpty else { return }
+        appLog(.info, "SessionManager", "shutdownAllAsync count=\(active.count)")
+        await withTaskGroup(of: Void.self) { group in
+            for session in active {
+                group.addTask { @MainActor in
+                    await session.closeAsync()
+                }
+            }
+        }
+        appLog(.info, "SessionManager", "shutdownAllAsync done")
+    }
+
     /// Get a `Session` for an existing record. Returns nil when the db
     /// has no matching record. First call creates and caches; subsequent
     /// calls return the same instance (stable identity). Read-only

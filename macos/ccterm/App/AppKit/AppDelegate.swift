@@ -52,6 +52,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
+    /// Before NSApplication tears down the process, give every active
+    /// CLI subprocess a chance to flush its session file. The shutdown
+    /// runs sessions in parallel inside
+    /// `SessionManager.shutdownAllAsync()`, so wall time is bounded by
+    /// the slowest CLI (the AgentSDK enforces a 5s per-process graceful
+    /// timeout before SIGTERM) rather than scaling linearly with the
+    /// session count.
+    ///
+    /// Returning `.terminateLater` parks the quit; we reply once the
+    /// task group finishes. Under XCTest we skip entirely — the test
+    /// harness owns lifecycle and there's no real CLI to shut down.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if Self.isUnderXCTest { return .terminateNow }
+        appLog(.info, "AppDelegate", "applicationShouldTerminate — begin parallel CLI shutdown")
+        Task { @MainActor in
+            await appState.sessionManager.shutdownAllAsync()
+            appLog(.info, "AppDelegate", "applicationShouldTerminate — replying")
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     /// Mirrors `CCTermApp.isUnderXCTest`. The test path installs the
     /// `NSWindow` swizzles in `CCTermApp.init` and we must skip
     /// creating the real window here so XCTest doesn't see a stray

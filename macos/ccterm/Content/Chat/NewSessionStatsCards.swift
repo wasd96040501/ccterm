@@ -191,94 +191,264 @@ private struct StatTile: View {
     }
 }
 
-/// GitHub-style activity heatmap. Always renders a 7×N grid where
-/// N is computed from the available width — that way the visual
-/// frame is stable from the very first frame, even before any data
-/// arrives (empty squares). When data lands, the matching cells
-/// shift colour inside `.animation(.default)`.
+/// Weekly activity heatmap — 26 columns (≈ half a year) × 7 rows
+/// (Monday row 0 → Sunday row 6). The rightmost column is the
+/// current week and only paints cells for days that have already
+/// happened; future days in that week render as transparent space
+/// instead of a "no activity" tile, so the leading edge reads as
+/// "the week is still in progress".
+///
+/// Cell intensity buckets daily tokens (sum of `tokensByModel`,
+/// already `input + output` only — no cache) into 4 tones: a
+/// neutral empty colour and three distinct blue tiers whose
+/// thresholds are the 33rd / 66th percentile of non-zero days in
+/// the visible window (adaptive: a light user and a heavy user
+/// each get the full tier range, instead of everything saturating
+/// at the top tier for the heavy user).
+///
+/// Hover is zero-delay: a single `.onContinuousHover` on the grid
+/// computes which cell is under the cursor from the hover location
+/// (cellSize + gap), and an overlay bubble shows `date · tokens`
+/// next to the cell. `.help(...)` is intentionally not used — it
+/// goes through `NSToolTip` and inherits the ~1.5s system delay.
 private struct ActivityHeatmap: View {
     let result: ClaudeCodeStats.Result?
 
-    /// Available width is supplied by the parent VStack via
-    /// `GeometryReader`. With a fixed 7-row height (`cellHeight`),
-    /// we derive cell count to fill the width without leaving a
-    /// large right-side gap.
-    var body: some View {
-        GeometryReader { proxy in
-            // Cell sized to fill the row's height; the chosen
-            // `cellSize` keeps the heatmap inside the available
-            // 90pt slot (7 cells + 6 gaps).
-            let cellSize: CGFloat = floor((proxy.size.height - 6 * 2) / 7)
-            let gap: CGFloat = 2
-            let cols = max(1, Int((proxy.size.width + gap) / (cellSize + gap)))
-            // Total days the grid can show; the data range we
-            // bucket against is exactly this so the trailing edge
-            // is always "today" regardless of card size.
-            let totalDays = cols * 7
-            let buckets = activityBuckets(days: totalDays)
+    @State private var hovered: HoveredHeatmapCell?
 
-            HStack(alignment: .top, spacing: gap) {
-                ForEach(0..<cols, id: \.self) { col in
-                    VStack(spacing: gap) {
-                        ForEach(0..<7, id: \.self) { row in
-                            let idx = col * 7 + row
-                            let v = idx < buckets.count ? buckets[idx] : 0
+    /// 26 columns × 7 rows. Tied to the "half year" spec — bumping
+    /// either dimension would require resizing the card.
+    private static let columns = 26
+    private static let rows = 7
+    /// Fixed cell + gap so the grid's natural width is stable
+    /// regardless of the parent's available width. The grid is
+    /// left-aligned in the card; the right-hand whitespace is
+    /// reserved deliberately and could host a legend later.
+    /// `12 × 26 + 2 × 25 = 362` wide; `12 × 7 + 2 × 6 = 96` tall —
+    /// fits the ~96pt slot below the stat-tile row in a 180pt card.
+    private static let cellSize: CGFloat = 12
+    private static let gap: CGFloat = 2
+
+    private static var gridWidth: CGFloat {
+        CGFloat(columns) * cellSize + CGFloat(columns - 1) * gap
+    }
+    private static var gridHeight: CGFloat {
+        CGFloat(rows) * cellSize + CGFloat(rows - 1) * gap
+    }
+
+    var body: some View {
+        let grid = buildGrid()
+        let thresholds = computeThresholds(grid: grid)
+
+        ZStack(alignment: .topLeading) {
+            heatmapGrid(grid: grid, thresholds: thresholds)
+                .frame(width: Self.gridWidth, height: Self.gridHeight)
+                .contentShape(Rectangle())
+                .onContinuousHover { phase in
+                    switch phase {
+                    case .active(let location):
+                        updateHovered(at: location, grid: grid)
+                    case .ended:
+                        hovered = nil
+                    }
+                }
+            if let info = hovered {
+                tooltipBubble(for: info)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    @ViewBuilder
+    private func heatmapGrid(grid: [[HeatmapCell?]], thresholds: (Int, Int)?) -> some View {
+        HStack(alignment: .top, spacing: Self.gap) {
+            ForEach(0..<Self.columns, id: \.self) { col in
+                VStack(spacing: Self.gap) {
+                    ForEach(0..<Self.rows, id: \.self) { row in
+                        if let cell = grid[col][row] {
                             RoundedRectangle(cornerRadius: 2, style: .continuous)
-                                .fill(cellColor(value: v))
-                                .frame(width: cellSize, height: cellSize)
+                                .fill(color(for: cell.tokens, thresholds: thresholds))
+                                .frame(width: Self.cellSize, height: Self.cellSize)
+                        } else {
+                            // Future day in the current week — no
+                            // tile, just transparent space so the
+                            // column's height stays consistent with
+                            // the other columns.
+                            Color.clear
+                                .frame(width: Self.cellSize, height: Self.cellSize)
                         }
                     }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
     }
 
-    /// Returns `days` integers, column-major (column 0 = oldest
-    /// week, row 0 = Monday). Each integer is that day's
-    /// `messageCount` (or 0 if no activity, or no data at all).
-    private func activityBuckets(days: Int) -> [Int] {
-        guard days > 0 else { return [] }
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = .current
-        let today = Calendar(identifier: .gregorian).startOfDay(for: Date())
-        // Map of YYYY-MM-DD → message count for fast lookup.
-        var byDay: [String: Int] = [:]
+    private func updateHovered(at location: CGPoint, grid: [[HeatmapCell?]]) {
+        let step = Self.cellSize + Self.gap
+        let col = Int(location.x / step)
+        let row = Int(location.y / step)
+        guard col >= 0, col < Self.columns, row >= 0, row < Self.rows,
+            let cell = grid[col][row]
+        else {
+            hovered = nil
+            return
+        }
+        hovered = HoveredHeatmapCell(col: col, row: row, cell: cell)
+    }
+
+    /// Tooltip placed *near* the cell (above for bottom-half rows,
+    /// below for top-half rows so the bubble stays inside the
+    /// heatmap's vertical band). Horizontal centre clamps to the
+    /// grid's bounds so edge cells don't render the bubble half-
+    /// outside the card; the bubble width is approximated, exact
+    /// width measurement isn't worth a `GeometryReader` round-trip.
+    @ViewBuilder
+    private func tooltipBubble(for info: HoveredHeatmapCell) -> some View {
+        let step = Self.cellSize + Self.gap
+        let cellCenterX = CGFloat(info.col) * step + Self.cellSize / 2
+        let cellCenterY = CGFloat(info.row) * step + Self.cellSize / 2
+        let placeBelow = info.row < 4
+        let halfCell = Self.cellSize / 2
+        // Bubble half-height (~16pt for the two-line layout) plus
+        // a small visual gap to the cell.
+        let yOffset: CGFloat = placeBelow ? halfCell + 18 : -halfCell - 18
+        let estimatedHalfWidth: CGFloat = 56
+        let clampedX = min(
+            max(cellCenterX, estimatedHalfWidth),
+            Self.gridWidth - estimatedHalfWidth)
+
+        VStack(alignment: .leading, spacing: 1) {
+            Text(Self.dateLabel(for: info.cell.date))
+                .font(.system(size: 9.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.85))
+            Text(Self.tokensLabel(for: info.cell.tokens))
+                .font(.system(size: 10, weight: .semibold).monospacedDigit())
+                .foregroundStyle(.white)
+        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                .fill(Color.black.opacity(0.85))
+        )
+        .fixedSize()
+        .position(x: clampedX, y: cellCenterY + yOffset)
+        .allowsHitTesting(false)
+    }
+
+    // MARK: - Grid construction
+
+    /// Builds the 26 × 7 grid. Column 0 = the Monday 25 weeks back,
+    /// column 25 = this week's Monday. Within a column, row 0 = the
+    /// week's Monday, row 6 = Sunday. Days past `today` render as
+    /// `nil` so the current-week column trails off.
+    private func buildGrid() -> [[HeatmapCell?]] {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = .current
+        cal.firstWeekday = 2  // Monday
+        let today = cal.startOfDay(for: Date())
+        // Calendar's `weekday` is 1 (Sunday) … 7 (Saturday). For a
+        // Monday-first week, the offset back to Monday is
+        // (weekday + 5) % 7 — Mon→0, Tue→1, …, Sun→6.
+        let weekday = cal.component(.weekday, from: today)
+        let mondayOffset = (weekday + 5) % 7
+        guard
+            let thisMonday = cal.date(byAdding: .day, value: -mondayOffset, to: today),
+            let firstMonday = cal.date(
+                byAdding: .weekOfYear, value: -(Self.columns - 1), to: thisMonday)
+        else {
+            return Array(
+                repeating: Array(repeating: nil, count: Self.rows), count: Self.columns)
+        }
+
+        var tokensByDay: [String: Int] = [:]
         if let result {
-            for d in result.dailyActivity {
-                byDay[d.date] = d.messageCount
+            for entry in result.dailyModelTokens {
+                tokensByDay[entry.date] = entry.tokensByModel.values.reduce(0, +)
             }
         }
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.timeZone = calendar.timeZone
-        formatter.dateFormat = "yyyy-MM-dd"
+        let dayFmt = DateFormatter()
+        dayFmt.calendar = cal
+        dayFmt.timeZone = cal.timeZone
+        dayFmt.dateFormat = "yyyy-MM-dd"
 
-        var out: [Int] = Array(repeating: 0, count: days)
-        for i in 0..<days {
-            // Newest day at the trailing edge of the grid; column
-            // order is left=oldest → right=newest.
-            let offset = days - 1 - i
-            guard let date = calendar.date(byAdding: .day, value: -offset, to: today) else {
-                continue
+        var grid: [[HeatmapCell?]] = Array(
+            repeating: Array(repeating: nil, count: Self.rows), count: Self.columns)
+        for col in 0..<Self.columns {
+            guard let weekStart = cal.date(byAdding: .day, value: col * 7, to: firstMonday)
+            else { continue }
+            for row in 0..<Self.rows {
+                guard let cellDate = cal.date(byAdding: .day, value: row, to: weekStart)
+                else { continue }
+                if cellDate > today { continue }  // future → leave nil
+                let key = dayFmt.string(from: cellDate)
+                grid[col][row] = HeatmapCell(date: cellDate, tokens: tokensByDay[key] ?? 0)
             }
-            let key = formatter.string(from: date)
-            out[i] = byDay[key] ?? 0
         }
-        return out
+        return grid
     }
 
-    /// Map an integer activity count to one of five tints. The base
-    /// "no activity" tone is a very faint primary tint so empty grids
-    /// still read as a structured surface, not an absent one.
-    private func cellColor(value: Int) -> Color {
-        switch value {
-        case 0: return Color.primary.opacity(0.08)
-        case 1..<10: return Color.accentColor.opacity(0.30)
-        case 10..<50: return Color.accentColor.opacity(0.50)
-        case 50..<150: return Color.accentColor.opacity(0.70)
-        default: return Color.accentColor.opacity(0.90)
-        }
+    /// Returns (p33, p66) of non-zero daily token counts in the
+    /// visible grid; `nil` when fewer than three non-zero days
+    /// exist (in which case any non-zero day reads as the top tier
+    /// — no useful split is possible).
+    private func computeThresholds(grid: [[HeatmapCell?]]) -> (Int, Int)? {
+        let values = grid.flatMap { $0 }
+            .compactMap { $0?.tokens }
+            .filter { $0 > 0 }
+            .sorted()
+        guard values.count >= 3 else { return nil }
+        return (values[values.count / 3], values[(values.count * 2) / 3])
+    }
+
+    private func color(for tokens: Int, thresholds: (Int, Int)?) -> Color {
+        if tokens == 0 { return Self.emptyColor }
+        guard let thresholds else { return Self.tierColors[2] }
+        if tokens < thresholds.0 { return Self.tierColors[0] }
+        if tokens < thresholds.1 { return Self.tierColors[1] }
+        return Self.tierColors[2]
+    }
+
+    /// Neutral mid-gray. Picked so empty cells read as "no activity"
+    /// without competing with the blue tier colours on the same
+    /// ultra-thin material.
+    private static let emptyColor = Color(white: 0.32).opacity(0.45)
+    /// Three explicit blues with increasing chroma — opacity-only
+    /// shading on the ultra-thin material doesn't separate the
+    /// tiers cleanly enough (the material's translucency washes
+    /// out low-opacity blues), so each tier gets its own RGB triple.
+    private static let tierColors: [Color] = [
+        Color(red: 0.55, green: 0.66, blue: 0.96),  // low
+        Color(red: 0.36, green: 0.50, blue: 0.94),  // mid
+        Color(red: 0.20, green: 0.38, blue: 0.92),  // high
+    ]
+
+    private static func dateLabel(for date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale.current
+        f.setLocalizedDateFormatFromTemplate("EEE MMMd")
+        return f.string(from: date)
+    }
+
+    private static func tokensLabel(for tokens: Int) -> String {
+        if tokens == 0 { return String(localized: "No activity") }
+        return String(
+            format: String(localized: "%@ tokens"),
+            OverviewStatsCard.compactTokens(tokens))
+    }
+}
+
+private struct HeatmapCell {
+    let date: Date
+    let tokens: Int
+}
+
+private struct HoveredHeatmapCell: Equatable {
+    let col: Int
+    let row: Int
+    let cell: HeatmapCell
+    static func == (lhs: HoveredHeatmapCell, rhs: HoveredHeatmapCell) -> Bool {
+        lhs.col == rhs.col && lhs.row == rhs.row && lhs.cell.date == rhs.cell.date
     }
 }
 

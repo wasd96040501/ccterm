@@ -1,19 +1,20 @@
 import AppKit
 
-/// Identifies the user bubble whose full text should be shown in a SwiftUI
+/// Identifies the user bubble whose full text should be shown in a
 /// modal sheet. `id` is the originating block's id; `text` is the
-/// untruncated source. `Identifiable` so SwiftUI's `.sheet(item:)`
-/// resolves presentation identity from this value alone.
+/// untruncated source. `Identifiable` so `Transcript2SheetPresenter`
+/// can tag the open sheet against the request that opened it.
 struct UserBubbleSheetRequest: Identifiable, Equatable, Sendable {
     let id: UUID
     let text: String
 }
 
-/// Carries an attachment chip's `NSImage` from the AppKit click to the
-/// SwiftUI `.sheet(item:)`. `id` is allocated per request so consecutive
-/// taps on the **same** chip (NSImage instance) still re-present the
-/// sheet — `.sheet(item:)` only re-fires when `id` changes. Equatable so
-/// `@Observable` knows when to publish.
+/// Carries an attachment chip's `NSImage` from the AppKit click to
+/// `Transcript2SheetPresenter`. `id` is allocated per request so
+/// consecutive taps on the **same** chip (NSImage instance) still
+/// re-present the sheet — the presenter compares request ids to decide
+/// whether the open sheet still matches. Equatable so `@Observable`
+/// knows when to publish.
 struct ImagePreviewRequest: Identifiable, Equatable {
     let id: UUID
     let image: NSImage
@@ -88,21 +89,22 @@ final class Transcript2Controller {
     /// observe count changes without reaching into AppKit state.
     private(set) var blockCount: Int = 0
 
-    /// Pending request for the SwiftUI "show full user message" sheet,
-    /// driven by chevron clicks inside `BlockCellView`. NSView-internal
-    /// interactions (link click, selection drag, chevron tap) are normally
-    /// AppKit-closed-loop; this is the one well-defined exit point because
-    /// `.sheet(item:)` is a SwiftUI presentation primitive and has to live
-    /// on the SwiftUI side. `NativeTranscript2View` binds against this
-    /// field and clears it on dismiss.
+    /// Pending request for the "show full user message" sheet, driven
+    /// by chevron clicks inside `BlockCellView`. NSView-internal
+    /// interactions stay AppKit-closed-loop; this is one of two
+    /// `@Observable` request fields `Transcript2SheetPresenter`
+    /// observes and turns into an AppKit-native sheet
+    /// (`view.window?.beginSheet`) wrapping a SwiftUI body
+    /// (`UserBubbleSheetView`) hosted via `NSHostingController`. The
+    /// presenter clears this field on dismiss.
     var pendingUserBubbleSheet: UserBubbleSheetRequest?
 
-    /// Pending request for the SwiftUI image preview sheet, driven by
-    /// chip clicks inside `BlockCellView`. Same escape-hatch contract as
-    /// `pendingUserBubbleSheet`: NSView-internal interactions stay
-    /// AppKit-closed-loop except for `.sheet(item:)` presentation, which
-    /// SwiftUI owns. `NativeTranscript2View` binds against this field
-    /// and clears it on dismiss.
+    /// Pending request for the attachment-image preview sheet, driven
+    /// by chip clicks inside `BlockCellView`. Same observation +
+    /// presentation contract as `pendingUserBubbleSheet`:
+    /// `Transcript2SheetPresenter` opens a sheet via the host window
+    /// with `ImagePreviewSheetView` as the SwiftUI body, and clears
+    /// this field on dismiss.
     var pendingImagePreview: ImagePreviewRequest?
 
     /// Observable snapshot of the in-transcript search state. Mirrored
@@ -121,7 +123,9 @@ final class Transcript2Controller {
         let currentIndex: Int?
     }
 
-    /// Module-internal: handed to `NativeTranscript2View.makeCoordinator`.
+    /// Module-internal: AppKit hosts read this via
+    /// `TranscriptScrollViewFactory.bindData(_:controller:)` to wire
+    /// it onto the `NSTableView`'s `dataSource` / `delegate`.
     let coordinator: Transcript2Coordinator
 
     /// Last `setLoading(_:)` intent. Source of truth for whether the

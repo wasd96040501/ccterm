@@ -1,68 +1,132 @@
 #if DEBUG
 
 import AgentSDK
+import AppKit
 import SwiftUI
 
-/// Drives the full chat surface — real `ChatHistoryView`, real
-/// `ChatRestingBar`, real `PermissionCardView` — against a mocked
-/// `SessionManager` / `Session` pair so the `permission card ↔ input
-/// bar ↔ transcript` geometry can be inspected end-to-end without a
-/// live CLI.
-///
-/// History is seeded once from `TranscriptDemoView.initialBlocks`
-/// (already an internal fixture). A floating control panel in the
-/// **bottom-trailing** corner — deliberately offset from the input
-/// bar's bottom-centered position so it never overlaps the bar or its
-/// permission card overlay — flips entries into / out of
-/// `runtime.pendingPermissions`, which the card observes by way of
-/// the `@Observable` runtime.
-struct PermissionSessionDemoView: View {
-    @State private var seed = Seed.make()
-    @State private var selectedKindIndex: Int = 0
+/// AppKit-rooted host for the end-to-end permission card layout demo.
+/// Replaces the former SwiftUI `PermissionSessionDemoView` +
+/// `ChatHistoryView` combo: the transcript is mounted directly via
+/// `TranscriptScrollViewFactory`, the input bar (`ChatRestingBar`) and
+/// the floating permission-card controller stay SwiftUI but are now
+/// hosted via `NSHostingView`. The mocked `SessionManager` /
+/// `Session` pair, seed payload (`TranscriptDemoViewController.initialBlocks`),
+/// and ControlPanel behavior are carried over verbatim from the old
+/// view; only the mount strategy changed.
+@MainActor
+final class PermissionSessionDemoViewController: NSViewController {
 
-    var body: some View {
-        ZStack {
-            ChatHistoryView(sessionId: seed.sessionId, showsSearch: false)
-                .ignoresSafeArea(edges: .top)
-                .overlay(alignment: .bottom) {
-                    ChatRestingBar(
-                        sessionId: seed.sessionId,
-                        draftKey: seed.sessionId,
-                        onSubmit: { _ in },
-                        onAttachRect: { _ in },
-                        onPillRect: { _ in }
-                    )
-                }
+    init(syntaxEngine: SyntaxHighlightEngine? = nil) {
+        self.syntaxEngine = syntaxEngine
+        self.seed = Seed.make()
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+
+    private let syntaxEngine: SyntaxHighlightEngine?
+    private let seed: Seed
+    private var scroll: Transcript2ScrollView?
+    private var sheetPresenter: Transcript2SheetPresenter?
+    private var inputBarHost: NSHostingView<AnyView>?
+    private var controlPanelHost: NSHostingView<ControlPanelHostView>?
+    private let controlPanelState = ControlPanelState()
+
+    override func loadView() {
+        view = NSView()
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        mountTranscript()
+        installInputBar()
+        installControlPanel()
+        sheetPresenter = Transcript2SheetPresenter(controller: seed.controller, hostView: view)
+        if let syntaxEngine {
+            seed.controller.attachSyntaxEngine(syntaxEngine)
         }
+        seed.seedHistoryIfNeeded()
+        // Mirror ChatHistoryView's initial sync: keep the pill in line
+        // with whatever isRunning currently reports (mocked CLI never
+        // flips it, but the symmetry keeps demo behavior closer to
+        // production).
+        seed.controller.setLoading(seed.session.isRunning)
+    }
+
+    override func viewWillDisappear() {
+        super.viewWillDisappear()
+        sheetPresenter?.stop()
+    }
+
+    private func mountTranscript() {
+        let controller = seed.controller
+        let scroll = TranscriptScrollViewFactory.make(controller: controller)
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(scroll)
+        NSLayoutConstraint.activate([
+            scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scroll.topAnchor.constraint(equalTo: view.topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+        view.layoutSubtreeIfNeeded()
+        TranscriptScrollViewFactory.bindData(scroll, controller: controller)
+        controller.scrollToTail()
+        self.scroll = scroll
+    }
+
+    private func installInputBar() {
+        let bar = ChatRestingBar(
+            sessionId: seed.sessionId,
+            draftKey: seed.sessionId,
+            onSubmit: { _ in },
+            onAttachRect: { _ in },
+            onPillRect: { _ in }
+        )
         .environment(seed.manager)
-        .overlay(alignment: .bottomTrailing) {
-            ControlPanel(
-                selection: $selectedKindIndex,
-                fixtures: Self.kindFixtures,
-                isCurrentShown: isCurrentShown,
-                hasAny: !seed.session.pendingPermissions.isEmpty,
-                onShow: showCurrent,
-                onHide: hideAll,
-                onMarkToolsRunning: markToolsRunning,
-                onEndTurn: endTurn
-            )
-            .padding(20)
-        }
-        .task {
-            seed.seedHistoryIfNeeded()
-        }
+        .ignoresSafeArea()
+        let host = NSHostingView(rootView: AnyView(bar))
+        host.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(host)
+        NSLayoutConstraint.activate([
+            host.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            host.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            host.topAnchor.constraint(equalTo: view.topAnchor),
+            host.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+        inputBarHost = host
+    }
+
+    private func installControlPanel() {
+        let panel = ControlPanelHostView(
+            state: controlPanelState,
+            isCurrentShown: { [seed, controlPanelState] in
+                guard let pending = seed.session.pendingPermissions.first else { return false }
+                return pending.id
+                    == Self.kindFixtures[controlPanelState.selectedKindIndex].id
+            },
+            hasAny: { [seed] in !seed.session.pendingPermissions.isEmpty },
+            onShow: { [weak self] in self?.showCurrent() },
+            onHide: { [weak self] in self?.hideAll() },
+            onMarkToolsRunning: { [weak self] in self?.markToolsRunning() },
+            onEndTurn: { [weak self] in self?.endTurn() }
+        )
+        let host = NSHostingView(rootView: panel)
+        host.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(host)
+        NSLayoutConstraint.activate([
+            host.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            host.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20),
+        ])
+        controlPanelHost = host
     }
 
     // MARK: - Toggling pendingPermissions
 
-    private var isCurrentShown: Bool {
-        guard let pending = seed.session.pendingPermissions.first else { return false }
-        return pending.id == Self.kindFixtures[selectedKindIndex].id
-    }
-
     private func showCurrent() {
         guard let runtime = seed.session.runtime else { return }
-        let item = Self.kindFixtures[selectedKindIndex]
+        let item = Self.kindFixtures[controlPanelState.selectedKindIndex]
         let pending = PendingPermission(
             id: item.id,
             request: item.request,
@@ -83,22 +147,23 @@ struct PermissionSessionDemoView: View {
     // MARK: - Tool-status testing
 
     /// Flip the seeded demo's running tool group + its bash child to
-    /// `.running` via `setToolStatus`. Same id pair `TranscriptDemoView`
-    /// uses on cold-load, so the shimmer + progressive label appear on
-    /// the row that `initialBlocks` already laid down.
+    /// `.running` via `setToolStatus`. Same id pair the transcript
+    /// demo uses on cold-load, so the shimmer + progressive label
+    /// appear on the row that `initialBlocks` already laid down.
     private func markToolsRunning() {
         let controller = seed.controller
         controller.setToolStatus(
-            id: TranscriptDemoView.runningGroupBlockId, status: .running)
+            id: TranscriptDemoViewController.runningGroupBlockId, status: .running)
         controller.setToolStatus(
-            id: TranscriptDemoView.runningBashChildId, status: .running)
+            id: TranscriptDemoViewController.runningBashChildId, status: .running)
     }
 
     /// Fire the same closure `SessionRuntime.finishTurn` fires on live
     /// `.result` — `Session.wireRuntimeMessagesSink` connects it to
-    /// `bridge.handleTurnFinished()` → `controller.clearAllRunningStatuses()`.
-    /// Exercises the full runtime → bridge → controller chain without
-    /// needing a `Message2.result` fixture in app code.
+    /// `bridge.handleTurnFinished()` →
+    /// `controller.clearAllRunningStatuses()`. Exercises the full
+    /// runtime → bridge → controller chain without needing a
+    /// `Message2.result` fixture in app code.
     private func endTurn() {
         seed.session.runtime?.onTurnFinishedLive?()
     }
@@ -198,14 +263,19 @@ struct PermissionSessionDemoView: View {
 
 // MARK: - Control panel
 
-/// Floating control surface anchored to the **bottom-trailing** corner.
+@Observable
+@MainActor
+fileprivate final class ControlPanelState {
+    var selectedKindIndex: Int = 0
+}
+
+/// Floating control surface anchored to the bottom-trailing corner.
 /// Bottom-centered would collide with the input bar / permission card
 /// stack; the trailing corner keeps both visible at the same time.
-private struct ControlPanel: View {
-    @Binding var selection: Int
-    let fixtures: [PermissionSessionDemoView.KindFixture]
-    let isCurrentShown: Bool
-    let hasAny: Bool
+fileprivate struct ControlPanelHostView: View {
+    @Bindable var state: ControlPanelState
+    let isCurrentShown: () -> Bool
+    let hasAny: () -> Bool
     let onShow: () -> Void
     let onHide: () -> Void
     let onMarkToolsRunning: () -> Void
@@ -217,8 +287,11 @@ private struct ControlPanel: View {
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
-            Picker("Kind", selection: $selection) {
-                ForEach(Array(fixtures.enumerated()), id: \.offset) { index, fx in
+            Picker("Kind", selection: $state.selectedKindIndex) {
+                ForEach(
+                    Array(PermissionSessionDemoViewController.kindFixtures.enumerated()),
+                    id: \.offset
+                ) { index, fx in
                     Text(fx.label).tag(index)
                 }
             }
@@ -229,11 +302,11 @@ private struct ControlPanel: View {
                 Button(action: onShow) {
                     Label("Show", systemImage: "eye")
                 }
-                .disabled(isCurrentShown)
+                .disabled(isCurrentShown())
                 Button(action: onHide) {
                     Label("Hide", systemImage: "eye.slash")
                 }
-                .disabled(!hasAny)
+                .disabled(!hasAny())
                 Spacer(minLength: 0)
             }
             .font(.system(size: 11))
@@ -271,12 +344,11 @@ private struct ControlPanel: View {
 
 // MARK: - Seed
 
-/// One-shot fixture container. Built once at `init` of the demo view
-/// (via `@State`'s default initializer) and persisted across re-renders.
-/// Owns the in-memory repository, the manager, and the cached `Session`
-/// the demo wires up — all live for the demo view's lifetime.
+/// One-shot fixture container. Built once at `init` of the VC and
+/// persisted across its lifetime. Owns the in-memory repository, the
+/// manager, and the cached `Session` the demo wires up.
 @MainActor
-private struct Seed {
+fileprivate struct Seed {
     let sessionId: String
     let manager: SessionManager
     let session: Session
@@ -299,9 +371,9 @@ private struct Seed {
             repository: repo,
             cliClientFactory: { _ in FakeCLIClient() }
         )
-        // `session(_:)` materialises the cached `Session` (active phase,
-        // since a record exists). Force-unwrap is safe — we just wrote
-        // the record above.
+        // `session(_:)` materialises the cached `Session` (active
+        // phase, since a record exists). Force-unwrap is safe — we
+        // just wrote the record above.
         let session = manager.session(sid)!
         return Seed(
             sessionId: sid,
@@ -314,16 +386,16 @@ private struct Seed {
     func seedHistoryIfNeeded() {
         guard !seedToken.done else { return }
         seedToken.done = true
-        controller.setHistory(TranscriptDemoView.initialBlocks)
+        controller.setHistory(TranscriptDemoViewController.initialBlocks)
         seedBackgroundTasks()
         seedTodos()
     }
 
     /// Push a representative mix of background bash tasks onto the
-    /// runtime so the input-bar chrome's "task" button has something to
-    /// show. The long-running entry intentionally carries an oversized
-    /// command + output so the sheet exercises card expansion + the
-    /// stream view's max-height scroll behavior.
+    /// runtime so the input-bar chrome's "task" button has something
+    /// to show. The long-running entry intentionally carries an
+    /// oversized command + output so the sheet exercises card
+    /// expansion + the stream view's max-height scroll behavior.
     private func seedBackgroundTasks() {
         guard let runtime = session.runtime else { return }
         let oversizedCommand = """
@@ -375,11 +447,11 @@ private struct Seed {
         runtime.tasks = [completed, failed, running]
     }
 
-    /// Push a representative todo plan onto the runtime so the chrome's
-    /// todo button + popover have something to render. The mix is one
-    /// `inProgress` row at the top, one `pending` follower, and three
-    /// `completed` rows underneath — enough to exercise the active /
-    /// completed grouping and the dimmed-row styling.
+    /// Push a representative todo plan onto the runtime so the
+    /// chrome's todo button + popover have something to render. The
+    /// mix is one `inProgress` row at the top, one `pending` follower,
+    /// and three `completed` rows underneath — enough to exercise the
+    /// active / completed grouping and the dimmed-row styling.
     private func seedTodos() {
         guard let runtime = session.runtime else { return }
         let now = Date()
@@ -443,7 +515,7 @@ private struct Seed {
 }
 
 @MainActor
-private final class SeedToken {
+fileprivate final class SeedToken {
     var done: Bool = false
 }
 

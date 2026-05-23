@@ -31,7 +31,7 @@ import Observation
 /// (`Transcript2EntryBridge`) — and wires the bridge to the runtime
 /// at session creation / promotion. This makes the bridge a continuous
 /// consumer of `runtime.onMessagesChange`: live CLI events flow into
-/// the controller's block list **even when no `ChatHistoryView` is
+/// the controller's block list **even when no transcript view is
 /// mounted**, so the user switching the sidebar to another session
 /// doesn't pause renderer-side processing for the session they left.
 /// `TranscriptDetailViewController` binds the controller's `coordinator`
@@ -68,9 +68,10 @@ final class Session {
     // MARK: - Render-side state (continuous lifetime)
 
     /// Imperative transcript controller. Lives as long as the session
-    /// does — survives `ChatHistoryView` mount/dismount cycles. Views
-    /// read `session.controller` and hand it to `NativeTranscript2View`;
-    /// they never construct their own.
+    /// does — survives transcript-view mount/dismount cycles. Views
+    /// read `session.controller` and hand it to the transcript host
+    /// (production: `TranscriptDetailViewController`); they never
+    /// construct their own.
     let controller: Transcript2Controller
 
     /// Renderer-side translator: subscribes to the runtime's

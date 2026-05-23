@@ -32,6 +32,11 @@ final class InputDraftStore {
         }
     }
 
+    /// macOS 26 SDK workaround — see `Session.deinit` for background.
+    /// `nonisolated` skips `swift_task_deinitOnExecutorImpl` which
+    /// traps for `@Observable @MainActor` classes on tear-down.
+    nonisolated deinit {}
+
     /// Off-main read + decode. Returns nil on miss, decode failure, or
     /// when the on-disk draft is empty (which the bar treats as "no
     /// restore needed").

@@ -10,6 +10,10 @@ import XCTest
 /// `.userAttachments` block kind end-to-end (Bridge → Coordinator →
 /// `UserAttachmentsLayout`) plus its visual rhythm next to the
 /// adjacent `.userBubble` row.
+///
+/// Mounts through `TranscriptOnlyHostViewController` (AppKit) — the
+/// SwiftUI bridge is gone. The host follows the same canonical
+/// attach pattern production uses.
 @MainActor
 final class UserAttachmentsSnapshotTests: XCTestCase {
 
@@ -19,6 +23,7 @@ final class UserAttachmentsSnapshotTests: XCTestCase {
 
     func testUserAttachmentsRow() throws {
         let controller = Transcript2Controller()
+        controller.attachSyntaxEngine(SyntaxHighlightEngine())
         controller.setHistory([
             Block(
                 id: UUID(),
@@ -40,12 +45,9 @@ final class UserAttachmentsSnapshotTests: XCTestCase {
                 kind: .userBubble(text: "five files, still single row")),
         ])
 
-        let view = NativeTranscript2View(controller: controller)
-            .frame(width: 720, height: 360)
-            .environment(\.syntaxEngine, SyntaxHighlightEngine())
-
-        let image = ViewSnapshot.render(
-            view, size: CGSize(width: 720, height: 360), settle: 0.5)
+        let host = TranscriptOnlyHostViewController(controller: controller)
+        let image = ViewSnapshot.renderViewController(
+            host, size: CGSize(width: 720, height: 360), settle: 0.5)
         let url = ViewSnapshot.writePNG(image, name: "UserAttachments")
 
         let attachment = XCTAttachment(contentsOfFile: url)

@@ -7,11 +7,13 @@ Self-drawn `NSTableView`-backed chat transcript. Each row is a `Block`; layout i
 ## 1. Architecture
 
 ```
-SwiftUI: NativeTranscript2View (NSViewRepresentable)
+AppKit host VC (TranscriptDetailViewController, TranscriptDemoViewController, …)
    │
-   ├─ makeCoordinator → Transcript2Coordinator (NSTableViewDataSource/Delegate)
+   ├─ Transcript2Controller (owns Transcript2Coordinator: NSTableViewDataSource/Delegate)
    │
-   └─ makeNSView →
+   ├─ Transcript2SheetPresenter (observes pendingUserBubbleSheet / pendingImagePreview)
+   │
+   └─ TranscriptScrollViewFactory.make(controller:) →
       Transcript2ScrollView (NSScrollView, .never, responsive)
          └─ Transcript2ClipView (NSClipView, .never)
             └─ Transcript2TableView (NSTableView, negative-width clamp)
@@ -22,13 +24,13 @@ SwiftUI: NativeTranscript2View (NSViewRepresentable)
 
 ### 1.1 Why two types: Controller vs. Coordinator
 
-`Transcript2Controller` (SwiftUI-facing) and `Transcript2Coordinator` (AppKit-facing) are kept apart on purpose; merging them was considered and rejected. They differ in three load-bearing ways:
+`Transcript2Controller` (host-facing) and `Transcript2Coordinator` (AppKit-facing) are kept apart on purpose; merging them was considered and rejected. They differ in three load-bearing ways:
 
-1. **Conformance constraints.** `Transcript2Coordinator` must be `NSObject` to satisfy `NSTableViewDataSource` / `NSTableViewDelegate`. `Transcript2Controller` is `@Observable` so SwiftUI hosts can observe `blockCount` / `isAnchorSettled` / `searchState` / `pendingUserBubbleSheet` / `loadingPillVisible` without reaching into AppKit state. A merged class would carry both surfaces; the public symbol table would include every `NSTableViewDataSource` callback alongside `setHistory` / `setLoading`, blurring the user-facing API.
-2. **File size.** Together the two files are ~2000 lines. Folding them produces one class that violates the project-wide rule against oversized bodies, and there is no natural axis of split inside a single class that's both the SwiftUI surface and the table delegate.
-3. **Controller carries real logic, not just forwarding.** `setHistory`'s viewport-slicing + Phase 1/Phase 2 scheduling, `setLoading`'s debounce + `reconcileLoadingPill`, and the `@Observable` mirroring are all Controller-side; they sit naturally one layer above the table delegate, not inside it. The remaining methods on Controller are thin forwards (`apply`, `setToolStatus`, `runSearch` / `nextSearchHit` / `previousSearchHit` / `endSearch`, `attachSyntaxEngine`), which is the price of keeping the SwiftUI surface flat.
+1. **Conformance constraints.** `Transcript2Coordinator` must be `NSObject` to satisfy `NSTableViewDataSource` / `NSTableViewDelegate`. `Transcript2Controller` is `@Observable` so hosts can observe `blockCount` / `isAnchorSettled` / `searchState` / `pendingUserBubbleSheet` / `loadingPillVisible` without reaching into AppKit state — used by `Transcript2SheetPresenter` for the two sheet-request fields, and by `@Bindable`-wrapped SwiftUI panels embedded inside the demo VCs. A merged class would carry both surfaces; the public symbol table would include every `NSTableViewDataSource` callback alongside `setHistory` / `setLoading`, blurring the API.
+2. **File size.** Together the two files are ~2000 lines. Folding them produces one class that violates the project-wide rule against oversized bodies, and there is no natural axis of split inside a single class that's both the host surface and the table delegate.
+3. **Controller carries real logic, not just forwarding.** `setHistory`'s viewport-slicing + Phase 1/Phase 2 scheduling, `setLoading`'s debounce + `reconcileLoadingPill`, and the `@Observable` mirroring are all Controller-side; they sit naturally one layer above the table delegate, not inside it. The remaining methods on Controller are thin forwards (`apply`, `setToolStatus`, `runSearch` / `nextSearchHit` / `previousSearchHit` / `endSearch`, `attachSyntaxEngine`), which is the price of keeping the host-facing surface flat.
 
-The split also matches the mount-vs-state-machine boundary: callers think in terms of `setHistory` / `append` / `setLoading` (Controller), not in terms of `tableView(_:numberOfRowsInSection:)` (Coordinator). Anchor settling, on the other hand, lives on the Coordinator because it's a function of the live `NSTableView` frame; Controller only mirrors `isAnchorSettled` for SwiftUI observation.
+The split also matches the mount-vs-state-machine boundary: callers think in terms of `setHistory` / `append` / `setLoading` (Controller), not in terms of `tableView(_:numberOfRowsInSection:)` (Coordinator). Anchor settling, on the other hand, lives on the Coordinator because it's a function of the live `NSTableView` frame; Controller only mirrors `isAnchorSettled` for observers.
 
 **Don't merge.** If the forwarding feels redundant, the right move is to make the forwards thinner (e.g. expose `coordinator.search` as a property), not to collapse the layer.
 
@@ -36,10 +38,10 @@ The split also matches the mount-vs-state-machine boundary: callers think in ter
 
 The runloop tick diagram lives in the root [CLAUDE.md § macOS runloop tick model](../../../../../CLAUDE.md). Read that first; it's the global canvas (source phase / beforeWaiting / sleep). This section only spells out the transcript-specific consequences:
 
-- **`clip.scroll(to:)` runs in source phase and needs row geometry already settled.** If the table's `documentView.frame.height == 0` when you write, `constrainBoundsRect` clamps your target to origin=0, your write is silently absorbed, and the documentView paints at the top for that tick. In the transcript's actual attach path, this is handled implicitly through a two-step bind: `TranscriptScrollViewFactory.make` builds the scroll/clip/table shell with no `dataSource` wired, so the host's `view.layoutSubtreeIfNeeded()` sizes the scroll view without firing any `heightOfRow` queries (table has no rows to ask about). Then `TranscriptScrollViewFactory.bindData` wires `dataSource` + `delegate` + the frame observer (no explicit `noteNumberOfRowsChanged` — that double-counts; AppKit picks up the new rows lazily). `controller.scrollToTail()`'s internal `tableView.layoutSubtreeIfNeeded()` is the first layout pass with `dataSource` bound, so it drives `NSTableView.tile()` at the final settled width and `rect(ofRow:)` returns real values inside the same source-phase tick. The fragile case is anything that wants `rect(ofRow:)` *without* an enclosing frame change to ride on — there force the tile explicitly via `noteNumberOfRowsChanged` / `insertRows` / `reloadData(forRowIndexes:)`. The verified-by-test corollaries: `TranscriptScrollFirstFrameSnapshotTests` (origin / row-tile geometry) and `TranscriptReentryLayoutCacheSnapshotTests` (each block typeset exactly once at the final width).
+- **`clip.scroll(to:)` runs in source phase and needs row geometry already settled.** If the table's `documentView.frame.height == 0` when you write, `constrainBoundsRect` clamps your target to origin=0, your write is silently absorbed, and the documentView paints at the top for that tick. In the transcript's actual attach path, this is handled implicitly through a two-step bind: `TranscriptScrollViewFactory.make` builds the scroll/clip/table shell with no `dataSource` wired, so the host's `view.layoutSubtreeIfNeeded()` sizes the scroll view without firing any `heightOfRow` queries (table has no rows to ask about). Then `TranscriptScrollViewFactory.bindData` wires `dataSource` + `delegate` + the frame observer (no explicit `noteNumberOfRowsChanged` — that double-counts; AppKit picks up the new rows lazily). `controller.scrollToTail()`'s internal `tableView.layoutSubtreeIfNeeded()` is the first layout pass with `dataSource` bound, so it drives `NSTableView.tile()` at the final settled width and `rect(ofRow:)` returns real values inside the same source-phase tick. The fragile case is anything that wants `rect(ofRow:)` *without* an enclosing frame change to ride on — there force the tile explicitly via `noteNumberOfRowsChanged` / `insertRows` / `reloadData(forRowIndexes:)`. The verified-by-test corollaries: `TranscriptScrollFirstFrameSnapshotTests` (origin / row-tile geometry), `TranscriptReentryLayoutCacheTests` (factory direct — each block typeset exactly once at the final width), and `TranscriptHostReentryLayoutCacheTests` (real `TranscriptDetailViewController.attachSession` + demo VC end-to-end so a host that reorders the attach steps gets caught).
 - **`NSClipView.scroll(to:)` does NOT auto-call `reflectScrolledClipView(_:)`.** That's the documented contract: the call writes `bounds.origin` but leaves the enclosing `NSScrollView`'s scrollers synced to the *prior* origin. Every direct `clip.scroll(to:)` site (`Coordinator.scrollRowToBottom` / `scrollRowToTop`) must follow up with `scrollView.reflectScrolledClipView(scrollView.contentView)` or the vertical scroller's `doubleValue` stays stale — visible as a thumb-at-top flash while content sits at the tail, especially under `.overlay` + `autohidesScrollers` where the scroller briefly fades in on content change. Guarded by `TranscriptScrollFirstFrameSnapshotTests.testScrollerKnobLandsAtTailAfterScrollToTail`.
 - **`tableView.layoutSubtreeIfNeeded()` alone does NOT re-tile a same-size table.** `scrollToInitialAnchor` calls it for two reasons: on the first-attach path it's the first layout pass with `dataSource` bound, so the table's frame transitions from 0 height to its tiled height and the size change drives the tile; on subsequent paths it's flushing a *queued* invalidation (`invalidate(rows:)` → `noteHeightOfRows` is async). If you call it on a table that hasn't been invalidated and whose frame hasn't changed, nothing happens — that's the narrow correct reading of "row positions are not an autolayout product." The broad reading ("`layoutSubtreeIfNeeded` won't move the table") is *wrong* once the table's frame is changing too.
-- **`controller.blockCount` is safe to read after `coordinator.apply` returns in source phase** — the `@Observable` mirror is updated synchronously through `onBlockCountChanged`. SwiftUI hosts observing the same field, on the other hand, won't see the new value until the next display.
+- **`controller.blockCount` is safe to read after `coordinator.apply` returns in source phase** — the `@Observable` mirror is updated synchronously through `onBlockCountChanged`. Observers reading the same field via `@Observable` tracking (the demo VC's bottom control panel, for instance), on the other hand, won't see the new value until the next display.
 - **§2 wraps `clip.scroll` + row mutations under `CATransaction.setDisableActions(true)` + `NSAnimationContext.allowsImplicitAnimation = false`.** Both phases are necessary because the height transition (AppKit-implicit) and the scroll-origin transition (CoreAnimation-implicit) commit independently at beforeWaiting; without the suppression they animate to the new state across one or two frames and the rendering tears.
 
 ## 2. Performance contract
@@ -330,7 +332,7 @@ Children mirror this: each payload exposes `label` (past form) and `activeLabel`
 
 `case .userBubble(text: String)`. Right-aligned bubble; long text hard-truncates at `userBubbleCollapseThreshold` lines, the last line trims with `CTLineCreateTruncatedLine` + an ellipsis, and a `>` chevron sits inside the padding. Selection clamps to the prefix lines — the truncated tail is not selectable. **The layout is fully stateless** and has no fold flag. Chevron `mouseDown` → `Coordinator.requestUserBubbleSheet(id:)` → routes through the `onUserBubbleSheetRequested` closure to `Transcript2Controller.pendingUserBubbleSheet` (`@Observable`) → SwiftUI's `.sheet(item:)` shows the full content (`Text.textSelection(.enabled)` for copy).
 
-This is the **only legal SwiftUI escape hatch** from the NSView loop: `.sheet(item:)` is a presentation primitive that must be owned by SwiftUI. In-cell rendering, hit testing, and selection stay entirely inside NSView.
+The signal lands as an `@Observable` write on `Transcript2Controller.pendingUserBubbleSheet`, which `Transcript2SheetPresenter` observes (via `withObservationTracking`) and turns into an AppKit-native sheet — `view.window?.beginSheet(NSWindow(contentViewController: NSHostingController(rootView: UserBubbleSheetView)))`. Sheet body stays SwiftUI (selectable text + a Done button is exactly what SwiftUI is for); presentation mechanism is pure AppKit so the entire transcript host VC can stay AppKit-rooted. In-cell rendering, hit testing, and selection stay entirely inside NSView.
 
 ## 6. File layout
 
@@ -372,19 +374,23 @@ NativeTranscript2/
 │   ├── SubviewPlan.swift            Chevron + entry-subview decoration plan (per-layout, same shape as SelectionAdapter)
 │   └── RowLayout.swift              Enum dispatch (text / image / list / table / userBubble / codeBlock / blockquote / thematicBreak / toolGroup)
 ├── AppKit/
-│   ├── Transcript2ScrollView.swift  NSScrollView + NSClipView subclasses
-│   ├── Transcript2TableView.swift   NSTableView subclass (negative-width clamp)
-│   ├── CenteredRowView.swift        Row-view placeholder subclass (no-op body); exists so NSTableView.makeView has a stable row-reuse key
-│   ├── BlockCellView.swift          Self-drawn cell: layoutOrigin.x = cellOriginX + blockHorizontalPadding for centering + layout.draw + link/chevron hit testing + selection + hover tracking
+│   ├── Transcript2ScrollView.swift      NSScrollView + NSClipView subclasses
+│   ├── Transcript2TableView.swift       NSTableView subclass (negative-width clamp)
+│   ├── TranscriptScrollViewFactory.swift Two-step make / bindData / dismantle (deferred bind)
+│   ├── Transcript2SheetPresenter.swift  AppKit sheet presenter for the two `pendingXxx` request fields
+│   ├── CenteredRowView.swift            Row-view placeholder subclass (no-op body); exists so NSTableView.makeView has a stable row-reuse key
+│   ├── BlockCellView.swift              Self-drawn cell: layoutOrigin.x = cellOriginX + blockHorizontalPadding for centering + layout.draw + link/chevron hit testing + selection + hover tracking
 │   └── BlockCellView+SubviewPlan.swift  Reconciles the chevron sublayer and entry subview against the layout's SubviewPlan; ToolGroupEntryView also lives here
-├── Transcript2Coordinator.swift          DataSource/Delegate + diff + per-kind dispatch + chevron sheet request routing
-├── Transcript2Controller.swift           Imperative command channel (apply / loadInitial / search)
-├── Transcript2SelectionCoordinator.swift Cross-row selection algorithm (reads layout.selectionAdapter)
-├── Transcript2SearchCoordinator.swift    In-transcript ⌘F scan + nav + per-cell highlight push
-└── NativeTranscript2View.swift      SwiftUI bridge (updateNSView is a no-op) + Preview
+├── Sheets/
+│   ├── UserBubbleSheetView.swift        SwiftUI body for the user-bubble full-text sheet (hosted via NSHostingController)
+│   └── ImagePreviewSheetView.swift      SwiftUI body for the attachment image preview sheet
+├── Transcript2Coordinator.swift             DataSource/Delegate + diff + per-kind dispatch + chevron sheet request routing
+├── Transcript2Controller.swift              Imperative command channel (apply / loadInitial / search) + @Observable pendingXxxSheet fields
+├── Transcript2SelectionCoordinator.swift    Cross-row selection algorithm (reads layout.selectionAdapter)
+└── Transcript2SearchCoordinator.swift       In-transcript ⌘F scan + nav + per-cell highlight push
 ```
 
-Dependencies only flow downward: `NativeTranscript2View → Coordinator → AppKit/ → Layout/ → Model/`.
+Dependencies only flow downward: `host VC → Controller → Coordinator → AppKit/ → Layout/ → Model/`. Sheet bodies under `Sheets/` are SwiftUI structs imported by `Transcript2SheetPresenter` only.
 
 ## 6.5 Search
 
@@ -395,8 +401,10 @@ per-cell paint is derived, affected cells are reseated via
 two compose at draw time, search highlights composite over the selection
 band.
 
-The host UI is SwiftUI's built-in `.searchable` modifier attached to
-`ChatHistoryView`, with `placement: .toolbar`. The native `NSSearchField`
+The host UI is an `NSSearchToolbarItem` on the window's toolbar
+(`MainWindowController`'s `NSToolbar`); the field is wired to
+`TranscriptSearchBus` (focus) and the controller's `searchState` (text
++ navigation). The native `NSSearchField`
 lands in the window toolbar's trailing slot; there are no prev / counter
 / next chrome items — the user navigates with `Return` (next match, via
 `.onSubmit(of: .search)`) and `Shift+Return` (previous, via
@@ -510,7 +518,7 @@ The framework itself does not change — storage and the reload pipeline are gen
 
 | Touched | Verify with |
 |---|---|
-| `Coordinator` diff / pipeline | SwiftUI Preview (`NativeTranscript2View.swift` `#Preview`); inspect insert/remove animations |
-| `BlockCellView.draw` | Preview; check layout + font |
-| `TextLayout.make` | Preview |
+| `Coordinator` diff / pipeline | Sidebar → "Transcript Demo" (`TranscriptDemoViewController`); inspect insert/remove animations via Add/Remove buttons |
+| `BlockCellView.draw` | Sidebar → "Transcript Demo"; check layout + font |
+| `TextLayout.make` | Sidebar → "Transcript Demo" |
 | `Transcript2ScrollView` / `Transcript2TableView` | `make build` + launch; drag window width to verify reflow |

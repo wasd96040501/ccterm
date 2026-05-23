@@ -151,16 +151,38 @@ them: `make test-unit FILTER=<class>` then `open <png>`.
 
 | View | Test class | PNG |
 |---|---|---|
-| `TranscriptDemoView` ([source](../ccterm/Content/TranscriptDemo/TranscriptDemoView.swift)) | `TranscriptDemoSnapshotTests` ([source](TranscriptDemoSnapshotTests.swift)) | `/tmp/ccterm-screenshots/TranscriptDemoView.png` |
+| `TranscriptDemoViewController` ([source](../ccterm/Content/TranscriptDemo/TranscriptDemoViewController.swift)) | `TranscriptDemoSnapshotTests` ([source](TranscriptDemoSnapshotTests.swift)) | `/tmp/ccterm-screenshots/TranscriptDemoView.png` |
 | `SidebarView2` row chrome + per-row state indicators ([source](../ccterm/Sidebar/SidebarView2.swift)) | `SidebarView2SnapshotTests` ([source](SidebarView2SnapshotTests.swift)) | `/tmp/ccterm-screenshots/SidebarView2.png` |
 | `NewSessionConfigurator` three-column compose card ([source](../ccterm/Content/Chat/NewSessionConfigurator.swift)) | `NewSessionConfiguratorSnapshotTests` ([source](NewSessionConfiguratorSnapshotTests.swift)) | `/tmp/ccterm-screenshots/NewSessionConfigurator.png` + `…-empty.png` |
 | `DiffView` standalone diff card (modified + new file) ([source](../ccterm/Components/DiffView.swift)) | `DiffViewSnapshotTests` ([source](DiffViewSnapshotTests.swift)) | `/tmp/ccterm-screenshots/DiffView.png` |
 | Transcript attach sequence — first-frame scroll origin / row geometry ([source](../ccterm/Content/Chat/NativeTranscript2/AppKit/TranscriptScrollViewFactory.swift)) | `TranscriptScrollFirstFrameSnapshotTests` ([source](TranscriptScrollFirstFrameSnapshotTests.swift)) | `/tmp/ccterm-screenshots/TranscriptScrollFirstFrame-Production.png` + `…-NoNote.png` |
 | Transcript attach sequence — first **composited** frame on a live render pipeline (CADisplayLink + `CALayer.presentation()`) ([source](../ccterm/Content/Chat/NativeTranscript2/AppKit/TranscriptScrollViewFactory.swift)) | `TranscriptScrollLivePresentationSnapshotTests` ([source](TranscriptScrollLivePresentationSnapshotTests.swift)) | none — text-only timeline attachment |
-| Transcript attach sequence — `layoutCache` write-trace probe (each block typeset at how many distinct widths inside one source-phase tick) ([source](../ccterm/Content/Chat/NativeTranscript2/AppKit/TranscriptScrollViewFactory.swift)) | `TranscriptReentryLayoutCacheSnapshotTests` ([source](TranscriptReentryLayoutCacheSnapshotTests.swift)) | none — text-only `(writes, widths, stages)` attachment |
 
 If your view isn't in this table, jump to [I want to add a snapshot
 test for a new view](#i-want-to-add-a-snapshot-test-for-a-new-view).
+
+### Measurement probes (NOT snapshots — CI merge gate)
+
+Some tests use the same offscreen-window scaffolding as snapshots —
+they mount a real view, drive a real attach sequence, sample state —
+but they're **assertion-driven property tests**, not PNGs for human
+review. They have to run on CI as merge gates. **Do not give them the
+`*SnapshotTests.swift` filename suffix** — `scripts/test-unit.sh`
+auto-skips that pattern from the default suite.
+
+Inventory:
+
+| File | What it asserts |
+|---|---|
+| [`TranscriptReentryLayoutCacheTests.swift`](TranscriptReentryLayoutCacheTests.swift) | The bare `TranscriptScrollViewFactory.make → addSubview → layoutSubtreeIfNeeded → bindData → scrollToTail` sequence typesets each block at exactly one width inside one source-phase tick. |
+| [`TranscriptHostReentryLayoutCacheTests.swift`](TranscriptHostReentryLayoutCacheTests.swift) | Same property, but driven through real hosts: the AppKit demo VC (`TranscriptDemoViewController`) and the production sidebar-switch path (`TranscriptDetailViewController.attachSession` on a `MainSelectionModel.selectedSessionId` flip). Closes the gap between the factory test and host orchestration. |
+
+When you add a new test that's "drive a real view + assert on a property at the boundary," follow these naming rules:
+
+- Filename: `<Subject>Tests.swift` (e.g. `TranscriptHostReentryLayoutCacheTests.swift`) — no `Snapshot` suffix.
+- Class name must match the filename (XCTest's runtime discovery + the skip-list script both key off the file name).
+- Attachment: text reports via `XCTAttachment(string:)` are fine; a PNG is fine if it helps debugging. The test passes / fails on `XCTAssert`, not on the human eyeball.
+- Don't reuse the snapshot test infrastructure's `ViewSnapshot.render` if your test only needs to assert on model state — that helper carries a long deliberate runloop drain that you usually don't want.
 
 ### Probing AppKit attach sequences offscreen
 

@@ -8,9 +8,11 @@ import CoreText
 /// lines) hard-truncates the visible block to `userBubbleCollapseThreshold`
 /// lines with a tail "…" on the last line, plus a `>` chevron anchored
 /// to the bubble's bottom-right rounded corner. Tapping the chevron
-/// opens a SwiftUI sheet with the full text — that path is the *only*
-/// place fold state lives, owned by `Transcript2Controller.pendingUserBubbleSheet`
-/// and consumed by `NativeTranscript2View`'s `.sheet(item:)`.
+/// opens an AppKit-presented sheet with the full text — that path is
+/// the *only* place fold state lives, owned by
+/// `Transcript2Controller.pendingUserBubbleSheet` and consumed by
+/// `Transcript2SheetPresenter` (which wraps `UserBubbleSheetView` in
+/// `NSHostingController` and presents via `NSWindow.beginSheet`).
 ///
 /// ### Why no in-cell expanded mode
 ///

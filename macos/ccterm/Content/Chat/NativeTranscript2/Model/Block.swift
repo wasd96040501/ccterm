@@ -44,9 +44,10 @@ struct Block: Identifiable, Equatable, @unchecked Sendable {
         case thematicBreak
         /// User-side message rendered as a right-aligned bubble. Long text
         /// auto-truncates with a tail "…" + a `>` chevron whose click
-        /// surfaces the full message in a SwiftUI sheet (presentation
-        /// concerns belong on the SwiftUI side; in-cell rendering stays
-        /// stateless). Short messages render in full with no chevron.
+        /// surfaces the full message in a sheet, opened by
+        /// `Transcript2SheetPresenter` on the host VC's window
+        /// (in-cell rendering stays stateless). Short messages render
+        /// in full with no chevron.
         ///
         /// `isQueued` reflects `SingleEntry.delivery == .queued` — the
         /// message has been appended locally but the CLI hasn't echoed

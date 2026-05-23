@@ -70,16 +70,18 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// observers on `blockCount` see the new value.
     var onBlockCountChanged: ((Int) -> Void)?
 
-    /// Set by `Transcript2Controller` to forward chevron taps to the
-    /// SwiftUI-owned sheet binding. The cell's mouseDown handler resolves
-    /// the chevron hit, looks up the source `Block.Kind.userBubble(text:_:)`,
-    /// and fires this — keeping the cross-layer signal narrow (one block
-    /// id + the original text) so neither side reaches into the other's
+    /// Set by `Transcript2Controller` to forward chevron taps onto its
+    /// `pendingUserBubbleSheet` field, which
+    /// `Transcript2SheetPresenter` observes and turns into an AppKit
+    /// sheet. The cell's mouseDown handler resolves the chevron hit,
+    /// looks up the source `Block.Kind.userBubble(text:_:)`, and fires
+    /// this — keeping the cross-layer signal narrow (one block id +
+    /// the original text) so neither side reaches into the other's
     /// internals.
     var onUserBubbleSheetRequested: ((UUID, String) -> Void)?
 
     /// Set by `Transcript2Controller` to forward an attachment-chip
-    /// click to the SwiftUI-owned image preview sheet. The cell's
+    /// click onto its `pendingImagePreview` field. The cell's
     /// mouseDown handler resolves the chip hit via
     /// `HitAction.openImagePreview(NSImage)` and fires this with the
     /// same `NSImage` instance the layout holds — narrow contract,

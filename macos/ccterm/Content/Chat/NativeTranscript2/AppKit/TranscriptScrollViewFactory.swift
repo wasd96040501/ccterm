@@ -1,11 +1,11 @@
 import AppKit
 
 /// Configures and returns a `Transcript2ScrollView` wired up to the
-/// given `Transcript2Controller`. Shared between the SwiftUI bridge
-/// (`NativeTranscript2View`) and the AppKit-rooted host
-/// (`TranscriptDetailViewController`) so the AppKit setup lives in one
-/// place — content insets, `.never` layer policies, table column,
-/// dataSource/delegate wiring, frameDidChange observer.
+/// given `Transcript2Controller`. Shared between the production
+/// AppKit host (`TranscriptDetailViewController`) and the AppKit demo
+/// VCs (`TranscriptDemoViewController` etc.) so the AppKit setup lives
+/// in one place — content insets, `.never` layer policies, table
+/// column, dataSource/delegate wiring, frameDidChange observer.
 ///
 /// **Two-step attach.** `make(controller:)` builds the scroll view
 /// shell (clip, table, column, layer policy, content insets) but does
@@ -21,19 +21,15 @@ import AppKit
 /// every block's row layout would be typeset, cached, and immediately
 /// invalidated. With the bind deferred to after `layoutSubtreeIfNeeded`,
 /// the first query lands at the final, settled width and every block
-/// is typeset exactly once. Measured by
-/// `TranscriptReentryLayoutCacheSnapshotTests`.
+/// is typeset exactly once. Guarded by
+/// `TranscriptReentryLayoutCacheTests` (factory direct) and
+/// `TranscriptHostReentryLayoutCacheTests` (production VC + demo VC
+/// end-to-end).
 ///
 /// Caller is responsible for placing the returned scroll view into a
 /// hierarchy, calling `bindData(_:controller:)` AFTER autolayout has
 /// settled (host runs `layoutSubtreeIfNeeded` on its own view in
-/// between), and tearing down via `dismantle(_:controller:)` —
-/// symmetric with the SwiftUI bridge's `dismantleNSView`.
-///
-/// SwiftUI hosts (`NativeTranscript2View`) cannot interleave their own
-/// layout call between `makeNSView` and `updateNSView`, so they call
-/// `make` + `bindData` back-to-back from `makeNSView`. They keep the
-/// pre-mount typeset cost; that path is preview / demo only.
+/// between), and tearing down via `dismantle(_:controller:)`.
 enum TranscriptScrollViewFactory {
 
     /// The fixed transcript content insets: `top` reserves room for the

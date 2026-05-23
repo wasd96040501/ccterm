@@ -1,90 +1,120 @@
 import AppKit
 import SwiftUI
 
-/// Sandbox tab focused on the **scroll-time** cost of an expanded
-/// `toolGroup` row whose single `fileEdit` child carries a many-screen
-/// diff. The host transcript is otherwise routine (200 paragraph blocks
-/// above the group, 80 below) so the viewport is always crossing a
-/// mixture of small cells + the giant entry view as the user scrolls.
+/// AppKit-rooted host for the diff-scroll perf demo. Replaces the
+/// former SwiftUI `TranscriptPerfDemoView`. Auto-expands the lone
+/// `toolGroup` row + its `fileEdit` child at mount so scrolling
+/// exercises the over-screen entry view immediately without a user
+/// click.
 ///
-/// Reproduces the report "diff view scrolling drops frames even with no
-/// running, no expand". Both fold flags are toggled on at mount time,
-/// the tool group is `.completed` (so no shimmer animation contributes
-/// to render cost), nothing streams.
-///
-/// The mount also flips `Transcript2PerfLog.enabled = true` for the
-/// duration the view is alive. Hot paths in `BlockCellView` /
-/// `ToolGroupEntryView` / `Transcript2Coordinator` emit info-level
-/// entries under category `Transcript2Perf`; an external
-/// `log stream --predicate '...'` (see `Transcript2PerfLog.swift`)
+/// While mounted, flips `Transcript2PerfLog.enabled = true` in Debug
+/// builds. Hot paths in `BlockCellView` / `ToolGroupEntryView` /
+/// `Transcript2Coordinator` emit info-level entries under category
+/// `Transcript2Perf`; an external `log stream --predicate '...'`
 /// captures them while reproducing the jank.
-struct TranscriptPerfDemoView: View {
-    @State private var controller = Transcript2Controller()
-    @State private var seeded = false
+@MainActor
+final class TranscriptPerfDemoViewController: NSViewController {
 
-    var body: some View {
-        NativeTranscript2View(controller: controller)
-            .frame(minWidth: 320, minHeight: 240)
-            .overlay(alignment: .bottom) { statusBar }
-            .task {
-                #if DEBUG
-                Transcript2PerfLog.enabled = true
-                #endif
-                guard !seeded else { return }
-                seeded = true
-                let blocks = Self.makeBlocks()
-                controller.setHistory(blocks)
-                // Expand the group and the lone fileEdit child so the
-                // giant diff body is the resting state — scrolling
-                // exercises the over-screen entry view immediately
-                // without a user click. Both ids must be addressed
-                // separately because `toggleFold` operates one fold
-                // surface at a time (group-level + child-level).
-                controller.coordinator.toggleFold(id: Self.toolGroupBlockId)
-                controller.coordinator.toggleFold(id: Self.fileEditChildId)
-            }
-            .onDisappear {
-                #if DEBUG
-                // Leave the flag clean for any non-demo tab the user
-                // navigates to next; otherwise a real session's scroll
-                // path would inherit the trace volume.
-                Transcript2PerfLog.enabled = false
-                #endif
-            }
+    init(syntaxEngine: SyntaxHighlightEngine? = nil) {
+        self.syntaxEngine = syntaxEngine
+        super.init(nibName: nil, bundle: nil)
     }
 
-    private var statusBar: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "speedometer").foregroundStyle(.secondary)
-            Text(
-                "\(controller.blockCount) blocks · diff = \(Self.diffLineCount) lines · trace ON (category Transcript2Perf)"
-            )
-            .monospacedDigit()
-            .foregroundStyle(.secondary)
-            .font(.callout)
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+
+    let controller = Transcript2Controller()
+    private let syntaxEngine: SyntaxHighlightEngine?
+    private var scroll: Transcript2ScrollView?
+    private var sheetPresenter: Transcript2SheetPresenter?
+    private var statusBarHost: NSHostingView<TranscriptPerfStatusBar>?
+    private var seeded = false
+
+    override func loadView() {
+        view = NSView()
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        mountTranscript()
+        installStatusBar()
+        sheetPresenter = Transcript2SheetPresenter(controller: controller, hostView: view)
+        if let syntaxEngine {
+            controller.attachSyntaxEngine(syntaxEngine)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(.regularMaterial, in: Capsule())
-        .overlay(Capsule().strokeBorder(.separator, lineWidth: 0.5))
-        .shadow(color: .black.opacity(0.18), radius: 8, y: 2)
-        .padding(.bottom, 20)
+        seedIfNeeded()
+        #if DEBUG
+        Transcript2PerfLog.enabled = true
+        #endif
+    }
+
+    override func viewWillDisappear() {
+        super.viewWillDisappear()
+        sheetPresenter?.stop()
+        #if DEBUG
+        // Leave the flag clean for any non-demo tab the user navigates
+        // to next; otherwise a real session's scroll path would
+        // inherit the trace volume.
+        Transcript2PerfLog.enabled = false
+        #endif
+    }
+
+    private func mountTranscript() {
+        let scroll = TranscriptScrollViewFactory.make(controller: controller)
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(scroll)
+        NSLayoutConstraint.activate([
+            scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scroll.topAnchor.constraint(equalTo: view.topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+        view.layoutSubtreeIfNeeded()
+        TranscriptScrollViewFactory.bindData(scroll, controller: controller)
+        controller.scrollToTail()
+        self.scroll = scroll
+    }
+
+    private func installStatusBar() {
+        let bar = TranscriptPerfStatusBar(controller: controller)
+        let host = NSHostingView(rootView: bar)
+        host.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(host)
+        NSLayoutConstraint.activate([
+            host.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            host.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20),
+        ])
+        statusBarHost = host
+    }
+
+    private func seedIfNeeded() {
+        guard !seeded else { return }
+        seeded = true
+        controller.setHistory(Self.makeBlocks())
+        // Expand the group and the lone fileEdit child so the giant
+        // diff body is the resting state — scrolling exercises the
+        // over-screen entry view immediately without a user click.
+        // Both ids must be addressed separately because `toggleFold`
+        // operates one fold surface at a time (group-level +
+        // child-level).
+        controller.coordinator.toggleFold(id: Self.toolGroupBlockId)
+        controller.coordinator.toggleFold(id: Self.fileEditChildId)
     }
 }
 
 // MARK: - Content generation
 
-extension TranscriptPerfDemoView {
-    /// Stable ids so the `.task` block can address fold state without
+extension TranscriptPerfDemoViewController {
+    /// Stable ids so the seed step can address fold state without
     /// scanning `controller.blockIds` at runtime.
     fileprivate static let toolGroupBlockId = UUID()
     fileprivate static let fileEditChildId = UUID()
 
     /// Diff body line count target. Chosen large enough that even on a
-    /// 5K display the entry view's frame.height blows past the IOSurface
-    /// max-texture-size guess (≈16k px on Apple Silicon) at 1× backing
-    /// scale, and trivially overflows at 2× Retina backing. ~700 lines
-    /// × 16pt line-height ≈ 11200pt → 22400px at @2x.
+    /// 5K display the entry view's frame.height blows past the
+    /// IOSurface max-texture-size guess (≈16k px on Apple Silicon) at
+    /// 1× backing scale, and trivially overflows at 2× Retina backing.
+    /// ~700 lines × 16pt line-height ≈ 11200pt → 22400px at @2x.
     fileprivate static let diffLineCount = 700
 
     /// Number of paragraph blocks rendered above the giant tool group.
@@ -116,12 +146,13 @@ extension TranscriptPerfDemoView {
                                 + "see Transcript2PerfLog.swift for the predicate.")
                     ])))
 
-        // One `.codeBlock` near the top so the markdown code-block chrome
-        // (language badge + copy button + syntax-highlight tokens) sits
-        // alongside the diff card below, letting an eyeball compare the
-        // two card families. `.codeBlock` renders through `BlockCellView`
-        // directly — independent of `ToolGroupEntryView`, which is the
-        // path the perf demo otherwise exercises.
+        // One `.codeBlock` near the top so the markdown code-block
+        // chrome (language badge + copy button + syntax-highlight
+        // tokens) sits alongside the diff card below, letting an
+        // eyeball compare the two card families. `.codeBlock` renders
+        // through `BlockCellView` directly — independent of
+        // `ToolGroupEntryView`, which is the path the perf demo
+        // otherwise exercises.
         blocks.append(
             Block(
                 id: UUID(),
@@ -204,16 +235,16 @@ extension TranscriptPerfDemoView {
 
     /// Synthesize an old/new pair that produces ~`diffLineCount` body
     /// rows after diffing. Keeps a Swift-ish flavour so
-    /// `LanguageDetection` resolves to `swift` and `highlight.js` emits
-    /// keyword / string / number tokens on most lines, exercising the
-    /// per-line token-array path in `DiffLayout` + the highlight
-    /// storage's `lineMap` writeback.
+    /// `LanguageDetection` resolves to `swift` and `highlight.js`
+    /// emits keyword / string / number tokens on most lines,
+    /// exercising the per-line token-array path in `DiffLayout` + the
+    /// highlight storage's `lineMap` writeback.
     ///
     /// Strategy: build a long block of code-shaped lines, then in a
-    /// scattered set of positions change one identifier so every fourth
-    /// hunk produces add/del rows on top of the context background. The
-    /// result is the kind of "log/stack-trace-density" diff a real
-    /// large refactor produces.
+    /// scattered set of positions change one identifier so every
+    /// fourth hunk produces add/del rows on top of the context
+    /// background. The result is the kind of "log/stack-trace-
+    /// density" diff a real large refactor produces.
     fileprivate static func makeDiffStrings() -> (String, String) {
         var oldLines: [String] = []
         var newLines: [String] = []
@@ -224,8 +255,8 @@ extension TranscriptPerfDemoView {
             let base = codeLine(at: i, version: .old)
             oldLines.append(base)
             // ~25% of lines mutate. The remaining 75% stay context —
-            // exercises gutter + line-number column paint width without
-            // overwhelming the diff with add/del bands.
+            // exercises gutter + line-number column paint width
+            // without overwhelming the diff with add/del bands.
             if i % 4 == 0 {
                 newLines.append(codeLine(at: i, version: .new))
             } else {
@@ -243,11 +274,12 @@ extension TranscriptPerfDemoView {
 
     private enum CodeVersion { case old, new }
 
-    /// Generate one synthetic Swift-ish line at `index`. Cycles through
-    /// a small set of statement shapes so per-line content varies
-    /// (varying token counts, varying widths) — the diff body's worst
-    /// case is uniform-width context lines that all hit the same wrap
-    /// boundary; mixing shapes is closer to a real file.
+    /// Generate one synthetic Swift-ish line at `index`. Cycles
+    /// through a small set of statement shapes so per-line content
+    /// varies (varying token counts, varying widths) — the diff
+    /// body's worst case is uniform-width context lines that all hit
+    /// the same wrap boundary; mixing shapes is closer to a real
+    /// file.
     private static func codeLine(at index: Int, version: CodeVersion) -> String {
         let shapes: [(_ i: Int, _ ver: CodeVersion) -> String] = [
             { i, _ in "// MARK: - Section \(i / 8) · helper #\(i)" },
@@ -283,8 +315,25 @@ extension TranscriptPerfDemoView {
     }
 }
 
-#Preview {
-    TranscriptPerfDemoView()
-        .frame(width: 900, height: 720)
-        .environment(\.syntaxEngine, SyntaxHighlightEngine())
+// MARK: - Status bar (SwiftUI)
+
+struct TranscriptPerfStatusBar: View {
+    @Bindable var controller: Transcript2Controller
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "speedometer").foregroundStyle(.secondary)
+            Text(
+                "\(controller.blockCount) blocks · diff = \(TranscriptPerfDemoViewController.diffLineCount) lines · trace ON (category Transcript2Perf)"
+            )
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+            .font(.callout)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(.separator, lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.18), radius: 8, y: 2)
+    }
 }

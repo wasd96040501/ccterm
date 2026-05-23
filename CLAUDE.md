@@ -209,7 +209,7 @@ appLog(.info, "SessionRuntime", "send() queued — status=\(status)")
 | `.warning` | Recoverable anomalies |
 | `.error` | Failures that affect features |
 
-- Category = class name without module prefix (`"SessionRuntime"`, `"ChatHistoryView"`).
+- Category = class name without module prefix (`"SessionRuntime"`, `"TranscriptDetailVC"`).
 - Never log secrets (tokens, passwords, API keys).
 - Live tail: Window → Logs (⌘⇧L). Also mirrored to `os.Logger`, visible in Console.app for history.
 

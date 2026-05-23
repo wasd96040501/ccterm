@@ -52,11 +52,16 @@ struct InputBarChrome: View {
                 directory: session.cwd,
                 additionalDirs: session.additionalDirectories,
                 pluginDirs: session.pluginDirectories,
-                // Chat-mode passes the live list so the rule short-circuits
-                // the temp-CLI fetch. Compose-mode leaves the array empty
-                // until promotion — that's the signal for `nil` here,
-                // routing through the prewarmed store cache instead.
-                knownSlashCommands: session.hasRecord ? session.slashCommands : nil,
+                // Live-list shortcut: once the CLI's `initialize` response
+                // has populated `session.slashCommands`, pass that list
+                // directly so the rule's provider skips the temp-CLI
+                // fetch. Until then — compose mode (no runtime yet) and
+                // chat mode in the brief window between session attach
+                // and `adopt(Init)` — leave this `nil` so the rule falls
+                // back to the per-cwd `SlashCommandStore` cache, which
+                // the same view's `.task(id: prewarmKey)` is already
+                // warming.
+                knownSlashCommands: session.slashCommands.isEmpty ? nil : session.slashCommands,
                 draftKey: draftKey
             )
             InputBarSessionChrome(session: session)

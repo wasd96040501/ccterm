@@ -294,6 +294,7 @@ struct UserBubbleLayout: @unchecked Sendable {
         let metrics = self.lineMetrics
         let totalLength = lines.reduce(0) { $0 + CTLineGetStringRange($1).length }
         let source = fullText as NSString
+        let attributed = NSAttributedString(string: fullText)
         let full = SelectionRange(
             start: .text(char: 0), end: .text(char: totalLength))
 
@@ -326,7 +327,15 @@ struct UserBubbleLayout: @unchecked Sendable {
                 guard hi > lo, hi <= source.length else { return "" }
                 return source.substring(with: NSRange(location: lo, length: hi - lo))
             },
-            wordBoundary: { _ in nil },
+            wordBoundary: { p in
+                guard case .text(let i) = p, attributed.length > 0
+                else { return nil }
+                let clamped = max(0, min(i, attributed.length - 1))
+                let word = attributed.doubleClick(at: clamped)
+                return SelectionRange(
+                    start: .text(char: word.location),
+                    end: .text(char: word.location + word.length))
+            },
             searchableRegions: {
                 // Decision A: only the visible (non-truncated) prefix
                 // participates in search — search range == selection

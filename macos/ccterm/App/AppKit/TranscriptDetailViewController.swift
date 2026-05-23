@@ -47,6 +47,13 @@ final class TranscriptDetailViewController: NSViewController {
     /// selected session's controller changes; nil for archive /
     /// demo branches.
     private var transcriptScroll: Transcript2ScrollView?
+    /// AppKit-native sheet presenter for the transcript controller's
+    /// `pendingUserBubbleSheet` / `pendingImagePreview` request
+    /// fields. Replaces the SwiftUI `.sheet(item:)` bindings the old
+    /// `NativeTranscript2View` carried. Re-instantiated per session
+    /// attach (same lifecycle as `transcriptScroll`); nil for
+    /// archive / demo branches (those VCs own their own presenter).
+    private var transcriptSheetPresenter: Transcript2SheetPresenter?
     /// Hosted SwiftUI overlays. All three are added to `view` once and
     /// stay mounted for the lifetime of the VC — the SwiftUI content
     /// they render reads from `model` and reactively switches form.
@@ -280,11 +287,16 @@ final class TranscriptDetailViewController: NSViewController {
     private func rebuildBackingContent() {
         let sid = model.selectedSessionId
 
-        // Side branch path (archive / demo views).
-        let sideBranch = sideBranchView(for: sid)
-        if sideBranch != nil {
+        // Side branch path (archive / demo views). Two variants — a
+        // SwiftUI surface hosted via `NSHostingController`, or a
+        // pre-built AppKit `NSViewController`. Demos that mount their
+        // own transcript take the VC path so the canonical
+        // make → addSubview → layoutSubtreeIfNeeded → bindData attach
+        // pattern can run in AppKit's source phase, same as the
+        // production transcript below.
+        if let sideBranch = sideBranchContent(for: sid) {
             tearDownTranscript()
-            mountSideBranch(sideBranch!, key: sid ?? "")
+            mountSideBranch(sideBranch)
             return
         }
         tearDownSideBranch()
@@ -296,42 +308,58 @@ final class TranscriptDetailViewController: NSViewController {
         attachSession(active)
     }
 
-    private func sideBranchView(for sid: String?) -> AnyView? {
+    private enum SideBranchContent {
+        case swiftUI(AnyView)
+        case viewController(NSViewController)
+    }
+
+    private func sideBranchContent(for sid: String?) -> SideBranchContent? {
         guard let sid else { return nil }
         if sid == SidebarSentinel.archive {
-            return AnyView(
-                ArchiveView(onUnarchive: { [weak self] resumeSid in
-                    self?.model.selectedSessionId = resumeSid
-                })
-                .environment(sessionManager)
-                .environment(recentProjects)
-                .environment(inputDraftStore)
-                .environment(\.syntaxEngine, searchEngine)
-                .environment(searchBus)
-                .environment(notifications)
-            )
+            return .swiftUI(
+                AnyView(
+                    ArchiveView(onUnarchive: { [weak self] resumeSid in
+                        self?.model.selectedSessionId = resumeSid
+                    })
+                    .environment(sessionManager)
+                    .environment(recentProjects)
+                    .environment(inputDraftStore)
+                    .environment(\.syntaxEngine, searchEngine)
+                    .environment(searchBus)
+                    .environment(notifications)
+                ))
         }
         #if DEBUG
         switch sid {
         case SidebarSentinel.transcriptDemo:
-            return AnyView(injectingEnvironment(TranscriptDemoView()))
+            return .viewController(
+                TranscriptDemoViewController(syntaxEngine: searchEngine))
         case SidebarSentinel.transcriptStress:
-            return AnyView(injectingEnvironment(TranscriptStressView()))
+            return .viewController(
+                TranscriptStressViewController(syntaxEngine: searchEngine))
         case SidebarSentinel.transcriptPerf:
-            return AnyView(injectingEnvironment(TranscriptPerfDemoView()))
+            return .viewController(
+                TranscriptPerfDemoViewController(syntaxEngine: searchEngine))
         case SidebarSentinel.permissionCardsDemo:
-            return AnyView(injectingEnvironment(PermissionCardsDemoView()))
+            return .swiftUI(AnyView(injectingEnvironment(PermissionCardsDemoView())))
         case SidebarSentinel.permissionSessionDemo:
-            return AnyView(injectingEnvironment(PermissionSessionDemoView()))
+            return .viewController(
+                PermissionSessionDemoViewController(syntaxEngine: searchEngine))
         default: break
         }
         #endif
         return nil
     }
 
-    private func mountSideBranch(_ content: AnyView, key: String) {
+    private func mountSideBranch(_ content: SideBranchContent) {
         tearDownSideBranch()
-        let host = NSHostingController(rootView: content)
+        let host: NSViewController
+        switch content {
+        case .swiftUI(let anyView):
+            host = NSHostingController(rootView: anyView)
+        case .viewController(let vc):
+            host = vc
+        }
         host.view.translatesAutoresizingMaskIntoConstraints = false
         addChild(host)
         // Insert at index 0 so the side-branch view sits under the
@@ -374,11 +402,13 @@ final class TranscriptDetailViewController: NSViewController {
             scroll.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         // Pull layout into the current call stack so the table reaches
-        // its real width before any downstream work (history load, scroll
-        // anchor, setLoading) runs. Without this, attachSession would
-        // return with width=0 and every "first tile" piece downstream
-        // would have to defer through `tableFrameDidChange` + async hops.
+        // its real width before we bind the dataSource — with the bind
+        // deferred until now, AppKit has no rows to query and the
+        // autolayout pass settles without any `heightOfRow` queries at
+        // transient widths. The downstream `scrollToTail` and history
+        // load can then run in the same source phase.
         view.layoutSubtreeIfNeeded()
+        TranscriptScrollViewFactory.bindData(scroll, controller: session.controller)
         transcriptScroll = scroll
         currentSession = session
 
@@ -390,6 +420,16 @@ final class TranscriptDetailViewController: NSViewController {
 
         // Attach syntax engine (idempotent).
         session.controller.attachSyntaxEngine(searchEngine)
+
+        // Sheet presenter is per-attach: it captures `view` (for
+        // `window`) and the session's controller. The presenter
+        // observes `pendingUserBubbleSheet` / `pendingImagePreview`
+        // and presents AppKit-native sheets via
+        // `view.window?.beginSheet`. Replaces the SwiftUI
+        // `.sheet(item:)` bindings the old `NativeTranscript2View`
+        // carried.
+        transcriptSheetPresenter = Transcript2SheetPresenter(
+            controller: session.controller, hostView: view)
 
         // Kick history load + initial running pill sync (mirrors
         // `ChatHistoryView.task(id: sessionId)`).
@@ -413,6 +453,8 @@ final class TranscriptDetailViewController: NSViewController {
         }
         transcriptScroll = nil
         currentSession = nil
+        transcriptSheetPresenter?.stop()
+        transcriptSheetPresenter = nil
         runningObservationTask?.cancel()
         runningObservationTask = nil
     }

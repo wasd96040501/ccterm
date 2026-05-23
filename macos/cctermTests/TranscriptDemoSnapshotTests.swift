@@ -5,19 +5,16 @@ import XCTest
 @testable import ccterm
 
 /// Validates the `ViewSnapshot` scaffold by rendering the real
-/// `TranscriptDemoView` — the same view RootView2 mounts when the
-/// "Transcript demo" sidebar item is selected — and asserting the
-/// resulting bitmap has plausible content.
+/// `TranscriptDemoViewController` — the same VC the side-branch
+/// mount path inserts when the user picks the "Transcript Demo"
+/// sidebar item — and asserting the resulting bitmap has plausible
+/// content.
 ///
-/// SwiftUI's `.task` modifier does not fire reliably inside an
-/// offscreen hosted-test window (AppKit's appearance signals are
-/// gated by visibility), so we use the supported test seam:
-/// `TranscriptDemoView`'s `init(controller:)` overload accepts a
-/// pre-seeded `Transcript2Controller`. The seeding payload
-/// (`TranscriptDemoView.initialBlocks` + the running-tool status
-/// puts) is identical to what the production `.task` closure would
-/// have installed — so the snapshot reflects the same view the user
-/// sees after the demo's normal cold-start.
+/// The VC's seed step is gated on `controller.blockCount == 0`, so
+/// the test pre-seeds a controller (matching the live demo's seed
+/// payload byte-for-byte: `TranscriptDemoViewController.initialBlocks`
+/// + the running-tool status puts) and passes it to the VC via the
+/// test-seam init.
 @MainActor
 final class TranscriptDemoSnapshotTests: XCTestCase {
 
@@ -27,22 +24,21 @@ final class TranscriptDemoSnapshotTests: XCTestCase {
 
     func testTranscriptDemoSnapshot() throws {
         let controller = Transcript2Controller()
-        controller.setHistory(TranscriptDemoView.initialBlocks)
+        controller.setHistory(TranscriptDemoViewController.initialBlocks)
         controller.setToolStatus(
-            id: TranscriptDemoView.runningGroupBlockId, status: .running)
+            id: TranscriptDemoViewController.runningGroupBlockId, status: .running)
         controller.setToolStatus(
-            id: TranscriptDemoView.runningReadChildId, status: .completed)
+            id: TranscriptDemoViewController.runningReadChildId, status: .completed)
         controller.setToolStatus(
-            id: TranscriptDemoView.runningGrepChildId, status: .completed)
+            id: TranscriptDemoViewController.runningGrepChildId, status: .completed)
         controller.setToolStatus(
-            id: TranscriptDemoView.runningBashChildId, status: .running)
+            id: TranscriptDemoViewController.runningBashChildId, status: .running)
 
-        let view =
-            TranscriptDemoView(controller: controller)
-            .environment(\.syntaxEngine, SyntaxHighlightEngine())
+        let vc = TranscriptDemoViewController(
+            controller: controller, syntaxEngine: SyntaxHighlightEngine())
 
-        let image = ViewSnapshot.render(
-            view, size: CGSize(width: 720, height: 720), settle: 0.6)
+        let image = ViewSnapshot.renderViewController(
+            vc, size: CGSize(width: 720, height: 720), settle: 0.6)
         let url = ViewSnapshot.writePNG(image, name: "TranscriptDemoView")
 
         let attachment = XCTAttachment(contentsOfFile: url)

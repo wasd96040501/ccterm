@@ -6,6 +6,18 @@ import Observation
 @Observable
 final class CompletionViewModel {
 
+    /// macOS 26 SDK workaround — same posture as `Session.deinit` /
+    /// `SessionRuntime.deinit`. The default `@MainActor` class deinit
+    /// would route through `swift_task_deinitOnExecutorImpl`, which
+    /// the stricter Xcode 26 Concurrency runtime traps on for any
+    /// `@Observable @MainActor` class with `TaskLocal`-touching
+    /// internals. `nonisolated` skips the executor-hop path. Hit by
+    /// the host-aware reentry test: tearing down a
+    /// `TranscriptDetailViewController` deallocates the input bar's
+    /// hosted SwiftUI graph, which tears down the per-session
+    /// `CompletionViewModel` from a Task continuation.
+    nonisolated deinit {}
+
     // MARK: - Public State
 
     enum EmptyReason {

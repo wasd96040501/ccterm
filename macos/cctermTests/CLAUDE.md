@@ -151,13 +151,129 @@ them: `make test-unit FILTER=<class>` then `open <png>`.
 
 | View | Test class | PNG |
 |---|---|---|
-| `TranscriptDemoView` ([source](../ccterm/Content/TranscriptDemo/TranscriptDemoView.swift)) | `TranscriptDemoSnapshotTests` ([source](TranscriptDemoSnapshotTests.swift)) | `/tmp/ccterm-screenshots/TranscriptDemoView.png` |
+| `TranscriptDemoViewController` ([source](../ccterm/Content/TranscriptDemo/TranscriptDemoViewController.swift)) | `TranscriptDemoSnapshotTests` ([source](TranscriptDemoSnapshotTests.swift)) | `/tmp/ccterm-screenshots/TranscriptDemoView.png` |
 | `SidebarViewController` source-list sidebar + per-row state indicators ([source](../ccterm/Sidebar/SidebarViewController.swift)) | `SidebarView2SnapshotTests` ([source](SidebarView2SnapshotTests.swift)) | `/tmp/ccterm-screenshots/SidebarView2.png` |
 | `NewSessionConfigurator` three-column compose card ([source](../ccterm/Content/Chat/NewSessionConfigurator.swift)) | `NewSessionConfiguratorSnapshotTests` ([source](NewSessionConfiguratorSnapshotTests.swift)) | `/tmp/ccterm-screenshots/NewSessionConfigurator.png` + `…-empty.png` |
 | `DiffView` standalone diff card (modified + new file) ([source](../ccterm/Components/DiffView.swift)) | `DiffViewSnapshotTests` ([source](DiffViewSnapshotTests.swift)) | `/tmp/ccterm-screenshots/DiffView.png` |
+| Transcript attach sequence — first-frame scroll origin / row geometry ([source](../ccterm/Content/Chat/NativeTranscript2/AppKit/TranscriptScrollViewFactory.swift)) | `TranscriptScrollFirstFrameSnapshotTests` ([source](TranscriptScrollFirstFrameSnapshotTests.swift)) | `/tmp/ccterm-screenshots/TranscriptScrollFirstFrame-Production.png` + `…-NoNote.png` |
+| Transcript attach sequence — first **composited** frame on a live render pipeline (CADisplayLink + `CALayer.presentation()`) ([source](../ccterm/Content/Chat/NativeTranscript2/AppKit/TranscriptScrollViewFactory.swift)) | `TranscriptScrollLivePresentationSnapshotTests` ([source](TranscriptScrollLivePresentationSnapshotTests.swift)) | none — text-only timeline attachment |
 
 If your view isn't in this table, jump to [I want to add a snapshot
 test for a new view](#i-want-to-add-a-snapshot-test-for-a-new-view).
+
+### Measurement probes (NOT snapshots — CI merge gate)
+
+Some tests use the same offscreen-window scaffolding as snapshots —
+they mount a real view, drive a real attach sequence, sample state —
+but they're **assertion-driven property tests**, not PNGs for human
+review. They have to run on CI as merge gates. **Do not give them the
+`*SnapshotTests.swift` filename suffix** — `scripts/test-unit.sh`
+auto-skips that pattern from the default suite.
+
+Inventory:
+
+| File | What it asserts |
+|---|---|
+| [`TranscriptReentryLayoutCacheTests.swift`](TranscriptReentryLayoutCacheTests.swift) | The bare `TranscriptScrollViewFactory.make → addSubview → layoutSubtreeIfNeeded → bindData → scrollToTail` sequence typesets each block at exactly one width inside one source-phase tick. |
+| [`TranscriptHostReentryLayoutCacheTests.swift`](TranscriptHostReentryLayoutCacheTests.swift) | Same property, but driven through real hosts: the AppKit demo VC (`TranscriptDemoViewController`) and the production sidebar-switch path (`TranscriptDetailViewController.attachSession` on a `MainSelectionModel.selectedSessionId` flip). Closes the gap between the factory test and host orchestration. |
+
+When you add a new test that's "drive a real view + assert on a property at the boundary," follow these naming rules:
+
+- Filename: `<Subject>Tests.swift` (e.g. `TranscriptHostReentryLayoutCacheTests.swift`) — no `Snapshot` suffix.
+- Class name must match the filename (XCTest's runtime discovery + the skip-list script both key off the file name).
+- Attachment: text reports via `XCTAttachment(string:)` are fine; a PNG is fine if it helps debugging. The test passes / fails on `XCTAssert`, not on the human eyeball.
+- Don't reuse the snapshot test infrastructure's `ViewSnapshot.render` if your test only needs to assert on model state — that helper carries a long deliberate runloop drain that you usually don't want.
+
+### Probing AppKit attach sequences offscreen
+
+`TranscriptScrollFirstFrameSnapshotTests` is a different shape from the
+SwiftUI snapshot tests above and worth understanding before you write
+your own. It's a measurement harness: it drives the exact AppKit attach
+sequence used in production (`TranscriptScrollViewFactory.make` →
+`addSubview` + constraints → `view.layoutSubtreeIfNeeded()` →
+`TranscriptScrollViewFactory.bindData` → `controller.scrollToTail()`)
+inside an offscreen window, and samples state —
+`clip.bounds.origin.y`, `documentView.frame.height`, `numberOfRows`,
+`rect(ofRow:)` — at four named transition points: after factory.make,
+after layoutSubtreeIfNeeded+bindData, after scrollToTail (still source
+phase), and after one runloop drain. Each measurement is attached to the
+xcresult as a text report alongside a final-frame PNG.
+
+What this scaffold is good for:
+
+- Asserting on **model state** that a one-tick visual glitch should
+  show up in — clip origin, document height, row geometry — without
+  launching the app.
+- A/B'ing two variants of the same attach sequence: one with the
+  production factory, one with a duplicated factory-minus-some-call.
+- Verifying tick-model claims — `testTickModelLayoutDoesForceRowTileOnFrameChange`
+  examines whether `layoutSubtreeIfNeeded` cascades into NSTableView's
+  tile (it does, but only when `dataSource` is bound — the production
+  factory now defers that bind, which is exactly the point this test
+  is calibrated against).
+
+What it **cannot** observe:
+
+- **Live-window render-pipeline timing.** The PNG comes from
+  `bitmapImageRepForCachingDisplay`, which is a synchronous re-draw,
+  not an actual frame the render server composited. If the bug is
+  "the rendered first frame on a live window paints stale because the
+  prior CATransaction commit was already in flight," this scaffold
+  will pass while the live app still glitches. For that class of bug,
+  reach for the live-presentation scaffold below.
+- Anything that needs a key window / first responder / cursor flashing
+  — the test window has `alphaValue = 0.01` and goes through
+  `ccterm_orderFrontForTesting()` which skips the responder activation.
+
+### Probing the live render pipeline — display-link + `CALayer.presentation()`
+
+`TranscriptScrollLivePresentationSnapshotTests` is the next rung up.
+Same fixture as the offscreen scaffold above, plus a `CADisplayLink`
+attached to `NSScreen.main` that samples
+`(clip.bounds.origin.y, clip.layer?.presentation()?.bounds.origin.y)`
+on every screen refresh tick for ~30 frames. The first sample where
+`presentation` is non-nil is the first frame the render server actually
+composited — its origin is what a user would have seen.
+
+The display link runs off `NSScreen.main` (not `NSView.displayLink`) on
+purpose: the view's own link only fires when the view is visible on a
+screen, but the test window is at `(-30_000, -30_000)` with `alphaValue
+= 0.01`. The screen-level link fires unconditionally at the screen's
+refresh rate, which is what we want — we're sampling state every
+refresh tick, independent of whether the render server picked our
+specific window for compositing. The flush probe (`testCATransactionFlushPresentationTimeline`
+in the sibling file) already proved that the render server DOES composite
+this window — `presentation()` returns the post-flush value at tail.
+
+This scaffold confirms the **content layer** lands at tail on the first
+composited frame — `nil → tail` on consecutive refresh ticks, no
+intermediate `top-clamp` frame. That's necessary but not sufficient: an
+earlier investigation chased a content-origin hypothesis here and missed
+the real bug, which lived in
+`NSScrollView.verticalScroller.doubleValue` (the scroller-knob
+position, *not* the clip origin). The lesson is general: when a
+user-reported visual glitch doesn't reproduce here, expand the sampled
+dimensions before declaring the bug falsified. See
+`TranscriptScrollFirstFrameSnapshotTests.testScrollerKnobLandsAtTailAfterScrollToTail`
+for the scroller-knob regression gate that caught it.
+
+What this scaffold **still can't** observe:
+
+- **NSScrollView non-content state.** The scroller's `doubleValue` /
+  `knobProportion` / fade-in alpha are separate dimensions; sample them
+  explicitly if a glitch is reported in the chrome (the sibling test
+  above does this).
+- **Production sibling-view interactions.** In the real app the same
+  attach tick also lays out the top scrim, bottom scrim, and compose
+  host (all `NSHostingView`s). Any of those committing on the same
+  CATransaction could perturb timing in ways the bare-scroll harness
+  doesn't reproduce. To rule this out you would need to host
+  `TranscriptDetailViewController` directly in a test window — feasible
+  but a larger lift.
+- **WindowServer scheduling under load.** The render server can delay
+  compositing a window if its parent process is busy on the GPU /
+  another window is occluding etc. None of those reproduce in a quiet
+  test environment.
 
 ### Run policy — opt-in only
 

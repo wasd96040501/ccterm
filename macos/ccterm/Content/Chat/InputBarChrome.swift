@@ -22,7 +22,7 @@ struct InputBarChrome: View {
 
     /// Resolved synchronously per render. `prepareDraftSession` is
     /// idempotent get-or-create (pure in-memory), and returns the same
-    /// instance `ChatHistoryView` holds.
+    /// instance `TranscriptDetailViewController` holds.
     private var session: Session {
         manager.prepareDraftSession(sessionId)
     }

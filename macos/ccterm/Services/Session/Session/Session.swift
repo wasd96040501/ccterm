@@ -31,15 +31,16 @@ import Observation
 /// (`Transcript2EntryBridge`) — and wires the bridge to the runtime
 /// at session creation / promotion. This makes the bridge a continuous
 /// consumer of `runtime.onMessagesChange`: live CLI events flow into
-/// the controller's block list **even when no `ChatHistoryView` is
+/// the controller's block list **even when no transcript view is
 /// mounted**, so the user switching the sidebar to another session
 /// doesn't pause renderer-side processing for the session they left.
 /// `TranscriptDetailViewController` binds the controller's `coordinator`
 /// (which has a `weak NSTableView`) to a fresh `NSTableView` on each
 /// mount via `TranscriptScrollViewFactory.make`; when no table is bound,
 /// the coordinator still updates its `blocks` array and skips AppKit
-/// calls — a re-attach syncs the new table to the accumulated state
-/// via the factory's `noteNumberOfRowsChanged` call.
+/// calls — a re-attach picks up the accumulated state through the host's
+/// `view.layoutSubtreeIfNeeded()`, which sizes the table from `.zero`
+/// to its real frame and drives `NSTableView.tile()` inline.
 @Observable
 @MainActor
 final class Session {
@@ -67,9 +68,10 @@ final class Session {
     // MARK: - Render-side state (continuous lifetime)
 
     /// Imperative transcript controller. Lives as long as the session
-    /// does — survives `ChatHistoryView` mount/dismount cycles. Views
-    /// read `session.controller` and hand it to `NativeTranscript2View`;
-    /// they never construct their own.
+    /// does — survives transcript-view mount/dismount cycles. Views
+    /// read `session.controller` and hand it to the transcript host
+    /// (production: `TranscriptDetailViewController`); they never
+    /// construct their own.
     let controller: Transcript2Controller
 
     /// Renderer-side translator: subscribes to the runtime's

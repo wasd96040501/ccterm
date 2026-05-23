@@ -112,8 +112,8 @@ final class SidebarView2SnapshotTests: XCTestCase {
             sessionManager: manager,
             groupOrderStore: groupOrderStore)
 
-        let image = ViewSnapshot.render(
-            controller: controller,
+        let image = ViewSnapshot.renderViewController(
+            controller,
             size: CGSize(width: 260, height: 360),
             settle: 0.8)
         let url = ViewSnapshot.writePNG(image, name: "SidebarView2")

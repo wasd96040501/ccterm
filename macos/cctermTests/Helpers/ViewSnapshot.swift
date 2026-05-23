@@ -93,14 +93,15 @@ enum ViewSnapshot {
         return image
     }
 
-    /// Render an `NSViewController` at `size` and return the resulting
-    /// `NSImage`. Mirrors the SwiftUI `render` above — the controller
-    /// is parked in a transparent, off-screen `NSWindow`, the main run
-    /// loop is drained, then the controller's view is cached into a
-    /// bitmap. Use for AppKit-rooted screens (e.g. the sidebar).
+    /// Render an AppKit `NSViewController` at `size` and return the
+    /// resulting `NSImage`. Parallel to `render(_:size:settle:)` but
+    /// for AppKit-rooted hosts (demo / transcript VCs, the sidebar
+    /// outline view) that don't go through `NSHostingController`. Same
+    /// offscreen-window + alpha-0.01 + ccterm_orderFrontForTesting
+    /// scaffolding.
     @MainActor
-    static func render(
-        controller: NSViewController,
+    static func renderViewController(
+        _ controller: NSViewController,
         size: CGSize,
         settle: TimeInterval = 0.4
     ) -> NSImage {

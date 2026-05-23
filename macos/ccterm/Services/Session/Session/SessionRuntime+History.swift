@@ -45,7 +45,7 @@ extension SessionRuntime {
         case .loadingTail, .tailLoaded, .loaded:
             // In-flight or already done — no-op. The bridge is wired to
             // `runtime.onMessagesChange` for the session's full lifetime
-            // (lives on `Session`, not on `ChatHistoryView`), so live
+            // (lives on `Session`, not on the transcript view), so live
             // events have been streaming into the controller all along
             // and any in-flight Phase A/B task will still fire its sink
             // when it completes. A re-entered `.loaded` session needs no

@@ -70,16 +70,18 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// observers on `blockCount` see the new value.
     var onBlockCountChanged: ((Int) -> Void)?
 
-    /// Set by `Transcript2Controller` to forward chevron taps to the
-    /// SwiftUI-owned sheet binding. The cell's mouseDown handler resolves
-    /// the chevron hit, looks up the source `Block.Kind.userBubble(text:_:)`,
-    /// and fires this — keeping the cross-layer signal narrow (one block
-    /// id + the original text) so neither side reaches into the other's
+    /// Set by `Transcript2Controller` to forward chevron taps onto its
+    /// `pendingUserBubbleSheet` field, which
+    /// `Transcript2SheetPresenter` observes and turns into an AppKit
+    /// sheet. The cell's mouseDown handler resolves the chevron hit,
+    /// looks up the source `Block.Kind.userBubble(text:_:)`, and fires
+    /// this — keeping the cross-layer signal narrow (one block id +
+    /// the original text) so neither side reaches into the other's
     /// internals.
     var onUserBubbleSheetRequested: ((UUID, String) -> Void)?
 
     /// Set by `Transcript2Controller` to forward an attachment-chip
-    /// click to the SwiftUI-owned image preview sheet. The cell's
+    /// click onto its `pendingImagePreview` field. The cell's
     /// mouseDown handler resolves the chip hit via
     /// `HitAction.openImagePreview(NSImage)` and fires this with the
     /// same `NSImage` instance the layout holds — narrow contract,
@@ -169,6 +171,15 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let width: CGFloat
         let layout: RowLayout
     }
+
+    #if DEBUG
+    /// Test-only observer: fires on every effective write into `layoutCache`,
+    /// from both the batch path (`cacheLayouts`) and the lazy path
+    /// (`layout(for:width:)`). Used by `TranscriptReentryLayoutCacheTests` to
+    /// detect same-id re-layouts at different widths inside one source phase.
+    /// Production never sets this; Release builds don't compile the hook.
+    var onLayoutCacheWriteForDebug: ((UUID, CGFloat) -> Void)?
+    #endif
 
     /// Tracks the `tableFrameDidChange` post-resize layout refill task.
     /// Superseded only by the next `refillLayoutCache`. `applyInBackground`'s
@@ -567,6 +578,9 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let target = rect.minY - scrollView.contentInsets.top
         scrollView.contentView.scroll(
             to: NSPoint(x: scrollView.contentView.bounds.origin.x, y: target))
+        // See note in `scrollRowToBottom` — `NSClipView.scroll(to:)` does
+        // not auto-update the enclosing scroll view's scrollers.
+        scrollView.reflectScrolledClipView(scrollView.contentView)
     }
 
     /// Scroll so `id`'s bottom aligns with the visible content area's bottom
@@ -594,6 +608,12 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let target = max(-scrollView.contentInsets.top, raw)
         scrollView.contentView.scroll(
             to: NSPoint(x: scrollView.contentView.bounds.origin.x, y: target))
+        // `NSClipView.scroll(to:)` writes the bounds origin but does NOT
+        // auto-call `reflectScrolledClipView(_:)`. Without this follow-up
+        // the enclosing scroll view's scroller stays synced to the *prior*
+        // clip origin, so the thumb flashes at the top while content is at
+        // the tail — visible on every populated-session re-attach.
+        scrollView.reflectScrolledClipView(scrollView.contentView)
     }
 
     // MARK: - Layout cache
@@ -613,6 +633,9 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         for (id, layout) in entries {
             if layoutCache[id]?.width == width { continue }
             layoutCache[id] = CachedLayout(width: width, layout: layout)
+            #if DEBUG
+            onLayoutCacheWriteForDebug?(id, width)
+            #endif
         }
     }
 
@@ -636,6 +659,9 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             folds: foldStates,
             statuses: statusStates)
         layoutCache[block.id] = CachedLayout(width: width, layout: layout)
+        #if DEBUG
+        onLayoutCacheWriteForDebug?(block.id, width)
+        #endif
         return layout
     }
 

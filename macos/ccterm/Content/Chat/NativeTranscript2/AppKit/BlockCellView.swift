@@ -651,18 +651,22 @@ final class BlockCellView: NSView {
             case .openURL(let url):
                 NSWorkspace.shared.open(url)
             case .openUserBubbleSheet:
-                // The only well-defined exit point from AppKit-internal
-                // interactions to SwiftUI, since `.sheet(item:)` lives
-                // on the SwiftUI side. Selection-drag continues to stay
-                // inside `Transcript2SelectionCoordinator`.
+                // Routes through the coordinator's
+                // `requestUserBubbleSheet`, which sets
+                // `controller.pendingUserBubbleSheet`. The host VC's
+                // `Transcript2SheetPresenter` observes that field and
+                // opens an AppKit sheet via
+                // `view.window?.beginSheet`. Selection-drag continues
+                // to stay inside `Transcript2SelectionCoordinator`.
                 if let id = blockId {
                     coordinator?.requestUserBubbleSheet(id: id)
                 }
             case .openImagePreview(let image):
-                // Same SwiftUI escape-hatch as `openUserBubbleSheet` —
+                // Same observation contract as `openUserBubbleSheet` —
                 // hand the chip's `NSImage` to the coordinator, which
                 // wakes the bound `pendingImagePreview` field on the
-                // controller and lets `.sheet(item:)` present.
+                // controller; the host's
+                // `Transcript2SheetPresenter` opens the modal.
                 coordinator?.requestImagePreview(image: image)
             case .copy(let id, let text):
                 handleCopy(id: id, text: text)

@@ -87,29 +87,12 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
 
     /// Whether the current sidebar selection is a real history session,
     /// as opposed to one of the sentinel tabs (New Session / Archive /
-    /// DEBUG demos). Listed explicitly against `SidebarView2`'s
-    /// constants so adding a new tab requires a deliberate update here.
+    /// DEBUG demos). Sentinel set lives on `SidebarSentinel` so adding
+    /// a new tab requires a deliberate update there.
     private var isHistorySession: Bool {
         guard let sid = model.selectedSessionId else { return false }
-        return !Self.sentinelTags.contains(sid)
+        return !SidebarSentinel.all.contains(sid)
     }
-
-    private static let sentinelTags: Set<String> = {
-        var tags: Set<String> = [
-            SidebarView2.newSessionTag,
-            SidebarView2.archiveTag,
-        ]
-        #if DEBUG
-        tags.formUnion([
-            SidebarView2.transcriptDemoTag,
-            SidebarView2.transcriptStressTag,
-            SidebarView2.transcriptPerfTag,
-            SidebarView2.permissionCardsDemoTag,
-            SidebarView2.permissionSessionDemoTag,
-        ])
-        #endif
-        return tags
-    }()
 
     /// Insert or remove the project-chip toolbar item to match the
     /// current selection. NSToolbar caches the hosted SwiftUI's

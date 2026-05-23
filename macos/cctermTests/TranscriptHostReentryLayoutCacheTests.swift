@@ -1,30 +1,73 @@
 import AppKit
+import Observation
 import SwiftUI
 import XCTest
 
 @testable import ccterm
 
-/// Host-driven companion to `TranscriptReentryLayoutCacheTests`.
+/// Merge gate for the transcript-attach orchestration on the
+/// **production session-switch path**. Sibling to
+/// `TranscriptReentryLayoutCacheTests` (which guards the bare factory
+/// API) — together they enforce a load-bearing performance invariant:
 ///
-/// The factory test asserts the "single source-phase tick = single
-/// width per id" property against the bare attach sequence
-/// (`TranscriptScrollViewFactory.make → addSubview →
-/// layoutSubtreeIfNeeded → bindData → scrollToTail`). This file
-/// asserts the same property against real hosts that orchestrate that
-/// sequence:
+///     One source-phase tick must typeset each block at exactly one width.
 ///
-/// 1. `TranscriptDemoViewController` — the new AppKit demo VC that
-///    replaces the deleted SwiftUI bridge. Catches a regression where
-///    the demo VC reorders the attach steps relative to production.
-/// 2. `TranscriptDetailViewController.attachSession` — production
-///    sidebar-switch path. Catches a regression where flipping
-///    `MainSelectionModel.selectedSessionId` produces multiple-width
-///    typesetting inside the source phase that runs `tearDownTranscript
-///    + attachSession` for the new session.
+/// ## Why this matters
 ///
-/// Same probe (`Coordinator.onLayoutCacheWriteForDebug`) as the
-/// factory test. Not a snapshot — text-only attachment — so it runs on
-/// the default CI suite as a merge gate.
+/// On re-entry into a populated session, the source phase that runs
+/// `tearDownTranscript + attachSession` mounts a fresh
+/// `Transcript2ScrollView`. If the dataSource is bound while the
+/// autolayout cascade is still in flight, `NSTableView.tile()` fires
+/// `heightOfRow` queries at every intermediate width the table visits —
+/// 100pt column default (clamped to `BlockStyle.minLayoutWidth = 460`),
+/// the window's real width (720), and the autolayout solver's overshoot
+/// at `maxLayoutWidth = 780`. Each transient width re-typesets *every*
+/// block via Core Text, blows out `layoutCache`, and visibly stutters
+/// the first frame on every re-entry. The fix that #198 + #205 + #206
+/// landed — `make` returns an unbound shell, the host runs
+/// `layoutSubtreeIfNeeded` to settle geometry, then `bindData` wires
+/// the dataSource — keeps every cache entry at the single settled width.
+///
+/// ## What gets caught
+///
+/// `TranscriptReentryLayoutCacheTests` (factory only) catches a
+/// regression INSIDE `TranscriptScrollViewFactory`. THIS file catches
+/// regressions in the **caller** orchestration — anything that breaks
+/// the contract documented on `TranscriptScrollViewFactory`:
+///
+///   * **Factory-internal regression** (e.g. `make` binds dataSource
+///     eagerly): factory test catches; this test also catches as a
+///     double-check via the production path.
+///   * **Host reorders steps** (e.g. `attachSession` calls `bindData`
+///     before `view.layoutSubtreeIfNeeded()`): only this test catches —
+///     the factory itself is unchanged, but the caller violates the
+///     order contract.
+///   * **Host drops the settle step** (e.g. `view.layoutSubtreeIfNeeded()`
+///     deleted, relying on a later cascade): only this test catches —
+///     same shape as above, surfaces as `distinctWidths=[460, 720, 780]`.
+///   * **New attach-time work that triggers a tile** (e.g. someone
+///     wires a sync `setHistory` or `scrollToTail` BEFORE the host's
+///     `layoutSubtreeIfNeeded`): this test catches it as multi-width
+///     writes per id.
+///
+/// Each failure attaches a text report listing total writes, per-stage
+/// width breakdown, and the first ten offending block ids with the
+/// widths each was typeset at — diagnostic-rich enough that the PR
+/// reviewer can identify which call moved without reproducing locally.
+///
+/// ## Do not weaken this gate
+///
+/// File name has no `Snapshot` suffix on purpose — `test-unit.sh`
+/// auto-skips that pattern. This file runs on `make test-unit`
+/// (the CI merge gate). If you find yourself wanting to delete or
+/// `XCTSkip` this test because the fixture timing felt fragile, read
+/// the §"Fixture invariants" comments inside the test body first —
+/// the non-obvious bits (pre-sized container, `Task.sleep` +
+/// `drainMainLoop` alternation, sanity gates on min write count + max
+/// width) are each load-bearing for a specific reason documented at
+/// the call site. Removing any of them silently regresses the gate to
+/// "always green," which is exactly the failure mode this file's
+/// predecessor was in.
 @MainActor
 final class TranscriptHostReentryLayoutCacheTests: XCTestCase {
 
@@ -53,73 +96,16 @@ final class TranscriptHostReentryLayoutCacheTests: XCTestCase {
         let stage: String
     }
 
-    // MARK: - Demo VC
-
-    /// Drive `TranscriptDemoViewController` end-to-end (the
-    /// `loadView → viewDidLoad → mountTranscript` sequence). A demo VC
-    /// that calls `TranscriptScrollViewFactory.bindData` before its
-    /// host runs `layoutSubtreeIfNeeded` would typeset every block at
-    /// the column's default width (clamped to `minLayoutWidth = 460`)
-    /// AND at the final settled width — two distinct values in one
-    /// tick — and fail this test.
-    func testTranscriptDemoVCMountDoesNotRelayoutSameBlockAtMultipleWidthsInOneTick() throws {
-        let controller = Transcript2Controller()
-        controller.setHistory(makeBlocks())
-        XCTAssertEqual(controller.blockIds.count, Self.blockCount)
-        let coordinator = controller.coordinator
-
-        var writes: [Write] = []
-        var currentStage = "pre-mount"
-        coordinator.onLayoutCacheWriteForDebug = { id, width in
-            writes.append(Write(id: id, width: width, stage: currentStage))
-        }
-        defer { coordinator.onLayoutCacheWriteForDebug = nil }
-
-        let vc = TranscriptDemoViewController(controller: controller)
-
-        let window = NSWindow(
-            contentRect: NSRect(
-                origin: CGPoint(x: -30_000, y: -30_000),
-                size: Self.windowSize),
-            styleMask: [.borderless],
-            backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.alphaValue = 0.01
-
-        currentStage = "contentViewController"
-        window.contentViewController = vc
-        window.ccterm_orderFrontForTesting()
-
-        currentStage = "post-mount-layout"
-        vc.view.layoutSubtreeIfNeeded()
-
-        let oneTickWrites = writes
-
-        defer {
-            window.contentViewController = nil
-            window.close()
-        }
-
-        try assertSingleWidthPerId(
-            oneTickWrites,
-            label: "TranscriptDemoViewController mount")
-    }
-
-    // MARK: - Production sidebar switch
-
-    /// Drive the real production sidebar-switch path: a
-    /// `TranscriptDetailViewController` with two pre-seeded sessions
-    /// in an in-memory `SessionManager`. Mount at session 1, settle,
-    /// then flip `model.selectedSessionId` to session 2 and capture
-    /// the `layoutCache` writes the resulting
-    /// `tearDownTranscript + attachSession` source phase emits.
-    ///
-    /// If `attachSession` calls `bindData` before
-    /// `view.layoutSubtreeIfNeeded()`, or if anything inside the
-    /// re-attach (selection observation, sheet presenter, syntax
-    /// engine re-attach, history load) reorders the sequence, the
-    /// target session's blocks would be typeset at both an
-    /// intermediate width AND the final settled width — caught here.
+    /// End-to-end exercise of the production sidebar-switch path:
+    /// in-memory `SessionManager` with two pre-seeded sessions, mount
+    /// `TranscriptDetailViewController` on session 1, settle, flip
+    /// `MainSelectionModel.selectedSessionId` to session 2, drain.
+    /// The probe is installed on session 2's coordinator AFTER session
+    /// 1 settles, so it captures EXACTLY the writes produced by
+    /// `attachSession(sessionId2)`. Pass means every block typeset at
+    /// exactly one width (the settled 720); fail means the probe saw
+    /// `[460, 720]` or `[460, 720, 780]` for at least one id — the
+    /// signature pattern of an attach-order regression.
     func testSidebarSwitchDoesNotRelayoutSameBlockAtMultipleWidthsInOneTick() async throws {
         let repo = InMemorySessionRepository()
         let sessionId1 = UUID().uuidString
@@ -144,9 +130,6 @@ final class TranscriptHostReentryLayoutCacheTests: XCTestCase {
         session1.controller.setHistory(makeBlocks())
         session2.controller.setHistory(makeBlocks())
 
-        // Per-test UserDefaults / temp directory so parallel tests
-        // don't share state. The defaults suite is unique by UUID so
-        // it cannot collide.
         let defaultsSuite = "ccterm-host-reentry-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: defaultsSuite)!
         defer { defaults.removePersistentDomain(forName: defaultsSuite) }
@@ -161,10 +144,9 @@ final class TranscriptHostReentryLayoutCacheTests: XCTestCase {
         let inputDraftStore = InputDraftStore(directory: draftDir, debounceInterval: 0.05)
 
         let model = MainSelectionModel()
-        // Start at session 1 so the VC's initial
-        // handleSelectionChanged attaches to it cleanly. Default is
-        // `__new_session__` which would route to the compose UI
-        // instead.
+        // Start at session 1 so the VC's initial handleSelectionChanged
+        // attaches to it. The default `__new_session__` would route to
+        // the compose UI instead.
         model.selectedSessionId = sessionId1
 
         let vc = TranscriptDetailViewController(
@@ -184,16 +166,60 @@ final class TranscriptHostReentryLayoutCacheTests: XCTestCase {
             backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.alphaValue = 0.01
-        window.contentViewController = vc
+
+        // Fixture invariant #1 — pre-sized container.
+        //
+        // Mount via a pre-sized container, NOT via
+        // `window.contentViewController = vc`. On a borderless offscreen
+        // window the contentViewController setter does NOT autoresize
+        // vc.view to the window's content rect: vc.view stays at
+        // NSView()'s default zero frame, the table's column stays at
+        // its 100pt default, and the whole attach sequence runs at the
+        // clamped `BlockStyle.minLayoutWidth = 460` — meaning the
+        // 460→720 transition that the multi-width invariant is supposed
+        // to detect never gets crossed and the test passes regardless
+        // of regression. Mounting via constraints to a container that
+        // already has the real frame mirrors production's
+        // `TranscriptDetailViewController.mountSideBranch` geometry and
+        // drives the cascade through to 720.
+        let container = NSView(frame: NSRect(origin: .zero, size: Self.windowSize))
+        window.contentView = container
         window.ccterm_orderFrontForTesting()
 
-        // Drain so session 1's initial attach (and its selection-
-        // observation re-arm) settles before we touch session 2.
-        drainMainLoop(seconds: 0.4)
+        vc.view.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(vc.view)
+        NSLayoutConstraint.activate([
+            vc.view.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            vc.view.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            vc.view.topAnchor.constraint(equalTo: container.topAnchor),
+            vc.view.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+        container.layoutSubtreeIfNeeded()
 
-        // Install the probe on session 2's coordinator AFTER session
-        // 1's attach has settled so we only capture writes that
-        // belong to the switch.
+        // Fixture invariant #2 — alternate `Task.sleep` AND runloop drains.
+        //
+        // We need TWO things to settle before we can flip the selection:
+        // session 1's autolayout cascade (runloop) AND the VC's
+        // `selectionObservationTask` reaching its
+        // `withObservationTracking` registration (Swift Concurrency
+        // MainActor executor). These use SEPARATE schedulers —
+        // `RunLoop.main.run` alone does NOT advance MainActor Tasks,
+        // and `await Task.sleep` alone does not flush AppKit's runloop
+        // observers. If we skip the Task.sleep hops the observer never
+        // starts tracking, the subsequent
+        // `model.selectedSessionId = sessionId2` write goes untracked,
+        // `handleSelectionChanged()` never fires, and the probe captures
+        // zero writes — making the test pass silently regardless of
+        // regression. The sanity gate near the end catches that failure
+        // mode but the right answer is not to trip it in the first place.
+        for _ in 0..<10 {
+            try await Task.sleep(for: .milliseconds(40))
+            drainMainLoop(seconds: 0.02)
+        }
+
+        // Install the probe on session 2's coordinator AFTER session 1
+        // has settled, so we only capture writes that belong to the
+        // switch.
         let coordinator2 = session2.controller.coordinator
         var writes: [Write] = []
         var currentStage = "pre-switch"
@@ -202,22 +228,52 @@ final class TranscriptHostReentryLayoutCacheTests: XCTestCase {
         }
         defer { coordinator2.onLayoutCacheWriteForDebug = nil }
 
-        // Flip selection. The detail VC's observation task fires on
-        // the next main-actor hop and calls handleSelectionChanged()
-        // synchronously, which calls tearDownTranscript + attachSession
-        // on session 2 — all inside one source-phase tick.
+        // Flip selection. The detail VC's observation Task fires on the
+        // next MainActor hop and calls handleSelectionChanged() →
+        // tearDownTranscript + attachSession on session 2 — all inside
+        // one source-phase tick.
         currentStage = "switch"
         model.selectedSessionId = sessionId2
 
-        // Drain to let the observation task fire + attach complete.
-        drainMainLoop(seconds: 0.4)
+        // Drive both schedulers until session 2's table is bound (the
+        // signal that `attachSession` ran) or we time out.
+        for _ in 0..<20 {
+            try await Task.sleep(for: .milliseconds(50))
+            drainMainLoop(seconds: 0.02)
+            if coordinator2.tableView != nil { break }
+        }
+        // Final flush in case any deferred autolayout work is still
+        // queued.
+        container.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
 
         let oneTickWrites = writes
 
         defer {
-            window.contentViewController = nil
+            window.contentView = nil
             window.close()
         }
+
+        // Fixture invariant #3 — sanity gates.
+        //
+        // If `attachSession` didn't run, or if the fixture geometry
+        // didn't reach the real window width, the probe captures an
+        // empty / under-sized sample on which the per-id width check
+        // is trivially satisfied. That's the silent-green failure mode
+        // we MUST trip on. Expected steady state: ≥`blockCount` writes
+        // (one per block; small surplus for NSTableView re-tiles is
+        // fine), max width ≥ 700 (clamped down to 720 when the cascade
+        // reaches the full container).
+        XCTAssertGreaterThanOrEqual(
+            oneTickWrites.count, Self.blockCount,
+            "Fixture broke: probe captured \(oneTickWrites.count) writes — "
+                + "expected ≥\(Self.blockCount). Has attachSession run? "
+                + "Has the observation Task reached withObservationTracking?")
+        let maxWidth = oneTickWrites.map(\.width).max() ?? 0
+        XCTAssertGreaterThanOrEqual(
+            maxWidth, 700,
+            "Fixture broke: max width seen = \(maxWidth) — expected ≥700. "
+                + "Container probably didn't cascade to the full window size.")
 
         try assertSingleWidthPerId(
             oneTickWrites,

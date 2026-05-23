@@ -41,9 +41,6 @@ enum TranscriptScrollViewFactory {
         scroll.contentInsets = contentInsets
 
         let table = Transcript2TableView()
-        // Born hidden. `Transcript2Coordinator.markAnchorSettled` flips
-        // alpha back to 1 once the first-screen scroll has landed.
-        table.alphaValue = 0
         table.headerView = nil
         table.backgroundColor = .clear
         table.style = .plain

@@ -71,82 +71,19 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             if oldValue != nil && tableView == nil {
                 Transcript2ReentryStats.recordDetach()
             }
-            #endif
-            // A new table view replaces the previous one (session
-            // switch). Mark the first-screen anchor unsettled until
-            // the next scroll-to-anchor lands.
-            setAnchorSettled(false)
-            // Reset the frame-change short-circuit so a same-sized
-            // re-mount still processes its first positive-width tick.
-            lastLayoutWidth = -1
-            guard let table = tableView else { return }
-            #if DEBUG
-            if !blocks.isEmpty {
+            if tableView != nil, !blocks.isEmpty {
                 Transcript2ReentryStats.recordAttachStart(blocks: blocks.count)
             }
             #endif
-            if blocks.isEmpty {
-                // Nothing to display → unhide immediately so empty /
-                // pre-`setHistory` sessions don't sit invisible
-                // (table is born `alphaValue = 0`; see factory).
-                table.alphaValue = 1
-            }
+            // Reset the frame-change short-circuit so a same-sized
+            // re-mount still processes its first positive-width tick.
+            lastLayoutWidth = -1
         }
     }
 
     /// Notifies the controller after every successful mutation so SwiftUI
     /// observers on `blockCount` see the new value.
     var onBlockCountChanged: ((Int) -> Void)?
-
-    /// Fires whenever `isAnchorSettled` toggles. `Transcript2Controller`
-    /// mirrors the value into its `@Observable` `isAnchorSettled` so
-    /// SwiftUI hosts can observe "first-screen anchor has landed for the
-    /// currently-attached table." Edge-triggered (only fires on actual
-    /// transitions), called on MainActor.
-    var onAnchorSettledChanged: ((Bool) -> Void)?
-
-    /// "Self-most-recent `setHistory` anchor has been honored for the
-    /// currently-attached table." Resets to false on every `setHistory`
-    /// and on every fresh `tableView` attach; flips to true once
-    /// `setHistory`'s Phase 1 (real-width path) scrolled the table, or
-    /// `Transcript2Controller.handleFirstTile` consumed the pending
-    /// first-tile work (deferred path).
-    ///
-    /// Routine `append` / `update` / `remove` traffic does **not** affect
-    /// this flag — appending a streaming message is not a first-screen
-    /// event. Re-attaches *do* reset it because the new table starts at
-    /// `bounds.width == 0` and the scroll origin sits at the document
-    /// top until tiling completes.
-    private(set) var isAnchorSettled: Bool = false
-
-    private func setAnchorSettled(_ value: Bool) {
-        guard isAnchorSettled != value else { return }
-        isAnchorSettled = value
-        onAnchorSettledChanged?(value)
-    }
-
-    /// Flip `isAnchorSettled` back to false. Used by `Transcript2Controller.setHistory`
-    /// so SwiftUI consumers see a false→true transition each time a new
-    /// snapshot's first-screen anchor lands (the subsequent Phase 1 /
-    /// `handleFirstTile` call to `markAnchorSettled` restores true).
-    func markAnchorUnsettled() {
-        setAnchorSettled(false)
-    }
-
-    /// Real-width `setHistory` Phase 1 has already scrolled the table to
-    /// the anchor, or `handleFirstTile` ran post-tile; either way this
-    /// records that the first-screen contract is fulfilled for the
-    /// currently-attached table and unhides the table (born
-    /// `alphaValue = 0` in `makeNSView`). Phase 2's later prepend uses
-    /// `.saveVisible(...)` and does not move the visual anchor, so
-    /// calling this between Phase 1 and Phase 2 is safe.
-    func markAnchorSettled() {
-        #if DEBUG
-        Transcript2ReentryStats.recordMarkAnchorSettled()
-        #endif
-        tableView?.alphaValue = 1
-        setAnchorSettled(true)
-    }
 
     /// Set by `Transcript2Controller` to forward chevron taps to the
     /// SwiftUI-owned sheet binding. The cell's mouseDown handler resolves
@@ -1068,15 +1005,13 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     }
 
     /// Scroll the table to the initial anchor — used by
-    /// `Transcript2Controller.handleFirstTile` after the table's first
-    /// 0→positive tile lands. Forces an immediate layout pass before
-    /// sampling `rect(ofRow:)` because `invalidate`'s `noteHeightOfRows`
-    /// is async; without it the documentView frame may still trail the
-    /// row-height total and `NSClipView.scroll(to:)` would be pinned by
-    /// `constrainBoundsRect`.
+    /// `Transcript2Controller.scrollToTail` and `setHistory`'s Phase 1.
+    /// Forces an immediate layout pass before sampling `rect(ofRow:)`
+    /// because `invalidate`'s `noteHeightOfRows` is async; without it
+    /// the documentView frame may still trail the row-height total and
+    /// `NSClipView.scroll(to:)` would be pinned by `constrainBoundsRect`.
     ///
-    /// No-op when `tableView` is nil. Settle / alpha-unhide is the
-    /// caller's responsibility (via `markAnchorSettled`).
+    /// No-op when `tableView` is nil.
     func scrollToInitialAnchor(_ anchor: Transcript2Controller.InitialAnchor) {
         guard let tableView else { return }
         tableView.layoutSubtreeIfNeeded()

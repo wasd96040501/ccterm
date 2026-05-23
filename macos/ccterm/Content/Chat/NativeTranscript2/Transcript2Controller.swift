@@ -88,23 +88,6 @@ final class Transcript2Controller {
     /// observe count changes without reaching into AppKit state.
     private(set) var blockCount: Int = 0
 
-    /// "First-screen anchor has landed for the currently-attached
-    /// `NSTableView`." Mirrors `Transcript2Coordinator.isAnchorSettled`
-    /// so SwiftUI hosts can observe it directly — e.g. fade in the
-    /// transcript or run any other "wait until first frame is stable"
-    /// effect.
-    ///
-    /// Resets to false on every `setHistory` and on every fresh table
-    /// attach (session switch / view rebuild). Flips to true once
-    /// `setHistory`'s Phase 1 has scrolled to the requested anchor, or
-    /// — for the deferred no-width branch — once `tableFrameDidChange`
-    /// consumes the desired anchor on the first 0→positive transition.
-    ///
-    /// Routine `append` / `update` / `remove` traffic does **not** flip
-    /// this back to false; streaming a new message into an already-
-    /// stabilized transcript is not a first-screen event.
-    private(set) var isAnchorSettled: Bool = false
-
     /// Pending request for the SwiftUI "show full user message" sheet,
     /// driven by chevron clicks inside `BlockCellView`. NSView-internal
     /// interactions (link click, selection drag, chevron tap) are normally
@@ -198,9 +181,6 @@ final class Transcript2Controller {
         }
         coordinator.onImagePreviewRequested = { [weak self] image in
             self?.pendingImagePreview = ImagePreviewRequest(image: image)
-        }
-        coordinator.onAnchorSettledChanged = { [weak self] settled in
-            self?.isAnchorSettled = settled
         }
         coordinator.search.onStateChanged = { [weak self] in
             self?.refreshSearchState()
@@ -359,10 +339,7 @@ final class Transcript2Controller {
 
     /// Declare the transcript's contents as a snapshot — `blocks` becomes
     /// the new full block list, `anchor` is the scroll position the table
-    /// must land at once layout settles. Resets `isAnchorSettled` to
-    /// false; flips back to true after Phase 1 scrolls (real-width
-    /// branch) or after `handleFirstTile` scrolls on the next 0→positive
-    /// `tableFrameDidChange` transition (zero-width branch).
+    /// lands at.
     ///
     /// Two-phase internally for large snapshots: Phase 1 (sync) inserts a
     /// viewport-covering slice so the user sees correct content
@@ -381,11 +358,6 @@ final class Transcript2Controller {
     /// (`coordinator.blockIds == blocks.map(\.id)` short-circuits).
     func setHistory(_ blocks: [Block], anchor: InitialAnchor = .bottom) {
         guard !blocks.isEmpty else { return }
-
-        // Flip `isAnchorSettled` back to false up front. SwiftUI consumers
-        // see false→true on every new snapshot landing; Phase 1 (below) or
-        // `handleFirstTile` (after first tile) restores true.
-        coordinator.markAnchorUnsettled()
 
         let width = coordinator.layoutWidth
         let viewportHeight = coordinator.viewportHeight
@@ -459,12 +431,6 @@ final class Transcript2Controller {
         phase1Changes.append(.insert(after: nil, viewportBatch))
         coordinator.apply(phase1Changes, scroll: phase1Scroll)
 
-        // Phase 1's `scroll` has landed the table at the requested anchor;
-        // declare the first-screen contract fulfilled. Phase 2's prepend
-        // below uses `.saveVisible(...)` and does not move the visual
-        // anchor, so it's safe to settle here.
-        coordinator.markAnchorSettled()
-
         // Phase 2 — the rest, off-main layout. ID-based anchors mean
         // ordering between the two inserts no longer matters: each anchor
         // resolves at apply-time independently of the other change.
@@ -492,7 +458,6 @@ final class Transcript2Controller {
     func scrollToTail() {
         guard !coordinator.blockIds.isEmpty else { return }
         coordinator.scrollToInitialAnchor(.bottom)
-        coordinator.markAnchorSettled()
     }
 
     // MARK: - Search

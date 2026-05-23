@@ -32,46 +32,14 @@ The split also matches the mount-vs-state-machine boundary: callers think in ter
 
 **Don't merge.** If the forwarding feels redundant, the right move is to make the forwards thinner (e.g. expose `coordinator.search` as a property), not to collapse the layer.
 
-### 1.2 macOS runloop tick model — the canvas every invariant lives on
+### 1.2 Runloop tick model — transcript corollaries
 
-Most "why is this one tick off" puzzles in the transcript resolve once you remember the order AppKit + SwiftUI + CoreAnimation share a single runloop iteration. The diagram below is the only abstraction needed; everything in §2 (scroll writes, frame-change observers, layout invalidation) is written against it.
-
-```
-┌─ source phase ─────────────── your code runs here ──────────┐
-│  · NSEvent dispatch              (mouse / key / wheel)      │
-│  · DispatchQueue.main.async      drained block-by-block     │
-│  · Observation @MainActor Tasks  resumed                    │
-│  · NotificationCenter posts                                 │
-│  · Timer fires                                              │
-│  · NSResponder selectors         (IBAction, performSelector)│
-│                                                             │
-│  setNeedsLayout / setNeedsDisplay / frame writes / bounds   │
-│  writes land NOW — actual layout + draw + commit happen     │
-│  in the next phase.                                         │
-├─ beforeWaiting observer ─── AppKit + CoreAnimation flush ──┤
-│  · SwiftUI body re-eval for invalidated views               │
-│      (Observation registers a runloop observer here)        │
-│  · NSWindow.update                                          │
-│  · updateConstraints → layout → display walks the view tree │
-│  · NSTableView's first display pass lazily queries          │
-│    numberOfRows / heightOfRow and runs tile()               │
-│  · CATransaction implicit commit → render server (IPC)      │
-├─ sleep ──── thread blocks waiting for next event ───────────┤
-│  render server animates on its own clock                    │
-└─ afterWaiting ─ process the event that woke us → next tick ─┘
-```
-
-Load-bearing consequences for code in this directory:
+The runloop tick diagram lives in the root [CLAUDE.md § macOS runloop tick model](../../../../../CLAUDE.md). Read that first; it's the global canvas (source phase / beforeWaiting / sleep). This section only spells out the transcript-specific consequences:
 
 - **`clip.scroll(to:)` runs in source phase; NSTableView's tile runs in beforeWaiting.** If the table hasn't been told about its rows, `documentView.frame.height == 0` when you write — `constrainBoundsRect` then clamps your target to origin=0, your write is silently absorbed, and the documentView paints at the top for that tick. Anything in source phase that depends on row geometry (`rect(ofRow:)` consumers, scroll-to-anchor, manual frame math) must force the tile first via `noteNumberOfRowsChanged` / `insertRows` / `reloadData`. The canonical place is `TranscriptScrollViewFactory.make` right after the dataSource binding.
-- **`view.layoutSubtreeIfNeeded()` runs autolayout NOW, but it does not force NSTableView's row tile.** Row positions are not an autolayout product; they're computed inside `NSTableView.tile()`, gated on row-count / row-height notifications. Don't conflate the two.
-- **`@Observable` writes don't reach SwiftUI bodies in the same tick.** Bodies re-evaluate in beforeWaiting. Reading `controller.blockCount` from your AppKit code right after `coordinator.apply` returns is fine (the mirror updated synchronously through `onBlockCountChanged`); reading it from a SwiftUI view that observes the controller won't see the new value until the next display.
-- **`.task { }` / `withObservationTracking` re-arm hops are async.** They post a Task that resumes on a future source phase — never inside the same tick as the change that fired them. Anything order-sensitive must be done inline, not through one of these hops.
-- **Implicit CALayer animations commit at beforeWaiting too.** That's why §2 wraps `clip.scroll` + row mutations under `CATransaction.setDisableActions(true)` + `NSAnimationContext.allowsImplicitAnimation = false` — without it the height transition and scroll origin animate independently and the rendering tears across one or two frames.
-
-Two stack-trace aliases worth memorising:
-- `__CFRUNLOOP_IS_CALLING_OUT_TO_AN_OBSERVER_CALLBACK_FUNCTION__` → you're inside a runloop observer (almost always CoreAnimation's beforeWaiting flush or SwiftUI's invalidation observer).
-- `__CFRUNLOOP_IS_SERVICING_THE_MAIN_DISPATCH_QUEUE__` → source phase, draining `DispatchQueue.main`.
+- **`view.layoutSubtreeIfNeeded()` does not force NSTableView's row tile.** Row positions are not an autolayout product; they're computed inside `NSTableView.tile()`, gated on row-count / row-height notifications. Don't conflate the two.
+- **`controller.blockCount` is safe to read after `coordinator.apply` returns in source phase** — the `@Observable` mirror is updated synchronously through `onBlockCountChanged`. SwiftUI hosts observing the same field, on the other hand, won't see the new value until the next display.
+- **§2 wraps `clip.scroll` + row mutations under `CATransaction.setDisableActions(true)` + `NSAnimationContext.allowsImplicitAnimation = false`.** Both phases are necessary because the height transition (AppKit-implicit) and the scroll-origin transition (CoreAnimation-implicit) commit independently at beforeWaiting; without the suppression they animate to the new state across one or two frames and the rendering tears.
 
 ## 2. Performance contract
 

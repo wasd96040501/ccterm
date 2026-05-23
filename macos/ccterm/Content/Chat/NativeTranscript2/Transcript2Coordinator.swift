@@ -567,6 +567,9 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let target = rect.minY - scrollView.contentInsets.top
         scrollView.contentView.scroll(
             to: NSPoint(x: scrollView.contentView.bounds.origin.x, y: target))
+        // See note in `scrollRowToBottom` — `NSClipView.scroll(to:)` does
+        // not auto-update the enclosing scroll view's scrollers.
+        scrollView.reflectScrolledClipView(scrollView.contentView)
     }
 
     /// Scroll so `id`'s bottom aligns with the visible content area's bottom
@@ -594,6 +597,12 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let target = max(-scrollView.contentInsets.top, raw)
         scrollView.contentView.scroll(
             to: NSPoint(x: scrollView.contentView.bounds.origin.x, y: target))
+        // `NSClipView.scroll(to:)` writes the bounds origin but does NOT
+        // auto-call `reflectScrolledClipView(_:)`. Without this follow-up
+        // the enclosing scroll view's scroller stays synced to the *prior*
+        // clip origin, so the thumb flashes at the top while content is at
+        // the tail — visible on every populated-session re-attach.
+        scrollView.reflectScrolledClipView(scrollView.contentView)
     }
 
     // MARK: - Layout cache

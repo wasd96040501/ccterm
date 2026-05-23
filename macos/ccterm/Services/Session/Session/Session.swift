@@ -38,8 +38,9 @@ import Observation
 /// (which has a `weak NSTableView`) to a fresh `NSTableView` on each
 /// mount via `TranscriptScrollViewFactory.make`; when no table is bound,
 /// the coordinator still updates its `blocks` array and skips AppKit
-/// calls — a re-attach syncs the new table to the accumulated state
-/// via the factory's `noteNumberOfRowsChanged` call.
+/// calls — a re-attach picks up the accumulated state through the host's
+/// `view.layoutSubtreeIfNeeded()`, which sizes the table from `.zero`
+/// to its real frame and drives `NSTableView.tile()` inline.
 @Observable
 @MainActor
 final class Session {

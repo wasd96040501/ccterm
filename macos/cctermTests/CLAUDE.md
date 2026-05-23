@@ -155,9 +155,102 @@ them: `make test-unit FILTER=<class>` then `open <png>`.
 | `SidebarView2` row chrome + per-row state indicators ([source](../ccterm/Sidebar/SidebarView2.swift)) | `SidebarView2SnapshotTests` ([source](SidebarView2SnapshotTests.swift)) | `/tmp/ccterm-screenshots/SidebarView2.png` |
 | `NewSessionConfigurator` three-column compose card ([source](../ccterm/Content/Chat/NewSessionConfigurator.swift)) | `NewSessionConfiguratorSnapshotTests` ([source](NewSessionConfiguratorSnapshotTests.swift)) | `/tmp/ccterm-screenshots/NewSessionConfigurator.png` + `…-empty.png` |
 | `DiffView` standalone diff card (modified + new file) ([source](../ccterm/Components/DiffView.swift)) | `DiffViewSnapshotTests` ([source](DiffViewSnapshotTests.swift)) | `/tmp/ccterm-screenshots/DiffView.png` |
+| Transcript attach sequence — first-frame scroll origin / row geometry ([source](../ccterm/Content/Chat/NativeTranscript2/AppKit/TranscriptScrollViewFactory.swift)) | `TranscriptScrollFirstFrameSnapshotTests` ([source](TranscriptScrollFirstFrameSnapshotTests.swift)) | `/tmp/ccterm-screenshots/TranscriptScrollFirstFrame-Production.png` + `…-NoNote.png` |
+| Transcript attach sequence — first **composited** frame on a live render pipeline (CADisplayLink + `CALayer.presentation()`) ([source](../ccterm/Content/Chat/NativeTranscript2/AppKit/TranscriptScrollViewFactory.swift)) | `TranscriptScrollLivePresentationSnapshotTests` ([source](TranscriptScrollLivePresentationSnapshotTests.swift)) | none — text-only timeline attachment |
 
 If your view isn't in this table, jump to [I want to add a snapshot
 test for a new view](#i-want-to-add-a-snapshot-test-for-a-new-view).
+
+### Probing AppKit attach sequences offscreen
+
+`TranscriptScrollFirstFrameSnapshotTests` is a different shape from the
+SwiftUI snapshot tests above and worth understanding before you write
+your own. It's a measurement harness: it drives the exact AppKit attach
+sequence used in production (`TranscriptScrollViewFactory.make` →
+`addSubview` + constraints → `view.layoutSubtreeIfNeeded()` →
+`controller.scrollToTail()`) inside an offscreen window, and samples
+state — `clip.bounds.origin.y`, `documentView.frame.height`,
+`numberOfRows`, `rect(ofRow:)` — at four named transition points: after
+factory.make, after layoutSubtreeIfNeeded, after scrollToTail (still
+source phase), and after one runloop drain. Each measurement is attached
+to the xcresult as a text report alongside a final-frame PNG.
+
+What this scaffold is good for:
+
+- Asserting on **model state** that a one-tick visual glitch should
+  show up in — clip origin, document height, row geometry — without
+  launching the app.
+- A/B'ing two variants of the same attach sequence: one with the
+  production factory, one with a duplicated factory-minus-some-call.
+  That's how the (now-removed) `noteNumberOfRowsChanged` call in
+  `TranscriptScrollViewFactory.make` was proved to be a no-op — the
+  two variants produced identical numbers.
+- Verifying tick-model claims — test 3 of that file falsified the
+  prior CLAUDE.md claim that `view.layoutSubtreeIfNeeded()` doesn't
+  drive NSTableView's row tile.
+
+What it **cannot** observe:
+
+- **Live-window render-pipeline timing.** The PNG comes from
+  `bitmapImageRepForCachingDisplay`, which is a synchronous re-draw,
+  not an actual frame the render server composited. If the bug is
+  "the rendered first frame on a live window paints stale because the
+  prior CATransaction commit was already in flight," this scaffold
+  will pass while the live app still glitches. For that class of bug,
+  reach for the live-presentation scaffold below.
+- Anything that needs a key window / first responder / cursor flashing
+  — the test window has `alphaValue = 0.01` and goes through
+  `ccterm_orderFrontForTesting()` which skips the responder activation.
+
+### Probing the live render pipeline — display-link + `CALayer.presentation()`
+
+`TranscriptScrollLivePresentationSnapshotTests` is the next rung up.
+Same fixture as the offscreen scaffold above, plus a `CADisplayLink`
+attached to `NSScreen.main` that samples
+`(clip.bounds.origin.y, clip.layer?.presentation()?.bounds.origin.y)`
+on every screen refresh tick for ~30 frames. The first sample where
+`presentation` is non-nil is the first frame the render server actually
+composited — its origin is what a user would have seen.
+
+The display link runs off `NSScreen.main` (not `NSView.displayLink`) on
+purpose: the view's own link only fires when the view is visible on a
+screen, but the test window is at `(-30_000, -30_000)` with `alphaValue
+= 0.01`. The screen-level link fires unconditionally at the screen's
+refresh rate, which is what we want — we're sampling state every
+refresh tick, independent of whether the render server picked our
+specific window for compositing. The flush probe (`testCATransactionFlushPresentationTimeline`
+in the sibling file) already proved that the render server DOES composite
+this window — `presentation()` returns the post-flush value at tail.
+
+This scaffold confirms the **content layer** lands at tail on the first
+composited frame — `nil → tail` on consecutive refresh ticks, no
+intermediate `top-clamp` frame. That's necessary but not sufficient: an
+earlier investigation chased a content-origin hypothesis here and missed
+the real bug, which lived in
+`NSScrollView.verticalScroller.doubleValue` (the scroller-knob
+position, *not* the clip origin). The lesson is general: when a
+user-reported visual glitch doesn't reproduce here, expand the sampled
+dimensions before declaring the bug falsified. See
+`TranscriptScrollFirstFrameSnapshotTests.testScrollerKnobLandsAtTailAfterScrollToTail`
+for the scroller-knob regression gate that caught it.
+
+What this scaffold **still can't** observe:
+
+- **NSScrollView non-content state.** The scroller's `doubleValue` /
+  `knobProportion` / fade-in alpha are separate dimensions; sample them
+  explicitly if a glitch is reported in the chrome (the sibling test
+  above does this).
+- **Production sibling-view interactions.** In the real app the same
+  attach tick also lays out the top scrim, bottom scrim, and compose
+  host (all `NSHostingView`s). Any of those committing on the same
+  CATransaction could perturb timing in ways the bare-scroll harness
+  doesn't reproduce. To rule this out you would need to host
+  `TranscriptDetailViewController` directly in a test window — feasible
+  but a larger lift.
+- **WindowServer scheduling under load.** The render server can delay
+  compositing a window if its parent process is busy on the GPU /
+  another window is occluding etc. None of those reproduce in a quiet
+  test environment.
 
 ### Run policy — opt-in only
 

@@ -11,35 +11,44 @@ import Observation
 /// site, not here).
 ///
 /// Aggregation reads dozens of JSONL files from disk, so it runs on a
-/// detached background task; the cached `result` is written back on
-/// the main actor. Concurrent `refresh()` calls coalesce — a fresh
-/// request cancels the in-flight task and starts a new one.
+/// dedicated user-initiated GCD queue (not a Swift `Task.detached`,
+/// which inherits actor isolation in subtle ways — the GCD queue
+/// guarantees the heavy work never lands on the main thread). The
+/// cached `result` is written back on the main actor.
+///
+/// Concurrent `refresh()` calls overlap on the serial queue (each
+/// request enqueues a fresh aggregation); the most recent result wins
+/// when it lands on the main actor. There's no in-flight cancellation
+/// hook because the work is dominated by `FileManager.contentsOfFile`
+/// reads that don't observe `Task.isCancelled` anyway — running an
+/// extra aggregation is cheap.
 @Observable
-@MainActor
 final class ClaudeCodeStatsService {
-    private(set) var result: ClaudeCodeStats.Result?
+    @MainActor private(set) var result: ClaudeCodeStats.Result?
 
     /// Last completed aggregation timestamp. Used as a `.task(id:)`
     /// signal so card views can re-arm animations when fresh data
     /// lands, without diff-ing the heavy `Result` struct itself.
-    private(set) var lastUpdated: Date?
+    @MainActor private(set) var lastUpdated: Date?
 
-    private var refreshTask: Task<Void, Never>?
+    /// Serial GCD queue — fans out the aggregation off the main
+    /// thread without going through Swift Concurrency's actor
+    /// inheritance rules. `.userInitiated` matches the user-visible
+    /// nature of the work (the New Session view is waiting on it).
+    private static let workQueue = DispatchQueue(
+        label: "ccterm.ClaudeCodeStatsService", qos: .userInitiated)
 
     init() {}
 
-    /// Kick off (or restart) a background aggregation. Cheap to call
-    /// repeatedly — earlier in-flight work is cancelled.
-    func refresh() {
-        refreshTask?.cancel()
-        refreshTask = Task { [weak self] in
-            let aggregated = await Task.detached(priority: .userInitiated) {
-                ClaudeCodeStats.aggregate()
-            }.value
-            guard !Task.isCancelled else { return }
-            guard let self else { return }
-            self.result = aggregated
-            self.lastUpdated = Date()
+    /// Kick off a background aggregation. Cheap to call repeatedly;
+    /// overlapping calls just enqueue and the most recent result wins.
+    nonisolated func refresh() {
+        Self.workQueue.async { [weak self] in
+            let aggregated = ClaudeCodeStats.aggregate()
+            Task { @MainActor [weak self] in
+                self?.result = aggregated
+                self?.lastUpdated = Date()
+            }
         }
     }
 }

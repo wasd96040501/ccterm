@@ -79,6 +79,42 @@ extension View {
     fileprivate func statsCardSurface() -> some View { modifier(StatsCardSurface()) }
 }
 
+// MARK: - Shared tier palette
+
+/// Three alpha steps on the system blue, plus the tier-bucketing
+/// helper. Shared by the heatmap (cell fill) and the chart (bar
+/// fill) so both surfaces agree on what "high activity" looks
+/// like. Top tier is platform `systemBlue` at full opacity; the
+/// two lower tiers fade it out — the user explicitly asked for
+/// alpha-controlled variants of one base colour rather than
+/// hand-picked hues.
+enum StatsTierPalette {
+    static let tiers: [Color] = [
+        Color(nsColor: .systemBlue).opacity(0.30),  // low
+        Color(nsColor: .systemBlue).opacity(0.60),  // mid
+        Color(nsColor: .systemBlue).opacity(1.00),  // high
+    ]
+
+    /// Returns the tier index (0/1/2) for `value` against (p33, p66)
+    /// thresholds. `nil` thresholds (too few non-zero days to bucket)
+    /// → top tier for any non-zero value, the lowest tier reserved
+    /// for zeros at the caller.
+    static func tier(for value: Int, thresholds: (Int, Int)?) -> Int {
+        guard let thresholds else { return 2 }
+        if value < thresholds.0 { return 0 }
+        if value < thresholds.1 { return 1 }
+        return 2
+    }
+
+    /// Computes (p33, p66) of non-zero values; `nil` if fewer than
+    /// three non-zero entries exist.
+    static func thresholds(forNonZero values: [Int]) -> (Int, Int)? {
+        let sorted = values.filter { $0 > 0 }.sorted()
+        guard sorted.count >= 3 else { return nil }
+        return (sorted[sorted.count / 3], sorted[(sorted.count * 2) / 3])
+    }
+}
+
 // MARK: - Overview card
 
 /// Wider top card: 4 compact stat tiles (sessions / messages /
@@ -301,15 +337,11 @@ private struct ActivityHeatmap: View {
 
     /// Returns (p33, p66) of non-zero daily token counts in the
     /// visible grid; `nil` when fewer than three non-zero days
-    /// exist (in which case any non-zero day reads as the top tier
-    /// — no useful split is possible).
+    /// exist (any non-zero day reads as top tier — no useful split
+    /// is possible).
     fileprivate static func computeThresholds(grid: [[HeatmapCell?]]) -> (Int, Int)? {
-        let values = grid.flatMap { $0 }
-            .compactMap { $0?.tokens }
-            .filter { $0 > 0 }
-            .sorted()
-        guard values.count >= 3 else { return nil }
-        return (values[values.count / 3], values[(values.count * 2) / 3])
+        StatsTierPalette.thresholds(
+            forNonZero: grid.flatMap { $0 }.compactMap { $0?.tokens })
     }
 }
 
@@ -428,25 +460,15 @@ private struct ActivityHeatmapBody: View {
 
     private func color(for tokens: Int) -> Color {
         if tokens == 0 { return Self.emptyColor }
-        guard let thresholds else { return Self.tierColors[2] }
-        if tokens < thresholds.0 { return Self.tierColors[0] }
-        if tokens < thresholds.1 { return Self.tierColors[1] }
-        return Self.tierColors[2]
+        return StatsTierPalette.tiers[
+            StatsTierPalette.tier(for: tokens, thresholds: thresholds)]
     }
 
     /// Neutral mid-gray. Picked so empty cells read as "no activity"
     /// without competing with the blue tier colours on the same
-    /// ultra-thin material.
+    /// ultra-thin material. Active tiers come from the shared
+    /// `StatsTierPalette` so they match the chart bar colours.
     private static let emptyColor = Color(white: 0.32).opacity(0.45)
-    /// Three explicit blues with increasing chroma — opacity-only
-    /// shading on the ultra-thin material doesn't separate the
-    /// tiers cleanly enough (the material's translucency washes
-    /// out low-opacity blues), so each tier gets its own RGB triple.
-    private static let tierColors: [Color] = [
-        Color(red: 0.55, green: 0.66, blue: 0.96),  // low
-        Color(red: 0.36, green: 0.50, blue: 0.94),  // mid
-        Color(red: 0.20, green: 0.38, blue: 0.92),  // high
-    ]
 
     private static func dateLabel(for date: Date) -> String {
         let f = DateFormatter()
@@ -646,13 +668,17 @@ private struct TokensChart: View {
     @State private var hovered: HoveredBar?
 
     var body: some View {
+        let thresholds = StatsTierPalette.thresholds(forNonZero: data.map(\.tokens))
         Chart {
             ForEach(data) { d in
                 BarMark(
                     x: .value("Date", d.date, unit: .day),
                     y: .value("Tokens", d.tokens)
                 )
-                .foregroundStyle(Color.accentColor.opacity(0.85))
+                .foregroundStyle(
+                    StatsTierPalette.tiers[
+                        StatsTierPalette.tier(for: d.tokens, thresholds: thresholds)]
+                )
                 .cornerRadius(1)
             }
             if let h = hovered {

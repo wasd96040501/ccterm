@@ -32,6 +32,15 @@ The split also matches the mount-vs-state-machine boundary: callers think in ter
 
 **Don't merge.** If the forwarding feels redundant, the right move is to make the forwards thinner (e.g. expose `coordinator.search` as a property), not to collapse the layer.
 
+### 1.2 Runloop tick model — transcript corollaries
+
+The runloop tick diagram lives in the root [CLAUDE.md § macOS runloop tick model](../../../../../CLAUDE.md). Read that first; it's the global canvas (source phase / beforeWaiting / sleep). This section only spells out the transcript-specific consequences:
+
+- **`clip.scroll(to:)` runs in source phase; NSTableView's tile runs in beforeWaiting.** If the table hasn't been told about its rows, `documentView.frame.height == 0` when you write — `constrainBoundsRect` then clamps your target to origin=0, your write is silently absorbed, and the documentView paints at the top for that tick. Anything in source phase that depends on row geometry (`rect(ofRow:)` consumers, scroll-to-anchor, manual frame math) must force the tile first via `noteNumberOfRowsChanged` / `insertRows` / `reloadData`. The canonical place is `TranscriptScrollViewFactory.make` right after the dataSource binding.
+- **`view.layoutSubtreeIfNeeded()` does not force NSTableView's row tile.** Row positions are not an autolayout product; they're computed inside `NSTableView.tile()`, gated on row-count / row-height notifications. Don't conflate the two.
+- **`controller.blockCount` is safe to read after `coordinator.apply` returns in source phase** — the `@Observable` mirror is updated synchronously through `onBlockCountChanged`. SwiftUI hosts observing the same field, on the other hand, won't see the new value until the next display.
+- **§2 wraps `clip.scroll` + row mutations under `CATransaction.setDisableActions(true)` + `NSAnimationContext.allowsImplicitAnimation = false`.** Both phases are necessary because the height transition (AppKit-implicit) and the scroll-origin transition (CoreAnimation-implicit) commit independently at beforeWaiting; without the suppression they animate to the new state across one or two frames and the rendering tears.
+
 ## 2. Performance contract
 
 Every item below is load-bearing for either scroll FPS, layout-pass cost, or memory churn. Cited file:line is authoritative; the description summarizes. **Changing any of these requires user confirmation.**

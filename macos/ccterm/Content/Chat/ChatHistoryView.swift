@@ -27,11 +27,11 @@ enum ChatHistoryRenderCase: Equatable {
 /// `runtime.onMessagesChange` permanently — live CLI events flow into
 /// the controller's block list even when no `ChatHistoryView` is
 /// mounted. This view simply rebinds the controller's coordinator to
-/// a fresh `NSTableView` per mount; the coordinator's `tableView.didSet`
-/// runs `reloadData()` automatically so the table picks up whatever
-/// block state accumulated while detached. **Switch-away → switch-back
-/// is O(1) on the renderer side** (no JSONL re-read, no re-derive of
-/// blocks, no markdown reparse).
+/// a fresh `NSTableView` per mount; `TranscriptScrollViewFactory.make`
+/// calls `noteNumberOfRowsChanged` immediately after binding the
+/// dataSource so the table picks up whatever block state accumulated
+/// while detached. **Switch-away → switch-back is O(1) on the renderer
+/// side** (no JSONL re-read, no re-derive of blocks, no markdown reparse).
 ///
 /// **Per-session NSView lifecycle**: the call site (RootView2) attaches
 /// `.id(sessionId)` to `ChatHistoryView`, so the whole struct rebuilds

@@ -219,6 +219,16 @@
         }
       }
     },
+    "Active days": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "活跃天数"
+          }
+        }
+      }
+    },
     "Add \"%@\"": {
       "extractionState": "stale",
       "localizations": {
@@ -1965,6 +1975,26 @@
         }
       }
     },
+    "Messages": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "消息"
+          }
+        }
+      }
+    },
+    "Models": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型"
+          }
+        }
+      }
+    },
     "New Conversation": {
       "extractionState": "stale",
       "localizations": {
@@ -3287,6 +3317,16 @@
         }
       }
     },
+    "Sessions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会话"
+          }
+        }
+      }
+    },
     "Settings": {
       "localizations": {
         "zh-Hans": {
@@ -3447,6 +3487,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "临时会话"
+          }
+        }
+      }
+    },
+    "Total tokens": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "总 Token"
           }
         }
       }

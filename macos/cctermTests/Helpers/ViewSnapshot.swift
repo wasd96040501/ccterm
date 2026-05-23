@@ -93,57 +93,6 @@ enum ViewSnapshot {
         return image
     }
 
-    /// Render an `NSViewController` at `size` and return the resulting
-    /// `NSImage`. Mirrors the SwiftUI `render` above — the controller
-    /// is parked in a transparent, off-screen `NSWindow`, the main run
-    /// loop is drained, then the controller's view is cached into a
-    /// bitmap. Use for AppKit-rooted screens (e.g. the sidebar).
-    @MainActor
-    static func render(
-        controller: NSViewController,
-        size: CGSize,
-        settle: TimeInterval = 0.4
-    ) -> NSImage {
-        controller.view.frame = CGRect(origin: .zero, size: size)
-
-        let window = NSWindow(
-            contentRect: CGRect(
-                origin: CGPoint(x: -30_000, y: -30_000),
-                size: size),
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false)
-        window.isReleasedWhenClosed = false
-        window.isExcludedFromWindowsMenu = true
-        window.alphaValue = 0.01
-        window.contentViewController = controller
-        window.ccterm_orderFrontForTesting()
-
-        controller.view.layoutSubtreeIfNeeded()
-
-        let deadline = Date().addingTimeInterval(settle)
-        while Date() < deadline {
-            RunLoop.main.run(
-                mode: .default,
-                before: Date(timeIntervalSinceNow: 0.02))
-        }
-        controller.view.layoutSubtreeIfNeeded()
-
-        let host = controller.view
-        guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
-            XCTFail("ViewSnapshot: bitmapImageRepForCachingDisplay returned nil")
-            return NSImage(size: size)
-        }
-        host.cacheDisplay(in: host.bounds, to: rep)
-
-        let image = NSImage(size: host.bounds.size)
-        image.addRepresentation(rep)
-
-        window.contentViewController = nil
-        window.close()
-        return image
-    }
-
     /// PNG-encode `image` and write it to `name.png` under the scratch
     /// directory (configurable via `CCTERM_SCREENSHOT_DIR`, defaults
     /// to `/tmp/ccterm-screenshots`). Returns the URL written.

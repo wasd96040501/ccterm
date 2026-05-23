@@ -15,7 +15,7 @@ final class MainSelectionModel {
     /// Mirrors `RootView2`'s `selectedSessionId` — the sidebar's
     /// selected item (a session id, `__new_session__`, `__archive__`,
     /// or one of the DEBUG demo sentinels).
-    var selectedSessionId: String? = SidebarSentinel.newSession
+    var selectedSessionId: String? = SidebarView2.newSessionTag
 
     /// Mirrors `RootView2`'s `draftSessionId` — lazily allocated when
     /// the user enters the "New Session" tab, becomes the real
@@ -50,13 +50,13 @@ final class MainSelectionModel {
     /// turns false and the detail VC settles the input bar at its
     /// chat-mode resting position.
     var isComposeMode: Bool {
-        selectedSessionId == SidebarSentinel.newSession
+        selectedSessionId == SidebarView2.newSessionTag
     }
 
     /// The currently displayed sessionId, derived from the tab + draft.
     /// Mirrors `RootView2.effectiveSessionId`.
     var effectiveSessionId: String? {
-        if selectedSessionId == SidebarSentinel.newSession {
+        if selectedSessionId == SidebarView2.newSessionTag {
             return draftSessionId
         }
         return selectedSessionId

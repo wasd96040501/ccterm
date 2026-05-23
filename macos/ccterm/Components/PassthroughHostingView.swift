@@ -14,7 +14,17 @@ import SwiftUI
 /// falls back to returning the hosting view itself. We intercept that
 /// fallback and return nil instead, so AppKit moves on to the next
 /// sibling and the table below receives the hit.
-final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
+///
+/// **Concrete `AnyView` specialization on purpose.** A generic
+/// `PassthroughHostingView<Content>: NSHostingView<Content>` triggers
+/// a Swift 6.3 SIL inliner crash on Release builds
+/// (swiftlang/swift#88173) when the compiler synthesizes the generic
+/// class's `__deallocating_deinit`. Pinning `Content` to `AnyView` —
+/// which is the only shape the only call site (`composeOrBarHost`)
+/// uses — sidesteps the crash. If a second call site needs a
+/// different `Content`, hoist this pattern into a non-generic base
+/// class rather than re-introducing generics.
+final class PassthroughHostingView: NSHostingView<AnyView> {
     override func hitTest(_ point: NSPoint) -> NSView? {
         let result = super.hitTest(point)
         return result === self ? nil : result

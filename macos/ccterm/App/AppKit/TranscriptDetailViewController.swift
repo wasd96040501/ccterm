@@ -67,7 +67,7 @@ final class TranscriptDetailViewController: NSViewController {
     /// compose card stays SwiftUI-hosted.
     private var topScrim: TranscriptScrimView!
     private var bottomScrim: TranscriptBottomScrimView!
-    private var composeOrBarHost: PassthroughHostingView<AnyView>!
+    private var composeOrBarHost: PassthroughHostingView!
 
     /// Sink for `model.attachRect` / `pillRect` → `bottomScrim` cutout
     /// path. Re-arms on every fire.

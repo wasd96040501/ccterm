@@ -661,7 +661,7 @@ struct TranscriptDetailComposeStack: View {
         let bindings = composeBindings(for: session)
         ZStack {
             DotGridBackground()
-            NewSessionConfigurator(
+            NewSessionComposeStack(
                 folderPath: bindings.folder,
                 useWorktree: bindings.useWorktree,
                 sourceBranch: bindings.sourceBranch,

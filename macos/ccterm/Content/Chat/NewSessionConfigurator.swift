@@ -52,11 +52,15 @@ struct NewSessionConfigurator<InputBar: View>: View {
     static var minWidth: CGFloat { 640 }
     static var idealWidth: CGFloat { 960 }
     static var maxWidth: CGFloat { 960 }
-    /// Fixed visual height; tall enough that the right column can host
-    /// hero + meta + recents list + input bar without crowding, while
-    /// still leaving generous breathing room above and below in a
-    /// typical detail pane.
-    static var height: CGFloat { 620 }
+    /// Fixed visual height. Sized so the full three-card stack on the
+    /// New Session tab (this card + two stat cards on top + 16pt
+    /// gutter) clears the MacBook Air 13" default-scaled detail-pane
+    /// height (~740pt usable after the toolbar overlay and the
+    /// compose body's 20pt vertical insets) with a few points of
+    /// buffer: 540 + 16 + 180 = 736. Right-column slack inside the
+    /// 540pt budget is still ample for hero + meta + the full 5-row
+    /// recents list + the input-bar reserved area.
+    static var height: CGFloat { 540 }
     /// Left-column width. Hosts the recent-projects nav. ~29% of the
     /// 960pt card width — feels like a "sidebar inside the card", not
     /// a near-50/50 split.

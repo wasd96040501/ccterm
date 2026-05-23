@@ -484,6 +484,56 @@ private struct ModelRow: View {
     }
 }
 
+// MARK: - Compose stack assembly
+
+/// Stacks the two stat cards on top of the `NewSessionConfigurator`
+/// hero card. The whole VStack is centred horizontally and pinned
+/// to the configurator's `maxWidth` so all three cards share their
+/// left/right edges. Reads the cached `ClaudeCodeStatsService`
+/// result from the environment and triggers `refresh()` on first
+/// appear (and on every re-mount); the first load on a cold launch
+/// renders with zeros and animates the real numbers in.
+struct NewSessionComposeStack<InputBar: View>: View {
+    @Binding var folderPath: String?
+    @Binding var useWorktree: Bool
+    @Binding var sourceBranch: String?
+    var onResumeSession: ((String) -> Void)? = nil
+    @ViewBuilder var inputBar: () -> InputBar
+
+    @Environment(ClaudeCodeStatsService.self) private var stats
+
+    var body: some View {
+        VStack(spacing: NewSessionStatsCardsLayout.spacing) {
+            HStack(alignment: .top, spacing: NewSessionStatsCardsLayout.spacing) {
+                OverviewStatsCard(result: stats.result)
+                ModelsStatsCard(result: stats.result)
+            }
+            // Wrap the data-driven swap in a SwiftUI animation so the
+            // numericText transitions on tiles + the BarMark height
+            // changes animate together when fresh data lands. The
+            // service writes `result` on the main actor; observation
+            // fires this re-eval inside the animation block.
+            .animation(.default, value: stats.lastUpdated)
+
+            NewSessionConfigurator(
+                folderPath: $folderPath,
+                useWorktree: $useWorktree,
+                sourceBranch: $sourceBranch,
+                onResumeSession: onResumeSession,
+                inputBar: inputBar
+            )
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task {
+            // Re-fire on every mount. The service short-circuits
+            // overlapping work (refreshTask cancels its predecessor),
+            // so back-to-back New Session opens still result in just
+            // one in-flight aggregation.
+            stats.refresh()
+        }
+    }
+}
+
 #Preview("Stats cards row") {
     HStack(spacing: NewSessionStatsCardsLayout.spacing) {
         OverviewStatsCard(result: nil)

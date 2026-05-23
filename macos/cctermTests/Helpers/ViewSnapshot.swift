@@ -95,9 +95,10 @@ enum ViewSnapshot {
 
     /// Render an AppKit `NSViewController` at `size` and return the
     /// resulting `NSImage`. Parallel to `render(_:size:settle:)` but
-    /// for AppKit-rooted hosts (demo / transcript VCs) that don't go
-    /// through `NSHostingController`. Same offscreen-window +
-    /// alpha-0.01 + ccterm_orderFrontForTesting scaffolding.
+    /// for AppKit-rooted hosts (demo / transcript VCs, the sidebar
+    /// outline view) that don't go through `NSHostingController`. Same
+    /// offscreen-window + alpha-0.01 + ccterm_orderFrontForTesting
+    /// scaffolding.
     @MainActor
     static func renderViewController(
         _ controller: NSViewController,

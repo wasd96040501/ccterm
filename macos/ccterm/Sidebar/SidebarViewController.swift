@@ -1,0 +1,639 @@
+import AppKit
+import Observation
+
+/// AppKit-native sidebar built on `NSOutlineView` in source-list style.
+/// Replaces the prior SwiftUI `SidebarView2`.
+///
+/// Data model is **hierarchical**: the root holds fixed top items
+/// followed by folder nodes; folder nodes hold history nodes as
+/// children. This means expand / collapse rides on the outline view's
+/// built-in `expandItem(_:)` / `collapseItem(_:)` (animated, persistent
+/// across reloads) and drag-and-drop of whole folders goes through the
+/// standard `pasteboardWriterForItem` / `validateDrop` / `acceptDrop`
+/// trio.
+///
+/// The standard left-edge disclosure triangle is suppressed by
+/// overriding `frameOfOutlineCell(atRow:)` to return `.zero` on a
+/// private NSOutlineView subclass — we draw a custom right-side
+/// chevron in the folder cell instead. Children render flush-left (no
+/// indent) because `indentationPerLevel = 0`; alignment relies on the
+/// cells sharing a fixed leading-icon slot.
+///
+/// Row heights are explicit via `outlineView(_:heightOfRowByItem:)` —
+/// `style = .sourceList` resets `rowHeight` and `intercellSpacing`
+/// after it's assigned, so per-row sizing has to come from the
+/// delegate. The three heights (`SidebarLayout.fixedRowHeight` /
+/// `.folderRowHeight` / `.historyRowHeight`) reproduce the prior
+/// SwiftUI sidebar's rhythm.
+///
+/// Group order is sourced from `SidebarSessionGroupOrderStore`
+/// (UserDefaults). Newly-appeared groups (a user just sent the first
+/// message in a folder that had no prior sessions) are detected via
+/// the records-observation diff and prepended to the store.
+@MainActor
+final class SidebarViewController: NSViewController {
+
+    let model: MainSelectionModel
+    let sessionManager: SessionManager
+    let groupOrderStore: SidebarSessionGroupOrderStore
+
+    private let scrollView = NSScrollView()
+    private let outlineView = NoDisclosureOutlineView()
+    private let column = NSTableColumn(identifier: .init("Sidebar"))
+
+    /// Flat list of the outline's root children. Folder nodes inside
+    /// hold their own `children` arrays for the hierarchy. Recomputed
+    /// by `rebuildItems`; mutated in-place during drag-and-drop so
+    /// `outlineView.moveItem` can animate the change.
+    private var rootChildren: [SidebarItemNode] = []
+
+    /// Snapshot of the group names present at the last records refresh.
+    /// Initialized in `viewDidLoad` to the current set so the first
+    /// observation fire reads as a "real change" rather than cold-start.
+    private var lastSeenGroups: Set<String> = []
+
+    /// Per-history-row observation handles. Keyed by sessionId so we
+    /// can cancel + re-arm when the underlying `Session` is replaced.
+    private var rowObservations: [String: Task<Void, Never>] = [:]
+
+    private var recordsObservationTask: Task<Void, Never>?
+    private var selectionObservationTask: Task<Void, Never>?
+    private var isApplyingSelectionFromModel = false
+
+    init(
+        model: MainSelectionModel,
+        sessionManager: SessionManager,
+        groupOrderStore: SidebarSessionGroupOrderStore
+    ) {
+        self.model = model
+        self.sessionManager = sessionManager
+        self.groupOrderStore = groupOrderStore
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+
+    deinit {
+        recordsObservationTask?.cancel()
+        selectionObservationTask?.cancel()
+        for task in rowObservations.values { task.cancel() }
+    }
+
+    override func loadView() {
+        let host = NSView()
+        host.translatesAutoresizingMaskIntoConstraints = false
+        view = host
+
+        configureOutline()
+        configureScrollView()
+        host.addSubview(scrollView)
+        NSLayoutConstraint.activate([
+            scrollView.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: host.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: host.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: host.bottomAnchor),
+        ])
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        // Initialize the seen-groups snapshot from the current
+        // repository state. Without this, the first records-observation
+        // fire after launch would treat every existing group as
+        // newly-appeared and prepend them in iteration order.
+        lastSeenGroups = currentGroupSet()
+        rebuildItems()  // also runs expandAllFolders + restores selection
+        applyModelSelection()
+        startRecordsObservation()
+        startSelectionObservation()
+    }
+
+    // MARK: - View construction
+
+    private func configureOutline() {
+        column.isEditable = false
+        column.resizingMask = [.autoresizingMask]
+        outlineView.addTableColumn(column)
+        // Keep `outlineTableColumn = column` so NSOutlineView wires its
+        // child-of-item dispatch correctly; the disclosure triangle is
+        // hidden by the subclass overriding `frameOfOutlineCell`.
+        outlineView.outlineTableColumn = column
+        outlineView.headerView = nil
+        outlineView.allowsEmptySelection = true
+        outlineView.allowsMultipleSelection = false
+        outlineView.usesAlternatingRowBackgroundColors = false
+        outlineView.style = .sourceList
+        // `style = .sourceList` resets indentation; force it to zero so
+        // history children sit in the same leading column as folder
+        // headers (alignment relies on the shared 16pt icon slot, not
+        // on outline indent).
+        outlineView.indentationPerLevel = 0
+        // Pin per-row heights to `heightOfRowByItem` instead of letting
+        // the source-list style fall back to intrinsic-size auto sizing
+        // — auto sizing would let a long title's intrinsic content size
+        // stretch the row and bleed into adjacent rows.
+        outlineView.usesAutomaticRowHeights = false
+        outlineView.dataSource = self
+        outlineView.delegate = self
+        outlineView.target = self
+        outlineView.action = #selector(handleOutlineClick(_:))
+        outlineView.menu = makeContextMenu()
+        outlineView.registerForDraggedTypes([SidebarLayout.folderDragType])
+        outlineView.setDraggingSourceOperationMask([.move], forLocal: true)
+        outlineView.setDraggingSourceOperationMask([], forLocal: false)
+    }
+
+    private func configureScrollView() {
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.documentView = outlineView
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.scrollerStyle = .overlay
+        scrollView.autohidesScrollers = true
+    }
+
+    private func makeContextMenu() -> NSMenu {
+        let menu = NSMenu()
+        menu.delegate = self
+        let archive = NSMenuItem(
+            title: String(localized: "Archive"),
+            action: #selector(archiveSelectedRow(_:)),
+            keyEquivalent: "")
+        archive.target = self
+        menu.addItem(archive)
+        return menu
+    }
+
+    // MARK: - Items
+
+    private func rebuildItems() {
+        let previousSelectionTag = currentSelectionTag()
+        rootChildren = buildRootChildren()
+        outlineView.reloadData()
+        expandAllFolders()
+        if let tag = previousSelectionTag {
+            selectRow(for: tag)
+        }
+    }
+
+    private func buildRootChildren() -> [SidebarItemNode] {
+        var items: [SidebarItemNode] = []
+        for kind in FixedKind.allCases {
+            items.append(
+                SidebarItemNode(kind: .fixed(kind), selectionTag: kind.selectionTag))
+        }
+        for group in groupedRecords() {
+            let children = group.records.map { record in
+                SidebarItemNode(
+                    kind: .history(
+                        sessionId: record.sessionId,
+                        fallbackTitle: record.title),
+                    selectionTag: record.sessionId)
+            }
+            items.append(
+                SidebarItemNode(
+                    kind: .folder(name: group.folderName),
+                    selectionTag: nil,
+                    children: children))
+        }
+        return items
+    }
+
+    private struct RecordGroup {
+        let folderName: String
+        let records: [SessionRecord]
+    }
+
+    private func groupedRecords() -> [RecordGroup] {
+        let buckets = Dictionary(grouping: sessionManager.records) {
+            $0.groupingFolderName ?? "Unknown"
+        }
+        let folderNames = Array(buckets.keys)
+        let ordered = groupOrderStore.arrange(folderNames)
+        return ordered.compactMap { name -> RecordGroup? in
+            guard let records = buckets[name] else { return nil }
+            return RecordGroup(
+                folderName: name,
+                records: records.sorted { $0.lastActiveAt > $1.lastActiveAt })
+        }
+    }
+
+    /// Index range within `rootChildren` that holds folder nodes.
+    /// Fixed items occupy the first `FixedKind.allCases.count` indices;
+    /// folders follow.
+    private var folderRange: Range<Int> {
+        let start = FixedKind.allCases.count
+        let end = rootChildren.count
+        return start..<end
+    }
+
+    private func currentGroupSet() -> Set<String> {
+        var s: Set<String> = []
+        for record in sessionManager.records {
+            if let name = record.groupingFolderName {
+                s.insert(name)
+            }
+        }
+        return s
+    }
+
+    private func currentSelectionTag() -> String? {
+        let row = outlineView.selectedRow
+        guard row >= 0 else { return nil }
+        let item = outlineView.item(atRow: row) as? SidebarItemNode
+        return item?.selectionTag
+    }
+
+    private func selectRow(for tag: String) {
+        // Walk the visible rows to find the matching tag. Folders
+        // aren't selectable so they're skipped naturally.
+        for row in 0..<outlineView.numberOfRows {
+            guard let node = outlineView.item(atRow: row) as? SidebarItemNode,
+                node.selectionTag == tag
+            else { continue }
+            isApplyingSelectionFromModel = true
+            outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+            outlineView.scrollRowToVisible(row)
+            isApplyingSelectionFromModel = false
+            return
+        }
+    }
+
+    /// Expand every folder synchronously without animation.
+    /// `outlineView.expandItem(_:)` (the non-animator form) is already
+    /// non-animated by default; an earlier attempt wrapped this in
+    /// `NSAnimationContext.runAnimationGroup { duration:0 }` to be safe,
+    /// but the wrapper was pure ceremony.
+    private func expandAllFolders() {
+        for node in rootChildren where node.isFolder {
+            outlineView.expandItem(node)
+        }
+    }
+
+    // MARK: - Selection / records observation
+
+    private func applyModelSelection() {
+        guard let tag = model.selectedSessionId else {
+            isApplyingSelectionFromModel = true
+            outlineView.deselectAll(nil)
+            isApplyingSelectionFromModel = false
+            return
+        }
+        selectRow(for: tag)
+    }
+
+    private func startSelectionObservation() {
+        selectionObservationTask?.cancel()
+        selectionObservationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await withCheckedContinuation { cont in
+                withObservationTracking {
+                    _ = self.model.selectedSessionId
+                } onChange: {
+                    Task { @MainActor in cont.resume() }
+                }
+            }
+            self.applyModelSelection()
+            self.startSelectionObservation()
+        }
+    }
+
+    private func startRecordsObservation() {
+        recordsObservationTask?.cancel()
+        recordsObservationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await withCheckedContinuation { cont in
+                withObservationTracking {
+                    _ = self.sessionManager.records
+                } onChange: {
+                    Task { @MainActor in cont.resume() }
+                }
+            }
+            self.handleRecordsChanged()
+            self.startRecordsObservation()
+        }
+    }
+
+    private func handleRecordsChanged() {
+        // Detect groups that appeared since the last refresh. Treat
+        // them as "user just created a new project" → prepend to the
+        // order store so the new project rides to the top. Cold-start
+        // (no prior snapshot) is excluded by initializing
+        // `lastSeenGroups` in `viewDidLoad` to the current set.
+        let current = currentGroupSet()
+        let newlyAppeared = current.subtracting(lastSeenGroups)
+        for name in newlyAppeared {
+            groupOrderStore.prependIfAbsent(name)
+        }
+        lastSeenGroups = current
+        rebuildItems()
+    }
+
+    // MARK: - Click + context menu
+
+    @objc private func handleOutlineClick(_ sender: Any?) {
+        let row = outlineView.clickedRow
+        guard row >= 0 else { return }
+        guard let node = outlineView.item(atRow: row) as? SidebarItemNode else { return }
+        if node.isFolder {
+            toggleFolder(node)
+        }
+    }
+
+    private func toggleFolder(_ node: SidebarItemNode) {
+        let isExpanded = outlineView.isItemExpanded(node)
+        // Call through the animator proxy directly — NSOutlineView
+        // attaches its own row insert/remove animation (slide-down for
+        // expand, slide-up for collapse). Wrapping this in a manual
+        // `NSAnimationContext.runAnimationGroup` with
+        // `allowsImplicitAnimation = true` (an earlier attempt) made
+        // CoreAnimation layer animations race the row animation and
+        // produced the "children fly in from the top of the scrollview"
+        // visual glitch.
+        if isExpanded {
+            outlineView.animator().collapseItem(node)
+        } else {
+            outlineView.animator().expandItem(node)
+        }
+        // Eager chevron update so it doesn't lag the slide animation
+        // by a frame. `outlineViewItemDidExpand` / `…DidCollapse` (in
+        // the delegate extension) is the fallback for state arrived at
+        // through other paths (autosave restore, etc).
+        let row = outlineView.row(forItem: node)
+        if let cell = outlineView.view(atColumn: 0, row: row, makeIfNecessary: false)
+            as? SidebarFolderCellView
+        {
+            cell.setExpanded(!isExpanded, animated: true)
+        }
+    }
+
+    @objc private func archiveSelectedRow(_ sender: Any?) {
+        let row = outlineView.clickedRow >= 0 ? outlineView.clickedRow : outlineView.selectedRow
+        guard row >= 0, let node = outlineView.item(atRow: row) as? SidebarItemNode else {
+            return
+        }
+        guard case .history(let sessionId, _) = node.kind else { return }
+        if model.selectedSessionId == sessionId {
+            model.selectedSessionId = SidebarSentinel.newSession
+        }
+        sessionManager.archive(sessionId)
+    }
+}
+
+// MARK: - DataSource
+
+extension SidebarViewController: NSOutlineViewDataSource {
+    func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
+        guard let item else { return rootChildren.count }
+        guard let node = item as? SidebarItemNode else { return 0 }
+        return node.children.count
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
+        guard let item else { return rootChildren[index] }
+        let node = item as! SidebarItemNode
+        return node.children[index]
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, isItemExpandable item: Any) -> Bool {
+        guard let node = item as? SidebarItemNode else { return false }
+        return node.isFolder
+    }
+
+    // MARK: Drag-and-drop
+
+    func outlineView(
+        _ outlineView: NSOutlineView, pasteboardWriterForItem item: Any
+    ) -> NSPasteboardWriting? {
+        guard let node = item as? SidebarItemNode, let name = node.folderName else { return nil }
+        let pb = NSPasteboardItem()
+        pb.setString(name, forType: SidebarLayout.folderDragType)
+        return pb
+    }
+
+    func outlineView(
+        _ outlineView: NSOutlineView,
+        validateDrop info: NSDraggingInfo,
+        proposedItem item: Any?,
+        proposedChildIndex index: Int
+    ) -> NSDragOperation {
+        // Folder reorder is allowed only at the root level, between
+        // children (no "on" drops, no drops into a folder).
+        guard item == nil else { return [] }
+        guard index != NSOutlineViewDropOnItemIndex else { return [] }
+        guard pasteboardFolderName(in: info) != nil else { return [] }
+        // Clamp the drop position into the folder range — refuse drops
+        // above the fixed top items, even if AppKit proposes them.
+        let range = folderRange
+        let clamped = max(range.lowerBound, min(index, range.upperBound))
+        if clamped != index {
+            outlineView.setDropItem(nil, dropChildIndex: clamped)
+        }
+        return .move
+    }
+
+    func outlineView(
+        _ outlineView: NSOutlineView,
+        acceptDrop info: NSDraggingInfo,
+        item: Any?,
+        childIndex index: Int
+    ) -> Bool {
+        guard let folderName = pasteboardFolderName(in: info) else { return false }
+        guard
+            let oldIndex = rootChildren.firstIndex(where: { $0.folderName == folderName })
+        else { return false }
+
+        let range = folderRange
+        var targetIndex = max(range.lowerBound, min(index, range.upperBound))
+        // When moving within the same parent, NSOutlineView's
+        // childIndex is "where to insert assuming the source is still
+        // in place". Adjust for the upcoming removal of the source row
+        // when it sits before the target.
+        if targetIndex > oldIndex { targetIndex -= 1 }
+        guard targetIndex != oldIndex else { return false }
+
+        let node = rootChildren.remove(at: oldIndex)
+        rootChildren.insert(node, at: targetIndex)
+
+        outlineView.moveItem(
+            at: oldIndex, inParent: nil, to: targetIndex, inParent: nil)
+
+        // Persist the new full order of folder names (not session ids).
+        let newOrder = rootChildren.compactMap(\.folderName)
+        groupOrderStore.replace(with: newOrder)
+        return true
+    }
+
+    private func pasteboardFolderName(in info: NSDraggingInfo) -> String? {
+        info.draggingPasteboard.pasteboardItems?
+            .compactMap { $0.string(forType: SidebarLayout.folderDragType) }
+            .first
+    }
+}
+
+// MARK: - Delegate
+
+extension SidebarViewController: NSOutlineViewDelegate {
+    func outlineView(
+        _ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any
+    ) -> NSView? {
+        guard let node = item as? SidebarItemNode else { return nil }
+        switch node.kind {
+        case .fixed(let kind):
+            let cell = SidebarFixedCellView()
+            cell.configure(kind: kind)
+            return cell
+        case .folder(let name):
+            let cell = SidebarFolderCellView()
+            cell.configure(folderName: name, isExpanded: outlineView.isItemExpanded(node))
+            return cell
+        case .history(let sessionId, let fallback):
+            let cell = SidebarHistoryCellView()
+            configureHistoryCell(cell, sessionId: sessionId, fallback: fallback)
+            return cell
+        }
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
+        guard let node = item as? SidebarItemNode else { return SidebarLayout.fixedRowHeight }
+        switch node.kind {
+        case .fixed: return SidebarLayout.fixedRowHeight
+        case .folder: return SidebarLayout.folderRowHeight
+        case .history: return SidebarLayout.historyRowHeight
+        }
+    }
+
+    /// Filter folder rows out of any proposed selection (click, keyboard
+    /// navigation, programmatic). When this delegate method is
+    /// implemented, NSOutlineView skips the older per-item
+    /// `outlineView(_:shouldSelectItem:)` path entirely, so it lives
+    /// here alone.
+    func outlineView(
+        _ outlineView: NSOutlineView,
+        selectionIndexesForProposedSelection proposed: IndexSet
+    ) -> IndexSet {
+        var allowed = IndexSet()
+        for row in proposed {
+            guard let node = outlineView.item(atRow: row) as? SidebarItemNode else { continue }
+            if node.isFolder { continue }
+            allowed.insert(row)
+        }
+        return allowed
+    }
+
+    func outlineViewSelectionDidChange(_ notification: Notification) {
+        guard !isApplyingSelectionFromModel else { return }
+        let row = outlineView.selectedRow
+        guard row >= 0,
+            let node = outlineView.item(atRow: row) as? SidebarItemNode,
+            let tag = node.selectionTag
+        else { return }
+        if model.selectedSessionId != tag {
+            model.selectedSessionId = tag
+        }
+    }
+
+    // Built-in expand/collapse can be triggered via paths other than
+    // our click handler (e.g. accessibility), so sync the chevron from
+    // the notification as a backstop.
+    func outlineViewItemDidExpand(_ notification: Notification) {
+        guard let node = notification.userInfo?["NSObject"] as? SidebarItemNode else { return }
+        let row = outlineView.row(forItem: node)
+        if let cell = outlineView.view(atColumn: 0, row: row, makeIfNecessary: false)
+            as? SidebarFolderCellView
+        {
+            cell.setExpanded(true, animated: false)
+        }
+    }
+
+    func outlineViewItemDidCollapse(_ notification: Notification) {
+        guard let node = notification.userInfo?["NSObject"] as? SidebarItemNode else { return }
+        let row = outlineView.row(forItem: node)
+        if let cell = outlineView.view(atColumn: 0, row: row, makeIfNecessary: false)
+            as? SidebarFolderCellView
+        {
+            cell.setExpanded(false, animated: false)
+        }
+    }
+}
+
+// MARK: - Per-row observation
+
+extension SidebarViewController {
+    fileprivate func configureHistoryCell(
+        _ cell: SidebarHistoryCellView, sessionId: String, fallback: String
+    ) {
+        if let earlier = cell.observedSessionId, earlier != sessionId {
+            rowObservations[earlier]?.cancel()
+            rowObservations[earlier] = nil
+        }
+        cell.observedSessionId = sessionId
+        cell.fallbackTitle = fallback
+        applyHistoryState(cell: cell, sessionId: sessionId, fallback: fallback)
+        armRowObservation(cell: cell, sessionId: sessionId)
+    }
+
+    private func armRowObservation(cell: SidebarHistoryCellView, sessionId: String) {
+        rowObservations[sessionId]?.cancel()
+        rowObservations[sessionId] = Task { @MainActor [weak self, weak cell] in
+            guard let controller = self, let initial = cell,
+                initial.observedSessionId == sessionId
+            else { return }
+            await withCheckedContinuation { cont in
+                withObservationTracking {
+                    let session = controller.sessionManager.existingSession(sessionId)
+                    _ = session?.title
+                    _ = session?.isRunning
+                    _ = session?.hasUnread
+                    _ = session?.isGeneratingTitle
+                } onChange: {
+                    Task { @MainActor in cont.resume() }
+                }
+            }
+            guard let refreshed = cell, refreshed.observedSessionId == sessionId else { return }
+            controller.applyHistoryState(
+                cell: refreshed, sessionId: sessionId, fallback: refreshed.fallbackTitle)
+            controller.armRowObservation(cell: refreshed, sessionId: sessionId)
+        }
+    }
+
+    private func applyHistoryState(
+        cell: SidebarHistoryCellView, sessionId: String, fallback: String
+    ) {
+        let session = sessionManager.existingSession(sessionId)
+        cell.configure(
+            title: session?.title ?? fallback,
+            isRunning: session?.isRunning ?? false,
+            hasUnread: session?.hasUnread ?? false,
+            isGeneratingTitle: session?.isGeneratingTitle ?? false)
+    }
+}
+
+// MARK: - Context menu validation
+
+extension SidebarViewController: NSMenuDelegate {
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        let row = outlineView.clickedRow
+        var allowed = false
+        if row >= 0,
+            let node = outlineView.item(atRow: row) as? SidebarItemNode,
+            case .history = node.kind
+        {
+            allowed = true
+        }
+        for item in menu.items { item.isHidden = !allowed }
+    }
+}
+
+// MARK: - NSOutlineView subclass
+
+/// Suppresses the left-edge disclosure triangle that NSOutlineView
+/// otherwise draws for expandable items. The sidebar's folder cells
+/// host their own right-edge chevron and own the expand/collapse
+/// gesture via `outlineView.action` + `clickedRow`.
+private final class NoDisclosureOutlineView: NSOutlineView {
+    override func frameOfOutlineCell(atRow row: Int) -> NSRect { .zero }
+}

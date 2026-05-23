@@ -87,29 +87,12 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
 
     /// Whether the current sidebar selection is a real history session,
     /// as opposed to one of the sentinel tabs (New Session / Archive /
-    /// DEBUG demos). Listed explicitly against `SidebarView2`'s
-    /// constants so adding a new tab requires a deliberate update here.
+    /// DEBUG demos). Sentinel set lives on `SidebarSentinel` so adding
+    /// a new tab requires a deliberate update there.
     private var isHistorySession: Bool {
         guard let sid = model.selectedSessionId else { return false }
-        return !Self.sentinelTags.contains(sid)
+        return !SidebarSentinel.all.contains(sid)
     }
-
-    private static let sentinelTags: Set<String> = {
-        var tags: Set<String> = [
-            SidebarView2.newSessionTag,
-            SidebarView2.archiveTag,
-        ]
-        #if DEBUG
-        tags.formUnion([
-            SidebarView2.transcriptDemoTag,
-            SidebarView2.transcriptStressTag,
-            SidebarView2.transcriptPerfTag,
-            SidebarView2.permissionCardsDemoTag,
-            SidebarView2.permissionSessionDemoTag,
-        ])
-        #endif
-        return tags
-    }()
 
     /// Insert or remove the project-chip toolbar item to match the
     /// current selection. NSToolbar caches the hosted SwiftUI's
@@ -118,6 +101,14 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
     /// remove-then-insert to force a fresh measurement of the new
     /// session's content. Wrapped in a zero-duration animation context
     /// so NSToolbar's default fade-in/out doesn't fire.
+    ///
+    /// The chip must sit **after** the `.sidebarTrackingSeparator` so
+    /// it belongs to the content (detail) section of the toolbar, not
+    /// the sidebar section. macOS 11+ groups contiguous items on each
+    /// side of the separator into a single capsule background — placing
+    /// the chip on the sidebar side puts it inside the traffic-light /
+    /// sidebar-toggle capsule, and worse, sidebar-collapse hides the
+    /// whole sidebar group along with it.
     private func updateProjectChipPresence() {
         guard let toolbar = window?.toolbar else { return }
         let currentIndex = toolbar.items.firstIndex {
@@ -130,7 +121,13 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
                 toolbar.removeItem(at: idx)
             }
             if isHistorySession {
-                toolbar.insertItem(withItemIdentifier: ItemID.projectChip, at: 0)
+                let separatorIndex = toolbar.items.firstIndex {
+                    $0.itemIdentifier == .sidebarTrackingSeparator
+                }
+                // Fall back to position 0 only if the separator isn't
+                // present (shouldn't happen — it's in default items).
+                let insertAt = separatorIndex.map { $0 + 1 } ?? 0
+                toolbar.insertItem(withItemIdentifier: ItemID.projectChip, at: insertAt)
             }
         }
     }
@@ -169,14 +166,27 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
     // MARK: - NSToolbarDelegate
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        // `.toggleSidebar` + `.sidebarTrackingSeparator` are
+        // system-provided items: NSToolbar synthesizes them, supplies
+        // the standard icon, and wires the action to
+        // `NSSplitViewController.toggleSidebar(_:)` via the responder
+        // chain — they never come through `itemForItemIdentifier`.
+        //
         // Project chip is inserted/removed imperatively by
         // `updateProjectChipPresence()` based on the current selection,
         // so it's NOT in the default identifiers — only search is.
-        [.flexibleSpace, ItemID.search]
+        [.toggleSidebar, .sidebarTrackingSeparator, .flexibleSpace, ItemID.search]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [ItemID.projectChip, ItemID.search, .flexibleSpace, .space]
+        [
+            .toggleSidebar,
+            .sidebarTrackingSeparator,
+            ItemID.projectChip,
+            ItemID.search,
+            .flexibleSpace,
+            .space,
+        ]
     }
 
     func toolbar(

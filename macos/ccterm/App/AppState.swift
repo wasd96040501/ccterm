@@ -8,6 +8,7 @@ final class AppState {
     let syntaxEngine = SyntaxHighlightEngine()
     let recentProjects = RecentProjectsStore()
     let inputDraftStore = InputDraftStore()
+    let sidebarGroupOrder = SidebarSessionGroupOrderStore()
     let activationTracker: AppActivationTracker
     let notificationService: NotificationService
 

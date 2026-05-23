@@ -259,7 +259,7 @@ final class TranscriptDetailViewController: NSViewController {
 
     private func handleSelectionChanged() {
         // Lazy-allocate draftSessionId on entering New Session.
-        if model.selectedSessionId == SidebarView2.newSessionTag, model.draftSessionId == nil {
+        if model.selectedSessionId == SidebarSentinel.newSession, model.draftSessionId == nil {
             model.draftSessionId = UUID().uuidString.lowercased()
             model.draftCwd = recentProjects.lastLaunchedPath
             model.draftUseWorktree =
@@ -315,7 +315,7 @@ final class TranscriptDetailViewController: NSViewController {
 
     private func sideBranchContent(for sid: String?) -> SideBranchContent? {
         guard let sid else { return nil }
-        if sid == SidebarView2.archiveTag {
+        if sid == SidebarSentinel.archive {
             return .swiftUI(
                 AnyView(
                     ArchiveView(onUnarchive: { [weak self] resumeSid in
@@ -331,18 +331,18 @@ final class TranscriptDetailViewController: NSViewController {
         }
         #if DEBUG
         switch sid {
-        case SidebarView2.transcriptDemoTag:
+        case SidebarSentinel.transcriptDemo:
             return .viewController(
                 TranscriptDemoViewController(syntaxEngine: searchEngine))
-        case SidebarView2.transcriptStressTag:
+        case SidebarSentinel.transcriptStress:
             return .viewController(
                 TranscriptStressViewController(syntaxEngine: searchEngine))
-        case SidebarView2.transcriptPerfTag:
+        case SidebarSentinel.transcriptPerf:
             return .viewController(
                 TranscriptPerfDemoViewController(syntaxEngine: searchEngine))
-        case SidebarView2.permissionCardsDemoTag:
+        case SidebarSentinel.permissionCardsDemo:
             return .swiftUI(AnyView(injectingEnvironment(PermissionCardsDemoView())))
-        case SidebarView2.permissionSessionDemoTag:
+        case SidebarSentinel.permissionSessionDemo:
             return .viewController(
                 PermissionSessionDemoViewController(syntaxEngine: searchEngine))
         default: break

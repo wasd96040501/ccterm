@@ -152,7 +152,7 @@ them: `make test-unit FILTER=<class>` then `open <png>`.
 | View | Test class | PNG |
 |---|---|---|
 | `TranscriptDemoViewController` ([source](../ccterm/Content/TranscriptDemo/TranscriptDemoViewController.swift)) | `TranscriptDemoSnapshotTests` ([source](TranscriptDemoSnapshotTests.swift)) | `/tmp/ccterm-screenshots/TranscriptDemoView.png` |
-| `SidebarView2` row chrome + per-row state indicators ([source](../ccterm/Sidebar/SidebarView2.swift)) | `SidebarView2SnapshotTests` ([source](SidebarView2SnapshotTests.swift)) | `/tmp/ccterm-screenshots/SidebarView2.png` |
+| `SidebarViewController` source-list sidebar + per-row state indicators ([source](../ccterm/Sidebar/SidebarViewController.swift)) | `SidebarView2SnapshotTests` ([source](SidebarView2SnapshotTests.swift)) | `/tmp/ccterm-screenshots/SidebarView2.png` |
 | `NewSessionConfigurator` three-column compose card ([source](../ccterm/Content/Chat/NewSessionConfigurator.swift)) | `NewSessionConfiguratorSnapshotTests` ([source](NewSessionConfiguratorSnapshotTests.swift)) | `/tmp/ccterm-screenshots/NewSessionConfigurator.png` + `…-empty.png` |
 | `DiffView` standalone diff card (modified + new file) ([source](../ccterm/Components/DiffView.swift)) | `DiffViewSnapshotTests` ([source](DiffViewSnapshotTests.swift)) | `/tmp/ccterm-screenshots/DiffView.png` |
 | Transcript attach sequence — first-frame scroll origin / row geometry ([source](../ccterm/Content/Chat/NativeTranscript2/AppKit/TranscriptScrollViewFactory.swift)) | `TranscriptScrollFirstFrameSnapshotTests` ([source](TranscriptScrollFirstFrameSnapshotTests.swift)) | `/tmp/ccterm-screenshots/TranscriptScrollFirstFrame-Production.png` + `…-NoNote.png` |

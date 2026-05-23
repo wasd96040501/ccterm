@@ -1,10 +1,9 @@
 import AppKit
-import SwiftUI
 
-/// Two-item `NSSplitViewController` that hosts the sidebar (SwiftUI
-/// `SidebarView2` via `NSHostingController`) on the leading side and
-/// the AppKit-rooted `TranscriptDetailViewController` on the trailing
-/// side. Replaces `RootView2`'s `NavigationSplitView` wrapper.
+/// Two-item `NSSplitViewController` that hosts the AppKit-native
+/// `SidebarViewController` on the leading side and the
+/// `TranscriptDetailViewController` on the trailing side. Replaces
+/// `RootView2`'s `NavigationSplitView` wrapper.
 @MainActor
 final class MainSplitViewController: NSSplitViewController {
     let model: MainSelectionModel
@@ -12,22 +11,17 @@ final class MainSplitViewController: NSSplitViewController {
     let searchBus: TranscriptSearchBus
 
     let detailViewController: TranscriptDetailViewController
-    private let sidebarHostingController: NSHostingController<AnyView>
+    private let sidebarViewController: SidebarViewController
 
     init(model: MainSelectionModel, appState: AppState, searchBus: TranscriptSearchBus) {
         self.model = model
         self.appState = appState
         self.searchBus = searchBus
 
-        let bindable = SidebarSelectionBinding(model: model)
-        let sidebar = SidebarView2(selection: bindable.selectionBinding)
-            .environment(appState.sessionManager)
-            .environment(appState.recentProjects)
-            .environment(appState.inputDraftStore)
-            .environment(\.syntaxEngine, appState.syntaxEngine)
-            .environment(searchBus)
-            .environment(appState.notificationService)
-        sidebarHostingController = NSHostingController(rootView: AnyView(sidebar))
+        sidebarViewController = SidebarViewController(
+            model: model,
+            sessionManager: appState.sessionManager,
+            groupOrderStore: appState.sidebarGroupOrder)
 
         detailViewController = TranscriptDetailViewController(
             model: model,
@@ -47,9 +41,13 @@ final class MainSplitViewController: NSSplitViewController {
 
     override func loadView() {
         super.loadView()
-        let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebarHostingController)
+        let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebarViewController)
         sidebarItem.minimumThickness = 220
         sidebarItem.maximumThickness = 350
+        // First-launch width when no autosaved divider position exists.
+        // 0.22 of a 1200pt default window → 264pt, inside [220, 350].
+        // Once autosave kicks in this is ignored.
+        sidebarItem.preferredThicknessFraction = 0.22
         sidebarItem.canCollapse = true
         sidebarItem.titlebarSeparatorStyle = .automatic
         addSplitViewItem(sidebarItem)
@@ -61,24 +59,9 @@ final class MainSplitViewController: NSSplitViewController {
         addSplitViewItem(detailItem)
 
         splitView.dividerStyle = .thin
-    }
-}
-
-/// `SidebarView2` takes a SwiftUI `@Binding<String?>`. The binding has
-/// to capture the `MainSelectionModel` by reference. Wrapping the
-/// closure pair in a small helper keeps that ownership explicit.
-@MainActor
-private final class SidebarSelectionBinding {
-    let model: MainSelectionModel
-
-    init(model: MainSelectionModel) {
-        self.model = model
-    }
-
-    var selectionBinding: Binding<String?> {
-        Binding(
-            get: { self.model.selectedSessionId },
-            set: { self.model.selectedSessionId = $0 }
-        )
+        // Persist the user's divider position (and collapsed state)
+        // across launches. Set after both items are added — AppKit
+        // restores the saved frames on the next layout pass.
+        splitView.autosaveName = "ccterm.mainSplit"
     }
 }

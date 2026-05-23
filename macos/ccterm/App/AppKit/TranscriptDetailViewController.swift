@@ -8,13 +8,12 @@ import SwiftUI
 /// table's mount + `frameDidChange` cascade lives in AppKit's source
 /// phase, not in SwiftUI's commit pass (the whole point of #195).
 ///
-/// Around the transcript, SwiftUI is hosted via three lightweight
-/// `NSHostingView`s:
-/// - top scrim
-/// - bottom scrim (with model-driven cut-outs for the attach button +
-///   pill)
-/// - input bar / compose configurator (one host, contents switch on
-///   `model.isComposeMode`)
+/// Around the transcript we mount three full-bleed overlays:
+/// - top scrim — `TranscriptScrimView` (AppKit, hitTest passthrough)
+/// - bottom scrim — `TranscriptBottomScrimView` (AppKit, hitTest
+///   passthrough, even-odd cutouts at the attach button + pill)
+/// - input bar / compose configurator — one `NSHostingView`, contents
+///   switch on `model.isComposeMode`
 ///
 /// Side branches (archive page, DEBUG transcript demos) are hosted via
 /// child `NSHostingController`s that take over the detail area when
@@ -25,8 +24,15 @@ final class TranscriptDetailViewController: NSViewController {
     /// `PreferenceKey` callbacks that report the attach button +
     /// pill rects. Mirrors `RootView2.detailCoordSpace`.
     static let detailCoordSpace = "TranscriptDetailViewController.detail"
-    private static let topFadeScrimHeight: CGFloat = 80
-    private static let bottomFadeScrimHeight: CGFloat = 160
+    /// Top fade band height. Sized to match the unified toolbar so the
+    /// gradient fades in exactly the strip the toolbar visually covers.
+    private static let topFadeScrimHeight: CGFloat = 52
+    /// Bottom fade band height. Sized to match the input bar's top
+    /// edge, so the gradient stops where the bar begins. Derived from
+    /// `chatBottomInset` (36) + `InputBarSessionChrome` row (~22) +
+    /// `InputBarSessionChrome.barSpacing` (10) + `InputBarView2` pill
+    /// (32) = 100. Hardcoded — those constants don't change at runtime.
+    private static let bottomFadeScrimHeight: CGFloat = 100
     static let composeMaxWidth: CGFloat = 512
     static let chatBottomInset: CGFloat = 36
     static let detailHorizontalInset: CGFloat = 20
@@ -54,12 +60,18 @@ final class TranscriptDetailViewController: NSViewController {
     /// attach (same lifecycle as `transcriptScroll`); nil for
     /// archive / demo branches (those VCs own their own presenter).
     private var transcriptSheetPresenter: Transcript2SheetPresenter?
-    /// Hosted SwiftUI overlays. All three are added to `view` once and
-    /// stay mounted for the lifetime of the VC — the SwiftUI content
-    /// they render reads from `model` and reactively switches form.
-    private var topScrimHost: NSHostingView<AnyView>!
-    private var bottomScrimHost: NSHostingView<AnyView>!
-    private var composeOrBarHost: NSHostingView<AnyView>!
+    /// Full-bleed overlays. All three are added to `view` once and
+    /// stay mounted for the lifetime of the VC. The scrims are pure
+    /// AppKit (no `NSHostingView` so they don't register cursor rects
+    /// that would shadow the transcript's I-beam); the input bar /
+    /// compose card stays SwiftUI-hosted.
+    private var topScrim: TranscriptScrimView!
+    private var bottomScrim: TranscriptBottomScrimView!
+    private var composeOrBarHost: PassthroughHostingView!
+
+    /// Sink for `model.attachRect` / `pillRect` → `bottomScrim` cutout
+    /// path. Re-arms on every fire.
+    private var scrimRectObservationTask: Task<Void, Never>?
 
     /// Side-branch (archive / demo) child VC, mounted via
     /// `addChild` + `view.addSubview`. nil while a session is shown.
@@ -104,28 +116,32 @@ final class TranscriptDetailViewController: NSViewController {
         // — we just need a plain container view here.
         view = NSView()
 
-        topScrimHost = NSHostingView(rootView: AnyView(makeTopScrim()))
-        topScrimHost.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(topScrimHost)
+        topScrim = TranscriptScrimView(edge: .top, bandHeight: Self.topFadeScrimHeight)
+        topScrim.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(topScrim)
 
-        bottomScrimHost = NSHostingView(rootView: AnyView(makeBottomScrim()))
-        bottomScrimHost.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(bottomScrimHost)
+        bottomScrim = TranscriptBottomScrimView(bandHeight: Self.bottomFadeScrimHeight)
+        bottomScrim.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(bottomScrim)
 
-        composeOrBarHost = NSHostingView(rootView: AnyView(makeComposeOrBarStack()))
+        composeOrBarHost = PassthroughHostingView(rootView: AnyView(makeComposeOrBarStack()))
         composeOrBarHost.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(composeOrBarHost)
 
+        // Each scrim is sized to its visible band, anchored to its edge.
+        // Cutout coordinates arrive in `composeOrBarHost`'s SwiftUI
+        // coord space; `applyScrimCutouts` translates them into the
+        // bottom scrim's local coord via `convert(_:from:)`.
         NSLayoutConstraint.activate([
-            topScrimHost.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            topScrimHost.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            topScrimHost.topAnchor.constraint(equalTo: view.topAnchor),
-            topScrimHost.heightAnchor.constraint(equalToConstant: Self.topFadeScrimHeight),
+            topScrim.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            topScrim.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            topScrim.topAnchor.constraint(equalTo: view.topAnchor),
+            topScrim.heightAnchor.constraint(equalToConstant: Self.topFadeScrimHeight),
 
-            bottomScrimHost.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            bottomScrimHost.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            bottomScrimHost.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            bottomScrimHost.heightAnchor.constraint(equalToConstant: Self.bottomFadeScrimHeight),
+            bottomScrim.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            bottomScrim.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            bottomScrim.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            bottomScrim.heightAnchor.constraint(equalToConstant: Self.bottomFadeScrimHeight),
 
             composeOrBarHost.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             composeOrBarHost.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -154,6 +170,29 @@ final class TranscriptDetailViewController: NSViewController {
         startSelectionObservation()
         startLaunchFailureObservation()
         startPendingActivationObservation()
+        startScrimRectObservation()
+    }
+
+    private func startScrimRectObservation() {
+        scrimRectObservationTask?.cancel()
+        scrimRectObservationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await withCheckedContinuation { cont in
+                withObservationTracking {
+                    _ = self.model.attachRect
+                    _ = self.model.pillRect
+                } onChange: {
+                    Task { @MainActor in cont.resume() }
+                }
+            }
+            self.applyScrimCutouts()
+            self.startScrimRectObservation()
+        }
+    }
+
+    private func applyScrimCutouts() {
+        bottomScrim.attachRect = bottomScrim.convert(model.attachRect, from: composeOrBarHost)
+        bottomScrim.pillRect = bottomScrim.convert(model.pillRect, from: composeOrBarHost)
     }
 
     private func startSelectionObservation() {
@@ -355,7 +394,7 @@ final class TranscriptDetailViewController: NSViewController {
         // overlays (scrim / input bar / compose card). Side branches
         // bring their own chrome but still benefit from the top
         // scrim's softening.
-        view.addSubview(host.view, positioned: .below, relativeTo: topScrimHost)
+        view.addSubview(host.view, positioned: .below, relativeTo: topScrim)
         NSLayoutConstraint.activate([
             host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -383,7 +422,7 @@ final class TranscriptDetailViewController: NSViewController {
 
         let scroll = TranscriptScrollViewFactory.make(controller: session.controller)
         scroll.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(scroll, positioned: .below, relativeTo: topScrimHost)
+        view.addSubview(scroll, positioned: .below, relativeTo: topScrim)
         NSLayoutConstraint.activate([
             scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -468,22 +507,6 @@ final class TranscriptDetailViewController: NSViewController {
 
     // MARK: - SwiftUI overlay builders
 
-    private func makeTopScrim() -> some View {
-        // `.ignoresSafeArea()` is essential: with `fullSizeContentView`,
-        // the detail view extends behind the toolbar, but NSHostingView
-        // forwards the parent's safe-area insets to its SwiftUI content
-        // by default — without this, the gradient draws *below* the
-        // toolbar instead of behind it.
-        FadeScrim(.topToBottom, height: Self.topFadeScrimHeight)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .ignoresSafeArea()
-    }
-
-    private func makeBottomScrim() -> some View {
-        TranscriptDetailBottomScrim(model: model, height: Self.bottomFadeScrimHeight)
-            .ignoresSafeArea()
-    }
-
     private func makeComposeOrBarStack() -> some View {
         TranscriptDetailComposeStack(
             model: model,
@@ -502,6 +525,16 @@ final class TranscriptDetailViewController: NSViewController {
         .environment(\.syntaxEngine, searchEngine)
         .environment(searchBus)
         .environment(notifications)
+        // Without `.ignoresSafeArea()`, `NSHostingView` would forward a
+        // toolbar-sized top safe-area inset to SwiftUI; the rects
+        // reported in `detailCoordSpace` would then sit in an inset
+        // coord space while `bottomScrim` (full-bleed AppKit) renders
+        // in `view.bounds`, so the cutouts would land
+        // `toolbarHeight` pixels too high. KNOWN ISSUE: this also
+        // makes the SwiftUI body extend behind the scrim's visible
+        // band, and mouse events in that band are intercepted instead
+        // of passing through to the transcript. Tracking separately.
+        .ignoresSafeArea()
     }
 
     private func injectingEnvironment<V: View>(_ inner: V) -> some View {
@@ -565,54 +598,11 @@ final class TranscriptDetailViewController: NSViewController {
         selectionObservationTask?.cancel()
         launchFailureObservationTask?.cancel()
         pendingActivationObservationTask?.cancel()
+        scrimRectObservationTask?.cancel()
     }
 }
 
 // MARK: - SwiftUI overlay subviews
-
-/// Bottom fade scrim, mirroring `RootView2.detailContentReleaseBranches`'s
-/// `.overlay(alignment: .bottom)`. Reads attach + pill rects from the
-/// shared `MainSelectionModel` so the cut-outs follow the input bar's
-/// reported geometry.
-private struct TranscriptDetailBottomScrim: View {
-    @Bindable var model: MainSelectionModel
-    let height: CGFloat
-
-    var body: some View {
-        FadeScrim(.bottomToTop, height: height)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-            .mask {
-                Color.white
-                    .overlay {
-                        if model.attachRect != .zero {
-                            Circle()
-                                .fill(.black)
-                                .frame(
-                                    width: model.attachRect.width,
-                                    height: model.attachRect.height
-                                )
-                                .position(x: model.attachRect.midX, y: model.attachRect.midY)
-                                .blendMode(.destinationOut)
-                        }
-                        if model.pillRect != .zero {
-                            RoundedRectangle(
-                                cornerRadius: InputBarView2.cornerRadius,
-                                style: .continuous
-                            )
-                            .fill(.black)
-                            .frame(
-                                width: model.pillRect.width,
-                                height: model.pillRect.height
-                            )
-                            .position(x: model.pillRect.midX, y: model.pillRect.midY)
-                            .blendMode(.destinationOut)
-                        }
-                    }
-                    .compositingGroup()
-            }
-            .allowsHitTesting(false)
-    }
-}
 
 /// Compose-mode card OR chat-mode resting input bar. Same shape as
 /// `RootView2.composeStack`, but reads state from the shared

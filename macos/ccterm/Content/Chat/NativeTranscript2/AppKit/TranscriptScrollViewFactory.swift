@@ -33,10 +33,12 @@ import AppKit
 enum TranscriptScrollViewFactory {
 
     /// The fixed transcript content insets: `top` reserves room for the
-    /// window's `unifiedCompact` toolbar; `bottom` reserves room for the
-    /// resting input bar + breathing space. See
-    /// `Transcript2NSViewBridge.makeNSView` for the original derivation.
-    static let contentInsets = NSEdgeInsets(top: 44, left: 0, bottom: 180, right: 0)
+    /// window's `unifiedCompact` toolbar; `bottom` matches the bottom
+    /// scrim height (`TranscriptDetailViewController.bottomFadeScrimHeight`)
+    /// so the last cell lands exactly at the input bar's top edge —
+    /// hit-test then routes that band to the cell rather than the
+    /// scroll view's empty backdrop.
+    static let contentInsets = NSEdgeInsets(top: 44, left: 0, bottom: 100, right: 0)
 
     /// Builds the scroll/clip/table/column shell. The table is added to
     /// the scroll view as document view, but its `dataSource` /

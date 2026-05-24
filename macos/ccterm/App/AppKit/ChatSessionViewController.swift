@@ -160,6 +160,22 @@ final class ChatSessionViewController: NSViewController {
 
         composeOrBarHost = NSHostingView(rootView: AnyView(makeComposeOrBarStack()))
         composeOrBarHost.translatesAutoresizingMaskIntoConstraints = false
+        // The host is bottom-anchored with a free top, so it sizes to its
+        // SwiftUI body's intrinsic height (bar + optional permission card).
+        // `NSHostingView`'s default `sizingOptions` is NOT empty — it adds
+        // required min/intrinsic/max constraints. Those make the host's
+        // intrinsic height a *required* contributor to the VC's
+        // `fittingSize`, which leaks up through the split and lets the
+        // window's constraint-based layout shrink the whole window to that
+        // height (`_changeWindowFrameFromConstraintsIfNecessary`). Keep the
+        // intrinsic size (the bar needs it) but lower the vertical
+        // compression resistance below `windowSizeStayPut` (500) so the
+        // window's own size wins and the pane never drives the window.
+        composeOrBarHost.sizingOptions = [.intrinsicContentSize]
+        composeOrBarHost.setContentCompressionResistancePriority(
+            NSLayoutConstraint.Priority(rawValue: 240), for: .vertical)
+        composeOrBarHost.setContentHuggingPriority(
+            NSLayoutConstraint.Priority(rawValue: 240), for: .vertical)
         view.addSubview(composeOrBarHost)
 
         // Bottom + leading + trailing always pinned. The top

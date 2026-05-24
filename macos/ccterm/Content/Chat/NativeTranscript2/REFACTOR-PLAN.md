@@ -59,6 +59,29 @@ source phase**. `blocks` changes ⟺ `insertRows`/`removeRows`/`noteHeightOfRows
 in the *same* tick. Pixels are **pulled** by NSTableView in `beforeWaiting`
 (`heightOfRow`/`viewFor` ← layout cache). `apply` draws nothing.
 
+### 3.1 Division of responsibility — who owns what
+
+The point of the refactor is that **no piece reaches into another's job**, and
+most of the hard parts are owned by machinery that **already exists** and is
+left unchanged. Read this table as the contract; the rest of the doc elaborates.
+
+| Concern | Owner | New or existing | Notes |
+|---|---|---|---|
+| **Source of truth (block list)** | `Transcript2Coordinator.blocks` | existing | The only authority. |
+| **Single write entry** | `apply(change)` | existing | Atomic data + structural notify, one tick. The *only* mutator. |
+| **Layout correctness across width** | **layout cache (width-keyed) + pure `makeLayout`** | **existing** | A cache entry carries its width; `layout(for:id,width:)` hits only on match, recomputes on miss. A wrong-width entry is self-healing — never a guard to maintain. |
+| **Off-main typesetting** | the reverse streaming iterator | **new** | Builds blocks **and** their layouts off-main, at the current row width. Withholds incomplete tool pairs (§4.2). |
+| **Telling the iterator the width** | view lifecycle → `iterator.retarget(width)` | new (one call) | The *entire* job on resize-mid-load. Even this is a perf optimization, not correctness (§4.4). |
+| **Visible-row relayout on resize** | **live-resize path (`refillLayoutCache` equiv.)** | **existing** | `viewWillStartLiveResize` / `viewDidEndLiveResize` rebuild what's on screen. Untouched. |
+| **Per-tick prepend + anchor** | controller, in-tick (§5 recipe) | new | Force tile → read real rects → scroll-compensate → commit, all one tick. No deferred compensation, so no `mutationCounter`-style guard. |
+| **Scroll-anchor intent** | rides with the change (`.prepend` ⇒ preserve viewport) | new vocabulary | A semantic property of the change, not a side effect a producer fires. |
+| **Scroller visibility** | derived `f(pipeline.isLoading, view.inLiveResize)` | new | Session-lifetime, recomputed on input change, applied to current scroll view. No counter, no push/pop. |
+| **Live/load merge** | pending queue, flushed at iterator exhaustion (§7) | new | Defined end condition; no race patches. |
+
+The recurring theme: **layout-vs-width and visible-resize are already solved by
+existing machinery**; the new code only adds the off-main builder, the in-tick
+prepend recipe, the derived scroller, and a one-call `retarget`.
+
 ---
 
 ## 4. The content pipeline: a reverse streaming iterator
@@ -73,7 +96,7 @@ A stateful streaming builder, running **off-main**:
 
 ```
 JSONL bytes  →  Message2  →  grouped / tool-paired entries  →  Block (+ RowLayout)
-   (reverse, paged)            (withholds incomplete pairs)        (typeset at snapshotted width)
+   (reverse, paged)            (withholds incomplete pairs)        (typeset at current row width)
 ```
 
 It is **not** a dumb byte pager. It owns the grouping + tool-pairing rules that
@@ -120,27 +143,55 @@ on-main would typeset rows the user cannot see, on the main thread. Off-main
 precompute keeps those off the main thread; the on-main insert is then a
 cache **hit** (a dict lookup), not a typeset.
 
-Off-main layout is sound only because **layout is a pure function of
-`(block, width, state)`** (existing `nonisolated static makeLayout`). `width`
-is the one input owned by main-thread view geometry, so it is handled by a
-**snapshot → validate** contract:
+Off-main layout is sound **by construction** because two existing facts compose:
+**layout is a pure function of `(block, width, state)`** (`nonisolated static
+makeLayout`), and **the layout cache is width-keyed** — `CachedLayout` carries
+the width it was built at, and `layout(for: id, width:)` returns the cached
+value *only* when the width matches, recomputing on mismatch.
 
-1. **Snapshot** the settled row width on main, *after* TICK 1's
-   `layoutSubtreeIfNeeded`, and feed it to the iterator.
-2. The iterator **tags** every built layout with the width it used.
-3. On the main `apply` hop, **validate** `builtWidth == currentSettledWidth`:
-   - **match** (the common case — the window is not resized mid-load) → install
-     layouts into cache + insert rows → cache hit, zero main-thread CTLine.
-   - **drift** (a resize happened mid-load — rare) → do not trust the prebuilt
-     layout: insert the rows anyway (data is width-independent), let
-     `heightOfRow` lazily recompute the affected rows at the new width
-     (cache miss = CTLine on main for those rows, correct but degraded), and
-     **retarget the iterator** to the new width for remaining pages. Already
-     applied visible rows go through the normal resize relayout path.
+`width` is the one input owned by main-thread view geometry. But it needs **no
+snapshot/validate/generation apparatus**, because a wrong-width cache entry is
+**self-healing**: it is consulted only through the width-matching read, so it
+can never corrupt anything — at worst it becomes a cache miss that recomputes at
+the current width. Concretely:
 
-This width guard is **irreducible** when layout is off-main — but it is now
-**one guard in one pipeline**, replacing the three scattered copies today
-(`applyInBackground`, `refillLayoutCache`, `setHistory`).
+- The iterator builds at **the current row width**, fed once at start (after
+  TICK 1's settle) and updated by `retarget(width)` whenever it changes.
+- On the install hop the off-main layouts go into the cache tagged with the
+  width they used, through the **existing** write path (the §2.14 anti-poison
+  check still applies). No validation gate.
+- `heightOfRow` reads `layout(for: id, width: currentWidth)`: a match is a
+  cache hit (zero main-thread CTLine — the common case, since the window is
+  rarely resized mid-load and on a wide window the width is pinned at
+  `maxLayoutWidth`); a mismatch recomputes on main for that row (correct,
+  degraded), exactly as today.
+
+**Resize mid-load is therefore almost nothing to do** (see §4.4 and the
+responsibility table in §3.1). The width is *not* a guard you maintain; it is
+just an honest field on the cache entry that already exists.
+
+### 4.4 Resize during backfill — the minimal action
+
+When the row width changes while the iterator is still backfilling, the work
+splits cleanly by owner, and the new pipeline's only job is one method call:
+
+| What | Who handles it | Cost |
+|---|---|---|
+| Already-applied **visible** rows | existing live-resize path (`viewWillStartLiveResize` / `viewDidEndLiveResize` → `refillLayoutCache` equiv.) | normal resize relayout |
+| Already-applied **off-screen** rows (above) | width-keyed cache → `heightOfRow` recomputes lazily when scrolled into view | deferred, on demand |
+| In-flight / buffered pages built at the **old** width | install as-is → `heightOfRow` miss → recompute at new width on insert tile | self-healing; only the off-main typeset was wasted |
+| **Future** pages | `iterator.retarget(newWidth)` so they build at the new width | one call |
+
+So the pipeline does exactly **one thing** on resize: `retarget(newWidth)`. And
+even that is a *performance* choice — skipping it stays correct (every batch
+self-heals through the width-keyed cache), it would just waste off-main typeset
+on pages that then recompute. There is **no generation, no validate gate, no
+discard bookkeeping** required for correctness.
+
+Note the clamp band makes this rare to begin with:
+`clampedLayoutWidth = min(780, max(460, rowWidth))`, so resizing only changes
+the layout width while the detail pane is within `[460, 780]`; on a wide window
+it is pinned at `780` and mid-load resize changes nothing.
 
 ---
 
@@ -163,8 +214,19 @@ In-tick order, all synchronous (no cross-hop, no "next tick fixes it"):
 [beforeWaiting] flushes exactly ONE composite: rows at true heights, clip at right origin. No intermediate frame.
 ```
 
-Because layouts are precomputed off-main at the validated width, step 2 is a
-tile of **cache hits** — cheap and synchronous.
+Because layouts are precomputed off-main at the current width, step 2 is
+normally a tile of **cache hits** — cheap and synchronous. Crucially, even on a
+cache **miss** (width drifted) the tile recomputes real heights *in-tick*, so
+step 3 still reads true rects. The anchor is therefore **never computed against
+deferred/stale geometry**.
+
+**This is why the old `mutationCounter` guard disappears.** That counter existed
+only because `applyInBackground` / `refillLayoutCache` deferred the anchor
+compensation across an async hop, where AppKit's heights could be mid-flight and
+`saveVisible` would compensate against stale values. Here the compensation is
+computed synchronously after a forced tile in the same tick (hit or miss both
+yield real heights), so there is no window for the world to change underneath
+it — nothing to guard, nothing to discard.
 
 **Multi-tick load stays jitter-free iff:** every tick is individually stable
 (above) **and** non-first ticks only ever *prepend above with anchor
@@ -185,9 +247,9 @@ keeps it true: **never mutate `blocks` outside `apply`.**
 
 ```
 TICK 1  [source]  VIEW: attach — synchronous, one tick
-        make shell → addSubview → layoutSubtreeIfNeeded (settle + SNAPSHOT width)
+        make shell → addSubview → layoutSubtreeIfNeeded (settle width)
         → bindData → render current blocks (cold = empty / warm = full) → scrollToTail
-        → start the iterator (off-main), fed the snapshotted width
+        → start the iterator (off-main), fed the current row width
         → scrollerHidden = true (pipeline loading)
         [beforeWaiting] single tile @ settled width, draw, commit
         ── the view line ends here; it does not know whether history is loading ──
@@ -284,8 +346,13 @@ never splits a block.
   `precondition` + `didPushForLiveResize` + the `flashScrollers` override — §8.
 - `applyInBackground`'s "completion fires exactly once" contract — its only job
   was balancing push/pop across the hop — §8.
-- Two of the three `layoutWidth == width` / `mutationCounter` guard copies,
-  collapsed into the one pipeline guard — §4.3.
+- The `mutationCounter` anchor guard — it only existed to police a *deferred*
+  anchor compensation; the new in-tick recipe never defers, so there is nothing
+  to guard — §5.
+- The scattered `layoutWidth == width` validate gates — not "collapsed into one
+  guard" but **removed**: width correctness falls out of the width-keyed cache
+  by construction, so no validate gate remains. The width survives only as the
+  cache entry's existing tag plus a one-call `iterator.retarget(width)` — §4.3/§4.4.
 
 ---
 

@@ -57,11 +57,11 @@ import AppKit
 /// `apply .update`/`.remove` evicted and lazy-refilled an entry can't
 /// overwrite the authoritative fresh layout with its older snapshot.
 ///
-/// On top of that, a `mutationCounter` snapshot lets the refill task
-/// drop its entire onMain block (including `noteHeightOfRows` and
-/// `saveVisible`) when an `apply` ran during the task — running
-/// `saveVisible` against stale AppKit heights (deferred re-query) would
-/// otherwise jitter the anchor row.
+/// The refill hop's `saveVisible` anchor compensation is made correct against
+/// a *concurrent* `apply` by forcing the re-tile in-tick
+/// (`layoutSubtreeIfNeeded` after `noteHeightOfRows`, before `applyAnchor`) —
+/// so the compensation always reads real `rect(ofRow:)`, never deferred-stale
+/// heights. No mutation counter / drift guard is needed (REFACTOR-PLAN §5.1).
 @MainActor
 final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     weak var tableView: NSTableView?
@@ -188,20 +188,6 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// by an unrelated cancel path.
     private var cacheRefillTask: Task<Void, Never>?
 
-    /// Bumped on every `apply`. The refill task captures it at start; if
-    /// it drifts during the task run, the entire onMain block (cache
-    /// writes, `noteHeightOfRows`, `saveVisible`) is dropped. Reason: the
-    /// `saveVisible` anchor math relies on AppKit re-querying heights for
-    /// rows we just `noteHeightOfRows`'d, but that re-query is deferred
-    /// to the next layout pass — so running `applyAnchor` immediately
-    /// after compensates against stale internal heights and the row
-    /// visually jumps when AppKit eventually catches up. Skipping refill
-    /// in this case is harmless: `apply`'s own scroll already settled the
-    /// post-mutation state, and `heightOfRow` lazy-fills missing layouts
-    /// on demand. `applyInBackground` doesn't bump because its own
-    /// row-mutation is the change-event for its own scroll handling.
-    private var mutationCounter: UInt64 = 0
-
     // MARK: - Read-only snapshot
 
     var blockIds: [UUID] { blocks.map(\.id) }
@@ -260,15 +246,6 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         _ changes: [Transcript2Controller.Change],
         scroll: Transcript2Controller.ScrollState = .none
     ) {
-        // Bump so any inflight `cacheRefillTask` discards its onMain on
-        // hop. We don't cancel here: the counter is the actual guard, and
-        // `cacheRefillTask` polices its own lifetime via the next
-        // `refillLayoutCache`. Discarding refill in this window matters
-        // because its `saveVisible` would compensate against stale AppKit
-        // heights (deferred re-query) — running on top of `apply`'s own
-        // settled scroll would jitter the anchor row.
-        mutationCounter &+= 1
-
         if let table = tableView {
             withScrollAdjustment(scroll, in: table) {
                 table.beginUpdates()
@@ -1113,7 +1090,6 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         guard !staleIdxs.isEmpty else { return }
 
         let snapshot = staleIdxs.map { blocks[$0] }
-        let snapshotCounter = mutationCounter
         let highlightSnapshot = highlightStorage.snapshot()
         let foldsSnapshot = foldStates
         let statusesSnapshot = statusStates
@@ -1148,27 +1124,36 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                 guard let self, let table = self.tableView,
                     self.layoutWidth == width
                 else { return }
-                // mutationCounter drift → an `apply` ran during the task.
-                // Skip the entire onMain (cache writes, noteHeightOfRows,
-                // saveVisible). Reason: noteHeightOfRows is deferred to
-                // the next layout pass, so `applyAnchor` would run
-                // against AppKit's still-stale internal heights and
-                // produce a wrong scroll compensation; the row visually
-                // jumps when AppKit eventually re-queries. `apply` has
-                // already settled its own scroll, and `heightOfRow` will
-                // lazy-fill the layouts as needed.
-                guard self.mutationCounter == snapshotCounter else { return }
-                // applyInBackground (fire-and-forget, counter-untracked)
-                // may have shifted indices. Re-resolve via id so
-                // noteHeightOfRows targets the current dataSource state.
-                let idxs = entries.compactMap { (id, _) -> Int? in
-                    self.blocks.firstIndex { $0.id == id }
-                }
+                // Re-resolve each prefetched layout to its current row. An
+                // `apply` since the snapshot may have moved rows (live message,
+                // backfill `.prepend`, `applyInBackground`) or removed them
+                // (`.remove`); a removed id resolves to nil and is dropped, so
+                // we never cache a layout for a row that no longer exists nor
+                // `noteHeightOfRows` a stale index.
+                let resolved: [(id: UUID, idx: Int, layout: RowLayout)] =
+                    entries.compactMap { id, layout in
+                        guard let idx = self.blocks.firstIndex(where: { $0.id == id })
+                        else { return nil }
+                        return (id, idx, layout)
+                    }
                 self.withScrollAdjustment(.saveVisible(.visualTop), in: table) {
-                    self.cacheLayouts(entries, width: width)
+                    self.cacheLayouts(resolved.map { ($0.id, $0.layout) }, width: width)
+                    let idxs = resolved.map(\.idx)
                     if !idxs.isEmpty {
                         table.noteHeightOfRows(withIndexesChanged: IndexSet(idxs))
                     }
+                    // Force the re-tile NOW so `applyAnchor` (run by
+                    // `withScrollAdjustment` right after this body) reads real
+                    // `rect(ofRow:)`. `noteHeightOfRows` only invalidates; the
+                    // re-tile is otherwise deferred to `beforeWaiting`, and the
+                    // anchor would compensate against AppKit's still-stale
+                    // heights → the row jumps. The layouts are already cached
+                    // (off-main precompute + the `cacheLayouts` above), so this
+                    // tile is cache-hit cheap, not a CTLine pass. Computing the
+                    // compensation in-tick is exactly what makes a concurrent
+                    // `apply` harmless and the old `mutationCounter` drift-guard
+                    // unnecessary (REFACTOR-PLAN §5.1).
+                    table.layoutSubtreeIfNeeded()
                 }
             }
         }

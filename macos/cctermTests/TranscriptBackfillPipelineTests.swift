@@ -61,6 +61,11 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
         }
     }
 
+    /// A standalone paragraph block, for simulating a live `.append`.
+    private func para(_ tag: String) -> Block {
+        Block(id: UUID(), kind: .paragraph(inlines: [.text(tag)]))
+    }
+
     // MARK: - B1: cold attach — nothing deposited yet
 
     func testB1_coldAttachHasNoContentUntilFirstDeposit() async {
@@ -163,16 +168,16 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
         XCTAssertEqual(controller.blockCount, 0, "no content applied, no crash")
     }
 
-    // MARK: - B8: off-main typeset installs at the trigger width (§4.3/§5b)
+    // MARK: - B8: off-main typeset installs at the start width (§4.3/§5b)
 
     /// The producer typesets every block off-main at the width passed to
-    /// `trigger`, and the drain installs those layouts through
+    /// `start`, and the drain installs those layouts through
     /// `apply(precomputed:)`. With no table bound there is no lazy `heightOfRow`
     /// path, so the layout-cache write trace is purely the off-main installs:
-    /// every block id written **exactly once**, all at the trigger width — no
+    /// every block id written **exactly once**, all at the start width — no
     /// double-typeset, no width drift.
-    func testB8_offMainPrecomputeInstallsAtTriggerWidth() async {
-        let triggerWidth: CGFloat = 720
+    func testB8_offMainPrecomputeInstallsAtStartWidth() async {
+        let startWidth: CGFloat = 720
         var writes: [(id: UUID, width: CGFloat)] = []
         let controller = makeController()
         controller.coordinator.onLayoutCacheWriteForDebug = { id, w in
@@ -186,7 +191,7 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
             ]),
             controller: controller,
             onLoaded: { loaded.fulfill() })
-        pipeline.start(width: triggerWidth)
+        pipeline.start(width: startWidth)
         await fulfillment(of: [loaded], timeout: 5)
 
         XCTAssertEqual(controller.blockCount, 4)
@@ -195,8 +200,8 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
             "every block typeset exactly once — off-main install, no lazy re-typeset")
         XCTAssertEqual(Set(writes.map(\.id)).count, writes.count, "no id written twice")
         XCTAssertTrue(
-            writes.allSatisfy { $0.width == triggerWidth },
-            "all layouts installed at the trigger width")
+            writes.allSatisfy { $0.width == startWidth },
+            "all layouts installed at the start width")
     }
 
     // MARK: - B9: retarget changes the width future pages typeset at (§4.4/§5b)
@@ -255,5 +260,39 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
             orderedTexts(controller), ["p0", "p1", "p2", "p3", "p4", "p5"],
             "document order preserved across interleaved deposits/drains")
         XCTAssertEqual(controller.blockCount, 6)
+    }
+
+    // MARK: - B10: live content before the first deposit lands above it (§7)
+
+    /// A live `.append` can race ahead of the pipeline's first deposit — the
+    /// user sends a message within the cold gap between attach and the first
+    /// tail page landing. That live content is the *newest*, so the tail
+    /// history page is older and must prepend ABOVE it, not append below.
+    /// Guards the `applyPage` first-content ordering branch: an empty table
+    /// appends + scrolls to tail, a non-empty one prepends.
+    func testB10_liveContentBeforeFirstDepositLandsAboveIt() async {
+        let controller = makeController()
+        let loaded = expectation(description: "loaded")
+        let pipeline = TranscriptBackfillPipeline(
+            source: FakeReversePageSource([
+                [Message2Fixtures.userText("c"), Message2Fixtures.assistantText("d")],
+                [Message2Fixtures.userText("a"), Message2Fixtures.assistantText("b")],
+            ]),
+            controller: controller,
+            onLoaded: { loaded.fulfill() })
+
+        // Simulate the instant send: a live block lands in the controller
+        // BEFORE start() lets the producer deposit its first page.
+        controller.apply(.append([para("live")]))
+        XCTAssertEqual(controller.blockCount, 1, "live content present before backfill")
+
+        pipeline.start(width: 0)
+        await fulfillment(of: [loaded], timeout: 5)
+
+        // History (document order a,b,c,d) sits ABOVE the live message, which
+        // stays pinned at the bottom.
+        XCTAssertEqual(
+            orderedTexts(controller), ["a", "b", "c", "d", "live"],
+            "tail history prepends above live content that arrived first (§7)")
     }
 }

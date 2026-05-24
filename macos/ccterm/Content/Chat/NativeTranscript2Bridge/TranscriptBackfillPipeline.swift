@@ -249,16 +249,28 @@ final class TranscriptBackfillPipeline {
                 .prepend(page.blocks), scroll: .saveVisible(.visualTop),
                 precomputed: page.precomputed)
         } else {
-            // First content: the tail page lands at the (empty) tail. On a COLD
-            // open the view-lifecycle `scrollToTail` already ran at the attach
-            // tick (TICK 1) against an *empty* table, so it was a no-op — there
-            // was nothing to anchor yet. This deposit IS the first content, so
-            // the scroll-to-tail belongs here, right after it lands. (Warm
-            // re-entry never reaches this branch: `loadHistory` is an idempotent
-            // no-op once blocks are already present, so the pipeline never runs.)
             didFirstApply = true
-            controller.apply(.append(page.blocks), precomputed: page.precomputed)
-            controller.scrollToTail()
+            if controller.blockCount == 0 {
+                // COLD table: this tail page IS the first content. The
+                // view-lifecycle `scrollToTail` at the attach tick (TICK 1) ran
+                // against an *empty* table, so it was a no-op — there was
+                // nothing to anchor. So the one-time scroll-to-tail belongs
+                // here, right after the tail lands. (Warm re-entry never reaches
+                // this branch: `loadHistory` is an idempotent no-op once blocks
+                // are already present, so the pipeline never runs.)
+                controller.apply(.append(page.blocks), precomputed: page.precomputed)
+                controller.scrollToTail()
+            } else {
+                // Live content streamed in before the first deposit (REFACTOR-PLAN
+                // §7) — e.g. the user sent a message within the cold gap. That
+                // live content is the *newest*, so the tail history page is older
+                // and must land ABOVE it: prepend, not append. Keep the viewport
+                // on the live tail the user is watching (no scroll-to-tail — they
+                // are already at the bottom).
+                controller.apply(
+                    .prepend(page.blocks), scroll: .saveVisible(.visualTop),
+                    precomputed: page.precomputed)
+            }
         }
         // History tool statuses (failed-history color, etc.) ride on the
         // entries; production routes them to historical derivation.

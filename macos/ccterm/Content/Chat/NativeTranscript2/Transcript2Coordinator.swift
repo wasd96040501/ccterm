@@ -234,12 +234,6 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         tableView?.enclosingScrollView as? Transcript2ScrollView
     }
 
-    /// Forwarders for `Transcript2ScrollView`'s scroller-hidden refcount.
-    /// Silently no-op when no scroll view is attached — push/pop balance
-    /// holds because both will no-op together.
-    func pushScrollerHidden() { transcriptScrollView?.pushScrollerHidden() }
-    func popScrollerHidden() { transcriptScrollView?.popScrollerHidden() }
-
     // MARK: - Mutation: sync
 
     func apply(
@@ -1085,18 +1079,13 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         guard width > 0 else { return }
         let staleIdxs = indexesNeedingLayoutRefresh(at: width)
         // Empty → fully cached at this width. Common case when resize
-        // ended at the start width with no actual change. No push
-        // happened, so no pop needed.
+        // ended at the start width with no actual change.
         guard !staleIdxs.isEmpty else { return }
 
         let snapshot = staleIdxs.map { blocks[$0] }
         let highlightSnapshot = highlightStorage.snapshot()
         let foldsSnapshot = foldStates
         let statusesSnapshot = statusStates
-        // Push covers the async layout window so the scroller stays hidden
-        // through the post-resize relayout. Popped via the task's defer in
-        // every outcome (cancelled, drifted, succeeded).
-        pushScrollerHidden()
 
         cacheRefillTask?.cancel()
         cacheRefillTask = Task.detached(priority: .userInitiated) { [weak self] in
@@ -1119,7 +1108,6 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                     ))
             }
             await MainActor.run { [entries] in
-                defer { self?.popScrollerHidden() }
                 if aborted { return }
                 guard let self, let table = self.tableView,
                     self.layoutWidth == width

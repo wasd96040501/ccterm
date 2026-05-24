@@ -364,13 +364,6 @@ final class Transcript2Controller {
     /// immediately; Phase 2 (off-main layout, main-hop insert) installs
     /// the rest with `.saveVisible` to keep Phase 1 visually fixed.
     ///
-    /// The vertical scroller is push-hidden across both phases — Phase 1's
-    /// scroll-to-anchor and Phase 2's insert+saveVisible both perturb the
-    /// scroll origin, and the overlay scroller's auto-flash on
-    /// `contentSize` change would otherwise paint a bouncing knob across
-    /// the cold-load. Popped after Phase 1 (no-Phase-2 branch) or from
-    /// Phase 2's completion (which `applyInBackground` guarantees to fire).
-    ///
     /// Repeatable: calling again replaces the snapshot. Idempotent in the
     /// degenerate case where the same id list comes back through
     /// (`coordinator.blockIds == blocks.map(\.id)` short-circuits).
@@ -429,8 +422,6 @@ final class Transcript2Controller {
             ? Array(blocks[slice.viewportRange.upperBound...])
             : []
 
-        coordinator.pushScrollerHidden()
-
         // Phase 1 — viewport batch, sync. heightOfRow lazy-computes layouts
         // for the visible rows; cost is bounded by viewport size.
         //
@@ -459,12 +450,8 @@ final class Transcript2Controller {
         if !above.isEmpty {
             phase2.append(.insert(after: nil, above))
         }
-        if phase2.isEmpty {
-            coordinator.popScrollerHidden()
-        } else {
-            coordinator.applyInBackground(phase2, scroll: .saveVisible(phase2Side)) {
-                [weak coordinator] in coordinator?.popScrollerHidden()
-            }
+        if !phase2.isEmpty {
+            coordinator.applyInBackground(phase2, scroll: .saveVisible(phase2Side))
         }
     }
 

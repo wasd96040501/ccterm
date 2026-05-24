@@ -1,4 +1,4 @@
-.PHONY: build release install dmg clean fmt fmt-check test-unit js-bundles help
+.PHONY: build release install dmg clean fmt fmt-check test-unit js-bundles logs help
 
 XCSTRINGS := macos/ccterm/Localizable.xcstrings
 FMT_XCSTRINGS := python3 macos/scripts/fmt-xcstrings.py
@@ -32,6 +32,9 @@ install: release ## Install Release build to $(PREFIX) (default: /Applications)
 
 test-unit: js-bundles ## Run unit tests (cctermTests) — fast, parallel-safe
 	./macos/scripts/test-unit.sh "$(FILTER)"
+
+logs: ## Stream unified logs for THIS worktree's build product only (CONFIG=debug|release CATEGORY=Foo LEVEL=info|debug)
+	@CONFIG="$(CONFIG)" CATEGORY="$(CATEGORY)" LEVEL="$(LEVEL)" ./macos/scripts/logs.sh
 
 dmg: ## Create DMG installer (usage: make dmg APP=/path/to/ccterm.app)
 	@test -n "$(APP)" || (echo "Usage: make dmg APP=/path/to/ccterm.app" && exit 1)

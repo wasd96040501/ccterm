@@ -214,6 +214,20 @@ appLog(.info, "SessionRuntime", "send() queued — status=\(status)")
 - Never log secrets (tokens, passwords, API keys).
 - Live tail: Window → Logs (⌘⇧L). Also mirrored to `os.Logger`, visible in Console.app for history.
 
+### Streaming logs from the terminal — `make logs`
+
+`make logs` live-tails the unified log for **the build product of the current worktree only**. This matters because you'll often have the Release build plus one or more Debug builds (from other worktrees) running at once — they share a log subsystem, but `make logs` follows only the binary this checkout produces, so you never have to guess which window you're reading.
+
+```bash
+make logs                          # this worktree's Debug build, info level, all categories
+make logs LEVEL=debug              # include .debug lines (default is info)
+make logs CATEGORY=SessionRuntime  # only one os_log category
+make logs CONFIG=release           # follow the Release build instead of Debug
+make logs CONFIG=release CATEGORY=TranscriptDetailVC LEVEL=debug  # combine freely
+```
+
+`CONFIG` (`debug`/`release`), `CATEGORY` (any `appLog` category), and `LEVEL` (`default`/`info`/`debug`) are all optional and independent. Just build, launch the app, and run `make logs` in a second terminal; Ctrl-C to stop.
+
 ## Internationalization
 
 Strings live in `Localizable.xcstrings`. Source language is English; `zh-Hans` is the translation. macOS locale switches automatically; English is the fallback.

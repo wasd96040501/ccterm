@@ -75,12 +75,14 @@ left unchanged. Read this table as the contract; the rest of the doc elaborates.
 | **Visible-row relayout on resize** | **live-resize path (`refillLayoutCache` equiv.)** | **existing** | `viewWillStartLiveResize` / `viewDidEndLiveResize` rebuild what's on screen. Untouched. |
 | **Per-tick prepend + anchor** | controller, in-tick (§5 recipe) | new | Force tile → read real rects → scroll-compensate → commit, all one tick. No deferred compensation, so no `mutationCounter`-style guard. |
 | **Scroll-anchor intent** | rides with the change (`.prepend` ⇒ preserve viewport) | new vocabulary | A semantic property of the change, not a side effect a producer fires. |
-| **Scroller visibility** | derived `f(pipeline.isLoading, view.inLiveResize)` | new | Session-lifetime, recomputed on input change, applied to current scroll view. No counter, no push/pop. |
-| **Live/load merge** | pending queue, flushed at iterator exhaustion (§7) | new | Defined end condition; no race patches. |
+| **Scroller visibility** | — | **deleted** | No custom control at all; AppKit default autohide (§8). The whole refcount mechanism is removed. |
+| **Loading state** | `SessionRuntime.historyLoadState` | **existing** | Derived `isLoading`, never a new flag; likely near-zero consumers after the scroller is gone (§8a). |
+| **Live/load merge** | none by default — live flows straight through `apply` | (no machinery) | Head-prepend vs tail-append don't conflict; no queue (§7). |
 
-The recurring theme: **layout-vs-width and visible-resize are already solved by
-existing machinery**; the new code only adds the off-main builder, the in-tick
-prepend recipe, the derived scroller, and a one-call `retarget`.
+The recurring theme: **layout-vs-width, visible-resize, and loading state are
+already solved by existing machinery**; the new code only adds the off-main
+builder, the in-tick prepend recipe, and a one-call `retarget`. Scroller control
+and the pending-merge queue are *removed*, not rebuilt.
 
 ---
 
@@ -341,7 +343,6 @@ TICK 1  [source]  VIEW: attach — synchronous, one tick
         make shell → addSubview → layoutSubtreeIfNeeded (settle width)
         → bindData → render current blocks (warm = full / COLD = EMPTY) → scrollToTail
         → trigger(width): start the iterator off-main
-        → scrollerHidden = true (pipeline loading)
         [beforeWaiting] single tile @ settled width, draw, commit
         ── cold: this tick shows NO content; the gap (attach → first deposit) is
            covered by blank or a baked image of the pre-switch frame — never a
@@ -358,8 +359,7 @@ TICK k+1..N  [source]  CONTENT: backfill drain — one apply per tick
         [beforeWaiting] insert above; viewport fixed; off-screen rows realize no cells
 
 TICK last  iterator exhausted (file top reached, orphans flushed) + buffer drained
-        → flush pending live events (§7)
-        → pipeline idle → scrollerHidden recomputed false → fade in
+        → historyLoadState = .loaded   (the only "done" signal; see §8a)
 ```
 
 Warm re-entry collapses to TICK 1 alone — content is already in the coordinator
@@ -368,37 +368,64 @@ are no CONTENT ticks. The multi-tick CONTENT sequence is the cold-open path.
 
 ---
 
-## 7. Live merge (pending)
+## 7. Live merge — probably nothing to do
 
-During load a `flag` marks the pipeline busy. Live CLI events are queued:
+Backfill prepends at the **head**; live CLI events append/update at the **tail**.
+Opposite ends — positionally non-conflicting. So the default position is: **live
+events flow straight through `apply` during backfill, no queue.** A live
+`.append` lands at the tail (where the user is) while the iterator keeps
+prepending older history above; neither disturbs the other (§5 anchor recipe
+holds for both independently).
 
-- **Simple-correct (v1):** queue *all* live events while loading; flush in
-  order when the iterator exhausts, before going idle.
-- **Optimization (later):** live events are *tail appends* while backfill is
-  *head prepends* — opposite ends, positionally non-conflicting. Tail appends
-  could pass through during load (the user is viewing the stable tail). Defer
-  this until v1 is proven; the only events that truly must queue are
-  updates/removes targeting an entry the iterator may still be building.
+The only events that *could* conflict are a live `.update` / `.replace` /
+`.remove` targeting an entry the iterator is **still building** — but the
+iterator builds *older* history (above), while live mutations target *recent*
+entries (already present at the tail), so in practice they don't overlap. If a
+real overlap is ever found, the narrow fix is to queue *those specific* events
+keyed by entry id until the iterator passes that id — not a blanket
+"queue everything while loading" gate.
 
-End condition is explicit: **iterator exhausted** = flag down → flush pending →
-idle.
+No global busy `flag` is needed for this (see §8a). End of load is just
+`historyLoadState = .loaded` when the iterator exhausts.
 
 ---
 
-## 8. Scroller visibility (derived)
+## 8. Scroller — the whole hide mechanism is deleted
 
-`scrollerHidden = f(pipeline.isLoading, view.inLiveResize)`. Owned at
-session/coordinator lifetime, recomputed whenever an input changes, applied to
-the currently-bound scroll view (re-applied on rebind). No counter, no
-push/pop, no cross-instance hazard.
+There is **no custom scroller-visibility control**. The overlay scroller follows
+AppKit's default `autohidesScrollers` behavior; nothing in this codebase hides,
+fades, push/pops, or flash-suppresses it.
 
-Bonus synergy: while backfilling, the document's true top and total height are
-provisional (unknown until the iterator exhausts), so the scroller thumb would
-otherwise jump — but `isLoading` keeps the scroller hidden through exactly that
-window.
+Deleted in full: `scrollerHiddenCount`, `pushScrollerHidden` /
+`popScrollerHidden`, the `precondition`, `didPushForLiveResize`, the
+`flashScrollers()` override — and, since there are no longer two producers to
+coordinate, `applyInBackground`'s "completion fires exactly once" balancing
+contract. The crash class disappears because the mechanism it guarded is gone,
+not because the guard was softened (consensus §8).
 
-The crashing `precondition` is **deleted** with the refcount, not softened
-(consensus §8).
+**Accepted tradeoff:** while backfilling, the document's true top/total height is
+provisional, so the overlay thumb may flash or jump as content grows. Judged not
+worth any machinery. If it ever reads as ugly, the cheapest mitigation is tuning
+AppKit's autohide, never reintroducing a refcount.
+
+### 8a. Loading state (`isLoading`) — not new state
+
+"Is history still loading" is a **data-pipeline fact**, session-scoped, surviving
+view mount/dismount. It **already exists** as `SessionRuntime.historyLoadState`
+(`@Observable`, forwarded through `Session`). The iterator is its new mechanism:
+on exhaustion it sets `.loaded`. So:
+
+- **Do not add an `isLoading` flag on the controller/coordinator.** That would be
+  a shadow copy of state that already lives at the right layer (violates the
+  Session-layer "no shadow state" rule) and couples render-side to load progress.
+  `isLoading ≡ historyLoadState ∉ {.loaded, .failed}`, derived.
+- The drain loop's "buffer not yet empty" stays a **controller-local** condition,
+  never promoted to shared state.
+- **With the scroller gone, re-examine who even reads it.** The cold-gap cover
+  keys off *"first content applied"* (`controller.blockCount > 0`), not
+  `isLoading`. The §7 pending gate is likely unnecessary (see §7). The honest
+  expectation: after this refactor `isLoading` has near-zero consumers — so the
+  right move is to derive it where needed, not to maintain it anywhere.
 
 ---
 
@@ -472,10 +499,14 @@ never splits a block.
   `.remove` / `.update`, each with intrinsic scroll intent and intrinsic position;
   no anchored `.insert(after:)` (the segment swap is the explicit `.replace`);
   `scroll:` shrinks to per-case intent; bridge load path collapses.
+- ~~Scroller visibility owner / `isLoading` location.~~ → §8/§8a: scroller hide
+  **deleted entirely** (AppKit default autohide); `isLoading` is **not** new
+  state — derive from `SessionRuntime.historyLoadState`, and expect near-zero
+  consumers after the scroller is gone.
+- ~~Live/load merge (pending queue).~~ → §7: no queue by default; live flows
+  straight through `apply` (head-prepend vs tail-append don't conflict).
 
 **Still open**
-- Where the pipeline `isLoading` flag and the derived `scrollerHidden` live
-  (controller vs coordinator).
 - Cold-gap cover: blank vs pre-switch frame image bake — pick one (UX).
 - Test net: which merge-gate tests assert the anchor invariant and the
   single-width typeset contract under the new pipeline.

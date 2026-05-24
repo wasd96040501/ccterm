@@ -8,7 +8,7 @@ How the chat pane is assembled. There is **no ViewModel** — `MainSplitViewCont
 | `MainSplitViewController` | NSSplitViewController | 1 | Sidebar item (`SidebarViewController`) + detail item (`TranscriptDetailViewController`). |
 | `MainSelectionModel` | `@Observable` | 1 | Shared selection / draft state — `selection: MainSelection` (typed: `.none` / `.newSession` / `.session(id)` / `.archive` / `.demo`), `draftSessionId`, attach + pill rects. |
 | `SidebarViewController` | NSViewController (NSOutlineView, source-list) | 1 | Reads `SessionManager.records` to render the history list; writes back the selected `sessionId` directly on the model. Group ordering is sourced from `SidebarSessionGroupOrderStore` (UserDefaults) and updated on folder drag-and-drop. |
-| `TranscriptDetailViewController` | NSViewController | 1 | Owns the `Transcript2ScrollView` directly via `TranscriptScrollViewFactory`; hosts SwiftUI overlays (top + bottom scrim, input bar / compose configurator) via `NSHostingView`. Drives session attach (`loadHistory`, `setLoading`) when `MainSelectionModel.effectiveSessionId` changes. |
+| `TranscriptDetailViewController` | NSViewController | 1 | Owns the `Transcript2ScrollView` directly via `TranscriptScrollViewFactory`; mounts AppKit `TranscriptScrimView` / `TranscriptBottomScrimView` for top/bottom fades (hitTest passthrough so the table below sees clicks + cursor rects), and hosts the SwiftUI input bar / compose configurator via `NSHostingView`. Drives session attach (`loadHistory`, `setLoading`) when `MainSelectionModel.effectiveSessionId` changes. |
 | `InputBarView2` | View | per-session | Pure UI (text field + send/stop button); `onSubmit` / `onStop` / `isRunning` are injected. No longer hosts a running pill — the indicator lives inside the transcript. |
 | `Transcript2SheetPresenter` | `@MainActor final class` | per-attach | Observes `Transcript2Controller.pendingUserBubbleSheet` / `pendingImagePreview` and opens AppKit-native sheets (`view.window?.beginSheet`) whose `contentViewController` is `NSHostingController(rootView: UserBubbleSheetView / ImagePreviewSheetView)`. Production VC reinstantiates it per session attach; demo VCs each own one for their lifetime. Replaces the deleted SwiftUI bridge's `.sheet(item:)` bindings. |
 
@@ -33,8 +33,8 @@ AppDelegate (NSApplicationDelegate)
         └── Detail item → TranscriptDetailViewController
             ├── transcriptScroll: Transcript2ScrollView (AppKit-native)
             │   └── session.controller drives blocks; isRunning → setLoading
-            ├── topScrimHost: NSHostingView<FadeScrim>
-            ├── bottomScrimHost: NSHostingView<FadeScrim with cut-outs>
+            ├── topScrim: TranscriptScrimView (AppKit, hitTest passthrough)
+            ├── bottomScrim: TranscriptBottomScrimView (AppKit, attach/pill cutouts)
             └── composeOrBarHost: NSHostingView<NewSessionConfigurator | ChatRestingBar>
 ```
 

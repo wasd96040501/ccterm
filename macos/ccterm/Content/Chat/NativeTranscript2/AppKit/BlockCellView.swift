@@ -525,12 +525,21 @@ final class BlockCellView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
+        // Gate on live scroll: with `.inVisibleRect` tracking, rows
+        // streaming past a stationary cursor fire enter/exit per cell,
+        // and every write here lands a `needsDisplay = true` that
+        // re-rasterises the cell — breaking the layer cache that §2.2
+        // depends on for 60fps scroll. The coordinator clears stale
+        // hover at scroll start and re-evaluates at scroll end, so
+        // skipping mid-scroll updates loses no UX.
+        if coordinator?.isLiveScrolling == true { return }
         let p = convert(event.locationInWindow, from: nil)
         updateHover(at: p)
         updateGutterHover(at: p)
     }
 
     override func mouseEntered(with event: NSEvent) {
+        if coordinator?.isLiveScrolling == true { return }
         if let id = blockId {
             coordinator?.hoveredBlockId = id
         }
@@ -540,6 +549,7 @@ final class BlockCellView: NSView {
     }
 
     override func mouseExited(with event: NSEvent) {
+        if coordinator?.isLiveScrolling == true { return }
         // Only clear the global pointer if it's *this* cell that owns
         // it. Without the guard, an `enter B → exit A` event order
         // (NSTrackingArea doesn't promise temporal ordering across
@@ -556,6 +566,24 @@ final class BlockCellView: NSView {
         if hoveredGutterId != nil {
             hoveredGutterId = nil
         }
+    }
+
+    /// Coordinator-driven scroll-start clear. Called on the cell that
+    /// was hovered immediately before live scroll began so its gutter
+    /// glyph doesn't stay painted on a row the cursor no longer hovers.
+    /// `coordinator.hoveredBlockId` is cleared by the caller itself.
+    func clearHoverDuringLiveScroll() {
+        if hoveredAction != nil { hoveredAction = nil }
+        if hoveredGutterId != nil { hoveredGutterId = nil }
+    }
+
+    /// Coordinator-driven scroll-end re-evaluation. Replays the work a
+    /// natural `mouseEntered` would have done, using the supplied
+    /// cell-local cursor point — restores hover affordances without
+    /// waiting for the user to wiggle the mouse.
+    func reevaluateHoverAt(_ local: NSPoint) {
+        updateHover(at: local)
+        updateGutterHover(at: local)
     }
 
     private func updateHover(at local: NSPoint) {

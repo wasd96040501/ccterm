@@ -445,7 +445,12 @@ final class Session {
                 self?.bridge.pushHistoricalStatuses(for: entries)
             })
         self.backfillPipeline = pipeline
-        pipeline.start()
+        // Seed the off-main typeset width from the settled, clamped row width.
+        // `loadHistory` runs after the attach tick's `scrollToTail`, so the
+        // table geometry has settled and `controller.layoutWidth` is real
+        // (REFACTOR-PLAN §6 TICK 1). Headless callers (no table) pass 0; their
+        // pages self-heal on the first real `heightOfRow` (§4.3).
+        pipeline.trigger(width: controller.layoutWidth)
     }
 
     func generateTitle(from firstMessage: String) {

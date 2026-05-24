@@ -85,6 +85,15 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// symmetric with `onUserBubbleSheetRequested`.
     var onImagePreviewRequested: ((NSImage) -> Void)?
 
+    /// Fires once at live-resize end (from `refillLayoutCache`) with the
+    /// settled clamped `layoutWidth`. The backfill pipeline subscribes via
+    /// `retarget(width:)` so **future** off-main pages build at the new width
+    /// (REFACTOR-PLAN §4.4). Purely a perf optimization — skipping it stays
+    /// correct because already-built pages self-heal through the width-keyed
+    /// cache; the hook never fires *during* a live resize (only at its end),
+    /// matching §4.4's "minimum during the drag, real work at the end".
+    var onLayoutWidthDidSettle: ((CGFloat) -> Void)?
+
     /// Cross-row text selection. Owns the selection dict; reads back into
     /// us through the helpers below (`block(atRow:)`, `textLayout(atRow:)`,
     /// `attributedString(forBlockId:)`, `markCellNeedsDisplay(blockId:)`).
@@ -230,12 +239,29 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
 
     // MARK: - Mutation: sync
 
+    /// `precomputed` carries off-main-built `(id, RowLayout)` layouts (the
+    /// backfill pipeline's producer, REFACTOR-PLAN §4.3) tagged with the
+    /// `precomputedWidth` they were typeset at. They are installed into the
+    /// cache **before** the structural change so the synchronous `heightOfRow`
+    /// queries `insertRows` fires inside `endUpdates` (§5.1 — no estimated
+    /// heights) are cache **hits**, not on-main CTLine passes. Width is
+    /// self-healing: an entry whose width doesn't match the table's current
+    /// `layoutWidth` is simply a miss that lazy-recomputes (§4.3), never a
+    /// corruption — so no validate gate. Empty by default; every existing
+    /// caller is unaffected.
     func apply(
         _ changes: [Transcript2Controller.Change],
-        scroll: Transcript2Controller.ScrollState = .none
+        scroll: Transcript2Controller.ScrollState = .none,
+        precomputed: [(UUID, RowLayout)] = [],
+        precomputedWidth: CGFloat = 0
     ) {
         if let table = tableView {
             withScrollAdjustment(scroll, in: table) {
+                // Install the off-main layouts before the structural notify so
+                // `insertRows`' in-`endUpdates` height query lands as a hit.
+                if !precomputed.isEmpty {
+                    cacheLayouts(precomputed, width: precomputedWidth)
+                }
                 table.beginUpdates()
                 for change in changes {
                     applyStructuralChange(change, in: table)
@@ -246,6 +272,11 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             // No table attached — mutate `blocks` only; layouts compute
             // lazily once a table re-attaches and `heightOfRow` is
             // queried. Scroll state is meaningless without live geometry.
+            // Still install the precomputed cache so a later attach finds
+            // them at the producer's width (a hit if width is unchanged).
+            if !precomputed.isEmpty {
+                cacheLayouts(precomputed, width: precomputedWidth)
+            }
             for change in changes {
                 applyStructuralChange(change, in: nil)
             }
@@ -978,6 +1009,11 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         guard let tableView else { return }
         let width = layoutWidth
         guard width > 0 else { return }
+        // Resize has ended at a settled width — tell the backfill pipeline so
+        // its future pages typeset at the new width (§4.4). Fired before the
+        // stale-row early-return so a resize that didn't move any *cached* row
+        // (all misses already, or nothing to refill) still retargets.
+        onLayoutWidthDidSettle?(width)
         let staleIdxs = indexesNeedingLayoutRefresh(at: width)
         // Empty → fully cached at this width. Common case when resize
         // ended at the start width with no actual change.

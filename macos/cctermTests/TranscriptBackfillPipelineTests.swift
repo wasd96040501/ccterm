@@ -37,7 +37,7 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
             budget: budget,
             onLoaded: { loaded.fulfill() })
         configure(pipeline)
-        pipeline.start()
+        pipeline.trigger(width: 0)
         await fulfillment(of: [loaded], timeout: 5)
         return controller
     }
@@ -69,7 +69,7 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
             source: FakeReversePageSource([[Message2Fixtures.userText("only")]]),
             controller: controller,
             onLoaded: {})
-        pipeline.start()
+        pipeline.trigger(width: 0)
         // Synchronous main is still busy — the producer's main hop cannot have
         // landed a deposit yet.
         XCTAssertEqual(controller.blockCount, 0, "cold first tick is empty (§4.5)")
@@ -147,7 +147,7 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
                 loadedCount += 1
                 done.fulfill()
             })
-        pipeline.start()
+        pipeline.trigger(width: 0)
         await fulfillment(of: [done], timeout: 5)
         // Give the runloop a couple of extra turns to surface any stray
         // second drain/finish.
@@ -161,6 +161,85 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
     func testB6_emptyHistoryLoadsImmediatelyWithNoContent() async {
         let controller = await runToLoaded(pages: [])
         XCTAssertEqual(controller.blockCount, 0, "no content applied, no crash")
+    }
+
+    // MARK: - B8: off-main typeset installs at the trigger width (§4.3/§5b)
+
+    /// The producer typesets every block off-main at the width passed to
+    /// `trigger`, and the drain installs those layouts through
+    /// `apply(precomputed:)`. With no table bound there is no lazy `heightOfRow`
+    /// path, so the layout-cache write trace is purely the off-main installs:
+    /// every block id written **exactly once**, all at the trigger width — no
+    /// double-typeset, no width drift.
+    func testB8_offMainPrecomputeInstallsAtTriggerWidth() async {
+        let triggerWidth: CGFloat = 720
+        var writes: [(id: UUID, width: CGFloat)] = []
+        let controller = makeController()
+        controller.coordinator.onLayoutCacheWriteForDebug = { id, w in
+            writes.append((id, w))
+        }
+        let loaded = expectation(description: "loaded")
+        let pipeline = TranscriptBackfillPipeline(
+            source: FakeReversePageSource([
+                [Message2Fixtures.userText("c"), Message2Fixtures.assistantText("d")],
+                [Message2Fixtures.userText("a"), Message2Fixtures.assistantText("b")],
+            ]),
+            controller: controller,
+            onLoaded: { loaded.fulfill() })
+        pipeline.trigger(width: triggerWidth)
+        await fulfillment(of: [loaded], timeout: 5)
+
+        XCTAssertEqual(controller.blockCount, 4)
+        XCTAssertEqual(
+            writes.count, controller.blockCount,
+            "every block typeset exactly once — off-main install, no lazy re-typeset")
+        XCTAssertEqual(Set(writes.map(\.id)).count, writes.count, "no id written twice")
+        XCTAssertTrue(
+            writes.allSatisfy { $0.width == triggerWidth },
+            "all layouts installed at the trigger width")
+    }
+
+    // MARK: - B9: retarget changes the width future pages typeset at (§4.4/§5b)
+
+    /// `retarget(width:)` between pages takes effect on the next page the
+    /// producer builds (it reads the pipeline width per page). The earlier page
+    /// stays at the original width; later pages land at the retargeted width.
+    /// Each id is still typeset exactly once — the single-width-per-id contract
+    /// holds across a retarget.
+    func testB9_retargetChangesFuturePageWidth() async {
+        let firstWidth: CGFloat = 720
+        let retargetWidth: CGFloat = 500
+        var writes: [(id: UUID, width: CGFloat)] = []
+        let controller = makeController()
+        controller.coordinator.onLayoutCacheWriteForDebug = { id, w in
+            writes.append((id, w))
+        }
+        let loaded = expectation(description: "loaded")
+        let source = FakeReversePageSource([
+            [Message2Fixtures.assistantText("tail")],
+            [Message2Fixtures.assistantText("older")],
+        ])
+        let pipeline = TranscriptBackfillPipeline(
+            source: source,
+            controller: controller,
+            onLoaded: { loaded.fulfill() })
+        // Simulate a resize-end (the production `onLayoutWidthDidSettle` hook)
+        // landing right before the second page is produced.
+        source.onBeforePage = { [weak pipeline] index in
+            guard index == 1 else { return }
+            await MainActor.run { pipeline?.retarget(width: retargetWidth) }
+        }
+        pipeline.trigger(width: firstWidth)
+        await fulfillment(of: [loaded], timeout: 5)
+
+        XCTAssertEqual(controller.blockCount, 2)
+        XCTAssertEqual(Set(writes.map(\.id)).count, writes.count, "no id written twice")
+        XCTAssertEqual(
+            writes.filter { $0.width == firstWidth }.count, 1,
+            "the tail page built before retarget stays at the original width")
+        XCTAssertEqual(
+            writes.filter { $0.width == retargetWidth }.count, 1,
+            "the page built after retarget lands at the new width")
     }
 
     // MARK: - B7: many interleaved deposits — no lost/dup/reordered page

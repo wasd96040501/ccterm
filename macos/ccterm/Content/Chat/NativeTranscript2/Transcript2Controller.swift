@@ -219,9 +219,29 @@ final class Transcript2Controller {
     /// Sync apply: layouts compute lazily on `heightOfRow` queries. Use for
     /// incremental updates (single message arrives, tool result fills in,
     /// user deletes one).
-    func apply(_ changes: Change..., scroll: ScrollState = .none) {
-        coordinator.apply(changes, scroll: scroll)
+    ///
+    /// `precomputed` carries off-main-built `(id, RowLayout)` layouts tagged
+    /// with `precomputedWidth` (the backfill pipeline's producer — §4.3). They
+    /// install into the layout cache before the structural change so the
+    /// prepend/append tick is a cache **hit**, not an on-main CTLine pass.
+    /// Empty by default — every incremental-update caller is unaffected.
+    func apply(
+        _ changes: Change...,
+        scroll: ScrollState = .none,
+        precomputed: [(UUID, RowLayout)] = [],
+        precomputedWidth: CGFloat = 0
+    ) {
+        coordinator.apply(
+            changes, scroll: scroll,
+            precomputed: precomputed, precomputedWidth: precomputedWidth)
     }
+
+    /// Settled, clamped row width the table currently lays out at (forwards
+    /// `coordinator.layoutWidth`). `0` when no table is bound. The backfill
+    /// pipeline reads this once after attach settles to seed its off-main
+    /// typeset (REFACTOR-PLAN §4.3); subsequent resizes ride the coordinator's
+    /// `onLayoutWidthDidSettle` hook into `retarget(width:)`.
+    var layoutWidth: CGFloat { coordinator.layoutWidth }
 
     // MARK: - Loading pill
 

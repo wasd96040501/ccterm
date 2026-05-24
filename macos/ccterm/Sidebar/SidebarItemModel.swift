@@ -20,15 +20,15 @@ final class SidebarItemNode {
     }
 
     let kind: Kind
-    /// Selection tag for fixed items / history rows. `nil` for folders
-    /// (folders are non-selectable; click toggles expand/collapse).
-    let selectionTag: String?
+    /// `MainSelection` this row represents when selected. `nil` for
+    /// folders (folders are non-selectable; click toggles expand/collapse).
+    let selection: MainSelection?
     /// Children — non-empty only for folder nodes.
     var children: [SidebarItemNode]
 
-    init(kind: Kind, selectionTag: String?, children: [SidebarItemNode] = []) {
+    init(kind: Kind, selection: MainSelection?, children: [SidebarItemNode] = []) {
         self.kind = kind
-        self.selectionTag = selectionTag
+        self.selection = selection
         self.children = children
     }
 
@@ -88,16 +88,16 @@ enum FixedKind: CaseIterable {
         }
     }
 
-    var selectionTag: String {
+    var selection: MainSelection {
         switch self {
-        case .newSession: return SidebarSentinel.newSession
-        case .archive: return SidebarSentinel.archive
+        case .newSession: return .newSession
+        case .archive: return .archive
         #if DEBUG
-        case .transcriptDemo: return SidebarSentinel.transcriptDemo
-        case .transcriptStress: return SidebarSentinel.transcriptStress
-        case .transcriptPerf: return SidebarSentinel.transcriptPerf
-        case .permissionCardsDemo: return SidebarSentinel.permissionCardsDemo
-        case .permissionSessionDemo: return SidebarSentinel.permissionSessionDemo
+        case .transcriptDemo: return .demo(.transcript)
+        case .transcriptStress: return .demo(.transcriptStress)
+        case .transcriptPerf: return .demo(.transcriptPerf)
+        case .permissionCardsDemo: return .demo(.permissionCards)
+        case .permissionSessionDemo: return .demo(.permissionSession)
         #endif
         }
     }

@@ -113,6 +113,17 @@ enum TranscriptScrollViewFactory {
             coordinator,
             selector: #selector(Transcript2Coordinator.tableFrameDidChange(_:)),
             name: NSView.frameDidChangeNotification, object: table)
+        // Live-scroll gating: suppress cell hover writes while the user
+        // is actively scrolling. Removed by `dismantle`'s blanket
+        // `removeObserver(coordinator)`.
+        NotificationCenter.default.addObserver(
+            coordinator,
+            selector: #selector(Transcript2Coordinator.scrollViewWillStartLiveScroll(_:)),
+            name: NSScrollView.willStartLiveScrollNotification, object: scroll)
+        NotificationCenter.default.addObserver(
+            coordinator,
+            selector: #selector(Transcript2Coordinator.scrollViewDidEndLiveScroll(_:)),
+            name: NSScrollView.didEndLiveScrollNotification, object: scroll)
 
         coordinator.tableView = table
         table.coordinator = coordinator

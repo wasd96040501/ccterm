@@ -305,8 +305,6 @@
         }
       }
     },
-    "All": {},
-    "All Categories": {},
     "All Folders": {
       "localizations": {
         "zh-Hans": {
@@ -837,7 +835,6 @@
         }
       }
     },
-    "Clear Logs": {},
     "Clear context and auto-accept all changes": {
       "extractionState": "stale",
       "localizations": {
@@ -954,7 +951,6 @@
         }
       }
     },
-    "Copy All": {},
     "Copy Branch": {
       "extractionState": "stale",
       "localizations": {
@@ -1448,7 +1444,6 @@
         }
       }
     },
-    "Filter": {},
     "Filter by folder": {
       "localizations": {
         "zh-Hans": {
@@ -1916,16 +1911,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "本地项目"
-          }
-        }
-      }
-    },
-    "Logs": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "日志"
           }
         }
       }

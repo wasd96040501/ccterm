@@ -121,6 +121,11 @@ final class TranscriptBackfillPipeline {
     func start(width: CGFloat) {
         guard task == nil else { return }
         self.width = width
+        // Suppress the overlay scroller for the load window — every drain
+        // `.prepend` grows the document and flashes the thumb in. Restored in
+        // `reportLoaded` once the buffer is fully drained. Only ever runs on a
+        // cold load (the pipeline is built once, never on warm re-entry).
+        controller?.setHistoryBackfilling(true)
         controller?.coordinator.onLayoutWidthDidSettle = { [weak self] settled in
             self?.retarget(width: settled)
         }
@@ -280,6 +285,9 @@ final class TranscriptBackfillPipeline {
     private func reportLoaded() {
         guard !didReportLoaded else { return }
         didReportLoaded = true
+        // Buffer fully drained + producer finished — the last `.prepend` landed
+        // this same tick. Restore the scroller suppressed in `start`.
+        controller?.setHistoryBackfilling(false)
         onLoaded()
     }
 }

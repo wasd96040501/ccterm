@@ -256,6 +256,26 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         tableView?.enclosingScrollView as? Transcript2ScrollView
     }
 
+    /// Hide / restore the vertical scroller for the duration of a cold
+    /// history backfill. Each backfill `.prepend` grows `documentView` and
+    /// nudges `contentView.bounds.origin`, which fades the overlay scroller
+    /// in on every drain tick — a flickering thumb on the right edge while
+    /// the load streams. Suppressing the scroller for the load window kills
+    /// the flicker. Safe because the scroll view is pinned to `.overlay`
+    /// (`Transcript2ScrollView.scrollerStyle`): an overlay scroller floats
+    /// over content and owns no layout width, so toggling `hasVerticalScroller`
+    /// never changes `contentView.bounds.width` → `tile()` is a no-op for the
+    /// table frame and no second-width typeset fires (§2.19). On restore we
+    /// `reflectScrolledClipView` so the re-added thumb syncs to the current
+    /// origin instead of snapping back to the load-start position.
+    func setHistoryBackfilling(_ active: Bool) {
+        guard let scrollView = transcriptScrollView else { return }
+        scrollView.hasVerticalScroller = !active
+        if !active {
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
+    }
+
     // MARK: - Mutation: sync
 
     /// `precomputed` carries off-main-built layouts + the width they were

@@ -391,6 +391,16 @@ final class Transcript2Controller {
         coordinator.scrollToInitialAnchor(.bottom)
     }
 
+    /// Hide the vertical scroller while a cold history backfill streams
+    /// `.prepend` pages, then restore it. The backfill pipeline drives this:
+    /// `true` at `start`, `false` at `reportLoaded`. Only ever active during a
+    /// cold load (the pipeline never runs on warm re-entry). Forwards to the
+    /// coordinator, which owns the scroll view. See
+    /// `Transcript2Coordinator.setHistoryBackfilling(_:)`.
+    func setHistoryBackfilling(_ active: Bool) {
+        coordinator.setHistoryBackfilling(active)
+    }
+
     // MARK: - Search
 
     /// Re-run a literal, case-insensitive search across the

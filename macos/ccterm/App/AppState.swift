@@ -11,6 +11,7 @@ final class AppState {
     let sidebarGroupOrder = SidebarSessionGroupOrderStore()
     let activationTracker: AppActivationTracker
     let notificationService: NotificationService
+    let claudeCodeStats = ClaudeCodeStatsService()
 
     init() {
         self.sessionManager = SessionManager()

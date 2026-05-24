@@ -53,6 +53,7 @@ final class TranscriptDetailViewController: NSViewController {
     let searchEngine: SyntaxHighlightEngine
     let searchBus: TranscriptSearchBus
     let inputDraftStore: InputDraftStore
+    let claudeCodeStats: ClaudeCodeStatsService
 
     /// The session currently driving the transcript, or nil for
     /// archive / demo branches.
@@ -106,7 +107,8 @@ final class TranscriptDetailViewController: NSViewController {
         notifications: NotificationService,
         searchEngine: SyntaxHighlightEngine,
         searchBus: TranscriptSearchBus,
-        inputDraftStore: InputDraftStore
+        inputDraftStore: InputDraftStore,
+        claudeCodeStats: ClaudeCodeStatsService
     ) {
         self.model = model
         self.sessionManager = sessionManager
@@ -115,6 +117,7 @@ final class TranscriptDetailViewController: NSViewController {
         self.searchEngine = searchEngine
         self.searchBus = searchBus
         self.inputDraftStore = inputDraftStore
+        self.claudeCodeStats = claudeCodeStats
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -557,6 +560,7 @@ final class TranscriptDetailViewController: NSViewController {
         .environment(\.syntaxEngine, searchEngine)
         .environment(searchBus)
         .environment(notifications)
+        .environment(claudeCodeStats)
         // Without `.ignoresSafeArea()`, `NSHostingView` would forward a
         // toolbar-sized top safe-area inset to SwiftUI; the rects
         // reported in `detailCoordSpace` would then sit in an inset
@@ -719,7 +723,7 @@ struct TranscriptDetailComposeStack: View {
         let bindings = composeBindings(for: session)
         ZStack {
             DotGridBackground()
-            NewSessionConfigurator(
+            NewSessionComposeStack(
                 folderPath: bindings.folder,
                 useWorktree: bindings.useWorktree,
                 sourceBranch: bindings.sourceBranch,

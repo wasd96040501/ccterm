@@ -30,7 +30,8 @@ final class MainSplitViewController: NSSplitViewController {
             notifications: appState.notificationService,
             searchEngine: appState.syntaxEngine,
             searchBus: searchBus,
-            inputDraftStore: appState.inputDraftStore
+            inputDraftStore: appState.inputDraftStore,
+            claudeCodeStats: appState.claudeCodeStats
         )
 
         super.init(nibName: nil, bundle: nil)

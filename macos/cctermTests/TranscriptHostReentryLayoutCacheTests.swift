@@ -156,7 +156,8 @@ final class TranscriptHostReentryLayoutCacheTests: XCTestCase {
             notifications: notifications,
             searchEngine: syntaxEngine,
             searchBus: searchBus,
-            inputDraftStore: inputDraftStore)
+            inputDraftStore: inputDraftStore,
+            claudeCodeStats: ClaudeCodeStatsService())
 
         let window = NSWindow(
             contentRect: NSRect(

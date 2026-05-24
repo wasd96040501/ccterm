@@ -2,6 +2,26 @@
   "sourceLanguage": "en",
   "strings": {
     "": {},
+    "%@ in · %@ out": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "输入 %@ · 输出 %@"
+          }
+        }
+      }
+    },
+    "%@ tokens": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ Token"
+          }
+        }
+      }
+    },
     "%lld": {},
     "%lld background tasks": {
       "localizations": {
@@ -215,6 +235,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "接受编辑"
+          }
+        }
+      }
+    },
+    "Active days": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "活跃天数"
           }
         }
       }
@@ -1965,6 +1995,26 @@
         }
       }
     },
+    "Messages": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "消息"
+          }
+        }
+      }
+    },
+    "Models": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模型"
+          }
+        }
+      }
+    },
     "New Conversation": {
       "extractionState": "stale",
       "localizations": {
@@ -2034,6 +2084,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "无匹配文件夹"
+          }
+        }
+      }
+    },
+    "No activity": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无活动"
           }
         }
       }
@@ -3287,6 +3347,16 @@
         }
       }
     },
+    "Sessions": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会话"
+          }
+        }
+      }
+    },
     "Settings": {
       "localizations": {
         "zh-Hans": {
@@ -3447,6 +3517,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "临时会话"
+          }
+        }
+      }
+    },
+    "Total tokens": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "总 Token"
           }
         }
       }

@@ -134,5 +134,39 @@ final class TranscriptAsyncLoadSwitchRaceTests: XCTestCase {
                 + "blocks=\(controller.blockIds.count), expected=\(Self.historyCount). "
                 + "This is the desync that breaks selection-highlight / search row mapping "
                 + "until a full re-attach.")
+
+        // Switch back: production rebuilds the scroll view on every swap.
+        // This is the layer the user actually hits — the rebuilt table
+        // tiles off `blocks.count`, and `markCellNeedsDisplay` /
+        // selection-highlight / search all map `block.id → row` through
+        // it. If `blocks` had been truncated above, the rebuilt table
+        // would tile short and the mapping would be off (drag selects but
+        // the wrong / no cell repaints). Assert the row count matches the
+        // whole history.
+        scroll.removeFromSuperview()
+        let scroll2 = TranscriptScrollViewFactory.make(controller: controller)
+        scroll2.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(scroll2)
+        NSLayoutConstraint.activate([
+            scroll2.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            scroll2.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            scroll2.topAnchor.constraint(equalTo: container.topAnchor),
+            scroll2.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+        container.layoutSubtreeIfNeeded()
+        TranscriptScrollViewFactory.bindData(scroll2, controller: controller)
+        controller.scrollToTail()
+        container.layoutSubtreeIfNeeded()
+
+        let table2 = try XCTUnwrap(scroll2.documentView as? Transcript2TableView)
+        XCTAssertEqual(
+            table2.numberOfRows, Self.historyCount,
+            "Re-attached table tiled to \(table2.numberOfRows) rows, expected "
+                + "\(Self.historyCount) — a truncated `blocks` would tile short here.")
+        XCTAssertEqual(
+            table2.numberOfRows, controller.blockIds.count,
+            "Re-attached table row count must equal blocks.count, or the "
+                + "block.id → row mapping selection-highlight relies on is off "
+                + "(numberOfRows=\(table2.numberOfRows), blocks=\(controller.blockIds.count)).")
     }
 }

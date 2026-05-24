@@ -2,14 +2,14 @@ import AppKit
 
 @testable import ccterm
 
-/// Offscreen-mounted transcript for Tier-2 measurement probes (REFACTOR-PLAN
-/// §12.2). Drives the **exact** production attach sequence —
+/// Offscreen-mounted transcript for Tier-2 measurement probes. Drives the
+/// **exact** production attach sequence —
 /// `TranscriptScrollViewFactory.make` → `addSubview` + constraints → host
 /// `layoutSubtreeIfNeeded` → `factory.bindData` → `controller.scrollToTail()` —
 /// inside an `alphaValue = 0.01` window, so the table reaches its real width
 /// and `heightOfRow` queries fire at the settled width (the same scaffold
 /// `TranscriptReentryLayoutCacheTests` uses). Mirrors `TranscriptScrollView`
-/// geometry without the full `TranscriptDetailViewController`.
+/// geometry without the full `ChatSessionViewController`.
 @MainActor
 struct MountedTranscript {
     let window: NSWindow

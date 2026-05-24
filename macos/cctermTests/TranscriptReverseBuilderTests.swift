@@ -3,7 +3,7 @@ import XCTest
 
 @testable import ccterm
 
-/// Tier-1 Group A (REFACTOR-PLAN §12.1): the pure reverse builder + tool
+/// Tier-1 Group A: the pure reverse builder + tool
 /// pairing. Fully synchronous — no async, no actor hop, no UI — so this is the
 /// cheapest, most deterministic place to pin the grouping + tool-pairing rules.
 @MainActor

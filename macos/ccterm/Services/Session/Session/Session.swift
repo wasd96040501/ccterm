@@ -421,7 +421,7 @@ final class Session {
     /// Drafts have no history.
     ///
     /// The pipeline applies blocks **directly** to `controller` (load path =
-    /// iterator → apply, REFACTOR-PLAN §4.6); the bridge handles only the live
+    /// iterator → apply); the bridge handles only the live
     /// path. History tool statuses route back through the bridge's historical
     /// derivation so failed / completed colors survive.
     func loadHistory(overrideURL: URL? = nil, firstPageEntryTarget: Int = 20) {
@@ -447,8 +447,8 @@ final class Session {
         // Seed the off-main typeset width from the settled, clamped row width.
         // `loadHistory` runs after the attach tick's `scrollToTail`, so the
         // table geometry has settled and `controller.layoutWidth` is real
-        // (REFACTOR-PLAN §6 TICK 1). Headless callers (no table) pass 0; their
-        // pages self-heal on the first real `heightOfRow` (§4.3).
+        // Headless callers (no table) pass 0; their pages self-heal on the
+        // first real `heightOfRow`.
         pipeline.start(width: controller.layoutWidth)
     }
 

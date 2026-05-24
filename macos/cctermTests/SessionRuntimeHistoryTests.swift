@@ -5,7 +5,7 @@ import XCTest
 
 /// Covers the reverse-streaming history load now driven by
 /// `Session.loadHistory()` → `TranscriptBackfillPipeline` →
-/// `JSONLReversePageSource` (REFACTOR-PLAN §4.5/§4.6). The old two-phase
+/// `JSONLReversePageSource`. The old two-phase
 /// `.reset`/`.prepended` mechanism, its precomputed-blocks payload, and the
 /// `ToolResultReresolver` backfill are gone — the grouping/pairing correctness
 /// they used to guard now lives in `TranscriptReverseBuilderTests` (Group A),

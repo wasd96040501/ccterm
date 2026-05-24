@@ -3,7 +3,7 @@ import XCTest
 
 @testable import ccterm
 
-/// Tier-1 Group B (REFACTOR-PLAN §12.1): the async deposit→drain lifecycle,
+/// Tier-1 Group B: the async deposit→drain lifecycle,
 /// driven through `FakeReversePageSource` so order/timing is controlled, plus
 /// the real main-owned buffer + drain. Synchronized with `XCTestExpectation` /
 /// `fulfillment` — never `Task.sleep` (suite rule #6).
@@ -122,7 +122,7 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
     // MARK: - B4: the budget splits ONLY the cache-miss path
 
     /// The per-tick cap is a typeset safety valve, not a blanket batch limit
-    /// (REFACTOR-PLAN §9.2). It bounds only pages whose precompute width
+    /// It bounds only pages whose precompute width
     /// mismatches the live table (cache miss → synchronous CTLine typeset on
     /// the main thread). Cache hits drain unbudgeted in one tick.
     ///

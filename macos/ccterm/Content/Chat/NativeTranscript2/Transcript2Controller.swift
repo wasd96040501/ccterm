@@ -31,8 +31,8 @@ struct ImagePreviewRequest: Identifiable, Equatable {
 ///    `Change` values (prepend / append / replace / remove / update) and a
 ///    `ScrollState`. Granular only; no diff, no `reloadData` escape hatch, no
 ///    whole-list `setHistory` snapshot (deleted — history load is the backfill
-///    pipeline draining `.prepend` / `.append` through this same entry;
-///    REFACTOR-PLAN §4.6). `precomputed` lets the pipeline land off-main-built
+///    pipeline draining `.prepend` / `.append` through this same entry).
+///    `precomputed` lets the pipeline land off-main-built
 ///    layouts as cache hits.
 /// 2. **Query** — read-only snapshot accessors.
 ///
@@ -40,7 +40,7 @@ struct ImagePreviewRequest: Identifiable, Equatable {
 @MainActor
 @Observable
 final class Transcript2Controller {
-    /// Structural mutation vocabulary (REFACTOR-PLAN §4.6). Position is
+    /// Structural mutation vocabulary. Position is
     /// **intrinsic** to each case — top (`prepend`), tail (`append`), or in
     /// place (`replace` / `update` / `remove`) — so callers never thread an
     /// arbitrary anchor through a generic insert. Scroll intent rides with the
@@ -66,7 +66,7 @@ final class Transcript2Controller {
     /// **before** a structural change, tagged with the `width` they were
     /// typeset at. The backfill pipeline's producer builds these so the
     /// `heightOfRow` query `insertRows` fires inside `endUpdates` is a cache
-    /// hit, not an on-main CTLine pass (REFACTOR-PLAN §4.3 / §5.1). `width` is
+    /// hit, not an on-main CTLine pass. `width` is
     /// self-healing: an entry whose width doesn't match the table's current
     /// `layoutWidth` is simply a miss that lazy-recomputes, never a corruption,
     /// so there is no validate gate.
@@ -247,7 +247,7 @@ final class Transcript2Controller {
     /// Settled, clamped row width the table currently lays out at (forwards
     /// `coordinator.layoutWidth`). `0` when no table is bound. The backfill
     /// pipeline reads this once after attach settles to seed its off-main
-    /// typeset (REFACTOR-PLAN §4.3); subsequent resizes ride the coordinator's
+    /// typeset; subsequent resizes ride the coordinator's
     /// `onLayoutWidthDidSettle` hook into `retarget(width:)`.
     var layoutWidth: CGFloat { coordinator.layoutWidth }
 

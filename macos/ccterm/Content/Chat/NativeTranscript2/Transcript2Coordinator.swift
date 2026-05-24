@@ -58,7 +58,7 @@ import AppKit
 /// a *concurrent* `apply` by forcing the re-tile in-tick
 /// (`layoutSubtreeIfNeeded` after `noteHeightOfRows`, before `applyAnchor`) —
 /// so the compensation always reads real `rect(ofRow:)`, never deferred-stale
-/// heights. No mutation counter / drift guard is needed (REFACTOR-PLAN §5.1).
+/// heights. No mutation counter / drift guard is needed.
 @MainActor
 final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     weak var tableView: NSTableView?
@@ -88,7 +88,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// Fires once at live-resize end (from `refillLayoutCache`) with the
     /// settled clamped `layoutWidth`. The backfill pipeline subscribes via
     /// `retarget(width:)` so **future** off-main pages build at the new width
-    /// (REFACTOR-PLAN §4.4). Purely a perf optimization — skipping it stays
+    /// Purely a perf optimization — skipping it stays
     /// correct because already-built pages self-heal through the width-keyed
     /// cache; the hook never fires *during* a live resize (only at its end),
     /// matching §4.4's "minimum during the drag, real work at the end".
@@ -297,7 +297,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     // MARK: - Mutation: sync
 
     /// `precomputed` carries off-main-built layouts + the width they were
-    /// typeset at (the backfill pipeline's producer, REFACTOR-PLAN §4.3). They
+    /// typeset at (the backfill pipeline's producer). They
     /// are installed into the cache **before** the structural change so the
     /// synchronous `heightOfRow` queries `insertRows` fires inside `endUpdates`
     /// (§5.1 — no estimated heights) are cache **hits**, not on-main CTLine
@@ -441,7 +441,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// = tail; the block above a removed run = in-place). Not a public
     /// `Change` case — the vocabulary exposes only intrinsic-position cases so
     /// no caller can thread an arbitrary anchor through a generic insert
-    /// (REFACTOR-PLAN §4.6). A non-nil but unknown `after` is a no-op, same
+    /// A non-nil but unknown `after` is a no-op, same
     /// posture as `.update` / `.remove` for unknown ids.
     private func insertBlocks(after: UUID?, _ new: [Block], in table: NSTableView?) {
         guard !new.isEmpty else { return }
@@ -1173,7 +1173,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                     // tile is cache-hit cheap, not a CTLine pass. Computing the
                     // compensation in-tick is exactly what makes a concurrent
                     // `apply` harmless and the old `mutationCounter` drift-guard
-                    // unnecessary (REFACTOR-PLAN §5.1).
+                    // unnecessary.
                     table.layoutSubtreeIfNeeded()
                 }
             }
@@ -1187,7 +1187,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// runloop tick so a burst of detached inserts / highlight re-fills
     /// produces one warm task. Main-actor owned; the detached task reads only
     /// the immutable snapshot captured at drain — the same lock-free shape as
-    /// the backfill pipeline (REFACTOR-PLAN §4.5), so there is no lock and no
+    /// the backfill pipeline, so there is no lock and no
     /// shared mutable buffer.
     private var pendingWarmLayouts: [UUID: Bool] = [:]
     private var warmScheduled = false

@@ -12,8 +12,8 @@ extension SessionRuntime {
     /// History **load** orchestration no longer lives here: the old two-phase
     /// (Phase A tail + Phase B prefix) read, its `tailBaseline` / `newTailStart`
     /// offset math, the throwaway in-memory `SessionRuntime` that `buildEntries`
-    /// spun up, and `ToolResultReresolver` are all deleted (REFACTOR-PLAN
-    /// §4.1/§4.2/§10). `Session.loadHistory()` now drives a
+    /// spun up, and `ToolResultReresolver` are all deleted.
+    /// `Session.loadHistory()` now drives a
     /// `TranscriptBackfillPipeline` over a `JSONLReversePageSource`: a single
     /// reverse-streaming read that emits already-paired blocks straight into
     /// the controller, with the runtime owning only the `historyLoadState`

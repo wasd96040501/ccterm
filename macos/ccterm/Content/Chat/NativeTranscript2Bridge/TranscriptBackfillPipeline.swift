@@ -3,7 +3,7 @@ import AppKit
 import Foundation
 
 /// Source of raw history pages, read **reverse** (newest page first). The
-/// reader abstraction is injected by initializer (REFACTOR-PLAN §12.3): the
+/// reader abstraction is injected by initializer: the
 /// production wiring supplies a JSONL reverse pager, Group B injects a fake
 /// yielding canned pages. Each page is a contiguous slice of the file in
 /// **document order**; `nextPage` returns the tail page first and walks toward
@@ -12,7 +12,7 @@ protocol ReversePageSource: AnyObject {
     func nextPage() async -> [Message2]?
 }
 
-/// The content pipeline (REFACTOR-PLAN §4.5): an off-main producer task
+/// The content pipeline: an off-main producer task
 /// **builds** pre-typeset block pages and **pushes** them into a lock-guarded
 /// `PipelineInbox`; the main thread **drains** them into the controller. The
 /// producer never hops to (or blocks on) the main actor per page — it builds at
@@ -38,7 +38,7 @@ protocol ReversePageSource: AnyObject {
 /// width they were typeset at; the drain installs them through the single
 /// `apply(_:scroll:precomputed:)` entry, so the prepend's
 /// in-`endUpdates` `heightOfRow` query is a cache **hit**, not a main-thread
-/// CTLine pass (REFACTOR-PLAN §4.3 / §5.1). The off-main width comes from
+/// CTLine pass. The off-main width comes from
 /// `start(width:)` (once, after TICK-1 settle) and `retarget(width:)`
 /// (at live-resize end); a width mismatch is self-healing (§4.4), never a gate.
 @MainActor
@@ -52,7 +52,7 @@ final class TranscriptBackfillPipeline {
     /// drain consumes on main. Replaces the old per-page `await MainActor.run`.
     private let inbox: PipelineInbox
 
-    /// Loose main-thread per-tick block cap (REFACTOR-PLAN §9.2): a safety
+    /// Loose main-thread per-tick block cap: a safety
     /// valve, not a typeset budget. A single page exceeding it still lands
     /// whole — the cap bounds a batch, never splits a page (§9.3).
     private let budget: Int
@@ -110,8 +110,8 @@ final class TranscriptBackfillPipeline {
     nonisolated deinit {}
 
     /// Start the off-main producer at `width` (the settled, clamped row width
-    /// read from `controller.layoutWidth` after the attach tick settles —
-    /// REFACTOR-PLAN §6 TICK 1). The ONE call that seeds the typeset width.
+    /// read from `controller.layoutWidth` after the attach tick settles).
+    /// The ONE call that seeds the typeset width.
     /// Idempotent — a second call is a no-op. Also subscribes to the
     /// coordinator's `onLayoutWidthDidSettle` so a resize-end retargets future
     /// pages without the host having to wire anything. Paired with
@@ -169,7 +169,7 @@ final class TranscriptBackfillPipeline {
         }
     }
 
-    /// Update the width future pages typeset at (REFACTOR-PLAN §4.4). Called
+    /// Update the width future pages typeset at. Called
     /// from the coordinator's `onLayoutWidthDidSettle` at live-resize **end**
     /// only — never per-frame during a drag. Pure perf: pages already built at
     /// the old width self-heal through the width-keyed cache on `heightOfRow`
@@ -225,7 +225,7 @@ final class TranscriptBackfillPipeline {
             // lands in one tick. Only a width-mismatched page (resize during
             // load → cache miss → synchronous typeset) is budgeted, so the cap
             // splits exactly the path that can freeze the main thread, and
-            // nothing else (REFACTOR-PLAN §9.2 "safety valve, not a typeset
+            // nothing else ("safety valve, not a typeset
             // budget"). `nil` width sentinel when no controller → treated as a
             // miss, but `applyPage` no-ops anyway. Peek the width first so a
             // budget-deferred miss page stays in the buffer for the next tick.
@@ -270,8 +270,8 @@ final class TranscriptBackfillPipeline {
                 controller.apply(.append(page.blocks), precomputed: page.precomputed)
                 controller.scrollToTail()
             } else {
-                // Live content streamed in before the first deposit (REFACTOR-PLAN
-                // §7) — e.g. the user sent a message within the cold gap. That
+                // Live content streamed in before the first deposit
+                // — e.g. the user sent a message within the cold gap. That
                 // live content is the *newest*, so the tail history page is older
                 // and must land ABOVE it: prepend, not append. Keep the viewport
                 // on the live tail the user is watching (no scroll-to-tail — they

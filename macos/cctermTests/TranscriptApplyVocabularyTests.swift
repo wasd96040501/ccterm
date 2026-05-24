@@ -3,7 +3,7 @@ import XCTest
 
 @testable import ccterm
 
-/// Tier-1 Group C (REFACTOR-PLAN §12.1): the `apply` change vocabulary, data
+/// Tier-1 Group C: the `apply` change vocabulary, data
 /// half. With no `NSTableView` bound, `apply` mutates `coordinator.blocks`
 /// directly (the headless path), so the prepend / append / replace / remove /
 /// update semantics are testable without geometry.

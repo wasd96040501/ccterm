@@ -3,8 +3,8 @@ import XCTest
 
 @testable import ccterm
 
-/// Tier-2 anchor probes (REFACTOR-PLAN §12.2): the viewport-stability claims of
-/// §5, measured on a mounted offscreen table.
+/// Tier-2 anchor probes: the viewport-stability claims, measured on a
+/// mounted offscreen table.
 ///
 /// - **U2** anchor invariant — a `.prepend` with `.saveVisible(.visualTop)`
 ///   keeps the visual-top row pinned on screen; the clip origin shifts down by

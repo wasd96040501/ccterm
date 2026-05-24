@@ -4,7 +4,7 @@ import XCTest
 
 @testable import ccterm
 
-/// Tier-2 cold/warm attach probes (REFACTOR-PLAN §12.2), measured on a mounted
+/// Tier-2 cold/warm attach probes, measured on a mounted
 /// offscreen table.
 ///
 /// - **U4** cold-empty first tick — a never-loaded session renders

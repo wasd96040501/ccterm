@@ -3,7 +3,7 @@ import Foundation
 
 @testable import ccterm
 
-/// Test double for `ReversePageSource` (REFACTOR-PLAN §12.3): yields canned
+/// Test double for `ReversePageSource`: yields canned
 /// pages on demand so Group B controls deposit order/timing while exercising
 /// the real main-owned buffer + drain. Pages are supplied **tail-first**
 /// (newest page first), matching the production reverse pager's contract.

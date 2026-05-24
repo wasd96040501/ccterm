@@ -195,7 +195,14 @@ final class DetailRouterViewController: NSViewController {
                     .environment(searchBus)
                     .environment(notifications)
             )
-            return NSHostingController(rootView: root)
+            let host = NSHostingController(rootView: root)
+            // Fill-the-pane detail child — clear `sizingOptions` so the
+            // SwiftUI body's fitting size doesn't bubble up through the
+            // split's `view.fittingSize` and collapse the window height
+            // (see `ArchiveViewController` for the full rationale). The
+            // router pins this view to the detail slot.
+            host.sizingOptions = []
+            return host
         }
     }
     #endif

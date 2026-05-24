@@ -61,6 +61,19 @@ final class ChatSessionViewController: NSViewController {
     /// The session currently driving the transcript, or nil for
     /// archive / demo branches.
     private var currentSession: Session?
+    /// Session whose transcript mount was deferred because the view had
+    /// no real frame yet. `DetailRouterViewController` creates this VC
+    /// fresh and runs its `viewDidLoad` (→ `attachSession`) BEFORE the
+    /// fill constraints that size the view are active, so the first
+    /// attach would run `layoutSubtreeIfNeeded` + `scrollToTail` at a
+    /// zero/transient width — typesetting every block at the wrong width
+    /// and leaving the clip scrolled past its content (a blank
+    /// transcript). We stash the request here and flush it from
+    /// `viewDidLayout` once the view has a settled, non-zero frame.
+    private var pendingAttachSessionId: String?
+    /// Guards against scheduling more than one deferred-attach flush
+    /// while one is already queued for the next source phase.
+    private var isFlushingPendingAttach: Bool = false
     /// AppKit-native transcript scroll view. Re-created when the
     /// selected session's controller changes; nil for archive /
     /// demo branches.
@@ -204,6 +217,35 @@ final class ChatSessionViewController: NSViewController {
         notifications.bootstrap()
     }
 
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        // Flush a transcript mount that `attachSession` deferred because
+        // the view had no real frame yet (fresh router-mounted VC). The
+        // flush must run in the NEXT source phase, not inline here:
+        // `viewDidLayout` fires mid-layout-pass, and `attachSession`'s own
+        // `layoutSubtreeIfNeeded` + `bindData` have to execute against a
+        // fully-settled frame in a clean source phase — running them while
+        // the enclosing autolayout cascade is still converging makes the
+        // table tile at the cascade's transient widths (460 / 780) instead
+        // of the single settled width (720), which is exactly the
+        // per-attach typesetting thrash the §2.19 contract forbids. The
+        // one-tick delay shows the chat backdrop for a frame before the
+        // transcript pops in anchored at the tail — same timing as the
+        // observation-driven session-switch path.
+        guard pendingAttachSessionId != nil, !isFlushingPendingAttach,
+            view.bounds.width > 0, view.bounds.height > 0
+        else { return }
+        isFlushingPendingAttach = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.isFlushingPendingAttach = false
+            guard let sid = self.pendingAttachSessionId,
+                self.view.bounds.width > 0, self.view.bounds.height > 0
+            else { return }
+            self.attachSession(sid)
+        }
+    }
+
     // MARK: - Observation
 
     private func installObservations() {
@@ -342,6 +384,19 @@ final class ChatSessionViewController: NSViewController {
     // MARK: - Transcript mount
 
     private func attachSession(_ sessionId: String) {
+        // The transcript attach below is geometry-sensitive: it pins the
+        // scroll view, runs `view.layoutSubtreeIfNeeded()` to settle the
+        // table to its real width, then `scrollToTail()` anchors the
+        // clip. All three need the view to already be at its final frame
+        // — see `pendingAttachSessionId`. When this VC is freshly mounted
+        // by the router, `viewDidLoad` fires before the view is sized, so
+        // defer to the first framed `viewDidLayout`.
+        guard view.bounds.width > 0, view.bounds.height > 0 else {
+            pendingAttachSessionId = sessionId
+            return
+        }
+        pendingAttachSessionId = nil
+
         let session = sessionManager.prepareDraftSession(sessionId)
         if currentSession?.sessionId == sessionId, transcriptScroll != nil {
             return
@@ -403,6 +458,10 @@ final class ChatSessionViewController: NSViewController {
     }
 
     private func tearDownTranscript() {
+        // Drop any deferred attach — the selection moved off a session
+        // before the view was framed, so the stale request must not fire
+        // on the next `viewDidLayout`.
+        pendingAttachSessionId = nil
         if let scroll = transcriptScroll, let session = currentSession {
             TranscriptScrollViewFactory.dismantle(scroll, controller: session.controller)
             scroll.removeFromSuperview()

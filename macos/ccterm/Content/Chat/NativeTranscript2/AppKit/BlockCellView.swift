@@ -525,12 +525,21 @@ final class BlockCellView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
+        // Gate on live scroll: with `.inVisibleRect` tracking, rows
+        // streaming past a stationary cursor fire enter/exit per cell,
+        // and every write here lands a `needsDisplay = true` that
+        // re-rasterises the cell — breaking the layer cache that §2.2
+        // depends on for 60fps scroll. The coordinator clears stale
+        // hover at scroll start and re-evaluates at scroll end, so
+        // skipping mid-scroll updates loses no UX.
+        if coordinator?.isLiveScrolling == true { return }
         let p = convert(event.locationInWindow, from: nil)
         updateHover(at: p)
         updateGutterHover(at: p)
     }
 
     override func mouseEntered(with event: NSEvent) {
+        if coordinator?.isLiveScrolling == true { return }
         if let id = blockId {
             coordinator?.hoveredBlockId = id
         }
@@ -540,6 +549,7 @@ final class BlockCellView: NSView {
     }
 
     override func mouseExited(with event: NSEvent) {
+        if coordinator?.isLiveScrolling == true { return }
         // Only clear the global pointer if it's *this* cell that owns
         // it. Without the guard, an `enter B → exit A` event order
         // (NSTrackingArea doesn't promise temporal ordering across
@@ -556,6 +566,24 @@ final class BlockCellView: NSView {
         if hoveredGutterId != nil {
             hoveredGutterId = nil
         }
+    }
+
+    /// Coordinator-driven scroll-start clear. Called on the cell that
+    /// was hovered immediately before live scroll began so its gutter
+    /// glyph doesn't stay painted on a row the cursor no longer hovers.
+    /// `coordinator.hoveredBlockId` is cleared by the caller itself.
+    func clearHoverDuringLiveScroll() {
+        if hoveredAction != nil { hoveredAction = nil }
+        if hoveredGutterId != nil { hoveredGutterId = nil }
+    }
+
+    /// Coordinator-driven scroll-end re-evaluation. Replays the work a
+    /// natural `mouseEntered` would have done, using the supplied
+    /// cell-local cursor point — restores hover affordances without
+    /// waiting for the user to wiggle the mouse.
+    func reevaluateHoverAt(_ local: NSPoint) {
+        updateHover(at: local)
+        updateGutterHover(at: local)
     }
 
     private func updateHover(at local: NSPoint) {
@@ -605,18 +633,26 @@ final class BlockCellView: NSView {
         guard let layout else { return }
         let origin = layoutOrigin
         // I-beam: over `iBeamRect` if the layout confines it
-        // (user bubble), else the whole cell `bounds` to match
-        // `NSTextView`'s "I-beam over full frame" behavior. Order
-        // matters: when cursor rects overlap, the most-recently-
-        // added wins, so pointing-hand rects registered below take
-        // priority over the I-beam in their hot zones. Non-
-        // selectable rows (image, thematic break) skip — they get
-        // the default arrow.
+        // (user bubble), else the layout's footprint — the centred
+        // (measuredWidth × totalHeight) rect at `layoutOrigin`.
+        // **Not** the cell `bounds`: the cell spans the full table
+        // row width, but content sits centred inside it, so falling
+        // back to `bounds` would paint I-beam over the gutter margin
+        // band and the right-of-content padding — both visibly empty
+        // and not selectable. Order matters: when cursor rects
+        // overlap, the most-recently-added wins, so pointing-hand
+        // rects registered below take priority over the I-beam in
+        // their hot zones. Non-selectable rows (image, thematic
+        // break) skip — they get the default arrow.
         if layout.selectionAdapter != nil {
             let rect =
                 layout.iBeamRect.map {
                     $0.offsetBy(dx: origin.x, dy: origin.y)
-                } ?? bounds
+                }
+                ?? CGRect(
+                    x: origin.x, y: origin.y,
+                    width: layout.measuredWidth,
+                    height: layout.totalHeight)
             addCursorRect(rect, cursor: .iBeam)
         }
         for hit in layout.interactiveHits {

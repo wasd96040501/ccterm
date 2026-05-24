@@ -1358,6 +1358,68 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         }
     }
 
+    /// `true` while the user is actively scrolling (trackpad / wheel /
+    /// scroller drag). Cells gate their hover writes on this so rows
+    /// streaming past a stationary cursor don't repeatedly trigger
+    /// `mouseExited`/`mouseEntered` → `needsDisplay` → full cell
+    /// re-rasterisation. The `.inVisibleRect` tracking area makes that
+    /// otherwise unavoidable: AppKit re-aligns the rect to the cell's
+    /// visible region every scroll tick, so a stationary cursor traverses
+    /// every cell's rect in turn.
+    ///
+    /// Flipped by `scrollViewWillStartLiveScroll` / `scrollViewDidEndLiveScroll`,
+    /// wired in `TranscriptScrollViewFactory.bindData`. Programmatic
+    /// scrolls (`scrollRowToTop` / `scrollRowToBottom` / `applyAnchor`)
+    /// don't fire these notifications and don't toggle the flag — they're
+    /// rare and short, so the brief enter/exit pair they trigger isn't
+    /// worth gating.
+    private(set) var isLiveScrolling: Bool = false
+
+    @objc func scrollViewWillStartLiveScroll(_ note: Notification) {
+        isLiveScrolling = true
+        // Clear stale hover on the cell that was hovered before scroll
+        // started — that cell will scroll off / under the cursor's
+        // last position anyway, and leaving its gutter glyph painted
+        // looks broken once the row is no longer under the pointer.
+        if let oldId = hoveredBlockId,
+            let table = tableView,
+            let row = blocks.firstIndex(where: { $0.id == oldId }),
+            let cell = table.view(atColumn: 0, row: row, makeIfNecessary: false)
+                as? BlockCellView
+        {
+            cell.clearHoverDuringLiveScroll()
+        }
+        hoveredBlockId = nil
+    }
+
+    @objc func scrollViewDidEndLiveScroll(_ note: Notification) {
+        isLiveScrolling = false
+        reevaluateHoverFromMouseLocation()
+    }
+
+    /// Re-resolve which cell the cursor is over right now and seed its
+    /// hover state. Without this, gutter / chevron affordances would
+    /// stay blank after a scroll until the user wiggles the mouse to
+    /// fire a real `mouseMoved` event.
+    private func reevaluateHoverFromMouseLocation() {
+        guard let table = tableView, let window = table.window else { return }
+        let mouseInScreen = NSEvent.mouseLocation
+        let windowFrameInScreen = window.frame
+        guard windowFrameInScreen.contains(mouseInScreen) else { return }
+        let mouseInWindow = window.convertPoint(fromScreen: mouseInScreen)
+        let mouseInTable = table.convert(mouseInWindow, from: nil)
+        let row = table.row(at: mouseInTable)
+        guard row >= 0, blocks.indices.contains(row) else { return }
+        let id = blocks[row].id
+        hoveredBlockId = id
+        guard
+            let cell = table.view(atColumn: 0, row: row, makeIfNecessary: false)
+                as? BlockCellView
+        else { return }
+        let cellLocal = cell.convert(mouseInWindow, from: nil)
+        cell.reevaluateHoverAt(cellLocal)
+    }
+
     private func markGutterRedraw(blockId: UUID?) {
         guard let blockId, let table = tableView,
             let row = blocks.firstIndex(where: { $0.id == blockId })

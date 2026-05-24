@@ -74,7 +74,7 @@ left unchanged. Read this table as the contract; the rest of the doc elaborates.
 | **Off-main typesetting** | the reverse streaming iterator | **new** | Builds blocks **and** their layouts off-main, at the current row width. Withholds incomplete tool pairs (§4.2). |
 | **Telling the iterator the width** | view lifecycle → `iterator.retarget(width)` | new (one call) | The *entire* job on resize-mid-load. Even this is a perf optimization, not correctness (§4.4). |
 | **Visible-row relayout on resize** | **live-resize path (`refillLayoutCache` equiv.)** | **existing** | `viewWillStartLiveResize` / `viewDidEndLiveResize` rebuild what's on screen. Untouched. |
-| **Per-tick prepend + anchor** | controller, in-tick (§5 recipe) | new | Force tile → read real rects → scroll-compensate → commit, all one tick. No deferred compensation, so no `mutationCounter`-style guard. |
+| **Per-tick prepend + anchor** | controller, in-tick (§5 recipe) | new | `insertRows` settles geometry synchronously in `endUpdates` (no forced tile needed — §5.1) → read real rects → scroll-compensate → commit, all one tick. No deferred compensation, so no `mutationCounter`-style guard. |
 | **Scroll-anchor intent** | rides with the change (`.prepend` ⇒ preserve viewport) | new vocabulary | A semantic property of the change, not a side effect a producer fires. |
 | **Scroller visibility** | — | **deleted** | No custom control at all; AppKit default autohide (§8). The whole refcount mechanism is removed. |
 | **Loading state** | `SessionRuntime.historyLoadState` | **existing** | Derived `isLoading`, never a new flag; likely near-zero consumers after the scroller is gone (§8a). |
@@ -312,13 +312,56 @@ cache **miss** (width drifted) the tile recomputes real heights *in-tick*, so
 step 3 still reads true rects. The anchor is therefore **never computed against
 deferred/stale geometry**.
 
-**This is why the old `mutationCounter` guard disappears.** That counter existed
-only because `applyInBackground` / `refillLayoutCache` deferred the anchor
-compensation across an async hop, where AppKit's heights could be mid-flight and
-`saveVisible` would compensate against stale values. Here the compensation is
-computed synchronously after a forced tile in the same tick (hit or miss both
-yield real heights), so there is no window for the world to change underneath
-it — nothing to guard, nothing to discard.
+### 5.1 Step 2 is load-bearing only for `noteHeightOfRows`, not for `insertRows`
+
+The two AppKit structural primitives differ in *when* they settle geometry, and
+that asymmetry is the whole reason the counter can go:
+
+- **`insertRows` settles geometry synchronously.** Inserting rows changes the
+  row count, so AppKit *must* query the new rows' `heightOfRow` and grow
+  `documentView` inside `endUpdates` — this table has **no estimated heights**
+  (§2.1). So the moment `endUpdates` returns, `rect(ofRow: anchor)` is already
+  real and `applyAnchor` compensates against true geometry **with no forced
+  tile**. The existing `applyInBackground` proves it empirically: it
+  large-prepends under `withScrollAdjustment(.saveVisible)` with no
+  `layoutSubtreeIfNeeded` and no jitter. ⇒ **the `.prepend` / `.append` backfill
+  path is already in-tick correct** (the pipeline applies `.prepend` via sync
+  `apply` → `withScrollAdjustment`); step 2 is a no-op there.
+- **`noteHeightOfRows` defers geometry.** It only marks *existing* rows' heights
+  dirty; the re-tile is deferred to the next layout pass, so `rect(ofRow:)`
+  stays stale until then. `refillLayoutCache` is the **only** `.saveVisible`
+  path built on `noteHeightOfRows` — which is exactly why it (alone) needed the
+  counter: an interleaving `apply` made its *deferred* compensation race
+  AppKit's stale heights.
+
+So step 2 (`layoutSubtreeIfNeeded`) is the substitute for the synchronous
+geometry that insert gives for free: harmless for insert, load-bearing for
+note-height.
+
+**This is why the old `mutationCounter` guard disappears.** The counter existed
+only because `refillLayoutCache` deferred its compensation across an async hop +
+a `noteHeightOfRows` re-query, where AppKit's heights were mid-flight and
+`saveVisible` would compensate against stale values. The fix is **not** to
+serialize producers (a queue/busy-gate would target the wrong window — the race
+is the post-`viewDidEndLiveResize` prefetch task, *not* live resize itself — and
+would reintroduce the global gate this refactor deletes; see §3.1/§7/§8a). The
+fix is to make refill's compensation **in-tick**, matching the insert path:
+
+1. In `refillLayoutCache`'s `withScrollAdjustment(.saveVisible)` body, force
+   `tableView.layoutSubtreeIfNeeded()` after `cacheLayouts` + `noteHeightOfRows`
+   (and before `applyAnchor`). The off-main typeset in the detached task is
+   untouched — the forced tile only re-queries **cache-hit** heights (dict
+   lookups), not CTLine.
+2. With refill's compensation now in-tick, an interleaving `apply` can no longer
+   corrupt a *deferred* compensation (there is none), so `mutationCounter` is
+   **vestigial** — delete the field, the bump in `apply`, the snapshot, and the
+   drift check. The id re-resolve in the refill hop stays (it handles any apply
+   that shifted indices).
+
+Edge: if an interleaving `apply` evicted a refilled row's cache and §2.14
+anti-poison skipped refill's write, the forced tile re-queries that one row as a
+miss → one on-main recompute. Same cost the deferred `beforeWaiting` tile would
+have paid anyway — not new, and self-healing through the width-keyed cache.
 
 **Multi-tick load stays jitter-free iff:** every tick is individually stable
 (above) **and** non-first ticks only ever *prepend above with anchor

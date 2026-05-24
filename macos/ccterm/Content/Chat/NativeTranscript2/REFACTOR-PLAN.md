@@ -253,18 +253,22 @@ free-form `scroll:` parameter away.
 |---|---|---|---|
 | `.prepend(blocks)` | top (index 0) | preserve viewport (save visual-top row) | backfill batches |
 | `.append(blocks)` | tail | stick to bottom if user is at bottom | live tail entries, loading pill |
-| `.insert(after: id, blocks)` | interior | preserve viewport | the one surviving mid-list insert (see note) |
+| `.replace(oldIds: [UUID], with: [Block])` | **in place** (where `oldIds` sit) | preserve viewport | structure-changed update — the segment swap (see note) |
 | `.remove(ids)` | — | preserve viewport | entry/segment removal, pill removal |
 | `.update(id, kind)` | — | preserve viewport (`noteHeightOfRows`, anchor fixed) | same-id per-block update — the ~95% tool_result merge |
 
-- **Mid-list insert does NOT disappear** (verified against the code). The single
-  caller is `Transcript2EntryBridge.applyUpdate`'s *structure-changed* branch: an
-  entry whose block sequence changed gets its old segment `.remove`d and the new
-  one re-inserted after the entry's predecessor, which can be **interior** (a
-  `tool_result` landing on an entry that is no longer the tail). So the vocabulary
-  does **not** collapse to four cases — keep an interior `.insert(after:)` (or a
-  `.replace` that fuses the remove+insert). Its scroll intent is preserve-viewport
-  like the rest.
+- **No anchored `.insert(after: id)`.** Position is intrinsic to each case — top
+  (`prepend`), tail (`append`), or in place (`replace`). The old generic
+  `.insert(after: arbitraryId)` was exactly the seam that *hid* a segment swap
+  inside a generic insert (paired loosely with a separate `.remove`); it is gone.
+- **The mid-list operation is `.replace`, made explicit** (verified caller:
+  `Transcript2EntryBridge.applyUpdate`'s *structure-changed* branch — an entry
+  whose block sequence changed, e.g. a `tool_result` landing on an entry that is
+  no longer the tail). `.replace(oldIds:with:)` finds the contiguous range of
+  `oldIds`, swaps in `newBlocks` at that same start index, atomically — the
+  remove+insert can't be split or misordered, and the complexity is named, not
+  buried. (Degenerate `oldIds == []` — an out-of-order sink for an unregistered
+  entry — routes to `.append`, not `.replace`.)
 - **Initial "anchor to tail" is NOT a change** — it is the one-time view-lifecycle
   `scrollToTail` (TICK 1 / first content), per §3.1: view lifecycle owns *where to
   land*; changes only carry *"don't disturb what's visible"*. So `.append` never
@@ -464,9 +468,10 @@ never splits a block.
   through the width-keyed cache. Only action is `retarget`, and not during live
   resize (§4.4).
 - ~~`apply` change vocabulary; is `.prepend` first-class; delete `setHistory`?~~ →
-  §4.6: `setHistory` deleted; `.prepend` / `.append` first-class with intrinsic
-  scroll intent; an interior `.insert(after:)` survives for the structure-change
-  update; `scroll:` shrinks to per-case intent; bridge load path collapses.
+  §4.6: `setHistory` deleted; vocabulary = `.prepend` / `.append` / `.replace` /
+  `.remove` / `.update`, each with intrinsic scroll intent and intrinsic position;
+  no anchored `.insert(after:)` (the segment swap is the explicit `.replace`);
+  `scroll:` shrinks to per-case intent; bridge load path collapses.
 
 **Still open**
 - Where the pipeline `isLoading` flag and the derived `scrollerHidden` live

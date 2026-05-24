@@ -175,7 +175,7 @@ Inventory:
 | File | What it asserts |
 |---|---|
 | [`TranscriptReentryLayoutCacheTests.swift`](TranscriptReentryLayoutCacheTests.swift) | The bare `TranscriptScrollViewFactory.make → addSubview → layoutSubtreeIfNeeded → bindData → scrollToTail` sequence typesets each block at exactly one width inside one source-phase tick. |
-| [`TranscriptHostReentryLayoutCacheTests.swift`](TranscriptHostReentryLayoutCacheTests.swift) | Same property, but driven through real hosts: the AppKit demo VC (`TranscriptDemoViewController`) and the production sidebar-switch path (`TranscriptDetailViewController.attachSession` on a `MainSelectionModel.selection` flip). Closes the gap between the factory test and host orchestration. |
+| [`TranscriptHostReentryLayoutCacheTests.swift`](TranscriptHostReentryLayoutCacheTests.swift) | Same property, but driven through real hosts: the AppKit demo VC (`TranscriptDemoViewController`) and the production sidebar-switch path (`ChatSessionViewController.attachSession` on a `MainSelectionModel.selection` flip). Closes the gap between the factory test and host orchestration. |
 
 When you add a new test that's "drive a real view + assert on a property at the boundary," follow these naming rules:
 
@@ -268,7 +268,7 @@ What this scaffold **still can't** observe:
   host (all `NSHostingView`s). Any of those committing on the same
   CATransaction could perturb timing in ways the bare-scroll harness
   doesn't reproduce. To rule this out you would need to host
-  `TranscriptDetailViewController` directly in a test window — feasible
+  `ChatSessionViewController` directly in a test window — feasible
   but a larger lift.
 - **WindowServer scheduling under load.** The render server can delay
   compositing a window if its parent process is busy on the GPU /

@@ -28,7 +28,7 @@ final class NotificationService: NSObject {
     @ObservationIgnored private let activation: AppActivationTracker
     @ObservationIgnored private var didBootstrap = false
 
-    /// Most recent click target. `TranscriptDetailViewController`
+    /// Most recent click target. `ChatSessionViewController`
     /// observes this, flips `MainSelectionModel.selection` to
     /// `.session(sid)`, then calls `clearPendingActivation()` so a
     /// re-click on the same session still fires.

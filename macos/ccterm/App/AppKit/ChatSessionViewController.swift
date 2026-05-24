@@ -17,7 +17,7 @@ import SwiftUI
 ///   passthrough, even-odd cutouts at the attach button + pill)
 /// - input bar / compose configurator — `NSHostingView<AnyView>`.
 ///   Its SwiftUI body switches on `model.selection` via
-///   `TranscriptDetailComposeStack.content(...)`: `.newSession` →
+///   `ChatComposeStack.content(...)`: `.newSession` →
 ///   compose card, `.session(_)` → chat resting bar, `.none` →
 ///   `EmptyView`. `.archive` and `.demo(_)` are routed away from
 ///   this VC entirely by `DetailRouterViewController` and never
@@ -31,11 +31,11 @@ import SwiftUI
 /// mode the host's top constraint is activated so the configurator
 /// card has the full pane to lay out in.
 @MainActor
-final class TranscriptDetailViewController: NSViewController {
+final class ChatSessionViewController: NSViewController {
     /// Coordinate-space identifier for SwiftUI `GeometryReader`/
     /// `PreferenceKey` callbacks that report the attach button +
     /// pill rects. Mirrors `RootView2.detailCoordSpace`.
-    static let detailCoordSpace = "TranscriptDetailViewController.detail"
+    static let detailCoordSpace = "ChatSessionViewController.detail"
     /// Top fade band height. Sized to match the unified toolbar so the
     /// gradient fades in exactly the strip the toolbar visually covers.
     private static let topFadeScrimHeight: CGFloat = 52
@@ -436,7 +436,7 @@ final class TranscriptDetailViewController: NSViewController {
     // MARK: - SwiftUI overlay builders
 
     private func makeComposeOrBarStack() -> some View {
-        TranscriptDetailComposeStack(
+        ChatComposeStack(
             model: model,
             onSubmit: { [weak self] submission, sessionId in
                 self?.submit(submission, sessionId: sessionId)
@@ -479,7 +479,7 @@ final class TranscriptDetailViewController: NSViewController {
 
     /// Mirror of `RootView2.submit` — kept on the VC so the
     /// compose-stack SwiftUI host can call back via the closure
-    /// installed on `TranscriptDetailComposeStack`.
+    /// installed on `ChatComposeStack`.
     private func submit(_ submission: InputBarView2.Submission, sessionId: String) {
         let session = sessionManager.prepareDraftSession(sessionId)
         let isFirstStart = !session.hasRecord
@@ -535,7 +535,7 @@ final class TranscriptDetailViewController: NSViewController {
 /// `RootView2.composeStack`, but reads state from the shared
 /// `MainSelectionModel` (so the AppKit VC can drive selection /
 /// draft flips imperatively from outside SwiftUI).
-struct TranscriptDetailComposeStack: View {
+struct ChatComposeStack: View {
     @Bindable var model: MainSelectionModel
     let onSubmit: (InputBarView2.Submission, String) -> Void
     let onResumeSession: (String) -> Void
@@ -546,7 +546,7 @@ struct TranscriptDetailComposeStack: View {
 
     /// Routing decision for this overlay. Static + pure so the
     /// "which selection shows what input chrome" invariant is
-    /// directly unit-testable — see `TranscriptDetailRoutingTests`.
+    /// directly unit-testable — see `ChatComposeStackRoutingTests`.
     /// In particular, `.archive` / `.demo` / `.none` all collapse to
     /// `.none` here, which is what keeps the input bar from rendering
     /// on top of (and intercepting clicks on) the Archive page.
@@ -614,7 +614,7 @@ struct TranscriptDetailComposeStack: View {
         // via an AppKit constraint, not via SwiftUI.
         .frame(maxWidth: .infinity)
         .animation(.smooth(duration: 0.42), value: model.isComposeMode)
-        .coordinateSpace(name: TranscriptDetailViewController.detailCoordSpace)
+        .coordinateSpace(name: ChatSessionViewController.detailCoordSpace)
     }
 
     @ViewBuilder
@@ -632,7 +632,7 @@ struct TranscriptDetailComposeStack: View {
                     InputBarChrome(
                         sessionId: sid,
                         draftKey: InputDraftStore.newSessionKey,
-                        coordSpace: TranscriptDetailViewController.detailCoordSpace,
+                        coordSpace: ChatSessionViewController.detailCoordSpace,
                         submitEnabled: session.cwd != nil,
                         onSubmit: { submission in onSubmit(submission, sid) },
                         onAttachRect: { _ in },
@@ -640,8 +640,8 @@ struct TranscriptDetailComposeStack: View {
                     )
                 }
             )
-            .padding(.horizontal, TranscriptDetailViewController.detailHorizontalInset)
-            .padding(.vertical, TranscriptDetailViewController.detailVerticalInset)
+            .padding(.horizontal, ChatSessionViewController.detailHorizontalInset)
+            .padding(.vertical, ChatSessionViewController.detailVerticalInset)
         }
         .transition(.opacity)
     }

@@ -16,20 +16,19 @@ import SwiftUI
 /// === self" gate to exist (which then silently dropped clicks on
 /// every plain-style SwiftUI button in the input bar's chrome row).
 ///
-/// ## Scaffolding state (this commit)
+/// Routing table:
+/// - `.none` / `.newSession` / `.session(_)` → `ChatSessionViewController`
+/// - `.archive` → `ArchiveViewController`
+/// - `.demo(_)` (DEBUG only) → the matching demo VC
 ///
-/// Only one child kind is plumbed: `.transcript` →
-/// `TranscriptDetailViewController`. Every selection currently routes
-/// to it, so the router never actually swaps children yet — but the
-/// observation + swap machinery is in place. Subsequent commits on
-/// this PR pull `.archive` and `.demo(_)` out of
-/// `TranscriptDetailViewController` and into their own kinds here, at
-/// which point a sidebar click really does tear the old child VC down
-/// and instantiate the new one from scratch.
+/// Same-kind transitions (e.g. flipping between two history sessions,
+/// both `.transcript`) keep the existing child VC alive — the chat
+/// VC's internal `attachSession` path handles the session swap. Only
+/// cross-kind transitions tear down and rebuild.
 ///
 /// `DetailRouterContainmentTests` pins the invariant that there is
 /// always exactly one child and it stays attached to `view` — the
-/// regression gate for every later extraction.
+/// regression gate for the whole refactor.
 @MainActor
 final class DetailRouterViewController: NSViewController {
     let model: MainSelectionModel
@@ -145,7 +144,7 @@ final class DetailRouterViewController: NSViewController {
     private func makeChild(for kind: ChildKind) -> NSViewController {
         switch kind {
         case .transcript:
-            return TranscriptDetailViewController(
+            return ChatSessionViewController(
                 model: model,
                 sessionManager: sessionManager,
                 recentProjects: recentProjects,

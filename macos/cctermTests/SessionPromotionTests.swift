@@ -172,7 +172,7 @@ final class SessionPromotionTests: XCTestCase {
     /// a subsequent `loadHistory()` is a no-op — no `.reset` reaches the
     /// bridge. Regression net for: switching away from a running fresh
     /// session and coming back triggers
-    /// `TranscriptDetailViewController.attachSession`'s `loadHistory()`
+    /// `ChatSessionViewController.attachSession`'s `loadHistory()`
     /// call. Without this guarantee, Phase A re-parses
     /// the JSONL the CLI has been writing live and `receive(_:.replay)`
     /// re-`.append`s every echo (the original entries have already

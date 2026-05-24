@@ -7,7 +7,7 @@ import XCTest
 /// Pins the AppKit VC containment invariants of
 /// `DetailRouterViewController` — the merge gate that protects the
 /// refactor pulling per-selection VCs out of the formerly-monolithic
-/// `TranscriptDetailViewController`. Three properties guarded:
+/// `ChatSessionViewController`. Three properties guarded:
 ///
 /// 1. The router always has **exactly one** child VC.
 /// 2. That child's `view` is mounted as a direct subview of
@@ -16,7 +16,7 @@ import XCTest
 /// 3. When `model.selection` flips to a new selection that maps to the
 ///    SAME `ChildKind`, the existing child instance is **reused** (no
 ///    needless rebuild). Per-`ChildKind` swap behavior gets pinned as
-///    each kind is split out of `TranscriptDetailViewController` in
+///    each kind is split out of `ChatSessionViewController` in
 ///    subsequent commits — see `testFlipToArchiveSwapsChild` etc.
 ///    (added in later commits).
 ///
@@ -36,7 +36,7 @@ final class DetailRouterContainmentTests: XCTestCase {
 
     // MARK: - Tree shape
 
-    func testInitialChildIsTranscriptDetailViewController() throws {
+    func testInitialChildIsChatSessionViewController() throws {
         let fixture = try makeFixture(initialSelection: .none)
         let router = fixture.router
 
@@ -47,7 +47,7 @@ final class DetailRouterContainmentTests: XCTestCase {
         XCTAssertEqual(router.children.count, 1, "router must own exactly one child")
         let child = try XCTUnwrap(router.currentChild)
         XCTAssertTrue(
-            child is TranscriptDetailViewController,
+            child is ChatSessionViewController,
             "scaffolding maps every selection to the transcript child")
         XCTAssertTrue(
             router.children.first === child,
@@ -110,7 +110,7 @@ final class DetailRouterContainmentTests: XCTestCase {
         let router = fixture.router
         _ = router.view
         let initialChild = try XCTUnwrap(router.currentChild)
-        XCTAssertTrue(initialChild is TranscriptDetailViewController)
+        XCTAssertTrue(initialChild is ChatSessionViewController)
 
         router.model.selection = .archive
         router.installChildForCurrentSelection()
@@ -175,7 +175,7 @@ final class DetailRouterContainmentTests: XCTestCase {
         router.installChildForCurrentSelection()
 
         let chatChild = try XCTUnwrap(router.currentChild)
-        XCTAssertTrue(chatChild is TranscriptDetailViewController)
+        XCTAssertTrue(chatChild is ChatSessionViewController)
         XCTAssertNil(demoChild.view.superview)
         XCTAssertNil(demoChild.parent)
         XCTAssertEqual(router.children.count, 1)
@@ -184,7 +184,7 @@ final class DetailRouterContainmentTests: XCTestCase {
 
     func testFlipFromArchiveBackToSessionMountsFreshTranscriptVC() throws {
         // `.archive` → `.session(_)` flips the other way. The previous
-        // TranscriptDetailViewController instance is gone (torn down
+        // ChatSessionViewController instance is gone (torn down
         // on the way INTO archive), so going BACK to a chat selection
         // must instantiate a brand-new transcript VC — not reach for
         // a stale reference. Mirrors the user round-trip of
@@ -199,7 +199,7 @@ final class DetailRouterContainmentTests: XCTestCase {
         router.installChildForCurrentSelection()
 
         let newChild = try XCTUnwrap(router.currentChild)
-        XCTAssertTrue(newChild is TranscriptDetailViewController)
+        XCTAssertTrue(newChild is ChatSessionViewController)
         XCTAssertNil(archiveChild.view.superview)
         XCTAssertNil(archiveChild.parent)
         XCTAssertEqual(router.children.count, 1)

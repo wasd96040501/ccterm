@@ -3,9 +3,9 @@ import XCTest
 @testable import ccterm
 
 /// Pins the routing decision that translates `MainSelection` →
-/// `TranscriptDetailComposeStack.content(for:draftSessionId:)`,
+/// `ChatComposeStack.content(for:draftSessionId:)`,
 /// which is what the (still always-mounted) input-bar overlay
-/// inside `TranscriptDetailViewController` renders. The invariants:
+/// inside `ChatSessionViewController` renders. The invariants:
 /// `.archive` / `.demo` / `.none` collapse to `.none`, so no input
 /// chrome floats on top of pages where the VC is unexpectedly
 /// mounted; `.newSession` with a draft renders the compose card;
@@ -17,14 +17,14 @@ import XCTest
 /// button (#222).
 ///
 /// `DetailRouterViewController` now routes `.archive` and `.demo(_)`
-/// away from `TranscriptDetailViewController` entirely, so the
+/// away from `ChatSessionViewController` entirely, so the
 /// `.archive` / `.demo` content-routing assertions below are
 /// belt-and-suspenders: even if the router regressed, the compose
 /// stack must still not fabricate input chrome for those cases.
 /// Router-level mount/unmount invariants live in
 /// `DetailRouterContainmentTests`.
 @MainActor
-final class TranscriptDetailRoutingTests: XCTestCase {
+final class ChatComposeStackRoutingTests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -38,25 +38,25 @@ final class TranscriptDetailRoutingTests: XCTestCase {
         // bottom-anchored ChatRestingBar (and its embedded
         // InputBarChrome) eats clicks on the Archive list, making
         // the per-row Unarchive button unpressable.
-        let content = TranscriptDetailComposeStack.content(
+        let content = ChatComposeStack.content(
             for: .archive, draftSessionId: "draft-1")
         XCTAssertEqual(content, .none)
     }
 
     func testComposeContent_noneSelectionRendersNothing() {
-        let content = TranscriptDetailComposeStack.content(
+        let content = ChatComposeStack.content(
             for: .none, draftSessionId: nil)
         XCTAssertEqual(content, .none)
     }
 
     func testComposeContent_historySessionRoutesToChat() {
-        let content = TranscriptDetailComposeStack.content(
+        let content = ChatComposeStack.content(
             for: .session("session-abc"), draftSessionId: nil)
         XCTAssertEqual(content, .chat(sessionId: "session-abc"))
     }
 
     func testComposeContent_newSessionWithDraftRoutesToCompose() {
-        let content = TranscriptDetailComposeStack.content(
+        let content = ChatComposeStack.content(
             for: .newSession, draftSessionId: "draft-xyz")
         XCTAssertEqual(content, .compose(draftSessionId: "draft-xyz"))
     }
@@ -67,7 +67,7 @@ final class TranscriptDetailRoutingTests: XCTestCase {
         // for `ChatRestingBar` — that's exactly the class of mistake
         // (treating a placeholder as a real session id) that this
         // typed-selection refactor is fixing.
-        let content = TranscriptDetailComposeStack.content(
+        let content = ChatComposeStack.content(
             for: .newSession, draftSessionId: nil)
         XCTAssertEqual(content, .none)
     }
@@ -75,7 +75,7 @@ final class TranscriptDetailRoutingTests: XCTestCase {
     #if DEBUG
     func testComposeContent_demoSelectionsRenderNoInputChrome() {
         for kind in DemoKind.allCases {
-            let content = TranscriptDetailComposeStack.content(
+            let content = ChatComposeStack.content(
                 for: .demo(kind), draftSessionId: nil)
             XCTAssertEqual(content, .none, "demo(.\(kind.rawValue)) should not render input chrome")
         }

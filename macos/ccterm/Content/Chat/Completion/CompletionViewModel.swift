@@ -13,7 +13,7 @@ final class CompletionViewModel {
     /// `@Observable @MainActor` class with `TaskLocal`-touching
     /// internals. `nonisolated` skips the executor-hop path. Hit by
     /// the host-aware reentry test: tearing down a
-    /// `TranscriptDetailViewController` deallocates the input bar's
+    /// `ChatSessionViewController` deallocates the input bar's
     /// hosted SwiftUI graph, which tears down the per-session
     /// `CompletionViewModel` from a Task continuation.
     nonisolated deinit {}

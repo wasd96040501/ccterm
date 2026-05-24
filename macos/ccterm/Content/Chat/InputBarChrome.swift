@@ -22,7 +22,7 @@ struct InputBarChrome: View {
 
     /// Resolved synchronously per render. `prepareDraftSession` is
     /// idempotent get-or-create (pure in-memory), and returns the same
-    /// instance `TranscriptDetailViewController` holds.
+    /// instance `ChatSessionViewController` holds.
     private var session: Session {
         manager.prepareDraftSession(sessionId)
     }
@@ -85,7 +85,7 @@ struct InputBarChrome: View {
 /// `RootView2` for the original geometry derivation.
 ///
 /// `maxHeight: .infinity` is intentionally absent: the bar host is
-/// bottom-anchored in `TranscriptDetailViewController`'s chat mode
+/// bottom-anchored in `ChatSessionViewController`'s chat mode
 /// and sized to this body's intrinsic height. A finite fitting size
 /// is what lets AppKit shrink the host so the transcript scroll
 /// view receives clicks in the empty band above the bar.
@@ -116,7 +116,7 @@ struct ChatRestingBar: View {
                     }
                 )
                 .frame(maxWidth: BlockStyle.maxLayoutWidth)
-                .padding(.horizontal, TranscriptDetailViewController.detailHorizontalInset)
+                .padding(.horizontal, ChatSessionViewController.detailHorizontalInset)
                 .padding(.bottom, 8)
                 .transition(
                     .scale(scale: 0.96, anchor: .bottom)
@@ -125,7 +125,7 @@ struct ChatRestingBar: View {
             InputBarChrome(
                 sessionId: sessionId,
                 draftKey: draftKey,
-                coordSpace: TranscriptDetailViewController.detailCoordSpace,
+                coordSpace: ChatSessionViewController.detailCoordSpace,
                 submitEnabled: true,
                 onSubmit: onSubmit,
                 onAttachRect: onAttachRect,
@@ -133,11 +133,11 @@ struct ChatRestingBar: View {
             )
             .frame(
                 minWidth: BlockStyle.minLayoutWidth,
-                maxWidth: TranscriptDetailViewController.composeMaxWidth
+                maxWidth: ChatSessionViewController.composeMaxWidth
             )
-            .padding(.horizontal, TranscriptDetailViewController.detailHorizontalInset)
+            .padding(.horizontal, ChatSessionViewController.detailHorizontalInset)
         }
-        .padding(.bottom, TranscriptDetailViewController.chatBottomInset)
+        .padding(.bottom, ChatSessionViewController.chatBottomInset)
         .frame(maxWidth: .infinity)
         .animation(.smooth(duration: 0.25), value: session.pendingPermissions.first?.id)
     }

@@ -5,17 +5,20 @@ import SwiftUI
 /// — creating it from `applicationDidFinishLaunching` instead of
 /// declaring a SwiftUI `Window` scene — so the transcript's mount and
 /// frame-change handlers run in the source phase, decoupled from
-/// SwiftUI's commit pass. Also owns the Settings window's lifecycle
-/// (lazy `SettingsWindowController`) so the OS can't resurface it
-/// from saved state at the next launch.
+/// SwiftUI's commit pass. Also owns every auxiliary window's
+/// lifecycle (lazy `SettingsWindowController` / `LogWindowController`
+/// / `AboutWindowController`) so the OS can't resurface them from
+/// saved state at the next launch and SwiftUI can't auto-open them
+/// as the leading `Window` scene.
 ///
-/// Logs / About stay as SwiftUI `Window` scenes declared in
-/// `CCTermApp`; their menu items (and the ⌘F bus hook for transcript
-/// search, plus ⌘, → `showSettingsWindow()`) live in `AppCommands` —
-/// a SwiftUI `Commands` block attached to the Logs scene. SwiftUI
-/// merges those into the app's main menu, so cold-start menu clicks
-/// resolve `@Environment(\.openWindow)` correctly without needing an
-/// AppKit bridge.
+/// `CCTermApp.body` keeps only a `Settings { EmptyView() }` placeholder
+/// to satisfy the `App` protocol's `some Scene` requirement; menu
+/// items + the ⌘F bus hook for transcript search live in `AppCommands`
+/// — a SwiftUI `Commands` block attached to that placeholder scene.
+/// SwiftUI merges those into the app's main menu, so cold-start menu
+/// clicks (⌘, → `showSettingsWindow()`, ⌘⇧L → `showLogsWindow()`,
+/// App > About ccterm → `showAboutWindow()`) resolve their closures
+/// without needing an AppKit bridge.
 ///
 /// The delegate also owns the app-scope state (`AppState`,
 /// `TranscriptSearchBus`). Previously these were `@State` on
@@ -42,6 +45,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             ?? {
                 let c = SettingsWindowController()
                 settingsWindowController = c
+                return c
+            }()
+        controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Lazy AppKit-rooted Logs window. Same shape as
+    /// `settingsWindowController` — created on the first
+    /// `showLogsWindow()` call (⌘⇧L or Debug > Logs menu item) so
+    /// SwiftUI cannot auto-open it as the leading `Window` scene and
+    /// the OS cannot resurface it from saved state.
+    private var logsWindowController: LogWindowController?
+
+    func showLogsWindow() {
+        let controller =
+            logsWindowController
+            ?? {
+                let c = LogWindowController()
+                logsWindowController = c
+                return c
+            }()
+        controller.showWindow(nil)
+        controller.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// Lazy AppKit-rooted About window. Same shape as
+    /// `settingsWindowController` / `logsWindowController` — created
+    /// on the first `showAboutWindow()` call (App > About ccterm menu
+    /// item) so SwiftUI cannot auto-open it as the leading `Window`
+    /// scene and the OS cannot resurface it from saved state.
+    private var aboutWindowController: AboutWindowController?
+
+    func showAboutWindow() {
+        let controller =
+            aboutWindowController
+            ?? {
+                let c = AboutWindowController()
+                aboutWindowController = c
                 return c
             }()
         controller.showWindow(nil)

@@ -1920,7 +1920,16 @@
         }
       }
     },
-    "Logs": {},
+    "Logs": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "日志"
+          }
+        }
+      }
+    },
     "Low": {
       "extractionState": "stale",
       "localizations": {

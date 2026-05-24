@@ -79,9 +79,19 @@ final class DetailRouterViewController: NSViewController {
     deinit { selectionObservationTask?.cancel() }
 
     override func loadView() {
-        // Plain container — the actual content comes from whichever
-        // child VC is currently installed.
-        view = NSView()
+        // Behind-window vibrancy backdrop for the whole detail half,
+        // shared by every child (chat / compose / archive). Replaces the
+        // flat opaque `windowBackgroundColor` the NSWindow paints by
+        // default: each child VC mounts on top with a transparent view,
+        // so the `.contentBackground` material shows through wherever they
+        // don't paint (the transcript, the dot-grid compose backdrop, the
+        // archive list). `.contentBackground` is the system material for a
+        // window's content region beside a source-list sidebar.
+        let effect = NSVisualEffectView()
+        effect.material = .contentBackground
+        effect.blendingMode = .behindWindow
+        effect.state = .followsWindowActiveState
+        view = effect
     }
 
     override func viewDidLoad() {

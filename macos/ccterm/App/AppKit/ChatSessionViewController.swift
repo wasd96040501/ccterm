@@ -147,9 +147,10 @@ final class ChatSessionViewController: NSViewController {
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     override func loadView() {
-        // The NSWindow paints `windowBackgroundColor` behind the
-        // transcript scroll view (which sets `drawsBackground = false`)
-        // — we just need a plain container view here.
+        // The detail router's `NSVisualEffectView` paints the vibrancy
+        // backdrop behind the transcript scroll view (which sets
+        // `drawsBackground = false`) — we just need a plain transparent
+        // container view here.
         view = NSView()
 
         topScrim = TranscriptTopScrimView(bandHeight: Self.topFadeScrimHeight)

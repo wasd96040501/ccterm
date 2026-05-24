@@ -110,6 +110,17 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
         // Become the model's sole structural observer — `select(_:)`
         // now drives `selectionDidChange(to:)` synchronously.
         model.selectionObserver = self
+        // Own the app→detail signals that used to be observed by every
+        // (leaky) `ChatSessionViewController`: a notification click maps
+        // straight to a selection change. The router is the single,
+        // window-lifetime owner, so there's exactly one consumer and no
+        // per-detail-VC observation task to retain a torn-down VC.
+        notifications.onActivateSession = { [weak self] sid in
+            self?.model.select(.session(sid))
+        }
+        // Notification subsystem bootstrap, kicked once per main-window
+        // mount from the stable owner. `bootstrap()` guards re-entry.
+        notifications.bootstrap()
         // Mount the correct child VC kind for the initial selection. The
         // transcript attach itself rides the first framed `viewDidLayout`
         // (the view has no real frame yet here).

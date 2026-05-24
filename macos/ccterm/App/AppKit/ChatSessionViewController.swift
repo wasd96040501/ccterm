@@ -112,8 +112,6 @@ final class ChatSessionViewController: NSViewController {
     private var runningObservationTask: Task<Void, Never>?
     /// Sink for the launch-failure alert.
     private var launchFailureObservationTask: Task<Void, Never>?
-    /// Sink for `notifications.pendingActivationSessionId`.
-    private var pendingActivationObservationTask: Task<Void, Never>?
 
     init(
         model: MainSelectionModel,
@@ -213,16 +211,12 @@ final class ChatSessionViewController: NSViewController {
         // machinery; the router's "settle, then present" ordering removes
         // the need for it.
         installObservations()
-        // Notification subsystem bootstrap, kicked once per
-        // main-window mount. `bootstrap()` guards against re-entry.
-        notifications.bootstrap()
     }
 
     // MARK: - Observation
 
     private func installObservations() {
         startLaunchFailureObservation()
-        startPendingActivationObservation()
     }
 
     /// Push the latest reported rects into the bottom scrim. Called
@@ -247,25 +241,6 @@ final class ChatSessionViewController: NSViewController {
             }
             self.presentLaunchFailureAlertIfNeeded()
             self.startLaunchFailureObservation()
-        }
-    }
-
-    private func startPendingActivationObservation() {
-        pendingActivationObservationTask?.cancel()
-        pendingActivationObservationTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            await withCheckedContinuation { cont in
-                withObservationTracking {
-                    _ = self.notifications.pendingActivationSessionId
-                } onChange: {
-                    Task { @MainActor in cont.resume() }
-                }
-            }
-            if let sid = self.notifications.pendingActivationSessionId {
-                self.model.select(.session(sid))
-                self.notifications.clearPendingActivation()
-            }
-            self.startPendingActivationObservation()
         }
     }
 
@@ -520,7 +495,6 @@ final class ChatSessionViewController: NSViewController {
     deinit {
         runningObservationTask?.cancel()
         launchFailureObservationTask?.cancel()
-        pendingActivationObservationTask?.cancel()
     }
 }
 

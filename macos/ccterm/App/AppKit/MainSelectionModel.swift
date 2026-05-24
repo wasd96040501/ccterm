@@ -38,15 +38,6 @@ final class MainSelectionModel {
     /// share this field via the model.
     var archiveSelectedFolderPath: String?
 
-    /// Frame of the round attach button, in the detail-pane
-    /// coordinate space. The bottom scrim cuts a `Circle` hole here.
-    var attachRect: CGRect = .zero
-
-    /// Frame of the rounded-rectangle pill, in the detail-pane
-    /// coordinate space. The bottom scrim cuts a `RoundedRectangle`
-    /// hole here.
-    var pillRect: CGRect = .zero
-
     /// True when the New Session tab is selected. Once `submit(...)`
     /// flips `selection` to `.session(...)`, this turns false and the
     /// detail VC settles the input bar at its chat-mode resting position.

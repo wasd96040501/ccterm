@@ -98,7 +98,7 @@ final class TranscriptHostReentryLayoutCacheTests: XCTestCase {
 
     /// End-to-end exercise of the production sidebar-switch path:
     /// in-memory `SessionManager` with two pre-seeded sessions, mount
-    /// `TranscriptDetailViewController` on session 1, settle, flip
+    /// `ChatSessionViewController` on session 1, settle, flip
     /// `MainSelectionModel.selection` to session 2, drain.
     /// The probe is installed on session 2's coordinator AFTER session
     /// 1 settles, so it captures EXACTLY the writes produced by
@@ -149,7 +149,7 @@ final class TranscriptHostReentryLayoutCacheTests: XCTestCase {
         // compose UI instead.
         model.selection = .session(sessionId1)
 
-        let vc = TranscriptDetailViewController(
+        let vc = ChatSessionViewController(
             model: model,
             sessionManager: manager,
             recentProjects: recentProjects,
@@ -180,7 +180,7 @@ final class TranscriptHostReentryLayoutCacheTests: XCTestCase {
         // to detect never gets crossed and the test passes regardless
         // of regression. Mounting via constraints to a container that
         // already has the real frame mirrors production's
-        // `TranscriptDetailViewController.mountSideBranch` geometry and
+        // `ChatSessionViewController.mountSideBranch` geometry and
         // drives the cascade through to 720.
         let container = NSView(frame: NSRect(origin: .zero, size: Self.windowSize))
         window.contentView = container
@@ -277,7 +277,7 @@ final class TranscriptHostReentryLayoutCacheTests: XCTestCase {
 
         try assertSingleWidthPerId(
             oneTickWrites,
-            label: "TranscriptDetailViewController sidebar switch")
+            label: "ChatSessionViewController sidebar switch")
     }
 
     // MARK: - Helpers

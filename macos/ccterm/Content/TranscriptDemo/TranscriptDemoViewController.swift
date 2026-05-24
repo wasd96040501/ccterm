@@ -3,7 +3,7 @@ import SwiftUI
 
 /// AppKit-rooted host for the transcript content demo. Replaces the
 /// former SwiftUI `TranscriptDemoView`: this VC is now the side-branch
-/// payload `TranscriptDetailViewController` mounts when the user picks
+/// payload `ChatSessionViewController` mounts when the user picks
 /// the "Transcript Demo" sidebar item. The transcript itself goes
 /// through the canonical attach pattern (see
 /// `TranscriptScrollViewFactory` doc-comment + `CLAUDE.md`'s

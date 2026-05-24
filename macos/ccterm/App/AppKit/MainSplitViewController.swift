@@ -1,8 +1,10 @@
 import AppKit
 
 /// Two-item `NSSplitViewController` that hosts the AppKit-native
-/// `SidebarViewController` on the leading side and the
-/// `TranscriptDetailViewController` on the trailing side. Replaces
+/// `SidebarViewController` on the leading side and a
+/// `DetailRouterViewController` on the trailing side. The router
+/// owns whichever detail child VC the current selection asks for —
+/// see its doc comment for the scaffolding plan. Replaces
 /// `RootView2`'s `NavigationSplitView` wrapper.
 @MainActor
 final class MainSplitViewController: NSSplitViewController {
@@ -10,7 +12,7 @@ final class MainSplitViewController: NSSplitViewController {
     let appState: AppState
     let searchBus: TranscriptSearchBus
 
-    let detailViewController: TranscriptDetailViewController
+    let detailRouter: DetailRouterViewController
     private let sidebarViewController: SidebarViewController
 
     init(model: MainSelectionModel, appState: AppState, searchBus: TranscriptSearchBus) {
@@ -23,7 +25,7 @@ final class MainSplitViewController: NSSplitViewController {
             sessionManager: appState.sessionManager,
             groupOrderStore: appState.sidebarGroupOrder)
 
-        detailViewController = TranscriptDetailViewController(
+        detailRouter = DetailRouterViewController(
             model: model,
             sessionManager: appState.sessionManager,
             recentProjects: appState.recentProjects,
@@ -52,7 +54,7 @@ final class MainSplitViewController: NSSplitViewController {
         sidebarItem.titlebarSeparatorStyle = .automatic
         addSplitViewItem(sidebarItem)
 
-        let detailItem = NSSplitViewItem(viewController: detailViewController)
+        let detailItem = NSSplitViewItem(viewController: detailRouter)
         detailItem.minimumThickness = 680
         detailItem.canCollapse = false
         detailItem.titlebarSeparatorStyle = .none

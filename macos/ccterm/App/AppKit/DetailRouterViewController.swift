@@ -2,6 +2,18 @@ import AppKit
 import Observation
 import SwiftUI
 
+/// A detail child the router can ask to release its per-session resources
+/// when it's swapped out on a cross-kind transition. The router drives
+/// teardown **explicitly** rather than leaving it to ARC timing: the
+/// outgoing child's transcript scroll view, sheet presenter, and
+/// `isRunning` observation task are dismantled deterministically the
+/// moment it leaves the hierarchy, instead of lingering until the VC
+/// happens to deallocate.
+@MainActor
+protocol DetailRouterChild: NSViewController {
+    func prepareForRemoval()
+}
+
 /// Empty AppKit container at the detail slot of `MainSplitViewController`.
 /// Hosts exactly one child `NSViewController` at a time and swaps it on
 /// `MainSelectionModel.selection` changes through proper AppKit VC
@@ -203,6 +215,10 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
         if kind == currentKind, currentChild != nil { return }
 
         if let old = currentChild {
+            // Let the outgoing child tear down its per-session resources
+            // before it leaves the tree — deterministic, not at the mercy
+            // of when ARC frees the VC.
+            (old as? DetailRouterChild)?.prepareForRemoval()
             old.view.removeFromSuperview()
             old.removeFromParent()
         }

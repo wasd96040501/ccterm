@@ -43,7 +43,7 @@ import SwiftUI
 /// permission card) intrinsic height, so the transcript scroll view
 /// receives clicks in the scrim band above it.
 @MainActor
-final class ChatSessionViewController: NSViewController {
+final class ChatSessionViewController: NSViewController, DetailRouterChild {
     /// Coordinate-space identifier for SwiftUI `GeometryReader`/
     /// `PreferenceKey` callbacks that report the attach button +
     /// pill rects. Mirrors `RootView2.detailCoordSpace`.
@@ -239,6 +239,15 @@ final class ChatSessionViewController: NSViewController {
             return
         }
         attachSession(sessionId)
+    }
+
+    /// `DetailRouterChild` — the router calls this right before it swaps
+    /// this VC out on a cross-kind transition (`.transcript →
+    /// .archive/.compose`). Tear the transcript down deterministically so
+    /// the scroll view, sheet presenter, and `isRunning` task are released
+    /// here rather than whenever ARC gets around to freeing the VC.
+    func prepareForRemoval() {
+        tearDownTranscript()
     }
 
     /// Keep `Session.setFocused` in sync with the shown session so

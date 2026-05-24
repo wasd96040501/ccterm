@@ -15,15 +15,20 @@ import SwiftUI
 /// - top scrim — `TranscriptScrimView` (AppKit, hitTest passthrough)
 /// - bottom scrim — `TranscriptBottomScrimView` (AppKit, hitTest
 ///   passthrough, even-odd cutouts at the attach button + pill)
-/// - input bar / compose configurator — `PassthroughHostingView`
-///   (NSHostingView subclass; see its doc for the remaining
-///   `claimsHits` knob, deleted in a follow-up commit once the host
-///   shrinks to fit the bar). Its SwiftUI body switches on
-///   `model.selection` via `TranscriptDetailComposeStack.content(...)`:
-///   `.newSession` → compose card, `.session(_)` → chat resting bar,
-///   `.none` → `EmptyView`. `.archive` and `.demo(_)` are routed
-///   away from this VC entirely by `DetailRouterViewController` and
-///   never land here.
+/// - input bar / compose configurator — `NSHostingView<AnyView>`.
+///   Its SwiftUI body switches on `model.selection` via
+///   `TranscriptDetailComposeStack.content(...)`: `.newSession` →
+///   compose card, `.session(_)` → chat resting bar, `.none` →
+///   `EmptyView`. `.archive` and `.demo(_)` are routed away from
+///   this VC entirely by `DetailRouterViewController` and never
+///   land here, so the host always renders a chat-flavored body —
+///   no need for any of the hit-test passthrough gymnastics earlier
+///   commits on this PR were forced to ship.
+///
+/// Known issue (tracked separately): the compose host is still
+/// full-bleed, so clicks in the transparent area around the input
+/// bar are intercepted by SwiftUI instead of reaching the transcript.
+/// Fixed by the next commit, which sizes the host to its content.
 @MainActor
 final class TranscriptDetailViewController: NSViewController {
     /// Coordinate-space identifier for SwiftUI `GeometryReader`/
@@ -70,13 +75,10 @@ final class TranscriptDetailViewController: NSViewController {
     /// stay mounted for the lifetime of the VC. The scrims are pure
     /// AppKit (no `NSHostingView` so they don't register cursor rects
     /// that would shadow the transcript's I-beam); the input bar /
-    /// compose card stays SwiftUI-hosted via `PassthroughHostingView`
-    /// so transparent regions (when the selection routes to a side
-    /// branch and the body collapses to `EmptyView`) click through to
-    /// the side-branch view sitting below.
+    /// compose card stays SwiftUI-hosted via a plain `NSHostingView`.
     private var topScrim: TranscriptScrimView!
     private var bottomScrim: TranscriptBottomScrimView!
-    private var composeOrBarHost: PassthroughHostingView!
+    private var composeOrBarHost: NSHostingView<AnyView>!
 
     /// Sink for `model.attachRect` / `pillRect` → `bottomScrim` cutout
     /// path. Re-arms on every fire.
@@ -129,7 +131,7 @@ final class TranscriptDetailViewController: NSViewController {
         bottomScrim.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(bottomScrim)
 
-        composeOrBarHost = PassthroughHostingView(rootView: AnyView(makeComposeOrBarStack()))
+        composeOrBarHost = NSHostingView(rootView: AnyView(makeComposeOrBarStack()))
         composeOrBarHost.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(composeOrBarHost)
 
@@ -304,20 +306,7 @@ final class TranscriptDetailViewController: NSViewController {
             sessionManager.existingSession(sid)?.setFocused(false)
         }
 
-        updateComposeHostHitClaim()
         rebuildBackingContent()
-    }
-
-    /// `PassthroughHostingView`'s remaining knob. Now that
-    /// `DetailRouterViewController` only ever mounts this VC for
-    /// chat-bearing selections (`.session` / `.newSession` / `.none`)
-    /// — `.archive` and `.demo(_)` get their own dedicated child VCs
-    /// — the host always renders visible interactive SwiftUI
-    /// controls, so we always claim hits. The flag and this method
-    /// disappear in the next commit when `PassthroughHostingView`
-    /// itself goes away.
-    private func updateComposeHostHitClaim() {
-        composeOrBarHost.claimsHits = true
     }
 
     // MARK: - Backing content rebuild

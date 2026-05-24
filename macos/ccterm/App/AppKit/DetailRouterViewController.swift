@@ -11,10 +11,10 @@ import SwiftUI
 /// The router's purpose is to **let each selection have its own VC**,
 /// instead of cramming archive / demos / chat / compose into one
 /// always-mounted detail VC and toggling them via overlay opacity +
-/// hit-test heuristics. Pre-router, that single-VC design forced
-/// `PassthroughHostingView`'s wrong "is super.hitTest === self" gate to
-/// exist (which then silently dropped clicks on every plain-style
-/// SwiftUI button in the input bar's chrome row).
+/// hit-test heuristics. The earlier single-VC shape was what forced
+/// the now-deleted `PassthroughHostingView` and its "is super.hitTest
+/// === self" gate to exist (which then silently dropped clicks on
+/// every plain-style SwiftUI button in the input bar's chrome row).
 ///
 /// ## Scaffolding state (this commit)
 ///

@@ -42,7 +42,21 @@ struct ImagePreviewRequest: Identifiable, Equatable {
 @MainActor
 @Observable
 final class Transcript2Controller {
+    /// Structural mutation vocabulary (REFACTOR-PLAN §4.6). Position is
+    /// **intrinsic** to each case — top (`prepend`), tail (`append`), or in
+    /// place (`replace` / `update` / `remove`) — so callers never thread an
+    /// arbitrary anchor through a generic insert. Scroll intent rides with the
+    /// case: `append` sticks to the bottom, everything else preserves the
+    /// visible viewport.
     enum Change: Sendable {
+        /// Prepend `blocks` at the head (index 0). Drives backfill batches.
+        case prepend(_ blocks: [Block])
+        /// Append `blocks` at the tail. Drives live tail entries + the pill.
+        case append(_ blocks: [Block])
+        /// Swap the contiguous run of `oldIds` for `with` **at the same start
+        /// index**, atomically — the structure-changed segment swap. A
+        /// degenerate `oldIds == []` (or none present) routes to `.append`.
+        case replace(oldIds: [UUID], with: [Block])
         /// Insert `blocks` after the block with id `after`. `after: nil`
         /// prepends (index 0). If `after` is non-nil but unknown (e.g. the
         /// anchor was removed), the change is a no-op — same posture as

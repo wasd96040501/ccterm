@@ -333,12 +333,18 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             return
         }
 
-        // Only `.insert` carries new blocks; `.remove` / `.update` either
-        // don't add layouts or evict them. `.update`'s replacement layout
-        // is computed lazily by `applyStructuralChange` after the main hop.
+        // Block-carrying cases feed off-main layout precompute; `.remove` /
+        // `.update` either don't add layouts or evict them. `.update`'s
+        // replacement layout is computed lazily by `applyStructuralChange`
+        // after the main hop.
         let toCompute: [Block] = changes.flatMap { change -> [Block] in
-            if case .insert(_, let blocks) = change { return blocks }
-            return []
+            switch change {
+            case .insert(_, let blocks): return blocks
+            case .prepend(let blocks): return blocks
+            case .append(let blocks): return blocks
+            case .replace(_, let blocks): return blocks
+            case .remove, .update: return []
+            }
         }
 
         // Snapshot highlight values + fold flags + status flags on
@@ -391,6 +397,32 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         in table: NSTableView?
     ) {
         switch change {
+        case .prepend(let new):
+            // Intrinsic position: head. Thin sugar over the insert path so the
+            // data mutation + structural notify stays one well-tested code path.
+            applyStructuralChange(.insert(after: nil, new), in: table)
+
+        case .append(let new):
+            // Intrinsic position: tail. `blocks.last?.id == nil` (empty table)
+            // collapses to an index-0 insert, which is the correct first land.
+            applyStructuralChange(.insert(after: blocks.last?.id, new), in: table)
+
+        case .replace(let oldIds, let newBlocks):
+            // Segment swap: remove the contiguous `oldIds` and insert
+            // `newBlocks` at the same start index, atomically. Anchor on the
+            // block just above the run so the insert lands where the run began.
+            // Degenerate / absent `oldIds` is an out-of-order sink → append.
+            let idSet = Set(oldIds)
+            guard !idSet.isEmpty,
+                let firstIdx = blocks.firstIndex(where: { idSet.contains($0.id) })
+            else {
+                applyStructuralChange(.append(newBlocks), in: table)
+                return
+            }
+            let anchorId: UUID? = firstIdx > 0 ? blocks[firstIdx - 1].id : nil
+            applyStructuralChange(.remove(ids: oldIds), in: table)
+            applyStructuralChange(.insert(after: anchorId, newBlocks), in: table)
+
         case .insert(let after, let new):
             guard !new.isEmpty else { return }
             let idx: Int

@@ -59,12 +59,17 @@ final class SessionManager {
     /// no observation-tracking trap.
     private(set) var archivedFolderOptions: [ArchivedFolder] = []
 
-    /// Most recent CLI launch failure from any handle. RootView2 binds to
-    /// this field with `.alert`: non-nil triggers the alert, and confirming
-    /// calls `clearLaunchFailure()` to reset. New failures overwrite old
-    /// ones — concurrent failures only keep the latest (no use case needs
-    /// the full list).
-    private(set) var lastLaunchFailure: LaunchFailure?
+    /// Pushed when any handle reports a CLI launch failure. A single
+    /// stable owner (`DetailRouterViewController`) installs this and
+    /// presents the alert on the window.
+    ///
+    /// Push callback rather than an `@Observable` field on purpose: the
+    /// old field was observed by every `ChatSessionViewController`
+    /// through a re-arming `withObservationTracking` task that pinned the
+    /// VC (strong `self` across the `await`). With N leaked VCs all
+    /// observing, one launch failure stacked N alert sheets. One owner +
+    /// one callback = one alert, no observation task, no retain cycle.
+    @ObservationIgnored var onLaunchFailure: ((LaunchFailure) -> Void)?
 
     struct LaunchFailure: Identifiable, Equatable {
         let id = UUID()
@@ -115,10 +120,6 @@ final class SessionManager {
     /// `SessionRuntime`, `InMemorySessionRepository`, and
     /// `CoreDataSessionRepository` already use.
     nonisolated deinit {}
-
-    func clearLaunchFailure() {
-        lastLaunchFailure = nil
-    }
 
     /// Gracefully shut down every cached `Session` in parallel and only
     /// return after each one has actually exited (or its SDK-level
@@ -204,8 +205,9 @@ final class SessionManager {
     /// Wire the session's manager-facing callbacks. Called once per
     /// `Session` on creation.
     ///
-    /// - `onLaunchFailure` → `lastLaunchFailure` so RootView2's `.alert`
-    ///   surfaces CLI launch errors.
+    /// - `onLaunchFailure` → forwards to the manager-level
+    ///   `onLaunchFailure` push callback so a single owner surfaces CLI
+    ///   launch errors.
     /// - `onRecordPersisted` → `refreshRecords()` so the sidebar picks
     ///   up sessions whose db row is saved asynchronously (worktree-
     ///   provisioning collision-recovery patch fires this from inside
@@ -220,10 +222,7 @@ final class SessionManager {
         session.onLaunchFailure = { [weak self] reason in
             // `reason` is the raw description the runtime already produced;
             // no localization or field reshuffle here.
-            self?.lastLaunchFailure = LaunchFailure(
-                sessionId: sid,
-                message: reason
-            )
+            self?.onLaunchFailure?(LaunchFailure(sessionId: sid, message: reason))
         }
         session.onRecordPersisted = { [weak self] in
             appLog(

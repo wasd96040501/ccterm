@@ -118,6 +118,12 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
         notifications.onActivateSession = { [weak self] sid in
             self?.model.select(.session(sid))
         }
+        // Likewise own the launch-failure alert here. Per-VC observation
+        // stacked one alert per leaked transcript VC; one owner presents
+        // exactly one.
+        sessionManager.onLaunchFailure = { [weak self] failure in
+            self?.presentLaunchFailureAlert(failure)
+        }
         // Notification subsystem bootstrap, kicked once per main-window
         // mount from the stable owner. `bootstrap()` guards re-entry.
         notifications.bootstrap()
@@ -136,6 +142,24 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
         guard !didInitialApply, view.bounds.width > 0, view.bounds.height > 0 else { return }
         didInitialApply = true
         applySelection(model.selection)
+    }
+
+    // MARK: - Launch-failure alert
+
+    /// Present the CLI launch-failure alert on the window. Owned here —
+    /// the single, window-lifetime detail owner — so a failure surfaces
+    /// exactly one alert regardless of how many transcript VCs exist.
+    private func presentLaunchFailureAlert(_ failure: SessionManager.LaunchFailure) {
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Failed to launch CLI")
+        alert.informativeText = failure.message
+        alert.addButton(withTitle: String(localized: "OK"))
+        alert.alertStyle = .warning
+        if let window = view.window {
+            alert.beginSheetModal(for: window, completionHandler: nil)
+        } else {
+            alert.runModal()
+        }
     }
 
     // MARK: - Routing

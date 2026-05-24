@@ -110,8 +110,6 @@ final class ChatSessionViewController: NSViewController {
     /// Sink for `session.isRunning` → `controller.setLoading(_:)`.
     /// Re-armed on every session swap.
     private var runningObservationTask: Task<Void, Never>?
-    /// Sink for the launch-failure alert.
-    private var launchFailureObservationTask: Task<Void, Never>?
 
     init(
         model: MainSelectionModel,
@@ -210,13 +208,12 @@ final class ChatSessionViewController: NSViewController {
         // sized the view) is exactly what forced the old deferred-attach
         // machinery; the router's "settle, then present" ordering removes
         // the need for it.
-        installObservations()
-    }
-
-    // MARK: - Observation
-
-    private func installObservations() {
-        startLaunchFailureObservation()
+        //
+        // No app-global observation installed here either: notification
+        // activation and launch-failure alerts are owned by the stable
+        // `DetailRouterViewController`, not self-observed per transcript VC
+        // (that observation pinned this VC via a strong-`self`-across-await
+        // re-arm and leaked it on every cross-kind round-trip).
     }
 
     /// Push the latest reported rects into the bottom scrim. Called
@@ -226,39 +223,6 @@ final class ChatSessionViewController: NSViewController {
     private func applyScrimCutouts() {
         bottomScrim.attachRect = bottomScrim.convert(lastAttachRect, from: composeOrBarHost)
         bottomScrim.pillRect = bottomScrim.convert(lastPillRect, from: composeOrBarHost)
-    }
-
-    private func startLaunchFailureObservation() {
-        launchFailureObservationTask?.cancel()
-        launchFailureObservationTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            await withCheckedContinuation { cont in
-                withObservationTracking {
-                    _ = self.sessionManager.lastLaunchFailure
-                } onChange: {
-                    Task { @MainActor in cont.resume() }
-                }
-            }
-            self.presentLaunchFailureAlertIfNeeded()
-            self.startLaunchFailureObservation()
-        }
-    }
-
-    private func presentLaunchFailureAlertIfNeeded() {
-        guard let failure = sessionManager.lastLaunchFailure else { return }
-        let alert = NSAlert()
-        alert.messageText = String(localized: "Failed to launch CLI")
-        alert.informativeText = failure.message
-        alert.addButton(withTitle: String(localized: "OK"))
-        alert.alertStyle = .warning
-        if let window = view.window {
-            alert.beginSheetModal(for: window) { [weak self] _ in
-                self?.sessionManager.clearLaunchFailure()
-            }
-        } else {
-            alert.runModal()
-            sessionManager.clearLaunchFailure()
-        }
     }
 
     // MARK: - Imperative presentation (driven by the router)
@@ -494,7 +458,6 @@ final class ChatSessionViewController: NSViewController {
 
     deinit {
         runningObservationTask?.cancel()
-        launchFailureObservationTask?.cancel()
     }
 }
 

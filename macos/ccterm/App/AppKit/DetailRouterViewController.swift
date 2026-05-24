@@ -17,7 +17,8 @@ import SwiftUI
 /// every plain-style SwiftUI button in the input bar's chrome row).
 ///
 /// Routing table:
-/// - `.none` / `.newSession` / `.session(_)` → `ChatSessionViewController`
+/// - `.none` / `.session(_)` → `ChatSessionViewController`
+/// - `.newSession` → `ComposeSessionViewController`
 /// - `.archive` → `ArchiveViewController`
 /// - `.demo(_)` (DEBUG only) → the matching demo VC
 ///
@@ -93,6 +94,7 @@ final class DetailRouterViewController: NSViewController {
 
     enum ChildKind: Equatable {
         case transcript
+        case compose
         case archive
         #if DEBUG
         case demo(DemoKind)
@@ -104,8 +106,10 @@ final class DetailRouterViewController: NSViewController {
     /// unit-testable — see `DetailRouterContainmentTests`.
     static func childKind(for selection: MainSelection) -> ChildKind {
         switch selection {
-        case .none, .newSession, .session:
+        case .none, .session:
             return .transcript
+        case .newSession:
+            return .compose
         case .archive:
             return .archive
         #if DEBUG
@@ -145,6 +149,16 @@ final class DetailRouterViewController: NSViewController {
         switch kind {
         case .transcript:
             return ChatSessionViewController(
+                model: model,
+                sessionManager: sessionManager,
+                recentProjects: recentProjects,
+                notifications: notifications,
+                searchEngine: searchEngine,
+                searchBus: searchBus,
+                inputDraftStore: inputDraftStore
+            )
+        case .compose:
+            return ComposeSessionViewController(
                 model: model,
                 sessionManager: sessionManager,
                 recentProjects: recentProjects,

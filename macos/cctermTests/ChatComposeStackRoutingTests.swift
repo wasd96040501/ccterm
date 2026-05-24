@@ -6,10 +6,11 @@ import XCTest
 /// `ChatComposeStack.content(for:draftSessionId:)`,
 /// which is what the (still always-mounted) input-bar overlay
 /// inside `ChatSessionViewController` renders. The invariants:
-/// `.archive` / `.demo` / `.none` collapse to `.none`, so no input
-/// chrome floats on top of pages where the VC is unexpectedly
-/// mounted; `.newSession` with a draft renders the compose card;
-/// `.session(_)` renders the chat resting bar.
+/// `.newSession` / `.archive` / `.demo` / `.none` collapse to `.none`,
+/// so no input chrome floats on top of pages where the VC is
+/// unexpectedly mounted; only `.session(_)` renders the chat resting
+/// bar. (New Session's compose card lives in its own
+/// `ComposeSessionViewController` now, not in this stack.)
 ///
 /// Pre-fix, the `.archive` branch fell through to
 /// `ChatRestingBar(sessionId: "__archive__")`, mounting a SwiftUI
@@ -55,21 +56,17 @@ final class ChatComposeStackRoutingTests: XCTestCase {
         XCTAssertEqual(content, .chat(sessionId: "session-abc"))
     }
 
-    func testComposeContent_newSessionWithDraftRoutesToCompose() {
-        let content = ChatComposeStack.content(
-            for: .newSession, draftSessionId: "draft-xyz")
-        XCTAssertEqual(content, .compose(draftSessionId: "draft-xyz"))
-    }
-
-    func testComposeContent_newSessionWithoutDraftRendersNothing() {
-        // Briefly true at first-mount before handleSelectionChanged()
-        // lazy-allocates a draftSessionId. Must NOT fabricate an id
-        // for `ChatRestingBar` — that's exactly the class of mistake
-        // (treating a placeholder as a real session id) that this
-        // typed-selection refactor is fixing.
-        let content = ChatComposeStack.content(
-            for: .newSession, draftSessionId: nil)
-        XCTAssertEqual(content, .none)
+    func testComposeContent_newSessionRendersNoInputChrome() {
+        // New Session is routed to `ComposeSessionViewController` by the
+        // router and never reaches this stack. Defensively, `content`
+        // still collapses it to `.none` (regardless of draft state) so a
+        // stray mount can't float the chat bar over the compose card.
+        XCTAssertEqual(
+            ChatComposeStack.content(for: .newSession, draftSessionId: "draft-xyz"),
+            .none)
+        XCTAssertEqual(
+            ChatComposeStack.content(for: .newSession, draftSessionId: nil),
+            .none)
     }
 
     #if DEBUG

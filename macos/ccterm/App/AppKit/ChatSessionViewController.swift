@@ -4,10 +4,21 @@ import Observation
 import SwiftUI
 
 /// Child VC the `DetailRouterViewController` mounts for chat-bearing
-/// selections (`.session` / `.newSession` / `.none`). Owns the transcript
+/// selections (`.session(_)` / `.none`). Owns the transcript
 /// `Transcript2ScrollView` directly — created in `loadView()` so the
 /// table's mount + `frameDidChange` cascade lives in AppKit's source
 /// phase, not in SwiftUI's commit pass (the whole point of #195).
+///
+/// New Session (`.newSession`) is NOT handled here — it has its own
+/// `ComposeSessionViewController`. That split is deliberate: when
+/// compose and chat shared this VC's one always-mounted bar host, the
+/// host had to morph between full-bleed (compose) and bottom-anchored
+/// (chat), and the constraint switch couldn't stay in sync with the
+/// SwiftUI body across runloop phases — the full-bleed host lingered
+/// over the transcript after a fast switch and swallowed its clicks.
+/// With compose gone, the bar host here is *always* bottom-anchored
+/// and only ever renders the chat resting bar (or nothing for `.none`),
+/// so it never covers more of the transcript than the bar itself.
 ///
 /// Around the transcript we mount three full-bleed overlays, all
 /// attached for the lifetime of the VC; their *contents* react to
@@ -15,21 +26,15 @@ import SwiftUI
 /// - top scrim — `TranscriptScrimView` (AppKit, hitTest passthrough)
 /// - bottom scrim — `TranscriptBottomScrimView` (AppKit, hitTest
 ///   passthrough, even-odd cutouts at the attach button + pill)
-/// - input bar / compose configurator — `NSHostingView<AnyView>`.
-///   Its SwiftUI body switches on `model.selection` via
-///   `ChatComposeStack.content(...)`: `.newSession` →
-///   compose card, `.session(_)` → chat resting bar, `.none` →
-///   `EmptyView`. `.archive` and `.demo(_)` are routed away from
-///   this VC entirely by `DetailRouterViewController` and never
-///   land here, so the host always renders a chat-flavored body —
-///   no need for any of the hit-test passthrough gymnastics earlier
-///   commits on this PR were forced to ship.
+/// - input bar — `NSHostingView<AnyView>`. Its SwiftUI body switches on
+///   `model.selection` via `ChatComposeStack.content(...)`: `.session(_)`
+///   → chat resting bar, everything else → `EmptyView`. `.newSession` /
+///   `.archive` / `.demo(_)` are routed away from this VC entirely by
+///   `DetailRouterViewController` and never land here.
 ///
-/// In chat mode the host is bottom-anchored and takes only the bar
-/// (+ optional permission card) intrinsic height, so the transcript
-/// scroll view receives clicks in the scrim band above. In compose
-/// mode the host's top constraint is activated so the configurator
-/// card has the full pane to lay out in.
+/// The host is bottom-anchored and takes only the bar (+ optional
+/// permission card) intrinsic height, so the transcript scroll view
+/// receives clicks in the scrim band above it.
 @MainActor
 final class ChatSessionViewController: NSViewController {
     /// Coordinate-space identifier for SwiftUI `GeometryReader`/
@@ -94,20 +99,11 @@ final class ChatSessionViewController: NSViewController {
     private var bottomScrim: TranscriptBottomScrimView!
     private var composeOrBarHost: NSHostingView<AnyView>!
 
-    /// Compose mode pins the host's top to `view.topAnchor` so the
-    /// configurator fills the pane (full-bleed). Chat / `.none`
-    /// deactivate it and activate `composeOrBarHostHeightConstraint`
-    /// instead, so the host shrinks to just the bar at the bottom and
-    /// the transcript it overlays keeps receiving clicks / cursor
-    /// rects everywhere above the bar. Exactly one of the two is
-    /// active at a time — see `updateComposeHostShape`.
-    private var composeOrBarHostTopConstraint: NSLayoutConstraint!
-
-    /// Active in chat / `.none` mode: fixes the host's height to the
-    /// bar's reported content height (driven by the SwiftUI body's
-    /// `onContentHeight` callback), bottom-anchored. Inactive in
-    /// compose mode, where the top constraint drives a full-bleed
-    /// layout instead.
+    /// Fixes the host's height to the bar's reported content height
+    /// (driven by the SwiftUI body's `onContentHeight` callback),
+    /// bottom-anchored. Always active — the host only ever renders the
+    /// chat resting bar (or nothing), never a full-bleed configurator,
+    /// so it never needs to grow past the bar.
     private var composeOrBarHostHeightConstraint: NSLayoutConstraint!
 
     /// Latest attach / pill rects reported by the chat resting bar
@@ -168,13 +164,12 @@ final class ChatSessionViewController: NSViewController {
         composeOrBarHost.translatesAutoresizingMaskIntoConstraints = false
         // A plain `NSHostingView` claims EVERY point in its bounds for
         // hit-testing, shadowing whatever AppKit view sits below — here
-        // the transcript table. In compose mode that's fine (the
-        // configurator fills the pane). In chat mode the host must
-        // cover ONLY the bar at the bottom, or it eats the transcript's
-        // selection / hover-gutter mouse events everywhere it overlaps.
+        // the transcript table. So the host must cover ONLY the bar at
+        // the bottom, or it eats the transcript's selection / hover-gutter
+        // mouse events everywhere it overlaps.
         //
-        // Drive the chat-mode height EXPLICITLY rather than leaning on
-        // the host's intrinsic size:
+        // Drive the height EXPLICITLY rather than leaning on the host's
+        // intrinsic size:
         // - `sizingOptions = []` stops the host from publishing any
         //   intrinsic height. The bottom-anchored `.intrinsicContentSize`
         //   variant leaked a *required* height up through the split into
@@ -189,12 +184,10 @@ final class ChatSessionViewController: NSViewController {
         composeOrBarHost.sizingOptions = []
         view.addSubview(composeOrBarHost)
 
-        // Bottom + leading + trailing always pinned. The vertical
-        // extent is one of two mutually-exclusive constraints, toggled
-        // by `updateComposeHostShape`: `topConstraint` (compose →
-        // full-bleed) or `heightConstraint` (chat / .none → bar height).
-        composeOrBarHostTopConstraint =
-            composeOrBarHost.topAnchor.constraint(equalTo: view.topAnchor)
+        // Bottom + leading + trailing pinned; height fixed to the bar's
+        // measured content height (set via `onContentHeight`). The host
+        // is never full-bleed — compose has its own VC now — so this
+        // height constraint is simply always active.
         composeOrBarHostHeightConstraint =
             composeOrBarHost.heightAnchor.constraint(equalToConstant: 0)
 
@@ -216,34 +209,16 @@ final class ChatSessionViewController: NSViewController {
             composeOrBarHost.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             composeOrBarHost.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             composeOrBarHost.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            composeOrBarHostHeightConstraint,
         ])
-    }
-
-    /// Activate / deactivate the host's top constraint to match the
-    /// current selection. Compose mode wants the configurator full-
-    /// bleed; chat mode wants only the bar at the bottom; `.none`
-    /// can use either (the body is `EmptyView` so it shrinks to 0
-    /// regardless).
-    private func updateComposeHostShape() {
-        let shouldPinTop = model.isComposeMode
-        // Exactly one vertical constraint active: top (full-bleed
-        // compose) XOR height (bar-only chat / .none). Deactivate
-        // before activating so the two never fight for a frame.
-        if composeOrBarHostTopConstraint.isActive != shouldPinTop {
-            composeOrBarHostTopConstraint.isActive = shouldPinTop
-        }
-        if composeOrBarHostHeightConstraint.isActive != !shouldPinTop {
-            composeOrBarHostHeightConstraint.isActive = !shouldPinTop
-        }
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        // Run the initial selection handler so the lazy
-        // `draftSessionId` allocation + focus tracking + side-branch
-        // mount happens for the model's initial value. Mirrors
-        // `RootView2`'s `.task(id: selection)` which fired once
-        // on mount in addition to firing on every change.
+        // Run the initial selection handler so focus tracking + the
+        // transcript mount happen for the model's initial value. Mirrors
+        // `RootView2`'s `.task(id: selection)` which fired once on mount
+        // in addition to firing on every change.
         handleSelectionChanged()
         installObservations()
         // Notification subsystem bootstrap, kicked once per
@@ -371,27 +346,10 @@ final class ChatSessionViewController: NSViewController {
     }
 
     private func handleSelectionChanged() {
-        // Lazy-allocate draftSessionId on entering New Session, and
-        // seed the draft's `cwd` / `originPath` synchronously here so
-        // `session.cwd` is non-nil by the time `NewSessionConfigurator`
-        // and the input bar's completion context first read it.
-        // `useWorktree` / `sourceBranch` are left to
-        // `NewSessionConfigurator.applyProbeBindings(...)` to fill in
-        // off the git probe.
-        if model.selection == .newSession, model.draftSessionId == nil {
-            let sid = UUID().uuidString.lowercased()
-            model.draftSessionId = sid
-            if let cwd = recentProjects.lastLaunchedPath,
-                let draft = sessionManager.prepareDraftSession(sid).draft
-            {
-                draft.setCwd(cwd)
-                draft.setOriginPath(cwd)
-            }
-        }
-
         // Focus tracking — keep `Session.setFocused` in sync with the
         // selection so unread state clears when the user enters a
-        // session.
+        // session. (Draft `sessionId` allocation for New Session lives
+        // in `ComposeSessionViewController` now, not here.)
         let activeSid = model.effectiveSessionId
         if let active = activeSid, let session = sessionManager.session(active) {
             session.setFocused(true)
@@ -401,7 +359,6 @@ final class ChatSessionViewController: NSViewController {
             sessionManager.existingSession(sid)?.setFocused(false)
         }
 
-        updateComposeHostShape()
         rebuildBackingContent()
     }
 
@@ -532,12 +489,13 @@ final class ChatSessionViewController: NSViewController {
         ChatComposeStack(
             model: model,
             onSubmit: { [weak self] submission, sessionId in
-                self?.submit(submission, sessionId: sessionId)
-            },
-            onResumeSession: { [weak self] resumeSid in
                 guard let self else { return }
-                self.model.selection = .session(resumeSid)
-                self.model.draftSessionId = nil
+                submitSessionInput(
+                    submission,
+                    sessionId: sessionId,
+                    sessionManager: self.sessionManager,
+                    recentProjects: self.recentProjects,
+                    model: self.model)
             },
             onAttachRect: { [weak self] rect in
                 guard let self else { return }
@@ -550,9 +508,7 @@ final class ChatSessionViewController: NSViewController {
                 self.applyScrimCutouts()
             },
             onContentHeight: { [weak self] height in
-                // Chat-mode bar height → host height constraint. No-op
-                // visually in compose mode (the height constraint is
-                // inactive there; the top constraint drives full-bleed).
+                // Chat bar height → host height constraint.
                 self?.composeOrBarHostHeightConstraint.constant = height
             }
         )
@@ -562,62 +518,6 @@ final class ChatSessionViewController: NSViewController {
         .environment(\.syntaxEngine, searchEngine)
         .environment(searchBus)
         .environment(notifications)
-        // Without `.ignoresSafeArea()`, `NSHostingView` would forward
-        // a toolbar-sized top safe-area inset to SwiftUI in compose
-        // mode (when the host is full-bleed); the rects reported in
-        // `detailCoordSpace` would then sit in an inset coord space
-        // while `bottomScrim` (full-bleed AppKit) renders in
-        // `view.bounds`, and the cutouts would land `toolbarHeight`
-        // pixels too high. In chat mode the host is bottom-anchored,
-        // doesn't intersect the top safe area, so this is a no-op
-        // there — kept on for the compose-mode behavior.
-        .ignoresSafeArea()
-    }
-
-    // MARK: - Submit (draft → real session promotion)
-
-    /// Mirror of `RootView2.submit` — kept on the VC so the
-    /// compose-stack SwiftUI host can call back via the closure
-    /// installed on `ChatComposeStack`.
-    private func submit(_ submission: InputBarView2.Submission, sessionId: String) {
-        let session = sessionManager.prepareDraftSession(sessionId)
-        let isFirstStart = !session.hasRecord
-        if isFirstStart {
-            // The configurator's bindings have already written cwd /
-            // originPath / useWorktree / sourceBranch onto `session.draft`,
-            // so promotion picks them up verbatim. Only the
-            // `recentProjects` bookkeeping and the home-fallback for users
-            // who somehow submit with no folder picked live here now.
-            if session.cwd == nil, let draft = session.draft {
-                let home = FileManager.default.homeDirectoryForCurrentUser.path
-                draft.setCwd(home)
-                draft.setOriginPath(home)
-            }
-            if let picked = session.cwd {
-                recentProjects.markLaunched(picked, useWorktree: session.isWorktree)
-            }
-        }
-        let mentions = submission.filePaths.map { "@\"\($0)\"" }.joined(separator: " ")
-        let composedBody: String = {
-            switch (mentions.isEmpty, submission.text.isEmpty) {
-            case (true, _): return submission.text
-            case (false, true): return mentions
-            case (false, false): return mentions + " " + submission.text
-            }
-        }()
-        if submission.images.isEmpty {
-            session.send(text: composedBody)
-        } else {
-            session.send(
-                images: submission.images,
-                caption: composedBody.isEmpty ? nil : composedBody
-            )
-        }
-        if isFirstStart {
-            sessionManager.refreshRecords()
-            model.selection = .session(sessionId)
-            model.draftSessionId = nil
-        }
     }
 
     deinit {
@@ -639,48 +539,46 @@ private struct BarContentHeightKey: PreferenceKey {
     }
 }
 
-/// Compose-mode card OR chat-mode resting input bar. Same shape as
-/// `RootView2.composeStack`, but reads state from the shared
-/// `MainSelectionModel` (so the AppKit VC can drive selection /
-/// draft flips imperatively from outside SwiftUI).
+/// Chat-mode resting input bar (or nothing). The always-mounted bar
+/// host of `ChatSessionViewController` renders this; it reads state from
+/// the shared `MainSelectionModel` so the AppKit VC can drive selection
+/// flips imperatively from outside SwiftUI.
+///
+/// New Session's compose card is NOT here — it has its own
+/// `ComposeSessionViewController` / `ComposeSessionView`. This stack only
+/// ever shows the chat resting bar for `.session(_)`, and `EmptyView`
+/// for every other selection.
 struct ChatComposeStack: View {
     @Bindable var model: MainSelectionModel
     let onSubmit: (InputBarView2.Submission, String) -> Void
-    let onResumeSession: (String) -> Void
     let onAttachRect: (CGRect) -> Void
     let onPillRect: (CGRect) -> Void
-    /// Reports the body's natural height to the host so the chat-mode
+    /// Reports the body's natural height to the host so the
     /// `composeOrBarHostHeightConstraint` can size to exactly the bar.
     let onContentHeight: (CGFloat) -> Void
-
-    @Environment(SessionManager.self) private var manager
 
     /// Routing decision for this overlay. Static + pure so the
     /// "which selection shows what input chrome" invariant is
     /// directly unit-testable — see `ChatComposeStackRoutingTests`.
-    /// In particular, `.archive` / `.demo` / `.none` all collapse to
-    /// `.none` here, which is what keeps the input bar from rendering
-    /// on top of (and intercepting clicks on) the Archive page.
+    /// Only `.session(_)` renders a bar; everything else collapses to
+    /// `.none`, which is what keeps the input bar from rendering on top
+    /// of (and intercepting clicks on) pages where this VC might be
+    /// mounted. `.newSession` is routed to `ComposeSessionViewController`
+    /// by the router and never reaches this stack, but it still maps to
+    /// `.none` here as belt-and-suspenders.
     enum Content: Equatable {
         case none
-        case compose(draftSessionId: String)
         case chat(sessionId: String)
     }
 
     static func content(for selection: MainSelection, draftSessionId: String?) -> Content {
         switch selection {
-        case .none, .archive:
+        case .none, .newSession, .archive:
             return .none
         #if DEBUG
         case .demo:
             return .none
         #endif
-        case .newSession:
-            // No draft allocated yet (briefly true on first entry
-            // before `handleSelectionChanged` lazy-allocates one) →
-            // render nothing rather than fabricating a session id.
-            guard let did = draftSessionId else { return .none }
-            return .compose(draftSessionId: did)
         case .session(let sid):
             return .chat(sessionId: sid)
         }
@@ -692,8 +590,6 @@ struct ChatComposeStack: View {
             switch content {
             case .none:
                 EmptyView()
-            case .compose(let sid):
-                composeBody(sid: sid)
             case .chat(let sid):
                 // `.id(sid)` resets `InputBarView2`'s `@State`
                 // (text, attachments, focus, completion) on every
@@ -721,17 +617,15 @@ struct ChatComposeStack: View {
             }
         }
         // Width-infinite always (the host is leading/trailing-pinned).
-        // Height is intentionally NOT `.infinity`: the chat-mode host
-        // is bottom-anchored to exactly the bar's height, reported to
-        // AppKit via `onContentHeight` below. Compose mode forces full
-        // height through an AppKit constraint instead.
+        // Height is intentionally NOT `.infinity`: the host is
+        // bottom-anchored to exactly the bar's height, reported to AppKit
+        // via `onContentHeight` below.
         .frame(maxWidth: .infinity)
         .background {
             // Measure the body's natural height without joining the
-            // layout, and feed it to the chat-mode host height
-            // constraint. Compose mode ignores the value (that
-            // constraint is inactive; the full-bleed top constraint
-            // wins), and `.none` measures the empty body as 0.
+            // layout, and feed it to the host height constraint. `.none`
+            // measures the empty body as 0, collapsing the host so the
+            // transcript receives clicks everywhere.
             GeometryReader { proxy in
                 Color.clear.preference(
                     key: BarContentHeightKey.self, value: proxy.size.height)
@@ -740,68 +634,6 @@ struct ChatComposeStack: View {
         .onPreferenceChange(BarContentHeightKey.self) { height in
             onContentHeight(height)
         }
-        .animation(.smooth(duration: 0.42), value: model.isComposeMode)
         .coordinateSpace(name: ChatSessionViewController.detailCoordSpace)
-    }
-
-    @ViewBuilder
-    private func composeBody(sid: String) -> some View {
-        let session = manager.prepareDraftSession(sid)
-        let bindings = composeBindings(for: session)
-        ZStack {
-            DotGridBackground()
-            NewSessionConfigurator(
-                folderPath: bindings.folder,
-                useWorktree: bindings.useWorktree,
-                sourceBranch: bindings.sourceBranch,
-                onResumeSession: onResumeSession,
-                inputBar: {
-                    InputBarChrome(
-                        sessionId: sid,
-                        draftKey: InputDraftStore.newSessionKey,
-                        coordSpace: ChatSessionViewController.detailCoordSpace,
-                        submitEnabled: session.cwd != nil,
-                        onSubmit: { submission in onSubmit(submission, sid) },
-                        onAttachRect: { _ in },
-                        onPillRect: { _ in }
-                    )
-                }
-            )
-            .padding(.horizontal, ChatSessionViewController.detailHorizontalInset)
-            .padding(.vertical, ChatSessionViewController.detailVerticalInset)
-        }
-        .transition(.opacity)
-    }
-
-    private struct ComposeBindings {
-        let folder: Binding<String?>
-        let useWorktree: Binding<Bool>
-        let sourceBranch: Binding<String?>
-    }
-
-    /// Bind the configurator's three controls straight to
-    /// `session.draft.config`. There is no parallel storage on the
-    /// selection model — the draft itself is the single source of
-    /// truth, so the input bar's completion context and the submit
-    /// path both observe the same values without a sync hop.
-    private func composeBindings(for session: Session) -> ComposeBindings {
-        ComposeBindings(
-            folder: Binding(
-                get: { session.cwd },
-                set: { new in
-                    guard let new, let draft = session.draft else { return }
-                    draft.setCwd(new)
-                    draft.setOriginPath(new)
-                }
-            ),
-            useWorktree: Binding(
-                get: { session.isWorktree },
-                set: { session.draft?.setWorktree($0) }
-            ),
-            sourceBranch: Binding(
-                get: { session.sourceBranch },
-                set: { session.draft?.setSourceBranch($0) }
-            )
-        )
     }
 }

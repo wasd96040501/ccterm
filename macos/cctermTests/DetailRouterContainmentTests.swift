@@ -64,7 +64,7 @@ final class DetailRouterContainmentTests: XCTestCase {
         // you add a new `MainSelection` case or a new `ChildKind`,
         // update this table in the same commit.
         XCTAssertEqual(DetailRouterViewController.childKind(for: .none), .transcript)
-        XCTAssertEqual(DetailRouterViewController.childKind(for: .newSession), .transcript)
+        XCTAssertEqual(DetailRouterViewController.childKind(for: .newSession), .compose)
         XCTAssertEqual(
             DetailRouterViewController.childKind(for: .session("sid")), .transcript)
         XCTAssertEqual(DetailRouterViewController.childKind(for: .archive), .archive)
@@ -99,6 +99,37 @@ final class DetailRouterContainmentTests: XCTestCase {
         XCTAssertEqual(
             router.children.count, 1,
             "same-kind flips must never multiply the child count")
+    }
+
+    func testNewSessionMountsComposeAndFlipToSessionSwapsToChat() throws {
+        // `.newSession` gets its OWN VC (`ComposeSessionViewController`),
+        // not `ChatSessionViewController`. This is the split that fixes
+        // the click-swallow bug: compose is full-bleed with no transcript
+        // behind it, so its host never has to morph between full-bleed
+        // and bottom-anchored — the source of the lingering-overlay race.
+        let fixture = try makeFixture(initialSelection: .newSession)
+        let router = fixture.router
+        _ = router.view
+
+        let composeChild = try XCTUnwrap(router.currentChild)
+        XCTAssertTrue(
+            composeChild is ComposeSessionViewController,
+            "`.newSession` must mount ComposeSessionViewController, not the chat VC")
+        XCTAssertEqual(router.currentKind, .compose)
+        XCTAssertTrue(composeChild.view.superview === router.view)
+
+        // Submitting the compose card flips selection to `.session(_)` —
+        // a cross-kind transition (`.compose` → `.transcript`). The
+        // compose VC must be fully torn down and a fresh chat VC mounted.
+        router.model.selection = .session("sid-promoted")
+        router.installChildForCurrentSelection()
+
+        let chatChild = try XCTUnwrap(router.currentChild)
+        XCTAssertTrue(chatChild is ChatSessionViewController)
+        XCTAssertFalse(chatChild === composeChild)
+        XCTAssertEqual(router.children.count, 1)
+        XCTAssertNil(composeChild.view.superview, "compose VC's view must be unmounted")
+        XCTAssertNil(composeChild.parent, "compose VC must be removed from parent chain")
     }
 
     func testFlipToArchiveTearsDownTranscriptAndMountsArchive() throws {

@@ -25,10 +25,11 @@ import SwiftUI
 ///   no need for any of the hit-test passthrough gymnastics earlier
 ///   commits on this PR were forced to ship.
 ///
-/// Known issue (tracked separately): the compose host is still
-/// full-bleed, so clicks in the transparent area around the input
-/// bar are intercepted by SwiftUI instead of reaching the transcript.
-/// Fixed by the next commit, which sizes the host to its content.
+/// In chat mode the host is bottom-anchored and takes only the bar
+/// (+ optional permission card) intrinsic height, so the transcript
+/// scroll view receives clicks in the scrim band above. In compose
+/// mode the host's top constraint is activated so the configurator
+/// card has the full pane to lay out in.
 @MainActor
 final class TranscriptDetailViewController: NSViewController {
     /// Coordinate-space identifier for SwiftUI `GeometryReader`/
@@ -82,7 +83,20 @@ final class TranscriptDetailViewController: NSViewController {
 
     /// Sink for `model.attachRect` / `pillRect` → `bottomScrim` cutout
     /// path. Re-arms on every fire.
-    private var scrimRectObservationTask: Task<Void, Never>?
+    /// Toggled active in compose mode to pin the host's top to
+    /// `view.topAnchor` (full-bleed). Inactive in chat / .none modes
+    /// — the host then sizes to its SwiftUI body's intrinsic height,
+    /// anchored at the bottom. This is what lets clicks in the
+    /// transcript's scrim band reach the table rather than getting
+    /// swallowed by a transparent overlay.
+    private var composeOrBarHostTopConstraint: NSLayoutConstraint!
+
+    /// Latest attach / pill rects reported by the chat resting bar
+    /// in `detailCoordSpace`. Used to drive `bottomScrim`'s cutouts.
+    /// Local to this VC — there's no cross-VC consumer that would
+    /// need to read these.
+    private var lastAttachRect: CGRect = .zero
+    private var lastPillRect: CGRect = .zero
 
     /// Sink for `session.isRunning` → `controller.setLoading(_:)`.
     /// Re-armed on every session swap.
@@ -135,10 +149,18 @@ final class TranscriptDetailViewController: NSViewController {
         composeOrBarHost.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(composeOrBarHost)
 
-        // Each scrim is sized to its visible band, anchored to its edge.
-        // Cutout coordinates arrive in `composeOrBarHost`'s SwiftUI
-        // coord space; `applyScrimCutouts` translates them into the
-        // bottom scrim's local coord via `convert(_:from:)`.
+        // Bottom + leading + trailing always pinned. The top
+        // constraint is created here but only activated in compose
+        // mode (see `updateComposeHostShape`) — chat mode lets the
+        // host take SwiftUI's intrinsic height anchored at the
+        // bottom, so the scrim band above the bar stays clickable.
+        composeOrBarHostTopConstraint =
+            composeOrBarHost.topAnchor.constraint(equalTo: view.topAnchor)
+
+        // Each scrim is sized to its visible band, anchored to its
+        // edge. Cutout coordinates arrive in `composeOrBarHost`'s
+        // SwiftUI coord space; `applyScrimCutouts` translates them
+        // into the bottom scrim's local coord via `convert(_:from:)`.
         NSLayoutConstraint.activate([
             topScrim.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             topScrim.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -152,9 +174,20 @@ final class TranscriptDetailViewController: NSViewController {
 
             composeOrBarHost.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             composeOrBarHost.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            composeOrBarHost.topAnchor.constraint(equalTo: view.topAnchor),
             composeOrBarHost.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
+    }
+
+    /// Activate / deactivate the host's top constraint to match the
+    /// current selection. Compose mode wants the configurator full-
+    /// bleed; chat mode wants only the bar at the bottom; `.none`
+    /// can use either (the body is `EmptyView` so it shrinks to 0
+    /// regardless).
+    private func updateComposeHostShape() {
+        let shouldPinTop = model.isComposeMode
+        if composeOrBarHostTopConstraint.isActive != shouldPinTop {
+            composeOrBarHostTopConstraint.isActive = shouldPinTop
+        }
     }
 
     override func viewDidLoad() {
@@ -177,29 +210,15 @@ final class TranscriptDetailViewController: NSViewController {
         startSelectionObservation()
         startLaunchFailureObservation()
         startPendingActivationObservation()
-        startScrimRectObservation()
     }
 
-    private func startScrimRectObservation() {
-        scrimRectObservationTask?.cancel()
-        scrimRectObservationTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            await withCheckedContinuation { cont in
-                withObservationTracking {
-                    _ = self.model.attachRect
-                    _ = self.model.pillRect
-                } onChange: {
-                    Task { @MainActor in cont.resume() }
-                }
-            }
-            self.applyScrimCutouts()
-            self.startScrimRectObservation()
-        }
-    }
-
+    /// Push the latest reported rects into the bottom scrim. Called
+    /// every time the chat resting bar fires a geometry callback —
+    /// no Observation hop in between because the rects are local to
+    /// this VC and there's no other consumer.
     private func applyScrimCutouts() {
-        bottomScrim.attachRect = bottomScrim.convert(model.attachRect, from: composeOrBarHost)
-        bottomScrim.pillRect = bottomScrim.convert(model.pillRect, from: composeOrBarHost)
+        bottomScrim.attachRect = bottomScrim.convert(lastAttachRect, from: composeOrBarHost)
+        bottomScrim.pillRect = bottomScrim.convert(lastPillRect, from: composeOrBarHost)
     }
 
     private func startSelectionObservation() {
@@ -306,6 +325,7 @@ final class TranscriptDetailViewController: NSViewController {
             sessionManager.existingSession(sid)?.setFocused(false)
         }
 
+        updateComposeHostShape()
         rebuildBackingContent()
     }
 
@@ -425,6 +445,16 @@ final class TranscriptDetailViewController: NSViewController {
                 guard let self else { return }
                 self.model.selection = .session(resumeSid)
                 self.model.draftSessionId = nil
+            },
+            onAttachRect: { [weak self] rect in
+                guard let self else { return }
+                self.lastAttachRect = rect
+                self.applyScrimCutouts()
+            },
+            onPillRect: { [weak self] rect in
+                guard let self else { return }
+                self.lastPillRect = rect
+                self.applyScrimCutouts()
             }
         )
         .environment(sessionManager)
@@ -433,15 +463,15 @@ final class TranscriptDetailViewController: NSViewController {
         .environment(\.syntaxEngine, searchEngine)
         .environment(searchBus)
         .environment(notifications)
-        // Without `.ignoresSafeArea()`, `NSHostingView` would forward a
-        // toolbar-sized top safe-area inset to SwiftUI; the rects
-        // reported in `detailCoordSpace` would then sit in an inset
-        // coord space while `bottomScrim` (full-bleed AppKit) renders
-        // in `view.bounds`, so the cutouts would land
-        // `toolbarHeight` pixels too high. KNOWN ISSUE: this also
-        // makes the SwiftUI body extend behind the scrim's visible
-        // band, and mouse events in that band are intercepted instead
-        // of passing through to the transcript. Tracking separately.
+        // Without `.ignoresSafeArea()`, `NSHostingView` would forward
+        // a toolbar-sized top safe-area inset to SwiftUI in compose
+        // mode (when the host is full-bleed); the rects reported in
+        // `detailCoordSpace` would then sit in an inset coord space
+        // while `bottomScrim` (full-bleed AppKit) renders in
+        // `view.bounds`, and the cutouts would land `toolbarHeight`
+        // pixels too high. In chat mode the host is bottom-anchored,
+        // doesn't intersect the top safe area, so this is a no-op
+        // there — kept on for the compose-mode behavior.
         .ignoresSafeArea()
     }
 
@@ -496,7 +526,6 @@ final class TranscriptDetailViewController: NSViewController {
         selectionObservationTask?.cancel()
         launchFailureObservationTask?.cancel()
         pendingActivationObservationTask?.cancel()
-        scrimRectObservationTask?.cancel()
     }
 }
 
@@ -510,6 +539,8 @@ struct TranscriptDetailComposeStack: View {
     @Bindable var model: MainSelectionModel
     let onSubmit: (InputBarView2.Submission, String) -> Void
     let onResumeSession: (String) -> Void
+    let onAttachRect: (CGRect) -> Void
+    let onPillRect: (CGRect) -> Void
 
     @Environment(SessionManager.self) private var manager
 
@@ -568,13 +599,20 @@ struct TranscriptDetailComposeStack: View {
                     sessionId: sid,
                     draftKey: sid,
                     onSubmit: { submission in onSubmit(submission, sid) },
-                    onAttachRect: { model.attachRect = $0 },
-                    onPillRect: { model.pillRect = $0 }
+                    onAttachRect: onAttachRect,
+                    onPillRect: onPillRect
                 )
                 .id(sid)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Width-infinite always (the host is leading/trailing-pinned).
+        // Height is intentionally NOT `.infinity`: in chat mode the
+        // host is bottom-anchored to its intrinsic height (driven by
+        // ChatRestingBar's content), so a finite fitting size is what
+        // lets the host shrink and uncovers the scrim band above the
+        // bar for transcript clicks. Compose mode forces full height
+        // via an AppKit constraint, not via SwiftUI.
+        .frame(maxWidth: .infinity)
         .animation(.smooth(duration: 0.42), value: model.isComposeMode)
         .coordinateSpace(name: TranscriptDetailViewController.detailCoordSpace)
     }

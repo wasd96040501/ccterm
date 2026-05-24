@@ -30,14 +30,6 @@ import AppKit
 final class Transcript2TableView: NSTableView, NSMenuItemValidation {
     weak var coordinator: Transcript2Coordinator?
     private var liveResizeStartWidth: CGFloat = 0
-    /// Tracks whether `viewWillStartLiveResize` actually ran a push for the
-    /// current resize cycle. AppKit only sends `viewWillStartLiveResize` to
-    /// views present in the window when resize starts, but sends
-    /// `viewDidEndLiveResize` to every view in the tree when it ends — so a
-    /// table mounted mid-resize (session switch during a window-manager
-    /// animation, e.g. zoom / tile / Stage Manager) would otherwise pop
-    /// without a matching push and trip the scroll view's precondition.
-    private var didPushForLiveResize = false
 
     override func setFrameSize(_ newSize: NSSize) {
         let safe = NSSize(
@@ -49,22 +41,12 @@ final class Transcript2TableView: NSTableView, NSMenuItemValidation {
     override func viewWillStartLiveResize() {
         super.viewWillStartLiveResize()
         liveResizeStartWidth = frame.width
-        coordinator?.pushScrollerHidden()
-        didPushForLiveResize = true
     }
 
     override func viewDidEndLiveResize() {
         super.viewDidEndLiveResize()
-        // Order matters: kick off refillLayoutCache first (it pushes its
-        // own scroller-hidden token) before popping ours. Otherwise count
-        // would briefly hit zero between the two and the scroller would
-        // flicker visible.
         if abs(liveResizeStartWidth - frame.width) > 0.5 {
             coordinator?.refillLayoutCache()
-        }
-        if didPushForLiveResize {
-            coordinator?.popScrollerHidden()
-            didPushForLiveResize = false
         }
     }
 

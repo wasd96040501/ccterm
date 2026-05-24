@@ -115,7 +115,8 @@ final class TranscriptStressViewController: NSViewController {
                 return acc
             }
         }
-        controller.setHistory(loaded)
+        controller.apply(.append(loaded))
+        controller.scrollToTail()
         statusModel.status = .ready(blockCount: loaded.count, charCount: chars)
     }
 

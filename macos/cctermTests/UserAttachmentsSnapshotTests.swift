@@ -24,26 +24,27 @@ final class UserAttachmentsSnapshotTests: XCTestCase {
     func testUserAttachmentsRow() throws {
         let controller = Transcript2Controller()
         controller.attachSyntaxEngine(SyntaxHighlightEngine())
-        controller.setHistory([
-            Block(
-                id: UUID(),
-                kind: .userAttachments(images: Self.chipImages(count: 1, palette: [.systemPink]))),
-            Block(
-                id: UUID(),
-                kind: .userBubble(text: "single image case — just dragged this into the bar")),
-            Block(
-                id: UUID(),
-                kind: .userAttachments(images: Self.chipImages(count: 3))),
-            Block(
-                id: UUID(),
-                kind: .userBubble(text: "three attachments + caption — strip is right-anchored")),
-            Block(
-                id: UUID(),
-                kind: .userAttachments(images: Self.chipImages(count: 5))),
-            Block(
-                id: UUID(),
-                kind: .userBubble(text: "five files, still single row")),
-        ])
+        controller.apply(
+            .append([
+                Block(
+                    id: UUID(),
+                    kind: .userAttachments(images: Self.chipImages(count: 1, palette: [.systemPink]))),
+                Block(
+                    id: UUID(),
+                    kind: .userBubble(text: "single image case — just dragged this into the bar")),
+                Block(
+                    id: UUID(),
+                    kind: .userAttachments(images: Self.chipImages(count: 3))),
+                Block(
+                    id: UUID(),
+                    kind: .userBubble(text: "three attachments + caption — strip is right-anchored")),
+                Block(
+                    id: UUID(),
+                    kind: .userAttachments(images: Self.chipImages(count: 5))),
+                Block(
+                    id: UUID(),
+                    kind: .userBubble(text: "five files, still single row")),
+            ]))
 
         let host = TranscriptOnlyHostViewController(controller: controller)
         let image = ViewSnapshot.renderViewController(

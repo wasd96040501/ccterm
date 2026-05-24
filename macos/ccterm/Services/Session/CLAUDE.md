@@ -13,9 +13,9 @@ The phase flips **exactly once**: a draft session sending its first message cons
 
 1. **Live CLI events flow into `controller.blocks` even when no transcript view is mounted.** Switching the sidebar to a different session does not pause renderer-side processing for the one you left; tool results, streaming assistant text, and group rollups all keep applying.
 2. **Switch-away → switch-back is O(1) on the renderer side.** No JSONL re-read, no markdown reparse, no block-list rebuild. The new `NSTableView` rebinds to the same coordinator on mount; the host's `view.layoutSubtreeIfNeeded()` sizes the table from `.zero` to its real frame and drives `NSTableView.tile()` inline, so the table picks up the coordinator's current `blocks` before `controller.scrollToTail()` runs.
-3. **`Transcript2Coordinator.applyInBackground` falls back to sync `apply` when no table is bound.** A Phase B prepend (or any other background-emitted change) that arrives on a session with no view still lands in `coordinator.blocks`; layouts compute lazily once a table re-attaches.
+3. **`Transcript2Coordinator.apply` mutates `coordinator.blocks` even when no table is bound.** A backfill prepend (or any other background-emitted change) that arrives on a session with no view still lands in `coordinator.blocks`; layouts compute lazily once a table re-attaches.
 
-`SessionRuntime.loadHistory()` is correspondingly simpler: `.loadingTail` / `.tailLoaded` / `.loaded` are all idempotent no-ops. There is no "switch-back re-emit `.reset`" path — the bridge has been processing all along.
+`Session.loadHistory()` is correspondingly simpler: `.loading` / `.loaded` are idempotent no-ops. There is no "switch-back re-emit" path — the bridge has been processing all along.
 
 `session.onMessagesChange` remains as an **optional external fanout slot** (tests, debugging). It fires *after* the bridge has consumed the same event, inside the same call stack.
 
@@ -29,12 +29,13 @@ Source lives in `Session/`:
 | `SessionRuntime+Start.swift` | `activate` / `stop` / `send` / bootstrap / `fromDraft` factory. |
 | `SessionRuntime+Messaging.swift` | `interrupt`, `cancelMessage`. |
 | `SessionRuntime+Configuration.swift` | Runtime-mutable setters (`setModel` / `setEffort` / `setPermissionMode` / `setFastMode` / `setAdditionalDirectories`) + `respond` / `setFocused`. **No** draft-only setters — those live on `SessionDraft`. |
-| `SessionRuntime+History.swift` | `loadHistory` orchestration (Phase A/B), `historyJSONLURL` forwarder. |
+| `SessionRuntime+History.swift` | `historyJSONLURL` path forwarder. (History-load orchestration moved to `Session.loadHistory()` + `TranscriptBackfillPipeline`.) |
 | `SessionRuntime+Receive.swift` | Incoming-message path from the CLI. |
 | `SessionTypes.swift` | `PendingPermission`, `SlashCommand`, `deriveTitleFromFirstMessage`. |
 | `MessageEntry.swift` | Render-ready entries (`SingleEntry` / `GroupEntry`), `LocalUserInput`. |
-| `MessagesChange.swift` | Timeline change events that the bridge consumes. |
-| `ToolResultReresolver.swift` | Phase B tool_result anchor patch-up. |
+| `MessagesChange.swift` | Live timeline change events the bridge consumes (`.appended` / `.updated` / `.removed`). History load is **not** a `MessagesChange`. |
+
+History load no longer lives on the runtime: `Session.loadHistory()` drives a `TranscriptBackfillPipeline` (`Content/Chat/NativeTranscript2Bridge/`) over a reverse-streaming `JSONLReversePageSource`, building already-paired blocks off-main and applying them straight to the controller. The old two-phase Phase A/B read, the `tailBaseline`/`newTailStart` offset math, the throwaway in-memory `SessionRuntime` (`buildEntries`), and `ToolResultReresolver` are deleted; grouping + tool-pairing is now `ReverseEntryBuilder.swift`.
 
 `SessionManager` (one level up at `Services/Session/SessionManager.swift`) is the registry: lazily creates and caches one `Session` façade per `sessionId`. `session(_:)` returns an active-phase façade for an existing record; `prepareDraftSession(_:)` returns a draft-phase façade (or active when a record happens to already exist for that id — idempotent get-or-create).
 
@@ -49,7 +50,7 @@ Source lives in `Session/`:
 | `CLIClient` protocol + `AgentSDKCLIClient` + `FakeCLIClient` | `CLIClient/` | Thin abstraction over `AgentSDK.Session`. Factory injected at `SessionManager.init(... cliClientFactory:)` and forwarded into every `Session` the manager constructs; production defaults to `AgentSDKCLIClient.defaultFactory`, tests pass `{ _ in FakeCLIClient() }`. |
 | `TitleGenerator` | `TitleGenerator.swift` | Stateless one-shot LLM call (`Prompt.runTitleAndBranch`) inside a scratch dir. Runtime's `generateTitle(from:)` calls into it; injectable `runner` seam for tests. |
 | `WorktreeProvisioner` | `Worktree/WorktreeProvisioner.swift` | Off-main `git worktree add` invocation via `DispatchQueue.global`. Wraps `Worktree.create`; injectable `creator` seam for tests. |
-| `HistoryLoader` | `HistoryLoader.swift` | Path resolution (`locate(sessionId:slug:)` with root-injected overload) + Phase A/B JSONL parsers. The two-phase orchestrator that consumes these stays on the runtime in `SessionRuntime+History.swift`. |
+| `HistoryLoader` | `HistoryLoader.swift` | Path resolution (`locate(sessionId:slug:)` with root-injected overload) + `parseLines` (per-page line→`Message2` decode). Reverse paging itself is a single streaming backward reader — `JSONLReversePageSource` + `ReverseLineReader` (`Content/Chat/NativeTranscript2Bridge/`) — with no tail/prefix split (the old `parseTail` / `parsePrefix` are gone). |
 
 ## Talking to the renderer
 

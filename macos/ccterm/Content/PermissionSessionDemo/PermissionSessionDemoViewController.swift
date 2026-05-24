@@ -386,7 +386,7 @@ fileprivate struct Seed {
     func seedHistoryIfNeeded() {
         guard !seedToken.done else { return }
         seedToken.done = true
-        controller.setHistory(TranscriptDemoViewController.initialBlocks)
+        controller.apply(.append(TranscriptDemoViewController.initialBlocks))
         seedBackgroundTasks()
         seedTodos()
     }

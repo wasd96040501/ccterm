@@ -95,8 +95,8 @@ handle.loadHistory(overrideURL: url)
 | Scenario | Approach |
 |---|---|
 | Block builder produces correct ids for a parsed entry | Call the builder, assert on its output |
-| `SessionRuntime.loadHistory` fires `.reset` with prebuilt blocks | Wire up a closure on the handle, assert it fires with the expected payload |
-| Bridge applies `.reset` → controller's blockIds match | Construct the bridge + controller, feed a `MessagesChange`, assert controller state |
+| `Session.loadHistory` backfills a JSONL file into the controller | Drive the `TranscriptBackfillPipeline` (real or `FakeReversePageSource`), await `historyLoadState == .loaded`, assert `controller.blockIds` |
+| Bridge applies `.appended` / `.updated` → controller's blockIds match | Construct the bridge + controller, feed a `MessagesChange`, assert controller state |
 | Send-button enable state under various input | Drive `SessionRuntime.send` and inspect `isRunning` / `status` directly |
 | Sidebar selection routes to the right handle | Hold the manager, simulate the selection change in code, assert the resulting handle |
 | "What does this view look like today?" — visual review of a SwiftUI view | [Snapshot tests](#snapshot-tests) |
@@ -176,6 +176,11 @@ Inventory:
 |---|---|
 | [`TranscriptReentryLayoutCacheTests.swift`](TranscriptReentryLayoutCacheTests.swift) | The bare `TranscriptScrollViewFactory.make → addSubview → layoutSubtreeIfNeeded → bindData → scrollToTail` sequence typesets each block at exactly one width inside one source-phase tick. |
 | [`TranscriptHostReentryLayoutCacheTests.swift`](TranscriptHostReentryLayoutCacheTests.swift) | Same property, but driven through real hosts: the AppKit demo VC (`TranscriptDemoViewController`) and the production sidebar-switch path (`TranscriptDetailViewController.attachSession` on a `MainSelectionModel.selection` flip). Closes the gap between the factory test and host orchestration. |
+| [`TranscriptBackfillLayoutCacheTests.swift`](TranscriptBackfillLayoutCacheTests.swift) | **U1** — the single-width contract extended across multi-tick backfill: a real `TranscriptBackfillPipeline` cold-load (tail `.append` + several `.prepend` ticks) typesets each block at exactly one width and exactly once. Prepend ticks are cache hits (off-main precompute, 5b); a width-mismatched producer shows up as a second write at a second width. |
+| [`TranscriptBackfillAnchorTests.swift`](TranscriptBackfillAnchorTests.swift) | **U2/U3/U7/U8** — anchor invariant (prepend pins the visual-top row, clip shifts by the inserted height, no jitter over N ticks); in-tick stability (anchor correct before any runloop drain — the deleted `mutationCounter` regression); `.update`/`.replace` riding `.saveVisible` preserve the viewport mid-document; interleaved tail-append + head-prepend land at opposite ends without moving the anchor. |
+| [`TranscriptColdAttachTests.swift`](TranscriptColdAttachTests.swift) | **U4/U5/U6** — cold attach renders 0 rows then lands the tail page at the bottom; `blocks.count == numberOfRows` after every change in a mixed `prepend`/`append`/`replace`/`remove`/`update` sequence; warm re-entry into a `.loaded` session fires zero backfill typeset. |
+
+All four reuse the offscreen-window scaffold; the three backfill probes share the [`Helpers/MountedTranscript.swift`](Helpers/MountedTranscript.swift) mount + geometry-sampling helper.
 
 When you add a new test that's "drive a real view + assert on a property at the boundary," follow these naming rules:
 

@@ -38,7 +38,7 @@ enum MainSelection: Equatable {
 #if DEBUG
 /// Stable identity for each DEBUG demo tab. The raw string is what
 /// shows up in logs / fixtures; the enum itself drives the selection
-/// switch in `TranscriptDetailViewController.sideBranchKind(for:)`.
+/// switch in `ChatSessionViewController.sideBranchKind(for:)`.
 enum DemoKind: String, CaseIterable, Equatable {
     case transcript
     case transcriptStress

@@ -46,8 +46,10 @@ final class TranscriptBackfillLayoutCacheTests: XCTestCase {
         }
         defer { controller.coordinator.onLayoutCacheWriteForDebug = nil }
 
-        // 12 single-message pages, tail-first; budget 2 forces several
-        // self-rescheduled prepend ticks (one append + multiple prepends).
+        // 12 single-message pages, tail-first. Producer width == table width,
+        // so every page is a cache hit and drains unbudgeted (`budget: 2` only
+        // gates the miss path now — see TranscriptBackfillPipelineTests.B4);
+        // the single-width contract below holds regardless of tick count.
         let pages: [[Message2]] = (0..<12).reversed().map {
             [
                 Message2Fixtures.assistantText(

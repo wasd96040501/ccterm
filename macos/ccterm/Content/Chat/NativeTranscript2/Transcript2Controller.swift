@@ -401,6 +401,29 @@ final class Transcript2Controller {
         coordinator.setHistoryBackfilling(active)
     }
 
+    /// Fires **once** when the cold-load first screen is visually complete —
+    /// either the rendered content covers the viewport, or the whole producer
+    /// drained (a short session that never fills the screen). The backfill
+    /// pipeline drives `notifyFirstScreenReady()`; this is the edge a future
+    /// image-bake reveal hangs off (drop the outgoing session's frozen
+    /// snapshot the moment the incoming cold session has real content).
+    ///
+    /// AppKit consumer → synchronous closure, not `@Observable` (the detail VC
+    /// owns the bake overlay). No queryable latch is needed: a cold attach
+    /// subscribes here before `loadHistory()` starts the pipeline, so the
+    /// subscription always precedes the earliest possible fire.
+    @ObservationIgnored var onFirstScreenReady: (() -> Void)?
+    @ObservationIgnored private var didFireFirstScreenReady = false
+
+    /// Latched, fire-once. Safe to call from every drain tick — the guard
+    /// collapses the "viewport covered" and "fully drained" conditions into a
+    /// single edge.
+    func notifyFirstScreenReady() {
+        guard !didFireFirstScreenReady else { return }
+        didFireFirstScreenReady = true
+        onFirstScreenReady?()
+    }
+
     // MARK: - Search
 
     /// Re-run a literal, case-insensitive search across the

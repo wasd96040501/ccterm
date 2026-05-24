@@ -227,16 +227,31 @@ final class TranscriptBackfillPipeline {
 
     private func drain() {
         drainScheduled = false
-        var applied = 0
-        while !pendingPages.isEmpty {
-            let page = pendingPages.removeFirst()
+        var appliedBlocks = 0  // all applied this tick — the debug probe's view
+        var typesetBlocks = 0  // miss-only — the real per-tick cost the cap bounds
+        while let page = pendingPages.first {
+            // A page whose precompute width matches the live table is a pure
+            // cache-hit insert: `heightOfRow` is a dict lookup per row, no
+            // CTLine pass (§2.6). Those cost ~nothing on the main thread, so
+            // they drain without counting toward the budget — the first screen
+            // lands in one tick. Only a width-mismatched page (resize during
+            // load → cache miss → synchronous typeset) is budgeted, so the cap
+            // splits exactly the path that can freeze the main thread, and
+            // nothing else (REFACTOR-PLAN §9.2 "safety valve, not a typeset
+            // budget"). `nil` width sentinel when no controller → treated as a
+            // miss, but `applyPage` no-ops anyway.
+            let willHit = (controller?.layoutWidth ?? -1) == page.width
+            if !willHit && typesetBlocks >= budget { break }
+            pendingPages.removeFirst()
             applyPage(page)
-            applied += page.blocks.count
-            // Stop after the batch crosses the cap; a single oversized page
-            // still lands whole (it was applied before this check).
-            if applied >= budget { break }
+            appliedBlocks += page.blocks.count
+            if !willHit { typesetBlocks += page.blocks.count }
+            // Fire the first-screen edge as soon as the viewport is covered.
+            if controller?.coordinator.contentCoversViewport == true {
+                controller?.notifyFirstScreenReady()
+            }
         }
-        if applied > 0 { onDrainTickForDebug?(applied) }
+        if appliedBlocks > 0 { onDrainTickForDebug?(appliedBlocks) }
         if !pendingPages.isEmpty {
             scheduleDrain()
         } else if producerFinished {
@@ -288,6 +303,10 @@ final class TranscriptBackfillPipeline {
         // Buffer fully drained + producer finished — the last `.prepend` landed
         // this same tick. Restore the scroller suppressed in `start`.
         controller?.setHistoryBackfilling(false)
+        // Fully drained — the first screen is as complete as it will ever be,
+        // even if the whole transcript is shorter than the viewport (the
+        // "never fills the screen" case the viewport-covered edge can't catch).
+        controller?.notifyFirstScreenReady()
         onLoaded()
     }
 }

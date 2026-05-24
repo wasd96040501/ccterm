@@ -25,6 +25,7 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
     private func runToLoaded(
         pages: [[Message2]],
         budget: Int = 40,
+        width: CGFloat = 0,
         configure: (TranscriptBackfillPipeline) -> Void = { _ in },
         file: StaticString = #filePath,
         line: UInt = #line
@@ -37,7 +38,7 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
             budget: budget,
             onLoaded: { loaded.fulfill() })
         configure(pipeline)
-        pipeline.start(width: 0)
+        pipeline.start(width: width)
         await fulfillment(of: [loaded], timeout: 5)
         return controller
     }
@@ -118,16 +119,25 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
             "tail page sits at the bottom; each older page prepends above")
     }
 
-    // MARK: - B4: a large buffer drains over multiple budget-capped ticks
+    // MARK: - B4: the budget splits ONLY the cache-miss path
 
-    func testB4_largeBufferDrainsOverMultipleTicks() async {
+    /// The per-tick cap is a typeset safety valve, not a blanket batch limit
+    /// (REFACTOR-PLAN §9.2). It bounds only pages whose precompute width
+    /// mismatches the live table (cache miss → synchronous CTLine typeset on
+    /// the main thread). Cache hits drain unbudgeted in one tick.
+    ///
+    /// Headless, the producer typesets at `width: 720` while the unmounted
+    /// controller's `layoutWidth` is `0` — every page is a miss, so the cap is
+    /// in force and a 12-page buffer drains across multiple budget-capped ticks.
+    func testB4_budgetSplitsTheCacheMissPath() async {
         var drainTicks = 0
         var maxAppliedPerTick = 0
-        // 12 single-block pages, budget 3 → at least 4 ticks.
+        // 12 single-block pages, budget 3, width-mismatch → at least 4 ticks.
         let pages = (0..<12).map { [Message2Fixtures.assistantText("m\($0)")] }
         let controller = await runToLoaded(
             pages: pages,
             budget: 3,
+            width: 720,
             configure: { pipeline in
                 pipeline.onDrainTickForDebug = { applied in
                     drainTicks += 1
@@ -135,8 +145,8 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
                 }
             })
         XCTAssertEqual(controller.blockCount, 12)
-        XCTAssertGreaterThan(drainTicks, 1, "buffer drained across multiple self-rescheduled ticks")
-        XCTAssertLessThanOrEqual(maxAppliedPerTick, 3, "each tick respects the budget cap (1-block pages)")
+        XCTAssertGreaterThan(drainTicks, 1, "miss path drains across multiple self-rescheduled ticks")
+        XCTAssertLessThanOrEqual(maxAppliedPerTick, 3, "each miss tick respects the budget cap (1-block pages)")
     }
 
     // MARK: - B5: file top + empty buffer → .loaded exactly once
@@ -166,6 +176,32 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
     func testB6_emptyHistoryLoadsImmediatelyWithNoContent() async {
         let controller = await runToLoaded(pages: [])
         XCTAssertEqual(controller.blockCount, 0, "no content applied, no crash")
+    }
+
+    // MARK: - B9: first-screen-ready edge fires exactly once
+
+    /// `onFirstScreenReady` is the fire-once edge a future image-bake reveal
+    /// hangs off. Headless there is no viewport to cover, so the viewport-
+    /// covered branch never trips; the edge fires via the "fully drained"
+    /// fallback (a short transcript that never fills the screen is still
+    /// "first-screen complete"). Asserts it fires exactly once even though the
+    /// pipeline polls the condition on every drain tick + at `reportLoaded`.
+    func testB9_firstScreenReadyFiresExactlyOnce() async {
+        var readyCount = 0
+        let controller = makeController()
+        let loaded = expectation(description: "loaded")
+        let pipeline = TranscriptBackfillPipeline(
+            source: FakeReversePageSource([
+                [Message2Fixtures.assistantText("b")],
+                [Message2Fixtures.assistantText("a")],
+            ]),
+            controller: controller,
+            onLoaded: { loaded.fulfill() })
+        controller.onFirstScreenReady = { readyCount += 1 }
+        pipeline.start(width: 0)
+        await fulfillment(of: [loaded], timeout: 5)
+        for _ in 0..<3 { await Task.yield() }
+        XCTAssertEqual(readyCount, 1, "first-screen edge is latched, fires once")
     }
 
     // MARK: - B8: off-main typeset installs at the start width (§4.3/§5b)

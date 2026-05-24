@@ -252,6 +252,24 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         tableView?.enclosingScrollView?.contentView.bounds.height ?? 0
     }
 
+    /// Total laid-out content height (the documentView's frame height). After
+    /// an `insertRows` settles inside `endUpdates` (§2.6 — no estimated
+    /// heights) this reflects the new total synchronously. `0` with no table.
+    var documentHeight: CGFloat {
+        tableView?.frame.height ?? 0
+    }
+
+    /// Whether the rendered content already covers the visible viewport — i.e.
+    /// there is enough laid-out height to fill the screen with no blank band.
+    /// Requires a live viewport (`> 0`); headless / unmounted always reports
+    /// `false` (there is no screen to cover). The backfill pipeline polls this
+    /// per drain tick to fire `onFirstScreenReady` the moment the first screen
+    /// is visually complete.
+    var contentCoversViewport: Bool {
+        let viewport = viewportHeight
+        return viewport > 0 && documentHeight >= viewport
+    }
+
     private var transcriptScrollView: Transcript2ScrollView? {
         tableView?.enclosingScrollView as? Transcript2ScrollView
     }

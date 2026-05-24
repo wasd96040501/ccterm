@@ -43,11 +43,17 @@ final class TranscriptBackfillPipeline {
     /// Fires once when the file top is reached and the buffer is drained.
     private let onLoaded: () -> Void
 
+    /// Fires on the drain, per applied page, with the entries that produced it.
+    /// Production routes these to historical tool-status derivation; tests
+    /// ignore them. Runs after the blocks land so the ids exist.
+    private let onApplied: ([MessageEntry]) -> Void
+
     // MARK: Main-owned buffer + drain bookkeeping
 
-    /// Pending pre-built pages, owned by the main actor. Appended only inside
-    /// the producer's main hop; consumed only by `drain`.
-    private var pendingPages: [[Block]] = []
+    /// Pending pre-built pages (entries + their blocks), owned by the main
+    /// actor. Appended only inside the producer's main hop; consumed only by
+    /// `drain`.
+    private var pendingPages: [(entries: [MessageEntry], blocks: [Block])] = []
     private var producerFinished = false
     private var didFirstApply = false
     private var didReportLoaded = false
@@ -63,12 +69,14 @@ final class TranscriptBackfillPipeline {
         source: ReversePageSource,
         controller: Transcript2Controller,
         budget: Int = 40,
-        onLoaded: @escaping () -> Void = {}
+        onLoaded: @escaping () -> Void = {},
+        onApplied: @escaping ([MessageEntry]) -> Void = { _ in }
     ) {
         self.source = source
         self.controller = controller
         self.budget = budget
         self.onLoaded = onLoaded
+        self.onApplied = onApplied
     }
 
     nonisolated deinit {}
@@ -90,13 +98,14 @@ final class TranscriptBackfillPipeline {
                 // Markdown parse happens here, off-main.
                 let blocks = MessageEntryBlockBuilder.blocks(from: finalized)
                 guard !blocks.isEmpty else { continue }
-                await MainActor.run { self?.deposit(blocks) }
+                let page = finalized
+                await MainActor.run { self?.deposit(entries: page, blocks: blocks) }
             }
             // File top: flush the still-open group + true orphans.
             let tail = builder.finish()
             let tailBlocks = MessageEntryBlockBuilder.blocks(from: tail)
             await MainActor.run {
-                if !tailBlocks.isEmpty { self?.deposit(tailBlocks) }
+                if !tailBlocks.isEmpty { self?.deposit(entries: tail, blocks: tailBlocks) }
                 self?.finishProducing()
             }
         }
@@ -112,8 +121,8 @@ final class TranscriptBackfillPipeline {
 
     /// Producer main hop: append a pre-built page to the main-owned buffer and
     /// wake the drain. The deposit **is** the wake — main never polls.
-    private func deposit(_ blocks: [Block]) {
-        pendingPages.append(blocks)
+    private func deposit(entries: [MessageEntry], blocks: [Block]) {
+        pendingPages.append((entries, blocks))
         onDepositForDebug?(blocks.count)
         scheduleDrain()
     }
@@ -139,8 +148,8 @@ final class TranscriptBackfillPipeline {
         var applied = 0
         while !pendingPages.isEmpty {
             let page = pendingPages.removeFirst()
-            applyPage(page)
-            applied += page.count
+            applyPage(page.entries, page.blocks)
+            applied += page.blocks.count
             // Stop after the batch crosses the cap; a single oversized page
             // still lands whole (it was applied before this check).
             if applied >= budget { break }
@@ -153,7 +162,7 @@ final class TranscriptBackfillPipeline {
         }
     }
 
-    private func applyPage(_ blocks: [Block]) {
+    private func applyPage(_ entries: [MessageEntry], _ blocks: [Block]) {
         guard let controller else { return }
         if didFirstApply {
             // Older history: stack above, keep the visible viewport fixed.
@@ -164,6 +173,9 @@ final class TranscriptBackfillPipeline {
             didFirstApply = true
             controller.apply(.append(blocks))
         }
+        // History tool statuses (failed-history color, etc.) ride on the
+        // entries; production routes them to historical derivation.
+        onApplied(entries)
     }
 
     private func reportLoaded() {

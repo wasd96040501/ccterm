@@ -33,8 +33,9 @@ Source lives in `Session/`:
 | `SessionRuntime+Receive.swift` | Incoming-message path from the CLI. |
 | `SessionTypes.swift` | `PendingPermission`, `SlashCommand`, `deriveTitleFromFirstMessage`. |
 | `MessageEntry.swift` | Render-ready entries (`SingleEntry` / `GroupEntry`), `LocalUserInput`. |
-| `MessagesChange.swift` | Timeline change events that the bridge consumes. |
-| `ToolResultReresolver.swift` | Phase B tool_result anchor patch-up. |
+| `MessagesChange.swift` | Live timeline change events the bridge consumes (`.appended` / `.updated` / `.removed`). History load is **not** a `MessagesChange`. |
+
+History load no longer lives on the runtime: `Session.loadHistory()` drives a `TranscriptBackfillPipeline` (`Content/Chat/NativeTranscript2Bridge/`) over a reverse-streaming `JSONLReversePageSource`, building already-paired blocks off-main and applying them straight to the controller. The old two-phase Phase A/B read, the `tailBaseline`/`newTailStart` offset math, the throwaway in-memory `SessionRuntime` (`buildEntries`), and `ToolResultReresolver` are deleted; grouping + tool-pairing is now `ReverseEntryBuilder.swift`.
 
 `SessionManager` (one level up at `Services/Session/SessionManager.swift`) is the registry: lazily creates and caches one `Session` façade per `sessionId`. `session(_:)` returns an active-phase façade for an existing record; `prepareDraftSession(_:)` returns a draft-phase façade (or active when a record happens to already exist for that id — idempotent get-or-create).
 

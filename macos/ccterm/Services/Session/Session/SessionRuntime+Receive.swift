@@ -137,8 +137,11 @@ extension SessionRuntime {
             change = nil
         }
 
-        // For replay, the caller (loadHistory Phase A / Phase B) emits a single
-        // `.reset` / `.prepended` at the end of the batch — we do not emit per-message here.
+        // Replay updates `messages` but suppresses the per-message change
+        // event. Production history no longer flows through `receive` (it goes
+        // through `TranscriptBackfillPipeline` / `ReverseEntryBuilder`); the
+        // `.replay` mode now exists only for the reverse-builder grouping
+        // parity test (`TranscriptReverseBuilderTests.A6`).
         guard mode == .live else { return }
         if let change { onMessagesChange?(change) }
     }

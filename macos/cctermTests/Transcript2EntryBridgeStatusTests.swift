@@ -5,9 +5,9 @@ import XCTest
 
 /// Status-derivation rules in `Transcript2EntryBridge`:
 ///
-/// - `.reset` / `.prepended` (history replay) → tool_use without a
-///   matching `tool_result` resolves to `.completed`, not `.running`.
-///   Historical sessions never paint an abandoned spinner.
+/// - `pushHistoricalStatuses` (history loaded by the backfill pipeline) →
+///   tool_use without a matching `tool_result` resolves to `.completed`,
+///   not `.running`. Historical sessions never paint an abandoned spinner.
 /// - `.appended` / `.updated` (live CLI) → tool_use without a matching
 ///   `tool_result` resolves to `.running`. Standard in-flight render.
 /// - `handleTurnFinished()` (runtime `.result` arrived) → every tool

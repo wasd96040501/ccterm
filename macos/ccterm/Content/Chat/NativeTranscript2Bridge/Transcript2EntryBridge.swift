@@ -27,8 +27,8 @@ final class Transcript2EntryBridge {
     let controller: Transcript2Controller
 
     // Module-internal so `cctermTests` (compiled with `@testable import`)
-    // can verify the reverse map after `.reset` / `.prepended` without
-    // having to mount an `NSTableView` (the bridge's contract is that
+    // can verify the reverse map after `.appended` / `.updated` / `.removed`
+    // without having to mount an `NSTableView` (the bridge's contract is that
     // these tables match the entry order it received, regardless of
     // whether the controller's table is real).
     private(set) var entryOrder: [UUID] = []
@@ -42,12 +42,12 @@ final class Transcript2EntryBridge {
     /// while bootstrap runs and a "you just hit send" indicator there
     /// reads as noise.
     ///
-    /// History-load events (`.reset` / `.prepended`) intentionally do
-    /// **not** pin this — replayed messages already have
-    /// `delivery == .confirmed` so the suppression would be a no-op
-    /// anyway, but more importantly we want the *next live send after
-    /// a resume* to receive the pin, not some long-confirmed historical
-    /// turn.
+    /// History never reaches the bridge — the backfill pipeline applies
+    /// loaded blocks directly to the controller — so the pin only ever sees
+    /// live `.appended` turns. That is exactly what we want: the *next live
+    /// send after a resume* receives the pin, never some long-confirmed
+    /// historical turn (which would be a no-op anyway, since replayed
+    /// messages already carry `delivery == .confirmed`).
     ///
     /// Same-session, already-bootstrapped sends (`.appended` after the
     /// pin is taken) keep their truthful queued visual — that's the
@@ -168,11 +168,12 @@ final class Transcript2EntryBridge {
     // | `.live`      | `.running`          | `.failed(message:)`   | `.completed` |
     // | `.historical`| `.completed`        | `.failed(message:)`   | `.completed` |
     //
-    // `.historical` is used for `.reset` and `.prepended` (JSONL replay
-    // paths). An incomplete tool_use in history is an abandoned run from
-    // a long-finished session — the spinner affordance only makes sense
-    // for live in-flight calls. `.failed` survives the mode flip because
-    // the past failure is still meaningful color.
+    // `.historical` is used by `pushHistoricalStatuses(for:)`, which the
+    // backfill pipeline calls for the entries it loads from JSONL. An
+    // incomplete tool_use in history is an abandoned run from a long-finished
+    // session — the spinner affordance only makes sense for live in-flight
+    // calls. `.failed` survives the mode flip because the past failure is
+    // still meaningful color.
     //
     // Group status follows the "running == any child running" rule:
     //

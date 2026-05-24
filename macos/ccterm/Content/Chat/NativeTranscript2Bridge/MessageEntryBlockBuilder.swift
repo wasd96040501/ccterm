@@ -31,21 +31,6 @@ enum MessageEntryBlockBuilder {
         return out
     }
 
-    /// Bulk precompute path. Builds blocks for every entry and returns a
-    /// `entry.id → [Block]` map suitable for `MessagesChange.reset` /
-    /// `.prepended`'s `precomputedBlocks` payload. Pure and safe to call
-    /// off the main actor — `MarkdownDocument(parsing:)` (the dominant
-    /// cost) is invoked here, never inside the bridge's main-thread
-    /// dispatch arm. Returns an empty map when `entries` is empty.
-    static func precompute(_ entries: [MessageEntry]) -> [UUID: [Block]] {
-        var out: [UUID: [Block]] = [:]
-        out.reserveCapacity(entries.count)
-        for entry in entries {
-            out[entry.id] = entryBlocks(entry)
-        }
-        return out
-    }
-
     /// Single entry → 0..N blocks. The bridge's incremental paths (append /
     /// prepend / mutate) call this directly to translate an entry into the
     /// exact Block list handed to the controller.

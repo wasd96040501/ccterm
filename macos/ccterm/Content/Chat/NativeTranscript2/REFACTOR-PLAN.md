@@ -1,16 +1,17 @@
 # Transcript load & scroll — refactor plan
 
 > ⚠️ **DO NOT MERGE INTO `main`. Delete this file before the PR lands.**
-> Working scratch for the upcoming refactor. Pairs with
-> `REFACTOR-CONSENSUS.md` (the *why* / conclusions); this file is the
-> *how* / technical plan. Remove both before squash-merge.
+> Working scratch for the upcoming refactor — the single planning doc.
+> It is the *how* / technical plan and has absorbed the *why* /
+> conclusions that previously lived in a companion consensus note.
+> Remove before squash-merge.
 
 ---
 
 ## 1. Background
 
 A session switch can hard-crash on `Transcript2ScrollView.popScrollerHidden()`'s
-release `precondition`. Root cause (see consensus §1–2): the scroller-hidden
+release `precondition`. Root cause: the scroller-hidden
 state is a manual push/pop refcount living on a per-switch-recreated scroll-view
 instance, late-resolved through a mutable pointer, written by three
 uncoordinated async producers — so push and pop can land on different
@@ -399,7 +400,7 @@ Deleted in full: `scrollerHiddenCount`, `pushScrollerHidden` /
 `flashScrollers()` override — and, since there are no longer two producers to
 coordinate, `applyInBackground`'s "completion fires exactly once" balancing
 contract. The crash class disappears because the mechanism it guarded is gone,
-not because the guard was softened (consensus §8).
+not because the guard was softened.
 
 **Accepted tradeoff:** while backfilling, the document's true top/total height is
 provisional, so the overlay thumb may flash or jump as content grows. Judged not
@@ -504,7 +505,153 @@ never splits a block.
 - ~~Live/load merge (pending queue).~~ → §7: no queue by default; live flows
   straight through `apply` (head-prepend vs tail-append don't conflict).
 - ~~Cold-gap cover.~~ → blank surface until first deposit; no affordance, no bake (§4.5/§6).
+- ~~Test net: which merge-gate tests assert the anchor invariant and the
+  single-width typeset contract under the new pipeline.~~ → §12: three tiers
+  matching the existing suite shape — pure-logic (no UI), offscreen-UI
+  measurement probes (merge gate, no `Snapshot` suffix), and opt-in snapshots.
+  The anchor invariant and single-width contract are Tier-2 probes (U1/U2/U3);
+  reverse pairing + drain timing are Tier-1 logic (A/B groups).
 
 **Still open**
-- Test net: which merge-gate tests assert the anchor invariant and the
-  single-width typeset contract under the new pipeline.
+- *(none — all resolved; §12 closes the test-net question.)*
+
+---
+
+## 12. Test net
+
+The suite already has the right three-tier shape; the new pipeline slots into
+it without inventing a fourth kind. (See `cctermTests/CLAUDE.md`.)
+
+| Tier | Kind | Runs on | Models the |
+|---|---|---|---|
+| **1** | pure-logic, no UI | default `make test-unit` (merge gate) | reverse builder + tool-pairing, drain/deposit **timing**, `apply` data half, derived `isLoading` |
+| **2** | offscreen-UI **measurement probe** (mounted table, assert on geometry; **no `Snapshot` suffix**) | default `make test-unit` (merge gate) | single-width typeset contract, anchor invariant, block↔row alignment, cold-empty first tick |
+| **3** | snapshot PNG (`*SnapshotTests.swift`) | opt-in only, never CI | visual review of the cold-gap blank + backfill frames |
+
+The two questions §11 named — **anchor invariant** and **single-width typeset
+contract** — are Tier-2 probes (`U1`/`U2`/`U3`), built on the *exact* harness
+`TranscriptReentryLayoutCacheTests` / `TranscriptScrollFirstFrameSnapshotTests`
+already use: an offscreen `alphaValue=0.01` window, the
+`onLayoutCacheWriteForDebug` write trace, and `clip.bounds.origin.y` /
+`rect(ofRow:)` sampling. **The new pipeline adds the multi-tick backfill
+dimension those tests don't exercise** (they stop at re-entry, where blocks are
+already present); §12.2 extends them across the prepend sequence.
+
+### 12.1 Tier 1 — pure-logic (no UI)
+
+Three groups. **Group A is fully synchronous** (the extracted pure builder, fed
+canned reverse-ordered input — no async, no actor hop), so it is the cheapest
+and most deterministic place to pin tool-pairing. **Group B drives the real
+async deposit→drain lifecycle** and is the "timing scenario" net the brief asks
+for — synchronized with `XCTestExpectation` / awaiting `historyLoadState`,
+**never `Task.sleep`** (suite rule #6). **Group C** covers the `apply` data half
+and derived state (no table needed — `coordinator.blocks` is the SoT).
+
+#### Group A — reverse builder + tool-pairing (sync)
+
+Lives next to `MessageEntryBlockBuilderTests` / `HistoryLoaderTests`. Suggested
+class `TranscriptReverseBuilderTests`.
+
+| # | Scenario | Assertion | Why it's a boundary/core case |
+|---|---|---|---|
+| A1 | bottom-up read of a clean file (tool_use above its tool_result, interleaved text) | emitted blocks, head-to-tail across all pages, equal **document order** | core — the whole "show before fully read" correctness claim (§4.2) |
+| A2 | a `tool_result` read before its `tool_use` | result is **withheld** (not emitted) until the `tool_use` is reached; then one **complete paired block** emitted at the tool_use's position | core — the withhold-buffer mechanic |
+| A3 | a `tool_result` whose `tool_use` is absent from the entire file (truncation/compaction) | on file-top, the orphan is flushed **best-effort, exactly once** (result-only/unknown-tool card) | boundary — true-orphan flush (§4.2) |
+| A4 | a tool pair split across a page boundary (result on the lower page, use on the next page up) | pairing still completes; withhold-buffer **spans page boundaries** | boundary — proves paging is decoupled from emission |
+| A5 | any load-path input | **no `.update` change is ever emitted** — load blocks are born complete; only `.prepend`/`.append` | core — the "no `.updated` on load" split (§4.2) |
+| A6 | the same JSONL fed to the new builder and to today's `SessionRuntime.receive` grouping | grouped/tool-paired **entries match** | extraction guard — proves `buildEntries`' throwaway `SessionRuntime` (§4.1) was replaced 1:1, not approximated |
+
+#### Group B — deposit→drain lifecycle (async, expectation-driven)
+
+Suggested class `TranscriptBackfillPipelineTests`. Driven through a **fake page
+source** (see §12.3) yielding canned `Sendable` pages so order/timing is
+controlled, plus the real main-owned buffer + drain.
+
+| # | Scenario | Assertion |
+|---|---|---|
+| B1 | cold attach, **nothing deposited yet** | the first drain produces **no content** — `blockCount == 0` until the first deposit lands (§4.5 "first tick on a cold open is empty") |
+| B2 | N pages deposited | drain fires **only after a deposit** — drain invocations ≤ deposits, **never an empty-buffer drain** ("the deposit *is* the wake") |
+| B3 | pages deposited tail-first then older (reverse-read order) | after full drain the coordinator's block order is **document order** (tail page at the bottom, each older page prepended above) |
+| B4 | one giant buffer deposited at once | each drain tick applies **≤ budget K** rows (§9.2); the buffer drains over multiple self-rescheduled ticks |
+| B5 | iterator reaches file top + buffer empties | `historyLoadState` transitions to `.loaded` **exactly once**; no further drain ticks |
+| B6 | empty history (no entries) | `.loaded` immediately, **zero** content applied, no crash |
+| B7 | interleaved deposits during an in-flight drain | pages land in deposit order; **no lost/duplicated/reordered** page (guards the "main-owned buffer, no lock" claim — §4.5) |
+
+#### Group C — `apply` vocabulary + derived state (no UI)
+
+Suggested class `TranscriptApplyVocabularyTests`. `apply` with no table bound
+mutates `coordinator.blocks` directly (same as today's `setHistory`-with-no-table
+path), so the data half is testable headless.
+
+| # | Scenario | Assertion |
+|---|---|---|
+| C1 | `.prepend(batch)` | inserted at index 0, prior blocks shifted, order preserved |
+| C2 | `.append(batch)` | inserted at tail |
+| C3 | `.replace(oldIds:with:)` on a **contiguous** range | `newBlocks` swapped in at the same start index, **atomically** (resulting array exact); count delta = `newBlocks − oldIds` |
+| C4 | `.replace(oldIds: [], with:)` (degenerate) | routes to `.append`, **not** an in-place swap (§4.6) |
+| C5 | `.remove(ids)` | rows gone; the per-id cache/selection/highlight/fold/status eviction still fires |
+| C6 | `.update(id, kind)` | same-id replacement in place, index stable |
+| C7 | drive `historyLoadState` through its states | `isLoading == (state ∉ {.loaded, .failed})`, **derived** — assert there is **no stored `isLoading`/busy field** on controller or coordinator (§8a) |
+| C8 | mutate blocks only via `apply` across a mixed sequence | `setHistory` is gone; **no second mutation path** reaches `blocks` (regression guard for §10's deletions) |
+
+### 12.2 Tier 2 — offscreen-UI measurement probes (merge gate)
+
+Mounted real `NSTableView` offscreen, assert on AppKit geometry. **No
+`Snapshot` filename suffix** (so `scripts/test-unit.sh` keeps them in the
+default suite) — these are the merge gates §11 asked for. Reuse the existing
+scaffold verbatim: offscreen window, `onLayoutCacheWriteForDebug` write trace,
+`drainMainLoop`, the `Write{ id, width, stage }` grouping helper.
+
+Suggested classes: `TranscriptBackfillLayoutCacheTests` (U1), `TranscriptBackfillAnchorTests` (U2/U3/U7/U8), `TranscriptColdAttachTests` (U4/U5/U6).
+
+| # | Scenario | Assertion | Maps to |
+|---|---|---|---|
+| **U1** | cold backfill: tail page lands, then ≥3 `.prepend(batch)` ticks, each its own source phase | **per tick, every block id is typeset at exactly one width** (the off-main width); because off-main precomputed at the current width, a prepend tick should be **cache-hits — ideally zero new typeset writes** at a third/fourth width | single-width contract (§4.3, §5) — the multi-tick extension of `TranscriptReentryLayoutCacheTests` |
+| **U2** | after scrollToTail on the first screen, capture the visual-top row's `rect(ofRow:)`/clip origin; apply `.prepend(batch)`; re-measure **in the same tick** | the anchor row's on-screen position is **unchanged** — clip origin shifted down by **exactly the inserted batch's measured height** (within ~1pt); repeat over N ticks, anchor stays pinned, **no jitter** | anchor invariant (§5) — the core viewport-stability claim |
+| **U3** | immediately after `apply(.prepend)`, **before any runloop drain** | `rect(ofRow:)` already returns **real** heights (forced tile in-tick) and the clip origin already reflects compensation — **no "next tick fixes it"**; falsifies any deferred-compensation regression (the deleted `mutationCounter` path) | in-tick stability (§5) |
+| **U4** | attach a **cold** (never-loaded) session | TICK 1: `numberOfRows == 0`, surface blank, no spinner/placeholder; then drain the first deposit → tail content appears at the bottom | cold-empty first tick (§4.5/§6) |
+| **U5** | a mixed sequence (`prepend`/`append`/`replace`/`remove`/`update`) | after **every** tick `coordinator.blocks.count == tableView.numberOfRows`, index-for-index | block↔row alignment invariant (§5) |
+| **U6** | **warm** re-entry into a populated session | attach collapses to **TICK 1 alone** — **zero** CONTENT `.prepend` ticks fire, `loadHistory` is an idempotent no-op (probe sees no backfill writes) | warm path (§6) — extends the existing reentry gate to assert the *absence* of backfill |
+| **U7** | `.update(id, kind)` (the ~95% tool_result merge) and `.replace` (segment swap) on an off-tail row while scrolled mid-document | viewport preserved — `noteHeightOfRows` with the anchor fixed; visible content does not jump | per-case scroll intent (§4.6) |
+| **U8** | live `.append` at the tail **while** backfill `.prepend` ticks run at the head | both land; tail append sticks to bottom (if at bottom), head prepend preserves viewport; **neither disturbs the other** | live/load non-conflict (§7) |
+
+**Boundary probes (same tier, lower priority — add if cheap):**
+
+| # | Scenario | Assertion | Maps to |
+|---|---|---|---|
+| U9 | change row width mid-backfill (within the `[460,780]` clamp band) | pages built at the **old** width install as-is → `heightOfRow` **miss** → recompute at the new width on scroll-in (**self-healing**); future pages built at the new width after one `retarget` | resize self-heal (§4.4) — assert via the width trace that a stale-width entry never corrupts, only re-typesets |
+| U10 | a single block whose own layout exceeds the budget (giant code block) | lands in **one** tick — the budget caps a batch, **never splits a block** | oversized-block exception (§9.3) |
+
+### 12.3 Test seams the design must expose (no test-only hacks)
+
+Per the engineering principle "never compromise production code to make tests
+pass," every seam below is **real product surface / dependency injection**, not
+a `forceXxxForTest()` :
+
+- **Injectable page source on the iterator** — the reverse pager takes a
+  reader abstraction by initializer. Production wires the JSONL file reader (the
+  existing `loadHistory(overrideURL:)` shape — already used by
+  `HistoryLoaderTests`); Group B injects a fake that yields canned `Sendable`
+  pages on demand. This is legitimate DI, the same way `SessionManager` takes a
+  `cliClientFactory`.
+- **`onLayoutCacheWriteForDebug`** — the existing read-only `(id, width)` write
+  probe. Carry it forward unchanged; it observes, it does not gate behavior.
+- **`historyLoadState`** is already `@Observable` and forwarded through
+  `Session` — Group B/U-tests **await it** rather than sleeping.
+- **The pure builder is a free/`static` function** (the §4.1 extraction) — Group
+  A calls it directly with no runtime, no CoreData, no actor.
+- **Drain is driven by real deposits** — tests deposit a page (through the fake
+  source) and `await`/drain the runloop; there is **no** "force a drain" method.
+
+### 12.4 Explicitly NOT a gate
+
+- **Scroller deletion (§8)** has nothing to assert at runtime — the mechanism is
+  *gone*, so the test is the *absence* of the symbol (compile-time) plus the
+  crash class disappearing. Do **not** add a runtime test that re-creates a
+  scroller-state observer just to assert it; that would resurrect the coupling
+  the refactor deletes. If anything, a one-line check that the bound scroll view
+  keeps AppKit's default `autohidesScrollers` is sufficient, and even that is
+  optional.
+- **The cold-gap blank** is a Tier-3 snapshot (opt-in PNG) for human review, not
+  a merge gate — there is no pixel to assert beyond "empty," already covered by
+  U4's `numberOfRows == 0`.

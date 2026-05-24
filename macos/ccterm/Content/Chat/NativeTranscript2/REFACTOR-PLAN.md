@@ -242,6 +242,44 @@ main drain (woken by a deposit; self-reschedules while buffer non-empty):
   options (to pick later) are an empty surface or a one-frame snapshot of the
   outgoing session composited until the first deposit lands.
 
+### 4.6 The `apply` change vocabulary
+
+`setHistory` is **deleted**; all content mutation is `apply(change)`. Promoting
+`.prepend` to first-class is not cosmetic — it **folds the scroll intent into
+the case** (the §3.1 "intent rides with the change" principle), shrinking the
+free-form `scroll:` parameter away.
+
+| case | position | intrinsic scroll intent | drives |
+|---|---|---|---|
+| `.prepend(blocks)` | top (index 0) | preserve viewport (save visual-top row) | backfill batches |
+| `.append(blocks)` | tail | stick to bottom if user is at bottom | live tail entries, loading pill |
+| `.insert(after: id, blocks)` | interior | preserve viewport | the one surviving mid-list insert (see note) |
+| `.remove(ids)` | — | preserve viewport | entry/segment removal, pill removal |
+| `.update(id, kind)` | — | preserve viewport (`noteHeightOfRows`, anchor fixed) | same-id per-block update — the ~95% tool_result merge |
+
+- **Mid-list insert does NOT disappear** (verified against the code). The single
+  caller is `Transcript2EntryBridge.applyUpdate`'s *structure-changed* branch: an
+  entry whose block sequence changed gets its old segment `.remove`d and the new
+  one re-inserted after the entry's predecessor, which can be **interior** (a
+  `tool_result` landing on an entry that is no longer the tail). So the vocabulary
+  does **not** collapse to four cases — keep an interior `.insert(after:)` (or a
+  `.replace` that fuses the remove+insert). Its scroll intent is preserve-viewport
+  like the rest.
+- **Initial "anchor to tail" is NOT a change** — it is the one-time view-lifecycle
+  `scrollToTail` (TICK 1 / first content), per §3.1: view lifecycle owns *where to
+  land*; changes only carry *"don't disturb what's visible"*. So `.append` never
+  has to encode "should I scroll to tail" — the empty-table first landing is the
+  controller's job.
+- **The `scroll:` parameter shrinks to two intrinsic intents** — preserve-viewport
+  (everything except append) and stick-bottom (append). Whether a thin explicit
+  override survives for an edge case is a coding-time call; the default is per-case.
+- **The bridge's load path collapses.** The iterator owns Message2→block for
+  history and feeds `.prepend` / `.append` directly, so the bridge's `.reset` /
+  `.prepended` handlers + the `didLoadInitial` two-path split are **deleted**. The
+  bridge keeps only the live path (`.append` / `.update` / `.remove`).
+  → **load path = iterator → apply; live path = bridge → apply**, both converging
+  on the one `apply`.
+
 ---
 
 ## 5. Tick anchor consensus
@@ -397,8 +435,10 @@ never splits a block.
 - `buildEntries`' throwaway in-memory `SessionRuntime` + CoreData stack — §4.1.
 - `tailBaseline / newTailStart / absoluteTailEnd / tailMessagesAsArray` offset
   math — §4.2.
-- `setHistory`'s four-concern fusion + the bridge's two reset paths +
-  `applyAppend`'s `setHistory(seed)` race patch + the zero-width branch — §3/§4.
+- `setHistory` entirely (four-concern fusion + two-phase split) + the bridge's
+  two reset paths (`.reset` / `.prepended` handlers, `didLoadInitial` branch) +
+  `applyAppend`'s `setHistory(seed)` race patch + the zero-width branch — §4.6.
+- The free-form `apply(scroll:)` parameter — intent is per-case now — §4.6.
 - `scrollerHiddenCount` + `pushScrollerHidden`/`popScrollerHidden` + the
   `precondition` + `didPushForLiveResize` + the `flashScrollers` override — §8.
 - `applyInBackground`'s "completion fires exactly once" contract — its only job
@@ -423,12 +463,14 @@ never splits a block.
 - ~~Width snapshot/validate/generation.~~ → §4.3/§4.4: removed; width self-heals
   through the width-keyed cache. Only action is `retarget`, and not during live
   resize (§4.4).
+- ~~`apply` change vocabulary; is `.prepend` first-class; delete `setHistory`?~~ →
+  §4.6: `setHistory` deleted; `.prepend` / `.append` first-class with intrinsic
+  scroll intent; an interior `.insert(after:)` survives for the structure-change
+  update; `scroll:` shrinks to per-case intent; bridge load path collapses.
 
 **Still open**
 - Where the pipeline `isLoading` flag and the derived `scrollerHidden` live
   (controller vs coordinator).
-- The `apply` change-set vocabulary after the resolver removal (does `.prepend`
-  become a first-class case distinct from `.insert(after: nil)`?).
 - Cold-gap cover: blank vs pre-switch frame image bake — pick one (UX).
 - Test net: which merge-gate tests assert the anchor invariant and the
   single-width typeset contract under the new pipeline.

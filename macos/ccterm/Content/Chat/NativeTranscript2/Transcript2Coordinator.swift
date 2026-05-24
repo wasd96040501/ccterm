@@ -240,6 +240,12 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// Sentinel `-1` will not match any real width on first run.
     private var lastLayoutWidth: CGFloat = -1
 
+    #if DEBUG
+    /// Test-only read of the recorded display width that seeds the detached
+    /// layout warm. Observation only; never gates behavior.
+    var displayWidthForDebug: CGFloat { lastLayoutWidth }
+    #endif
+
     /// Visible-region height of the enclosing scroll view. Returns 0 if
     /// no scroll view is attached.
     var viewportHeight: CGFloat {
@@ -291,6 +297,14 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             for change in changes {
                 applyStructuralChange(change, in: nil)
             }
+            // Detached (non-active session): warm the newly-inserted blocks'
+            // layouts off-main at the last-displayed width so a later attach
+            // finds them as cache hits, instead of typesetting O(streamed
+            // rows) on the main thread during the re-entry tile. Active
+            // sessions skip this — their visible rows fill lazily through
+            // `heightOfRow`, and off-screen rows stay lazy as today.
+            let warmIds = changes.flatMap(warmCandidateIds)
+            scheduleLayoutWarm(ids: warmIds)
         }
 
         onBlockCountChanged?(blocks.count)
@@ -414,13 +428,26 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// Skips `noteHeightOfRows` because token fill changes only color,
     /// not glyph metrics — a re-layout pass would be a wasted query.
     private func handleHighlightDidFill(blockId: UUID) {
-        guard let table = tableView,
+        guard blocks.contains(where: { $0.id == blockId }) else { return }
+        if let table = tableView,
             let row = blocks.firstIndex(where: { $0.id == blockId })
-        else { return }
-        removeCachedLayout(for: blockId)
-        table.reloadData(
-            forRowIndexes: IndexSet(integer: row),
-            columnIndexes: IndexSet(integer: 0))
+        {
+            // Active: evict + single-row reload. The visible row recomputes
+            // its now-coloured layout on the main thread immediately — one
+            // row, on screen, no async hop, no plain→coloured flicker.
+            removeCachedLayout(for: blockId)
+            table.reloadData(
+                forRowIndexes: IndexSet(integer: row),
+                columnIndexes: IndexSet(integer: 0))
+        } else {
+            // Detached: don't just evict — that would punch a hole in the
+            // warm cache that becomes a re-entry miss. Drop the stale plain
+            // layout and re-warm off-main with the freshly-filled tokens, so
+            // the cache stays warm AND coloured. `force` makes the coloured
+            // write win over any in-flight plain insert-warm for this id.
+            removeCachedLayout(for: blockId)
+            scheduleLayoutWarm(ids: [blockId], force: true)
+        }
     }
 
     // MARK: - Scroll adjustment
@@ -576,9 +603,15 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// since this batch was computed, and the lazy re-fill it triggered
     /// is the authoritative entry. Overwriting it with our (older
     /// snapshot's) layout would poison the cache.
-    private func cacheLayouts(_ entries: [(UUID, RowLayout)], width: CGFloat) {
+    private func cacheLayouts(
+        _ entries: [(UUID, RowLayout)], width: CGFloat, force: Bool = false
+    ) {
         for (id, layout) in entries {
-            if layoutCache[id]?.width == width { continue }
+            // `force` overwrites a same-width entry; the detached highlight
+            // re-warm needs it so its coloured layout wins over a queued plain
+            // insert-warm regardless of which task completes last. Non-forced
+            // writes keep the anti-poison skip (see the method's doc comment).
+            if !force, layoutCache[id]?.width == width { continue }
             layoutCache[id] = CachedLayout(width: width, layout: layout)
             #if DEBUG
             onLayoutCacheWriteForDebug?(id, width)
@@ -972,6 +1005,16 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     func scrollToInitialAnchor(_ anchor: Transcript2Controller.InitialAnchor) {
         guard let tableView else { return }
         tableView.layoutSubtreeIfNeeded()
+        // Record the settled display width so the detached layout warm
+        // (`scheduleLayoutWarm`) has a width to typeset at once the session is
+        // switched away. `tableFrameDidChange` is the other writer, but it can
+        // miss the first attach (the frame may settle before its observer is
+        // registered in `bindData`); reading here — after the tile, when
+        // `layoutWidth` is reliable — is the deterministic capture.
+        let settledWidth = layoutWidth
+        if settledWidth > 0, settledWidth != lastLayoutWidth {
+            lastLayoutWidth = settledWidth
+        }
         switch anchor {
         case .bottom:
             if let lastId = blocks.last?.id {
@@ -1095,6 +1138,100 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                     // unnecessary (REFACTOR-PLAN §5.1).
                     table.layoutSubtreeIfNeeded()
                 }
+            }
+        }
+    }
+
+    // MARK: - Detached layout warm (off-main cache pre-fill for non-active sessions)
+
+    /// Block ids awaiting an off-main layout warm, mapped to whether the write
+    /// must **overwrite** an existing same-width entry. Coalesced within a
+    /// runloop tick so a burst of detached inserts / highlight re-fills
+    /// produces one warm task. Main-actor owned; the detached task reads only
+    /// the immutable snapshot captured at drain — the same lock-free shape as
+    /// the backfill pipeline (REFACTOR-PLAN §4.5), so there is no lock and no
+    /// shared mutable buffer.
+    private var pendingWarmLayouts: [UUID: Bool] = [:]
+    private var warmScheduled = false
+    private var warmTask: Task<Void, Never>?
+
+    /// Warm-candidate ids for a change applied to a **detached** coordinator:
+    /// the newly-inserted blocks. `.update` is deliberately excluded — a
+    /// streaming entry re-`.update`s many times and only its final state
+    /// matters, so warming each intermediate is churn; `.remove` has nothing
+    /// to warm.
+    private func warmCandidateIds(_ change: Transcript2Controller.Change) -> [UUID] {
+        switch change {
+        case .prepend(let new), .append(let new): return new.map(\.id)
+        case .replace(_, let new): return new.map(\.id)
+        case .update, .remove: return []
+        }
+    }
+
+    /// Queue `ids` for an off-main layout warm at the last-displayed width
+    /// (`lastLayoutWidth`). Called **only** from the detached paths (`apply`
+    /// with no table; the detached arm of `handleHighlightDidFill`) — when a
+    /// table is bound, layouts fill lazily through `heightOfRow` for visible
+    /// rows and the active path is untouched. The point: a session the user
+    /// switched away from keeps its layout cache warm as the bridge streams
+    /// into it, so re-entry is a cache hit rather than an O(streamed-rows)
+    /// main-thread typeset. `force` overwrites a same-width entry — needed for
+    /// the highlight re-fill, whose coloured layout must win over a queued
+    /// plain insert-warm regardless of completion order; the default `false`
+    /// defers to `cacheLayouts`' anti-poison.
+    private func scheduleLayoutWarm(ids: [UUID], force: Bool = false) {
+        guard !ids.isEmpty else { return }
+        for id in ids {
+            pendingWarmLayouts[id] = (pendingWarmLayouts[id] ?? false) || force
+        }
+        guard !warmScheduled else { return }
+        warmScheduled = true
+        DispatchQueue.main.async { [weak self] in self?.drainLayoutWarm() }
+    }
+
+    /// Typeset the queued blocks off-main at `lastLayoutWidth` and land them
+    /// through `cacheLayouts`. Mirrors `refillLayoutCache`'s detached-typeset
+    /// shape (snapshot on main → `makeLayout` off-main → `cacheLayouts` on
+    /// main); unlike refill there is no table, so there is no
+    /// `noteHeightOfRows` / anchor work — only the cache is warmed.
+    private func drainLayoutWarm() {
+        warmScheduled = false
+        let width = lastLayoutWidth
+        // No display width recorded yet (the session has never been shown) →
+        // no width to typeset against; a first attach computes these lazily.
+        // Drop the queue so we don't spin.
+        guard width > 0 else {
+            pendingWarmLayouts.removeAll()
+            return
+        }
+        let requests = pendingWarmLayouts
+        pendingWarmLayouts.removeAll()
+        let present = blocks.filter { requests[$0.id] != nil }
+        guard !present.isEmpty else { return }
+        let forced = Set(requests.filter { $0.value }.map(\.key))
+        let highlightSnapshot = highlightStorage.snapshot()
+        let foldsSnapshot = foldStates
+        let statusesSnapshot = statusStates
+        warmTask = Task.detached(priority: .utility) { [weak self] in
+            let entries: [(UUID, RowLayout)] = present.map { block in
+                (
+                    block.id,
+                    Self.makeLayout(
+                        for: block, width: width,
+                        highlights: highlightSnapshot,
+                        folds: foldsSnapshot,
+                        statuses: statusesSnapshot)
+                )
+            }
+            await MainActor.run { [entries] in
+                guard let self else { return }
+                // A wrong-width entry (window resized while detached) is a
+                // self-healing miss on re-attach, never a corruption (§4.4),
+                // so we never gate on the table's current width here.
+                self.cacheLayouts(
+                    entries.filter { forced.contains($0.0) }, width: width, force: true)
+                self.cacheLayouts(
+                    entries.filter { !forced.contains($0.0) }, width: width)
             }
         }
     }

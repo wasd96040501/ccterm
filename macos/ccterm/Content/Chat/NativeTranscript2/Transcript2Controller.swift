@@ -27,13 +27,13 @@ struct ImagePreviewRequest: Identifiable, Equatable {
 
 /// Public, imperative API for `NativeTranscript2`. Two orthogonal channels:
 ///
-/// 1. **Mutation** — `apply(_:scroll:precomputed:precomputedWidth:)` accepts
-///    one or more `Change` values (prepend / append / replace / remove /
-///    update) and a `ScrollState`. Granular only; no diff, no `reloadData`
-///    escape hatch, no whole-list `setHistory` snapshot (deleted — history
-///    load is the backfill pipeline draining `.prepend` / `.append` through
-///    this same entry; REFACTOR-PLAN §4.6). `precomputed` lets the pipeline
-///    land off-main-built layouts as cache hits.
+/// 1. **Mutation** — `apply(_:scroll:precomputed:)` accepts one or more
+///    `Change` values (prepend / append / replace / remove / update) and a
+///    `ScrollState`. Granular only; no diff, no `reloadData` escape hatch, no
+///    whole-list `setHistory` snapshot (deleted — history load is the backfill
+///    pipeline draining `.prepend` / `.append` through this same entry;
+///    REFACTOR-PLAN §4.6). `precomputed` lets the pipeline land off-main-built
+///    layouts as cache hits.
 /// 2. **Query** — read-only snapshot accessors.
 ///
 /// `@MainActor`-isolated. Background producers must hop before calling.
@@ -60,6 +60,19 @@ final class Transcript2Controller {
         /// Replace the kind of an existing block, preserving its id. No-op
         /// if the id is unknown.
         case update(id: UUID, kind: Block.Kind)
+    }
+
+    /// Off-main-built `(id, RowLayout)` layouts to install as cache hits
+    /// **before** a structural change, tagged with the `width` they were
+    /// typeset at. The backfill pipeline's producer builds these so the
+    /// `heightOfRow` query `insertRows` fires inside `endUpdates` is a cache
+    /// hit, not an on-main CTLine pass (REFACTOR-PLAN §4.3 / §5.1). `width` is
+    /// self-healing: an entry whose width doesn't match the table's current
+    /// `layoutWidth` is simply a miss that lazy-recomputes, never a corruption,
+    /// so there is no validate gate.
+    struct PrecomputedLayouts: Sendable {
+        let layouts: [(UUID, RowLayout)]
+        let width: CGFloat
     }
 
     /// What the table should do with scroll position around an `apply`.
@@ -218,20 +231,17 @@ final class Transcript2Controller {
     /// incremental updates (single message arrives, tool result fills in,
     /// user deletes one).
     ///
-    /// `precomputed` carries off-main-built `(id, RowLayout)` layouts tagged
-    /// with `precomputedWidth` (the backfill pipeline's producer — §4.3). They
-    /// install into the layout cache before the structural change so the
-    /// prepend/append tick is a cache **hit**, not an on-main CTLine pass.
-    /// Empty by default — every incremental-update caller is unaffected.
+    /// `precomputed` carries off-main-built layouts + the width they were
+    /// typeset at (the backfill pipeline's producer — §4.3). They install into
+    /// the layout cache before the structural change so the prepend/append tick
+    /// is a cache **hit**, not an on-main CTLine pass. `nil` by default — every
+    /// incremental-update caller is unaffected.
     func apply(
         _ changes: Change...,
         scroll: ScrollState = .none,
-        precomputed: [(UUID, RowLayout)] = [],
-        precomputedWidth: CGFloat = 0
+        precomputed: PrecomputedLayouts? = nil
     ) {
-        coordinator.apply(
-            changes, scroll: scroll,
-            precomputed: precomputed, precomputedWidth: precomputedWidth)
+        coordinator.apply(changes, scroll: scroll, precomputed: precomputed)
     }
 
     /// Settled, clamped row width the table currently lays out at (forwards

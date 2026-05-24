@@ -32,7 +32,7 @@ protocol ReversePageSource: AnyObject {
 /// (`Transcript2Coordinator.makeLayout` — `nonisolated static`, §2.5). Each
 /// deposited page carries its pre-built `(id, RowLayout)` layouts plus the
 /// width they were typeset at; the drain installs them through the single
-/// `apply(_:scroll:precomputed:precomputedWidth:)` entry, so the prepend's
+/// `apply(_:scroll:precomputed:)` entry, so the prepend's
 /// in-`endUpdates` `heightOfRow` query is a cache **hit**, not a main-thread
 /// CTLine pass (REFACTOR-PLAN §4.3 / §5.1). The off-main width comes from
 /// `trigger(width:)` (once, after TICK-1 settle) and `retarget(width:)`
@@ -74,6 +74,11 @@ final class TranscriptBackfillPipeline {
         let blocks: [Block]
         let layouts: [(UUID, RowLayout)]
         let width: CGFloat
+
+        /// The off-main layouts + width bundled for `Transcript2Controller.apply`.
+        var precomputed: Transcript2Controller.PrecomputedLayouts {
+            .init(layouts: layouts, width: width)
+        }
     }
 
     /// Pending pre-built pages, owned by the main actor. Appended only inside
@@ -241,7 +246,7 @@ final class TranscriptBackfillPipeline {
             // Older history: stack above, keep the visible viewport fixed.
             controller.apply(
                 .prepend(page.blocks), scroll: .saveVisible(.visualTop),
-                precomputed: page.layouts, precomputedWidth: page.width)
+                precomputed: page.precomputed)
         } else {
             // First content: the tail page lands at the (empty) tail. On a COLD
             // open the view-lifecycle `scrollToTail` already ran at the attach
@@ -251,9 +256,7 @@ final class TranscriptBackfillPipeline {
             // re-entry never reaches this branch: `loadHistory` is an idempotent
             // no-op once blocks are already present, so the pipeline never runs.)
             didFirstApply = true
-            controller.apply(
-                .append(page.blocks),
-                precomputed: page.layouts, precomputedWidth: page.width)
+            controller.apply(.append(page.blocks), precomputed: page.precomputed)
             controller.scrollToTail()
         }
         // History tool statuses (failed-history color, etc.) ride on the

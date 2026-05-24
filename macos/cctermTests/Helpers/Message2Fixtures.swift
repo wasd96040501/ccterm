@@ -118,6 +118,30 @@ enum Message2Fixtures {
         ])
     }
 
+    /// A user message carrying a single `tool_result` block (the CLI's
+    /// envelope for a tool's output). Pairs with `assistantRead(...)` /
+    /// any tool_use of the same `toolUseId`.
+    static func userToolResult(
+        toolUseId: String, text: String = "ok", isError: Bool = false
+    ) -> Message2 {
+        resolve([
+            "type": "user",
+            "uuid": UUID().uuidString,
+            "session_id": "s",
+            "message": [
+                "role": "user",
+                "content": [
+                    [
+                        "type": "tool_result",
+                        "tool_use_id": toolUseId,
+                        "content": text,
+                        "is_error": isError,
+                    ]
+                ],
+            ],
+        ])
+    }
+
     /// JSONL line for `assistantText(...)` — useful when a test feeds bytes
     /// into `SessionRuntime.loadHistory(overrideURL:)`.
     static func assistantTextJSONL(_ text: String) -> String {

@@ -468,7 +468,11 @@ extension Message2User {
 
     /// Whether this message enters the timeline as its own entry.
     /// Filters out sub-agents, synthetic, compact summary, transcript-only, and empty text.
-    fileprivate var isVisible: Bool {
+    ///
+    /// Module-internal (not `fileprivate`) so the pure `ReverseEntryBuilder`
+    /// reuses the exact same visibility rule the live `receive` path uses —
+    /// the single source of truth `TranscriptReverseBuilderTests.A6` pins.
+    var isVisible: Bool {
         guard parentToolUseId == nil,
             isSynthetic != true,
             isCompactSummary != true,
@@ -532,7 +536,9 @@ extension Message2User {
     }
 
     /// The first tool_result block (each user message typically carries only one).
-    fileprivate var toolResultBlock: ItemToolResult? {
+    /// Module-internal so `ReverseEntryBuilder` classifies tool_result the same
+    /// way `receive`'s `action(for:)` does.
+    var toolResultBlock: ItemToolResult? {
         guard case .array(let items) = message?.content else { return nil }
         for item in items {
             if case .toolResult(let r) = item { return r }
@@ -544,7 +550,8 @@ extension Message2User {
 extension Message2Assistant {
 
     /// Has any visible content (text or tool_use). thinking-only / subagent is treated as invisible.
-    fileprivate var isVisible: Bool {
+    /// Module-internal so `ReverseEntryBuilder` shares the live visibility rule.
+    var isVisible: Bool {
         guard parentToolUseId == nil, let blocks = message?.content else { return false }
         return blocks.contains { block in
             switch block {
@@ -560,7 +567,8 @@ extension Message2 {
 
     /// "Groupable": an assistant message whose non-empty content blocks are all tool_use (any kind).
     /// Mixed text / thinking still goes through `.single` and is rendered by `AssistantMarkdownComponent`.
-    fileprivate var isGroupableAssistant: Bool {
+    /// Module-internal so `ReverseEntryBuilder` applies the same grouping rule as `appendToTimeline`.
+    var isGroupableAssistant: Bool {
         guard case .assistant(let a) = self,
             let blocks = a.message?.content,
             !blocks.isEmpty

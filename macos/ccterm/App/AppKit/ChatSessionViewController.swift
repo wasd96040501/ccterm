@@ -321,7 +321,7 @@ final class ChatSessionViewController: NSViewController {
                 }
             }
             if let sid = self.notifications.pendingActivationSessionId {
-                self.model.selection = .session(sid)
+                self.model.select(.session(sid))
                 self.notifications.clearPendingActivation()
             }
             self.startPendingActivationObservation()

@@ -1,19 +1,23 @@
 import AppKit
 import SwiftUI
 
-/// `NSHostingView` subclass with hit-test passthrough on transparent
-/// SwiftUI regions. Without this override, an `NSHostingView` overlaid
-/// on top of AppKit content claims every point inside its bounds for
-/// hit-testing, shadowing whichever AppKit view sits below (e.g. the
-/// transcript `NSTableView`).
+/// `NSHostingView` subclass with an explicit "should this overlay claim
+/// clicks" gate. When `claimsHits` is `false`, `hitTest(_:)` returns
+/// `nil` for every point in the host's bounds — so AppKit moves on to
+/// the next sibling underneath (e.g. a side-branch view like Archive)
+/// rather than letting the otherwise-transparent SwiftUI body swallow
+/// the click.
 ///
-/// `super.hitTest(point)` already does the work of walking SwiftUI's
-/// internal subview tree: it returns the deepest SwiftUI rendering
-/// view that contains the point. For transparent SwiftUI regions
-/// (e.g. an empty `Spacer`) no SwiftUI subview matches, and super
-/// falls back to returning the hosting view itself. We intercept that
-/// fallback and return nil instead, so AppKit moves on to the next
-/// sibling and the table below receives the hit.
+/// The previous implementation tried to derive this from
+/// `super.hitTest(_:) === self`, on the theory that NSHostingView only
+/// returns itself when no SwiftUI subview matches. That theory is
+/// wrong: SwiftUI controls with no AppKit backing (any `Button` with
+/// `.buttonStyle(.plain)`, `Menu` with `.menuStyle(.button)`, etc.)
+/// also resolve to the hosting view, so the heuristic ate every click
+/// on the input bar's chrome row (Permission / Model · Effort / Todo
+/// / Context-ring / Attach `+`). Pinning the decision to an explicit
+/// flag set by the host's controller, based on what the SwiftUI body
+/// currently renders, is the only safe split.
 ///
 /// **Concrete `AnyView` specialization on purpose.** A generic
 /// `PassthroughHostingView<Content>: NSHostingView<Content>` triggers
@@ -25,8 +29,14 @@ import SwiftUI
 /// different `Content`, hoist this pattern into a non-generic base
 /// class rather than re-introducing generics.
 final class PassthroughHostingView: NSHostingView<AnyView> {
+    /// `true` → behave like a plain `NSHostingView` (super decides);
+    /// `false` → drop every hit so the view below receives it.
+    /// Default `true` is the conservative choice: a fresh host claims
+    /// its bounds until the controller flips it off.
+    var claimsHits: Bool = true
+
     override func hitTest(_ point: NSPoint) -> NSView? {
-        let result = super.hitTest(point)
-        return result === self ? nil : result
+        guard claimsHits else { return nil }
+        return super.hitTest(point)
     }
 }

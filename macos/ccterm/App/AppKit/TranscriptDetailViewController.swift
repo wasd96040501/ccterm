@@ -310,7 +310,25 @@ final class TranscriptDetailViewController: NSViewController {
             sessionManager.existingSession(sid)?.setFocused(false)
         }
 
+        updateComposeHostHitClaim()
         rebuildBackingContent()
+    }
+
+    /// Decide whether `composeOrBarHost` (the full-bleed SwiftUI overlay
+    /// that renders the input bar / compose card / EmptyView) should
+    /// claim its bounds for hit-testing. Driven by `selection` because
+    /// the SwiftUI body itself doesn't expose enough hit-test semantics
+    /// for `PassthroughHostingView` to figure it out:
+    /// - Side branches (`.archive` / `.demo`) render `EmptyView` here
+    ///   so the host must let every click through to the side-branch
+    ///   VC that sits below it.
+    /// - Transcript-bearing selections (`.session` / `.newSession` /
+    ///   `.none`) render visible interactive SwiftUI controls, so the
+    ///   host must claim its bounds — otherwise input-bar buttons
+    ///   that lack AppKit backing (Permission / Model · Effort / etc.)
+    ///   silently swallow nothing.
+    private func updateComposeHostHitClaim() {
+        composeOrBarHost.claimsHits = Self.sideBranchKind(for: model.selection) == nil
     }
 
     // MARK: - Backing content rebuild

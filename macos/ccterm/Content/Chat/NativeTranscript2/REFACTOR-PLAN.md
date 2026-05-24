@@ -239,10 +239,8 @@ main drain (woken by a deposit; self-reschedules while buffer non-empty):
   content and applies nothing — the transcript is genuinely empty for the gap
   between attach and the first deposit (a small tail page, tens of ms). Warm
   sessions have no gap (blocks already present from the continuous bridge).
-- **Covering the cold gap: blank, or a baked image of the pre-switch frame —
-  never a loading affordance.** No spinner / placeholder UI. The two acceptable
-  options (to pick later) are an empty surface or a one-frame snapshot of the
-  outgoing session composited until the first deposit lands.
+- **Covering the cold gap: blank.** The surface is simply empty until the first
+  deposit lands — no spinner, no placeholder, no pre-switch image bake. (Decided.)
 
 ### 4.6 The `apply` change vocabulary
 
@@ -345,8 +343,8 @@ TICK 1  [source]  VIEW: attach — synchronous, one tick
         → trigger(width): start the iterator off-main
         [beforeWaiting] single tile @ settled width, draw, commit
         ── cold: this tick shows NO content; the gap (attach → first deposit) is
-           covered by blank or a baked image of the pre-switch frame — never a
-           loading affordance. warm: full content already present, no gap. ──
+           simply blank — no loading affordance, no image bake.
+           warm: full content already present, no gap. ──
 
 TICK k  [source]  CONTENT: first deposit drained (cold first screen)
         off-main deposited the tail page → drain woken
@@ -505,8 +503,8 @@ never splits a block.
   consumers after the scroller is gone.
 - ~~Live/load merge (pending queue).~~ → §7: no queue by default; live flows
   straight through `apply` (head-prepend vs tail-append don't conflict).
+- ~~Cold-gap cover.~~ → blank surface until first deposit; no affordance, no bake (§4.5/§6).
 
 **Still open**
-- Cold-gap cover: blank vs pre-switch frame image bake — pick one (UX).
 - Test net: which merge-gate tests assert the anchor invariant and the
   single-width typeset contract under the new pipeline.

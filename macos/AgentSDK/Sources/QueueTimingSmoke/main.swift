@@ -153,6 +153,7 @@ session.onMessage = { msg in
     case .queueOperation: label = "queueOperation"
     case .rateLimitEvent: label = "rateLimitEvent"
     case .result: label = "result"
+    case .streamEvent: label = "streamEvent"
     case .user(let u):
         label = ourUuids.contains(u.uuid) ? "user.echo(ours)" : "user.other"
     case .worktreeState: label = "worktreeState"

@@ -35,7 +35,7 @@ protocol ReversePageSource: AnyObject {
 /// `apply(_:scroll:precomputed:)` entry, so the prepend's
 /// in-`endUpdates` `heightOfRow` query is a cache **hit**, not a main-thread
 /// CTLine pass (REFACTOR-PLAN §4.3 / §5.1). The off-main width comes from
-/// `trigger(width:)` (once, after TICK-1 settle) and `retarget(width:)`
+/// `start(width:)` (once, after TICK-1 settle) and `retarget(width:)`
 /// (at live-resize end); a width mismatch is self-healing (§4.4), never a gate.
 @MainActor
 final class TranscriptBackfillPipeline {
@@ -43,7 +43,7 @@ final class TranscriptBackfillPipeline {
     private let source: ReversePageSource
     private weak var controller: Transcript2Controller?
 
-    /// Row width future pages typeset at. Seeded by `trigger(width:)` after the
+    /// Row width future pages typeset at. Seeded by `start(width:)` after the
     /// attach tick settles; updated by `retarget(width:)` at live-resize end.
     /// The producer reads this on each page-build hop, so a `retarget` between
     /// pages takes effect on the next page without disturbing in-flight ones.
@@ -116,8 +116,9 @@ final class TranscriptBackfillPipeline {
     /// REFACTOR-PLAN §6 TICK 1). The ONE call that seeds the typeset width.
     /// Idempotent — a second call is a no-op. Also subscribes to the
     /// coordinator's `onLayoutWidthDidSettle` so a resize-end retargets future
-    /// pages without the host having to wire anything.
-    func trigger(width: CGFloat) {
+    /// pages without the host having to wire anything. Paired with
+    /// `retarget(width:)` (same shape) for the post-resize width update.
+    func start(width: CGFloat) {
         guard task == nil else { return }
         self.width = width
         controller?.coordinator.onLayoutWidthDidSettle = { [weak self] settled in

@@ -448,7 +448,7 @@ final class Session {
         // table geometry has settled and `controller.layoutWidth` is real
         // (REFACTOR-PLAN §6 TICK 1). Headless callers (no table) pass 0; their
         // pages self-heal on the first real `heightOfRow` (§4.3).
-        pipeline.trigger(width: controller.layoutWidth)
+        pipeline.start(width: controller.layoutWidth)
     }
 
     func generateTitle(from firstMessage: String) {

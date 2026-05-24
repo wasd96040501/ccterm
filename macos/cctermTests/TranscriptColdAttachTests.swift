@@ -64,7 +64,7 @@ final class TranscriptColdAttachTests: XCTestCase {
             controller: controller,
             budget: 1,
             onLoaded: { loaded.fulfill() })
-        pipeline.trigger(width: controller.layoutWidth)
+        pipeline.start(width: controller.layoutWidth)
         await fulfillment(of: [loaded], timeout: 5)
         mounted.drain()
 
@@ -108,7 +108,7 @@ final class TranscriptColdAttachTests: XCTestCase {
             controller: controller,
             budget: 1,
             onLoaded: { loaded.fulfill() })
-        pipeline.trigger(width: controller.layoutWidth)
+        pipeline.start(width: controller.layoutWidth)
         await fulfillment(of: [loaded], timeout: 5)
         mounted.drain()
 

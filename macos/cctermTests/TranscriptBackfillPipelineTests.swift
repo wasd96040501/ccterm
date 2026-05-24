@@ -37,7 +37,7 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
             budget: budget,
             onLoaded: { loaded.fulfill() })
         configure(pipeline)
-        pipeline.trigger(width: 0)
+        pipeline.start(width: 0)
         await fulfillment(of: [loaded], timeout: 5)
         return controller
     }
@@ -69,7 +69,7 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
             source: FakeReversePageSource([[Message2Fixtures.userText("only")]]),
             controller: controller,
             onLoaded: {})
-        pipeline.trigger(width: 0)
+        pipeline.start(width: 0)
         // Synchronous main is still busy — the producer's main hop cannot have
         // landed a deposit yet.
         XCTAssertEqual(controller.blockCount, 0, "cold first tick is empty (§4.5)")
@@ -147,7 +147,7 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
                 loadedCount += 1
                 done.fulfill()
             })
-        pipeline.trigger(width: 0)
+        pipeline.start(width: 0)
         await fulfillment(of: [done], timeout: 5)
         // Give the runloop a couple of extra turns to surface any stray
         // second drain/finish.
@@ -186,7 +186,7 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
             ]),
             controller: controller,
             onLoaded: { loaded.fulfill() })
-        pipeline.trigger(width: triggerWidth)
+        pipeline.start(width: triggerWidth)
         await fulfillment(of: [loaded], timeout: 5)
 
         XCTAssertEqual(controller.blockCount, 4)
@@ -229,7 +229,7 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
             guard index == 1 else { return }
             await MainActor.run { pipeline?.retarget(width: retargetWidth) }
         }
-        pipeline.trigger(width: firstWidth)
+        pipeline.start(width: firstWidth)
         await fulfillment(of: [loaded], timeout: 5)
 
         XCTAssertEqual(controller.blockCount, 2)

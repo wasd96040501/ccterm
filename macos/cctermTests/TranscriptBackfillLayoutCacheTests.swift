@@ -61,7 +61,7 @@ final class TranscriptBackfillLayoutCacheTests: XCTestCase {
             controller: controller,
             budget: 2,
             onLoaded: { loaded.fulfill() })
-        pipeline.trigger(width: controller.layoutWidth)
+        pipeline.start(width: controller.layoutWidth)
         await fulfillment(of: [loaded], timeout: 5)
         mounted.drain()
 

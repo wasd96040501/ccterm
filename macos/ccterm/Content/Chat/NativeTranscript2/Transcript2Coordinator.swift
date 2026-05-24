@@ -368,7 +368,23 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             }
             await MainActor.run { [entries] in
                 defer { completion() }
-                guard let self, let table = self.tableView else { return }
+                guard let self else { return }
+                guard let table = self.tableView else {
+                    // The table was torn down (session switched away)
+                    // while this detached layout task was computing.
+                    // Returning here used to silently DROP `changes` —
+                    // the Phase-2 blocks never entered `blocks`, leaving
+                    // it desynced from the row count a rebuilt table
+                    // tiles to. Downstream `block.id → row` consumers
+                    // (`markCellNeedsDisplay` selection highlight,
+                    // search) then point at the wrong rows until a full
+                    // re-attach (#224). Keep `blocks` authoritative via
+                    // the same sync `apply` fallback the pre-detach
+                    // guards above use; layouts recompute lazily when a
+                    // table re-attaches and `heightOfRow` is queried.
+                    self.apply(changes, scroll: .none)
+                    return
+                }
                 self.withScrollAdjustment(scroll, in: table) {
                     if self.layoutWidth == width {
                         self.cacheLayouts(entries, width: width)

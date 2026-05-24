@@ -37,8 +37,10 @@ final class SessionRuntimeHistoryTests: XCTestCase {
 
     /// Drive `loadHistory(overrideURL:)` to completion, awaiting
     /// `historyLoadState == .loaded`.
-    private func loadToCompletion(_ session: ccterm.Session, url: URL, tailTarget: Int = 80) async {
-        session.loadHistory(overrideURL: url, tailTarget: tailTarget)
+    private func loadToCompletion(
+        _ session: ccterm.Session, url: URL, firstPageEntryTarget: Int = 20
+    ) async {
+        session.loadHistory(overrideURL: url, firstPageEntryTarget: firstPageEntryTarget)
         let predicate = NSPredicate { _, _ in
             session.historyLoadState == .loaded
         }
@@ -74,7 +76,7 @@ final class SessionRuntimeHistoryTests: XCTestCase {
         XCTAssertEqual(session.historyLoadState, .loaded)
     }
 
-    /// A JSONL larger than `tailTarget` exercises the prefix-paging path:
+    /// A JSONL larger than the first page exercises multi-page backfill:
     /// every line still lands, in document order.
     func testLoadHistoryMultiPageRendersInDocumentOrder() async {
         let lines = (0..<6).map { Message2Fixtures.assistantTextJSONL("Segment \($0)") }
@@ -82,9 +84,9 @@ final class SessionRuntimeHistoryTests: XCTestCase {
         tempFile = file
 
         let session = makeSession()
-        await loadToCompletion(session, url: file.url, tailTarget: 2)
+        await loadToCompletion(session, url: file.url, firstPageEntryTarget: 2)
 
-        XCTAssertEqual(session.controller.blockCount, 6, "tail + prefix pages all land")
+        XCTAssertEqual(session.controller.blockCount, 6, "first page + later pages all land")
         // Document order: first paragraph reads "Segment 0".
         let firstId = session.controller.coordinator.blockIds.first
         let firstBlock = firstId.flatMap { session.controller.coordinator.block(forId: $0) }

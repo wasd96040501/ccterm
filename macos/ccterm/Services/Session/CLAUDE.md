@@ -50,7 +50,7 @@ History load no longer lives on the runtime: `Session.loadHistory()` drives a `T
 | `CLIClient` protocol + `AgentSDKCLIClient` + `FakeCLIClient` | `CLIClient/` | Thin abstraction over `AgentSDK.Session`. Factory injected at `SessionManager.init(... cliClientFactory:)` and forwarded into every `Session` the manager constructs; production defaults to `AgentSDKCLIClient.defaultFactory`, tests pass `{ _ in FakeCLIClient() }`. |
 | `TitleGenerator` | `TitleGenerator.swift` | Stateless one-shot LLM call (`Prompt.runTitleAndBranch`) inside a scratch dir. Runtime's `generateTitle(from:)` calls into it; injectable `runner` seam for tests. |
 | `WorktreeProvisioner` | `Worktree/WorktreeProvisioner.swift` | Off-main `git worktree add` invocation via `DispatchQueue.global`. Wraps `Worktree.create`; injectable `creator` seam for tests. |
-| `HistoryLoader` | `HistoryLoader.swift` | Path resolution (`locate(sessionId:slug:)` with root-injected overload) + the tail/prefix JSONL parsers (`parseTail` / `parsePrefix`) that `JSONLReversePageSource` reads pages through. |
+| `HistoryLoader` | `HistoryLoader.swift` | Path resolution (`locate(sessionId:slug:)` with root-injected overload) + `parseLines` (per-page line→`Message2` decode). Reverse paging itself is a single streaming backward reader — `JSONLReversePageSource` + `ReverseLineReader` (`Content/Chat/NativeTranscript2Bridge/`) — with no tail/prefix split (the old `parseTail` / `parsePrefix` are gone). |
 
 ## Talking to the renderer
 

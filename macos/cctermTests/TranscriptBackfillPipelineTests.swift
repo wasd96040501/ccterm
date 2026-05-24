@@ -81,12 +81,12 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
         XCTAssertEqual(controller.blockCount, 0, "cold first tick is empty (§4.5)")
     }
 
-    // MARK: - B2: drain only fires after a deposit (the deposit IS the wake)
+    // MARK: - B2: every reported drain tick did real work (no empty drain)
 
-    func testB2_neverDrainsAnEmptyBuffer() async {
-        var deposits = 0
+    func testB2_neverReportsAnEmptyDrainTick() async {
         var drainTicks = 0
         var minAppliedPerTick = Int.max
+        var totalApplied = 0
         let controller = await runToLoaded(
             pages: [
                 [Message2Fixtures.assistantText("c")],
@@ -94,16 +94,16 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
                 [Message2Fixtures.assistantText("a")],
             ],
             configure: { pipeline in
-                pipeline.onDepositForDebug = { _ in deposits += 1 }
                 pipeline.onDrainTickForDebug = { applied in
                     drainTicks += 1
                     minAppliedPerTick = min(minAppliedPerTick, applied)
+                    totalApplied += applied
                 }
             })
-        XCTAssertEqual(deposits, 3)
-        XCTAssertLessThanOrEqual(drainTicks, deposits, "drain invocations never exceed deposits")
-        XCTAssertGreaterThan(minAppliedPerTick, 0, "no drain tick ever runs on an empty buffer")
         XCTAssertEqual(controller.blockCount, 3)
+        XCTAssertEqual(totalApplied, 3, "every block landed across the drain ticks")
+        XCTAssertGreaterThan(minAppliedPerTick, 0, "a reported drain tick always applied ≥1 block")
+        XCTAssertLessThanOrEqual(drainTicks, 3, "drains coalesce — never more ticks than pages")
     }
 
     // MARK: - B3: reverse-read pages reassemble into document order
@@ -178,7 +178,7 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
         XCTAssertEqual(controller.blockCount, 0, "no content applied, no crash")
     }
 
-    // MARK: - B9: first-screen-ready edge fires exactly once
+    // MARK: - B10: first-screen-ready edge fires exactly once
 
     /// `onFirstScreenReady` is the fire-once edge a future image-bake reveal
     /// hangs off. Headless there is no viewport to cover, so the viewport-
@@ -186,7 +186,7 @@ final class TranscriptBackfillPipelineTests: XCTestCase {
     /// fallback (a short transcript that never fills the screen is still
     /// "first-screen complete"). Asserts it fires exactly once even though the
     /// pipeline polls the condition on every drain tick + at `reportLoaded`.
-    func testB9_firstScreenReadyFiresExactlyOnce() async {
+    func testB10_firstScreenReadyFiresExactlyOnce() async {
         var readyCount = 0
         let controller = makeController()
         let loaded = expectation(description: "loaded")

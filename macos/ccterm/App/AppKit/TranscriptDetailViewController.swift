@@ -450,6 +450,11 @@ final class TranscriptDetailViewController: NSViewController {
         if currentSession?.sessionId == sessionId, transcriptScroll != nil {
             return
         }
+        // Stopwatch for "sidebar click → first rendered screen". Cold attaches
+        // paint blank for the first tick (block building is off-main), so this
+        // measures the gap the cold-load first-screen edge closes. Reported in
+        // the `onFirstScreenReady` callback wired just before `loadHistory`.
+        let attachStart = CFAbsoluteTimeGetCurrent()
         tearDownTranscript()
 
         let scroll = TranscriptScrollViewFactory.make(controller: session.controller)
@@ -515,6 +520,18 @@ final class TranscriptDetailViewController: NSViewController {
                 + "blockCount=\(session.controller.blockCount) "
                 + "reentryTypeset=\(reentryTypeset) "
                 + "reentryTile=\(String(format: "%.1f", reentryTileMs))ms")
+        // Log the cold-load first-screen latency once it lands. Capture only
+        // the sessionId string + start time (no `self` / `session`) so the
+        // closure stored on the controller can't form a retain cycle. On a warm
+        // re-entry the edge already fired during the original cold load, so the
+        // latched callback never re-fires — no spurious log.
+        session.controller.onFirstScreenReady = {
+            let ms = (CFAbsoluteTimeGetCurrent() - attachStart) * 1000
+            appLog(
+                .info, "TranscriptDetailVC",
+                "[firstScreen] sidebar→first view=\(String(format: "%.1f", ms))ms "
+                    + "session=\(sessionId.prefix(8))…")
+        }
         session.loadHistory()
         session.controller.setLoading(session.isRunning)
 

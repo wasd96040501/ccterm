@@ -170,6 +170,52 @@ enum Message2Fixtures {
         ])
     }
 
+    /// JSONL line for a groupable assistant tool_use (one Read block) — a
+    /// "tool child" for merge-aware first-page counting.
+    static func assistantReadJSONL(toolUseId: String, filePath: String) -> String {
+        jsonl([
+            "type": "assistant",
+            "uuid": UUID().uuidString,
+            "session_id": "s",
+            "message": [
+                "id": "m\(UUID().uuidString.prefix(8))",
+                "type": "message",
+                "role": "assistant",
+                "content": [
+                    [
+                        "type": "tool_use",
+                        "id": toolUseId,
+                        "name": "Read",
+                        "input": ["file_path": filePath],
+                    ]
+                ],
+            ],
+        ])
+    }
+
+    /// JSONL line for a user `tool_result` envelope — a "tool child" that pairs
+    /// with `assistantReadJSONL(toolUseId:)`.
+    static func userToolResultJSONL(
+        toolUseId: String, text: String = "ok", isError: Bool = false
+    ) -> String {
+        jsonl([
+            "type": "user",
+            "uuid": UUID().uuidString,
+            "session_id": "s",
+            "message": [
+                "role": "user",
+                "content": [
+                    [
+                        "type": "tool_result",
+                        "tool_use_id": toolUseId,
+                        "content": text,
+                        "is_error": isError,
+                    ]
+                ],
+            ],
+        ])
+    }
+
     // MARK: - Internals
 
     private static func resolve(_ dict: [String: Any]) -> Message2 {

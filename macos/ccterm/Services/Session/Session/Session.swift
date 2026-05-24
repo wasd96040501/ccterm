@@ -424,7 +424,7 @@ final class Session {
     /// iterator → apply, REFACTOR-PLAN §4.6); the bridge handles only the live
     /// path. History tool statuses route back through the bridge's historical
     /// derivation so failed / completed colors survive.
-    func loadHistory(overrideURL: URL? = nil, tailTarget: Int = 80) {
+    func loadHistory(overrideURL: URL? = nil, firstPageEntryTarget: Int = 20) {
         guard let runtime else { return }
         switch runtime.historyLoadState {
         case .loading, .loaded:
@@ -436,7 +436,8 @@ final class Session {
 
         let url = overrideURL ?? runtime.historyJSONLURL
         let pipeline = TranscriptBackfillPipeline(
-            source: JSONLReversePageSource(url: url, tailTarget: tailTarget),
+            source: JSONLReversePageSource(
+                url: url, firstPageEntryTarget: firstPageEntryTarget),
             controller: controller,
             onLoaded: { [weak self] in self?.runtime?.historyLoadState = .loaded },
             onApplied: { [weak self] entries in

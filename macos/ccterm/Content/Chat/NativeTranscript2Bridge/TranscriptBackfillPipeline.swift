@@ -12,17 +12,21 @@ protocol ReversePageSource: AnyObject {
     func nextPage() async -> [Message2]?
 }
 
-/// The content pipeline (REFACTOR-PLAN §4.5): an off-main task **produces and
-/// deposits** pre-built block pages into a **main-owned buffer**; the main
-/// thread **drains** them into the controller. No polling, no shared mutable
-/// buffer, no lock — the off-main task touches the buffer only inside its main
-/// hop, and the drain runs on main too, so the runloop serializes them.
+/// The content pipeline (REFACTOR-PLAN §4.5): an off-main producer task
+/// **builds** pre-typeset block pages and **pushes** them into a lock-guarded
+/// `PipelineInbox`; the main thread **drains** them into the controller. The
+/// producer never hops to (or blocks on) the main actor per page — it builds at
+/// full speed and posts a single coalesced, fire-and-forget drain signal — so
+/// throughput is bounded by `max(build rate, apply rate)` rather than serialized
+/// through a main-actor round-trip per page. Async backpressure
+/// (`inbox.waitForCapacity()`) caps resident pre-built pages so the decoupling
+/// can't run the producer away into an unbounded memory spike.
 ///
-/// - The first non-empty deposit is the tail page; it lands at the (empty)
+/// - The first non-empty page is the tail page; it lands at the (empty)
 ///   tail via `.append`, then scrolls to tail (the attach tick's
 ///   `scrollToTail` was a no-op against the cold empty table — this is the
 ///   first content, so it owns the one-time scroll-to-tail).
-/// - Every later deposit is older history; it `.prepend`s above with
+/// - Every later page is older history; it `.prepend`s above with
 ///   viewport preservation.
 /// - When the producer reaches the file top **and** the buffer empties,
 ///   `onLoaded` fires exactly once.
@@ -30,7 +34,7 @@ protocol ReversePageSource: AnyObject {
 /// Both heavy costs run **off-main** inside the producer: markdown parsing
 /// (`MarkdownDocument(parsing:)`) and per-row CTLine typesetting
 /// (`Transcript2Coordinator.makeLayout` — `nonisolated static`, §2.5). Each
-/// deposited page carries its pre-built `(id, RowLayout)` layouts plus the
+/// page carries its pre-built `(id, RowLayout)` layouts plus the
 /// width they were typeset at; the drain installs them through the single
 /// `apply(_:scroll:precomputed:)` entry, so the prepend's
 /// in-`endUpdates` `heightOfRow` query is a cache **hit**, not a main-thread
@@ -43,11 +47,10 @@ final class TranscriptBackfillPipeline {
     private let source: ReversePageSource
     private weak var controller: Transcript2Controller?
 
-    /// Row width future pages typeset at. Seeded by `start(width:)` after the
-    /// attach tick settles; updated by `retarget(width:)` at live-resize end.
-    /// The producer reads this on each page-build hop, so a `retarget` between
-    /// pages takes effect on the next page without disturbing in-flight ones.
-    private var width: CGFloat = 0
+    /// Thread-safe producer→drain hand-off (buffer + typeset width + drain-
+    /// coalescing + async backpressure). The producer pushes here off-main; the
+    /// drain consumes on main. Replaces the old per-page `await MainActor.run`.
+    private let inbox: PipelineInbox
 
     /// Loose main-thread per-tick block cap (REFACTOR-PLAN §9.2): a safety
     /// valve, not a typeset budget. A single page exceeding it still lands
@@ -65,10 +68,9 @@ final class TranscriptBackfillPipeline {
     // MARK: Main-owned buffer + drain bookkeeping
 
     /// One pre-built page: the entries, their blocks, the off-main `(id,
-    /// RowLayout)` layouts, and the width those layouts were typeset at.
-    /// Constructed on the main actor inside `deposit` — only the individual
-    /// values cross the producer → main hop (`blocks` / `layouts` are
-    /// `@unchecked Sendable`), never a shared mutable buffer (§4.5).
+    /// RowLayout)` layouts, and the width those layouts were typeset at. Built
+    /// entirely off-main by the producer and handed to the drain through
+    /// `PipelineInbox` (the values are `@unchecked Sendable`).
     struct PendingPage {
         let entries: [MessageEntry]
         let blocks: [Block]
@@ -81,30 +83,26 @@ final class TranscriptBackfillPipeline {
         }
     }
 
-    /// Pending pre-built pages, owned by the main actor. Appended only inside
-    /// the producer's main hop; consumed only by `drain`.
-    private var pendingPages: [PendingPage] = []
-    private var producerFinished = false
     private var didFirstApply = false
     private var didReportLoaded = false
-    private var drainScheduled = false
     private var task: Task<Void, Never>?
 
-    // MARK: Read-only debug probes (observation only, never gate behavior)
+    // MARK: Read-only debug probe (observation only, never gates behavior)
 
-    var onDepositForDebug: ((_ pageBlockCount: Int) -> Void)?
     var onDrainTickForDebug: ((_ appliedBlocks: Int) -> Void)?
 
     init(
         source: ReversePageSource,
         controller: Transcript2Controller,
         budget: Int = 40,
+        bufferCapacity: Int = 8,
         onLoaded: @escaping () -> Void = {},
         onApplied: @escaping ([MessageEntry]) -> Void = { _ in }
     ) {
         self.source = source
         self.controller = controller
         self.budget = budget
+        self.inbox = PipelineInbox(width: 0, capacity: bufferCapacity)
         self.onLoaded = onLoaded
         self.onApplied = onApplied
     }
@@ -120,7 +118,7 @@ final class TranscriptBackfillPipeline {
     /// `retarget(width:)` (same shape) for the post-resize width update.
     func start(width: CGFloat) {
         guard task == nil else { return }
-        self.width = width
+        inbox.setWidth(width)
         // Suppress the overlay scroller for the load window — every drain
         // `.prepend` grows the document and flashes the thumb in. Restored in
         // `reportLoaded` once the buffer is fully drained. Only ever runs on a
@@ -130,6 +128,7 @@ final class TranscriptBackfillPipeline {
             self?.retarget(width: settled)
         }
         let source = self.source
+        let inbox = self.inbox
         task = Task.detached(priority: .userInitiated) { [weak self] in
             var builder = ReverseEntryBuilder()
             while let page = await source.nextPage() {
@@ -143,39 +142,42 @@ final class TranscriptBackfillPipeline {
                 // Markdown parse + CTLine typeset both happen here, off-main.
                 let blocks = MessageEntryBlockBuilder.blocks(from: finalized)
                 guard !blocks.isEmpty else { continue }
-                let pageWidth = await self?.width ?? 0
+                let pageWidth = inbox.width  // lock-read, no main-actor hop
                 let layouts = Self.typeset(blocks, width: pageWidth)
-                let entries = finalized
-                await MainActor.run {
-                    self?.deposit(
-                        entries: entries, blocks: blocks,
-                        layouts: layouts, width: pageWidth)
-                }
+                inbox.push(
+                    PendingPage(
+                        entries: finalized, blocks: blocks,
+                        layouts: layouts, width: pageWidth))
+                self?.requestDrain()
+                // Async backpressure: park the producer (off-main, no thread
+                // blocked) when the buffer is full; the drain resumes it.
+                if inbox.isAtCapacity { await inbox.waitForCapacity() }
             }
             // File top: flush the still-open group + true orphans.
             let tail = builder.finish()
             let tailBlocks = MessageEntryBlockBuilder.blocks(from: tail)
-            let tailWidth = await self?.width ?? 0
-            let tailLayouts = Self.typeset(tailBlocks, width: tailWidth)
-            await MainActor.run {
-                if !tailBlocks.isEmpty {
-                    self?.deposit(
+            if !tailBlocks.isEmpty {
+                let tailWidth = inbox.width
+                let tailLayouts = Self.typeset(tailBlocks, width: tailWidth)
+                inbox.push(
+                    PendingPage(
                         entries: tail, blocks: tailBlocks,
-                        layouts: tailLayouts, width: tailWidth)
-                }
-                self?.finishProducing()
+                        layouts: tailLayouts, width: tailWidth))
             }
+            inbox.markFinished()
+            self?.requestDrain()
         }
     }
 
     /// Update the width future pages typeset at (REFACTOR-PLAN §4.4). Called
     /// from the coordinator's `onLayoutWidthDidSettle` at live-resize **end**
-    /// only — never per-frame during a drag, where intermediate widths are
-    /// meaningless. Pure perf: pages already built at the old width self-heal
-    /// through the width-keyed cache on `heightOfRow` miss; skipping `retarget`
-    /// stays correct, it just wastes one off-main typeset per stale page.
+    /// only — never per-frame during a drag. Pure perf: pages already built at
+    /// the old width self-heal through the width-keyed cache on `heightOfRow`
+    /// miss; skipping `retarget` stays correct, it just wastes one off-main
+    /// typeset per stale page. Forwards to the inbox (read off-main by the
+    /// producer on its next page).
     func retarget(width: CGFloat) {
-        self.width = width
+        inbox.setWidth(width)
     }
 
     /// Off-main CTLine typeset of a page's blocks at `width`. `makeLayout` is
@@ -189,47 +191,33 @@ final class TranscriptBackfillPipeline {
         blocks.map { ($0.id, Transcript2Coordinator.makeLayout(for: $0, width: width)) }
     }
 
-    /// Stop the producer (e.g. session torn down before load completes).
+    /// Stop the producer (e.g. session torn down before load completes). Also
+    /// resumes a producer parked on backpressure so the detached task isn't
+    /// stranded on a never-resumed continuation.
     func cancel() {
         task?.cancel()
         task = nil
+        inbox.cancelWaiter()
     }
 
-    // MARK: - Deposit (main hop) + drain (main)
+    // MARK: - Drain (main)
 
-    /// Producer main hop: append a pre-built page to the main-owned buffer and
-    /// wake the drain. The deposit **is** the wake — main never polls.
-    private func deposit(
-        entries: [MessageEntry], blocks: [Block],
-        layouts: [(UUID, RowLayout)], width: CGFloat
-    ) {
-        pendingPages.append(
-            PendingPage(entries: entries, blocks: blocks, layouts: layouts, width: width))
-        onDepositForDebug?(blocks.count)
-        scheduleDrain()
-    }
-
-    private func finishProducing() {
-        producerFinished = true
-        // Ensure the terminal state is observed even if the buffer is already
-        // empty (e.g. empty history).
-        scheduleDrain()
-    }
-
-    /// Schedule a drain on the next runloop tick so each drained batch is its
-    /// own source phase (the §5 recipe runs per tick). `drainScheduled`
-    /// coalesces multiple deposits between ticks into one drain.
-    private func scheduleDrain() {
-        guard !drainScheduled else { return }
-        drainScheduled = true
+    /// Post a coalesced, **non-blocking** drain. Called from the off-main
+    /// producer after each `inbox.push` and from the drain's own reschedule, so
+    /// it is `nonisolated` — it only touches the `Sendable` inbox and posts the
+    /// main-queue block. `acquireDrainSlot` coalesces concurrent calls so only
+    /// one drain is ever outstanding. This is the producer's entire interaction
+    /// with main: a fire-and-forget post, never an `await`.
+    nonisolated func requestDrain() {
+        guard inbox.acquireDrainSlot() else { return }
         DispatchQueue.main.async { [weak self] in self?.drain() }
     }
 
     private func drain() {
-        drainScheduled = false
+        inbox.releaseDrainSlot()
         var appliedBlocks = 0  // all applied this tick — the debug probe's view
         var typesetBlocks = 0  // miss-only — the real per-tick cost the cap bounds
-        while let page = pendingPages.first {
+        while let pageWidth = inbox.peekFirstWidth() {
             // A page whose precompute width matches the live table is a pure
             // cache-hit insert: `heightOfRow` is a dict lookup per row, no
             // CTLine pass (§2.6). Those cost ~nothing on the main thread, so
@@ -239,10 +227,11 @@ final class TranscriptBackfillPipeline {
             // splits exactly the path that can freeze the main thread, and
             // nothing else (REFACTOR-PLAN §9.2 "safety valve, not a typeset
             // budget"). `nil` width sentinel when no controller → treated as a
-            // miss, but `applyPage` no-ops anyway.
-            let willHit = (controller?.layoutWidth ?? -1) == page.width
+            // miss, but `applyPage` no-ops anyway. Peek the width first so a
+            // budget-deferred miss page stays in the buffer for the next tick.
+            let willHit = (controller?.layoutWidth ?? -1) == pageWidth
             if !willHit && typesetBlocks >= budget { break }
-            pendingPages.removeFirst()
+            guard let page = inbox.popFirst() else { break }
             applyPage(page)
             appliedBlocks += page.blocks.count
             if !willHit { typesetBlocks += page.blocks.count }
@@ -252,9 +241,9 @@ final class TranscriptBackfillPipeline {
             }
         }
         if appliedBlocks > 0 { onDrainTickForDebug?(appliedBlocks) }
-        if !pendingPages.isEmpty {
-            scheduleDrain()
-        } else if producerFinished {
+        if inbox.hasPending {
+            requestDrain()
+        } else if inbox.isFinished {
             reportLoaded()
         }
     }

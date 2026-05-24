@@ -93,23 +93,25 @@ final class DetailRouterViewController: NSViewController {
 
     enum ChildKind: Equatable {
         case transcript
-        // `.archive` and `.demo(_)` arrive in follow-up commits as
-        // they're extracted out of `TranscriptDetailViewController`.
+        case archive
+        // `.demo(_)` arrives in the next commit when the demo VCs
+        // get pulled out of `TranscriptDetailViewController`.
     }
 
     /// Pure routing decision: which kind of child VC `selection`
     /// should map to. Static + pure so the routing table is directly
     /// unit-testable — see `DetailRouterContainmentTests`.
     static func childKind(for selection: MainSelection) -> ChildKind {
-        // Scaffolding: every selection routes through
-        // `TranscriptDetailViewController` for now. As `.archive` and
-        // `.demo(_)` get their own VCs, they'll get their own cases
-        // here and the swap below will start firing.
         switch selection {
-        case .none, .newSession, .session, .archive:
+        case .none, .newSession, .session:
             return .transcript
+        case .archive:
+            return .archive
         #if DEBUG
         case .demo:
+            // Still goes through `TranscriptDetailViewController`'s
+            // internal side-branch mount until the next commit pulls
+            // each demo into its own router case.
             return .transcript
         #endif
         }
@@ -145,6 +147,16 @@ final class DetailRouterViewController: NSViewController {
         switch kind {
         case .transcript:
             return TranscriptDetailViewController(
+                model: model,
+                sessionManager: sessionManager,
+                recentProjects: recentProjects,
+                notifications: notifications,
+                searchEngine: searchEngine,
+                searchBus: searchBus,
+                inputDraftStore: inputDraftStore
+            )
+        case .archive:
+            return ArchiveViewController(
                 model: model,
                 sessionManager: sessionManager,
                 recentProjects: recentProjects,

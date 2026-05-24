@@ -57,17 +57,20 @@ final class DetailRouterContainmentTests: XCTestCase {
         XCTAssertEqual(router.currentKind, .transcript)
     }
 
-    func testRouterChildKindIsStableAcrossEverySelection() {
-        // Scaffolding invariant: in this commit, every `MainSelection`
-        // collapses to `.transcript`. Later commits split `.archive`
-        // and `.demo(_)` out; THIS test will fail when that lands and
-        // gets updated alongside the new routing.
+    func testRoutingTable() {
+        // The single source of truth for "which selection routes to
+        // which child VC kind." Each entry has a code reason — when
+        // you add a new `MainSelection` case or a new `ChildKind`,
+        // update this table in the same commit.
         XCTAssertEqual(DetailRouterViewController.childKind(for: .none), .transcript)
         XCTAssertEqual(DetailRouterViewController.childKind(for: .newSession), .transcript)
         XCTAssertEqual(
             DetailRouterViewController.childKind(for: .session("sid")), .transcript)
-        XCTAssertEqual(DetailRouterViewController.childKind(for: .archive), .transcript)
+        XCTAssertEqual(DetailRouterViewController.childKind(for: .archive), .archive)
         #if DEBUG
+        // Demos still pass through `TranscriptDetailViewController`'s
+        // internal side-branch mount until the next commit. Update
+        // this branch when each demo gets its own router kind.
         for kind in DemoKind.allCases {
             XCTAssertEqual(
                 DetailRouterViewController.childKind(for: .demo(kind)),
@@ -79,8 +82,8 @@ final class DetailRouterContainmentTests: XCTestCase {
     // MARK: - Swap behavior
 
     func testSameKindSelectionFlipReusesChildInstance() throws {
-        // All selections currently map to `.transcript`, so any flip
-        // is a same-kind transition. The router must NOT tear down
+        // `.none` → `.session(_)` is a same-kind transition
+        // (`.transcript` both ways). The router must NOT tear down
         // and rebuild the child — it stays the same instance and
         // remains attached to `router.view`.
         let fixture = try makeFixture(initialSelection: .none)
@@ -88,22 +91,72 @@ final class DetailRouterContainmentTests: XCTestCase {
         _ = router.view
         let initialChild = try XCTUnwrap(router.currentChild)
 
-        router.model.selection = .archive
-        router.installChildForCurrentSelection()
-        XCTAssertTrue(
-            router.currentChild === initialChild,
-            ".none → .archive is a same-kind transition; child must be reused")
-        XCTAssertTrue(initialChild.view.superview === router.view)
-
         router.model.selection = .session("sid-abc")
         router.installChildForCurrentSelection()
         XCTAssertTrue(
             router.currentChild === initialChild,
-            ".archive → .session(_) is a same-kind transition; child must be reused")
+            ".none → .session(_) is a same-kind transition; child must be reused")
+        XCTAssertTrue(initialChild.view.superview === router.view)
 
         XCTAssertEqual(
             router.children.count, 1,
             "same-kind flips must never multiply the child count")
+    }
+
+    func testFlipToArchiveTearsDownTranscriptAndMountsArchive() throws {
+        // `.session(_)` → `.archive` is a cross-kind transition
+        // (`.transcript` → `.archive`). The router must fully detach
+        // the old child (`removeFromParent` + `view.removeFromSuperview`)
+        // and install an `ArchiveViewController` in its place.
+        let fixture = try makeFixture(initialSelection: .session("sid-abc"))
+        let router = fixture.router
+        _ = router.view
+        let initialChild = try XCTUnwrap(router.currentChild)
+        XCTAssertTrue(initialChild is TranscriptDetailViewController)
+
+        router.model.selection = .archive
+        router.installChildForCurrentSelection()
+
+        let newChild = try XCTUnwrap(router.currentChild)
+        XCTAssertTrue(
+            newChild is ArchiveViewController,
+            "router must install ArchiveViewController on `.archive` selection")
+        XCTAssertFalse(
+            newChild === initialChild,
+            "cross-kind transition must replace the child instance, not reuse it")
+        XCTAssertEqual(router.children.count, 1)
+        XCTAssertTrue(newChild.view.superview === router.view)
+
+        // Old child must be fully detached — no lingering subview, no
+        // lingering parent-child registration. This is the property
+        // that lets us delete `PassthroughHostingView` in a later
+        // commit: the old VC's overlays vanish with it, so there's
+        // nothing left to swallow clicks on top of the new child.
+        XCTAssertNil(initialChild.view.superview, "old child's view must be unmounted")
+        XCTAssertNil(initialChild.parent, "old child must be removed from parent chain")
+    }
+
+    func testFlipFromArchiveBackToSessionMountsFreshTranscriptVC() throws {
+        // `.archive` → `.session(_)` flips the other way. The previous
+        // TranscriptDetailViewController instance is gone (torn down
+        // on the way INTO archive), so going BACK to a chat selection
+        // must instantiate a brand-new transcript VC — not reach for
+        // a stale reference. Mirrors the user round-trip of
+        // "open archive, then click a recent session in the sidebar."
+        let fixture = try makeFixture(initialSelection: .archive)
+        let router = fixture.router
+        _ = router.view
+        let archiveChild = try XCTUnwrap(router.currentChild)
+        XCTAssertTrue(archiveChild is ArchiveViewController)
+
+        router.model.selection = .session("sid-xyz")
+        router.installChildForCurrentSelection()
+
+        let newChild = try XCTUnwrap(router.currentChild)
+        XCTAssertTrue(newChild is TranscriptDetailViewController)
+        XCTAssertNil(archiveChild.view.superview)
+        XCTAssertNil(archiveChild.parent)
+        XCTAssertEqual(router.children.count, 1)
     }
 
     // MARK: - Fixture

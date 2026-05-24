@@ -358,12 +358,16 @@ final class TranscriptDetailViewController: NSViewController {
     /// Returning `nil` means the detail pane should mount the
     /// transcript instead. Static + pure so it's directly unit-testable
     /// — see `TranscriptDetailRoutingTests`.
+    ///
+    /// **Transitional shape.** `.archive` was pulled out into
+    /// `ArchiveViewController` (mounted by `DetailRouterViewController`),
+    /// so it no longer appears here. The remaining `.demo(_)` case
+    /// follows in the next commit, at which point this method and
+    /// every side-branch helper below it gets deleted.
     static func sideBranchKind(for selection: MainSelection) -> SideBranchKind? {
         switch selection {
-        case .none, .newSession, .session:
+        case .none, .newSession, .session, .archive:
             return nil
-        case .archive:
-            return .archive
         #if DEBUG
         case .demo(let kind):
             return .demo(kind)
@@ -372,7 +376,6 @@ final class TranscriptDetailViewController: NSViewController {
     }
 
     enum SideBranchKind: Equatable {
-        case archive
         #if DEBUG
         case demo(DemoKind)
         #endif
@@ -385,26 +388,6 @@ final class TranscriptDetailViewController: NSViewController {
 
     private func makeSideBranch(kind: SideBranchKind) -> SideBranchContent {
         switch kind {
-        case .archive:
-            let folderBinding = Binding<String?>(
-                get: { [weak self] in self?.model.archiveSelectedFolderPath },
-                set: { [weak self] in self?.model.archiveSelectedFolderPath = $0 }
-            )
-            return .swiftUI(
-                AnyView(
-                    ArchiveView(
-                        selectedFolderPath: folderBinding,
-                        onUnarchive: { [weak self] resumeSid in
-                            self?.model.selection = .session(resumeSid)
-                        }
-                    )
-                    .environment(sessionManager)
-                    .environment(recentProjects)
-                    .environment(inputDraftStore)
-                    .environment(\.syntaxEngine, searchEngine)
-                    .environment(searchBus)
-                    .environment(notifications)
-                ))
         #if DEBUG
         case .demo(let demoKind):
             switch demoKind {

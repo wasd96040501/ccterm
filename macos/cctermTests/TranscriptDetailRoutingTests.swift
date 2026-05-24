@@ -77,10 +77,13 @@ final class TranscriptDetailRoutingTests: XCTestCase {
 
     // MARK: - Side-branch routing
 
-    func testSideBranch_archiveSelectionMountsArchiveBranch() {
-        XCTAssertEqual(
-            TranscriptDetailViewController.sideBranchKind(for: .archive),
-            .archive)
+    func testSideBranch_archiveNoLongerMountedAsSideBranchHere() {
+        // `.archive` is now routed by `DetailRouterViewController` to a
+        // dedicated `ArchiveViewController`, so `TranscriptDetailView`
+        // `Controller` never sees `.archive` in production. The
+        // sideBranchKind table must reflect that. The router-level
+        // assertion lives in `DetailRouterContainmentTests`.
+        XCTAssertNil(TranscriptDetailViewController.sideBranchKind(for: .archive))
     }
 
     func testSideBranch_chatSelectionsMountNoSideBranch() {

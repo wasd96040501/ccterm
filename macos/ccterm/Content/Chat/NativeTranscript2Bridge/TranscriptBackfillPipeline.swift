@@ -19,7 +19,9 @@ protocol ReversePageSource: AnyObject {
 /// hop, and the drain runs on main too, so the runloop serializes them.
 ///
 /// - The first non-empty deposit is the tail page; it lands at the (empty)
-///   tail via `.append` (the view lifecycle owns the one-time scroll-to-tail).
+///   tail via `.append`, then scrolls to tail (the attach tick's
+///   `scrollToTail` was a no-op against the cold empty table — this is the
+///   first content, so it owns the one-time scroll-to-tail).
 /// - Every later deposit is older history; it `.prepend`s above with
 ///   viewport preservation.
 /// - When the producer reaches the file top **and** the buffer empties,
@@ -241,12 +243,18 @@ final class TranscriptBackfillPipeline {
                 .prepend(page.blocks), scroll: .saveVisible(.visualTop),
                 precomputed: page.layouts, precomputedWidth: page.width)
         } else {
-            // First content (tail page): land at the empty tail. The one-time
-            // scroll-to-tail is the view lifecycle's job, not a change.
+            // First content: the tail page lands at the (empty) tail. On a COLD
+            // open the view-lifecycle `scrollToTail` already ran at the attach
+            // tick (TICK 1) against an *empty* table, so it was a no-op — there
+            // was nothing to anchor yet. This deposit IS the first content, so
+            // the scroll-to-tail belongs here, right after it lands. (Warm
+            // re-entry never reaches this branch: `loadHistory` is an idempotent
+            // no-op once blocks are already present, so the pipeline never runs.)
             didFirstApply = true
             controller.apply(
                 .append(page.blocks),
                 precomputed: page.layouts, precomputedWidth: page.width)
+            controller.scrollToTail()
         }
         // History tool statuses (failed-history color, etc.) ride on the
         // entries; production routes them to historical derivation.

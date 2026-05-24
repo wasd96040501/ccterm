@@ -77,6 +77,68 @@ final class TranscriptColdAttachTests: XCTestCase {
         XCTAssertEqual(blockText(controller, ids.last!), "newest", "tail content at the bottom")
     }
 
+    // MARK: - U4b: cold first screen scrolls to the tail (viewport-exceeding)
+
+    /// Regression for the cold-open landing bug: when the tail page is taller
+    /// than the viewport, the first content must land the **newest** row at the
+    /// viewport's visible bottom — not pinned to the top with `clip.origin.y ==
+    /// 0`. The attach-tick `scrollToTail` is a no-op against the cold empty
+    /// table, so the scroll-to-tail belongs to the first deposit
+    /// (`TranscriptBackfillPipeline.applyPage`). U4 above uses 3 short rows that
+    /// fit the viewport, where top and bottom landings are indistinguishable;
+    /// this probe forces a tail page that overflows so the scroll position is
+    /// observable.
+    func testU4b_coldFirstScreenScrollsToTailWhenTailPageOverflowsViewport() async throws {
+        let controller = Transcript2Controller()
+        let mounted = MountedTranscript.mount(controller: controller)
+        defer { mounted.teardown() }
+
+        XCTAssertEqual(mounted.table.numberOfRows, 0, "cold attach renders 0 rows")
+
+        // Tail page (pages[0], newest) alone overflows the 800pt viewport;
+        // a couple of older pages prepend above it.
+        let tailPage = (0..<40).map { Message2Fixtures.assistantText("newest line \($0)") }
+        let loaded = expectation(description: "loaded")
+        let pipeline = TranscriptBackfillPipeline(
+            source: FakeReversePageSource([
+                tailPage,
+                [Message2Fixtures.assistantText("older")],
+                [Message2Fixtures.assistantText("oldest")],
+            ]),
+            controller: controller,
+            budget: 1,
+            onLoaded: { loaded.fulfill() })
+        pipeline.trigger(width: controller.layoutWidth)
+        await fulfillment(of: [loaded], timeout: 5)
+        mounted.drain()
+
+        XCTAssertEqual(mounted.table.numberOfRows, 42)
+
+        // The fixture must overflow the viewport, else scroll-to-tail is a
+        // trivial no-op and the test proves nothing.
+        XCTAssertGreaterThan(
+            mounted.table.frame.height, mounted.clip.bounds.height,
+            "tail page must overflow the viewport for the scroll to be observable")
+
+        // The newest row is on screen (the regression parks it far below the
+        // fold, off-screen) and its bottom edge sits at the viewport's visible
+        // bottom — i.e. content scrolled down to the tail, not stuck at top.
+        let lastRow = mounted.table.numberOfRows - 1
+        let visible = mounted.table.rows(in: mounted.table.visibleRect)
+        XCTAssertTrue(
+            NSLocationInRange(lastRow, visible),
+            "newest row is visible after the cold first screen, not off-screen below")
+        XCTAssertGreaterThan(
+            mounted.clip.bounds.origin.y, 0,
+            "document scrolled down to the tail (regression leaves it at the top)")
+        let visibleBottom =
+            mounted.clip.bounds.origin.y + mounted.clip.bounds.height
+            - mounted.scroll.contentInsets.bottom
+        XCTAssertEqual(
+            mounted.table.rect(ofRow: lastRow).maxY, visibleBottom, accuracy: 2,
+            "newest row's bottom edge lands at the viewport's visible bottom")
+    }
+
     // MARK: - U5: blocks.count == numberOfRows after every change
 
     func testU5_blockRowAlignmentAcrossMixedSequence() throws {

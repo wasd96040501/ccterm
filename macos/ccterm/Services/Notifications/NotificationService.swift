@@ -28,10 +28,10 @@ final class NotificationService: NSObject {
     @ObservationIgnored private let activation: AppActivationTracker
     @ObservationIgnored private var didBootstrap = false
 
-    /// Most recent click target. RootView2 binds to this via
-    /// `.onChange(of:)`, switches its `selectedSessionId`, then calls
-    /// `clearPendingActivation()` so a re-click on the same session
-    /// still fires.
+    /// Most recent click target. `TranscriptDetailViewController`
+    /// observes this, flips `MainSelectionModel.selection` to
+    /// `.session(sid)`, then calls `clearPendingActivation()` so a
+    /// re-click on the same session still fires.
     private(set) var pendingActivationSessionId: String?
 
     /// Authorization status snapshot — `nil` until the first query

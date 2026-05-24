@@ -170,12 +170,12 @@ final class SidebarViewController: NSViewController {
     // MARK: - Items
 
     private func rebuildItems() {
-        let previousSelectionTag = currentSelectionTag()
+        let previousSelection = currentSelection()
         rootChildren = buildRootChildren()
         outlineView.reloadData()
         expandAllFolders()
-        if let tag = previousSelectionTag {
-            selectRow(for: tag)
+        if let selection = previousSelection {
+            selectRow(for: selection)
         }
     }
 
@@ -183,7 +183,7 @@ final class SidebarViewController: NSViewController {
         var items: [SidebarItemNode] = []
         for kind in FixedKind.allCases {
             items.append(
-                SidebarItemNode(kind: .fixed(kind), selectionTag: kind.selectionTag))
+                SidebarItemNode(kind: .fixed(kind), selection: kind.selection))
         }
         for group in groupedRecords() {
             let children = group.records.map { record in
@@ -191,12 +191,12 @@ final class SidebarViewController: NSViewController {
                     kind: .history(
                         sessionId: record.sessionId,
                         fallbackTitle: record.title),
-                    selectionTag: record.sessionId)
+                    selection: .session(record.sessionId))
             }
             items.append(
                 SidebarItemNode(
                     kind: .folder(name: group.folderName),
-                    selectionTag: nil,
+                    selection: nil,
                     children: children))
         }
         return items
@@ -240,19 +240,19 @@ final class SidebarViewController: NSViewController {
         return s
     }
 
-    private func currentSelectionTag() -> String? {
+    private func currentSelection() -> MainSelection? {
         let row = outlineView.selectedRow
         guard row >= 0 else { return nil }
         let item = outlineView.item(atRow: row) as? SidebarItemNode
-        return item?.selectionTag
+        return item?.selection
     }
 
-    private func selectRow(for tag: String) {
-        // Walk the visible rows to find the matching tag. Folders
+    private func selectRow(for selection: MainSelection) {
+        // Walk the visible rows to find the matching selection. Folders
         // aren't selectable so they're skipped naturally.
         for row in 0..<outlineView.numberOfRows {
             guard let node = outlineView.item(atRow: row) as? SidebarItemNode,
-                node.selectionTag == tag
+                node.selection == selection
             else { continue }
             isApplyingSelectionFromModel = true
             outlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
@@ -276,13 +276,13 @@ final class SidebarViewController: NSViewController {
     // MARK: - Selection / records observation
 
     private func applyModelSelection() {
-        guard let tag = model.selectedSessionId else {
+        if model.selection == .none {
             isApplyingSelectionFromModel = true
             outlineView.deselectAll(nil)
             isApplyingSelectionFromModel = false
             return
         }
-        selectRow(for: tag)
+        selectRow(for: model.selection)
     }
 
     private func startSelectionObservation() {
@@ -291,7 +291,7 @@ final class SidebarViewController: NSViewController {
             guard let self else { return }
             await withCheckedContinuation { cont in
                 withObservationTracking {
-                    _ = self.model.selectedSessionId
+                    _ = self.model.selection
                 } onChange: {
                     Task { @MainActor in cont.resume() }
                 }
@@ -376,8 +376,8 @@ final class SidebarViewController: NSViewController {
             return
         }
         guard case .history(let sessionId, _) = node.kind else { return }
-        if model.selectedSessionId == sessionId {
-            model.selectedSessionId = SidebarSentinel.newSession
+        if model.selection == .session(sessionId) {
+            model.selection = .newSession
         }
         sessionManager.archive(sessionId)
     }
@@ -529,10 +529,10 @@ extension SidebarViewController: NSOutlineViewDelegate {
         let row = outlineView.selectedRow
         guard row >= 0,
             let node = outlineView.item(atRow: row) as? SidebarItemNode,
-            let tag = node.selectionTag
+            let selection = node.selection
         else { return }
-        if model.selectedSessionId != tag {
-            model.selectedSessionId = tag
+        if model.selection != selection {
+            model.selection = selection
         }
     }
 

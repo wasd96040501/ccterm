@@ -34,7 +34,7 @@ import Observation
 /// the controller's block list **even when no transcript view is
 /// mounted**, so the user switching the sidebar to another session
 /// doesn't pause renderer-side processing for the session they left.
-/// `TranscriptDetailViewController` binds the controller's `coordinator`
+/// `ChatSessionViewController` binds the controller's `coordinator`
 /// (which has a `weak NSTableView`) to a fresh `NSTableView` on each
 /// mount via `TranscriptScrollViewFactory.make`; when no table is bound,
 /// the coordinator still updates its `blocks` array and skips AppKit
@@ -70,7 +70,7 @@ final class Session {
     /// Imperative transcript controller. Lives as long as the session
     /// does — survives transcript-view mount/dismount cycles. Views
     /// read `session.controller` and hand it to the transcript host
-    /// (production: `TranscriptDetailViewController`); they never
+    /// (production: `ChatSessionViewController`); they never
     /// construct their own.
     let controller: Transcript2Controller
 

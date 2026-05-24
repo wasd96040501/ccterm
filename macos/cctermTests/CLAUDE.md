@@ -185,7 +185,7 @@ Inventory:
 | File | What it asserts |
 |---|---|
 | [`TranscriptReentryLayoutCacheTests.swift`](TranscriptReentryLayoutCacheTests.swift) | The bare `TranscriptScrollViewFactory.make → addSubview → layoutSubtreeIfNeeded → bindData → scrollToTail` sequence typesets each block at exactly one width inside one source-phase tick. |
-| [`TranscriptHostReentryLayoutCacheTests.swift`](TranscriptHostReentryLayoutCacheTests.swift) | Same property, but driven through real hosts: the AppKit demo VC (`TranscriptDemoViewController`) and the production sidebar-switch path (`TranscriptDetailViewController.attachSession` on a `MainSelectionModel.selection` flip). Closes the gap between the factory test and host orchestration. |
+| [`TranscriptHostReentryLayoutCacheTests.swift`](TranscriptHostReentryLayoutCacheTests.swift) | Same property, but driven through real hosts: the AppKit demo VC (`TranscriptDemoViewController`) and the production sidebar-switch path (`ChatSessionViewController.attachSession` on a `MainSelectionModel.selection` flip). Closes the gap between the factory test and host orchestration. |
 | [`TranscriptBackfillLayoutCacheTests.swift`](TranscriptBackfillLayoutCacheTests.swift) | **U1** — the single-width contract extended across multi-tick backfill: a real `TranscriptBackfillPipeline` cold-load (tail `.append` + several `.prepend` ticks) typesets each block at exactly one width and exactly once. Prepend ticks are cache hits (off-main precompute, 5b); a width-mismatched producer shows up as a second write at a second width. |
 | [`TranscriptBackfillAnchorTests.swift`](TranscriptBackfillAnchorTests.swift) | **U2/U3/U7/U8** — anchor invariant (prepend pins the visual-top row, clip shifts by the inserted height, no jitter over N ticks); in-tick stability (anchor correct before any runloop drain — the deleted `mutationCounter` regression); `.update`/`.replace` riding `.saveVisible` preserve the viewport mid-document; interleaved tail-append + head-prepend land at opposite ends without moving the anchor. |
 | [`TranscriptColdAttachTests.swift`](TranscriptColdAttachTests.swift) | **U4/U5/U6** — cold attach renders 0 rows then lands the tail page at the bottom; `blocks.count == numberOfRows` after every change in a mixed `prepend`/`append`/`replace`/`remove`/`update` sequence; warm re-entry into a `.loaded` session fires zero backfill typeset. |
@@ -284,7 +284,7 @@ What this scaffold **still can't** observe:
   host (all `NSHostingView`s). Any of those committing on the same
   CATransaction could perturb timing in ways the bare-scroll harness
   doesn't reproduce. To rule this out you would need to host
-  `TranscriptDetailViewController` directly in a test window — feasible
+  `ChatSessionViewController` directly in a test window — feasible
   but a larger lift.
 - **WindowServer scheduling under load.** The render server can delay
   compositing a window if its parent process is busy on the GPU /

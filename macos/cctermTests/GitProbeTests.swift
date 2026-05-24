@@ -39,7 +39,7 @@ final class GitProbeTests: XCTestCase {
 
     // MARK: - Cold-mount sequence (regression net for the empty-picker bug)
 
-    /// Mirrors what `TranscriptDetailViewController` +
+    /// Mirrors what `ChatSessionViewController` +
     /// `NewSessionConfigurator` do on a fresh app launch: the
     /// configurator mounts before `Session.draft.cwd` has been seeded
     /// (so the first call is `refresh(nil)`), then the parent task

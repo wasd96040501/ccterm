@@ -9,7 +9,7 @@ import AppKit
 /// inside an `alphaValue = 0.01` window, so the table reaches its real width
 /// and `heightOfRow` queries fire at the settled width (the same scaffold
 /// `TranscriptReentryLayoutCacheTests` uses). Mirrors `TranscriptScrollView`
-/// geometry without the full `TranscriptDetailViewController`.
+/// geometry without the full `ChatSessionViewController`.
 @MainActor
 struct MountedTranscript {
     let window: NSWindow

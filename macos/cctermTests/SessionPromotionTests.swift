@@ -171,7 +171,7 @@ final class SessionPromotionTests: XCTestCase {
     /// A draft-promoted runtime starts in `.loaded` history state and a
     /// subsequent `loadHistory()` is a no-op — no backfill pipeline starts.
     /// Regression net for: switching away from a running fresh session and
-    /// coming back triggers `TranscriptDetailViewController.attachSession`'s
+    /// coming back triggers `ChatSessionViewController.attachSession`'s
     /// `loadHistory()` call. Without the `.loaded` guard the iterator would
     /// re-read the JSONL the CLI has been writing live and duplicate the live
     /// messages already in the controller.

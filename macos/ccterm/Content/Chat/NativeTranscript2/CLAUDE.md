@@ -149,7 +149,7 @@ The source-phase tick that mounts a `Transcript2ScrollView` for a session — `f
 | Test | Scope |
 |---|---|
 | [`TranscriptReentryLayoutCacheTests`](../../../../cctermTests/TranscriptReentryLayoutCacheTests.swift) | Bare-factory contract. Catches `factory.make` regressions (e.g. eager `dataSource` bind). |
-| [`TranscriptHostReentryLayoutCacheTests`](../../../../cctermTests/TranscriptHostReentryLayoutCacheTests.swift) | Production sidebar-switch path via `ChatSessionViewController.attachSession`. Catches caller regressions the factory test misses: `bindData` reordered before `layoutSubtreeIfNeeded`, the `layoutSubtreeIfNeeded` step dropped, or any new attach-time tile trigger inserted ahead of the settle step. Verified to fail against each of these three regression shapes. |
+| [`TranscriptHostReentryLayoutCacheTests`](../../../../cctermTests/TranscriptHostReentryLayoutCacheTests.swift) | Production session-switch path via `ChatSessionViewController.present(sessionId:)` → `attachSession`. Catches caller regressions the factory test misses: `bindData` reordered before `layoutSubtreeIfNeeded`, the `layoutSubtreeIfNeeded` step dropped, or any new attach-time tile trigger inserted ahead of the settle step. Verified to fail against each of these three regression shapes. |
 
 Both files lack the `Snapshot` filename suffix on purpose — `scripts/test-unit.sh` auto-skips that pattern, and these tests are merge gates, not screenshots. **Don't `XCTSkip` them and don't widen the offender tolerance to "make CI green"** — a tolerated multi-width write IS the bug. If the host test goes red after a refactor, read the per-stage report it attaches to xcresult before changing anything; the offender list pins the regression to a specific call.
 

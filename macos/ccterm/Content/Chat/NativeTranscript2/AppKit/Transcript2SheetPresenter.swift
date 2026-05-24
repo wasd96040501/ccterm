@@ -71,19 +71,33 @@ final class Transcript2SheetPresenter {
 
     private func startObservation() {
         observationTask?.cancel()
+        // Capture `controller` (owned by the `Session`, never by us) so the
+        // suspended task holds no strong `self`. Re-acquire `self` weakly
+        // only AFTER each resume.
+        //
+        // The old shape was `guard let self` at the top, which bound a
+        // strong `self` that lived across the `withCheckedContinuation`
+        // suspension — a task↔presenter retain cycle. `stop()` / `deinit`
+        // cancel the task, but cancellation does not resume a suspended
+        // `withCheckedContinuation`, so the strong `self` lingered until
+        // the observed fields next changed — which, for a session detached
+        // mid-attach, is never. Result: one leaked presenter per session
+        // switch (every `attachSession` builds a fresh one). The loop form
+        // below mirrors `ChatSessionViewController.startRunningObservation`.
+        let controller = self.controller
         observationTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            await withCheckedContinuation { cont in
-                withObservationTracking {
-                    _ = self.controller.pendingUserBubbleSheet
-                    _ = self.controller.pendingImagePreview
-                } onChange: {
-                    Task { @MainActor in cont.resume() }
+            while !Task.isCancelled {
+                await withCheckedContinuation { cont in
+                    withObservationTracking {
+                        _ = controller.pendingUserBubbleSheet
+                        _ = controller.pendingImagePreview
+                    } onChange: {
+                        Task { @MainActor in cont.resume() }
+                    }
                 }
+                guard !Task.isCancelled, let self else { return }
+                self.reconcile()
             }
-            guard !Task.isCancelled else { return }
-            self.reconcile()
-            self.startObservation()
         }
     }
 

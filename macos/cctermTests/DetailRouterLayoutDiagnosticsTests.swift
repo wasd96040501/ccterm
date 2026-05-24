@@ -138,7 +138,7 @@ final class DetailRouterLayoutDiagnosticsTests: XCTestCase {
         await settle()
         let chatHeight = window.frame.height
 
-        fx.model.selection = .archive
+        fx.model.select(.archive)
         await settle()
         let archiveHeight = window.frame.height
 
@@ -168,10 +168,11 @@ final class DetailRouterLayoutDiagnosticsTests: XCTestCase {
 
     /// Drives the cross-kind transition the user hits when restoring a
     /// session from the Archive page: `.archive` → `.session(_)`. That
-    /// makes the router tear down `ArchiveViewController` and build a
-    /// fresh `ChatSessionViewController`, whose `viewDidLoad` runs the
-    /// transcript attach (`layoutSubtreeIfNeeded` + `scrollToTail`).
-    /// The attach must typeset every block at the single settled width;
+    /// makes the router tear down `ArchiveViewController`, build a fresh
+    /// `ChatSessionViewController`, settle its frame, and drive its
+    /// transcript attach via `present(sessionId:)` (`layoutSubtreeIfNeeded`
+    /// + `scrollToTail`). The attach must typeset every block at the
+    /// single settled width;
     /// if it runs before the child view has a real frame, blocks get
     /// typeset at the clamped `minLayoutWidth` (460) first and the
     /// first painted frame is wrong (the user-visible "white screen").
@@ -225,7 +226,11 @@ final class DetailRouterLayoutDiagnosticsTests: XCTestCase {
         }
         defer { coordinator.onLayoutCacheWriteForDebug = nil }
 
-        fx.model.selection = .session(sid)
+        // Cross-kind switch (archive → transcript) through the router's
+        // synchronous owner path. `select` swaps in a fresh
+        // `ChatSessionViewController`, settles its frame, and runs the
+        // transcript attach — all in this source phase.
+        fx.model.select(.session(sid))
 
         for _ in 0..<24 {
             try? await Task.sleep(for: .milliseconds(50))

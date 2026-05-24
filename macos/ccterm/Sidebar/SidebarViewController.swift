@@ -377,7 +377,7 @@ final class SidebarViewController: NSViewController {
         }
         guard case .history(let sessionId, _) = node.kind else { return }
         if model.selection == .session(sessionId) {
-            model.selection = .newSession
+            model.select(.newSession)
         }
         sessionManager.archive(sessionId)
     }
@@ -532,7 +532,7 @@ extension SidebarViewController: NSOutlineViewDelegate {
             let selection = node.selection
         else { return }
         if model.selection != selection {
-            model.selection = selection
+            model.select(selection)
         }
     }
 

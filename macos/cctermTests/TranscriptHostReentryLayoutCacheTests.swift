@@ -96,13 +96,14 @@ final class TranscriptHostReentryLayoutCacheTests: XCTestCase {
         let stage: String
     }
 
-    /// End-to-end exercise of the production sidebar-switch path:
+    /// End-to-end exercise of the production session-switch path:
     /// in-memory `SessionManager` with two pre-seeded sessions, mount
-    /// `ChatSessionViewController` on session 1, settle, flip
-    /// `MainSelectionModel.selection` to session 2, drain.
-    /// The probe is installed on session 2's coordinator AFTER session
-    /// 1 settles, so it captures EXACTLY the writes produced by
-    /// `attachSession(sessionId2)`. Pass means every block typeset at
+    /// `ChatSessionViewController` in a framed container, attach session
+    /// 1 via `present(sessionId:)`, then switch to session 2 via the same
+    /// imperative entry the router calls — synchronously, in one source
+    /// phase. The probe is installed on session 2's coordinator AFTER
+    /// session 1 is attached, so it captures EXACTLY the writes produced
+    /// by the switch's `attachSession`. Pass means every block typeset at
     /// exactly one width (the settled 720); fail means the probe saw
     /// `[460, 720]` or `[460, 720, 780]` for at least one id — the
     /// signature pattern of an attach-order regression.
@@ -144,9 +145,8 @@ final class TranscriptHostReentryLayoutCacheTests: XCTestCase {
         let inputDraftStore = InputDraftStore(directory: draftDir, debounceInterval: 0.05)
 
         let model = MainSelectionModel()
-        // Start at session 1 so the VC's initial handleSelectionChanged
-        // attaches to it. The default `.newSession` would route to the
-        // compose UI instead.
+        // Seed session 1 — the VC no longer self-attaches; the test
+        // drives `present(sessionId:)` directly (the router's role).
         model.selection = .session(sessionId1)
 
         let vc = ChatSessionViewController(
@@ -196,29 +196,18 @@ final class TranscriptHostReentryLayoutCacheTests: XCTestCase {
         ])
         container.layoutSubtreeIfNeeded()
 
-        // Fixture invariant #2 — alternate `Task.sleep` AND runloop drains.
-        //
-        // We need TWO things to settle before we can flip the selection:
-        // session 1's autolayout cascade (runloop) AND the VC's
-        // `selectionObservationTask` reaching its
-        // `withObservationTracking` registration (Swift Concurrency
-        // MainActor executor). These use SEPARATE schedulers —
-        // `RunLoop.main.run` alone does NOT advance MainActor Tasks,
-        // and `await Task.sleep` alone does not flush AppKit's runloop
-        // observers. If we skip the Task.sleep hops the observer never
-        // starts tracking, the subsequent
-        // `model.selection = .session(sessionId2)` write goes untracked,
-        // `handleSelectionChanged()` never fires, and the probe captures
-        // zero writes — making the test pass silently regardless of
-        // regression. The sanity gate near the end catches that failure
-        // mode but the right answer is not to trip it in the first place.
-        for _ in 0..<10 {
-            try await Task.sleep(for: .milliseconds(40))
+        // Attach session 1 the way the router does — imperatively, on a
+        // framed VC. (The VC no longer self-attaches on viewDidLoad.)
+        vc.present(sessionId: sessionId1)
+        // Let session 1's autolayout cascade settle so its writes are
+        // fully out of the way before we install the probe.
+        for _ in 0..<6 {
+            try await Task.sleep(for: .milliseconds(20))
             drainMainLoop(seconds: 0.02)
         }
 
         // Install the probe on session 2's coordinator AFTER session 1
-        // has settled, so we only capture writes that belong to the
+        // is attached, so we only capture writes that belong to the
         // switch.
         let coordinator2 = session2.controller.coordinator
         var writes: [Write] = []
@@ -228,24 +217,19 @@ final class TranscriptHostReentryLayoutCacheTests: XCTestCase {
         }
         defer { coordinator2.onLayoutCacheWriteForDebug = nil }
 
-        // Flip selection. The detail VC's observation Task fires on the
-        // next MainActor hop and calls handleSelectionChanged() →
-        // tearDownTranscript + attachSession on session 2 — all inside
-        // one source-phase tick.
+        // Switch to session 2 through the same imperative entry the
+        // router calls. `present` runs `attachSession` synchronously —
+        // build + mount + bind + scrollToTail (tiling session 2 at the
+        // settled 720) + tear down session 1 — all in one source-phase
+        // tick. No async observation hop to wait on.
         currentStage = "switch"
-        model.selection = .session(sessionId2)
+        vc.present(sessionId: sessionId2)
+        XCTAssertNotNil(
+            coordinator2.tableView,
+            "fixture broke: session 2 table not bound after present()")
 
-        // Drive both schedulers until session 2's table is bound (the
-        // signal that `attachSession` ran) or we time out.
-        for _ in 0..<20 {
-            try await Task.sleep(for: .milliseconds(50))
-            drainMainLoop(seconds: 0.02)
-            if coordinator2.tableView != nil { break }
-        }
-        // Final flush in case any deferred autolayout work is still
-        // queued.
+        // Flush any deferred autolayout work still queued from the swap.
         container.layoutSubtreeIfNeeded()
-        try await Task.sleep(for: .milliseconds(100))
 
         let oneTickWrites = writes
 
@@ -267,8 +251,8 @@ final class TranscriptHostReentryLayoutCacheTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(
             oneTickWrites.count, Self.blockCount,
             "Fixture broke: probe captured \(oneTickWrites.count) writes — "
-                + "expected ≥\(Self.blockCount). Has attachSession run? "
-                + "Has the observation Task reached withObservationTracking?")
+                + "expected ≥\(Self.blockCount). Did present(sessionId2) run "
+                + "attachSession against a framed view?")
         let maxWidth = oneTickWrites.map(\.width).max() ?? 0
         XCTAssertGreaterThanOrEqual(
             maxWidth, 700,

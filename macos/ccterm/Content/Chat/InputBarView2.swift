@@ -444,10 +444,23 @@ struct InputBarView2: View {
                 filePaths.append(path)
             }
         }
-        onSubmit(Submission(text: trimmed, images: images, filePaths: filePaths))
+        let submission = Submission(text: trimmed, images: images, filePaths: filePaths)
+        // Reset local state AND clear the persisted draft *before* handing
+        // off to `onSubmit`. In compose mode `onSubmit` promotes the draft
+        // and calls `model.select(.session(_))`, which now swaps the routed
+        // child VC **synchronously** — this view is torn down in the same
+        // source phase. After that teardown SwiftUI never re-evaluates the
+        // body, so the reactive `.onChange(of: text) → scheduleDraftSave`
+        // clear can't fire and the new-session draft would survive the send
+        // (reappearing on the next New Session). Clearing the store directly
+        // here is teardown-proof — it runs on the stack regardless.
         text = ""
         attachments = []
         completion.dismiss()
+        if let key = draftKey {
+            draftStore.clear(key)
+        }
+        onSubmit(submission)
     }
 
     // MARK: - Completion glue

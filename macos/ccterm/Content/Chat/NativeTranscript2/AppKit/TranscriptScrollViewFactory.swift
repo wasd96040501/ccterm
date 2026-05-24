@@ -2,7 +2,7 @@ import AppKit
 
 /// Configures and returns a `Transcript2ScrollView` wired up to the
 /// given `Transcript2Controller`. Shared between the production
-/// AppKit host (`ChatSessionViewController`) and the AppKit demo
+/// AppKit host (`TranscriptDetailViewController`) and the AppKit demo
 /// VCs (`TranscriptDemoViewController` etc.) so the AppKit setup lives
 /// in one place — content insets, `.never` layer policies, table
 /// column, dataSource/delegate wiring, frameDidChange observer.
@@ -34,7 +34,7 @@ enum TranscriptScrollViewFactory {
 
     /// The fixed transcript content insets: `top` reserves room for the
     /// window's `unifiedCompact` toolbar; `bottom` matches the bottom
-    /// scrim height (`ChatSessionViewController.bottomFadeScrimHeight`)
+    /// scrim height (`TranscriptDetailViewController.bottomFadeScrimHeight`)
     /// so the last cell lands exactly at the input bar's top edge —
     /// hit-test then routes that band to the cell rather than the
     /// scroll view's empty backdrop.

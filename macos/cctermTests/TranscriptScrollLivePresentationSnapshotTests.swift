@@ -99,7 +99,7 @@ final class TranscriptScrollLivePresentationSnapshotTests: XCTestCase {
         defer { sampler.stop() }
 
         // Production attach sequence (mirrors
-        // ChatSessionViewController.attachSession + #199's
+        // TranscriptDetailViewController.attachSession + #199's
         // scrollToTail anchor — same as the model-only test).
         container.layoutSubtreeIfNeeded()
         TranscriptScrollViewFactory.bindData(scroll, controller: controller)

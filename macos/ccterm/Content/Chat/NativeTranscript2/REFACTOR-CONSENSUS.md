@@ -224,13 +224,22 @@ resolver.
 
 ## 8. Production-safety conclusion
 
-`precondition` (not `assert`) fires in **release** and is fatal. Guarding a
-**cosmetic bookkeeping** invariant (scroller visibility — worst real
-consequence of imbalance is a scroller flashing for a frame) with a release
-`precondition` is the wrong trade: it converts a bookkeeping slip into a hard
-crash of the user's daily-driver app. The rule going forward: debug-only
-`assert` for the invariant + release-safe clamp/early-return for the value.
-Cosmetic state must never `SIGTRAP`.
+**The crashing `precondition` is deleted, not softened.** In the target shape
+(§4.6) scroller visibility is a derived value — there is no `scrollerHiddenCount`,
+no `pushScrollerHidden` / `popScrollerHidden`, hence no pairing invariant and
+nothing to assert. The `precondition` disappears together with the refcount it
+guarded; it is not replaced by a softened (assert + clamp) version.
+
+What remains is the **general principle** the crash taught us, stated for the
+record: a release `precondition` (unlike `assert`, it fires in release and is
+fatal) must never guard **cosmetic bookkeeping** — the worst real consequence
+of scroller imbalance was a scroller flashing for one frame, which is not worth
+hard-crashing the user's daily-driver app. Cosmetic state must never `SIGTRAP`;
+use a debug-only `assert` plus a release-safe clamp/early-return. This principle
+governs any *future* such guard. It is **not** a directive to keep a softened
+form of this particular precondition — there is no counter left to clamp. (The
+`assert + clamp` band-aid was the abandoned "止血 first" path; we chose the full
+refactor instead.)
 
 ---
 

@@ -251,6 +251,13 @@ final class Transcript2Controller {
     /// `onLayoutWidthDidSettle` hook into `retarget(width:)`.
     var layoutWidth: CGFloat { coordinator.layoutWidth }
 
+    /// Monotonic count of on-main `RowLayout` recomputes (cache misses typeset
+    /// synchronously). Forwarded from the coordinator. Hosts read it as a
+    /// *delta* around the attach-tick tile to log how many rows a reentry had
+    /// to typeset on the main thread — never per row. See
+    /// `Transcript2Coordinator.mainThreadLayoutComputes`.
+    var mainThreadLayoutComputes: Int { coordinator.mainThreadLayoutComputes }
+
     // MARK: - Loading pill
 
     /// Toggle the trailing "running" pill row. Idempotent — setting

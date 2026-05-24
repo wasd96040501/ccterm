@@ -476,7 +476,21 @@ final class TranscriptDetailViewController: NSViewController {
         // mount land here with no setHistory follow-up (loadHistory is
         // idempotent and short-circuits). Anchor to the tail synchronously
         // now that the table has real width.
+        //
+        // Resident reentry telemetry: the first tile `scrollToTail` forces
+        // queries `heightOfRow` for every row, and cache *misses* (blocks the
+        // bridge appended while this session was detached, or a width change
+        // since it was last displayed) recompute their `RowLayout` on the main
+        // thread right here. We read the coordinator's monotonic compute
+        // counter as a delta around this one tile so the cost is logged ONCE
+        // per attach (session switches are user-paced — not a hot path); the
+        // per-row typeset itself is never logged.
+        let layoutComputesBeforeTile = session.controller.mainThreadLayoutComputes
+        let reentryTileStart = CFAbsoluteTimeGetCurrent()
         session.controller.scrollToTail()
+        let reentryTileMs = (CFAbsoluteTimeGetCurrent() - reentryTileStart) * 1000
+        let reentryTypeset =
+            session.controller.mainThreadLayoutComputes &- layoutComputesBeforeTile
 
         // Attach syntax engine (idempotent).
         session.controller.attachSyntaxEngine(searchEngine)
@@ -498,7 +512,9 @@ final class TranscriptDetailViewController: NSViewController {
             "[history] attach session=\(sessionId.prefix(8))… "
                 + "loadState=\(String(describing: session.historyLoadState)) "
                 + "msgCount=\(session.messages.count) "
-                + "blockCount=\(session.controller.blockCount)")
+                + "blockCount=\(session.controller.blockCount) "
+                + "reentryTypeset=\(reentryTypeset) "
+                + "reentryTile=\(String(format: "%.1f", reentryTileMs))ms")
         session.loadHistory()
         session.controller.setLoading(session.isRunning)
 

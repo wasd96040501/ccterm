@@ -178,6 +178,19 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         let layout: RowLayout
     }
 
+    /// Resident telemetry: monotonic count of **on-main** `makeLayout`
+    /// recomputes — layout-cache misses resolved synchronously through
+    /// `layout(for:width:)` (`heightOfRow` / `viewFor`). Off-main precompute
+    /// (`refillLayoutCache`, the backfill pipeline) calls `Self.makeLayout`
+    /// directly and does **not** touch this, so the counter is exactly the
+    /// main-thread typeset work. Read it as a *delta* around a known span
+    /// (the attach-tick tile) so callers can log "how many rows this attach
+    /// had to typeset on the main thread" **once** per attach — never per row
+    /// (the per-row path is hot, so we bump an integer here and log nowhere).
+    /// `&+=` wraps instead of trapping on a long-lived session; delta math
+    /// within a single span is unaffected.
+    private(set) var mainThreadLayoutComputes: Int = 0
+
     #if DEBUG
     /// Test-only observer: fires on every effective write into `layoutCache`,
     /// from both the batch path (`cacheLayouts`) and the lazy path
@@ -593,6 +606,10 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             folds: foldStates,
             statuses: statusStates)
         layoutCache[block.id] = CachedLayout(width: width, layout: layout)
+        // Hot path — count only (one integer bump), never log here. The
+        // summary is logged once per attach by reading the delta (see
+        // `mainThreadLayoutComputes`).
+        mainThreadLayoutComputes &+= 1
         #if DEBUG
         onLayoutCacheWriteForDebug?(block.id, width)
         #endif

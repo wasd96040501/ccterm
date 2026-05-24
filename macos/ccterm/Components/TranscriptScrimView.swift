@@ -144,3 +144,39 @@ final class TranscriptBottomScrimView: TranscriptScrimView {
         ctx.clip(using: .evenOdd)
     }
 }
+
+/// Top fade scrim that doubles as a title-bar-style hit region.
+///
+/// The base scrim is a decorative passthrough (`hitTest` returns `nil`)
+/// so the transcript underneath keeps receiving clicks / cursor rects.
+/// The top band, however, sits over the window's chrome area where the
+/// natural macOS affordance is the title bar: drag to move the window,
+/// double-click to zoom. So this variant **intercepts** mouse events in
+/// its band (no passthrough) and adopts those two standard gestures —
+/// `performDrag` / `performZoom` are exactly what the real title bar and
+/// the green traffic-light button invoke. The 52pt band overlaps a sliver
+/// of the transcript's top inset; trading that sliver's selectability for
+/// title-bar behavior is intentional.
+@MainActor
+final class TranscriptTopScrimView: TranscriptScrimView {
+    init(bandHeight: CGFloat) {
+        super.init(edge: .top, bandHeight: bandHeight)
+    }
+
+    /// Claim the band (the base returns `nil`). Returning `self` is what
+    /// routes `mouseDown` here instead of to the transcript below.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let local = convert(point, from: superview)
+        return bounds.contains(local) ? self : nil
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount >= 2 {
+            window?.performZoom(nil)
+        } else {
+            // Single press → drag the window from this band, mirroring the
+            // title bar. A press with no movement is a harmless no-op.
+            window?.performDrag(with: event)
+        }
+    }
+}

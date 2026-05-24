@@ -95,7 +95,7 @@ final class ChatSessionViewController: NSViewController {
     /// AppKit (no `NSHostingView` so they don't register cursor rects
     /// that would shadow the transcript's I-beam); the input bar /
     /// compose card stays SwiftUI-hosted via a plain `NSHostingView`.
-    private var topScrim: TranscriptScrimView!
+    private var topScrim: TranscriptTopScrimView!
     private var bottomScrim: TranscriptBottomScrimView!
     private var composeOrBarHost: NSHostingView<AnyView>!
 
@@ -152,7 +152,7 @@ final class ChatSessionViewController: NSViewController {
         // — we just need a plain container view here.
         view = NSView()
 
-        topScrim = TranscriptScrimView(edge: .top, bandHeight: Self.topFadeScrimHeight)
+        topScrim = TranscriptTopScrimView(bandHeight: Self.topFadeScrimHeight)
         topScrim.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(topScrim)
 

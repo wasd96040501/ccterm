@@ -1,5 +1,9 @@
 # Transcript load & scroll — refactor consensus
 
+> ⚠️ **DO NOT MERGE INTO `main`. Delete this file before the PR lands.**
+> Working scratch — a shared consensus to anchor the upcoming refactor, not a
+> permanent doc. It must not survive in `main`; remove it before squash-merge.
+
 **Status: consensus only. No plan, no file-level steps yet.** This records
 *what we agree is wrong* and *what the target shape is, in principle*. The
 concrete plan (new types, migration order, test net) is a deliberate

@@ -13,7 +13,7 @@ import SwiftUI
 /// view; tear down via `stop()` before the host's window is gone.
 /// Observation tracking re-arms itself by tail-recursing through
 /// `startObservation()` — same pattern as
-/// `ChatSessionViewController.startSelectionObservation`.
+/// `TranscriptDetailViewController.startSelectionObservation`.
 ///
 /// **Sheet content.** SwiftUI bodies (`UserBubbleSheetView` /
 /// `ImagePreviewSheetView`) wrapped in `NSHostingController`. The body

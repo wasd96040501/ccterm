@@ -22,7 +22,7 @@ struct InputBarChrome: View {
 
     /// Resolved synchronously per render. `prepareDraftSession` is
     /// idempotent get-or-create (pure in-memory), and returns the same
-    /// instance `ChatSessionViewController` holds.
+    /// instance `TranscriptDetailViewController` holds.
     private var session: Session {
         manager.prepareDraftSession(sessionId)
     }
@@ -72,23 +72,15 @@ struct InputBarChrome: View {
     }
 }
 
-/// Chat-mode resting input region: `InputBarChrome` plus the inline
-/// `PermissionCardView` (when one is pending). Both children are
-/// centered horizontally and share the same bottom inset — the card
-/// stacks **above** the bar in a VStack rather than overlaying it,
-/// so the surrounding hosting view's intrinsic size correctly
-/// includes the card's footprint when present.
+/// Chat-mode resting input region: bottom-anchored `InputBarChrome`
+/// plus the floating `PermissionCardView` overlay.
 ///
-/// The card's `.frame(maxWidth: BlockStyle.maxLayoutWidth = 780)` is
-/// hoisted out of `InputBarChrome`'s own `.frame(maxWidth: composeMaxWidth
-/// = 512)` so it gets its full width budget — see the pre-AppKit
-/// `RootView2` for the original geometry derivation.
-///
-/// `maxHeight: .infinity` is intentionally absent: the bar host is
-/// bottom-anchored in `ChatSessionViewController`'s chat mode
-/// and sized to this body's intrinsic height. A finite fitting size
-/// is what lets AppKit shrink the host so the transcript scroll
-/// view receives clicks in the empty band above the bar.
+/// The card is hosted *here* — outside `InputBarChrome`'s own
+/// `.frame(maxWidth: composeMaxWidth = 512)` — so its `.frame(maxWidth:
+/// BlockStyle.maxLayoutWidth = 780)` is no longer silently clipped to
+/// 512 by the bar's host frame. Vertical alignment and horizontal
+/// centering are preserved bit-for-bit; see the pre-AppKit-migration
+/// `RootView2` for the geometry derivation.
 struct ChatRestingBar: View {
     let sessionId: String
     let draftKey: String
@@ -101,6 +93,25 @@ struct ChatRestingBar: View {
     var body: some View {
         let session = manager.prepareDraftSession(sessionId)
         VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            InputBarChrome(
+                sessionId: sessionId,
+                draftKey: draftKey,
+                coordSpace: TranscriptDetailViewController.detailCoordSpace,
+                submitEnabled: true,
+                onSubmit: onSubmit,
+                onAttachRect: onAttachRect,
+                onPillRect: onPillRect
+            )
+            .frame(
+                minWidth: BlockStyle.minLayoutWidth,
+                maxWidth: TranscriptDetailViewController.composeMaxWidth
+            )
+            .padding(.horizontal, TranscriptDetailViewController.detailHorizontalInset)
+            .padding(.bottom, TranscriptDetailViewController.chatBottomInset)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .bottom) {
             if let pending = session.pendingPermissions.first {
                 PermissionCardView(
                     request: pending.request,
@@ -116,29 +127,13 @@ struct ChatRestingBar: View {
                     }
                 )
                 .frame(maxWidth: BlockStyle.maxLayoutWidth)
-                .padding(.horizontal, ChatSessionViewController.detailHorizontalInset)
-                .padding(.bottom, 8)
+                .padding(.horizontal, TranscriptDetailViewController.detailHorizontalInset)
+                .padding(.bottom, TranscriptDetailViewController.chatBottomInset)
                 .transition(
                     .scale(scale: 0.96, anchor: .bottom)
                         .combined(with: .opacity))
             }
-            InputBarChrome(
-                sessionId: sessionId,
-                draftKey: draftKey,
-                coordSpace: ChatSessionViewController.detailCoordSpace,
-                submitEnabled: true,
-                onSubmit: onSubmit,
-                onAttachRect: onAttachRect,
-                onPillRect: onPillRect
-            )
-            .frame(
-                minWidth: BlockStyle.minLayoutWidth,
-                maxWidth: ChatSessionViewController.composeMaxWidth
-            )
-            .padding(.horizontal, ChatSessionViewController.detailHorizontalInset)
         }
-        .padding(.bottom, ChatSessionViewController.chatBottomInset)
-        .frame(maxWidth: .infinity)
         .animation(.smooth(duration: 0.25), value: session.pendingPermissions.first?.id)
     }
 }

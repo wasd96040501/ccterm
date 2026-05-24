@@ -8,7 +8,7 @@ import XCTest
 /// property against the canonical `TranscriptScrollViewFactory` attach
 /// sequence (bare NSView container — no production VC, no demo VC).
 /// Sibling tests in `TranscriptHostReentryLayoutCacheTests` drive the
-/// production `ChatSessionViewController` and the AppKit demo VCs
+/// production `TranscriptDetailViewController` and the AppKit demo VCs
 /// through the same property; the three together guard both the
 /// factory itself AND every caller's adherence to the documented
 /// attach order.

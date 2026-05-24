@@ -3,39 +3,35 @@ import Combine
 import Observation
 import SwiftUI
 
-/// Child VC the `DetailRouterViewController` mounts for chat-bearing
-/// selections (`.session` / `.newSession` / `.none`). Owns the transcript
+/// The main window's detail-pane controller. Owns the transcript
 /// `Transcript2ScrollView` directly — created in `loadView()` so the
 /// table's mount + `frameDidChange` cascade lives in AppKit's source
 /// phase, not in SwiftUI's commit pass (the whole point of #195).
 ///
-/// Around the transcript we mount three full-bleed overlays, all
-/// attached for the lifetime of the VC; their *contents* react to
+/// Around the transcript we mount three full-bleed overlays. All three
+/// stay mounted for the lifetime of the VC; their *contents* react to
 /// `model.selection`:
 /// - top scrim — `TranscriptScrimView` (AppKit, hitTest passthrough)
 /// - bottom scrim — `TranscriptBottomScrimView` (AppKit, hitTest
 ///   passthrough, even-odd cutouts at the attach button + pill)
-/// - input bar / compose configurator — `NSHostingView<AnyView>`.
-///   Its SwiftUI body switches on `model.selection` via
-///   `ChatComposeStack.content(...)`: `.newSession` →
-///   compose card, `.session(_)` → chat resting bar, `.none` →
-///   `EmptyView`. `.archive` and `.demo(_)` are routed away from
-///   this VC entirely by `DetailRouterViewController` and never
-///   land here, so the host always renders a chat-flavored body —
-///   no need for any of the hit-test passthrough gymnastics earlier
-///   commits on this PR were forced to ship.
+/// - input bar / compose configurator — `PassthroughHostingView`
+///   (NSHostingView subclass that lets transparent SwiftUI regions
+///   click-through). Its SwiftUI body switches on `model.selection`
+///   via `TranscriptDetailComposeStack.content(...)`: `.newSession` →
+///   compose card, `.session(_)` → chat resting bar, and `.archive` /
+///   `.demo` / `.none` → `EmptyView`. The EmptyView + passthrough
+///   combination is what keeps clicks reaching the side-branch view
+///   (Archive page, demo VCs) sitting below the overlay.
 ///
-/// In chat mode the host is bottom-anchored and takes only the bar
-/// (+ optional permission card) intrinsic height, so the transcript
-/// scroll view receives clicks in the scrim band above. In compose
-/// mode the host's top constraint is activated so the configurator
-/// card has the full pane to lay out in.
+/// Side branches (archive page, DEBUG transcript demos) are hosted via
+/// child `NSHostingController`s that take over the detail area when
+/// the sidebar selection lands on their sentinel tag.
 @MainActor
-final class ChatSessionViewController: NSViewController {
+final class TranscriptDetailViewController: NSViewController {
     /// Coordinate-space identifier for SwiftUI `GeometryReader`/
     /// `PreferenceKey` callbacks that report the attach button +
     /// pill rects. Mirrors `RootView2.detailCoordSpace`.
-    static let detailCoordSpace = "ChatSessionViewController.detail"
+    static let detailCoordSpace = "TranscriptDetailViewController.detail"
     /// Top fade band height. Sized to match the unified toolbar so the
     /// gradient fades in exactly the strip the toolbar visually covers.
     private static let topFadeScrimHeight: CGFloat = 52
@@ -61,19 +57,6 @@ final class ChatSessionViewController: NSViewController {
     /// The session currently driving the transcript, or nil for
     /// archive / demo branches.
     private var currentSession: Session?
-    /// Session whose transcript mount was deferred because the view had
-    /// no real frame yet. `DetailRouterViewController` creates this VC
-    /// fresh and runs its `viewDidLoad` (→ `attachSession`) BEFORE the
-    /// fill constraints that size the view are active, so the first
-    /// attach would run `layoutSubtreeIfNeeded` + `scrollToTail` at a
-    /// zero/transient width — typesetting every block at the wrong width
-    /// and leaving the clip scrolled past its content (a blank
-    /// transcript). We stash the request here and flush it from
-    /// `viewDidLayout` once the view has a settled, non-zero frame.
-    private var pendingAttachSessionId: String?
-    /// Guards against scheduling more than one deferred-attach flush
-    /// while one is already queued for the next source phase.
-    private var isFlushingPendingAttach: Bool = false
     /// AppKit-native transcript scroll view. Re-created when the
     /// selected session's controller changes; nil for archive /
     /// demo branches.
@@ -89,27 +72,21 @@ final class ChatSessionViewController: NSViewController {
     /// stay mounted for the lifetime of the VC. The scrims are pure
     /// AppKit (no `NSHostingView` so they don't register cursor rects
     /// that would shadow the transcript's I-beam); the input bar /
-    /// compose card stays SwiftUI-hosted via a plain `NSHostingView`.
+    /// compose card stays SwiftUI-hosted via `PassthroughHostingView`
+    /// so transparent regions (when the selection routes to a side
+    /// branch and the body collapses to `EmptyView`) click through to
+    /// the side-branch view sitting below.
     private var topScrim: TranscriptScrimView!
     private var bottomScrim: TranscriptBottomScrimView!
-    private var composeOrBarHost: NSHostingView<AnyView>!
+    private var composeOrBarHost: PassthroughHostingView!
 
     /// Sink for `model.attachRect` / `pillRect` → `bottomScrim` cutout
     /// path. Re-arms on every fire.
-    /// Toggled active in compose mode to pin the host's top to
-    /// `view.topAnchor` (full-bleed). Inactive in chat / .none modes
-    /// — the host then sizes to its SwiftUI body's intrinsic height,
-    /// anchored at the bottom. This is what lets clicks in the
-    /// transcript's scrim band reach the table rather than getting
-    /// swallowed by a transparent overlay.
-    private var composeOrBarHostTopConstraint: NSLayoutConstraint!
+    private var scrimRectObservationTask: Task<Void, Never>?
 
-    /// Latest attach / pill rects reported by the chat resting bar
-    /// in `detailCoordSpace`. Used to drive `bottomScrim`'s cutouts.
-    /// Local to this VC — there's no cross-VC consumer that would
-    /// need to read these.
-    private var lastAttachRect: CGRect = .zero
-    private var lastPillRect: CGRect = .zero
+    /// Side-branch (archive / demo) child VC, mounted via
+    /// `addChild` + `view.addSubview`. nil while a session is shown.
+    private var sideBranchController: NSViewController?
 
     /// Sink for `session.isRunning` → `controller.setLoading(_:)`.
     /// Re-armed on every session swap.
@@ -158,38 +135,14 @@ final class ChatSessionViewController: NSViewController {
         bottomScrim.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(bottomScrim)
 
-        composeOrBarHost = NSHostingView(rootView: AnyView(makeComposeOrBarStack()))
+        composeOrBarHost = PassthroughHostingView(rootView: AnyView(makeComposeOrBarStack()))
         composeOrBarHost.translatesAutoresizingMaskIntoConstraints = false
-        // The host is bottom-anchored with a free top, so it sizes to its
-        // SwiftUI body's intrinsic height (bar + optional permission card).
-        // `NSHostingView`'s default `sizingOptions` is NOT empty — it adds
-        // required min/intrinsic/max constraints. Those make the host's
-        // intrinsic height a *required* contributor to the VC's
-        // `fittingSize`, which leaks up through the split and lets the
-        // window's constraint-based layout shrink the whole window to that
-        // height (`_changeWindowFrameFromConstraintsIfNecessary`). Keep the
-        // intrinsic size (the bar needs it) but lower the vertical
-        // compression resistance below `windowSizeStayPut` (500) so the
-        // window's own size wins and the pane never drives the window.
-        composeOrBarHost.sizingOptions = [.intrinsicContentSize]
-        composeOrBarHost.setContentCompressionResistancePriority(
-            NSLayoutConstraint.Priority(rawValue: 240), for: .vertical)
-        composeOrBarHost.setContentHuggingPriority(
-            NSLayoutConstraint.Priority(rawValue: 240), for: .vertical)
         view.addSubview(composeOrBarHost)
 
-        // Bottom + leading + trailing always pinned. The top
-        // constraint is created here but only activated in compose
-        // mode (see `updateComposeHostShape`) — chat mode lets the
-        // host take SwiftUI's intrinsic height anchored at the
-        // bottom, so the scrim band above the bar stays clickable.
-        composeOrBarHostTopConstraint =
-            composeOrBarHost.topAnchor.constraint(equalTo: view.topAnchor)
-
-        // Each scrim is sized to its visible band, anchored to its
-        // edge. Cutout coordinates arrive in `composeOrBarHost`'s
-        // SwiftUI coord space; `applyScrimCutouts` translates them
-        // into the bottom scrim's local coord via `convert(_:from:)`.
+        // Each scrim is sized to its visible band, anchored to its edge.
+        // Cutout coordinates arrive in `composeOrBarHost`'s SwiftUI
+        // coord space; `applyScrimCutouts` translates them into the
+        // bottom scrim's local coord via `convert(_:from:)`.
         NSLayoutConstraint.activate([
             topScrim.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             topScrim.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -203,20 +156,9 @@ final class ChatSessionViewController: NSViewController {
 
             composeOrBarHost.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             composeOrBarHost.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            composeOrBarHost.topAnchor.constraint(equalTo: view.topAnchor),
             composeOrBarHost.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
-    }
-
-    /// Activate / deactivate the host's top constraint to match the
-    /// current selection. Compose mode wants the configurator full-
-    /// bleed; chat mode wants only the bar at the bottom; `.none`
-    /// can use either (the body is `EmptyView` so it shrinks to 0
-    /// regardless).
-    private func updateComposeHostShape() {
-        let shouldPinTop = model.isComposeMode
-        if composeOrBarHostTopConstraint.isActive != shouldPinTop {
-            composeOrBarHostTopConstraint.isActive = shouldPinTop
-        }
     }
 
     override func viewDidLoad() {
@@ -233,50 +175,35 @@ final class ChatSessionViewController: NSViewController {
         notifications.bootstrap()
     }
 
-    override func viewDidLayout() {
-        super.viewDidLayout()
-        // Flush a transcript mount that `attachSession` deferred because
-        // the view had no real frame yet (fresh router-mounted VC). The
-        // flush must run in the NEXT source phase, not inline here:
-        // `viewDidLayout` fires mid-layout-pass, and `attachSession`'s own
-        // `layoutSubtreeIfNeeded` + `bindData` have to execute against a
-        // fully-settled frame in a clean source phase — running them while
-        // the enclosing autolayout cascade is still converging makes the
-        // table tile at the cascade's transient widths (460 / 780) instead
-        // of the single settled width (720), which is exactly the
-        // per-attach typesetting thrash the §2.19 contract forbids. The
-        // one-tick delay shows the chat backdrop for a frame before the
-        // transcript pops in anchored at the tail — same timing as the
-        // observation-driven session-switch path.
-        guard pendingAttachSessionId != nil, !isFlushingPendingAttach,
-            view.bounds.width > 0, view.bounds.height > 0
-        else { return }
-        isFlushingPendingAttach = true
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.isFlushingPendingAttach = false
-            guard let sid = self.pendingAttachSessionId,
-                self.view.bounds.width > 0, self.view.bounds.height > 0
-            else { return }
-            self.attachSession(sid)
-        }
-    }
-
     // MARK: - Observation
 
     private func installObservations() {
         startSelectionObservation()
         startLaunchFailureObservation()
         startPendingActivationObservation()
+        startScrimRectObservation()
     }
 
-    /// Push the latest reported rects into the bottom scrim. Called
-    /// every time the chat resting bar fires a geometry callback —
-    /// no Observation hop in between because the rects are local to
-    /// this VC and there's no other consumer.
+    private func startScrimRectObservation() {
+        scrimRectObservationTask?.cancel()
+        scrimRectObservationTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            await withCheckedContinuation { cont in
+                withObservationTracking {
+                    _ = self.model.attachRect
+                    _ = self.model.pillRect
+                } onChange: {
+                    Task { @MainActor in cont.resume() }
+                }
+            }
+            self.applyScrimCutouts()
+            self.startScrimRectObservation()
+        }
+    }
+
     private func applyScrimCutouts() {
-        bottomScrim.attachRect = bottomScrim.convert(lastAttachRect, from: composeOrBarHost)
-        bottomScrim.pillRect = bottomScrim.convert(lastPillRect, from: composeOrBarHost)
+        bottomScrim.attachRect = bottomScrim.convert(model.attachRect, from: composeOrBarHost)
+        bottomScrim.pillRect = bottomScrim.convert(model.pillRect, from: composeOrBarHost)
     }
 
     private func startSelectionObservation() {
@@ -383,13 +310,24 @@ final class ChatSessionViewController: NSViewController {
             sessionManager.existingSession(sid)?.setFocused(false)
         }
 
-        updateComposeHostShape()
         rebuildBackingContent()
     }
 
     // MARK: - Backing content rebuild
 
     private func rebuildBackingContent() {
+        // Detail-pane router. Switch on the typed selection so the
+        // compiler enforces that every case has a deliberate route —
+        // transcript (chat chrome stays mounted around it, with the
+        // compose host's SwiftUI body driven by the selection) or a
+        // side-branch view (archive / demo), or nothing (no selection).
+        if let kind = Self.sideBranchKind(for: model.selection) {
+            tearDownTranscript()
+            mountSideBranch(makeSideBranch(kind: kind))
+            return
+        }
+        tearDownSideBranch()
+
         guard let active = model.effectiveSessionId else {
             tearDownTranscript()
             return
@@ -397,22 +335,117 @@ final class ChatSessionViewController: NSViewController {
         attachSession(active)
     }
 
+    /// Pure routing decision: which side-branch view (if any) the
+    /// `selection` should mount under the detail pane's overlays.
+    /// Returning `nil` means the detail pane should mount the
+    /// transcript instead. Static + pure so it's directly unit-testable
+    /// — see `TranscriptDetailRoutingTests`.
+    static func sideBranchKind(for selection: MainSelection) -> SideBranchKind? {
+        switch selection {
+        case .none, .newSession, .session:
+            return nil
+        case .archive:
+            return .archive
+        #if DEBUG
+        case .demo(let kind):
+            return .demo(kind)
+        #endif
+        }
+    }
+
+    enum SideBranchKind: Equatable {
+        case archive
+        #if DEBUG
+        case demo(DemoKind)
+        #endif
+    }
+
+    private enum SideBranchContent {
+        case swiftUI(AnyView)
+        case viewController(NSViewController)
+    }
+
+    private func makeSideBranch(kind: SideBranchKind) -> SideBranchContent {
+        switch kind {
+        case .archive:
+            let folderBinding = Binding<String?>(
+                get: { [weak self] in self?.model.archiveSelectedFolderPath },
+                set: { [weak self] in self?.model.archiveSelectedFolderPath = $0 }
+            )
+            return .swiftUI(
+                AnyView(
+                    ArchiveView(
+                        selectedFolderPath: folderBinding,
+                        onUnarchive: { [weak self] resumeSid in
+                            self?.model.selection = .session(resumeSid)
+                        }
+                    )
+                    .environment(sessionManager)
+                    .environment(recentProjects)
+                    .environment(inputDraftStore)
+                    .environment(\.syntaxEngine, searchEngine)
+                    .environment(searchBus)
+                    .environment(notifications)
+                ))
+        #if DEBUG
+        case .demo(let demoKind):
+            switch demoKind {
+            case .transcript:
+                return .viewController(
+                    TranscriptDemoViewController(syntaxEngine: searchEngine))
+            case .transcriptStress:
+                return .viewController(
+                    TranscriptStressViewController(syntaxEngine: searchEngine))
+            case .transcriptPerf:
+                return .viewController(
+                    TranscriptPerfDemoViewController(syntaxEngine: searchEngine))
+            case .permissionCards:
+                return .swiftUI(AnyView(injectingEnvironment(PermissionCardsDemoView())))
+            case .permissionSession:
+                return .viewController(
+                    PermissionSessionDemoViewController(syntaxEngine: searchEngine))
+            }
+        #endif
+        }
+    }
+
+    private func mountSideBranch(_ content: SideBranchContent) {
+        tearDownSideBranch()
+        let host: NSViewController
+        switch content {
+        case .swiftUI(let anyView):
+            host = NSHostingController(rootView: anyView)
+        case .viewController(let vc):
+            host = vc
+        }
+        host.view.translatesAutoresizingMaskIntoConstraints = false
+        addChild(host)
+        // Insert below the chat-chrome overlays. The compose host's
+        // SwiftUI body is `EmptyView` for side-branch selections (see
+        // `TranscriptDetailComposeStack.content(...)`), and
+        // `PassthroughHostingView` lets the resulting transparent
+        // region click-through, so the side branch receives clicks
+        // even though it sits below the host in the subview stack.
+        view.addSubview(host.view, positioned: .below, relativeTo: topScrim)
+        NSLayoutConstraint.activate([
+            host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            host.view.topAnchor.constraint(equalTo: view.topAnchor),
+            host.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
+        sideBranchController = host
+    }
+
+    private func tearDownSideBranch() {
+        guard let controller = sideBranchController else { return }
+        controller.view.removeFromSuperview()
+        controller.removeFromParent()
+        sideBranchController = nil
+    }
+
     // MARK: - Transcript mount
 
     private func attachSession(_ sessionId: String) {
-        // The transcript attach below is geometry-sensitive: it pins the
-        // scroll view, runs `view.layoutSubtreeIfNeeded()` to settle the
-        // table to its real width, then `scrollToTail()` anchors the
-        // clip. All three need the view to already be at its final frame
-        // — see `pendingAttachSessionId`. When this VC is freshly mounted
-        // by the router, `viewDidLoad` fires before the view is sized, so
-        // defer to the first framed `viewDidLayout`.
-        guard view.bounds.width > 0, view.bounds.height > 0 else {
-            pendingAttachSessionId = sessionId
-            return
-        }
-        pendingAttachSessionId = nil
-
         let session = sessionManager.prepareDraftSession(sessionId)
         if currentSession?.sessionId == sessionId, transcriptScroll != nil {
             return
@@ -474,10 +507,6 @@ final class ChatSessionViewController: NSViewController {
     }
 
     private func tearDownTranscript() {
-        // Drop any deferred attach — the selection moved off a session
-        // before the view was framed, so the stale request must not fire
-        // on the next `viewDidLayout`.
-        pendingAttachSessionId = nil
         if let scroll = transcriptScroll, let session = currentSession {
             TranscriptScrollViewFactory.dismantle(scroll, controller: session.controller)
             scroll.removeFromSuperview()
@@ -511,7 +540,7 @@ final class ChatSessionViewController: NSViewController {
     // MARK: - SwiftUI overlay builders
 
     private func makeComposeOrBarStack() -> some View {
-        ChatComposeStack(
+        TranscriptDetailComposeStack(
             model: model,
             onSubmit: { [weak self] submission, sessionId in
                 self?.submit(submission, sessionId: sessionId)
@@ -520,16 +549,6 @@ final class ChatSessionViewController: NSViewController {
                 guard let self else { return }
                 self.model.selection = .session(resumeSid)
                 self.model.draftSessionId = nil
-            },
-            onAttachRect: { [weak self] rect in
-                guard let self else { return }
-                self.lastAttachRect = rect
-                self.applyScrimCutouts()
-            },
-            onPillRect: { [weak self] rect in
-                guard let self else { return }
-                self.lastPillRect = rect
-                self.applyScrimCutouts()
             }
         )
         .environment(sessionManager)
@@ -538,23 +557,33 @@ final class ChatSessionViewController: NSViewController {
         .environment(\.syntaxEngine, searchEngine)
         .environment(searchBus)
         .environment(notifications)
-        // Without `.ignoresSafeArea()`, `NSHostingView` would forward
-        // a toolbar-sized top safe-area inset to SwiftUI in compose
-        // mode (when the host is full-bleed); the rects reported in
-        // `detailCoordSpace` would then sit in an inset coord space
-        // while `bottomScrim` (full-bleed AppKit) renders in
-        // `view.bounds`, and the cutouts would land `toolbarHeight`
-        // pixels too high. In chat mode the host is bottom-anchored,
-        // doesn't intersect the top safe area, so this is a no-op
-        // there — kept on for the compose-mode behavior.
+        // Without `.ignoresSafeArea()`, `NSHostingView` would forward a
+        // toolbar-sized top safe-area inset to SwiftUI; the rects
+        // reported in `detailCoordSpace` would then sit in an inset
+        // coord space while `bottomScrim` (full-bleed AppKit) renders
+        // in `view.bounds`, so the cutouts would land
+        // `toolbarHeight` pixels too high. KNOWN ISSUE: this also
+        // makes the SwiftUI body extend behind the scrim's visible
+        // band, and mouse events in that band are intercepted instead
+        // of passing through to the transcript. Tracking separately.
         .ignoresSafeArea()
+    }
+
+    private func injectingEnvironment<V: View>(_ inner: V) -> some View {
+        inner
+            .environment(sessionManager)
+            .environment(recentProjects)
+            .environment(inputDraftStore)
+            .environment(\.syntaxEngine, searchEngine)
+            .environment(searchBus)
+            .environment(notifications)
     }
 
     // MARK: - Submit (draft → real session promotion)
 
     /// Mirror of `RootView2.submit` — kept on the VC so the
     /// compose-stack SwiftUI host can call back via the closure
-    /// installed on `ChatComposeStack`.
+    /// installed on `TranscriptDetailComposeStack`.
     private func submit(_ submission: InputBarView2.Submission, sessionId: String) {
         let session = sessionManager.prepareDraftSession(sessionId)
         let isFirstStart = !session.hasRecord
@@ -601,6 +630,7 @@ final class ChatSessionViewController: NSViewController {
         selectionObservationTask?.cancel()
         launchFailureObservationTask?.cancel()
         pendingActivationObservationTask?.cancel()
+        scrimRectObservationTask?.cancel()
     }
 }
 
@@ -610,18 +640,16 @@ final class ChatSessionViewController: NSViewController {
 /// `RootView2.composeStack`, but reads state from the shared
 /// `MainSelectionModel` (so the AppKit VC can drive selection /
 /// draft flips imperatively from outside SwiftUI).
-struct ChatComposeStack: View {
+struct TranscriptDetailComposeStack: View {
     @Bindable var model: MainSelectionModel
     let onSubmit: (InputBarView2.Submission, String) -> Void
     let onResumeSession: (String) -> Void
-    let onAttachRect: (CGRect) -> Void
-    let onPillRect: (CGRect) -> Void
 
     @Environment(SessionManager.self) private var manager
 
     /// Routing decision for this overlay. Static + pure so the
     /// "which selection shows what input chrome" invariant is
-    /// directly unit-testable — see `ChatComposeStackRoutingTests`.
+    /// directly unit-testable — see `TranscriptDetailRoutingTests`.
     /// In particular, `.archive` / `.demo` / `.none` all collapse to
     /// `.none` here, which is what keeps the input bar from rendering
     /// on top of (and intercepting clicks on) the Archive page.
@@ -674,22 +702,15 @@ struct ChatComposeStack: View {
                     sessionId: sid,
                     draftKey: sid,
                     onSubmit: { submission in onSubmit(submission, sid) },
-                    onAttachRect: onAttachRect,
-                    onPillRect: onPillRect
+                    onAttachRect: { model.attachRect = $0 },
+                    onPillRect: { model.pillRect = $0 }
                 )
                 .id(sid)
             }
         }
-        // Width-infinite always (the host is leading/trailing-pinned).
-        // Height is intentionally NOT `.infinity`: in chat mode the
-        // host is bottom-anchored to its intrinsic height (driven by
-        // ChatRestingBar's content), so a finite fitting size is what
-        // lets the host shrink and uncovers the scrim band above the
-        // bar for transcript clicks. Compose mode forces full height
-        // via an AppKit constraint, not via SwiftUI.
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .animation(.smooth(duration: 0.42), value: model.isComposeMode)
-        .coordinateSpace(name: ChatSessionViewController.detailCoordSpace)
+        .coordinateSpace(name: TranscriptDetailViewController.detailCoordSpace)
     }
 
     @ViewBuilder
@@ -707,7 +728,7 @@ struct ChatComposeStack: View {
                     InputBarChrome(
                         sessionId: sid,
                         draftKey: InputDraftStore.newSessionKey,
-                        coordSpace: ChatSessionViewController.detailCoordSpace,
+                        coordSpace: TranscriptDetailViewController.detailCoordSpace,
                         submitEnabled: session.cwd != nil,
                         onSubmit: { submission in onSubmit(submission, sid) },
                         onAttachRect: { _ in },
@@ -715,8 +736,8 @@ struct ChatComposeStack: View {
                     )
                 }
             )
-            .padding(.horizontal, ChatSessionViewController.detailHorizontalInset)
-            .padding(.vertical, ChatSessionViewController.detailVerticalInset)
+            .padding(.horizontal, TranscriptDetailViewController.detailHorizontalInset)
+            .padding(.vertical, TranscriptDetailViewController.detailVerticalInset)
         }
         .transition(.opacity)
     }

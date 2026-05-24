@@ -111,4 +111,73 @@ final class TranscriptApplyVocabularyTests: XCTestCase {
         XCTAssertEqual(controller.coordinator.blockIds, [a.id, b.id], "index stable")
         XCTAssertEqual(controller.coordinator.block(forId: a.id)?.kind, .thematicBreak)
     }
+
+    // MARK: - C7: isLoading is derived from historyLoadState, not a stored flag
+
+    /// §8a: "is history still loading" is a data-pipeline fact owned by
+    /// `SessionRuntime.historyLoadState` and forwarded verbatim by `Session`.
+    /// It is **derived** (`isLoading ≡ state ∉ {.loaded, .failed}`), never a
+    /// shadow flag on the controller / coordinator. Walk the lifecycle and
+    /// assert the derived relationship; assert the controller's only loading-ish
+    /// boolean — `loadingPillVisible`, the *running* pill — is independent of
+    /// the history-load state (no coupling, no shadow copy).
+    func testC7_isLoadingDerivedFromHistoryLoadState() throws {
+        let runtime = SessionRuntime(
+            sessionId: UUID().uuidString, repository: InMemorySessionRepository())
+        let session = ccterm.Session(
+            runtime: runtime, cliClientFactory: { _ in FakeCLIClient() })
+
+        func isLoading(_ s: SessionRuntime.HistoryLoadState) -> Bool {
+            switch s {
+            case .loaded, .failed: return false
+            default: return true
+            }
+        }
+
+        let cases: [(SessionRuntime.HistoryLoadState, Bool)] = [
+            (.notLoaded, true),
+            (.loadingTail, true),
+            (.tailLoaded(count: 3), true),
+            (.loaded, false),
+            (.failed("boom"), false),
+        ]
+        for (state, expected) in cases {
+            runtime.historyLoadState = state
+            XCTAssertEqual(
+                session.historyLoadState, state, "Session forwards historyLoadState verbatim")
+            XCTAssertEqual(
+                isLoading(session.historyLoadState), expected,
+                "isLoading derived for \(state)")
+            // The controller has no history-loading field — its only loading-ish
+            // bool tracks the running pill and stays put across load transitions.
+            XCTAssertFalse(
+                session.controller.loadingPillVisible,
+                "history-load transitions must not flip a controller flag (§8a)")
+        }
+    }
+
+    // MARK: - C8: apply is the only path that reaches blocks (setHistory gone)
+
+    /// §10: `setHistory` is deleted; the `apply` vocabulary is the single
+    /// mutation entry. A mixed sequence composes into exactly the expected
+    /// block list — there is no second channel to reach `coordinator.blocks`.
+    func testC8_mixedSequenceComposesThroughApplyOnly() throws {
+        let a = para("A")
+        let b = para("B")
+        let c = para("C")
+        let controller = seeded([a, b, c])
+
+        let head = para("head")
+        let tail = para("tail")
+        let swap = para("swap")
+        controller.apply(.prepend([head]))  // head, A, B, C
+        controller.apply(.append([tail]))  // head, A, B, C, tail
+        controller.apply(.replace(oldIds: [b.id], with: [swap]))  // head, A, swap, C, tail
+        controller.apply(.remove(ids: [a.id]))  // head, swap, C, tail
+
+        XCTAssertEqual(
+            controller.coordinator.blockIds,
+            [head.id, swap.id, c.id, tail.id],
+            "the apply vocabulary is the sole mutation path; no setHistory escape hatch")
+    }
 }

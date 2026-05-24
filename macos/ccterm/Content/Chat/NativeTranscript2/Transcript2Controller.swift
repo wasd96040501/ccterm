@@ -25,18 +25,16 @@ struct ImagePreviewRequest: Identifiable, Equatable {
     }
 }
 
-/// Public, imperative API for `NativeTranscript2`. Three orthogonal channels:
+/// Public, imperative API for `NativeTranscript2`. Two orthogonal channels:
 ///
-/// 1. **Mutation** — `apply(_:scroll:)` accepts one or more `Change` values
-///    (insert / remove / update) and a `ScrollState`. Granular only; no
-///    diff, no `reloadData` escape hatch.
-/// 2. **History snapshot** — `setHistory(_:anchor:)` declares the whole
-///    block list at once and an anchor. Idempotent and repeatable — every
-///    call resets `isAnchorSettled` to false until the new anchor lands.
-///    Internally splits large payloads into a viewport-covering Phase 1
-///    (sync, main) and a Phase 2 (off-main layout, main-hop insert) so
-///    10k-row snapshots don't block the main thread.
-/// 3. **Query** — read-only snapshot accessors.
+/// 1. **Mutation** — `apply(_:scroll:precomputed:precomputedWidth:)` accepts
+///    one or more `Change` values (prepend / append / replace / remove /
+///    update) and a `ScrollState`. Granular only; no diff, no `reloadData`
+///    escape hatch, no whole-list `setHistory` snapshot (deleted — history
+///    load is the backfill pipeline draining `.prepend` / `.append` through
+///    this same entry; REFACTOR-PLAN §4.6). `precomputed` lets the pipeline
+///    land off-main-built layouts as cache hits.
+/// 2. **Query** — read-only snapshot accessors.
 ///
 /// `@MainActor`-isolated. Background producers must hop before calling.
 @MainActor

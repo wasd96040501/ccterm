@@ -633,18 +633,26 @@ final class BlockCellView: NSView {
         guard let layout else { return }
         let origin = layoutOrigin
         // I-beam: over `iBeamRect` if the layout confines it
-        // (user bubble), else the whole cell `bounds` to match
-        // `NSTextView`'s "I-beam over full frame" behavior. Order
-        // matters: when cursor rects overlap, the most-recently-
-        // added wins, so pointing-hand rects registered below take
-        // priority over the I-beam in their hot zones. Non-
-        // selectable rows (image, thematic break) skip — they get
-        // the default arrow.
+        // (user bubble), else the layout's footprint — the centred
+        // (measuredWidth × totalHeight) rect at `layoutOrigin`.
+        // **Not** the cell `bounds`: the cell spans the full table
+        // row width, but content sits centred inside it, so falling
+        // back to `bounds` would paint I-beam over the gutter margin
+        // band and the right-of-content padding — both visibly empty
+        // and not selectable. Order matters: when cursor rects
+        // overlap, the most-recently-added wins, so pointing-hand
+        // rects registered below take priority over the I-beam in
+        // their hot zones. Non-selectable rows (image, thematic
+        // break) skip — they get the default arrow.
         if layout.selectionAdapter != nil {
             let rect =
                 layout.iBeamRect.map {
                     $0.offsetBy(dx: origin.x, dy: origin.y)
-                } ?? bounds
+                }
+                ?? CGRect(
+                    x: origin.x, y: origin.y,
+                    width: layout.measuredWidth,
+                    height: layout.totalHeight)
             addCursorRect(rect, cursor: .iBeam)
         }
         for hit in layout.interactiveHits {

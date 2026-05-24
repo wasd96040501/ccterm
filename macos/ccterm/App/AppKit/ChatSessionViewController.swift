@@ -94,15 +94,21 @@ final class ChatSessionViewController: NSViewController {
     private var bottomScrim: TranscriptBottomScrimView!
     private var composeOrBarHost: NSHostingView<AnyView>!
 
-    /// Sink for `model.attachRect` / `pillRect` → `bottomScrim` cutout
-    /// path. Re-arms on every fire.
-    /// Toggled active in compose mode to pin the host's top to
-    /// `view.topAnchor` (full-bleed). Inactive in chat / .none modes
-    /// — the host then sizes to its SwiftUI body's intrinsic height,
-    /// anchored at the bottom. This is what lets clicks in the
-    /// transcript's scrim band reach the table rather than getting
-    /// swallowed by a transparent overlay.
+    /// Compose mode pins the host's top to `view.topAnchor` so the
+    /// configurator fills the pane (full-bleed). Chat / `.none`
+    /// deactivate it and activate `composeOrBarHostHeightConstraint`
+    /// instead, so the host shrinks to just the bar at the bottom and
+    /// the transcript it overlays keeps receiving clicks / cursor
+    /// rects everywhere above the bar. Exactly one of the two is
+    /// active at a time — see `updateComposeHostShape`.
     private var composeOrBarHostTopConstraint: NSLayoutConstraint!
+
+    /// Active in chat / `.none` mode: fixes the host's height to the
+    /// bar's reported content height (driven by the SwiftUI body's
+    /// `onContentHeight` callback), bottom-anchored. Inactive in
+    /// compose mode, where the top constraint drives a full-bleed
+    /// layout instead.
+    private var composeOrBarHostHeightConstraint: NSLayoutConstraint!
 
     /// Latest attach / pill rects reported by the chat resting bar
     /// in `detailCoordSpace`. Used to drive `bottomScrim`'s cutouts.
@@ -160,31 +166,37 @@ final class ChatSessionViewController: NSViewController {
 
         composeOrBarHost = NSHostingView(rootView: AnyView(makeComposeOrBarStack()))
         composeOrBarHost.translatesAutoresizingMaskIntoConstraints = false
-        // The host is bottom-anchored with a free top, so it sizes to its
-        // SwiftUI body's intrinsic height (bar + optional permission card).
-        // `NSHostingView`'s default `sizingOptions` is NOT empty — it adds
-        // required min/intrinsic/max constraints. Those make the host's
-        // intrinsic height a *required* contributor to the VC's
-        // `fittingSize`, which leaks up through the split and lets the
-        // window's constraint-based layout shrink the whole window to that
-        // height (`_changeWindowFrameFromConstraintsIfNecessary`). Keep the
-        // intrinsic size (the bar needs it) but lower the vertical
-        // compression resistance below `windowSizeStayPut` (500) so the
-        // window's own size wins and the pane never drives the window.
-        composeOrBarHost.sizingOptions = [.intrinsicContentSize]
-        composeOrBarHost.setContentCompressionResistancePriority(
-            NSLayoutConstraint.Priority(rawValue: 240), for: .vertical)
-        composeOrBarHost.setContentHuggingPriority(
-            NSLayoutConstraint.Priority(rawValue: 240), for: .vertical)
+        // A plain `NSHostingView` claims EVERY point in its bounds for
+        // hit-testing, shadowing whatever AppKit view sits below — here
+        // the transcript table. In compose mode that's fine (the
+        // configurator fills the pane). In chat mode the host must
+        // cover ONLY the bar at the bottom, or it eats the transcript's
+        // selection / hover-gutter mouse events everywhere it overlaps.
+        //
+        // Drive the chat-mode height EXPLICITLY rather than leaning on
+        // the host's intrinsic size:
+        // - `sizingOptions = []` stops the host from publishing any
+        //   intrinsic height. The bottom-anchored `.intrinsicContentSize`
+        //   variant leaked a *required* height up through the split into
+        //   the window's constraint layout and collapsed the window
+        //   (`_changeWindowFrameFromConstraintsIfNecessary`); an empty
+        //   set severs that path entirely.
+        // - `composeOrBarHostHeightConstraint`'s constant is set from the
+        //   SwiftUI body's reported content height (`onContentHeight`),
+        //   so the host tracks the bar exactly — multi-line input or a
+        //   permission card grows it, nothing else, and it never covers
+        //   more of the transcript than the bar actually needs.
+        composeOrBarHost.sizingOptions = []
         view.addSubview(composeOrBarHost)
 
-        // Bottom + leading + trailing always pinned. The top
-        // constraint is created here but only activated in compose
-        // mode (see `updateComposeHostShape`) — chat mode lets the
-        // host take SwiftUI's intrinsic height anchored at the
-        // bottom, so the scrim band above the bar stays clickable.
+        // Bottom + leading + trailing always pinned. The vertical
+        // extent is one of two mutually-exclusive constraints, toggled
+        // by `updateComposeHostShape`: `topConstraint` (compose →
+        // full-bleed) or `heightConstraint` (chat / .none → bar height).
         composeOrBarHostTopConstraint =
             composeOrBarHost.topAnchor.constraint(equalTo: view.topAnchor)
+        composeOrBarHostHeightConstraint =
+            composeOrBarHost.heightAnchor.constraint(equalToConstant: 0)
 
         // Each scrim is sized to its visible band, anchored to its
         // edge. Cutout coordinates arrive in `composeOrBarHost`'s
@@ -214,8 +226,14 @@ final class ChatSessionViewController: NSViewController {
     /// regardless).
     private func updateComposeHostShape() {
         let shouldPinTop = model.isComposeMode
+        // Exactly one vertical constraint active: top (full-bleed
+        // compose) XOR height (bar-only chat / .none). Deactivate
+        // before activating so the two never fight for a frame.
         if composeOrBarHostTopConstraint.isActive != shouldPinTop {
             composeOrBarHostTopConstraint.isActive = shouldPinTop
+        }
+        if composeOrBarHostHeightConstraint.isActive != !shouldPinTop {
+            composeOrBarHostHeightConstraint.isActive = !shouldPinTop
         }
     }
 
@@ -530,6 +548,12 @@ final class ChatSessionViewController: NSViewController {
                 guard let self else { return }
                 self.lastPillRect = rect
                 self.applyScrimCutouts()
+            },
+            onContentHeight: { [weak self] height in
+                // Chat-mode bar height → host height constraint. No-op
+                // visually in compose mode (the height constraint is
+                // inactive there; the top constraint drives full-bleed).
+                self?.composeOrBarHostHeightConstraint.constant = height
             }
         )
         .environment(sessionManager)
@@ -606,6 +630,15 @@ final class ChatSessionViewController: NSViewController {
 
 // MARK: - SwiftUI overlay subviews
 
+/// Carries `ChatComposeStack`'s measured natural height out to the
+/// AppKit host so it can size the chat-mode bar exactly.
+private struct BarContentHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 /// Compose-mode card OR chat-mode resting input bar. Same shape as
 /// `RootView2.composeStack`, but reads state from the shared
 /// `MainSelectionModel` (so the AppKit VC can drive selection /
@@ -616,6 +649,9 @@ struct ChatComposeStack: View {
     let onResumeSession: (String) -> Void
     let onAttachRect: (CGRect) -> Void
     let onPillRect: (CGRect) -> Void
+    /// Reports the body's natural height to the host so the chat-mode
+    /// `composeOrBarHostHeightConstraint` can size to exactly the bar.
+    let onContentHeight: (CGFloat) -> Void
 
     @Environment(SessionManager.self) private var manager
 
@@ -677,17 +713,33 @@ struct ChatComposeStack: View {
                     onAttachRect: onAttachRect,
                     onPillRect: onPillRect
                 )
+                // Pin to the bar's natural height so the measured
+                // value below is the bar's own footprint, never the
+                // (possibly zero / stale) height the host proposes.
+                .fixedSize(horizontal: false, vertical: true)
                 .id(sid)
             }
         }
         // Width-infinite always (the host is leading/trailing-pinned).
-        // Height is intentionally NOT `.infinity`: in chat mode the
-        // host is bottom-anchored to its intrinsic height (driven by
-        // ChatRestingBar's content), so a finite fitting size is what
-        // lets the host shrink and uncovers the scrim band above the
-        // bar for transcript clicks. Compose mode forces full height
-        // via an AppKit constraint, not via SwiftUI.
+        // Height is intentionally NOT `.infinity`: the chat-mode host
+        // is bottom-anchored to exactly the bar's height, reported to
+        // AppKit via `onContentHeight` below. Compose mode forces full
+        // height through an AppKit constraint instead.
         .frame(maxWidth: .infinity)
+        .background {
+            // Measure the body's natural height without joining the
+            // layout, and feed it to the chat-mode host height
+            // constraint. Compose mode ignores the value (that
+            // constraint is inactive; the full-bleed top constraint
+            // wins), and `.none` measures the empty body as 0.
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: BarContentHeightKey.self, value: proxy.size.height)
+            }
+        }
+        .onPreferenceChange(BarContentHeightKey.self) { height in
+            onContentHeight(height)
+        }
         .animation(.smooth(duration: 0.42), value: model.isComposeMode)
         .coordinateSpace(name: ChatSessionViewController.detailCoordSpace)
     }

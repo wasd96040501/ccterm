@@ -415,10 +415,10 @@ final class Session {
 
     /// Drive a one-shot reverse-streaming history load into the controller.
     ///
-    /// Idempotent through `runtime.historyLoadState`: `.loadingTail` /
-    /// `.tailLoaded` / `.loaded` are no-ops (the bridge has been streaming live
-    /// events into the controller the whole time, so a re-entered session needs
-    /// no replay), `.failed` retries. Drafts have no history.
+    /// Idempotent through `runtime.historyLoadState`: `.loading` / `.loaded`
+    /// are no-ops (the bridge has been streaming live events into the
+    /// controller the whole time, so a re-entered session needs no replay).
+    /// Drafts have no history.
     ///
     /// The pipeline applies blocks **directly** to `controller` (load path =
     /// iterator → apply, REFACTOR-PLAN §4.6); the bridge handles only the live
@@ -427,14 +427,12 @@ final class Session {
     func loadHistory(overrideURL: URL? = nil, tailTarget: Int = 80) {
         guard let runtime else { return }
         switch runtime.historyLoadState {
-        case .loadingTail, .tailLoaded, .loaded:
+        case .loading, .loaded:
             return
-        case .failed:
-            runtime.historyLoadState = .notLoaded
         case .notLoaded:
             break
         }
-        runtime.historyLoadState = .loadingTail
+        runtime.historyLoadState = .loading
 
         let url = overrideURL ?? runtime.historyJSONLURL
         let pipeline = TranscriptBackfillPipeline(

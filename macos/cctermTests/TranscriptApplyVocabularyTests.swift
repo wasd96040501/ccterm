@@ -116,11 +116,11 @@ final class TranscriptApplyVocabularyTests: XCTestCase {
 
     /// §8a: "is history still loading" is a data-pipeline fact owned by
     /// `SessionRuntime.historyLoadState` and forwarded verbatim by `Session`.
-    /// It is **derived** (`isLoading ≡ state ∉ {.loaded, .failed}`), never a
-    /// shadow flag on the controller / coordinator. Walk the lifecycle and
-    /// assert the derived relationship; assert the controller's only loading-ish
-    /// boolean — `loadingPillVisible`, the *running* pill — is independent of
-    /// the history-load state (no coupling, no shadow copy).
+    /// It is **derived** (`isLoading ≡ state != .loaded`), never a shadow flag
+    /// on the controller / coordinator. Walk the lifecycle and assert the
+    /// derived relationship; assert the controller's only loading-ish boolean —
+    /// `loadingPillVisible`, the *running* pill — is independent of the
+    /// history-load state (no coupling, no shadow copy).
     func testC7_isLoadingDerivedFromHistoryLoadState() throws {
         let runtime = SessionRuntime(
             sessionId: UUID().uuidString, repository: InMemorySessionRepository())
@@ -128,18 +128,13 @@ final class TranscriptApplyVocabularyTests: XCTestCase {
             runtime: runtime, cliClientFactory: { _ in FakeCLIClient() })
 
         func isLoading(_ s: SessionRuntime.HistoryLoadState) -> Bool {
-            switch s {
-            case .loaded, .failed: return false
-            default: return true
-            }
+            s != .loaded
         }
 
         let cases: [(SessionRuntime.HistoryLoadState, Bool)] = [
             (.notLoaded, true),
-            (.loadingTail, true),
-            (.tailLoaded(count: 3), true),
+            (.loading, true),
             (.loaded, false),
-            (.failed("boom"), false),
         ]
         for (state, expected) in cases {
             runtime.historyLoadState = state

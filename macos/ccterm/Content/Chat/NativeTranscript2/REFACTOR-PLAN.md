@@ -193,6 +193,55 @@ Note the clamp band makes this rare to begin with:
 the layout width while the detail pane is within `[460, 780]`; on a wide window
 it is pinned at `780` and mid-load resize changes nothing.
 
+**During a *live* resize, do not `retarget` at all.** The width changes every
+frame and every intermediate value is meaningless (instantly stale). The
+iterator keeps building at the pre-resize width throughout `inLiveResize`;
+`retarget` fires **once**, at `viewDidEndLiveResize`, with the final width.
+Pages built during the drag at the old width self-heal. This is the same
+"minimum during the drag, real work at the end" rhythm as the existing
+visible-row path (§2.8).
+
+### 4.5 Lifecycle: trigger, off-main produce, main-owned buffer, drain
+
+Decided model (resolves the push/pull question): **off-main produces and
+*deposits*; the main thread *drains*. There is no main-thread polling and no
+shared mutable buffer.**
+
+```
+trigger(width)                         ← the ONE call that passes width; starts the off-main task
+   │
+off-main task (runs until file top):
+   read page (reverse, paged)
+   → parse + group + tool-pair + typeset      (all heavy work here)
+   → produce one immutable Sendable page = [Block] + their RowLayouts
+   → hop to main: append page to the MAIN-OWNED pending buffer, wake a drain
+   → continue reading the next page off-main
+   │
+main drain (woken by a deposit; self-reschedules while buffer non-empty):
+   take ≤ budget pre-built blocks from the buffer
+   → apply(.prepend, batch)   (§5 in-tick recipe)
+```
+
+- **Concurrency: no lock.** The pending buffer is **owned by the main actor**.
+  The off-main task touches it only inside its main hop, and the drain runs on
+  main too — both are serialized by the runloop, so the "off-main writes while
+  main drains" race **cannot occur**. The cross-thread boundary carries an
+  *immutable* `Sendable` page, never a buffer two threads mutate. (A shared
+  mutable buffer + lock held during drain would also work, but it is the worse
+  design — the main-owned buffer removes the need for the lock entirely.)
+- **The deposit *is* the wake.** Main never polls an empty buffer; the first
+  drain happens only after the first page is deposited. No wasted empty tick on
+  the consumer side.
+- **First tick on a cold open is empty.** When a never-loaded session is
+  attached, the off-main task has produced nothing yet, so TICK 1 renders no
+  content and applies nothing — the transcript is genuinely empty for the gap
+  between attach and the first deposit (a small tail page, tens of ms). Warm
+  sessions have no gap (blocks already present from the continuous bridge).
+- **Covering the cold gap: blank, or a baked image of the pre-switch frame —
+  never a loading affordance.** No spinner / placeholder UI. The two acceptable
+  options (to pick later) are an empty surface or a one-frame snapshot of the
+  outgoing session composited until the first deposit lands.
+
 ---
 
 ## 5. Tick anchor consensus
@@ -248,24 +297,32 @@ keeps it true: **never mutate `blocks` outside `apply`.**
 ```
 TICK 1  [source]  VIEW: attach — synchronous, one tick
         make shell → addSubview → layoutSubtreeIfNeeded (settle width)
-        → bindData → render current blocks (cold = empty / warm = full) → scrollToTail
-        → start the iterator (off-main), fed the current row width
+        → bindData → render current blocks (warm = full / COLD = EMPTY) → scrollToTail
+        → trigger(width): start the iterator off-main
         → scrollerHidden = true (pipeline loading)
         [beforeWaiting] single tile @ settled width, draw, commit
-        ── the view line ends here; it does not know whether history is loading ──
+        ── cold: this tick shows NO content; the gap (attach → first deposit) is
+           covered by blank or a baked image of the pre-switch frame — never a
+           loading affordance. warm: full content already present, no gap. ──
 
-TICK 2..N  [source]  CONTENT: backfill drain — one apply per tick
-        drain ≤ budget ready blocks from the iterator buffer
+TICK k  [source]  CONTENT: first deposit drained (cold first screen)
+        off-main deposited the tail page → drain woken
+        → apply(.insert / .prepend, tail)   (anchored to tail)
+        [beforeWaiting] insert, tile, draw — first content appears
+
+TICK k+1..N  [source]  CONTENT: backfill drain — one apply per tick
+        drain ≤ budget pre-built blocks from the main-owned buffer
         → apply(.prepend, batch)   (anchor-preserving; §5 recipe)
         [beforeWaiting] insert above; viewport fixed; off-screen rows realize no cells
 
-TICK last  iterator exhausted (file top reached, orphans flushed)
+TICK last  iterator exhausted (file top reached, orphans flushed) + buffer drained
         → flush pending live events (§7)
         → pipeline idle → scrollerHidden recomputed false → fade in
 ```
 
-The tail's first screen is part of TICK 1's "render current blocks" when warm,
-or arrives as the first backfill batch when cold — either way no special path.
+Warm re-entry collapses to TICK 1 alone — content is already in the coordinator
+from the continuous bridge, and `loadHistory` is an idempotent no-op, so there
+are no CONTENT ticks. The multi-tick CONTENT sequence is the cold-open path.
 
 ---
 
@@ -358,12 +415,20 @@ never splits a block.
 
 ## 11. Open questions (to settle before coding)
 
-- Iterator API surface: pull (`next()` non-blocking, returns buffered) vs push
-  (reader posts batches, main drains). Both keep parse/CTLine off-main; pick the
-  one that makes backpressure + width-retarget cleanest.
+**Resolved**
+- ~~Iterator API surface: pull vs push.~~ → §4.5: **off-main produces and
+  deposits into a main-owned buffer; main drains.** No polling, no shared
+  mutable buffer, no lock. Cold first tick is empty by design; the gap is
+  covered by blank / pre-switch image bake, never a loading affordance.
+- ~~Width snapshot/validate/generation.~~ → §4.3/§4.4: removed; width self-heals
+  through the width-keyed cache. Only action is `retarget`, and not during live
+  resize (§4.4).
+
+**Still open**
 - Where the pipeline `isLoading` flag and the derived `scrollerHidden` live
   (controller vs coordinator).
 - The `apply` change-set vocabulary after the resolver removal (does `.prepend`
   become a first-class case distinct from `.insert(after: nil)`?).
+- Cold-gap cover: blank vs pre-switch frame image bake — pick one (UX).
 - Test net: which merge-gate tests assert the anchor invariant and the
   single-width typeset contract under the new pipeline.

@@ -11,9 +11,9 @@ Native macOS client for Claude Code. SwiftUI + AppKit, minimum target macOS 14 (
   - **Window toolbar** — `NSToolbar` + `NSSearchToolbarItem`; `.searchable` doesn't give the first-responder + ⌘F semantics the transcript search needs.
   - **App lifecycle** — `AppDelegate` (via `@NSApplicationDelegateAdaptor`) owns app-scope state and creates the main window in `applicationDidFinishLaunching`.
 
-  Everything else — input bar, configurator, overlays, Settings / Logs / About windows, every reusable component — is SwiftUI, hosted via `NSHostingController` (full panes) or `NSHostingView` (toolbar items / overlays). New code lands in SwiftUI unless it fits one of the exceptions above; introducing a new AppKit surface needs an explicit reason (perf measurement, missing API, lifecycle ordering).
+  Everything else — input bar, configurator, overlays, Settings / About windows, every reusable component — is SwiftUI, hosted via `NSHostingController` (full panes) or `NSHostingView` (toolbar items / overlays). New code lands in SwiftUI unless it fits one of the exceptions above; introducing a new AppKit surface needs an explicit reason (perf measurement, missing API, lifecycle ordering).
 
-- **Entry point**: `@main CCTermApp` (SwiftUI `App`) → `@NSApplicationDelegateAdaptor(AppDelegate.self)` → `MainWindowController` → `MainSplitViewController` (sidebar item + detail item) → `TranscriptDetailViewController`. Selection / draft state lives on `MainSelectionModel` (`@Observable`), shared between the AppKit `SidebarViewController` and the AppKit detail VC. Settings / Logs / About remain SwiftUI `Window` scenes; their menu items + ⌘F binding come from `AppCommands` (a SwiftUI `Commands` block on the Settings scene) so cold-start clicks resolve `@Environment(\.openWindow)` cleanly.
+- **Entry point**: `@main CCTermApp` (SwiftUI `App`) → `@NSApplicationDelegateAdaptor(AppDelegate.self)` → `MainWindowController` → `MainSplitViewController` (sidebar item + detail item) → `TranscriptDetailViewController`. Selection / draft state lives on `MainSelectionModel` (`@Observable`), shared between the AppKit `SidebarViewController` and the AppKit detail VC. Settings / About remain SwiftUI `Window` scenes; their menu items + ⌘F binding come from `AppCommands` (a SwiftUI `Commands` block on the Settings scene) so cold-start clicks resolve `@Environment(\.openWindow)` cleanly.
 - **Layers**:
   - **Model** — plain data, `struct` first, `Codable` where it crosses a boundary.
   - **View** — SwiftUI structs, declarative.
@@ -212,7 +212,7 @@ appLog(.info, "SessionRuntime", "send() queued — status=\(status)")
 
 - Category = class name without module prefix (`"SessionRuntime"`, `"TranscriptDetailVC"`).
 - Never log secrets (tokens, passwords, API keys).
-- Live tail: Window → Logs (⌘⇧L). Also mirrored to `os.Logger`, visible in Console.app for history.
+- Visible in Console.app (filter by subsystem `com.ccterm.app`). Live tail: `log stream --predicate 'subsystem == "com.ccterm.app"' --level debug`.
 
 ## Internationalization
 

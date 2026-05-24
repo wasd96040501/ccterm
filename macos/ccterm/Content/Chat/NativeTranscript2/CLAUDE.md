@@ -20,17 +20,17 @@ AppKit host VC (TranscriptDetailViewController, TranscriptDemoViewController, �
                └─ BlockCellView (NSView, override draw(_:), .onSetNeedsDisplay)
 ```
 
-`Transcript2Coordinator.blocks: [Block]` is the single source of truth — no `rows` mirror, no parallel diff structure. Mutation enters via `Controller.Change` (`.insert(after:blocks:)` / `.remove(ids:)` / `.update(id:kind:)`) and dispatches to `apply` (sync, lazy layout) or `applyInBackground` (off-main precompute then a single main hop).
+`Transcript2Coordinator.blocks: [Block]` is the single source of truth — no `rows` mirror, no parallel diff structure. Mutation enters via `Controller.Change` (`.prepend` / `.append` / `.replace` / `.remove` / `.update`, plus the internal `.insert(after:)` primitive) through the single `apply(_:scroll:)` entry (sync; layouts lazy on `heightOfRow`, or precomputed off-main by the backfill pipeline and landed as cache hits).
 
 ### 1.1 Why two types: Controller vs. Coordinator
 
 `Transcript2Controller` (host-facing) and `Transcript2Coordinator` (AppKit-facing) are kept apart on purpose; merging them was considered and rejected. They differ in three load-bearing ways:
 
-1. **Conformance constraints.** `Transcript2Coordinator` must be `NSObject` to satisfy `NSTableViewDataSource` / `NSTableViewDelegate`. `Transcript2Controller` is `@Observable` so hosts can observe `blockCount` / `isAnchorSettled` / `searchState` / `pendingUserBubbleSheet` / `loadingPillVisible` without reaching into AppKit state — used by `Transcript2SheetPresenter` for the two sheet-request fields, and by `@Bindable`-wrapped SwiftUI panels embedded inside the demo VCs. A merged class would carry both surfaces; the public symbol table would include every `NSTableViewDataSource` callback alongside `setHistory` / `setLoading`, blurring the API.
+1. **Conformance constraints.** `Transcript2Coordinator` must be `NSObject` to satisfy `NSTableViewDataSource` / `NSTableViewDelegate`. `Transcript2Controller` is `@Observable` so hosts can observe `blockCount` / `isAnchorSettled` / `searchState` / `pendingUserBubbleSheet` / `loadingPillVisible` without reaching into AppKit state — used by `Transcript2SheetPresenter` for the two sheet-request fields, and by `@Bindable`-wrapped SwiftUI panels embedded inside the demo VCs. A merged class would carry both surfaces; the public symbol table would include every `NSTableViewDataSource` callback alongside `apply` / `setLoading`, blurring the API.
 2. **File size.** Together the two files are ~2000 lines. Folding them produces one class that violates the project-wide rule against oversized bodies, and there is no natural axis of split inside a single class that's both the host surface and the table delegate.
-3. **Controller carries real logic, not just forwarding.** `setHistory`'s viewport-slicing + Phase 1/Phase 2 scheduling, `setLoading`'s debounce + `reconcileLoadingPill`, and the `@Observable` mirroring are all Controller-side; they sit naturally one layer above the table delegate, not inside it. The remaining methods on Controller are thin forwards (`apply`, `setToolStatus`, `runSearch` / `nextSearchHit` / `previousSearchHit` / `endSearch`, `attachSyntaxEngine`), which is the price of keeping the host-facing surface flat.
+3. **Controller carries real logic, not just forwarding.** `setLoading`'s debounce + `reconcileLoadingPill`, the loading-pill row insertion, the search-state and `@Observable` mirroring are all Controller-side; they sit naturally one layer above the table delegate, not inside it. The remaining methods on Controller are thin forwards (`apply`, `scrollToTail`, `setToolStatus`, `runSearch` / `nextSearchHit` / `previousSearchHit` / `endSearch`, `attachSyntaxEngine`), which is the price of keeping the host-facing surface flat.
 
-The split also matches the mount-vs-state-machine boundary: callers think in terms of `setHistory` / `append` / `setLoading` (Controller), not in terms of `tableView(_:numberOfRowsInSection:)` (Coordinator). Anchor settling, on the other hand, lives on the Coordinator because it's a function of the live `NSTableView` frame; Controller only mirrors `isAnchorSettled` for observers.
+The split also matches the mount-vs-state-machine boundary: callers think in terms of `apply` / `scrollToTail` / `setLoading` (Controller), not in terms of `tableView(_:numberOfRowsInSection:)` (Coordinator). Anchor settling, on the other hand, lives on the Coordinator because it's a function of the live `NSTableView` frame; Controller only mirrors `isAnchorSettled` for observers.
 
 **Don't merge.** If the forwarding feels redundant, the right move is to make the forwards thinner (e.g. expose `coordinator.search` as a property), not to collapse the layer.
 
@@ -62,15 +62,15 @@ Every item below is load-bearing for either scroll FPS, layout-pass cost, or mem
 
 ### 2.4 Layout cache: `[UUID: CachedLayout]`, no LRU
 
-`layoutCache: [UUID: CachedLayout { width, layout }]` ([Transcript2Coordinator.swift:163-168](Transcript2Coordinator.swift:163)) is keyed by block id; the width lives inside the entry. Cache evicts only on `.update` / `.remove` (point invalidation via `removeCachedLayout(for:)` [:547](Transcript2Coordinator.swift:547)). On `.insert`, layouts populate lazily through `layout(for:width:)` ([:557](Transcript2Coordinator.swift:557)) or eagerly through `applyInBackground` / `refillLayoutCache`. **Cost of an LRU**: eviction logic + hit-rate variance for nothing — transcript size is bounded (≤ 10k blocks typical), the dict cost is dominated by id lookup.
+`layoutCache: [UUID: CachedLayout { width, layout }]` ([Transcript2Coordinator.swift:163-168](Transcript2Coordinator.swift:163)) is keyed by block id; the width lives inside the entry. Cache evicts only on `.update` / `.remove` (point invalidation via `removeCachedLayout(for:)` [:547](Transcript2Coordinator.swift:547)). On insert, layouts populate lazily through `layout(for:width:)` ([:557](Transcript2Coordinator.swift:557)) or eagerly through `refillLayoutCache` (post-resize) and the backfill pipeline's off-main precompute. **Cost of an LRU**: eviction logic + hit-rate variance for nothing — transcript size is bounded (≤ 10k blocks typical), the dict cost is dominated by id lookup.
 
 ### 2.5 Pure off-main layout via `nonisolated static makeLayout`
 
-`Transcript2Coordinator.makeLayout(for:width:highlights:folds:statuses:)` ([:579-584](Transcript2Coordinator.swift:579)) is `nonisolated static`. It takes snapshot dicts (highlights / folds / statuses) captured on MainActor before the detached task starts; the off-main loop has no actor hops inside its per-block iteration. **Cost of making it `MainActor`**: every detached layout pass becomes a stream of main-actor hops, serializing with UI work and destroying the parallelism that backs `applyInBackground` / `refillLayoutCache`.
+`Transcript2Coordinator.makeLayout(for:width:highlights:folds:statuses:)` ([:579-584](Transcript2Coordinator.swift:579)) is `nonisolated static`. It takes snapshot dicts (highlights / folds / statuses) captured on MainActor before the detached task starts; the off-main loop has no actor hops inside its per-block iteration. **Cost of making it `MainActor`**: every detached layout pass becomes a stream of main-actor hops, serializing with UI work and destroying the parallelism that backs `refillLayoutCache` and the backfill pipeline's off-main builder.
 
-### 2.6 `applyInBackground` (fire-and-forget) for large prepends
+### 2.6 Backfill is off-main-built, then sync-applied in budgeted ticks
 
-For loadInitial Phase 2 and other large structural changes, `applyInBackground` ([:292-344](Transcript2Coordinator.swift:292)) computes layouts on a detached `userInitiated` Task, then a single main hop installs them and runs the structural change inside `withScrollAdjustment`. **Untracked, non-cancellable on purpose** — row-mutation is dataSource critical-path work; `Change.insert` resolves anchors by id at apply time, so landing is robust against any `apply`s in between. **Cost of making it sync**: 100+ ms freeze on every cold-load Phase 2 prepend.
+Cold history load runs through `TranscriptBackfillPipeline` (`NativeTranscript2Bridge/`): a detached producer reads reverse pages, builds blocks (markdown parse off-main), and deposits pre-built pages into a main-owned buffer; the main drain applies each page through the single sync `apply` — the tail page as `.append`, older history as `.prepend` with `.saveVisible(.visualTop)` — capped at a loose per-tick block budget. `insertRows` settles geometry synchronously, so the prepend anchor compensates in-tick with no forced tile (§2.7 / REFACTOR-PLAN §5.1). **Cost of building blocks on main**: 100+ ms freeze on cold load of a long transcript. (Per-row CTLine typeset still lands lazily on `heightOfRow` today; moving it off-main into the producer is tracked separately.)
 
 ### 2.7 `refillLayoutCache` post-resize prefetch + in-tick anchor
 
@@ -116,7 +116,7 @@ row — search-as-you-type turns into a frame-budget killer.
 
 ### 2.14 `cacheLayouts` anti-poison check
 
-`cacheLayouts(_:width:)` ([:540-545](Transcript2Coordinator.swift:540)) skips writes when the cache already has a fresh entry at the same width. An inflight background task that completes after a sync `apply` evicted + lazy-refilled the entry would otherwise overwrite the authoritative fresh layout with its older snapshot. **Cost of dropping the check**: cache poisoning under interleaved `apply` + `applyInBackground` / `refillLayoutCache` traffic.
+`cacheLayouts(_:width:)` ([:540-545](Transcript2Coordinator.swift:540)) skips writes when the cache already has a fresh entry at the same width. An inflight background task that completes after a sync `apply` evicted + lazy-refilled the entry would otherwise overwrite the authoritative fresh layout with its older snapshot. **Cost of dropping the check**: cache poisoning under interleaved `apply` + `refillLayoutCache` traffic.
 
 ### 2.15 Per-scope dedup + generation guard in `Transcript2HighlightStorage`
 
@@ -160,7 +160,7 @@ Both files lack the `Snapshot` filename suffix on purpose — `scripts/test-unit
 - **Single source of truth** is `Transcript2Coordinator.blocks: [Block]`. No `rows` mirror, no parallel diff structure. The only sync invariant is layout↔data, mediated by `layoutCache: [UUID: CachedLayout]`.
 - **Stable ids drive identity.** `Block.id: UUID` is caller-supplied. Never derive ids from content hashes — identical consecutive messages would collide and selection/highlight scope would drift across content-equivalent updates.
 - **Layout is a pure function**: `Self.makeLayout(for:width:highlights:folds:statuses:)` is `nonisolated static`. Cache entries are derived, not authoritative — `removeCachedLayout(for:)` is always safe; `heightOfRow` lazy-recomputes on miss.
-- **Two mutation entry points only.** `apply(_:scroll:)` (sync, lazy layout, incremental updates) and `applyInBackground(_:scroll:)` (off-main precompute, single main hop, large prepends). Both dispatch to `applyStructuralChange` per `Change` enum. No third channel; do not add a `pendingBlocks` side path.
+- **One mutation entry point.** `apply(_:scroll:)` (sync) dispatches every `Change` to `applyStructuralChange`. Off-main work (the backfill pipeline's producer, `refillLayoutCache`'s prefetch) precomputes layouts and feeds them through this same `apply` / `cacheLayouts`; it is never a second mutation channel. Do not add a `pendingBlocks` side path.
 
 ### 3.2 Coordinator-held row state
 

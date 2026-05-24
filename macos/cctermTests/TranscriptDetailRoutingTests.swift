@@ -2,20 +2,27 @@ import XCTest
 
 @testable import ccterm
 
-/// Pins the two pure routing decisions that translate
-/// `MainSelection` → detail-pane content:
+/// Pins the routing decision that translates `MainSelection` →
+/// `TranscriptDetailComposeStack.content(for:draftSessionId:)`,
+/// which is what the (still always-mounted) input-bar overlay
+/// inside `TranscriptDetailViewController` renders. The invariants:
+/// `.archive` / `.demo` / `.none` collapse to `.none`, so no input
+/// chrome floats on top of pages where the VC is unexpectedly
+/// mounted; `.newSession` with a draft renders the compose card;
+/// `.session(_)` renders the chat resting bar.
 ///
-/// 1. `TranscriptDetailComposeStack.content(for:draftSessionId:)` —
-///    what the always-mounted input-bar overlay should render. The
-///    invariant under test: `.archive` / `.demo` / `.none` collapse to
-///    `.none`, so no input chrome floats on top of side-branch pages.
-///    Pre-fix, this branch fell through to `ChatRestingBar(sessionId:
-///    "__archive__")`, which mounted a SwiftUI input bar that swallowed
-///    clicks on the Archive page's Unarchive button.
-/// 2. `TranscriptDetailViewController.sideBranchKind(for:)` — which
-///    side-branch VC (if any) the detail VC should mount under the
-///    overlays. The invariant: only `.archive` / `.demo` produce a
-///    side branch; chat-flavored cases route to the transcript.
+/// Pre-fix, the `.archive` branch fell through to
+/// `ChatRestingBar(sessionId: "__archive__")`, mounting a SwiftUI
+/// input bar that swallowed clicks on the Archive page's Unarchive
+/// button (#222).
+///
+/// `DetailRouterViewController` now routes `.archive` and `.demo(_)`
+/// away from `TranscriptDetailViewController` entirely, so the
+/// `.archive` / `.demo` content-routing assertions below are
+/// belt-and-suspenders: even if the router regressed, the compose
+/// stack must still not fabricate input chrome for those cases.
+/// Router-level mount/unmount invariants live in
+/// `DetailRouterContainmentTests`.
 @MainActor
 final class TranscriptDetailRoutingTests: XCTestCase {
 
@@ -71,35 +78,6 @@ final class TranscriptDetailRoutingTests: XCTestCase {
             let content = TranscriptDetailComposeStack.content(
                 for: .demo(kind), draftSessionId: nil)
             XCTAssertEqual(content, .none, "demo(.\(kind.rawValue)) should not render input chrome")
-        }
-    }
-    #endif
-
-    // MARK: - Side-branch routing
-
-    func testSideBranch_archiveNoLongerMountedAsSideBranchHere() {
-        // `.archive` is now routed by `DetailRouterViewController` to a
-        // dedicated `ArchiveViewController`, so `TranscriptDetailView`
-        // `Controller` never sees `.archive` in production. The
-        // sideBranchKind table must reflect that. The router-level
-        // assertion lives in `DetailRouterContainmentTests`.
-        XCTAssertNil(TranscriptDetailViewController.sideBranchKind(for: .archive))
-    }
-
-    func testSideBranch_chatSelectionsMountNoSideBranch() {
-        XCTAssertNil(TranscriptDetailViewController.sideBranchKind(for: .none))
-        XCTAssertNil(TranscriptDetailViewController.sideBranchKind(for: .newSession))
-        XCTAssertNil(
-            TranscriptDetailViewController.sideBranchKind(for: .session("session-abc")))
-    }
-
-    #if DEBUG
-    func testSideBranch_demoSelectionsMountDemoBranch() {
-        for kind in DemoKind.allCases {
-            XCTAssertEqual(
-                TranscriptDetailViewController.sideBranchKind(for: .demo(kind)),
-                .demo(kind),
-                "demo(.\(kind.rawValue)) should mount the matching demo side branch")
         }
     }
     #endif

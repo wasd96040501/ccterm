@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import XCTest
 
 @testable import ccterm
@@ -68,13 +69,10 @@ final class DetailRouterContainmentTests: XCTestCase {
             DetailRouterViewController.childKind(for: .session("sid")), .transcript)
         XCTAssertEqual(DetailRouterViewController.childKind(for: .archive), .archive)
         #if DEBUG
-        // Demos still pass through `TranscriptDetailViewController`'s
-        // internal side-branch mount until the next commit. Update
-        // this branch when each demo gets its own router kind.
         for kind in DemoKind.allCases {
             XCTAssertEqual(
                 DetailRouterViewController.childKind(for: .demo(kind)),
-                .transcript)
+                .demo(kind))
         }
         #endif
     }
@@ -135,6 +133,54 @@ final class DetailRouterContainmentTests: XCTestCase {
         XCTAssertNil(initialChild.view.superview, "old child's view must be unmounted")
         XCTAssertNil(initialChild.parent, "old child must be removed from parent chain")
     }
+
+    #if DEBUG
+    func testEveryDemoSelectionMountsItsOwnViewController() throws {
+        // Each `.demo(_)` case must map to its dedicated VC class.
+        // Tear down explicitly after every demo so the next iteration
+        // starts from a clean child slot (mirrors the user flipping
+        // demos in the sidebar one after another).
+        for kind in DemoKind.allCases {
+            let fixture = try makeFixture(initialSelection: .demo(kind))
+            let router = fixture.router
+            _ = router.view
+
+            let child = try XCTUnwrap(router.currentChild)
+            switch kind {
+            case .transcript:
+                XCTAssertTrue(child is TranscriptDemoViewController, "\(kind)")
+            case .transcriptStress:
+                XCTAssertTrue(child is TranscriptStressViewController, "\(kind)")
+            case .transcriptPerf:
+                XCTAssertTrue(child is TranscriptPerfDemoViewController, "\(kind)")
+            case .permissionSession:
+                XCTAssertTrue(child is PermissionSessionDemoViewController, "\(kind)")
+            case .permissionCards:
+                // SwiftUI-only demo — hosted via NSHostingController.
+                XCTAssertTrue(child is NSHostingController<AnyView>, "\(kind)")
+            }
+            XCTAssertTrue(child.view.superview === router.view)
+            XCTAssertEqual(router.children.count, 1)
+        }
+    }
+
+    func testFlipBetweenDemoAndSessionFullyDetachesPreviousChild() throws {
+        let fixture = try makeFixture(initialSelection: .demo(.transcript))
+        let router = fixture.router
+        _ = router.view
+        let demoChild = try XCTUnwrap(router.currentChild)
+        XCTAssertTrue(demoChild is TranscriptDemoViewController)
+
+        router.model.selection = .session("sid")
+        router.installChildForCurrentSelection()
+
+        let chatChild = try XCTUnwrap(router.currentChild)
+        XCTAssertTrue(chatChild is TranscriptDetailViewController)
+        XCTAssertNil(demoChild.view.superview)
+        XCTAssertNil(demoChild.parent)
+        XCTAssertEqual(router.children.count, 1)
+    }
+    #endif
 
     func testFlipFromArchiveBackToSessionMountsFreshTranscriptVC() throws {
         // `.archive` → `.session(_)` flips the other way. The previous

@@ -3,29 +3,27 @@ import Combine
 import Observation
 import SwiftUI
 
-/// The main window's detail-pane controller. Owns the transcript
+/// Child VC the `DetailRouterViewController` mounts for chat-bearing
+/// selections (`.session` / `.newSession` / `.none`). Owns the transcript
 /// `Transcript2ScrollView` directly — created in `loadView()` so the
 /// table's mount + `frameDidChange` cascade lives in AppKit's source
 /// phase, not in SwiftUI's commit pass (the whole point of #195).
 ///
-/// Around the transcript we mount three full-bleed overlays. All three
-/// stay mounted for the lifetime of the VC; their *contents* react to
+/// Around the transcript we mount three full-bleed overlays, all
+/// attached for the lifetime of the VC; their *contents* react to
 /// `model.selection`:
 /// - top scrim — `TranscriptScrimView` (AppKit, hitTest passthrough)
 /// - bottom scrim — `TranscriptBottomScrimView` (AppKit, hitTest
 ///   passthrough, even-odd cutouts at the attach button + pill)
 /// - input bar / compose configurator — `PassthroughHostingView`
-///   (NSHostingView subclass that lets transparent SwiftUI regions
-///   click-through). Its SwiftUI body switches on `model.selection`
-///   via `TranscriptDetailComposeStack.content(...)`: `.newSession` →
-///   compose card, `.session(_)` → chat resting bar, and `.archive` /
-///   `.demo` / `.none` → `EmptyView`. The EmptyView + passthrough
-///   combination is what keeps clicks reaching the side-branch view
-///   (Archive page, demo VCs) sitting below the overlay.
-///
-/// Side branches (archive page, DEBUG transcript demos) are hosted via
-/// child `NSHostingController`s that take over the detail area when
-/// the sidebar selection lands on their sentinel tag.
+///   (NSHostingView subclass; see its doc for the remaining
+///   `claimsHits` knob, deleted in a follow-up commit once the host
+///   shrinks to fit the bar). Its SwiftUI body switches on
+///   `model.selection` via `TranscriptDetailComposeStack.content(...)`:
+///   `.newSession` → compose card, `.session(_)` → chat resting bar,
+///   `.none` → `EmptyView`. `.archive` and `.demo(_)` are routed
+///   away from this VC entirely by `DetailRouterViewController` and
+///   never land here.
 @MainActor
 final class TranscriptDetailViewController: NSViewController {
     /// Coordinate-space identifier for SwiftUI `GeometryReader`/
@@ -83,10 +81,6 @@ final class TranscriptDetailViewController: NSViewController {
     /// Sink for `model.attachRect` / `pillRect` → `bottomScrim` cutout
     /// path. Re-arms on every fire.
     private var scrimRectObservationTask: Task<Void, Never>?
-
-    /// Side-branch (archive / demo) child VC, mounted via
-    /// `addChild` + `view.addSubview`. nil while a session is shown.
-    private var sideBranchController: NSViewController?
 
     /// Sink for `session.isRunning` → `controller.setLoading(_:)`.
     /// Re-armed on every session swap.
@@ -314,134 +308,26 @@ final class TranscriptDetailViewController: NSViewController {
         rebuildBackingContent()
     }
 
-    /// Decide whether `composeOrBarHost` (the full-bleed SwiftUI overlay
-    /// that renders the input bar / compose card / EmptyView) should
-    /// claim its bounds for hit-testing. Driven by `selection` because
-    /// the SwiftUI body itself doesn't expose enough hit-test semantics
-    /// for `PassthroughHostingView` to figure it out:
-    /// - Side branches (`.archive` / `.demo`) render `EmptyView` here
-    ///   so the host must let every click through to the side-branch
-    ///   VC that sits below it.
-    /// - Transcript-bearing selections (`.session` / `.newSession` /
-    ///   `.none`) render visible interactive SwiftUI controls, so the
-    ///   host must claim its bounds — otherwise input-bar buttons
-    ///   that lack AppKit backing (Permission / Model · Effort / etc.)
-    ///   silently swallow nothing.
+    /// `PassthroughHostingView`'s remaining knob. Now that
+    /// `DetailRouterViewController` only ever mounts this VC for
+    /// chat-bearing selections (`.session` / `.newSession` / `.none`)
+    /// — `.archive` and `.demo(_)` get their own dedicated child VCs
+    /// — the host always renders visible interactive SwiftUI
+    /// controls, so we always claim hits. The flag and this method
+    /// disappear in the next commit when `PassthroughHostingView`
+    /// itself goes away.
     private func updateComposeHostHitClaim() {
-        composeOrBarHost.claimsHits = Self.sideBranchKind(for: model.selection) == nil
+        composeOrBarHost.claimsHits = true
     }
 
     // MARK: - Backing content rebuild
 
     private func rebuildBackingContent() {
-        // Detail-pane router. Switch on the typed selection so the
-        // compiler enforces that every case has a deliberate route —
-        // transcript (chat chrome stays mounted around it, with the
-        // compose host's SwiftUI body driven by the selection) or a
-        // side-branch view (archive / demo), or nothing (no selection).
-        if let kind = Self.sideBranchKind(for: model.selection) {
-            tearDownTranscript()
-            mountSideBranch(makeSideBranch(kind: kind))
-            return
-        }
-        tearDownSideBranch()
-
         guard let active = model.effectiveSessionId else {
             tearDownTranscript()
             return
         }
         attachSession(active)
-    }
-
-    /// Pure routing decision: which side-branch view (if any) the
-    /// `selection` should mount under the detail pane's overlays.
-    /// Returning `nil` means the detail pane should mount the
-    /// transcript instead. Static + pure so it's directly unit-testable
-    /// — see `TranscriptDetailRoutingTests`.
-    ///
-    /// **Transitional shape.** `.archive` was pulled out into
-    /// `ArchiveViewController` (mounted by `DetailRouterViewController`),
-    /// so it no longer appears here. The remaining `.demo(_)` case
-    /// follows in the next commit, at which point this method and
-    /// every side-branch helper below it gets deleted.
-    static func sideBranchKind(for selection: MainSelection) -> SideBranchKind? {
-        switch selection {
-        case .none, .newSession, .session, .archive:
-            return nil
-        #if DEBUG
-        case .demo(let kind):
-            return .demo(kind)
-        #endif
-        }
-    }
-
-    enum SideBranchKind: Equatable {
-        #if DEBUG
-        case demo(DemoKind)
-        #endif
-    }
-
-    private enum SideBranchContent {
-        case swiftUI(AnyView)
-        case viewController(NSViewController)
-    }
-
-    private func makeSideBranch(kind: SideBranchKind) -> SideBranchContent {
-        switch kind {
-        #if DEBUG
-        case .demo(let demoKind):
-            switch demoKind {
-            case .transcript:
-                return .viewController(
-                    TranscriptDemoViewController(syntaxEngine: searchEngine))
-            case .transcriptStress:
-                return .viewController(
-                    TranscriptStressViewController(syntaxEngine: searchEngine))
-            case .transcriptPerf:
-                return .viewController(
-                    TranscriptPerfDemoViewController(syntaxEngine: searchEngine))
-            case .permissionCards:
-                return .swiftUI(AnyView(injectingEnvironment(PermissionCardsDemoView())))
-            case .permissionSession:
-                return .viewController(
-                    PermissionSessionDemoViewController(syntaxEngine: searchEngine))
-            }
-        #endif
-        }
-    }
-
-    private func mountSideBranch(_ content: SideBranchContent) {
-        tearDownSideBranch()
-        let host: NSViewController
-        switch content {
-        case .swiftUI(let anyView):
-            host = NSHostingController(rootView: anyView)
-        case .viewController(let vc):
-            host = vc
-        }
-        host.view.translatesAutoresizingMaskIntoConstraints = false
-        addChild(host)
-        // Insert below the chat-chrome overlays. The compose host's
-        // SwiftUI body is `EmptyView` for side-branch selections (see
-        // `TranscriptDetailComposeStack.content(...)`), and
-        // `PassthroughHostingView` lets the resulting transparent
-        // region click-through, so the side branch receives clicks
-        // even though it sits below the host in the subview stack.
-        view.addSubview(host.view, positioned: .below, relativeTo: topScrim)
-        NSLayoutConstraint.activate([
-            host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            host.view.topAnchor.constraint(equalTo: view.topAnchor),
-            host.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ])
-        sideBranchController = host
-    }
-
-    private func tearDownSideBranch() {
-        guard let controller = sideBranchController else { return }
-        controller.view.removeFromSuperview()
-        controller.removeFromParent()
-        sideBranchController = nil
     }
 
     // MARK: - Transcript mount
@@ -568,16 +454,6 @@ final class TranscriptDetailViewController: NSViewController {
         // band, and mouse events in that band are intercepted instead
         // of passing through to the transcript. Tracking separately.
         .ignoresSafeArea()
-    }
-
-    private func injectingEnvironment<V: View>(_ inner: V) -> some View {
-        inner
-            .environment(sessionManager)
-            .environment(recentProjects)
-            .environment(inputDraftStore)
-            .environment(\.syntaxEngine, searchEngine)
-            .environment(searchBus)
-            .environment(notifications)
     }
 
     // MARK: - Submit (draft → real session promotion)

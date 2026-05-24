@@ -1,5 +1,6 @@
 import AppKit
 import Observation
+import SwiftUI
 
 /// Empty AppKit container at the detail slot of `MainSplitViewController`.
 /// Hosts exactly one child `NSViewController` at a time and swaps it on
@@ -94,8 +95,9 @@ final class DetailRouterViewController: NSViewController {
     enum ChildKind: Equatable {
         case transcript
         case archive
-        // `.demo(_)` arrives in the next commit when the demo VCs
-        // get pulled out of `TranscriptDetailViewController`.
+        #if DEBUG
+        case demo(DemoKind)
+        #endif
     }
 
     /// Pure routing decision: which kind of child VC `selection`
@@ -108,11 +110,8 @@ final class DetailRouterViewController: NSViewController {
         case .archive:
             return .archive
         #if DEBUG
-        case .demo:
-            // Still goes through `TranscriptDetailViewController`'s
-            // internal side-branch mount until the next commit pulls
-            // each demo into its own router case.
-            return .transcript
+        case .demo(let kind):
+            return .demo(kind)
         #endif
         }
     }
@@ -165,8 +164,42 @@ final class DetailRouterViewController: NSViewController {
                 searchBus: searchBus,
                 inputDraftStore: inputDraftStore
             )
+        #if DEBUG
+        case .demo(let demoKind):
+            return makeDemoChild(demoKind)
+        #endif
         }
     }
+
+    #if DEBUG
+    private func makeDemoChild(_ kind: DemoKind) -> NSViewController {
+        switch kind {
+        case .transcript:
+            return TranscriptDemoViewController(syntaxEngine: searchEngine)
+        case .transcriptStress:
+            return TranscriptStressViewController(syntaxEngine: searchEngine)
+        case .transcriptPerf:
+            return TranscriptPerfDemoViewController(syntaxEngine: searchEngine)
+        case .permissionSession:
+            return PermissionSessionDemoViewController(syntaxEngine: searchEngine)
+        case .permissionCards:
+            // The only demo that's a pure SwiftUI view — host it via
+            // `NSHostingController` so the surrounding `addChild`
+            // plumbing matches the other branches. Same environment
+            // injections the production app uses.
+            let root = AnyView(
+                PermissionCardsDemoView()
+                    .environment(sessionManager)
+                    .environment(recentProjects)
+                    .environment(inputDraftStore)
+                    .environment(\.syntaxEngine, searchEngine)
+                    .environment(searchBus)
+                    .environment(notifications)
+            )
+            return NSHostingController(rootView: root)
+        }
+    }
+    #endif
 
     // MARK: - Observation
 

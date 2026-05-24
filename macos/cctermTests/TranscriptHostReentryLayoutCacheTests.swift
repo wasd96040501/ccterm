@@ -127,8 +127,8 @@ final class TranscriptHostReentryLayoutCacheTests: XCTestCase {
             XCTFail("session materialization failed")
             return
         }
-        session1.controller.setHistory(makeBlocks())
-        session2.controller.setHistory(makeBlocks())
+        session1.controller.apply(.append(makeBlocks()))
+        session2.controller.apply(.append(makeBlocks()))
 
         let defaultsSuite = "ccterm-host-reentry-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: defaultsSuite)!

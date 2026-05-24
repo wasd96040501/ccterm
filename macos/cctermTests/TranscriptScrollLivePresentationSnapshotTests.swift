@@ -60,8 +60,8 @@ final class TranscriptScrollLivePresentationSnapshotTests: XCTestCase {
 
     private func prepopulatedController() -> Transcript2Controller {
         let c = Transcript2Controller()
-        c.setHistory(makeBlocks())
-        XCTAssertEqual(c.blockIds.count, Self.blockCount, "fixture: setHistory should land all blocks")
+        c.apply(.append(makeBlocks()))
+        XCTAssertEqual(c.blockIds.count, Self.blockCount, "fixture: append should land all blocks")
         return c
     }
 

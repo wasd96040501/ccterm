@@ -182,7 +182,7 @@ final class DetailRouterLayoutDiagnosticsTests: XCTestCase {
             XCTFail("session materialization failed")
             return
         }
-        session.controller.setHistory(makeBlocks())
+        session.controller.apply(.append(makeBlocks()))
 
         // Start on Archive so the first child VC is ArchiveViewController,
         // forcing a true cross-kind swap when we flip to the session.

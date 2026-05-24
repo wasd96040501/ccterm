@@ -392,6 +392,11 @@ final class ChatSessionViewController: NSViewController {
         if currentSession?.sessionId == sessionId, transcriptScroll != nil {
             return
         }
+        // Stopwatch for "sidebar click → first rendered screen". Cold attaches
+        // paint blank for the first tick (block building is off-main), so this
+        // measures the gap the cold-load first-screen edge closes. Reported in
+        // the `onFirstScreenReady` callback wired just before `loadHistory`.
+        let attachStart = CFAbsoluteTimeGetCurrent()
         tearDownTranscript()
 
         let scroll = TranscriptScrollViewFactory.make(controller: session.controller)
@@ -418,7 +423,21 @@ final class ChatSessionViewController: NSViewController {
         // mount land here with no setHistory follow-up (loadHistory is
         // idempotent and short-circuits). Anchor to the tail synchronously
         // now that the table has real width.
+        //
+        // Resident reentry telemetry: the first tile `scrollToTail` forces
+        // queries `heightOfRow` for every row, and cache *misses* (blocks the
+        // bridge appended while this session was detached, or a width change
+        // since it was last displayed) recompute their `RowLayout` on the main
+        // thread right here. We read the coordinator's monotonic compute
+        // counter as a delta around this one tile so the cost is logged ONCE
+        // per attach (session switches are user-paced — not a hot path); the
+        // per-row typeset itself is never logged.
+        let layoutComputesBeforeTile = session.controller.mainThreadLayoutComputes
+        let reentryTileStart = CFAbsoluteTimeGetCurrent()
         session.controller.scrollToTail()
+        let reentryTileMs = (CFAbsoluteTimeGetCurrent() - reentryTileStart) * 1000
+        let reentryTypeset =
+            session.controller.mainThreadLayoutComputes &- layoutComputesBeforeTile
 
         // Attach syntax engine (idempotent).
         session.controller.attachSyntaxEngine(searchEngine)
@@ -440,7 +459,21 @@ final class ChatSessionViewController: NSViewController {
             "[history] attach session=\(sessionId.prefix(8))… "
                 + "loadState=\(String(describing: session.historyLoadState)) "
                 + "msgCount=\(session.messages.count) "
-                + "blockCount=\(session.controller.blockCount)")
+                + "blockCount=\(session.controller.blockCount) "
+                + "reentryTypeset=\(reentryTypeset) "
+                + "reentryTile=\(String(format: "%.1f", reentryTileMs))ms")
+        // Log the cold-load first-screen latency once it lands. Capture only
+        // the sessionId string + start time (no `self` / `session`) so the
+        // closure stored on the controller can't form a retain cycle. On a warm
+        // re-entry the edge already fired during the original cold load, so the
+        // latched callback never re-fires — no spurious log.
+        session.controller.onFirstScreenReady = {
+            let ms = (CFAbsoluteTimeGetCurrent() - attachStart) * 1000
+            appLog(
+                .info, "TranscriptDetailVC",
+                "[firstScreen] sidebar→first view=\(String(format: "%.1f", ms))ms "
+                    + "session=\(sessionId.prefix(8))…")
+        }
         session.loadHistory()
         session.controller.setLoading(session.isRunning)
 

@@ -3,13 +3,15 @@ import XCTest
 
 @testable import ccterm
 
-/// Covers `SessionRuntime.loadHistory`'s two-phase flow with the
-/// precomputed-blocks payload added in this PR. Each test:
-///
-/// - Writes a unique tmp JSONL file (no shared FS paths under parallel
-///   execution; see `cctermTests/CLAUDE.md`).
-/// - Constructs a fresh `SessionRuntime` against an in-memory repository.
-/// - Attaches a `MessagesChangeRecorder` and drives `loadHistory(overrideURL:)`.
+/// Covers the reverse-streaming history load now driven by
+/// `Session.loadHistory()` → `TranscriptBackfillPipeline` →
+/// `JSONLReversePageSource` (REFACTOR-PLAN §4.5/§4.6). The old two-phase
+/// `.reset`/`.prepended` mechanism, its precomputed-blocks payload, and the
+/// `ToolResultReresolver` backfill are gone — the grouping/pairing correctness
+/// they used to guard now lives in `TranscriptReverseBuilderTests` (Group A),
+/// and the deposit/drain timing in `TranscriptBackfillPipelineTests` (Group B).
+/// These tests are the end-to-end integration: bytes on disk → blocks in the
+/// controller.
 @MainActor
 final class SessionRuntimeHistoryTests: XCTestCase {
 
@@ -24,153 +26,92 @@ final class SessionRuntimeHistoryTests: XCTestCase {
         tempFile = nil
     }
 
-    // MARK: - Phase A
+    /// Build an `.active` Session over an in-memory repo so `loadHistory`'s
+    /// controller + bridge + historyLoadState are all wired.
+    private func makeSession() -> ccterm.Session {
+        let runtime = SessionRuntime(
+            sessionId: UUID().uuidString,
+            repository: InMemorySessionRepository())
+        return ccterm.Session(runtime: runtime, cliClientFactory: { _ in FakeCLIClient() })
+    }
 
-    /// Cold load of a small JSONL: `.reset` fires with precomputed blocks
-    /// that cover every entry the handle just ingested. Verifies the
-    /// off-main precompute → main-hop dispatch wiring.
-    func testLoadHistoryFiresResetWithPrecomputedBlocks() async {
+    /// Drive `loadHistory(overrideURL:)` to completion, awaiting
+    /// `historyLoadState == .loaded`.
+    private func loadToCompletion(
+        _ session: ccterm.Session, url: URL, firstPageEntryTarget: Int = 20
+    ) async {
+        session.loadHistory(overrideURL: url, firstPageEntryTarget: firstPageEntryTarget)
+        let predicate = NSPredicate { _, _ in
+            session.historyLoadState == .loaded
+        }
+        let exp = XCTNSPredicateExpectation(predicate: predicate, object: nil)
+        await fulfillment(of: [exp], timeout: 5)
+    }
+
+    /// Cold load of a small JSONL lands every entry's blocks in the controller.
+    func testLoadHistoryRendersAllBlocks() async {
         let file = try! TempJSONLFile([
             Message2Fixtures.assistantTextJSONL("Hello"),
             Message2Fixtures.userTextJSONL("Hi back"),
         ])
         tempFile = file
 
-        let runtime = SessionRuntime(
-            sessionId: UUID().uuidString,
-            repository: InMemorySessionRepository())
-        let recorder = MessagesChangeRecorder()
-        recorder.attach(to: runtime)
+        let session = makeSession()
+        await loadToCompletion(session, url: file.url)
 
-        runtime.loadHistory(overrideURL: file.url, tailTarget: 80)
-
-        let arrived = await recorder.wait { events in
-            events.contains(where: { $0.asReset != nil })
-        }
-        XCTAssertTrue(arrived, "reset event did not arrive within timeout")
-
-        guard let reset = recorder.events.compactMap(\.asReset).first else {
-            return XCTFail("expected at least one .reset event")
-        }
-        XCTAssertEqual(
-            reset.entries.count, 2,
-            "both JSONL lines should appear as entries")
-        XCTAssertNotNil(
-            reset.precomputed,
-            "Phase A must ship a precomputed-blocks payload")
-        // Every entry has a non-empty block list in the map.
-        for entry in reset.entries {
-            let blocks = reset.precomputed?[entry.id]
-            XCTAssertNotNil(
-                blocks,
-                "precomputed map missing entry \(entry.id)")
-            XCTAssertFalse(
-                blocks?.isEmpty ?? true,
-                "precomputed blocks for entry \(entry.id) should be non-empty")
-        }
+        // assistant text → 1 paragraph block; user text → 1 bubble block.
+        XCTAssertEqual(session.controller.blockCount, 2)
+        XCTAssertEqual(session.historyLoadState, .loaded)
     }
 
-    /// Edge: empty file. `.reset([], precomputed: [:])` still fires so the
-    /// bridge can flip `didLoadInitial = true` and subsequent live appends
-    /// take the incremental path.
-    func testLoadHistoryEmptyFileFiresEmptyReset() async {
+    /// Empty file loads to `.loaded` with no content and no crash.
+    func testLoadHistoryEmptyFile() async {
         let file = try! TempJSONLFile([])
         tempFile = file
 
-        let runtime = SessionRuntime(
-            sessionId: UUID().uuidString,
-            repository: InMemorySessionRepository())
-        let recorder = MessagesChangeRecorder()
-        recorder.attach(to: runtime)
+        let session = makeSession()
+        await loadToCompletion(session, url: file.url)
 
-        runtime.loadHistory(overrideURL: file.url, tailTarget: 80)
-
-        let arrived = await recorder.wait { events in
-            events.contains(where: { $0.asReset != nil })
-        }
-        XCTAssertTrue(arrived, "reset event did not arrive within timeout")
-
-        guard let reset = recorder.events.compactMap(\.asReset).first else {
-            return XCTFail("expected one .reset event")
-        }
-        XCTAssertTrue(reset.entries.isEmpty)
-        XCTAssertEqual(reset.precomputed?.isEmpty, true)
+        XCTAssertEqual(session.controller.blockCount, 0)
+        XCTAssertEqual(session.historyLoadState, .loaded)
     }
 
-    // MARK: - Phase B
-
-    /// JSONL larger than `tailTarget`: Phase A picks up the tail, Phase B
-    /// streams the prefix in afterwards. The `.prepended` event must
-    /// carry precomputed blocks for every prefix entry — proving the
-    /// off-main precompute kicked in for the larger-load path too.
-    func testLoadHistoryPhaseBFiresPrependedWithPrecomputedBlocks() async {
-        // 6 JSONL lines, tailTarget=2 → Phase B picks up ~4 prefix lines.
-        let lines = (0..<6).map { i in
-            Message2Fixtures.assistantTextJSONL("Segment \(i)")
-        }
+    /// A JSONL larger than the first page exercises multi-page backfill:
+    /// every line still lands, in document order.
+    func testLoadHistoryMultiPageRendersInDocumentOrder() async {
+        let lines = (0..<6).map { Message2Fixtures.assistantTextJSONL("Segment \($0)") }
         let file = try! TempJSONLFile(lines)
         tempFile = file
 
-        let runtime = SessionRuntime(
-            sessionId: UUID().uuidString,
-            repository: InMemorySessionRepository())
-        let recorder = MessagesChangeRecorder()
-        recorder.attach(to: runtime)
+        let session = makeSession()
+        await loadToCompletion(session, url: file.url, firstPageEntryTarget: 2)
 
-        runtime.loadHistory(overrideURL: file.url, tailTarget: 2)
-
-        let arrived = await recorder.wait { events in
-            events.contains(where: { $0.asPrepended != nil })
-        }
-        XCTAssertTrue(arrived, "prepended event did not arrive within timeout")
-
-        guard let prepended = recorder.events.compactMap(\.asPrepended).first
-        else {
-            return XCTFail("expected at least one .prepended event")
-        }
-        XCTAssertFalse(
-            prepended.entries.isEmpty,
-            "Phase B prefix should not be empty for a multi-line file")
-        XCTAssertNotNil(
-            prepended.precomputed,
-            "Phase B must ship a precomputed-blocks payload")
-        for entry in prepended.entries {
-            let blocks = prepended.precomputed?[entry.id]
-            XCTAssertNotNil(
-                blocks,
-                "precomputed map missing prefix entry \(entry.id)")
+        XCTAssertEqual(session.controller.blockCount, 6, "first page + later pages all land")
+        // Document order: first paragraph reads "Segment 0".
+        let firstId = session.controller.coordinator.blockIds.first
+        let firstBlock = firstId.flatMap { session.controller.coordinator.block(forId: $0) }
+        if case .paragraph(let inlines) = firstBlock?.kind,
+            case .text(let s) = inlines.first
+        {
+            XCTAssertEqual(s, "Segment 0", "oldest entry sits at the top after backfill")
+        } else {
+            XCTFail("expected a paragraph block at the top, got \(String(describing: firstBlock?.kind))")
         }
     }
 
-    /// Edge: precomputed payload must match what `MessageEntryBlockBuilder`
-    /// would produce on the synchronous fallback path. If they diverge, the
-    /// bridge's reverse map would point at the wrong block ids.
-    func testPrecomputedBlocksMatchSynchronousBuild() async {
-        let file = try! TempJSONLFile([
-            Message2Fixtures.assistantTextJSONL("# Heading\n\nA paragraph.")
-        ])
+    /// Re-entry is idempotent: a second `loadHistory` on a `.loaded` session is
+    /// a no-op (no duplicate content).
+    func testLoadHistoryIdempotentOnReentry() async {
+        let file = try! TempJSONLFile([Message2Fixtures.assistantTextJSONL("Once")])
         tempFile = file
 
-        let runtime = SessionRuntime(
-            sessionId: UUID().uuidString,
-            repository: InMemorySessionRepository())
-        let recorder = MessagesChangeRecorder()
-        recorder.attach(to: runtime)
+        let session = makeSession()
+        await loadToCompletion(session, url: file.url)
+        let countAfterFirst = session.controller.blockCount
 
-        runtime.loadHistory(overrideURL: file.url, tailTarget: 80)
-
-        _ = await recorder.wait { events in
-            events.contains(where: { $0.asReset != nil })
-        }
-        guard let reset = recorder.events.compactMap(\.asReset).first,
-            let entry = reset.entries.first
-        else {
-            return XCTFail("expected an entry on reset")
-        }
-        let precomputed = reset.precomputed?[entry.id] ?? []
-        let synchronous = MessageEntryBlockBuilder.entryBlocks(entry)
-        XCTAssertEqual(
-            precomputed.map(\.id), synchronous.map(\.id),
-            "off-main precompute must yield the same block ids as the sync builder")
+        session.loadHistory(overrideURL: file.url)
+        // No state change to await — assert it stayed put.
+        XCTAssertEqual(session.controller.blockCount, countAfterFirst)
+        XCTAssertEqual(session.historyLoadState, .loaded)
     }
 }

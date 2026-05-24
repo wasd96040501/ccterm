@@ -125,7 +125,7 @@ final class TranscriptDemoViewController: NSViewController {
         // Idempotent — a pre-seeded controller (snapshot test path)
         // skips this. Same guard the old SwiftUI `.task` carried.
         guard controller.blockCount == 0 else { return }
-        controller.setHistory(Self.initialBlocks)
+        controller.apply(.append(Self.initialBlocks))
         // Mark the third toolGroup live. Status flows through the
         // dedicated `setToolStatus` channel so the rows already in the
         // table refresh granularly. Mixed per-child statuses prove
@@ -141,7 +141,7 @@ final class TranscriptDemoViewController: NSViewController {
 
     private func handleAddMessage() {
         let next = Self.extraBlock(at: extraAddCount)
-        controller.apply(.insert(after: controller.blockIds.last, [next]))
+        controller.apply(.append([next]))
         extraAddCount += 1
     }
 

@@ -1,16 +1,17 @@
+import AgentSDK
 import AppKit
 import XCTest
 
 @testable import ccterm
 
-/// Reproduces the deferred-from-#224 async-load race that survives the
-/// compose/overlay work: switching sessions while a history load is
-/// in flight desyncs the transcript.
+/// Acceptance gate (deferred-from-#224): switching sessions while a history
+/// load is in flight must not desync the transcript.
 ///
-/// `Transcript2Controller.setHistory` splits a large history into a sync
-/// Phase 1 (viewport batch) and an async Phase 2 (`applyInBackground`:
-/// off-main layout, then a single main-hop that mutates `blocks` and
-/// calls `insertRows`). The main-hop guards on `self.tableView`:
+/// ## What the old code got wrong, and why this is the gate for the fix
+///
+/// The pre-refactor `Transcript2Controller.setHistory` split a large history
+/// into a sync Phase 1 (viewport batch) and an async Phase 2 whose main-hop
+/// guarded on the live table:
 ///
 /// ```
 /// await MainActor.run {
@@ -19,31 +20,29 @@ import XCTest
 /// }
 /// ```
 ///
-/// If the user switches away before Phase 2 lands, `dismantle` has set
-/// `coordinator.tableView = nil`, so the landing returns **without
-/// inserting the Phase-2 blocks into `coordinator.blocks`** — they are
-/// silently lost. The transcript is now missing rows the history
-/// contained, `blocks.count` no longer matches the real history, and the
-/// `block.id → row` mapping every downstream consumer relies on
-/// (`markCellNeedsDisplay`, selection highlight, search) is off — which
-/// is the user-visible "I can drag-select but no highlight appears, and
-/// only switching away and back fixes it."
+/// If the user switched away before Phase 2 landed, `dismantle` had nilled
+/// `coordinator.tableView`, so the landing returned **without inserting the
+/// Phase-2 blocks into `coordinator.blocks`** — they were silently lost.
+/// `blocks.count` no longer matched the row count a rebuilt table tiled to, so
+/// every `block.id → row` consumer (selection-highlight, search) pointed at the
+/// wrong rows. The only thing that "fixed" it was a full re-attach.
 ///
-/// The fix must keep `blocks` authoritative across a mid-flight table
-/// swap (route the landing through the sync `apply` path when the table
-/// is gone, exactly as the *pre*-detach guards at the top of
-/// `applyInBackground` already do).
+/// ## What the merged refactor changed (the property under test)
 ///
-/// ## Status on this branch: fix reverted, test RED on purpose
+/// `setHistory` + the two-phase apply are gone. History now loads through the
+/// reverse-streaming `TranscriptBackfillPipeline`: an off-main producer builds
+/// pre-typeset pages, and the main thread drains them through the single
+/// `Transcript2Controller.apply` entry — the tail page as `.append`, every
+/// older page as `.prepend`. Crucially, `apply` mutates `coordinator.blocks`
+/// **regardless of whether a table is bound** (the headless drain in
+/// `TranscriptBackfillPipelineTests` is the same path with no table at all). So
+/// a mid-load table teardown can no longer truncate `blocks`.
 ///
-/// The point-fix in `applyInBackground` was intentionally **reverted**
-/// here — the timing race is being solved more fundamentally by the
-/// `set blocks` refactor on another branch. This test is kept as the
-/// acceptance gate for that refactor and is **expected to FAIL** on this
-/// branch: without the fix, the dropped Phase-2 landing truncates
-/// `blocks` and the rebuilt table's row count. When the refactor merges
-/// in, this test must turn green — `blocks` and the rebuilt table's row
-/// count back in sync — with no edit to the assertions.
+/// This test pins that guarantee end-to-end: drive a real pipeline, land the
+/// tail page with the table bound, tear the table down before the older
+/// `.prepend` pages drain (the switch-away), let the rest land while detached,
+/// then re-attach (the switch-back). `blocks` — and the rebuilt table's row
+/// count — must survive intact.
 @MainActor
 final class TranscriptAsyncLoadSwitchRaceTests: XCTestCase {
 
@@ -51,142 +50,123 @@ final class TranscriptAsyncLoadSwitchRaceTests: XCTestCase {
         continueAfterFailure = false
     }
 
-    private static let windowSize = CGSize(width: 720, height: 800)
-    private static let historyCount = 200
+    private static let pageCount = 6
+    private static let perPage = 5
+    private static var totalBlocks: Int { pageCount * perPage }
 
-    private func makeBlocks() -> [Block] {
-        (0..<Self.historyCount).map { i in
-            Block(
-                id: UUID(),
-                kind: .paragraph(inlines: [
-                    .text(
-                        "line \(i): the rain in spain falls mainly on the plain, "
-                            + "and the quick brown fox jumps over the lazy dog.")
-                ]))
+    /// Tail-first list of document-order message slices, one block per message.
+    /// Each message carries a unique id so no two collapse into one entry.
+    private func makePages() -> [[Message2]] {
+        (0..<Self.pageCount).map { p in
+            (0..<Self.perPage).map { i in
+                Message2Fixtures.assistantText(
+                    "page \(p) line \(i): the rain in spain falls mainly on the plain",
+                    messageId: "m-\(p)-\(i)")
+            }
         }
     }
 
-    private func drainMainLoop(seconds: TimeInterval) {
-        let deadline = Date().addingTimeInterval(seconds)
-        while Date() < deadline {
-            RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.02))
-        }
-    }
-
-    /// Mounts a bound table, kicks an async `setHistory`, tears the table
-    /// down mid-flight (the switch-away), then lands Phase 2. The history
-    /// must survive intact in `coordinator.blocks`.
-    func testHistorySurvivesTableTeardownDuringAsyncLoad() async throws {
+    /// Mounts a bound table, drives a real backfill pipeline, tears the table
+    /// down after the tail page lands but before the older pages drain (the
+    /// switch-away), then re-attaches. The full history must survive in
+    /// `coordinator.blocks` and the re-attached table must tile to it.
+    func testHistorySurvivesTableTeardownMidBackfill() async throws {
         let controller = Transcript2Controller()
-        let coordinator = controller.coordinator
 
-        // Mount + bind so `setHistory` takes the async Phase-2 path
-        // (needs layoutWidth > 0 && viewportHeight > 0).
-        let scroll = TranscriptScrollViewFactory.make(controller: controller)
-        let window = NSWindow(
-            contentRect: NSRect(
-                origin: CGPoint(x: -30_000, y: -30_000), size: Self.windowSize),
-            styleMask: [.borderless], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.alphaValue = 0.01
-        let container = NSView(frame: NSRect(origin: .zero, size: Self.windowSize))
-        scroll.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(scroll)
-        NSLayoutConstraint.activate([
-            scroll.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            scroll.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            scroll.topAnchor.constraint(equalTo: container.topAnchor),
-            scroll.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-        ])
-        window.contentView = container
-        window.ccterm_orderFrontForTesting()
-        container.layoutSubtreeIfNeeded()
-        TranscriptScrollViewFactory.bindData(scroll, controller: controller)
-        controller.scrollToTail()
-        container.layoutSubtreeIfNeeded()
-
+        // Mount + bind a real table, running the production attach order.
+        let mounted = MountedTranscript.mount(controller: controller)
         addTeardownBlock {
-            window.contentView = nil
-            window.close()
+            mounted.window.contentView = nil
+            mounted.window.close()
+        }
+        XCTAssertNotNil(
+            controller.coordinator.tableView, "fixture broke: table not bound after mount")
+
+        // Gate the producer just before the FIRST older page (index 1): the
+        // tail page (index 0) lands while the table is still bound, and every
+        // older `.prepend` page is held until we've switched away.
+        let gate = BackfillGate()
+        let source = FakeReversePageSource(makePages())
+        source.onBeforePage = { idx in
+            if idx == 1 { await gate.wait() }
         }
 
-        // Kick the load. Phase 1 (viewport) lands sync; Phase 2 (the rest)
-        // is scheduled on a detached task.
-        let blocks = makeBlocks()
-        controller.setHistory(blocks)
+        let tailApplied = expectation(description: "tail page applied")
+        tailApplied.assertForOverFulfill = false
+        let loaded = expectation(description: "backfill loaded")
+        let pipeline = TranscriptBackfillPipeline(
+            source: source,
+            controller: controller,
+            onLoaded: { loaded.fulfill() },
+            onApplied: { _ in tailApplied.fulfill() })
 
-        // Sanity: confirm we actually hit the async split — Phase 1 only
-        // put the viewport batch into `blocks`, the rest is pending in
-        // Phase 2. If this fails, the fixture went down the sync path and
-        // the test below would be a false green.
-        XCTAssertLessThan(
-            controller.blockIds.count, Self.historyCount,
-            "Fixture broke: setHistory took the SYNC path (blocks already complete), "
-                + "so the async-landing race isn't being exercised. "
-                + "blockIds=\(controller.blockIds.count)")
+        // Kick the backfill at the settled width production reads after attach.
+        pipeline.start(width: controller.layoutWidth)
 
-        // Switch away BEFORE Phase 2 lands: dismantle nils
-        // `coordinator.tableView`, the same state the production swap
-        // (`tearDownTranscript` → `dismantle`) leaves while the detached
-        // layout task is still computing.
-        TranscriptScrollViewFactory.dismantle(scroll, controller: controller)
-        XCTAssertNil(coordinator.tableView)
+        // Tail page lands first (`.append`) with the table still bound. Only
+        // that page is in `blocks` — the rest is gated behind the producer park.
+        await fulfillment(of: [tailApplied], timeout: 5)
+        XCTAssertEqual(
+            controller.blockCount, Self.perPage,
+            "only the tail page should have landed before the gate opens "
+                + "(blockCount=\(controller.blockCount))")
+        XCTAssertNotNil(controller.coordinator.tableView, "table should still be bound here")
 
-        // Land Phase 2 (the detached task's `await MainActor.run`).
-        drainMainLoop(seconds: 0.2)
-        try? await Task.sleep(for: .milliseconds(100))
-        drainMainLoop(seconds: 0.2)
+        // SWITCH AWAY mid-load: tear the bound table down, exactly the state a
+        // sidebar switch (`attachSession` → `dismantle`) leaves while the
+        // detached producer is still building older pages.
+        TranscriptScrollViewFactory.dismantle(mounted.scroll, controller: controller)
+        XCTAssertNil(controller.coordinator.tableView)
 
-        // Switch back: production rebuilds the scroll view on every swap.
-        // This is the layer the user actually hits — the rebuilt table
-        // tiles off `blocks.count`, and `markCellNeedsDisplay` /
-        // selection-highlight / search all map `block.id → row` through
-        // it. If `blocks` was truncated by the dropped Phase-2 landing,
-        // the rebuilt table tiles short and the mapping is off (drag
-        // selects but the wrong / no cell repaints).
-        scroll.removeFromSuperview()
-        let scroll2 = TranscriptScrollViewFactory.make(controller: controller)
-        scroll2.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(scroll2)
-        NSLayoutConstraint.activate([
-            scroll2.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            scroll2.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            scroll2.topAnchor.constraint(equalTo: container.topAnchor),
-            scroll2.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-        ])
-        container.layoutSubtreeIfNeeded()
-        TranscriptScrollViewFactory.bindData(scroll2, controller: controller)
-        controller.scrollToTail()
-        container.layoutSubtreeIfNeeded()
+        // Drain the rest WITHOUT a table — every older page `.prepend`s into
+        // `coordinator.blocks` through the table-independent apply path.
+        await gate.open()
+        await fulfillment(of: [loaded], timeout: 5)
+        XCTAssertEqual(
+            controller.blockCount, Self.totalBlocks,
+            "Phase-equivalent blocks were dropped when the table was torn down "
+                + "mid-backfill: blockCount=\(controller.blockCount), "
+                + "expected=\(Self.totalBlocks). This is the desync that breaks "
+                + "selection-highlight / search row mapping until a full re-attach.")
 
-        guard let table2 = scroll2.documentView as? Transcript2TableView else {
-            return XCTFail("no Transcript2TableView after re-attach")
+        // SWITCH BACK: production rebuilds the scroll view on every swap. The
+        // rebuilt table tiles off `blocks.count`; a truncated `blocks` would
+        // tile short and the `block.id → row` mapping would be off.
+        let reattached = MountedTranscript.mount(controller: controller)
+        addTeardownBlock {
+            reattached.window.contentView = nil
+            reattached.window.close()
         }
-
-        // ⚠️ This branch intentionally does NOT carry the history-load
-        // fix — the `applyInBackground` landing was reverted because the
-        // timing race is being solved more fundamentally by the
-        // `set blocks` refactor on another branch. So this test is
-        // EXPECTED TO FAIL here: without the fix the dropped Phase-2
-        // landing leaves `blocks` (and the rebuilt table's row count)
-        // truncated at the Phase-1 viewport count. It is left red on
-        // purpose, as the acceptance gate for the incoming refactor —
-        // when that merges in, this test must go green (blocks + table
-        // row count back in sync) with no other change.
         XCTAssertEqual(
-            controller.blockIds.count, Self.historyCount,
-            "Phase-2 blocks were dropped when the table was torn down mid-load: "
-                + "blocks=\(controller.blockIds.count), expected=\(Self.historyCount). "
-                + "This is the desync that breaks selection-highlight / search "
-                + "row mapping until a full re-attach.")
+            reattached.table.numberOfRows, Self.totalBlocks,
+            "Re-attached table tiled to \(reattached.table.numberOfRows) rows, expected "
+                + "\(Self.totalBlocks) — a truncated `blocks` tiles short here.")
         XCTAssertEqual(
-            table2.numberOfRows, Self.historyCount,
-            "Re-attached table tiled to \(table2.numberOfRows) rows, expected "
-                + "\(Self.historyCount) — a truncated `blocks` tiles short here.")
-        XCTAssertEqual(
-            table2.numberOfRows, controller.blockIds.count,
+            reattached.table.numberOfRows, controller.blockCount,
             "Re-attached table row count must equal blocks.count, or the "
                 + "block.id → row mapping selection-highlight relies on is off "
-                + "(numberOfRows=\(table2.numberOfRows), blocks=\(controller.blockIds.count)).")
+                + "(numberOfRows=\(reattached.table.numberOfRows), "
+                + "blocks=\(controller.blockCount)).")
+    }
+}
+
+/// One-shot async gate: the off-main backfill producer parks on `wait()` until
+/// the test calls `open()`. An actor so the producer task and the `@MainActor`
+/// test can touch it without a data race. Records `open` so a producer that
+/// reaches `wait()` *after* `open()` proceeds immediately (no lost wakeup).
+private actor BackfillGate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        if isOpen { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func open() {
+        isOpen = true
+        let resume = waiters
+        waiters.removeAll()
+        resume.forEach { $0.resume() }
     }
 }

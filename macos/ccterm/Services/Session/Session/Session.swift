@@ -83,6 +83,12 @@ final class Session {
     /// entire lifetime.
     let bridge: Transcript2EntryBridge
 
+    /// History backfill pipeline, alive for the duration of one load. Created
+    /// by `loadHistory()` and retained so its off-main producer task isn't
+    /// torn down mid-flight. Re-entry is gated by `historyLoadState`, so at
+    /// most one ever runs per session.
+    @ObservationIgnored private var backfillPipeline: TranscriptBackfillPipeline?
+
     // MARK: - External hooks
 
     /// Optional **external** observer of `MessagesChange` events. The
@@ -407,8 +413,43 @@ final class Session {
         runtime?.cancelMessage(id: id)
     }
 
-    func loadHistory(overrideURL: URL? = nil, tailTarget: Int = 80) {
-        runtime?.loadHistory(overrideURL: overrideURL, tailTarget: tailTarget)
+    /// Drive a one-shot reverse-streaming history load into the controller.
+    ///
+    /// Idempotent through `runtime.historyLoadState`: `.loading` / `.loaded`
+    /// are no-ops (the bridge has been streaming live events into the
+    /// controller the whole time, so a re-entered session needs no replay).
+    /// Drafts have no history.
+    ///
+    /// The pipeline applies blocks **directly** to `controller` (load path =
+    /// iterator → apply, REFACTOR-PLAN §4.6); the bridge handles only the live
+    /// path. History tool statuses route back through the bridge's historical
+    /// derivation so failed / completed colors survive.
+    func loadHistory(overrideURL: URL? = nil, firstPageEntryTarget: Int = 20) {
+        guard let runtime else { return }
+        switch runtime.historyLoadState {
+        case .loading, .loaded:
+            return
+        case .notLoaded:
+            break
+        }
+        runtime.historyLoadState = .loading
+
+        let url = overrideURL ?? runtime.historyJSONLURL
+        let pipeline = TranscriptBackfillPipeline(
+            source: JSONLReversePageSource(
+                url: url, firstPageEntryTarget: firstPageEntryTarget),
+            controller: controller,
+            onLoaded: { [weak self] in self?.runtime?.historyLoadState = .loaded },
+            onApplied: { [weak self] entries in
+                self?.bridge.pushHistoricalStatuses(for: entries)
+            })
+        self.backfillPipeline = pipeline
+        // Seed the off-main typeset width from the settled, clamped row width.
+        // `loadHistory` runs after the attach tick's `scrollToTail`, so the
+        // table geometry has settled and `controller.layoutWidth` is real
+        // (REFACTOR-PLAN §6 TICK 1). Headless callers (no table) pass 0; their
+        // pages self-heal on the first real `heightOfRow` (§4.3).
+        pipeline.start(width: controller.layoutWidth)
     }
 
     func generateTitle(from firstMessage: String) {

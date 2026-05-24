@@ -68,9 +68,9 @@ enum HighlightValue: Sendable {
 ///   internally, which lets sibling children survive a partial update
 ///   without their tokens flickering off.
 /// - `snapshot()` — read-only copy of the tokens map. Used by the
-///   coordinator's off-main precompute paths (`applyInBackground`,
-///   `refillLayoutCache`) so the detached task can call `makeLayout`
-///   without crossing the actor boundary mid-loop.
+///   coordinator's off-main precompute path (`refillLayoutCache`) so the
+///   detached task can call `makeLayout` without crossing the actor boundary
+///   mid-loop.
 ///
 /// ### Generation guard
 ///

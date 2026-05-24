@@ -1,15 +1,15 @@
 import AgentSDK
 import Foundation
 
-/// Pure I/O for a session's history JSONL: locate the file, parse a
-/// tail / prefix byte range, decode JSON lines into `Message2`. All
-/// `nonisolated static` — no actor isolation, no handle state.
+/// Pure I/O for a session's history JSONL: locate the file and decode JSON
+/// lines into `Message2`. All `nonisolated static` — no actor isolation, no
+/// handle state.
 ///
-/// Split out of `Session+History.swift` so the file-system and
-/// parsing paths can be exercised in isolation. The two-phase
-/// orchestration (`loadHistory()`) that consumes these results still
-/// lives on `Session` because it's tightly coupled to handle
-/// state (`messages`, `historyLoadState`, `onMessagesChange`).
+/// Reverse paging now lives in `JSONLReversePageSource` + `ReverseLineReader`
+/// (a single streaming backward reader, no tail/prefix split); this type keeps
+/// only path resolution + `parseLines`, the per-page line→`Message2` decode the
+/// page source calls. The orchestration (`loadHistory()`) that drives the
+/// pipeline still lives on `Session`, coupled to `historyLoadState`.
 enum HistoryLoader {
 
     // MARK: - Path resolution
@@ -104,62 +104,9 @@ enum HistoryLoader {
 
     // MARK: - Parsers
 
-    /// Result of `parseTail`. `tailStartByteOffset` is the byte offset
-    /// where the tail begins inside the file; Phase B reads `[0,
-    /// tailStartByteOffset)` to recover the prefix.
-    struct TailParsed {
-        let messages: [Message2]
-        let tailStartByteOffset: Int
-    }
-
-    /// Phase A: byte tail + forward parse + per-file `Message2Resolver`.
-    /// nil url or missing file → success with empty messages and 0
-    /// offset (no history available to render).
-    nonisolated static func parseTail(
-        at url: URL?, targetLines: Int
-    ) -> Result<TailParsed, Error> {
-        guard let url else {
-            return .success(TailParsed(messages: [], tailStartByteOffset: 0))
-        }
-        if !FileManager.default.fileExists(atPath: url.path) {
-            return .success(TailParsed(messages: [], tailStartByteOffset: 0))
-        }
-        do {
-            let readerResult = try JSONLTailReader.readTail(
-                url: url, targetLines: targetLines)
-            let msgs = parseLines(readerResult.lines)
-            return .success(
-                TailParsed(
-                    messages: msgs,
-                    tailStartByteOffset: readerResult.tailStartByteOffset))
-        } catch {
-            return .failure(error)
-        }
-    }
-
-    /// Phase B: read `[0, byteLimit)` and parse into a prefix `[Message2]`,
-    /// using its own resolver. The caller backfills any tail
-    /// `tool_result`s whose anchor lives in this prefix.
-    nonisolated static func parsePrefix(
-        at url: URL, byteLimit: Int
-    ) -> Result<[Message2], Error> {
-        do {
-            let handle = try FileHandle(forReadingFrom: url)
-            defer { try? handle.close() }
-            try handle.seek(toOffset: 0)
-            let data = try handle.read(upToCount: byteLimit) ?? Data()
-            guard let text = String(data: data, encoding: .utf8) else {
-                return .failure(ParseError.invalidUTF8)
-            }
-            let lines = text.components(separatedBy: "\n").filter { !$0.isEmpty }
-            return .success(parseLines(lines))
-        } catch {
-            return .failure(error)
-        }
-    }
-
     /// Forward-parse JSONL text lines into `[Message2]`, dropping lines
-    /// that fail to parse.
+    /// that fail to parse. Pass a page's lines in **document order** so the
+    /// per-call `Message2Resolver` pairs each tool_result with its tool_use.
     nonisolated static func parseLines(_ lines: [String]) -> [Message2] {
         let resolver = Message2Resolver()
         var out: [Message2] = []

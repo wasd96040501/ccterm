@@ -65,12 +65,12 @@ final class TranscriptScrollFirstFrameSnapshotTests: XCTestCase {
 
     /// Mirrors the re-entry scenario: a `Transcript2Controller` whose
     /// `coordinator.blocks` is already populated (via the continuous
-    /// bridge while no table was attached). `setHistory` with no table
+    /// bridge while no table was attached). `apply(.append)` with no table
     /// mounted lands the blocks directly into the coordinator's array.
     private func prepopulatedController() -> Transcript2Controller {
         let c = Transcript2Controller()
-        c.setHistory(makeBlocks())
-        XCTAssertEqual(c.blockIds.count, Self.blockCount, "fixture: setHistory should land all blocks")
+        c.apply(.append(makeBlocks()))
+        XCTAssertEqual(c.blockIds.count, Self.blockCount, "fixture: append should land all blocks")
         return c
     }
 

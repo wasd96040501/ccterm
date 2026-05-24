@@ -90,7 +90,7 @@ final class TranscriptPerfDemoViewController: NSViewController {
     private func seedIfNeeded() {
         guard !seeded else { return }
         seeded = true
-        controller.setHistory(Self.makeBlocks())
+        controller.apply(.append(Self.makeBlocks()))
         // Expand the group and the lone fileEdit child so the giant
         // diff body is the resting state — scrolling exercises the
         // over-screen entry view immediately without a user click.

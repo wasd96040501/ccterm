@@ -111,29 +111,6 @@ final class HistoryLoaderTests: XCTestCase {
 
     // MARK: - parsers
 
-    func testParseTailNilURLIsEmptySuccess() {
-        let result = HistoryLoader.parseTail(at: nil, targetLines: 80)
-        switch result {
-        case .success(let parsed):
-            XCTAssertTrue(parsed.messages.isEmpty)
-            XCTAssertEqual(parsed.tailStartByteOffset, 0)
-        case .failure(let err):
-            XCTFail("expected .success for nil url, got \(err)")
-        }
-    }
-
-    func testParseTailMissingFileIsEmptySuccess() {
-        let absent = sandbox.appendingPathComponent("does-not-exist.jsonl")
-        let result = HistoryLoader.parseTail(at: absent, targetLines: 80)
-        switch result {
-        case .success(let parsed):
-            XCTAssertTrue(parsed.messages.isEmpty)
-            XCTAssertEqual(parsed.tailStartByteOffset, 0)
-        case .failure(let err):
-            XCTFail("expected .success for missing file, got \(err)")
-        }
-    }
-
     func testParseLinesDropsUnparseable() {
         // Use a minimal-shape line that the resolver can handle, plus
         // garbage lines that must be skipped.
@@ -152,26 +129,5 @@ final class HistoryLoaderTests: XCTestCase {
         // produced *some* messages and that garbage didn't crash.
         XCTAssertGreaterThanOrEqual(result.count, 1)
         XCTAssertLessThanOrEqual(result.count, lines.count)
-    }
-
-    func testParsePrefixReadsFromZero() throws {
-        let path = sandbox.appendingPathComponent("prefix.jsonl")
-        let line =
-            #"{"type":"user","uuid":"x","message":{"role":"user","content":"abc"}}"#
-        let body = "\(line)\n\(line)\n"
-        try body.write(to: path, atomically: true, encoding: .utf8)
-
-        let bytes = (body.data(using: .utf8)?.count ?? 0)
-        let result = HistoryLoader.parsePrefix(at: path, byteLimit: bytes)
-        switch result {
-        case .success(let msgs):
-            // Two valid lines → up to 2 parsed messages (resolver may
-            // legitimately reject under stricter validation, so we
-            // assert "at least one, no more than two").
-            XCTAssertGreaterThanOrEqual(msgs.count, 1)
-            XCTAssertLessThanOrEqual(msgs.count, 2)
-        case .failure(let err):
-            XCTFail("expected .success, got \(err)")
-        }
     }
 }

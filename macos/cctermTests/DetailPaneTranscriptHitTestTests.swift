@@ -94,7 +94,7 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
             repository: repo,
             cliClientFactory: { _ in FakeCLIClient() })
         for sid in ids {
-            manager.session(sid)?.controller.setHistory(makeBlocks())
+            manager.session(sid)?.controller.apply(.append(makeBlocks()))
         }
         let initialSelection: MainSelection =
             initialSessionIndex.map { .session(ids[$0]) } ?? .none

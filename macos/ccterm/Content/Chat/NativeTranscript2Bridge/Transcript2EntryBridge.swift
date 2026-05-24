@@ -27,16 +27,12 @@ final class Transcript2EntryBridge {
     let controller: Transcript2Controller
 
     // Module-internal so `cctermTests` (compiled with `@testable import`)
-    // can verify the reverse map after `.reset` / `.prepended` without
-    // having to mount an `NSTableView` (the bridge's contract is that
+    // can verify the reverse map after `.appended` / `.updated` / `.removed`
+    // without having to mount an `NSTableView` (the bridge's contract is that
     // these tables match the entry order it received, regardless of
     // whether the controller's table is real).
     private(set) var entryOrder: [UUID] = []
     private(set) var entryBlockIds: [UUID: [UUID]] = [:]
-    /// Tracks whether `setHistory` has fired. Any append / update arriving
-    /// before it is the abnormal path (handle hasn't reset yet) — fall back
-    /// by treating the entry as a reset seed so content isn't lost.
-    private var didLoadInitial = false
 
     /// Entry id of the **first user-typed message that arrives live**
     /// (via `.appended`) during this bridge's lifetime. UI-suppresses the
@@ -46,12 +42,12 @@ final class Transcript2EntryBridge {
     /// while bootstrap runs and a "you just hit send" indicator there
     /// reads as noise.
     ///
-    /// History-load events (`.reset` / `.prepended`) intentionally do
-    /// **not** pin this — replayed messages already have
-    /// `delivery == .confirmed` so the suppression would be a no-op
-    /// anyway, but more importantly we want the *next live send after
-    /// a resume* to receive the pin, not some long-confirmed historical
-    /// turn.
+    /// History never reaches the bridge — the backfill pipeline applies
+    /// loaded blocks directly to the controller — so the pin only ever sees
+    /// live `.appended` turns. That is exactly what we want: the *next live
+    /// send after a resume* receives the pin, never some long-confirmed
+    /// historical turn (which would be a no-op anyway, since replayed
+    /// messages already carry `delivery == .confirmed`).
     ///
     /// Same-session, already-bootstrapped sends (`.appended` after the
     /// pin is taken) keep their truthful queued visual — that's the
@@ -79,15 +75,9 @@ final class Transcript2EntryBridge {
 
     func apply(_ change: MessagesChange) {
         switch change {
-        case .reset(let entries, let precomputed):
-            applyReset(entries, precomputed: precomputed)
-            for entry in entries { pushStatuses(for: entry, mode: .historical) }
         case .appended(let entry):
             applyAppend(entry)
             pushStatuses(for: entry, mode: .live)
-        case .prepended(let entries, let precomputed):
-            applyPrepend(entries, precomputed: precomputed)
-            for entry in entries { pushStatuses(for: entry, mode: .historical) }
         case .updated(let entry):
             applyUpdate(entry)
             pushStatuses(for: entry, mode: .live)
@@ -98,6 +88,15 @@ final class Transcript2EntryBridge {
         }
     }
 
+    /// Push historical tool statuses for entries the backfill pipeline loaded.
+    /// The pipeline renders history blocks directly (it doesn't flow through
+    /// the bridge's live `apply`), but routes its entries here so failed /
+    /// completed history tools keep their color. The bridge owns status
+    /// derivation; `.historical` mode never marks a tool `.running`.
+    func pushHistoricalStatuses(for entries: [MessageEntry]) {
+        for entry in entries { pushStatuses(for: entry, mode: .historical) }
+    }
+
     /// Runtime saw `.result` — turn ended. Clear any tool surface still
     /// stuck in `.running`. Called from `Session.wireRuntimeMessagesSink`
     /// after the runtime fires its turn-finished sink.
@@ -105,24 +104,15 @@ final class Transcript2EntryBridge {
         controller.clearAllRunningStatuses()
     }
 
-    /// Pull the blocks for an entry from the precomputed map (off-main
-    /// build) when available, otherwise fall back to the inline
-    /// `MessageEntryBlockBuilder.entryBlocks` (on-main Markdown parse).
-    /// The fallback keeps every code path well-defined when a caller
-    /// doesn't ship a precomputed payload — incremental writes
-    /// (`.appended` / `.updated`) intentionally don't.
+    /// Build the blocks for a live entry (`.appended` / `.updated`) via the
+    /// inline `MessageEntryBlockBuilder.entryBlocks`. History is built off-main
+    /// by `TranscriptBackfillPipeline`, never here.
     ///
     /// Post-processes the result through `applyFirstUserSuppression` so a
     /// single, central place owns the queued-visual override for the
     /// session's first user message.
-    private func blocks(for entry: MessageEntry, precomputed: [UUID: [Block]]?) -> [Block] {
-        let raw: [Block]
-        if let cached = precomputed?[entry.id] {
-            raw = cached
-        } else {
-            raw = MessageEntryBlockBuilder.entryBlocks(entry)
-        }
-        return applyFirstUserSuppression(raw, for: entry.id)
+    private func blocks(for entry: MessageEntry) -> [Block] {
+        applyFirstUserSuppression(MessageEntryBlockBuilder.entryBlocks(entry), for: entry.id)
     }
 
     /// If `entryId` matches `firstUserEntryId`, rewrite every
@@ -178,11 +168,12 @@ final class Transcript2EntryBridge {
     // | `.live`      | `.running`          | `.failed(message:)`   | `.completed` |
     // | `.historical`| `.completed`        | `.failed(message:)`   | `.completed` |
     //
-    // `.historical` is used for `.reset` and `.prepended` (JSONL replay
-    // paths). An incomplete tool_use in history is an abandoned run from
-    // a long-finished session — the spinner affordance only makes sense
-    // for live in-flight calls. `.failed` survives the mode flip because
-    // the past failure is still meaningful color.
+    // `.historical` is used by `pushHistoricalStatuses(for:)`, which the
+    // backfill pipeline calls for the entries it loads from JSONL. An
+    // incomplete tool_use in history is an abandoned run from a long-finished
+    // session — the spinner affordance only makes sense for live in-flight
+    // calls. `.failed` survives the mode flip because the past failure is
+    // still meaningful color.
     //
     // Group status follows the "running == any child running" rule:
     //
@@ -268,55 +259,6 @@ final class Transcript2EntryBridge {
         return .completed
     }
 
-    // MARK: - Reset (setHistory / re-entry)
-
-    private func applyReset(_ entries: [MessageEntry], precomputed: [UUID: [Block]]?) {
-        // History reset does NOT pin `firstUserEntryId`. We want the
-        // pin to land on the next *live* `.appended` (the first send
-        // into the freshly-booted CLI), not on some long-confirmed
-        // historical turn. See the field docs for why.
-
-        // Rebuild reverse tables and collect blocks.
-        var newOrder: [UUID] = []
-        newOrder.reserveCapacity(entries.count)
-        var newMap: [UUID: [UUID]] = [:]
-        newMap.reserveCapacity(entries.count)
-        var allBlocks: [Block] = []
-        for entry in entries {
-            let blocks = self.blocks(for: entry, precomputed: precomputed)
-            newOrder.append(entry.id)
-            newMap[entry.id] = blocks.map(\.id)
-            allBlocks.append(contentsOf: blocks)
-        }
-
-        // Second reset (user navigated away then back / Phase A re-fires) goes
-        // through the controller's incremental API rather than another
-        // `setHistory`: the Coordinator has already viewport-rendered, and a
-        // blunt blocks-array swap would lose animation. Use remove-all +
-        // insert in one batch — visually a reload, but on the apply channel.
-        if didLoadInitial {
-            var changes: [Transcript2Controller.Change] = []
-            let oldAllIds = entryOrder.flatMap { entryBlockIds[$0] ?? [] }
-            if !oldAllIds.isEmpty {
-                changes.append(.remove(ids: oldAllIds))
-            }
-            if !allBlocks.isEmpty {
-                changes.append(.insert(after: nil, allBlocks))
-            }
-            entryOrder = newOrder
-            entryBlockIds = newMap
-            controller.coordinator.apply(changes, scroll: .none)
-            return
-        }
-
-        // First reset: take setHistory's two-phase fast first-screen path.
-        entryOrder = newOrder
-        entryBlockIds = newMap
-        didLoadInitial = true
-        guard !allBlocks.isEmpty else { return }
-        controller.setHistory(allBlocks, anchor: .bottom)
-    }
-
     // MARK: - Append (live message)
 
     private func applyAppend(_ entry: MessageEntry) {
@@ -326,7 +268,7 @@ final class Transcript2EntryBridge {
         if firstUserEntryId == nil, Self.isUserTyped(entry) {
             firstUserEntryId = entry.id
         }
-        let blocks = self.blocks(for: entry, precomputed: nil)
+        let blocks = self.blocks(for: entry)
         if blocks.isEmpty {
             // Entry produced no block (empty user message / all-thinking
             // assistant) — still take an entryOrder slot so a future mutate
@@ -335,69 +277,19 @@ final class Transcript2EntryBridge {
             entryBlockIds[entry.id] = []
             return
         }
-        let anchor = previousEntryLastBlockId(beforeAppending: entry.id)
         entryOrder.append(entry.id)
         entryBlockIds[entry.id] = blocks.map(\.id)
-
-        if !didLoadInitial {
-            // Sink fired before reset: use the first message as cold-load seed.
-            didLoadInitial = true
-            controller.setHistory(blocks, anchor: .bottom)
-            return
-        }
-        controller.coordinator.apply(
-            [.insert(after: anchor, blocks)], scroll: .none)
-    }
-
-    /// Last block id of the entry preceding the insertion point. Returns nil
-    /// (= insert at index 0) when there is no predecessor (first entry / prior
-    /// entry produced no blocks).
-    private func previousEntryLastBlockId(beforeAppending entryId: UUID) -> UUID? {
-        // Callers guarantee entryId is not yet in entryOrder, so entryOrder.last
-        // is the anchor source.
-        guard let prev = entryOrder.last else { return nil }
-        return entryBlockIds[prev]?.last
-    }
-
-    // MARK: - Prepend (loadHistory Phase B)
-
-    private func applyPrepend(_ entries: [MessageEntry], precomputed: [UUID: [Block]]?) {
-        // Same reasoning as `applyReset`: older history doesn't take the
-        // pin. The live `.appended` path is the sole pin source.
-
-        var prefixBlocks: [Block] = []
-        var newOrder: [UUID] = []
-        var newMap: [UUID: [UUID]] = [:]
-        for entry in entries {
-            let blocks = self.blocks(for: entry, precomputed: precomputed)
-            newOrder.append(entry.id)
-            newMap[entry.id] = blocks.map(\.id)
-            prefixBlocks.append(contentsOf: blocks)
-        }
-
-        entryOrder = newOrder + entryOrder
-        for (k, v) in newMap { entryBlockIds[k] = v }
-
-        guard !prefixBlocks.isEmpty else { return }
-        // Prepend → `.saveVisible(.visualTop)` keeps the user's currently
-        // visible first line at the same visual position. Route through
-        // `applyInBackground` so the per-row layout precompute (paragraph
-        // wrap, code-block typeset, tool-group geometry) runs on a
-        // detached `userInitiated` task and not on the main thread —
-        // mirroring what `setHistory`'s Phase 2 already does for the
-        // first-screen path. The bridge stays synchronous from the
-        // handle's perspective: the structural change still lands in a
-        // single main hop.
-        controller.coordinator.applyInBackground(
-            [.insert(after: nil, prefixBlocks)],
-            scroll: .saveVisible(.visualTop))
+        // Position is intrinsic to `.append` — tail. No anchor threading; the
+        // tail is wherever `coordinator.blocks` currently ends (after any
+        // history the backfill pipeline already prepended).
+        controller.apply(.append(blocks))
     }
 
     // MARK: - Update (tool_result merge / confirm / group grew)
 
     private func applyUpdate(_ entry: MessageEntry) {
         let oldIds = entryBlockIds[entry.id] ?? []
-        let newBlocks = self.blocks(for: entry, precomputed: nil)
+        let newBlocks = self.blocks(for: entry)
         let newIds = newBlocks.map(\.id)
 
         // Identical id sequence: the typical 95% case — per-block update.
@@ -411,28 +303,18 @@ final class Transcript2EntryBridge {
             return
         }
 
-        // Structure changed: remove old + insert new, anchored to the previous
-        // entry. Atomic replacement of the whole segment. A finer-grained diff
-        // is possible but not worth the cost — this path almost never fires.
-        let anchor = previousEntryLastBlockId(beforeRebuilding: entry.id)
-        var changes: [Transcript2Controller.Change] = []
-        if !oldIds.isEmpty { changes.append(.remove(ids: oldIds)) }
-        if !newBlocks.isEmpty { changes.append(.insert(after: anchor, newBlocks)) }
+        // Structure changed: the segment swap, made explicit. `.replace` swaps
+        // the contiguous `oldIds` for `newBlocks` at the same start index,
+        // atomically — the remove+insert can't be split or misordered. A
+        // degenerate `oldIds == []` (entry never registered — out-of-order
+        // sink) routes to `.append` inside the coordinator.
         entryBlockIds[entry.id] = newIds
         if entryOrder.firstIndex(of: entry.id) == nil {
             // Entry was never registered before this update (out-of-order
             // sink). Defensively append so the block doesn't hang loose.
             entryOrder.append(entry.id)
         }
-        guard !changes.isEmpty else { return }
-        controller.coordinator.apply(changes, scroll: .none)
-    }
-
-    /// Update path: entry is still in entryOrder; return the predecessor's
-    /// last block id.
-    private func previousEntryLastBlockId(beforeRebuilding entryId: UUID) -> UUID? {
-        guard let idx = entryOrder.firstIndex(of: entryId), idx > 0 else { return nil }
-        return entryBlockIds[entryOrder[idx - 1]]?.last
+        controller.apply(.replace(oldIds: oldIds, with: newBlocks))
     }
 
     // MARK: - Remove (cancelMessage)

@@ -6,8 +6,9 @@ import Foundation
 ///
 /// Intent: the view bridge does not need to scan the whole messages table to
 /// diff — it translates each case directly into
-/// `Transcript2Controller.apply(.insert / .remove / .update)` or
-/// `setHistory(...)`.
+/// `Transcript2Controller.apply(.append / .replace / .update / .remove)`.
+/// History load is **not** a `MessagesChange`: it flows through
+/// `TranscriptBackfillPipeline` straight into `apply`, never the bridge.
 ///
 /// Channel: the runtime exposes a synchronous closure
 /// `onMessagesChange: ((MessagesChange) -> Void)?`. `Session.wireRuntimeMessagesSink`
@@ -21,19 +22,8 @@ import Foundation
 /// `@Observable` fields (`messages` / `status` / `isRunning` / ...) and
 /// does not use this channel.
 enum MessagesChange {
-    /// Replace the view-side timeline wholesale (`loadHistory` Phase A
-    /// completion / second entry into `.loaded`). `precomputedBlocks`
-    /// is an optional `entryId → [Block]` map that the producer built
-    /// off the main actor — when present, the bridge consumes these
-    /// directly and skips the on-main Markdown parse in
-    /// `MessageEntryBlockBuilder.entryBlocks`. When `nil`, the bridge
-    /// falls back to building blocks inline.
-    case reset([MessageEntry], precomputedBlocks: [UUID: [Block]]?)
     /// Append one new entry at the tail.
     case appended(MessageEntry)
-    /// Prepend a group of entries at the head (`loadHistory` Phase B prefix).
-    /// Same precomputed-blocks contract as `.reset`.
-    case prepended([MessageEntry], precomputedBlocks: [UUID: [Block]]?)
     /// Replace one existing entry (tool_result merge / queued→confirmed /
     /// queued→failed / group items growing). `entry.id` is the view-side
     /// lookup key.

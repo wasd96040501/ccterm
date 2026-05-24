@@ -175,7 +175,7 @@ Inventory:
 | File | What it asserts |
 |---|---|
 | [`TranscriptReentryLayoutCacheTests.swift`](TranscriptReentryLayoutCacheTests.swift) | The bare `TranscriptScrollViewFactory.make → addSubview → layoutSubtreeIfNeeded → bindData → scrollToTail` sequence typesets each block at exactly one width inside one source-phase tick. |
-| [`TranscriptHostReentryLayoutCacheTests.swift`](TranscriptHostReentryLayoutCacheTests.swift) | Same property, but driven through real hosts: the AppKit demo VC (`TranscriptDemoViewController`) and the production sidebar-switch path (`TranscriptDetailViewController.attachSession` on a `MainSelectionModel.selectedSessionId` flip). Closes the gap between the factory test and host orchestration. |
+| [`TranscriptHostReentryLayoutCacheTests.swift`](TranscriptHostReentryLayoutCacheTests.swift) | Same property, but driven through real hosts: the AppKit demo VC (`TranscriptDemoViewController`) and the production sidebar-switch path (`TranscriptDetailViewController.attachSession` on a `MainSelectionModel.selection` flip). Closes the gap between the factory test and host orchestration. |
 
 When you add a new test that's "drive a real view + assert on a property at the boundary," follow these naming rules:
 

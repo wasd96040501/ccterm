@@ -8,12 +8,20 @@ import SwiftUI
 /// table's mount + `frameDidChange` cascade lives in AppKit's source
 /// phase, not in SwiftUI's commit pass (the whole point of #195).
 ///
-/// Around the transcript we mount three full-bleed overlays:
+/// Around the transcript we mount three full-bleed overlays. All three
+/// stay mounted for the lifetime of the VC; their *contents* react to
+/// `model.selection`:
 /// - top scrim — `TranscriptScrimView` (AppKit, hitTest passthrough)
 /// - bottom scrim — `TranscriptBottomScrimView` (AppKit, hitTest
 ///   passthrough, even-odd cutouts at the attach button + pill)
-/// - input bar / compose configurator — one `NSHostingView`, contents
-///   switch on `model.isComposeMode`
+/// - input bar / compose configurator — `PassthroughHostingView`
+///   (NSHostingView subclass that lets transparent SwiftUI regions
+///   click-through). Its SwiftUI body switches on `model.selection`
+///   via `TranscriptDetailComposeStack.content(...)`: `.newSession` →
+///   compose card, `.session(_)` → chat resting bar, and `.archive` /
+///   `.demo` / `.none` → `EmptyView`. The EmptyView + passthrough
+///   combination is what keeps clicks reaching the side-branch view
+///   (Archive page, demo VCs) sitting below the overlay.
 ///
 /// Side branches (archive page, DEBUG transcript demos) are hosted via
 /// child `NSHostingController`s that take over the detail area when
@@ -64,7 +72,10 @@ final class TranscriptDetailViewController: NSViewController {
     /// stay mounted for the lifetime of the VC. The scrims are pure
     /// AppKit (no `NSHostingView` so they don't register cursor rects
     /// that would shadow the transcript's I-beam); the input bar /
-    /// compose card stays SwiftUI-hosted.
+    /// compose card stays SwiftUI-hosted via `PassthroughHostingView`
+    /// so transparent regions (when the selection routes to a side
+    /// branch and the body collapses to `EmptyView`) click through to
+    /// the side-branch view sitting below.
     private var topScrim: TranscriptScrimView!
     private var bottomScrim: TranscriptBottomScrimView!
     private var composeOrBarHost: PassthroughHostingView!
@@ -155,7 +166,7 @@ final class TranscriptDetailViewController: NSViewController {
         // Run the initial selection handler so the lazy
         // `draftSessionId` allocation + focus tracking + side-branch
         // mount happens for the model's initial value. Mirrors
-        // `RootView2`'s `.task(id: selectedSessionId)` which fired once
+        // `RootView2`'s `.task(id: selection)` which fired once
         // on mount in addition to firing on every change.
         handleSelectionChanged()
         installObservations()
@@ -205,9 +216,8 @@ final class TranscriptDetailViewController: NSViewController {
             // tracking closure so re-arm happens on any change.
             await withCheckedContinuation { cont in
                 withObservationTracking {
-                    _ = self.model.selectedSessionId
+                    _ = self.model.selection
                     _ = self.model.draftSessionId
-                    _ = self.model.isComposeMode
                 } onChange: {
                     Task { @MainActor in cont.resume() }
                 }
@@ -245,7 +255,7 @@ final class TranscriptDetailViewController: NSViewController {
                 }
             }
             if let sid = self.notifications.pendingActivationSessionId {
-                self.model.selectedSessionId = sid
+                self.model.selection = .session(sid)
                 self.notifications.clearPendingActivation()
             }
             self.startPendingActivationObservation()
@@ -277,7 +287,7 @@ final class TranscriptDetailViewController: NSViewController {
         // `useWorktree` / `sourceBranch` are left to
         // `NewSessionConfigurator.applyProbeBindings(...)` to fill in
         // off the git probe.
-        if model.selectedSessionId == SidebarSentinel.newSession, model.draftSessionId == nil {
+        if model.selection == .newSession, model.draftSessionId == nil {
             let sid = UUID().uuidString.lowercased()
             model.draftSessionId = sid
             if let cwd = recentProjects.lastLaunchedPath,
@@ -306,18 +316,14 @@ final class TranscriptDetailViewController: NSViewController {
     // MARK: - Backing content rebuild
 
     private func rebuildBackingContent() {
-        let sid = model.selectedSessionId
-
-        // Side branch path (archive / demo views). Two variants — a
-        // SwiftUI surface hosted via `NSHostingController`, or a
-        // pre-built AppKit `NSViewController`. Demos that mount their
-        // own transcript take the VC path so the canonical
-        // make → addSubview → layoutSubtreeIfNeeded → bindData attach
-        // pattern can run in AppKit's source phase, same as the
-        // production transcript below.
-        if let sideBranch = sideBranchContent(for: sid) {
+        // Detail-pane router. Switch on the typed selection so the
+        // compiler enforces that every case has a deliberate route —
+        // transcript (chat chrome stays mounted around it, with the
+        // compose host's SwiftUI body driven by the selection) or a
+        // side-branch view (archive / demo), or nothing (no selection).
+        if let kind = Self.sideBranchKind(for: model.selection) {
             tearDownTranscript()
-            mountSideBranch(sideBranch)
+            mountSideBranch(makeSideBranch(kind: kind))
             return
         }
         tearDownSideBranch()
@@ -329,14 +335,39 @@ final class TranscriptDetailViewController: NSViewController {
         attachSession(active)
     }
 
+    /// Pure routing decision: which side-branch view (if any) the
+    /// `selection` should mount under the detail pane's overlays.
+    /// Returning `nil` means the detail pane should mount the
+    /// transcript instead. Static + pure so it's directly unit-testable
+    /// — see `TranscriptDetailRoutingTests`.
+    static func sideBranchKind(for selection: MainSelection) -> SideBranchKind? {
+        switch selection {
+        case .none, .newSession, .session:
+            return nil
+        case .archive:
+            return .archive
+        #if DEBUG
+        case .demo(let kind):
+            return .demo(kind)
+        #endif
+        }
+    }
+
+    enum SideBranchKind: Equatable {
+        case archive
+        #if DEBUG
+        case demo(DemoKind)
+        #endif
+    }
+
     private enum SideBranchContent {
         case swiftUI(AnyView)
         case viewController(NSViewController)
     }
 
-    private func sideBranchContent(for sid: String?) -> SideBranchContent? {
-        guard let sid else { return nil }
-        if sid == SidebarSentinel.archive {
+    private func makeSideBranch(kind: SideBranchKind) -> SideBranchContent {
+        switch kind {
+        case .archive:
             let folderBinding = Binding<String?>(
                 get: { [weak self] in self?.model.archiveSelectedFolderPath },
                 set: { [weak self] in self?.model.archiveSelectedFolderPath = $0 }
@@ -346,7 +377,7 @@ final class TranscriptDetailViewController: NSViewController {
                     ArchiveView(
                         selectedFolderPath: folderBinding,
                         onUnarchive: { [weak self] resumeSid in
-                            self?.model.selectedSessionId = resumeSid
+                            self?.model.selection = .session(resumeSid)
                         }
                     )
                     .environment(sessionManager)
@@ -356,27 +387,26 @@ final class TranscriptDetailViewController: NSViewController {
                     .environment(searchBus)
                     .environment(notifications)
                 ))
-        }
         #if DEBUG
-        switch sid {
-        case SidebarSentinel.transcriptDemo:
-            return .viewController(
-                TranscriptDemoViewController(syntaxEngine: searchEngine))
-        case SidebarSentinel.transcriptStress:
-            return .viewController(
-                TranscriptStressViewController(syntaxEngine: searchEngine))
-        case SidebarSentinel.transcriptPerf:
-            return .viewController(
-                TranscriptPerfDemoViewController(syntaxEngine: searchEngine))
-        case SidebarSentinel.permissionCardsDemo:
-            return .swiftUI(AnyView(injectingEnvironment(PermissionCardsDemoView())))
-        case SidebarSentinel.permissionSessionDemo:
-            return .viewController(
-                PermissionSessionDemoViewController(syntaxEngine: searchEngine))
-        default: break
-        }
+        case .demo(let demoKind):
+            switch demoKind {
+            case .transcript:
+                return .viewController(
+                    TranscriptDemoViewController(syntaxEngine: searchEngine))
+            case .transcriptStress:
+                return .viewController(
+                    TranscriptStressViewController(syntaxEngine: searchEngine))
+            case .transcriptPerf:
+                return .viewController(
+                    TranscriptPerfDemoViewController(syntaxEngine: searchEngine))
+            case .permissionCards:
+                return .swiftUI(AnyView(injectingEnvironment(PermissionCardsDemoView())))
+            case .permissionSession:
+                return .viewController(
+                    PermissionSessionDemoViewController(syntaxEngine: searchEngine))
+            }
         #endif
-        return nil
+        }
     }
 
     private func mountSideBranch(_ content: SideBranchContent) {
@@ -390,10 +420,12 @@ final class TranscriptDetailViewController: NSViewController {
         }
         host.view.translatesAutoresizingMaskIntoConstraints = false
         addChild(host)
-        // Insert at index 0 so the side-branch view sits under the
-        // overlays (scrim / input bar / compose card). Side branches
-        // bring their own chrome but still benefit from the top
-        // scrim's softening.
+        // Insert below the chat-chrome overlays. The compose host's
+        // SwiftUI body is `EmptyView` for side-branch selections (see
+        // `TranscriptDetailComposeStack.content(...)`), and
+        // `PassthroughHostingView` lets the resulting transparent
+        // region click-through, so the side branch receives clicks
+        // even though it sits below the host in the subview stack.
         view.addSubview(host.view, positioned: .below, relativeTo: topScrim)
         NSLayoutConstraint.activate([
             host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -515,7 +547,7 @@ final class TranscriptDetailViewController: NSViewController {
             },
             onResumeSession: { [weak self] resumeSid in
                 guard let self else { return }
-                self.model.selectedSessionId = resumeSid
+                self.model.selection = .session(resumeSid)
                 self.model.draftSessionId = nil
             }
         )
@@ -588,7 +620,7 @@ final class TranscriptDetailViewController: NSViewController {
         }
         if isFirstStart {
             sessionManager.refreshRecords()
-            model.selectedSessionId = sessionId
+            model.selection = .session(sessionId)
             model.draftSessionId = nil
         }
     }
@@ -615,35 +647,65 @@ struct TranscriptDetailComposeStack: View {
 
     @Environment(SessionManager.self) private var manager
 
+    /// Routing decision for this overlay. Static + pure so the
+    /// "which selection shows what input chrome" invariant is
+    /// directly unit-testable — see `TranscriptDetailRoutingTests`.
+    /// In particular, `.archive` / `.demo` / `.none` all collapse to
+    /// `.none` here, which is what keeps the input bar from rendering
+    /// on top of (and intercepting clicks on) the Archive page.
+    enum Content: Equatable {
+        case none
+        case compose(draftSessionId: String)
+        case chat(sessionId: String)
+    }
+
+    static func content(for selection: MainSelection, draftSessionId: String?) -> Content {
+        switch selection {
+        case .none, .archive:
+            return .none
+        #if DEBUG
+        case .demo:
+            return .none
+        #endif
+        case .newSession:
+            // No draft allocated yet (briefly true on first entry
+            // before `handleSelectionChanged` lazy-allocates one) →
+            // render nothing rather than fabricating a session id.
+            guard let did = draftSessionId else { return .none }
+            return .compose(draftSessionId: did)
+        case .session(let sid):
+            return .chat(sessionId: sid)
+        }
+    }
+
     var body: some View {
-        let sid = model.effectiveSessionId
+        let content = Self.content(for: model.selection, draftSessionId: model.draftSessionId)
         ZStack {
-            if let sid {
-                if model.isComposeMode {
-                    composeBody(sid: sid)
-                } else {
-                    // `.id(sid)` resets `InputBarView2`'s `@State`
-                    // (text, attachments, focus, completion) on every
-                    // session switch. Without it, the bar's local state
-                    // persists across sessions — the bar's `.task(id:
-                    // draftKey)` restore is gated on `text.isEmpty &&
-                    // attachments.isEmpty`, so a non-empty bar would
-                    // both display the previous session's body and
-                    // overwrite the new session's draft on the next
-                    // keystroke. Pre-#195 this reset came for free from
-                    // `.id(sid)` on `ChatHistoryView`, which used to
-                    // bracket the overlay-hosted input bar.
-                    ChatRestingBar(
-                        sessionId: sid,
-                        draftKey: sid,
-                        onSubmit: { submission in onSubmit(submission, sid) },
-                        onAttachRect: { model.attachRect = $0 },
-                        onPillRect: { model.pillRect = $0 }
-                    )
-                    .id(sid)
-                }
-            } else {
-                Color.clear
+            switch content {
+            case .none:
+                EmptyView()
+            case .compose(let sid):
+                composeBody(sid: sid)
+            case .chat(let sid):
+                // `.id(sid)` resets `InputBarView2`'s `@State`
+                // (text, attachments, focus, completion) on every
+                // session switch. Without it, the bar's local state
+                // persists across sessions — the bar's `.task(id:
+                // draftKey)` restore is gated on `text.isEmpty &&
+                // attachments.isEmpty`, so a non-empty bar would
+                // both display the previous session's body and
+                // overwrite the new session's draft on the next
+                // keystroke. Pre-#195 this reset came for free from
+                // `.id(sid)` on `ChatHistoryView`, which used to
+                // bracket the overlay-hosted input bar.
+                ChatRestingBar(
+                    sessionId: sid,
+                    draftKey: sid,
+                    onSubmit: { submission in onSubmit(submission, sid) },
+                    onAttachRect: { model.attachRect = $0 },
+                    onPillRect: { model.pillRect = $0 }
+                )
+                .id(sid)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

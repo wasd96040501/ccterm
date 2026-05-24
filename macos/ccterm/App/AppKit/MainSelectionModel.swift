@@ -12,14 +12,14 @@ import Observation
 @MainActor
 @Observable
 final class MainSelectionModel {
-    /// Mirrors `RootView2`'s `selectedSessionId` — the sidebar's
-    /// selected item (a session id, `__new_session__`, `__archive__`,
-    /// or one of the DEBUG demo sentinels).
-    var selectedSessionId: String? = SidebarSentinel.newSession
+    /// What the sidebar currently has selected. Typed via `MainSelection`
+    /// so each consumer's `switch` is exhaustive — "is this a real
+    /// session or a sidebar tab" is no longer a runtime string-compare
+    /// scattered across files.
+    var selection: MainSelection = .newSession
 
-    /// Mirrors `RootView2`'s `draftSessionId` — lazily allocated when
-    /// the user enters the "New Session" tab, becomes the real
-    /// `sessionId` after the first send.
+    /// Lazily allocated when the user enters the "New Session" tab,
+    /// becomes the real `sessionId` after the first send.
     ///
     /// Compose-time configuration (cwd / useWorktree / sourceBranch /
     /// originPath) is **not** mirrored here — it lives on
@@ -48,19 +48,23 @@ final class MainSelectionModel {
     var pillRect: CGRect = .zero
 
     /// True when the New Session tab is selected. Once `submit(...)`
-    /// flips `selectedSessionId` to the concrete draft UUID, this
-    /// turns false and the detail VC settles the input bar at its
-    /// chat-mode resting position.
+    /// flips `selection` to `.session(...)`, this turns false and the
+    /// detail VC settles the input bar at its chat-mode resting position.
     var isComposeMode: Bool {
-        selectedSessionId == SidebarSentinel.newSession
+        selection == .newSession
     }
 
-    /// The currently displayed sessionId, derived from the tab + draft.
-    /// Mirrors `RootView2.effectiveSessionId`.
+    /// The currently displayed sessionId, derived from selection +
+    /// draft. Returns `nil` for tabs that don't correspond to a session
+    /// (`.none`, `.archive`, `.demo`).
     var effectiveSessionId: String? {
-        if selectedSessionId == SidebarSentinel.newSession {
-            return draftSessionId
+        switch selection {
+        case .newSession: return draftSessionId
+        case .session(let sid): return sid
+        case .none, .archive: return nil
+        #if DEBUG
+        case .demo: return nil
+        #endif
         }
-        return selectedSessionId
     }
 }

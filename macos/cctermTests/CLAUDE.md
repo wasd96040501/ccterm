@@ -95,8 +95,8 @@ handle.loadHistory(overrideURL: url)
 | Scenario | Approach |
 |---|---|
 | Block builder produces correct ids for a parsed entry | Call the builder, assert on its output |
-| `SessionRuntime.loadHistory` fires `.reset` with prebuilt blocks | Wire up a closure on the handle, assert it fires with the expected payload |
-| Bridge applies `.reset` → controller's blockIds match | Construct the bridge + controller, feed a `MessagesChange`, assert controller state |
+| `Session.loadHistory` backfills a JSONL file into the controller | Drive the `TranscriptBackfillPipeline` (real or `FakeReversePageSource`), await `historyLoadState == .loaded`, assert `controller.blockIds` |
+| Bridge applies `.appended` / `.updated` → controller's blockIds match | Construct the bridge + controller, feed a `MessagesChange`, assert controller state |
 | Send-button enable state under various input | Drive `SessionRuntime.send` and inspect `isRunning` / `status` directly |
 | Sidebar selection routes to the right handle | Hold the manager, simulate the selection change in code, assert the resulting handle |
 | "What does this view look like today?" — visual review of a SwiftUI view | [Snapshot tests](#snapshot-tests) |

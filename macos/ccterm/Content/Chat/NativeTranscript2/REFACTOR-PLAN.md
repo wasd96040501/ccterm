@@ -275,9 +275,19 @@ free-form `scroll:` parameter away.
   land*; changes only carry *"don't disturb what's visible"*. So `.append` never
   has to encode "should I scroll to tail" — the empty-table first landing is the
   controller's job.
-- **The `scroll:` parameter shrinks to two intrinsic intents** — preserve-viewport
-  (everything except append) and stick-bottom (append). Whether a thin explicit
-  override survives for an edge case is a coding-time call; the default is per-case.
+- **Implementation note — `scroll:` stayed orthogonal, not folded into the
+  case.** The shipped `apply(_:scroll:precomputed:)` keeps a free-form
+  `scroll: ScrollState` (`.none` / `.top` / `.bottom` / `.saveVisible`),
+  defaulting `.none`; callers pass intent explicitly (the backfill prepend
+  passes `.saveVisible(.visualTop)`; a live `.append` uses `.none` and does
+  *not* auto-stick to bottom; the loading pill appends with `.none` too). The
+  orthogonal parameter proved more flexible than hard-wiring intent per case,
+  so the "intrinsic scroll intent" column above reads as the *typical* intent,
+  not a compiler-enforced one. Relatedly, the backfill pipeline delegates
+  exactly one scroll call — `controller.scrollToTail()` after the cold
+  first-content `.append` (§6 TICK k) — so §3.1's "content pipeline never
+  touches scroll" is aspirational: that one first-content scroll lives with the
+  pipeline because that is where "first content arrived" is known.
 - **The bridge's load path collapses.** The iterator owns Message2→block for
   history and feeds `.prepend` / `.append` directly, so the bridge's `.reset` /
   `.prepended` handlers + the `didLoadInitial` two-path split are **deleted**. The
@@ -460,7 +470,9 @@ on exhaustion it sets `.loaded`. So:
 - **Do not add an `isLoading` flag on the controller/coordinator.** That would be
   a shadow copy of state that already lives at the right layer (violates the
   Session-layer "no shadow state" rule) and couples render-side to load progress.
-  `isLoading ≡ historyLoadState ∉ {.loaded, .failed}`, derived.
+  `isLoading ≡ historyLoadState != .loaded`, derived. (The enum shipped
+  collapsed to `notLoaded` / `loading` / `loaded` — the Phase-A/B `tailLoaded`
+  and the never-set `failed` cases were dropped as dead state.)
 - The drain loop's "buffer not yet empty" stays a **controller-local** condition,
   never promoted to shared state.
 - **With the scroller gone, re-examine who even reads it.** The cold-gap cover
@@ -634,7 +646,7 @@ path), so the data half is testable headless.
 | C4 | `.replace(oldIds: [], with:)` (degenerate) | routes to `.append`, **not** an in-place swap (§4.6) |
 | C5 | `.remove(ids)` | rows gone; the per-id cache/selection/highlight/fold/status eviction still fires |
 | C6 | `.update(id, kind)` | same-id replacement in place, index stable |
-| C7 | drive `historyLoadState` through its states | `isLoading == (state ∉ {.loaded, .failed})`, **derived** — assert there is **no stored `isLoading`/busy field** on controller or coordinator (§8a) |
+| C7 | drive `historyLoadState` through its states | `isLoading == (state != .loaded)`, **derived** — assert there is **no stored `isLoading`/busy field** on controller or coordinator (§8a) |
 | C8 | mutate blocks only via `apply` across a mixed sequence | `setHistory` is gone; **no second mutation path** reaches `blocks` (regression guard for §10's deletions) |
 
 ### 12.2 Tier 2 — offscreen-UI measurement probes (merge gate)

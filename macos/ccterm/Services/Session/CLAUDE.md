@@ -15,7 +15,7 @@ The phase flips **exactly once**: a draft session sending its first message cons
 2. **Switch-away → switch-back is O(1) on the renderer side.** No JSONL re-read, no markdown reparse, no block-list rebuild. The new `NSTableView` rebinds to the same coordinator on mount; the host's `view.layoutSubtreeIfNeeded()` sizes the table from `.zero` to its real frame and drives `NSTableView.tile()` inline, so the table picks up the coordinator's current `blocks` before `controller.scrollToTail()` runs.
 3. **`Transcript2Coordinator.apply` mutates `coordinator.blocks` even when no table is bound.** A backfill prepend (or any other background-emitted change) that arrives on a session with no view still lands in `coordinator.blocks`; layouts compute lazily once a table re-attaches.
 
-`SessionRuntime.loadHistory()` is correspondingly simpler: `.loadingTail` / `.tailLoaded` / `.loaded` are all idempotent no-ops. There is no "switch-back re-emit `.reset`" path — the bridge has been processing all along.
+`Session.loadHistory()` is correspondingly simpler: `.loading` / `.loaded` are idempotent no-ops. There is no "switch-back re-emit" path — the bridge has been processing all along.
 
 `session.onMessagesChange` remains as an **optional external fanout slot** (tests, debugging). It fires *after* the bridge has consumed the same event, inside the same call stack.
 
@@ -29,7 +29,7 @@ Source lives in `Session/`:
 | `SessionRuntime+Start.swift` | `activate` / `stop` / `send` / bootstrap / `fromDraft` factory. |
 | `SessionRuntime+Messaging.swift` | `interrupt`, `cancelMessage`. |
 | `SessionRuntime+Configuration.swift` | Runtime-mutable setters (`setModel` / `setEffort` / `setPermissionMode` / `setFastMode` / `setAdditionalDirectories`) + `respond` / `setFocused`. **No** draft-only setters — those live on `SessionDraft`. |
-| `SessionRuntime+History.swift` | `loadHistory` orchestration (Phase A/B), `historyJSONLURL` forwarder. |
+| `SessionRuntime+History.swift` | `historyJSONLURL` path forwarder. (History-load orchestration moved to `Session.loadHistory()` + `TranscriptBackfillPipeline`.) |
 | `SessionRuntime+Receive.swift` | Incoming-message path from the CLI. |
 | `SessionTypes.swift` | `PendingPermission`, `SlashCommand`, `deriveTitleFromFirstMessage`. |
 | `MessageEntry.swift` | Render-ready entries (`SingleEntry` / `GroupEntry`), `LocalUserInput`. |
@@ -50,7 +50,7 @@ History load no longer lives on the runtime: `Session.loadHistory()` drives a `T
 | `CLIClient` protocol + `AgentSDKCLIClient` + `FakeCLIClient` | `CLIClient/` | Thin abstraction over `AgentSDK.Session`. Factory injected at `SessionManager.init(... cliClientFactory:)` and forwarded into every `Session` the manager constructs; production defaults to `AgentSDKCLIClient.defaultFactory`, tests pass `{ _ in FakeCLIClient() }`. |
 | `TitleGenerator` | `TitleGenerator.swift` | Stateless one-shot LLM call (`Prompt.runTitleAndBranch`) inside a scratch dir. Runtime's `generateTitle(from:)` calls into it; injectable `runner` seam for tests. |
 | `WorktreeProvisioner` | `Worktree/WorktreeProvisioner.swift` | Off-main `git worktree add` invocation via `DispatchQueue.global`. Wraps `Worktree.create`; injectable `creator` seam for tests. |
-| `HistoryLoader` | `HistoryLoader.swift` | Path resolution (`locate(sessionId:slug:)` with root-injected overload) + Phase A/B JSONL parsers. The two-phase orchestrator that consumes these stays on the runtime in `SessionRuntime+History.swift`. |
+| `HistoryLoader` | `HistoryLoader.swift` | Path resolution (`locate(sessionId:slug:)` with root-injected overload) + the tail/prefix JSONL parsers (`parseTail` / `parsePrefix`) that `JSONLReversePageSource` reads pages through. |
 
 ## Talking to the renderer
 

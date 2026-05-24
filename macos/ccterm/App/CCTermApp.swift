@@ -1,16 +1,15 @@
 import AppKit
 import SwiftUI
 
-/// Every window (main, Settings, Logs, About) is AppKit-rooted —
+/// Every window (main, Settings, About) is AppKit-rooted —
 /// see `AppDelegate`, `MainWindowController`, `SettingsWindowController`,
-/// `LogWindowController`, `AboutWindowController`. The migration
-/// chain started with #219 (Settings → AppKit, fixing "Settings
-/// occasionally pops up at launch"); removing the `Settings { … }`
-/// scene promoted `Window("Logs")` to the leading `Window` scene
-/// which SwiftUI auto-opens at launch, so Logs got the same
-/// treatment; removing that in turn promoted `Window("About ccterm")`
-/// to the leading slot, so About followed too. Each window is lazy,
-/// `isRestorable = false`, owned by `AppDelegate`.
+/// `AboutWindowController`. The migration chain started with #219
+/// (Settings → AppKit, fixing "Settings occasionally pops up at
+/// launch"); removing the `Settings { … }` scene promoted the next
+/// `Window` scene to the leading slot which SwiftUI auto-opens at
+/// launch, so each remaining auxiliary window got the same treatment
+/// in turn. Each window is lazy, `isRestorable = false`, owned by
+/// `AppDelegate`.
 ///
 /// `App.body` still requires a `some Scene`, so we declare a
 /// `Settings { EmptyView() }` placeholder: the dedicated `Settings`
@@ -44,7 +43,6 @@ struct CCTermApp: App {
             AppCommands(
                 searchBus: appDelegate.searchBus,
                 openSettings: { appDelegate.showSettingsWindow() },
-                openLogs: { appDelegate.showLogsWindow() },
                 openAbout: { appDelegate.showAboutWindow() }
             )
         }
@@ -136,12 +134,11 @@ extension NSWindow {
 /// rebuild. ⌘F focus routes through `TranscriptSearchBus.requestFocus()`,
 /// which the AppKit toolbar's `TranscriptSearchToolbarBridge` picks up
 /// reactively via `withObservationTracking`. ⌘, → `openSettings`,
-/// ⌘⇧L → `openLogs`, App > About ccterm → `openAbout` all route into
+/// App > About ccterm → `openAbout` route into
 /// `AppDelegate.show*Window()`, bypassing SwiftUI's scenes entirely.
 struct AppCommands: Commands {
     let searchBus: TranscriptSearchBus
     let openSettings: @MainActor () -> Void
-    let openLogs: @MainActor () -> Void
     let openAbout: @MainActor () -> Void
 
     var body: some Commands {
@@ -164,12 +161,6 @@ struct AppCommands: Commands {
                 Text("Find in Transcript")
             }
             .keyboardShortcut("f", modifiers: .command)
-        }
-        CommandMenu("Debug") {
-            Button("Logs") {
-                openLogs()
-            }
-            .keyboardShortcut("L", modifiers: [.command, .shift])
         }
     }
 }

@@ -3,11 +3,12 @@ import SwiftUI
 
 /// AppKit-rooted window controller for the About panel. Replaces the
 /// previous `Window("About ccterm", id: "about")` SwiftUI scene which,
-/// after the Logs migration, became the only `Window` scene in
-/// `CCTermApp.body` and was therefore auto-opened by SwiftUI alongside
-/// the AppKit-rooted main window on every cold start. Same mitigation
-/// as `SettingsWindowController` / `LogWindowController`: the contents
-/// stay pure SwiftUI — `AboutView` is hosted via `NSHostingController`
+/// after earlier auxiliary windows migrated to AppKit, became the only
+/// remaining `Window` scene in `CCTermApp.body` and was therefore
+/// auto-opened by SwiftUI alongside the AppKit-rooted main window on
+/// every cold start. Same mitigation as `SettingsWindowController`:
+/// the contents stay pure SwiftUI — `AboutView` is hosted via
+/// `NSHostingController`
 /// — but the NSWindow lifecycle is owned by us, lazy-created on the
 /// first `showWindow(_:)`, `isRestorable = false`, App > About ccterm
 /// routed through `AppCommands` → `AppDelegate.showAboutWindow()`.

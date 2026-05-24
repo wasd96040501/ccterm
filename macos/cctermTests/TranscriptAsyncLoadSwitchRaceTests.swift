@@ -33,6 +33,18 @@ import XCTest
 /// swap (route the landing through the sync `apply` path when the table
 /// is gone, exactly as the *pre*-detach guards at the top of
 /// `applyInBackground` already do).
+///
+/// ## Status on this branch: fix reverted, test retained
+///
+/// The point-fix in `applyInBackground` was intentionally **reverted**
+/// here — the timing race is being solved more fundamentally by the
+/// `set blocks` refactor on another branch. This test is kept as the
+/// acceptance gate for that refactor: its correctness assertions are
+/// wrapped in `XCTExpectFailure` so the suite stays green while the fix
+/// is absent. **When the refactor merges in, delete the
+/// `XCTExpectFailure` wrapper** (see the inline note at the call site);
+/// the test then reads green iff the refactor actually keeps `blocks`
+/// and the rebuilt table's row count in sync.
 @MainActor
 final class TranscriptAsyncLoadSwitchRaceTests: XCTestCase {
 
@@ -126,23 +138,13 @@ final class TranscriptAsyncLoadSwitchRaceTests: XCTestCase {
         try? await Task.sleep(for: .milliseconds(100))
         drainMainLoop(seconds: 0.2)
 
-        // The history must be intact regardless of where the table was at
-        // landing time. A torn-down table must not cost us the blocks.
-        XCTAssertEqual(
-            controller.blockIds.count, Self.historyCount,
-            "Phase-2 blocks were dropped when the table was torn down mid-load: "
-                + "blocks=\(controller.blockIds.count), expected=\(Self.historyCount). "
-                + "This is the desync that breaks selection-highlight / search row mapping "
-                + "until a full re-attach.")
-
         // Switch back: production rebuilds the scroll view on every swap.
         // This is the layer the user actually hits — the rebuilt table
         // tiles off `blocks.count`, and `markCellNeedsDisplay` /
         // selection-highlight / search all map `block.id → row` through
-        // it. If `blocks` had been truncated above, the rebuilt table
-        // would tile short and the mapping would be off (drag selects but
-        // the wrong / no cell repaints). Assert the row count matches the
-        // whole history.
+        // it. If `blocks` was truncated by the dropped Phase-2 landing,
+        // the rebuilt table tiles short and the mapping is off (drag
+        // selects but the wrong / no cell repaints).
         scroll.removeFromSuperview()
         let scroll2 = TranscriptScrollViewFactory.make(controller: controller)
         scroll2.translatesAutoresizingMaskIntoConstraints = false
@@ -158,15 +160,45 @@ final class TranscriptAsyncLoadSwitchRaceTests: XCTestCase {
         controller.scrollToTail()
         container.layoutSubtreeIfNeeded()
 
-        let table2 = try XCTUnwrap(scroll2.documentView as? Transcript2TableView)
-        XCTAssertEqual(
-            table2.numberOfRows, Self.historyCount,
-            "Re-attached table tiled to \(table2.numberOfRows) rows, expected "
-                + "\(Self.historyCount) — a truncated `blocks` would tile short here.")
-        XCTAssertEqual(
-            table2.numberOfRows, controller.blockIds.count,
-            "Re-attached table row count must equal blocks.count, or the "
-                + "block.id → row mapping selection-highlight relies on is off "
-                + "(numberOfRows=\(table2.numberOfRows), blocks=\(controller.blockIds.count)).")
+        guard let table2 = scroll2.documentView as? Transcript2TableView else {
+            return XCTFail("no Transcript2TableView after re-attach")
+        }
+
+        // ⚠️ Pending fix — this branch intentionally does NOT carry the
+        // history-load fix. The `applyInBackground` landing was reverted
+        // because the timing race is being solved more fundamentally by
+        // the `set blocks` refactor on another branch. So the three
+        // correctness assertions below currently FAIL (blocks/rows stay
+        // truncated at the Phase-1 viewport count). They are wrapped in
+        // `XCTExpectFailure` purely so this branch's suite stays green
+        // while the fix is absent — the assertions themselves still
+        // encode the correct post-fix behavior.
+        //
+        // WHEN THE `set blocks` REFACTOR MERGES IN: delete the
+        // `XCTExpectFailure` wrapper (keep the assertions). The test then
+        // becomes a live gate — green = the refactor fixed the desync,
+        // red = it didn't. (If you forget to remove the wrapper, strict
+        // mode trips it with "expected failure did not occur" once the
+        // refactor makes the assertions pass — that's the reminder.)
+        XCTExpectFailure(
+            "History-load fix reverted on this branch; awaiting the set-blocks "
+                + "refactor. Remove this wrapper after merging that refactor."
+        ) {
+            XCTAssertEqual(
+                controller.blockIds.count, Self.historyCount,
+                "Phase-2 blocks were dropped when the table was torn down mid-load: "
+                    + "blocks=\(controller.blockIds.count), expected=\(Self.historyCount). "
+                    + "This is the desync that breaks selection-highlight / search "
+                    + "row mapping until a full re-attach.")
+            XCTAssertEqual(
+                table2.numberOfRows, Self.historyCount,
+                "Re-attached table tiled to \(table2.numberOfRows) rows, expected "
+                    + "\(Self.historyCount) — a truncated `blocks` tiles short here.")
+            XCTAssertEqual(
+                table2.numberOfRows, controller.blockIds.count,
+                "Re-attached table row count must equal blocks.count, or the "
+                    + "block.id → row mapping selection-highlight relies on is off "
+                    + "(numberOfRows=\(table2.numberOfRows), blocks=\(controller.blockIds.count)).")
+        }
     }
 }

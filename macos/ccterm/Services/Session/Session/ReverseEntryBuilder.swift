@@ -6,7 +6,7 @@ import Foundation
 /// Feed it `Message2` values in **reverse document order** (newest first);
 /// receive grouped + tool-paired `MessageEntry` values back in **document
 /// order** as runs finalize. This is the proper death of `buildEntries`'
-/// throwaway in-memory `SessionRuntime` (REFACTOR-PLAN §4.1): the grouping +
+/// throwaway in-memory `SessionRuntime`: the grouping +
 /// tool-pairing rules that live in `SessionRuntime.receive` are reproduced here
 /// as a pure function — no CLI, no CoreData, no actor, no lifecycle side
 /// effects. `TranscriptReverseBuilderTests.A6` pins the 1:1 parity with the

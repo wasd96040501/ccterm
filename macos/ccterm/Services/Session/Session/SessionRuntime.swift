@@ -30,8 +30,7 @@ final class SessionRuntime {
     /// reverse-streaming `TranscriptBackfillPipeline` through this once —
     /// `.notLoaded → .loading → .loaded` — while the bridge streams live events
     /// into the controller independently. "Is history still loading" is
-    /// **derived** as `state != .loaded`; there is no separate `isLoading` flag
-    /// (REFACTOR-PLAN §8a).
+    /// **derived** as `state != .loaded`; there is no separate `isLoading` flag.
     enum HistoryLoadState: Equatable {
         /// `loadHistory()` has never been triggered.
         case notLoaded

@@ -4,7 +4,7 @@ import XCTest
 
 @testable import ccterm
 
-/// Tier-2 probe **U1** (REFACTOR-PLAN §12.2): the single-width typeset contract
+/// Tier-2 probe **U1**: the single-width typeset contract
 /// extended across the multi-tick backfill sequence. `TranscriptReentryLayoutCacheTests`
 /// stops at re-entry (blocks already present); this drives a real
 /// `TranscriptBackfillPipeline` cold — tail page `.append`, then several

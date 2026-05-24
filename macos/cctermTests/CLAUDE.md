@@ -80,14 +80,24 @@ final class MyBridgeTests: XCTestCase {
 }
 ```
 
-For JSONL replay tests, write a temp file:
+For JSONL replay tests, write a temp file and drive `Session.loadHistory`
+(the load orchestration lives on the façade, not the runtime — wrap the runtime
+in a `Session` so `controller` / `bridge` / `historyLoadState` are all wired):
 
 ```swift
 let url = FileManager.default.temporaryDirectory
     .appendingPathComponent("\(UUID().uuidString).jsonl")
 try jsonlText.write(to: url, atomically: true, encoding: .utf8)
 addTeardownBlock { try? FileManager.default.removeItem(at: url) }
-handle.loadHistory(overrideURL: url)
+
+let session = Session(runtime: handle, cliClientFactory: { _ in FakeCLIClient() })
+session.loadHistory(overrideURL: url)
+// Backfill is async (off-main producer + main drain); wait for completion.
+let exp = XCTNSPredicateExpectation(
+    predicate: NSPredicate { _, _ in session.historyLoadState == .loaded },
+    object: nil)
+await fulfillment(of: [exp], timeout: 5)
+// ... assert on session.controller.blockIds ...
 ```
 
 ## What goes here
@@ -179,8 +189,9 @@ Inventory:
 | [`TranscriptBackfillLayoutCacheTests.swift`](TranscriptBackfillLayoutCacheTests.swift) | **U1** — the single-width contract extended across multi-tick backfill: a real `TranscriptBackfillPipeline` cold-load (tail `.append` + several `.prepend` ticks) typesets each block at exactly one width and exactly once. Prepend ticks are cache hits (off-main precompute, 5b); a width-mismatched producer shows up as a second write at a second width. |
 | [`TranscriptBackfillAnchorTests.swift`](TranscriptBackfillAnchorTests.swift) | **U2/U3/U7/U8** — anchor invariant (prepend pins the visual-top row, clip shifts by the inserted height, no jitter over N ticks); in-tick stability (anchor correct before any runloop drain — the deleted `mutationCounter` regression); `.update`/`.replace` riding `.saveVisible` preserve the viewport mid-document; interleaved tail-append + head-prepend land at opposite ends without moving the anchor. |
 | [`TranscriptColdAttachTests.swift`](TranscriptColdAttachTests.swift) | **U4/U5/U6** — cold attach renders 0 rows then lands the tail page at the bottom; `blocks.count == numberOfRows` after every change in a mixed `prepend`/`append`/`replace`/`remove`/`update` sequence; warm re-entry into a `.loaded` session fires zero backfill typeset. |
+| [`TranscriptDetachedWarmTests.swift`](TranscriptDetachedWarmTests.swift) | **Detached layout warm** — a session mounted once (records its display width) then streamed N more blocks while detached pre-fills its layout cache off-main, so re-attaching recomputes **zero** rows on the main thread. Driven through `controller.apply` (the bridge's detached path) + the resident `mainThreadLayoutComputes` / `onLayoutCacheWriteForDebug` telemetry; no test-only hooks. |
 
-All four reuse the offscreen-window scaffold; the three backfill probes share the [`Helpers/MountedTranscript.swift`](Helpers/MountedTranscript.swift) mount + geometry-sampling helper.
+All six reuse an offscreen-window scaffold; the four mount-based probes (the three backfill probes + the detached-warm probe) share the [`Helpers/MountedTranscript.swift`](Helpers/MountedTranscript.swift) mount + geometry-sampling helper, while the two reentry probes each stand up their own window inline.
 
 When you add a new test that's "drive a real view + assert on a property at the boundary," follow these naming rules:
 
@@ -385,7 +396,7 @@ final class MyViewSnapshotTests: XCTestCase {
         //    Reuse production constants (widen `fileprivate` → `internal`
         //    if needed — access modifier only).
         let controller = MyController()
-        controller.loadInitial(MyView.initialFixture)
+        controller.apply(.append(MyView.initialFixture))
 
         // 2. Mount via the test-seam init; inject fresh environment.
         let view = MyView(controller: controller)

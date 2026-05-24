@@ -262,14 +262,15 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     ) {
         switch change {
         case .prepend(let new):
-            // Intrinsic position: head. Thin sugar over the insert path so the
-            // data mutation + structural notify stays one well-tested code path.
-            applyStructuralChange(.insert(after: nil, new), in: table)
+            // Intrinsic position: head. Thin sugar over the shared insert
+            // primitive so the data mutation + structural notify stays one
+            // well-tested code path.
+            insertBlocks(after: nil, new, in: table)
 
         case .append(let new):
             // Intrinsic position: tail. `blocks.last?.id == nil` (empty table)
             // collapses to an index-0 insert, which is the correct first land.
-            applyStructuralChange(.insert(after: blocks.last?.id, new), in: table)
+            insertBlocks(after: blocks.last?.id, new, in: table)
 
         case .replace(let oldIds, let newBlocks):
             // Segment swap: remove the contiguous `oldIds` and insert
@@ -285,22 +286,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             }
             let anchorId: UUID? = firstIdx > 0 ? blocks[firstIdx - 1].id : nil
             applyStructuralChange(.remove(ids: oldIds), in: table)
-            applyStructuralChange(.insert(after: anchorId, newBlocks), in: table)
-
-        case .insert(let after, let new):
-            guard !new.isEmpty else { return }
-            let idx: Int
-            if let after {
-                guard let i = blocks.firstIndex(where: { $0.id == after }) else { return }
-                idx = i + 1
-            } else {
-                idx = 0
-            }
-            blocks.insert(contentsOf: new, at: idx)
-            for block in new { highlightStorage.schedule(block) }
-            table?.insertRows(
-                at: IndexSet(idx..<idx + new.count),
-                withAnimation: [.effectFade])
+            insertBlocks(after: anchorId, newBlocks, in: table)
 
         case .remove(let ids):
             let idSet = Set(ids)
@@ -354,6 +340,29 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                 columnIndexes: IndexSet(integer: 0))
             table?.noteHeightOfRows(withIndexesChanged: idx)
         }
+    }
+
+    /// Shared insert primitive for `.prepend` / `.append` / `.replace`.
+    /// Position is the caller's concern (`after: nil` = head; `blocks.last?.id`
+    /// = tail; the block above a removed run = in-place). Not a public
+    /// `Change` case — the vocabulary exposes only intrinsic-position cases so
+    /// no caller can thread an arbitrary anchor through a generic insert
+    /// (REFACTOR-PLAN §4.6). A non-nil but unknown `after` is a no-op, same
+    /// posture as `.update` / `.remove` for unknown ids.
+    private func insertBlocks(after: UUID?, _ new: [Block], in table: NSTableView?) {
+        guard !new.isEmpty else { return }
+        let idx: Int
+        if let after {
+            guard let i = blocks.firstIndex(where: { $0.id == after }) else { return }
+            idx = i + 1
+        } else {
+            idx = 0
+        }
+        blocks.insert(contentsOf: new, at: idx)
+        for block in new { highlightStorage.schedule(block) }
+        table?.insertRows(
+            at: IndexSet(idx..<idx + new.count),
+            withAnimation: [.effectFade])
     }
 
     // MARK: - Highlight tokens fill-in

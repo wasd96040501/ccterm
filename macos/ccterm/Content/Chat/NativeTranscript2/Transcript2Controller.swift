@@ -57,12 +57,6 @@ final class Transcript2Controller {
         /// index**, atomically — the structure-changed segment swap. A
         /// degenerate `oldIds == []` (or none present) routes to `.append`.
         case replace(oldIds: [UUID], with: [Block])
-        /// Insert `blocks` after the block with id `after`. `after: nil`
-        /// prepends (index 0). If `after` is non-nil but unknown (e.g. the
-        /// anchor was removed), the change is a no-op — same posture as
-        /// `.update` / `.remove` for unknown ids. To append, pass the
-        /// current last block's id (or `nil` if empty).
-        case insert(after: UUID?, _ blocks: [Block])
         /// Remove every block whose id is in `ids`. Unknown ids are ignored.
         case remove(ids: [UUID])
         /// Replace the kind of an existing block, preserving its id. No-op
@@ -188,8 +182,8 @@ final class Transcript2Controller {
             guard let self else { return }
             self.blockCount = count
             // Reconcile after every structural change so a bridge-
-            // driven `.insert(after: lastRealBlock, ...)` that landed
-            // *before* the pill re-pins the pill to the new tail.
+            // driven `.append(...)` that landed *before* the pill
+            // re-pins the pill to the new tail.
             // The recursion guard inside ensures the pill insert /
             // remove that reconciliation itself emits doesn't loop.
             self.reconcileLoadingPill()
@@ -242,10 +236,9 @@ final class Transcript2Controller {
     /// derives from `blocks.count`, no `pendingBlocks` side channel.
     ///
     /// **Pinning to the tail.** External structural changes (live
-    /// `.appended` blocks from the bridge, `setHistory`'s viewport
-    /// batch landing on a fresh attach) may slip in *after* the pill
-    /// if their `.insert(after:)` resolves to the pill's id or relies
-    /// on `coordinator.blockIds.last`. Every
+    /// `.appended` blocks from the bridge, a backfill `.prepend` /
+    /// `.append`) may slip in *after* the pill if their tail-relative
+    /// position resolves past it. Every
     /// `apply` fires `onBlockCountChanged` → `reconcileLoadingPill()`,
     /// which sees the pill is no longer at the tail and re-pins it
     /// by removing + re-inserting at the new tail in one beat.
@@ -307,7 +300,7 @@ final class Transcript2Controller {
             let newId = UUID()
             loadingPillId = newId
             coordinator.apply(
-                [.insert(after: coordinator.blockIds.last, [Block(id: newId, kind: .loadingPill)])],
+                [.append([Block(id: newId, kind: .loadingPill)])],
                 scroll: .none)
         } else {
             if let id = pillIdSnapshot, blockIds.contains(id) {

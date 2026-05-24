@@ -141,7 +141,7 @@ final class TranscriptDemoViewController: NSViewController {
 
     private func handleAddMessage() {
         let next = Self.extraBlock(at: extraAddCount)
-        controller.apply(.insert(after: controller.blockIds.last, [next]))
+        controller.apply(.append([next]))
         extraAddCount += 1
     }
 

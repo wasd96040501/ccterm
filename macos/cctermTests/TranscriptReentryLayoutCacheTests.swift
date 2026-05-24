@@ -46,7 +46,7 @@ final class TranscriptReentryLayoutCacheTests: XCTestCase {
 
     func testReentryDoesNotRelayoutSameBlockAtMultipleWidthsInOneTick() throws {
         let controller = Transcript2Controller()
-        controller.setHistory(makeBlocks())
+        controller.apply(.append(makeBlocks()))
         XCTAssertEqual(controller.blockIds.count, Self.blockCount)
         let coordinator = controller.coordinator
 

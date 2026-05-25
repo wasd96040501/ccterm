@@ -16,4 +16,9 @@ struct GenericChild: Equatable, Sendable {
     /// without a dedicated child layout fall through here, so the
     /// caller picks whatever phrase reads best.
     let activeLabel: String
+    /// Wrapper-level error text (`tool_result.is_error == true`), stripped
+    /// of the `<tool_use_error>` envelope. `nil` on success. When set, the
+    /// otherwise header-only generic child gains a foldable body holding a
+    /// uniform red error card (via `Child.hasExpandableBody`).
+    var errorText: String? = nil
 }

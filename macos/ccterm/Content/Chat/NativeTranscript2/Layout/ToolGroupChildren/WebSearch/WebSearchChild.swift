@@ -14,6 +14,10 @@ struct WebSearchChild: Equatable, Sendable {
     let activeLabel: String
     let query: String
     let results: [Result]
+    /// Wrapper-level error text (`tool_result.is_error == true`), stripped
+    /// of the `<tool_use_error>` envelope. `nil` on success. Rendered as a
+    /// uniform red error card below the body by `ToolGroupChildLayout`.
+    var errorText: String? = nil
 
     struct Result: Equatable, Sendable {
         let title: String

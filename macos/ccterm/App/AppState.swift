@@ -11,6 +11,7 @@ final class AppState {
     let sidebarGroupOrder = SidebarSessionGroupOrderStore()
     let activationTracker: AppActivationTracker
     let notificationService: NotificationService
+    let openInService = OpenInAppService()
 
     init() {
         self.sessionManager = SessionManager()
@@ -34,5 +35,11 @@ final class AppState {
         // it behind real user interactions.
         let engine = syntaxEngine
         Task.detached(priority: .utility) { await engine.load() }
+
+        // Probe installed "Open in …" apps once at launch (off-main,
+        // result published back on the main actor). The sidebar context
+        // menu reads the result; an empty list just means the scan hasn't
+        // landed yet.
+        openInService.refresh()
     }
 }

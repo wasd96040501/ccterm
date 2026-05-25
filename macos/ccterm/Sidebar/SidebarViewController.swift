@@ -36,10 +36,18 @@ final class SidebarViewController: NSViewController {
     let model: MainSelectionModel
     let sessionManager: SessionManager
     let groupOrderStore: SidebarSessionGroupOrderStore
+    let openInService: OpenInAppService
 
     private let scrollView = NSScrollView()
     private let outlineView = NoDisclosureOutlineView()
     private let column = NSTableColumn(identifier: .init("Sidebar"))
+
+    /// "Open in" context-menu item. Its submenu (the per-app list) is
+    /// rebuilt on every right-click in `menuNeedsUpdate`, and the item
+    /// itself is disabled (greyed) when the clicked session has no
+    /// openable directory on disk.
+    private let openInItem = NSMenuItem(
+        title: String(localized: "Open in"), action: nil, keyEquivalent: "")
 
     /// Flat list of the outline's root children. Folder nodes inside
     /// hold their own `children` arrays for the hierarchy. Recomputed
@@ -63,11 +71,13 @@ final class SidebarViewController: NSViewController {
     init(
         model: MainSelectionModel,
         sessionManager: SessionManager,
-        groupOrderStore: SidebarSessionGroupOrderStore
+        groupOrderStore: SidebarSessionGroupOrderStore,
+        openInService: OpenInAppService
     ) {
         self.model = model
         self.sessionManager = sessionManager
         self.groupOrderStore = groupOrderStore
+        self.openInService = openInService
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -158,6 +168,16 @@ final class SidebarViewController: NSViewController {
     private func makeContextMenu() -> NSMenu {
         let menu = NSMenu()
         menu.delegate = self
+        // Manage enabled state ourselves — the default autoenable path
+        // would route through `validateMenuItem`/responder chain and
+        // override the greyed-out "Open in" state we set explicitly.
+        menu.autoenablesItems = false
+
+        let openInSubmenu = NSMenu()
+        openInSubmenu.autoenablesItems = false
+        openInItem.submenu = openInSubmenu
+        menu.addItem(openInItem)
+
         let archive = NSMenuItem(
             title: String(localized: "Archive"),
             action: #selector(archiveSelectedRow(_:)),
@@ -165,6 +185,59 @@ final class SidebarViewController: NSViewController {
         archive.target = self
         menu.addItem(archive)
         return menu
+    }
+
+    /// Resolve the directory to open for a history session: prefer
+    /// `cwd`, fall back to `originPath`. Returns nil when neither is set
+    /// or the resolved path no longer exists as a directory on disk —
+    /// the caller greys out "Open in" in that case.
+    private func openablePath(forSessionId sessionId: String) -> String? {
+        guard let record = sessionManager.records.first(where: { $0.sessionId == sessionId })
+        else { return nil }
+        guard let candidate = record.cwd ?? record.originPath, !candidate.isEmpty else {
+            return nil
+        }
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: candidate, isDirectory: &isDir),
+            isDir.boolValue
+        else { return nil }
+        return candidate
+    }
+
+    /// Rebuild the "Open in" submenu for the clicked session. Enabled
+    /// only when there's a valid directory and at least one installed
+    /// app; otherwise the parent item is left disabled and the submenu
+    /// empty.
+    private func rebuildOpenInSubmenu(forSessionId sessionId: String) {
+        let submenu = openInItem.submenu ?? NSMenu()
+        submenu.removeAllItems()
+
+        let path = openablePath(forSessionId: sessionId)
+        let targets = openInService.targets
+        openInItem.isEnabled = path != nil && !targets.isEmpty
+
+        guard let path, !targets.isEmpty else { return }
+        for target in targets {
+            let item = NSMenuItem(
+                title: target.name, action: #selector(openInApp(_:)), keyEquivalent: "")
+            item.target = self
+            item.image = target.icon
+            item.representedObject = OpenInRequest(path: path, target: target)
+            submenu.addItem(item)
+        }
+    }
+
+    /// Captured at submenu-build time so the action handler has both the
+    /// directory and the chosen app without re-reading `clickedRow`
+    /// (which is no longer valid by the time the item fires).
+    private struct OpenInRequest {
+        let path: String
+        let target: OpenInAppService.Target
+    }
+
+    @objc private func openInApp(_ sender: NSMenuItem) {
+        guard let request = sender.representedObject as? OpenInRequest else { return }
+        openInService.open(path: request.path, with: request.target)
     }
 
     // MARK: - Items
@@ -617,14 +690,18 @@ extension SidebarViewController {
 extension SidebarViewController: NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         let row = outlineView.clickedRow
-        var allowed = false
+        var historySessionId: String?
         if row >= 0,
             let node = outlineView.item(atRow: row) as? SidebarItemNode,
-            case .history = node.kind
+            case .history(let sessionId, _) = node.kind
         {
-            allowed = true
+            historySessionId = sessionId
         }
+        let allowed = historySessionId != nil
         for item in menu.items { item.isHidden = !allowed }
+        if let historySessionId {
+            rebuildOpenInSubmenu(forSessionId: historySessionId)
+        }
     }
 }
 

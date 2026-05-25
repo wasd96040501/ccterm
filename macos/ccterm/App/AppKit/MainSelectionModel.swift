@@ -83,6 +83,21 @@ final class MainSelectionModel {
         selection == .newSession
     }
 
+    /// Deallocation needs no main-actor isolation — every stored member
+    /// (enum value, `String?`s, the `weak` observer, the synthesized
+    /// `@Observable` registrar) tears down safely on any thread. Without
+    /// this, the project-wide `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`
+    /// gives the class an *isolated* deinit that hops to the main actor
+    /// via `swift_task_deinitOnExecutorImpl`. When an instance is released
+    /// from a context with no current Swift task — a synchronous XCTest
+    /// method body, invoked through `-[NSInvocation invoke]` — that hop's
+    /// `TaskLocal::StopLookupScope` teardown double-frees the (absent)
+    /// task-local stack and aborts (`___BUG_IN_CLIENT_OF_LIBMALLOC…`).
+    /// `nonisolated` keeps dealloc inline on the releasing thread, side-
+    /// stepping the buggy runtime path entirely. See
+    /// `MainSelectionModelDeinitTests`.
+    nonisolated deinit {}
+
     /// The currently displayed sessionId, derived from selection +
     /// draft. Returns `nil` for tabs that don't correspond to a session
     /// (`.none`, `.archive`, `.demo`).

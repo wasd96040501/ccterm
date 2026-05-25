@@ -72,12 +72,24 @@ struct InputBarChrome: View {
     }
 }
 
-/// Chat-mode resting input region: `InputBarChrome` plus the inline
-/// `PermissionCardView` (when one is pending). Both children are
-/// centered horizontally and share the same bottom inset — the card
-/// stacks **above** the bar in a VStack rather than overlaying it,
-/// so the surrounding hosting view's intrinsic size correctly
-/// includes the card's footprint when present.
+/// Chat-mode resting input region: `InputBarChrome` plus the floating
+/// `PermissionCardView` (when one is pending). The card is **layered
+/// on the z-axis over the bar** — a `ZStack(alignment: .bottom)` whose
+/// later child (the card) draws on top of and covers the bar, sharing
+/// the same `chatBottomInset` so the card's bottom edge sits flush with
+/// the chrome row and it extends *up* from there. It does NOT stack
+/// above the bar on the y-axis (that pushed the bar down into a separate
+/// tier and broke the floating-overlay look the card was designed for).
+///
+/// `ZStack` (not `.overlay`) is deliberate: an overlay is sized to its
+/// host and never grows the parent, so under the bottom-anchored bar
+/// host — whose height tracks this body's measured natural height — an
+/// overlaid card would be clipped (and its upper half would fall outside
+/// the host's hit-test bounds, killing its buttons). A `ZStack` reports
+/// the union of its children, so the card's footprint correctly grows
+/// the host to contain it. When no card is pending the ZStack collapses
+/// back to the bar's height, so the host shrinks and the transcript
+/// scroll view keeps receiving clicks in the empty band above the bar.
 ///
 /// The card's `.frame(maxWidth: BlockStyle.maxLayoutWidth = 780)` is
 /// hoisted out of `InputBarChrome`'s own `.frame(maxWidth: composeMaxWidth
@@ -85,10 +97,8 @@ struct InputBarChrome: View {
 /// `RootView2` for the original geometry derivation.
 ///
 /// `maxHeight: .infinity` is intentionally absent: the bar host is
-/// bottom-anchored in `ChatSessionViewController`'s chat mode
-/// and sized to this body's intrinsic height. A finite fitting size
-/// is what lets AppKit shrink the host so the transcript scroll
-/// view receives clicks in the empty band above the bar.
+/// bottom-anchored in `ChatSessionViewController`'s chat mode and sized
+/// to this body's natural height (`fixedSize` + `onContentHeight`).
 struct ChatRestingBar: View {
     let sessionId: String
     let draftKey: String
@@ -100,7 +110,22 @@ struct ChatRestingBar: View {
 
     var body: some View {
         let session = manager.prepareDraftSession(sessionId)
-        VStack(spacing: 0) {
+        ZStack(alignment: .bottom) {
+            InputBarChrome(
+                sessionId: sessionId,
+                draftKey: draftKey,
+                coordSpace: ChatSessionViewController.detailCoordSpace,
+                submitEnabled: true,
+                onSubmit: onSubmit,
+                onAttachRect: onAttachRect,
+                onPillRect: onPillRect
+            )
+            .frame(
+                minWidth: BlockStyle.minLayoutWidth,
+                maxWidth: ChatSessionViewController.composeMaxWidth
+            )
+            .padding(.horizontal, ChatSessionViewController.detailHorizontalInset)
+
             if let pending = session.pendingPermissions.first {
                 PermissionCardView(
                     request: pending.request,
@@ -117,25 +142,10 @@ struct ChatRestingBar: View {
                 )
                 .frame(maxWidth: BlockStyle.maxLayoutWidth)
                 .padding(.horizontal, ChatSessionViewController.detailHorizontalInset)
-                .padding(.bottom, 8)
                 .transition(
                     .scale(scale: 0.96, anchor: .bottom)
                         .combined(with: .opacity))
             }
-            InputBarChrome(
-                sessionId: sessionId,
-                draftKey: draftKey,
-                coordSpace: ChatSessionViewController.detailCoordSpace,
-                submitEnabled: true,
-                onSubmit: onSubmit,
-                onAttachRect: onAttachRect,
-                onPillRect: onPillRect
-            )
-            .frame(
-                minWidth: BlockStyle.minLayoutWidth,
-                maxWidth: ChatSessionViewController.composeMaxWidth
-            )
-            .padding(.horizontal, ChatSessionViewController.detailHorizontalInset)
         }
         .padding(.bottom, ChatSessionViewController.chatBottomInset)
         .frame(maxWidth: .infinity)

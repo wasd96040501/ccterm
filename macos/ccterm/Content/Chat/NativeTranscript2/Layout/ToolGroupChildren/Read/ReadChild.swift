@@ -32,4 +32,8 @@ struct ReadChild: Equatable, Sendable {
     /// When non-nil, `ReadChildLayout` renders the body as a new-file
     /// diff card so the contents read as line-numbered code.
     let content: String?
+    /// Wrapper-level error text (`tool_result.is_error == true`), stripped
+    /// of the `<tool_use_error>` envelope. `nil` on success. Rendered as a
+    /// uniform red error card below the body by `ToolGroupChildLayout`.
+    var errorText: String? = nil
 }

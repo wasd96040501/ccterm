@@ -116,7 +116,6 @@ struct ArchiveView: View {
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 24)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
         .searchable(
             text: $searchQueryRaw,
             placement: .toolbar,

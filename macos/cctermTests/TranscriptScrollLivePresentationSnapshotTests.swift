@@ -60,8 +60,8 @@ final class TranscriptScrollLivePresentationSnapshotTests: XCTestCase {
 
     private func prepopulatedController() -> Transcript2Controller {
         let c = Transcript2Controller()
-        c.setHistory(makeBlocks())
-        XCTAssertEqual(c.blockIds.count, Self.blockCount, "fixture: setHistory should land all blocks")
+        c.apply(.append(makeBlocks()))
+        XCTAssertEqual(c.blockIds.count, Self.blockCount, "fixture: append should land all blocks")
         return c
     }
 
@@ -99,7 +99,7 @@ final class TranscriptScrollLivePresentationSnapshotTests: XCTestCase {
         defer { sampler.stop() }
 
         // Production attach sequence (mirrors
-        // TranscriptDetailViewController.attachSession + #199's
+        // ChatSessionViewController.attachSession + #199's
         // scrollToTail anchor — same as the model-only test).
         container.layoutSubtreeIfNeeded()
         TranscriptScrollViewFactory.bindData(scroll, controller: controller)

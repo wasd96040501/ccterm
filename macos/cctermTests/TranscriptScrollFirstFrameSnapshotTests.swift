@@ -65,12 +65,12 @@ final class TranscriptScrollFirstFrameSnapshotTests: XCTestCase {
 
     /// Mirrors the re-entry scenario: a `Transcript2Controller` whose
     /// `coordinator.blocks` is already populated (via the continuous
-    /// bridge while no table was attached). `setHistory` with no table
+    /// bridge while no table was attached). `apply(.append)` with no table
     /// mounted lands the blocks directly into the coordinator's array.
     private func prepopulatedController() -> Transcript2Controller {
         let c = Transcript2Controller()
-        c.setHistory(makeBlocks())
-        XCTAssertEqual(c.blockIds.count, Self.blockCount, "fixture: setHistory should land all blocks")
+        c.apply(.append(makeBlocks()))
+        XCTAssertEqual(c.blockIds.count, Self.blockCount, "fixture: append should land all blocks")
         return c
     }
 
@@ -128,7 +128,7 @@ final class TranscriptScrollFirstFrameSnapshotTests: XCTestCase {
     /// clip origin at the tail.
     ///
     /// Why: the host's `view.layoutSubtreeIfNeeded()` (in
-    /// `TranscriptDetailViewController.attachSession`, predating #199)
+    /// `ChatSessionViewController.attachSession`, predating #199)
     /// already drives the table from frame=.zero to its real frame, and
     /// that frame change triggers NSTableView's internal `tile()` through
     /// the `heightOfRow` callback chain — independent of whether
@@ -510,7 +510,7 @@ final class TranscriptScrollFirstFrameSnapshotTests: XCTestCase {
     }
 
     /// Drives the exact attach sequence used by
-    /// `TranscriptDetailViewController.attachSession`, sampling state at
+    /// `ChatSessionViewController.attachSession`, sampling state at
     /// each of the four observable points. Returns the window so the
     /// caller can keep it alive for an optional PNG capture; dismantle
     /// via `dismantleWindow(_:)` when done.
@@ -521,7 +521,7 @@ final class TranscriptScrollFirstFrameSnapshotTests: XCTestCase {
         let m0 = measure(scroll: scroll)
         let (window, container) = makeOffscreenWindow(content: scroll)
 
-        // Mirror TranscriptDetailViewController.attachSession's
+        // Mirror ChatSessionViewController.attachSession's
         // forced-layout pass — autolayout sizes the scroll view, clip
         // view, and table column to real width. dataSource is NOT bound
         // yet, so no `heightOfRow` queries fire here.

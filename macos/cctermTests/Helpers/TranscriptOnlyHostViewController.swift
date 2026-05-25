@@ -11,7 +11,7 @@ import AppKit
 /// The mount goes through the same canonical attach pattern documented
 /// on `TranscriptScrollViewFactory` (make / addSubview /
 /// layoutSubtreeIfNeeded / bindData) — same pattern production's
-/// `TranscriptDetailViewController.attachSession` uses — so a snapshot
+/// `ChatSessionViewController.attachSession` uses — so a snapshot
 /// taken here reflects the same row geometry the production transcript
 /// would render at the same width.
 @MainActor

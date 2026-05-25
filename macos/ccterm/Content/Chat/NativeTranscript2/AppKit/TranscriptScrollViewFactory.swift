@@ -2,7 +2,7 @@ import AppKit
 
 /// Configures and returns a `Transcript2ScrollView` wired up to the
 /// given `Transcript2Controller`. Shared between the production
-/// AppKit host (`TranscriptDetailViewController`) and the AppKit demo
+/// AppKit host (`ChatSessionViewController`) and the AppKit demo
 /// VCs (`TranscriptDemoViewController` etc.) so the AppKit setup lives
 /// in one place — content insets, `.never` layer policies, table
 /// column, dataSource/delegate wiring, frameDidChange observer.
@@ -33,12 +33,11 @@ import AppKit
 enum TranscriptScrollViewFactory {
 
     /// The fixed transcript content insets: `top` reserves room for the
-    /// window's `unifiedCompact` toolbar; `bottom` matches the bottom
-    /// scrim height (`TranscriptDetailViewController.bottomFadeScrimHeight`)
-    /// so the last cell lands exactly at the input bar's top edge —
-    /// hit-test then routes that band to the cell rather than the
-    /// scroll view's empty backdrop.
-    static let contentInsets = NSEdgeInsets(top: 44, left: 0, bottom: 100, right: 0)
+    /// window's `unifiedCompact` toolbar; `bottom` sits a touch above the
+    /// bottom scrim height (`ChatSessionViewController.bottomFadeScrimHeight`,
+    /// 100) so the last cell clears the input bar's top edge with a little
+    /// breathing room rather than butting straight into it.
+    static let contentInsets = NSEdgeInsets(top: 56, left: 0, bottom: 112, right: 0)
 
     /// Builds the scroll/clip/table/column shell. The table is added to
     /// the scroll view as document view, but its `dataSource` /
@@ -113,6 +112,17 @@ enum TranscriptScrollViewFactory {
             coordinator,
             selector: #selector(Transcript2Coordinator.tableFrameDidChange(_:)),
             name: NSView.frameDidChangeNotification, object: table)
+        // Live-scroll gating: suppress cell hover writes while the user
+        // is actively scrolling. Removed by `dismantle`'s blanket
+        // `removeObserver(coordinator)`.
+        NotificationCenter.default.addObserver(
+            coordinator,
+            selector: #selector(Transcript2Coordinator.scrollViewWillStartLiveScroll(_:)),
+            name: NSScrollView.willStartLiveScrollNotification, object: scroll)
+        NotificationCenter.default.addObserver(
+            coordinator,
+            selector: #selector(Transcript2Coordinator.scrollViewDidEndLiveScroll(_:)),
+            name: NSScrollView.didEndLiveScrollNotification, object: scroll)
 
         coordinator.tableView = table
         table.coordinator = coordinator

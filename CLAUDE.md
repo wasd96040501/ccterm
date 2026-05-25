@@ -6,14 +6,14 @@ Native macOS client for Claude Code. SwiftUI + AppKit, minimum target macOS 14 (
 
 - **UI framework — SwiftUI by default, AppKit by exception.** Reach for AppKit only when SwiftUI cannot meet the requirement (performance, lifecycle timing, or a missing capability). The current AppKit footprint is:
   - **Chat transcript** — `NSTableView` + Core Text self-drawn (`NativeTranscript2`). SwiftUI's `List` / `LazyVStack` cannot keep up with the row count, custom layout, and selection semantics.
-  - **Main window root** — `MainWindowController` + `MainSplitViewController` + `TranscriptDetailViewController`. The transcript's mount and `frameDidChange` cascade must run in AppKit's source phase, not SwiftUI's commit pass.
+  - **Main window root** — `MainWindowController` + `MainSplitViewController` + `DetailRouterViewController` + `ChatSessionViewController`. The transcript's mount and `frameDidChange` cascade must run in AppKit's source phase, not SwiftUI's commit pass.
   - **Sidebar** — `SidebarViewController` on `NSOutlineView` (source-list style). SwiftUI's `.listStyle(.sidebar)` is itself an `NSOutlineView` under the hood, but going direct gives us folder drag-and-drop via the standard `pasteboardWriterForItem` / `validateDrop` / `acceptDrop` trio and built-in `expandItem(_:)` / `collapseItem(_:)` animations.
   - **Window toolbar** — `NSToolbar` + `NSSearchToolbarItem`; `.searchable` doesn't give the first-responder + ⌘F semantics the transcript search needs.
   - **App lifecycle** — `AppDelegate` (via `@NSApplicationDelegateAdaptor`) owns app-scope state and creates the main window in `applicationDidFinishLaunching`.
 
-  Everything else — input bar, configurator, overlays, Settings / Logs / About windows, every reusable component — is SwiftUI, hosted via `NSHostingController` (full panes) or `NSHostingView` (toolbar items / overlays). New code lands in SwiftUI unless it fits one of the exceptions above; introducing a new AppKit surface needs an explicit reason (perf measurement, missing API, lifecycle ordering).
+  Everything else — input bar, configurator, overlays, Settings / About windows, every reusable component — is SwiftUI, hosted via `NSHostingController` (full panes) or `NSHostingView` (toolbar items / overlays). New code lands in SwiftUI unless it fits one of the exceptions above; introducing a new AppKit surface needs an explicit reason (perf measurement, missing API, lifecycle ordering).
 
-- **Entry point**: `@main CCTermApp` (SwiftUI `App`) → `@NSApplicationDelegateAdaptor(AppDelegate.self)` → `MainWindowController` → `MainSplitViewController` (sidebar item + detail item) → `TranscriptDetailViewController`. Selection / draft state lives on `MainSelectionModel` (`@Observable`), shared between the AppKit `SidebarViewController` and the AppKit detail VC. Settings / Logs / About remain SwiftUI `Window` scenes; their menu items + ⌘F binding come from `AppCommands` (a SwiftUI `Commands` block on the Settings scene) so cold-start clicks resolve `@Environment(\.openWindow)` cleanly.
+- **Entry point**: `@main CCTermApp` (SwiftUI `App`) → `@NSApplicationDelegateAdaptor(AppDelegate.self)` → `MainWindowController` → `MainSplitViewController` (sidebar item + detail item) → `DetailRouterViewController`, which mounts exactly one child VC per selection (`ChatSessionViewController` for `.session(_)` / `.none`, `ComposeSessionViewController` for `.newSession`, `ArchiveViewController` for `.archive`, demo VCs in DEBUG). Selection / draft state lives on `MainSelectionModel` (`@Observable`); the AppKit `SidebarViewController` writes it via `select(_:)`, and the router is its **sole structural observer** — `select(_:)` drives the detail-side transition synchronously, in the same source phase as the click. Settings / About remain SwiftUI `Window` scenes; their menu items + ⌘F binding come from `AppCommands` (a SwiftUI `Commands` block on the Settings scene) so cold-start clicks resolve `@Environment(\.openWindow)` cleanly.
 - **Layers**:
   - **Model** — plain data, `struct` first, `Codable` where it crosses a boundary.
   - **View** — SwiftUI structs, declarative.
@@ -212,7 +212,21 @@ appLog(.info, "SessionRuntime", "send() queued — status=\(status)")
 
 - Category = class name without module prefix (`"SessionRuntime"`, `"TranscriptDetailVC"`).
 - Never log secrets (tokens, passwords, API keys).
-- Live tail: Window → Logs (⌘⇧L). Also mirrored to `os.Logger`, visible in Console.app for history.
+- Visible in Console.app (filter by subsystem `com.ccterm.app`). Live tail: `log stream --predicate 'subsystem == "com.ccterm.app"' --level debug`.
+
+### Streaming logs from the terminal — `make logs`
+
+`make logs` live-tails the unified log for **the build product of the current worktree only**. This matters because you'll often have the Release build plus one or more Debug builds (from other worktrees) running at once — they share a log subsystem, but `make logs` follows only the binary this checkout produces, so you never have to guess which window you're reading.
+
+```bash
+make logs                          # this worktree's Debug build, info level, all categories
+make logs LEVEL=debug              # include .debug lines (default is info)
+make logs CATEGORY=SessionRuntime  # only one os_log category
+make logs CONFIG=release           # follow the Release build instead of Debug
+make logs CONFIG=release CATEGORY=TranscriptDetailVC LEVEL=debug  # combine freely
+```
+
+`CONFIG` (`debug`/`release`), `CATEGORY` (any `appLog` category), and `LEVEL` (`default`/`info`/`debug`) are all optional and independent. Just build, launch the app, and run `make logs` in a second terminal; Ctrl-C to stop.
 
 ## Internationalization
 

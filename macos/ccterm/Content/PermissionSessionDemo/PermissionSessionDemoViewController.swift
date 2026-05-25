@@ -4,6 +4,16 @@ import AgentSDK
 import AppKit
 import SwiftUI
 
+/// Carries the resting bar's measured natural height out to the AppKit host
+/// so the bottom-anchored host can size to exactly the bar (demo-local twin of
+/// `ChatSessionViewController`'s `BarContentHeightKey`).
+private struct DemoBarHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 /// AppKit-rooted host for the end-to-end permission card layout demo.
 /// Replaces the former SwiftUI `PermissionSessionDemoView` +
 /// `ChatHistoryView` combo: the transcript is mounted directly via
@@ -15,6 +25,11 @@ import SwiftUI
 /// view; only the mount strategy changed.
 @MainActor
 final class PermissionSessionDemoViewController: NSViewController {
+
+    /// `nonisolated` so dealloc skips the `@MainActor` deinit executor-hop
+    /// that aborts in the XCTest process (macOS 26 libswift_Concurrency
+    /// `TaskLocal` teardown bug). See `SessionRuntime.swift`.
+    nonisolated deinit {}
 
     init(syntaxEngine: SyntaxHighlightEngine? = nil) {
         self.syntaxEngine = syntaxEngine
@@ -30,8 +45,18 @@ final class PermissionSessionDemoViewController: NSViewController {
     private var scroll: Transcript2ScrollView?
     private var sheetPresenter: Transcript2SheetPresenter?
     private var inputBarHost: NSHostingView<AnyView>?
+    /// Bottom-anchored bar host height, driven by the bar's measured natural
+    /// height (mirrors `ChatSessionViewController.composeOrBarHostHeightConstraint`).
+    private var inputBarHeightConstraint: NSLayoutConstraint?
     private var controlPanelHost: NSHostingView<ControlPanelHostView>?
     private let controlPanelState = ControlPanelState()
+    /// Demo-local draft store so the hosted `InputBarView2` resolves its
+    /// required `@Environment(InputDraftStore.self)` (production supplies it
+    /// from `AppState`). Temp-dir backed so the demo never touches the user's
+    /// real input drafts.
+    private let inputDraftStore = InputDraftStore(
+        directory: FileManager.default.temporaryDirectory
+            .appendingPathComponent("ccterm-permission-demo-drafts", isDirectory: true))
 
     override func loadView() {
         view = NSView()
@@ -85,15 +110,36 @@ final class PermissionSessionDemoViewController: NSViewController {
             onPillRect: { _ in }
         )
         .environment(seed.manager)
+        .environment(inputDraftStore)
+        // Bottom-anchor the bar at its OWN height, exactly as
+        // `ChatSessionViewController` does. Measure the bar's natural height
+        // and feed it to the host's height constraint; pinning the host
+        // full-bleed (or letting a plain `NSHostingView` publish its intrinsic
+        // height) leaks a required height up into the window's constraints and
+        // collapses the window. `sizingOptions = []` below severs that path.
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity)
+        .background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: DemoBarHeightKey.self, value: proxy.size.height)
+            }
+        }
+        .onPreferenceChange(DemoBarHeightKey.self) { [weak self] height in
+            self?.inputBarHeightConstraint?.constant = height
+        }
         .ignoresSafeArea()
         let host = NSHostingView(rootView: AnyView(bar))
+        host.sizingOptions = []
         host.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(host)
+        let heightConstraint = host.heightAnchor.constraint(equalToConstant: 0)
+        inputBarHeightConstraint = heightConstraint
         NSLayoutConstraint.activate([
             host.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             host.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            host.topAnchor.constraint(equalTo: view.topAnchor),
             host.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            heightConstraint,
         ])
         inputBarHost = host
     }
@@ -386,7 +432,7 @@ fileprivate struct Seed {
     func seedHistoryIfNeeded() {
         guard !seedToken.done else { return }
         seedToken.done = true
-        controller.setHistory(TranscriptDemoViewController.initialBlocks)
+        controller.apply(.append(TranscriptDemoViewController.initialBlocks))
         seedBackgroundTasks()
         seedTodos()
     }

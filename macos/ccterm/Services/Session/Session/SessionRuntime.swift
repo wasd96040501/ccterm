@@ -26,23 +26,21 @@ final class SessionRuntime {
         case stopped
     }
 
+    /// History-load lifecycle for a session. `Session.loadHistory()` drives a
+    /// reverse-streaming `TranscriptBackfillPipeline` through this once —
+    /// `.notLoaded → .loading → .loaded` — while the bridge streams live events
+    /// into the controller independently. "Is history still loading" is
+    /// **derived** as `state != .loaded`; there is no separate `isLoading` flag.
     enum HistoryLoadState: Equatable {
-        /// loadHistory has never been triggered.
+        /// `loadHistory()` has never been triggered.
         case notLoaded
-        /// Phase A byte-level tail read in progress. UI renders an empty
-        /// NativeTranscriptView (the ProgressView was removed — tail is
-        /// usually < 50 ms; flashing a spinner is worse).
-        case loadingTail
-        /// Phase A done; tail is appended to `messages` and renderable.
-        /// Phase B full parse continues in the background. `messages` may
-        /// keep growing in this state (live appends are not blocked).
-        case tailLoaded(count: Int)
-        /// Done: Phase B merged in; `messages` contains the full history.
+        /// The backfill pipeline is producing pages. The transcript may already
+        /// show the tail (the first deposit lands before this clears) and keeps
+        /// growing as older pages prepend; live appends are not blocked.
+        case loading
+        /// The pipeline reached the file top and drained — `controller.blocks`
+        /// holds the full history.
         case loaded
-        /// Failed: only triggered by Phase A (tail unreadable). Phase B
-        /// failure just logs a warning and the state stays at `.tailLoaded` —
-        /// the user already saw the tail, no point un-committing it.
-        case failed(String)
     }
 
     // MARK: - Identity
@@ -385,21 +383,10 @@ final class SessionRuntime {
     // `activate()` / `stop()` / `send(_:)` implementations and docs live in
     // `SessionRuntime+Start.swift`.
 
-    /// Load history messages into `messages` in the background. Idempotent,
-    /// dispatched by `historyLoadState`.
-    ///
-    /// - `.notLoaded`: two-phase read. `historyLoadState` → `.loadingTail`
-    ///   → `.tailLoaded(count)` → `.loaded`; tail renders first, prefix
-    ///   merges in the background. Parse failure → `.failed(reason)`.
-    /// - `.loadingTail` / `.tailLoaded`: no-op (prevents reentry / Phase B
-    ///   in flight).
-    /// - `.loaded`: no-op.
-    /// - `.failed`: retry — flips back to `.notLoaded` and reloads.
-    ///
-    /// The method does not block its caller; the UI observes
-    /// `historyLoadState` for spinner / error display. Independent of
-    /// `activate()` — stopped / notStarted sessions can still view history.
-    // impl in SessionRuntime+History.swift
+    // History load lives on the façade now: `Session.loadHistory()` drives a
+    // reverse-streaming `TranscriptBackfillPipeline`; the runtime only owns the
+    // `historyLoadState` lifecycle flag (see the enum above). `historyJSONLURL`
+    // path resolution stays here in `SessionRuntime+History.swift`.
 
     // MARK: - Messaging commands
 

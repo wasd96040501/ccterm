@@ -13,6 +13,10 @@ struct AskUserQuestionChild: Equatable, Sendable {
     /// Progressive form (e.g. `"Asking: <question>"`).
     let activeLabel: String
     let items: [Item]
+    /// Wrapper-level error text (`tool_result.is_error == true`), stripped
+    /// of the `<tool_use_error>` envelope. `nil` on success. Rendered as a
+    /// uniform red error card below the body by `ToolGroupChildLayout`.
+    var errorText: String? = nil
 
     struct Item: Equatable, Sendable {
         let question: String

@@ -74,7 +74,18 @@ public struct SessionConfiguration {
     /// On resume, mint a new session ID instead of reusing the original. Use with `resume` or `continueConversation`. Maps to `--fork-session`.
     public var forkSession: Bool
 
-    /// Include partial messages (intermediate assistant states) in the stream. Maps to `--include-partial-messages`.
+    /// Include partial messages (intermediate assistant states) in the
+    /// stream. Maps to `--include-partial-messages`.
+    ///
+    /// When true, the CLI emits SSE-style `stream_event` envelopes
+    /// (`message_start` / `content_block_start` /
+    /// `content_block_delta` / `content_block_stop` / `message_delta`
+    /// / `message_stop`) interleaved with the regular final envelopes.
+    /// These flow on a **separate** callback —
+    /// `Session.onStreamEvent` — not `onMessage`. Callers that opt in
+    /// must subscribe to `onStreamEvent`; otherwise the deltas land in
+    /// the dispatcher and are silently dropped, wasting CLI bandwidth
+    /// for no UI effect.
     public var includePartialMessages: Bool
 
     /// Which settings sources to load (user/project/local). nil = default; empty array loads nothing. Maps to `--setting-sources`.

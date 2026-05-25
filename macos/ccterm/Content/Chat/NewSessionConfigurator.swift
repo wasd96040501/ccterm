@@ -53,11 +53,22 @@ struct NewSessionConfigurator<InputBar: View>: View {
     static var minWidth: CGFloat { 640 }
     static var idealWidth: CGFloat { 960 }
     static var maxWidth: CGFloat { 960 }
-    /// Fixed visual height; tall enough that the right column can host
-    /// hero + meta + recents list + input bar without crowding, while
-    /// still leaving generous breathing room above and below in a
+    /// Ideal / maximum visual height; tall enough that the right column
+    /// can host hero + meta + recents list + input bar without crowding,
+    /// while still leaving generous breathing room above and below in a
     /// typical detail pane.
     static var height: CGFloat { 620 }
+    /// Lower bound the card may shrink to when the detail pane is short.
+    /// Mirrors `minWidth` for the vertical axis: without it the card
+    /// stays pinned at `height` (620) and `ComposeSessionView`'s vertical
+    /// padding collapses the moment the pane drops below ~660pt — the card
+    /// then touches the top and bottom edges while the horizontal padding
+    /// (width is already flexible) survives. Letting it shrink keeps the
+    /// top/bottom inset symmetric with left/right down to short windows.
+    /// Sized so the right column's fixed chrome (hero + meta + divider +
+    /// recents header + reserved input-bar band) still fits with a couple
+    /// of recents rows above the bar.
+    static var minHeight: CGFloat { 360 }
     /// Left-column width. Hosts the recent-projects nav. ~29% of the
     /// 960pt card width — feels like a "sidebar inside the card", not
     /// a near-50/50 split.
@@ -145,7 +156,7 @@ struct NewSessionConfigurator<InputBar: View>: View {
             minWidth: Self.minWidth,
             idealWidth: Self.idealWidth,
             maxWidth: Self.maxWidth,
-            minHeight: Self.height,
+            minHeight: Self.minHeight,
             idealHeight: Self.height,
             maxHeight: Self.height
         )

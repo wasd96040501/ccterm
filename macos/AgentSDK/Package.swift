@@ -25,6 +25,10 @@ let package = Package(
             dependencies: ["AgentSDK"]
         ),
         .executableTarget(
+            name: "PartialMessagesSmoke",
+            dependencies: ["AgentSDK"]
+        ),
+        .executableTarget(
             name: "PermissionModeProbe",
             dependencies: ["AgentSDK"]
         ),

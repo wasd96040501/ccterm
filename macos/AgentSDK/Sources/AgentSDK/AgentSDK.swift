@@ -60,8 +60,27 @@ public final class Session {
     /// CLI requests user input (elicitation). The return value is sent back to the CLI as-is.
     public var onElicitationRequest: ((_ request: ElicitationRequest) -> ElicitationResult)?
 
-    /// A typed message arrived (assistant, user, system, result, ...).
+    /// A complete typed message arrived (assistant, user, system,
+    /// result, progress, ...). Each callback is one finalized envelope
+    /// from the CLI. Streaming partials (`stream_event`) are NOT
+    /// delivered here — they only arrive via `onStreamEvent` when
+    /// `SessionConfiguration.includePartialMessages` is true.
     public var onMessage: ((_ message: Message2) -> Void)?
+
+    /// A streaming partial (delta) arrived from the CLI. Only fires
+    /// when `SessionConfiguration.includePartialMessages` is true; nil
+    /// when the flag is off. Each callback carries one SSE-style sub-
+    /// event (`message_start` / `content_block_start` /
+    /// `content_block_delta` / `content_block_stop` / `message_delta`
+    /// / `message_stop`) keyed by the parent assistant message's id
+    /// (available via the matching `onMessage(.assistant)` envelope
+    /// that arrives at turn close).
+    ///
+    /// Callers that subscribe must merge deltas against the final
+    /// `.assistant` envelope themselves — the SDK does NOT
+    /// reconstruct partial messages. If left nil while
+    /// `includePartialMessages` is on, deltas are silently dropped.
+    public var onStreamEvent: ((_ event: Message2StreamEvent) -> Void)?
 
     public var onStderr: ((_ text: String) -> Void)?
 
@@ -794,7 +813,15 @@ public final class Session {
 
         default:
             if let message = try? resolver.resolve(json) {
-                onMessage?(message)
+                // Stream-event deltas flow on a separate callback so
+                // callers must explicitly opt into partial handling
+                // (see `onStreamEvent` doc). `onMessage` only sees
+                // finalized envelopes.
+                if case .streamEvent(let evt) = message {
+                    onStreamEvent?(evt)
+                } else {
+                    onMessage?(message)
+                }
             }
         }
     }

@@ -23,4 +23,8 @@ struct AgentChild: Equatable, Sendable {
     /// re-parsing is a future refinement (would belong to a shared
     /// `Markdown → [InlineNode]` helper, not to this child's layout).
     let output: String?
+    /// Wrapper-level error text (`tool_result.is_error == true`), stripped
+    /// of the `<tool_use_error>` envelope. `nil` on success. Rendered as a
+    /// uniform red error card below the body by `ToolGroupChildLayout`.
+    var errorText: String? = nil
 }

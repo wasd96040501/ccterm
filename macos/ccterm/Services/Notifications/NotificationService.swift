@@ -3,7 +3,8 @@ import Observation
 import UserNotifications
 
 /// Routes `TurnEndedNotice`s into the system Notification Center, and
-/// surfaces user clicks back to the UI as `pendingActivationSessionId`.
+/// surfaces user clicks back to the UI by **pushing** them through the
+/// `onActivateSession` callback.
 ///
 /// Lifetime: one instance, owned by `AppState`, lives for the whole app
 /// session. `bootstrap()` requests permission + installs the
@@ -28,11 +29,19 @@ final class NotificationService: NSObject {
     @ObservationIgnored private let activation: AppActivationTracker
     @ObservationIgnored private var didBootstrap = false
 
-    /// Most recent click target. `TranscriptDetailViewController`
-    /// observes this, flips `MainSelectionModel.selection` to
-    /// `.session(sid)`, then calls `clearPendingActivation()` so a
-    /// re-click on the same session still fires.
-    private(set) var pendingActivationSessionId: String?
+    /// Pushed when the user clicks a notification banner. A single
+    /// stable owner (`DetailRouterViewController`) installs this and
+    /// flips `MainSelectionModel.selection` to `.session(sid)`.
+    ///
+    /// This is a **push** callback rather than an `@Observable` field on
+    /// purpose: the old shape had every `ChatSessionViewController`
+    /// observe a `pendingActivationSessionId` through a re-arming
+    /// `withObservationTracking` task, so each leaked detail VC kept
+    /// driving selection (and the strong-`self`-across-`await` re-arm
+    /// pinned those VCs forever). A direct closure has one owner, no
+    /// observation task, and no retain cycle — see the
+    /// `onLaunchFailure` / `onRecordPersisted` sinks for the same idiom.
+    @ObservationIgnored var onActivateSession: ((String) -> Void)?
 
     /// Authorization status snapshot — `nil` until the first query
     /// resolves. Settings UI can read this if we ever want to nudge the
@@ -76,11 +85,6 @@ final class NotificationService: NSObject {
     func handleTurnEnded(_ notice: TurnEndedNotice) {
         guard !activation.isAppActive else { return }
         post(notice: notice)
-    }
-
-    /// Called by RootView2 after it consumes the activation request.
-    func clearPendingActivation() {
-        pendingActivationSessionId = nil
     }
 
     private func post(notice: TurnEndedNotice) {
@@ -132,11 +136,15 @@ final class NotificationService: NSObject {
         return out.trimmingCharacters(in: .whitespaces)
     }
 
-    /// Used from the nonisolated delegate callback to hop back onto
-    /// the main actor for the activation-state write.
-    fileprivate func activateForSession(_ sessionId: String) {
+    /// Main-actor entry for "a notification for `sessionId` was
+    /// activated." Called by the `UNUserNotificationCenterDelegate`
+    /// callback after it hops back onto the main actor; `internal` so a
+    /// test can drive the real activation path without fabricating a
+    /// `UNNotificationResponse` (the OS half is Apple's to test, not
+    /// ours).
+    func activateForSession(_ sessionId: String) {
         NSApp.activate(ignoringOtherApps: true)
-        pendingActivationSessionId = sessionId
+        onActivateSession?(sessionId)
     }
 }
 

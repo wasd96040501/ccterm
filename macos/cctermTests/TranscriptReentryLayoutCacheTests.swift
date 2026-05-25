@@ -8,7 +8,7 @@ import XCTest
 /// property against the canonical `TranscriptScrollViewFactory` attach
 /// sequence (bare NSView container — no production VC, no demo VC).
 /// Sibling tests in `TranscriptHostReentryLayoutCacheTests` drive the
-/// production `TranscriptDetailViewController` and the AppKit demo VCs
+/// production `ChatSessionViewController` and the AppKit demo VCs
 /// through the same property; the three together guard both the
 /// factory itself AND every caller's adherence to the documented
 /// attach order.
@@ -46,7 +46,7 @@ final class TranscriptReentryLayoutCacheTests: XCTestCase {
 
     func testReentryDoesNotRelayoutSameBlockAtMultipleWidthsInOneTick() throws {
         let controller = Transcript2Controller()
-        controller.setHistory(makeBlocks())
+        controller.apply(.append(makeBlocks()))
         XCTAssertEqual(controller.blockIds.count, Self.blockCount)
         let coordinator = controller.coordinator
 

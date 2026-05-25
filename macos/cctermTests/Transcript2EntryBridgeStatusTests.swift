@@ -5,9 +5,9 @@ import XCTest
 
 /// Status-derivation rules in `Transcript2EntryBridge`:
 ///
-/// - `.reset` / `.prepended` (history replay) → tool_use without a
-///   matching `tool_result` resolves to `.completed`, not `.running`.
-///   Historical sessions never paint an abandoned spinner.
+/// - `pushHistoricalStatuses` (history loaded by the backfill pipeline) →
+///   tool_use without a matching `tool_result` resolves to `.completed`,
+///   not `.running`. Historical sessions never paint an abandoned spinner.
 /// - `.appended` / `.updated` (live CLI) → tool_use without a matching
 ///   `tool_result` resolves to `.running`. Standard in-flight render.
 /// - `handleTurnFinished()` (runtime `.result` arrived) → every tool
@@ -52,19 +52,20 @@ final class Transcript2EntryBridgeStatusTests: XCTestCase {
             "entry", entryId.uuidString, "tg", String(toolUseIndex))
     }
 
-    // MARK: - Historical mode (.reset)
+    // MARK: - Historical mode (pipeline-loaded history)
 
-    /// `.reset` with an unresolved tool_use must NOT mark it `.running`.
-    /// History replay's abandoned tools render as `.completed`.
-    func testResetMapsUnresolvedToolToCompleted() {
-        let (entry, entryId) = entryWithUnresolvedRead(toolUseId: "tu-reset")
+    /// History tools routed through `pushHistoricalStatuses` (the backfill
+    /// pipeline's status entry point) must NOT be marked `.running`. History
+    /// replay's abandoned tools render as `.completed`.
+    func testHistoricalUnresolvedToolIsCompleted() {
+        let (entry, entryId) = entryWithUnresolvedRead(toolUseId: "tu-hist")
         let controller = Transcript2Controller()
         let bridge = Transcript2EntryBridge(controller: controller)
 
-        bridge.apply(.reset([entry], precomputedBlocks: nil))
+        bridge.pushHistoricalStatuses(for: [entry])
 
         XCTAssertEqual(
-            controller.toolStatus(for: childIdFor(toolUseId: "tu-reset")),
+            controller.toolStatus(for: childIdFor(toolUseId: "tu-hist")),
             .completed,
             "historical tool_use should not be marked .running")
         XCTAssertEqual(
@@ -74,29 +75,22 @@ final class Transcript2EntryBridgeStatusTests: XCTestCase {
             "single-tool host group should mirror child .completed")
     }
 
-    /// `.prepended` (Phase B) mirrors `.reset` historical semantics.
-    func testPrependedMapsUnresolvedToolToCompleted() {
-        // Seed with an unrelated tail entry so `.prepended` has an anchor.
-        let tail = MessageEntry.single(
-            SingleEntry(
-                id: UUID(),
-                payload: .remote(Message2Fixtures.assistantText("tail")),
-                delivery: nil,
-                toolResults: [:]))
-        let (prefix, prefixId) = entryWithUnresolvedRead(toolUseId: "tu-prep")
+    /// A batch of history entries all settle `.completed` under historical
+    /// derivation (mirrors the multi-page backfill the pipeline feeds).
+    func testHistoricalBatchAllCompleted() {
+        let (a, idA) = entryWithUnresolvedRead(toolUseId: "tu-h1")
+        let (b, idB) = entryWithUnresolvedRead(toolUseId: "tu-h2")
 
         let controller = Transcript2Controller()
         let bridge = Transcript2EntryBridge(controller: controller)
-        bridge.apply(.reset([tail], precomputedBlocks: nil))
-        bridge.apply(.prepended([prefix], precomputedBlocks: nil))
+        bridge.pushHistoricalStatuses(for: [a, b])
 
+        XCTAssertEqual(controller.toolStatus(for: childIdFor(toolUseId: "tu-h1")), .completed)
+        XCTAssertEqual(controller.toolStatus(for: childIdFor(toolUseId: "tu-h2")), .completed)
         XCTAssertEqual(
-            controller.toolStatus(for: childIdFor(toolUseId: "tu-prep")),
-            .completed)
+            controller.toolStatus(for: groupIdFor(entryId: idA, toolUseIndex: 0)), .completed)
         XCTAssertEqual(
-            controller.toolStatus(
-                for: groupIdFor(entryId: prefixId, toolUseIndex: 0)),
-            .completed)
+            controller.toolStatus(for: groupIdFor(entryId: idB, toolUseIndex: 0)), .completed)
     }
 
     // MARK: - Live mode (.appended)

@@ -15,6 +15,11 @@ import SwiftUI
 @MainActor
 final class TranscriptPerfDemoViewController: NSViewController {
 
+    /// `nonisolated` so dealloc skips the `@MainActor` deinit executor-hop
+    /// that aborts in the XCTest process (macOS 26 libswift_Concurrency
+    /// `TaskLocal` teardown bug). See `SessionRuntime.swift`.
+    nonisolated deinit {}
+
     init(syntaxEngine: SyntaxHighlightEngine? = nil) {
         self.syntaxEngine = syntaxEngine
         super.init(nibName: nil, bundle: nil)
@@ -90,7 +95,7 @@ final class TranscriptPerfDemoViewController: NSViewController {
     private func seedIfNeeded() {
         guard !seeded else { return }
         seeded = true
-        controller.setHistory(Self.makeBlocks())
+        controller.apply(.append(Self.makeBlocks()))
         // Expand the group and the lone fileEdit child so the giant
         // diff body is the resting state — scrolling exercises the
         // over-screen entry view immediately without a user click.

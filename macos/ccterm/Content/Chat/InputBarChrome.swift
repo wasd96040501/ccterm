@@ -22,7 +22,7 @@ struct InputBarChrome: View {
 
     /// Resolved synchronously per render. `prepareDraftSession` is
     /// idempotent get-or-create (pure in-memory), and returns the same
-    /// instance `TranscriptDetailViewController` holds.
+    /// instance `ChatSessionViewController` holds.
     private var session: Session {
         manager.prepareDraftSession(sessionId)
     }
@@ -72,15 +72,33 @@ struct InputBarChrome: View {
     }
 }
 
-/// Chat-mode resting input region: bottom-anchored `InputBarChrome`
-/// plus the floating `PermissionCardView` overlay.
+/// Chat-mode resting input region: `InputBarChrome` plus the floating
+/// `PermissionCardView` (when one is pending). The card is **layered
+/// on the z-axis over the bar** — a `ZStack(alignment: .bottom)` whose
+/// later child (the card) draws on top of and covers the bar, sharing
+/// the same `chatBottomInset` so the card's bottom edge sits flush with
+/// the chrome row and it extends *up* from there. It does NOT stack
+/// above the bar on the y-axis (that pushed the bar down into a separate
+/// tier and broke the floating-overlay look the card was designed for).
 ///
-/// The card is hosted *here* — outside `InputBarChrome`'s own
-/// `.frame(maxWidth: composeMaxWidth = 512)` — so its `.frame(maxWidth:
-/// BlockStyle.maxLayoutWidth = 780)` is no longer silently clipped to
-/// 512 by the bar's host frame. Vertical alignment and horizontal
-/// centering are preserved bit-for-bit; see the pre-AppKit-migration
-/// `RootView2` for the geometry derivation.
+/// `ZStack` (not `.overlay`) is deliberate: an overlay is sized to its
+/// host and never grows the parent, so under the bottom-anchored bar
+/// host — whose height tracks this body's measured natural height — an
+/// overlaid card would be clipped (and its upper half would fall outside
+/// the host's hit-test bounds, killing its buttons). A `ZStack` reports
+/// the union of its children, so the card's footprint correctly grows
+/// the host to contain it. When no card is pending the ZStack collapses
+/// back to the bar's height, so the host shrinks and the transcript
+/// scroll view keeps receiving clicks in the empty band above the bar.
+///
+/// The card's `.frame(maxWidth: BlockStyle.maxLayoutWidth = 780)` is
+/// hoisted out of `InputBarChrome`'s own `.frame(maxWidth: composeMaxWidth
+/// = 512)` so it gets its full width budget — see the pre-AppKit
+/// `RootView2` for the original geometry derivation.
+///
+/// `maxHeight: .infinity` is intentionally absent: the bar host is
+/// bottom-anchored in `ChatSessionViewController`'s chat mode and sized
+/// to this body's natural height (`fixedSize` + `onContentHeight`).
 struct ChatRestingBar: View {
     let sessionId: String
     let draftKey: String
@@ -92,12 +110,11 @@ struct ChatRestingBar: View {
 
     var body: some View {
         let session = manager.prepareDraftSession(sessionId)
-        VStack(spacing: 0) {
-            Spacer(minLength: 0)
+        ZStack(alignment: .bottom) {
             InputBarChrome(
                 sessionId: sessionId,
                 draftKey: draftKey,
-                coordSpace: TranscriptDetailViewController.detailCoordSpace,
+                coordSpace: ChatSessionViewController.detailCoordSpace,
                 submitEnabled: true,
                 onSubmit: onSubmit,
                 onAttachRect: onAttachRect,
@@ -105,13 +122,10 @@ struct ChatRestingBar: View {
             )
             .frame(
                 minWidth: BlockStyle.minLayoutWidth,
-                maxWidth: TranscriptDetailViewController.composeMaxWidth
+                maxWidth: ChatSessionViewController.composeMaxWidth
             )
-            .padding(.horizontal, TranscriptDetailViewController.detailHorizontalInset)
-            .padding(.bottom, TranscriptDetailViewController.chatBottomInset)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .overlay(alignment: .bottom) {
+            .padding(.horizontal, ChatSessionViewController.detailHorizontalInset)
+
             if let pending = session.pendingPermissions.first {
                 PermissionCardView(
                     request: pending.request,
@@ -127,13 +141,14 @@ struct ChatRestingBar: View {
                     }
                 )
                 .frame(maxWidth: BlockStyle.maxLayoutWidth)
-                .padding(.horizontal, TranscriptDetailViewController.detailHorizontalInset)
-                .padding(.bottom, TranscriptDetailViewController.chatBottomInset)
+                .padding(.horizontal, ChatSessionViewController.detailHorizontalInset)
                 .transition(
                     .scale(scale: 0.96, anchor: .bottom)
                         .combined(with: .opacity))
             }
         }
+        .padding(.bottom, ChatSessionViewController.chatBottomInset)
+        .frame(maxWidth: .infinity)
         .animation(.smooth(duration: 0.25), value: session.pendingPermissions.first?.id)
     }
 }

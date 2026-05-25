@@ -21,6 +21,11 @@ import AppKit
 /// should never claim mouse events.
 @MainActor
 class TranscriptScrimView: NSView {
+    /// `nonisolated` so dealloc skips the `@MainActor` deinit executor-hop
+    /// that aborts in the XCTest process (macOS 26 libswift_Concurrency
+    /// `TaskLocal` teardown bug). See `SessionRuntime.swift`.
+    nonisolated deinit {}
+
     /// Where the gradient sits relative to the view's bounds and which
     /// direction it fades.
     enum Edge {
@@ -103,6 +108,11 @@ class TranscriptScrimView: NSView {
 /// `view`).
 @MainActor
 final class TranscriptBottomScrimView: TranscriptScrimView {
+    /// `nonisolated` so dealloc skips the `@MainActor` deinit executor-hop
+    /// that aborts in the XCTest process (macOS 26 libswift_Concurrency
+    /// `TaskLocal` teardown bug). See `SessionRuntime.swift`.
+    nonisolated deinit {}
+
     /// Attach button rect (a circle inscribed in this rect is punched).
     var attachRect: CGRect = .zero {
         didSet {
@@ -142,5 +152,41 @@ final class TranscriptBottomScrimView: TranscriptScrimView {
         }
         ctx.addPath(path)
         ctx.clip(using: .evenOdd)
+    }
+}
+
+/// Top fade scrim that doubles as a title-bar-style hit region.
+///
+/// The base scrim is a decorative passthrough (`hitTest` returns `nil`)
+/// so the transcript underneath keeps receiving clicks / cursor rects.
+/// The top band, however, sits over the window's chrome area where the
+/// natural macOS affordance is the title bar: drag to move the window,
+/// double-click to zoom. So this variant **intercepts** mouse events in
+/// its band (no passthrough) and adopts those two standard gestures —
+/// `performDrag` / `performZoom` are exactly what the real title bar and
+/// the green traffic-light button invoke. The 52pt band overlaps a sliver
+/// of the transcript's top inset; trading that sliver's selectability for
+/// title-bar behavior is intentional.
+@MainActor
+final class TranscriptTopScrimView: TranscriptScrimView {
+    init(bandHeight: CGFloat) {
+        super.init(edge: .top, bandHeight: bandHeight)
+    }
+
+    /// Claim the band (the base returns `nil`). Returning `self` is what
+    /// routes `mouseDown` here instead of to the transcript below.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let local = convert(point, from: superview)
+        return bounds.contains(local) ? self : nil
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount >= 2 {
+            window?.performZoom(nil)
+        } else {
+            // Single press → drag the window from this band, mirroring the
+            // title bar. A press with no movement is a harmless no-op.
+            window?.performDrag(with: event)
+        }
     }
 }

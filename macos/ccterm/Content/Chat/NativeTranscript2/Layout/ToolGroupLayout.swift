@@ -160,34 +160,28 @@ struct ToolGroupLayout: @unchecked Sendable {
         var out: [Region] = []
         for (idx, entry) in items.enumerated() {
             guard let body = entry.body else { continue }
-            switch body {
-            case .fileEdit(let l):
-                let d = l.body
-                guard !d.containerRect.isEmpty else { continue }
+            // Diff-bearing kinds (`fileEdit`, `read` in new-file mode)
+            // expose a `DiffLayout`; selection threads through the diff
+            // path. `diffBody` is the single source of truth for "this
+            // kind renders a diff."
+            if let d = body.diffBody, !d.containerRect.isEmpty {
                 out.append(makeDiffRegion(childIndex: idx, body: d))
-            case .read(let l):
-                // Read renders through `DiffLayout` in new-file mode;
-                // selection threads through the same diff path as
-                // `fileEdit`.
-                guard let d = l.body, !d.containerRect.isEmpty else { continue }
-                out.append(makeDiffRegion(childIndex: idx, body: d))
-            case .generic:
-                // Header-only — no body geometry to select.
-                continue
-            case .bash, .grep, .glob, .webFetch, .webSearch,
-                .askUserQuestion, .agent:
-                // Every kind in this arm exposes its body through
-                // `textCardSections`; the accessor switch on
-                // `ToolGroupChildLayout` is the single source of
-                // truth for "this kind uses the text-card primitive."
-                let sections = body.textCardSections ?? []
-                for (sectionIndex, section) in sections.enumerated() {
-                    out.append(
-                        makeTextCardRegion(
-                            childIndex: idx,
-                            sectionIndex: sectionIndex,
-                            section: section))
-                }
+            }
+            // Text-card sections: the per-kind cards (bash / grep / …)
+            // plus the uniform error card, which `textCardSections`
+            // appends as the trailing section for *every* kind — so a
+            // failed `fileEdit` or header-only `generic` still gets its
+            // error text selectable + searchable. The error card's
+            // `.textCard` position never collides with a diff body's
+            // `.diff` position (different `LayoutPosition` cases).
+            for (sectionIndex, section) in (body.textCardSections ?? [])
+                .enumerated()
+            {
+                out.append(
+                    makeTextCardRegion(
+                        childIndex: idx,
+                        sectionIndex: sectionIndex,
+                        section: section))
             }
         }
         return out
@@ -621,12 +615,11 @@ struct ToolGroupLayout: @unchecked Sendable {
         let displayTitle: String
         let titleWidth: CGFloat
         if titleBudget > 0 {
-            // Trim leading path components (`Sources/Foo/Bar.swift`
-            // → `…/Bar.swift`) when the band can't fit the full
-            // string. The basename — the part the eye scans for — is
-            // preserved, matching `web/src/utils/displayPath.ts`'s
-            // behavior on the React side.
-            displayTitle = truncateHead(title, budget: titleBudget, font: font)
+            // Trim the trailing end (`Edit Sources/Foo/Bar.swift`
+            // → `Edit Sources/Fo…`) when the band can't fit the full
+            // string. The leading text — the tool verb plus the start
+            // of its target, which the eye reads first — is preserved.
+            displayTitle = truncateTail(title, budget: titleBudget, font: font)
             titleWidth = min(
                 textWidth(displayTitle, attrs: [.font: font]),
                 titleBudget)
@@ -703,51 +696,37 @@ struct ToolGroupLayout: @unchecked Sendable {
             status: .completed)
     }
 
-    /// Trim leading path components until the remainder fits `budget`
-    /// at `font`. Prepends `…/` once a trim happens.
+    /// Tail-truncate `text` so it fits `budget` at `font`, keeping the
+    /// longest leading prefix whose width plus a trailing `…` still
+    /// fits.
     ///
-    /// If path-aware shortening exhausts (no slash in `path`, or even
-    /// the basename alone is wider than `budget`), falls back to a
-    /// character-level head truncation that keeps the longest suffix
-    /// of the basename whose `…` + suffix still fits. This is the
-    /// load-bearing invariant: the returned string's typographic width
-    /// is always ≤ `budget`. `makeHeader` clamps the numeric
-    /// `titleWidth` to `titleBudget` but `drawHeader` retypesets the
-    /// raw `header.title` at draw time — without this guarantee the
-    /// glyphs spill past the title band and overlap the chevron.
-    nonisolated private static func truncateHead(
-        _ path: String, budget: CGFloat, font: NSFont
+    /// This is the load-bearing invariant: the returned string's
+    /// typographic width is always ≤ `budget`. `makeHeader` clamps the
+    /// numeric `titleWidth` to `titleBudget` but `drawHeader`
+    /// retypesets the raw `header.title` at draw time — without this
+    /// guarantee the glyphs spill past the title band and overlap the
+    /// chevron.
+    nonisolated private static func truncateTail(
+        _ text: String, budget: CGFloat, font: NSFont
     ) -> String {
         let attrs: [NSAttributedString.Key: Any] = [.font: font]
-        if textWidth(path, attrs: attrs) <= budget { return path }
+        if textWidth(text, attrs: attrs) <= budget { return text }
 
-        let parts = path.split(separator: "/")
-        if parts.count > 1 {
-            for drop in 1..<parts.count {
-                let kept = parts[drop...].joined(separator: "/")
-                let candidate = "…/" + kept
-                if textWidth(candidate, attrs: attrs) <= budget {
-                    return candidate
-                }
-            }
-        }
-
-        let basename = parts.last.map(String.init) ?? path
         let ellipsis = "…"
         if textWidth(ellipsis, attrs: attrs) > budget { return "" }
-        let chars = Array(basename)
+        let chars = Array(text)
         var lo = 0
         var hi = chars.count
         while lo < hi {
             let mid = (lo + hi + 1) / 2
-            let candidate = ellipsis + String(chars.suffix(mid))
+            let candidate = String(chars.prefix(mid)) + ellipsis
             if textWidth(candidate, attrs: attrs) <= budget {
                 lo = mid
             } else {
                 hi = mid - 1
             }
         }
-        return ellipsis + String(chars.suffix(lo))
+        return String(chars.prefix(lo)) + ellipsis
     }
 
     nonisolated private static func textWidth(

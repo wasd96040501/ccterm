@@ -34,7 +34,7 @@ import Observation
 /// the controller's block list **even when no transcript view is
 /// mounted**, so the user switching the sidebar to another session
 /// doesn't pause renderer-side processing for the session they left.
-/// `TranscriptDetailViewController` binds the controller's `coordinator`
+/// `ChatSessionViewController` binds the controller's `coordinator`
 /// (which has a `weak NSTableView`) to a fresh `NSTableView` on each
 /// mount via `TranscriptScrollViewFactory.make`; when no table is bound,
 /// the coordinator still updates its `blocks` array and skips AppKit
@@ -70,7 +70,7 @@ final class Session {
     /// Imperative transcript controller. Lives as long as the session
     /// does — survives transcript-view mount/dismount cycles. Views
     /// read `session.controller` and hand it to the transcript host
-    /// (production: `TranscriptDetailViewController`); they never
+    /// (production: `ChatSessionViewController`); they never
     /// construct their own.
     let controller: Transcript2Controller
 
@@ -82,6 +82,12 @@ final class Session {
     /// draft → active sessions — and stays wired for the session's
     /// entire lifetime.
     let bridge: Transcript2EntryBridge
+
+    /// History backfill pipeline, alive for the duration of one load. Created
+    /// by `loadHistory()` and retained so its off-main producer task isn't
+    /// torn down mid-flight. Re-entry is gated by `historyLoadState`, so at
+    /// most one ever runs per session.
+    @ObservationIgnored private var backfillPipeline: TranscriptBackfillPipeline?
 
     // MARK: - External hooks
 
@@ -436,8 +442,43 @@ final class Session {
         runtime?.cancelMessage(id: id)
     }
 
-    func loadHistory(overrideURL: URL? = nil, tailTarget: Int = 80) {
-        runtime?.loadHistory(overrideURL: overrideURL, tailTarget: tailTarget)
+    /// Drive a one-shot reverse-streaming history load into the controller.
+    ///
+    /// Idempotent through `runtime.historyLoadState`: `.loading` / `.loaded`
+    /// are no-ops (the bridge has been streaming live events into the
+    /// controller the whole time, so a re-entered session needs no replay).
+    /// Drafts have no history.
+    ///
+    /// The pipeline applies blocks **directly** to `controller` (load path =
+    /// iterator → apply); the bridge handles only the live
+    /// path. History tool statuses route back through the bridge's historical
+    /// derivation so failed / completed colors survive.
+    func loadHistory(overrideURL: URL? = nil, firstPageEntryTarget: Int = 20) {
+        guard let runtime else { return }
+        switch runtime.historyLoadState {
+        case .loading, .loaded:
+            return
+        case .notLoaded:
+            break
+        }
+        runtime.historyLoadState = .loading
+
+        let url = overrideURL ?? runtime.historyJSONLURL
+        let pipeline = TranscriptBackfillPipeline(
+            source: JSONLReversePageSource(
+                url: url, firstPageEntryTarget: firstPageEntryTarget),
+            controller: controller,
+            onLoaded: { [weak self] in self?.runtime?.historyLoadState = .loaded },
+            onApplied: { [weak self] entries in
+                self?.bridge.pushHistoricalStatuses(for: entries)
+            })
+        self.backfillPipeline = pipeline
+        // Seed the off-main typeset width from the settled, clamped row width.
+        // `loadHistory` runs after the attach tick's `scrollToTail`, so the
+        // table geometry has settled and `controller.layoutWidth` is real
+        // Headless callers (no table) pass 0; their pages self-heal on the
+        // first real `heightOfRow`.
+        pipeline.start(width: controller.layoutWidth)
     }
 
     func generateTitle(from firstMessage: String) {

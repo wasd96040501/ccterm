@@ -205,27 +205,28 @@ private struct StandalonePermissionCardFixture: View {
     }
 }
 
-/// Mirrors the visible composition of `InputBarChrome` (private to
-/// `RootView2`): the input bar + session chrome VStack with the
-/// permission-card overlay bottom-anchored on top. Uses production
-/// constants verbatim — `barSpacing`, the unmodified card view, no
-/// alternate fixture geometry.
+/// Mirrors the visible composition of `ChatRestingBar`: the input bar +
+/// session chrome stack with the permission card layered on the z-axis
+/// over it via `ZStack(alignment: .bottom)` (the card covers the bar,
+/// bottom-flush, rather than stacking above it on the y-axis). Uses
+/// production constants verbatim — `barSpacing`, the unmodified card
+/// view, no alternate fixture geometry.
 private struct InputBarChromeMirrorFixture: View {
     let session: ccterm.Session
 
     var body: some View {
         VStack {
             Spacer(minLength: 0)
-            VStack(alignment: .leading, spacing: InputBarSessionChrome.barSpacing) {
-                InputBarView2(
-                    onSubmit: { _ in },
-                    onStop: {},
-                    isRunning: session.isRunning,
-                    submitEnabled: true
-                )
-                InputBarSessionChrome(session: session)
-            }
-            .overlay(alignment: .bottom) {
+            ZStack(alignment: .bottom) {
+                VStack(alignment: .leading, spacing: InputBarSessionChrome.barSpacing) {
+                    InputBarView2(
+                        onSubmit: { _ in },
+                        onStop: {},
+                        isRunning: session.isRunning,
+                        submitEnabled: true
+                    )
+                    InputBarSessionChrome(session: session)
+                }
                 if let pending = session.pendingPermissions.first {
                     PermissionCardView(
                         request: pending.request,
@@ -238,5 +239,9 @@ private struct InputBarChromeMirrorFixture: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
+        // `InputBarView2` reads `@Environment(InputDraftStore.self)`;
+        // inject a fresh in-memory store so the offscreen render doesn't
+        // trap on a missing environment object.
+        .environment(InputDraftStore())
     }
 }

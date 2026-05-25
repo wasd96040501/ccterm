@@ -3,7 +3,7 @@ import SwiftUI
 
 /// AppKit-rooted host for the transcript content demo. Replaces the
 /// former SwiftUI `TranscriptDemoView`: this VC is now the side-branch
-/// payload `TranscriptDetailViewController` mounts when the user picks
+/// payload `ChatSessionViewController` mounts when the user picks
 /// the "Transcript Demo" sidebar item. The transcript itself goes
 /// through the canonical attach pattern (see
 /// `TranscriptScrollViewFactory` doc-comment + `CLAUDE.md`'s
@@ -66,18 +66,15 @@ final class TranscriptDemoViewController: NSViewController {
         sheetPresenter?.stop()
     }
 
-    deinit {
-        if let scroll {
-            // Cannot call MainActor-isolated dismantle from a
-            // nonisolated deinit; the observation removal would
-            // happen on the wrong actor. Safe to leak: when the
-            // controller goes away its coordinator goes with it and
-            // the notification center's weak observer drops. The
-            // explicit cleanup in `viewWillDisappear` is the primary
-            // path.
-            _ = scroll
-        }
-    }
+    /// `nonisolated` so dealloc skips the `@MainActor` deinit
+    /// executor-hop (`swift_task_deinitOnExecutorImpl`) that aborts in the
+    /// XCTest process — the macOS 26 libswift_Concurrency `TaskLocal`
+    /// teardown bug the rest of the codebase already guards against (see
+    /// `SessionRuntime.swift`). No isolated teardown is needed here: the
+    /// scroll/coordinator dismantle is driven from `viewWillDisappear`,
+    /// and any residual coordinator drops with the controller (its
+    /// NotificationCenter observer is weak).
+    nonisolated deinit {}
 
     private func mountTranscript() {
         let scroll = TranscriptScrollViewFactory.make(controller: controller)
@@ -125,7 +122,7 @@ final class TranscriptDemoViewController: NSViewController {
         // Idempotent — a pre-seeded controller (snapshot test path)
         // skips this. Same guard the old SwiftUI `.task` carried.
         guard controller.blockCount == 0 else { return }
-        controller.setHistory(Self.initialBlocks)
+        controller.apply(.append(Self.initialBlocks))
         // Mark the third toolGroup live. Status flows through the
         // dedicated `setToolStatus` channel so the rows already in the
         // table refresh granularly. Mixed per-child statuses prove
@@ -141,7 +138,7 @@ final class TranscriptDemoViewController: NSViewController {
 
     private func handleAddMessage() {
         let next = Self.extraBlock(at: extraAddCount)
-        controller.apply(.insert(after: controller.blockIds.last, [next]))
+        controller.apply(.append([next]))
         extraAddCount += 1
     }
 

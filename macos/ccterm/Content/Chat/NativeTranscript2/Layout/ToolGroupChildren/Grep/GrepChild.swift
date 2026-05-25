@@ -19,4 +19,8 @@ struct GrepChild: Equatable, Sendable {
     /// verbatim in a second card below the filenames card. `nil`
     /// when the tool returned filenames only.
     let content: String?
+    /// Wrapper-level error text (`tool_result.is_error == true`), stripped
+    /// of the `<tool_use_error>` envelope. `nil` on success. Rendered as a
+    /// uniform red error card below the body by `ToolGroupChildLayout`.
+    var errorText: String? = nil
 }

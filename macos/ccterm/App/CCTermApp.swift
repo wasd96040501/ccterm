@@ -1,21 +1,23 @@
 import AppKit
 import SwiftUI
 
-/// Main window AND Settings are AppKit-rooted (see `AppDelegate`,
-/// `MainWindowController`, `SettingsWindowController`). The Settings
-/// migration is what fixes the long-standing "Settings occasionally
-/// pops up at launch" bug — a SwiftUI `Settings { … }` scene's
-/// internal NSWindow was being resurfaced by OS state restoration on
-/// some cold starts. Lazy AppKit construction with
-/// `isRestorable = false` removes that grey area.
+/// Every window (main, Settings, About) is AppKit-rooted —
+/// see `AppDelegate`, `MainWindowController`, `SettingsWindowController`,
+/// `AboutWindowController`. The migration chain started with #219
+/// (Settings → AppKit, fixing "Settings occasionally pops up at
+/// launch"); removing the `Settings { … }` scene promoted the next
+/// `Window` scene to the leading slot which SwiftUI auto-opens at
+/// launch, so each remaining auxiliary window got the same treatment
+/// in turn. Each window is lazy, `isRestorable = false`, owned by
+/// `AppDelegate`.
 ///
-/// What stays SwiftUI here is the SCENE structure for Logs / About —
-/// their menu items + ⌘F come from the SwiftUI `Commands` DSL
-/// attached to the Logs scene so cold-start menu clicks (before any
-/// auxiliary scene has mounted) still resolve
-/// `@Environment(\.openWindow)`. The `.appSettings` command group is
-/// re-installed manually in `AppCommands` so ⌘, routes to our
-/// AppKit-rooted Settings window.
+/// `App.body` still requires a `some Scene`, so we declare a
+/// `Settings { EmptyView() }` placeholder: the dedicated `Settings`
+/// scene is the only built-in scene type that does NOT auto-open at
+/// launch. `.commands` attaches here. ⌘, is overridden via
+/// `CommandGroup(replacing: .appSettings)` to route to the AppKit
+/// Settings window, so users never reach the placeholder — nothing
+/// for the OS to state-restore.
 @main
 struct CCTermApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -27,26 +29,23 @@ struct CCTermApp: App {
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 
     var body: some Scene {
-        // Logs is the only "first scene" remaining — Settings moved
-        // to AppKit-rooted `SettingsWindowController`. `.commands`
-        // attaches here so the menu items are installed at the same
-        // launch-phase point as before.
-        Window("Logs", id: "logs") {
-            LogWindowView()
+        // Placeholder scene — `App.body` requires `some Scene` and
+        // `Settings` is the only built-in type that does NOT auto-
+        // open at launch. The content view is `EmptyView()`; users
+        // never reach this window because ⌘, is overridden in
+        // `AppCommands` to call `AppDelegate.showSettingsWindow()`.
+        // `.commands` attaches here so menu items install at the
+        // same launch-phase point as before.
+        Settings {
+            EmptyView()
         }
-        .defaultSize(width: 900, height: 500)
         .commands {
             AppCommands(
                 searchBus: appDelegate.searchBus,
-                openSettings: { appDelegate.showSettingsWindow() }
+                openSettings: { appDelegate.showSettingsWindow() },
+                openAbout: { appDelegate.showAboutWindow() }
             )
         }
-
-        Window("About ccterm", id: "about") {
-            AboutView()
-        }
-        .windowResizability(.contentSize)
-        .windowStyle(.hiddenTitleBar)
     }
 
     init() {
@@ -127,26 +126,25 @@ extension NSWindow {
     }
 }
 
-/// SwiftUI command bar attached to the Logs scene. Survives the
-/// AppKit-host migration: SwiftUI's command system installs these as
-/// NSMenuItem instances on the merged main menu, so the AppKit main
-/// window keeps full menu coverage without an
-/// `applicationDidFinishLaunching`-side NSMenu rebuild. ⌘F focus
-/// routes through `TranscriptSearchBus.requestFocus()`, which the
-/// AppKit toolbar's `TranscriptSearchToolbarBridge` picks up
-/// reactively via `withObservationTracking`. ⌘, routes through
-/// `openSettings` into `AppDelegate.showSettingsWindow()` — the
-/// AppKit-rooted Settings window — bypassing SwiftUI's `Settings`
-/// scene entirely.
+/// SwiftUI command bar attached to the `Settings { EmptyView() }`
+/// placeholder scene. Survives the AppKit-host migration: SwiftUI's
+/// command system installs these as NSMenuItem instances on the
+/// merged main menu, so the AppKit main window keeps full menu
+/// coverage without an `applicationDidFinishLaunching`-side NSMenu
+/// rebuild. ⌘F focus routes through `TranscriptSearchBus.requestFocus()`,
+/// which the AppKit toolbar's `TranscriptSearchToolbarBridge` picks up
+/// reactively via `withObservationTracking`. ⌘, → `openSettings`,
+/// App > About ccterm → `openAbout` route into
+/// `AppDelegate.show*Window()`, bypassing SwiftUI's scenes entirely.
 struct AppCommands: Commands {
-    @Environment(\.openWindow) private var openWindow
     let searchBus: TranscriptSearchBus
     let openSettings: @MainActor () -> Void
+    let openAbout: @MainActor () -> Void
 
     var body: some Commands {
         CommandGroup(replacing: .appInfo) {
             Button("About ccterm") {
-                openWindow(id: "about")
+                openAbout()
             }
         }
         CommandGroup(replacing: .appSettings) {
@@ -163,12 +161,6 @@ struct AppCommands: Commands {
                 Text("Find in Transcript")
             }
             .keyboardShortcut("f", modifiers: .command)
-        }
-        CommandMenu("Debug") {
-            Button("Logs") {
-                openWindow(id: "logs")
-            }
-            .keyboardShortcut("L", modifiers: [.command, .shift])
         }
     }
 }

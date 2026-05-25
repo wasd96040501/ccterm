@@ -94,6 +94,26 @@ final class FakeCLIClient: CLIClient {
         interruptCalls.append(completion)
     }
 
+    struct ContextUsageCall {
+        let timeout: TimeInterval
+        let completion: (ContextUsageOutcome) -> Void
+    }
+    private(set) var contextUsageCalls: [ContextUsageCall] = []
+
+    func getContextUsage(
+        timeout: TimeInterval,
+        completion: @escaping (ContextUsageOutcome) -> Void
+    ) {
+        contextUsageCalls.append(ContextUsageCall(timeout: timeout, completion: completion))
+    }
+
+    /// Drive the most recently queued `getContextUsage(...)` completion.
+    func completeContextUsage(_ outcome: ContextUsageOutcome) {
+        guard !contextUsageCalls.isEmpty else { return }
+        let call = contextUsageCalls.removeFirst()
+        call.completion(outcome)
+    }
+
     // MARK: - Messaging
 
     func sendMessage(_ text: String, extra: [String: Any]) {

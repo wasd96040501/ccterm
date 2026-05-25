@@ -486,12 +486,15 @@ public final class Session {
 
     // MARK: - Generic Control Request
 
-    /// Sends an arbitrary control request.
+    /// Sends an arbitrary control request. Returns the `request_id` so
+    /// callers that want to time out (e.g. `getContextUsage`) can
+    /// remove their pending entry via `cancelPendingControlResponse`.
+    @discardableResult
     public func sendControlRequest(
         subtype: String,
         params: [String: Any] = [:],
         completion: (([String: Any]) -> Void)? = nil
-    ) {
+    ) -> String {
         let requestId = UUID().uuidString
         var request: [String: Any] = ["subtype": subtype]
         for (k, v) in params { request[k] = v }
@@ -503,6 +506,75 @@ public final class Session {
             "request_id": requestId,
             "request": request,
         ])
+        return requestId
+    }
+
+    /// Drops a pending control_response handler without invoking it.
+    /// Returns `true` if an entry was removed. Used by timeout paths so
+    /// late CLI responses turn into no-ops rather than firing the
+    /// completion twice.
+    @discardableResult
+    public func cancelPendingControlResponse(requestId: String) -> Bool {
+        pendingControlResponses.removeValue(forKey: requestId) != nil
+    }
+
+    // MARK: - Context Window Usage
+
+    /// Requests a context-window-usage breakdown from the CLI.
+    ///
+    /// Old CLIs do not implement this control subtype and will never
+    /// respond. After `timeout` seconds we drop the pending handler and
+    /// surface `.unsupported`. Callers should treat that as "feature
+    /// missing" rather than as an error to bubble up — the popover just
+    /// shows its fallback summary instead.
+    public func getContextUsage(
+        timeout: TimeInterval = 3.0,
+        completion: @escaping (ContextUsageOutcome) -> Void
+    ) {
+        guard isRunning else {
+            completion(.unsupported)
+            return
+        }
+
+        // Once-only completion: the CLI response and the timeout race;
+        // whichever lands first wins, the other becomes a no-op.
+        let lock = NSLock()
+        var fired = false
+        let fire: (ContextUsageOutcome) -> Void = { outcome in
+            lock.lock()
+            let wasFired = fired
+            fired = true
+            lock.unlock()
+            guard !wasFired else { return }
+            completion(outcome)
+        }
+
+        let requestId = sendControlRequest(subtype: "get_context_usage") { [weak self] response in
+            if let subtype = response["subtype"] as? String, subtype == "error" {
+                let err = response["error"] as? String ?? "unknown error"
+                fire(.sdkError(err))
+                return
+            }
+            guard let inner = response["response"] as? [String: Any] else {
+                fire(.sdkError("missing response payload"))
+                return
+            }
+            do {
+                let usage = try ContextUsage(json: inner)
+                fire(.usage(usage))
+            } catch {
+                _ = self  // silence unused-warning; weak retained only for symmetry
+                fire(.sdkError("parse: \(error)"))
+            }
+        }
+
+        DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { [weak self] in
+            // Tear down the dangling pending entry so it doesn't leak.
+            // If the CLI already responded `fired == true`, this is a
+            // no-op on both sides.
+            self?.cancelPendingControlResponse(requestId: requestId)
+            fire(.unsupported)
+        }
     }
 
     // MARK: - Private: Process Arguments

@@ -98,6 +98,13 @@ final class AgentSDKCLIClient: CLIClient {
         session.interrupt(completion: completion)
     }
 
+    func getContextUsage(
+        timeout: TimeInterval,
+        completion: @escaping (ContextUsageOutcome) -> Void
+    ) {
+        session.getContextUsage(timeout: timeout, completion: completion)
+    }
+
     // MARK: Messaging
 
     func sendMessage(_ text: String, extra: [String: Any]) {

@@ -30,6 +30,11 @@ enum ToolUseToChild {
             if case .object(let obj) = result?.typed { return obj }
             return nil
         }()
+        // Wrapper-level error text — uniform across every tool kind.
+        // On error the CLI returns a plain string (never the typed
+        // object — see `Transcript2EntryBridge`'s status table), so this
+        // is the only body content available for a failed call.
+        let err = errorText(from: result)
 
         switch toolUse {
         case .Read(let v):
@@ -39,7 +44,12 @@ enum ToolUseToChild {
                     label: label,
                     activeLabel: activeLabel,
                     filePath: v.input?.filePath ?? "",
-                    content: stripCatNPrefix(extractText(from: result))))
+                    // On error, `extractText` would otherwise pour the
+                    // error string into the new-file diff card; suppress
+                    // it so only the dedicated red error card shows.
+                    content: err == nil
+                        ? stripCatNPrefix(extractText(from: result)) : nil,
+                    errorText: err))
 
         case .Edit(let v):
             return .fileEdit(
@@ -51,7 +61,8 @@ enum ToolUseToChild {
                     diff: DiffBlock(
                         filePath: v.input?.filePath ?? "",
                         oldString: v.input?.oldString,
-                        newString: v.input?.newString ?? "")))
+                        newString: v.input?.newString ?? ""),
+                    errorText: err))
 
         case .Write(let v):
             let originalFile: String? = {
@@ -67,7 +78,8 @@ enum ToolUseToChild {
                     diff: DiffBlock(
                         filePath: v.input?.filePath ?? "",
                         oldString: originalFile,
-                        newString: v.input?.content ?? "")))
+                        newString: v.input?.content ?? ""),
+                    errorText: err))
 
         case .Bash(let v):
             let (stdout, stderr): (String?, String?) = {
@@ -81,7 +93,8 @@ enum ToolUseToChild {
                     activeLabel: activeLabel,
                     command: v.input?.command ?? "",
                     stdout: stdout,
-                    stderr: stderr))
+                    stderr: stderr,
+                    errorText: err))
 
         case .Grep(let v):
             let (filenames, content): ([String], String?) = {
@@ -97,7 +110,8 @@ enum ToolUseToChild {
                     activeLabel: activeLabel,
                     pattern: v.input?.pattern ?? "",
                     filenames: filenames,
-                    content: content))
+                    content: content,
+                    errorText: err))
 
         case .Glob(let v):
             let (filenames, truncated): ([String], Bool) = {
@@ -113,7 +127,8 @@ enum ToolUseToChild {
                     activeLabel: activeLabel,
                     pattern: v.input?.pattern ?? "",
                     filenames: filenames,
-                    truncated: truncated))
+                    truncated: truncated,
+                    errorText: err))
 
         case .WebFetch(let v):
             let (httpStatus, body): (Int?, String?) = {
@@ -127,7 +142,8 @@ enum ToolUseToChild {
                     activeLabel: activeLabel,
                     url: v.input?.url ?? "",
                     httpStatus: httpStatus,
-                    result: body))
+                    result: body,
+                    errorText: err))
 
         case .WebSearch(let v):
             let results: [WebSearchChild.Result] = {
@@ -155,7 +171,8 @@ enum ToolUseToChild {
                     label: label,
                     activeLabel: activeLabel,
                     query: v.input?.query ?? v.input?.searchQuery ?? "",
-                    results: results))
+                    results: results,
+                    errorText: err))
 
         case .AskUserQuestion(let v):
             let answers: [String: String]? = {
@@ -173,7 +190,8 @@ enum ToolUseToChild {
                     id: id,
                     label: label,
                     activeLabel: activeLabel,
-                    items: items))
+                    items: items,
+                    errorText: err))
 
         case .Agent(let v):
             let (progress, output): ([String], String?) = {
@@ -191,13 +209,45 @@ enum ToolUseToChild {
                     activeLabel: activeLabel,
                     description: v.input?.description ?? v.input?.name ?? "Agent",
                     progress: progress,
-                    output: output))
+                    output: output,
+                    errorText: err))
 
         default:
             return .generic(
                 GenericChild(
-                    id: id, label: label, activeLabel: activeLabel))
+                    id: id, label: label, activeLabel: activeLabel,
+                    errorText: err))
         }
+    }
+
+    /// Wrapper-level error text for a result that came back with
+    /// `is_error == true`. The CLI delivers the message as a plain string
+    /// (it never populates the typed result object on error — see the
+    /// status table in `Transcript2EntryBridge`), sometimes wrapped in a
+    /// `<tool_use_error>…</tool_use_error>` envelope which we strip so the
+    /// card shows just the message. Returns `nil` for a successful result
+    /// or one that carried no text.
+    private static func errorText(from result: ToolResultPayload?) -> String? {
+        guard result?.isError == true,
+            let raw = extractText(from: result)
+        else { return nil }
+        return stripToolUseErrorEnvelope(raw)
+    }
+
+    /// Drop a surrounding `<tool_use_error>…</tool_use_error>` envelope
+    /// (the form the CLI uses for input-validation / path-not-found
+    /// failures) and trim surrounding whitespace. Plain error strings
+    /// (permission denials, non-zero exits, HTTP errors) pass through
+    /// unchanged save for the trim.
+    private static func stripToolUseErrorEnvelope(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let open = "<tool_use_error>"
+        let close = "</tool_use_error>"
+        guard trimmed.hasPrefix(open), trimmed.hasSuffix(close),
+            trimmed.count >= open.count + close.count
+        else { return trimmed }
+        let inner = trimmed.dropFirst(open.count).dropLast(close.count)
+        return inner.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Concatenate all text-bearing fragments out of a `ToolResultPayload`.

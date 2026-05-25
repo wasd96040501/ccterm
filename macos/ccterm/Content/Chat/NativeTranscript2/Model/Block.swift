@@ -271,12 +271,36 @@ struct ToolGroupBlock: Equatable, Sendable {
             }
         }
 
+        /// Wrapper-level error text from the tool_result (`is_error ==
+        /// true`), already stripped of the `<tool_use_error>` envelope.
+        /// `nil` for a successful result. The single source of truth the
+        /// layout reads to decide whether to append a uniform red error
+        /// card; also gates `hasExpandableBody` so even header-only kinds
+        /// (`generic`, `read` without content) become foldable on error.
+        var errorText: String? {
+            switch self {
+            case .fileEdit(let c): return c.errorText
+            case .read(let c): return c.errorText
+            case .bash(let c): return c.errorText
+            case .grep(let c): return c.errorText
+            case .glob(let c): return c.errorText
+            case .webFetch(let c): return c.errorText
+            case .webSearch(let c): return c.errorText
+            case .askUserQuestion(let c): return c.errorText
+            case .agent(let c): return c.errorText
+            case .generic(let c): return c.errorText
+            }
+        }
+
         /// `true` when this child has an expandable body. Drives
         /// `ToolGroupLayout`'s decision to draw a chevron + register
         /// a fold hit on the header. `read` only exposes a body once
         /// the tool_result has landed (and carried text content);
-        /// `generic` is always header-only.
+        /// `generic` is always header-only — **unless** the result was an
+        /// error, in which case every kind gains a body to host the
+        /// uniform red error card.
         var hasExpandableBody: Bool {
+            if errorText != nil { return true }
             switch self {
             case .fileEdit, .bash, .grep, .glob, .webFetch, .webSearch,
                 .askUserQuestion, .agent:

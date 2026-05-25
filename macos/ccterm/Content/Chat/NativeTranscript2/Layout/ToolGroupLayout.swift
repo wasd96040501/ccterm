@@ -160,34 +160,28 @@ struct ToolGroupLayout: @unchecked Sendable {
         var out: [Region] = []
         for (idx, entry) in items.enumerated() {
             guard let body = entry.body else { continue }
-            switch body {
-            case .fileEdit(let l):
-                let d = l.body
-                guard !d.containerRect.isEmpty else { continue }
+            // Diff-bearing kinds (`fileEdit`, `read` in new-file mode)
+            // expose a `DiffLayout`; selection threads through the diff
+            // path. `diffBody` is the single source of truth for "this
+            // kind renders a diff."
+            if let d = body.diffBody, !d.containerRect.isEmpty {
                 out.append(makeDiffRegion(childIndex: idx, body: d))
-            case .read(let l):
-                // Read renders through `DiffLayout` in new-file mode;
-                // selection threads through the same diff path as
-                // `fileEdit`.
-                guard let d = l.body, !d.containerRect.isEmpty else { continue }
-                out.append(makeDiffRegion(childIndex: idx, body: d))
-            case .generic:
-                // Header-only — no body geometry to select.
-                continue
-            case .bash, .grep, .glob, .webFetch, .webSearch,
-                .askUserQuestion, .agent:
-                // Every kind in this arm exposes its body through
-                // `textCardSections`; the accessor switch on
-                // `ToolGroupChildLayout` is the single source of
-                // truth for "this kind uses the text-card primitive."
-                let sections = body.textCardSections ?? []
-                for (sectionIndex, section) in sections.enumerated() {
-                    out.append(
-                        makeTextCardRegion(
-                            childIndex: idx,
-                            sectionIndex: sectionIndex,
-                            section: section))
-                }
+            }
+            // Text-card sections: the per-kind cards (bash / grep / …)
+            // plus the uniform error card, which `textCardSections`
+            // appends as the trailing section for *every* kind — so a
+            // failed `fileEdit` or header-only `generic` still gets its
+            // error text selectable + searchable. The error card's
+            // `.textCard` position never collides with a diff body's
+            // `.diff` position (different `LayoutPosition` cases).
+            for (sectionIndex, section) in (body.textCardSections ?? [])
+                .enumerated()
+            {
+                out.append(
+                    makeTextCardRegion(
+                        childIndex: idx,
+                        sectionIndex: sectionIndex,
+                        section: section))
             }
         }
         return out

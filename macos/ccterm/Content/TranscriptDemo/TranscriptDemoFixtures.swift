@@ -707,6 +707,37 @@ extension TranscriptDemoViewController {
                                     stderr: nil))
                         ]))),
 
+            // Failed tools — expand to see the uniform red error card the
+            // bridge surfaces from a `tool_result` with `is_error == true`.
+            // The bash child keeps its command card; the generic child is
+            // header-only until the error gives it a body.
+            Block(
+                id: UUID(),
+                kind: .toolGroup(
+                    ToolGroupBlock(
+                        activeTitle: String(localized: "Running \("rm …")"),
+                        expandedActiveTitle: String(localized: "Running \(2) tools"),
+                        completedTitle: String(localized: "Ran \(2) tools"),
+                        children: [
+                            .bash(
+                                BashChild(
+                                    id: UUID(),
+                                    label: String(localized: "Ran \("rm …")"),
+                                    activeLabel: String(localized: "Running \("rm …")"),
+                                    command: "rm -rf /protected/path",
+                                    stdout: nil,
+                                    stderr: nil,
+                                    errorText:
+                                        "Permission to use Bash has been denied. The command tried to remove a protected path."
+                                )),
+                            .generic(
+                                GenericChild(
+                                    id: UUID(),
+                                    label: String(localized: "Used \("Skill")"),
+                                    activeLabel: String(localized: "Using \("Skill")"),
+                                    errorText: "Unknown skill: commit")),
+                        ]))),
+
             headingIR(level: 2, [.text("Blockquotes")]),
 
             Block(

@@ -192,6 +192,8 @@ Status is folded into `ToolGroupLayout.Header.status` at `make` time. `drawHeade
 
 **Color rule:** `.running` uses identical title and chevron colors to `.completed`. The running affordance is the shimmer overlay (`SubviewPlan.Shimmer`), never a brighter color tier — a color-tier change produces a brightness pop on running↔completed transitions.
 
+**`.failed` is color-only; the error *text* is body content, not status.** `.failed` paints the header + chevron `systemRed` and nothing else — its `message:` associated value is unused (and the bridge always passes `nil`). The actual error message is rendered as a uniform red error card in the child's **body** (see §5 "error card"), because it changes row height and therefore must ride the structural rebuild, not the color-only `statusStates` channel. Status and error text land together when the `tool_result` arrives — status via `setToolStatus`, text via the child payload's `errorText` — but through the two independent channels by design.
+
 **Shimmer is an additive overlay, not a mask.** A mask-based version dims AA glyph edges. The implementation:
 
 - `drawHeader` always paints the base title in the secondary color into the cell bitmap.
@@ -309,10 +311,10 @@ Children mirror this: each payload exposes `label` (past form) and `activeLabel`
 
 **Adding a new child kind:**
 
-1. Create `Layout/ToolGroupChildren/<Kind>/<Kind>Child.swift` with the payload struct (must expose `id` / `label` / `activeLabel`; `id` drives fold state and highlight scope, `label` is the past form, `activeLabel` is the progressive form; `Child.headerLabel(for: ToolStatus)` selects). In `Block.swift`, add the enum case and one arm to each of the `id` / `label` / `activeLabel` / `hasExpandableBody` switches.
-2. Create `Layout/ToolGroupChildren/<Kind>/<Kind>ChildLayout.swift` implementing `make / totalHeight / draw / drawBackplate`. For multi-sub-card bodies, reuse `TextCardSection.build / drawBackplates / draw` rather than reimplementing sub-card geometry.
-3. Add the case to `ToolGroupChildLayout` plus four switch arms (`totalHeight`, `drawBackplate`, `draw`, `make`).
-4. Header-only kinds (`.generic`, plus `.read` until its tool_result lands): `hasExpandableBody = false`, layout `totalHeight == 0`, empty `draw` and `drawBackplate`. `ToolGroupLayout` skips chevron drawing and skips registering the fold hit automatically.
+1. Create `Layout/ToolGroupChildren/<Kind>/<Kind>Child.swift` with the payload struct (must expose `id` / `label` / `activeLabel` / `errorText`; `id` drives fold state and highlight scope, `label` is the past form, `activeLabel` is the progressive form, `errorText` is the failed-result message — `var errorText: String? = nil`, a defaulted trailing field so existing construction sites stay untouched; `Child.headerLabel(for: ToolStatus)` selects the label). In `Block.swift`, add the enum case and one arm to each of the `id` / `label` / `activeLabel` / `errorText` / `hasExpandableBody` switches.
+2. Create `Layout/ToolGroupChildren/<Kind>/<Kind>ChildLayout.swift` implementing `make / totalHeight / draw / drawBackplate`. For multi-sub-card bodies, reuse `TextCardSection.build / drawBackplates / draw` rather than reimplementing sub-card geometry. **Don't render `errorText` here** — the error card composes uniformly in `ToolGroupChildLayout` (see "error card" below), so per-kind layouts never touch it.
+3. Add the case to `ToolGroupChildLayout.Kind` plus four switch arms (`totalHeight`, `drawBackplate`, `draw`, `Kind.make`). `ToolGroupChildLayout` is a **struct** `{ kind: Kind, errorCard, errorCopyChrome, totalHeight }`; the per-kind dispatch lives on the nested `Kind` enum, and the struct's accessors compose the error card on top — so a new kind needs no error-card wiring.
+4. Header-only kinds (`.generic`, plus `.read` until its tool_result lands): `hasExpandableBody = false`, layout `totalHeight == 0`, empty `draw` and `drawBackplate`. `ToolGroupLayout` skips chevron drawing and skips registering the fold hit automatically. **Exception:** when `errorText != nil`, `hasExpandableBody` returns `true` for *every* kind so the row gains a body to host the error card.
 5. If async highlighting is needed, add a case to `ToolGroupChildHighlight.requests(for:)` that returns a `Plan`.
 6. If the body should be selectable (`selectionAdapter`):
    - Bodies built on `TextCardSection` (bash / grep / glob / webFetch / webSearch / askUserQuestion / agent) are zero-effort — `ToolGroupChildLayout.textCardSections` already exposes the section list, and `ToolGroupLayout.selectionAdapter.buildRegions` produces one `LayoutPosition.textCard(childIndex:sectionIndex:char:)` region per section. Extend `LayoutPosition` only if your new kind isn't built on `TextCardSection`: add a concrete case and route it through a `buildRegions` arm.
@@ -335,13 +337,19 @@ Children mirror this: each payload exposes `label` (past form) and `activeLabel`
 
 **No protocols.** Enum dispatch gives exhaustiveness checking; protocols let you forget an implementation in some file.
 
+**Error card (uniform across every kind).** When a `tool_result` comes back with `is_error == true`, `ToolUseToChild` extracts the wrapper-level message — `ItemToolResult.content` (always a plain string on error; the typed `ToolUseResult.object` projection is never populated for a failed call), stripped of any `<tool_use_error>…</tool_use_error>` envelope — onto the child payload's `errorText`. `ToolGroupChildLayout.make` then appends a single red monospaced `TextCardSection` (+ a `CopyChrome` on a high sentinel slot so its id never collides with a kind's per-section copy slots) **below** the per-kind body. This is the *only* place error text renders; per-kind layouts are untouched. Consequences:
+
+- The error card lands for every kind — including diff-bearing (`fileEdit` / `read`, card sits below the diff) and header-only (`generic`, the card *is* the body). bash keeps its command card even on a failed run, so you see the command and the error.
+- Because it's a `TextCardSection` and `ToolGroupChildLayout.textCardSections` appends it as the trailing section, it is selectable + searchable for free — `ToolGroupLayout.buildRegions` drives off the `diffBody` + `textCardSections` accessors, so a failed `fileEdit` yields both a `.diff` region and a trailing `.textCard` error region (different `LayoutPosition` cases, no collision).
+- `read` suppresses its file-content card on error (`ToolUseToChild` passes `content: nil`) so the error string isn't *also* rendered as fake new-file content.
+
 **Child header text uses the payload's `label`, not the raw file path.** `FileEditChild` carries both `label` (display, e.g. "Edit Sources/Greeter.swift", past form) and `filePath` (for language detection in highlighting). When a group is expanded, children always show their completed form; the running affordance is reflected on the group title.
 
 **Async highlighting** — scope = `Transcript2HighlightScope.toolGroupChild(itemId: child.id)`. Each child decides the `HighlightValue` shape. `fileEdit` uses per-unique-line `.lineMap`; the key is the raw line content. Line metrics don't depend on tokens, so `onDidFill` is a `reloadData(forRowIndexes:)` only — no `noteHeightOfRows`.
 
 **New-file mode (`oldString == nil`)** — `.add` lines render as `.context` (no `+` sign, no add background); gutter line numbers + token highlight are preserved. The output reads as a "line-numbered code view", not a "diff with everything added".
 
-**Selection** — `fileEdit` and `read` (when expanded) use `LayoutPosition.diff(childIndex:char:)`; the other seven kinds (bash / grep / glob / webFetch / webSearch / askUserQuestion / agent) use `LayoutPosition.textCard(childIndex:sectionIndex:char:)` with per-card granularity. `generic` is header-only with nothing to select.
+**Selection** — `fileEdit` and `read` (when expanded) use `LayoutPosition.diff(childIndex:char:)`; the other seven kinds (bash / grep / glob / webFetch / webSearch / askUserQuestion / agent) use `LayoutPosition.textCard(childIndex:sectionIndex:char:)` with per-card granularity. `generic` is header-only with nothing to select — *unless* it carries an error card, which is a trailing `.textCard` section like any other. The uniform error card is always a `.textCard` section, so it's selectable on every kind including the diff-bearing and header-only ones.
 
 #### `.userBubble` → `UserBubbleLayout`
 
@@ -367,7 +375,7 @@ NativeTranscript2/
 │   ├── ThematicBreakLayout.swift    Single hairline
 │   ├── ToolGroupLayout.swift        Tool group row (group header + child headers + expanded body); dispatches into ToolGroupChildLayout
 │   ├── ToolGroupChildren/           Per-kind tool-group child layouts (payload + layout colocated)
-│   │   ├── ToolGroupChildLayout.swift     Enum dispatch for totalHeight / draw / drawBackplate + `make` factory
+│   │   ├── ToolGroupChildLayout.swift     Struct { kind: Kind, errorCard } — per-kind dispatch (nested Kind enum) + uniform red error card composed on top
 │   │   ├── ToolGroupChildHighlight.swift  Per-kind highlight requests + finalize
 │   │   ├── TextCardSection.swift          Shared geometry + draw helpers for multi-card sub-bodies
 │   │   ├── FileEdit/                      Diff body (header + body)
@@ -481,7 +489,9 @@ attenuated when the window has resigned key.
 prefix only; the truncated tail isn't selectable, so it isn't searchable)
 — and by `toolGroup` rows for **currently-expanded** children:
 `fileEdit` diff bodies and any child built on `TextCardSection` (bash /
-grep / glob / webFetch / webSearch / askUserQuestion / agent). Folded
+grep / glob / webFetch / webSearch / askUserQuestion / agent), plus the
+uniform error card on any failed child (a trailing `.textCard` section,
+searchable on every kind). Folded
 children carry no body in the layout, so their text doesn't enter the
 initial scan — same invariant as selection. `list` / `table` return
 empty regions; their selection adapters exist but haven't been wired

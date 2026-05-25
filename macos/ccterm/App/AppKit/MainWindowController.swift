@@ -42,12 +42,6 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.toolbarStyle = .unified
-        // Translucent window so the detail pane's behind-window vibrancy
-        // (see `DetailRouterViewController`) and the source-list sidebar
-        // can sample the desktop, instead of every pane sitting on the
-        // flat opaque `windowBackgroundColor` the OS paints by default.
-        window.isOpaque = false
-        window.backgroundColor = .clear
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 880, height: 540)
         window.contentViewController = splitController

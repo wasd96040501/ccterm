@@ -37,7 +37,7 @@ enum TranscriptScrollViewFactory {
     /// bottom scrim height (`ChatSessionViewController.bottomFadeScrimHeight`,
     /// 100) so the last cell clears the input bar's top edge with a little
     /// breathing room rather than butting straight into it.
-    static let contentInsets = NSEdgeInsets(top: 44, left: 0, bottom: 112, right: 0)
+    static let contentInsets = NSEdgeInsets(top: 56, left: 0, bottom: 112, right: 0)
 
     /// Builds the scroll/clip/table/column shell. The table is added to
     /// the scroll view as document view, but its `dataSource` /

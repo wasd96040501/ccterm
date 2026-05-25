@@ -26,6 +26,11 @@ import SwiftUI
 /// the window.
 @MainActor
 final class ComposeSessionViewController: NSViewController {
+    /// `nonisolated` so dealloc skips the `@MainActor` deinit executor-hop
+    /// that aborts in the XCTest process (macOS 26 libswift_Concurrency
+    /// `TaskLocal` teardown bug). See `SessionRuntime.swift`.
+    nonisolated deinit {}
+
     let model: MainSelectionModel
     let sessionManager: SessionManager
     let recentProjects: RecentProjectsStore

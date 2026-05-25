@@ -1,21 +1,24 @@
 import AgentSDK
 import SwiftUI
 
-/// Floating decision card shown above the input bar when the CLI is
-/// waiting on a permission request. Mount as
-/// `.overlay(alignment: .bottom)` on `ChatRestingBar` — the
-/// detail-pane-wide VStack that contains `InputBarChrome`, NOT on
-/// `InputBarChrome` itself:
+/// Floating decision card shown over the input bar when the CLI is
+/// waiting on a permission request. Layered as the top child of
+/// `ChatRestingBar`'s `ZStack(alignment: .bottom)` — the detail-pane-wide
+/// stack that contains `InputBarChrome`, NOT mounted on `InputBarChrome`
+/// itself:
 ///
 /// - Bottom edge sits flush with the chrome row (permission mode /
 ///   model+effort) by way of the same `chatBottomInset` padding the
 ///   bar uses, so the card visually extends *up* from there.
-/// - The host is the detail-wide VStack, not the bar's 512pt-capped
+/// - The host is the detail-wide stack, not the bar's 512pt-capped
 ///   frame, so the card's `.frame(maxWidth: BlockStyle.maxLayoutWidth)`
 ///   can actually reach 780 (the transcript column width) instead of
 ///   silently clipping to the bar's width.
-/// - Z-order is above the input bar; the bar surface fades through
-///   the card's material as the card expands upward.
+/// - Z-order is above the input bar: the card draws on top of and covers
+///   the bar rather than pushing it down a tier. A `ZStack` (not
+///   `.overlay`) is what lets the card's footprint grow `ChatRestingBar`'s
+///   measured height so the bottom-anchored bar host stays tall enough to
+///   contain it (clip + hit-test) — see `ChatRestingBar`.
 ///
 /// Pure UI: the card receives a `PermissionRequest` plus three
 /// decision callbacks and renders the body. Wiring through to

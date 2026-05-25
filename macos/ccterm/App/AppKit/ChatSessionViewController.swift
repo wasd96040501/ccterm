@@ -89,7 +89,7 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
     /// AppKit (no `NSHostingView` so they don't register cursor rects
     /// that would shadow the transcript's I-beam); the input bar /
     /// compose card stays SwiftUI-hosted via a plain `NSHostingView`.
-    private var topScrim: TranscriptScrimView!
+    private var topScrim: TranscriptTopScrimView!
     private var bottomScrim: TranscriptBottomScrimView!
     private var composeOrBarHost: NSHostingView<AnyView>!
 
@@ -134,12 +134,13 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     override func loadView() {
-        // The NSWindow paints `windowBackgroundColor` behind the
-        // transcript scroll view (which sets `drawsBackground = false`)
-        // — we just need a plain container view here.
+        // The detail router's `NSVisualEffectView` paints the vibrancy
+        // backdrop behind the transcript scroll view (which sets
+        // `drawsBackground = false`) — we just need a plain transparent
+        // container view here.
         view = NSView()
 
-        topScrim = TranscriptScrimView(edge: .top, bandHeight: Self.topFadeScrimHeight)
+        topScrim = TranscriptTopScrimView(bandHeight: Self.topFadeScrimHeight)
         topScrim.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(topScrim)
 

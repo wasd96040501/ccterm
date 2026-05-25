@@ -728,7 +728,8 @@ extension TranscriptDemoViewController {
                                     stdout: nil,
                                     stderr: nil,
                                     errorText:
-                                        "Permission to use Bash has been denied. The command tried to remove a protected path.")),
+                                        "Permission to use Bash has been denied. The command tried to remove a protected path."
+                                )),
                             .generic(
                                 GenericChild(
                                     id: UUID(),

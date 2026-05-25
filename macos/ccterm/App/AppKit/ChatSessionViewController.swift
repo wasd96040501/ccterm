@@ -465,7 +465,12 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
         .environment(notifications)
     }
 
-    deinit {
+    /// `nonisolated` so dealloc skips the `@MainActor` deinit
+    /// executor-hop (`swift_task_deinitOnExecutorImpl`) that aborts in the
+    /// XCTest process — the macOS 26 libswift_Concurrency `TaskLocal`
+    /// teardown bug the rest of the codebase already guards against (see
+    /// `SessionRuntime.swift`). Cancelling a `Task` needs no isolation.
+    nonisolated deinit {
         runningObservationTask?.cancel()
     }
 }

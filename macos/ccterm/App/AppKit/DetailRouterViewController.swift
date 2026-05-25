@@ -61,6 +61,13 @@ protocol DetailRouterChild: NSViewController {
 /// regression gate for the whole refactor.
 @MainActor
 final class DetailRouterViewController: NSViewController, MainSelectionObserver {
+    /// `nonisolated` so dealloc skips the `@MainActor` deinit executor-hop
+    /// (`swift_task_deinitOnExecutorImpl`) that aborts in the XCTest
+    /// process — the macOS 26 libswift_Concurrency `TaskLocal` teardown bug
+    /// the rest of the codebase already guards against. See
+    /// `SessionRuntime.swift` for the full writeup.
+    nonisolated deinit {}
+
     let model: MainSelectionModel
     let sessionManager: SessionManager
     let recentProjects: RecentProjectsStore

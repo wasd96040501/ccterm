@@ -15,6 +15,11 @@ import SwiftUI
 @MainActor
 final class TranscriptPerfDemoViewController: NSViewController {
 
+    /// `nonisolated` so dealloc skips the `@MainActor` deinit executor-hop
+    /// that aborts in the XCTest process (macOS 26 libswift_Concurrency
+    /// `TaskLocal` teardown bug). See `SessionRuntime.swift`.
+    nonisolated deinit {}
+
     init(syntaxEngine: SyntaxHighlightEngine? = nil) {
         self.syntaxEngine = syntaxEngine
         super.init(nibName: nil, bundle: nil)

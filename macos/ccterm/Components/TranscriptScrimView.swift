@@ -21,6 +21,11 @@ import AppKit
 /// should never claim mouse events.
 @MainActor
 class TranscriptScrimView: NSView {
+    /// `nonisolated` so dealloc skips the `@MainActor` deinit executor-hop
+    /// that aborts in the XCTest process (macOS 26 libswift_Concurrency
+    /// `TaskLocal` teardown bug). See `SessionRuntime.swift`.
+    nonisolated deinit {}
+
     /// Where the gradient sits relative to the view's bounds and which
     /// direction it fades.
     enum Edge {
@@ -103,6 +108,11 @@ class TranscriptScrimView: NSView {
 /// `view`).
 @MainActor
 final class TranscriptBottomScrimView: TranscriptScrimView {
+    /// `nonisolated` so dealloc skips the `@MainActor` deinit executor-hop
+    /// that aborts in the XCTest process (macOS 26 libswift_Concurrency
+    /// `TaskLocal` teardown bug). See `SessionRuntime.swift`.
+    nonisolated deinit {}
+
     /// Attach button rect (a circle inscribed in this rect is punched).
     var attachRect: CGRect = .zero {
         didSet {

@@ -66,18 +66,15 @@ final class TranscriptDemoViewController: NSViewController {
         sheetPresenter?.stop()
     }
 
-    deinit {
-        if let scroll {
-            // Cannot call MainActor-isolated dismantle from a
-            // nonisolated deinit; the observation removal would
-            // happen on the wrong actor. Safe to leak: when the
-            // controller goes away its coordinator goes with it and
-            // the notification center's weak observer drops. The
-            // explicit cleanup in `viewWillDisappear` is the primary
-            // path.
-            _ = scroll
-        }
-    }
+    /// `nonisolated` so dealloc skips the `@MainActor` deinit
+    /// executor-hop (`swift_task_deinitOnExecutorImpl`) that aborts in the
+    /// XCTest process — the macOS 26 libswift_Concurrency `TaskLocal`
+    /// teardown bug the rest of the codebase already guards against (see
+    /// `SessionRuntime.swift`). No isolated teardown is needed here: the
+    /// scroll/coordinator dismantle is driven from `viewWillDisappear`,
+    /// and any residual coordinator drops with the controller (its
+    /// NotificationCenter observer is weak).
+    nonisolated deinit {}
 
     private func mountTranscript() {
         let scroll = TranscriptScrollViewFactory.make(controller: controller)

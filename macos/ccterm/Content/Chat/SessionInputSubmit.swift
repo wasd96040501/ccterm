@@ -55,7 +55,7 @@ func submitSessionInput(
     }
     if isFirstStart {
         sessionManager.refreshRecords()
-        model.selection = .session(sessionId)
+        model.select(.session(sessionId))
         model.draftSessionId = nil
     }
 }

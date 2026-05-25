@@ -64,7 +64,7 @@ final class ArchiveViewController: NSViewController {
             ArchiveView(
                 selectedFolderPath: folderBinding,
                 onUnarchive: { [weak self] resumeSid in
-                    self?.model.selection = .session(resumeSid)
+                    self?.model.select(.session(resumeSid))
                 }
             )
             .environment(sessionManager)

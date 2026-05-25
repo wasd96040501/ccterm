@@ -88,7 +88,7 @@ final class ComposeSessionViewController: NSViewController {
                 },
                 onResumeSession: { [weak self] resumeSid in
                     guard let self else { return }
-                    self.model.selection = .session(resumeSid)
+                    self.model.select(.session(resumeSid))
                     self.model.draftSessionId = nil
                 }
             )

@@ -236,6 +236,39 @@ final class DetailRouterContainmentTests: XCTestCase {
         XCTAssertEqual(router.children.count, 1)
     }
 
+    // MARK: - Leak regression gate
+
+    func testTranscriptVCDeallocatesAfterCrossKindSwap() throws {
+        // The headline regression gate for the session-switch leak: a
+        // transcript VC the router swaps out (cross-kind `.session →
+        // .archive`) must actually deallocate. It only fails to if some
+        // observation task holds a strong `self` across an `await` and
+        // re-arms forever (the launch-failure / pending-activation tasks
+        // that used to live here did exactly that). Keep `router` alive so
+        // this asserts the *child* drops, not that everything teardown.
+        let fixture = try makeFixture(initialSelection: .session("sid-1"))
+        let router = fixture.router
+        _ = router.view  // viewDidLoad mounts the initial transcript child
+
+        weak var weakChild: ChatSessionViewController?
+        autoreleasepool {
+            weakChild = router.currentChild as? ChatSessionViewController
+            XCTAssertNotNil(weakChild, "fixture should start on a transcript child")
+            router.model.selection = .archive
+            router.installChildForCurrentSelection()
+        }
+
+        // ARC + SwiftUI hosting teardown can settle across a runloop turn;
+        // poll rather than asserting synchronously (no sleep).
+        let exp = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in weakChild == nil }, object: nil)
+        wait(for: [exp], timeout: 5)
+        XCTAssertNil(
+            weakChild,
+            "transcript VC must deallocate after a cross-kind swap — no observation "
+                + "task may hold a strong self across an await and pin it")
+    }
+
     // MARK: - Fixture
 
     /// Holds onto the dependency graph for the lifetime of one test so

@@ -299,7 +299,9 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
 
         for switchIdx in 0..<5 {
             let target = fx2.sessionIds[(switchIdx + 1) % 3]
-            fx2.model.selection = .session(target)
+            // Route through `select(_:)` so the router (the sole
+            // structural observer) runs the switch synchronously.
+            fx2.model.select(.session(target))
 
             // Probe at increasing delays: capture how long, if at all,
             // selection stays dead right after the switch.

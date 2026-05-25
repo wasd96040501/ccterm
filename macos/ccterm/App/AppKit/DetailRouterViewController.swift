@@ -2,6 +2,18 @@ import AppKit
 import Observation
 import SwiftUI
 
+/// A detail child the router can ask to release its per-session resources
+/// when it's swapped out on a cross-kind transition. The router drives
+/// teardown **explicitly** rather than leaving it to ARC timing: the
+/// outgoing child's transcript scroll view, sheet presenter, and
+/// `isRunning` observation task are dismantled deterministically the
+/// moment it leaves the hierarchy, instead of lingering until the VC
+/// happens to deallocate.
+@MainActor
+protocol DetailRouterChild: NSViewController {
+    func prepareForRemoval()
+}
+
 /// Empty AppKit container at the detail slot of `MainSplitViewController`.
 /// Hosts exactly one child `NSViewController` at a time and swaps it on
 /// `MainSelectionModel.selection` changes through proper AppKit VC
@@ -23,15 +35,32 @@ import SwiftUI
 /// - `.demo(_)` (DEBUG only) → the matching demo VC
 ///
 /// Same-kind transitions (e.g. flipping between two history sessions,
-/// both `.transcript`) keep the existing child VC alive — the chat
-/// VC's internal `attachSession` path handles the session swap. Only
-/// cross-kind transitions tear down and rebuild.
+/// both `.transcript`) keep the existing child VC alive — the router
+/// drives the child's imperative `present(sessionId:)` to swap the
+/// session. Only cross-kind transitions tear down and rebuild.
+///
+/// ## Sole structural owner of the detail-side transition
+///
+/// The router is the **only** observer of `MainSelectionModel` for
+/// structural purposes — it registers as the model's
+/// `selectionObserver` and is driven **synchronously** from
+/// `select(_:)`, in the same source phase as the click. It then:
+///
+/// 1. installs the correct child VC kind (swap only on cross-kind), and
+/// 2. for the transcript kind, settles the child's frame and calls
+///    `ChatSessionViewController.present(sessionId:)`.
+///
+/// This collapses what used to be two independent async observers (the
+/// router AND the chat VC each watching `model.selection` on separate
+/// `withObservationTracking` re-arm hops) into one synchronous path, so
+/// "show session X" lands atomically rather than fragmenting across
+/// ticks. The chat VC no longer observes selection at all.
 ///
 /// `DetailRouterContainmentTests` pins the invariant that there is
 /// always exactly one child and it stays attached to `view` — the
 /// regression gate for the whole refactor.
 @MainActor
-final class DetailRouterViewController: NSViewController {
+final class DetailRouterViewController: NSViewController, MainSelectionObserver {
     let model: MainSelectionModel
     let sessionManager: SessionManager
     let recentProjects: RecentProjectsStore
@@ -44,15 +73,21 @@ final class DetailRouterViewController: NSViewController {
     /// against `childKind(for:)` on selection change to decide whether
     /// a swap is needed — same-kind transitions (e.g. flipping between
     /// two history sessions, both `.transcript`) keep the existing
-    /// child VC alive so its internal `attachSession` path can take
-    /// over without paying for a full tree rebuild.
+    /// child VC alive, and the router hands it the new session via
+    /// `present(sessionId:)` without paying for a full tree rebuild.
     private(set) var currentKind: ChildKind?
 
     /// The single mounted child. `private(set)` so containment tests
     /// can read it without widening the swap API.
     private(set) var currentChild: NSViewController?
 
-    private var selectionObservationTask: Task<Void, Never>?
+    /// Gates the first transcript attach until the router's view has a
+    /// real frame. The router's `viewDidLoad` runs before the split has
+    /// sized the detail item, so the very first `applySelection` (which
+    /// runs `layoutSubtreeIfNeeded` + the child's `present`) is deferred
+    /// to the first framed `viewDidLayout`. Every selection change after
+    /// that is applied synchronously from `selectionDidChange(to:)`.
+    private var didInitialApply = false
 
     init(
         model: MainSelectionModel,
@@ -76,8 +111,6 @@ final class DetailRouterViewController: NSViewController {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    deinit { selectionObservationTask?.cancel() }
-
     override func loadView() {
         // Behind-window vibrancy backdrop for the whole detail half,
         // shared by every child (chat / compose / archive). Replaces the
@@ -96,8 +129,59 @@ final class DetailRouterViewController: NSViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        // Become the model's sole structural observer — `select(_:)`
+        // now drives `selectionDidChange(to:)` synchronously.
+        model.selectionObserver = self
+        // Own the app→detail signals that used to be observed by every
+        // (leaky) `ChatSessionViewController`: a notification click maps
+        // straight to a selection change. The router is the single,
+        // window-lifetime owner, so there's exactly one consumer and no
+        // per-detail-VC observation task to retain a torn-down VC.
+        notifications.onActivateSession = { [weak self] sid in
+            self?.model.select(.session(sid))
+        }
+        // Likewise own the launch-failure alert here. Per-VC observation
+        // stacked one alert per leaked transcript VC; one owner presents
+        // exactly one.
+        sessionManager.onLaunchFailure = { [weak self] failure in
+            self?.presentLaunchFailureAlert(failure)
+        }
+        // Notification subsystem bootstrap, kicked once per main-window
+        // mount from the stable owner. `bootstrap()` guards re-entry.
+        notifications.bootstrap()
+        // Mount the correct child VC kind for the initial selection. The
+        // transcript attach itself rides the first framed `viewDidLayout`
+        // (the view has no real frame yet here).
         installChildForCurrentSelection()
-        startSelectionObservation()
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        // First framed pass: run the full transition (child kind is
+        // already mounted; this adds the transcript attach against the
+        // now-settled frame). Subsequent changes come through
+        // `selectionDidChange(to:)` synchronously.
+        guard !didInitialApply, view.bounds.width > 0, view.bounds.height > 0 else { return }
+        didInitialApply = true
+        applySelection(model.selection)
+    }
+
+    // MARK: - Launch-failure alert
+
+    /// Present the CLI launch-failure alert on the window. Owned here —
+    /// the single, window-lifetime detail owner — so a failure surfaces
+    /// exactly one alert regardless of how many transcript VCs exist.
+    private func presentLaunchFailureAlert(_ failure: SessionManager.LaunchFailure) {
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Failed to launch CLI")
+        alert.informativeText = failure.message
+        alert.addButton(withTitle: String(localized: "OK"))
+        alert.alertStyle = .warning
+        if let window = view.window {
+            alert.beginSheetModal(for: window, completionHandler: nil)
+        } else {
+            alert.runModal()
+        }
     }
 
     // MARK: - Routing
@@ -129,13 +213,22 @@ final class DetailRouterViewController: NSViewController {
         }
     }
 
-    /// Sync entry point used by both the observation hop and unit
-    /// tests. Idempotent when the kind is unchanged.
+    /// Ensure the correct child VC **kind** is mounted for the current
+    /// selection — swap only on a cross-kind change, reuse otherwise.
+    /// Does NOT attach a session; the transcript attach is driven
+    /// separately by `applySelection` via `present(sessionId:)`. Called
+    /// from `applySelection` and directly by `DetailRouterContainmentTests`
+    /// (which assert tree shape without a window). Idempotent when the
+    /// kind is unchanged.
     func installChildForCurrentSelection() {
         let kind = Self.childKind(for: model.selection)
         if kind == currentKind, currentChild != nil { return }
 
         if let old = currentChild {
+            // Let the outgoing child tear down its per-session resources
+            // before it leaves the tree — deterministic, not at the mercy
+            // of when ARC frees the VC.
+            (old as? DetailRouterChild)?.prepareForRemoval()
             old.view.removeFromSuperview()
             old.removeFromParent()
         }
@@ -231,21 +324,37 @@ final class DetailRouterViewController: NSViewController {
     }
     #endif
 
-    // MARK: - Observation
+    // MARK: - Selection transition (synchronous)
 
-    private func startSelectionObservation() {
-        selectionObservationTask?.cancel()
-        selectionObservationTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            await withCheckedContinuation { cont in
-                withObservationTracking {
-                    _ = self.model.selection
-                } onChange: {
-                    Task { @MainActor in cont.resume() }
-                }
-            }
-            self.installChildForCurrentSelection()
-            self.startSelectionObservation()
+    /// `MainSelectionObserver` — driven synchronously from
+    /// `MainSelectionModel.select(_:)`, in the same source phase as the
+    /// caller (a sidebar click, a notification activation, etc).
+    func selectionDidChange(to selection: MainSelection) {
+        // Before the first framed layout there is nothing to attach a
+        // transcript to — just keep the child kind in sync; the initial
+        // `applySelection` rides `viewDidLayout`.
+        guard isViewLoaded else { return }
+        guard didInitialApply else {
+            installChildForCurrentSelection()
+            return
         }
+        applySelection(selection)
+    }
+
+    /// The whole detail-side transition in one synchronous pass:
+    /// install the correct child VC kind (swap only on cross-kind),
+    /// then — for the transcript kind — settle the child's frame and
+    /// hand it the new session imperatively. Compose / archive / demo
+    /// children manage their own content, so the router stops at the
+    /// child swap for them.
+    private func applySelection(_ selection: MainSelection) {
+        installChildForCurrentSelection()
+        guard Self.childKind(for: selection) == .transcript else { return }
+        // Settle the freshly-(re)mounted child so the transcript attach
+        // typesets at the final width (the §2.19 single-width contract).
+        view.layoutSubtreeIfNeeded()
+        let sessionId: String?
+        if case .session(let sid) = selection { sessionId = sid } else { sessionId = nil }
+        (currentChild as? ChatSessionViewController)?.present(sessionId: sessionId)
     }
 }

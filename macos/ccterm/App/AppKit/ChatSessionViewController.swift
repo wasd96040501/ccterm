@@ -9,6 +9,13 @@ import SwiftUI
 /// table's mount + `frameDidChange` cascade lives in AppKit's source
 /// phase, not in SwiftUI's commit pass (the whole point of #195).
 ///
+/// This VC does **not** observe `MainSelectionModel`. The router is the
+/// sole structural owner and drives the session swap imperatively via
+/// `present(sessionId:)` — called synchronously once this VC is mounted
+/// AND framed, so the attach always runs against a settled frame (no
+/// deferred-attach machinery) and lands in the same source phase as the
+/// click that triggered it.
+///
 /// New Session (`.newSession`) is NOT handled here — it has its own
 /// `ComposeSessionViewController`. That split is deliberate: when
 /// compose and chat shared this VC's one always-mounted bar host, the
@@ -36,7 +43,7 @@ import SwiftUI
 /// permission card) intrinsic height, so the transcript scroll view
 /// receives clicks in the scrim band above it.
 @MainActor
-final class ChatSessionViewController: NSViewController {
+final class ChatSessionViewController: NSViewController, DetailRouterChild {
     /// Coordinate-space identifier for SwiftUI `GeometryReader`/
     /// `PreferenceKey` callbacks that report the attach button +
     /// pill rects. Mirrors `RootView2.detailCoordSpace`.
@@ -66,19 +73,6 @@ final class ChatSessionViewController: NSViewController {
     /// The session currently driving the transcript, or nil for
     /// archive / demo branches.
     private var currentSession: Session?
-    /// Session whose transcript mount was deferred because the view had
-    /// no real frame yet. `DetailRouterViewController` creates this VC
-    /// fresh and runs its `viewDidLoad` (→ `attachSession`) BEFORE the
-    /// fill constraints that size the view are active, so the first
-    /// attach would run `layoutSubtreeIfNeeded` + `scrollToTail` at a
-    /// zero/transient width — typesetting every block at the wrong width
-    /// and leaving the clip scrolled past its content (a blank
-    /// transcript). We stash the request here and flush it from
-    /// `viewDidLayout` once the view has a settled, non-zero frame.
-    private var pendingAttachSessionId: String?
-    /// Guards against scheduling more than one deferred-attach flush
-    /// while one is already queued for the next source phase.
-    private var isFlushingPendingAttach: Bool = false
     /// AppKit-native transcript scroll view. Re-created when the
     /// selected session's controller changes; nil for archive /
     /// demo branches.
@@ -116,13 +110,6 @@ final class ChatSessionViewController: NSViewController {
     /// Sink for `session.isRunning` → `controller.setLoading(_:)`.
     /// Re-armed on every session swap.
     private var runningObservationTask: Task<Void, Never>?
-    /// Sink for the sidebar selection + draft fields. Re-arms after
-    /// each fire (one-shot `withObservationTracking` semantics).
-    private var selectionObservationTask: Task<Void, Never>?
-    /// Sink for the launch-failure alert.
-    private var launchFailureObservationTask: Task<Void, Never>?
-    /// Sink for `notifications.pendingActivationSessionId`.
-    private var pendingActivationObservationTask: Task<Void, Never>?
 
     init(
         model: MainSelectionModel,
@@ -216,52 +203,18 @@ final class ChatSessionViewController: NSViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        // Run the initial selection handler so focus tracking + the
-        // transcript mount happen for the model's initial value. Mirrors
-        // `RootView2`'s `.task(id: selection)` which fired once on mount
-        // in addition to firing on every change.
-        handleSelectionChanged()
-        installObservations()
-        // Notification subsystem bootstrap, kicked once per
-        // main-window mount. `bootstrap()` guards against re-entry.
-        notifications.bootstrap()
-    }
-
-    override func viewDidLayout() {
-        super.viewDidLayout()
-        // Flush a transcript mount that `attachSession` deferred because
-        // the view had no real frame yet (fresh router-mounted VC). The
-        // flush must run in the NEXT source phase, not inline here:
-        // `viewDidLayout` fires mid-layout-pass, and `attachSession`'s own
-        // `layoutSubtreeIfNeeded` + `bindData` have to execute against a
-        // fully-settled frame in a clean source phase — running them while
-        // the enclosing autolayout cascade is still converging makes the
-        // table tile at the cascade's transient widths (460 / 780) instead
-        // of the single settled width (720), which is exactly the
-        // per-attach typesetting thrash the §2.19 contract forbids. The
-        // one-tick delay shows the chat backdrop for a frame before the
-        // transcript pops in anchored at the tail — same timing as the
-        // observation-driven session-switch path.
-        guard pendingAttachSessionId != nil, !isFlushingPendingAttach,
-            view.bounds.width > 0, view.bounds.height > 0
-        else { return }
-        isFlushingPendingAttach = true
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.isFlushingPendingAttach = false
-            guard let sid = self.pendingAttachSessionId,
-                self.view.bounds.width > 0, self.view.bounds.height > 0
-            else { return }
-            self.attachSession(sid)
-        }
-    }
-
-    // MARK: - Observation
-
-    private func installObservations() {
-        startSelectionObservation()
-        startLaunchFailureObservation()
-        startPendingActivationObservation()
+        // No initial transcript attach here — the router owns that and
+        // calls `present(sessionId:)` once this VC is mounted AND framed.
+        // Self-attaching from `viewDidLoad` (before the fill constraints
+        // sized the view) is exactly what forced the old deferred-attach
+        // machinery; the router's "settle, then present" ordering removes
+        // the need for it.
+        //
+        // No app-global observation installed here either: notification
+        // activation and launch-failure alerts are owned by the stable
+        // `DetailRouterViewController`, not self-observed per transcript VC
+        // (that observation pinned this VC via a strong-`self`-across-await
+        // re-arm and leaked it on every cross-kind round-trip).
     }
 
     /// Push the latest reported rects into the bottom scrim. Called
@@ -273,121 +226,54 @@ final class ChatSessionViewController: NSViewController {
         bottomScrim.pillRect = bottomScrim.convert(lastPillRect, from: composeOrBarHost)
     }
 
-    private func startSelectionObservation() {
-        selectionObservationTask?.cancel()
-        selectionObservationTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            // One-shot Observation tracking — re-arm via tail
-            // recursion through `startSelectionObservation` once it
-            // fires. We touch every field we care about inside the
-            // tracking closure so re-arm happens on any change.
-            await withCheckedContinuation { cont in
-                withObservationTracking {
-                    _ = self.model.selection
-                    _ = self.model.draftSessionId
-                } onChange: {
-                    Task { @MainActor in cont.resume() }
-                }
-            }
-            self.handleSelectionChanged()
-            self.startSelectionObservation()
-        }
-    }
+    // MARK: - Imperative presentation (driven by the router)
 
-    private func startLaunchFailureObservation() {
-        launchFailureObservationTask?.cancel()
-        launchFailureObservationTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            await withCheckedContinuation { cont in
-                withObservationTracking {
-                    _ = self.sessionManager.lastLaunchFailure
-                } onChange: {
-                    Task { @MainActor in cont.resume() }
-                }
-            }
-            self.presentLaunchFailureAlertIfNeeded()
-            self.startLaunchFailureObservation()
-        }
-    }
-
-    private func startPendingActivationObservation() {
-        pendingActivationObservationTask?.cancel()
-        pendingActivationObservationTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            await withCheckedContinuation { cont in
-                withObservationTracking {
-                    _ = self.notifications.pendingActivationSessionId
-                } onChange: {
-                    Task { @MainActor in cont.resume() }
-                }
-            }
-            if let sid = self.notifications.pendingActivationSessionId {
-                self.model.selection = .session(sid)
-                self.notifications.clearPendingActivation()
-            }
-            self.startPendingActivationObservation()
-        }
-    }
-
-    private func presentLaunchFailureAlertIfNeeded() {
-        guard let failure = sessionManager.lastLaunchFailure else { return }
-        let alert = NSAlert()
-        alert.messageText = String(localized: "Failed to launch CLI")
-        alert.informativeText = failure.message
-        alert.addButton(withTitle: String(localized: "OK"))
-        alert.alertStyle = .warning
-        if let window = view.window {
-            alert.beginSheetModal(for: window) { [weak self] _ in
-                self?.sessionManager.clearLaunchFailure()
-            }
-        } else {
-            alert.runModal()
-            sessionManager.clearLaunchFailure()
-        }
-    }
-
-    private func handleSelectionChanged() {
-        // Focus tracking — keep `Session.setFocused` in sync with the
-        // selection so unread state clears when the user enters a
-        // session. (Draft `sessionId` allocation for New Session lives
-        // in `ComposeSessionViewController` now, not here.)
-        let activeSid = model.effectiveSessionId
-        if let active = activeSid, let session = sessionManager.session(active) {
-            session.setFocused(true)
-        }
-        for sid in sessionManager.records.map(\.sessionId)
-        where sid != activeSid {
-            sessionManager.existingSession(sid)?.setFocused(false)
-        }
-
-        rebuildBackingContent()
-    }
-
-    // MARK: - Backing content rebuild
-
-    private func rebuildBackingContent() {
-        guard let active = model.effectiveSessionId else {
+    /// Show `sessionId`'s transcript, or tear down to an empty chat
+    /// backdrop when `nil` (the `.none` selection). The sole entry point
+    /// the router calls — **synchronously**, after it has mounted and
+    /// framed this VC, so the attach always runs against a settled
+    /// frame. Replaces the old `model.selection`-observing path.
+    func present(sessionId: String?) {
+        updateFocus(activeSessionId: sessionId)
+        guard let sessionId else {
             tearDownTranscript()
             return
         }
-        attachSession(active)
+        attachSession(sessionId)
+    }
+
+    /// `DetailRouterChild` — the router calls this right before it swaps
+    /// this VC out on a cross-kind transition (`.transcript →
+    /// .archive/.compose`). Tear the transcript down deterministically so
+    /// the scroll view, sheet presenter, and `isRunning` task are released
+    /// here rather than whenever ARC gets around to freeing the VC.
+    func prepareForRemoval() {
+        tearDownTranscript()
+    }
+
+    /// Keep `Session.setFocused` in sync with the shown session so
+    /// unread state clears on entry. (Draft `sessionId` allocation for
+    /// New Session lives in `ComposeSessionViewController`.)
+    private func updateFocus(activeSessionId: String?) {
+        if let active = activeSessionId, let session = sessionManager.session(active) {
+            session.setFocused(true)
+        }
+        for sid in sessionManager.records.map(\.sessionId) where sid != activeSessionId {
+            sessionManager.existingSession(sid)?.setFocused(false)
+        }
     }
 
     // MARK: - Transcript mount
 
     private func attachSession(_ sessionId: String) {
-        // The transcript attach below is geometry-sensitive: it pins the
-        // scroll view, runs `view.layoutSubtreeIfNeeded()` to settle the
-        // table to its real width, then `scrollToTail()` anchors the
-        // clip. All three need the view to already be at its final frame
-        // — see `pendingAttachSessionId`. When this VC is freshly mounted
-        // by the router, `viewDidLoad` fires before the view is sized, so
-        // defer to the first framed `viewDidLayout`.
+        // Contract: the router only calls `present` on a mounted, framed
+        // VC, so the geometry-sensitive attach below (pin scroll view →
+        // `layoutSubtreeIfNeeded` settles the table width → `scrollToTail`
+        // anchors the clip) always has a real frame to work against.
         guard view.bounds.width > 0, view.bounds.height > 0 else {
-            pendingAttachSessionId = sessionId
+            assertionFailure("attachSession called before the host view was framed")
             return
         }
-        pendingAttachSessionId = nil
 
         let session = sessionManager.prepareDraftSession(sessionId)
         if currentSession?.sessionId == sessionId, transcriptScroll != nil {
@@ -398,10 +284,31 @@ final class ChatSessionViewController: NSViewController {
         // measures the gap the cold-load first-screen edge closes. Reported in
         // the `onFirstScreenReady` callback wired just before `loadHistory`.
         let attachStart = CFAbsoluteTimeGetCurrent()
-        tearDownTranscript()
+
+        // Atomic swap: build, mount, bind, and anchor the INCOMING
+        // transcript, then tear down the OUTGOING one — all inside one
+        // disabled-animation transaction. Removing the old scroll view
+        // first (the previous shape) flashed a blank pane for at least
+        // one frame; building the new one on top of the old and dropping
+        // the old last means the user never sees an empty transcript.
+        let outgoingScroll = transcriptScroll
+        let outgoingSession = currentSession
+
+        NSAnimationContext.beginGrouping()
+        NSAnimationContext.current.duration = 0
+        NSAnimationContext.current.allowsImplicitAnimation = false
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer {
+            CATransaction.commit()
+            NSAnimationContext.endGrouping()
+        }
 
         let scroll = TranscriptScrollViewFactory.make(controller: session.controller)
         scroll.translatesAutoresizingMaskIntoConstraints = false
+        // Insert just below the top scrim — i.e. in front of the still-mounted
+        // outgoing scroll view — so the incoming transcript fully covers it
+        // until we drop the old one at the end of this tick.
         view.addSubview(scroll, positioned: .below, relativeTo: topScrim)
         NSLayoutConstraint.activate([
             scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -449,7 +356,8 @@ final class ChatSessionViewController: NSViewController {
         // and presents AppKit-native sheets via
         // `view.window?.beginSheet`. Replaces the SwiftUI
         // `.sheet(item:)` bindings the old `NativeTranscript2View`
-        // carried.
+        // carried. Stop the outgoing one first.
+        transcriptSheetPresenter?.stop()
         transcriptSheetPresenter = Transcript2SheetPresenter(
             controller: session.controller, hostView: view)
 
@@ -478,15 +386,19 @@ final class ChatSessionViewController: NSViewController {
         session.loadHistory()
         session.controller.setLoading(session.isRunning)
 
-        // Re-arm the `isRunning` → `setLoading` sink.
+        // Re-arm the `isRunning` → `setLoading` sink (cancels the old).
         startRunningObservation(for: session)
+
+        // Drop the outgoing transcript last, now that the incoming one is
+        // live and on top — no blank frame in between.
+        if let outgoingScroll, let outgoingSession {
+            TranscriptScrollViewFactory.dismantle(
+                outgoingScroll, controller: outgoingSession.controller)
+            outgoingScroll.removeFromSuperview()
+        }
     }
 
     private func tearDownTranscript() {
-        // Drop any deferred attach — the selection moved off a session
-        // before the view was framed, so the stale request must not fire
-        // on the next `viewDidLayout`.
-        pendingAttachSessionId = nil
         if let scroll = transcriptScroll, let session = currentSession {
             TranscriptScrollViewFactory.dismantle(scroll, controller: session.controller)
             scroll.removeFromSuperview()
@@ -556,9 +468,6 @@ final class ChatSessionViewController: NSViewController {
 
     deinit {
         runningObservationTask?.cancel()
-        selectionObservationTask?.cancel()
-        launchFailureObservationTask?.cancel()
-        pendingActivationObservationTask?.cancel()
     }
 }
 

@@ -88,6 +88,21 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
     /// can read it without widening the swap API.
     private(set) var currentChild: NSViewController?
 
+    /// The outgoing child mid-crossfade, kept mounted (behind the
+    /// incoming one) until the fade-out animation completes. `nil` when
+    /// no crossfade is in flight. A new swap flushes it synchronously
+    /// first (`finishFadeOut`) so rapid sidebar switches collapse rather
+    /// than stacking translucent ghosts.
+    private var fadingOutChild: NSViewController?
+
+    /// Crossfade duration for a cross-kind detail swap. Short — matches
+    /// the snappy feel of a macOS source-list mode change; long enough
+    /// to read as a transition rather than a flash. The fade is the only
+    /// non-atomic part of the swap: the structural mount + `present` run
+    /// synchronously in the click's source phase, then the opacity
+    /// animation rides CoreAnimation's own clock from `beforeWaiting`.
+    private static let childCrossfadeDuration: CFTimeInterval = 0.18
+
     /// Gates the first transcript attach until the router's view has a
     /// real frame. The router's `viewDidLoad` runs before the split has
     /// sized the detail item, so the very first `applySelection` (which
@@ -224,25 +239,39 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
     /// selection — swap only on a cross-kind change, reuse otherwise.
     /// Does NOT attach a session; the transcript attach is driven
     /// separately by `applySelection` via `present(sessionId:)`. Called
-    /// from `applySelection` and directly by `DetailRouterContainmentTests`
-    /// (which assert tree shape without a window). Idempotent when the
+    /// from `applySelection` (with `animated: true`) and directly by
+    /// `DetailRouterContainmentTests` (which assert tree shape without a
+    /// window, so they take the synchronous path). Idempotent when the
     /// kind is unchanged.
-    func installChildForCurrentSelection() {
+    ///
+    /// When `animated` and there's an outgoing child AND we're in a
+    /// window, the swap stages a crossfade: the incoming child is mounted
+    /// **on top** of the still-live outgoing one at `alpha == 0`, and the
+    /// outgoing child is parked in `fadingOutChild`. The actual fade is
+    /// kicked by `commitChildTransition()` *after* `applySelection` has
+    /// run `present` on the incoming transcript — so the structural mount
+    /// stays synchronous (settled frame, one-width typeset) and only the
+    /// cosmetic fade is deferred to CoreAnimation. Without a window (tests,
+    /// cold start) it falls back to the synchronous teardown-then-mount.
+    func installChildForCurrentSelection(animated: Bool = false) {
         let kind = Self.childKind(for: model.selection)
         if kind == currentKind, currentChild != nil { return }
 
-        if let old = currentChild {
-            // Let the outgoing child tear down its per-session resources
-            // before it leaves the tree — deterministic, not at the mercy
-            // of when ARC frees the VC.
-            (old as? DetailRouterChild)?.prepareForRemoval()
-            old.view.removeFromSuperview()
-            old.removeFromParent()
-        }
+        // Flush any still-running crossfade synchronously before staging a
+        // new one, so rapid sidebar switches collapse (the older outgoing
+        // child snaps out) instead of stacking translucent ghosts. The
+        // late completion for the flushed child no-ops via its guard.
+        finishFadeOut()
+
+        let old = currentChild
+        let crossfade = animated && old != nil && view.window != nil
 
         let child = makeChild(for: kind)
         addChild(child)
         child.view.translatesAutoresizingMaskIntoConstraints = false
+        // Default `addSubview` z-order puts the incoming child ON TOP of
+        // the outgoing one, mirroring `attachSession`'s build-in-front
+        // ordering so the crossfade composites new-over-old.
         view.addSubview(child.view)
         NSLayoutConstraint.activate([
             child.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -253,6 +282,54 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
 
         currentKind = kind
         currentChild = child
+
+        if crossfade, let old {
+            child.view.wantsLayer = true
+            old.view.wantsLayer = true
+            child.view.alphaValue = 0
+            fadingOutChild = old
+        } else if let old {
+            // Synchronous path (no window / not animated): tear the
+            // outgoing child's per-session resources down before it leaves
+            // the tree — deterministic, not at the mercy of ARC timing.
+            (old as? DetailRouterChild)?.prepareForRemoval()
+            old.view.removeFromSuperview()
+            old.removeFromParent()
+        }
+    }
+
+    /// Run the staged crossfade, if `installChildForCurrentSelection`
+    /// parked an outgoing child. Fades the incoming child in and the
+    /// outgoing child out together, tearing the outgoing one down on
+    /// completion. No-op when nothing is staged (same-kind reuse,
+    /// synchronous path, or initial mount). Called from `applySelection`
+    /// only after `present` has made the incoming transcript content live,
+    /// so the first composited fade frame already shows real content.
+    private func commitChildTransition() {
+        guard let outgoing = fadingOutChild, let incoming = currentChild else { return }
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = Self.childCrossfadeDuration
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            ctx.allowsImplicitAnimation = true
+            incoming.view.animator().alphaValue = 1
+            outgoing.view.animator().alphaValue = 0
+        } completionHandler: { [weak self] in
+            self?.finishFadeOut(expected: outgoing)
+        }
+    }
+
+    /// Tear down the outgoing crossfade child. Idempotent and called from
+    /// two places: the animation completion (with `expected` set), and
+    /// synchronously at the head of a new swap to flush an in-flight fade
+    /// (no `expected`). The `expected` guard makes a late completion for
+    /// an already-flushed child a no-op.
+    private func finishFadeOut(expected: NSViewController? = nil) {
+        guard let outgoing = fadingOutChild else { return }
+        if let expected, expected !== outgoing { return }
+        fadingOutChild = nil
+        (outgoing as? DetailRouterChild)?.prepareForRemoval()
+        outgoing.view.removeFromSuperview()
+        outgoing.removeFromParent()
     }
 
     private func makeChild(for kind: ChildKind) -> NSViewController {
@@ -355,13 +432,50 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
     /// children manage their own content, so the router stops at the
     /// child swap for them.
     private func applySelection(_ selection: MainSelection) {
-        installChildForCurrentSelection()
-        guard Self.childKind(for: selection) == .transcript else { return }
-        // Settle the freshly-(re)mounted child so the transcript attach
-        // typesets at the final width (the §2.19 single-width contract).
-        view.layoutSubtreeIfNeeded()
-        let sessionId: String?
-        if case .session(let sid) = selection { sessionId = sid } else { sessionId = nil }
-        (currentChild as? ChatSessionViewController)?.present(sessionId: sessionId)
+        // Policy: only animate when the target is "fresh content" — the
+        // New Session card, the Archive, or the FIRST entry into a history
+        // session. Warm re-entry of an already-viewed session is instant.
+        // Computed before `present` runs `loadHistory` (which flips the
+        // state off `.notLoaded`). Threads into both transition layers: the
+        // cross-kind child swap below, and the same-kind transcript swap
+        // inside `present` → `attachSession`.
+        let animate = shouldAnimateTransition(to: selection)
+        installChildForCurrentSelection(animated: animate)
+        if Self.childKind(for: selection) == .transcript {
+            // Settle the freshly-(re)mounted child so the transcript attach
+            // typesets at the final width (the §2.19 single-width contract).
+            view.layoutSubtreeIfNeeded()
+            let sessionId: String?
+            if case .session(let sid) = selection { sessionId = sid } else { sessionId = nil }
+            (currentChild as? ChatSessionViewController)?
+                .present(sessionId: sessionId, animated: animate)
+        }
+        // Kick the staged crossfade (if a cross-kind swap parked an
+        // outgoing child) now that the incoming content is live. No-op for
+        // same-kind reuse and the synchronous (no-window) path.
+        commitChildTransition()
+    }
+
+    /// Whether a transition INTO `selection` should crossfade. True only
+    /// for the three "fresh content" targets — `.newSession`, `.archive`,
+    /// and a **first** entry into a history session (history not yet
+    /// loaded). A warm re-entry of an already-viewed session, `.none`, and
+    /// demos are instant. The session check reads `historyLoadState` via
+    /// the non-creating `existingSession` lookup; an unmaterialized session
+    /// (never opened) is treated as a first entry.
+    private func shouldAnimateTransition(to selection: MainSelection) -> Bool {
+        switch selection {
+        case .newSession, .archive:
+            return true
+        case .session(let sid):
+            let state = sessionManager.existingSession(sid)?.historyLoadState ?? .notLoaded
+            return state == .notLoaded
+        case .none:
+            return false
+        #if DEBUG
+        case .demo:
+            return false
+        #endif
+        }
     }
 }

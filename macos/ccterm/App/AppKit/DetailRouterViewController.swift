@@ -88,12 +88,19 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
     /// can read it without widening the swap API.
     private(set) var currentChild: NSViewController?
 
-    /// The outgoing child mid-crossfade, kept mounted (behind the
-    /// incoming one) until the fade-out animation completes. `nil` when
-    /// no crossfade is in flight. A new swap flushes it synchronously
-    /// first (`finishFadeOut`) so rapid sidebar switches collapse rather
-    /// than stacking translucent ghosts.
-    private var fadingOutChild: NSViewController?
+    /// A frozen bitmap of the outgoing child, fading out behind the
+    /// incoming one. `nil` when no crossfade is in flight. We fade a
+    /// **snapshot** — not the live outgoing view — because the outgoing VC
+    /// can re-render mid-fade and blank its own content: promotion flips
+    /// `.newSession → .session(_)` and fires `refreshRecords()`, and the
+    /// compose card's "Recent Sessions" list observes `manager.records`, so
+    /// a live fade would show the card's elements vanish the instant the
+    /// message is sent. Snapshotting in the swap's source phase (before
+    /// SwiftUI re-evaluates at `beforeWaiting`) captures the last good
+    /// frame; the live VC is then torn down immediately so it never paints
+    /// the blanked state. A new swap flushes the snapshot synchronously
+    /// (`finishFadeOut`) so rapid switches collapse rather than stack.
+    private var fadingOutSnapshot: NSView?
 
     /// Crossfade duration for a cross-kind detail swap. Short — matches
     /// the snappy feel of a macOS source-list mode change; long enough
@@ -246,31 +253,36 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
     ///
     /// When `animated` and there's an outgoing child AND we're in a
     /// window, the swap stages a crossfade: the incoming child is mounted
-    /// **on top** of the still-live outgoing one at `alpha == 0`, and the
-    /// outgoing child is parked in `fadingOutChild`. The actual fade is
-    /// kicked by `commitChildTransition()` *after* `applySelection` has
-    /// run `present` on the incoming transcript — so the structural mount
-    /// stays synchronous (settled frame, one-width typeset) and only the
-    /// cosmetic fade is deferred to CoreAnimation. Without a window (tests,
-    /// cold start) it falls back to the synchronous teardown-then-mount.
+    /// **on top** at `alpha == 0`, a frozen snapshot of the outgoing child
+    /// is parked **behind** it in `fadingOutSnapshot`, and the live
+    /// outgoing VC is torn down immediately (so it can't re-render and
+    /// blank its content mid-fade — see `fadingOutSnapshot`). The actual
+    /// fade is kicked by `commitChildTransition()` *after* `applySelection`
+    /// has run `present` on the incoming transcript — so the structural
+    /// mount stays synchronous (settled frame, one-width typeset) and only
+    /// the cosmetic fade is deferred to CoreAnimation. Without a window
+    /// (tests, cold start) it falls back to the synchronous
+    /// teardown-then-mount.
     func installChildForCurrentSelection(animated: Bool = false) {
         let kind = Self.childKind(for: model.selection)
         if kind == currentKind, currentChild != nil { return }
 
         // Flush any still-running crossfade synchronously before staging a
         // new one, so rapid sidebar switches collapse (the older outgoing
-        // child snaps out) instead of stacking translucent ghosts. The
-        // late completion for the flushed child no-ops via its guard.
+        // snapshot snaps out) instead of stacking translucent ghosts.
         finishFadeOut()
 
         let old = currentChild
-        let crossfade = animated && old != nil && view.window != nil
+        // Snapshot BEFORE mounting/tearing anything down, while the outgoing
+        // view still shows its last good frame (SwiftUI hasn't re-evaluated
+        // this source phase yet).
+        let snapshot = (animated && view.window != nil) ? old.flatMap { snapshotView(of: $0.view) } : nil
 
         let child = makeChild(for: kind)
         addChild(child)
         child.view.translatesAutoresizingMaskIntoConstraints = false
         // Default `addSubview` z-order puts the incoming child ON TOP of
-        // the outgoing one, mirroring `attachSession`'s build-in-front
+        // the outgoing snapshot, mirroring `attachSession`'s build-in-front
         // ordering so the crossfade composites new-over-old.
         view.addSubview(child.view)
         NSLayoutConstraint.activate([
@@ -283,53 +295,84 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
         currentKind = kind
         currentChild = child
 
-        if crossfade, let old {
-            child.view.wantsLayer = true
-            old.view.wantsLayer = true
-            child.view.alphaValue = 0
-            fadingOutChild = old
-        } else if let old {
-            // Synchronous path (no window / not animated): tear the
-            // outgoing child's per-session resources down before it leaves
-            // the tree — deterministic, not at the mercy of ARC timing.
+        // Tear the outgoing VC down NOW regardless of path — deterministic,
+        // not at the mercy of ARC timing, and (when animating) so it stops
+        // observing before it can paint a blanked frame.
+        if let old {
             (old as? DetailRouterChild)?.prepareForRemoval()
             old.view.removeFromSuperview()
             old.removeFromParent()
         }
+
+        if let snapshot {
+            child.view.wantsLayer = true
+            child.view.alphaValue = 0
+            // Insert the frozen snapshot behind the incoming child.
+            view.addSubview(snapshot, positioned: .below, relativeTo: child.view)
+            snapshot.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                snapshot.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                snapshot.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                snapshot.topAnchor.constraint(equalTo: view.topAnchor),
+                snapshot.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            ])
+            fadingOutSnapshot = snapshot
+        }
     }
 
     /// Run the staged crossfade, if `installChildForCurrentSelection`
-    /// parked an outgoing child. Fades the incoming child in and the
-    /// outgoing child out together, tearing the outgoing one down on
-    /// completion. No-op when nothing is staged (same-kind reuse,
-    /// synchronous path, or initial mount). Called from `applySelection`
-    /// only after `present` has made the incoming transcript content live,
-    /// so the first composited fade frame already shows real content.
+    /// parked an outgoing snapshot. Fades the incoming child in and the
+    /// snapshot out together, removing the snapshot on completion. No-op
+    /// when nothing is staged (same-kind reuse, synchronous path, or
+    /// initial mount). Called from `applySelection` only after `present`
+    /// has made the incoming transcript content live, so the first
+    /// composited fade frame already shows real content.
     private func commitChildTransition() {
-        guard let outgoing = fadingOutChild, let incoming = currentChild else { return }
+        guard let snapshot = fadingOutSnapshot, let incoming = currentChild else { return }
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = Self.childCrossfadeDuration
             ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             ctx.allowsImplicitAnimation = true
             incoming.view.animator().alphaValue = 1
-            outgoing.view.animator().alphaValue = 0
+            snapshot.animator().alphaValue = 0
         } completionHandler: { [weak self] in
-            self?.finishFadeOut(expected: outgoing)
+            self?.finishFadeOut(expected: snapshot)
         }
     }
 
-    /// Tear down the outgoing crossfade child. Idempotent and called from
-    /// two places: the animation completion (with `expected` set), and
+    /// Remove the parked outgoing snapshot. Idempotent and called from two
+    /// places: the animation completion (with `expected` set), and
     /// synchronously at the head of a new swap to flush an in-flight fade
-    /// (no `expected`). The `expected` guard makes a late completion for
-    /// an already-flushed child a no-op.
-    private func finishFadeOut(expected: NSViewController? = nil) {
-        guard let outgoing = fadingOutChild else { return }
-        if let expected, expected !== outgoing { return }
-        fadingOutChild = nil
-        (outgoing as? DetailRouterChild)?.prepareForRemoval()
-        outgoing.view.removeFromSuperview()
-        outgoing.removeFromParent()
+    /// (no `expected`). The `expected` guard makes a late completion for an
+    /// already-flushed snapshot a no-op. The outgoing VC is already gone
+    /// (torn down at swap time), so there's nothing else to release here.
+    private func finishFadeOut(expected: NSView? = nil) {
+        guard let snapshot = fadingOutSnapshot else { return }
+        if let expected, expected !== snapshot { return }
+        fadingOutSnapshot = nil
+        snapshot.removeFromSuperview()
+    }
+
+    /// A frozen bitmap of `source` wrapped in a layer-backed image view,
+    /// sized to its current bounds. Captured via `cacheDisplay`, which
+    /// renders the CURRENT view tree — and since this runs in the swap's
+    /// source phase, before SwiftUI's `beforeWaiting` re-evaluation, it
+    /// freezes the last good frame even though the underlying `@Observable`
+    /// state (selection, `manager.records`) has already flipped. Returns
+    /// `nil` if the view hasn't been laid out yet (no frame to snapshot).
+    private func snapshotView(of source: NSView) -> NSView? {
+        let bounds = source.bounds
+        guard bounds.width > 0, bounds.height > 0,
+            let rep = source.bitmapImageRepForCachingDisplay(in: bounds)
+        else { return nil }
+        source.cacheDisplay(in: bounds, to: rep)
+        let image = NSImage(size: bounds.size)
+        image.addRepresentation(rep)
+        let imageView = NSImageView()
+        imageView.image = image
+        imageView.imageScaling = .scaleAxesIndependently
+        imageView.wantsLayer = true
+        return imageView
     }
 
     private func makeChild(for kind: ChildKind) -> NSViewController {

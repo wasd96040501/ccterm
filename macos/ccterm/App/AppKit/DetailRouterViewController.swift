@@ -456,18 +456,32 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
         commitChildTransition()
     }
 
-    /// Whether a transition INTO `selection` should crossfade. True only
-    /// for the three "fresh content" targets — `.newSession`, `.archive`,
-    /// and a **first** entry into a history session (history not yet
-    /// loaded). A warm re-entry of an already-viewed session, `.none`, and
-    /// demos are instant. The session check reads `historyLoadState` via
-    /// the non-creating `existingSession` lookup; an unmaterialized session
+    /// Whether a transition INTO `selection` should crossfade. True for
+    /// the "fresh content" targets — `.newSession`, `.archive`, a **first**
+    /// entry into a history session (history not yet loaded), and entering
+    /// a session **from the New Session card** (`currentKind == .compose`).
+    /// A warm re-entry of an already-viewed session, `.none`, and demos are
+    /// instant.
+    ///
+    /// The compose→session case covers promotion: sending the first message
+    /// flips `.newSession → .session(_)`, and the promoted session is
+    /// already `.loaded` (its runtime is created with `historyLoadState =
+    /// .loaded` to skip a no-op JSONL replay), so the `.notLoaded` check
+    /// below would miss it. `currentKind` is read here — before
+    /// `installChildForCurrentSelection` swaps the child — so it still holds
+    /// the OUTGOING kind. Resuming an existing session from the card hits
+    /// the same branch, which is the consistent "entered a session from
+    /// compose" feel.
+    ///
+    /// The history-session check reads `historyLoadState` via the
+    /// non-creating `existingSession` lookup; an unmaterialized session
     /// (never opened) is treated as a first entry.
     private func shouldAnimateTransition(to selection: MainSelection) -> Bool {
         switch selection {
         case .newSession, .archive:
             return true
         case .session(let sid):
+            if currentKind == .compose { return true }
             let state = sessionManager.existingSession(sid)?.historyLoadState ?? .notLoaded
             return state == .notLoaded
         case .none:

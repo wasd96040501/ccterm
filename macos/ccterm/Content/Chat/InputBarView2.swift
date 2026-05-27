@@ -489,7 +489,11 @@ struct InputBarView2: View {
         case 125:  // Down
             completion.moveSelectionDown()
             return true
-        case 48:  // Tab
+        case 48, 36:  // Tab or Return — both confirm the highlighted item.
+            // The interceptor runs before InputNSTextView's send-key
+            // switch, so swallowing Return here confirms the completion
+            // instead of inserting a newline (the default in commandEnter
+            // mode).
             if let result = completion.confirmSelection() {
                 applyReplacement(result)
             }

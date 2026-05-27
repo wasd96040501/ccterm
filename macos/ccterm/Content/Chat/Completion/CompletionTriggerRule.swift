@@ -69,8 +69,8 @@ struct SlashCommandTriggerRule: CompletionTriggerRule {
             text[text.startIndex] == "/"
         else { return nil }
 
-        let makeReplacement: (any CompletionItem, String, Int, Bool) -> (range: NSRange, replacement: String) = {
-            item, _, wordEnd, _ in
+        let makeReplacement: (any CompletionItem, String, Int) -> (range: NSRange, replacement: String) = {
+            item, _, wordEnd in
             (range: NSRange(location: 0, length: wordEnd), replacement: item.displayText + " ")
         }
 
@@ -125,7 +125,7 @@ struct FileMentionTriggerRule: CompletionTriggerRule {
 
         return .init(
             anchorLocation: anchorLoc,
-            headerText: String(localized: "Tab / Enter to confirm · → to drill down"),
+            headerText: String(localized: "Tab / Enter to confirm"),
             provider: { query, cb in
                 if allDirs.count > 1 {
                     FileCompletionStore.shared.complete(query: query, in: allDirs) { matches in
@@ -137,7 +137,7 @@ struct FileMentionTriggerRule: CompletionTriggerRule {
                     }
                 }
             },
-            makeReplacement: { item, _, wordEnd, _ in
+            makeReplacement: { item, _, wordEnd in
                 let length = wordEnd - anchorLoc
                 let path = item.displayText
                 let needsQuote = path.contains(" ")

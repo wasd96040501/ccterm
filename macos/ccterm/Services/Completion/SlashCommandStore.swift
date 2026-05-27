@@ -23,10 +23,9 @@ final class SlashCommandStore {
 
         var displayText: String { "/\(name)" }
         var displayDetail: String? { description }
-        var displayIcon: NSImage? {
-            NSImage(systemSymbolName: "terminal", accessibilityDescription: "Command")?
-                .withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
-        }
+        /// Slash rows render text-only — no leading icon. The selected
+        /// command's description is surfaced in the popup footer instead.
+        var displayIcon: NSImage? { nil }
     }
 
     static let shared = SlashCommandStore()

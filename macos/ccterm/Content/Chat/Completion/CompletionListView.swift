@@ -4,14 +4,34 @@ import SwiftUI
 struct CompletionListView: View {
     @Bindable var viewModel: CompletionViewModel
     var onConfirm: (any CompletionItem) -> Void
-    var onDrillDown: ((any CompletionItem) -> Void)?
     var onDeleteRecent: ((any CompletionItem) -> Void)?
 
     private let rowHeight: CGFloat = 24
     private let verticalInset: CGFloat = 4
     private let maxVisibleItems = 10
+    /// Reserved height for the selected-item description footer. Fixed at
+    /// two lines so navigating between commands of differing description
+    /// length never resizes the popup — the footer height stays put.
+    private let detailLineHeight: CGFloat = 15
 
     var body: some View {
+        // The list keeps its own fixed-height scroll frame; the optional
+        // description footer is a sibling below it. Splitting them this way
+        // means the footer's appear/disappear changes the popup height
+        // without disturbing the scroll geometry.
+        VStack(spacing: 0) {
+            list
+            if let detail = selectedDetail {
+                Divider()
+                detailFooter(detail)
+                    // Popup height changes (footer toggling, text reflow)
+                    // must land instantly — no crossfade, no slide.
+                    .transaction { $0.animation = nil }
+            }
+        }
+    }
+
+    private var list: some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: 0) {
@@ -131,20 +151,9 @@ struct CompletionListView: View {
                 .font(.system(size: 13))
                 .lineLimit(1)
                 .truncationMode(.middle)
-                .padding(.leading, item.displayBadge != nil ? 4 : 6)
+                .padding(.leading, textLeading(for: item))
 
             Spacer(minLength: 8)
-
-            if let detail = item.displayDetail?.trimmingCharacters(in: .whitespacesAndNewlines)
-                .components(separatedBy: .newlines).first, !detail.isEmpty
-            {
-                Text(detail)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .padding(.trailing, 8)
-            }
 
             if let dirItem = item as? DirectoryCompletionItem, dirItem.isRecent {
                 Text("recent")
@@ -173,14 +182,44 @@ struct CompletionListView: View {
             viewModel.selectedIndex = index
             onConfirm(item)
         }
-        .gesture(
-            TapGesture()
-                .modifiers(.control)
-                .onEnded { _ in
-                    viewModel.selectedIndex = index
-                    onDrillDown?(item)
-                }
-        )
+    }
+
+    /// Leading inset for the row's primary text. Icon-bearing rows sit
+    /// after the 16pt glyph; text-only rows (slash commands) take the
+    /// icon's own 13pt leading so the column edge stays aligned.
+    private func textLeading(for item: any CompletionItem) -> CGFloat {
+        if item.displayIcon == nil && item.displayBadge == nil { return 13 }
+        return item.displayBadge != nil ? 4 : 6
+    }
+
+    // MARK: - Detail footer
+
+    /// Cleaned description of the currently-selected item, or nil when the
+    /// item carries none. Only slash commands populate `displayDetail`, so
+    /// this footer is effectively slash-only.
+    private var selectedDetail: String? {
+        let idx = viewModel.selectedIndex
+        guard idx >= 0, idx < viewModel.items.count else { return nil }
+        guard let raw = viewModel.items[idx].displayDetail else { return nil }
+        // Trim, fold every whitespace run (incl. \n \t) into one space.
+        let cleaned = raw.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        return cleaned.isEmpty ? nil : cleaned
+    }
+
+    @ViewBuilder
+    private func detailFooter(_ detail: String) -> some View {
+        Text(detail)
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .lineLimit(2)
+            .truncationMode(.tail)
+            .frame(
+                maxWidth: .infinity,
+                minHeight: detailLineHeight * 2,
+                alignment: .topLeading
+            )
+            .padding(.horizontal, 13)
+            .padding(.vertical, verticalInset)
     }
 
     // MARK: - Layout

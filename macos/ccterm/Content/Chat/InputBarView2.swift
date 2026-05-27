@@ -239,8 +239,7 @@ struct InputBarView2: View {
             if completion.isActive {
                 CompletionListView(
                     viewModel: completion,
-                    onConfirm: { item in confirmCompletion(item: item, keepSession: false) },
-                    onDrillDown: { item in confirmCompletion(item: item, keepSession: true) },
+                    onConfirm: { item in confirmCompletion(item: item) },
                     onDeleteRecent: { item in
                         guard let dirItem = item as? DirectoryCompletionItem else { return }
                         DirectoryCompletionProvider.removeFromRecent(dirItem.path)
@@ -380,7 +379,7 @@ struct InputBarView2: View {
                 // while the popup is open confirms the highlighted
                 // entry rather than sending the half-typed message.
                 if completion.isActive,
-                    let result = completion.confirmSelection(keepSession: false)
+                    let result = completion.confirmSelection()
                 {
                     applyReplacement(result)
                     return
@@ -491,7 +490,7 @@ struct InputBarView2: View {
             completion.moveSelectionDown()
             return true
         case 48:  // Tab
-            if let result = completion.confirmSelection(keepSession: true) {
+            if let result = completion.confirmSelection() {
                 applyReplacement(result)
             }
             return true
@@ -503,11 +502,11 @@ struct InputBarView2: View {
     /// Run a completion replacement: splice `result.replacement` into
     /// the text at `result.range` and move the cursor to the end of the
     /// inserted text via `desiredCursorPosition`.
-    private func confirmCompletion(item: any CompletionItem, keepSession: Bool) {
+    private func confirmCompletion(item: any CompletionItem) {
         guard completion.isActive else { return }
-        // Set selectedIndex by finding the item; CompletionListView taps
-        // already update selectedIndex before invoking the callback.
-        if let result = completion.confirmSelection(keepSession: keepSession) {
+        // CompletionListView taps already update selectedIndex before
+        // invoking the callback, so confirm the highlighted row.
+        if let result = completion.confirmSelection() {
             applyReplacement(result)
         }
     }

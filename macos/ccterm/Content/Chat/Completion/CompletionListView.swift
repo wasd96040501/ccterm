@@ -9,29 +9,17 @@ struct CompletionListView: View {
     private let rowHeight: CGFloat = 24
     private let verticalInset: CGFloat = 4
     private let maxVisibleItems = 10
-    /// Reserved height for the selected-item description footer. Fixed at
-    /// two lines so navigating between commands of differing description
-    /// length never resizes the popup — the footer height stays put.
+    /// One line of description text inside a selected row.
     private let detailLineHeight: CGFloat = 15
+    /// Bottom breathing room under the in-row description.
+    private let detailBottomPadding: CGFloat = 6
+
+    /// Height a selected row gains to host its (up to two-line)
+    /// description. Reserved at exactly two lines so moving between two
+    /// commands that both have a description never resizes the popup.
+    private var detailBlockHeight: CGFloat { detailLineHeight * 2 + detailBottomPadding }
 
     var body: some View {
-        // The list keeps its own fixed-height scroll frame; the optional
-        // description footer is a sibling below it. Splitting them this way
-        // means the footer's appear/disappear changes the popup height
-        // without disturbing the scroll geometry.
-        VStack(spacing: 0) {
-            list
-            if let detail = selectedDetail {
-                Divider()
-                detailFooter(detail)
-                    // Popup height changes (footer toggling, text reflow)
-                    // must land instantly — no crossfade, no slide.
-                    .transaction { $0.animation = nil }
-            }
-        }
-    }
-
-    private var list: some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: 0) {
@@ -70,7 +58,10 @@ struct CompletionListView: View {
                 }
             }
             .frame(height: listHeight)
+            // The popup must resize instantly — no crossfade or slide when
+            // items change or the selected row grows/shrinks its description.
             .animation(nil, value: viewModel.items.count)
+            .animation(nil, value: viewModel.selectedIndex)
             .onChange(of: viewModel.selectedIndex) { _, newIndex in
                 withAnimation(.easeInOut(duration: 0.1)) {
                     proxy.scrollTo(newIndex, anchor: .center)
@@ -126,6 +117,42 @@ struct CompletionListView: View {
     )
         -> some View
     {
+        let isSelected = index == viewModel.selectedIndex
+        // Selected rows expand to show the command description inline,
+        // right under the command name; the highlight covers both lines.
+        VStack(alignment: .leading, spacing: 0) {
+            commandLine(item: item)
+
+            if isSelected, let detail = cleanedDetail(item) {
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: detailLineHeight * 2,
+                        alignment: .topLeading
+                    )
+                    .padding(.leading, textLeading(for: item))
+                    .padding(.trailing, 8)
+                    .padding(.bottom, detailBottomPadding)
+            }
+        }
+        .padding(.top, isFirst ? verticalInset : 0)
+        .padding(.bottom, isLast ? verticalInset : 0)
+        .background(isSelected ? Color.accentColor.opacity(0.2) : Color.clear)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            viewModel.selectedIndex = index
+            onConfirm(item)
+        }
+    }
+
+    /// The command-name line — icon (file/dir only) + optional source
+    /// badge + display text + the recent-dir affordances.
+    @ViewBuilder
+    private func commandLine(item: any CompletionItem) -> some View {
         HStack(spacing: 0) {
             if let icon = item.displayIcon {
                 Image(nsImage: icon)
@@ -174,14 +201,6 @@ struct CompletionListView: View {
             }
         }
         .frame(height: rowHeight)
-        .padding(.top, isFirst ? verticalInset : 0)
-        .padding(.bottom, isLast ? verticalInset : 0)
-        .background(index == viewModel.selectedIndex ? Color.accentColor.opacity(0.2) : Color.clear)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            viewModel.selectedIndex = index
-            onConfirm(item)
-        }
     }
 
     /// Leading inset for the row's primary text. Icon-bearing rows sit
@@ -192,34 +211,23 @@ struct CompletionListView: View {
         return item.displayBadge != nil ? 4 : 6
     }
 
-    // MARK: - Detail footer
+    // MARK: - Description
 
-    /// Cleaned description of the currently-selected item, or nil when the
-    /// item carries none. Only slash commands populate `displayDetail`, so
-    /// this footer is effectively slash-only.
-    private var selectedDetail: String? {
-        let idx = viewModel.selectedIndex
-        guard idx >= 0, idx < viewModel.items.count else { return nil }
-        guard let raw = viewModel.items[idx].displayDetail else { return nil }
+    /// Cleaned description for `item`, or nil when it carries none. Only
+    /// slash commands populate `displayDetail`, so the in-row description
+    /// is effectively slash-only.
+    private func cleanedDetail(_ item: any CompletionItem) -> String? {
+        guard let raw = item.displayDetail else { return nil }
         // Trim, fold every whitespace run (incl. \n \t) into one space.
         let cleaned = raw.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
         return cleaned.isEmpty ? nil : cleaned
     }
 
-    @ViewBuilder
-    private func detailFooter(_ detail: String) -> some View {
-        Text(detail)
-            .font(.system(size: 11))
-            .foregroundStyle(.secondary)
-            .lineLimit(2)
-            .truncationMode(.tail)
-            .frame(
-                maxWidth: .infinity,
-                minHeight: detailLineHeight * 2,
-                alignment: .topLeading
-            )
-            .padding(.horizontal, 13)
-            .padding(.vertical, verticalInset)
+    /// The selected row's description, used to size the popup.
+    private var selectedDetail: String? {
+        let idx = viewModel.selectedIndex
+        guard idx >= 0, idx < viewModel.items.count else { return nil }
+        return cleanedDetail(viewModel.items[idx])
     }
 
     // MARK: - Layout
@@ -233,6 +241,7 @@ struct CompletionListView: View {
     private var listHeight: CGFloat {
         let headerH: CGFloat = viewModel.headerText != nil ? rowHeight : 0
         let contentH = CGFloat(displayCount) * rowHeight
-        return headerH + contentH + 2 * verticalInset
+        let detailH: CGFloat = selectedDetail != nil ? detailBlockHeight : 0
+        return headerH + contentH + detailH + 2 * verticalInset
     }
 }

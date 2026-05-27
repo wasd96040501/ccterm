@@ -110,7 +110,8 @@ final class SidebarView2SnapshotTests: XCTestCase {
         let controller = SidebarViewController(
             model: model,
             sessionManager: manager,
-            groupOrderStore: groupOrderStore)
+            groupOrderStore: groupOrderStore,
+            openInService: OpenInAppService())
 
         let image = ViewSnapshot.renderViewController(
             controller,

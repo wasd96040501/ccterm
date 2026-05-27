@@ -23,7 +23,8 @@ final class MainSplitViewController: NSSplitViewController {
         sidebarViewController = SidebarViewController(
             model: model,
             sessionManager: appState.sessionManager,
-            groupOrderStore: appState.sidebarGroupOrder)
+            groupOrderStore: appState.sidebarGroupOrder,
+            openInService: appState.openInService)
 
         detailRouter = DetailRouterViewController(
             model: model,

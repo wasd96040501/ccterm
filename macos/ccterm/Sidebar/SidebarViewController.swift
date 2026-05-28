@@ -173,17 +173,17 @@ final class SidebarViewController: NSViewController {
         // override the greyed-out "Open in" state we set explicitly.
         menu.autoenablesItems = false
 
-        let openInSubmenu = NSMenu()
-        openInSubmenu.autoenablesItems = false
-        openInItem.submenu = openInSubmenu
-        menu.addItem(openInItem)
-
         let archive = NSMenuItem(
             title: String(localized: "Archive"),
             action: #selector(archiveSelectedRow(_:)),
             keyEquivalent: "")
         archive.target = self
         menu.addItem(archive)
+
+        let openInSubmenu = NSMenu()
+        openInSubmenu.autoenablesItems = false
+        openInItem.submenu = openInSubmenu
+        menu.addItem(openInItem)
         return menu
     }
 

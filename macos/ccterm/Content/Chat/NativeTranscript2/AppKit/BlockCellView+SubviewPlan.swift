@@ -51,6 +51,7 @@ extension BlockCellView {
                 origin: layoutOrigin,
                 hoveredAction: hoveredAction,
                 selection: selection,
+                searchHighlights: searchHighlights,
                 flashingCopyIds: Set(copyFlashByActionId.keys)) ?? .empty
         let animateFrames = pendingFoldTransition
         pendingFoldTransition = false
@@ -756,11 +757,16 @@ final class ToolGroupEntryView: NSView {
         // time. The view supplies it here and the closure paints
         // accordingly. Falls back to a sensible default when not in
         // a window (off-screen draw during view assembly).
+        let isKey = window?.isKeyWindow == true
         let selectionColor: NSColor =
-            (window?.isKeyWindow == true)
+            isKey
             ? .selectedTextBackgroundColor
             : .unemphasizedSelectedTextBackgroundColor
-        spec.draw(ctx, selectionColor, dirtyRect)
+        spec.draw(
+            ctx, selectionColor,
+            BlockCellView.searchActiveFillColor(isKey: isKey),
+            BlockCellView.searchInactiveFillColor(isKey: isKey),
+            dirtyRect)
     }
 }
 

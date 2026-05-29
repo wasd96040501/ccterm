@@ -822,6 +822,10 @@ struct ToolGroupLayout: @unchecked Sendable {
         hovered: Bool,
         selectionRects: [CGRect],
         selectionColor: NSColor,
+        searchActiveRects: [CGRect],
+        searchInactiveRects: [CGRect],
+        searchActiveColor: NSColor,
+        searchInactiveColor: NSColor,
         hoveredCopyId: UUID?,
         flashingCopyIds: Set<UUID>,
         in ctx: CGContext,
@@ -841,6 +845,21 @@ struct ToolGroupLayout: @unchecked Sendable {
         if !filtered.isEmpty {
             ctx.setFillColor(selectionColor.cgColor)
             for r in filtered {
+                ctx.fill(r.offsetBy(dx: dx, dy: dy).integral)
+            }
+        }
+
+        // 2.5 Search highlights — over the selection band, under glyphs
+        // (same order as `BlockCellView.draw`). Inactive first so the
+        // active (cursor) hit's brighter tint wins where they overlap.
+        for (rects, color) in [
+            (searchInactiveRects, searchInactiveColor),
+            (searchActiveRects, searchActiveColor),
+        ] {
+            let hits = rects.filter { bandRect.intersects($0) }
+            guard !hits.isEmpty else { continue }
+            ctx.setFillColor(color.cgColor)
+            for r in hits {
                 ctx.fill(r.offsetBy(dx: dx, dy: dy).integral)
             }
         }
@@ -899,6 +918,7 @@ struct ToolGroupLayout: @unchecked Sendable {
         origin: CGPoint,
         hoveredAction: HitAction?,
         selection: SelectionRange?,
+        searchHighlights: [SearchHighlightSpec]? = nil,
         flashingCopyIds: Set<UUID> = []
     ) -> SubviewPlan {
         let hoveredId = Self.hoveredFoldId(in: hoveredAction)
@@ -942,6 +962,28 @@ struct ToolGroupLayout: @unchecked Sendable {
             return adapter.rects(selection.start, selection.end)
         }()
 
+        // Search-highlight rects, in the same layout-local coords as
+        // selection and split by `isCurrent` so the active (cursor) hit
+        // can paint a brighter tint than the rest. Routed through the
+        // entry subviews exactly like selection — a highlight painted on
+        // the cell bitmap would be hidden under the body subview.
+        let searchHitRects: (active: [CGRect], inactive: [CGRect]) = {
+            guard let searchHighlights, let adapter = selectionAdapter else {
+                return ([], [])
+            }
+            var active: [CGRect] = []
+            var inactive: [CGRect] = []
+            for hit in searchHighlights {
+                let rs = adapter.rects(hit.range.start, hit.range.end)
+                if hit.isCurrent {
+                    active.append(contentsOf: rs)
+                } else {
+                    inactive.append(contentsOf: rs)
+                }
+            }
+            return (active, inactive)
+        }()
+
         var entries: [SubviewPlan.Entry] = []
         entries.reserveCapacity(items.count)
         for entry in items {
@@ -978,18 +1020,24 @@ struct ToolGroupLayout: @unchecked Sendable {
             let capturedEntry = entry
             let capturedHovered = hoveredId == entry.header.foldId
             let capturedRects = selectionRects
+            let capturedSearchActive = searchHitRects.active
+            let capturedSearchInactive = searchHitRects.inactive
             let capturedHoveredCopyId = hoveredCopyId
             let capturedFlashing = flashingCopyIds
             entries.append(
                 SubviewPlan.Entry(
                     id: entry.childId,
                     frame: frame,
-                    draw: { ctx, selectionColor, dirtyRect in
+                    draw: { ctx, selectionColor, searchActiveColor, searchInactiveColor, dirtyRect in
                         Self.drawEntry(
                             capturedEntry,
                             hovered: capturedHovered,
                             selectionRects: capturedRects,
                             selectionColor: selectionColor,
+                            searchActiveRects: capturedSearchActive,
+                            searchInactiveRects: capturedSearchInactive,
+                            searchActiveColor: searchActiveColor,
+                            searchInactiveColor: searchInactiveColor,
                             hoveredCopyId: capturedHoveredCopyId,
                             flashingCopyIds: capturedFlashing,
                             in: ctx,

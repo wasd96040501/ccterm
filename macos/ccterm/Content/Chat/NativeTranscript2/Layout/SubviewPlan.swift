@@ -150,9 +150,15 @@ struct SubviewPlan: @unchecked Sendable {
         /// entry `bandRect` offset by `layoutOrigin`.
         let frame: CGRect
         /// View paints itself by invoking this closure from its own
-        /// `draw(_:)`. `selectionColor` is supplied at draw time
-        /// because it depends on `window.isKeyWindow`, which is a
-        /// runtime cell-state, not a layout-build property.
+        /// `draw(_:)`. `selectionColor` and the two search-highlight
+        /// colours are supplied at draw time because they depend on
+        /// `window.isKeyWindow`, a runtime cell-state, not a
+        /// layout-build property. Search highlights composite over the
+        /// selection band (same order as `BlockCellView.draw`): they
+        /// MUST flow through this subview for the same reason selection
+        /// does — the body subview is opaque-composited over the cell
+        /// bitmap, so a highlight painted on the cell never reaches the
+        /// screen (see `RowLayout.subviewPlan`'s note).
         ///
         /// `dirtyRect` is the AppKit-supplied draw region intersected
         /// with the view's `visibleRect`, expressed in **view-local**
@@ -170,7 +176,10 @@ struct SubviewPlan: @unchecked Sendable {
         /// The closure captures the layout's immutable data and is safe
         /// to invoke from the view's draw path on the main thread.
         let draw:
-            (_ ctx: CGContext, _ selectionColor: NSColor, _ dirtyRect: CGRect)
-                -> Void
+            (
+                _ ctx: CGContext, _ selectionColor: NSColor,
+                _ searchActiveColor: NSColor, _ searchInactiveColor: NSColor,
+                _ dirtyRect: CGRect
+            ) -> Void
     }
 }

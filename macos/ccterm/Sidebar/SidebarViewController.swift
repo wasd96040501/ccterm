@@ -49,6 +49,14 @@ final class SidebarViewController: NSViewController {
     private let openInItem = NSMenuItem(
         title: String(localized: "Open in"), action: nil, keyEquivalent: "")
 
+    /// "Copy Session File Path" context-menu item. Held as a field so
+    /// `menuNeedsUpdate` can grey it out when the clicked session has no
+    /// JSONL on disk yet (same enable/disable discipline as `openInItem`).
+    private let copyPathItem = NSMenuItem(
+        title: String(localized: "Copy Session File Path"),
+        action: #selector(copySessionFilePath(_:)),
+        keyEquivalent: "")
+
     /// Flat list of the outline's root children. Folder nodes inside
     /// hold their own `children` arrays for the hierarchy. Recomputed
     /// by `rebuildItems`; mutated in-place during drag-and-drop so
@@ -180,6 +188,9 @@ final class SidebarViewController: NSViewController {
         archive.target = self
         menu.addItem(archive)
 
+        copyPathItem.target = self
+        menu.addItem(copyPathItem)
+
         let openInSubmenu = NSMenu()
         openInSubmenu.autoenablesItems = false
         openInItem.submenu = openInSubmenu
@@ -202,6 +213,15 @@ final class SidebarViewController: NSViewController {
             isDir.boolValue
         else { return nil }
         return candidate
+    }
+
+    /// On-disk path of the session's history JSONL, resolved through the
+    /// same `HistoryLoader.locate` the runtime uses (ccterm export →
+    /// CLI live file → project-dir scan). Returns nil when no JSONL
+    /// exists yet — the caller greys out "Copy Session File Path".
+    private func jsonlPath(forSessionId sessionId: String) -> String? {
+        let slug = sessionManager.records.first { $0.sessionId == sessionId }?.slug
+        return HistoryLoader.locate(sessionId: sessionId, slug: slug)?.path
     }
 
     /// Rebuild the "Open in" submenu for the clicked session. Enabled
@@ -454,6 +474,18 @@ final class SidebarViewController: NSViewController {
         }
         sessionManager.archive(sessionId)
     }
+
+    @objc private func copySessionFilePath(_ sender: Any?) {
+        let row = outlineView.clickedRow >= 0 ? outlineView.clickedRow : outlineView.selectedRow
+        guard row >= 0, let node = outlineView.item(atRow: row) as? SidebarItemNode else {
+            return
+        }
+        guard case .history(let sessionId, _) = node.kind else { return }
+        guard let path = jsonlPath(forSessionId: sessionId) else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(path, forType: .string)
+    }
 }
 
 // MARK: - DataSource
@@ -700,6 +732,7 @@ extension SidebarViewController: NSMenuDelegate {
         let allowed = historySessionId != nil
         for item in menu.items { item.isHidden = !allowed }
         if let historySessionId {
+            copyPathItem.isEnabled = jsonlPath(forSessionId: historySessionId) != nil
             rebuildOpenInSubmenu(forSessionId: historySessionId)
         }
     }

@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Icon · 第二元素三思路</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400;1,500&family=JetBrains+Mono:wght@400;500&family=Spectral:ital,wght@0,300;0,400;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #F2EDE2; --paper: #FAF6EC;
+    --ink: #1A1814; --ink-2: #4A463E; --ink-3: #7E7869; --ink-4: #BFB8A8;
+    --coral: #C44A1F; --coral-soft: rgba(196, 74, 31, 0.10);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: var(--bg); color: var(--ink);
+    font-family: 'Spectral', Georgia, serif;
+    font-weight: 300; line-height: 1.55; min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    background-image:
+      radial-gradient(circle at 20% 80%, rgba(196,74,31,0.025) 0%, transparent 50%),
+      radial-gradient(circle at 80% 20%, rgba(196,74,31,0.02) 0%, transparent 40%);
+  }
+  .page { max-width: 1320px; margin: 0 auto; padding: 56px 48px 64px; }
+  header {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    border-bottom: 1px solid var(--ink); padding-bottom: 20px; margin-bottom: 40px;
+  }
+  .title-zh {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 40px; font-weight: 500; letter-spacing: -0.005em; line-height: 1;
+  }
+  .title-en {
+    font-family: 'Cormorant Garamond', serif;
+    font-style: italic; font-weight: 400; font-size: 18px;
+    color: var(--ink-3); margin-top: 8px;
+  }
+  .meta {
+    text-align: right; font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--ink-3);
+    text-transform: uppercase; letter-spacing: 0.14em; line-height: 1.8;
+  }
+  .meta .formula {
+    font-family: 'Cormorant Garamond', serif;
+    font-style: italic; font-size: 16px; text-transform: none; letter-spacing: 0;
+    color: var(--coral); margin-top: 4px;
+  }
+
+  .compare-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 32px; margin-bottom: 56px;
+  }
+  @media (max-width: 1000px) {
+    .compare-grid { grid-template-columns: 1fr; }
+    .page { padding: 32px 20px 48px; }
+    .title-zh { font-size: 30px; }
+    header { flex-direction: column; align-items: flex-start; gap: 16px; }
+    .meta { text-align: left; }
+  }
+
+  .compare-cell { display: flex; flex-direction: column; gap: 16px; }
+
+  .diagram-frame {
+    background: var(--paper); padding: 24px;
+    border: 1px solid var(--ink); position: relative; aspect-ratio: 1;
+  }
+  .diagram-frame::before, .diagram-frame::after,
+  .diagram-frame > .corner-tl, .diagram-frame > .corner-tr {
+    content: ''; position: absolute; width: 7px; height: 7px; background: var(--coral);
+  }
+  .diagram-frame::before { top: -4px; left: -4px; }
+  .diagram-frame::after { bottom: -4px; right: -4px; }
+  .diagram-frame .corner-tl { top: -4px; right: -4px; }
+  .diagram-frame .corner-tr { bottom: -4px; left: -4px; }
+
+  svg.diagram { width: 100%; height: 100%; display: block; overflow: visible; }
+
+  /* 弱化骨架 */
+  .canvas-square { fill: none; stroke: var(--ink-4); stroke-width: 0.8; opacity: 0.7; }
+  .squircle { fill: none; stroke: var(--ink-4); stroke-width: 0.7; stroke-dasharray: 4 4; opacity: 0.45; }
+  .axis { stroke: var(--ink-3); stroke-width: 0.7; stroke-dasharray: 5 4; fill: none; opacity: 0.4; }
+  .spiral { stroke: var(--coral); stroke-width: 0.8; stroke-dasharray: 3 3; fill: none; opacity: 0.28; }
+  /* 反向（异手性）副螺线 */
+  .spiral-counter { stroke: var(--coral); stroke-width: 1.0; stroke-dasharray: 5 3; fill: none; opacity: 0.5; }
+
+  .star { fill: var(--coral); }
+  .pole-ring { fill: none; stroke: var(--paper); stroke-width: 1.0; opacity: 0.9; }
+  .pole-dot { fill: var(--paper); }
+
+  /* 第二元素通用高亮 */
+  .accent { fill: var(--coral); }
+  .accent-halo { fill: var(--coral); opacity: 0.11; }
+  .accent-ring { fill: none; stroke: var(--coral); stroke-width: 1.0; opacity: 0.85; }
+  .accent-dot  { fill: var(--paper); }
+  .accent-dot-solid { fill: var(--coral); }
+  /* 固定十字的参考轴（极淡） */
+  .cross-guide { stroke: var(--coral); stroke-width: 0.6; stroke-dasharray: 2 2.5; opacity: 0.55; }
+
+  .cell-label { display: flex; flex-direction: column; gap: 6px; padding: 8px 4px 0; }
+  .cell-label .name {
+    font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 500;
+    color: var(--ink); letter-spacing: -0.005em;
+  }
+  .cell-label .ratio {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.06em;
+    color: var(--coral); font-weight: 500;
+  }
+  .cell-label .symmetry {
+    font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--ink-3);
+    padding: 2px 6px; border: 1px solid var(--ink-4); border-radius: 2px;
+    align-self: flex-start; margin-top: 4px;
+  }
+  .cell-label .tagline {
+    font-family: 'Spectral', Georgia, serif; font-style: italic; font-weight: 300;
+    font-size: 13.5px; line-height: 1.5; color: var(--ink-2); margin-top: 6px;
+  }
+
+  .compare-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; }
+  @media (max-width: 1000px) { .compare-panel { grid-template-columns: 1fr; gap: 32px; } }
+  .panel-section { margin-bottom: 32px; }
+
+  .section-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.16em;
+    color: var(--ink-3); margin-bottom: 14px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--ink-4);
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .section-label .num {
+    font-style: italic; text-transform: none;
+    font-family: 'Cormorant Garamond', serif; font-size: 14px; color: var(--ink-4);
+  }
+
+  .note-text {
+    font-family: 'Spectral', Georgia, serif; font-weight: 300;
+    font-size: 14.5px; line-height: 1.7; color: var(--ink-2); margin-bottom: 12px;
+  }
+  .note-text em {
+    color: var(--ink); font-weight: 400; font-style: italic;
+    font-family: 'Cormorant Garamond', serif;
+  }
+  .note-text code {
+    font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--coral);
+    background: var(--coral-soft); padding: 1px 5px; border-radius: 2px;
+  }
+
+  table.compare-table {
+    width: 100%; border-collapse: collapse;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  }
+  table.compare-table th {
+    font-family: 'JetBrains Mono', monospace; font-size: 9px;
+    text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-3);
+    text-align: right; padding: 8px 6px; border-bottom: 1px solid var(--ink); font-weight: 500;
+  }
+  table.compare-table th:first-child { text-align: left; }
+  table.compare-table td {
+    text-align: right; padding: 8px 6px; color: var(--coral); font-weight: 500;
+    border-bottom: 1px dotted var(--ink-4);
+  }
+  table.compare-table td:first-child {
+    text-align: left; color: var(--ink-3); font-size: 9.5px;
+    text-transform: uppercase; letter-spacing: 0.06em; font-weight: 400;
+  }
+  table.compare-table tr:last-child td { border-bottom: none; }
+
+  footer {
+    margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--ink-4);
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 14px;
+    color: var(--ink-3); gap: 24px;
+  }
+  footer .right {
+    font-family: 'JetBrains Mono', monospace; font-style: normal; font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.12em; color: var(--coral);
+  }
+  @media (max-width: 600px) { footer { flex-direction: column; gap: 8px; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div>
+      <div class="title-zh">第二元素 · 三思路</div>
+      <div class="title-en">Where the second point goes — and what fixes its cross</div>
+    </div>
+    <div class="meta">
+      Iteration 05 · second element
+      <div class="formula">反向螺线 · 外框火花 · 角隅光</div>
+    </div>
+  </header>
+
+  <div class="compare-grid">
+
+    <!-- ============================================================ -->
+    <!-- A · 反向螺线（用户思路）                                       -->
+    <!-- ============================================================ -->
+    <div class="compare-cell">
+      <div class="diagram-frame">
+        <div class="corner-tl"></div>
+        <div class="corner-tr"></div>
+        <svg class="diagram" viewBox="-10 -10 420 420" xmlns="http://www.w3.org/2000/svg">
+          <rect class="canvas-square" x="0" y="0" width="400" height="400"/>
+          <rect class="squircle" x="0" y="0" width="400" height="400" rx="90"/>
+
+          <!-- 主螺线 + 主轴（弱） -->
+          <line class="axis" x1="0" y1="323.607" x2="400" y2="76.393"/>
+          <line class="axis" x1="0" y1="76.393" x2="200" y2="400"/>
+          <path class="spiral" d="
+            M 400,323.607
+            A 247.214,247.214 0 0 0 152.786,76.393
+            A 152.786,152.786 0 0 0 0,229.180
+            A 94.427,94.427 0 0 0 94.428,323.607
+            A 58.359,58.359 0 0 0 152.786,265.247
+            A 36.068,36.068 0 0 0 116.718,229.180
+            A 22.291,22.291 0 0 0 94.428,251.470
+            A 13.777,13.777 0 0 0 108.205,265.247
+          "/>
+
+          <!-- 反向副螺线：主螺线沿 y=x 反射 + 缩放 1/φ²，收于 A=(0.638,0.276) -->
+          <path class="spiral-counter"
+            transform="translate(255.279 110.557) scale(0.382) translate(-255.279 -110.557) matrix(0 1 1 0 0 0)"
+            d="
+            M 400,323.607
+            A 247.214,247.214 0 0 0 152.786,76.393
+            A 152.786,152.786 0 0 0 0,229.180
+            A 94.427,94.427 0 0 0 94.428,323.607
+            A 58.359,58.359 0 0 0 152.786,265.247
+            A 36.068,36.068 0 0 0 116.718,229.180
+            A 22.291,22.291 0 0 0 94.428,251.470
+            A 13.777,13.777 0 0 0 108.205,265.247
+          "/>
+
+          <!-- 主星（变体 B） -->
+          <path class="star" d="
+            M 167.354,220.173
+            Q 150.494,230.594 142.870,262.910
+            Q 135.242,295.216 167.365,347.187
+            Q 135.242,295.216 102.929,287.589
+            Q  70.620,279.964  53.760,290.385
+            Q  70.620,279.964  78.245,247.646
+            Q  85.872,215.342  53.749,163.371
+            Q  85.872,215.342 118.188,222.969
+            Q 150.494,230.594 167.354,220.173 Z"/>
+          <circle class="pole-ring" cx="110.557" cy="255.279" r="2.6"/>
+          <circle class="pole-dot"  cx="110.557" cy="255.279" r="1.3"/>
+
+          <!-- 副螺线“固定”的反射十字（短参考轴） -->
+          <line class="cross-guide" x1="244.8" y1="127.6" x2="265.8" y2="93.5"/>
+          <line class="cross-guide" x1="238.3" y1="100.0" x2="272.3" y2="121.1"/>
+
+          <!-- 反向副星 = 主星沿 y=x 反射 + 缩放 1/φ²，落在 A -->
+          <circle class="accent-halo" cx="255.279" cy="110.557" r="20"/>
+          <path class="accent"
+            transform="translate(255.279 110.557) scale(0.382) translate(-255.279 -110.557) matrix(0 1 1 0 0 0)"
+            d="
+            M 167.354,220.173
+            Q 150.494,230.594 142.870,262.910
+            Q 135.242,295.216 167.365,347.187
+            Q 135.242,295.216 102.929,287.589
+            Q  70.620,279.964  53.760,290.385
+            Q  70.620,279.964  78.245,247.646
+            Q  85.872,215.342  53.749,163.371
+            Q  85.872,215.342 118.188,222.969
+            Q 150.494,230.594 167.354,220.173 Z"/>
+          <circle class="accent-ring" cx="255.279" cy="110.557" r="2.6"/>
+          <circle class="accent-dot"  cx="255.279" cy="110.557" r="1.2"/>
+        </svg>
+      </div>
+      <div class="cell-label">
+        <span class="name">反向螺线 · A</span>
+        <span class="ratio">A = (0.638, 0.276) · y=x 镜像</span>
+        <span class="symmetry">counter-rotating · 异手性</span>
+        <span class="tagline">主螺线向内收于 P，副螺线 <em>反向</em> 收于 A（P 沿对角线 y=x 的镜像）。
+        十字由副螺线 <em>自身的反射黄金轴</em>（−φ, +1/φ）固定，天然 ≠ 主星。双螺旋 = 对话 / 阴阳。</span>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- B · 外框火花（我的思路）                                       -->
+    <!-- ============================================================ -->
+    <div class="compare-cell">
+      <div class="diagram-frame">
+        <div class="corner-tl"></div>
+        <div class="corner-tr"></div>
+        <svg class="diagram" viewBox="-10 -10 420 420" xmlns="http://www.w3.org/2000/svg">
+          <rect class="canvas-square" x="0" y="0" width="400" height="400"/>
+          <rect class="squircle" x="0" y="0" width="400" height="400" rx="90"/>
+
+          <line class="axis" x1="0" y1="76.393" x2="200" y2="400"/>
+          <!-- 轴 1 略强：主星短臂方向，把火花甩向右上角 -->
+          <line class="axis" x1="0" y1="323.607" x2="400" y2="76.393" style="opacity:.55;stroke:var(--coral);stroke-dasharray:6 4;"/>
+          <path class="spiral" d="
+            M 400,323.607
+            A 247.214,247.214 0 0 0 152.786,76.393
+            A 152.786,152.786 0 0 0 0,229.180
+            A 94.427,94.427 0 0 0 94.428,323.607
+            A 58.359,58.359 0 0 0 152.786,265.247
+            A 36.068,36.068 0 0 0 116.718,229.180
+            A 22.291,22.291 0 0 0 94.428,251.470
+            A 13.777,13.777 0 0 0 108.205,265.247
+          "/>
+
+          <path class="star" d="
+            M 167.354,220.173
+            Q 150.494,230.594 142.870,262.910
+            Q 135.242,295.216 167.365,347.187
+            Q 135.242,295.216 102.929,287.589
+            Q  70.620,279.964  53.760,290.385
+            Q  70.620,279.964  78.245,247.646
+            Q  85.872,215.342  53.749,163.371
+            Q  85.872,215.342 118.188,222.969
+            Q 150.494,230.594 167.354,220.173 Z"/>
+          <circle class="pole-ring" cx="110.557" cy="255.279" r="2.6"/>
+          <circle class="pole-dot"  cx="110.557" cy="255.279" r="1.3"/>
+
+          <!-- 立正参考十字（对齐外框 H/V） -->
+          <line class="cross-guide" x1="300" y1="123.6" x2="347" y2="123.6"/>
+          <line class="cross-guide" x1="323.6" y1="83" x2="323.6" y2="164"/>
+
+          <!-- 立正小 sparkle（上下长 φ : 左右短 1），A=(0.809,0.309) -->
+          <circle class="accent-halo" cx="323.6" cy="123.6" r="19"/>
+          <path class="accent" d="
+            M 323.6,82.4
+            Q 323.6,103.8 333.5,113.7
+            Q 343.4,123.6 349.1,123.6
+            Q 343.4,123.6 333.5,133.5
+            Q 323.6,143.4 323.6,164.8
+            Q 323.6,143.4 313.7,133.5
+            Q 303.8,123.6 298.1,123.6
+            Q 303.8,123.6 313.7,113.7
+            Q 323.6,103.8 323.6,82.4 Z"/>
+          <circle class="accent-ring" cx="323.6" cy="123.6" r="2.4"/>
+          <circle class="accent-dot"  cx="323.6" cy="123.6" r="1.1"/>
+        </svg>
+      </div>
+      <div class="cell-label">
+        <span class="name">外框火花 · B</span>
+        <span class="ratio">A = (0.809, 0.309) · 轴 1 · φ/2, 1/2φ</span>
+        <span class="symmetry">upright + · ⟂ 外框</span>
+        <span class="tagline">小 sparkle 沿轴 1 被主星短臂 <em>甩到右上角</em>，十字 <em>立正</em>，对齐 squircle 的直边（H/V）。
+        与主星差一个黄金角 31.7°。spark / "AI 微光" 的惯用位。</span>
+      </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- C · 角隅光（我的思路）                                         -->
+    <!-- ============================================================ -->
+    <div class="compare-cell">
+      <div class="diagram-frame">
+        <div class="corner-tl"></div>
+        <div class="corner-tr"></div>
+        <svg class="diagram" viewBox="-10 -10 420 420" xmlns="http://www.w3.org/2000/svg">
+          <rect class="canvas-square" x="0" y="0" width="400" height="400"/>
+          <rect class="squircle" x="0" y="0" width="400" height="400" rx="90"/>
+
+          <line class="axis" x1="0" y1="323.607" x2="400" y2="76.393"/>
+          <line class="axis" x1="0" y1="76.393" x2="200" y2="400"/>
+          <path class="spiral" d="
+            M 400,323.607
+            A 247.214,247.214 0 0 0 152.786,76.393
+            A 152.786,152.786 0 0 0 0,229.180
+            A 94.427,94.427 0 0 0 94.428,323.607
+            A 58.359,58.359 0 0 0 152.786,265.247
+            A 36.068,36.068 0 0 0 116.718,229.180
+            A 22.291,22.291 0 0 0 94.428,251.470
+            A 13.777,13.777 0 0 0 108.205,265.247
+          "/>
+
+          <path class="star" d="
+            M 167.354,220.173
+            Q 150.494,230.594 142.870,262.910
+            Q 135.242,295.216 167.365,347.187
+            Q 135.242,295.216 102.929,287.589
+            Q  70.620,279.964  53.760,290.385
+            Q  70.620,279.964  78.245,247.646
+            Q  85.872,215.342  53.749,163.371
+            Q  85.872,215.342 118.188,222.969
+            Q 150.494,230.594 167.354,220.173 Z"/>
+          <circle class="pole-ring" cx="110.557" cy="255.279" r="2.6"/>
+          <circle class="pole-dot"  cx="110.557" cy="255.279" r="1.3"/>
+
+          <!-- 圆角 45° 角分线（朝 squircle 角的对角线） -->
+          <line class="cross-guide" x1="300" y1="100" x2="370" y2="30"/>
+
+          <!-- 角隅光：小 sparkle 旋转 45°、长臂沿角分线，嵌在右上圆角内 -->
+          <circle class="accent-halo" cx="335" cy="65" r="16"/>
+          <path class="accent"
+            transform="translate(335 65) rotate(45) scale(0.55)"
+            d="
+            M 0,-41.2
+            Q 0,-19.8 9.9,-9.9
+            Q 19.8,0 25.5,0
+            Q 19.8,0 9.9,9.9
+            Q 0,19.8 0,41.2
+            Q 0,19.8 -9.9,9.9
+            Q -19.8,0 -25.5,0
+            Q -19.8,0 -9.9,-9.9
+            Q 0,-19.8 0,-41.2 Z"/>
+          <circle class="accent-ring" cx="335" cy="65" r="2.2"/>
+          <circle class="accent-dot"  cx="335" cy="65" r="1.0"/>
+        </svg>
+      </div>
+      <div class="cell-label">
+        <span class="name">角隅光 · C</span>
+        <span class="ratio">A ≈ (0.84, 0.16) · 圆角内</span>
+        <span class="symmetry">45° glint · 角分线</span>
+        <span class="tagline">极小 sparkle 嵌在右上 <em>圆角</em> 里，十字沿 squircle 角的 <em>45° 角分线</em>（朝角里 / 角外）。
+        像光打在圆角上的一点反光，十字由 <em>圆角几何</em> 固定。最克制、最"点睛"。</span>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="compare-panel">
+    <div>
+      <div class="panel-section">
+        <div class="section-label">十字由谁固定 · 对比 <span class="num">i</span></div>
+        <table class="compare-table">
+          <thead>
+            <tr><th>思路</th><th>第二点</th><th>十字锚定</th><th>手性</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>A 反向螺线</td><td>0.638, 0.276</td><td>副螺线反射轴</td><td>反手</td></tr>
+            <tr><td>B 外框火花</td><td>0.809, 0.309</td><td>外框 H / V</td><td>同手</td></tr>
+            <tr><td>C 角隅光</td><td>≈0.84, 0.16</td><td>圆角 45°</td><td>同手</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel-section">
+        <div class="section-label">A · 反向螺线 为什么成立 <span class="num">ii</span></div>
+        <p class="note-text">
+          一条螺线 <em>自带</em> 一套正交轴（whirling-square 对角线 = 骨架的轴 1/轴 2）。
+          所以给第二点配一条螺线，它的十字就被 <em>自己的轴钉死</em>，不用手选。
+        </p>
+        <p class="note-text">
+          关键是 <em>反向 = 反射</em>（不是 180° 旋转——旋转不翻手性、十字也不变，那仍是克隆）。
+          沿对角线 <code>y=x</code> 反射：<code>P → A=(0.638,0.276)</code>，
+          手性翻转，轴斜率 <code>−1/φ,+φ → −φ,+1/φ</code>——
+          <em>十字自动转向且被几何固定</em>，正好回应你前面"十字不能和主星一样"。
+        </p>
+        <p class="note-text">
+          双螺旋（主向内收、副反向收）天生是 <em>对话 / 交换</em> 的隐喻——
+          很贴 agent。代价：两条螺线在小尺寸下偏密；可只留 A 处的反向 <em>副星</em>，把副螺线当推导、不进图标。
+        </p>
+      </div>
+    </div>
+
+    <div>
+      <div class="panel-section">
+        <div class="section-label">B · C 与取舍 <span class="num">iii</span></div>
+        <p class="note-text">
+          <em>B 外框火花</em>：十字交给 <em>外框</em>（squircle 直边）固定 → 立正 +。
+          位置离心（轴 1 上、右上角），<em>非对称平衡</em>最活；小尺寸下最清晰。
+          缺点：和底层"黄金引擎"的血缘最弱（只靠"在轴 1 上"挂钩）。
+        </p>
+        <p class="note-text">
+          <em>C 角隅光</em>：十字交给 <em>圆角的 45° 角分线</em> 固定。
+          最克制、最像"反光点睛"；但它几乎脱离了螺线/黄金体系，
+          更接近纯装饰，且嵌在圆角里、极小尺寸易被裁切。
+        </p>
+      </div>
+      <div class="panel-section">
+        <div class="section-label">我的建议 <span class="num">iv</span></div>
+        <p class="note-text">
+          作 CC 图标，<em>A（反向螺线）</em> 概念最强：第二个十字 <em>不是我选的、是几何逼出来的</em>，
+          且双螺旋的"对话"语义对 agent 工具最贴。<em>建议落地版</em>：保留 A 处的反向小副星（十字由反射轴固定），
+          副螺线只在推导稿里画、成品里淡化或去掉，避免双线打架。
+        </p>
+        <p class="note-text">
+          若优先 <em>极小尺寸的辨识度</em> 和 <em>构图动势</em>，退一步用 <em>B</em>；
+          <em>C</em> 留作"再轻一档"的备选。三者位置都在右上、十字都有几何依据，可叠着调。
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <span>三种"第二元素"：反向螺线（轴自定）/ 外框火花（H·V）/ 角隅光（45°）。都在右上，区别在——十字由谁来钉。</span>
+    <span class="right">iteration 05 · second element</span>
+  </footer>
+</div>
+</body>
+</html>

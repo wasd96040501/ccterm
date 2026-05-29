@@ -46,15 +46,24 @@ enum Message2Fixtures {
     /// turn-prologue blob. Emitted once at attach-time and again at
     /// the start of every CLI-spawned follow-up turn (see
     /// `AgentSDKMessageDumpSmokeTests`).
-    static func systemInit(sessionId: String = "s", permissionMode: String = "default") -> Message2 {
-        resolve([
+    static func systemInit(
+        sessionId: String = "s",
+        permissionMode: String = "default",
+        slashCommands: [String]? = nil
+    ) -> Message2 {
+        var dict: [String: Any] = [
             "type": "system",
             "subtype": "init",
             "uuid": UUID().uuidString,
             "session_id": sessionId,
             "cwd": "/tmp",
             "permissionMode": permissionMode,
-        ])
+        ]
+        // The CLI's `system.init` carries command names only (no
+        // descriptions) — mirror that wire shape so the merge-on-adopt
+        // path is exercised faithfully.
+        if let slashCommands { dict["slash_commands"] = slashCommands }
+        return resolve(dict)
     }
 
     /// A `Message2.system(.status)` — CLI's broadcast for session-side

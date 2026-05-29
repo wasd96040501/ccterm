@@ -452,7 +452,12 @@ extension SessionRuntime {
         if let c = info.cwd { cwd = c }
         adoptPermissionMode(info.permissionMode)
         if let cmds = info.slashCommands {
-            slashCommands = cmds.map { SlashCommand(name: $0, description: nil) }
+            // `system.init` carries command names only — merge in the
+            // descriptions cached from the bootstrap `initialize` response
+            // so the completion popup's footer keeps them across turns.
+            slashCommands = cmds.map {
+                SlashCommand(name: $0, description: slashCommandDescriptions[$0])
+            }
         }
         if mode == .live {
             appLog(

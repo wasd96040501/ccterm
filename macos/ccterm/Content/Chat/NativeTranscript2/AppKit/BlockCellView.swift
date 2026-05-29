@@ -127,6 +127,13 @@ final class BlockCellView: NSView {
         didSet {
             if searchHighlights != oldValue {
                 needsDisplay = true
+                // Route the specs into the subview plan too: a
+                // `toolGroup` row paints its expanded body in a
+                // layer-backed subview that composites over the cell
+                // bitmap, so a highlight drawn at the cell level never
+                // reaches the screen for tool bodies. Selection syncs
+                // here for the same reason — search has to as well.
+                syncSubviewPlan()
             }
         }
     }

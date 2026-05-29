@@ -350,6 +350,7 @@ enum RowLayout: @unchecked Sendable {
         origin: CGPoint,
         hoveredAction: HitAction?,
         selection: SelectionRange?,
+        searchHighlights: [SearchHighlightSpec]? = nil,
         flashingCopyIds: Set<UUID> = []
     ) -> SubviewPlan {
         switch self {
@@ -358,6 +359,7 @@ enum RowLayout: @unchecked Sendable {
                 origin: origin,
                 hoveredAction: hoveredAction,
                 selection: selection,
+                searchHighlights: searchHighlights,
                 flashingCopyIds: flashingCopyIds)
         case .loadingPill(let l):
             // The indicator hosts a single `NSImageView` running an

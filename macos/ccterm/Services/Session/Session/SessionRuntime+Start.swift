@@ -630,6 +630,18 @@ extension SessionRuntime {
             availableModels = models
         }
 
+        // The bootstrap `initialize` response is the only source that
+        // carries command descriptions; the recurring `system.init` stream
+        // message has names only. Cache the descriptions so `adopt(_:)` can
+        // merge them back in, and seed `slashCommands` now so the popup has
+        // descriptions even before the first `system.init` lands.
+        if let cmds = initResp?.commands {
+            slashCommandDescriptions = Dictionary(
+                cmds.compactMap { cmd in cmd.description.map { (cmd.name, $0) } },
+                uniquingKeysWith: { first, _ in first })
+            slashCommands = cmds.map { SlashCommand(name: $0.name, description: $0.description) }
+        }
+
         status = .idle
         if wasFresh {
             repository.updateStatus(sessionId, to: .created)

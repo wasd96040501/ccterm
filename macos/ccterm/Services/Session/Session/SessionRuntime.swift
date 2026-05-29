@@ -252,6 +252,15 @@ final class SessionRuntime {
     @ObservationIgnored internal var contextUsagePendingCallbacks: [(ContextUsageOutcome) -> Void] = []
     internal(set) var slashCommands: [SlashCommand] = []
 
+    /// Command descriptions keyed by name, sourced from the desc-rich
+    /// `initialize(promptSuggestions:)` bootstrap response. The recurring
+    /// `system.init` stream message only carries command *names*
+    /// (`Init.slashCommands` is `[String]`), so `adopt(_:)` merges
+    /// descriptions back in from here — otherwise every turn's `system.init`
+    /// would overwrite `slashCommands` with a desc-less list and the
+    /// completion popup's footer would lose its description.
+    @ObservationIgnored internal var slashCommandDescriptions: [String: String] = [:]
+
     /// Background bash tasks the CLI is tracking for this session. Updated
     /// in receive() from system.task_started / task_updated /
     /// task_notification — these events are otherwise dropped from the

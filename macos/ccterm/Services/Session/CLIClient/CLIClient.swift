@@ -26,6 +26,11 @@ protocol CLIClient: AnyObject {
     // MARK: Callbacks (assigned by Session.attachCallbacks)
 
     var onMessage: ((Message2) -> Void)? { get set }
+    /// Streaming partial (delta) events. Fires only when the underlying
+    /// session was configured with `includePartialMessages = true`. The
+    /// runtime folds these into live assistant text + turn token usage; see
+    /// `StreamingTurnAssembler`.
+    var onStreamEvent: ((Message2StreamEvent) -> Void)? { get set }
     var onPermissionRequest: ((PermissionRequest, @escaping (PermissionDecision) -> Void) -> Void)?
     { get set }
     var onPermissionCancelled: ((String) -> Void)? { get set }

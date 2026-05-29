@@ -146,6 +146,11 @@ struct SessionConfig: Equatable {
             resume: resume ? sessionId : nil,
             effort: effort,
             addDirs: additionalDirectories,
+            // Opt into SSE-style partial messages so the renderer can stream
+            // assistant text live and track turn token usage as it accrues.
+            // Deltas arrive on `Session.onStreamEvent` (wired in
+            // `SessionRuntime.attachCallbacks`), never on `onMessage`.
+            includePartialMessages: true,
             plugins: pluginDirectories,
             customCommand: customCommand,
             allowDangerouslySkipPermissions: true

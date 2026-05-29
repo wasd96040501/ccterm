@@ -27,6 +27,31 @@ enum Message2Fixtures {
         ])
     }
 
+    /// One assistant text message carrying a `usage` block — for turn-token
+    /// reconciliation tests. `inputTokens` is the fresh (non-cache) input.
+    static func assistantWithUsage(
+        messageId: String,
+        text: String,
+        inputTokens: Int,
+        outputTokens: Int
+    ) -> Message2 {
+        resolve([
+            "type": "assistant",
+            "uuid": UUID().uuidString,
+            "session_id": "s",
+            "message": [
+                "id": messageId,
+                "type": "message",
+                "role": "assistant",
+                "content": [["type": "text", "text": text]],
+                "usage": [
+                    "input_tokens": inputTokens,
+                    "output_tokens": outputTokens,
+                ],
+            ],
+        ])
+    }
+
     /// One user message containing a plain text content array. `uuid` is
     /// settable so tests can pretend the CLI is echoing back a specific
     /// `SingleEntry.id`.
@@ -223,6 +248,74 @@ enum Message2Fixtures {
                 ],
             ],
         ])
+    }
+
+    // MARK: - Stream events (partial messages)
+
+    /// `message_start` SSE sub-event. `inputTokens` / `outputTokens` seed the
+    /// initial usage block the CLI sends up front.
+    static func streamMessageStart(
+        messageId: String,
+        inputTokens: Int? = nil,
+        outputTokens: Int? = nil
+    ) -> Message2StreamEvent {
+        var usage: [String: Any] = [:]
+        if let inputTokens { usage["input_tokens"] = inputTokens }
+        if let outputTokens { usage["output_tokens"] = outputTokens }
+        var message: [String: Any] = ["id": messageId, "role": "assistant", "type": "message"]
+        if !usage.isEmpty { message["usage"] = usage }
+        return streamEvent(["type": "message_start", "message": message])
+    }
+
+    /// `content_block_delta` carrying a `text_delta`.
+    static func streamTextDelta(index: Int, text: String) -> Message2StreamEvent {
+        streamEvent([
+            "type": "content_block_delta",
+            "index": index,
+            "delta": ["type": "text_delta", "text": text],
+        ])
+    }
+
+    /// `content_block_delta` carrying a `thinking_delta` (ignored for text by
+    /// the assembler — used to prove it's skipped).
+    static func streamThinkingDelta(index: Int, thinking: String) -> Message2StreamEvent {
+        streamEvent([
+            "type": "content_block_delta",
+            "index": index,
+            "delta": ["type": "thinking_delta", "thinking": thinking],
+        ])
+    }
+
+    /// `content_block_delta` carrying an `input_json_delta` (tool-use args;
+    /// ignored by the assembler).
+    static func streamInputJSONDelta(index: Int, partialJSON: String) -> Message2StreamEvent {
+        streamEvent([
+            "type": "content_block_delta",
+            "index": index,
+            "delta": ["type": "input_json_delta", "partial_json": partialJSON],
+        ])
+    }
+
+    /// `message_delta` carrying a cumulative output-token count.
+    static func streamMessageDelta(outputTokens: Int) -> Message2StreamEvent {
+        streamEvent([
+            "type": "message_delta",
+            "delta": [:],
+            "usage": ["output_tokens": outputTokens],
+        ])
+    }
+
+    private static func streamEvent(_ event: [String: Any]) -> Message2StreamEvent {
+        do {
+            return try Message2StreamEvent(json: [
+                "type": "stream_event",
+                "uuid": UUID().uuidString,
+                "session_id": "s",
+                "event": event,
+            ])
+        } catch {
+            fatalError("Message2Fixtures: stream event parse failed: \(error)\n\(event)")
+        }
     }
 
     // MARK: - Internals

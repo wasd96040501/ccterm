@@ -302,6 +302,13 @@ final class Session {
         runtime?.contextWindowTokens ?? 0
     }
 
+    /// Live token usage for the in-flight turn (fresh input + output, cache
+    /// excluded), shown beside the running pill. `.zero` for `.draft`
+    /// sessions and between turns.
+    var turnUsage: TurnTokenUsage {
+        runtime?.turnUsage ?? .zero
+    }
+
     /// Most recent typed `get_context_usage` breakdown, if one has been
     /// fetched. Always `nil` for `.draft` sessions and for `.active`
     /// sessions before the popover ever opened.

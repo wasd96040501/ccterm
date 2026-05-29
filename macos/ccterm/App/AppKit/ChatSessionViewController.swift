@@ -426,8 +426,9 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
         }
         session.loadHistory()
         session.controller.setLoading(session.isRunning)
+        session.controller.setTurnUsage(session.turnUsage)
 
-        // Re-arm the `isRunning` → `setLoading` sink (cancels the old).
+        // Re-arm the `isRunning` / `turnUsage` → controller sink (cancels the old).
         startRunningObservation(for: session)
 
         // Synchronous path: drop the outgoing transcript last, now that the
@@ -516,12 +517,14 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
                 await withCheckedContinuation { cont in
                     withObservationTracking {
                         _ = session.isRunning
+                        _ = session.turnUsage
                     } onChange: {
                         Task { @MainActor in cont.resume() }
                     }
                 }
                 guard let self, self.currentSession === session else { return }
                 session.controller.setLoading(session.isRunning)
+                session.controller.setTurnUsage(session.turnUsage)
             }
         }
     }

@@ -233,6 +233,32 @@ final class SessionRuntime {
     internal(set) var contextUsedTokens: Int = 0
     internal(set) var contextWindowTokens: Int = 0
 
+    /// Token usage for the in-flight turn — fresh input + output only
+    /// (cache excluded). Reset on each `send`, updated live from the
+    /// partial-message stream (`streamingAssembler`) and reconciled against
+    /// finalized `.assistant` envelopes. Surfaced beside the running pill.
+    internal(set) var turnUsage: TurnTokenUsage = .zero
+
+    /// Per-turn folder for SSE partial-message events (`onStreamEvent`).
+    /// Off the observation path — `turnUsage` and the streaming-text preview
+    /// are its observable / pushed projections. See `SessionRuntime+Streaming`.
+    @ObservationIgnored internal var streamingAssembler = StreamingTurnAssembler()
+
+    /// CLI `message.id` → the timeline entry id of its live streaming-text
+    /// preview. The finalized `.assistant` envelope reuses this entry id so
+    /// the preview converges in place (no duplicate, no flicker). Cleared
+    /// per turn. See `SessionRuntime+Streaming`.
+    @ObservationIgnored internal var streamingPreviewEntryIds: [String: UUID] = [:]
+
+    /// Coalescing guard for the streaming-text flush — collapses a burst of
+    /// `text_delta`s into one re-render per runloop tick.
+    @ObservationIgnored internal var streamingFlushScheduled = false
+
+    /// Last committed streaming text emitted to the renderer, so a usage-only
+    /// flush tick doesn't re-typeset the preview. Reset when the message
+    /// switches or the turn restarts.
+    @ObservationIgnored internal var lastStreamingCommit: String?
+
     /// Most-recent typed `get_context_usage` response from the CLI. `nil`
     /// until the popover has fetched at least once. The popover reads
     /// this directly so the panel can render synchronously on re-open;

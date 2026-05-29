@@ -98,6 +98,9 @@ extension SessionRuntime {
     /// draft-to-runtime promotion path (the runtime receives an already-
     /// titled draft); inside the runtime, `send` does not touch `title`.
     private func enqueueAndSend(_ input: LocalUserInput) {
+        // A new user turn starts — drop the prior turn's streaming state
+        // (token totals reset to zero, any stale preview mapping cleared).
+        resetStreamingTurn()
         let single = SingleEntry(
             id: UUID(),
             payload: .localUser(input),
@@ -698,6 +701,15 @@ extension SessionRuntime {
             appLog(.info, "SessionRuntime", "[v2-send] onMessage sid=\(sidPrefix) kind=\(kind)")
             Task { @MainActor [weak self] in
                 self?.receive(msg, mode: .live)
+            }
+        }
+
+        // Partial-message stream (gated by `includePartialMessages`). Folds
+        // into live assistant text + turn token usage; see
+        // `SessionRuntime+Streaming`.
+        session.onStreamEvent = { [weak self] event in
+            Task { @MainActor [weak self] in
+                self?.consumeStreamEvent(event)
             }
         }
 

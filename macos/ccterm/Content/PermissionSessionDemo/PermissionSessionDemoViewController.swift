@@ -5,8 +5,9 @@ import AppKit
 import SwiftUI
 
 /// Carries the resting bar's measured natural height out to the AppKit host
-/// so the bottom-anchored host can size to exactly the bar (demo-local twin of
-/// `ChatSessionViewController`'s `BarContentHeightKey`).
+/// so the bottom-anchored host can size to exactly the bar. (Demo-local; the
+/// production `ChatSessionViewController` now sizes its bar host via
+/// `NSHostingView.sizingOptions = [.intrinsicContentSize]` instead.)
 private struct DemoBarHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
@@ -46,7 +47,7 @@ final class PermissionSessionDemoViewController: NSViewController {
     private var sheetPresenter: Transcript2SheetPresenter?
     private var inputBarHost: NSHostingView<AnyView>?
     /// Bottom-anchored bar host height, driven by the bar's measured natural
-    /// height (mirrors `ChatSessionViewController.composeOrBarHostHeightConstraint`).
+    /// height (demo-local; production sizes its host via `.intrinsicContentSize`).
     private var inputBarHeightConstraint: NSLayoutConstraint?
     private var controlPanelHost: NSHostingView<ControlPanelHostView>?
     private let controlPanelState = ControlPanelState()

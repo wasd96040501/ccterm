@@ -973,6 +973,16 @@
         }
       }
     },
+    "Copy Session File Path": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复制会话文件路径"
+          }
+        }
+      }
+    },
     "Corpus missing": {
       "localizations": {
         "zh-Hans": {

@@ -48,7 +48,7 @@
     position: relative; aspect-ratio: 1; padding: 0; overflow: hidden;
   }
   .frame.bare { background: var(--bg); border: none; display: grid; place-items: center; padding: 22px; }
-  .frame::before, .frame::after, .frame > .c-tl, .frame > .c-tr {
+  .frame:not(.bare)::before, .frame:not(.bare)::after, .frame > .c-tl, .frame > .c-tr {
     content: ''; position: absolute; width: 7px; height: 7px; background: var(--coral); z-index: 3;
   }
   .frame:not(.bare)::before { top: -4px; left: -4px; }
@@ -172,6 +172,10 @@
           <text class="lbl-coral" x="250" y="96">D = 螺线 ∩ 十字 (0.774, 0.331)</text>
           <text class="lbl" x="250" y="107">右上唯一交点 · 位置固定</text>
 
+          <!-- 画布正中心标记（仅辅助图） -->
+          <rect x="196.5" y="196.5" width="7" height="7" style="fill:var(--coral)"/>
+          <text class="lbl-coral" x="209" y="203">中心 (0.5, 0.5)</text>
+
           <text class="lbl" x="300" y="300">4 圆 → 负空间</text>
         </svg>
       </div>
@@ -205,17 +209,17 @@
   <div class="controls">
     <div class="ctrl">
       <div class="row"><label>① 圆半径 r/d</label><span class="val" id="kVal"></span></div>
-      <input type="range" id="kEl" min="102" max="140" step="1" value="120">
+      <input type="range" id="kEl" min="102" max="140" step="1" value="102">
       <span class="hint">控制尖锐度：越接近 √2 星越尖小，越接近 1 越钝大。</span>
     </div>
     <div class="ctrl">
       <div class="row"><label>② 圆心距 d</label><span class="val" id="mVal"></span></div>
-      <input type="range" id="mEl" min="55" max="165" step="1" value="104">
+      <input type="range" id="mEl" min="55" max="165" step="1" value="112">
       <span class="hint">四个圆心离星心 P 的距离（沿两条轴的对角），控制整体尺度。</span>
     </div>
     <div class="ctrl">
       <div class="row"><label>③ 修饰圆半径</label><span class="val" id="dVal"></span></div>
-      <input type="range" id="dEl" min="3" max="64" step="1" value="22">
+      <input type="range" id="dEl" min="3" max="64" step="1" value="16">
       <span class="hint">位置固定在 D（螺线∩十字），只调半径。</span>
     </div>
   </div>

@@ -20,6 +20,16 @@ Native macOS client for Claude Code. SwiftUI + AppKit, minimum target macOS 14 (
   - **Service** — `@Observable`, injected via initializer or `.environment()`. Views never construct services themselves.
   - **AppState** — process-scope container owned by `AppDelegate`, injected through `.environment()`. Currently holds `SessionManager`, `SyntaxHighlightEngine`, `RecentProjectsStore`, `InputDraftStore`, `SidebarSessionGroupOrderStore`, `AppActivationTracker`, `NotificationService`.
 
+### Embedding SwiftUI in AppKit: host sizing
+
+When you host a SwiftUI view in an `NSHostingView` / `NSHostingController`, the host's `sizingOptions` decides whether the SwiftUI content's size flows *up* into Auto Layout. There are two cases, and picking the wrong one collapses the window:
+
+- **Fill-a-pane host → `sizingOptions = []`.** The hosted view *is* its container's content, pinned edge-to-edge; the container (split → window) must drive its size, not the reverse. The default options publish the body's `view.fittingSize` as an intrinsic size — with nothing else governing that dimension, it leaks up through the split's `view.fittingSize` into the window's constraint solver (`_changeWindowFrameFromConstraintsIfNecessary`) and **resizes / collapses the window**. `[]` severs that path; you then pin all four edges so layout sizes the host from the container. Examples: `ArchiveViewController`, `ComposeSessionViewController`, the permission-cards demo child.
+
+- **Subordinate component → `sizingOptions = [.intrinsicContentSize]`.** The hosted view is a small piece whose *container* is sized by something else (a toolbar slot; or a bottom-anchored bar over a transcript that already fills the pane). Here you *want* the content to size itself: pin only its position and let the host's intrinsic content size supply the missing dimension(s). No window-collapse risk — the component isn't what governs its container's size. Examples: `ChatSessionViewController`'s input-bar host (centered, width-capped, height from intrinsic), the toolbar project chip / archive-filter (`MainWindowController`).
+
+Rule of thumb: **does the host fill its container (→ `[]`, container drives size) or sit inside it as a component (→ `[.intrinsicContentSize]`, content drives size)?** Never hand-roll the height with `GeometryReader` + `PreferenceKey` + a manual height constraint — that was an earlier input-bar workaround and is exactly what `.intrinsicContentSize` does for free.
+
 ### SwiftUI rules
 
 - `@Observable` for state shared across views (e.g. `Session`); `@State` for view-private UI state; `@Binding` for writable references from a parent.

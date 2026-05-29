@@ -83,7 +83,7 @@ struct InputBarChrome: View {
 ///
 /// `ZStack` (not `.overlay`) is deliberate: an overlay is sized to its
 /// host and never grows the parent, so under the bottom-anchored bar
-/// host — whose height tracks this body's measured natural height — an
+/// host — whose height tracks this body's intrinsic content height — an
 /// overlaid card would be clipped (and its upper half would fall outside
 /// the host's hit-test bounds, killing its buttons). A `ZStack` reports
 /// the union of its children, so the card's footprint correctly grows
@@ -97,8 +97,8 @@ struct InputBarChrome: View {
 /// `RootView2` for the original geometry derivation.
 ///
 /// `maxHeight: .infinity` is intentionally absent: the bar host is
-/// bottom-anchored in `ChatSessionViewController`'s chat mode and sized
-/// to this body's natural height (`fixedSize` + `onContentHeight`).
+/// bottom-anchored in `ChatSessionViewController`'s chat mode and takes
+/// this body's intrinsic height via the host's `.intrinsicContentSize`.
 struct ChatRestingBar: View {
     let sessionId: String
     let draftKey: String

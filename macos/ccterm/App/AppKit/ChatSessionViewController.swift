@@ -93,13 +93,6 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
     private var bottomScrim: TranscriptBottomScrimView!
     private var composeOrBarHost: NSHostingView<AnyView>!
 
-    /// Fixes the host's height to the bar's reported content height
-    /// (driven by the SwiftUI body's `onContentHeight` callback),
-    /// bottom-anchored. Always active — the host only ever renders the
-    /// chat resting bar (or nothing), never a full-bleed configurator,
-    /// so it never needs to grow past the bar.
-    private var composeOrBarHostHeightConstraint: NSLayoutConstraint!
-
     /// Latest attach / pill rects reported by the chat resting bar
     /// in `detailCoordSpace`. Used to drive `bottomScrim`'s cutouts.
     /// Local to this VC — there's no cross-VC consumer that would
@@ -167,34 +160,29 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
 
         composeOrBarHost = NSHostingView(rootView: AnyView(makeComposeOrBarStack()))
         composeOrBarHost.translatesAutoresizingMaskIntoConstraints = false
-        // A plain `NSHostingView` claims EVERY point in its bounds for
-        // hit-testing, shadowing whatever AppKit view sits below — here
-        // the transcript table. So the host must cover ONLY the bar at
-        // the bottom, or it eats the transcript's selection / hover-gutter
-        // mouse events everywhere it overlaps.
-        //
-        // Drive the height EXPLICITLY rather than leaning on the host's
-        // intrinsic size:
-        // - `sizingOptions = []` stops the host from publishing any
-        //   intrinsic height. The bottom-anchored `.intrinsicContentSize`
-        //   variant leaked a *required* height up through the split into
-        //   the window's constraint layout and collapsed the window
-        //   (`_changeWindowFrameFromConstraintsIfNecessary`); an empty
-        //   set severs that path entirely.
-        // - `composeOrBarHostHeightConstraint`'s constant is set from the
-        //   SwiftUI body's reported content height (`onContentHeight`),
-        //   so the host tracks the bar exactly — multi-line input or a
-        //   permission card grows it, nothing else, and it never covers
-        //   more of the transcript than the bar actually needs.
-        composeOrBarHost.sizingOptions = []
+        // A plain `NSHostingView` claims every point in its bounds for
+        // hit-testing, shadowing the transcript table below it. We keep its
+        // bounds to just the bar: the HEIGHT is left to the content's own
+        // intrinsic size (`.intrinsicContentSize`), so the host is only as
+        // tall as the bar — multi-line input or a permission card grows it,
+        // nothing else — and the transcript receives clicks everywhere above.
+        composeOrBarHost.sizingOptions = [.intrinsicContentSize]
         view.addSubview(composeOrBarHost)
 
-        // Bottom + leading + trailing pinned; height fixed to the bar's
-        // measured content height (set via `onContentHeight`). The host
-        // is never full-bleed — compose has its own VC now — so this
-        // height constraint is simply always active.
-        composeOrBarHostHeightConstraint =
-            composeOrBarHost.heightAnchor.constraint(equalToConstant: 0)
+        // WIDTH is owned by AppKit, HEIGHT by the content (above):
+        // - centerX  → the bar is horizontally centered in the pane.
+        // - width <= maxHostWidth (required) caps it at the widest content it
+        //   hosts — the permission card (`BlockStyle.maxLayoutWidth`) plus its
+        //   horizontal padding — so the card is never clipped; the narrower
+        //   input pill (`composeMaxWidth`) self-centers inside via its own frame.
+        // - width == maxHostWidth @high fills up to that cap on a wide pane,
+        //   but yields to `leading >=` on a pane narrower than the cap (detail
+        //   can be as small as 680) so the bar shrinks to fit the pane instead
+        //   of overflowing its edges.
+        let maxHostWidth = BlockStyle.maxLayoutWidth + 2 * Self.detailHorizontalInset
+        let composeOrBarHostWidthFill = composeOrBarHost.widthAnchor.constraint(
+            equalToConstant: maxHostWidth)
+        composeOrBarHostWidthFill.priority = .defaultHigh
 
         // Each scrim is sized to its visible band, anchored to its
         // edge. Cutout coordinates arrive in `composeOrBarHost`'s
@@ -211,10 +199,12 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
             bottomScrim.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             bottomScrim.heightAnchor.constraint(equalToConstant: Self.bottomFadeScrimHeight),
 
-            composeOrBarHost.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            composeOrBarHost.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            composeOrBarHost.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             composeOrBarHost.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            composeOrBarHostHeightConstraint,
+            composeOrBarHost.widthAnchor.constraint(lessThanOrEqualToConstant: maxHostWidth),
+            composeOrBarHost.leadingAnchor.constraint(
+                greaterThanOrEqualTo: view.leadingAnchor),
+            composeOrBarHostWidthFill,
         ])
     }
 
@@ -559,10 +549,6 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
                 guard let self else { return }
                 self.lastPillRect = rect
                 self.applyScrimCutouts()
-            },
-            onContentHeight: { [weak self] height in
-                // Chat bar height → host height constraint.
-                self?.composeOrBarHostHeightConstraint.constant = height
             }
         )
         .environment(sessionManager)
@@ -585,15 +571,6 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
 
 // MARK: - SwiftUI overlay subviews
 
-/// Carries `ChatComposeStack`'s measured natural height out to the
-/// AppKit host so it can size the chat-mode bar exactly.
-private struct BarContentHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
 /// Chat-mode resting input bar (or nothing). The always-mounted bar
 /// host of `ChatSessionViewController` renders this; it reads state from
 /// the shared `MainSelectionModel` so the AppKit VC can drive selection
@@ -608,9 +585,6 @@ struct ChatComposeStack: View {
     let onSubmit: (InputBarView2.Submission, String) -> Void
     let onAttachRect: (CGRect) -> Void
     let onPillRect: (CGRect) -> Void
-    /// Reports the body's natural height to the host so the
-    /// `composeOrBarHostHeightConstraint` can size to exactly the bar.
-    let onContentHeight: (CGFloat) -> Void
 
     /// Routing decision for this overlay. Static + pure so the
     /// "which selection shows what input chrome" invariant is
@@ -664,31 +638,16 @@ struct ChatComposeStack: View {
                     onAttachRect: onAttachRect,
                     onPillRect: onPillRect
                 )
-                // Pin to the bar's natural height so the measured
-                // value below is the bar's own footprint, never the
-                // (possibly zero / stale) height the host proposes.
-                .fixedSize(horizontal: false, vertical: true)
                 .id(sid)
             }
         }
-        // Width-infinite always (the host is leading/trailing-pinned).
-        // Height is intentionally NOT `.infinity`: the host is
-        // bottom-anchored to exactly the bar's height, reported to AppKit
-        // via `onContentHeight` below.
+        // Fill the width the AppKit host hands us — the host is centered and
+        // width-capped (at the widest content) by `ChatSessionViewController`.
+        // Height is left to the content's own intrinsic size, which the host
+        // reads via its `.intrinsicContentSize` sizing option. The pill and
+        // permission card self-limit and center inside this width via their
+        // own frames.
         .frame(maxWidth: .infinity)
-        .background {
-            // Measure the body's natural height without joining the
-            // layout, and feed it to the host height constraint. `.none`
-            // measures the empty body as 0, collapsing the host so the
-            // transcript receives clicks everywhere.
-            GeometryReader { proxy in
-                Color.clear.preference(
-                    key: BarContentHeightKey.self, value: proxy.size.height)
-            }
-        }
-        .onPreferenceChange(BarContentHeightKey.self) { height in
-            onContentHeight(height)
-        }
         .coordinateSpace(name: ChatSessionViewController.detailCoordSpace)
     }
 }

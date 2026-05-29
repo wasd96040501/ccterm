@@ -90,6 +90,50 @@ final class StreamingTurnAssemblerTests: XCTestCase {
         XCTAssertEqual(a.turnUsage.outputTokens, 42)
     }
 
+    // MARK: - Live output estimate
+
+    /// Text deltas grow the output estimate before any authoritative
+    /// `message_delta` lands, so the counter moves during the message body.
+    func testTextDeltasGrowLiveOutputEstimate() {
+        var a = StreamingTurnAssembler()
+        a.consume(Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 10, outputTokens: 1))
+        XCTAssertEqual(a.turnUsage.outputTokens, 1, "only the placeholder so far")
+        // A long ASCII chunk pushes the estimate above the placeholder.
+        let chunk = String(repeating: "word ", count: 40)  // 200 chars
+        let out = a.consume(Message2Fixtures.streamTextDelta(index: 0, text: chunk))
+        XCTAssertTrue(out.usageChanged, "a growing estimate must request a flush")
+        XCTAssertGreaterThan(
+            a.turnUsage.outputTokens, 1, "estimate climbs while the message streams")
+    }
+
+    /// Thinking deltas count toward `output_tokens`, so the estimate must
+    /// reflect them too (the user sees the counter move during thinking).
+    func testThinkingDeltasGrowLiveOutputEstimate() {
+        var a = StreamingTurnAssembler()
+        a.consume(Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 5, outputTokens: 1))
+        let out = a.consume(
+            Message2Fixtures.streamThinkingDelta(
+                index: 0, thinking: String(repeating: "想", count: 50)))
+        XCTAssertTrue(out.usageChanged, "thinking grows the output estimate")
+        XCTAssertGreaterThan(a.turnUsage.outputTokens, 1)
+        XCTAssertEqual(a.currentText, "", "thinking still never leaks into the rendered text")
+    }
+
+    /// The authoritative `message_delta` total takes over exactly — an
+    /// over-eager estimate can't pin the displayed value above the truth.
+    func testAuthoritativeOutputOverridesEstimate() {
+        var a = StreamingTurnAssembler()
+        a.consume(Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 10, outputTokens: 1))
+        a.consume(
+            Message2Fixtures.streamTextDelta(
+                index: 0, text: String(repeating: "x", count: 400)))
+        XCTAssertGreaterThan(a.turnUsage.outputTokens, 1, "estimate is live")
+        a.consume(Message2Fixtures.streamMessageDelta(outputTokens: 7))
+        XCTAssertEqual(
+            a.turnUsage.outputTokens, 7,
+            "authoritative total wins outright — estimate no longer applies")
+    }
+
     func testResetClearsEverything() {
         var a = StreamingTurnAssembler()
         a.consume(Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 10, outputTokens: 5))

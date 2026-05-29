@@ -51,6 +51,44 @@ final class Transcript2EntryBridgeTests: XCTestCase {
         XCTAssertEqual(bridge.entryBlockIds[entry.id], before)
     }
 
+    /// An assistant entry whose text grows by a whole new block (the streaming
+    /// shape: paragraphs accruing) updates **append-only** — the already-shown
+    /// block ids are preserved as a prefix and only the new block is added.
+    /// This is what keeps settled rows from being torn out + re-faded on every
+    /// paragraph boundary.
+    func testUpdateAppendOnlyGrowthPreservesSettledBlocks() {
+        let controller = Transcript2Controller()
+        let bridge = Transcript2EntryBridge(controller: controller)
+
+        let entryId = UUID()
+        func entry(_ text: String) -> MessageEntry {
+            .single(
+                SingleEntry(
+                    id: entryId,
+                    payload: .remote(Message2Fixtures.assistantText(text, messageId: "m1")),
+                    delivery: nil, toolResults: [:]))
+        }
+
+        bridge.apply(.appended(entry("para one")))
+        let afterFirst = controller.coordinator.blockIds
+        XCTAssertFalse(afterFirst.isEmpty)
+
+        // Grow with a second, then a third paragraph.
+        bridge.apply(.updated(entry("para one\n\npara two")))
+        let afterSecond = controller.coordinator.blockIds
+        XCTAssertEqual(
+            Array(afterSecond.prefix(afterFirst.count)), afterFirst,
+            "the first block keeps its id (no remove/insert churn)")
+        XCTAssertGreaterThan(afterSecond.count, afterFirst.count, "the new paragraph was added")
+
+        bridge.apply(.updated(entry("para one\n\npara two\n\npara three")))
+        let afterThird = controller.coordinator.blockIds
+        XCTAssertEqual(
+            Array(afterThird.prefix(afterSecond.count)), afterSecond,
+            "earlier blocks keep their ids as more paragraphs stream in")
+        XCTAssertEqual(bridge.entryBlockIds[entryId], afterThird, "reverse map stays in sync")
+    }
+
     /// `.removed` drops the entry's blocks and forgets it.
     func testRemoveDropsBlocks() {
         let controller = Transcript2Controller()

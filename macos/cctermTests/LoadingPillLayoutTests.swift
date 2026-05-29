@@ -15,17 +15,19 @@ final class LoadingPillLayoutTests: XCTestCase {
 
     func testNoUsageHasNoLabel() {
         let layout = LoadingPillLayout.make(usage: .zero)
-        XCTAssertNil(layout.usageText)
+        XCTAssertNil(layout.usageRect)
         XCTAssertEqual(layout.measuredWidth, BlockStyle.loadingPillWidth)
     }
 
-    func testUsageProducesLabelToTheRightOfDots() {
-        let layout = LoadingPillLayout.make(
-            usage: TurnTokenUsage(inputTokens: 1234, outputTokens: 340))
-        XCTAssertEqual(layout.usageText, "↑1.2k ↓340")
-        // Label sits past the dots + gap.
+    func testUsageProducesRectToTheRightOfDots() throws {
+        let usage = TurnTokenUsage(inputTokens: 1234, outputTokens: 340)
+        let layout = LoadingPillLayout.make(usage: usage)
+        // The raw totals carry through; the view renders the `↑in ↓out` label.
+        XCTAssertEqual(layout.usage.compactLabel, "↑1.2k ↓340")
+        // The usage view's band sits past the dots + gap.
+        let rect = try XCTUnwrap(layout.usageRect)
         XCTAssertGreaterThanOrEqual(
-            layout.usageTextOrigin.x,
+            rect.origin.x,
             BlockStyle.loadingPillWidth + BlockStyle.loadingPillUsageGap)
         XCTAssertGreaterThan(layout.measuredWidth, BlockStyle.loadingPillWidth)
     }

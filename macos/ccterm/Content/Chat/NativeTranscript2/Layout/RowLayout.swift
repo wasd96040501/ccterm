@@ -363,16 +363,27 @@ enum RowLayout: @unchecked Sendable {
                 flashingCopyIds: flashingCopyIds)
         case .loadingPill(let l):
             // The indicator hosts a single `NSImageView` running an
-            // SF Symbol `.variableColor` effect. The reconciler
-            // creates / reuses the view per cell; the symbol effect
-            // loop survives `reloadData(forRowIndexes:)` because the
-            // view itself is reused, not the spec.
+            // SF Symbol `.variableColor` effect, plus a
+            // `LoadingPillUsageView` for the live token counter. The
+            // reconciler creates / reuses both per cell; the symbol
+            // effect loop and the counter's roll state survive
+            // `reloadData(forRowIndexes:)` because the views themselves
+            // are reused, not the specs.
+            let usageSpec: SubviewPlan.UsageCounter? = l.usageRect.map { rect in
+                SubviewPlan.UsageCounter(
+                    frame: rect.offsetBy(dx: origin.x, dy: origin.y),
+                    inputTokens: l.usage.inputTokens,
+                    outputTokens: l.usage.outputTokens,
+                    font: BlockStyle.loadingPillUsageFont,
+                    color: BlockStyle.loadingPillUsageColor)
+            }
             return SubviewPlan(
                 chevrons: [], entries: [], shimmers: [],
                 loadingDots: SubviewPlan.LoadingDots(
                     frame: l.symbolFrame.offsetBy(
                         dx: origin.x, dy: origin.y),
-                    tintColor: BlockStyle.loadingPillDotColor))
+                    tintColor: BlockStyle.loadingPillDotColor),
+                usage: usageSpec)
         default:
             return .empty
         }

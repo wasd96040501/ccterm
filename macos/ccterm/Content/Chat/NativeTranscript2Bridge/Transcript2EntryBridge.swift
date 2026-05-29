@@ -4,20 +4,23 @@ import Foundation
 
 /// Translates entry-level instructions from `Session.onMessagesChange`
 /// into block-level commands for `Transcript2Controller`. **Purely imperative**
-/// — does not maintain a full `[Block]` mirror to diff against; just two
-/// reverse tables:
+/// — does not maintain a full `[Block]` mirror to diff against; just the
+/// timeline order plus, per entry, the exact blocks it last rendered:
 ///
 /// - `entryOrder: [UUID]`: timeline order of entries.
-/// - `entryBlockIds: [UUID: [UUID]]`: entry.id → ordered list of Block.ids
-///   produced by that entry.
+/// - `entryBlocks: [UUID: [Block]]`: entry.id → the blocks it currently
+///   renders as (id view exposed as `entryBlockIds` for tests / anchoring).
 ///
-/// On entry update: run the builder to compute new blocks, then compare to old
-/// ids:
-/// - identical id sequences (typical: tool_result merge / confirm / group items
-///   grew) → per-block `.update(id, kind)`, preserving row-level animation /
-///   selection / fold.
-/// - mismatched (rare: assistant entry structure changed) → `.remove(old)` +
-///   `.insert(new)`, anchored to the previous entry's last block id.
+/// On entry update (`applyUpdate`), the builder recomputes the entry's blocks
+/// and the bridge emits the **minimal** change set against the stored ones:
+/// - identical id sequence (tool_result merge / confirm / the grow-the-last-
+///   block streaming tick) → `.update(id, kind)` for *only the blocks whose
+///   kind moved*, preserving row-level animation / selection / fold.
+/// - append-only growth (old ids are a prefix of new — paragraphs accruing as
+///   an assistant message streams) → update any changed prefix block in place
+///   and insert *only* the new trailing blocks; the settled blocks above are
+///   never removed, so there is no whole-message `.effectFade` flicker.
+/// - genuine structural change (rare) → explicit `.replace` segment swap.
 ///
 /// **Invariant**: after every dispatch, `entryOrder` / `entryBlockIds` match
 /// `handle.messages`'s entry order. Reset rebuilds wholesale; append / prepend
@@ -32,7 +35,18 @@ final class Transcript2EntryBridge {
     // these tables match the entry order it received, regardless of
     // whether the controller's table is real).
     private(set) var entryOrder: [UUID] = []
-    private(set) var entryBlockIds: [UUID: [UUID]] = [:]
+
+    /// entry.id → the exact `[Block]` that entry currently renders as. Storing
+    /// full blocks (not just ids) lets `applyUpdate` diff by *kind* and emit a
+    /// minimal change set — only blocks that actually moved are touched, and
+    /// settled blocks above a streaming tail are never removed/reinserted (no
+    /// `.effectFade` churn). The id-only view below is derived for tests and
+    /// for the structural-change anchor math.
+    private var entryBlocks: [UUID: [Block]] = [:]
+
+    /// Derived id view of `entryBlocks`, kept for the test-facing contract
+    /// (`entryOrder` / `entryBlockIds` match the entry order received).
+    var entryBlockIds: [UUID: [UUID]] { entryBlocks.mapValues { $0.map(\.id) } }
 
     /// Entry id of the **first user-typed message that arrives live**
     /// (via `.appended`) during this bridge's lifetime. UI-suppresses the
@@ -274,54 +288,98 @@ final class Transcript2EntryBridge {
             // assistant) — still take an entryOrder slot so a future mutate
             // can resolve the previous-entry anchor correctly.
             entryOrder.append(entry.id)
-            entryBlockIds[entry.id] = []
+            entryBlocks[entry.id] = []
             return
         }
         entryOrder.append(entry.id)
-        entryBlockIds[entry.id] = blocks.map(\.id)
+        entryBlocks[entry.id] = blocks
         // Position is intrinsic to `.append` — tail. No anchor threading; the
         // tail is wherever `coordinator.blocks` currently ends (after any
         // history the backfill pipeline already prepended).
         controller.apply(.append(blocks))
     }
 
-    // MARK: - Update (tool_result merge / confirm / group grew)
+    // MARK: - Update (tool_result merge / confirm / group grew / live stream)
 
+    /// Reconcile an entry's blocks against what it rendered last time, emitting
+    /// the **minimal** change set:
+    ///
+    /// - **Identical id sequence** (tool_result merge / confirm / the
+    ///   grow-the-last-block streaming tick): `.update` only the blocks whose
+    ///   `kind` actually moved — settled rows aren't re-typeset every tick.
+    /// - **Append-only growth** (old ids are a prefix of new — the dominant
+    ///   streaming shape as paragraphs accrue): update any changed prefix block
+    ///   in place, then insert *only* the new trailing blocks. The settled
+    ///   blocks above are never removed, so there is no whole-message
+    ///   `.effectFade` flicker. The insert is anchored inside the entry's own
+    ///   range (by re-stating the last existing block through `.replace`), so
+    ///   the new blocks never land at the table tail past the loading pill.
+    /// - **Structural change** (a shared index changed kind, or blocks were
+    ///   dropped — rare): fall back to the explicit full segment swap.
     private func applyUpdate(_ entry: MessageEntry) {
-        let oldIds = entryBlockIds[entry.id] ?? []
-        let newBlocks = self.blocks(for: entry)
-        let newIds = newBlocks.map(\.id)
+        let old = entryBlocks[entry.id] ?? []
+        let new = self.blocks(for: entry)
+        let oldIds = old.map(\.id)
+        let newIds = new.map(\.id)
 
-        // Identical id sequence: the typical 95% case — per-block update.
-        if oldIds == newIds {
-            // All-empty (entry produces no block) → nothing to do.
-            guard !newIds.isEmpty else { return }
-            let changes: [Transcript2Controller.Change] = newBlocks.map {
-                .update(id: $0.id, kind: $0.kind)
-            }
-            controller.coordinator.apply(changes, scroll: .none)
-            return
-        }
-
-        // Structure changed: the segment swap, made explicit. `.replace` swaps
-        // the contiguous `oldIds` for `newBlocks` at the same start index,
-        // atomically — the remove+insert can't be split or misordered. A
-        // degenerate `oldIds == []` (entry never registered — out-of-order
-        // sink) routes to `.append` inside the coordinator.
-        entryBlockIds[entry.id] = newIds
         if entryOrder.firstIndex(of: entry.id) == nil {
             // Entry was never registered before this update (out-of-order
             // sink). Defensively append so the block doesn't hang loose.
             entryOrder.append(entry.id)
         }
-        controller.apply(.replace(oldIds: oldIds, with: newBlocks))
+
+        // 1) Identical id sequence — per-block update, but only where the kind
+        //    moved (a same-content re-send is a true no-op, not a re-typeset).
+        if oldIds == newIds {
+            let changes = Self.changedUpdates(old: old, new: new)
+            if !changes.isEmpty { controller.coordinator.apply(changes, scroll: .none) }
+            entryBlocks[entry.id] = new
+            return
+        }
+
+        // 2) Append-only growth — old ids are a strict prefix of new ids.
+        if !oldIds.isEmpty, newIds.count > oldIds.count,
+            Array(newIds.prefix(oldIds.count)) == oldIds
+        {
+            let boundary = oldIds.count - 1
+            // Update changed blocks strictly *before* the boundary (settled
+            // prose rarely changes once a later block exists, so usually none).
+            let prefixUpdates = Self.changedUpdates(
+                old: Array(old[0..<boundary]), new: Array(new[0..<boundary]))
+            if !prefixUpdates.isEmpty {
+                controller.coordinator.apply(prefixUpdates, scroll: .none)
+            }
+            // Re-state the boundary block + new tail in one anchored replace.
+            // The boundary id is unchanged, so if its content didn't move this
+            // is a same-content crossfade (invisible); only the genuinely-new
+            // tail blocks fade in. Settled blocks above are untouched.
+            let replacement = Array(new[boundary...])
+            controller.apply(.replace(oldIds: [oldIds[boundary]], with: replacement))
+            entryBlocks[entry.id] = new
+            return
+        }
+
+        // 3) Genuine structural change — explicit full segment swap. A
+        //    degenerate `oldIds == []` (out-of-order sink) routes to `.append`
+        //    inside the coordinator.
+        controller.apply(.replace(oldIds: oldIds, with: new))
+        entryBlocks[entry.id] = new
+    }
+
+    /// `.update` changes for blocks whose `kind` differs at the same position.
+    /// Precondition: `old` and `new` share an id at each index. Identical
+    /// blocks are skipped so a re-render only touches what moved.
+    private static func changedUpdates(old: [Block], new: [Block]) -> [Transcript2Controller.Change] {
+        zip(old, new).compactMap { o, n in
+            o.kind == n.kind ? nil : .update(id: n.id, kind: n.kind)
+        }
     }
 
     // MARK: - Remove (cancelMessage)
 
     private func applyRemove(_ entry: MessageEntry) {
-        let ids = entryBlockIds[entry.id] ?? []
-        entryBlockIds.removeValue(forKey: entry.id)
+        let ids = entryBlocks[entry.id]?.map(\.id) ?? []
+        entryBlocks.removeValue(forKey: entry.id)
         entryOrder.removeAll { $0 == entry.id }
         // Releasing the pin when the first user message is removed lets
         // the *next* still-queued user bubble keep its truthful queued

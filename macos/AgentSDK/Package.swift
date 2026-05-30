@@ -48,5 +48,9 @@ let package = Package(
             name: "ThinkingUsageSmoke",
             dependencies: ["AgentSDK"]
         ),
+        .executableTarget(
+            name: "SideQuestionSmoke",
+            dependencies: ["AgentSDK"]
+        ),
     ]
 )

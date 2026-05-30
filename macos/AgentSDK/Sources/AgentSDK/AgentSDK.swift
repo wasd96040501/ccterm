@@ -577,6 +577,51 @@ public final class Session {
         }
     }
 
+    // MARK: - Side Question (/btw)
+
+    /// Asks a one-shot side question over the `side_question` control
+    /// request — the protocol behind the CLI's `/btw` slash command.
+    ///
+    /// The CLI answers from the *current conversation context* with a
+    /// separate, lightweight, **tool-less** model call that runs `maxTurns:
+    /// 1`, is **not** written to the transcript, and does **not** interrupt
+    /// or advance the main turn loop. Use it to ask "by the way…" without
+    /// disturbing whatever Claude is doing.
+    ///
+    /// No client-side timeout: the answer is a model round-trip that may
+    /// legitimately be slow (long context, rate-limit backoff), and a CLI
+    /// that speaks the control protocol but lacks this subtype replies with
+    /// an error response (→ `.sdkError`) rather than hanging. `.unsupported`
+    /// is reserved for the synchronous "no live CLI" case. `completion` is
+    /// invoked once, when the CLI responds.
+    public func askSideQuestion(
+        _ question: String,
+        completion: @escaping (SideQuestionOutcome) -> Void
+    ) {
+        guard isRunning else {
+            completion(.unsupported)
+            return
+        }
+        sendControlRequest(subtype: "side_question", params: ["question": question]) { response in
+            if let subtype = response["subtype"] as? String, subtype == "error" {
+                completion(.sdkError(response["error"] as? String ?? "unknown error"))
+                return
+            }
+            guard let inner = response["response"] as? [String: Any] else {
+                completion(.sdkError("missing response payload"))
+                return
+            }
+            let synthetic = inner["synthetic"] as? Bool ?? false
+            // `response` is `String | null`: null means the host produced no
+            // text (the CLI's "No response received" path).
+            if let text = inner["response"] as? String {
+                completion(.answer(SideQuestionAnswer(response: text, synthetic: synthetic)))
+            } else {
+                completion(.empty)
+            }
+        }
+    }
+
     // MARK: - Private: Process Arguments
 
     private func buildArguments() -> [String] {

@@ -110,6 +110,13 @@ final class AgentSDKCLIClient: CLIClient {
         session.getContextUsage(timeout: timeout, completion: completion)
     }
 
+    func askSideQuestion(
+        _ question: String,
+        completion: @escaping (SideQuestionOutcome) -> Void
+    ) {
+        session.askSideQuestion(question, completion: completion)
+    }
+
     // MARK: Messaging
 
     func sendMessage(_ text: String, extra: [String: Any]) {

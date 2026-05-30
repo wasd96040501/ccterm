@@ -69,6 +69,16 @@ protocol CLIClient: AnyObject {
         completion: @escaping (ContextUsageOutcome) -> Void
     )
 
+    /// Asks a one-shot `/btw`-style side question (`side_question` control
+    /// request). Answered from live conversation context without
+    /// interrupting the current turn. `.unsupported` when there is no live
+    /// CLI; `.sdkError` when the CLI rejects the subtype. Invokes
+    /// `completion` once, when the CLI responds.
+    func askSideQuestion(
+        _ question: String,
+        completion: @escaping (SideQuestionOutcome) -> Void
+    )
+
     // MARK: Messaging
 
     func sendMessage(_ text: String, extra: [String: Any])

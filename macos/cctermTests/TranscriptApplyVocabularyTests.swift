@@ -175,4 +175,44 @@ final class TranscriptApplyVocabularyTests: XCTestCase {
             [head.id, swap.id, c.id, tail.id],
             "the apply vocabulary is the sole mutation path; no setHistory escape hatch")
     }
+
+    // MARK: - C9: append keeps the loading pill pinned at the tail
+
+    /// While the running pill occupies the tail, an `.append` (the assistant's
+    /// first block of a turn) must land *before* the pill — not after it.
+    /// Landing after the pill would leave it off-tail, and the ensuing
+    /// `reconcileLoadingPill()` would tear the pill out and re-append a fresh
+    /// one (new id), reflowing the just-inserted block as a "rise from below"
+    /// on the first assistant block. Anchoring before the pill makes the
+    /// reconcile a no-op: the pill keeps its id and the block gets a plain
+    /// `.effectFade` fade-in with no positional motion.
+    func testC9_appendKeepsLoadingPillPinnedAtTail() throws {
+        let a = para("A")
+        let controller = seeded([a])
+
+        // Running indicator inserts the pill at the tail.
+        controller.setLoading(true)
+        let withPill = controller.coordinator.blockIds
+        XCTAssertEqual(withPill.count, 2, "setLoading(true) appends the pill")
+        let pillId = withPill[1]
+        XCTAssertTrue(isLoadingPill(controller, pillId), "pill sits at the tail")
+
+        // The assistant's first block appends while the pill is present.
+        let assistant = para("assistant")
+        controller.apply(.append([assistant]))
+
+        XCTAssertEqual(
+            controller.coordinator.blockIds,
+            [a.id, assistant.id, pillId],
+            "append lands before the pill; the pill keeps the SAME id at the tail "
+                + "(no remove + reinsert — that churn is the first-assistant-block jump)")
+        XCTAssertTrue(
+            isLoadingPill(controller, pillId), "the unchanged pill id is still a loadingPill")
+    }
+
+    private func isLoadingPill(_ controller: Transcript2Controller, _ id: UUID) -> Bool {
+        guard let kind = controller.coordinator.block(forId: id)?.kind else { return false }
+        if case .loadingPill = kind { return true }
+        return false
+    }
 }

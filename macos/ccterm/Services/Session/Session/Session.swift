@@ -137,6 +137,17 @@ final class Session {
         }
     }
 
+    /// Permission-prompt signal, forwarded to the runtime when one
+    /// exists. Same wiring shape as `onTurnEnded`: `SessionManager` routes
+    /// it into its own sink, which the notification service subscribes to.
+    /// Draft phase has no runtime, so the setter is a no-op there; the
+    /// wiring re-attaches in `wireRuntimeMessagesSink` at promotion time.
+    @ObservationIgnored var onPermissionPrompt: ((PermissionPromptNotice) -> Void)? {
+        didSet {
+            runtime?.onPermissionPrompt = onPermissionPrompt
+        }
+    }
+
     // MARK: - Init
 
     /// Construct from an existing record. `phase` is `.active` with a
@@ -224,6 +235,7 @@ final class Session {
         runtime.onRecordPersisted = onRecordPersisted
         runtime.onTurnEnded = onTurnEnded
         runtime.onTurnUsageChange = onTurnUsageChange
+        runtime.onPermissionPrompt = onPermissionPrompt
     }
 
     // MARK: - Phase accessors

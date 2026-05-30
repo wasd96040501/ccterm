@@ -94,6 +94,13 @@ final class SessionManager {
     /// notification service exists.
     @ObservationIgnored var onTurnEndedNotice: ((TurnEndedNotice) -> Void)?
 
+    /// Manager-level "a session is asking for permission" sink. Wired by
+    /// `AppState` to `NotificationService.handlePermissionPrompt` in the
+    /// same place as `onTurnEndedNotice`, so every session the manager
+    /// allocates gets permission banners for free without `SessionRuntime`
+    /// knowing the notification service exists.
+    @ObservationIgnored var onPermissionPromptNotice: ((PermissionPromptNotice) -> Void)?
+
     init(
         repository: any SessionRepository = CoreDataSessionRepository(),
         cliClientFactory: @escaping CLIClientFactory = AgentSDKCLIClient.defaultFactory,
@@ -232,6 +239,9 @@ final class SessionManager {
         }
         session.onTurnEnded = { [weak self] notice in
             self?.onTurnEndedNotice?(notice)
+        }
+        session.onPermissionPrompt = { [weak self] notice in
+            self?.onPermissionPromptNotice?(notice)
         }
     }
 

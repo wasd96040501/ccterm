@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Icon · 胶囊发光星（实验） · macOS</title>
+<title>Icon · 胶囊星（实验） · macOS</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400;1,500&family=JetBrains+Mono:wght@400;500&family=Spectral:ital,wght@0,300;0,400;1,400&display=swap" rel="stylesheet">
@@ -106,12 +106,12 @@
 <div class="page">
   <header>
     <div>
-      <div class="title-zh">胶囊发光星<span class="badge">实验 · experimental</span></div>
-      <div class="title-en">Glowing capsule along the P→D axis · macOS app-icon sizes · live</div>
+      <div class="title-zh">胶囊星<span class="badge">实验 · experimental</span></div>
+      <div class="title-en">Capsule accent along the P→D axis · macOS app-icon sizes · live</div>
     </div>
     <div class="meta">
-      Iteration 08 · capsule · glow
-      <div class="formula">capsule ∥ axis1 (P→D) · center D · soft glow</div>
+      Iteration 08 · capsule
+      <div class="formula">capsule ∥ axis1 (P→D) · center D</div>
     </div>
   </header>
 
@@ -179,8 +179,8 @@
     </figure>
   </div>
 
-  <!-- N：每个 macOS size 一张成品（胶囊发光） -->
-  <div class="section-label">成品 · all macOS sizes（纯色 · 元素黑 / 底白 · 胶囊发光）</div>
+  <!-- N：每个 macOS size 一张成品（胶囊） -->
+  <div class="section-label">成品 · all macOS sizes（纯色 · 元素黑 / 底白 · 胶囊）</div>
   <div class="ladder" id="ladder"></div>
 
   <!-- 控制台 -->
@@ -216,7 +216,7 @@
   </div>
 
   <footer>
-    <span>右上修饰元素由圆改为胶囊：中心固定在 D，长轴顺着 P→D 轴（星心·画布中心·D 三点共线）。外发光（固定）营造星星发光感；长度与扁平可调，一套滑块驱动全部尺寸。</span>
+    <span>右上修饰元素由圆改为胶囊：中心固定在 D，长轴顺着 P→D 轴（星心·画布中心·D 三点共线）。长度与扁平可调，一套滑块驱动全部尺寸。</span>
     <span class="right">iteration 08 · capsule · 1 + 7</span>
   </footer>
 </div>
@@ -240,24 +240,15 @@
     <filter id="tileShadow" x="-25%" y="-25%" width="150%" height="160%">
       <feDropShadow dx="0" dy="7" stdDeviation="11" flood-color="#1A1A1A" flood-opacity="0.22"/>
     </filter>
-    <!-- 发光：两层高斯模糊（紧 + 宽），固定强度 -->
-    <filter id="glowTight" x="-160%" y="-160%" width="420%" height="420%">
-      <feGaussianBlur stdDeviation="7.6"/>
-    </filter>
-    <filter id="glowWide" x="-260%" y="-260%" width="620%" height="620%">
-      <feGaussianBlur stdDeviation="16.8"/>
-    </filter>
   </defs>
 
-  <!-- 成品图标：白 tile + 投影 + 黑色负空间星 + 黑色发光胶囊，全部裁到 squircle -->
+  <!-- 成品图标：白 tile + 投影 + 黑色负空间星 + 黑色胶囊，全部裁到 squircle -->
   <symbol id="iconArt" viewBox="-48.5437 -48.5437 497.0874 497.0874">
     <path id="symTile" fill="#FFFFFF" d="" filter="url(#tileShadow)"/>
     <g clip-path="url(#squircleClip)">
       <rect x="-60" y="-60" width="520" height="520" fill="#000000" mask="url(#prodStarMask)"/>
       <g id="gCapP">
-        <rect id="pGlowW" fill="#000000" filter="url(#glowWide)" opacity="0.18"/>
-        <rect id="pGlowT" fill="#000000" filter="url(#glowTight)" opacity="0.34"/>
-        <rect id="pCap"   fill="#000000"/>
+        <rect id="pCap" fill="#000000"/>
       </g>
     </g>
   </symbol>
@@ -376,7 +367,7 @@
       width: capLen, height: capThk,
       rx: (capThk / 2).toFixed(2), ry: (capThk / 2).toFixed(2),
     };
-    ['pCap', 'pGlowW', 'pGlowT', 'hCap'].forEach(id => set(id, capAttrs));
+    ['pCap', 'hCap'].forEach(id => set(id, capAttrs));
     const rot = `rotate(${CAP_ANGLE.toFixed(3)} ${D.x} ${D.y})`;
     set('gCapP', { transform: rot });
     set('gCapH', { transform: rot });

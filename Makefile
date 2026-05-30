@@ -1,4 +1,4 @@
-.PHONY: build release dmg clean fmt fmt-check test-unit js-bundles help
+.PHONY: build release dmg clean fmt fmt-check test-unit js-bundles appicon help
 
 XCSTRINGS := macos/ccterm/Localizable.xcstrings
 FMT_XCSTRINGS := python3 macos/scripts/fmt-xcstrings.py
@@ -39,6 +39,9 @@ dmg: ## Create DMG installer (usage: make dmg APP=/path/to/ccterm.app)
 		--app-drop-link 450 190 \
 		ccterm.dmg \
 		"$(APP)"
+
+appicon: ## Regenerate the macOS app icon from design/icon/icon-capsule.html
+	python3 macos/scripts/export-appicon.py
 
 fmt: ## Format Swift sources and localization strings
 	$(SWIFT_FORMAT) format --parallel --in-place --recursive $(SWIFT_SRC)

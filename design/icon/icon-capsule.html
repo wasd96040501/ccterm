@@ -106,11 +106,11 @@
 <div class="page">
   <header>
     <div>
-      <div class="title-zh">胶囊星<span class="badge">实验 · experimental</span></div>
-      <div class="title-en">Capsule accent along the P→D axis · macOS app-icon sizes · live</div>
+      <div class="title-zh">胶囊星</div>
+      <div class="title-en">Capsule star · official macOS app icon · single source of truth</div>
     </div>
     <div class="meta">
-      Iteration 08 · capsule
+      macOS app icon · export via make appicon
       <div class="formula">capsule ∥ axis1 (P→D) · center D</div>
     </div>
   </header>
@@ -400,6 +400,31 @@
 
   [mEl, kEl, lenEl, thkEl].forEach(el => el.addEventListener('input', render));
   render();
+
+  // ---- 导出模式：?export=<px> 只渲染成品 #iconArt（透明底） ----
+  // 让本 HTML 成为图标唯一的 source of truth：export-appicon.py 仅无头截图，
+  // 不复制任何几何/颜色/尺寸。改这里的 SVG 或样式，导出会自动跟着变。
+  const exportPx = parseInt(new URLSearchParams(location.search).get('export') || '', 10);
+  if (Number.isFinite(exportPx) && exportPx > 0) {
+    document.querySelector('.page').style.display = 'none';      // 隐藏文档外壳，保留共享 defs/symbol
+    document.documentElement.style.background = 'transparent';
+    document.body.style.background = 'transparent';
+    document.body.style.margin = '0';
+    const svg = document.createElementNS(SVGNS, 'svg');
+    svg.setAttribute('viewBox', '-48.5437 -48.5437 497.0874 497.0874');
+    svg.setAttribute('width', exportPx);
+    svg.setAttribute('height', exportPx);
+    svg.style.cssText = 'position:fixed; top:0; left:0; display:block';
+    const use = document.createElementNS(SVGNS, 'use');
+    use.setAttribute('href', '#iconArt');
+    use.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', '#iconArt');
+    use.setAttribute('x', '-48.5437');
+    use.setAttribute('y', '-48.5437');
+    use.setAttribute('width', '497.0874');
+    use.setAttribute('height', '497.0874');
+    svg.appendChild(use);
+    document.body.appendChild(svg);
+  }
 </script>
 </body>
 </html>

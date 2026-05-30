@@ -352,8 +352,29 @@ extension SessionRuntime {
     /// so the bridge takes its per-block `.update` fast path — the streamed
     /// text settles into its authoritative form with no remove/insert flicker.
     /// Consumes the preview mapping for this message id.
+    ///
+    /// **Deferred when still typing.** If the typewriter hasn't finished
+    /// revealing this message, the swap is parked on the reveal
+    /// (`scheduleFinalize`) and performed once the head catches up, so a short
+    /// reply types all the way to its end instead of the untyped tail popping
+    /// in. The typewriter emits the `.updated` itself in that case, so this
+    /// returns nil (no synchronous change).
     fileprivate func replaceAssistantEntry(id: UUID, with message: Message2) -> MessageEntry? {
-        guard let idx = messages.firstIndex(where: { $0.id == id }) else { return nil }
+        if case .assistant(let a) = message, let msgId = a.message?.id,
+            shouldDeferFinalize(messageId: msgId)
+        {
+            scheduleFinalize(entryId: id, messageId: msgId, message: message)
+            return nil
+        }
+        return swapAssistantPayload(entryId: id, with: message)
+    }
+
+    /// The actual payload swap, shared by the synchronous `receive` path
+    /// (`replaceAssistantEntry`) and the deferred typewriter-completion path
+    /// (`performAssistantSwap`). Reuses the entry id so block ids converge and
+    /// consumes the preview mapping for this message id.
+    func swapAssistantPayload(entryId: UUID, with message: Message2) -> MessageEntry? {
+        guard let idx = messages.firstIndex(where: { $0.id == entryId }) else { return nil }
         guard case .single(var single) = messages[idx] else { return nil }
         single.payload = .remote(message)
         single.delivery = nil
@@ -362,6 +383,26 @@ extension SessionRuntime {
             streamingPreviewEntryIds.removeValue(forKey: msgId)
         }
         return messages[idx]
+    }
+
+    /// Deferred-path swap: perform the payload swap and emit the `.updated`
+    /// directly. The typewriter calls this when the head finishes revealing a
+    /// finalized message, outside `receive`'s return-the-change flow.
+    func performAssistantSwap(entryId: UUID, message: Message2) {
+        guard let entry = swapAssistantPayload(entryId: entryId, with: message) else { return }
+        onMessagesChange?(.updated(entry))
+    }
+
+    /// Join an assistant message's `.text` blocks with blank-line separators —
+    /// the same shape `StreamingTurnAssembler.currentText` produces, so the
+    /// typewriter's sealed reveal target lines up with the streamed prefix.
+    static func joinedAssistantText(_ message: Message2) -> String? {
+        guard case .assistant(let a) = message, let blocks = a.message?.content else { return nil }
+        let parts: [String] = blocks.compactMap { block in
+            if case .text(let t) = block, let txt = t.text, !txt.isEmpty { return txt }
+            return nil
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: "\n\n")
     }
 
     /// Walk `messages`, flip every locally-queued user entry to
@@ -454,6 +495,14 @@ extension SessionRuntime {
     /// text of every `.text` block on that single, separated by blank
     /// lines and trimmed.
     fileprivate func snapshotLastAssistantText() -> String? {
+        // A still-revealing final message hasn't swapped its provisional
+        // preview for the authoritative text yet — read the deferred envelope
+        // so a turn-end notification body isn't truncated mid-type.
+        if let pending = activeReveal?.pendingFinalize,
+            let text = Self.joinedAssistantText(pending.message)
+        {
+            return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
         for entry in messages.reversed() {
             guard case .single(let s) = entry,
                 case .assistant(let a) = s.remoteMessage,

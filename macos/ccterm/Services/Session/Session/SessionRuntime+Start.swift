@@ -32,6 +32,9 @@ extension SessionRuntime {
             break
         }
         appLog(.info, "SessionRuntime", "stop() close agent \(sessionId)")
+        // Snap any half-typed streaming preview to its full text before the
+        // CLI tears down — no more deltas are coming.
+        finalizeStreamingOnTermination()
         cliClient?.close()
     }
 
@@ -791,6 +794,8 @@ extension SessionRuntime {
         // Process is dead — no `.result` will arrive for any in-flight turn,
         // so clear isRunning explicitly to keep the spinner from getting stuck.
         isRunning = false
+        // …and no more deltas, so snap any half-typed streaming preview whole.
+        finalizeStreamingOnTermination()
 
         for pending in pendingPermissions {
             pending.respond(.deny(reason: "Process exited"))

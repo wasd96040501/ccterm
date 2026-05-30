@@ -261,14 +261,27 @@ final class SessionRuntime {
     /// per turn. See `SessionRuntime+Streaming`.
     @ObservationIgnored internal var streamingPreviewEntryIds: [String: UUID] = [:]
 
-    /// Coalescing guard for the streaming-text flush — collapses a burst of
-    /// `text_delta`s into one re-render per runloop tick.
+    /// Coalescing guard for the streaming usage flush — collapses a burst of
+    /// usage-bearing stream events into one pill-counter publish per runloop
+    /// tick. (Streaming *text* no longer rides this; it is paced by the
+    /// typewriter frame ticker.)
     @ObservationIgnored internal var streamingFlushScheduled = false
 
-    /// Last committed streaming text emitted to the renderer, so a usage-only
-    /// flush tick doesn't re-typeset the preview. Reset when the message
-    /// switches or the turn restarts.
-    @ObservationIgnored internal var lastStreamingCommit: String?
+    /// The in-flight streaming message's typewriter reveal — a single active
+    /// reveal at a time. A new `message_start` snaps the previous one and
+    /// starts fresh. `nil` when no assistant message is streaming. The
+    /// `frameTicker` advances its `head` per frame; see
+    /// `SessionRuntime+Streaming`.
+    @ObservationIgnored internal var activeReveal: TypewriterReveal?
+
+    /// Whether the `frameTicker` is currently driving `activeReveal`. Guards
+    /// the start/stop so a burst of deltas doesn't re-arm the ticker.
+    @ObservationIgnored internal var typewriterRunning = false
+
+    /// Frame timer that paces the typewriter reveal. Injected so tests can
+    /// step it deterministically (`ManualFrameTicker`); production uses
+    /// `TimerFrameTicker`. See `SessionRuntime+Streaming`.
+    @ObservationIgnored internal let frameTicker: FrameTicker
 
     /// Most-recent typed `get_context_usage` response from the CLI. `nil`
     /// until the popover has fetched at least once. The popover reads
@@ -398,11 +411,17 @@ final class SessionRuntime {
     init(
         sessionId: String,
         repository: any SessionRepository,
-        cliClientFactory: @escaping CLIClientFactory = AgentSDKCLIClient.defaultFactory
+        cliClientFactory: @escaping CLIClientFactory = AgentSDKCLIClient.defaultFactory,
+        frameTicker: FrameTicker? = nil
     ) {
         self.sessionId = sessionId
         self.repository = repository
         self.cliClientFactory = cliClientFactory
+        // Default to the production timer here (inside the @MainActor init)
+        // rather than as a default argument — a @MainActor initializer can't be
+        // evaluated in the nonisolated default-argument context. Tests inject a
+        // `ManualFrameTicker`.
+        self.frameTicker = frameTicker ?? TimerFrameTicker()
         if let record = repository.find(sessionId) {
             hasRecord = true
             apply(record)

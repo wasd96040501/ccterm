@@ -120,6 +120,9 @@ jobs:
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          # CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO drops the injected
+          # get-task-allow (debug-attach) entitlement that notarization rejects;
+          # the app carries no other entitlements (see scripts/install.sh).
           xcodebuild \
             -project macos/ccterm.xcodeproj \
             -scheme ccterm \
@@ -130,6 +133,7 @@ jobs:
             CODE_SIGN_IDENTITY="Developer ID Application" \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             OTHER_CODE_SIGN_FLAGS="--timestamp" \
+            CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
             build
 
       - name: Locate built .app

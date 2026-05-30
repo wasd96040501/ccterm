@@ -1,0 +1,188 @@
+name: publish-release
+
+# Cuts a signed + notarized GitHub Release whenever a `v*` tag is pushed.
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# This is SEPARATE from `release.yml` on purpose: that one builds Release on
+# every PR/push as a compiler-crash canary; this one only runs on tags and is
+# the thing that actually ships a binary to users.
+#
+# Required secrets — add them on the `release` ENVIRONMENT (Settings → Environments
+# → release → Environment secrets), NOT repo-wide. The environment carries a
+# required reviewer, so a run can't unlock your signing key until you approve it:
+#   MACOS_CERTIFICATE      base64 of your exported "Developer ID Application" .p12
+#                          (export from Keychain Access WITH the private key)
+#                          → base64 -i DeveloperID.p12 | pbcopy
+#   MACOS_CERTIFICATE_PWD  the password you set when exporting the .p12
+#   KEYCHAIN_PASSWORD      any random string; password for the throwaway keychain
+#   APPLE_TEAM_ID          your 10-char Apple Developer Team ID
+#   NOTARY_APPLE_ID        the Apple ID email used for notarization
+#   NOTARY_PASSWORD        an APP-SPECIFIC password (appleid.apple.com → Sign-In
+#                          and Security → App-Specific Passwords), NOT your login pw
+#
+# The Release itself is published with the built-in GITHUB_TOKEN, so it shows as
+# authored by github-actions[bot] — no personal token needed.
+#
+# (Alternative to NOTARY_APPLE_ID/NOTARY_PASSWORD: an App Store Connect API key —
+#  swap the notarytool flags for --key/--key-id/--issuer. The Apple-ID path below
+#  is the simplest first setup.)
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: macos-26
+    timeout-minutes: 45
+    # Gates the whole job behind the `release` environment's required reviewer:
+    # the signing secrets stay locked until you click "approve" on the run.
+    environment: release
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Init submodules (with retry)
+        # Same retry dance as release.yml — actions/checkout's recursive
+        # submodule fetch has no retry and flakes on transient network hiccups.
+        run: |
+          for attempt in 1 2 3; do
+            if git submodule update --init --recursive; then
+              exit 0
+            fi
+            echo "::warning::git submodule update failed on attempt $attempt"
+            git submodule deinit -f --all || true
+            sleep $((attempt * 5))
+          done
+          exit 1
+
+      - name: Setup Go
+        # fzf submodule compiles from Go sources inside an Xcode build phase.
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+          cache-dependency-path: thirdparty/fzf/go.sum
+
+      - name: Setup Bun
+        # JSCore syntax-highlight bundle is compiled from js/ by `make js-bundles`.
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: latest
+
+      - name: Import Developer ID certificate
+        # THIS is how the runner "knows" your signing identity: we decode the
+        # .p12 (certificate + private key) and import it into a throwaway
+        # keychain that's discarded with the runner at job end.
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          CERT_PATH="$RUNNER_TEMP/developer_id.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$CERT_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Import the cert+key; -T authorises codesign to use the private key.
+          security import "$CERT_PATH" -k "$KEYCHAIN_PATH" \
+            -P "$MACOS_CERTIFICATE_PWD" -T /usr/bin/codesign
+
+          # CI has no UI to click "Always Allow" — grant non-interactive access.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # Put our keychain first in the search list so codesign finds the identity.
+          security list-keychains -d user -s "$KEYCHAIN_PATH" \
+            $(security list-keychains -d user | sed 's/"//g')
+
+          # Sanity check: the identity must be present, else fail early.
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+          rm -f "$CERT_PATH"
+
+      - name: Compile JSCore bundles
+        run: make js-bundles
+
+      - name: Build (Release, signed with Developer ID)
+        # Manual signing in CI is more deterministic than Automatic (no
+        # provisioning-profile fetch). Hardened runtime is already ON in the
+        # project (ENABLE_HARDENED_RUNTIME=YES) which notarization requires;
+        # --timestamp adds the secure timestamp notarization also requires.
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          xcodebuild \
+            -project macos/ccterm.xcodeproj \
+            -scheme ccterm \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            -derivedDataPath macos/build/release-dd \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY="Developer ID Application" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            OTHER_CODE_SIGN_FLAGS="--timestamp" \
+            build
+
+      - name: Locate built .app
+        id: app
+        run: |
+          APP_PATH=$(find macos/build/release-dd/Build/Products/Release -maxdepth 2 -name 'ccterm.app' -type d | head -n1)
+          if [ -z "$APP_PATH" ]; then
+            echo "Could not find ccterm.app under macos/build/release-dd/Build/Products/Release"
+            exit 1
+          fi
+          echo "path=$APP_PATH" >> "$GITHUB_OUTPUT"
+          # Verify the signature is a valid Developer ID one before notarizing.
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+
+      - name: Notarize & staple
+        env:
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          APP_PATH='${{ steps.app.outputs.path }}'
+          SUBMIT_ZIP="$RUNNER_TEMP/notarize.zip"
+
+          # notarytool wants a zip/dmg/pkg, not a bare .app.
+          ditto -c -k --keepParent "$APP_PATH" "$SUBMIT_ZIP"
+
+          xcrun notarytool submit "$SUBMIT_ZIP" \
+            --apple-id "$NOTARY_APPLE_ID" \
+            --password "$NOTARY_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+
+          # Staple the ticket INTO the app so Gatekeeper validates offline.
+          xcrun stapler staple "$APP_PATH"
+          xcrun stapler validate "$APP_PATH"
+
+      - name: Package release asset
+        id: pkg
+        run: |
+          set -euo pipefail
+          APP_PATH='${{ steps.app.outputs.path }}'
+          VERSION="${GITHUB_REF_NAME#v}"
+          ASSET="ccterm-${VERSION}.zip"
+          # Re-zip AFTER stapling so the downloaded artifact carries the ticket.
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$GITHUB_WORKSPACE/$ASSET"
+          echo "asset=$ASSET" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
+        with:
+          # Default GITHUB_TOKEN (permissions: contents: write above); the
+          # Release is authored by github-actions[bot] — no personal PAT needed.
+          files: ${{ steps.pkg.outputs.asset }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true

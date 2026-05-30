@@ -150,18 +150,30 @@ jobs:
           NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           APP_PATH='${{ steps.app.outputs.path }}'
           SUBMIT_ZIP="$RUNNER_TEMP/notarize.zip"
 
           # notarytool wants a zip/dmg/pkg, not a bare .app.
           ditto -c -k --keepParent "$APP_PATH" "$SUBMIT_ZIP"
 
-          xcrun notarytool submit "$SUBMIT_ZIP" \
+          OUT=$(xcrun notarytool submit "$SUBMIT_ZIP" \
             --apple-id "$NOTARY_APPLE_ID" \
             --password "$NOTARY_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
-            --wait
+            --wait --output-format json) || true
+          echo "$OUT"
+          SUBMIT_ID=$(echo "$OUT" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("id",""))')
+          STATUS=$(echo "$OUT"  | python3 -c 'import sys,json;print(json.load(sys.stdin).get("status",""))')
+
+          if [ "$STATUS" != "Accepted" ]; then
+            echo "::error::Notarization status=$STATUS — dumping Apple's per-file log:"
+            xcrun notarytool log "$SUBMIT_ID" \
+              --apple-id "$NOTARY_APPLE_ID" \
+              --password "$NOTARY_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" || true
+            exit 1
+          fi
 
           # Staple the ticket INTO the app so Gatekeeper validates offline.
           xcrun stapler staple "$APP_PATH"

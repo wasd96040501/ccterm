@@ -74,6 +74,13 @@ extension SessionRuntime {
             if mode == .live {
                 flushQueuedOnInit()
             }
+        case .system(.thinkingTokens(let tt)) where mode == .live:
+            // CLI's redacted-thinking progress: `estimated_tokens` is the
+            // cumulative (conservative) thinking-token estimate for the current
+            // block. Fold it into the running output total so the pill's `↓`
+            // counter climbs during thinking; the authoritative `message_delta`
+            // total (which includes thinking) supersedes it at turn's end.
+            if let cumulative = tt.estimatedTokens { foldThinkingEstimate(cumulativeEstimate: cumulative) }
         case .system(.status(let s)):
             // CLI broadcasts a `system.status` whenever the
             // session-side permission mode changes. Three triggers

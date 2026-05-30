@@ -127,6 +127,16 @@ final class Session {
         }
     }
 
+    /// Live turn-token-usage sink for the AppKit running pill, forwarded to the
+    /// runtime when one exists. Imperative channel (no `@Observable`): the
+    /// runtime fires it synchronously at each `turnUsage` write. Re-attached in
+    /// `wireRuntimeMessagesSink` at promotion time.
+    @ObservationIgnored var onTurnUsageChange: ((TurnTokenUsage) -> Void)? {
+        didSet {
+            runtime?.onTurnUsageChange = onTurnUsageChange
+        }
+    }
+
     // MARK: - Init
 
     /// Construct from an existing record. `phase` is `.active` with a
@@ -213,6 +223,7 @@ final class Session {
         runtime.onLaunchFailure = onLaunchFailure
         runtime.onRecordPersisted = onRecordPersisted
         runtime.onTurnEnded = onTurnEnded
+        runtime.onTurnUsageChange = onTurnUsageChange
     }
 
     // MARK: - Phase accessors

@@ -6,10 +6,10 @@ import AppKit
 /// instead of snapping.
 ///
 /// Why a roll is needed at all: the CLI reports authoritative `output_tokens`
-/// only once per message (the trailing `message_delta`), so the displayed
-/// total tends to climb in a smooth stream of estimate updates and then take
-/// one larger step when the real figure lands. Easing the *displayed* value
-/// toward the target turns both into a continuous count-up. The runtime drives
+/// only once per message (the trailing `message_delta`), so the target jumps
+/// in a single large step per message rather than climbing smoothly. Easing the
+/// *displayed* value toward the target turns each jump into a continuous
+/// count-up instead of an abrupt snap. The runtime drives
 /// targets through `Transcript2Coordinator.setTurnUsage` → a single-row
 /// `reloadData`, which re-runs the subview plan and calls `apply(spec:)` here;
 /// the cell reconciler reuses this view across reloads, so the roll state

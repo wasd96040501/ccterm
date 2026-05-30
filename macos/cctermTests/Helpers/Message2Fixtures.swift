@@ -127,6 +127,23 @@ enum Message2Fixtures {
         ])
     }
 
+    /// A `Message2.system(.thinkingTokens)` — the CLI's redacted-thinking
+    /// progress signal. `estimatedTokens` is the cumulative (conservative)
+    /// thinking-token estimate for the current block; `estimatedTokensDelta`
+    /// is the per-frame increment. See `ThinkingUsageSmoke` for live samples.
+    static func systemThinkingTokens(
+        estimatedTokens: Int, estimatedTokensDelta: Int, sessionId: String = "s"
+    ) -> Message2 {
+        resolve([
+            "type": "system",
+            "subtype": "thinking_tokens",
+            "uuid": UUID().uuidString,
+            "session_id": sessionId,
+            "estimated_tokens": estimatedTokens,
+            "estimated_tokens_delta": estimatedTokensDelta,
+        ])
+    }
+
     /// Assistant message containing exactly one Read tool_use block. Useful
     /// for tool_group rendering tests.
     static func assistantRead(

@@ -87,19 +87,52 @@ final class SessionRuntimeStreamingTests: XCTestCase {
 
     func testTurnUsageTracksStreamThenFinalEnvelope() async {
         let runtime = makeRuntime()
+        // message_start carries real input + a small output placeholder; the
+        // authoritative cumulative output lands only in message_delta.
         runtime.consumeStreamEvent(
-            Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 12, outputTokens: 1))
-        runtime.consumeStreamEvent(Message2Fixtures.streamMessageDelta(outputTokens: 40))
-        await wait(for: runtime) { runtime.turnUsage.outputTokens == 40 }
+            Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 12, outputTokens: 5))
+        runtime.consumeStreamEvent(Message2Fixtures.streamMessageDelta(outputTokens: 1556))
+        await wait(for: runtime) { runtime.turnUsage.outputTokens == 1556 }
 
         XCTAssertEqual(runtime.turnUsage.inputTokens, 12)
-        XCTAssertEqual(runtime.turnUsage.outputTokens, 40)
+        XCTAssertEqual(runtime.turnUsage.outputTokens, 1556)
 
-        // A finalized envelope restates authoritative usage for the message.
+        // GROUND TRUTH (ThinkingUsageSmoke): the finalized `.assistant` envelope
+        // carries the SAME output placeholder (5), not the real total. It must
+        // not regress the authoritative figure message_delta already delivered.
         let final = Message2Fixtures.assistantWithUsage(
-            messageId: "m1", text: "done", inputTokens: 12, outputTokens: 47)
+            messageId: "m1", text: "done", inputTokens: 12, outputTokens: 5)
         runtime.receive(final, mode: .live)
         XCTAssertEqual(runtime.turnUsage.inputTokens, 12)
-        XCTAssertEqual(runtime.turnUsage.outputTokens, 47, "final envelope reconciles the output total")
+        XCTAssertEqual(
+            runtime.turnUsage.outputTokens, 1556,
+            "the placeholder in the final envelope must not clobber the real total")
+    }
+
+    /// A `system.thinking_tokens` arriving during the thinking phase folds its
+    /// cumulative estimate into the running output and pushes it through the
+    /// imperative `onTurnUsageChange` sink (no observation).
+    func testThinkingTokensSystemMessageDrivesOutputViaImperativeSink() async {
+        let runtime = makeRuntime()
+        var pushed: [TurnTokenUsage] = []
+        runtime.onTurnUsageChange = { pushed.append($0) }
+
+        runtime.consumeStreamEvent(
+            Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 2465, outputTokens: 5))
+        // Redacted-thinking progress (cumulative estimate climbs).
+        runtime.receive(
+            Message2Fixtures.systemThinkingTokens(estimatedTokens: 200, estimatedTokensDelta: 200), mode: .live)
+        runtime.receive(
+            Message2Fixtures.systemThinkingTokens(estimatedTokens: 900, estimatedTokensDelta: 700), mode: .live)
+
+        XCTAssertEqual(runtime.turnUsage.outputTokens, 900, "thinking estimate folded into output")
+        XCTAssertEqual(runtime.turnUsage.inputTokens, 2465)
+        XCTAssertEqual(
+            pushed.last?.outputTokens, 900,
+            "the imperative sink fired synchronously with the latest total")
+
+        // Authoritative total supersedes the estimate.
+        runtime.consumeStreamEvent(Message2Fixtures.streamMessageDelta(outputTokens: 1752))
+        await wait(for: runtime) { runtime.turnUsage.outputTokens == 1752 }
     }
 }

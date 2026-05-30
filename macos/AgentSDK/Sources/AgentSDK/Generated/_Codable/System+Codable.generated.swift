@@ -44,6 +44,9 @@ extension System {
         case "task_updated":
             let _v: TaskUpdated = try _jp(dict)
             self = .taskUpdated(_v)
+        case "thinking_tokens":
+            let _v: ThinkingTokens = try _jp(dict)
+            self = .thinkingTokens(_v)
         case "turn_duration":
             let _v: TurnDuration = try _jp(dict)
             self = .turnDuration(_v)
@@ -64,6 +67,7 @@ extension System {
         case .taskProgress(let v): return v.toJSON()
         case .taskStarted(let v): return v.toJSON()
         case .taskUpdated(let v): return v.toJSON()
+        case .thinkingTokens(let v): return v.toJSON()
         case .turnDuration(let v): return v.toJSON()
         case .unknown(_, let raw): return raw
         }
@@ -85,6 +89,7 @@ extension System {
         case .taskProgress(let v): return v.strippingUnknown().map { .taskProgress($0) }
         case .taskStarted(let v): return v.strippingUnknown().map { .taskStarted($0) }
         case .taskUpdated(let v): return v.strippingUnknown().map { .taskUpdated($0) }
+        case .thinkingTokens(let v): return v.strippingUnknown().map { .thinkingTokens($0) }
         case .turnDuration(let v): return v.strippingUnknown().map { .turnDuration($0) }
         }
     }
@@ -136,6 +141,10 @@ extension System {
         case .taskUpdated(let v):
             var d = v.toTypedJSON() as? [String: Any] ?? [:]
             d["subtype"] = "task_updated"
+            return d
+        case .thinkingTokens(let v):
+            var d = v.toTypedJSON() as? [String: Any] ?? [:]
+            d["subtype"] = "thinking_tokens"
             return d
         case .turnDuration(let v):
             var d = v.toTypedJSON() as? [String: Any] ?? [:]

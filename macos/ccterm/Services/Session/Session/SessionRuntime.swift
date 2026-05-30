@@ -237,7 +237,18 @@ final class SessionRuntime {
     /// (cache excluded). Reset on each `send`, updated live from the
     /// partial-message stream (`streamingAssembler`) and reconciled against
     /// finalized `.assistant` envelopes. Surfaced beside the running pill.
-    internal(set) var turnUsage: TurnTokenUsage = .zero
+    ///
+    /// The running pill is an AppKit surface, so this rides the **imperative**
+    /// channel — every write goes through `publishTurnUsage`, which fires
+    /// `onTurnUsageChange` synchronously at the mutation site (no `@Observable`,
+    /// no `withObservationTracking` pull). Kept as a plain stored value (not
+    /// observed) only so a freshly-attached transcript can read the current
+    /// total once on mount.
+    @ObservationIgnored internal(set) var turnUsage: TurnTokenUsage = .zero
+
+    /// Imperative sink for `turnUsage` changes (AppKit pill). Fired
+    /// synchronously by `publishTurnUsage`. Forwarded from `Session`.
+    @ObservationIgnored var onTurnUsageChange: ((TurnTokenUsage) -> Void)?
 
     /// Per-turn folder for SSE partial-message events (`onStreamEvent`).
     /// Off the observation path — `turnUsage` and the streaming-text preview

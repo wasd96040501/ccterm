@@ -26,7 +26,25 @@ extension SessionRuntime {
         streamingAssembler.reset()
         streamingPreviewEntryIds = [:]
         lastStreamingCommit = nil
-        turnUsage = .zero
+        publishTurnUsage(.zero)
+    }
+
+    /// Single funnel for `turnUsage` writes: update the stored value and push it
+    /// to the AppKit pill imperatively (no observation). See `turnUsage`.
+    func publishTurnUsage(_ usage: TurnTokenUsage) {
+        turnUsage = usage
+        onTurnUsageChange?(usage)
+    }
+
+    /// Fold the CLI's cumulative thinking-token estimate
+    /// (`system.thinking_tokens.estimated_tokens`) into the running output total
+    /// so the `↓` counter climbs during the redacted thinking phase. Called from
+    /// `receive`'s `.system(.thinkingTokens)` arm. The authoritative
+    /// `message_delta` total supersedes it later (see `StreamingTurnAssembler`).
+    func foldThinkingEstimate(cumulativeEstimate: Int) {
+        guard streamingAssembler.recordThinkingEstimate(cumulativeEstimate: cumulativeEstimate)
+        else { return }
+        publishTurnUsage(streamingAssembler.turnUsage)
     }
 
     /// Fold one typed stream event (already hopped to the main actor) into the
@@ -48,7 +66,7 @@ extension SessionRuntime {
             messageId: id,
             input: assistant.message?.usage?.inputTokens,
             output: assistant.message?.usage?.outputTokens)
-        turnUsage = streamingAssembler.turnUsage
+        publishTurnUsage(streamingAssembler.turnUsage)
     }
 
     // MARK: - Coalesced flush
@@ -68,7 +86,7 @@ extension SessionRuntime {
 
     private func flushStreamingState() {
         // Usage first — cheap, always current.
-        turnUsage = streamingAssembler.turnUsage
+        publishTurnUsage(streamingAssembler.turnUsage)
 
         guard let messageId = streamingAssembler.currentMessageId else { return }
         let committed = StreamingMarkdownCommit.committedPrefix(of: streamingAssembler.currentText)

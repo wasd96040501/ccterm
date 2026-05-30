@@ -32,7 +32,28 @@ extension SessionRuntime {
             break
         }
         appLog(.info, "SessionRuntime", "stop() close agent \(sessionId)")
+        // Snap any half-typed streaming preview to its full text before the
+        // CLI tears down — no more deltas are coming.
+        finalizeStreamingOnTermination()
         cliClient?.close()
+    }
+
+    /// Async sibling of `stop()`: waits for the CLI to actually exit
+    /// before returning, so the app-quit path can fan multiple sessions
+    /// out in parallel and only proceed once every subprocess has wound
+    /// down (or the underlying SDK's per-process timeout has forced
+    /// SIGTERM). `stop()` is unchanged so the stop-button path stays
+    /// fire-and-forget.
+    func closeAsync() async {
+        switch status {
+        case .notStarted, .stopped:
+            return
+        default:
+            break
+        }
+        guard let client = cliClient else { return }
+        appLog(.info, "SessionRuntime", "closeAsync() close agent \(sessionId)")
+        await client.closeAsync()
     }
 }
 
@@ -80,6 +101,9 @@ extension SessionRuntime {
     /// draft-to-runtime promotion path (the runtime receives an already-
     /// titled draft); inside the runtime, `send` does not touch `title`.
     private func enqueueAndSend(_ input: LocalUserInput) {
+        // A new user turn starts — drop the prior turn's streaming state
+        // (token totals reset to zero, any stale preview mapping cleared).
+        resetStreamingTurn()
         let single = SingleEntry(
             id: UUID(),
             payload: .localUser(input),
@@ -160,6 +184,12 @@ extension SessionRuntime {
         isGeneratingTitle = false
         title = result.titleI18n
         repository.updateTitle(sessionId, title: result.titleI18n)
+        // `title` is `@Observable` and `SidebarHistoryRow` reads it via
+        // `session.title`, so the row re-renders on its own; the
+        // `refreshRecords()` roundtrip is kept so the persisted `record.title`
+        // stays current for sessions whose runtime later gets evicted (sidebar
+        // falls back to `record.title`).
+        onRecordPersisted?()
         appLog(.info, "SessionRuntime", "title-gen done \(sessionId) title=\(result.titleI18n)")
     }
 }
@@ -606,6 +636,18 @@ extension SessionRuntime {
             availableModels = models
         }
 
+        // The bootstrap `initialize` response is the only source that
+        // carries command descriptions; the recurring `system.init` stream
+        // message has names only. Cache the descriptions so `adopt(_:)` can
+        // merge them back in, and seed `slashCommands` now so the popup has
+        // descriptions even before the first `system.init` lands.
+        if let cmds = initResp?.commands {
+            slashCommandDescriptions = Dictionary(
+                cmds.compactMap { cmd in cmd.description.map { (cmd.name, $0) } },
+                uniquingKeysWith: { first, _ in first })
+            slashCommands = cmds.map { SlashCommand(name: $0.name, description: $0.description) }
+        }
+
         status = .idle
         if wasFresh {
             repository.updateStatus(sessionId, to: .created)
@@ -665,6 +707,15 @@ extension SessionRuntime {
             }
         }
 
+        // Partial-message stream (gated by `includePartialMessages`). Folds
+        // into live assistant text + turn token usage; see
+        // `SessionRuntime+Streaming`.
+        session.onStreamEvent = { [weak self] event in
+            Task { @MainActor [weak self] in
+                self?.consumeStreamEvent(event)
+            }
+        }
+
         session.onPermissionRequest = { [weak self] request, completion in
             Task { @MainActor [weak self] in
                 guard let self else {
@@ -714,6 +765,20 @@ extension SessionRuntime {
             }
         )
         pendingPermissions.append(pending)
+
+        // Surface "your input is needed" through the same sink that posts
+        // a turn-end banner. A pending permission blocks the turn, so the
+        // `.responding` → `.idle` edge that drives `onTurnEnded` never
+        // fires while the card is up; without this a backgrounded app gets
+        // no banner at all. Fire unconditionally — the subscriber gates on
+        // app focus, exactly like the turn-end path.
+        let displayTitle = title.isEmpty ? String(localized: "Untitled") : title
+        onPermissionPrompt?(
+            PermissionPromptNotice(
+                sessionId: sessionId,
+                title: displayTitle,
+                body: String(localized: "Permission required to use \(request.toolName)")
+            ))
     }
 
     fileprivate func handleProcessExit(_ code: Int32) {
@@ -743,6 +808,8 @@ extension SessionRuntime {
         // Process is dead — no `.result` will arrive for any in-flight turn,
         // so clear isRunning explicitly to keep the spinner from getting stuck.
         isRunning = false
+        // …and no more deltas, so snap any half-typed streaming preview whole.
+        finalizeStreamingOnTermination()
 
         for pending in pendingPermissions {
             pending.respond(.deny(reason: "Process exited"))

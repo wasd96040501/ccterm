@@ -29,4 +29,8 @@ struct FileEditChild: Equatable, Sendable {
     /// of the displayed `label`).
     let filePath: String
     let diff: DiffBlock
+    /// Wrapper-level error text (`tool_result.is_error == true`), stripped
+    /// of the `<tool_use_error>` envelope. `nil` on success. Rendered as a
+    /// uniform red error card below the diff body by `ToolGroupChildLayout`.
+    var errorText: String? = nil
 }

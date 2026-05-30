@@ -24,5 +24,33 @@ let package = Package(
             name: "InterruptSmoke",
             dependencies: ["AgentSDK"]
         ),
+        .executableTarget(
+            name: "PartialMessagesSmoke",
+            dependencies: ["AgentSDK"]
+        ),
+        .executableTarget(
+            name: "PermissionModeProbe",
+            dependencies: ["AgentSDK"]
+        ),
+        .executableTarget(
+            name: "QueueTimingSmoke",
+            dependencies: ["AgentSDK"]
+        ),
+        .executableTarget(
+            name: "TodoSmoke",
+            dependencies: ["AgentSDK"]
+        ),
+        .executableTarget(
+            name: "ContextUsageSmoke",
+            dependencies: ["AgentSDK"]
+        ),
+        .executableTarget(
+            name: "ThinkingUsageSmoke",
+            dependencies: ["AgentSDK"]
+        ),
+        .executableTarget(
+            name: "SideQuestionSmoke",
+            dependencies: ["AgentSDK"]
+        ),
     ]
 )

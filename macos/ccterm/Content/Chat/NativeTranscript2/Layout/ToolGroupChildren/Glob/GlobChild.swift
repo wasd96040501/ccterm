@@ -15,4 +15,8 @@ struct GlobChild: Equatable, Sendable {
     let pattern: String
     let filenames: [String]
     let truncated: Bool
+    /// Wrapper-level error text (`tool_result.is_error == true`), stripped
+    /// of the `<tool_use_error>` envelope. `nil` on success. Rendered as a
+    /// uniform red error card below the body by `ToolGroupChildLayout`.
+    var errorText: String? = nil
 }

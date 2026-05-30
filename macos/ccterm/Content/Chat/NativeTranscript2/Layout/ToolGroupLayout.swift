@@ -160,34 +160,28 @@ struct ToolGroupLayout: @unchecked Sendable {
         var out: [Region] = []
         for (idx, entry) in items.enumerated() {
             guard let body = entry.body else { continue }
-            switch body {
-            case .fileEdit(let l):
-                let d = l.body
-                guard !d.containerRect.isEmpty else { continue }
+            // Diff-bearing kinds (`fileEdit`, `read` in new-file mode)
+            // expose a `DiffLayout`; selection threads through the diff
+            // path. `diffBody` is the single source of truth for "this
+            // kind renders a diff."
+            if let d = body.diffBody, !d.containerRect.isEmpty {
                 out.append(makeDiffRegion(childIndex: idx, body: d))
-            case .read(let l):
-                // Read renders through `DiffLayout` in new-file mode;
-                // selection threads through the same diff path as
-                // `fileEdit`.
-                guard let d = l.body, !d.containerRect.isEmpty else { continue }
-                out.append(makeDiffRegion(childIndex: idx, body: d))
-            case .generic:
-                // Header-only — no body geometry to select.
-                continue
-            case .bash, .grep, .glob, .webFetch, .webSearch,
-                .askUserQuestion, .agent:
-                // Every kind in this arm exposes its body through
-                // `textCardSections`; the accessor switch on
-                // `ToolGroupChildLayout` is the single source of
-                // truth for "this kind uses the text-card primitive."
-                let sections = body.textCardSections ?? []
-                for (sectionIndex, section) in sections.enumerated() {
-                    out.append(
-                        makeTextCardRegion(
-                            childIndex: idx,
-                            sectionIndex: sectionIndex,
-                            section: section))
-                }
+            }
+            // Text-card sections: the per-kind cards (bash / grep / …)
+            // plus the uniform error card, which `textCardSections`
+            // appends as the trailing section for *every* kind — so a
+            // failed `fileEdit` or header-only `generic` still gets its
+            // error text selectable + searchable. The error card's
+            // `.textCard` position never collides with a diff body's
+            // `.diff` position (different `LayoutPosition` cases).
+            for (sectionIndex, section) in (body.textCardSections ?? [])
+                .enumerated()
+            {
+                out.append(
+                    makeTextCardRegion(
+                        childIndex: idx,
+                        sectionIndex: sectionIndex,
+                        section: section))
             }
         }
         return out
@@ -621,12 +615,11 @@ struct ToolGroupLayout: @unchecked Sendable {
         let displayTitle: String
         let titleWidth: CGFloat
         if titleBudget > 0 {
-            // Trim leading path components (`Sources/Foo/Bar.swift`
-            // → `…/Bar.swift`) when the band can't fit the full
-            // string. The basename — the part the eye scans for — is
-            // preserved, matching `web/src/utils/displayPath.ts`'s
-            // behavior on the React side.
-            displayTitle = truncateHead(title, budget: titleBudget, font: font)
+            // Trim the trailing end (`Edit Sources/Foo/Bar.swift`
+            // → `Edit Sources/Fo…`) when the band can't fit the full
+            // string. The leading text — the tool verb plus the start
+            // of its target, which the eye reads first — is preserved.
+            displayTitle = truncateTail(title, budget: titleBudget, font: font)
             titleWidth = min(
                 textWidth(displayTitle, attrs: [.font: font]),
                 titleBudget)
@@ -703,24 +696,37 @@ struct ToolGroupLayout: @unchecked Sendable {
             status: .completed)
     }
 
-    /// Trim leading path components until the remainder fits `budget`
-    /// at `font`. Prepends `…/` once a trim happens.
-    nonisolated private static func truncateHead(
-        _ path: String, budget: CGFloat, font: NSFont
+    /// Tail-truncate `text` so it fits `budget` at `font`, keeping the
+    /// longest leading prefix whose width plus a trailing `…` still
+    /// fits.
+    ///
+    /// This is the load-bearing invariant: the returned string's
+    /// typographic width is always ≤ `budget`. `makeHeader` clamps the
+    /// numeric `titleWidth` to `titleBudget` but `drawHeader`
+    /// retypesets the raw `header.title` at draw time — without this
+    /// guarantee the glyphs spill past the title band and overlap the
+    /// chevron.
+    nonisolated private static func truncateTail(
+        _ text: String, budget: CGFloat, font: NSFont
     ) -> String {
         let attrs: [NSAttributedString.Key: Any] = [.font: font]
-        if textWidth(path, attrs: attrs) <= budget { return path }
+        if textWidth(text, attrs: attrs) <= budget { return text }
 
-        let parts = path.split(separator: "/")
-        guard parts.count > 1 else { return path }
-        for drop in 1..<parts.count {
-            let kept = parts[drop...].joined(separator: "/")
-            let candidate = "…/" + kept
+        let ellipsis = "…"
+        if textWidth(ellipsis, attrs: attrs) > budget { return "" }
+        let chars = Array(text)
+        var lo = 0
+        var hi = chars.count
+        while lo < hi {
+            let mid = (lo + hi + 1) / 2
+            let candidate = String(chars.prefix(mid)) + ellipsis
             if textWidth(candidate, attrs: attrs) <= budget {
-                return candidate
+                lo = mid
+            } else {
+                hi = mid - 1
             }
         }
-        return "…/" + (parts.last.map(String.init) ?? path)
+        return String(chars.prefix(lo)) + ellipsis
     }
 
     nonisolated private static func textWidth(
@@ -816,6 +822,10 @@ struct ToolGroupLayout: @unchecked Sendable {
         hovered: Bool,
         selectionRects: [CGRect],
         selectionColor: NSColor,
+        searchActiveRects: [CGRect],
+        searchInactiveRects: [CGRect],
+        searchActiveColor: NSColor,
+        searchInactiveColor: NSColor,
         hoveredCopyId: UUID?,
         flashingCopyIds: Set<UUID>,
         in ctx: CGContext,
@@ -835,6 +845,21 @@ struct ToolGroupLayout: @unchecked Sendable {
         if !filtered.isEmpty {
             ctx.setFillColor(selectionColor.cgColor)
             for r in filtered {
+                ctx.fill(r.offsetBy(dx: dx, dy: dy).integral)
+            }
+        }
+
+        // 2.5 Search highlights — over the selection band, under glyphs
+        // (same order as `BlockCellView.draw`). Inactive first so the
+        // active (cursor) hit's brighter tint wins where they overlap.
+        for (rects, color) in [
+            (searchInactiveRects, searchInactiveColor),
+            (searchActiveRects, searchActiveColor),
+        ] {
+            let hits = rects.filter { bandRect.intersects($0) }
+            guard !hits.isEmpty else { continue }
+            ctx.setFillColor(color.cgColor)
+            for r in hits {
                 ctx.fill(r.offsetBy(dx: dx, dy: dy).integral)
             }
         }
@@ -893,6 +918,7 @@ struct ToolGroupLayout: @unchecked Sendable {
         origin: CGPoint,
         hoveredAction: HitAction?,
         selection: SelectionRange?,
+        searchHighlights: [SearchHighlightSpec]? = nil,
         flashingCopyIds: Set<UUID> = []
     ) -> SubviewPlan {
         let hoveredId = Self.hoveredFoldId(in: hoveredAction)
@@ -936,6 +962,28 @@ struct ToolGroupLayout: @unchecked Sendable {
             return adapter.rects(selection.start, selection.end)
         }()
 
+        // Search-highlight rects, in the same layout-local coords as
+        // selection and split by `isCurrent` so the active (cursor) hit
+        // can paint a brighter tint than the rest. Routed through the
+        // entry subviews exactly like selection — a highlight painted on
+        // the cell bitmap would be hidden under the body subview.
+        let searchHitRects: (active: [CGRect], inactive: [CGRect]) = {
+            guard let searchHighlights, let adapter = selectionAdapter else {
+                return ([], [])
+            }
+            var active: [CGRect] = []
+            var inactive: [CGRect] = []
+            for hit in searchHighlights {
+                let rs = adapter.rects(hit.range.start, hit.range.end)
+                if hit.isCurrent {
+                    active.append(contentsOf: rs)
+                } else {
+                    inactive.append(contentsOf: rs)
+                }
+            }
+            return (active, inactive)
+        }()
+
         var entries: [SubviewPlan.Entry] = []
         entries.reserveCapacity(items.count)
         for entry in items {
@@ -972,18 +1020,24 @@ struct ToolGroupLayout: @unchecked Sendable {
             let capturedEntry = entry
             let capturedHovered = hoveredId == entry.header.foldId
             let capturedRects = selectionRects
+            let capturedSearchActive = searchHitRects.active
+            let capturedSearchInactive = searchHitRects.inactive
             let capturedHoveredCopyId = hoveredCopyId
             let capturedFlashing = flashingCopyIds
             entries.append(
                 SubviewPlan.Entry(
                     id: entry.childId,
                     frame: frame,
-                    draw: { ctx, selectionColor, dirtyRect in
+                    draw: { ctx, selectionColor, searchActiveColor, searchInactiveColor, dirtyRect in
                         Self.drawEntry(
                             capturedEntry,
                             hovered: capturedHovered,
                             selectionRects: capturedRects,
                             selectionColor: selectionColor,
+                            searchActiveRects: capturedSearchActive,
+                            searchInactiveRects: capturedSearchInactive,
+                            searchActiveColor: searchActiveColor,
+                            searchInactiveColor: searchInactiveColor,
                             hoveredCopyId: capturedHoveredCopyId,
                             flashingCopyIds: capturedFlashing,
                             in: ctx,
@@ -995,7 +1049,8 @@ struct ToolGroupLayout: @unchecked Sendable {
             chevrons: chevrons,
             entries: entries,
             shimmers: shimmers,
-            loadingDots: nil)
+            loadingDots: nil,
+            usage: nil)
     }
 
     /// Build a shimmer spec covering the title rect of `header`.

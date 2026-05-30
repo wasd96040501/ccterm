@@ -10,6 +10,7 @@ public enum Message2: JSONParseable, UnknownStrippable {
     case queueOperation(QueueOperation)
     case rateLimitEvent(RateLimitEvent)
     case result(Message2Result)
+    case streamEvent(Message2StreamEvent)
     case system(System)
     case user(Message2User)
     case worktreeState(WorktreeState)

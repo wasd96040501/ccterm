@@ -30,19 +30,3 @@ final class MessagesChangeRecorder {
         return true
     }
 }
-
-extension MessagesChange {
-    /// Decompose a `.reset` event into its entries + precomputed payload.
-    /// Nil for non-`.reset` events. Convenience for asserting on the
-    /// precomputed shape without writing a `switch` in every test.
-    var asReset: (entries: [MessageEntry], precomputed: [UUID: [Block]]?)? {
-        if case .reset(let entries, let pre) = self { return (entries, pre) }
-        return nil
-    }
-
-    /// Same for `.prepended`.
-    var asPrepended: (entries: [MessageEntry], precomputed: [UUID: [Block]]?)? {
-        if case .prepended(let entries, let pre) = self { return (entries, pre) }
-        return nil
-    }
-}

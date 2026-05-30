@@ -30,8 +30,9 @@ struct NewSessionConfigurator<InputBar: View>: View {
     @Binding var useWorktree: Bool
     @Binding var sourceBranch: String?
     /// Invoked when the user clicks a row in the "Recent Sessions"
-    /// section. `RootView2` flips `selectedSessionId` to this value,
-    /// swapping the compose card out for the chosen session's history.
+    /// section. The detail VC flips `MainSelectionModel.selection` to
+    /// `.session(id)`, swapping the compose card out for the chosen
+    /// session's history.
     var onResumeSession: ((String) -> Void)? = nil
     /// Embedded input bar. Provided by `RootView2` so the bar's
     /// per-session wiring (submit / interrupt / running state) and pill
@@ -52,11 +53,22 @@ struct NewSessionConfigurator<InputBar: View>: View {
     static var minWidth: CGFloat { 640 }
     static var idealWidth: CGFloat { 960 }
     static var maxWidth: CGFloat { 960 }
-    /// Fixed visual height; tall enough that the right column can host
-    /// hero + meta + recents list + input bar without crowding, while
-    /// still leaving generous breathing room above and below in a
+    /// Ideal / maximum visual height; tall enough that the right column
+    /// can host hero + meta + recents list + input bar without crowding,
+    /// while still leaving generous breathing room above and below in a
     /// typical detail pane.
     static var height: CGFloat { 620 }
+    /// Lower bound the card may shrink to when the detail pane is short.
+    /// Mirrors `minWidth` for the vertical axis: without it the card
+    /// stays pinned at `height` (620) and `ComposeSessionView`'s vertical
+    /// padding collapses the moment the pane drops below ~660pt — the card
+    /// then touches the top and bottom edges while the horizontal padding
+    /// (width is already flexible) survives. Letting it shrink keeps the
+    /// top/bottom inset symmetric with left/right down to short windows.
+    /// Sized so the right column's fixed chrome (hero + meta + divider +
+    /// recents header + reserved input-bar band) still fits with a couple
+    /// of recents rows above the bar.
+    static var minHeight: CGFloat { 360 }
     /// Left-column width. Hosts the recent-projects nav. ~29% of the
     /// 960pt card width — feels like a "sidebar inside the card", not
     /// a near-50/50 split.
@@ -144,7 +156,7 @@ struct NewSessionConfigurator<InputBar: View>: View {
             minWidth: Self.minWidth,
             idealWidth: Self.idealWidth,
             maxWidth: Self.maxWidth,
-            minHeight: Self.height,
+            minHeight: Self.minHeight,
             idealHeight: Self.height,
             maxHeight: Self.height
         )
@@ -281,23 +293,37 @@ struct NewSessionConfigurator<InputBar: View>: View {
 
     @ViewBuilder
     private var recentsList: some View {
-        List(selection: folderPathSelection) {
-            ForEach(recents.entries) { entry in
-                recentRow(entry)
-                    .tag(entry.path as String?)
-                    .background(HideEnclosingScrollerWidth())
-                    .contextMenu {
-                        Button(String(localized: "Reveal in Finder")) {
-                            revealInFinder(entry.path)
+        ScrollViewReader { proxy in
+            List(selection: folderPathSelection) {
+                ForEach(recents.entries) { entry in
+                    recentRow(entry)
+                        .tag(entry.path as String?)
+                        .background(HideEnclosingScrollerWidth())
+                        .contextMenu {
+                            Button(String(localized: "Reveal in Finder")) {
+                                revealInFinder(entry.path)
+                            }
+                            Button(String(localized: "Remove from Recents")) {
+                                removeFromRecents(entry.path)
+                            }
                         }
-                        Button(String(localized: "Remove from Recents")) {
-                            removeFromRecents(entry.path)
-                        }
-                    }
+                }
+            }
+            .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
+            // Prepended entries (RecentProjectsStore.add / markLaunched)
+            // leave the sidebar List's NSScrollView with a stale top
+            // contentInset that clips row 0 by a few pixels until the
+            // user scrolls. A no-animation scrollTo on the new first
+            // row drives HideEnclosingScrollerWidth's willStartLiveScroll
+            // reapply, zeroing the inset immediately.
+            .onChange(of: recents.entries.first?.id) { _, newId in
+                guard let newId else { return }
+                withAnimation(.none) {
+                    proxy.scrollTo(newId, anchor: .top)
+                }
             }
         }
-        .listStyle(.sidebar)
-        .scrollContentBackground(.hidden)
     }
 
     /// Wrap the binding so the row's `tag` (an optional path) can drive

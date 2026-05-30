@@ -4,7 +4,7 @@ import XCTest
 @testable import ccterm
 
 /// Verifies that the three buttons on `PermissionCardView`, as wired
-/// in `InputBarChrome`, route to the right `PermissionDecision` at
+/// in `ChatRestingBar`, route to the right `PermissionDecision` at
 /// the `Session.respond(to:decision:)` boundary — and that the
 /// runtime pops the entry off `pendingPermissions` once a decision
 /// has been delivered. We drive the underlying method the buttons

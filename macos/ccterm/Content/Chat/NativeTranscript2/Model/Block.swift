@@ -44,10 +44,17 @@ struct Block: Identifiable, Equatable, @unchecked Sendable {
         case thematicBreak
         /// User-side message rendered as a right-aligned bubble. Long text
         /// auto-truncates with a tail "…" + a `>` chevron whose click
-        /// surfaces the full message in a SwiftUI sheet (presentation
-        /// concerns belong on the SwiftUI side; in-cell rendering stays
-        /// stateless). Short messages render in full with no chevron.
-        case userBubble(text: String)
+        /// surfaces the full message in a sheet, opened by
+        /// `Transcript2SheetPresenter` on the host VC's window
+        /// (in-cell rendering stays stateless). Short messages render
+        /// in full with no chevron.
+        ///
+        /// `isQueued` reflects `SingleEntry.delivery == .queued` — the
+        /// message has been appended locally but the CLI hasn't echoed
+        /// it back yet. Bubble paints with a dimmer fill and gets a
+        /// small `clock` SF Symbol pinned to the bottom-right corner.
+        /// Flips to `false` via `Change.update` once the echo lands.
+        case userBubble(text: String, isQueued: Bool = false)
         /// Inline image attachments on a user message — a right-aligned
         /// strip of 48×48 thumbnails matching the InputBar's attach chip
         /// style. Emitted as a sibling block to the user's `userBubble`
@@ -159,10 +166,17 @@ struct ToolGroupBlock: Equatable, Sendable {
     /// Pick the right title for the current `(status, fold)` pair.
     /// Single-source-of-truth for the three-state logic so layouts
     /// and any future consumers don't reimplement the switch.
+    ///
+    /// When `.running` + folded with an empty `activeTitle`, falls back
+    /// to a localized "Running" so the header never collapses to a
+    /// chevron-only row before upstream resolves the progressive fragment.
     func resolvedTitle(status: ToolStatus, isExpanded: Bool) -> String {
         switch status {
         case .running:
-            return isExpanded ? expandedActiveTitle : activeTitle
+            if isExpanded {
+                return expandedActiveTitle
+            }
+            return activeTitle.isEmpty ? String(localized: "Running") : activeTitle
         case .completed, .failed, .cancelled:
             return completedTitle
         }
@@ -257,12 +271,36 @@ struct ToolGroupBlock: Equatable, Sendable {
             }
         }
 
+        /// Wrapper-level error text from the tool_result (`is_error ==
+        /// true`), already stripped of the `<tool_use_error>` envelope.
+        /// `nil` for a successful result. The single source of truth the
+        /// layout reads to decide whether to append a uniform red error
+        /// card; also gates `hasExpandableBody` so even header-only kinds
+        /// (`generic`, `read` without content) become foldable on error.
+        var errorText: String? {
+            switch self {
+            case .fileEdit(let c): return c.errorText
+            case .read(let c): return c.errorText
+            case .bash(let c): return c.errorText
+            case .grep(let c): return c.errorText
+            case .glob(let c): return c.errorText
+            case .webFetch(let c): return c.errorText
+            case .webSearch(let c): return c.errorText
+            case .askUserQuestion(let c): return c.errorText
+            case .agent(let c): return c.errorText
+            case .generic(let c): return c.errorText
+            }
+        }
+
         /// `true` when this child has an expandable body. Drives
         /// `ToolGroupLayout`'s decision to draw a chevron + register
         /// a fold hit on the header. `read` only exposes a body once
         /// the tool_result has landed (and carried text content);
-        /// `generic` is always header-only.
+        /// `generic` is always header-only — **unless** the result was an
+        /// error, in which case every kind gains a body to host the
+        /// uniform red error card.
         var hasExpandableBody: Bool {
+            if errorText != nil { return true }
             switch self {
             case .fileEdit, .bash, .grep, .glob, .webFetch, .webSearch,
                 .askUserQuestion, .agent:
@@ -479,6 +517,17 @@ enum BlockStyle: Sendable {
         .secondaryLabelColor
     }
 
+    /// Font for the live turn-token-usage label drawn to the right of the
+    /// running dots. 11pt — matches the codeblock chrome tier so the ambient
+    /// counter reads as chrome, not content.
+    nonisolated static var loadingPillUsageFont: NSFont {
+        NSFont.systemFont(ofSize: 11, weight: .regular)
+    }
+    /// Tertiary so the running counter sits a tier quieter than the dots.
+    nonisolated static let loadingPillUsageColor: NSColor = .tertiaryLabelColor
+    /// Gap between the running dots and the usage label.
+    nonisolated static let loadingPillUsageGap: CGFloat = 8
+
     /// Cap for image height — wide-and-tall sources don't dominate the viewport.
     nonisolated static let imageMaxHeight: CGFloat = 360
 
@@ -641,6 +690,45 @@ enum BlockStyle: Sendable {
     nonisolated static let bubbleFillColor: NSColor =
         NSColor.controlAccentColor.withAlphaComponent(0.15)
 
+    /// Bubble background for messages still in the `.queued` delivery
+    /// state (locally appended, CLI hasn't echoed yet). Dimmer than the
+    /// confirmed fill so the row reads as "in flight". Drops the accent
+    /// tint and uses an appearance-neutral muted gray so the bubble
+    /// loses its primary-affordance weight while the user waits.
+    ///
+    /// Tuning: light mode `black @ 5%` lands one tier above the chat
+    /// surface (which itself sits one tier above the window) — visible
+    /// as a card but reads quieter than the 15% accent tint. Dark mode
+    /// `white @ 7%` matches the same perceived elevation against the
+    /// darker window. Both attenuate to roughly half the confirmed fill's
+    /// chromatic weight, matching the typing-indicator / shimmer family's
+    /// "alive but secondary" tone.
+    nonisolated static let bubbleQueuedFillColor: NSColor = NSColor(name: nil) { appearance in
+        let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        return isDark
+            ? NSColor(white: 1, alpha: 0.07)
+            : NSColor(white: 0, alpha: 0.05)
+    }
+
+    // MARK: - Queued bubble badge (clock SF Symbol)
+    //
+    // A small `clock` glyph pinned at the bubble's bottom-right corner.
+    // Center sits on the rounded-corner arc at its 45° midpoint, so the
+    // badge straddles the boundary — half inside the bubble, half hanging
+    // off — like a card-corner annotation. Only painted when the bubble's
+    // `isQueued` flag is true.
+
+    /// SF Symbol point size for the queued bubble's `clock` glyph.
+    /// `cornerRadius - 4 = 10pt` — large enough to read at a glance,
+    /// small enough that the symbol stays within the corner's optical
+    /// breathing room.
+    nonisolated static var queuedBadgeSymbolPointSize: CGFloat { bubbleCornerRadius - 4 }
+
+    /// Foreground tint for the queued badge glyph. `secondaryLabel`
+    /// pairs with the dimmed `bubbleQueuedFillColor` so the badge reads
+    /// as ambient chrome, not as a primary affordance.
+    nonisolated static let queuedBadgeForeground: NSColor = .secondaryLabelColor
+
     /// Lines at and above this count *may* fold (subject to `userBubbleMinHiddenLines`).
     nonisolated static let userBubbleCollapseThreshold: Int = 12
     /// Hide fewer than this many lines reads worse than not folding at
@@ -677,17 +765,18 @@ enum BlockStyle: Sendable {
         NSFont.monospacedSystemFont(ofSize: paragraphFont.pointSize, weight: .regular)
     }
 
-    /// Background fill — Xcode "Default" canvas tone with a light-mode
-    /// nudge for separation: `#F5F5F7` light / `#1F1F24` dark. Dark uses
-    /// the editor's `DVTSourceTextBackground` verbatim (already darker
-    /// than the chat window). Light shifts off pure `#FFFFFF` so the
-    /// card edge is visible against an otherwise white transcript —
-    /// `#F5F5F7` is the same off-white Apple's developer docs use for
-    /// inline samples, so it still reads as "Xcode-adjacent."
+    /// Background fill — `#F5F5F7` light / `#2A2A2E` dark. Both sit one
+    /// elevation tier above `NSColor.windowBackgroundColor` (light
+    /// `#ECECEC` → +9pt; dark `#1E1E1E` → +12pt) so the card reads as a
+    /// raised surface in either mode. Light uses the off-white Apple's
+    /// developer docs use for inline samples; dark lands between the
+    /// window and the gutter column (dark gutter ≈ `#3A3D44` after the
+    /// `white α=0.10` overlay), keeping the chrome layer ordering
+    /// "window < container < gutter < chip" intact.
     nonisolated static let codeBlockBackgroundColor: NSColor = NSColor(name: nil) { appearance in
         let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         return isDark
-            ? NSColor(srgbRed: 0x1F / 255.0, green: 0x1F / 255.0, blue: 0x24 / 255.0, alpha: 1)
+            ? NSColor(srgbRed: 0x2A / 255.0, green: 0x2A / 255.0, blue: 0x2E / 255.0, alpha: 1)
             : NSColor(srgbRed: 0xF5 / 255.0, green: 0xF5 / 255.0, blue: 0xF7 / 255.0, alpha: 1)
     }
 
@@ -780,7 +869,7 @@ enum BlockStyle: Sendable {
         appearance in
         let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         // Light: 0xF5,F5,F7 base × (1-0.08) ≈ 0xE1,E1,E3
-        // Dark:  0x1F,1F,24 base × (1-0.14) + 0xFF×0.14 ≈ 0x3E,3E,43
+        // Dark:  0x2A,2A,2E base × (1-0.09) + 0xFF×0.09 ≈ 0x3E,3E,43
         return isDark
             ? NSColor(srgbRed: 0x3E / 255.0, green: 0x3E / 255.0, blue: 0x43 / 255.0, alpha: 1)
             : NSColor(srgbRed: 0xE1 / 255.0, green: 0xE1 / 255.0, blue: 0xE3 / 255.0, alpha: 1)
@@ -956,8 +1045,10 @@ enum BlockStyle: Sendable {
     }
 
     /// Container background tint behind every line — DiffColors' table
-    /// background. Slightly darker than the surrounding chat surface so
-    /// the line backgrounds read against it.
+    /// background. One elevation tier above the surrounding chat surface
+    /// (lighter than `windowBackgroundColor` in both modes) so the card
+    /// reads as raised, and the per-line add/del/context backgrounds
+    /// still register against the container.
     nonisolated static var diffContainerBackground: NSColor {
         DiffColors.dynamicTableBg
     }
@@ -1251,7 +1342,7 @@ extension Block {
     /// upstream of the IR.
     nonisolated func copyableText() -> String {
         switch kind {
-        case .userBubble(let text):
+        case .userBubble(let text, _):
             return text
         case .paragraph(let inlines):
             return Self.inlinesPlainText(inlines)

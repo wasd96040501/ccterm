@@ -26,23 +26,21 @@ final class SessionRuntime {
         case stopped
     }
 
+    /// History-load lifecycle for a session. `Session.loadHistory()` drives a
+    /// reverse-streaming `TranscriptBackfillPipeline` through this once —
+    /// `.notLoaded → .loading → .loaded` — while the bridge streams live events
+    /// into the controller independently. "Is history still loading" is
+    /// **derived** as `state != .loaded`; there is no separate `isLoading` flag.
     enum HistoryLoadState: Equatable {
-        /// loadHistory has never been triggered.
+        /// `loadHistory()` has never been triggered.
         case notLoaded
-        /// Phase A byte-level tail read in progress. UI renders an empty
-        /// NativeTranscriptView (the ProgressView was removed — tail is
-        /// usually < 50 ms; flashing a spinner is worse).
-        case loadingTail
-        /// Phase A done; tail is appended to `messages` and renderable.
-        /// Phase B full parse continues in the background. `messages` may
-        /// keep growing in this state (live appends are not blocked).
-        case tailLoaded(count: Int)
-        /// Done: Phase B merged in; `messages` contains the full history.
+        /// The backfill pipeline is producing pages. The transcript may already
+        /// show the tail (the first deposit lands before this clears) and keeps
+        /// growing as older pages prepend; live appends are not blocked.
+        case loading
+        /// The pipeline reached the file top and drained — `controller.blocks`
+        /// holds the full history.
         case loaded
-        /// Failed: only triggered by Phase A (tail unreadable). Phase B
-        /// failure just logs a warning and the state stays at `.tailLoaded` —
-        /// the user already saw the tail, no point un-committing it.
-        case failed(String)
     }
 
     // MARK: - Identity
@@ -191,6 +189,28 @@ final class SessionRuntime {
     /// runtime stays UI-agnostic.
     @ObservationIgnored var onTurnEnded: ((TurnEndedNotice) -> Void)?
 
+    /// Fired once per live `.result` arrival — the CLI's only
+    /// authoritative "turn is over" signal. Unlike `onTurnEnded`, this
+    /// fires on **every** live turn close (CLI-initiated continuations
+    /// included), not just `.responding → .idle`. The subscriber
+    /// (`Session.wireRuntimeMessagesSink` → bridge) uses it to flip any
+    /// still-`.running` tool surfaces to `.completed`, so abandoned
+    /// shimmer doesn't outlive the turn. Replay (`mode == .replay`)
+    /// does not fire this — historical entries never enter `.running`
+    /// in the first place.
+    @ObservationIgnored var onTurnFinishedLive: (() -> Void)?
+
+    /// Fired when a new `PermissionRequest` is appended to
+    /// `pendingPermissions` — i.e. the permission card just appeared and
+    /// the turn is now blocked on a user decision. Mirrors `onTurnEnded`'s
+    /// closure-injected shape: the subscriber (SessionManager →
+    /// NotificationService) decides whether to post a banner, gated on app
+    /// focus. A blocked turn never reaches the `.responding` → `.idle`
+    /// edge, so `onTurnEnded` does not fire for it — this is the only
+    /// signal that surfaces "your input is needed" while the app is in the
+    /// background.
+    @ObservationIgnored var onPermissionPrompt: ((PermissionPromptNotice) -> Void)?
+
     /// Hook installed during the bootstrap init wait so
     /// `handleProcessExit` can route "died before init" back into the
     /// bootstrap continuation. Without it, `initialize` would never
@@ -223,7 +243,109 @@ final class SessionRuntime {
     internal(set) var pendingPermissions: [PendingPermission] = []
     internal(set) var contextUsedTokens: Int = 0
     internal(set) var contextWindowTokens: Int = 0
+
+    /// Token usage for the in-flight turn — fresh input + output only
+    /// (cache excluded). Reset on each `send`, updated live from the
+    /// partial-message stream (`streamingAssembler`) and reconciled against
+    /// finalized `.assistant` envelopes. Surfaced beside the running pill.
+    ///
+    /// The running pill is an AppKit surface, so this rides the **imperative**
+    /// channel — every write goes through `publishTurnUsage`, which fires
+    /// `onTurnUsageChange` synchronously at the mutation site (no `@Observable`,
+    /// no `withObservationTracking` pull). Kept as a plain stored value (not
+    /// observed) only so a freshly-attached transcript can read the current
+    /// total once on mount.
+    @ObservationIgnored internal(set) var turnUsage: TurnTokenUsage = .zero
+
+    /// Imperative sink for `turnUsage` changes (AppKit pill). Fired
+    /// synchronously by `publishTurnUsage`. Forwarded from `Session`.
+    @ObservationIgnored var onTurnUsageChange: ((TurnTokenUsage) -> Void)?
+
+    /// Per-turn folder for SSE partial-message events (`onStreamEvent`).
+    /// Off the observation path — `turnUsage` and the streaming-text preview
+    /// are its observable / pushed projections. See `SessionRuntime+Streaming`.
+    @ObservationIgnored internal var streamingAssembler = StreamingTurnAssembler()
+
+    /// CLI `message.id` → the timeline entry id of its live streaming-text
+    /// preview. The finalized `.assistant` envelope reuses this entry id so
+    /// the preview converges in place (no duplicate, no flicker). Cleared
+    /// per turn. See `SessionRuntime+Streaming`.
+    @ObservationIgnored internal var streamingPreviewEntryIds: [String: UUID] = [:]
+
+    /// Coalescing guard for the streaming usage flush — collapses a burst of
+    /// usage-bearing stream events into one pill-counter publish per runloop
+    /// tick. (Streaming *text* no longer rides this; it is paced by the
+    /// typewriter frame ticker.)
+    @ObservationIgnored internal var streamingFlushScheduled = false
+
+    /// The in-flight streaming message's typewriter reveal — a single active
+    /// reveal at a time. A new `message_start` snaps the previous one and
+    /// starts fresh. `nil` when no assistant message is streaming. The
+    /// `frameTicker` advances its `head` per frame; see
+    /// `SessionRuntime+Streaming`.
+    @ObservationIgnored internal var activeReveal: TypewriterReveal?
+
+    /// Whether the `frameTicker` is currently driving `activeReveal`. Guards
+    /// the start/stop so a burst of deltas doesn't re-arm the ticker.
+    @ObservationIgnored internal var typewriterRunning = false
+
+    /// Frame timer that paces the typewriter reveal. Injected so tests can
+    /// step it deterministically (`ManualFrameTicker`); production uses
+    /// `TimerFrameTicker`. See `SessionRuntime+Streaming`.
+    @ObservationIgnored internal let frameTicker: FrameTicker
+
+    /// Most-recent typed `get_context_usage` response from the CLI. `nil`
+    /// until the popover has fetched at least once. The popover reads
+    /// this directly so the panel can render synchronously on re-open;
+    /// the request is fired-and-forgotten by the UI when the user opens
+    /// the popover.
+    internal(set) var contextUsage: ContextUsage?
+
+    /// When the cached `contextUsage` was last refreshed.
+    internal(set) var contextUsageFetchedAt: Date?
+
+    /// True while a `getContextUsage` request is in flight. Lets the
+    /// popover show a spinner instead of stale numbers during a refresh.
+    internal(set) var isFetchingContextUsage: Bool = false
+
+    /// Completions queued while a `getContextUsage` is in flight. All
+    /// fire with the same outcome when the in-flight request settles.
+    @ObservationIgnored internal var contextUsagePendingCallbacks: [(ContextUsageOutcome) -> Void] = []
     internal(set) var slashCommands: [SlashCommand] = []
+
+    /// Command descriptions keyed by name, sourced from the desc-rich
+    /// `initialize(promptSuggestions:)` bootstrap response. The recurring
+    /// `system.init` stream message only carries command *names*
+    /// (`Init.slashCommands` is `[String]`), so `adopt(_:)` merges
+    /// descriptions back in from here — otherwise every turn's `system.init`
+    /// would overwrite `slashCommands` with a desc-less list and the
+    /// completion popup's footer would lose its description.
+    @ObservationIgnored internal var slashCommandDescriptions: [String: String] = [:]
+
+    /// Background bash tasks the CLI is tracking for this session. Updated
+    /// in receive() from system.task_started / task_updated /
+    /// task_notification — these events are otherwise dropped from the
+    /// transcript timeline (they are control signals, not user content).
+    /// Ordered chronologically (oldest first); the popover groups them by
+    /// running vs. terminal at render time.
+    internal(set) var tasks: [BackgroundTask] = []
+
+    /// The assistant's live todo plan. Built from the CLI's `TaskCreate`
+    /// / `TaskUpdate` tool calls — see [Services/Session/SessionRuntime+Todos.swift]
+    /// for the merger. The matching tool_use / tool_result blocks remain
+    /// visible in the transcript; this collection is a structured
+    /// off-band projection so the input-bar popover can render the plan
+    /// without re-parsing the timeline.
+    internal(set) var todos: [TodoEntry] = []
+
+    /// Internal scratch — `TaskCreate` input keyed by `tool_use_id`,
+    /// captured the moment the assistant emits the tool_use so we can
+    /// pair it with the subsequent tool_result (which only echoes
+    /// `task.id` + `subject`, dropping the description / activeForm).
+    /// Entries are removed once consumed; the dict stays small even on
+    /// long sessions.
+    @ObservationIgnored internal var pendingTodoCreates: [String: TodoEntry.CreateScratch] = [:]
+    @ObservationIgnored internal var pendingTodoUpdates: [String: TodoEntry.UpdateScratch] = [:]
     /// Model catalog from the CLI's `InitializeResponse.models`. Source of
     /// truth for the model picker — display name, supported effort levels,
     /// and feature flags (auto / fast / adaptive thinking) per model. Set
@@ -300,11 +422,17 @@ final class SessionRuntime {
     init(
         sessionId: String,
         repository: any SessionRepository,
-        cliClientFactory: @escaping CLIClientFactory = AgentSDKCLIClient.defaultFactory
+        cliClientFactory: @escaping CLIClientFactory = AgentSDKCLIClient.defaultFactory,
+        frameTicker: FrameTicker? = nil
     ) {
         self.sessionId = sessionId
         self.repository = repository
         self.cliClientFactory = cliClientFactory
+        // Default to the production timer here (inside the @MainActor init)
+        // rather than as a default argument — a @MainActor initializer can't be
+        // evaluated in the nonisolated default-argument context. Tests inject a
+        // `ManualFrameTicker`.
+        self.frameTicker = frameTicker ?? TimerFrameTicker()
         if let record = repository.find(sessionId) {
             hasRecord = true
             apply(record)
@@ -331,21 +459,10 @@ final class SessionRuntime {
     // `activate()` / `stop()` / `send(_:)` implementations and docs live in
     // `SessionRuntime+Start.swift`.
 
-    /// Load history messages into `messages` in the background. Idempotent,
-    /// dispatched by `historyLoadState`.
-    ///
-    /// - `.notLoaded`: two-phase read. `historyLoadState` → `.loadingTail`
-    ///   → `.tailLoaded(count)` → `.loaded`; tail renders first, prefix
-    ///   merges in the background. Parse failure → `.failed(reason)`.
-    /// - `.loadingTail` / `.tailLoaded`: no-op (prevents reentry / Phase B
-    ///   in flight).
-    /// - `.loaded`: no-op.
-    /// - `.failed`: retry — flips back to `.notLoaded` and reloads.
-    ///
-    /// The method does not block its caller; the UI observes
-    /// `historyLoadState` for spinner / error display. Independent of
-    /// `activate()` — stopped / notStarted sessions can still view history.
-    // impl in SessionRuntime+History.swift
+    // History load lives on the façade now: `Session.loadHistory()` drives a
+    // reverse-streaming `TranscriptBackfillPipeline`; the runtime only owns the
+    // `historyLoadState` lifecycle flag (see the enum above). `historyJSONLURL`
+    // path resolution stays here in `SessionRuntime+History.swift`.
 
     // MARK: - Messaging commands
 

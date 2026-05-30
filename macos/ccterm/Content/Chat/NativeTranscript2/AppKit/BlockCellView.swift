@@ -127,6 +127,13 @@ final class BlockCellView: NSView {
         didSet {
             if searchHighlights != oldValue {
                 needsDisplay = true
+                // Route the specs into the subview plan too: a
+                // `toolGroup` row paints its expanded body in a
+                // layer-backed subview that composites over the cell
+                // bitmap, so a highlight drawn at the cell level never
+                // reaches the screen for tool bodies. Selection syncs
+                // here for the same reason — search has to as well.
+                syncSubviewPlan()
             }
         }
     }
@@ -266,6 +273,13 @@ final class BlockCellView: NSView {
     /// goes `nil` (pill gone / row recycled to another kind).
     var loadingDotsImageView: NSImageView?
 
+    /// Live turn-token-usage counter drawn to the right of the running
+    /// dots. A dedicated subview (not the cell bitmap) so the number can
+    /// roll up — odometer style — as `setTurnUsage` reloads the pill row
+    /// each tick. Reused across `reloadData(forRowIndexes:)` so the tween
+    /// state survives. Cleared when the plan's `usage` goes `nil`.
+    var loadingPillUsageView: LoadingPillUsageView?
+
     /// Set by `beginFoldTransition` just before the coordinator's
     /// `reloadData`. Tells the upcoming `syncSubviewPlan()` to route
     /// entry-frame updates through `view.animator()` so each entry
@@ -358,6 +372,21 @@ final class BlockCellView: NSView {
         for (_, layer) in chevronLayers {
             layer.contentsScale = scale
         }
+        syncSubviewPlan()
+    }
+
+    /// Light ↔ Dark flip (system appearance toggle, window joining a
+    /// different appearance context). The cell-bitmap title repaints
+    /// via `needsDisplay`, but `CAShapeLayer.strokeColor` is a static
+    /// `CGColor` — chevron sublayers keep their pre-flip RGB unless we
+    /// re-resolve. `syncSubviewPlan` re-enters `applyChevronStyle`
+    /// which now resolves `NSColor.cgColor` under
+    /// `effectiveAppearance.performAsCurrentDrawingAppearance`, so the
+    /// new appearance's RGB lands on the layer. Cheap — outside the
+    /// 60fps scroll path; fires only on actual appearance change.
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
         syncSubviewPlan()
     }
 
@@ -510,12 +539,21 @@ final class BlockCellView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
+        // Gate on live scroll: with `.inVisibleRect` tracking, rows
+        // streaming past a stationary cursor fire enter/exit per cell,
+        // and every write here lands a `needsDisplay = true` that
+        // re-rasterises the cell — breaking the layer cache that §2.2
+        // depends on for 60fps scroll. The coordinator clears stale
+        // hover at scroll start and re-evaluates at scroll end, so
+        // skipping mid-scroll updates loses no UX.
+        if coordinator?.isLiveScrolling == true { return }
         let p = convert(event.locationInWindow, from: nil)
         updateHover(at: p)
         updateGutterHover(at: p)
     }
 
     override func mouseEntered(with event: NSEvent) {
+        if coordinator?.isLiveScrolling == true { return }
         if let id = blockId {
             coordinator?.hoveredBlockId = id
         }
@@ -525,6 +563,7 @@ final class BlockCellView: NSView {
     }
 
     override func mouseExited(with event: NSEvent) {
+        if coordinator?.isLiveScrolling == true { return }
         // Only clear the global pointer if it's *this* cell that owns
         // it. Without the guard, an `enter B → exit A` event order
         // (NSTrackingArea doesn't promise temporal ordering across
@@ -541,6 +580,24 @@ final class BlockCellView: NSView {
         if hoveredGutterId != nil {
             hoveredGutterId = nil
         }
+    }
+
+    /// Coordinator-driven scroll-start clear. Called on the cell that
+    /// was hovered immediately before live scroll began so its gutter
+    /// glyph doesn't stay painted on a row the cursor no longer hovers.
+    /// `coordinator.hoveredBlockId` is cleared by the caller itself.
+    func clearHoverDuringLiveScroll() {
+        if hoveredAction != nil { hoveredAction = nil }
+        if hoveredGutterId != nil { hoveredGutterId = nil }
+    }
+
+    /// Coordinator-driven scroll-end re-evaluation. Replays the work a
+    /// natural `mouseEntered` would have done, using the supplied
+    /// cell-local cursor point — restores hover affordances without
+    /// waiting for the user to wiggle the mouse.
+    func reevaluateHoverAt(_ local: NSPoint) {
+        updateHover(at: local)
+        updateGutterHover(at: local)
     }
 
     private func updateHover(at local: NSPoint) {
@@ -590,18 +647,26 @@ final class BlockCellView: NSView {
         guard let layout else { return }
         let origin = layoutOrigin
         // I-beam: over `iBeamRect` if the layout confines it
-        // (user bubble), else the whole cell `bounds` to match
-        // `NSTextView`'s "I-beam over full frame" behavior. Order
-        // matters: when cursor rects overlap, the most-recently-
-        // added wins, so pointing-hand rects registered below take
-        // priority over the I-beam in their hot zones. Non-
-        // selectable rows (image, thematic break) skip — they get
-        // the default arrow.
+        // (user bubble), else the layout's footprint — the centred
+        // (measuredWidth × totalHeight) rect at `layoutOrigin`.
+        // **Not** the cell `bounds`: the cell spans the full table
+        // row width, but content sits centred inside it, so falling
+        // back to `bounds` would paint I-beam over the gutter margin
+        // band and the right-of-content padding — both visibly empty
+        // and not selectable. Order matters: when cursor rects
+        // overlap, the most-recently-added wins, so pointing-hand
+        // rects registered below take priority over the I-beam in
+        // their hot zones. Non-selectable rows (image, thematic
+        // break) skip — they get the default arrow.
         if layout.selectionAdapter != nil {
             let rect =
                 layout.iBeamRect.map {
                     $0.offsetBy(dx: origin.x, dy: origin.y)
-                } ?? bounds
+                }
+                ?? CGRect(
+                    x: origin.x, y: origin.y,
+                    width: layout.measuredWidth,
+                    height: layout.totalHeight)
             addCursorRect(rect, cursor: .iBeam)
         }
         for hit in layout.interactiveHits {
@@ -636,18 +701,22 @@ final class BlockCellView: NSView {
             case .openURL(let url):
                 NSWorkspace.shared.open(url)
             case .openUserBubbleSheet:
-                // The only well-defined exit point from AppKit-internal
-                // interactions to SwiftUI, since `.sheet(item:)` lives
-                // on the SwiftUI side. Selection-drag continues to stay
-                // inside `Transcript2SelectionCoordinator`.
+                // Routes through the coordinator's
+                // `requestUserBubbleSheet`, which sets
+                // `controller.pendingUserBubbleSheet`. The host VC's
+                // `Transcript2SheetPresenter` observes that field and
+                // opens an AppKit sheet via
+                // `view.window?.beginSheet`. Selection-drag continues
+                // to stay inside `Transcript2SelectionCoordinator`.
                 if let id = blockId {
                     coordinator?.requestUserBubbleSheet(id: id)
                 }
             case .openImagePreview(let image):
-                // Same SwiftUI escape-hatch as `openUserBubbleSheet` —
+                // Same observation contract as `openUserBubbleSheet` —
                 // hand the chip's `NSImage` to the coordinator, which
                 // wakes the bound `pendingImagePreview` field on the
-                // controller and lets `.sheet(item:)` present.
+                // controller; the host's
+                // `Transcript2SheetPresenter` opens the modal.
                 coordinator?.requestImagePreview(image: image)
             case .copy(let id, let text):
                 handleCopy(id: id, text: text)

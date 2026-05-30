@@ -60,8 +60,27 @@ public final class Session {
     /// CLI requests user input (elicitation). The return value is sent back to the CLI as-is.
     public var onElicitationRequest: ((_ request: ElicitationRequest) -> ElicitationResult)?
 
-    /// A typed message arrived (assistant, user, system, result, ...).
+    /// A complete typed message arrived (assistant, user, system,
+    /// result, progress, ...). Each callback is one finalized envelope
+    /// from the CLI. Streaming partials (`stream_event`) are NOT
+    /// delivered here — they only arrive via `onStreamEvent` when
+    /// `SessionConfiguration.includePartialMessages` is true.
     public var onMessage: ((_ message: Message2) -> Void)?
+
+    /// A streaming partial (delta) arrived from the CLI. Only fires
+    /// when `SessionConfiguration.includePartialMessages` is true; nil
+    /// when the flag is off. Each callback carries one SSE-style sub-
+    /// event (`message_start` / `content_block_start` /
+    /// `content_block_delta` / `content_block_stop` / `message_delta`
+    /// / `message_stop`) keyed by the parent assistant message's id
+    /// (available via the matching `onMessage(.assistant)` envelope
+    /// that arrives at turn close).
+    ///
+    /// Callers that subscribe must merge deltas against the final
+    /// `.assistant` envelope themselves — the SDK does NOT
+    /// reconstruct partial messages. If left nil while
+    /// `includePartialMessages` is on, deltas are silently dropped.
+    public var onStreamEvent: ((_ event: Message2StreamEvent) -> Void)?
 
     public var onStderr: ((_ text: String) -> Void)?
 
@@ -467,12 +486,15 @@ public final class Session {
 
     // MARK: - Generic Control Request
 
-    /// Sends an arbitrary control request.
+    /// Sends an arbitrary control request. Returns the `request_id` so
+    /// callers that want to time out (e.g. `getContextUsage`) can
+    /// remove their pending entry via `cancelPendingControlResponse`.
+    @discardableResult
     public func sendControlRequest(
         subtype: String,
         params: [String: Any] = [:],
         completion: (([String: Any]) -> Void)? = nil
-    ) {
+    ) -> String {
         let requestId = UUID().uuidString
         var request: [String: Any] = ["subtype": subtype]
         for (k, v) in params { request[k] = v }
@@ -484,6 +506,120 @@ public final class Session {
             "request_id": requestId,
             "request": request,
         ])
+        return requestId
+    }
+
+    /// Drops a pending control_response handler without invoking it.
+    /// Returns `true` if an entry was removed. Used by timeout paths so
+    /// late CLI responses turn into no-ops rather than firing the
+    /// completion twice.
+    @discardableResult
+    public func cancelPendingControlResponse(requestId: String) -> Bool {
+        pendingControlResponses.removeValue(forKey: requestId) != nil
+    }
+
+    // MARK: - Context Window Usage
+
+    /// Requests a context-window-usage breakdown from the CLI.
+    ///
+    /// Old CLIs do not implement this control subtype and will never
+    /// respond. After `timeout` seconds we drop the pending handler and
+    /// surface `.unsupported`. Callers should treat that as "feature
+    /// missing" rather than as an error to bubble up — the popover just
+    /// shows its fallback summary instead.
+    public func getContextUsage(
+        timeout: TimeInterval = 3.0,
+        completion: @escaping (ContextUsageOutcome) -> Void
+    ) {
+        guard isRunning else {
+            completion(.unsupported)
+            return
+        }
+
+        // Once-only completion: the CLI response and the timeout race;
+        // whichever lands first wins, the other becomes a no-op.
+        let lock = NSLock()
+        var fired = false
+        let fire: (ContextUsageOutcome) -> Void = { outcome in
+            lock.lock()
+            let wasFired = fired
+            fired = true
+            lock.unlock()
+            guard !wasFired else { return }
+            completion(outcome)
+        }
+
+        let requestId = sendControlRequest(subtype: "get_context_usage") { [weak self] response in
+            if let subtype = response["subtype"] as? String, subtype == "error" {
+                let err = response["error"] as? String ?? "unknown error"
+                fire(.sdkError(err))
+                return
+            }
+            guard let inner = response["response"] as? [String: Any] else {
+                fire(.sdkError("missing response payload"))
+                return
+            }
+            do {
+                let usage = try ContextUsage(json: inner)
+                fire(.usage(usage))
+            } catch {
+                _ = self  // silence unused-warning; weak retained only for symmetry
+                fire(.sdkError("parse: \(error)"))
+            }
+        }
+
+        DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { [weak self] in
+            // Tear down the dangling pending entry so it doesn't leak.
+            // If the CLI already responded `fired == true`, this is a
+            // no-op on both sides.
+            self?.cancelPendingControlResponse(requestId: requestId)
+            fire(.unsupported)
+        }
+    }
+
+    // MARK: - Side Question (/btw)
+
+    /// Asks a one-shot side question over the `side_question` control
+    /// request — the protocol behind the CLI's `/btw` slash command.
+    ///
+    /// The CLI answers from the *current conversation context* with a
+    /// separate, lightweight, **tool-less** model call that runs `maxTurns:
+    /// 1`, is **not** written to the transcript, and does **not** interrupt
+    /// or advance the main turn loop. Use it to ask "by the way…" without
+    /// disturbing whatever Claude is doing.
+    ///
+    /// No client-side timeout: the answer is a model round-trip that may
+    /// legitimately be slow (long context, rate-limit backoff), and a CLI
+    /// that speaks the control protocol but lacks this subtype replies with
+    /// an error response (→ `.sdkError`) rather than hanging. `.unsupported`
+    /// is reserved for the synchronous "no live CLI" case. `completion` is
+    /// invoked once, when the CLI responds.
+    public func askSideQuestion(
+        _ question: String,
+        completion: @escaping (SideQuestionOutcome) -> Void
+    ) {
+        guard isRunning else {
+            completion(.unsupported)
+            return
+        }
+        sendControlRequest(subtype: "side_question", params: ["question": question]) { response in
+            if let subtype = response["subtype"] as? String, subtype == "error" {
+                completion(.sdkError(response["error"] as? String ?? "unknown error"))
+                return
+            }
+            guard let inner = response["response"] as? [String: Any] else {
+                completion(.sdkError("missing response payload"))
+                return
+            }
+            let synthetic = inner["synthetic"] as? Bool ?? false
+            // `response` is `String | null`: null means the host produced no
+            // text (the CLI's "No response received" path).
+            if let text = inner["response"] as? String {
+                completion(.answer(SideQuestionAnswer(response: text, synthetic: synthetic)))
+            } else {
+                completion(.empty)
+            }
+        }
     }
 
     // MARK: - Private: Process Arguments
@@ -722,7 +858,15 @@ public final class Session {
 
         default:
             if let message = try? resolver.resolve(json) {
-                onMessage?(message)
+                // Stream-event deltas flow on a separate callback so
+                // callers must explicitly opt into partial handling
+                // (see `onStreamEvent` doc). `onMessage` only sees
+                // finalized envelopes.
+                if case .streamEvent(let evt) = message {
+                    onStreamEvent?(evt)
+                } else {
+                    onMessage?(message)
+                }
             }
         }
     }

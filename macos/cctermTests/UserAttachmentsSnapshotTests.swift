@@ -10,6 +10,10 @@ import XCTest
 /// `.userAttachments` block kind end-to-end (Bridge → Coordinator →
 /// `UserAttachmentsLayout`) plus its visual rhythm next to the
 /// adjacent `.userBubble` row.
+///
+/// Mounts through `TranscriptOnlyHostViewController` (AppKit) — the
+/// SwiftUI bridge is gone. The host follows the same canonical
+/// attach pattern production uses.
 @MainActor
 final class UserAttachmentsSnapshotTests: XCTestCase {
 
@@ -19,33 +23,32 @@ final class UserAttachmentsSnapshotTests: XCTestCase {
 
     func testUserAttachmentsRow() throws {
         let controller = Transcript2Controller()
-        controller.setHistory([
-            Block(
-                id: UUID(),
-                kind: .userAttachments(images: Self.chipImages(count: 1, palette: [.systemPink]))),
-            Block(
-                id: UUID(),
-                kind: .userBubble(text: "single image case — just dragged this into the bar")),
-            Block(
-                id: UUID(),
-                kind: .userAttachments(images: Self.chipImages(count: 3))),
-            Block(
-                id: UUID(),
-                kind: .userBubble(text: "three attachments + caption — strip is right-anchored")),
-            Block(
-                id: UUID(),
-                kind: .userAttachments(images: Self.chipImages(count: 5))),
-            Block(
-                id: UUID(),
-                kind: .userBubble(text: "five files, still single row")),
-        ])
+        controller.attachSyntaxEngine(SyntaxHighlightEngine())
+        controller.apply(
+            .append([
+                Block(
+                    id: UUID(),
+                    kind: .userAttachments(images: Self.chipImages(count: 1, palette: [.systemPink]))),
+                Block(
+                    id: UUID(),
+                    kind: .userBubble(text: "single image case — just dragged this into the bar")),
+                Block(
+                    id: UUID(),
+                    kind: .userAttachments(images: Self.chipImages(count: 3))),
+                Block(
+                    id: UUID(),
+                    kind: .userBubble(text: "three attachments + caption — strip is right-anchored")),
+                Block(
+                    id: UUID(),
+                    kind: .userAttachments(images: Self.chipImages(count: 5))),
+                Block(
+                    id: UUID(),
+                    kind: .userBubble(text: "five files, still single row")),
+            ]))
 
-        let view = NativeTranscript2View(controller: controller)
-            .frame(width: 720, height: 360)
-            .environment(\.syntaxEngine, SyntaxHighlightEngine())
-
-        let image = ViewSnapshot.render(
-            view, size: CGSize(width: 720, height: 360), settle: 0.5)
+        let host = TranscriptOnlyHostViewController(controller: controller)
+        let image = ViewSnapshot.renderViewController(
+            host, size: CGSize(width: 720, height: 360), settle: 0.5)
         let url = ViewSnapshot.writePNG(image, name: "UserAttachments")
 
         let attachment = XCTAttachment(contentsOfFile: url)

@@ -38,6 +38,9 @@ extension Message2 {
         case "result":
             let _v: Message2Result = try _jp(dict)
             self = .result(_v)
+        case "stream_event":
+            let _v: Message2StreamEvent = try _jp(dict)
+            self = .streamEvent(_v)
         case "system":
             let _v: System = try _jp(dict)
             self = .system(_v)
@@ -62,6 +65,7 @@ extension Message2 {
         case .queueOperation(let v): return v.toJSON()
         case .rateLimitEvent(let v): return v.toJSON()
         case .result(let v): return v.toJSON()
+        case .streamEvent(let v): return v.toJSON()
         case .system(let v): return v.toJSON()
         case .user(let v): return v.toJSON()
         case .worktreeState(let v): return v.toJSON()
@@ -83,6 +87,7 @@ extension Message2 {
         case .queueOperation(let v): return v.strippingUnknown().map { .queueOperation($0) }
         case .rateLimitEvent(let v): return v.strippingUnknown().map { .rateLimitEvent($0) }
         case .result(let v): return v.strippingUnknown().map { .result($0) }
+        case .streamEvent(let v): return v.strippingUnknown().map { .streamEvent($0) }
         case .system(let v): return v.strippingUnknown().map { .system($0) }
         case .user(let v): return v.strippingUnknown().map { .user($0) }
         case .worktreeState(let v): return v.strippingUnknown().map { .worktreeState($0) }
@@ -128,6 +133,10 @@ extension Message2 {
         case .result(let v):
             var d = v.toTypedJSON() as? [String: Any] ?? [:]
             d["type"] = "result"
+            return d
+        case .streamEvent(let v):
+            var d = v.toTypedJSON() as? [String: Any] ?? [:]
+            d["type"] = "stream_event"
             return d
         case .system(let v):
             var d = v.toTypedJSON() as? [String: Any] ?? [:]

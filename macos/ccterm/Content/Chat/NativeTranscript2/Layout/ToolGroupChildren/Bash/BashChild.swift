@@ -23,4 +23,10 @@ struct BashChild: Equatable, Sendable {
     let stdout: String?
     /// Captured stderr.
     let stderr: String?
+    /// Wrapper-level error text (`tool_result.is_error == true`), already
+    /// stripped of the `<tool_use_error>` envelope. `nil` on success.
+    /// Rendered as a uniform red error card below the body by
+    /// `ToolGroupChildLayout` — the failure path carries no typed
+    /// `stdout` / `stderr`, so this is the only body bash shows on error.
+    var errorText: String? = nil
 }

@@ -1,19 +1,20 @@
 import AppKit
 
-/// Identifies the user bubble whose full text should be shown in a SwiftUI
+/// Identifies the user bubble whose full text should be shown in a
 /// modal sheet. `id` is the originating block's id; `text` is the
-/// untruncated source. `Identifiable` so SwiftUI's `.sheet(item:)`
-/// resolves presentation identity from this value alone.
+/// untruncated source. `Identifiable` so `Transcript2SheetPresenter`
+/// can tag the open sheet against the request that opened it.
 struct UserBubbleSheetRequest: Identifiable, Equatable, Sendable {
     let id: UUID
     let text: String
 }
 
-/// Carries an attachment chip's `NSImage` from the AppKit click to the
-/// SwiftUI `.sheet(item:)`. `id` is allocated per request so consecutive
-/// taps on the **same** chip (NSImage instance) still re-present the
-/// sheet — `.sheet(item:)` only re-fires when `id` changes. Equatable so
-/// `@Observable` knows when to publish.
+/// Carries an attachment chip's `NSImage` from the AppKit click to
+/// `Transcript2SheetPresenter`. `id` is allocated per request so
+/// consecutive taps on the **same** chip (NSImage instance) still
+/// re-present the sheet — the presenter compares request ids to decide
+/// whether the open sheet still matches. Equatable so `@Observable`
+/// knows when to publish.
 struct ImagePreviewRequest: Identifiable, Equatable {
     let id: UUID
     let image: NSImage
@@ -24,35 +25,54 @@ struct ImagePreviewRequest: Identifiable, Equatable {
     }
 }
 
-/// Public, imperative API for `NativeTranscript2`. Three orthogonal channels:
+/// Public, imperative API for `NativeTranscript2`. Two orthogonal channels:
 ///
-/// 1. **Mutation** — `apply(_:scroll:)` accepts one or more `Change` values
-///    (insert / remove / update) and a `ScrollState`. Granular only; no
-///    diff, no `reloadData` escape hatch.
-/// 2. **History snapshot** — `setHistory(_:anchor:)` declares the whole
-///    block list at once and an anchor. Idempotent and repeatable — every
-///    call resets `isAnchorSettled` to false until the new anchor lands.
-///    Internally splits large payloads into a viewport-covering Phase 1
-///    (sync, main) and a Phase 2 (off-main layout, main-hop insert) so
-///    10k-row snapshots don't block the main thread.
-/// 3. **Query** — read-only snapshot accessors.
+/// 1. **Mutation** — `apply(_:scroll:precomputed:)` accepts one or more
+///    `Change` values (prepend / append / replace / remove / update) and a
+///    `ScrollState`. Granular only; no diff, no `reloadData` escape hatch, no
+///    whole-list `setHistory` snapshot (deleted — history load is the backfill
+///    pipeline draining `.prepend` / `.append` through this same entry).
+///    `precomputed` lets the pipeline land off-main-built
+///    layouts as cache hits.
+/// 2. **Query** — read-only snapshot accessors.
 ///
 /// `@MainActor`-isolated. Background producers must hop before calling.
 @MainActor
 @Observable
 final class Transcript2Controller {
+    /// Structural mutation vocabulary. Position is
+    /// **intrinsic** to each case — top (`prepend`), tail (`append`), or in
+    /// place (`replace` / `update` / `remove`) — so callers never thread an
+    /// arbitrary anchor through a generic insert. Scroll intent rides with the
+    /// case: `append` sticks to the bottom, everything else preserves the
+    /// visible viewport.
     enum Change: Sendable {
-        /// Insert `blocks` after the block with id `after`. `after: nil`
-        /// prepends (index 0). If `after` is non-nil but unknown (e.g. the
-        /// anchor was removed), the change is a no-op — same posture as
-        /// `.update` / `.remove` for unknown ids. To append, pass the
-        /// current last block's id (or `nil` if empty).
-        case insert(after: UUID?, _ blocks: [Block])
+        /// Prepend `blocks` at the head (index 0). Drives backfill batches.
+        case prepend(_ blocks: [Block])
+        /// Append `blocks` at the tail. Drives live tail entries + the pill.
+        case append(_ blocks: [Block])
+        /// Swap the contiguous run of `oldIds` for `with` **at the same start
+        /// index**, atomically — the structure-changed segment swap. A
+        /// degenerate `oldIds == []` (or none present) routes to `.append`.
+        case replace(oldIds: [UUID], with: [Block])
         /// Remove every block whose id is in `ids`. Unknown ids are ignored.
         case remove(ids: [UUID])
         /// Replace the kind of an existing block, preserving its id. No-op
         /// if the id is unknown.
         case update(id: UUID, kind: Block.Kind)
+    }
+
+    /// Off-main-built `(id, RowLayout)` layouts to install as cache hits
+    /// **before** a structural change, tagged with the `width` they were
+    /// typeset at. The backfill pipeline's producer builds these so the
+    /// `heightOfRow` query `insertRows` fires inside `endUpdates` is a cache
+    /// hit, not an on-main CTLine pass. `width` is
+    /// self-healing: an entry whose width doesn't match the table's current
+    /// `layoutWidth` is simply a miss that lazy-recomputes, never a corruption,
+    /// so there is no validate gate.
+    struct PrecomputedLayouts: Sendable {
+        let layouts: [(UUID, RowLayout)]
+        let width: CGFloat
     }
 
     /// What the table should do with scroll position around an `apply`.
@@ -88,38 +108,22 @@ final class Transcript2Controller {
     /// observe count changes without reaching into AppKit state.
     private(set) var blockCount: Int = 0
 
-    /// "First-screen anchor has landed for the currently-attached
-    /// `NSTableView`." Mirrors `Transcript2Coordinator.isAnchorSettled`
-    /// so SwiftUI hosts can observe it directly — e.g. fade in the
-    /// transcript or run any other "wait until first frame is stable"
-    /// effect.
-    ///
-    /// Resets to false on every `setHistory` and on every fresh table
-    /// attach (session switch / view rebuild). Flips to true once
-    /// `setHistory`'s Phase 1 has scrolled to the requested anchor, or
-    /// — for the deferred no-width branch — once `tableFrameDidChange`
-    /// consumes the desired anchor on the first 0→positive transition.
-    ///
-    /// Routine `append` / `update` / `remove` traffic does **not** flip
-    /// this back to false; streaming a new message into an already-
-    /// stabilized transcript is not a first-screen event.
-    private(set) var isAnchorSettled: Bool = false
-
-    /// Pending request for the SwiftUI "show full user message" sheet,
-    /// driven by chevron clicks inside `BlockCellView`. NSView-internal
-    /// interactions (link click, selection drag, chevron tap) are normally
-    /// AppKit-closed-loop; this is the one well-defined exit point because
-    /// `.sheet(item:)` is a SwiftUI presentation primitive and has to live
-    /// on the SwiftUI side. `NativeTranscript2View` binds against this
-    /// field and clears it on dismiss.
+    /// Pending request for the "show full user message" sheet, driven
+    /// by chevron clicks inside `BlockCellView`. NSView-internal
+    /// interactions stay AppKit-closed-loop; this is one of two
+    /// `@Observable` request fields `Transcript2SheetPresenter`
+    /// observes and turns into an AppKit-native sheet
+    /// (`view.window?.beginSheet`) wrapping a SwiftUI body
+    /// (`UserBubbleSheetView`) hosted via `NSHostingController`. The
+    /// presenter clears this field on dismiss.
     var pendingUserBubbleSheet: UserBubbleSheetRequest?
 
-    /// Pending request for the SwiftUI image preview sheet, driven by
-    /// chip clicks inside `BlockCellView`. Same escape-hatch contract as
-    /// `pendingUserBubbleSheet`: NSView-internal interactions stay
-    /// AppKit-closed-loop except for `.sheet(item:)` presentation, which
-    /// SwiftUI owns. `NativeTranscript2View` binds against this field
-    /// and clears it on dismiss.
+    /// Pending request for the attachment-image preview sheet, driven
+    /// by chip clicks inside `BlockCellView`. Same observation +
+    /// presentation contract as `pendingUserBubbleSheet`:
+    /// `Transcript2SheetPresenter` opens a sheet via the host window
+    /// with `ImagePreviewSheetView` as the SwiftUI body, and clears
+    /// this field on dismiss.
     var pendingImagePreview: ImagePreviewRequest?
 
     /// Observable snapshot of the in-transcript search state. Mirrored
@@ -138,15 +142,10 @@ final class Transcript2Controller {
         let currentIndex: Int?
     }
 
-    /// Module-internal: handed to `NativeTranscript2View.makeCoordinator`.
+    /// Module-internal: AppKit hosts read this via
+    /// `TranscriptScrollViewFactory.bindData(_:controller:)` to wire
+    /// it onto the `NSTableView`'s `dataSource` / `delegate`.
     let coordinator: Transcript2Coordinator
-
-    /// First-tile work waiting for `layoutWidth > 0`. Set by `setHistory`
-    /// when called before the table has tiled; drained by `handleFirstTile`
-    /// on the next 0→positive transition. Survives `tableView` detach /
-    /// re-attach so a user who navigates away mid-load returns to the
-    /// requested anchor when they come back.
-    private var pendingFirstTile: InitialAnchor?
 
     /// Last `setLoading(_:)` intent. Source of truth for whether the
     /// trailing pill row should be present. The actual block id (if
@@ -194,8 +193,8 @@ final class Transcript2Controller {
             guard let self else { return }
             self.blockCount = count
             // Reconcile after every structural change so a bridge-
-            // driven `.insert(after: lastRealBlock, ...)` that landed
-            // *before* the pill re-pins the pill to the new tail.
+            // driven `.append(...)` that landed *before* the pill
+            // re-pins the pill to the new tail.
             // The recursion guard inside ensures the pill insert /
             // remove that reconciliation itself emits doesn't loop.
             self.reconcileLoadingPill()
@@ -205,12 +204,6 @@ final class Transcript2Controller {
         }
         coordinator.onImagePreviewRequested = { [weak self] image in
             self?.pendingImagePreview = ImagePreviewRequest(image: image)
-        }
-        coordinator.onAnchorSettledChanged = { [weak self] settled in
-            self?.isAnchorSettled = settled
-        }
-        coordinator.onTableDidTile = { [weak self] in
-            self?.handleFirstTile()
         }
         coordinator.search.onStateChanged = { [weak self] in
             self?.refreshSearchState()
@@ -237,9 +230,33 @@ final class Transcript2Controller {
     /// Sync apply: layouts compute lazily on `heightOfRow` queries. Use for
     /// incremental updates (single message arrives, tool result fills in,
     /// user deletes one).
-    func apply(_ changes: Change..., scroll: ScrollState = .none) {
-        coordinator.apply(changes, scroll: scroll)
+    ///
+    /// `precomputed` carries off-main-built layouts + the width they were
+    /// typeset at (the backfill pipeline's producer — §4.3). They install into
+    /// the layout cache before the structural change so the prepend/append tick
+    /// is a cache **hit**, not an on-main CTLine pass. `nil` by default — every
+    /// incremental-update caller is unaffected.
+    func apply(
+        _ changes: Change...,
+        scroll: ScrollState = .none,
+        precomputed: PrecomputedLayouts? = nil
+    ) {
+        coordinator.apply(changes, scroll: scroll, precomputed: precomputed)
     }
+
+    /// Settled, clamped row width the table currently lays out at (forwards
+    /// `coordinator.layoutWidth`). `0` when no table is bound. The backfill
+    /// pipeline reads this once after attach settles to seed its off-main
+    /// typeset; subsequent resizes ride the coordinator's
+    /// `onLayoutWidthDidSettle` hook into `retarget(width:)`.
+    var layoutWidth: CGFloat { coordinator.layoutWidth }
+
+    /// Monotonic count of on-main `RowLayout` recomputes (cache misses typeset
+    /// synchronously). Forwarded from the coordinator. Hosts read it as a
+    /// *delta* around the attach-tick tile to log how many rows a reentry had
+    /// to typeset on the main thread — never per row. See
+    /// `Transcript2Coordinator.mainThreadLayoutComputes`.
+    var mainThreadLayoutComputes: Int { coordinator.mainThreadLayoutComputes }
 
     // MARK: - Loading pill
 
@@ -254,10 +271,9 @@ final class Transcript2Controller {
     /// derives from `blocks.count`, no `pendingBlocks` side channel.
     ///
     /// **Pinning to the tail.** External structural changes (live
-    /// `.appended` blocks from the bridge, `setHistory`'s viewport
-    /// batch landing on a fresh attach) may slip in *after* the pill
-    /// if their `.insert(after:)` resolves to the pill's id or relies
-    /// on `coordinator.blockIds.last`. Every
+    /// `.appended` blocks from the bridge, a backfill `.prepend` /
+    /// `.append`) may slip in *after* the pill if their tail-relative
+    /// position resolves past it. Every
     /// `apply` fires `onBlockCountChanged` → `reconcileLoadingPill()`,
     /// which sees the pill is no longer at the tail and re-pins it
     /// by removing + re-inserting at the new tail in one beat.
@@ -319,7 +335,7 @@ final class Transcript2Controller {
             let newId = UUID()
             loadingPillId = newId
             coordinator.apply(
-                [.insert(after: coordinator.blockIds.last, [Block(id: newId, kind: .loadingPill)])],
+                [.append([Block(id: newId, kind: .loadingPill)])],
                 scroll: .none)
         } else {
             if let id = pillIdSnapshot, blockIds.contains(id) {
@@ -350,163 +366,69 @@ final class Transcript2Controller {
         coordinator.setStatus(id: id, status: status)
     }
 
-    // MARK: - History snapshot
-
-    /// Declare the transcript's contents as a snapshot — `blocks` becomes
-    /// the new full block list, `anchor` is the scroll position the table
-    /// must land at once layout settles. Resets `isAnchorSettled` to
-    /// false; flips back to true after Phase 1 scrolls (real-width
-    /// branch) or after `handleFirstTile` scrolls on the next 0→positive
-    /// `tableFrameDidChange` transition (zero-width branch).
-    ///
-    /// Two-phase internally for large snapshots: Phase 1 (sync) inserts a
-    /// viewport-covering slice so the user sees correct content
-    /// immediately; Phase 2 (off-main layout, main-hop insert) installs
-    /// the rest with `.saveVisible` to keep Phase 1 visually fixed.
-    ///
-    /// The vertical scroller is push-hidden across both phases — Phase 1's
-    /// scroll-to-anchor and Phase 2's insert+saveVisible both perturb the
-    /// scroll origin, and the overlay scroller's auto-flash on
-    /// `contentSize` change would otherwise paint a bouncing knob across
-    /// the cold-load. Popped after Phase 1 (no-Phase-2 branch) or from
-    /// Phase 2's completion (which `applyInBackground` guarantees to fire).
-    ///
-    /// Repeatable: calling again replaces the snapshot. Idempotent in the
-    /// degenerate case where the same id list comes back through
-    /// (`coordinator.blockIds == blocks.map(\.id)` short-circuits).
-    func setHistory(_ blocks: [Block], anchor: InitialAnchor = .bottom) {
-        guard !blocks.isEmpty else { return }
-
-        // Flip `isAnchorSettled` back to false up front. SwiftUI consumers
-        // see false→true on every new snapshot landing; Phase 1 (below) or
-        // `handleFirstTile` (after first tile) restores true.
-        coordinator.markAnchorUnsettled()
-
-        let width = coordinator.layoutWidth
-        let viewportHeight = coordinator.viewportHeight
-        guard width > 0, viewportHeight > 0 else {
-            // Table not mounted / not yet tiled. **Insert the blocks into
-            // `coordinator.blocks` immediately** so subsequent `apply()`s
-            // — live `.appended` events on background sessions whose view
-            // hasn't been mounted yet — can resolve anchors against a
-            // populated array. Scroll-to-anchor is deferred to
-            // `handleFirstTile`, fired by the coordinator's first
-            // 0→positive `tableFrameDidChange` after the real width tiles.
-            //
-            // Idempotent on re-entry: if `coordinator.blocks` already
-            // matches `blocks` (e.g. a second `setHistory(same payload)`
-            // — rare, mostly tests), skip the insert.
-            pendingFirstTile = anchor
-            if coordinator.blockIds != blocks.map(\.id) {
-                let existing = coordinator.blockIds
-                var changes: [Transcript2Controller.Change] = []
-                if !existing.isEmpty {
-                    changes.append(.remove(ids: existing))
-                }
-                changes.append(.insert(after: nil, blocks))
-                coordinator.apply(changes, scroll: .none)
-            }
-            return
-        }
-
-        // Real-width path will scroll synchronously below; drop any
-        // pending first-tile from an earlier deferred-path call so the
-        // tile handler doesn't double-scroll on the same anchor landing.
-        pendingFirstTile = nil
-
-        let slice = Self.sliceForViewport(
-            blocks: blocks, anchor: anchor,
-            width: width, viewportHeight: viewportHeight)
-
-        let phase1Scroll: ScrollState
-        let phase2Side: ScrollState.Side
-        switch anchor {
-        case .bottom:
-            phase1Scroll = .bottom(id: blocks[slice.viewportRange.upperBound - 1].id)
-            phase2Side = .visualBottom
-        case .top(let id):
-            phase1Scroll = .top(id: id)
-            phase2Side = .visualTop
-        case .bottomTo(let id):
-            phase1Scroll = .bottom(id: id)
-            phase2Side = .visualBottom
-        }
-
-        let viewportBatch = Array(blocks[slice.viewportRange])
-        let above = Array(blocks[..<slice.viewportRange.lowerBound])
-        let below =
-            slice.viewportRange.upperBound < blocks.count
-            ? Array(blocks[slice.viewportRange.upperBound...])
-            : []
-
-        coordinator.pushScrollerHidden()
-
-        // Phase 1 — viewport batch, sync. heightOfRow lazy-computes layouts
-        // for the visible rows; cost is bounded by viewport size.
-        //
-        // `setHistory` is a snapshot setter — every call replaces the
-        // transcript's contents. If the coordinator already holds blocks
-        // (a second `setHistory` on a live session, a re-entry after the
-        // bridge dispatched `.reset`), remove them in the same atomic
-        // beginUpdates/endUpdates as the Phase 1 insert so AppKit doesn't
-        // composite an empty intermediate state. Equivalent to what the
-        // zero-width branch above does, just at real width.
-        var phase1Changes: [Transcript2Controller.Change] = []
-        let existing = coordinator.blockIds
-        if !existing.isEmpty {
-            phase1Changes.append(.remove(ids: existing))
-        }
-        phase1Changes.append(.insert(after: nil, viewportBatch))
-        coordinator.apply(phase1Changes, scroll: phase1Scroll)
-
-        // Phase 1's `scroll` has landed the table at the requested anchor;
-        // declare the first-screen contract fulfilled. Phase 2's prepend
-        // below uses `.saveVisible(...)` and does not move the visual
-        // anchor, so it's safe to settle here.
-        coordinator.markAnchorSettled()
-
-        // Phase 2 — the rest, off-main layout. ID-based anchors mean
-        // ordering between the two inserts no longer matters: each anchor
-        // resolves at apply-time independently of the other change.
-        var phase2: [Change] = []
-        if !below.isEmpty {
-            phase2.append(.insert(after: viewportBatch.last?.id, below))
-        }
-        if !above.isEmpty {
-            phase2.append(.insert(after: nil, above))
-        }
-        if phase2.isEmpty {
-            coordinator.popScrollerHidden()
-        } else {
-            coordinator.applyInBackground(phase2, scroll: .saveVisible(phase2Side)) {
-                [weak coordinator] in coordinator?.popScrollerHidden()
-            }
-        }
+    /// Read the current `ToolStatus` for a tool surface. Defaults to
+    /// `.completed` for ids the coordinator hasn't seen — matches the
+    /// layout-side "absent = completed" convention.
+    func toolStatus(for id: UUID) -> ToolStatus {
+        coordinator.status(for: id)
     }
 
-    /// Called by `Transcript2Coordinator` on the first 0→positive
-    /// `tableFrameDidChange` transition after a `tableView` attach.
-    /// Two scenarios resolved here:
+    /// Update the live turn token usage shown to the right of the running
+    /// pill. Forwarded to the coordinator, which repaints the pill row (if
+    /// present) with no height change. Idempotent.
+    func setTurnUsage(_ usage: TurnTokenUsage) {
+        coordinator.setTurnUsage(usage)
+    }
+
+    /// Sweep every `.running` entry to `.completed` in one pass. Wired
+    /// up from `Transcript2EntryBridge.handleTurnFinished()`, which the
+    /// runtime calls inside `finishTurn` (live `.result`). `.failed` /
+    /// `.cancelled` survive — only the spinning-but-unresolved ones flip.
+    func clearAllRunningStatuses() {
+        coordinator.clearAllRunningStatuses()
+    }
+
+    /// Scroll the table so the tail (latest block) sits at the visual
+    /// bottom. Used by the host (`TranscriptDetailVC`) immediately
+    /// after `view.layoutSubtreeIfNeeded()` to anchor a re-attached
+    /// session at its most recent message. No-op when there are no
+    /// blocks or no table attached.
+    func scrollToTail() {
+        guard !coordinator.blockIds.isEmpty else { return }
+        coordinator.scrollToInitialAnchor(.bottom)
+    }
+
+    /// Hide the vertical scroller while a cold history backfill streams
+    /// `.prepend` pages, then restore it. The backfill pipeline drives this:
+    /// `true` at `start`, `false` at `reportLoaded`. Only ever active during a
+    /// cold load (the pipeline never runs on warm re-entry). Forwards to the
+    /// coordinator, which owns the scroll view. See
+    /// `Transcript2Coordinator.setHistoryBackfilling(_:)`.
+    func setHistoryBackfilling(_ active: Bool) {
+        coordinator.setHistoryBackfilling(active)
+    }
+
+    /// Fires **once** when the cold-load first screen is visually complete —
+    /// either the rendered content covers the viewport, or the whole producer
+    /// drained (a short session that never fills the screen). The backfill
+    /// pipeline drives `notifyFirstScreenReady()`; this is the edge a future
+    /// image-bake reveal hangs off (drop the outgoing session's frozen
+    /// snapshot the moment the incoming cold session has real content).
     ///
-    /// 1. **Pending `setHistory`** — `pendingFirstTile` carries the
-    ///    requested anchor. Blocks were already injected at width=0;
-    ///    only the scroll is left.
-    /// 2. **Plain re-attach** — controller already has blocks (bridge
-    ///    accumulated state or a prior `setHistory` landed) but no
-    ///    pending anchor. Default to `.bottom` so re-entering a
-    ///    session always lands at the latest message.
-    ///
-    /// `markAnchorSettled` runs in both branches — flips alpha to 1 and
-    /// fires the `@Observable` `isAnchorSettled` mirror.
-    private func handleFirstTile() {
-        let anchor: InitialAnchor? = {
-            if let pending = pendingFirstTile { return pending }
-            return coordinator.blockIds.isEmpty ? nil : .bottom
-        }()
-        pendingFirstTile = nil
-        guard let anchor else { return }
-        coordinator.scrollToInitialAnchor(anchor)
-        coordinator.markAnchorSettled()
+    /// AppKit consumer → synchronous closure, not `@Observable` (the detail VC
+    /// owns the bake overlay). No queryable latch is needed: a cold attach
+    /// subscribes here before `loadHistory()` starts the pipeline, so the
+    /// subscription always precedes the earliest possible fire.
+    @ObservationIgnored var onFirstScreenReady: (() -> Void)?
+    @ObservationIgnored private var didFireFirstScreenReady = false
+
+    /// Latched, fire-once. Safe to call from every drain tick — the guard
+    /// collapses the "viewport covered" and "fully drained" conditions into a
+    /// single edge.
+    func notifyFirstScreenReady() {
+        guard !didFireFirstScreenReady else { return }
+        didFireFirstScreenReady = true
+        onFirstScreenReady?()
     }
 
     // MARK: - Search
@@ -542,69 +464,4 @@ final class Transcript2Controller {
     // MARK: - Query
 
     var blockIds: [UUID] { coordinator.blockIds }
-
-    // MARK: - Slicing (private)
-
-    private struct Slice {
-        /// Range into the original `blocks` array covering the viewport.
-        let viewportRange: Range<Int>
-    }
-
-    /// Walks `blocks` from the anchor outward, accumulating row heights
-    /// until viewport is covered. Pure: only reads `Coordinator.makeLayout`
-    /// (a `nonisolated static` function); does not mutate cache.
-    private static func sliceForViewport(
-        blocks: [Block],
-        anchor: InitialAnchor,
-        width: CGFloat,
-        viewportHeight: CGFloat
-    ) -> Slice {
-        func rowHeight(_ block: Block) -> CGFloat {
-            let pad = BlockStyle.blockPadding(for: block.kind)
-            return Transcript2Coordinator.makeLayout(for: block, width: width).totalHeight
-                + pad.top + pad.bottom
-        }
-
-        switch anchor {
-        case .bottom:
-            var height: CGFloat = 0
-            var first = blocks.count
-            for i in stride(from: blocks.count - 1, through: 0, by: -1) {
-                height += rowHeight(blocks[i])
-                first = i
-                if height >= viewportHeight { break }
-            }
-            return Slice(viewportRange: first..<blocks.count)
-
-        case .top(let id):
-            guard let anchorIdx = blocks.firstIndex(where: { $0.id == id }) else {
-                return sliceForViewport(
-                    blocks: blocks, anchor: .bottom,
-                    width: width, viewportHeight: viewportHeight)
-            }
-            var height: CGFloat = 0
-            var last = anchorIdx
-            for i in anchorIdx..<blocks.count {
-                height += rowHeight(blocks[i])
-                last = i
-                if height >= viewportHeight { break }
-            }
-            return Slice(viewportRange: anchorIdx..<last + 1)
-
-        case .bottomTo(let id):
-            guard let anchorIdx = blocks.firstIndex(where: { $0.id == id }) else {
-                return sliceForViewport(
-                    blocks: blocks, anchor: .bottom,
-                    width: width, viewportHeight: viewportHeight)
-            }
-            var height: CGFloat = 0
-            var first = anchorIdx
-            for i in stride(from: anchorIdx, through: 0, by: -1) {
-                height += rowHeight(blocks[i])
-                first = i
-                if height >= viewportHeight { break }
-            }
-            return Slice(viewportRange: first..<anchorIdx + 1)
-        }
-    }
 }

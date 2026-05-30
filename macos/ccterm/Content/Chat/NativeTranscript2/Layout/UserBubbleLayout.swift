@@ -8,9 +8,11 @@ import CoreText
 /// lines) hard-truncates the visible block to `userBubbleCollapseThreshold`
 /// lines with a tail "…" on the last line, plus a `>` chevron anchored
 /// to the bubble's bottom-right rounded corner. Tapping the chevron
-/// opens a SwiftUI sheet with the full text — that path is the *only*
-/// place fold state lives, owned by `Transcript2Controller.pendingUserBubbleSheet`
-/// and consumed by `NativeTranscript2View`'s `.sheet(item:)`.
+/// opens an AppKit-presented sheet with the full text — that path is
+/// the *only* place fold state lives, owned by
+/// `Transcript2Controller.pendingUserBubbleSheet` and consumed by
+/// `Transcript2SheetPresenter` (which wraps `UserBubbleSheetView` in
+/// `NSHostingController` and presents via `NSWindow.beginSheet`).
 ///
 /// ### Why no in-cell expanded mode
 ///
@@ -46,6 +48,16 @@ struct UserBubbleLayout: @unchecked Sendable {
     /// full content unchanged after the layout truncated it for in-cell
     /// rendering.
     let fullText: String
+
+    /// Mirrors `Block.Kind.userBubble(isQueued:)`. When true, the bubble
+    /// paints with `bubbleQueuedFillColor` and renders a `clock` badge
+    /// at the bottom-right arc midpoint.
+    let isQueued: Bool
+
+    /// Center of the queued-state badge — sits on the bottom-right
+    /// rounded corner's arc at 45°, so the disc straddles the bubble
+    /// boundary. `nil` when `isQueued == false`.
+    let queuedBadgeCenter: CGPoint?
 
     /// Lines actually drawn. When folded, the last entry is a CT-truncated
     /// "…"-tail line whose `CTLineGetStringRange` still spans the full
@@ -86,7 +98,11 @@ struct UserBubbleLayout: @unchecked Sendable {
     /// `>` and reads as a single visual unit.
     nonisolated private static let truncationGuardWidth: CGFloat = 24
 
-    nonisolated static func make(text: String, maxWidth: CGFloat) -> UserBubbleLayout {
+    nonisolated static func make(
+        text: String,
+        isQueued: Bool,
+        maxWidth: CGFloat
+    ) -> UserBubbleLayout {
         let maxBubbleWidth = max(
             120,
             min(
@@ -154,8 +170,27 @@ struct UserBubbleLayout: @unchecked Sendable {
             chevronHit = nil
         }
 
+        // Queued badge — centered on the bottom-right arc at 45° so the
+        // disc straddles the bubble boundary. With arc center at
+        // `(maxX - r, maxY - r)` and arc radius `r`, the 45° point lands
+        // at `(maxX - r + r·cos45°, maxY - r + r·sin45°)`. The badge
+        // ends up offset from the outer edge by `r·(1 - √2/2)` (~4.1pt
+        // at r=14), so it reads as anchored to the corner curve.
+        let queuedBadgeCenter: CGPoint?
+        if isQueued {
+            let r = BlockStyle.bubbleCornerRadius
+            let off = r * (CGFloat(1) - CGFloat(2).squareRoot() / 2)
+            queuedBadgeCenter = CGPoint(
+                x: bubbleRect.maxX - off,
+                y: bubbleRect.maxY - off)
+        } else {
+            queuedBadgeCenter = nil
+        }
+
         return UserBubbleLayout(
             fullText: text,
+            isQueued: isQueued,
+            queuedBadgeCenter: queuedBadgeCenter,
             lines: drawnLines,
             lineOrigins: stack.lineOrigins,
             lineMetrics: stack.lineMetrics,
@@ -259,6 +294,7 @@ struct UserBubbleLayout: @unchecked Sendable {
         let metrics = self.lineMetrics
         let totalLength = lines.reduce(0) { $0 + CTLineGetStringRange($1).length }
         let source = fullText as NSString
+        let attributed = NSAttributedString(string: fullText)
         let full = SelectionRange(
             start: .text(char: 0), end: .text(char: totalLength))
 
@@ -291,7 +327,15 @@ struct UserBubbleLayout: @unchecked Sendable {
                 guard hi > lo, hi <= source.length else { return "" }
                 return source.substring(with: NSRange(location: lo, length: hi - lo))
             },
-            wordBoundary: { _ in nil },
+            wordBoundary: { p in
+                guard case .text(let i) = p, attributed.length > 0
+                else { return nil }
+                let clamped = max(0, min(i, attributed.length - 1))
+                let word = attributed.doubleClick(at: clamped)
+                return SelectionRange(
+                    start: .text(char: word.location),
+                    end: .text(char: word.location + word.length))
+            },
             searchableRegions: {
                 // Decision A: only the visible (non-truncated) prefix
                 // participates in search — search range == selection
@@ -363,9 +407,13 @@ struct UserBubbleLayout: @unchecked Sendable {
             cornerHeight: BlockStyle.bubbleCornerRadius,
             transform: nil)
 
-        // 1) Bubble fill.
+        // 1) Bubble fill — queued state gets the dimmer neutral tint.
         ctx.saveGState()
-        ctx.setFillColor(BlockStyle.bubbleFillColor.cgColor)
+        let fill =
+            isQueued
+            ? BlockStyle.bubbleQueuedFillColor
+            : BlockStyle.bubbleFillColor
+        ctx.setFillColor(fill.cgColor)
         ctx.addPath(bubblePath)
         ctx.fillPath()
         ctx.restoreGState()
@@ -388,6 +436,47 @@ struct UserBubbleLayout: @unchecked Sendable {
                 centerInRow: CGPoint(
                     x: center.x + origin.x, y: center.y + origin.y))
         }
+
+        // 4) Queued badge — clock SF Symbol on the bubble corner arc.
+        //    Drawn after the chevron so the badge sits on top if the
+        //    bubble is both queued and truncated (rare but valid).
+        if let center = queuedBadgeCenter {
+            drawQueuedBadge(
+                in: ctx,
+                centerInRow: CGPoint(
+                    x: center.x + origin.x, y: center.y + origin.y))
+        }
+    }
+
+    /// Paint the queued-state `clock` SF Symbol on the bubble corner.
+    /// The center is supplied in the cell's coordinate space (already
+    /// offset by `origin`). Rendered into the cell's bitmap so the
+    /// cached layer composites without per-frame redraw.
+    private func drawQueuedBadge(in ctx: CGContext, centerInRow center: CGPoint) {
+        let pointSize = BlockStyle.queuedBadgeSymbolPointSize
+        let baseConfig = NSImage.SymbolConfiguration(pointSize: pointSize, weight: .medium)
+        let palette = NSImage.SymbolConfiguration(
+            paletteColors: [BlockStyle.queuedBadgeForeground])
+        let config = baseConfig.applying(palette)
+        guard let raw = NSImage(systemSymbolName: "clock", accessibilityDescription: nil),
+            let symbol = raw.withSymbolConfiguration(config)
+        else { return }
+
+        let symbolSize = symbol.size
+        let symbolRect = CGRect(
+            x: center.x - symbolSize.width / 2,
+            y: center.y - symbolSize.height / 2,
+            width: symbolSize.width,
+            height: symbolSize.height)
+
+        // The cell's CGContext runs y-down (cells override `isFlipped`).
+        // Bridge through `NSGraphicsContext(cgContext:flipped:)` with
+        // `flipped: true` so `NSImage.draw(in:)` interprets `symbolRect`
+        // in the same y-down space without manual transform math.
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: true)
+        symbol.draw(in: symbolRect)
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     private func drawChevron(in ctx: CGContext, centerInRow center: CGPoint) {

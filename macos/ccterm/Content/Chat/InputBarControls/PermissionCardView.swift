@@ -1,20 +1,28 @@
 import AgentSDK
 import SwiftUI
 
-/// Floating decision card shown above the input bar when the CLI is
-/// waiting on a permission request. Mount as
-/// `.overlay(alignment: .bottom)` on `InputBarChrome`:
+/// Floating decision card shown over the input bar when the CLI is
+/// waiting on a permission request. Layered as the top child of
+/// `ChatRestingBar`'s `ZStack(alignment: .bottom)` — the detail-pane-wide
+/// stack that contains `InputBarChrome`, NOT mounted on `InputBarChrome`
+/// itself:
 ///
 /// - Bottom edge sits flush with the chrome row (permission mode /
-///   model+effort), so the card visually extends *up* from there.
-/// - Width inherits the chrome wrapper's frame — same span as the
-///   attach button + pill of `InputBarView2`.
-/// - Z-order is above the input bar; the bar surface fades through
-///   the card's material as the card expands upward.
+///   model+effort) by way of the same `chatBottomInset` padding the
+///   bar uses, so the card visually extends *up* from there.
+/// - The host is the detail-wide stack, not the bar's 512pt-capped
+///   frame, so the card's `.frame(maxWidth: BlockStyle.maxLayoutWidth)`
+///   can actually reach 780 (the transcript column width) instead of
+///   silently clipping to the bar's width.
+/// - Z-order is above the input bar: the card draws on top of and covers
+///   the bar rather than pushing it down a tier. A `ZStack` (not
+///   `.overlay`) is what lets the card's footprint grow `ChatRestingBar`'s
+///   measured height so the bottom-anchored bar host stays tall enough to
+///   contain it (clip + hit-test) — see `ChatRestingBar`.
 ///
 /// Pure UI: the card receives a `PermissionRequest` plus three
 /// decision callbacks and renders the body. Wiring through to
-/// `session.respond(...)` lives in `InputBarChrome` — keeping this
+/// `session.respond(...)` lives in `ChatRestingBar` — keeping this
 /// view free of session state so it stays snapshot-friendly.
 ///
 /// The body shape varies per category — see `PermissionCardKind`.

@@ -1,0 +1,120 @@
+name: build-release
+
+# Produces a Release `ccterm.app` build for every PR as an independent
+# job so it runs in parallel with `test.yml` / `fmt.yml`. Release builds
+# go through whole-module optimization and have caught compiler crashes
+# (e.g. Swift 6.3 SIL inliner regressions on certain code shapes) that
+# Debug-only CI cannot. Also uploads a downloadable Release artifact.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  build-release:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Init submodules (with retry)
+        # actions/checkout's recursive submodule fetch uses --depth=1 and has
+        # no retry; transient network hiccups manifest as "Fetched in
+        # submodule path, but it did not contain <sha>" + "could not read
+        # Username" and fail the whole job. See actions/checkout#748. Do it
+        # ourselves with a small retry loop.
+        run: |
+          for attempt in 1 2 3; do
+            if git submodule update --init --recursive; then
+              exit 0
+            fi
+            echo "::warning::git submodule update failed on attempt $attempt"
+            git submodule deinit -f --all || true
+            sleep $((attempt * 5))
+          done
+          exit 1
+
+      - name: Setup Go
+        # fzf submodule compiles from Go sources inside an Xcode build phase.
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: true
+          cache-dependency-path: thirdparty/fzf/go.sum
+
+      - name: Setup Bun
+        # JSCore bundles in `macos/ccterm/Resources/*.js` are compiled from
+        # `js/` by `make js-bundles`. Without this the Release build would
+        # ship without the syntax-highlight bundle and assert at launch.
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Xcode info
+        run: |
+          xcode-select -p
+          xcodebuild -version
+          sw_vers
+          go version
+
+      - name: Compute cache fingerprint
+        id: fp
+        run: |
+          XCODE=$(xcodebuild -version | head -n1 | awk '{print $2}')
+          FZF_SHA=$(git submodule status thirdparty/fzf | awk '{print $1}' | tr -d ' -+')
+          echo "xcode=$XCODE" >> "$GITHUB_OUTPUT"
+          echo "fzf=$FZF_SHA"  >> "$GITHUB_OUTPUT"
+
+      # Separate cache key from test/debug workflows because Release builds
+      # write a different .swiftmodule (whole-module optimization, -O).
+      - name: Cache DerivedData
+        uses: actions/cache@v4
+        with:
+          path: macos/build/release-dd
+          key: dd-release-${{ runner.os }}-${{ runner.arch }}-xc${{ steps.fp.outputs.xcode }}-fzf${{ steps.fp.outputs.fzf }}-salt${{ hashFiles('.github/cache-salt') }}-src${{ hashFiles('macos/**/*.swift', 'macos/ccterm.xcodeproj/project.pbxproj', 'macos/Config.xcconfig', 'macos/AgentSDK/Package.swift', 'macos/ccterm/Localizable.xcstrings') }}
+          restore-keys: |
+            dd-release-${{ runner.os }}-${{ runner.arch }}-xc${{ steps.fp.outputs.xcode }}-fzf${{ steps.fp.outputs.fzf }}-salt${{ hashFiles('.github/cache-salt') }}-
+
+      - name: Compile JSCore bundles
+        # Produces `macos/ccterm/Resources/hljs-jscore.js` so the Xcode
+        # Resources copy phase has something to bundle. We invoke xcodebuild
+        # explicitly below (custom -derivedDataPath for the cache step)
+        # instead of going through `make release`, so the js-bundles target
+        # runs standalone.
+        run: make js-bundles
+
+      - name: Build (Release)
+        run: |
+          xcodebuild \
+            -project macos/ccterm.xcodeproj \
+            -scheme ccterm \
+            -configuration Release \
+            -destination 'platform=macOS' \
+            -derivedDataPath macos/build/release-dd \
+            SWIFT_STRICT_CONCURRENCY=complete \
+            build
+
+      - name: Locate built .app
+        id: app
+        run: |
+          APP_PATH=$(find macos/build/release-dd/Build/Products/Release -maxdepth 2 -name 'ccterm.app' -type d | head -n1)
+          if [ -z "$APP_PATH" ]; then
+            echo "Could not find ccterm.app under macos/build/release-dd/Build/Products/Release"
+            exit 1
+          fi
+          echo "path=$APP_PATH" >> "$GITHUB_OUTPUT"
+          du -sh "$APP_PATH"
+
+      - name: Zip .app
+        run: |
+          cd "$(dirname '${{ steps.app.outputs.path }}')"
+          ditto -c -k --sequesterRsrc --keepParent "$(basename '${{ steps.app.outputs.path }}')" ccterm-release.zip
+          mv ccterm-release.zip "$GITHUB_WORKSPACE/ccterm-release.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ccterm-release-app
+          path: ccterm-release.zip
+          retention-days: 14
+          if-no-files-found: error

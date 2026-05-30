@@ -22,9 +22,9 @@ test-results/
 # Local config
 macos/Local.xcconfig
 
-# Claude Code
-.claude/
+# Claude Code — track committed skills/settings; ignore only local-only bits
 .claude/worktrees/
+.claude/settings.local.json
 
 # Private development notes
 prds/

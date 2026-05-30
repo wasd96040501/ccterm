@@ -9,9 +9,11 @@
 #   ./scripts/test-unit.sh ClassName             # one class
 #   ./scripts/test-unit.sh ClassName/method      # one method
 #
-# DerivedData is cached under macos/build/test-dd by default; override with
-# DERIVED_DATA_PATH if needed. CI restores the same path from cache so the
-# first run after a cache hit is incremental.
+# DerivedData uses Xcode's default location (~/Library/Developer/Xcode/
+# DerivedData/ccterm-<hash>), which keys off the .xcodeproj absolute path —
+# so each git worktree gets its own cache automatically. CI overrides via
+# the DERIVED_DATA_PATH env var to pin a workspace-relative path the cache
+# action can serialize.
 #
 # Exit codes:
 #   0 success / 1 test failure / 2 build failure.
@@ -24,15 +26,12 @@ SCHEME="ccterm"
 DESTINATION='platform=macOS,arch=arm64'
 TEST_TARGET="cctermTests"
 FILTER="${1:-}"
-# DerivedData must live outside the project tree. If a checkout sits inside
-# `~/Documents`, an in-tree DerivedData puts the test bundle under the TCC
-# "Documents" boundary; the host app's `Bundle.main` reads (e.g.
-# SyntaxHighlightEngine loading `hljs-jscore.js` from AppState.init) then
-# prompt for "ccterm 要访问文档" on every rebuild — the codesign hash changes
-# each Debug build so the consent never sticks. CI overrides this to
-# `macos/build/test-dd` (see .github/workflows/test.yml) so the cache action
-# can pick it up.
-DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-${HOME}/Library/Caches/ccterm-test-dd}"
+# DerivedData: unset → Xcode default (~/Library/Developer/Xcode/DerivedData/
+# ccterm-<hash>), naturally isolated per worktree via the project-path hash
+# and safely outside ~/Documents (TCC "Documents" boundary). CI sets
+# DERIVED_DATA_PATH=macos/build/test-dd so the cache action has a stable
+# in-workspace path to serialize.
+DERIVED_DATA_PATH="${DERIVED_DATA_PATH:-}"
 
 STAMP=$(date +%Y%m%d-%H%M%S)
 LOG_DIR="/tmp/ccterm-utest-$STAMP-$$"
@@ -46,7 +45,6 @@ XCB_ARGS=(
   -scheme "$SCHEME"
   -configuration Debug
   -destination "$DESTINATION"
-  -derivedDataPath "$DERIVED_DATA_PATH"
   -resultBundlePath "$XCRESULT"
   -parallel-testing-enabled YES
   -parallel-testing-worker-count 4
@@ -55,6 +53,7 @@ XCB_ARGS=(
   CODE_SIGN_IDENTITY=-
   DEVELOPMENT_TEAM=
 )
+[ -n "$DERIVED_DATA_PATH" ] && XCB_ARGS+=(-derivedDataPath "$DERIVED_DATA_PATH")
 
 # Propagate `CI` into the test process. xcodebuild scrubs the env when
 # spawning XCTRunner, but any var prefixed `TEST_RUNNER_` is forwarded
@@ -87,7 +86,7 @@ fi
 XCB_ARGS+=(test)
 
 echo "Running unit tests: filter=${FILTER:-<all>}"
-echo "DerivedData: $DERIVED_DATA_PATH"
+echo "DerivedData: ${DERIVED_DATA_PATH:-<Xcode default>}"
 echo "Logs: $LOG_DIR"
 
 START_TIME=$(date +%s)

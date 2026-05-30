@@ -10,13 +10,14 @@ import XCTest
 ///
 /// The first test is the regression net for the bug: on a fresh probe
 /// instance, doing `refresh(nil)` first (mimicking the card mounting
-/// before `RootView2` has populated `draftCwd`) followed by `refresh(X) +
-/// loadHeavy(X)` must populate `branches`. The pre-extraction code path
-/// reproduced "first entry shows empty picker" because the probe state
-/// lived in SwiftUI `@State` storage on the configurator, and the
-/// transition was sensitive to view re-render timing; the extracted
-/// `@Observable` lets us drive the exact same sequence in a single
-/// `XCTestCase` and assert on the result deterministically.
+/// before `Session.draft.cwd` has been seeded) followed by
+/// `refresh(X) + loadHeavy(X)` must populate `branches`. The
+/// pre-extraction code path reproduced "first entry shows empty picker"
+/// because the probe state lived in SwiftUI `@State` storage on the
+/// configurator, and the transition was sensitive to view re-render
+/// timing; the extracted `@Observable` lets us drive the exact same
+/// sequence in a single `XCTestCase` and assert on the result
+/// deterministically.
 @MainActor
 final class GitProbeTests: XCTestCase {
 
@@ -38,10 +39,11 @@ final class GitProbeTests: XCTestCase {
 
     // MARK: - Cold-mount sequence (regression net for the empty-picker bug)
 
-    /// Mirrors what `RootView2` + `NewSessionConfigurator` do on a fresh
-    /// app launch: the configurator mounts before `draftCwd` has been
-    /// populated (so the first call is `refresh(nil)`), then the parent
-    /// task fills in `draftCwd` and the second `refresh + loadHeavy`
+    /// Mirrors what `ChatSessionViewController` +
+    /// `NewSessionConfigurator` do on a fresh app launch: the
+    /// configurator mounts before `Session.draft.cwd` has been seeded
+    /// (so the first call is `refresh(nil)`), then the parent task
+    /// fills in the draft's cwd and the second `refresh + loadHeavy`
     /// fires for the real repo path.
     ///
     /// After the second sequence, `branches` MUST contain the repo's
@@ -52,8 +54,8 @@ final class GitProbeTests: XCTestCase {
         let repo = try makeGitRepo(name: "repo-a", branches: ["main", "feature/a", "feature/b"])
         let probe = GitProbe()
 
-        // Phase 1 — card mounts with nil folderPath (RootView2's
-        // `.task(id: selectedSessionId)` hasn't filled in `draftCwd` yet).
+        // Phase 1 — card mounts with nil folderPath (the detail VC
+        // hasn't seeded `Session.draft.cwd` yet).
         probe.refresh(folderPath: nil)
         await probe.loadHeavy(folderPath: nil)
         XCTAssertFalse(probe.isGitRepo, "nil folder must not flip the repo flag")

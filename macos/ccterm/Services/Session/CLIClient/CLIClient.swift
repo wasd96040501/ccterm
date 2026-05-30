@@ -26,6 +26,11 @@ protocol CLIClient: AnyObject {
     // MARK: Callbacks (assigned by Session.attachCallbacks)
 
     var onMessage: ((Message2) -> Void)? { get set }
+    /// Streaming partial (delta) events. Fires only when the underlying
+    /// session was configured with `includePartialMessages = true`. The
+    /// runtime folds these into live assistant text + turn token usage; see
+    /// `StreamingTurnAssembler`.
+    var onStreamEvent: ((Message2StreamEvent) -> Void)? { get set }
     var onPermissionRequest: ((PermissionRequest, @escaping (PermissionDecision) -> Void) -> Void)?
     { get set }
     var onPermissionCancelled: ((String) -> Void)? { get set }
@@ -40,6 +45,14 @@ protocol CLIClient: AnyObject {
     func start() async throws
     func close()
 
+    /// Graceful shutdown that completes only after the subprocess has
+    /// actually exited (or after the underlying SDK's per-process
+    /// timeout forces SIGTERM). Used by the app-quit path so all CLIs
+    /// can be shut down in parallel before `NSApplication` finishes
+    /// terminating. The synchronous `close()` remains fire-and-forget
+    /// for the usual stop-button path.
+    func closeAsync() async
+
     // MARK: Control requests
 
     func initialize(
@@ -47,6 +60,24 @@ protocol CLIClient: AnyObject {
         completion: @escaping (InitializeResponse?) -> Void
     )
     func interrupt(completion: @escaping ([String: Any]) -> Void)
+
+    /// Requests a context-window-usage breakdown. Falls through to
+    /// `.unsupported` on old CLIs (no response within `timeout` seconds).
+    /// Always invokes `completion` exactly once.
+    func getContextUsage(
+        timeout: TimeInterval,
+        completion: @escaping (ContextUsageOutcome) -> Void
+    )
+
+    /// Asks a one-shot `/btw`-style side question (`side_question` control
+    /// request). Answered from live conversation context without
+    /// interrupting the current turn. `.unsupported` when there is no live
+    /// CLI; `.sdkError` when the CLI rejects the subtype. Invokes
+    /// `completion` once, when the CLI responds.
+    func askSideQuestion(
+        _ question: String,
+        completion: @escaping (SideQuestionOutcome) -> Void
+    )
 
     // MARK: Messaging
 

@@ -142,7 +142,7 @@ enum DiffColors {
 
     static func tableBg(_ scheme: ColorScheme) -> Color {
         scheme == .dark
-            ? Color(.sRGB, red: 27 / 255, green: 31 / 255, blue: 38 / 255)
+            ? Color(.sRGB, red: 38 / 255, green: 42 / 255, blue: 48 / 255)
             : Color(.sRGB, red: 129 / 255, green: 139 / 255, blue: 152 / 255, opacity: 31 / 255)
     }
 
@@ -172,7 +172,7 @@ enum DiffColors {
         case (.del, .light): Color(.sRGB, red: 236 / 255, green: 214 / 255, blue: 216 / 255)
         // Context gutter in dark mode: bumped from 0.04 → 0.10 so the
         // line-number column is visibly distinct from the card body
-        // (`tableBg` at `#1B1F26`). Same tier as `tableHeaderBackground`
+        // (`tableBg` at `#262A30`). Same tier as `tableHeaderBackground`
         // dark (~0.14) so chrome columns read at one density.
         case (.context, .dark): Color.white.opacity(0.10)
         case (.context, .light): Color.black.opacity(0.04)
@@ -206,7 +206,7 @@ enum DiffColors {
 
     static func nsTableBg(isDark: Bool) -> NSColor {
         isDark
-            ? NSColor(srgbRed: 27 / 255, green: 31 / 255, blue: 38 / 255, alpha: 1)
+            ? NSColor(srgbRed: 38 / 255, green: 42 / 255, blue: 48 / 255, alpha: 1)
             : NSColor(srgbRed: 129 / 255, green: 139 / 255, blue: 152 / 255, alpha: 31 / 255)
     }
 

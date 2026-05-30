@@ -6,6 +6,18 @@ import Observation
 @Observable
 final class CompletionViewModel {
 
+    /// macOS 26 SDK workaround — same posture as `Session.deinit` /
+    /// `SessionRuntime.deinit`. The default `@MainActor` class deinit
+    /// would route through `swift_task_deinitOnExecutorImpl`, which
+    /// the stricter Xcode 26 Concurrency runtime traps on for any
+    /// `@Observable @MainActor` class with `TaskLocal`-touching
+    /// internals. `nonisolated` skips the executor-hop path. Hit by
+    /// the host-aware reentry test: tearing down a
+    /// `ChatSessionViewController` deallocates the input bar's
+    /// hosted SwiftUI graph, which tears down the per-session
+    /// `CompletionViewModel` from a Task continuation.
+    nonisolated deinit {}
+
     // MARK: - Public State
 
     enum EmptyReason {
@@ -59,13 +71,15 @@ final class CompletionViewModel {
         /// Override for empty reason (e.g. `.noDirectory` for slash without provider).
         let emptyReasonOverride: EmptyReason?
         let provider: (_ query: String, _ completion: @escaping ([any CompletionItem]) -> Void) -> Void
-        /// Returns text replacement. `keepSession` lets the session distinguish navigation (Tab) from final confirm (Enter).
-        /// The `wordEnd` parameter is the end offset of the full trigger word (anchor to next whitespace/EOT).
+        /// Returns text replacement for the confirmed item. The `wordEnd`
+        /// parameter is the end offset of the full trigger word (anchor to
+        /// next whitespace/EOT). Tab and Enter both route here — there is
+        /// no navigation-vs-confirm distinction.
         let makeReplacement:
-            (_ item: any CompletionItem, _ text: String, _ wordEnd: Int, _ keepSession: Bool) -> (
+            (_ item: any CompletionItem, _ text: String, _ wordEnd: Int) -> (
                 range: NSRange, replacement: String
             )
-        /// Side-effect closure called on final confirm (keepSession=false). Nil for standard text replacement.
+        /// Side-effect closure called on confirm. Nil for standard text replacement.
         let onItemConfirmed: ((_ item: any CompletionItem) -> Void)?
         /// Validates raw query text (e.g. typed path) and performs side-effects if valid. Returns true if confirmed.
         let validateAndConfirmFromInput: ((_ query: String) -> Bool)?
@@ -80,7 +94,7 @@ final class CompletionViewModel {
             emptyReasonOverride: EmptyReason? = nil,
             provider: @escaping (_ query: String, _ completion: @escaping ([any CompletionItem]) -> Void) -> Void,
             makeReplacement:
-                @escaping (_ item: any CompletionItem, _ text: String, _ wordEnd: Int, _ keepSession: Bool) -> (
+                @escaping (_ item: any CompletionItem, _ text: String, _ wordEnd: Int) -> (
                     range: NSRange, replacement: String
                 ),
             onItemConfirmed: ((_ item: any CompletionItem) -> Void)? = nil,
@@ -265,19 +279,19 @@ final class CompletionViewModel {
 
     // MARK: - Confirm
 
-    func confirmSelection(keepSession: Bool = false) -> (range: NSRange, replacement: String)? {
+    /// Confirm the highlighted item. Tab and Enter both call this — the
+    /// replacement is spliced in and the session is dismissed.
+    func confirmSelection() -> (range: NSRange, replacement: String)? {
         guard let session = activeSession,
             selectedIndex >= 0, selectedIndex < items.count
         else { return nil }
 
         let item = items[selectedIndex]
         let wEnd = wordRange(for: session).upperBound
-        let result = session.makeReplacement(item, text, wEnd, keepSession)
+        let result = session.makeReplacement(item, text, wEnd)
 
-        if !keepSession {
-            session.onItemConfirmed?(item)
-            dismiss()
-        }
+        session.onItemConfirmed?(item)
+        dismiss()
         return result
     }
 

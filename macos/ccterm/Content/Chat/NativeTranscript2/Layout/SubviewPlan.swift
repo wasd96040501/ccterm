@@ -49,8 +49,16 @@ struct SubviewPlan: @unchecked Sendable {
     /// present.
     let loadingDots: LoadingDots?
 
+    /// Live turn-token-usage counter drawn beside the running dots.
+    /// Emitted by `LoadingPillLayout` when the turn has counted any
+    /// tokens. Rendered in a dedicated `LoadingPillUsageView` (not the
+    /// cell bitmap) so the digits can roll up — odometer style — as
+    /// `setTurnUsage` reloads the pill row each tick. `nil` before any
+    /// tokens accrue (and on non-pill rows).
+    let usage: UsageCounter?
+
     static let empty = SubviewPlan(
-        chevrons: [], entries: [], shimmers: [], loadingDots: nil)
+        chevrons: [], entries: [], shimmers: [], loadingDots: nil, usage: nil)
 
     /// One spinning glyph attached to a foldable header. The cell
     /// owns a `CAShapeLayer` keyed by `id`, snaps `transform.rotation.z`
@@ -140,6 +148,20 @@ struct SubviewPlan: @unchecked Sendable {
         let tintColor: NSColor
     }
 
+    /// Live turn-token-usage spec. The cell hosts a single
+    /// `LoadingPillUsageView` that renders `↑in ↓out` and rolls each
+    /// number toward its new target. `frame` is cell-local placement;
+    /// `inputTokens` / `outputTokens` are the raw (cache-excluded) turn
+    /// totals — the view abbreviates and tweens them. `font` / `color`
+    /// match the chrome tier the layout reserved width for.
+    struct UsageCounter: @unchecked Sendable {
+        let frame: CGRect
+        let inputTokens: Int
+        let outputTokens: Int
+        let font: NSFont
+        let color: NSColor
+    }
+
     /// One layer-backed body subview. The cell hosts a
     /// `ToolGroupEntryView` keyed by `id`; reuse across layout swaps
     /// is what lets `view.animator().frame` slide entries during a
@@ -150,9 +172,15 @@ struct SubviewPlan: @unchecked Sendable {
         /// entry `bandRect` offset by `layoutOrigin`.
         let frame: CGRect
         /// View paints itself by invoking this closure from its own
-        /// `draw(_:)`. `selectionColor` is supplied at draw time
-        /// because it depends on `window.isKeyWindow`, which is a
-        /// runtime cell-state, not a layout-build property.
+        /// `draw(_:)`. `selectionColor` and the two search-highlight
+        /// colours are supplied at draw time because they depend on
+        /// `window.isKeyWindow`, a runtime cell-state, not a
+        /// layout-build property. Search highlights composite over the
+        /// selection band (same order as `BlockCellView.draw`): they
+        /// MUST flow through this subview for the same reason selection
+        /// does — the body subview is opaque-composited over the cell
+        /// bitmap, so a highlight painted on the cell never reaches the
+        /// screen (see `RowLayout.subviewPlan`'s note).
         ///
         /// `dirtyRect` is the AppKit-supplied draw region intersected
         /// with the view's `visibleRect`, expressed in **view-local**
@@ -170,7 +198,10 @@ struct SubviewPlan: @unchecked Sendable {
         /// The closure captures the layout's immutable data and is safe
         /// to invoke from the view's draw path on the main thread.
         let draw:
-            (_ ctx: CGContext, _ selectionColor: NSColor, _ dirtyRect: CGRect)
-                -> Void
+            (
+                _ ctx: CGContext, _ selectionColor: NSColor,
+                _ searchActiveColor: NSColor, _ searchInactiveColor: NSColor,
+                _ dirtyRect: CGRect
+            ) -> Void
     }
 }

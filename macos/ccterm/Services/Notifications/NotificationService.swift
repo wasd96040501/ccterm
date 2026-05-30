@@ -2,8 +2,12 @@ import AppKit
 import Observation
 import UserNotifications
 
-/// Routes `TurnEndedNotice`s into the system Notification Center, and
-/// surfaces user clicks back to the UI as `pendingActivationSessionId`.
+/// Routes session activity that needs the user's attention —
+/// `TurnEndedNotice` (an assistant turn finished) and
+/// `PermissionPromptNotice` (a session is blocked waiting for a tool
+/// approval) — into the system Notification Center, and surfaces user
+/// clicks back to the UI by **pushing** them through the
+/// `onActivateSession` callback.
 ///
 /// Lifetime: one instance, owned by `AppState`, lives for the whole app
 /// session. `bootstrap()` requests permission + installs the
@@ -28,11 +32,19 @@ final class NotificationService: NSObject {
     @ObservationIgnored private let activation: AppActivationTracker
     @ObservationIgnored private var didBootstrap = false
 
-    /// Most recent click target. RootView2 binds to this via
-    /// `.onChange(of:)`, switches its `selectedSessionId`, then calls
-    /// `clearPendingActivation()` so a re-click on the same session
-    /// still fires.
-    private(set) var pendingActivationSessionId: String?
+    /// Pushed when the user clicks a notification banner. A single
+    /// stable owner (`DetailRouterViewController`) installs this and
+    /// flips `MainSelectionModel.selection` to `.session(sid)`.
+    ///
+    /// This is a **push** callback rather than an `@Observable` field on
+    /// purpose: the old shape had every `ChatSessionViewController`
+    /// observe a `pendingActivationSessionId` through a re-arming
+    /// `withObservationTracking` task, so each leaked detail VC kept
+    /// driving selection (and the strong-`self`-across-`await` re-arm
+    /// pinned those VCs forever). A direct closure has one owner, no
+    /// observation task, and no retain cycle — see the
+    /// `onLaunchFailure` / `onRecordPersisted` sinks for the same idiom.
+    @ObservationIgnored var onActivateSession: ((String) -> Void)?
 
     /// Authorization status snapshot — `nil` until the first query
     /// resolves. Settings UI can read this if we ever want to nudge the
@@ -75,22 +87,29 @@ final class NotificationService: NSObject {
     /// app is already active.
     func handleTurnEnded(_ notice: TurnEndedNotice) {
         guard !activation.isAppActive else { return }
-        post(notice: notice)
+        post(kind: "turnEnded", sessionId: notice.sessionId, title: notice.title, body: notice.body)
     }
 
-    /// Called by RootView2 after it consumes the activation request.
-    func clearPendingActivation() {
-        pendingActivationSessionId = nil
+    /// Entry point from `SessionManager.onPermissionPromptNotice`. Same
+    /// gating as `handleTurnEnded` — drops if the app is frontmost, since
+    /// the user already sees the permission card.
+    func handlePermissionPrompt(_ notice: PermissionPromptNotice) {
+        guard !activation.isAppActive else { return }
+        post(kind: "permission", sessionId: notice.sessionId, title: notice.title, body: notice.body)
     }
 
-    private func post(notice: TurnEndedNotice) {
+    /// Build + enqueue a Notification Center banner. `kind` only
+    /// distinguishes the request identifier so a turn-end banner and a
+    /// permission banner for the same session don't collide; both click
+    /// through to the same session via `userInfo["sessionId"]`.
+    private func post(kind: String, sessionId: String, title: String, body: String) {
         let content = UNMutableNotificationContent()
-        content.title = notice.title
-        content.body = Self.truncated(notice.body)
+        content.title = Self.flattened(title)
+        content.body = Self.truncated(Self.flattened(body))
         content.sound = .default
-        content.userInfo = ["sessionId": notice.sessionId]
+        content.userInfo = ["sessionId": sessionId]
         let request = UNNotificationRequest(
-            identifier: "ccterm.turnEnded.\(notice.sessionId).\(UUID().uuidString)",
+            identifier: "ccterm.\(kind).\(sessionId).\(UUID().uuidString)",
             content: content,
             trigger: nil
         )
@@ -110,11 +129,37 @@ final class NotificationService: NSObject {
         return trimmed[..<cut] + "\u{2026}"
     }
 
-    /// Used from the nonisolated delegate callback to hop back onto
-    /// the main actor for the activation-state write.
-    fileprivate func activateForSession(_ sessionId: String) {
+    /// Collapse all runs of whitespace (newlines, tabs, multi-space) into a
+    /// single space and trim the ends. macOS' notification banner is tiny —
+    /// internal newlines waste vertical room without adding meaning once the
+    /// body is already truncated to a few hundred chars.
+    private static func flattened(_ s: String) -> String {
+        var out = ""
+        out.reserveCapacity(s.count)
+        var lastWasSpace = false
+        for scalar in s.unicodeScalars {
+            if CharacterSet.whitespacesAndNewlines.contains(scalar) {
+                if !lastWasSpace {
+                    out.append(" ")
+                    lastWasSpace = true
+                }
+            } else {
+                out.unicodeScalars.append(scalar)
+                lastWasSpace = false
+            }
+        }
+        return out.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Main-actor entry for "a notification for `sessionId` was
+    /// activated." Called by the `UNUserNotificationCenterDelegate`
+    /// callback after it hops back onto the main actor; `internal` so a
+    /// test can drive the real activation path without fabricating a
+    /// `UNNotificationResponse` (the OS half is Apple's to test, not
+    /// ours).
+    func activateForSession(_ sessionId: String) {
         NSApp.activate(ignoringOtherApps: true)
-        pendingActivationSessionId = sessionId
+        onActivateSession?(sessionId)
     }
 }
 

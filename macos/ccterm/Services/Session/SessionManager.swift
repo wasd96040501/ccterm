@@ -51,17 +51,40 @@ final class SessionManager {
     /// unarchive triggered while the page is visible refreshes the list.
     private(set) var archivedRecords: [SessionRecord] = []
 
-    /// Most recent CLI launch failure from any handle. RootView2 binds to
-    /// this field with `.alert`: non-nil triggers the alert, and confirming
-    /// calls `clearLaunchFailure()` to reset. New failures overwrite old
-    /// ones — concurrent failures only keep the latest (no use case needs
-    /// the full list).
-    private(set) var lastLaunchFailure: LaunchFailure?
+    /// Distinct folders represented in `archivedRecords`, keyed on
+    /// `originPath` (so worktree sessions group with their parent repo).
+    /// Refreshed in lock-step with `archivedRecords` so the Archive page's
+    /// folder-filter popover always reads a derived value that matches the
+    /// current row set — no view-side caching, no per-keystroke recompute,
+    /// no observation-tracking trap.
+    private(set) var archivedFolderOptions: [ArchivedFolder] = []
+
+    /// Pushed when any handle reports a CLI launch failure. A single
+    /// stable owner (`DetailRouterViewController`) installs this and
+    /// presents the alert on the window.
+    ///
+    /// Push callback rather than an `@Observable` field on purpose: the
+    /// old field was observed by every `ChatSessionViewController`
+    /// through a re-arming `withObservationTracking` task that pinned the
+    /// VC (strong `self` across the `await`). With N leaked VCs all
+    /// observing, one launch failure stacked N alert sheets. One owner +
+    /// one callback = one alert, no observation task, no retain cycle.
+    @ObservationIgnored var onLaunchFailure: ((LaunchFailure) -> Void)?
 
     struct LaunchFailure: Identifiable, Equatable {
         let id = UUID()
         let sessionId: String
         let message: String
+    }
+
+    /// One option in the Archive page's folder-filter popover. `path` is
+    /// the canonical identity (a `SessionRecord.originPath`); `name` is
+    /// the leaf displayed as the row title. Two folders sharing the
+    /// same leaf at different paths are distinct rows.
+    struct ArchivedFolder: Identifiable, Hashable {
+        let path: String
+        let name: String
+        var id: String { path }
     }
 
     /// Manager-level "turn ended on some session" sink. `AppState`
@@ -70,6 +93,13 @@ final class SessionManager {
     /// behavior for free — without `SessionRuntime` needing to know the
     /// notification service exists.
     @ObservationIgnored var onTurnEndedNotice: ((TurnEndedNotice) -> Void)?
+
+    /// Manager-level "a session is asking for permission" sink. Wired by
+    /// `AppState` to `NotificationService.handlePermissionPrompt` in the
+    /// same place as `onTurnEndedNotice`, so every session the manager
+    /// allocates gets permission banners for free without `SessionRuntime`
+    /// knowing the notification service exists.
+    @ObservationIgnored var onPermissionPromptNotice: ((PermissionPromptNotice) -> Void)?
 
     init(
         repository: any SessionRepository = CoreDataSessionRepository(),
@@ -98,8 +128,30 @@ final class SessionManager {
     /// `CoreDataSessionRepository` already use.
     nonisolated deinit {}
 
-    func clearLaunchFailure() {
-        lastLaunchFailure = nil
+    /// Gracefully shut down every cached `Session` in parallel and only
+    /// return after each one has actually exited (or its SDK-level
+    /// timeout has fired SIGTERM). The app-quit path
+    /// (`applicationShouldTerminate`) awaits this so total shutdown
+    /// time is bounded by the slowest CLI, not by their sum — running
+    /// N sessions serially would scale linearly with N.
+    ///
+    /// Snapshots the values up front so the iteration is stable even if
+    /// a callback mutates the cache during shutdown. Sessions in
+    /// `.draft` phase (no runtime) and runtimes in `.notStarted` /
+    /// `.stopped` self-skip inside `closeAsync()`, so we don't need to
+    /// pre-filter here.
+    func shutdownAllAsync() async {
+        let active = Array(sessions.values)
+        guard !active.isEmpty else { return }
+        appLog(.info, "SessionManager", "shutdownAllAsync count=\(active.count)")
+        await withTaskGroup(of: Void.self) { group in
+            for session in active {
+                group.addTask { @MainActor in
+                    await session.closeAsync()
+                }
+            }
+        }
+        appLog(.info, "SessionManager", "shutdownAllAsync done")
     }
 
     /// Get a `Session` for an existing record. Returns nil when the db
@@ -160,8 +212,9 @@ final class SessionManager {
     /// Wire the session's manager-facing callbacks. Called once per
     /// `Session` on creation.
     ///
-    /// - `onLaunchFailure` → `lastLaunchFailure` so RootView2's `.alert`
-    ///   surfaces CLI launch errors.
+    /// - `onLaunchFailure` → forwards to the manager-level
+    ///   `onLaunchFailure` push callback so a single owner surfaces CLI
+    ///   launch errors.
     /// - `onRecordPersisted` → `refreshRecords()` so the sidebar picks
     ///   up sessions whose db row is saved asynchronously (worktree-
     ///   provisioning collision-recovery patch fires this from inside
@@ -176,10 +229,7 @@ final class SessionManager {
         session.onLaunchFailure = { [weak self] reason in
             // `reason` is the raw description the runtime already produced;
             // no localization or field reshuffle here.
-            self?.lastLaunchFailure = LaunchFailure(
-                sessionId: sid,
-                message: reason
-            )
+            self?.onLaunchFailure?(LaunchFailure(sessionId: sid, message: reason))
         }
         session.onRecordPersisted = { [weak self] in
             appLog(
@@ -189,6 +239,9 @@ final class SessionManager {
         }
         session.onTurnEnded = { [weak self] notice in
             self?.onTurnEndedNotice?(notice)
+        }
+        session.onPermissionPrompt = { [weak self] notice in
+            self?.onPermissionPromptNotice?(notice)
         }
     }
 
@@ -200,9 +253,13 @@ final class SessionManager {
 
     /// Re-read the archived list from the repository. Called by the
     /// Archive page on appear and after any archive/unarchive operation
-    /// that mutates archived state.
+    /// that mutates archived state. The derived `archivedFolderOptions`
+    /// list is refreshed in the same call so observers see a consistent
+    /// pair.
     func refreshArchivedRecords() {
-        archivedRecords = repository.findArchived()
+        let fresh = repository.findArchived()
+        archivedRecords = fresh
+        archivedFolderOptions = Self.deriveFolderOptions(from: fresh)
     }
 
     /// Async variant used by the Archive page's first paint so the
@@ -210,14 +267,34 @@ final class SessionManager {
     /// the main thread. In-memory test repos fall back to the
     /// synchronous read after a single `Task.yield()` — they're instant
     /// but the yield still gives SwiftUI a frame to render the page
-    /// chrome before the records appear.
+    /// chrome before the records appear. The folder-options derivation
+    /// runs on the same hop so the Archive page sees both updates land
+    /// atomically.
     func refreshArchivedRecordsAsync() async {
+        let fresh: [SessionRecord]
         if let coreDataRepo = repository as? CoreDataSessionRepository {
-            archivedRecords = await coreDataRepo.findArchivedAsync()
+            fresh = await coreDataRepo.findArchivedAsync()
         } else {
             await Task.yield()
-            archivedRecords = repository.findArchived()
+            fresh = repository.findArchived()
         }
+        archivedRecords = fresh
+        archivedFolderOptions = Self.deriveFolderOptions(from: fresh)
+    }
+
+    /// Group `records` by `originPath` and produce a sorted, deduped
+    /// `[ArchivedFolder]` for the Archive page's folder-filter popover.
+    /// Records without an `originPath` are silently dropped — they can't
+    /// be filtered into a single bucket. Sorted alphabetically by leaf
+    /// name for predictable scanning.
+    static func deriveFolderOptions(from records: [SessionRecord]) -> [ArchivedFolder] {
+        let buckets = Dictionary(grouping: records) { $0.originPath }
+        return buckets.compactMap { path, _ -> ArchivedFolder? in
+            guard let path, !path.isEmpty else { return nil }
+            let name = (path as NSString).lastPathComponent
+            return ArchivedFolder(path: path, name: name)
+        }
+        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     /// Soft-delete: flip the record to `.archived` so it drops out of

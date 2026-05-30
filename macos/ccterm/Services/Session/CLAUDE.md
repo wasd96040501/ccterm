@@ -11,11 +11,11 @@ The phase flips **exactly once**: a draft session sending its first message cons
 
 `session.controller: Transcript2Controller` and `session.bridge: Transcript2EntryBridge` are eagerly created in **every** `Session.init` and have the **same lifetime as the session itself**. The bridge is permanently wired to `runtime.onMessagesChange` — at session creation for `.active`-from-record sessions, at promotion time for draft → active sessions — and processes events continuously. This has three knock-on consequences:
 
-1. **Live CLI events flow into `controller.blocks` even when no `ChatHistoryView` is mounted.** Switching the sidebar to a different session does not pause renderer-side processing for the one you left; tool results, streaming assistant text, and group rollups all keep applying.
-2. **Switch-away → switch-back is O(1) on the renderer side.** No JSONL re-read, no markdown reparse, no block-list rebuild. The new `NSTableView` rebinds to the same coordinator on mount; `Transcript2Coordinator.tableView.didSet` runs `reloadData()` once and the table is current.
-3. **`Transcript2Coordinator.applyInBackground` falls back to sync `apply` when no table is bound.** A Phase B prepend (or any other background-emitted change) that arrives on a session with no view still lands in `coordinator.blocks`; layouts compute lazily once a table re-attaches.
+1. **Live CLI events flow into `controller.blocks` even when no transcript view is mounted.** Switching the sidebar to a different session does not pause renderer-side processing for the one you left; tool results, streaming assistant text, and group rollups all keep applying.
+2. **Switch-away → switch-back is O(1) on the renderer side.** No JSONL re-read, no markdown reparse, no block-list rebuild. The new `NSTableView` rebinds to the same coordinator on mount; the host's `view.layoutSubtreeIfNeeded()` sizes the table from `.zero` to its real frame and drives `NSTableView.tile()` inline, so the table picks up the coordinator's current `blocks` before `controller.scrollToTail()` runs.
+3. **`Transcript2Coordinator.apply` mutates `coordinator.blocks` even when no table is bound.** A backfill prepend (or any other background-emitted change) that arrives on a session with no view still lands in `coordinator.blocks`; layouts compute lazily once a table re-attaches.
 
-`SessionRuntime.loadHistory()` is correspondingly simpler: `.loadingTail` / `.tailLoaded` / `.loaded` are all idempotent no-ops. There is no "switch-back re-emit `.reset`" path — the bridge has been processing all along.
+`Session.loadHistory()` is correspondingly simpler: `.loading` / `.loaded` are idempotent no-ops. There is no "switch-back re-emit" path — the bridge has been processing all along.
 
 `session.onMessagesChange` remains as an **optional external fanout slot** (tests, debugging). It fires *after* the bridge has consumed the same event, inside the same call stack.
 
@@ -29,12 +29,13 @@ Source lives in `Session/`:
 | `SessionRuntime+Start.swift` | `activate` / `stop` / `send` / bootstrap / `fromDraft` factory. |
 | `SessionRuntime+Messaging.swift` | `interrupt`, `cancelMessage`. |
 | `SessionRuntime+Configuration.swift` | Runtime-mutable setters (`setModel` / `setEffort` / `setPermissionMode` / `setFastMode` / `setAdditionalDirectories`) + `respond` / `setFocused`. **No** draft-only setters — those live on `SessionDraft`. |
-| `SessionRuntime+History.swift` | `loadHistory` orchestration (Phase A/B), `historyJSONLURL` forwarder. |
+| `SessionRuntime+History.swift` | `historyJSONLURL` path forwarder. (History-load orchestration moved to `Session.loadHistory()` + `TranscriptBackfillPipeline`.) |
 | `SessionRuntime+Receive.swift` | Incoming-message path from the CLI. |
 | `SessionTypes.swift` | `PendingPermission`, `SlashCommand`, `deriveTitleFromFirstMessage`. |
 | `MessageEntry.swift` | Render-ready entries (`SingleEntry` / `GroupEntry`), `LocalUserInput`. |
-| `MessagesChange.swift` | Timeline change events that the bridge consumes. |
-| `ToolResultReresolver.swift` | Phase B tool_result anchor patch-up. |
+| `MessagesChange.swift` | Live timeline change events the bridge consumes (`.appended` / `.updated` / `.removed`). History load is **not** a `MessagesChange`. |
+
+History load no longer lives on the runtime: `Session.loadHistory()` drives a `TranscriptBackfillPipeline` (`Content/Chat/NativeTranscript2Bridge/`) over a reverse-streaming `JSONLReversePageSource`, building already-paired blocks off-main and applying them straight to the controller. The old two-phase Phase A/B read, the `tailBaseline`/`newTailStart` offset math, the throwaway in-memory `SessionRuntime` (`buildEntries`), and `ToolResultReresolver` are deleted; grouping + tool-pairing is now `ReverseEntryBuilder.swift`.
 
 `SessionManager` (one level up at `Services/Session/SessionManager.swift`) is the registry: lazily creates and caches one `Session` façade per `sessionId`. `session(_:)` returns an active-phase façade for an existing record; `prepareDraftSession(_:)` returns a draft-phase façade (or active when a record happens to already exist for that id — idempotent get-or-create).
 
@@ -49,7 +50,7 @@ Source lives in `Session/`:
 | `CLIClient` protocol + `AgentSDKCLIClient` + `FakeCLIClient` | `CLIClient/` | Thin abstraction over `AgentSDK.Session`. Factory injected at `SessionManager.init(... cliClientFactory:)` and forwarded into every `Session` the manager constructs; production defaults to `AgentSDKCLIClient.defaultFactory`, tests pass `{ _ in FakeCLIClient() }`. |
 | `TitleGenerator` | `TitleGenerator.swift` | Stateless one-shot LLM call (`Prompt.runTitleAndBranch`) inside a scratch dir. Runtime's `generateTitle(from:)` calls into it; injectable `runner` seam for tests. |
 | `WorktreeProvisioner` | `Worktree/WorktreeProvisioner.swift` | Off-main `git worktree add` invocation via `DispatchQueue.global`. Wraps `Worktree.create`; injectable `creator` seam for tests. |
-| `HistoryLoader` | `HistoryLoader.swift` | Path resolution (`locate(sessionId:slug:)` with root-injected overload) + Phase A/B JSONL parsers. The two-phase orchestrator that consumes these stays on the runtime in `SessionRuntime+History.swift`. |
+| `HistoryLoader` | `HistoryLoader.swift` | Path resolution (`locate(sessionId:slug:)` with root-injected overload) + `parseLines` (per-page line→`Message2` decode). Reverse paging itself is a single streaming backward reader — `JSONLReversePageSource` + `ReverseLineReader` (`Content/Chat/NativeTranscript2Bridge/`) — with no tail/prefix split (the old `parseTail` / `parsePrefix` are gone). |
 
 ## Talking to the renderer
 
@@ -70,7 +71,7 @@ The AppKit path deliberately skips `AsyncStream` and `@Observable`:
 - **AppKit channel** — declare a `@ObservationIgnored var onXxxChange: ((XxxChange) -> Void)?` on `SessionRuntime`. For `onMessagesChange` specifically, the wiring is **one-shot inside `Session`** (`wireRuntimeMessagesSink`): the closure fires `bridge.apply(change)` followed by `session.onMessagesChange?(change)`. For new sinks that don't have a bridge consumer, follow the `onLaunchFailure` / `onRecordPersisted` pattern — a `didSet` on the façade re-wires the runtime when phase is `.active`.
 - **Adding a new notification on the AppKit path** — add the closure on the runtime, fire it synchronously at the mutation site, expose a matching forwarder on `Session`, add a dispatch arm to the bridge, then call `controller.apply(...)`.
 - **Never emit a state change on both channels.** Pick one. `SessionRuntime.messages` is delivered only through `onMessagesChange`; there is no shadow snapshot.
-- **Views never cache session properties as their own state.** Read the `@Observable` field directly or expose a computed property. The transcript controller is owned by `Session` (`session.controller`) — `ChatHistoryView` reads it, never constructs one.
+- **Views never cache session properties as their own state.** Read the `@Observable` field directly or expose a computed property. The transcript controller is owned by `Session` (`session.controller`) — `ChatSessionViewController` reads it, never constructs one.
 - **Local actions** (`send` / `interrupt` / `setPermissionMode`) either issue a stdin request or perform a local state transition. They never write to observables behind the runtime's back.
 - **New change variants** — add a `case` to `MessagesChange`, fire `onMessagesChange?(...)` at the mutation site in `SessionRuntime`, add the matching arm in `Transcript2EntryBridge.apply`. The bridge is wired once per session, so no view-side attach work is needed.
 
@@ -90,6 +91,6 @@ The AppKit path deliberately skips `AsyncStream` and `@Observable`:
 
 ## Test infrastructure
 
-Unit tests inject `InMemorySessionRepository` (DEBUG only) when constructing a `SessionManager` so they don't touch the on-disk CoreData store. CLI-path tests construct `SessionRuntime` directly with `cliClientFactory: { _ in FakeCLIClient() }` — driving the runtime through its public surface (send / interrupt / loadHistory / receive) and asserting on the observable result. Do not add `forceXxxForTest()` methods on `SessionRuntime` / `SessionDraft` / `Session` / `SessionManager` — drive them through the public surface instead.
+Unit tests inject `InMemorySessionRepository` (DEBUG only) when constructing a `SessionManager` so they don't touch the on-disk CoreData store. CLI-path tests construct `SessionRuntime` directly with `cliClientFactory: { _ in FakeCLIClient() }` — driving the runtime through its public surface (send / interrupt / receive) and asserting on the observable result. History-load tests instead wrap the runtime in a `Session` (`Session(runtime:)`) and call `session.loadHistory(overrideURL:)`, because the load orchestration lives on the façade now (see `SessionRuntimeHistoryTests`). Do not add `forceXxxForTest()` methods on `SessionRuntime` / `SessionDraft` / `Session` / `SessionManager` — drive them through the public surface instead.
 
 Façade-level tests live in `SessionFacadeTests` (phase init + forwarding) and `SessionPromotionTests` (the regression net for the draft → active flip). Draft-only behavior lives in `SessionDraftTests`. Runtime-only behavior continues to live in `SessionRuntimeBootstrapModeTests` / `SessionRuntimeCLIWiringTests` / `SessionRuntimeHistoryTests`.

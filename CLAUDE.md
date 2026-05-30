@@ -4,22 +4,84 @@ Native macOS client for Claude Code. SwiftUI + AppKit, minimum target macOS 14 (
 
 ## Architecture at a glance
 
-- **UI**: SwiftUI everywhere except the chat transcript, which is `NSTableView` + Core Text self-drawn. Bridged through `NSViewRepresentable` (e.g. `NativeTranscript2View`, `InputTextView`). No XIB / Storyboard / `NSHostingController`.
-- **Entry point**: `@main CCTermApp` → `Window` scene → `RootView2` (a `NavigationSplitView`) → `SidebarView2` + detail. `RootView2` owns `selectedSessionId` / `draftSessionId` locally; there is no global router.
+- **UI framework — SwiftUI by default, AppKit by exception.** Reach for AppKit only when SwiftUI cannot meet the requirement (performance, lifecycle timing, or a missing capability). The current AppKit footprint is:
+  - **Chat transcript** — `NSTableView` + Core Text self-drawn (`NativeTranscript2`). SwiftUI's `List` / `LazyVStack` cannot keep up with the row count, custom layout, and selection semantics.
+  - **Main window root** — `MainWindowController` + `MainSplitViewController` + `DetailRouterViewController` + `ChatSessionViewController`. The transcript's mount and `frameDidChange` cascade must run in AppKit's source phase, not SwiftUI's commit pass.
+  - **Sidebar** — `SidebarViewController` on `NSOutlineView` (source-list style). SwiftUI's `.listStyle(.sidebar)` is itself an `NSOutlineView` under the hood, but going direct gives us folder drag-and-drop via the standard `pasteboardWriterForItem` / `validateDrop` / `acceptDrop` trio and built-in `expandItem(_:)` / `collapseItem(_:)` animations.
+  - **Window toolbar** — `NSToolbar` + `NSSearchToolbarItem`; `.searchable` doesn't give the first-responder + ⌘F semantics the transcript search needs.
+  - **App lifecycle** — `AppDelegate` (via `@NSApplicationDelegateAdaptor`) owns app-scope state and creates the main window in `applicationDidFinishLaunching`.
+
+  Everything else — input bar, configurator, overlays, Settings / About windows, every reusable component — is SwiftUI, hosted via `NSHostingController` (full panes) or `NSHostingView` (toolbar items / overlays). New code lands in SwiftUI unless it fits one of the exceptions above; introducing a new AppKit surface needs an explicit reason (perf measurement, missing API, lifecycle ordering).
+
+- **Entry point**: `@main CCTermApp` (SwiftUI `App`) → `@NSApplicationDelegateAdaptor(AppDelegate.self)` → `MainWindowController` → `MainSplitViewController` (sidebar item + detail item) → `DetailRouterViewController`, which mounts exactly one child VC per selection (`ChatSessionViewController` for `.session(_)` / `.none`, `ComposeSessionViewController` for `.newSession`, `ArchiveViewController` for `.archive`, demo VCs in DEBUG). Selection / draft state lives on `MainSelectionModel` (`@Observable`); the AppKit `SidebarViewController` writes it via `select(_:)`, and the router is its **sole structural observer** — `select(_:)` drives the detail-side transition synchronously, in the same source phase as the click. Settings / About remain SwiftUI `Window` scenes; their menu items + ⌘F binding come from `AppCommands` (a SwiftUI `Commands` block on the Settings scene) so cold-start clicks resolve `@Environment(\.openWindow)` cleanly.
 - **Layers**:
   - **Model** — plain data, `struct` first, `Codable` where it crosses a boundary.
   - **View** — SwiftUI structs, declarative.
   - **Service** — `@Observable`, injected via initializer or `.environment()`. Views never construct services themselves.
-  - **AppState** — a thin global container that only holds `SessionManager2` and `SyntaxHighlightEngine`, injected through `.environment()`.
+  - **AppState** — process-scope container owned by `AppDelegate`, injected through `.environment()`. Currently holds `SessionManager`, `SyntaxHighlightEngine`, `RecentProjectsStore`, `InputDraftStore`, `SidebarSessionGroupOrderStore`, `AppActivationTracker`, `NotificationService`.
+
+### Embedding SwiftUI in AppKit: host sizing
+
+When you host a SwiftUI view in an `NSHostingView` / `NSHostingController`, the host's `sizingOptions` decides whether the SwiftUI content's size flows *up* into Auto Layout. There are two cases, and picking the wrong one collapses the window:
+
+- **Fill-a-pane host → `sizingOptions = []`.** The hosted view *is* its container's content, pinned edge-to-edge; the container (split → window) must drive its size, not the reverse. The default options publish the body's `view.fittingSize` as an intrinsic size — with nothing else governing that dimension, it leaks up through the split's `view.fittingSize` into the window's constraint solver (`_changeWindowFrameFromConstraintsIfNecessary`) and **resizes / collapses the window**. `[]` severs that path; you then pin all four edges so layout sizes the host from the container. Examples: `ArchiveViewController`, `ComposeSessionViewController`, the permission-cards demo child.
+
+- **Subordinate component → `sizingOptions = [.intrinsicContentSize]`.** The hosted view is a small piece whose *container* is sized by something else (a toolbar slot; or a bottom-anchored bar over a transcript that already fills the pane). Here you *want* the content to size itself: pin only its position and let the host's intrinsic content size supply the missing dimension(s). No window-collapse risk — the component isn't what governs its container's size. Examples: `ChatSessionViewController`'s input-bar host (centered, width-capped, height from intrinsic), the toolbar project chip / archive-filter (`MainWindowController`).
+
+Rule of thumb: **does the host fill its container (→ `[]`, container drives size) or sit inside it as a component (→ `[.intrinsicContentSize]`, content drives size)?** Never hand-roll the height with `GeometryReader` + `PreferenceKey` + a manual height constraint — that was an earlier input-bar workaround and is exactly what `.intrinsicContentSize` does for free.
 
 ### SwiftUI rules
 
-- `@Observable` for state shared across views (e.g. `SessionHandle2`); `@State` for view-private UI state; `@Binding` for writable references from a parent.
+- `@Observable` for state shared across views (e.g. `Session`); `@State` for view-private UI state; `@Binding` for writable references from a parent.
 - Put reusable SwiftUI components under `Components/`.
 - If a `body` runs past ~40 lines, split it: child views with their own state become separate `View` structs (and usually their own files); pure layout becomes a computed property or `@ViewBuilder` helper.
 - No expensive work inside `body`. Long lists use `NativeTranscript2`, never `List` / `LazyVStack`.
 - `ForEach` ids must be stable.
 - Load data with `.task { }`; react to dependency changes with `.task(id:)` or `.onChange(of:)`. Never trigger side effects from the body construction path.
+
+## macOS runloop tick model
+
+Most "why is this one tick off" puzzles in AppKit + SwiftUI code resolve once you remember the order AppKit, SwiftUI, and CoreAnimation share a single runloop iteration. Every invariant below the "must run in AppKit's source phase" / "races with SwiftUI's commit pass" wording in the architecture section above is written against this diagram:
+
+```
+┌─ source phase ─────────────── your code runs here ──────────┐
+│  · NSEvent dispatch              (mouse / key / wheel)      │
+│  · DispatchQueue.main.async      drained block-by-block     │
+│  · Observation @MainActor Tasks  resumed                    │
+│  · NotificationCenter posts                                 │
+│  · Timer fires                                              │
+│  · NSResponder selectors         (IBAction, performSelector)│
+│                                                             │
+│  setNeedsLayout / setNeedsDisplay / frame writes / bounds   │
+│  writes land NOW — actual layout + draw + commit happen     │
+│  in the next phase.                                         │
+├─ beforeWaiting observer ─── AppKit + CoreAnimation flush ──┤
+│  · SwiftUI body re-eval for invalidated views               │
+│      (Observation registers a runloop observer here)        │
+│  · NSWindow.update                                          │
+│  · updateConstraints → layout → display walks the view tree │
+│  · NSTableView's first display pass lazily queries          │
+│    numberOfRows / heightOfRow and runs tile()               │
+│  · CATransaction implicit commit → render server (IPC)      │
+├─ sleep ──── thread blocks waiting for next event ───────────┤
+│  render server animates on its own clock                    │
+└─ afterWaiting ─ process the event that woke us → next tick ─┘
+```
+
+Load-bearing consequences:
+
+- **Source-phase scroll / frame writes need the geometry they depend on already settled.** Anything in source phase that reads or writes lazy AppKit geometry (NSTableView row tile, NSClipView `constrainBoundsRect` against documentView.frame, NSScrollView tile) must have already triggered that geometry. Two ways to do that, in order of preference: (a) let the host's `view.layoutSubtreeIfNeeded()` size the subtree from its current frame — a size change to a freshly-attached scroll-host child cascades into the table and `NSTableView.tile()` runs inline **only if the table's `dataSource` is bound at that moment**; if `dataSource` is bound later (the transcript's actual attach pattern), the tile fires on the next `layoutSubtreeIfNeeded` to run with dataSource bound (in the transcript's case, `controller.scrollToTail()`'s internal `tableView.layoutSubtreeIfNeeded()`); (b) explicitly invalidate via `noteNumberOfRowsChanged` / `insertRows` / `reloadData(forRowIndexes:)` if no enclosing frame change is going to happen. Writing first and waiting hands you a one-frame visual glitch.
+- **`view.layoutSubtreeIfNeeded()` flushes autolayout, AND that triggers a chain of side effects that look like "not autolayout."** NSTableView's row layout, for example, is not directly an autolayout product — but the table's tile is gated on FRAME changes, and autolayout drives frame changes, so flushing the parent's autolayout transitively drives the table's tile when the table's size changes. The fragile case is the one where the table's frame *doesn't* change (e.g. a sibling-only invalidation, or `tableView.layoutSubtreeIfNeeded()` called on a table that's already at the right size); there `layoutSubtreeIfNeeded` is a no-op for row geometry and you have to invalidate explicitly. The takeaway: don't assume the doc surface ("autolayout product") is the boundary — frame-change-triggered re-tiles are the dominant case.
+- **`@Observable` writes don't reach SwiftUI bodies in the same tick.** Bodies re-evaluate in beforeWaiting. Reading `model.foo` from a SwiftUI view that observes the source-of-truth right after your AppKit code wrote it won't show the new value until the next display.
+- **`.task { }` / `withObservationTracking` re-arm hops are async.** They post a Task that resumes on a future source phase — never inside the same tick as the change that fired them. Anything order-sensitive must be done inline, not through one of these hops.
+- **Implicit CALayer animations commit at beforeWaiting too.** Multiple model writes during one source phase coalesce into one transaction; wrap them in `CATransaction.setDisableActions(true)` + `NSAnimationContext.allowsImplicitAnimation = false` if you need them composited without animation rather than crossfaded.
+
+Two stack-trace aliases worth memorising:
+
+- `__CFRUNLOOP_IS_CALLING_OUT_TO_AN_OBSERVER_CALLBACK_FUNCTION__` → you're inside a runloop observer (almost always CoreAnimation's beforeWaiting flush or SwiftUI's invalidation observer).
+- `__CFRUNLOOP_IS_SERVICING_THE_MAIN_DISPATCH_QUEUE__` → source phase, draining `DispatchQueue.main`.
+
+Subsystem-specific corollaries (e.g. the transcript's `clip.scroll` / NSTableView tile choreography) live next to the code; the diagram above is the only thing that's truly global.
 
 ## Where to read more
 
@@ -27,8 +89,8 @@ Detailed conventions live next to the code they govern. When you touch one of th
 
 | Area | Doc |
 |---|---|
-| Chat UI assembly (RootView2 / Sidebar / ChatHistory / InputBar / pill) | [Content/Chat/CLAUDE.md](macos/ccterm/Content/Chat/CLAUDE.md) |
-| `SessionHandle2` runtime, render-side comms, mutation rules | [Services/Session/CLAUDE.md](macos/ccterm/Services/Session/CLAUDE.md) |
+| Chat UI assembly (MainWindow / Sidebar / Detail VC / InputBar / pill) | [Content/Chat/CLAUDE.md](macos/ccterm/Content/Chat/CLAUDE.md) |
+| `Session` / `SessionRuntime` runtime, render-side comms, mutation rules | [Services/Session/CLAUDE.md](macos/ccterm/Services/Session/CLAUDE.md) |
 | Native transcript internals (layouts, diff, tool rendering) | [Content/Chat/NativeTranscript2/CLAUDE.md](macos/ccterm/Content/Chat/NativeTranscript2/CLAUDE.md) |
 | Unit test conventions (parallel safety, in-memory fixtures) | [cctermTests/CLAUDE.md](macos/cctermTests/CLAUDE.md) |
 
@@ -39,12 +101,12 @@ ccterm/
 ├── macos/                    # macOS platform
 │   ├── ccterm.xcodeproj/
 │   ├── ccterm/               # App sources
-│   │   ├── App/              # CCTermApp, AppState, RootView2
-│   │   ├── Sidebar/          # SidebarView2
+│   │   ├── App/              # CCTermApp, AppState; AppKit/ holds AppDelegate + MainWindowController + split + detail VC
+│   │   ├── Sidebar/          # SidebarViewController + cell views + group-order store
 │   │   ├── Components/       # Reusable SwiftUI / AppKit components
 │   │   │   └── Markdown/     # GFM parser → internal IR (consumed by NativeTranscript2)
 │   │   ├── Content/          # Top-level content panes
-│   │   │   ├── Chat/         # ChatHistoryView / InputBarView2 / LoadingPillView2
+│   │   │   ├── Chat/         # InputBarView2 / NewSessionConfigurator / InputBarControls / Completion
 │   │   │   │   ├── NativeTranscript2/        # NSTableView-based transcript
 │   │   │   │   └── NativeTranscript2Bridge/  # MessageEntry → Block translation
 │   │   │   ├── TranscriptDemo/   # Offline demos and stress harness
@@ -52,7 +114,7 @@ ccterm/
 │   │   │   └── LogViewer/        # Log window
 │   │   ├── Models/           # Data models (SyntaxToken, PermissionMode, ...)
 │   │   ├── Services/         # Service layer
-│   │   │   ├── Session/      # SessionHandle2 / SessionManager2 / SessionRepository / Worktree
+│   │   │   ├── Session/      # Session / SessionRuntime / SessionManager / SessionRepository / Worktree
 │   │   │   └── Logging/      # AppLogger / MainThreadWatchdog
 │   │   ├── Extensions/       # Foundation / AppKit extensions
 │   │   └── Resources/        # Assets.xcassets and other resources
@@ -97,14 +159,14 @@ make fmt         # Format code (xcstrings, ...)
 live there:
 
 - **Logic tests** (default) — bridge dispatch, history parsing, block
-  builder, session-handle state transitions. Run on every PR.
+  builder, `Session` / `SessionRuntime` state transitions. Run on every PR.
 - **Snapshot tests** — render a real SwiftUI view offscreen via
   `NSHostingController` and write a PNG. **Skipped on the default
   suite and on CI**; opt-in only. For visual review and self-check
   after a view edit. Filename convention `*SnapshotTests.swift`.
 
 There is no XCUITest target — click / keystroke / focus flows are
-covered by driving the handle / bridge / controller directly from a
+covered by driving the session / bridge / controller directly from a
 logic test.
 
 ```bash
@@ -148,7 +210,7 @@ Two workflows run on every PR:
 Use `appLog()` (`Services/Logging/AppLogger.swift`). Never `NSLog` or `print` directly.
 
 ```swift
-appLog(.info, "SessionHandle2", "send() queued — status=\(status)")
+appLog(.info, "SessionRuntime", "send() queued — status=\(status)")
 ```
 
 | Level | Use for |
@@ -158,9 +220,23 @@ appLog(.info, "SessionHandle2", "send() queued — status=\(status)")
 | `.warning` | Recoverable anomalies |
 | `.error` | Failures that affect features |
 
-- Category = class name without module prefix (`"SessionHandle2"`, `"ChatHistoryView"`).
+- Category = class name without module prefix (`"SessionRuntime"`, `"TranscriptDetailVC"`).
 - Never log secrets (tokens, passwords, API keys).
-- Live tail: Window → Logs (⌘⇧L). Also mirrored to `os.Logger`, visible in Console.app for history.
+- Visible in Console.app (filter by subsystem `com.ccterm.app`). Live tail: `log stream --predicate 'subsystem == "com.ccterm.app"' --level debug`.
+
+### Streaming logs from the terminal — `make logs`
+
+`make logs` live-tails the unified log for **the build product of the current worktree only**. This matters because you'll often have the Release build plus one or more Debug builds (from other worktrees) running at once — they share a log subsystem, but `make logs` follows only the binary this checkout produces, so you never have to guess which window you're reading.
+
+```bash
+make logs                          # this worktree's Debug build, info level, all categories
+make logs LEVEL=debug              # include .debug lines (default is info)
+make logs CATEGORY=SessionRuntime  # only one os_log category
+make logs CONFIG=release           # follow the Release build instead of Debug
+make logs CONFIG=release CATEGORY=TranscriptDetailVC LEVEL=debug  # combine freely
+```
+
+`CONFIG` (`debug`/`release`), `CATEGORY` (any `appLog` category), and `LEVEL` (`default`/`info`/`debug`) are all optional and independent. Just build, launch the app, and run `make logs` in a second terminal; Ctrl-C to stop.
 
 ## Internationalization
 
@@ -208,6 +284,9 @@ Follow the Swift API Design Guidelines, plus: suffix `View` / `Service` / `Deleg
 
   If a one-off artifact does land in the worktree, `rm -rf` it before staging — never let `git add -A` decide. As a safety net, `/tmp` style scratch dirs (e.g. `xcresult/`, `tmp_*/`) belong in `.gitignore`.
 - **Waiting for a PR**: run `scripts/wait-for-pr.sh <pr#>` with `run_in_background: true`. It blocks until a terminal state (`READY` / `CHECKS_FAILED` / `CONFLICT` / `REVIEW_CHANGES_REQUESTED` / `MERGED` / `CLOSED` / `TIMEOUT` / `NO_CHECKS`) and prints a one-line summary + JSON. Never foreground-poll `gh pr checks` / `gh pr view` in a sleep loop.
+- **Syncing a branch with `main`**: always use `git merge origin/main` (or `gh pr update-branch`). **Never `git rebase`** — rebase rewrites the PR branch's history, which breaks the GitHub review thread, invalidates existing review comments' line anchors, and forces every collaborator to reset their local branch. Conflict resolution happens on a merge commit instead. The squash-merge at the end collapses these merge commits anyway, so the `main` branch's history stays linear.
+- **Squash-merging a PR**: always pass an explicit message (`gh pr merge <#> --squash --subject "…" --body "$(cat <<'EOF' … EOF)"`). The default GitHub message is the PR title + a list of every individual commit on the branch — noisy and unhelpful in `git log`. Write a clean single-purpose subject + body that mirror the PR description.
+- **Killing the app**: only kill Debug builds of `ccterm`. Never kill a Release build — that is the user's daily-driver instance and may hold unsaved session state. Before any `kill` / `pkill` / `killall ccterm`, confirm the target PID belongs to a Debug build (e.g. `ps -o command= -p <pid>` shows a path under `macos/build/` / `DerivedData/`, not `/Applications/`). If you cannot prove it is Debug, do not kill it — ask the user.
 
 ## Engineering principles
 

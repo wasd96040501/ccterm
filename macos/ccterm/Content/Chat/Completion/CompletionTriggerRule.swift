@@ -29,11 +29,17 @@ struct CompletionTriggerContext {
     /// per-key cache differentiates configurations that change `plugins`
     /// without changing `cwd`.
     let pluginDirs: [String]
-    /// When non-nil, the slash rule short-circuits the store and filters
-    /// this list synchronously — chat-mode sessions already carry the
-    /// command list from the CLI's `initialize` response, so a temp-CLI
-    /// fetch would be wasted. Nil in compose-mode (the store goes
-    /// through `launchTempCLI`).
+    /// When non-nil and non-empty, the slash rule short-circuits the
+    /// store and filters this list synchronously — chat-mode sessions
+    /// whose CLI has already returned an `initialize` response carry
+    /// the command list directly, so a temp-CLI fetch would be wasted.
+    /// Nil signals "no live list yet"; the rule falls through to the
+    /// `SlashCommandStore`'s per-cwd cache, which serves both
+    /// compose-mode and the brief window after a chat session attaches
+    /// but before its CLI has answered `initialize`. Callers should
+    /// collapse an empty live list to `nil` rather than forwarding it
+    /// here — otherwise the rule would render an empty popup instead
+    /// of routing through the store.
     let knownSlashCommands: [SlashCommand]?
 }
 
@@ -63,8 +69,8 @@ struct SlashCommandTriggerRule: CompletionTriggerRule {
             text[text.startIndex] == "/"
         else { return nil }
 
-        let makeReplacement: (any CompletionItem, String, Int, Bool) -> (range: NSRange, replacement: String) = {
-            item, _, wordEnd, _ in
+        let makeReplacement: (any CompletionItem, String, Int) -> (range: NSRange, replacement: String) = {
+            item, _, wordEnd in
             (range: NSRange(location: 0, length: wordEnd), replacement: item.displayText + " ")
         }
 
@@ -119,7 +125,7 @@ struct FileMentionTriggerRule: CompletionTriggerRule {
 
         return .init(
             anchorLocation: anchorLoc,
-            headerText: String(localized: "Tab / Enter to confirm · → to drill down"),
+            headerText: String(localized: "Tab / Enter to confirm"),
             provider: { query, cb in
                 if allDirs.count > 1 {
                     FileCompletionStore.shared.complete(query: query, in: allDirs) { matches in
@@ -131,7 +137,7 @@ struct FileMentionTriggerRule: CompletionTriggerRule {
                     }
                 }
             },
-            makeReplacement: { item, _, wordEnd, _ in
+            makeReplacement: { item, _, wordEnd in
                 let length = wordEnd - anchorLoc
                 let path = item.displayText
                 let needsQuote = path.contains(" ")

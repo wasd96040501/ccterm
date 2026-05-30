@@ -7,30 +7,42 @@ Self-drawn `NSTableView`-backed chat transcript. Each row is a `Block`; layout i
 ## 1. Architecture
 
 ```
-SwiftUI: NativeTranscript2View (NSViewRepresentable)
+AppKit host VC (ChatSessionViewController, TranscriptDemoViewController, …)
    │
-   ├─ makeCoordinator → Transcript2Coordinator (NSTableViewDataSource/Delegate)
+   ├─ Transcript2Controller (owns Transcript2Coordinator: NSTableViewDataSource/Delegate)
    │
-   └─ makeNSView →
+   ├─ Transcript2SheetPresenter (observes pendingUserBubbleSheet / pendingImagePreview)
+   │
+   └─ TranscriptScrollViewFactory.make(controller:) →
       Transcript2ScrollView (NSScrollView, .never, responsive)
          └─ Transcript2ClipView (NSClipView, .never)
             └─ Transcript2TableView (NSTableView, negative-width clamp)
                └─ BlockCellView (NSView, override draw(_:), .onSetNeedsDisplay)
 ```
 
-`Transcript2Coordinator.blocks: [Block]` is the single source of truth — no `rows` mirror, no parallel diff structure. Mutation enters via `Controller.Change` (`.insert(after:blocks:)` / `.remove(ids:)` / `.update(id:kind:)`) and dispatches to `apply` (sync, lazy layout) or `applyInBackground` (off-main precompute then a single main hop).
+`Transcript2Coordinator.blocks: [Block]` is the single source of truth — no `rows` mirror, no parallel diff structure. Mutation enters via `Controller.Change` (`.prepend` / `.append` / `.replace` / `.remove` / `.update` — all intrinsic-position; the shared `insertBlocks(after:)` primitive is private) through the single `apply(_:scroll:)` entry (sync; layouts lazy on `heightOfRow`, or precomputed off-main by the backfill pipeline and landed as cache hits).
 
 ### 1.1 Why two types: Controller vs. Coordinator
 
-`Transcript2Controller` (SwiftUI-facing) and `Transcript2Coordinator` (AppKit-facing) are kept apart on purpose; merging them was considered and rejected. They differ in three load-bearing ways:
+`Transcript2Controller` (host-facing) and `Transcript2Coordinator` (AppKit-facing) are kept apart on purpose; merging them was considered and rejected. They differ in three load-bearing ways:
 
-1. **Conformance constraints.** `Transcript2Coordinator` must be `NSObject` to satisfy `NSTableViewDataSource` / `NSTableViewDelegate`. `Transcript2Controller` is `@Observable` so SwiftUI hosts can observe `blockCount` / `isAnchorSettled` / `searchState` / `pendingUserBubbleSheet` / `loadingPillVisible` without reaching into AppKit state. A merged class would carry both surfaces; the public symbol table would include every `NSTableViewDataSource` callback alongside `setHistory` / `setLoading`, blurring the user-facing API.
-2. **File size.** Together the two files are ~2000 lines. Folding them produces one class that violates the project-wide rule against oversized bodies, and there is no natural axis of split inside a single class that's both the SwiftUI surface and the table delegate.
-3. **Controller carries real logic, not just forwarding.** `setHistory`'s viewport-slicing + Phase 1/Phase 2 scheduling, `setLoading`'s debounce + `reconcileLoadingPill`, and the `@Observable` mirroring are all Controller-side; they sit naturally one layer above the table delegate, not inside it. The remaining methods on Controller are thin forwards (`apply`, `setToolStatus`, `runSearch` / `nextSearchHit` / `previousSearchHit` / `endSearch`, `attachSyntaxEngine`), which is the price of keeping the SwiftUI surface flat.
+1. **Conformance constraints.** `Transcript2Coordinator` must be `NSObject` to satisfy `NSTableViewDataSource` / `NSTableViewDelegate`. `Transcript2Controller` is `@Observable` so hosts can observe `blockCount` / `isAnchorSettled` / `searchState` / `pendingUserBubbleSheet` / `loadingPillVisible` without reaching into AppKit state — used by `Transcript2SheetPresenter` for the two sheet-request fields, and by `@Bindable`-wrapped SwiftUI panels embedded inside the demo VCs. A merged class would carry both surfaces; the public symbol table would include every `NSTableViewDataSource` callback alongside `apply` / `setLoading`, blurring the API.
+2. **File size.** Together the two files are ~2000 lines. Folding them produces one class that violates the project-wide rule against oversized bodies, and there is no natural axis of split inside a single class that's both the host surface and the table delegate.
+3. **Controller carries real logic, not just forwarding.** `setLoading`'s debounce + `reconcileLoadingPill`, the loading-pill row insertion, the search-state and `@Observable` mirroring are all Controller-side; they sit naturally one layer above the table delegate, not inside it. The remaining methods on Controller are thin forwards (`apply`, `scrollToTail`, `setToolStatus`, `runSearch` / `nextSearchHit` / `previousSearchHit` / `endSearch`, `attachSyntaxEngine`), which is the price of keeping the host-facing surface flat.
 
-The split also matches the mount-vs-state-machine boundary: callers think in terms of `setHistory` / `append` / `setLoading` (Controller), not in terms of `tableView(_:numberOfRowsInSection:)` (Coordinator). Anchor settling, on the other hand, lives on the Coordinator because it's a function of the live `NSTableView` frame; Controller only mirrors `isAnchorSettled` for SwiftUI observation.
+The split also matches the mount-vs-state-machine boundary: callers think in terms of `apply` / `scrollToTail` / `setLoading` (Controller), not in terms of `tableView(_:numberOfRowsInSection:)` (Coordinator). Anchor settling, on the other hand, lives on the Coordinator because it's a function of the live `NSTableView` frame; Controller only mirrors `isAnchorSettled` for observers.
 
 **Don't merge.** If the forwarding feels redundant, the right move is to make the forwards thinner (e.g. expose `coordinator.search` as a property), not to collapse the layer.
+
+### 1.2 Runloop tick model — transcript corollaries
+
+The runloop tick diagram lives in the root [CLAUDE.md § macOS runloop tick model](../../../../../CLAUDE.md). Read that first; it's the global canvas (source phase / beforeWaiting / sleep). This section only spells out the transcript-specific consequences:
+
+- **`clip.scroll(to:)` runs in source phase and needs row geometry already settled.** If the table's `documentView.frame.height == 0` when you write, `constrainBoundsRect` clamps your target to origin=0, your write is silently absorbed, and the documentView paints at the top for that tick. In the transcript's actual attach path, this is handled implicitly through a two-step bind: `TranscriptScrollViewFactory.make` builds the scroll/clip/table shell with no `dataSource` wired, so the host's `view.layoutSubtreeIfNeeded()` sizes the scroll view without firing any `heightOfRow` queries (table has no rows to ask about). Then `TranscriptScrollViewFactory.bindData` wires `dataSource` + `delegate` + the frame observer (no explicit `noteNumberOfRowsChanged` — that double-counts; AppKit picks up the new rows lazily). `controller.scrollToTail()`'s internal `tableView.layoutSubtreeIfNeeded()` is the first layout pass with `dataSource` bound, so it drives `NSTableView.tile()` at the final settled width and `rect(ofRow:)` returns real values inside the same source-phase tick. The fragile case is anything that wants `rect(ofRow:)` *without* an enclosing frame change to ride on — there force the tile explicitly via `noteNumberOfRowsChanged` / `insertRows` / `reloadData(forRowIndexes:)`. **Invariant**: a source-phase tick that attaches a session must typeset each block at exactly ONE width — see §2.19 below for the contract and the merge-gate tests that enforce it.
+- **`NSClipView.scroll(to:)` does NOT auto-call `reflectScrolledClipView(_:)`.** That's the documented contract: the call writes `bounds.origin` but leaves the enclosing `NSScrollView`'s scrollers synced to the *prior* origin. Every direct `clip.scroll(to:)` site (`Coordinator.scrollRowToBottom` / `scrollRowToTop`) must follow up with `scrollView.reflectScrolledClipView(scrollView.contentView)` or the vertical scroller's `doubleValue` stays stale — visible as a thumb-at-top flash while content sits at the tail, especially under `.overlay` + `autohidesScrollers` where the scroller briefly fades in on content change. Guarded by `TranscriptScrollFirstFrameSnapshotTests.testScrollerKnobLandsAtTailAfterScrollToTail`.
+- **`tableView.layoutSubtreeIfNeeded()` alone does NOT re-tile a same-size table.** `scrollToInitialAnchor` calls it for two reasons: on the first-attach path it's the first layout pass with `dataSource` bound, so the table's frame transitions from 0 height to its tiled height and the size change drives the tile; on subsequent paths it's flushing a *queued* invalidation (`invalidate(rows:)` → `noteHeightOfRows` is async). If you call it on a table that hasn't been invalidated and whose frame hasn't changed, nothing happens — that's the narrow correct reading of "row positions are not an autolayout product." The broad reading ("`layoutSubtreeIfNeeded` won't move the table") is *wrong* once the table's frame is changing too.
+- **`controller.blockCount` is safe to read after `coordinator.apply` returns in source phase** — the `@Observable` mirror is updated synchronously through `onBlockCountChanged`. Observers reading the same field via `@Observable` tracking (the demo VC's bottom control panel, for instance), on the other hand, won't see the new value until the next display.
+- **§2 wraps `clip.scroll` + row mutations under `CATransaction.setDisableActions(true)` + `NSAnimationContext.allowsImplicitAnimation = false`.** Both phases are necessary because the height transition (AppKit-implicit) and the scroll-origin transition (CoreAnimation-implicit) commit independently at beforeWaiting; without the suppression they animate to the new state across one or two frames and the rendering tears.
 
 ## 2. Performance contract
 
@@ -50,19 +62,21 @@ Every item below is load-bearing for either scroll FPS, layout-pass cost, or mem
 
 ### 2.4 Layout cache: `[UUID: CachedLayout]`, no LRU
 
-`layoutCache: [UUID: CachedLayout { width, layout }]` ([Transcript2Coordinator.swift:163-168](Transcript2Coordinator.swift:163)) is keyed by block id; the width lives inside the entry. Cache evicts only on `.update` / `.remove` (point invalidation via `removeCachedLayout(for:)` [:547](Transcript2Coordinator.swift:547)). On `.insert`, layouts populate lazily through `layout(for:width:)` ([:557](Transcript2Coordinator.swift:557)) or eagerly through `applyInBackground` / `refillLayoutCache`. **Cost of an LRU**: eviction logic + hit-rate variance for nothing — transcript size is bounded (≤ 10k blocks typical), the dict cost is dominated by id lookup.
+`layoutCache: [UUID: CachedLayout { width, layout }]` ([Transcript2Coordinator.swift:163-168](Transcript2Coordinator.swift:163)) is keyed by block id; the width lives inside the entry. Cache evicts only on `.update` / `.remove` (point invalidation via `removeCachedLayout(for:)` [:547](Transcript2Coordinator.swift:547)). On insert, layouts populate lazily through `layout(for:width:)` ([:557](Transcript2Coordinator.swift:557)) or eagerly through `refillLayoutCache` (post-resize) and the backfill pipeline's off-main precompute. **Cost of an LRU**: eviction logic + hit-rate variance for nothing — transcript size is bounded (≤ 10k blocks typical), the dict cost is dominated by id lookup.
 
 ### 2.5 Pure off-main layout via `nonisolated static makeLayout`
 
-`Transcript2Coordinator.makeLayout(for:width:highlights:folds:statuses:)` ([:579-584](Transcript2Coordinator.swift:579)) is `nonisolated static`. It takes snapshot dicts (highlights / folds / statuses) captured on MainActor before the detached task starts; the off-main loop has no actor hops inside its per-block iteration. **Cost of making it `MainActor`**: every detached layout pass becomes a stream of main-actor hops, serializing with UI work and destroying the parallelism that backs `applyInBackground` / `refillLayoutCache`.
+`Transcript2Coordinator.makeLayout(for:width:highlights:folds:statuses:)` ([:579-584](Transcript2Coordinator.swift:579)) is `nonisolated static`. It takes snapshot dicts (highlights / folds / statuses) captured on MainActor before the detached task starts; the off-main loop has no actor hops inside its per-block iteration. **Cost of making it `MainActor`**: every detached layout pass becomes a stream of main-actor hops, serializing with UI work and destroying the parallelism that backs `refillLayoutCache` and the backfill pipeline's off-main builder.
 
-### 2.6 `applyInBackground` (fire-and-forget) for large prepends
+### 2.6 Backfill is off-main-built, then sync-applied in budgeted ticks
 
-For loadInitial Phase 2 and other large structural changes, `applyInBackground` ([:292-344](Transcript2Coordinator.swift:292)) computes layouts on a detached `userInitiated` Task, then a single main hop installs them and runs the structural change inside `withScrollAdjustment`. **Untracked, non-cancellable on purpose** — row-mutation is dataSource critical-path work; `Change.insert` resolves anchors by id at apply time, so landing is robust against any `apply`s in between. **Cost of making it sync**: 100+ ms freeze on every cold-load Phase 2 prepend.
+Cold history load runs through `TranscriptBackfillPipeline` (`NativeTranscript2Bridge/`): a detached producer reads reverse pages, builds blocks (markdown parse off-main) **and typesets their `RowLayout`s off-main** (`makeLayout` is `nonisolated static`, §2.5), and deposits pre-built pages — blocks + their `(id, RowLayout)` layouts + the typeset width — into a main-owned buffer; the main drain applies each page through the single sync `apply` — the tail page as `.append`, older history as `.prepend` with `.saveVisible(.visualTop)` — capped at a loose per-tick block budget. The off-main layouts install into the cache **before** the structural change (via `apply`'s `precomputed:` parameter), so the `heightOfRow` query `insertRows` fires synchronously inside `endUpdates` (no estimated heights — §2.1) is a cache **hit**, not an on-main CTLine pass. `insertRows` settling geometry synchronously is also why the prepend anchor compensates in-tick with no forced tile (§2.7). The producer's typeset width is seeded once by `start(width:)` (the settled `controller.layoutWidth`, read after the attach tick's `scrollToTail`) and updated at live-resize end by `retarget(width:)` (wired through the coordinator's `onLayoutWidthDidSettle` hook); a width mismatch is **self-healing** — a stale-width entry is a `heightOfRow` miss that lazy-recomputes (§4.3/§4.4), never a corruption, so there is no validate gate. **Cost of building blocks or layouts on main**: 100+ ms freeze on cold load of a long transcript.
 
-### 2.7 `refillLayoutCache` post-resize prefetch + `mutationCounter` guard
+### 2.7 `refillLayoutCache` post-resize prefetch + in-tick anchor
 
-After `viewDidEndLiveResize`, `refillLayoutCache` ([:866](Transcript2Coordinator.swift:866)) prefetches layouts for off-screen rows on a detached task, then under `.saveVisible(.visualTop)` installs them and runs `noteHeightOfRows`. `mutationCounter` ([:253](Transcript2Coordinator.swift:253), [:913](Transcript2Coordinator.swift:913)) drops the entire onMain block if any `apply` ran during the task — running `saveVisible` against AppKit's stale (deferred-re-query) heights would jitter the anchor row. **Cost of dropping the counter**: visible anchor jumps when an `apply` interleaves with a resize-prefetch. **Cost of dropping the prefetch**: off-screen rows lazy-layout one-at-a-time as user scrolls in, producing jank.
+After `viewDidEndLiveResize`, `refillLayoutCache` prefetches layouts for off-screen rows on a detached task, then under `.saveVisible(.visualTop)` installs them, runs `noteHeightOfRows`, and forces a synchronous `table.layoutSubtreeIfNeeded()` **inside the body, before `applyAnchor`**. The forced tile is load-bearing: `noteHeightOfRows` only invalidates and defers its re-tile to `beforeWaiting`, so without the flush `applyAnchor` would compensate against AppKit's deferred-stale heights and the anchor row would jump. Because the layouts were just cached (off-main precompute + `cacheLayouts`), the tile is a cache-hit re-query, not a CTLine pass. Computing the compensation **in-tick** is what lets a concurrent `apply` (live message, backfill `.prepend`) interleave the prefetch harmlessly — so there is **no** mutation counter / drift guard. **Cost of dropping the forced tile**: the anchor compensates against stale heights → visible jump (precisely the bug the old `mutationCounter` papered over by bailing out). **Cost of dropping the prefetch**: off-screen rows lazy-layout one-at-a-time as user scrolls in, producing jank.
+
+Only this `noteHeightOfRows` path needs the flush. The `insertRows` paths (`.prepend` / `.append` / `.replace`, via the shared `insertBlocks`) settle new-row geometry synchronously inside `endUpdates` (no estimated heights — §2.1), so their `.saveVisible` anchor already reads real `rect(ofRow:)` with no forced tile — that is the asymmetry between the two anchor paths.
 
 ### 2.8 Live-resize bounds work to visible rows only
 
@@ -102,7 +116,7 @@ row — search-as-you-type turns into a frame-budget killer.
 
 ### 2.14 `cacheLayouts` anti-poison check
 
-`cacheLayouts(_:width:)` ([:540-545](Transcript2Coordinator.swift:540)) skips writes when the cache already has a fresh entry at the same width. An inflight background task that completes after a sync `apply` evicted + lazy-refilled the entry would otherwise overwrite the authoritative fresh layout with its older snapshot. **Cost of dropping the check**: cache poisoning under interleaved `apply` + `applyInBackground` / `refillLayoutCache` traffic.
+`cacheLayouts(_:width:)` ([:540-545](Transcript2Coordinator.swift:540)) skips writes when the cache already has a fresh entry at the same width. An inflight background task that completes after a sync `apply` evicted + lazy-refilled the entry would otherwise overwrite the authoritative fresh layout with its older snapshot. **Cost of dropping the check**: cache poisoning under interleaved `apply` + `refillLayoutCache` traffic.
 
 ### 2.15 Per-scope dedup + generation guard in `Transcript2HighlightStorage`
 
@@ -126,6 +140,19 @@ row — search-as-you-type turns into a frame-budget killer.
 
 `Block.id: UUID` is caller-supplied, never derived from content hash. The cache, diff, selection, highlight scope, fold state, and status state are all keyed by it. **Cost of content-hashed ids**: identical consecutive messages collapse to one row; selection and highlight scope drift across content-equivalent updates; `.update` events flood the cache and selection paths spuriously.
 
+### 2.19 Attach contract: one source-phase tick = one width per id
+
+The source-phase tick that mounts a `Transcript2ScrollView` for a session — `factory.make` → `addSubview` + constraints → host `view.layoutSubtreeIfNeeded()` → `factory.bindData` → `controller.scrollToTail()` — must typeset each visible block at **exactly one width** (the settled, post-cascade row width, typically 720 in the default chat layout). Anything that fires `heightOfRow` while the autolayout cascade is still in flight (`dataSource` bound too early, `layoutSubtreeIfNeeded` reordered after `bindData`, an extra `scrollToTail` inserted before settle, etc.) causes the table to typeset every block at the column's default 100pt clamped to `BlockStyle.minLayoutWidth = 460`, then again at 720, and sometimes a third pass at `maxLayoutWidth = 780` as the solver converges. **Cost of breaking this**: 60–10k blocks worth of Core Text typesetting fire 2–3× per attach, `layoutCache` thrashes, and the first frame after every session switch / re-entry stutters visibly. This is the bug #198 + #205 + #206 landed; treat the two-step `make` / `bindData` split + the host's "settle before bind" ordering as load-bearing.
+
+**Merge gates** (both run on default `make test-unit` / CI):
+
+| Test | Scope |
+|---|---|
+| [`TranscriptReentryLayoutCacheTests`](../../../../cctermTests/TranscriptReentryLayoutCacheTests.swift) | Bare-factory contract. Catches `factory.make` regressions (e.g. eager `dataSource` bind). |
+| [`TranscriptHostReentryLayoutCacheTests`](../../../../cctermTests/TranscriptHostReentryLayoutCacheTests.swift) | Production session-switch path via `ChatSessionViewController.present(sessionId:)` → `attachSession`. Catches caller regressions the factory test misses: `bindData` reordered before `layoutSubtreeIfNeeded`, the `layoutSubtreeIfNeeded` step dropped, or any new attach-time tile trigger inserted ahead of the settle step. Verified to fail against each of these three regression shapes. |
+
+Both files lack the `Snapshot` filename suffix on purpose — `scripts/test-unit.sh` auto-skips that pattern, and these tests are merge gates, not screenshots. **Don't `XCTSkip` them and don't widen the offender tolerance to "make CI green"** — a tolerated multi-width write IS the bug. If the host test goes red after a refactor, read the per-stage report it attaches to xcresult before changing anything; the offender list pins the regression to a specific call.
+
 ## 3. Invariants
 
 ### 3.1 Data and state
@@ -133,7 +160,7 @@ row — search-as-you-type turns into a frame-budget killer.
 - **Single source of truth** is `Transcript2Coordinator.blocks: [Block]`. No `rows` mirror, no parallel diff structure. The only sync invariant is layout↔data, mediated by `layoutCache: [UUID: CachedLayout]`.
 - **Stable ids drive identity.** `Block.id: UUID` is caller-supplied. Never derive ids from content hashes — identical consecutive messages would collide and selection/highlight scope would drift across content-equivalent updates.
 - **Layout is a pure function**: `Self.makeLayout(for:width:highlights:folds:statuses:)` is `nonisolated static`. Cache entries are derived, not authoritative — `removeCachedLayout(for:)` is always safe; `heightOfRow` lazy-recomputes on miss.
-- **Two mutation entry points only.** `apply(_:scroll:)` (sync, lazy layout, incremental updates) and `applyInBackground(_:scroll:)` (off-main precompute, single main hop, large prepends). Both dispatch to `applyStructuralChange` per `Change` enum. No third channel; do not add a `pendingBlocks` side path.
+- **One mutation entry point.** `apply(_:scroll:)` (sync) dispatches every `Change` to `applyStructuralChange`. Off-main work (the backfill pipeline's producer, `refillLayoutCache`'s prefetch) precomputes layouts and feeds them through this same `apply` / `cacheLayouts`; it is never a second mutation channel. Do not add a `pendingBlocks` side path.
 
 ### 3.2 Coordinator-held row state
 
@@ -165,6 +192,8 @@ Status is folded into `ToolGroupLayout.Header.status` at `make` time. `drawHeade
 
 **Color rule:** `.running` uses identical title and chevron colors to `.completed`. The running affordance is the shimmer overlay (`SubviewPlan.Shimmer`), never a brighter color tier — a color-tier change produces a brightness pop on running↔completed transitions.
 
+**`.failed` is color-only; the error *text* is body content, not status.** `.failed` paints the header + chevron `systemRed` and nothing else — its `message:` associated value is unused (and the bridge always passes `nil`). The actual error message is rendered as a uniform red error card in the child's **body** (see §5 "error card"), because it changes row height and therefore must ride the structural rebuild, not the color-only `statusStates` channel. Status and error text land together when the `tool_result` arrives — status via `setToolStatus`, text via the child payload's `errorText` — but through the two independent channels by design.
+
 **Shimmer is an additive overlay, not a mask.** A mask-based version dims AA glyph edges. The implementation:
 
 - `drawHeader` always paints the base title in the secondary color into the cell bitmap.
@@ -182,7 +211,7 @@ The `Change` enum (emitted by `Transcript2Controller`) is the only shape `applyS
 
 | Case | NSTableView call | Cache effect |
 |---|---|---|
-| `.insert(after, blocks)` | `insertRows(at:withAnimation:[.effectFade])` | None (lazy lookup on next `viewFor` / `heightOfRow`) |
+| `.prepend(blocks)` / `.append(blocks)` / `.replace(…)` | `insertBlocks(after:)` → `insertRows(at:withAnimation:[.effectFade])` | None (lazy lookup on next `viewFor` / `heightOfRow`) |
 | `.remove(ids)` | `removeRows(at:withAnimation:[.effectFade])` | `removeCachedLayout(for: id)` + `selection.dropEntry` + `highlightStorage.drop` + remove from `foldStates` / `statusStates` |
 | `.update(id, kind)` | `reloadData(forRowIndexes:) + noteHeightOfRows(withIndexesChanged:)` | `removeCachedLayout` + `highlightStorage.schedule(new)` (per-scope diff — unchanged sibling scopes keep their tokens; see §2.15) + `selection.dropEntry` |
 
@@ -282,10 +311,10 @@ Children mirror this: each payload exposes `label` (past form) and `activeLabel`
 
 **Adding a new child kind:**
 
-1. Create `Layout/ToolGroupChildren/<Kind>/<Kind>Child.swift` with the payload struct (must expose `id` / `label` / `activeLabel`; `id` drives fold state and highlight scope, `label` is the past form, `activeLabel` is the progressive form; `Child.headerLabel(for: ToolStatus)` selects). In `Block.swift`, add the enum case and one arm to each of the `id` / `label` / `activeLabel` / `hasExpandableBody` switches.
-2. Create `Layout/ToolGroupChildren/<Kind>/<Kind>ChildLayout.swift` implementing `make / totalHeight / draw / drawBackplate`. For multi-sub-card bodies, reuse `TextCardSection.build / drawBackplates / draw` rather than reimplementing sub-card geometry.
-3. Add the case to `ToolGroupChildLayout` plus four switch arms (`totalHeight`, `drawBackplate`, `draw`, `make`).
-4. Header-only kinds (`.generic`, plus `.read` until its tool_result lands): `hasExpandableBody = false`, layout `totalHeight == 0`, empty `draw` and `drawBackplate`. `ToolGroupLayout` skips chevron drawing and skips registering the fold hit automatically.
+1. Create `Layout/ToolGroupChildren/<Kind>/<Kind>Child.swift` with the payload struct (must expose `id` / `label` / `activeLabel` / `errorText`; `id` drives fold state and highlight scope, `label` is the past form, `activeLabel` is the progressive form, `errorText` is the failed-result message — `var errorText: String? = nil`, a defaulted trailing field so existing construction sites stay untouched; `Child.headerLabel(for: ToolStatus)` selects the label). In `Block.swift`, add the enum case and one arm to each of the `id` / `label` / `activeLabel` / `errorText` / `hasExpandableBody` switches.
+2. Create `Layout/ToolGroupChildren/<Kind>/<Kind>ChildLayout.swift` implementing `make / totalHeight / draw / drawBackplate`. For multi-sub-card bodies, reuse `TextCardSection.build / drawBackplates / draw` rather than reimplementing sub-card geometry. **Don't render `errorText` here** — the error card composes uniformly in `ToolGroupChildLayout` (see "error card" below), so per-kind layouts never touch it.
+3. Add the case to `ToolGroupChildLayout.Kind` plus four switch arms (`totalHeight`, `drawBackplate`, `draw`, `Kind.make`). `ToolGroupChildLayout` is a **struct** `{ kind: Kind, errorCard, errorCopyChrome, totalHeight }`; the per-kind dispatch lives on the nested `Kind` enum, and the struct's accessors compose the error card on top — so a new kind needs no error-card wiring.
+4. Header-only kinds (`.generic`, plus `.read` until its tool_result lands): `hasExpandableBody = false`, layout `totalHeight == 0`, empty `draw` and `drawBackplate`. `ToolGroupLayout` skips chevron drawing and skips registering the fold hit automatically. **Exception:** when `errorText != nil`, `hasExpandableBody` returns `true` for *every* kind so the row gains a body to host the error card.
 5. If async highlighting is needed, add a case to `ToolGroupChildHighlight.requests(for:)` that returns a `Plan`.
 6. If the body should be selectable (`selectionAdapter`):
    - Bodies built on `TextCardSection` (bash / grep / glob / webFetch / webSearch / askUserQuestion / agent) are zero-effort — `ToolGroupChildLayout.textCardSections` already exposes the section list, and `ToolGroupLayout.selectionAdapter.buildRegions` produces one `LayoutPosition.textCard(childIndex:sectionIndex:char:)` region per section. Extend `LayoutPosition` only if your new kind isn't built on `TextCardSection`: add a concrete case and route it through a `buildRegions` arm.
@@ -308,19 +337,25 @@ Children mirror this: each payload exposes `label` (past form) and `activeLabel`
 
 **No protocols.** Enum dispatch gives exhaustiveness checking; protocols let you forget an implementation in some file.
 
+**Error card (uniform across every kind).** When a `tool_result` comes back with `is_error == true`, `ToolUseToChild` extracts the wrapper-level message — `ItemToolResult.content` (always a plain string on error; the typed `ToolUseResult.object` projection is never populated for a failed call), stripped of any `<tool_use_error>…</tool_use_error>` envelope — onto the child payload's `errorText`. `ToolGroupChildLayout.make` then appends a single red monospaced `TextCardSection` (+ a `CopyChrome` on a high sentinel slot so its id never collides with a kind's per-section copy slots) **below** the per-kind body. This is the *only* place error text renders; per-kind layouts are untouched. Consequences:
+
+- The error card lands for every kind — including diff-bearing (`fileEdit` / `read`, card sits below the diff) and header-only (`generic`, the card *is* the body). bash keeps its command card even on a failed run, so you see the command and the error.
+- Because it's a `TextCardSection` and `ToolGroupChildLayout.textCardSections` appends it as the trailing section, it is selectable + searchable for free — `ToolGroupLayout.buildRegions` drives off the `diffBody` + `textCardSections` accessors, so a failed `fileEdit` yields both a `.diff` region and a trailing `.textCard` error region (different `LayoutPosition` cases, no collision).
+- `read` suppresses its file-content card on error (`ToolUseToChild` passes `content: nil`) so the error string isn't *also* rendered as fake new-file content.
+
 **Child header text uses the payload's `label`, not the raw file path.** `FileEditChild` carries both `label` (display, e.g. "Edit Sources/Greeter.swift", past form) and `filePath` (for language detection in highlighting). When a group is expanded, children always show their completed form; the running affordance is reflected on the group title.
 
 **Async highlighting** — scope = `Transcript2HighlightScope.toolGroupChild(itemId: child.id)`. Each child decides the `HighlightValue` shape. `fileEdit` uses per-unique-line `.lineMap`; the key is the raw line content. Line metrics don't depend on tokens, so `onDidFill` is a `reloadData(forRowIndexes:)` only — no `noteHeightOfRows`.
 
 **New-file mode (`oldString == nil`)** — `.add` lines render as `.context` (no `+` sign, no add background); gutter line numbers + token highlight are preserved. The output reads as a "line-numbered code view", not a "diff with everything added".
 
-**Selection** — `fileEdit` and `read` (when expanded) use `LayoutPosition.diff(childIndex:char:)`; the other seven kinds (bash / grep / glob / webFetch / webSearch / askUserQuestion / agent) use `LayoutPosition.textCard(childIndex:sectionIndex:char:)` with per-card granularity. `generic` is header-only with nothing to select.
+**Selection** — `fileEdit` and `read` (when expanded) use `LayoutPosition.diff(childIndex:char:)`; the other seven kinds (bash / grep / glob / webFetch / webSearch / askUserQuestion / agent) use `LayoutPosition.textCard(childIndex:sectionIndex:char:)` with per-card granularity. `generic` is header-only with nothing to select — *unless* it carries an error card, which is a trailing `.textCard` section like any other. The uniform error card is always a `.textCard` section, so it's selectable on every kind including the diff-bearing and header-only ones.
 
 #### `.userBubble` → `UserBubbleLayout`
 
 `case .userBubble(text: String)`. Right-aligned bubble; long text hard-truncates at `userBubbleCollapseThreshold` lines, the last line trims with `CTLineCreateTruncatedLine` + an ellipsis, and a `>` chevron sits inside the padding. Selection clamps to the prefix lines — the truncated tail is not selectable. **The layout is fully stateless** and has no fold flag. Chevron `mouseDown` → `Coordinator.requestUserBubbleSheet(id:)` → routes through the `onUserBubbleSheetRequested` closure to `Transcript2Controller.pendingUserBubbleSheet` (`@Observable`) → SwiftUI's `.sheet(item:)` shows the full content (`Text.textSelection(.enabled)` for copy).
 
-This is the **only legal SwiftUI escape hatch** from the NSView loop: `.sheet(item:)` is a presentation primitive that must be owned by SwiftUI. In-cell rendering, hit testing, and selection stay entirely inside NSView.
+The signal lands as an `@Observable` write on `Transcript2Controller.pendingUserBubbleSheet`, which `Transcript2SheetPresenter` observes (via `withObservationTracking`) and turns into an AppKit-native sheet — `view.window?.beginSheet(NSWindow(contentViewController: NSHostingController(rootView: UserBubbleSheetView)))`. Sheet body stays SwiftUI (selectable text + a Done button is exactly what SwiftUI is for); presentation mechanism is pure AppKit so the entire transcript host VC can stay AppKit-rooted. In-cell rendering, hit testing, and selection stay entirely inside NSView.
 
 ## 6. File layout
 
@@ -340,7 +375,7 @@ NativeTranscript2/
 │   ├── ThematicBreakLayout.swift    Single hairline
 │   ├── ToolGroupLayout.swift        Tool group row (group header + child headers + expanded body); dispatches into ToolGroupChildLayout
 │   ├── ToolGroupChildren/           Per-kind tool-group child layouts (payload + layout colocated)
-│   │   ├── ToolGroupChildLayout.swift     Enum dispatch for totalHeight / draw / drawBackplate + `make` factory
+│   │   ├── ToolGroupChildLayout.swift     Struct { kind: Kind, errorCard } — per-kind dispatch (nested Kind enum) + uniform red error card composed on top
 │   │   ├── ToolGroupChildHighlight.swift  Per-kind highlight requests + finalize
 │   │   ├── TextCardSection.swift          Shared geometry + draw helpers for multi-card sub-bodies
 │   │   ├── FileEdit/                      Diff body (header + body)
@@ -362,19 +397,23 @@ NativeTranscript2/
 │   ├── SubviewPlan.swift            Chevron + entry-subview decoration plan (per-layout, same shape as SelectionAdapter)
 │   └── RowLayout.swift              Enum dispatch (text / image / list / table / userBubble / codeBlock / blockquote / thematicBreak / toolGroup)
 ├── AppKit/
-│   ├── Transcript2ScrollView.swift  NSScrollView + NSClipView subclasses
-│   ├── Transcript2TableView.swift   NSTableView subclass (negative-width clamp)
-│   ├── CenteredRowView.swift        Row-view placeholder subclass (no-op body); exists so NSTableView.makeView has a stable row-reuse key
-│   ├── BlockCellView.swift          Self-drawn cell: layoutOrigin.x = cellOriginX + blockHorizontalPadding for centering + layout.draw + link/chevron hit testing + selection + hover tracking
+│   ├── Transcript2ScrollView.swift      NSScrollView + NSClipView subclasses
+│   ├── Transcript2TableView.swift       NSTableView subclass (negative-width clamp)
+│   ├── TranscriptScrollViewFactory.swift Two-step make / bindData / dismantle (deferred bind)
+│   ├── Transcript2SheetPresenter.swift  AppKit sheet presenter for the two `pendingXxx` request fields
+│   ├── CenteredRowView.swift            Row-view placeholder subclass (no-op body); exists so NSTableView.makeView has a stable row-reuse key
+│   ├── BlockCellView.swift              Self-drawn cell: layoutOrigin.x = cellOriginX + blockHorizontalPadding for centering + layout.draw + link/chevron hit testing + selection + hover tracking
 │   └── BlockCellView+SubviewPlan.swift  Reconciles the chevron sublayer and entry subview against the layout's SubviewPlan; ToolGroupEntryView also lives here
-├── Transcript2Coordinator.swift          DataSource/Delegate + diff + per-kind dispatch + chevron sheet request routing
-├── Transcript2Controller.swift           Imperative command channel (apply / loadInitial / search)
-├── Transcript2SelectionCoordinator.swift Cross-row selection algorithm (reads layout.selectionAdapter)
-├── Transcript2SearchCoordinator.swift    In-transcript ⌘F scan + nav + per-cell highlight push
-└── NativeTranscript2View.swift      SwiftUI bridge (updateNSView is a no-op) + Preview
+├── Sheets/
+│   ├── UserBubbleSheetView.swift        SwiftUI body for the user-bubble full-text sheet (hosted via NSHostingController)
+│   └── ImagePreviewSheetView.swift      SwiftUI body for the attachment image preview sheet
+├── Transcript2Coordinator.swift             DataSource/Delegate + diff + per-kind dispatch + chevron sheet request routing
+├── Transcript2Controller.swift              Imperative command channel (apply / scrollToTail / setLoading / search) + @Observable pendingXxxSheet fields
+├── Transcript2SelectionCoordinator.swift    Cross-row selection algorithm (reads layout.selectionAdapter)
+└── Transcript2SearchCoordinator.swift       In-transcript ⌘F scan + nav + per-cell highlight push
 ```
 
-Dependencies only flow downward: `NativeTranscript2View → Coordinator → AppKit/ → Layout/ → Model/`.
+Dependencies only flow downward: `host VC → Controller → Coordinator → AppKit/ → Layout/ → Model/`. Sheet bodies under `Sheets/` are SwiftUI structs imported by `Transcript2SheetPresenter` only.
 
 ## 6.5 Search
 
@@ -385,8 +424,10 @@ per-cell paint is derived, affected cells are reseated via
 two compose at draw time, search highlights composite over the selection
 band.
 
-The host UI is SwiftUI's built-in `.searchable` modifier attached to
-`ChatHistoryView`, with `placement: .toolbar`. The native `NSSearchField`
+The host UI is an `NSSearchToolbarItem` on the window's toolbar
+(`MainWindowController`'s `NSToolbar`); the field is wired to
+`TranscriptSearchBus` (focus) and the controller's `searchState` (text
++ navigation). The native `NSSearchField`
 lands in the window toolbar's trailing slot; there are no prev / counter
 / next chrome items — the user navigates with `Return` (next match, via
 `.onSubmit(of: .search)`) and `Shift+Return` (previous, via
@@ -448,7 +489,9 @@ attenuated when the window has resigned key.
 prefix only; the truncated tail isn't selectable, so it isn't searchable)
 — and by `toolGroup` rows for **currently-expanded** children:
 `fileEdit` diff bodies and any child built on `TextCardSection` (bash /
-grep / glob / webFetch / webSearch / askUserQuestion / agent). Folded
+grep / glob / webFetch / webSearch / askUserQuestion / agent), plus the
+uniform error card on any failed child (a trailing `.textCard` section,
+searchable on every kind). Folded
 children carry no body in the layout, so their text doesn't enter the
 initial scan — same invariant as selection. `list` / `table` return
 empty regions; their selection adapters exist but haven't been wired
@@ -477,7 +520,7 @@ exactly the row needed to surface the highlight.
 
 **Back-fill flow** (same for every highlight-bearing kind):
 
-1. `Coordinator.apply` calls `storage.schedule(block)` on `.insert` / `.update`.
+1. `Coordinator.apply` calls `storage.schedule(block)` on insert (`.prepend` / `.append` / `.replace`) / `.update`.
 2. `schedule` dispatches via `plan(for: block)`, which returns a `Plan { payload, writeback }`.
 3. A single `engine.highlightBatch(payload)` crosses into JSCore; results are written back through `writeback`.
 4. `onDidFill(blockId)` triggers `removeCachedLayout(for: id)` + `reloadData(forRowIndexes:)`.
@@ -500,7 +543,7 @@ The framework itself does not change — storage and the reload pipeline are gen
 
 | Touched | Verify with |
 |---|---|
-| `Coordinator` diff / pipeline | SwiftUI Preview (`NativeTranscript2View.swift` `#Preview`); inspect insert/remove animations |
-| `BlockCellView.draw` | Preview; check layout + font |
-| `TextLayout.make` | Preview |
+| `Coordinator` diff / pipeline | Sidebar → "Transcript Demo" (`TranscriptDemoViewController`); inspect insert/remove animations via Add/Remove buttons |
+| `BlockCellView.draw` | Sidebar → "Transcript Demo"; check layout + font |
+| `TextLayout.make` | Sidebar → "Transcript Demo" |
 | `Transcript2ScrollView` / `Transcript2TableView` | `make build` + launch; drag window width to verify reflow |

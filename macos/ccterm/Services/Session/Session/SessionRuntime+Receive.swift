@@ -25,7 +25,15 @@ extension SessionRuntime {
     func receive(_ message: Message2, mode: ReceiveMode = .live) {
         switch message {
         case .assistant(let a):
+            // Capture TaskCreate / TaskUpdate tool_use inputs so the
+            // pairing user.tool_result can materialize / patch the
+            // entry in `todos`. Runs in both live and replay so the
+            // popover list is correct after a JSONL reload.
+            captureTodoToolUses(in: a)
             noteUsage(a.message?.usage)
+            // Fold this message's authoritative usage into the turn total.
+            // Live mode only — replay reloads don't drive the turn counter.
+            if mode == .live { reconcileFinalUsage(a) }
             // CLI is producing assistant content → a turn is in progress.
             // Self-heals two real scenarios surfaced by the SDK smoke
             // dump:
@@ -53,6 +61,62 @@ extension SessionRuntime {
                 isRunning = true
             }
             adopt(info, mode: mode)
+            // Flush queued local-user entries now that CLI has signalled
+            // "turn starting". `system.init` arrives ~5-20 ms after the
+            // matching `sendMessage`, while the `--replay-user-messages`
+            // echo doesn't land until ~2 s later (in lockstep with the
+            // first assistant token). Using init as the confirm trigger
+            // shaves ~2 s off the queued visual without losing the FIFO
+            // semantics — CLI bundles every send that's in its stdin
+            // buffer at turn-start into one turn, so flushing every
+            // currently-queued entry on init matches CLI behaviour. See
+            // `AgentSDK/Sources/QueueTimingSmoke` for the measurements.
+            if mode == .live {
+                flushQueuedOnInit()
+            }
+        case .system(.thinkingTokens(let tt)) where mode == .live:
+            // CLI's redacted-thinking progress: `estimated_tokens` is the
+            // cumulative (conservative) thinking-token estimate for the current
+            // block. Fold it into the running output total so the pill's `↓`
+            // counter climbs during thinking; the authoritative `message_delta`
+            // total (which includes thinking) supersedes it at turn's end.
+            if let cumulative = tt.estimatedTokens { foldThinkingEstimate(cumulativeEstimate: cumulative) }
+        case .system(.status(let s)):
+            // CLI broadcasts a `system.status` whenever the
+            // session-side permission mode changes. Three triggers
+            // observed in PermissionModeProbe:
+            //   1. EnterPlanMode runs (no permission_request) → CLI
+            //      pushes `permissionMode=plan`.
+            //   2. User responds to a permission_request with
+            //      allowAlways + `setMode` suggestion (Edit/Write
+            //      default to `setMode=acceptEdits`) → CLI pushes the
+            //      new mode after applying the update.
+            //   3. The CLI silently rejects a requested mode (e.g.
+            //      `bypassPermissions` when --allow-dangerously-skip is
+            //      off, or `plan` from ExitPlanMode which must leave
+            //      plan mode) → CLI pushes the corrected mode
+            //      (typically `default`).
+            // Case 3 is why we must trust the CLI, not the optimistic
+            // local write in setPermissionMode: this branch is the
+            // self-heal that pulls UI state back to reality.
+            adoptPermissionMode(s.permissionMode)
+        case .system(.taskStarted(let started)) where mode == .live:
+            handleTaskStarted(started)
+        case .system(.taskNotification(let notif)) where mode == .live:
+            handleTaskNotification(notif)
+        case .system(.taskUpdated(let updated)) where mode == .live:
+            handleTaskUpdated(updated)
+        case .user(let u) where u.toolResultBlock?.toolUseId != nil:
+            // Capture backgroundTaskId → outputFile mapping when the bash
+            // tool's tool_result lands. system.task_started doesn't carry
+            // the output path (it's allocated lazily when the CLI writes
+            // its first byte to the spool file), so this is the earliest
+            // reliable point to record where to tail from.
+            if mode == .live { rememberOutputFileFromBashResult(u) }
+            // Fold any TaskCreate / TaskUpdate result into `todos`. Runs
+            // for both live and replay so the popover state survives a
+            // JSONL reload.
+            applyTodoToolResult(u)
         default: break
         }
 
@@ -62,6 +126,7 @@ extension SessionRuntime {
             switch act {
             case .merge(let id, _): actDesc = "merge(\(id.prefix(8)))"
             case .confirm(let id, _): actDesc = "confirm(\(id.uuidString.prefix(8)))"
+            case .replaceAssistant(let id): actDesc = "replaceAssistant(\(id.uuidString.prefix(8)))"
             case .append: actDesc = "append"
             case .skip: actDesc = "skip"
             }
@@ -77,14 +142,19 @@ extension SessionRuntime {
             change = attachToolResult(payload, to: id).map(MessagesChange.updated)
         case .confirm(let id, let echo):
             change = confirmQueuedEntry(id: id, echo: echo, mode: mode).map(MessagesChange.updated)
+        case .replaceAssistant(let id):
+            change = replaceAssistantEntry(id: id, with: message).map(MessagesChange.updated)
         case .append:
             change = appendToTimeline(message, mode: mode)
         case .skip:
             change = nil
         }
 
-        // For replay, the caller (loadHistory Phase A / Phase B) emits a single
-        // `.reset` / `.prepended` at the end of the batch — we do not emit per-message here.
+        // Replay updates `messages` but suppresses the per-message change
+        // event. Production history no longer flows through `receive` (it goes
+        // through `TranscriptBackfillPipeline` / `ReverseEntryBuilder`); the
+        // `.replay` mode now exists only for the reverse-builder grouping
+        // parity test (`TranscriptReverseBuilderTests.A6`).
         guard mode == .live else { return }
         if let change { onMessagesChange?(change) }
     }
@@ -101,6 +171,11 @@ extension SessionRuntime {
         /// when the entry is already `.confirmed` (CLI replay during
         /// interrupt).
         case confirm(entryId: UUID, echo: Message2)
+        /// A finalized `.assistant` envelope whose message already has a live
+        /// streaming-text preview entry — swap the provisional payload for the
+        /// authoritative one in place, reusing the entry id so block ids
+        /// converge (no duplicate, no flicker). See `SessionRuntime+Streaming`.
+        case replaceAssistant(entryId: UUID)
         case append
         case skip
     }
@@ -117,7 +192,17 @@ extension SessionRuntime {
             }
             return u.isVisible ? .append : .skip
         case .assistant(let a):
-            return a.isVisible ? .append : .skip
+            guard a.isVisible else { return .skip }
+            // If this message streamed a live preview, converge onto that
+            // entry instead of appending a duplicate. Gated on an existing
+            // preview, so non-streamed sessions keep the exact append path.
+            if let msgId = a.message?.id,
+                let entryId = streamingPreviewEntryIds[msgId],
+                messages.contains(where: { $0.id == entryId })
+            {
+                return .replaceAssistant(entryId: entryId)
+            }
+            return .append
         default:
             return .skip
         }
@@ -231,14 +316,24 @@ extension SessionRuntime {
     /// Swap payload to `.remote(echo)`, flip delivery to `.confirmed`,
     /// and — only on the `.queued` → `.confirmed` edge in live mode —
     /// advance status to `.responding`. Reuse the local entry; never
-    /// append a duplicate. A re-confirm of an already-`.confirmed`
-    /// entry returns nil so the bridge doesn't get a no-op `.updated`
-    /// (and so we don't thrash `.interrupting` → `.responding` if a
-    /// stray replay arrives mid-interrupt).
+    /// append a duplicate.
+    ///
+    /// Two prior states are both fine to land on:
+    ///   1. `.localUser` + `.queued`  — echo arrived before init flush
+    ///      (rare; happens when init is skipped or delayed). Flip
+    ///      delivery and swap payload.
+    ///   2. `.localUser` + `.confirmed` — `flushQueuedOnInit` already
+    ///      ran. Delivery is already correct; still swap the payload
+    ///      so the entry adopts the CLI-canonical form. Returns the
+    ///      updated entry so the bridge re-renders the bubble.
+    ///
+    /// Re-confirm of an already-`.remote` entry (CLI replay during
+    /// interrupt) returns nil — the entry has already adopted the
+    /// CLI form once; don't thrash payload or status.
     fileprivate func confirmQueuedEntry(id: UUID, echo: Message2, mode: ReceiveMode) -> MessageEntry? {
         guard let idx = messages.firstIndex(where: { $0.id == id }) else { return nil }
         guard case .single(var single) = messages[idx] else { return nil }
-        if single.delivery == .confirmed {
+        if case .remote = single.payload {
             return nil
         }
         let wasQueued = single.delivery == .queued
@@ -249,6 +344,96 @@ extension SessionRuntime {
             status = .responding
         }
         return messages[idx]
+    }
+
+    /// Swap a streaming-text preview entry's provisional payload for the
+    /// finalized `.assistant` envelope, reusing the entry id. The block
+    /// builder derives the same text-block ids off the (unchanged) entry id,
+    /// so the bridge takes its per-block `.update` fast path — the streamed
+    /// text settles into its authoritative form with no remove/insert flicker.
+    /// Consumes the preview mapping for this message id.
+    ///
+    /// **Deferred when still typing.** If the typewriter hasn't finished
+    /// revealing this message, the swap is parked on the reveal
+    /// (`scheduleFinalize`) and performed once the head catches up, so a short
+    /// reply types all the way to its end instead of the untyped tail popping
+    /// in. The typewriter emits the `.updated` itself in that case, so this
+    /// returns nil (no synchronous change).
+    fileprivate func replaceAssistantEntry(id: UUID, with message: Message2) -> MessageEntry? {
+        if case .assistant(let a) = message, let msgId = a.message?.id,
+            shouldDeferFinalize(messageId: msgId)
+        {
+            scheduleFinalize(entryId: id, messageId: msgId, message: message)
+            return nil
+        }
+        return swapAssistantPayload(entryId: id, with: message)
+    }
+
+    /// The actual payload swap, shared by the synchronous `receive` path
+    /// (`replaceAssistantEntry`) and the deferred typewriter-completion path
+    /// (`performAssistantSwap`). Reuses the entry id so block ids converge and
+    /// consumes the preview mapping for this message id.
+    func swapAssistantPayload(entryId: UUID, with message: Message2) -> MessageEntry? {
+        guard let idx = messages.firstIndex(where: { $0.id == entryId }) else { return nil }
+        guard case .single(var single) = messages[idx] else { return nil }
+        single.payload = .remote(message)
+        single.delivery = nil
+        messages[idx] = .single(single)
+        if case .assistant(let a) = message, let msgId = a.message?.id {
+            streamingPreviewEntryIds.removeValue(forKey: msgId)
+        }
+        return messages[idx]
+    }
+
+    /// Deferred-path swap: perform the payload swap and emit the `.updated`
+    /// directly. The typewriter calls this when the head finishes revealing a
+    /// finalized message, outside `receive`'s return-the-change flow.
+    func performAssistantSwap(entryId: UUID, message: Message2) {
+        guard let entry = swapAssistantPayload(entryId: entryId, with: message) else { return }
+        onMessagesChange?(.updated(entry))
+    }
+
+    /// Join an assistant message's `.text` blocks with blank-line separators —
+    /// the same shape `StreamingTurnAssembler.currentText` produces, so the
+    /// typewriter's sealed reveal target lines up with the streamed prefix.
+    static func joinedAssistantText(_ message: Message2) -> String? {
+        guard case .assistant(let a) = message, let blocks = a.message?.content else { return nil }
+        let parts: [String] = blocks.compactMap { block in
+            if case .text(let t) = block, let txt = t.text, !txt.isEmpty { return txt }
+            return nil
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: "\n\n")
+    }
+
+    /// Walk `messages`, flip every locally-queued user entry to
+    /// `.confirmed`, and emit one `MessagesChange.updated` per flipped
+    /// entry. Payload stays as `.localUser` — the canonical-form swap
+    /// to `.remote(echo)` still happens later when the echo lands
+    /// (`confirmQueuedEntry`). Only the *delivery* flag — and the
+    /// status transition `.idle` → `.responding` — moves here.
+    ///
+    /// Called from the `system.init` arm of `receive`. CLI buffers
+    /// every send that's sitting in its stdin queue at turn-start into
+    /// a single follow-up turn, so flushing every currently-queued
+    /// entry on each init is correct in both single-send and
+    /// burst-send scenarios. The narrow race where a `.queued` entry
+    /// arrives *between* init-fire and CLI's actual stdin read would
+    /// land here optimistically; in practice the window is sub-ms and
+    /// echoes still arrive later to do the payload swap.
+    fileprivate func flushQueuedOnInit() {
+        var anyFlushed = false
+        for i in messages.indices {
+            guard case .single(var single) = messages[i] else { continue }
+            guard case .localUser = single.payload else { continue }
+            guard single.delivery == .queued else { continue }
+            single.delivery = .confirmed
+            messages[i] = .single(single)
+            anyFlushed = true
+            onMessagesChange?(.updated(messages[i]))
+        }
+        if anyFlushed, status == .idle {
+            status = .responding
+        }
     }
 }
 
@@ -279,6 +464,11 @@ extension SessionRuntime {
             // continuation, …), the next `.assistant` in `receive`
             // flips us back true.
             isRunning = false
+            // Notify the renderer so any tool surface still in
+            // `.running` (no matching `tool_result` arrived before
+            // turn-close) flips to `.completed`. Fires on every live
+            // turn close, not just `.responding → .idle`.
+            onTurnFinishedLive?()
         }
         if mode == .live, case .responding = status {
             status = .idle
@@ -305,6 +495,14 @@ extension SessionRuntime {
     /// text of every `.text` block on that single, separated by blank
     /// lines and trimmed.
     fileprivate func snapshotLastAssistantText() -> String? {
+        // A still-revealing final message hasn't swapped its provisional
+        // preview for the authoritative text yet — read the deferred envelope
+        // so a turn-end notification body isn't truncated mid-type.
+        if let pending = activeReveal?.pendingFinalize,
+            let text = Self.joinedAssistantText(pending.message)
+        {
+            return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
         for entry in messages.reversed() {
             guard case .single(let s) = entry,
                 case .assistant(let a) = s.remoteMessage,
@@ -327,13 +525,34 @@ extension SessionRuntime {
         return nil
     }
 
+    /// Receive-side permission mode sync. Idempotent: same mode is a
+    /// no-op (no observable churn, no DB write). DB write skipped for
+    /// pre-record sessions (first bootstrap before persistence). Does
+    /// **not** call `setPermissionMode` — that path issues a
+    /// `set_permission_mode` RPC to the CLI, which would loop back as
+    /// another `system.status`.
+    fileprivate func adoptPermissionMode(_ raw: String?) {
+        guard let raw,
+            let mapped = PermissionMode(rawValue: raw),
+            mapped != permissionMode
+        else { return }
+        permissionMode = mapped
+        if repository.find(sessionId) != nil {
+            repository.updateExtra(
+                sessionId, with: SessionExtraUpdate(permissionMode: raw))
+        }
+    }
+
     fileprivate func adopt(_ info: Init, mode: ReceiveMode) {
         if let c = info.cwd { cwd = c }
-        if let raw = info.permissionMode, let mapped = PermissionMode(rawValue: raw) {
-            permissionMode = mapped
-        }
+        adoptPermissionMode(info.permissionMode)
         if let cmds = info.slashCommands {
-            slashCommands = cmds.map { SlashCommand(name: $0, description: nil) }
+            // `system.init` carries command names only — merge in the
+            // descriptions cached from the bootstrap `initialize` response
+            // so the completion popup's footer keeps them across turns.
+            slashCommands = cmds.map {
+                SlashCommand(name: $0, description: slashCommandDescriptions[$0])
+            }
         }
         if mode == .live {
             appLog(
@@ -352,13 +571,57 @@ extension Message2User {
 
     /// Whether this message enters the timeline as its own entry.
     /// Filters out sub-agents, synthetic, compact summary, transcript-only, and empty text.
-    fileprivate var isVisible: Bool {
+    ///
+    /// Module-internal (not `fileprivate`) so the pure `ReverseEntryBuilder`
+    /// reuses the exact same visibility rule the live `receive` path uses —
+    /// the single source of truth `TranscriptReverseBuilderTests.A6` pins.
+    var isVisible: Bool {
         guard parentToolUseId == nil,
             isSynthetic != true,
             isCompactSummary != true,
-            isVisibleInTranscriptOnly != true
+            isVisibleInTranscriptOnly != true,
+            // The CLI marks any user envelope whose turn was triggered
+            // by a background task notification with
+            // `origin.kind == "task-notification"`. Newer CLI builds may
+            // surface that as its own synthetic user record (the
+            // task-notification turn currently emits only a system.init
+            // + assistant block, but the CLI has shifted that contract
+            // before). Treat such envelopes as control signals so the
+            // tasks popover is the sole surface for completion-related
+            // chatter.
+            origin?.kind != "task-notification",
+            // Content-prefix fallback: older CLI builds (observed in
+            // smoke dumps as early as 2026-02) injected the synthetic
+            // task-notification user turn without the `origin` field at
+            // all. The `<task-notification>` XML envelope itself has
+            // been stable across every CLI version we have on file, so
+            // a string body that starts with it is a CLI control signal
+            // regardless of envelope metadata.
+            !startsWithTaskNotificationEnvelope
         else { return false }
         return hasVisibleText
+    }
+
+    /// Whether `message.content` begins with the `<task-notification>`
+    /// XML envelope. Backstop for legacy CLI builds that don't set
+    /// `origin.kind`. Checks both string-shaped content and the first
+    /// text block of array-shaped content; non-text content shapes
+    /// (e.g. tool_result, image) return false.
+    fileprivate var startsWithTaskNotificationEnvelope: Bool {
+        let marker = "<task-notification>"
+        switch message?.content {
+        case .string(let s)?:
+            return s.hasPrefix(marker)
+        case .array(let items)?:
+            for item in items {
+                if case .text(let t) = item, let txt = t.text {
+                    return txt.hasPrefix(marker)
+                }
+            }
+            return false
+        default:
+            return false
+        }
     }
 
     fileprivate var hasVisibleText: Bool {
@@ -376,7 +639,9 @@ extension Message2User {
     }
 
     /// The first tool_result block (each user message typically carries only one).
-    fileprivate var toolResultBlock: ItemToolResult? {
+    /// Module-internal so `ReverseEntryBuilder` classifies tool_result the same
+    /// way `receive`'s `action(for:)` does.
+    var toolResultBlock: ItemToolResult? {
         guard case .array(let items) = message?.content else { return nil }
         for item in items {
             if case .toolResult(let r) = item { return r }
@@ -388,7 +653,8 @@ extension Message2User {
 extension Message2Assistant {
 
     /// Has any visible content (text or tool_use). thinking-only / subagent is treated as invisible.
-    fileprivate var isVisible: Bool {
+    /// Module-internal so `ReverseEntryBuilder` shares the live visibility rule.
+    var isVisible: Bool {
         guard parentToolUseId == nil, let blocks = message?.content else { return false }
         return blocks.contains { block in
             switch block {
@@ -404,7 +670,8 @@ extension Message2 {
 
     /// "Groupable": an assistant message whose non-empty content blocks are all tool_use (any kind).
     /// Mixed text / thinking still goes through `.single` and is rendered by `AssistantMarkdownComponent`.
-    fileprivate var isGroupableAssistant: Bool {
+    /// Module-internal so `ReverseEntryBuilder` applies the same grouping rule as `appendToTimeline`.
+    var isGroupableAssistant: Bool {
         guard case .assistant(let a) = self,
             let blocks = a.message?.content,
             !blocks.isEmpty

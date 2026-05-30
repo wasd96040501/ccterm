@@ -42,6 +42,7 @@ final class FakeCLIClient: CLIClient {
 
     var lastKnownSessionId: String?
     var onMessage: ((Message2) -> Void)?
+    var onStreamEvent: ((Message2StreamEvent) -> Void)?
     var onPermissionRequest: ((PermissionRequest, @escaping (PermissionDecision) -> Void) -> Void)?
     var onPermissionCancelled: ((String) -> Void)?
     var onProcessExit: ((Int32) -> Void)?
@@ -69,6 +70,18 @@ final class FakeCLIClient: CLIClient {
         closeCalls += 1
     }
 
+    func closeAsync() async {
+        closeCalls += 1
+        closeAsyncCalls += 1
+        await closeAsyncHook?()
+    }
+
+    /// Optional async hook fired by `closeAsync`. Tests use it to
+    /// gate the continuation on an explicit signal so the parallel-
+    /// shutdown test can observe overlap rather than serial completion.
+    var closeAsyncHook: (@Sendable () async -> Void)?
+    private(set) var closeAsyncCalls: Int = 0
+
     // MARK: - Control requests
 
     func initialize(
@@ -80,6 +93,46 @@ final class FakeCLIClient: CLIClient {
 
     func interrupt(completion: @escaping ([String: Any]) -> Void) {
         interruptCalls.append(completion)
+    }
+
+    struct ContextUsageCall {
+        let timeout: TimeInterval
+        let completion: (ContextUsageOutcome) -> Void
+    }
+    private(set) var contextUsageCalls: [ContextUsageCall] = []
+
+    func getContextUsage(
+        timeout: TimeInterval,
+        completion: @escaping (ContextUsageOutcome) -> Void
+    ) {
+        contextUsageCalls.append(ContextUsageCall(timeout: timeout, completion: completion))
+    }
+
+    /// Drive the most recently queued `getContextUsage(...)` completion.
+    func completeContextUsage(_ outcome: ContextUsageOutcome) {
+        guard !contextUsageCalls.isEmpty else { return }
+        let call = contextUsageCalls.removeFirst()
+        call.completion(outcome)
+    }
+
+    struct SideQuestionCall {
+        let question: String
+        let completion: (SideQuestionOutcome) -> Void
+    }
+    private(set) var sideQuestionCalls: [SideQuestionCall] = []
+
+    func askSideQuestion(
+        _ question: String,
+        completion: @escaping (SideQuestionOutcome) -> Void
+    ) {
+        sideQuestionCalls.append(SideQuestionCall(question: question, completion: completion))
+    }
+
+    /// Drive the oldest queued `askSideQuestion(...)` completion.
+    func completeSideQuestion(_ outcome: SideQuestionOutcome) {
+        guard !sideQuestionCalls.isEmpty else { return }
+        let call = sideQuestionCalls.removeFirst()
+        call.completion(outcome)
     }
 
     // MARK: - Messaging
@@ -119,6 +172,12 @@ final class FakeCLIClient: CLIClient {
     /// Deliver one Message2 through `onMessage` as if the CLI streamed it.
     func pushMessage(_ message: Message2) {
         onMessage?(message)
+    }
+
+    /// Deliver one streaming partial through `onStreamEvent`, as the SDK does
+    /// when `includePartialMessages` is on.
+    func pushStreamEvent(_ event: Message2StreamEvent) {
+        onStreamEvent?(event)
     }
 
     /// Drive the most recently queued `initialize(...)` completion. Tests

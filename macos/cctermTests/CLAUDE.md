@@ -80,14 +80,24 @@ final class MyBridgeTests: XCTestCase {
 }
 ```
 
-For JSONL replay tests, write a temp file:
+For JSONL replay tests, write a temp file and drive `Session.loadHistory`
+(the load orchestration lives on the façade, not the runtime — wrap the runtime
+in a `Session` so `controller` / `bridge` / `historyLoadState` are all wired):
 
 ```swift
 let url = FileManager.default.temporaryDirectory
     .appendingPathComponent("\(UUID().uuidString).jsonl")
 try jsonlText.write(to: url, atomically: true, encoding: .utf8)
 addTeardownBlock { try? FileManager.default.removeItem(at: url) }
-handle.loadHistory(overrideURL: url)
+
+let session = Session(runtime: handle, cliClientFactory: { _ in FakeCLIClient() })
+session.loadHistory(overrideURL: url)
+// Backfill is async (off-main producer + main drain); wait for completion.
+let exp = XCTNSPredicateExpectation(
+    predicate: NSPredicate { _, _ in session.historyLoadState == .loaded },
+    object: nil)
+await fulfillment(of: [exp], timeout: 5)
+// ... assert on session.controller.blockIds ...
 ```
 
 ## What goes here
@@ -95,8 +105,8 @@ handle.loadHistory(overrideURL: url)
 | Scenario | Approach |
 |---|---|
 | Block builder produces correct ids for a parsed entry | Call the builder, assert on its output |
-| `SessionRuntime.loadHistory` fires `.reset` with prebuilt blocks | Wire up a closure on the handle, assert it fires with the expected payload |
-| Bridge applies `.reset` → controller's blockIds match | Construct the bridge + controller, feed a `MessagesChange`, assert controller state |
+| `Session.loadHistory` backfills a JSONL file into the controller | Drive the `TranscriptBackfillPipeline` (real or `FakeReversePageSource`), await `historyLoadState == .loaded`, assert `controller.blockIds` |
+| Bridge applies `.appended` / `.updated` → controller's blockIds match | Construct the bridge + controller, feed a `MessagesChange`, assert controller state |
 | Send-button enable state under various input | Drive `SessionRuntime.send` and inspect `isRunning` / `status` directly |
 | Sidebar selection routes to the right handle | Hold the manager, simulate the selection change in code, assert the resulting handle |
 | "What does this view look like today?" — visual review of a SwiftUI view | [Snapshot tests](#snapshot-tests) |
@@ -151,13 +161,136 @@ them: `make test-unit FILTER=<class>` then `open <png>`.
 
 | View | Test class | PNG |
 |---|---|---|
-| `TranscriptDemoView` ([source](../ccterm/Content/TranscriptDemo/TranscriptDemoView.swift)) | `TranscriptDemoSnapshotTests` ([source](TranscriptDemoSnapshotTests.swift)) | `/tmp/ccterm-screenshots/TranscriptDemoView.png` |
-| `SidebarView2` row chrome + per-row state indicators ([source](../ccterm/Sidebar/SidebarView2.swift)) | `SidebarView2SnapshotTests` ([source](SidebarView2SnapshotTests.swift)) | `/tmp/ccterm-screenshots/SidebarView2.png` |
+| `TranscriptDemoViewController` ([source](../ccterm/Content/TranscriptDemo/TranscriptDemoViewController.swift)) | `TranscriptDemoSnapshotTests` ([source](TranscriptDemoSnapshotTests.swift)) | `/tmp/ccterm-screenshots/TranscriptDemoView.png` |
+| `SidebarViewController` source-list sidebar + per-row state indicators ([source](../ccterm/Sidebar/SidebarViewController.swift)) | `SidebarView2SnapshotTests` ([source](SidebarView2SnapshotTests.swift)) | `/tmp/ccterm-screenshots/SidebarView2.png` |
 | `NewSessionConfigurator` three-column compose card ([source](../ccterm/Content/Chat/NewSessionConfigurator.swift)) | `NewSessionConfiguratorSnapshotTests` ([source](NewSessionConfiguratorSnapshotTests.swift)) | `/tmp/ccterm-screenshots/NewSessionConfigurator.png` + `…-empty.png` |
 | `DiffView` standalone diff card (modified + new file) ([source](../ccterm/Components/DiffView.swift)) | `DiffViewSnapshotTests` ([source](DiffViewSnapshotTests.swift)) | `/tmp/ccterm-screenshots/DiffView.png` |
+| Transcript attach sequence — first-frame scroll origin / row geometry ([source](../ccterm/Content/Chat/NativeTranscript2/AppKit/TranscriptScrollViewFactory.swift)) | `TranscriptScrollFirstFrameSnapshotTests` ([source](TranscriptScrollFirstFrameSnapshotTests.swift)) | `/tmp/ccterm-screenshots/TranscriptScrollFirstFrame-Production.png` + `…-NoNote.png` |
+| Transcript attach sequence — first **composited** frame on a live render pipeline (CADisplayLink + `CALayer.presentation()`) ([source](../ccterm/Content/Chat/NativeTranscript2/AppKit/TranscriptScrollViewFactory.swift)) | `TranscriptScrollLivePresentationSnapshotTests` ([source](TranscriptScrollLivePresentationSnapshotTests.swift)) | none — text-only timeline attachment |
+| Running pill + live turn-usage counter (`↑in ↓out` in the `LoadingPillUsageView` subview) ([source](../ccterm/Content/Chat/NativeTranscript2/AppKit/LoadingPillUsageView.swift)) | `LoadingPillUsageSnapshotTests` ([source](LoadingPillUsageSnapshotTests.swift)) | `/tmp/ccterm-screenshots/LoadingPillUsage.png` |
 
 If your view isn't in this table, jump to [I want to add a snapshot
 test for a new view](#i-want-to-add-a-snapshot-test-for-a-new-view).
+
+### Measurement probes (NOT snapshots — CI merge gate)
+
+Some tests use the same offscreen-window scaffolding as snapshots —
+they mount a real view, drive a real attach sequence, sample state —
+but they're **assertion-driven property tests**, not PNGs for human
+review. They have to run on CI as merge gates. **Do not give them the
+`*SnapshotTests.swift` filename suffix** — `scripts/test-unit.sh`
+auto-skips that pattern from the default suite.
+
+Inventory:
+
+| File | What it asserts |
+|---|---|
+| [`TranscriptReentryLayoutCacheTests.swift`](TranscriptReentryLayoutCacheTests.swift) | The bare `TranscriptScrollViewFactory.make → addSubview → layoutSubtreeIfNeeded → bindData → scrollToTail` sequence typesets each block at exactly one width inside one source-phase tick. |
+| [`TranscriptHostReentryLayoutCacheTests.swift`](TranscriptHostReentryLayoutCacheTests.swift) | Same property, but driven through real hosts: the AppKit demo VC (`TranscriptDemoViewController`) and the production session-switch path (`ChatSessionViewController.present(sessionId:)` → `attachSession`). Closes the gap between the factory test and host orchestration. |
+| [`TranscriptBackfillLayoutCacheTests.swift`](TranscriptBackfillLayoutCacheTests.swift) | **U1** — the single-width contract extended across multi-tick backfill: a real `TranscriptBackfillPipeline` cold-load (tail `.append` + several `.prepend` ticks) typesets each block at exactly one width and exactly once. Prepend ticks are cache hits (off-main precompute, 5b); a width-mismatched producer shows up as a second write at a second width. |
+| [`TranscriptBackfillAnchorTests.swift`](TranscriptBackfillAnchorTests.swift) | **U2/U3/U7/U8** — anchor invariant (prepend pins the visual-top row, clip shifts by the inserted height, no jitter over N ticks); in-tick stability (anchor correct before any runloop drain — the deleted `mutationCounter` regression); `.update`/`.replace` riding `.saveVisible` preserve the viewport mid-document; interleaved tail-append + head-prepend land at opposite ends without moving the anchor. |
+| [`TranscriptColdAttachTests.swift`](TranscriptColdAttachTests.swift) | **U4/U5/U6** — cold attach renders 0 rows then lands the tail page at the bottom; `blocks.count == numberOfRows` after every change in a mixed `prepend`/`append`/`replace`/`remove`/`update` sequence; warm re-entry into a `.loaded` session fires zero backfill typeset. |
+| [`TranscriptDetachedWarmTests.swift`](TranscriptDetachedWarmTests.swift) | **Detached layout warm** — a session mounted once (records its display width) then streamed N more blocks while detached pre-fills its layout cache off-main, so re-attaching recomputes **zero** rows on the main thread. Driven through `controller.apply` (the bridge's detached path) + the resident `mainThreadLayoutComputes` / `onLayoutCacheWriteForDebug` telemetry; no test-only hooks. |
+
+All six reuse an offscreen-window scaffold; the four mount-based probes (the three backfill probes + the detached-warm probe) share the [`Helpers/MountedTranscript.swift`](Helpers/MountedTranscript.swift) mount + geometry-sampling helper, while the two reentry probes each stand up their own window inline.
+
+When you add a new test that's "drive a real view + assert on a property at the boundary," follow these naming rules:
+
+- Filename: `<Subject>Tests.swift` (e.g. `TranscriptHostReentryLayoutCacheTests.swift`) — no `Snapshot` suffix.
+- Class name must match the filename (XCTest's runtime discovery + the skip-list script both key off the file name).
+- Attachment: text reports via `XCTAttachment(string:)` are fine; a PNG is fine if it helps debugging. The test passes / fails on `XCTAssert`, not on the human eyeball.
+- Don't reuse the snapshot test infrastructure's `ViewSnapshot.render` if your test only needs to assert on model state — that helper carries a long deliberate runloop drain that you usually don't want.
+
+### Probing AppKit attach sequences offscreen
+
+`TranscriptScrollFirstFrameSnapshotTests` is a different shape from the
+SwiftUI snapshot tests above and worth understanding before you write
+your own. It's a measurement harness: it drives the exact AppKit attach
+sequence used in production (`TranscriptScrollViewFactory.make` →
+`addSubview` + constraints → `view.layoutSubtreeIfNeeded()` →
+`TranscriptScrollViewFactory.bindData` → `controller.scrollToTail()`)
+inside an offscreen window, and samples state —
+`clip.bounds.origin.y`, `documentView.frame.height`, `numberOfRows`,
+`rect(ofRow:)` — at four named transition points: after factory.make,
+after layoutSubtreeIfNeeded+bindData, after scrollToTail (still source
+phase), and after one runloop drain. Each measurement is attached to the
+xcresult as a text report alongside a final-frame PNG.
+
+What this scaffold is good for:
+
+- Asserting on **model state** that a one-tick visual glitch should
+  show up in — clip origin, document height, row geometry — without
+  launching the app.
+- A/B'ing two variants of the same attach sequence: one with the
+  production factory, one with a duplicated factory-minus-some-call.
+- Verifying tick-model claims — `testTickModelLayoutDoesForceRowTileOnFrameChange`
+  examines whether `layoutSubtreeIfNeeded` cascades into NSTableView's
+  tile (it does, but only when `dataSource` is bound — the production
+  factory now defers that bind, which is exactly the point this test
+  is calibrated against).
+
+What it **cannot** observe:
+
+- **Live-window render-pipeline timing.** The PNG comes from
+  `bitmapImageRepForCachingDisplay`, which is a synchronous re-draw,
+  not an actual frame the render server composited. If the bug is
+  "the rendered first frame on a live window paints stale because the
+  prior CATransaction commit was already in flight," this scaffold
+  will pass while the live app still glitches. For that class of bug,
+  reach for the live-presentation scaffold below.
+- Anything that needs a key window / first responder / cursor flashing
+  — the test window has `alphaValue = 0.01` and goes through
+  `ccterm_orderFrontForTesting()` which skips the responder activation.
+
+### Probing the live render pipeline — display-link + `CALayer.presentation()`
+
+`TranscriptScrollLivePresentationSnapshotTests` is the next rung up.
+Same fixture as the offscreen scaffold above, plus a `CADisplayLink`
+attached to `NSScreen.main` that samples
+`(clip.bounds.origin.y, clip.layer?.presentation()?.bounds.origin.y)`
+on every screen refresh tick for ~30 frames. The first sample where
+`presentation` is non-nil is the first frame the render server actually
+composited — its origin is what a user would have seen.
+
+The display link runs off `NSScreen.main` (not `NSView.displayLink`) on
+purpose: the view's own link only fires when the view is visible on a
+screen, but the test window is at `(-30_000, -30_000)` with `alphaValue
+= 0.01`. The screen-level link fires unconditionally at the screen's
+refresh rate, which is what we want — we're sampling state every
+refresh tick, independent of whether the render server picked our
+specific window for compositing. The flush probe (`testCATransactionFlushPresentationTimeline`
+in the sibling file) already proved that the render server DOES composite
+this window — `presentation()` returns the post-flush value at tail.
+
+This scaffold confirms the **content layer** lands at tail on the first
+composited frame — `nil → tail` on consecutive refresh ticks, no
+intermediate `top-clamp` frame. That's necessary but not sufficient: an
+earlier investigation chased a content-origin hypothesis here and missed
+the real bug, which lived in
+`NSScrollView.verticalScroller.doubleValue` (the scroller-knob
+position, *not* the clip origin). The lesson is general: when a
+user-reported visual glitch doesn't reproduce here, expand the sampled
+dimensions before declaring the bug falsified. See
+`TranscriptScrollFirstFrameSnapshotTests.testScrollerKnobLandsAtTailAfterScrollToTail`
+for the scroller-knob regression gate that caught it.
+
+What this scaffold **still can't** observe:
+
+- **NSScrollView non-content state.** The scroller's `doubleValue` /
+  `knobProportion` / fade-in alpha are separate dimensions; sample them
+  explicitly if a glitch is reported in the chrome (the sibling test
+  above does this).
+- **Production sibling-view interactions.** In the real app the same
+  attach tick also lays out the top scrim, bottom scrim, and compose
+  host (all `NSHostingView`s). Any of those committing on the same
+  CATransaction could perturb timing in ways the bare-scroll harness
+  doesn't reproduce. To rule this out you would need to host
+  `ChatSessionViewController` directly in a test window — feasible
+  but a larger lift.
+- **WindowServer scheduling under load.** The render server can delay
+  compositing a window if its parent process is busy on the GPU /
+  another window is occluding etc. None of those reproduce in a quiet
+  test environment.
 
 ### Run policy — opt-in only
 
@@ -264,7 +397,7 @@ final class MyViewSnapshotTests: XCTestCase {
         //    Reuse production constants (widen `fileprivate` → `internal`
         //    if needed — access modifier only).
         let controller = MyController()
-        controller.loadInitial(MyView.initialFixture)
+        controller.apply(.append(MyView.initialFixture))
 
         // 2. Mount via the test-seam init; inject fresh environment.
         let view = MyView(controller: controller)

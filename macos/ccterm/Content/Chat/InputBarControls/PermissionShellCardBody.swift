@@ -32,7 +32,14 @@ struct PermissionShellCardBody: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             BoundedHeightScrollView(maxHeight: Self.commandMaxHeight) {
-                DiffView(diff: commandDiffBlock)
+                // Strip the codeblock-style chrome: the language pill
+                // would always read "bash" / "powershell" (redundant
+                // with the kind icon on the card), and the copy button
+                // hands out a command the user hasn't yet authorised.
+                DiffView(
+                    diff: commandDiffBlock,
+                    showsLangBadge: false,
+                    showsCopyIcon: false)
             }
             if let description = description, !description.isEmpty {
                 Text(description)

@@ -33,6 +33,11 @@ final class AgentSDKCLIClient: CLIClient {
         set { session.onMessage = newValue }
     }
 
+    var onStreamEvent: ((Message2StreamEvent) -> Void)? {
+        get { session.onStreamEvent }
+        set { session.onStreamEvent = newValue }
+    }
+
     var onPermissionRequest: ((PermissionRequest, @escaping (PermissionDecision) -> Void) -> Void)?
     {
         get { session.onPermissionRequest }
@@ -79,6 +84,12 @@ final class AgentSDKCLIClient: CLIClient {
         session.close()
     }
 
+    func closeAsync() async {
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            session.close { cont.resume() }
+        }
+    }
+
     // MARK: Control requests
 
     func initialize(
@@ -90,6 +101,20 @@ final class AgentSDKCLIClient: CLIClient {
 
     func interrupt(completion: @escaping ([String: Any]) -> Void) {
         session.interrupt(completion: completion)
+    }
+
+    func getContextUsage(
+        timeout: TimeInterval,
+        completion: @escaping (ContextUsageOutcome) -> Void
+    ) {
+        session.getContextUsage(timeout: timeout, completion: completion)
+    }
+
+    func askSideQuestion(
+        _ question: String,
+        completion: @escaping (SideQuestionOutcome) -> Void
+    ) {
+        session.askSideQuestion(question, completion: completion)
     }
 
     // MARK: Messaging

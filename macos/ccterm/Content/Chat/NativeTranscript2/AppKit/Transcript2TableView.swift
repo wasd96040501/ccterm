@@ -14,11 +14,13 @@ import AppKit
 ///    corrected.
 /// 3. **Text-selection tracking.** `mouseDown` enters a private event
 ///    loop (`NSApp.nextEvent(matching:)`) that consumes
-///    `leftMouseDragged`/`leftMouseUp` directly. Each drag tick updates
-///    `Transcript2SelectionCoordinator` and asks the clip view to
-///    autoscroll if the cursor has left the viewport. The cell forwards
-///    its mouseDown here for non-link clicks, so cell hit-tests don't
-///    suppress selection.
+///    `leftMouseDragged`/`leftMouseUp` — plus `scrollWheel`, which the
+///    loop forwards to the scroll view so the wheel keeps working
+///    mid-drag instead of being starved by the modal loop. Each drag
+///    tick updates `Transcript2SelectionCoordinator` and asks the clip
+///    view to autoscroll if the cursor has left the viewport. The cell
+///    forwards its mouseDown here for non-link clicks, so cell
+///    hit-tests don't suppress selection.
 ///
 /// ### Edit menu
 ///
@@ -41,19 +43,13 @@ final class Transcript2TableView: NSTableView, NSMenuItemValidation {
     override func viewWillStartLiveResize() {
         super.viewWillStartLiveResize()
         liveResizeStartWidth = frame.width
-        coordinator?.pushScrollerHidden()
     }
 
     override func viewDidEndLiveResize() {
         super.viewDidEndLiveResize()
-        // Order matters: kick off refillLayoutCache first (it pushes its
-        // own scroller-hidden token) before popping ours. Otherwise count
-        // would briefly hit zero between the two and the scroller would
-        // flicker visible.
         if abs(liveResizeStartWidth - frame.width) > 0.5 {
             coordinator?.refillLayoutCache()
         }
-        coordinator?.popScrollerHidden()
     }
 
     // MARK: - Selection: mouse tracking
@@ -115,6 +111,14 @@ final class Transcript2TableView: NSTableView, NSMenuItemValidation {
     /// while we're inside this loop. Same pattern NSTableView uses
     /// internally for its own drag tracking.
     ///
+    /// `.scrollWheel` is included in the mask on purpose: a private
+    /// tracking loop starves every event type it doesn't dequeue, so
+    /// without this the wheel / two-finger scroll is dead for the whole
+    /// duration of a selection drag. We forward each scroll event to the
+    /// enclosing scroll view so the content keeps moving, then re-extend
+    /// the selection to the cursor's new document position — the mouse
+    /// hasn't moved on screen, but the content scrolled underneath it.
+    ///
     /// `byWord` propagates into `updateSelection` so a double-click
     /// drag snaps to word boundaries on every tick. Single-click
     /// drag is character-precise.
@@ -123,7 +127,7 @@ final class Transcript2TableView: NSTableView, NSMenuItemValidation {
         byWord: Bool,
         coordinator: Transcript2Coordinator
     ) {
-        let mask: NSEvent.EventTypeMask = [.leftMouseDragged, .leftMouseUp]
+        let mask: NSEvent.EventTypeMask = [.leftMouseDragged, .leftMouseUp, .scrollWheel]
         while true {
             guard
                 let event = NSApp.nextEvent(
@@ -135,10 +139,22 @@ final class Transcript2TableView: NSTableView, NSMenuItemValidation {
 
             if event.type == .leftMouseUp { break }
 
+            if event.type == .scrollWheel {
+                // Let the user keep scrolling mid-selection. Forward to
+                // the scroll view; the content moves and the selection is
+                // re-extended below against the new doc-space cursor.
+                enclosingScrollView?.scrollWheel(with: event)
+            }
+
             let drag = convert(event.locationInWindow, from: nil)
             coordinator.selection.updateSelection(
                 from: start, to: drag, in: self, byWord: byWord)
-            autoscrollIfNeeded(cursorInDocCoord: drag)
+
+            // Edge autoscroll only applies to drag ticks — a scroll event
+            // is the user already driving the viewport themselves.
+            if event.type == .leftMouseDragged {
+                autoscrollIfNeeded(cursorInDocCoord: drag)
+            }
         }
     }
 

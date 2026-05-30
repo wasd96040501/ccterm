@@ -93,6 +93,58 @@ enum ViewSnapshot {
         return image
     }
 
+    /// Render an AppKit `NSViewController` at `size` and return the
+    /// resulting `NSImage`. Parallel to `render(_:size:settle:)` but
+    /// for AppKit-rooted hosts (demo / transcript VCs, the sidebar
+    /// outline view) that don't go through `NSHostingController`. Same
+    /// offscreen-window + alpha-0.01 + ccterm_orderFrontForTesting
+    /// scaffolding.
+    @MainActor
+    static func renderViewController(
+        _ controller: NSViewController,
+        size: CGSize,
+        settle: TimeInterval = 0.4
+    ) -> NSImage {
+        controller.view.frame = CGRect(origin: .zero, size: size)
+
+        let window = NSWindow(
+            contentRect: CGRect(
+                origin: CGPoint(x: -30_000, y: -30_000),
+                size: size),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false)
+        window.isReleasedWhenClosed = false
+        window.isExcludedFromWindowsMenu = true
+        window.alphaValue = 0.01
+        window.contentViewController = controller
+        window.ccterm_orderFrontForTesting()
+
+        controller.view.layoutSubtreeIfNeeded()
+
+        let deadline = Date().addingTimeInterval(settle)
+        while Date() < deadline {
+            RunLoop.main.run(
+                mode: .default,
+                before: Date(timeIntervalSinceNow: 0.02))
+        }
+        controller.view.layoutSubtreeIfNeeded()
+
+        let host = controller.view
+        guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else {
+            XCTFail("ViewSnapshot: bitmapImageRepForCachingDisplay returned nil")
+            return NSImage(size: size)
+        }
+        host.cacheDisplay(in: host.bounds, to: rep)
+
+        let image = NSImage(size: host.bounds.size)
+        image.addRepresentation(rep)
+
+        window.contentViewController = nil
+        window.close()
+        return image
+    }
+
     /// PNG-encode `image` and write it to `name.png` under the scratch
     /// directory (configurable via `CCTERM_SCREENSHOT_DIR`, defaults
     /// to `/tmp/ccterm-screenshots`). Returns the URL written.

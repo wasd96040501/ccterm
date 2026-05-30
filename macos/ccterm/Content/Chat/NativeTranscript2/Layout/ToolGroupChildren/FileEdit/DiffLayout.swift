@@ -155,7 +155,9 @@ struct DiffLayout: @unchecked Sendable {
         copyText: String,
         originX: CGFloat,
         originY: CGFloat,
-        maxWidth: CGFloat
+        maxWidth: CGFloat,
+        showsLangBadge: Bool = true,
+        showsCopyIcon: Bool = true
     ) -> DiffLayout {
         guard maxWidth > 0 else {
             return Self.empty()
@@ -320,26 +322,39 @@ struct DiffLayout: @unchecked Sendable {
         // Does not steal vertical space from the rows; sits on top of
         // whatever lines flow underneath it. Shares the
         // `CopyChrome.topRight` factory with `CodeBlockLayout` so the
-        // diff card and codeblock chrome read as one family.
-        let copy = CopyChrome.topRight(
-            of: container, id: copyButtonId, text: copyText)
+        // diff card and codeblock chrome read as one family. Callers
+        // that want a chrome-less card (e.g. the permission preview
+        // in the input bar) pass `showsCopyIcon: false`.
+        let copy =
+            showsCopyIcon
+            ? CopyChrome.topRight(
+                of: container, id: copyButtonId, text: copyText)
+            : nil
 
         // Language badge — overlay, left of the copy button at the
         // same vertical centre. `LanguageDetection.language(for:)`
         // returns lowercased highlight.js names; we render verbatim.
-        // Dropped when the language is unknown or the available width
-        // would force the pill to overlap the copy button.
-        let overlayCenterY =
-            copy?.center.y
-            ?? (container.minY
-                + BlockStyle.codeBlockChromeTopInset
-                + BlockStyle.gutterHitSize / 2)
-        let langName = LanguageDetection.language(for: diff.filePath)
-        let (langText, langBadgeRect) = makeLangBadge(
-            name: langName,
-            container: container,
-            copyHitRect: copy?.hitRect,
-            overlayCenterY: overlayCenterY)
+        // Dropped when the language is unknown, the available width
+        // would force the pill to overlap the copy button, or the
+        // caller suppressed the badge.
+        let langText: String?
+        let langBadgeRect: CGRect?
+        if showsLangBadge {
+            let overlayCenterY =
+                copy?.center.y
+                ?? (container.minY
+                    + BlockStyle.codeBlockChromeTopInset
+                    + BlockStyle.gutterHitSize / 2)
+            let langName = LanguageDetection.language(for: diff.filePath)
+            (langText, langBadgeRect) = makeLangBadge(
+                name: langName,
+                container: container,
+                copyHitRect: copy?.hitRect,
+                overlayCenterY: overlayCenterY)
+        } else {
+            langText = nil
+            langBadgeRect = nil
+        }
 
         return DiffLayout(
             containerRect: container,

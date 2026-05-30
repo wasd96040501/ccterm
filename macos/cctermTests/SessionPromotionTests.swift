@@ -168,15 +168,13 @@ final class SessionPromotionTests: XCTestCase {
         XCTAssertEqual(session.permissionMode, .acceptEdits)
     }
 
-    /// A draft-promoted runtime starts in `.loaded` history state and
-    /// a subsequent `loadHistory()` is a no-op — no `.reset` reaches the
-    /// bridge. Regression net for: switching away from a running fresh
-    /// session and coming back triggers `ChatHistoryView`'s `.task` to
-    /// call `loadHistory()`. Without this guarantee, Phase A re-parses
-    /// the JSONL the CLI has been writing live and `receive(_:.replay)`
-    /// re-`.append`s every echo (the original entries have already
-    /// flipped from `.queued` to `.confirmed`, so `matchQueuedEntry`
-    /// misses), producing duplicate messages.
+    /// A draft-promoted runtime starts in `.loaded` history state and a
+    /// subsequent `loadHistory()` is a no-op — no backfill pipeline starts.
+    /// Regression net for: switching away from a running fresh session and
+    /// coming back triggers `ChatSessionViewController.attachSession`'s
+    /// `loadHistory()` call. Without the `.loaded` guard the iterator would
+    /// re-read the JSONL the CLI has been writing live and duplicate the live
+    /// messages already in the controller.
     func testFromDraftMarksHistoryLoaded() {
         let session = ccterm.Session(
             draftSessionId: UUID().uuidString,
@@ -185,20 +183,19 @@ final class SessionPromotionTests: XCTestCase {
         )
         session.draft?.setCwd("/tmp/history-loaded")
 
-        var resetCount = 0
-        session.onMessagesChange = { change in
-            if case .reset = change { resetCount += 1 }
-        }
-
         session.send(text: "first")
 
         XCTAssertEqual(session.historyLoadState, .loaded)
+        let countAfterSend = session.controller.blockCount
 
-        // Re-entry from ChatHistoryView's perspective: calling
-        // `loadHistory()` again must be a no-op — no `.reset` fired.
+        // Re-entry from the transcript host's perspective: calling
+        // `loadHistory()` again must be a no-op — load state stays `.loaded`
+        // and no extra content is applied.
         session.loadHistory()
-        XCTAssertEqual(resetCount, 0, "loadHistory on a draft-promoted session must not fire .reset")
         XCTAssertEqual(session.historyLoadState, .loaded)
+        XCTAssertEqual(
+            session.controller.blockCount, countAfterSend,
+            "loadHistory on a draft-promoted session must not start a backfill")
     }
 
     /// A second send (now in `.active` phase) routes directly to the

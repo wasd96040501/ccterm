@@ -31,14 +31,16 @@ import Observation
 /// (`Transcript2EntryBridge`) — and wires the bridge to the runtime
 /// at session creation / promotion. This makes the bridge a continuous
 /// consumer of `runtime.onMessagesChange`: live CLI events flow into
-/// the controller's block list **even when no `ChatHistoryView` is
+/// the controller's block list **even when no transcript view is
 /// mounted**, so the user switching the sidebar to another session
 /// doesn't pause renderer-side processing for the session they left.
-/// `NativeTranscript2View` binds the controller's `coordinator`
+/// `ChatSessionViewController` binds the controller's `coordinator`
 /// (which has a `weak NSTableView`) to a fresh `NSTableView` on each
-/// mount; when no table is bound, the coordinator still updates its
-/// `blocks` array and skips AppKit calls — a re-attach triggers an
-/// automatic `reloadData()` via the coordinator's `tableView.didSet`.
+/// mount via `TranscriptScrollViewFactory.make`; when no table is bound,
+/// the coordinator still updates its `blocks` array and skips AppKit
+/// calls — a re-attach picks up the accumulated state through the host's
+/// `view.layoutSubtreeIfNeeded()`, which sizes the table from `.zero`
+/// to its real frame and drives `NSTableView.tile()` inline.
 @Observable
 @MainActor
 final class Session {
@@ -66,9 +68,10 @@ final class Session {
     // MARK: - Render-side state (continuous lifetime)
 
     /// Imperative transcript controller. Lives as long as the session
-    /// does — survives `ChatHistoryView` mount/dismount cycles. Views
-    /// read `session.controller` and hand it to `NativeTranscript2View`;
-    /// they never construct their own.
+    /// does — survives transcript-view mount/dismount cycles. Views
+    /// read `session.controller` and hand it to the transcript host
+    /// (production: `ChatSessionViewController`); they never
+    /// construct their own.
     let controller: Transcript2Controller
 
     /// Renderer-side translator: subscribes to the runtime's
@@ -79,6 +82,12 @@ final class Session {
     /// draft → active sessions — and stays wired for the session's
     /// entire lifetime.
     let bridge: Transcript2EntryBridge
+
+    /// History backfill pipeline, alive for the duration of one load. Created
+    /// by `loadHistory()` and retained so its off-main producer task isn't
+    /// torn down mid-flight. Re-entry is gated by `historyLoadState`, so at
+    /// most one ever runs per session.
+    @ObservationIgnored private var backfillPipeline: TranscriptBackfillPipeline?
 
     // MARK: - External hooks
 
@@ -115,6 +124,27 @@ final class Session {
     @ObservationIgnored var onTurnEnded: ((TurnEndedNotice) -> Void)? {
         didSet {
             runtime?.onTurnEnded = onTurnEnded
+        }
+    }
+
+    /// Live turn-token-usage sink for the AppKit running pill, forwarded to the
+    /// runtime when one exists. Imperative channel (no `@Observable`): the
+    /// runtime fires it synchronously at each `turnUsage` write. Re-attached in
+    /// `wireRuntimeMessagesSink` at promotion time.
+    @ObservationIgnored var onTurnUsageChange: ((TurnTokenUsage) -> Void)? {
+        didSet {
+            runtime?.onTurnUsageChange = onTurnUsageChange
+        }
+    }
+
+    /// Permission-prompt signal, forwarded to the runtime when one
+    /// exists. Same wiring shape as `onTurnEnded`: `SessionManager` routes
+    /// it into its own sink, which the notification service subscribes to.
+    /// Draft phase has no runtime, so the setter is a no-op there; the
+    /// wiring re-attaches in `wireRuntimeMessagesSink` at promotion time.
+    @ObservationIgnored var onPermissionPrompt: ((PermissionPromptNotice) -> Void)? {
+        didSet {
+            runtime?.onPermissionPrompt = onPermissionPrompt
         }
     }
 
@@ -198,9 +228,14 @@ final class Session {
             self.bridge.apply(change)
             self.onMessagesChange?(change)
         }
+        runtime.onTurnFinishedLive = { [weak self] in
+            self?.bridge.handleTurnFinished()
+        }
         runtime.onLaunchFailure = onLaunchFailure
         runtime.onRecordPersisted = onRecordPersisted
         runtime.onTurnEnded = onTurnEnded
+        runtime.onTurnUsageChange = onTurnUsageChange
+        runtime.onPermissionPrompt = onPermissionPrompt
     }
 
     // MARK: - Phase accessors
@@ -274,12 +309,70 @@ final class Session {
         runtime?.slashCommands ?? []
     }
 
+    var tasks: [BackgroundTask] {
+        runtime?.tasks ?? []
+    }
+
+    var todos: [TodoEntry] {
+        runtime?.todos ?? []
+    }
+
     var contextUsedTokens: Int {
         runtime?.contextUsedTokens ?? 0
     }
 
     var contextWindowTokens: Int {
         runtime?.contextWindowTokens ?? 0
+    }
+
+    /// Live token usage for the in-flight turn (fresh input + output, cache
+    /// excluded), shown beside the running pill. `.zero` for `.draft`
+    /// sessions and between turns.
+    var turnUsage: TurnTokenUsage {
+        runtime?.turnUsage ?? .zero
+    }
+
+    /// Most recent typed `get_context_usage` breakdown, if one has been
+    /// fetched. Always `nil` for `.draft` sessions and for `.active`
+    /// sessions before the popover ever opened.
+    var contextUsage: ContextUsage? {
+        runtime?.contextUsage
+    }
+
+    var contextUsageFetchedAt: Date? {
+        runtime?.contextUsageFetchedAt
+    }
+
+    var isFetchingContextUsage: Bool {
+        runtime?.isFetchingContextUsage ?? false
+    }
+
+    /// Fire a `get_context_usage` request for the running CLI. No-op on
+    /// `.draft` sessions; `.unsupported` is delivered to the completion
+    /// when the CLI is too old to respond.
+    func requestContextUsage(
+        timeout: TimeInterval = 3.0,
+        completion: ((ContextUsageOutcome) -> Void)? = nil
+    ) {
+        guard let runtime else {
+            completion?(.unsupported)
+            return
+        }
+        runtime.requestContextUsage(timeout: timeout, completion: completion)
+    }
+
+    /// Ask a `/btw`-style side question against the running CLI without
+    /// interrupting the current turn. On `.draft` sessions (no CLI yet) the
+    /// completion fires `.unsupported`. Completion runs on the main actor once.
+    func askSideQuestion(
+        _ question: String,
+        completion: @escaping (SideQuestionOutcome) -> Void
+    ) {
+        guard let runtime else {
+            completion(.unsupported)
+            return
+        }
+        runtime.askSideQuestion(question, completion: completion)
     }
 
     var isFocused: Bool {
@@ -377,6 +470,14 @@ final class Session {
         runtime?.stop()
     }
 
+    /// Async variant of `stop()` used by the app-quit shutdown path —
+    /// returns only after the CLI has actually exited (or after the
+    /// SDK's per-process graceful-shutdown timeout fires SIGTERM). On
+    /// a draft session, no runtime exists and this is a no-op.
+    func closeAsync() async {
+        await runtime?.closeAsync()
+    }
+
     func interrupt() {
         runtime?.interrupt()
     }
@@ -385,8 +486,43 @@ final class Session {
         runtime?.cancelMessage(id: id)
     }
 
-    func loadHistory(overrideURL: URL? = nil, tailTarget: Int = 80) {
-        runtime?.loadHistory(overrideURL: overrideURL, tailTarget: tailTarget)
+    /// Drive a one-shot reverse-streaming history load into the controller.
+    ///
+    /// Idempotent through `runtime.historyLoadState`: `.loading` / `.loaded`
+    /// are no-ops (the bridge has been streaming live events into the
+    /// controller the whole time, so a re-entered session needs no replay).
+    /// Drafts have no history.
+    ///
+    /// The pipeline applies blocks **directly** to `controller` (load path =
+    /// iterator → apply); the bridge handles only the live
+    /// path. History tool statuses route back through the bridge's historical
+    /// derivation so failed / completed colors survive.
+    func loadHistory(overrideURL: URL? = nil, firstPageEntryTarget: Int = 20) {
+        guard let runtime else { return }
+        switch runtime.historyLoadState {
+        case .loading, .loaded:
+            return
+        case .notLoaded:
+            break
+        }
+        runtime.historyLoadState = .loading
+
+        let url = overrideURL ?? runtime.historyJSONLURL
+        let pipeline = TranscriptBackfillPipeline(
+            source: JSONLReversePageSource(
+                url: url, firstPageEntryTarget: firstPageEntryTarget),
+            controller: controller,
+            onLoaded: { [weak self] in self?.runtime?.historyLoadState = .loaded },
+            onApplied: { [weak self] entries in
+                self?.bridge.pushHistoricalStatuses(for: entries)
+            })
+        self.backfillPipeline = pipeline
+        // Seed the off-main typeset width from the settled, clamped row width.
+        // `loadHistory` runs after the attach tick's `scrollToTail`, so the
+        // table geometry has settled and `controller.layoutWidth` is real
+        // Headless callers (no table) pass 0; their pages self-heal on the
+        // first real `heightOfRow`.
+        pipeline.start(width: controller.layoutWidth)
     }
 
     func generateTitle(from firstMessage: String) {
@@ -445,6 +581,13 @@ final class Session {
             // entry is in `runtime.messages` ready to be flushed by
             // `flushBootstrapBacklog` once the CLI hits `.idle`.
             runtime.ensureStarted()
+            // Async LLM title-gen against the first user message. Until
+            // it lands the row shows the first-message-derived title set
+            // inside `fromDraft`; success overwrites the title and fires
+            // `onRecordPersisted` so the sidebar re-reads `records`.
+            if let firstText = input.text {
+                runtime.generateTitle(from: firstText)
+            }
             onPromoted?(runtime)
         case .active(let runtime):
             forward(runtime)

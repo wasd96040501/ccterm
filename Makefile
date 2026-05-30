@@ -1,9 +1,10 @@
-.PHONY: build release dmg clean fmt fmt-check test-unit js-bundles icon help
+.PHONY: build release install dmg clean fmt fmt-check test-unit js-bundles logs icon help
 
 XCSTRINGS := macos/ccterm/Localizable.xcstrings
 FMT_XCSTRINGS := python3 macos/scripts/fmt-xcstrings.py
 SWIFT_FORMAT := swift-format
 SWIFT_SRC := macos/ccterm macos/cctermTests macos/AgentSDK/Sources
+PREFIX ?= /Applications
 
 # JSCore bundles — compiled from js/ on demand. Outputs are gitignored; the
 # `js-bundles` target rebuilds them when sources / lockfile change, so
@@ -26,8 +27,14 @@ build: js-bundles ## Build ccterm (Debug)
 release: js-bundles ## Build ccterm (Release)
 	./macos/scripts/build.sh release
 
+install: release ## Install Release build to $(PREFIX) (default: /Applications)
+	./macos/scripts/install.sh "$(PREFIX)"
+
 test-unit: js-bundles ## Run unit tests (cctermTests) — fast, parallel-safe
 	./macos/scripts/test-unit.sh "$(FILTER)"
+
+logs: ## Stream unified logs for THIS worktree's build product only (CONFIG=debug|release CATEGORY=Foo LEVEL=info|debug)
+	@CONFIG="$(CONFIG)" CATEGORY="$(CATEGORY)" LEVEL="$(LEVEL)" ./macos/scripts/logs.sh
 
 dmg: ## Create DMG installer (usage: make dmg APP=/path/to/ccterm.app)
 	@test -n "$(APP)" || (echo "Usage: make dmg APP=/path/to/ccterm.app" && exit 1)
@@ -65,4 +72,3 @@ fmt-check: ## Check formatting (CI)
 
 clean: ## Remove all build artifacts
 	rm -rf ~/Library/Developer/Xcode/DerivedData/ccterm-*
-	rm -rf ~/Library/Caches/ccterm-test-dd

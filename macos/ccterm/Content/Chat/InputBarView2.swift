@@ -135,7 +135,13 @@ struct InputBarView2: View {
     /// mode leaves this `nil` so the store goes through its cache
     /// (warmed by `CompletionPrewarmer`).
     var knownSlashCommands: [SlashCommand]? = nil
+    /// Storage key for the unsent draft. `nil` disables persistence
+    /// (used by `#Preview`). Chat mode passes the session id; compose
+    /// mode passes `InputDraftStore.newSessionKey` so the draft
+    /// survives the lazily-allocated `draftSessionId` regenerating.
+    var draftKey: String? = nil
 
+    @Environment(InputDraftStore.self) private var draftStore
     @State private var text: String = ""
     @State private var isFocused: Bool = false
     @State private var desiredCursorPosition: Int?
@@ -174,6 +180,51 @@ struct InputBarView2: View {
         .sheet(item: $previewImage) { item in
             ImagePreviewView(thumbnail: item.image)
         }
+        // Off-main load of the persisted draft. Re-fires on draftKey
+        // change (session switch). Only restores when the local state
+        // is still untouched — if the user started typing before the
+        // disk read returned, we throw the loaded value away rather
+        // than clobber in-flight input.
+        .task(id: draftKey) {
+            guard let key = draftKey else { return }
+            guard let draft = await draftStore.load(sessionId: key) else { return }
+            if text.isEmpty && attachments.isEmpty {
+                text = draft.text
+                attachments = draft.filePaths.map { Self.restoreFileAttachment(path: $0) }
+            }
+        }
+        .onChange(of: text) { _, _ in scheduleDraftSave() }
+        .onChange(of: attachments) { _, _ in scheduleDraftSave() }
+    }
+
+    /// Snapshot the bar's persistable state and hand it to the store.
+    /// Empty input routes through `save` too — the store turns an
+    /// empty draft into a `clear` so we never leave a zero-byte file
+    /// on disk.
+    private func scheduleDraftSave() {
+        guard let key = draftKey else { return }
+        let filePaths: [String] = attachments.compactMap { attachment in
+            if case .file(let path) = attachment.kind { return path }
+            return nil
+        }
+        draftStore.save(
+            InputDraft(text: text, filePaths: filePaths, updatedAt: Date()),
+            for: key
+        )
+    }
+
+    /// Rehydrate a `.file` attachment from a persisted path. The system
+    /// icon falls back to a generic file glyph when the file has moved
+    /// or been deleted since the draft was saved — the user can hit
+    /// the remove X to drop a stale entry.
+    private static func restoreFileAttachment(path: String) -> Attachment {
+        let url = URL(fileURLWithPath: path)
+        let icon = NSWorkspace.shared.icon(forFile: path)
+        return Attachment(
+            kind: .file(path: path),
+            thumbnail: icon,
+            filename: url.lastPathComponent
+        )
     }
 
     // MARK: - Pill
@@ -188,8 +239,7 @@ struct InputBarView2: View {
             if completion.isActive {
                 CompletionListView(
                     viewModel: completion,
-                    onConfirm: { item in confirmCompletion(item: item, keepSession: false) },
-                    onDrillDown: { item in confirmCompletion(item: item, keepSession: true) },
+                    onConfirm: { item in confirmCompletion(item: item) },
                     onDeleteRecent: { item in
                         guard let dirItem = item as? DirectoryCompletionItem else { return }
                         DirectoryCompletionProvider.removeFromRecent(dirItem.path)
@@ -198,7 +248,6 @@ struct InputBarView2: View {
                         }
                     }
                 )
-                .padding(.vertical, 4)
                 Divider()
             }
             if !attachments.isEmpty {
@@ -213,6 +262,7 @@ struct InputBarView2: View {
             }
         }
         .frame(minHeight: pillMinHeight)
+        .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius, style: .continuous))
         .barSurface(cornerRadius: Self.cornerRadius)
         .overlay {
             if isDropTargeted {
@@ -329,7 +379,7 @@ struct InputBarView2: View {
                 // while the popup is open confirms the highlighted
                 // entry rather than sending the half-typed message.
                 if completion.isActive,
-                    let result = completion.confirmSelection(keepSession: false)
+                    let result = completion.confirmSelection()
                 {
                     applyReplacement(result)
                     return
@@ -393,10 +443,23 @@ struct InputBarView2: View {
                 filePaths.append(path)
             }
         }
-        onSubmit(Submission(text: trimmed, images: images, filePaths: filePaths))
+        let submission = Submission(text: trimmed, images: images, filePaths: filePaths)
+        // Reset local state AND clear the persisted draft *before* handing
+        // off to `onSubmit`. In compose mode `onSubmit` promotes the draft
+        // and calls `model.select(.session(_))`, which now swaps the routed
+        // child VC **synchronously** — this view is torn down in the same
+        // source phase. After that teardown SwiftUI never re-evaluates the
+        // body, so the reactive `.onChange(of: text) → scheduleDraftSave`
+        // clear can't fire and the new-session draft would survive the send
+        // (reappearing on the next New Session). Clearing the store directly
+        // here is teardown-proof — it runs on the stack regardless.
         text = ""
         attachments = []
         completion.dismiss()
+        if let key = draftKey {
+            draftStore.clear(key)
+        }
+        onSubmit(submission)
     }
 
     // MARK: - Completion glue
@@ -426,8 +489,12 @@ struct InputBarView2: View {
         case 125:  // Down
             completion.moveSelectionDown()
             return true
-        case 48:  // Tab
-            if let result = completion.confirmSelection(keepSession: true) {
+        case 48, 36:  // Tab or Return — both confirm the highlighted item.
+            // The interceptor runs before InputNSTextView's send-key
+            // switch, so swallowing Return here confirms the completion
+            // instead of inserting a newline (the default in commandEnter
+            // mode).
+            if let result = completion.confirmSelection() {
                 applyReplacement(result)
             }
             return true
@@ -439,11 +506,11 @@ struct InputBarView2: View {
     /// Run a completion replacement: splice `result.replacement` into
     /// the text at `result.range` and move the cursor to the end of the
     /// inserted text via `desiredCursorPosition`.
-    private func confirmCompletion(item: any CompletionItem, keepSession: Bool) {
+    private func confirmCompletion(item: any CompletionItem) {
         guard completion.isActive else { return }
-        // Set selectedIndex by finding the item; CompletionListView taps
-        // already update selectedIndex before invoking the callback.
-        if let result = completion.confirmSelection(keepSession: keepSession) {
+        // CompletionListView taps already update selectedIndex before
+        // invoking the callback, so confirm the highlighted row.
+        if let result = completion.confirmSelection() {
             applyReplacement(result)
         }
     }
@@ -758,4 +825,7 @@ private struct PreviewImage: Identifiable {
         }
     }
     .frame(width: 800, height: 600)
+    .environment(
+        InputDraftStore(directory: URL(fileURLWithPath: NSTemporaryDirectory()))
+    )
 }

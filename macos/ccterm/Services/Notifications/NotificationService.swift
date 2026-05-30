@@ -2,8 +2,11 @@ import AppKit
 import Observation
 import UserNotifications
 
-/// Routes `TurnEndedNotice`s into the system Notification Center, and
-/// surfaces user clicks back to the UI by **pushing** them through the
+/// Routes session activity that needs the user's attention —
+/// `TurnEndedNotice` (an assistant turn finished) and
+/// `PermissionPromptNotice` (a session is blocked waiting for a tool
+/// approval) — into the system Notification Center, and surfaces user
+/// clicks back to the UI by **pushing** them through the
 /// `onActivateSession` callback.
 ///
 /// Lifetime: one instance, owned by `AppState`, lives for the whole app
@@ -84,17 +87,29 @@ final class NotificationService: NSObject {
     /// app is already active.
     func handleTurnEnded(_ notice: TurnEndedNotice) {
         guard !activation.isAppActive else { return }
-        post(notice: notice)
+        post(kind: "turnEnded", sessionId: notice.sessionId, title: notice.title, body: notice.body)
     }
 
-    private func post(notice: TurnEndedNotice) {
+    /// Entry point from `SessionManager.onPermissionPromptNotice`. Same
+    /// gating as `handleTurnEnded` — drops if the app is frontmost, since
+    /// the user already sees the permission card.
+    func handlePermissionPrompt(_ notice: PermissionPromptNotice) {
+        guard !activation.isAppActive else { return }
+        post(kind: "permission", sessionId: notice.sessionId, title: notice.title, body: notice.body)
+    }
+
+    /// Build + enqueue a Notification Center banner. `kind` only
+    /// distinguishes the request identifier so a turn-end banner and a
+    /// permission banner for the same session don't collide; both click
+    /// through to the same session via `userInfo["sessionId"]`.
+    private func post(kind: String, sessionId: String, title: String, body: String) {
         let content = UNMutableNotificationContent()
-        content.title = Self.flattened(notice.title)
-        content.body = Self.truncated(Self.flattened(notice.body))
+        content.title = Self.flattened(title)
+        content.body = Self.truncated(Self.flattened(body))
         content.sound = .default
-        content.userInfo = ["sessionId": notice.sessionId]
+        content.userInfo = ["sessionId": sessionId]
         let request = UNNotificationRequest(
-            identifier: "ccterm.turnEnded.\(notice.sessionId).\(UUID().uuidString)",
+            identifier: "ccterm.\(kind).\(sessionId).\(UUID().uuidString)",
             content: content,
             trigger: nil
         )

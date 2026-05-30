@@ -1,15 +1,13 @@
 // icon-art.js — single source of truth for the CCTerm app-icon geometry.
 //
-// DOM-free and dependency-free. Loaded two ways off the same file:
-//   • the design page (icon-capsule.html) pulls it in as a classic <script>
-//     (works over file://) and reads window.IconArt to draw the blueprint
-//     and the live preview;
-//   • the exporter (js/scripts/export-appicon.ts) imports it under Bun and
-//     calls IconArt.svg(...) to emit a real vector, then rasterises that SVG
-//     with @resvg/resvg-js.
+// DOM-free and dependency-free. The design page (icon-capsule.html) pulls it in
+// as a classic <script> (works over file://) and reads window.IconArt to draw
+// the blueprint and the live preview.
 //
-// Because both paths share this one module, editing the geometry here updates
-// the on-screen design AND the exported PNGs — nothing is duplicated.
+// The shipped app icon is produced via Icon Composer (macOS Tahoe / Liquid
+// Glass): `make icon` rasterises design/icon/AppIcon-foreground.svg — whose art
+// coordinates come from this same geometry — to a transparent 1024 PNG that you
+// drop into Icon Composer. The system supplies the rounding, margin, and shadow.
 
 (function () {
   const rad = (d) => (d * Math.PI) / 180;

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <!-- FOREGROUND ONLY — transparent background. For Icon Composer (macOS Tahoe
+       Liquid Glass): set the background fill to white INSIDE Icon Composer, and
+       drop this in as the foreground layer. Do NOT bake a white square here. -->
+  <defs>
+    <mask id="star" maskUnits="userSpaceOnUse" x="-60" y="-60" width="520" height="520">
+      <polygon points="188.44,207.15 163.19,314.08 56.26,288.84 81.50,181.90" fill="#FFFFFF"/>
+      <circle cx="256.18" cy="279.59" r="99.18" fill="#000000"/>
+      <circle cx="90.75" cy="381.83" r="99.18" fill="#000000"/>
+      <circle cx="-11.49" cy="216.40" r="99.18" fill="#000000"/>
+      <circle cx="153.94" cy="114.16" r="99.18" fill="#000000"/>
+    </mask>
+  </defs>
+  <!-- art at 1.0x (no scale), recentred on the canvas centre -->
+  <g transform="translate(200,200) scale(1.0) translate(-199.7,-212.0)">
+    <rect x="-60" y="-60" width="520" height="520" fill="#000000" mask="url(#star)"/>
+    <g transform="rotate(-31.717 295.013798005 141.276857495)">
+      <rect x="239.45" y="136.07" width="111.13" height="10.42" rx="5.21" ry="5.21" fill="#000000"/>
+    </g>
+  </g>
+</svg>

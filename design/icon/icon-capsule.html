@@ -133,21 +133,22 @@
           </g>
 
           <path id="heroEdge" class="squircle-edge" d=""/>
-          <rect class="golden-rect" x="0" y="76.393" width="400" height="247.214"/>
+          <!-- 黄金矩形：内嵌于「中间正方形」= squircle 最大内接方（边 347.279，绕中心缩放 S≈0.8682） -->
+          <rect class="golden-rect" x="26.3605" y="92.6847" width="347.279" height="214.6306"/>
 
           <!-- 两条轴：axis1 = P→D 即胶囊长轴方向 -->
-          <line class="axis axis1" x1="-30" y1="342.15" x2="430" y2="57.85"/>
-          <line class="axis" x1="-20" y1="44.0" x2="218.5" y2="430"/>
+          <line class="axis axis1" x1="0.3146" y1="323.4143" x2="399.6854" y2="76.5857"/>
+          <line class="axis" x1="8.9966" y1="64.5612" x2="216.0617" y2="399.6854"/>
 
           <path class="spiral" d="
-            M 400,323.607
-            A 247.214,247.214 0 0 0 152.786,76.393
-            A 152.786,152.786 0 0 0 0,229.180
-            A 94.427,94.427 0 0 0 94.428,323.607
-            A 58.359,58.359 0 0 0 152.786,265.247
-            A 36.068,36.068 0 0 0 116.718,229.180
-            A 22.291,22.291 0 0 0 94.428,251.470
-            A 13.777,13.777 0 0 0 108.205,265.247
+            M 373.6395,307.3153
+            A 214.6306,214.6306 0 0 0 159.0089,92.6847
+            A 132.6484,132.6484 0 0 0 26.3605,225.334
+            A 81.9813,81.9813 0 0 0 108.3427,307.3153
+            A 50.6671,50.6671 0 0 0 159.0089,256.6473
+            A 31.3141,31.3141 0 0 0 127.6948,225.334
+            A 19.353,19.353 0 0 0 108.3427,244.6861
+            A 11.9612,11.9612 0 0 0 120.3038,256.6473
           "/>
 
           <circle class="circ-aux" id="hCo0"/><circle class="circ-aux" id="hCo1"/>
@@ -155,15 +156,15 @@
           <circle class="circ-center" id="hCc0" r="1.6"/><circle class="circ-center" id="hCc1" r="1.6"/>
           <circle class="circ-center" id="hCc2" r="1.6"/><circle class="circ-center" id="hCc3" r="1.6"/>
 
-          <!-- 极点 P -->
-          <circle class="pole-ring" cx="110.557" cy="255.279" r="2.8"/>
-          <circle class="pole-dot"  cx="110.557" cy="255.279" r="1.4"/>
-          <text class="lbl-key" x="58" y="278">P (0.276, 0.638)</text>
+          <!-- 极点 P（缩放后；中间正方形内仍位于黄金比 0.276,0.638） -->
+          <circle class="pole-ring" cx="122.3458" cy="247.9931" r="2.8"/>
+          <circle class="pole-dot"  cx="122.3458" cy="247.9931" r="1.4"/>
+          <text class="lbl-key" x="76.716" y="267.7194">P (0.306, 0.620)</text>
 
           <!-- 胶囊中心 D（= 螺线 ∩ 轴1，长轴顺 P→D） -->
-          <circle class="d-ring" cx="309.438" cy="132.362" r="2.6"/>
-          <text class="lbl-key" x="244" y="100">D · 胶囊中心</text>
-          <text class="lbl" x="244" y="111">长轴顺 P→D 轴 (axis1)</text>
+          <circle class="d-ring" cx="295.0138" cy="141.2769" r="2.6"/>
+          <text class="lbl-key" x="238.2007" y="113.1803">D · 胶囊中心</text>
+          <text class="lbl" x="238.2007" y="122.7304">长轴顺 P→D 轴 (axis1)</text>
 
           <rect x="196.5" y="196.5" width="7" height="7" class="center-mark"/>
           <text class="lbl-key" x="209" y="203">中心 (0.5, 0.5)</text>
@@ -256,10 +257,16 @@
 
 <script>
   // ---- 几何常量 ----
-  const P  = { x: 110.557, y: 255.279 };
-  const e1 = { x: 0.8506508, y: -0.5257311 }; // 轴1 = P→D 方向
+  // 螺线参考方框：从 body-square(400) 收到「中间正方形」= squircle 最大内接方（边 347.279）。
+  // 整套黄金构造（黄金矩形/螺线/P/轴/星/D/胶囊）绕图标中心 (200,200) 等比缩放 S。
+  const CENTER = { x: 200, y: 200 };
+  const REF = 347.279;                 // squircle 最大内接正方形边长（每边内缩 26.36）
+  const S = REF / 400;                 // ≈ 0.8682
+  const sc = p => ({ x: CENTER.x + S * (p.x - CENTER.x), y: CENTER.y + S * (p.y - CENTER.y) });
+  const P  = sc({ x: 110.557, y: 255.279 });   // 极点（缩放后）
+  const e1 = { x: 0.8506508, y: -0.5257311 };  // 轴1 = P→D 方向（方向不随缩放变）
   const e2 = { x: 0.5257311, y:  0.8506508 };
-  const D  = { x: 309.438, y: 132.362 };
+  const D  = sc({ x: 309.438, y: 132.362 });   // 胶囊中心（缩放后）
   const CAP_ANGLE = Math.atan2(e1.y, e1.x) * 180 / Math.PI; // ≈ -31.7175°
 
   // ---- Apple 连续圆角 squircle ----
@@ -340,7 +347,8 @@
   const kEl = document.getElementById('kEl');
   const lenEl = document.getElementById('lenEl');
   const thkEl = document.getElementById('thkEl');
-  const lin = (a1, a2) => ({ x: P.x + a1 * e1.x + a2 * e2.x, y: P.y + a1 * e1.y + a2 * e2.y });
+  // 长度参数也按 S 缩放，使星/胶囊随整套构造等比缩进中间正方形
+  const lin = (a1, a2) => ({ x: P.x + a1 * S * e1.x + a2 * S * e2.x, y: P.y + a1 * S * e1.y + a2 * S * e2.y });
   const set = (id, attrs) => { const el = document.getElementById(id); for (const k in attrs) el.setAttribute(k, attrs[k]); };
 
   function render() {
@@ -351,6 +359,7 @@
 
     const r = m * k;
     const t = m * (1 - Math.sqrt(k * k - 1));
+    const rS = r * S;                 // 圆半径随整套构造缩放（位置已在 lin 内缩放）
 
     // 负空间星
     const Tpu = lin(t, 0), Tpv = lin(0, t), Tmu = lin(-t, 0), Tmv = lin(0, -t);
@@ -358,14 +367,15 @@
     const C = [lin(m, m), lin(-m, m), lin(-m, -m), lin(m, -m)];
     ['p', 'h'].forEach(pfx => {
       document.getElementById(pfx + 'Tips').setAttribute('points', tips);
-      C.forEach((c, i) => set(`${pfx}C${i}`, { cx: c.x.toFixed(2), cy: c.y.toFixed(2), r: r.toFixed(2) }));
+      C.forEach((c, i) => set(`${pfx}C${i}`, { cx: c.x.toFixed(2), cy: c.y.toFixed(2), r: rS.toFixed(2) }));
     });
 
-    // 胶囊：中心 D，长 capLen，厚 capThk，圆头 rx=ry=capThk/2，长轴顺 axis1
+    // 胶囊：中心 D，长 capLen，厚 capThk（均按 S 缩放），圆头 rx=ry=厚/2，长轴顺 axis1
+    const capL = capLen * S, capT = capThk * S;
     const capAttrs = {
-      x: (D.x - capLen / 2).toFixed(2), y: (D.y - capThk / 2).toFixed(2),
-      width: capLen, height: capThk,
-      rx: (capThk / 2).toFixed(2), ry: (capThk / 2).toFixed(2),
+      x: (D.x - capL / 2).toFixed(2), y: (D.y - capT / 2).toFixed(2),
+      width: capL.toFixed(2), height: capT.toFixed(2),
+      rx: (capT / 2).toFixed(2), ry: (capT / 2).toFixed(2),
     };
     ['pCap', 'hCap'].forEach(id => set(id, capAttrs));
     const rot = `rotate(${CAP_ANGLE.toFixed(3)} ${D.x} ${D.y})`;
@@ -374,7 +384,7 @@
 
     // 蓝图：构造圆轮廓 + 圆心
     C.forEach((c, i) => {
-      set(`hCo${i}`, { cx: c.x.toFixed(2), cy: c.y.toFixed(2), r: r.toFixed(2) });
+      set(`hCo${i}`, { cx: c.x.toFixed(2), cy: c.y.toFixed(2), r: rS.toFixed(2) });
       set(`hCc${i}`, { cx: c.x.toFixed(2), cy: c.y.toFixed(2) });
     });
 
@@ -382,9 +392,9 @@
     document.getElementById('mVal').textContent = m + ' u';
     document.getElementById('lenVal').textContent = capLen + ' u';
     document.getElementById('thkVal').textContent = capThk + ' u';
-    document.getElementById('roR').textContent = r.toFixed(1);
-    document.getElementById('roT').textContent = t.toFixed(1);
-    document.getElementById('roCap').textContent = `${capLen}×${capThk} u`;
+    document.getElementById('roR').textContent = rS.toFixed(1);
+    document.getElementById('roT').textContent = (t * S).toFixed(1);
+    document.getElementById('roCap').textContent = `${capL.toFixed(1)}×${capT.toFixed(1)} u`;
     document.getElementById('roFlat').textContent = (capLen / capThk).toFixed(2);
   }
 

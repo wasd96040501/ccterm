@@ -50,3 +50,6 @@ macos/ccterm/Resources/*.js
 # Stress-test corpus fetch cache (raw Gutenberg downloads)
 macos/scripts/.stress_corpus_cache/
 xcresult/
+
+# App-icon master, regenerated from the SVG by `make icon` (feed to Icon Composer)
+design/icon/AppIcon-foreground-1024.png

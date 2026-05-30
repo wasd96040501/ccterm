@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Icon · 胶囊星（实验） · macOS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400;1,500&family=JetBrains+Mono:wght@400;500&family=Spectral:ital,wght@0,300;0,400;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* 纯色：元素黑、底白，画廊用中性浅灰托底 */
+    --page: #E8E8EA; --tile: #FFFFFF; --element: #000000;
+    --ink: #111111; --ink-2: #3A3A3A; --ink-3: #8A8A8A; --ink-4: #C8C8C8;
+    --guide-1: #C8C8C8; --guide-2: #ABABAB; --guide-3: #8A8A8A; --guide-4: #5A5A5A;
+    --ghost: #DCDCDC;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: var(--page); color: var(--ink);
+    font-family: 'Spectral', Georgia, serif; font-weight: 300; line-height: 1.55;
+    min-height: 100vh; -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 1180px; margin: 0 auto; padding: 56px 48px 64px; }
+  header {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    border-bottom: 1px solid var(--ink); padding-bottom: 20px; margin-bottom: 36px;
+  }
+  .title-zh { font-family: 'Cormorant Garamond', serif; font-size: 40px; font-weight: 500; letter-spacing: -0.005em; line-height: 1; }
+  .title-en { font-family: 'Cormorant Garamond', serif; font-style: italic; font-weight: 400; font-size: 18px; color: var(--ink-3); margin-top: 8px; }
+  .badge { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--tile); background: var(--element); padding: 2px 7px; border-radius: 3px; margin-left: 10px; vertical-align: 4px; }
+  .meta { text-align: right; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.14em; line-height: 1.8; }
+  .meta .formula { font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 16px; text-transform: none; letter-spacing: 0; color: var(--ink); margin-top: 4px; }
+
+  .section-label {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--ink-3); margin: 4px 0 18px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .section-label::after { content: ''; flex: 1; height: 1px; background: var(--ink-4); }
+
+  .blueprint-wrap { display: flex; justify-content: center; margin-bottom: 44px; }
+  figure { display: flex; flex-direction: column; gap: 12px; align-items: center; }
+  .frame-blueprint {
+    background: var(--tile); border: 1px solid var(--ink-4);
+    width: 560px; height: 560px; position: relative; overflow: hidden;
+  }
+  @media (max-width: 640px) { .frame-blueprint { width: 92vw; height: 92vw; } }
+  svg.diagram { width: 100%; height: 100%; display: block; }
+
+  .ladder { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 30px 34px; }
+  .ladder figure { gap: 10px; }
+  .ladder svg { display: block; }
+
+  figcaption { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  figcaption .px { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 500; color: var(--ink); letter-spacing: 0.04em; }
+  figcaption .pt { font-family: 'JetBrains Mono', monospace; font-size: 8.5px; letter-spacing: 0.06em; color: var(--ink-3); white-space: nowrap; }
+  figcaption.blueprint-cap .px { font-size: 14px; }
+
+  /* 辅助线（单色灰阶） */
+  .pad-frame   { fill: none; stroke: var(--guide-1); stroke-width: 0.8; stroke-dasharray: 2 4; }
+  .body-square { fill: none; stroke: var(--guide-2); stroke-width: 0.8; opacity: 0.9; }
+  .squircle-edge { fill: none; stroke: var(--guide-4); stroke-width: 1.0; }
+  .golden-rect { fill: none; stroke: var(--guide-1); stroke-width: 0.6; stroke-dasharray: 2 3; }
+  .axis  { stroke: var(--guide-3); stroke-width: 0.8; stroke-dasharray: 5 4; fill: none; opacity: 0.8; }
+  .axis.axis1 { stroke: var(--ink); opacity: 0.5; stroke-dasharray: 6 4; }
+  .spiral { stroke: var(--guide-4); stroke-width: 1.0; stroke-dasharray: 4 3; fill: none; opacity: 0.7; }
+  .circ-aux { fill: none; stroke: var(--guide-3); stroke-width: 0.8; opacity: 0.75; }
+  .circ-center { fill: var(--guide-4); }
+  .ghost-star { fill: var(--ghost); }
+  .cap-ghost  { fill: #2A2A2A; }
+  .pole-ring { fill: none; stroke: var(--element); stroke-width: 1.1; }
+  .pole-dot  { fill: var(--element); }
+  .d-ring    { fill: none; stroke: var(--element); stroke-width: 1.1; }
+  .center-mark { fill: var(--element); }
+  text.lbl { font-family: 'JetBrains Mono', monospace; font-size: 8.5px; fill: var(--ink-3); }
+  text.lbl-key { font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: var(--ink); font-weight: 500; }
+
+  .tile { fill: var(--tile); }
+
+  /* 控制台（5 个滑块，自适应换行） */
+  .controls {
+    border: 1px solid var(--ink-4); background: var(--tile); margin-top: 44px;
+    padding: 22px 26px; display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: 26px 28px;
+  }
+  .ctrl { display: flex; flex-direction: column; gap: 8px; }
+  .ctrl .row { display: flex; justify-content: space-between; align-items: baseline; }
+  .ctrl label { font-family: 'JetBrains Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--ink-3); }
+  .ctrl .val { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--ink); font-weight: 500; }
+  .ctrl .hint { font-family: 'Spectral', Georgia, serif; font-style: italic; font-size: 12px; color: var(--ink-3); }
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 2px; background: var(--ink-4); outline: none; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 15px; height: 15px; border-radius: 50%; background: var(--element); cursor: pointer; border: 2px solid var(--tile); box-shadow: 0 0 0 1px var(--element); }
+  input[type=range]::-moz-range-thumb { width: 13px; height: 13px; border-radius: 50%; background: var(--element); cursor: pointer; border: 2px solid var(--tile); }
+
+  .readout { margin-top: 18px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--ink-3); display: flex; flex-wrap: wrap; gap: 6px 22px; }
+  .readout b { color: var(--ink); font-weight: 500; }
+
+  footer { margin-top: 36px; padding-top: 20px; border-top: 1px solid var(--ink-4);
+    display: flex; justify-content: space-between; gap: 24px;
+    font-family: 'Cormorant Garamond', serif; font-style: italic; font-size: 14px; color: var(--ink-3); }
+  footer .right { font-family: 'JetBrains Mono', monospace; font-style: normal; font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--ink); }
+  @media (max-width: 600px) { footer { flex-direction: column; gap: 8px; } }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div>
+      <div class="title-zh">胶囊星</div>
+      <div class="title-en">Capsule star · official macOS app icon · single source of truth</div>
+    </div>
+    <div class="meta">
+      macOS app icon · export via make appicon
+      <div class="formula">capsule ∥ axis1 (P→D) · center D</div>
+    </div>
+  </header>
+
+  <!-- 1：最大尺寸 + 辅助线（蓝图） -->
+  <div class="section-label">蓝图 · construction（仅最大尺寸 1024）</div>
+  <div class="blueprint-wrap">
+    <figure>
+      <div class="frame-blueprint">
+        <svg class="diagram" viewBox="-48.5437 -48.5437 497.0874 497.0874" xmlns="http://www.w3.org/2000/svg">
+          <rect class="pad-frame" x="-48.5437" y="-48.5437" width="497.0874" height="497.0874"/>
+          <rect class="body-square" x="0" y="0" width="400" height="400"/>
+
+          <path id="heroTile" class="tile" d="" filter="url(#tileShadow)"/>
+
+          <!-- 负空间星（蓝图浅灰幽灵填充）+ 胶囊（深灰幽灵） -->
+          <g clip-path="url(#squircleClip)">
+            <rect x="-60" y="-60" width="520" height="520" class="ghost-star" mask="url(#heroStarMask)"/>
+            <g id="gCapH"><rect id="hCap" class="cap-ghost"/></g>
+          </g>
+
+          <path id="heroEdge" class="squircle-edge" d=""/>
+          <!-- 黄金矩形：内嵌于「中间正方形」= squircle 最大内接方（边 347.279，绕中心缩放 S≈0.8682） -->
+          <rect class="golden-rect" x="26.3605" y="92.6847" width="347.279" height="214.6306"/>
+
+          <!-- 两条轴：axis1 = P→D 即胶囊长轴方向 -->
+          <line class="axis axis1" x1="0.3146" y1="323.4143" x2="399.6854" y2="76.5857"/>
+          <line class="axis" x1="8.9966" y1="64.5612" x2="216.0617" y2="399.6854"/>
+
+          <path class="spiral" d="
+            M 373.6395,307.3153
+            A 214.6306,214.6306 0 0 0 159.0089,92.6847
+            A 132.6484,132.6484 0 0 0 26.3605,225.334
+            A 81.9813,81.9813 0 0 0 108.3427,307.3153
+            A 50.6671,50.6671 0 0 0 159.0089,256.6473
+            A 31.3141,31.3141 0 0 0 127.6948,225.334
+            A 19.353,19.353 0 0 0 108.3427,244.6861
+            A 11.9612,11.9612 0 0 0 120.3038,256.6473
+          "/>
+
+          <circle class="circ-aux" id="hCo0"/><circle class="circ-aux" id="hCo1"/>
+          <circle class="circ-aux" id="hCo2"/><circle class="circ-aux" id="hCo3"/>
+          <circle class="circ-center" id="hCc0" r="1.6"/><circle class="circ-center" id="hCc1" r="1.6"/>
+          <circle class="circ-center" id="hCc2" r="1.6"/><circle class="circ-center" id="hCc3" r="1.6"/>
+
+          <!-- 极点 P（缩放后；中间正方形内仍位于黄金比 0.276,0.638） -->
+          <circle class="pole-ring" cx="122.3458" cy="247.9931" r="2.8"/>
+          <circle class="pole-dot"  cx="122.3458" cy="247.9931" r="1.4"/>
+          <text class="lbl-key" x="76.716" y="267.7194">P (0.306, 0.620)</text>
+
+          <!-- 胶囊中心 D（= 螺线 ∩ 轴1，长轴顺 P→D） -->
+          <circle class="d-ring" cx="295.0138" cy="141.2769" r="2.6"/>
+          <text class="lbl-key" x="238.2007" y="113.1803">D · 胶囊中心</text>
+          <text class="lbl" x="238.2007" y="122.7304">长轴顺 P→D 轴 (axis1)</text>
+
+          <rect x="196.5" y="196.5" width="7" height="7" class="center-mark"/>
+          <text class="lbl-key" x="209" y="203">中心 (0.5, 0.5)</text>
+
+          <text class="lbl" x="-46" y="-30">canvas 1024 · pad 100</text>
+          <text class="lbl" x="6" y="416">body 824 · r = 0.225·body · continuous · capsule ∥ axis1</text>
+        </svg>
+      </div>
+      <figcaption class="blueprint-cap">
+        <span class="px">1024 px · construction</span>
+        <span class="pt">512pt @2x · master geometry</span>
+      </figcaption>
+    </figure>
+  </div>
+
+  <!-- N：每个 macOS size 一张成品（胶囊） -->
+  <div class="section-label">成品 · all macOS sizes（纯色 · 元素黑 / 底白 · 胶囊）</div>
+  <div class="ladder" id="ladder"></div>
+
+  <!-- 控制台 -->
+  <div class="controls">
+    <div class="ctrl">
+      <div class="row"><label>① 圆半径 r/d</label><span class="val" id="kVal"></span></div>
+      <input type="range" id="kEl" min="102" max="140" step="1" value="102">
+      <span class="hint">星的尖锐度：越接近 √2 越尖小。</span>
+    </div>
+    <div class="ctrl">
+      <div class="row"><label>② 圆心距 d</label><span class="val" id="mVal"></span></div>
+      <input type="range" id="mEl" min="55" max="165" step="1" value="112">
+      <span class="hint">四圆心离星心 P 的对角距离，控制整体尺度。</span>
+    </div>
+    <div class="ctrl">
+      <div class="row"><label>③ 胶囊长度</label><span class="val" id="lenVal"></span></div>
+      <input type="range" id="lenEl" min="16" max="150" step="1" value="128">
+      <span class="hint">沿 P→D 轴的总长。长度=厚度时退化为圆。</span>
+    </div>
+    <div class="ctrl">
+      <div class="row"><label>④ 胶囊厚度 / 扁平</label><span class="val" id="thkVal"></span></div>
+      <input type="range" id="thkEl" min="6" max="44" step="1" value="12">
+      <span class="hint">厚度越小越扁平（长宽比越大）。</span>
+    </div>
+  </div>
+
+  <div class="readout">
+    <span>r = <b id="roR"></b></span>
+    <span>tip 距 P = <b id="roT"></b></span>
+    <span>胶囊 = <b id="roCap"></b></span>
+    <span>扁平比 L/W = <b id="roFlat"></b></span>
+    <span>朝向 = <b>−31.72° (axis1)</b></span>
+  </div>
+
+  <footer>
+    <span>右上修饰元素由圆改为胶囊：中心固定在 D，长轴顺着 P→D 轴（星心·画布中心·D 三点共线）。长度与扁平可调，一套滑块驱动全部尺寸。</span>
+    <span class="right">iteration 08 · capsule · 1 + 7</span>
+  </footer>
+</div>
+
+<!-- 共享定义 -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <clipPath id="squircleClip" clipPathUnits="userSpaceOnUse">
+      <path id="clipSqPath" d=""/>
+    </clipPath>
+    <mask id="prodStarMask" maskUnits="userSpaceOnUse" x="-60" y="-60" width="520" height="520">
+      <polygon id="pTips" points="" fill="white"/>
+      <circle id="pC0" fill="black"/><circle id="pC1" fill="black"/>
+      <circle id="pC2" fill="black"/><circle id="pC3" fill="black"/>
+    </mask>
+    <mask id="heroStarMask" maskUnits="userSpaceOnUse" x="-60" y="-60" width="520" height="520">
+      <polygon id="hTips" points="" fill="white"/>
+      <circle id="hC0" fill="black"/><circle id="hC1" fill="black"/>
+      <circle id="hC2" fill="black"/><circle id="hC3" fill="black"/>
+    </mask>
+    <filter id="tileShadow" x="-25%" y="-25%" width="150%" height="160%">
+      <feDropShadow dx="0" dy="7" stdDeviation="11" flood-color="#1A1A1A" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+
+  <!-- 成品图标：白 tile + 黑色负空间星 + 黑色胶囊，全部裁到 squircle。
+       macOS 网格：squircle 内缩在 1024 画布的 824/1024（留 ~10% 边），无自烤阴影（系统统一加）。 -->
+  <symbol id="iconArt" viewBox="-48.5437 -48.5437 497.0874 497.0874">
+    <path id="symTile" fill="#FFFFFF" d=""/>
+    <g clip-path="url(#squircleClip)">
+      <rect x="-60" y="-60" width="520" height="520" fill="#000000" mask="url(#prodStarMask)"/>
+      <g id="gCapP">
+        <rect id="pCap" fill="#000000"/>
+      </g>
+    </g>
+  </symbol>
+</svg>
+
+<script src="icon-art.js"></script>
+<script>
+  // 几何与 squircle 全部来自共享模块 icon-art.js —— 同一份 source of truth，
+  // 既驱动本页（蓝图 + 成品预览），也驱动导出脚本生成的矢量/PNG。
+  const SQ = IconArt.SQUIRCLE;
+  ['clipSqPath', 'symTile', 'heroTile', 'heroEdge'].forEach(id => document.getElementById(id).setAttribute('d', SQ));
+
+  // ---- macOS 尺寸：1 蓝图 + 7 成品 ----
+  const SIZES = [
+    { px: 1024, pt: '512pt @2x' },
+    { px: 512,  pt: '512pt @1x · 256pt @2x' },
+    { px: 256,  pt: '256pt @1x · 128pt @2x' },
+    { px: 128,  pt: '128pt @1x' },
+    { px: 64,   pt: '32pt @2x' },
+    { px: 32,   pt: '32pt @1x · 16pt @2x' },
+    { px: 16,   pt: '16pt @1x' },
+  ];
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  const ladder = document.getElementById('ladder');
+  for (const s of SIZES) {
+    const fig = document.createElement('figure');
+    const svg = document.createElementNS(SVGNS, 'svg');
+    svg.setAttribute('viewBox', '-48.5437 -48.5437 497.0874 497.0874');
+    svg.setAttribute('width', s.px);
+    svg.setAttribute('height', s.px);
+    const use = document.createElementNS(SVGNS, 'use');
+    use.setAttribute('href', '#iconArt');
+    use.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', '#iconArt');
+    use.setAttribute('x', '-48.5437');
+    use.setAttribute('y', '-48.5437');
+    use.setAttribute('width', '497.0874');
+    use.setAttribute('height', '497.0874');
+    svg.appendChild(use);
+    const cap = document.createElement('figcaption');
+    cap.innerHTML = `<span class="px">${s.px} px</span><span class="pt">${s.pt}</span>`;
+    fig.appendChild(svg);
+    fig.appendChild(cap);
+    ladder.appendChild(fig);
+  }
+
+  // ---- 滑块 → 几何 ----
+  const mEl = document.getElementById('mEl');
+  const kEl = document.getElementById('kEl');
+  const lenEl = document.getElementById('lenEl');
+  const thkEl = document.getElementById('thkEl');
+  const set = (id, attrs) => { const el = document.getElementById(id); for (const k in attrs) el.setAttribute(k, attrs[k]); };
+
+  function render() {
+    const g = IconArt.geometry({
+      m: +mEl.value, k: +kEl.value / 100, capLen: +lenEl.value, capThk: +thkEl.value,
+    });
+
+    // 负空间星 + 构造圆：成品(p) 与 蓝图(h) 共用同一组几何
+    ['p', 'h'].forEach(pfx => {
+      document.getElementById(pfx + 'Tips').setAttribute('points', g.tips);
+      g.circles.forEach((c, i) => set(`${pfx}C${i}`, c));
+    });
+
+    // 胶囊：中心 D，长轴顺 axis1
+    ['pCap', 'hCap'].forEach(id => set(id, g.capsule));
+    set('gCapP', { transform: g.capTransform });
+    set('gCapH', { transform: g.capTransform });
+
+    // 蓝图：构造圆轮廓 + 圆心
+    g.circles.forEach((c, i) => {
+      set(`hCo${i}`, c);
+      set(`hCc${i}`, { cx: c.cx, cy: c.cy });
+    });
+
+    const mx = g.metrics;
+    document.getElementById('kVal').textContent = mx.k.toFixed(2) + ' ×d';
+    document.getElementById('mVal').textContent = mx.m + ' u';
+    document.getElementById('lenVal').textContent = mx.capLen + ' u';
+    document.getElementById('thkVal').textContent = mx.capThk + ' u';
+    document.getElementById('roR').textContent = mx.rS.toFixed(1);
+    document.getElementById('roT').textContent = mx.tS.toFixed(1);
+    document.getElementById('roCap').textContent = `${mx.capL.toFixed(1)}×${mx.capT.toFixed(1)} u`;
+    document.getElementById('roFlat').textContent = mx.flat.toFixed(2);
+  }
+
+  [mEl, kEl, lenEl, thkEl].forEach(el => el.addEventListener('input', render));
+  render();
+</script>
+</body>
+</html>

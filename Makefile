@@ -1,4 +1,4 @@
-.PHONY: build release install dmg clean fmt fmt-check test-unit js-bundles logs help
+.PHONY: build release install dmg clean fmt fmt-check test-unit js-bundles logs icon help
 
 XCSTRINGS := macos/ccterm/Localizable.xcstrings
 FMT_XCSTRINGS := python3 macos/scripts/fmt-xcstrings.py
@@ -46,6 +46,17 @@ dmg: ## Create DMG installer (usage: make dmg APP=/path/to/ccterm.app)
 		--app-drop-link 450 190 \
 		ccterm.dmg \
 		"$(APP)"
+
+# App-icon master for Icon Composer (macOS Tahoe / Liquid Glass): a 1024px
+# TRANSPARENT foreground PNG (black star + wand, no white square, no shadow).
+# Drop the output into Icon Composer, set its background to white there, and
+# save AppIcon.icon — the system supplies the rounding, margin, and shadow.
+ICON_SRC := design/icon/AppIcon-foreground.svg
+ICON_OUT ?= design/icon/AppIcon-foreground-1024.png
+icon: ## Generate the transparent app-icon master for Icon Composer (ICON_OUT=path)
+	cd js && bun install --frozen-lockfile && \
+		bun run scripts/render-svg.ts ../$(ICON_SRC) ../$(ICON_OUT) 1024
+	@echo "master → $(ICON_OUT)  (drop into Icon Composer; bg = white there)"
 
 fmt: ## Format Swift sources and localization strings
 	$(SWIFT_FORMAT) format --parallel --in-place --recursive $(SWIFT_SRC)

@@ -183,15 +183,51 @@ jobs:
           xcrun stapler staple "$APP_PATH"
           xcrun stapler validate "$APP_PATH"
 
-      - name: Package release asset
+      - name: Build, sign & notarize DMG
         id: pkg
+        env:
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           APP_PATH='${{ steps.app.outputs.path }}'
           VERSION="${GITHUB_REF_NAME#v}"
-          ASSET="ccterm-${VERSION}.zip"
-          # Re-zip AFTER stapling so the downloaded artifact carries the ticket.
-          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$GITHUB_WORKSPACE/$ASSET"
+          ASSET="ccterm-${VERSION}.dmg"
+
+          # `make dmg` wraps create-dmg into the standard drag-to-Applications
+          # layout: 600x400 window, app icon @150,190, Applications alias @450,190.
+          # Built from the already-stapled app so the dragged-out app is trusted
+          # offline too. create-dmg is a Homebrew formula, not preinstalled.
+          brew list create-dmg >/dev/null 2>&1 || brew install create-dmg
+          rm -f ccterm.dmg
+          make dmg APP="$APP_PATH"
+
+          # Sign the disk image itself (Developer ID + secure timestamp).
+          codesign --force --timestamp --sign "Developer ID Application" ccterm.dmg
+
+          # Notarize + staple the DMG so the download itself passes Gatekeeper
+          # offline (same self-diagnosing pattern as the app step above).
+          OUT=$(xcrun notarytool submit ccterm.dmg \
+            --apple-id "$NOTARY_APPLE_ID" \
+            --password "$NOTARY_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait --output-format json) || true
+          echo "$OUT"
+          SUBMIT_ID=$(echo "$OUT" | python3 -c 'import sys,json;print(json.load(sys.stdin).get("id",""))')
+          STATUS=$(echo "$OUT"  | python3 -c 'import sys,json;print(json.load(sys.stdin).get("status",""))')
+          if [ "$STATUS" != "Accepted" ]; then
+            echo "::error::DMG notarization status=$STATUS — dumping Apple's log:"
+            xcrun notarytool log "$SUBMIT_ID" \
+              --apple-id "$NOTARY_APPLE_ID" \
+              --password "$NOTARY_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" || true
+            exit 1
+          fi
+          xcrun stapler staple ccterm.dmg
+          xcrun stapler validate ccterm.dmg
+
+          mv ccterm.dmg "$GITHUB_WORKSPACE/$ASSET"
           echo "asset=$ASSET" >> "$GITHUB_OUTPUT"
 
       - name: Publish GitHub Release

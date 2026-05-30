@@ -361,6 +361,20 @@ final class Session {
         runtime.requestContextUsage(timeout: timeout, completion: completion)
     }
 
+    /// Ask a `/btw`-style side question against the running CLI without
+    /// interrupting the current turn. On `.draft` sessions (no CLI yet) the
+    /// completion fires `.unsupported`. Completion runs on the main actor once.
+    func askSideQuestion(
+        _ question: String,
+        completion: @escaping (SideQuestionOutcome) -> Void
+    ) {
+        guard let runtime else {
+            completion(.unsupported)
+            return
+        }
+        runtime.askSideQuestion(question, completion: completion)
+    }
+
     var isFocused: Bool {
         switch phase {
         case .draft(let d): return d.isFocused

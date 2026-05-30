@@ -115,6 +115,26 @@ final class FakeCLIClient: CLIClient {
         call.completion(outcome)
     }
 
+    struct SideQuestionCall {
+        let question: String
+        let completion: (SideQuestionOutcome) -> Void
+    }
+    private(set) var sideQuestionCalls: [SideQuestionCall] = []
+
+    func askSideQuestion(
+        _ question: String,
+        completion: @escaping (SideQuestionOutcome) -> Void
+    ) {
+        sideQuestionCalls.append(SideQuestionCall(question: question, completion: completion))
+    }
+
+    /// Drive the oldest queued `askSideQuestion(...)` completion.
+    func completeSideQuestion(_ outcome: SideQuestionOutcome) {
+        guard !sideQuestionCalls.isEmpty else { return }
+        let call = sideQuestionCalls.removeFirst()
+        call.completion(outcome)
+    }
+
     // MARK: - Messaging
 
     func sendMessage(_ text: String, extra: [String: Any]) {

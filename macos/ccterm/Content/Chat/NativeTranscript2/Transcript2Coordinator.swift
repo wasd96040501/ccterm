@@ -368,9 +368,25 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             insertBlocks(after: nil, new, in: table)
 
         case .append(let new):
-            // Intrinsic position: tail. `blocks.last?.id == nil` (empty table)
-            // collapses to an index-0 insert, which is the correct first land.
-            insertBlocks(after: blocks.last?.id, new, in: table)
+            // Intrinsic position: tail — but keep the trailing loading pill
+            // pinned at the very end. If the last row is the pill, anchor the
+            // new content *before* it; otherwise an appended block lands after
+            // the pill and the ensuing `reconcileLoadingPill()` tears the pill
+            // out and re-appends it. That remove+reinsert reflows the
+            // just-inserted block, reading as a "rise from below" on the first
+            // assistant block of a turn (the pill is present only while running,
+            // so user bubbles — which arrive before `setLoading` — never hit it,
+            // matching the symptom: only the assistant's first block jumps).
+            // Anchoring before the pill makes the reconcile a no-op, leaving the
+            // block's plain `.effectFade` fade-in with no positional motion.
+            // `blocks.last?.id == nil` on an empty table collapses to index 0.
+            let appendAnchor: UUID?
+            if let last = blocks.last, case .loadingPill = last.kind {
+                appendAnchor = blocks.count >= 2 ? blocks[blocks.count - 2].id : nil
+            } else {
+                appendAnchor = blocks.last?.id
+            }
+            insertBlocks(after: appendAnchor, new, in: table)
 
         case .replace(let oldIds, let newBlocks):
             // Segment swap: remove the contiguous `oldIds` and insert

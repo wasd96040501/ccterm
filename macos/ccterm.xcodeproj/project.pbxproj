@@ -209,7 +209,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "export PATH=\"/usr/local/go/bin:/opt/homebrew/bin:$HOME/go/bin:$PATH\"\nif ! command -v go &>/dev/null; then\n  echo \"error: Go is required. Install from https://go.dev/dl/\"\n  exit 1\nfi\nFZF_DIR=\"$SRCROOT/../thirdparty/fzf\"\nFZF_BIN=\"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Resources/fzf\"\nif [ ! -f \"$FZF_BIN\" ]; then\n  if [ ! -f \"$FZF_DIR/go.mod\" ]; then\n    git -C \"$SRCROOT/..\" submodule update --init thirdparty/fzf\n  fi\n  cd \"$FZF_DIR\"\n  CGO_ENABLED=0 go build -trimpath -o \"$FZF_BIN\" .\nfi\nif [ -n \"$EXPANDED_CODE_SIGN_IDENTITY\" ]; then\n  codesign --force --options runtime --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" \"$FZF_BIN\"\nfi\n";
+			shellScript = "export PATH=\"/usr/local/go/bin:/opt/homebrew/bin:$HOME/go/bin:$PATH\"\nif ! command -v go &>/dev/null; then\n  echo \"error: Go is required. Install from https://go.dev/dl/\"\n  exit 1\nfi\nFZF_DIR=\"$SRCROOT/../thirdparty/fzf\"\nFZF_BIN=\"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Resources/fzf\"\nif [ ! -f \"$FZF_BIN\" ]; then\n  if [ ! -f \"$FZF_DIR/go.mod\" ]; then\n    git -C \"$SRCROOT/..\" submodule update --init thirdparty/fzf\n  fi\n  cd \"$FZF_DIR\"\n  CGO_ENABLED=0 go build -trimpath -o \"$FZF_BIN\" .\nfi\nif [ -n \"$EXPANDED_CODE_SIGN_IDENTITY\" ]; then\n  TS=\"\"\n  [ \"$EXPANDED_CODE_SIGN_IDENTITY\" != \"-\" ] && TS=\"--timestamp\"\n  codesign --force --options runtime $TS --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" \"$FZF_BIN\"\nfi\n";
 		};
 		EA5A17402F5E000000DD0001 /* Inject git commit */ = {
 			isa = PBXShellScriptBuildPhase;

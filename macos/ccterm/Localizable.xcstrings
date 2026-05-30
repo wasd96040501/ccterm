@@ -2226,6 +2226,16 @@
         }
       }
     },
+    "Permission required to use %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请求使用 %@ 的权限"
+          }
+        }
+      }
+    },
     "Pick a project on the left to begin.": {
       "localizations": {
         "zh-Hans": {

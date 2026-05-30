@@ -29,6 +29,14 @@ final class AppState {
             notifications.handleTurnEnded(notice)
         }
 
+        // Same plumbing for "a session is waiting on a permission
+        // decision." A pending permission blocks the turn (no turn-end
+        // signal fires), so this is the only banner the user gets when
+        // the app is backgrounded and Claude needs approval to proceed.
+        sessionManager.onPermissionPromptNotice = { [notifications] notice in
+            notifications.handlePermissionPrompt(notice)
+        }
+
         // Eagerly load the syntax highlight engine in the background so the
         // first `highlightBatch` call doesn't pay the JSCore / highlight.js
         // init cost (~30ms) on the user-facing path. `.utility` priority keeps

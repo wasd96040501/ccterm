@@ -750,6 +750,20 @@ extension SessionRuntime {
             }
         )
         pendingPermissions.append(pending)
+
+        // Surface "your input is needed" through the same sink that posts
+        // a turn-end banner. A pending permission blocks the turn, so the
+        // `.responding` → `.idle` edge that drives `onTurnEnded` never
+        // fires while the card is up; without this a backgrounded app gets
+        // no banner at all. Fire unconditionally — the subscriber gates on
+        // app focus, exactly like the turn-end path.
+        let displayTitle = title.isEmpty ? String(localized: "Untitled") : title
+        onPermissionPrompt?(
+            PermissionPromptNotice(
+                sessionId: sessionId,
+                title: displayTitle,
+                body: String(localized: "Permission required to use \(request.toolName)")
+            ))
     }
 
     fileprivate func handleProcessExit(_ code: Int32) {

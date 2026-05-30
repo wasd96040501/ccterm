@@ -31,6 +31,23 @@ struct TurnEndedNotice {
     let body: String
 }
 
+/// Payload for "this session is asking the user to approve a tool
+/// call." Produced by `SessionRuntime` the moment a `PermissionRequest`
+/// is enqueued (the permission card appears) and consumed by the
+/// notification service the same way `TurnEndedNotice` is. A pending
+/// permission *pauses* the turn, so the `.responding` → `.idle` edge
+/// that drives `TurnEndedNotice` never fires while the card is up —
+/// without this notice a backgrounded app would surface no banner until
+/// the user happened to look back at the window. Values are already
+/// user-display ready: `title` is the session's display title with the
+/// empty-state fallback applied; `body` names the tool awaiting
+/// approval.
+struct PermissionPromptNotice {
+    let sessionId: String
+    let title: String
+    let body: String
+}
+
 /// A background bash task spawned by the CLI's `Bash` tool with
 /// `run_in_background: true`. Tracked off the transcript timeline so we
 /// can surface live status in the input bar's task popover instead of

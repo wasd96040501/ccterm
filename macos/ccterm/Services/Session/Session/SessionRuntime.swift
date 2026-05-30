@@ -200,6 +200,17 @@ final class SessionRuntime {
     /// in the first place.
     @ObservationIgnored var onTurnFinishedLive: (() -> Void)?
 
+    /// Fired when a new `PermissionRequest` is appended to
+    /// `pendingPermissions` — i.e. the permission card just appeared and
+    /// the turn is now blocked on a user decision. Mirrors `onTurnEnded`'s
+    /// closure-injected shape: the subscriber (SessionManager →
+    /// NotificationService) decides whether to post a banner, gated on app
+    /// focus. A blocked turn never reaches the `.responding` → `.idle`
+    /// edge, so `onTurnEnded` does not fire for it — this is the only
+    /// signal that surfaces "your input is needed" while the app is in the
+    /// background.
+    @ObservationIgnored var onPermissionPrompt: ((PermissionPromptNotice) -> Void)?
+
     /// Hook installed during the bootstrap init wait so
     /// `handleProcessExit` can route "died before init" back into the
     /// bootstrap continuation. Without it, `initialize` would never

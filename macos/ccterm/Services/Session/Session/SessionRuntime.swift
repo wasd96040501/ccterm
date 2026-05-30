@@ -311,16 +311,6 @@ final class SessionRuntime {
     /// Completions queued while a `getContextUsage` is in flight. All
     /// fire with the same outcome when the in-flight request settles.
     @ObservationIgnored internal var contextUsagePendingCallbacks: [(ContextUsageOutcome) -> Void] = []
-
-    /// Per-session `/btw` thread. The CLI host answers each `side_question`
-    /// statelessly (`threadHistory: false`) and the control request carries
-    /// only the question string, so consecutive side questions are linked
-    /// **client-side**: each real Q&A is recorded here and embedded into the
-    /// next question (see `SessionRuntime+SideQuestion`). Capped at the same
-    /// 20 turns the CLI's own `/btw` overlay keeps. Never written to the main
-    /// transcript. Mutated only by `SessionRuntime+SideQuestion`.
-    @ObservationIgnored var sideQuestionThread: [SideQuestionTurn] = []
-
     internal(set) var slashCommands: [SlashCommand] = []
 
     /// Command descriptions keyed by name, sourced from the desc-rich

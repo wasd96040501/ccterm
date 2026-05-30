@@ -375,6 +375,12 @@ final class Session {
         runtime.askSideQuestion(question, completion: completion)
     }
 
+    /// Forget this session's `/btw` thread so the next side question starts
+    /// fresh. No-op on `.draft` sessions.
+    func clearSideQuestionThread() {
+        runtime?.clearSideQuestionThread()
+    }
+
     var isFocused: Bool {
         switch phase {
         case .draft(let d): return d.isFocused

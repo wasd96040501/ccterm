@@ -60,6 +60,66 @@ final class SideQuestionTests: XCTestCase {
         XCTAssertEqual(synthetic, true)
     }
 
+    func testConsecutiveQuestionsAreThreadedClientSide() async throws {
+        let fake = FakeCLIClient()
+        let session = try await makeActivatedSession(client: fake)
+
+        // Q1: first in the thread — sent verbatim, no prior context embedded.
+        let exp1 = expectation(description: "q1")
+        session.askSideQuestion("my favorite number is 4242") { _ in exp1.fulfill() }
+        XCTAssertEqual(fake.sideQuestionCalls.count, 1)
+        XCTAssertEqual(
+            fake.sideQuestionCalls[0].question, "my favorite number is 4242",
+            "first question carries no thread preamble")
+        fake.completeSideQuestion(.answer(SideQuestionAnswer(response: "noted", synthetic: false)))
+        await fulfillment(of: [exp1], timeout: 2.0)
+
+        // Q2: the prior real Q&A must be embedded into the outgoing question.
+        let exp2 = expectation(description: "q2")
+        session.askSideQuestion("what was it?") { _ in exp2.fulfill() }
+        let q2 = try XCTUnwrap(fake.sideQuestionCalls.last?.question)
+        XCTAssertTrue(q2.contains("my favorite number is 4242"), "prior question embedded")
+        XCTAssertTrue(q2.contains("noted"), "prior answer embedded")
+        XCTAssertTrue(q2.contains("what was it?"), "current question present")
+        fake.completeSideQuestion(.answer(SideQuestionAnswer(response: "4242", synthetic: false)))
+        await fulfillment(of: [exp2], timeout: 2.0)
+    }
+
+    func testSyntheticAnswersAreNotThreaded() async throws {
+        let fake = FakeCLIClient()
+        let session = try await makeActivatedSession(client: fake)
+
+        let exp1 = expectation(description: "q1")
+        session.askSideQuestion("read my file") { _ in exp1.fulfill() }
+        fake.completeSideQuestion(
+            .answer(SideQuestionAnswer(response: "(tried to call Read)", synthetic: true)))
+        await fulfillment(of: [exp1], timeout: 2.0)
+
+        // A synthetic (non-answer) must not pollute the thread. The outgoing
+        // question is recorded synchronously, so assert on it directly.
+        session.askSideQuestion("hello") { _ in }
+        XCTAssertEqual(
+            fake.sideQuestionCalls.last?.question, "hello",
+            "synthetic prior turn was not embedded")
+    }
+
+    func testClearThreadResetsContext() async throws {
+        let fake = FakeCLIClient()
+        let session = try await makeActivatedSession(client: fake)
+
+        let exp1 = expectation(description: "q1")
+        session.askSideQuestion("number is 4242") { _ in exp1.fulfill() }
+        fake.completeSideQuestion(.answer(SideQuestionAnswer(response: "noted", synthetic: false)))
+        await fulfillment(of: [exp1], timeout: 2.0)
+
+        session.clearSideQuestionThread()
+
+        session.askSideQuestion("what was it?") { _ in }
+        XCTAssertEqual(
+            fake.sideQuestionCalls.last?.question, "what was it?",
+            "cleared thread carries no prior context")
+    }
+
     func testUnsupportedPassesThrough() async throws {
         let fake = FakeCLIClient()
         let session = try await makeActivatedSession(client: fake)

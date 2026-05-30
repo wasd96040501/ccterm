@@ -426,8 +426,16 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
         }
         session.loadHistory()
         session.controller.setLoading(session.isRunning)
+        // turnUsage rides the imperative channel: push the current value once on
+        // mount, then let `onTurnUsageChange` drive live updates (the runtime
+        // fires it synchronously at each write — no observation pull).
+        session.controller.setTurnUsage(session.turnUsage)
+        session.onTurnUsageChange = { [weak self, weak session] usage in
+            guard let self, let session, self.currentSession === session else { return }
+            session.controller.setTurnUsage(usage)
+        }
 
-        // Re-arm the `isRunning` → `setLoading` sink (cancels the old).
+        // Re-arm the `isRunning` → controller sink (cancels the old).
         startRunningObservation(for: session)
 
         // Synchronous path: drop the outgoing transcript last, now that the

@@ -32,6 +32,9 @@ extension SessionRuntime {
             break
         }
         appLog(.info, "SessionRuntime", "stop() close agent \(sessionId)")
+        // Snap any half-typed streaming preview to its full text before the
+        // CLI tears down — no more deltas are coming.
+        finalizeStreamingOnTermination()
         cliClient?.close()
     }
 
@@ -98,6 +101,9 @@ extension SessionRuntime {
     /// draft-to-runtime promotion path (the runtime receives an already-
     /// titled draft); inside the runtime, `send` does not touch `title`.
     private func enqueueAndSend(_ input: LocalUserInput) {
+        // A new user turn starts — drop the prior turn's streaming state
+        // (token totals reset to zero, any stale preview mapping cleared).
+        resetStreamingTurn()
         let single = SingleEntry(
             id: UUID(),
             payload: .localUser(input),
@@ -701,6 +707,15 @@ extension SessionRuntime {
             }
         }
 
+        // Partial-message stream (gated by `includePartialMessages`). Folds
+        // into live assistant text + turn token usage; see
+        // `SessionRuntime+Streaming`.
+        session.onStreamEvent = { [weak self] event in
+            Task { @MainActor [weak self] in
+                self?.consumeStreamEvent(event)
+            }
+        }
+
         session.onPermissionRequest = { [weak self] request, completion in
             Task { @MainActor [weak self] in
                 guard let self else {
@@ -793,6 +808,8 @@ extension SessionRuntime {
         // Process is dead — no `.result` will arrive for any in-flight turn,
         // so clear isRunning explicitly to keep the spinner from getting stuck.
         isRunning = false
+        // …and no more deltas, so snap any half-typed streaming preview whole.
+        finalizeStreamingOnTermination()
 
         for pending in pendingPermissions {
             pending.respond(.deny(reason: "Process exited"))

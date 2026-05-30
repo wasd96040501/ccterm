@@ -49,8 +49,16 @@ struct SubviewPlan: @unchecked Sendable {
     /// present.
     let loadingDots: LoadingDots?
 
+    /// Live turn-token-usage counter drawn beside the running dots.
+    /// Emitted by `LoadingPillLayout` when the turn has counted any
+    /// tokens. Rendered in a dedicated `LoadingPillUsageView` (not the
+    /// cell bitmap) so the digits can roll up — odometer style — as
+    /// `setTurnUsage` reloads the pill row each tick. `nil` before any
+    /// tokens accrue (and on non-pill rows).
+    let usage: UsageCounter?
+
     static let empty = SubviewPlan(
-        chevrons: [], entries: [], shimmers: [], loadingDots: nil)
+        chevrons: [], entries: [], shimmers: [], loadingDots: nil, usage: nil)
 
     /// One spinning glyph attached to a foldable header. The cell
     /// owns a `CAShapeLayer` keyed by `id`, snaps `transform.rotation.z`
@@ -138,6 +146,20 @@ struct SubviewPlan: @unchecked Sendable {
     struct LoadingDots: @unchecked Sendable {
         let frame: CGRect
         let tintColor: NSColor
+    }
+
+    /// Live turn-token-usage spec. The cell hosts a single
+    /// `LoadingPillUsageView` that renders `↑in ↓out` and rolls each
+    /// number toward its new target. `frame` is cell-local placement;
+    /// `inputTokens` / `outputTokens` are the raw (cache-excluded) turn
+    /// totals — the view abbreviates and tweens them. `font` / `color`
+    /// match the chrome tier the layout reserved width for.
+    struct UsageCounter: @unchecked Sendable {
+        let frame: CGRect
+        let inputTokens: Int
+        let outputTokens: Int
+        let font: NSFont
+        let color: NSColor
     }
 
     /// One layer-backed body subview. The cell hosts a

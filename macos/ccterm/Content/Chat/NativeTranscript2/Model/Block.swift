@@ -517,6 +517,17 @@ enum BlockStyle: Sendable {
         .secondaryLabelColor
     }
 
+    /// Font for the live turn-token-usage label drawn to the right of the
+    /// running dots. 11pt — matches the codeblock chrome tier so the ambient
+    /// counter reads as chrome, not content.
+    nonisolated static var loadingPillUsageFont: NSFont {
+        NSFont.systemFont(ofSize: 11, weight: .regular)
+    }
+    /// Tertiary so the running counter sits a tier quieter than the dots.
+    nonisolated static let loadingPillUsageColor: NSColor = .tertiaryLabelColor
+    /// Gap between the running dots and the usage label.
+    nonisolated static let loadingPillUsageGap: CGFloat = 8
+
     /// Cap for image height — wide-and-tall sources don't dominate the viewport.
     nonisolated static let imageMaxHeight: CGFloat = 360
 

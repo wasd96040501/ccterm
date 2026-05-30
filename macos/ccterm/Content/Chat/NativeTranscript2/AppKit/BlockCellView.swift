@@ -273,6 +273,13 @@ final class BlockCellView: NSView {
     /// goes `nil` (pill gone / row recycled to another kind).
     var loadingDotsImageView: NSImageView?
 
+    /// Live turn-token-usage counter drawn to the right of the running
+    /// dots. A dedicated subview (not the cell bitmap) so the number can
+    /// roll up — odometer style — as `setTurnUsage` reloads the pill row
+    /// each tick. Reused across `reloadData(forRowIndexes:)` so the tween
+    /// state survives. Cleared when the plan's `usage` goes `nil`.
+    var loadingPillUsageView: LoadingPillUsageView?
+
     /// Set by `beginFoldTransition` just before the coordinator's
     /// `reloadData`. Tells the upcoming `syncSubviewPlan()` to route
     /// entry-frame updates through `view.animator()` so each entry

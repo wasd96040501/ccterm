@@ -133,6 +133,12 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// reloads that single row.
     private var statusStates: [UUID: ToolStatus] = [:]
 
+    /// Live token usage for the in-flight turn, drawn to the right of the
+    /// running pill. Single value (there is at most one pill), so it lives
+    /// as a scalar rather than a sparse dict. `makeLayout`'s `.loadingPill`
+    /// arm reads it; `setTurnUsage(_:)` is the single mutation entry.
+    private var turnUsage: TurnTokenUsage = .zero
+
     init(syntaxEngine: SyntaxHighlightEngine? = nil) {
         self.selection = Transcript2SelectionCoordinator()
         self.search = Transcript2SearchCoordinator()
@@ -675,7 +681,8 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             for: block, width: width,
             highlights: highlightStorage.snapshot(),
             folds: foldStates,
-            statuses: statusStates)
+            statuses: statusStates,
+            turnUsage: turnUsage)
         layoutCache[block.id] = CachedLayout(width: width, layout: layout)
         // Hot path — count only (one integer bump), never log here. The
         // summary is logged once per attach by reading the delta (see
@@ -700,7 +707,8 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         for block: Block, width: CGFloat,
         highlights: [Transcript2HighlightKey: HighlightValue] = [:],
         folds: [UUID: Bool] = [:],
-        statuses: [UUID: ToolStatus] = [:]
+        statuses: [UUID: ToolStatus] = [:],
+        turnUsage: TurnTokenUsage = .zero
     ) -> RowLayout {
         let contentWidth = max(0, width - 2 * BlockStyle.blockHorizontalPadding)
         switch block.kind {
@@ -778,8 +786,10 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             // Intrinsic size — `contentWidth` is unused (pill is a
             // small chip that doesn't fill the column). Kept
             // `nonisolated static` so the off-main precompute paths
-            // (`refillLayoutCache`, the backfill builder) can call it.
-            return .loadingPill(LoadingPillLayout.make())
+            // (`refillLayoutCache`, the backfill builder) can call it;
+            // those pass the default `.zero` usage, and `setTurnUsage`
+            // evicts + reloads the pill row to land the live figure.
+            return .loadingPill(LoadingPillLayout.make(usage: turnUsage))
         }
     }
 
@@ -937,6 +947,29 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// absent = `.completed`). Symmetric with `setStatus(id:status:)`.
     func status(for id: UUID) -> ToolStatus {
         statusStates[id] ?? .completed
+    }
+
+    /// Update the live turn token usage shown beside the running pill.
+    /// Same posture as `setStatus`: store the value, evict the pill row's
+    /// cached layout, and reload that single row. The pill layout reserves
+    /// constant height whether or not a usage label is present, so there's
+    /// no `noteHeightOfRows`. No-op when the value is unchanged or there's
+    /// no pill row currently installed (the value is still stored so the
+    /// next pill insert reads it via `makeLayout`).
+    func setTurnUsage(_ usage: TurnTokenUsage) {
+        guard usage != turnUsage else { return }
+        turnUsage = usage
+        guard let table = tableView else { return }
+        guard
+            let row = blocks.firstIndex(where: {
+                if case .loadingPill = $0.kind { return true }
+                return false
+            })
+        else { return }
+        removeCachedLayout(for: blocks[row].id)
+        table.reloadData(
+            forRowIndexes: IndexSet(integer: row),
+            columnIndexes: IndexSet(integer: 0))
     }
 
     /// Bulk-clear every `.running` entry to `.completed`. `.failed` and

@@ -33,6 +33,11 @@ final class AgentSDKCLIClient: CLIClient {
         set { session.onMessage = newValue }
     }
 
+    var onStreamEvent: ((Message2StreamEvent) -> Void)? {
+        get { session.onStreamEvent }
+        set { session.onStreamEvent = newValue }
+    }
+
     var onPermissionRequest: ((PermissionRequest, @escaping (PermissionDecision) -> Void) -> Void)?
     {
         get { session.onPermissionRequest }

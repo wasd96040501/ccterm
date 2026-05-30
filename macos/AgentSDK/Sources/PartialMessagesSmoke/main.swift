@@ -138,6 +138,7 @@ session.onMessage = { (msg: Message2) in
         case .taskProgress: label = "system.taskProgress"
         case .taskStarted: label = "system.taskStarted"
         case .taskUpdated: label = "system.taskUpdated"
+        case .thinkingTokens: label = "system.thinkingTokens"
         case .turnDuration: label = "system.turnDuration"
         case .unknown(let n, _): label = "system.unknown(\(n))"
         }

@@ -127,6 +127,16 @@ final class Session {
         }
     }
 
+    /// Live turn-token-usage sink for the AppKit running pill, forwarded to the
+    /// runtime when one exists. Imperative channel (no `@Observable`): the
+    /// runtime fires it synchronously at each `turnUsage` write. Re-attached in
+    /// `wireRuntimeMessagesSink` at promotion time.
+    @ObservationIgnored var onTurnUsageChange: ((TurnTokenUsage) -> Void)? {
+        didSet {
+            runtime?.onTurnUsageChange = onTurnUsageChange
+        }
+    }
+
     /// Permission-prompt signal, forwarded to the runtime when one
     /// exists. Same wiring shape as `onTurnEnded`: `SessionManager` routes
     /// it into its own sink, which the notification service subscribes to.
@@ -224,6 +234,7 @@ final class Session {
         runtime.onLaunchFailure = onLaunchFailure
         runtime.onRecordPersisted = onRecordPersisted
         runtime.onTurnEnded = onTurnEnded
+        runtime.onTurnUsageChange = onTurnUsageChange
         runtime.onPermissionPrompt = onPermissionPrompt
     }
 
@@ -312,6 +323,13 @@ final class Session {
 
     var contextWindowTokens: Int {
         runtime?.contextWindowTokens ?? 0
+    }
+
+    /// Live token usage for the in-flight turn (fresh input + output, cache
+    /// excluded), shown beside the running pill. `.zero` for `.draft`
+    /// sessions and between turns.
+    var turnUsage: TurnTokenUsage {
+        runtime?.turnUsage ?? .zero
     }
 
     /// Most recent typed `get_context_usage` breakdown, if one has been

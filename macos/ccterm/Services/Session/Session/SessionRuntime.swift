@@ -244,6 +244,56 @@ final class SessionRuntime {
     internal(set) var contextUsedTokens: Int = 0
     internal(set) var contextWindowTokens: Int = 0
 
+    /// Token usage for the in-flight turn — fresh input + output only
+    /// (cache excluded). Reset on each `send`, updated live from the
+    /// partial-message stream (`streamingAssembler`) and reconciled against
+    /// finalized `.assistant` envelopes. Surfaced beside the running pill.
+    ///
+    /// The running pill is an AppKit surface, so this rides the **imperative**
+    /// channel — every write goes through `publishTurnUsage`, which fires
+    /// `onTurnUsageChange` synchronously at the mutation site (no `@Observable`,
+    /// no `withObservationTracking` pull). Kept as a plain stored value (not
+    /// observed) only so a freshly-attached transcript can read the current
+    /// total once on mount.
+    @ObservationIgnored internal(set) var turnUsage: TurnTokenUsage = .zero
+
+    /// Imperative sink for `turnUsage` changes (AppKit pill). Fired
+    /// synchronously by `publishTurnUsage`. Forwarded from `Session`.
+    @ObservationIgnored var onTurnUsageChange: ((TurnTokenUsage) -> Void)?
+
+    /// Per-turn folder for SSE partial-message events (`onStreamEvent`).
+    /// Off the observation path — `turnUsage` and the streaming-text preview
+    /// are its observable / pushed projections. See `SessionRuntime+Streaming`.
+    @ObservationIgnored internal var streamingAssembler = StreamingTurnAssembler()
+
+    /// CLI `message.id` → the timeline entry id of its live streaming-text
+    /// preview. The finalized `.assistant` envelope reuses this entry id so
+    /// the preview converges in place (no duplicate, no flicker). Cleared
+    /// per turn. See `SessionRuntime+Streaming`.
+    @ObservationIgnored internal var streamingPreviewEntryIds: [String: UUID] = [:]
+
+    /// Coalescing guard for the streaming usage flush — collapses a burst of
+    /// usage-bearing stream events into one pill-counter publish per runloop
+    /// tick. (Streaming *text* no longer rides this; it is paced by the
+    /// typewriter frame ticker.)
+    @ObservationIgnored internal var streamingFlushScheduled = false
+
+    /// The in-flight streaming message's typewriter reveal — a single active
+    /// reveal at a time. A new `message_start` snaps the previous one and
+    /// starts fresh. `nil` when no assistant message is streaming. The
+    /// `frameTicker` advances its `head` per frame; see
+    /// `SessionRuntime+Streaming`.
+    @ObservationIgnored internal var activeReveal: TypewriterReveal?
+
+    /// Whether the `frameTicker` is currently driving `activeReveal`. Guards
+    /// the start/stop so a burst of deltas doesn't re-arm the ticker.
+    @ObservationIgnored internal var typewriterRunning = false
+
+    /// Frame timer that paces the typewriter reveal. Injected so tests can
+    /// step it deterministically (`ManualFrameTicker`); production uses
+    /// `TimerFrameTicker`. See `SessionRuntime+Streaming`.
+    @ObservationIgnored internal let frameTicker: FrameTicker
+
     /// Most-recent typed `get_context_usage` response from the CLI. `nil`
     /// until the popover has fetched at least once. The popover reads
     /// this directly so the panel can render synchronously on re-open;
@@ -372,11 +422,17 @@ final class SessionRuntime {
     init(
         sessionId: String,
         repository: any SessionRepository,
-        cliClientFactory: @escaping CLIClientFactory = AgentSDKCLIClient.defaultFactory
+        cliClientFactory: @escaping CLIClientFactory = AgentSDKCLIClient.defaultFactory,
+        frameTicker: FrameTicker? = nil
     ) {
         self.sessionId = sessionId
         self.repository = repository
         self.cliClientFactory = cliClientFactory
+        // Default to the production timer here (inside the @MainActor init)
+        // rather than as a default argument — a @MainActor initializer can't be
+        // evaluated in the nonisolated default-argument context. Tests inject a
+        // `ManualFrameTicker`.
+        self.frameTicker = frameTicker ?? TimerFrameTicker()
         if let record = repository.find(sessionId) {
             hasRecord = true
             apply(record)

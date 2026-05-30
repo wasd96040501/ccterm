@@ -73,6 +73,7 @@ extension BlockCellView {
         applyEntryPlan(plan.entries, animateFrames: animateFrames)
         applyShimmerPlan(plan.shimmers)
         applyLoadingDotsPlan(plan.loadingDots)
+        applyUsagePlan(plan.usage)
     }
 
     /// Coordinator entry point for a fold toggle. Captures the
@@ -519,6 +520,35 @@ extension BlockCellView {
     /// renders a glyph whose natural bounding box (~17×4) lines up
     /// with `BlockStyle.loadingPillWidth/Height`.
     nonisolated private static let loadingDotsSymbolPointSize: CGFloat = 13
+
+    // MARK: - Usage counter
+
+    /// Reconcile the live token-usage counter against `spec`. Hosts a single
+    /// `LoadingPillUsageView` reused across `reloadData(forRowIndexes:)` so the
+    /// odometer-style roll state carries through each `setTurnUsage` tick.
+    /// Cleared when the spec goes `nil` (turn counted no tokens yet, or the row
+    /// recycled to another kind).
+    private func applyUsagePlan(_ spec: SubviewPlan.UsageCounter?) {
+        guard let spec else {
+            if let view = loadingPillUsageView {
+                view.removeFromSuperview()
+                loadingPillUsageView = nil
+            }
+            return
+        }
+        let view: LoadingPillUsageView
+        if let existing = loadingPillUsageView {
+            view = existing
+        } else {
+            view = LoadingPillUsageView(frame: spec.frame)
+            addSubview(view)
+            loadingPillUsageView = view
+        }
+        if view.frame != spec.frame {
+            view.frame = spec.frame
+        }
+        view.apply(spec)
+    }
 
     private func applyEntryPlan(
         _ specs: [SubviewPlan.Entry], animateFrames: Bool

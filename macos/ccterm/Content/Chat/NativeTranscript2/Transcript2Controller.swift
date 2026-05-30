@@ -373,6 +373,13 @@ final class Transcript2Controller {
         coordinator.status(for: id)
     }
 
+    /// Update the live turn token usage shown to the right of the running
+    /// pill. Forwarded to the coordinator, which repaints the pill row (if
+    /// present) with no height change. Idempotent.
+    func setTurnUsage(_ usage: TurnTokenUsage) {
+        coordinator.setTurnUsage(usage)
+    }
+
     /// Sweep every `.running` entry to `.completed` in one pass. Wired
     /// up from `Transcript2EntryBridge.handleTurnFinished()`, which the
     /// runtime calls inside `finishTurn` (live `.result`). `.failed` /

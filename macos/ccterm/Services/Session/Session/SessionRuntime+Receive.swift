@@ -31,6 +31,9 @@ extension SessionRuntime {
             // popover list is correct after a JSONL reload.
             captureTodoToolUses(in: a)
             noteUsage(a.message?.usage)
+            // Fold this message's authoritative usage into the turn total.
+            // Live mode only — replay reloads don't drive the turn counter.
+            if mode == .live { reconcileFinalUsage(a) }
             // CLI is producing assistant content → a turn is in progress.
             // Self-heals two real scenarios surfaced by the SDK smoke
             // dump:
@@ -71,6 +74,13 @@ extension SessionRuntime {
             if mode == .live {
                 flushQueuedOnInit()
             }
+        case .system(.thinkingTokens(let tt)) where mode == .live:
+            // CLI's redacted-thinking progress: `estimated_tokens` is the
+            // cumulative (conservative) thinking-token estimate for the current
+            // block. Fold it into the running output total so the pill's `↓`
+            // counter climbs during thinking; the authoritative `message_delta`
+            // total (which includes thinking) supersedes it at turn's end.
+            if let cumulative = tt.estimatedTokens { foldThinkingEstimate(cumulativeEstimate: cumulative) }
         case .system(.status(let s)):
             // CLI broadcasts a `system.status` whenever the
             // session-side permission mode changes. Three triggers
@@ -116,6 +126,7 @@ extension SessionRuntime {
             switch act {
             case .merge(let id, _): actDesc = "merge(\(id.prefix(8)))"
             case .confirm(let id, _): actDesc = "confirm(\(id.uuidString.prefix(8)))"
+            case .replaceAssistant(let id): actDesc = "replaceAssistant(\(id.uuidString.prefix(8)))"
             case .append: actDesc = "append"
             case .skip: actDesc = "skip"
             }
@@ -131,6 +142,8 @@ extension SessionRuntime {
             change = attachToolResult(payload, to: id).map(MessagesChange.updated)
         case .confirm(let id, let echo):
             change = confirmQueuedEntry(id: id, echo: echo, mode: mode).map(MessagesChange.updated)
+        case .replaceAssistant(let id):
+            change = replaceAssistantEntry(id: id, with: message).map(MessagesChange.updated)
         case .append:
             change = appendToTimeline(message, mode: mode)
         case .skip:
@@ -158,6 +171,11 @@ extension SessionRuntime {
         /// when the entry is already `.confirmed` (CLI replay during
         /// interrupt).
         case confirm(entryId: UUID, echo: Message2)
+        /// A finalized `.assistant` envelope whose message already has a live
+        /// streaming-text preview entry — swap the provisional payload for the
+        /// authoritative one in place, reusing the entry id so block ids
+        /// converge (no duplicate, no flicker). See `SessionRuntime+Streaming`.
+        case replaceAssistant(entryId: UUID)
         case append
         case skip
     }
@@ -174,7 +192,17 @@ extension SessionRuntime {
             }
             return u.isVisible ? .append : .skip
         case .assistant(let a):
-            return a.isVisible ? .append : .skip
+            guard a.isVisible else { return .skip }
+            // If this message streamed a live preview, converge onto that
+            // entry instead of appending a duplicate. Gated on an existing
+            // preview, so non-streamed sessions keep the exact append path.
+            if let msgId = a.message?.id,
+                let entryId = streamingPreviewEntryIds[msgId],
+                messages.contains(where: { $0.id == entryId })
+            {
+                return .replaceAssistant(entryId: entryId)
+            }
+            return .append
         default:
             return .skip
         }
@@ -318,6 +346,65 @@ extension SessionRuntime {
         return messages[idx]
     }
 
+    /// Swap a streaming-text preview entry's provisional payload for the
+    /// finalized `.assistant` envelope, reusing the entry id. The block
+    /// builder derives the same text-block ids off the (unchanged) entry id,
+    /// so the bridge takes its per-block `.update` fast path — the streamed
+    /// text settles into its authoritative form with no remove/insert flicker.
+    /// Consumes the preview mapping for this message id.
+    ///
+    /// **Deferred when still typing.** If the typewriter hasn't finished
+    /// revealing this message, the swap is parked on the reveal
+    /// (`scheduleFinalize`) and performed once the head catches up, so a short
+    /// reply types all the way to its end instead of the untyped tail popping
+    /// in. The typewriter emits the `.updated` itself in that case, so this
+    /// returns nil (no synchronous change).
+    fileprivate func replaceAssistantEntry(id: UUID, with message: Message2) -> MessageEntry? {
+        if case .assistant(let a) = message, let msgId = a.message?.id,
+            shouldDeferFinalize(messageId: msgId)
+        {
+            scheduleFinalize(entryId: id, messageId: msgId, message: message)
+            return nil
+        }
+        return swapAssistantPayload(entryId: id, with: message)
+    }
+
+    /// The actual payload swap, shared by the synchronous `receive` path
+    /// (`replaceAssistantEntry`) and the deferred typewriter-completion path
+    /// (`performAssistantSwap`). Reuses the entry id so block ids converge and
+    /// consumes the preview mapping for this message id.
+    func swapAssistantPayload(entryId: UUID, with message: Message2) -> MessageEntry? {
+        guard let idx = messages.firstIndex(where: { $0.id == entryId }) else { return nil }
+        guard case .single(var single) = messages[idx] else { return nil }
+        single.payload = .remote(message)
+        single.delivery = nil
+        messages[idx] = .single(single)
+        if case .assistant(let a) = message, let msgId = a.message?.id {
+            streamingPreviewEntryIds.removeValue(forKey: msgId)
+        }
+        return messages[idx]
+    }
+
+    /// Deferred-path swap: perform the payload swap and emit the `.updated`
+    /// directly. The typewriter calls this when the head finishes revealing a
+    /// finalized message, outside `receive`'s return-the-change flow.
+    func performAssistantSwap(entryId: UUID, message: Message2) {
+        guard let entry = swapAssistantPayload(entryId: entryId, with: message) else { return }
+        onMessagesChange?(.updated(entry))
+    }
+
+    /// Join an assistant message's `.text` blocks with blank-line separators —
+    /// the same shape `StreamingTurnAssembler.currentText` produces, so the
+    /// typewriter's sealed reveal target lines up with the streamed prefix.
+    static func joinedAssistantText(_ message: Message2) -> String? {
+        guard case .assistant(let a) = message, let blocks = a.message?.content else { return nil }
+        let parts: [String] = blocks.compactMap { block in
+            if case .text(let t) = block, let txt = t.text, !txt.isEmpty { return txt }
+            return nil
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: "\n\n")
+    }
+
     /// Walk `messages`, flip every locally-queued user entry to
     /// `.confirmed`, and emit one `MessagesChange.updated` per flipped
     /// entry. Payload stays as `.localUser` — the canonical-form swap
@@ -408,6 +495,14 @@ extension SessionRuntime {
     /// text of every `.text` block on that single, separated by blank
     /// lines and trimmed.
     fileprivate func snapshotLastAssistantText() -> String? {
+        // A still-revealing final message hasn't swapped its provisional
+        // preview for the authoritative text yet — read the deferred envelope
+        // so a turn-end notification body isn't truncated mid-type.
+        if let pending = activeReveal?.pendingFinalize,
+            let text = Self.joinedAssistantText(pending.message)
+        {
+            return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
         for entry in messages.reversed() {
             guard case .single(let s) = entry,
                 case .assistant(let a) = s.remoteMessage,

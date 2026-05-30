@@ -42,6 +42,7 @@ final class FakeCLIClient: CLIClient {
 
     var lastKnownSessionId: String?
     var onMessage: ((Message2) -> Void)?
+    var onStreamEvent: ((Message2StreamEvent) -> Void)?
     var onPermissionRequest: ((PermissionRequest, @escaping (PermissionDecision) -> Void) -> Void)?
     var onPermissionCancelled: ((String) -> Void)?
     var onProcessExit: ((Int32) -> Void)?
@@ -151,6 +152,12 @@ final class FakeCLIClient: CLIClient {
     /// Deliver one Message2 through `onMessage` as if the CLI streamed it.
     func pushMessage(_ message: Message2) {
         onMessage?(message)
+    }
+
+    /// Deliver one streaming partial through `onStreamEvent`, as the SDK does
+    /// when `includePartialMessages` is on.
+    func pushStreamEvent(_ event: Message2StreamEvent) {
+        onStreamEvent?(event)
     }
 
     /// Drive the most recently queued `initialize(...)` completion. Tests

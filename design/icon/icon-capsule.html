@@ -244,8 +244,8 @@
   </defs>
 
   <!-- 成品图标：白 tile + 黑色负空间星 + 黑色胶囊，全部裁到 squircle。
-       撑满分辨率（viewBox 0 0 400 400，圆角矩形铺满），无阴影（阴影由系统/Dock 合成）。 -->
-  <symbol id="iconArt" viewBox="0 0 400 400">
+       macOS 网格：squircle 内缩在 1024 画布的 824/1024（留 ~10% 边），无自烤阴影（系统统一加）。 -->
+  <symbol id="iconArt" viewBox="-48.5437 -48.5437 497.0874 497.0874">
     <path id="symTile" fill="#FFFFFF" d=""/>
     <g clip-path="url(#squircleClip)">
       <rect x="-60" y="-60" width="520" height="520" fill="#000000" mask="url(#prodStarMask)"/>
@@ -278,16 +278,16 @@
   for (const s of SIZES) {
     const fig = document.createElement('figure');
     const svg = document.createElementNS(SVGNS, 'svg');
-    svg.setAttribute('viewBox', '0 0 400 400');
+    svg.setAttribute('viewBox', '-48.5437 -48.5437 497.0874 497.0874');
     svg.setAttribute('width', s.px);
     svg.setAttribute('height', s.px);
     const use = document.createElementNS(SVGNS, 'use');
     use.setAttribute('href', '#iconArt');
     use.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', '#iconArt');
-    use.setAttribute('x', '0');
-    use.setAttribute('y', '0');
-    use.setAttribute('width', '400');
-    use.setAttribute('height', '400');
+    use.setAttribute('x', '-48.5437');
+    use.setAttribute('y', '-48.5437');
+    use.setAttribute('width', '497.0874');
+    use.setAttribute('height', '497.0874');
     svg.appendChild(use);
     const cap = document.createElement('figcaption');
     cap.innerHTML = `<span class="px">${s.px} px</span><span class="pt">${s.pt}</span>`;

@@ -57,6 +57,12 @@
   const SQUIRCLE_SMOOTHING = 0.6;
   const SQUIRCLE = squirclePath(BODY, SQUIRCLE_R, SQUIRCLE_SMOOTHING);
 
+  // macOS app-icon grid: the squircle body is 824/1024 of the full canvas, so it
+  // sits inset with ~10% transparent margin — that margin is where macOS composites
+  // its uniform drop shadow. Every system icon follows this; full-bleed is oversized.
+  const CANVAS = (BODY * 1024) / 824; // 497.0874
+  const PAD = (CANVAS - BODY) / 2; //    48.5437
+
   // Spiral reference square = the squircle's largest inscribed square ("middle
   // square", side 347.279). The whole golden construction is scaled about the
   // icon centre by S so it never reaches into the rounded-off corners.
@@ -107,8 +113,8 @@
     };
   }
 
-  // Standalone vector for export: full-bleed body (viewBox 0 0 BODY BODY → the
-  // squircle fills the whole canvas), NO drop shadow (macOS/Dock add their own).
+  // Standalone vector for export: the macOS icon grid (squircle inset in the 1024
+  // canvas at 824/1024, ~10% margin), NO baked shadow — macOS adds its uniform one.
   function svg(params, opts) {
     const g = geometry(params);
     const size = opts && opts.size;
@@ -117,7 +123,8 @@
       .map((c) => `<circle cx="${c.cx}" cy="${c.cy}" r="${c.r}" fill="#000000"/>`)
       .join("\n      ");
     const cap = g.capsule;
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${BODY} ${BODY}"${dim}>
+    const vb = `${(-PAD).toFixed(4)} ${(-PAD).toFixed(4)} ${CANVAS.toFixed(4)} ${CANVAS.toFixed(4)}`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vb}"${dim}>
   <defs>
     <clipPath id="sq" clipPathUnits="userSpaceOnUse"><path d="${g.squircle}"/></clipPath>
     <mask id="star" maskUnits="userSpaceOnUse" x="-60" y="-60" width="520" height="520">
@@ -136,7 +143,7 @@
 
   const IconArt = {
     squirclePath, geometry, svg,
-    SQUIRCLE, BODY, SQUIRCLE_R, SQUIRCLE_SMOOTHING, REF, S, CENTER, P, D, e1, e2, CAP_ANGLE, DEFAULTS,
+    SQUIRCLE, BODY, CANVAS, PAD, SQUIRCLE_R, SQUIRCLE_SMOOTHING, REF, S, CENTER, P, D, e1, e2, CAP_ANGLE, DEFAULTS,
   };
   globalThis.IconArt = IconArt;
 })();

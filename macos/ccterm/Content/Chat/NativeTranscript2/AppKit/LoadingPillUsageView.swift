@@ -5,11 +5,12 @@ import AppKit
 /// numbers can **roll up** — odometer / 翻牌器 style — toward each new target
 /// instead of snapping.
 ///
-/// Why a roll is needed at all: the CLI reports authoritative `output_tokens`
-/// only once per message (the trailing `message_delta`), so the target jumps
-/// in a single large step per message rather than climbing smoothly. Easing the
-/// *displayed* value toward the target turns each jump into a continuous
-/// count-up instead of an abrupt snap. The runtime drives
+/// Why a roll is needed at all: the displayed output is a client-side estimate
+/// that climbs as text streams (and as the CLI's thinking estimate accrues),
+/// then takes one larger step when the authoritative `message_delta` total
+/// overtakes it. Easing the *displayed* value toward the target keeps both the
+/// per-delta climb and that final step a continuous count-up instead of a jitter
+/// or an abrupt snap. The runtime drives
 /// targets through `Transcript2Coordinator.setTurnUsage` → a single-row
 /// `reloadData`, which re-runs the subview plan and calls `apply(spec:)` here;
 /// the cell reconciler reuses this view across reloads, so the roll state

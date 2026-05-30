@@ -90,42 +90,64 @@ final class StreamingTurnAssemblerTests: XCTestCase {
         XCTAssertEqual(a.turnUsage.outputTokens, 42)
     }
 
-    // MARK: - Usage is wire-only (no estimation)
+    // MARK: - Live output estimate (claude.app parity)
 
-    /// Text deltas never move token usage — they grow only the rendered text.
-    /// Output stays at the `message_start` placeholder until `message_delta`.
-    func testTextDeltasDoNotMoveUsage() {
+    /// Text deltas grow a CJK-weighted output estimate so the `↓` counter
+    /// climbs while the message streams (claude.app parity), above the
+    /// `message_start` placeholder.
+    func testTextDeltasGrowOutputEstimate() {
         var a = StreamingTurnAssembler()
-        a.consume(Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 10, outputTokens: 1))
-        XCTAssertEqual(a.turnUsage.outputTokens, 1, "only the wire placeholder so far")
+        a.consume(Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 10, outputTokens: 5))
+        XCTAssertEqual(a.turnUsage.outputTokens, 5, "only the wire placeholder so far")
+        // 200 ASCII chars * 0.3/char = 60 estimated tokens.
         let out = a.consume(
             Message2Fixtures.streamTextDelta(index: 0, text: String(repeating: "word ", count: 40)))
         XCTAssertTrue(out.textChanged)
-        XCTAssertFalse(out.usageChanged, "text never synthesizes an output estimate")
-        XCTAssertEqual(
-            a.turnUsage.outputTokens, 1, "output holds at the placeholder, no estimation")
+        XCTAssertTrue(out.usageChanged, "a growing estimate requests a flush")
+        XCTAssertEqual(a.turnUsage.outputTokens, 60, "output climbs with the text estimate")
+        XCTAssertEqual(a.currentText, String(repeating: "word ", count: 40))
     }
 
-    /// Thinking deltas are a complete no-op: not rendered, and never folded
-    /// into usage (no per-character estimate).
-    func testThinkingDeltasAreNoop() {
+    /// CJK text counts denser (1.0/char) than Latin (0.3/char).
+    func testCJKTextCountsDenser() {
+        var a = StreamingTurnAssembler()
+        a.consume(Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 1, outputTokens: 1))
+        a.consume(Message2Fixtures.streamTextDelta(index: 0, text: String(repeating: "答", count: 50)))
+        XCTAssertEqual(a.turnUsage.outputTokens, 50, "50 CJK chars * 1.0 = 50 tokens")
+    }
+
+    /// Raw `thinking_delta` stream events stay a no-op (thinking is accounted
+    /// via `system.thinking_tokens`, not the redacted stream delta).
+    func testThinkingDeltaStreamEventIsNoop() {
         var a = StreamingTurnAssembler()
         a.consume(Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 5, outputTokens: 1))
         let out = a.consume(
             Message2Fixtures.streamThinkingDelta(
                 index: 0, thinking: String(repeating: "想", count: 50)))
-        XCTAssertTrue(out.isNoop, "thinking deltas change nothing")
-        XCTAssertEqual(a.turnUsage.outputTokens, 1, "thinking never moves usage")
+        XCTAssertTrue(out.isNoop, "raw thinking_delta changes nothing")
+        XCTAssertEqual(a.turnUsage.outputTokens, 1, "raw thinking_delta never moves usage")
         XCTAssertEqual(a.currentText, "", "thinking never leaks into the rendered text")
     }
 
-    /// The authoritative `message_delta` total replaces the placeholder
-    /// outright once it lands.
-    func testMessageDeltaReplacesPlaceholder() {
+    /// Text estimate and thinking estimate are **additive** in the displayed
+    /// output (output = text + thinking, until the authoritative total wins).
+    func testTextAndThinkingEstimatesAreAdditive() {
+        var a = StreamingTurnAssembler()
+        a.consume(Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 2465, outputTokens: 5))
+        a.recordThinkingEstimate(cumulativeEstimate: 900)
+        a.consume(Message2Fixtures.streamTextDelta(index: 0, text: String(repeating: "x", count: 400)))  // 120 tokens
+        XCTAssertEqual(a.turnUsage.outputTokens, 1020, "max(5, 120 text + 900 thinking)")
+    }
+
+    /// The authoritative `message_delta` total overtakes the estimate via `max`
+    /// — it never snaps the counter down (claude.app parity).
+    func testAuthoritativeOutputOvertakesEstimate() {
         var a = StreamingTurnAssembler()
         a.consume(Message2Fixtures.streamMessageStart(messageId: "m1", inputTokens: 10, outputTokens: 5))
+        a.consume(Message2Fixtures.streamTextDelta(index: 0, text: String(repeating: "x", count: 400)))  // 120
+        XCTAssertEqual(a.turnUsage.outputTokens, 120, "estimate climbs")
         a.consume(Message2Fixtures.streamMessageDelta(outputTokens: 1556))
-        XCTAssertEqual(a.turnUsage.outputTokens, 1556, "authoritative total wins")
+        XCTAssertEqual(a.turnUsage.outputTokens, 1556, "authoritative total overtakes the estimate")
     }
 
     /// GROUND TRUTH (ThinkingUsageSmoke): the finalized `.assistant` envelope

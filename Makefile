@@ -40,8 +40,8 @@ dmg: ## Create DMG installer (usage: make dmg APP=/path/to/ccterm.app)
 		ccterm.dmg \
 		"$(APP)"
 
-appicon: ## Regenerate the macOS app icon from design/icon/icon-capsule.html
-	python3 macos/scripts/export-appicon.py
+appicon: ## Regenerate the macOS app icon (design/icon/icon-art.js → vector → PNGs)
+	cd js && bun install --frozen-lockfile && bun run scripts/export-appicon.ts
 
 fmt: ## Format Swift sources and localization strings
 	$(SWIFT_FORMAT) format --parallel --in-place --recursive $(SWIFT_SRC)

@@ -9,6 +9,7 @@
     "highlight.js": "^11.10.0"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "typescript": "^5.8.3"
   }
 }

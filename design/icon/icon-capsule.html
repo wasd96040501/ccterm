@@ -243,9 +243,10 @@
     </filter>
   </defs>
 
-  <!-- 成品图标：白 tile + 投影 + 黑色负空间星 + 黑色胶囊，全部裁到 squircle -->
-  <symbol id="iconArt" viewBox="-48.5437 -48.5437 497.0874 497.0874">
-    <path id="symTile" fill="#FFFFFF" d="" filter="url(#tileShadow)"/>
+  <!-- 成品图标：白 tile + 黑色负空间星 + 黑色胶囊，全部裁到 squircle。
+       撑满分辨率（viewBox 0 0 400 400，圆角矩形铺满），无阴影（阴影由系统/Dock 合成）。 -->
+  <symbol id="iconArt" viewBox="0 0 400 400">
+    <path id="symTile" fill="#FFFFFF" d=""/>
     <g clip-path="url(#squircleClip)">
       <rect x="-60" y="-60" width="520" height="520" fill="#000000" mask="url(#prodStarMask)"/>
       <g id="gCapP">
@@ -255,58 +256,11 @@
   </symbol>
 </svg>
 
+<script src="icon-art.js"></script>
 <script>
-  // ---- 几何常量 ----
-  // 螺线参考方框：从 body-square(400) 收到「中间正方形」= squircle 最大内接方（边 347.279）。
-  // 整套黄金构造（黄金矩形/螺线/P/轴/星/D/胶囊）绕图标中心 (200,200) 等比缩放 S。
-  const CENTER = { x: 200, y: 200 };
-  const REF = 347.279;                 // squircle 最大内接正方形边长（每边内缩 26.36）
-  const S = REF / 400;                 // ≈ 0.8682
-  const sc = p => ({ x: CENTER.x + S * (p.x - CENTER.x), y: CENTER.y + S * (p.y - CENTER.y) });
-  const P  = sc({ x: 110.557, y: 255.279 });   // 极点（缩放后）
-  const e1 = { x: 0.8506508, y: -0.5257311 };  // 轴1 = P→D 方向（方向不随缩放变）
-  const e2 = { x: 0.5257311, y:  0.8506508 };
-  const D  = sc({ x: 309.438, y: 132.362 });   // 胶囊中心（缩放后）
-  const CAP_ANGLE = Math.atan2(e1.y, e1.x) * 180 / Math.PI; // ≈ -31.7175°
-
-  // ---- Apple 连续圆角 squircle ----
-  const rad = d => d * Math.PI / 180;
-  function squirclePath(side, R, smoothing) {
-    const budget = side / 2;
-    R = Math.min(R, budget);
-    let cs = smoothing;
-    let p = (1 + cs) * R;
-    const maxCS = budget / R - 1;
-    cs = Math.min(cs, maxCS);
-    p = Math.min(p, budget);
-    const arcMeasure = 90 * (1 - cs);
-    const arc = Math.sin(rad(arcMeasure / 2)) * R * Math.SQRT2;
-    const angleAlpha = (90 - arcMeasure) / 2;
-    const p3p4 = R * Math.tan(rad(angleAlpha / 2));
-    const angleBeta = 45 * cs;
-    const c = p3p4 * Math.cos(rad(angleBeta));
-    const d = c * Math.tan(rad(angleBeta));
-    const b = (p - arc - c - d) / 3;
-    const a = 2 * b;
-    const W = side, H = side, n = v => (+v).toFixed(4);
-    return `M ${n(W - p)} 0 ` +
-      `c ${n(a)} 0 ${n(a + b)} 0 ${n(a + b + c)} ${n(d)} ` +
-      `a ${n(R)} ${n(R)} 0 0 1 ${n(arc)} ${n(arc)} ` +
-      `c ${n(d)} ${n(c)} ${n(d)} ${n(b + c)} ${n(d)} ${n(a + b + c)} ` +
-      `L ${n(W)} ${n(H - p)} ` +
-      `c 0 ${n(a)} 0 ${n(a + b)} ${n(-d)} ${n(a + b + c)} ` +
-      `a ${n(R)} ${n(R)} 0 0 1 ${n(-arc)} ${n(arc)} ` +
-      `c ${n(-c)} ${n(d)} ${n(-(b + c))} ${n(d)} ${n(-(a + b + c))} ${n(d)} ` +
-      `L ${n(p)} ${n(H)} ` +
-      `c ${n(-a)} 0 ${n(-(a + b))} 0 ${n(-(a + b + c))} ${n(-d)} ` +
-      `a ${n(R)} ${n(R)} 0 0 1 ${n(-arc)} ${n(-arc)} ` +
-      `c ${n(-d)} ${n(-c)} ${n(-d)} ${n(-(b + c))} ${n(-d)} ${n(-(a + b + c))} ` +
-      `L 0 ${n(p)} ` +
-      `c 0 ${n(-a)} 0 ${n(-(a + b))} ${n(d)} ${n(-(a + b + c))} ` +
-      `a ${n(R)} ${n(R)} 0 0 1 ${n(arc)} ${n(-arc)} ` +
-      `c ${n(c)} ${n(-d)} ${n(b + c)} ${n(-d)} ${n(a + b + c)} ${n(-d)} Z`;
-  }
-  const SQ = squirclePath(400, 400 * 185.4 / 824, 0.6);
+  // 几何与 squircle 全部来自共享模块 icon-art.js —— 同一份 source of truth，
+  // 既驱动本页（蓝图 + 成品预览），也驱动导出脚本生成的矢量/PNG。
+  const SQ = IconArt.SQUIRCLE;
   ['clipSqPath', 'symTile', 'heroTile', 'heroEdge'].forEach(id => document.getElementById(id).setAttribute('d', SQ));
 
   // ---- macOS 尺寸：1 蓝图 + 7 成品 ----
@@ -324,16 +278,16 @@
   for (const s of SIZES) {
     const fig = document.createElement('figure');
     const svg = document.createElementNS(SVGNS, 'svg');
-    svg.setAttribute('viewBox', '-48.5437 -48.5437 497.0874 497.0874');
+    svg.setAttribute('viewBox', '0 0 400 400');
     svg.setAttribute('width', s.px);
     svg.setAttribute('height', s.px);
     const use = document.createElementNS(SVGNS, 'use');
     use.setAttribute('href', '#iconArt');
     use.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', '#iconArt');
-    use.setAttribute('x', '-48.5437');
-    use.setAttribute('y', '-48.5437');
-    use.setAttribute('width', '497.0874');
-    use.setAttribute('height', '497.0874');
+    use.setAttribute('x', '0');
+    use.setAttribute('y', '0');
+    use.setAttribute('width', '400');
+    use.setAttribute('height', '400');
     svg.appendChild(use);
     const cap = document.createElement('figcaption');
     cap.innerHTML = `<span class="px">${s.px} px</span><span class="pt">${s.pt}</span>`;
@@ -347,84 +301,43 @@
   const kEl = document.getElementById('kEl');
   const lenEl = document.getElementById('lenEl');
   const thkEl = document.getElementById('thkEl');
-  // 长度参数也按 S 缩放，使星/胶囊随整套构造等比缩进中间正方形
-  const lin = (a1, a2) => ({ x: P.x + a1 * S * e1.x + a2 * S * e2.x, y: P.y + a1 * S * e1.y + a2 * S * e2.y });
   const set = (id, attrs) => { const el = document.getElementById(id); for (const k in attrs) el.setAttribute(k, attrs[k]); };
 
   function render() {
-    const m = +mEl.value;
-    const k = Math.min(Math.max(+kEl.value / 100, 1.02), 1.4142);
-    const capLen = +lenEl.value;
-    const capThk = +thkEl.value;
-
-    const r = m * k;
-    const t = m * (1 - Math.sqrt(k * k - 1));
-    const rS = r * S;                 // 圆半径随整套构造缩放（位置已在 lin 内缩放）
-
-    // 负空间星
-    const Tpu = lin(t, 0), Tpv = lin(0, t), Tmu = lin(-t, 0), Tmv = lin(0, -t);
-    const tips = [Tpu, Tpv, Tmu, Tmv].map(q => `${q.x.toFixed(2)},${q.y.toFixed(2)}`).join(' ');
-    const C = [lin(m, m), lin(-m, m), lin(-m, -m), lin(m, -m)];
-    ['p', 'h'].forEach(pfx => {
-      document.getElementById(pfx + 'Tips').setAttribute('points', tips);
-      C.forEach((c, i) => set(`${pfx}C${i}`, { cx: c.x.toFixed(2), cy: c.y.toFixed(2), r: rS.toFixed(2) }));
+    const g = IconArt.geometry({
+      m: +mEl.value, k: +kEl.value / 100, capLen: +lenEl.value, capThk: +thkEl.value,
     });
 
-    // 胶囊：中心 D，长 capLen，厚 capThk（均按 S 缩放），圆头 rx=ry=厚/2，长轴顺 axis1
-    const capL = capLen * S, capT = capThk * S;
-    const capAttrs = {
-      x: (D.x - capL / 2).toFixed(2), y: (D.y - capT / 2).toFixed(2),
-      width: capL.toFixed(2), height: capT.toFixed(2),
-      rx: (capT / 2).toFixed(2), ry: (capT / 2).toFixed(2),
-    };
-    ['pCap', 'hCap'].forEach(id => set(id, capAttrs));
-    const rot = `rotate(${CAP_ANGLE.toFixed(3)} ${D.x} ${D.y})`;
-    set('gCapP', { transform: rot });
-    set('gCapH', { transform: rot });
+    // 负空间星 + 构造圆：成品(p) 与 蓝图(h) 共用同一组几何
+    ['p', 'h'].forEach(pfx => {
+      document.getElementById(pfx + 'Tips').setAttribute('points', g.tips);
+      g.circles.forEach((c, i) => set(`${pfx}C${i}`, c));
+    });
+
+    // 胶囊：中心 D，长轴顺 axis1
+    ['pCap', 'hCap'].forEach(id => set(id, g.capsule));
+    set('gCapP', { transform: g.capTransform });
+    set('gCapH', { transform: g.capTransform });
 
     // 蓝图：构造圆轮廓 + 圆心
-    C.forEach((c, i) => {
-      set(`hCo${i}`, { cx: c.x.toFixed(2), cy: c.y.toFixed(2), r: rS.toFixed(2) });
-      set(`hCc${i}`, { cx: c.x.toFixed(2), cy: c.y.toFixed(2) });
+    g.circles.forEach((c, i) => {
+      set(`hCo${i}`, c);
+      set(`hCc${i}`, { cx: c.cx, cy: c.cy });
     });
 
-    document.getElementById('kVal').textContent = k.toFixed(2) + ' ×d';
-    document.getElementById('mVal').textContent = m + ' u';
-    document.getElementById('lenVal').textContent = capLen + ' u';
-    document.getElementById('thkVal').textContent = capThk + ' u';
-    document.getElementById('roR').textContent = rS.toFixed(1);
-    document.getElementById('roT').textContent = (t * S).toFixed(1);
-    document.getElementById('roCap').textContent = `${capL.toFixed(1)}×${capT.toFixed(1)} u`;
-    document.getElementById('roFlat').textContent = (capLen / capThk).toFixed(2);
+    const mx = g.metrics;
+    document.getElementById('kVal').textContent = mx.k.toFixed(2) + ' ×d';
+    document.getElementById('mVal').textContent = mx.m + ' u';
+    document.getElementById('lenVal').textContent = mx.capLen + ' u';
+    document.getElementById('thkVal').textContent = mx.capThk + ' u';
+    document.getElementById('roR').textContent = mx.rS.toFixed(1);
+    document.getElementById('roT').textContent = mx.tS.toFixed(1);
+    document.getElementById('roCap').textContent = `${mx.capL.toFixed(1)}×${mx.capT.toFixed(1)} u`;
+    document.getElementById('roFlat').textContent = mx.flat.toFixed(2);
   }
 
   [mEl, kEl, lenEl, thkEl].forEach(el => el.addEventListener('input', render));
   render();
-
-  // ---- 导出模式：?export=<px> 只渲染成品 #iconArt（透明底） ----
-  // 让本 HTML 成为图标唯一的 source of truth：export-appicon.py 仅无头截图，
-  // 不复制任何几何/颜色/尺寸。改这里的 SVG 或样式，导出会自动跟着变。
-  const exportPx = parseInt(new URLSearchParams(location.search).get('export') || '', 10);
-  if (Number.isFinite(exportPx) && exportPx > 0) {
-    document.querySelector('.page').style.display = 'none';      // 隐藏文档外壳，保留共享 defs/symbol
-    document.documentElement.style.background = 'transparent';
-    document.body.style.background = 'transparent';
-    document.body.style.margin = '0';
-    const svg = document.createElementNS(SVGNS, 'svg');
-    svg.setAttribute('viewBox', '-48.5437 -48.5437 497.0874 497.0874');
-    svg.setAttribute('width', exportPx);
-    svg.setAttribute('height', exportPx);
-    svg.style.cssText = 'position:fixed; top:0; left:0; display:block';
-    const use = document.createElementNS(SVGNS, 'use');
-    use.setAttribute('href', '#iconArt');
-    use.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', '#iconArt');
-    use.setAttribute('x', '-48.5437');
-    use.setAttribute('y', '-48.5437');
-    use.setAttribute('width', '497.0874');
-    use.setAttribute('height', '497.0874');
-    svg.appendChild(use);
-    document.body.appendChild(svg);
-  }
 </script>
 </body>
 </html>

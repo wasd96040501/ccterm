@@ -264,6 +264,14 @@ final class Session {
         return false
     }
 
+    /// True iff `phase == .draft` — the inverse of `hasRecord`. The detail
+    /// router reads this to route a `.session(_)` selection to the
+    /// draft-landing page (draft) vs the live transcript (active).
+    var isDraft: Bool {
+        if case .draft = phase { return true }
+        return false
+    }
+
     // MARK: - Forwarded state reads
 
     var title: String {

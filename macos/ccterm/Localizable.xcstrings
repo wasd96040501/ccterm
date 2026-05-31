@@ -377,6 +377,16 @@
         }
       }
     },
+    "Archive this session and start a new one": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "归档当前会话并开始新会话"
+          }
+        }
+      }
+    },
     "Archived %@": {
       "localizations": {
         "zh-Hans": {
@@ -3369,6 +3379,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "开始新对话"
+          }
+        }
+      }
+    },
+    "Start a new session in this project": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在此项目中开始新会话"
           }
         }
       }

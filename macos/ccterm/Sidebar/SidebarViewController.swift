@@ -301,7 +301,13 @@ final class SidebarViewController: NSViewController {
     }
 
     private func groupedRecords() -> [RecordGroup] {
-        let buckets = Dictionary(grouping: sessionManager.records) {
+        // Draft sessions (`/new`, `/clear`) are merged in alongside real
+        // records so they appear as ordinary history rows. Each carries a
+        // current `lastActiveAt`, so the per-folder sort below floats it to
+        // the top of its group. Promotion / archive prunes it from
+        // `draftRecords`, swapping it for the persisted row in one update.
+        let allRecords = sessionManager.records + sessionManager.draftRecords
+        let buckets = Dictionary(grouping: allRecords) {
             $0.groupingFolderName ?? "Unknown"
         }
         let folderNames = Array(buckets.keys)
@@ -401,6 +407,9 @@ final class SidebarViewController: NSViewController {
             await withCheckedContinuation { cont in
                 withObservationTracking {
                     _ = self.sessionManager.records
+                    // Track drafts too so `/new` / `/clear` adds — and the
+                    // prune on promotion / archive — rebuild the sidebar.
+                    _ = self.sessionManager.draftRecords
                 } onChange: {
                     Task { @MainActor in cont.resume() }
                 }
@@ -709,8 +718,13 @@ extension SidebarViewController {
         cell: SidebarHistoryCellView, sessionId: String, fallback: String
     ) {
         let session = sessionManager.existingSession(sessionId)
+        // An empty title (a freshly-created `/new` / `/clear` draft, or a
+        // session whose async title-gen hasn't landed) renders as the
+        // localized "Untitled" placeholder rather than a blank row.
+        let rawTitle = session?.title ?? fallback
+        let displayTitle = rawTitle.isEmpty ? String(localized: "Untitled") : rawTitle
         cell.configure(
-            title: session?.title ?? fallback,
+            title: displayTitle,
             isRunning: session?.isRunning ?? false,
             hasUnread: session?.hasUnread ?? false,
             isGeneratingTitle: session?.isGeneratingTitle ?? false)

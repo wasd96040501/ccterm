@@ -17,6 +17,10 @@ struct InputBarChrome: View {
     let onSubmit: (InputBarView2.Submission) -> Void
     let onAttachRect: (CGRect) -> Void
     let onPillRect: (CGRect) -> Void
+    /// Builtin slash command (`/new`, `/clear`) dispatcher. Forwarded to
+    /// `InputBarView2`'s completion trigger context. Nil where builtins
+    /// shouldn't be offered (the compose card).
+    var onBuiltinCommand: ((BuiltinSlashCommand) -> Void)? = nil
 
     @Environment(SessionManager.self) private var manager
 
@@ -62,7 +66,8 @@ struct InputBarChrome: View {
                 // the same view's `.task(id: prewarmKey)` is already
                 // warming.
                 knownSlashCommands: session.slashCommands.isEmpty ? nil : session.slashCommands,
-                draftKey: draftKey
+                draftKey: draftKey,
+                onBuiltinCommand: onBuiltinCommand
             )
             InputBarSessionChrome(session: session)
         }
@@ -105,6 +110,10 @@ struct ChatRestingBar: View {
     let onSubmit: (InputBarView2.Submission) -> Void
     let onAttachRect: (CGRect) -> Void
     let onPillRect: (CGRect) -> Void
+    /// Builtin slash command (`/new`, `/clear`) dispatcher, forwarded to
+    /// `InputBarChrome`. Non-nil in chat mode so the resting bar offers
+    /// the builtins.
+    var onBuiltinCommand: ((BuiltinSlashCommand) -> Void)? = nil
 
     @Environment(SessionManager.self) private var manager
 
@@ -118,7 +127,8 @@ struct ChatRestingBar: View {
                 submitEnabled: true,
                 onSubmit: onSubmit,
                 onAttachRect: onAttachRect,
-                onPillRect: onPillRect
+                onPillRect: onPillRect,
+                onBuiltinCommand: onBuiltinCommand
             )
             .frame(
                 minWidth: BlockStyle.minLayoutWidth,

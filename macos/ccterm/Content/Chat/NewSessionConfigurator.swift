@@ -570,14 +570,16 @@ struct NewSessionConfigurator<InputBar: View>: View {
     /// via the sidebar.
     private static var resumeRowLimit: Int { 5 }
 
-    /// Top N non-archived sessions whose `groupingPath` matches the
-    /// picked folder, descending by `lastActiveAt`.
+    /// Top N non-archived, already-started sessions whose `groupingPath`
+    /// matches the picked folder, descending by `lastActiveAt`. `.draft` rows
+    /// (unsent `/new` / `/clear` drafts) are excluded — they aren't a
+    /// resumable conversation yet.
     private var recentSessionsForFolder: [SessionRecord] {
         guard let folder = folderPath else { return [] }
         return
             manager.records
             .lazy
-            .filter { $0.status != .archived && $0.groupingPath == folder }
+            .filter { $0.status != .archived && $0.status != .draft && $0.groupingPath == folder }
             .prefix(Self.resumeRowLimit)
             .map { $0 }
     }

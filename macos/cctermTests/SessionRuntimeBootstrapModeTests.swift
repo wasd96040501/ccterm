@@ -83,6 +83,25 @@ final class SessionRuntimeBootstrapModeTests: XCTestCase {
         XCTAssertFalse(SessionRuntime.shouldResumeBootstrap(for: record))
     }
 
+    /// A `/new` / `/clear` draft is persisted as a `.draft` row before its
+    /// first send — there is no CLI JSONL to resume from, so it MUST launch
+    /// fresh. Only `.created` resumes; `.draft` falls in with `.pending` /
+    /// `.archived`.
+    func testDraftRecordIsFreshMode() {
+        let record = SessionRecord(
+            sessionId: UUID().uuidString,
+            title: "",
+            cwd: "/repo/.claude/worktrees/W",
+            isWorktree: true,
+            originPath: "/repo",
+            status: .draft,
+            worktreeBranch: "W"
+        )
+        XCTAssertFalse(
+            SessionRuntime.shouldResumeBootstrap(for: record),
+            "draft records have never launched the CLI — must start fresh, never resume")
+    }
+
     // MARK: - Wired into makeAgentConfig
 
     /// No persisted record yet → SDK config uses `sessionId`, not `resume`.

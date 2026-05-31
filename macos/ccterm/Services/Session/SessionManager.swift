@@ -44,14 +44,6 @@ final class SessionManager {
     /// refreshed via `refreshRecords()`.
     private(set) var records: [SessionRecord] = []
 
-    /// Sidebar-visible draft sessions created by `/new` / `/clear`, newest
-    /// first. **In-memory only** — never persisted, so they vanish on app
-    /// restart (the spec's "close & reopen → it's gone"). A draft is pruned
-    /// the moment its first message promotes it to a real `records` row
-    /// (`refreshRecords`) or it's archived (`archive`). `@Observable` so the
-    /// sidebar re-renders when one is added or removed.
-    private(set) var draftRecords: [SessionRecord] = []
-
     /// Archived records, descending by `archivedAt` then `lastActiveAt`.
     /// Lazily loaded — the Archive page calls `refreshArchivedRecords()`
     /// in `.task` so the cold path (user never opens the page) doesn't
@@ -169,15 +161,44 @@ final class SessionManager {
     func session(_ sessionId: String) -> Session? {
         if let session = sessions[sessionId] { return session }
         guard let record = repository.find(sessionId) else { return nil }
-        let session = Session(
-            record: record,
-            repository: repository,
-            cliClientFactory: cliClientFactory,
-            onPromoted: { [weak self] _ in self?.refreshRecords() }
-        )
+        let session = makeSession(from: record)
         wireSessionCallbacks(session)
         sessions[sessionId] = session
         return session
+    }
+
+    /// Build the right-phase `Session` for a persisted record: a
+    /// `.draft`-status row (a `/new` / `/clear` draft that survived restart)
+    /// rehydrates as a **draft-phase** façade so it routes to the landing
+    /// page and promotes on first send; every other status is an `.active`
+    /// runtime. Centralized so `session(_:)` and `prepareDraftSession(_:)`
+    /// can't drift on this decision.
+    private func makeSession(from record: SessionRecord) -> Session {
+        let onPromoted: (SessionRuntime) -> Void = { [weak self] _ in self?.refreshRecords() }
+        if record.status == .draft {
+            return Session(
+                draftRecord: record,
+                repository: repository,
+                cliClientFactory: cliClientFactory,
+                onPromoted: onPromoted)
+        }
+        return Session(
+            record: record,
+            repository: repository,
+            cliClientFactory: cliClientFactory,
+            onPromoted: onPromoted)
+    }
+
+    /// Whether `sessionId` is a not-yet-sent draft. Prefers the cached
+    /// façade's live phase (authoritative across the in-process
+    /// `.draft → .active` promotion flip); falls back to the persisted
+    /// `.draft` status for the uncached / cold-restart path, where the
+    /// sidebar holds a row but no `Session` has been materialized yet. The
+    /// detail router reads this to route to the landing page vs the
+    /// transcript.
+    func isDraftSession(_ sessionId: String) -> Bool {
+        if let session = sessions[sessionId] { return session.isDraft }
+        return repository.find(sessionId)?.status == .draft
     }
 
     /// Non-creating lookup. Returns the cached session if it exists,
@@ -197,14 +218,12 @@ final class SessionManager {
         if let session = sessions[sessionId] { return session }
         let session: Session
         if let record = repository.find(sessionId) {
-            // A record already exists for this id (e.g. UI navigated to
-            // an existing session via the draft path) — start the
-            // façade in `.active` phase instead of `.draft`.
-            session = Session(
-                record: record,
-                repository: repository,
-                cliClientFactory: cliClientFactory,
-                onPromoted: { [weak self] _ in self?.refreshRecords() })
+            // A record already exists for this id: a `.draft`-status row
+            // (a `/new` / `/clear` draft, possibly restored from disk)
+            // rehydrates as a draft-phase façade; any other status (the UI
+            // navigated to an already-promoted session via the draft path)
+            // starts in `.active` phase. `makeSession` owns this decision.
+            session = makeSession(from: record)
         } else {
             session = Session(
                 draftSessionId: sessionId,
@@ -217,17 +236,28 @@ final class SessionManager {
         return session
     }
 
-    /// Create a fresh in-memory draft session for the `/new` / `/clear`
-    /// builtins and surface it as an auto-focused sidebar row. The draft
-    /// inherits `seededFrom`'s full configuration so the new session is
-    /// identical to the one it was triggered from — cwd, originPath,
-    /// worktree flag + source branch, model, effort, permission mode,
+    /// Create a fresh draft session for the `/new` / `/clear` builtins and
+    /// surface it as an auto-focused sidebar row. The draft inherits
+    /// `seededFrom`'s full configuration so the new session continues the one
+    /// it was triggered from — cwd, originPath, worktree flag + source branch
+    /// + **provisioned worktree branch**, model, effort, permission mode,
     /// additional + plugin directories, fast mode.
     ///
-    /// Returns the new draft's `sessionId`. The caller selects it
-    /// (`model.select(.session(id))`), which routes to the draft-landing
-    /// page; the draft is promoted to a real session on first send, exactly
-    /// like the New Session compose card.
+    /// The draft is persisted immediately as a `.draft`-status record (not an
+    /// in-memory list), so it survives app restart and participates in the
+    /// worktree reference count (see `archive`). The first send flips it
+    /// `.draft → .pending` and promotes it exactly like the compose card.
+    /// Returns the new draft's `sessionId`; the caller selects it, routing to
+    /// the draft-landing page.
+    ///
+    /// **Worktree reuse.** For a worktree source we seed `cwd` from the
+    /// source's *actual* worktree dir and carry `worktreeBranch`, so the new
+    /// session continues in the **same** worktree (same branch, same
+    /// uncommitted changes) rather than forking a fresh one. Because a
+    /// persisted record already exists at first send, `ensureStarted`'s
+    /// `fresh` check is false and the provisioning block is skipped — the CLI
+    /// just launches in the seeded worktree dir. The worktree is torn down
+    /// only when its last referencing session is archived (`archive`).
     ///
     /// `seededFrom` is resolved via `session(_:)` (not `existingSession`) so
     /// it materializes a façade even when the source is itself a draft
@@ -243,22 +273,15 @@ final class SessionManager {
         {
             // Config-forwarding reads on `Session` are phase-agnostic, so
             // this copies correctly whether the source is a live runtime or
-            // another draft. `sourceBranch` is the parent branch a worktree
-            // forks from; `worktreeBranch` (the provisioned name) is left
-            // unset so the new session provisions its own at first send.
-            //
-            // For a worktree source, `source.cwd` is the *provisioned*
-            // worktree dir (`.ccterm-worktrees/<oldName>`); seeding that
-            // would point the new draft's landing page at the OLD session's
-            // worktree. Seed from `originPath` (the base repo) instead and
-            // let promotion provision a fresh worktree from it — exactly how
-            // New Session treats a worktree folder. For a plain source
-            // `cwd == originPath`, so this is a no-op there.
-            let seedCwd = source.isWorktree ? (source.originPath ?? source.cwd) : source.cwd
-            if let seedCwd { target.setCwd(seedCwd) }
+            // another draft. Seed `cwd` from the source's actual cwd (for a
+            // worktree source, its provisioned worktree dir) and carry
+            // `worktreeBranch` so the new session adopts — and shares the
+            // reference count of — the same worktree instead of forking one.
+            if let cwd = source.cwd { target.setCwd(cwd) }
             target.setOriginPath(source.originPath)
             target.setWorktree(source.isWorktree)
             target.setSourceBranch(source.sourceBranch)
+            target.setWorktreeBranch(source.worktreeBranch)
             target.setPluginDirectories(source.pluginDirectories)
             target.setAdditionalDirectories(source.additionalDirectories)
             target.setPermissionMode(source.permissionMode)
@@ -267,20 +290,25 @@ final class SessionManager {
             if let effort = source.effort { target.setEffort(effort) }
         }
 
-        // Snapshot a sidebar row from the draft's now-seeded config via the
-        // same `toSessionRecord` path promotion uses — `.pending` status,
-        // full `extra`, and `worktreeBranch` derived in one place. This also
-        // keeps `Effort.rawValue`'s AgentSDK dependency inside `SessionConfig`
-        // (which imports it); `SessionManager` does not. Empty title →
-        // rendered as "未命名/Untitled"; `createdAt`/`lastActiveAt` default to
-        // now so the draft sorts to the top of its folder group.
+        // Persist a `.draft`-status row from the now-seeded config via the
+        // same `toSessionRecord` path promotion uses (full `extra`, worktree
+        // fields derived in one place; this also keeps `Effort.rawValue`'s
+        // AgentSDK dependency inside `SessionConfig`, which imports it —
+        // `SessionManager` does not). Empty title → rendered as "Untitled";
+        // `createdAt`/`lastActiveAt` default to now so it sorts to the top of
+        // its folder group. Saving eagerly is load-bearing: it's what makes
+        // the row durable across restart and visible to the worktree refcount
+        // when `/clear` archives the source moments later.
         let config = draft.draft?.config ?? SessionConfig()
-        let record = config.toSessionRecord(sessionId: newId, title: "")
-        draftRecords.insert(record, at: 0)
+        var record = config.toSessionRecord(sessionId: newId, title: "")
+        record.status = .draft
+        repository.save(record)
+        refreshRecords()
         appLog(
             .info, "SessionManager",
             "createSidebarDraft sid=\(newId.prefix(8)) seededFrom=\(sourceId?.prefix(8).description ?? "(nil)") "
-                + "cwd=\(draft.cwd ?? "(nil)") isWorktree=\(draft.isWorktree)")
+                + "cwd=\(draft.cwd ?? "(nil)") isWorktree=\(draft.isWorktree) "
+                + "worktreeBranch=\(draft.worktreeBranch ?? "(nil)")")
         return newId
     }
 
@@ -321,18 +349,13 @@ final class SessionManager {
     }
 
     /// Re-read every record from the repository and write back to
-    /// `records`. The caller triggers this after a NewSession launches.
-    ///
-    /// Also prunes `draftRecords` of any id that now has a persisted
-    /// record: a draft promoted by its first message appears in `records`
-    /// the same beat, so dropping it here makes the sidebar swap the draft
-    /// row for the real one in one update (no duplicate, no flicker).
+    /// `records`. The caller triggers this after a NewSession launches, after
+    /// a `/new` / `/clear` draft is persisted, and at every promotion. A
+    /// `/new` / `/clear` draft is an ordinary `.draft`-status row here, so its
+    /// promotion is an in-place status flip on the same row (`.draft` →
+    /// `.pending` → `.created`) — no draft-row-to-real-row swap.
     func refreshRecords() {
         records = repository.findAll()
-        if !draftRecords.isEmpty {
-            let persisted = Set(records.map(\.sessionId))
-            draftRecords.removeAll { persisted.contains($0.sessionId) }
-        }
     }
 
     /// Re-read the archived list from the repository. Called by the
@@ -388,9 +411,17 @@ final class SessionManager {
     /// a fresh handle.
     ///
     /// For worktree-backed sessions the on-disk worktree directory is
-    /// also removed (via the injected `worktreeArchive` closure). The
-    /// DB record keeps `cwd` / `originPath` / `worktreeBranch` so
-    /// `unarchive` has everything it needs to reconstruct the worktree.
+    /// also removed (via the injected `worktreeArchive` closure) — but only
+    /// when no other live session still references the same worktree (see
+    /// `liveWorktreeReferenceExists`). The DB record keeps `cwd` /
+    /// `originPath` / `worktreeBranch` so `unarchive` has everything it needs
+    /// to reconstruct the worktree.
+    ///
+    /// A never-sent `.draft` row is **hard-deleted** instead of soft-archived
+    /// (it has no conversation worth keeping and shouldn't surface on the
+    /// Archive page) — this preserves the old "dismiss an unsent draft → it
+    /// vanishes" behavior. Either way the worktree teardown runs through the
+    /// same reference-count gate.
     func archive(_ sessionId: String) {
         // Snapshot the record BEFORE mutating the repo, because
         // `repository.archive` is the only way to flip status; we need
@@ -398,16 +429,42 @@ final class SessionManager {
         let snapshot = repository.find(sessionId)
         sessions[sessionId]?.stop()
         sessions.removeValue(forKey: sessionId)
-        // Drop the in-memory draft row too, for the case where an unsent
-        // draft is archived directly (it has no persisted record, so
-        // `repository.archive` is a no-op for it). `refreshRecords` only
-        // prunes drafts that gained a record; this covers the rest.
-        draftRecords.removeAll { $0.sessionId == sessionId }
-        repository.archive(sessionId)
+        if snapshot?.status == .draft {
+            repository.delete(sessionId)
+        } else {
+            repository.archive(sessionId)
+        }
         refreshRecords()
         refreshArchivedRecords()
-        if let snapshot, snapshot.isWorktree {
+        // Evaluate the reference count AFTER the repo mutation so the
+        // just-archived/deleted self-row is already out of `findAll()`. Tear
+        // the worktree down only when this was its last live referencer;
+        // otherwise a co-owner (e.g. the session a `/new` adopter shares with,
+        // or the `/clear` adopter holding the source's worktree) keeps it.
+        if let snapshot, snapshot.isWorktree,
+            !liveWorktreeReferenceExists(
+                branch: snapshot.worktreeBranch, cwd: snapshot.cwd, excluding: sessionId)
+        {
             worktreeArchive(snapshot)
+        }
+    }
+
+    /// Whether any other **non-archived** session still points at the worktree
+    /// identified by `branch` / `cwd`. The records table IS the reference
+    /// count — `findAll()` excludes archived rows (and the just-removed self
+    /// row), and includes persisted `.draft` adopters, so this is durable
+    /// across app restart with no separate store. Matches on `worktreeBranch`
+    /// **or** `cwd`: `invokeWorktreeArchiveSync` derives the dir to remove
+    /// from `cwd.lastPathComponent`, so a shared cwd must also block deletion
+    /// even if a row's branch is nil.
+    private func liveWorktreeReferenceExists(
+        branch: String?, cwd: String?, excluding sessionId: String
+    ) -> Bool {
+        repository.findAll().contains { other in
+            guard other.sessionId != sessionId, other.isWorktree else { return false }
+            if let branch, other.worktreeBranch == branch { return true }
+            if let cwd, other.cwd == cwd { return true }
+            return false
         }
     }
 

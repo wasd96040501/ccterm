@@ -1990,6 +1990,16 @@
         }
       }
     },
+    "New Draft": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新草稿"
+          }
+        }
+      }
+    },
     "New Session": {
       "localizations": {
         "zh-Hans": {

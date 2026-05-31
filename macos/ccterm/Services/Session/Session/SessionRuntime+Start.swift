@@ -290,6 +290,19 @@ extension SessionRuntime {
         termination = nil
         stderrBuffer = ""
 
+        // A `/new` / `/clear` draft is persisted as a `.draft` row before its
+        // first send. Committing (sending) flips it to `.pending` so the
+        // durable record reflects "launched": a restart mid-launch — or a
+        // launch that fails — lands on the transcript like any `.pending`,
+        // not back on the draft-landing page. No-op for the compose card
+        // (no record yet) and for resume (status is already `.created`).
+        // Because the record exists, `fresh` is false below, so the worktree
+        // provisioning block is skipped and the CLI launches in the seeded
+        // `cwd` — i.e. an adopted worktree is reused, not re-forked.
+        if repository.find(sessionId)?.status == .draft {
+            repository.updateStatus(sessionId, to: .pending)
+        }
+
         let fresh = (repository.find(sessionId) == nil)
 
         // For fresh + isWorktree, provision the worktree on a background

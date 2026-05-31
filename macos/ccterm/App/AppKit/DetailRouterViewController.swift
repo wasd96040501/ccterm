@@ -244,14 +244,19 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
 
     /// Phase-aware routing decision used by the live router. Refines the
     /// pure `childKind(for:)` table with one runtime fact: a `.session(_)`
-    /// whose `Session` is still in `.draft` phase routes to `.draftLanding`
-    /// (the no-card landing page), not `.transcript`. Read fresh on every
+    /// that is still a not-yet-sent draft routes to `.draftLanding` (the
+    /// no-card landing page), not `.transcript`. Read fresh on every
     /// `applySelection` — never cached — so the draft → active phase flip
     /// on first send swaps the landing VC for the transcript VC in place
     /// (driven by `MainSelectionModel.promote(to:)`).
+    ///
+    /// `isDraftSession` (not the cache-only `existingSession(_:)?.isDraft`)
+    /// so a `.draft` row restored from disk after a cold restart — present in
+    /// the sidebar but not yet materialized as a `Session` — still routes to
+    /// the landing page instead of falling through to the transcript.
     private func resolvedChildKind(for selection: MainSelection) -> ChildKind {
         if case .session(let sid) = selection,
-            sessionManager.existingSession(sid)?.isDraft == true
+            sessionManager.isDraftSession(sid)
         {
             return .draftLanding
         }

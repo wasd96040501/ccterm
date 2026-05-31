@@ -11,12 +11,16 @@ import XCTest
 @MainActor
 final class DetailRouterDraftRoutingTests: XCTestCase {
 
-    private func makeRouter() -> (DetailRouterViewController, MainSelectionModel, SessionManager) {
+    private func makeRouter(
+        manager: SessionManager? = nil
+    ) -> (DetailRouterViewController, MainSelectionModel, SessionManager) {
         let model = MainSelectionModel()
-        let manager = SessionManager(
-            repository: InMemorySessionRepository(),
-            cliClientFactory: { _ in FakeCLIClient() }
-        )
+        let manager =
+            manager
+            ?? SessionManager(
+                repository: InMemorySessionRepository(),
+                cliClientFactory: { _ in FakeCLIClient() }
+            )
         let router = DetailRouterViewController(
             model: model,
             sessionManager: manager,
@@ -36,6 +40,26 @@ final class DetailRouterDraftRoutingTests: XCTestCase {
         model.select(.session(draftId))
         XCTAssertTrue(router.currentChild is DraftSessionLandingViewController)
         XCTAssertEqual(router.children.count, 1)
+    }
+
+    func test_uncachedDraftRow_afterRestart_mountsLandingVC() {
+        // Simulate a cold restart: a `.draft` row exists in the store but no
+        // `Session` is cached. Routing must consult the durable status and
+        // still land on the landing page — not fall through to the transcript
+        // (the cache-only `existingSession?.isDraft` would have returned nil).
+        let repo = InMemorySessionRepository()
+        let draftId = "restored-draft"
+        repo.save(
+            SessionRecord(
+                sessionId: draftId, title: "", cwd: "/proj",
+                originPath: "/proj", status: .draft))
+        let manager = SessionManager(
+            repository: repo, cliClientFactory: { _ in FakeCLIClient() })
+        let (router, model, _) = makeRouter(manager: manager)
+
+        model.select(.session(draftId))
+
+        XCTAssertTrue(router.currentChild is DraftSessionLandingViewController)
     }
 
     func test_realSession_mountsTranscriptVC() {

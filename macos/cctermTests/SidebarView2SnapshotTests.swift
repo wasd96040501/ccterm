@@ -59,6 +59,14 @@ final class SidebarView2SnapshotTests: XCTestCase {
             title: "Notes & TODOs",
             originPath: "/Users/me/work/project-a",
             lastActiveAt: now.addingTimeInterval(-120))
+        // A not-yet-sent `/new` / `/clear` draft: empty title → "New Draft"
+        // placeholder, dimmed row, no status indicator. Floats to the top of
+        // its folder via a current `lastActiveAt`.
+        let unsentDraftInProjectA = makeRecord(
+            title: "",
+            originPath: "/Users/me/work/project-a",
+            lastActiveAt: now.addingTimeInterval(5),
+            status: .draft)
         // Long English title — second representative overflow case to
         // make sure the ellipsis lands on a word boundary cleanly.
         let longEnglishInProjectB = makeRecord(
@@ -77,7 +85,7 @@ final class SidebarView2SnapshotTests: XCTestCase {
 
         for record in [
             runningInProjectA, longChineseInProjectA, weirdInProjectA, unreadInProjectA,
-            idleInProjectA,
+            idleInProjectA, unsentDraftInProjectA,
             longEnglishInProjectB, runningAndUnreadInProjectB, idleInProjectB,
         ] {
             repo.save(record)
@@ -131,7 +139,8 @@ final class SidebarView2SnapshotTests: XCTestCase {
     private func makeRecord(
         title: String,
         originPath: String,
-        lastActiveAt: Date
+        lastActiveAt: Date,
+        status: SessionStatus = .created
     ) -> SessionRecord {
         SessionRecord(
             sessionId: UUID().uuidString.lowercased(),
@@ -139,7 +148,7 @@ final class SidebarView2SnapshotTests: XCTestCase {
             cwd: originPath,
             originPath: originPath,
             lastActiveAt: lastActiveAt,
-            status: .created
+            status: status
         )
     }
 }

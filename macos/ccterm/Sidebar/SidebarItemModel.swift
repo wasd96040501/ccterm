@@ -15,8 +15,11 @@ final class SidebarItemNode {
         case fixed(FixedKind)
         /// A folder header — grouping parent that contains history rows.
         case folder(name: String)
-        /// History entry inside a folder.
-        case history(sessionId: String, fallbackTitle: String)
+        /// History entry inside a folder. `isDraft` is a snapshot of the
+        /// record's `.draft` status taken when the tree is built, so the cell
+        /// can render the "not yet sent" marker without a per-row lookup
+        /// (durable across restart, where the row isn't a cached `Session`).
+        case history(sessionId: String, fallbackTitle: String, isDraft: Bool)
     }
 
     let kind: Kind

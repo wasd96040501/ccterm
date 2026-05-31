@@ -13,10 +13,25 @@ final class LoadingPillLayoutTests: XCTestCase {
         continueAfterFailure = false
     }
 
-    func testNoUsageHasNoLabel() {
+    func testNoUsageNoClockHasNoChip() {
+        // No tokens and no clock anchor → no trailing chip at all.
         let layout = LoadingPillLayout.make(usage: .zero)
         XCTAssertNil(layout.usageRect)
+        XCTAssertNil(layout.startedAt)
         XCTAssertEqual(layout.measuredWidth, BlockStyle.loadingPillWidth)
+    }
+
+    func testClockReservesChipEvenWithoutTokens() throws {
+        // A turn clock alone (no tokens yet) still reserves the trailing chip,
+        // sitting past the dots + gap.
+        let started = Date()
+        let layout = LoadingPillLayout.make(usage: .zero, startedAt: started)
+        XCTAssertEqual(layout.startedAt, started)
+        let rect = try XCTUnwrap(layout.usageRect)
+        XCTAssertGreaterThanOrEqual(
+            rect.origin.x,
+            BlockStyle.loadingPillWidth + BlockStyle.loadingPillUsageGap)
+        XCTAssertGreaterThan(layout.measuredWidth, BlockStyle.loadingPillWidth)
     }
 
     func testUsageProducesRectToTheRightOfDots() throws {
@@ -32,12 +47,30 @@ final class LoadingPillLayoutTests: XCTestCase {
         XCTAssertGreaterThan(layout.measuredWidth, BlockStyle.loadingPillWidth)
     }
 
-    func testRowHeightConstantRegardlessOfUsage() {
-        // Constant height is what lets setTurnUsage skip noteHeightOfRows.
+    func testRowHeightConstantRegardlessOfChip() {
+        // Constant height is what lets setTurnUsage / setTurnStartedAt skip
+        // noteHeightOfRows — true whether the chip carries a clock, tokens, both,
+        // or nothing.
         let empty = LoadingPillLayout.make(usage: .zero)
         let withUsage = LoadingPillLayout.make(
             usage: TurnTokenUsage(inputTokens: 9_999_999, outputTokens: 1))
+        let withClock = LoadingPillLayout.make(usage: .zero, startedAt: Date())
+        let withBoth = LoadingPillLayout.make(
+            usage: TurnTokenUsage(inputTokens: 9_999_999, outputTokens: 1),
+            startedAt: Date())
         XCTAssertEqual(empty.totalHeight, withUsage.totalHeight)
+        XCTAssertEqual(empty.totalHeight, withClock.totalHeight)
+        XCTAssertEqual(empty.totalHeight, withBoth.totalHeight)
+    }
+
+    func testFormatElapsedDropsZeroUnits() {
+        XCTAssertEqual(LoadingPillUsageView.formatElapsed(0), "0s")
+        XCTAssertEqual(LoadingPillUsageView.formatElapsed(45), "45s")
+        XCTAssertEqual(LoadingPillUsageView.formatElapsed(60), "1m")
+        XCTAssertEqual(LoadingPillUsageView.formatElapsed(63), "1m 3s")
+        XCTAssertEqual(LoadingPillUsageView.formatElapsed(3661), "1h 1m 1s")
+        // 1 day + 0 hours + 2 minutes + 3 seconds → the zero hour is dropped.
+        XCTAssertEqual(LoadingPillUsageView.formatElapsed(86523), "1d 2m 3s")
     }
 
     func testDotsVerticallyCenteredInRow() {

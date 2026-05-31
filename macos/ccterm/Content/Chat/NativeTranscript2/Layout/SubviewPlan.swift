@@ -148,14 +148,17 @@ struct SubviewPlan: @unchecked Sendable {
         let tintColor: NSColor
     }
 
-    /// Live turn-token-usage spec. The cell hosts a single
-    /// `LoadingPillUsageView` that renders `↑in ↓out` and rolls each
-    /// number toward its new target. `frame` is cell-local placement;
-    /// `inputTokens` / `outputTokens` are the raw (cache-excluded) turn
-    /// totals — the view abbreviates and tweens them. `font` / `color`
-    /// match the chrome tier the layout reserved width for.
+    /// Live trailing-chip spec for the running pill. The cell hosts a single
+    /// `LoadingPillUsageView` that renders the elapsed turn clock and — once
+    /// tokens accrue — a ` · ↑in ↓out` suffix whose numbers roll toward their
+    /// targets. `frame` is cell-local placement (the view self-sizes its width
+    /// from there); `startedAt` anchors the self-ticking clock (`nil` → no
+    /// clock); `inputTokens` / `outputTokens` are the raw (cache-excluded) turn
+    /// totals — the view abbreviates and tweens them. `font` / `color` match the
+    /// chrome tier the layout reserved width for.
     struct UsageCounter: @unchecked Sendable {
         let frame: CGRect
+        let startedAt: Date?
         let inputTokens: Int
         let outputTokens: Int
         let font: NSFont

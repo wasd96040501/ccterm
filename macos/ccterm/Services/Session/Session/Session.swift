@@ -365,6 +365,13 @@ final class Session {
         runtime?.turnUsage ?? .zero
     }
 
+    /// Instant the in-flight turn started — the anchor the running pill's
+    /// elapsed clock counts up from. `nil` for `.draft` sessions and before
+    /// the first turn.
+    var turnStartedAt: Date? {
+        runtime?.turnStartedAt
+    }
+
     /// Most recent typed `get_context_usage` breakdown, if one has been
     /// fetched. Always `nil` for `.draft` sessions and for `.active`
     /// sessions before the popover ever opened.

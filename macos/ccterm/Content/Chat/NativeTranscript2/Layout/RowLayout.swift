@@ -372,6 +372,7 @@ enum RowLayout: @unchecked Sendable {
             let usageSpec: SubviewPlan.UsageCounter? = l.usageRect.map { rect in
                 SubviewPlan.UsageCounter(
                     frame: rect.offsetBy(dx: origin.x, dy: origin.y),
+                    startedAt: l.startedAt,
                     inputTokens: l.usage.inputTokens,
                     outputTokens: l.usage.outputTokens,
                     font: BlockStyle.loadingPillUsageFont,

@@ -23,12 +23,13 @@ import Foundation
 /// ### Rate model
 ///
 /// The pacing math lives in `StreamPacer` (EWMA arrival-rate estimate + a
-/// first-order servo onto a playout cushion — the standard adaptive-playout /
-/// smooth-LLM-token formulation). The visible head trails the received tail by
-/// the pacer's playout cushion, advancing at the estimated arrival rate — so the
-/// reveal stays smooth across the gaps between deltas instead of racing to each
-/// burst boundary and idling. `seal()` (at finalize) drops the cushion so the
-/// final tail drains straight to the end.
+/// critically-damped second-order servo onto a playout cushion — the
+/// SmoothDamp / α-β-filter formulation). The visible head trails the received
+/// tail by the pacer's playout cushion, advancing at the estimated arrival rate;
+/// because the servo carries velocity as a *state*, the head's *speed* changes
+/// smoothly too — the reveal neither races to each burst boundary nor visibly
+/// speeds up and coasts between deltas. `seal()` (at finalize) drops the cushion
+/// so the final tail drains straight to the end.
 ///
 /// No UI, no markdown parsing, no actor isolation — unit-tested in isolation
 /// (`TypewriterRevealTests`).

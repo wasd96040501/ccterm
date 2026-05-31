@@ -91,12 +91,16 @@ struct StreamPacer {
         /// quickly but never teleports. There is no floor — see the type doc.
         var maxRate: Double
 
-        /// Characters: sized to hide the ~50–120ms gaps between SSE `text_delta`
-        /// flushes; the cap keeps a giant paste-in from teleporting.
+        /// Characters. `targetLatency` is sized off the **measured** SSE cadence
+        /// (a `claude-haiku` long-story turn via `PartialMessagesSmoke`):
+        /// ~17-char chunks arriving a median 228ms apart (p90 281ms). A cushion
+        /// must bridge that gap or the display drains between chunks and stutters
+        /// a chunk (~1/3 line) at a time; 0.3s ⇒ ~23-char cushion at that rate,
+        /// just over one chunk. The cap keeps a giant paste-in from teleporting.
         static let text = Params(
-            rateTimeConstant: 0.25,
-            catchUpTimeConstant: 0.18,
-            targetLatency: 0.12,
+            rateTimeConstant: 0.35,
+            catchUpTimeConstant: 0.25,
+            targetLatency: 0.3,
             maxRate: 700)
 
         /// Token counters: a smooth, readable climb between the CLI's coarse

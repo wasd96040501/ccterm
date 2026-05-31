@@ -153,6 +153,58 @@ final class StreamPacerTests: XCTestCase {
                 + "the display stalled at the boundary, i.e. the stutter")
     }
 
+    /// Replays the **real** SSE cadence captured from a `claude-haiku` long-story
+    /// turn (`PartialMessagesSmoke`): ~17-char chunks arriving a median 228ms
+    /// apart (p90 281ms, with 674/416/439ms outliers). With the cushion too small
+    /// to bridge a 228ms gap, the display catches the boundary between chunks and
+    /// the buffer runs dry — the "1/3-line stutter". We replay the trace frame by
+    /// frame and count dry frames (buffer empty while more deltas are still owed).
+    func testRealHaikuCadenceKeepsTheBufferFull() {
+        // (chars, gapMsFromPrevDelta) — verbatim from the smoke run.
+        let trace: [(len: Int, gap: Double)] = [
+            (17, 0), (20, 267), (15, 206), (17, 262), (18, 213), (18, 211), (15, 210),
+            (11, 237), (13, 234), (22, 238), (14, 212), (22, 237), (22, 235), (12, 211),
+            (18, 217), (11, 228), (16, 211), (10, 235), (21, 238), (15, 262), (16, 210),
+            (13, 315), (13, 210), (9, 242), (22, 674), (14, 4), (16, 1), (18, 256),
+            (17, 301), (15, 158), (23, 149), (21, 215), (14, 416), (12, 57), (23, 439),
+            (20, 112), (21, 298), (22, 156), (18, 232), (17, 242), (14, 321), (24, 226),
+        ]
+        // Absolute arrival time (ms) of each delta.
+        var arrival: [Double] = []
+        var clock = 0.0
+        for d in trace {
+            clock += d.gap
+            arrival.append(clock)
+        }
+        let lastArrival = arrival.last ?? 0
+
+        var pacer = StreamPacer(params: .text)
+        var target = 0.0
+        var next = 0
+        var simMs = 0.0
+        let frameMs = 1000.0 / 60.0
+        var dryFrames = 0
+
+        var f = 0
+        while simMs <= lastArrival + 2000 {  // +2s tail to drain
+            simMs += frameMs
+            while next < trace.count, arrival[next] <= simMs {
+                target += Double(trace[next].len)
+                pacer.setTarget(target)
+                next += 1
+            }
+            pacer.advance(dt: frameMs / 1000)
+            // A dry buffer while deltas are still owed is a mid-stream stall.
+            if f > 30, next < trace.count, pacer.backlog < 0.5 { dryFrames += 1 }
+            f += 1
+        }
+
+        XCTAssertEqual(
+            dryFrames, 0,
+            "the buffer ran dry on \(dryFrames) frame(s) under the real 228ms-median "
+                + "cadence — the display stalled between chunks (the 1/3-line stutter)")
+    }
+
     // MARK: - Catch up when it falls behind
 
     /// A large sudden jump (a slow stream that abruptly bursts, or a batched

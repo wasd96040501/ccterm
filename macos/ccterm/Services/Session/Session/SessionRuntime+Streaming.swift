@@ -45,6 +45,10 @@ extension SessionRuntime {
         activeReveal = nil
         streamingAssembler.reset()
         streamingPreviewEntryIds = [:]
+        // Anchor the running pill's elapsed clock at the turn start, then push
+        // the zeroed usage — the sink site re-reads `turnStartedAt` alongside
+        // it, so the clock restarts in lockstep with the counter.
+        turnStartedAt = Date()
         publishTurnUsage(.zero)
     }
 

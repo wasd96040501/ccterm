@@ -261,6 +261,14 @@ final class SessionRuntime {
     /// synchronously by `publishTurnUsage`. Forwarded from `Session`.
     @ObservationIgnored var onTurnUsageChange: ((TurnTokenUsage) -> Void)?
 
+    /// Wall-clock instant the in-flight turn started — the anchor the running
+    /// pill's live "elapsed" clock counts up from. Set at each real turn start
+    /// (`resetStreamingTurn`, and `fromDraft` for the first turn), never cleared
+    /// (the next turn overwrites it). Off the observation path like `turnUsage`:
+    /// the pill reads it once on mount and the view self-ticks from it; turn
+    /// boundaries push it through `onTurnUsageChange`'s sink site.
+    @ObservationIgnored internal(set) var turnStartedAt: Date?
+
     /// Per-turn folder for SSE partial-message events (`onStreamEvent`).
     /// Off the observation path — `turnUsage` and the streaming-text preview
     /// are its observable / pushed projections. See `SessionRuntime+Streaming`.

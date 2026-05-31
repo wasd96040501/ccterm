@@ -101,9 +101,15 @@ extension SessionRuntime {
     /// draft-to-runtime promotion path (the runtime receives an already-
     /// titled draft); inside the runtime, `send` does not touch `title`.
     private func enqueueAndSend(_ input: LocalUserInput) {
-        // A new user turn starts — drop the prior turn's streaming state
-        // (token totals reset to zero, any stale preview mapping cleared).
-        resetStreamingTurn()
+        // A *new* user turn starts only when nothing is running. While a turn is
+        // already in flight this send is a queued follow-up — the CLI buffers it
+        // and opens its turn after the current `.result`. Resetting here would
+        // wipe the running turn's streaming state (token counter, turn clock,
+        // typewriter) mid-turn; defer it to the follow-up turn's `system.init`
+        // (see `receive`). When idle, reset now so the counter starts fresh.
+        if !isRunning {
+            resetStreamingTurn()
+        }
         let single = SingleEntry(
             id: UUID(),
             payload: .localUser(input),
@@ -258,6 +264,10 @@ extension SessionRuntime {
             // façade flips phase. Matches the pre-split behavior where
             // `enqueueAndSend` flipped before any side effect.
             runtime.isRunning = true
+            // Anchor the running pill's elapsed clock for this first turn. The
+            // draft path bypasses `enqueueAndSend` / `resetStreamingTurn`, so set
+            // it here; the transcript reads it on mount via `session.turnStartedAt`.
+            runtime.turnStartedAt = Date()
         }
 
         return (runtime, queuedEntry)

@@ -4,11 +4,11 @@ import XCTest
 
 @testable import ccterm
 
-/// Visual self-check (opt-in, skipped on CI) for the running pill with a live
-/// turn-usage counter: renders a real `BlockCellView` carrying the
-/// `.loadingPill` layout at a non-zero `turnUsage`, and confirms the `↑in ↓out`
-/// label paints in its dedicated `LoadingPillUsageView` subview to the right of
-/// the dots (not double-drawn into the cell bitmap).
+/// Visual self-check (opt-in, skipped on CI) for the running pill's trailing
+/// chip: renders a real `BlockCellView` carrying the `.loadingPill` layout with
+/// both a turn clock (`turnStartedAt`) and a non-zero `turnUsage`, and confirms
+/// the `{elapsed} · ↑in ↓out` chip paints in its dedicated `LoadingPillUsageView`
+/// subview to the right of the dots (not double-drawn into the cell bitmap).
 ///
 ///   make test-unit FILTER=LoadingPillUsageSnapshotTests
 ///   then Read /tmp/ccterm-screenshots/LoadingPillUsage.png
@@ -43,7 +43,9 @@ final class LoadingPillUsageSnapshotTests: XCTestCase {
         let layout = Transcript2Coordinator.makeLayout(
             for: Block(id: UUID(), kind: .loadingPill),
             width: width,
-            turnUsage: TurnTokenUsage(inputTokens: 1234, outputTokens: 340))
+            turnUsage: TurnTokenUsage(inputTokens: 1234, outputTokens: 340),
+            // 75s ago → the clock should read "1m 15s · ↑1.2k ↓340".
+            turnStartedAt: Date(timeIntervalSinceNow: -75))
 
         let cell = BlockCellView(frame: CGRect(x: 0, y: 0, width: width, height: 40))
         cell.padTop = 12

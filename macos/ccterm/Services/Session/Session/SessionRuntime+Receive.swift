@@ -58,6 +58,16 @@ extension SessionRuntime {
             // (`send` either flipped it true already, or no message
             // is in flight and the spinner should stay off).
             if mode == .live, status != .starting {
+                // A follow-up turn is starting (a message queued mid-turn, or a
+                // CLI-spontaneous continuation). `enqueueAndSend` deliberately
+                // skips the per-turn reset for a queued send so the prior turn's
+                // counter / clock survive to its `.result`; do it here, at the
+                // real turn boundary. `!isRunning` gates it to the false→true
+                // edge so a normal idle send — already reset + running — isn't
+                // reset a second time.
+                if !isRunning {
+                    resetStreamingTurn()
+                }
                 isRunning = true
             }
             adopt(info, mode: mode)

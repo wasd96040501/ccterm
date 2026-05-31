@@ -380,6 +380,14 @@ final class Transcript2Controller {
         coordinator.setTurnUsage(usage)
     }
 
+    /// Update the running pill's elapsed-clock anchor (the turn's start
+    /// instant). Forwarded to the coordinator, which repaints the pill row so
+    /// the hosted `LoadingPillUsageView` picks up the new start and self-ticks.
+    /// Idempotent — unchanged values are dropped coordinator-side.
+    func setTurnStartedAt(_ date: Date?) {
+        coordinator.setTurnStartedAt(date)
+    }
+
     /// Sweep every `.running` entry to `.completed` in one pass. Wired
     /// up from `Transcript2EntryBridge.handleTurnFinished()`, which the
     /// runtime calls inside `finishTurn` (live `.result`). `.failed` /

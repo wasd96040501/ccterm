@@ -428,11 +428,17 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
         session.controller.setLoading(session.isRunning)
         // turnUsage rides the imperative channel: push the current value once on
         // mount, then let `onTurnUsageChange` drive live updates (the runtime
-        // fires it synchronously at each write — no observation pull).
+        // fires it synchronously at each write — no observation pull). The turn
+        // clock's start anchor rides the same site: it only changes at a turn
+        // boundary (which always coincides with a usage write), so re-reading
+        // `session.turnStartedAt` here keeps the pill's elapsed clock in sync
+        // without a second sink.
         session.controller.setTurnUsage(session.turnUsage)
+        session.controller.setTurnStartedAt(session.turnStartedAt)
         session.onTurnUsageChange = { [weak self, weak session] usage in
             guard let self, let session, self.currentSession === session else { return }
             session.controller.setTurnUsage(usage)
+            session.controller.setTurnStartedAt(session.turnStartedAt)
         }
 
         // Re-arm the `isRunning` → controller sink (cancels the old).

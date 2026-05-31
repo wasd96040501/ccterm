@@ -139,6 +139,13 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     /// arm reads it; `setTurnUsage(_:)` is the single mutation entry.
     private var turnUsage: TurnTokenUsage = .zero
 
+    /// Start instant of the in-flight turn — the anchor the running pill's
+    /// elapsed clock counts up from. Scalar for the same reason as `turnUsage`.
+    /// `makeLayout`'s `.loadingPill` arm forwards it to the layout (and thence
+    /// the hosted `LoadingPillUsageView`, which self-ticks from it);
+    /// `setTurnStartedAt(_:)` is the single mutation entry. `nil` → no clock.
+    private var turnStartedAt: Date?
+
     init(syntaxEngine: SyntaxHighlightEngine? = nil) {
         self.selection = Transcript2SelectionCoordinator()
         self.search = Transcript2SearchCoordinator()
@@ -698,7 +705,8 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             highlights: highlightStorage.snapshot(),
             folds: foldStates,
             statuses: statusStates,
-            turnUsage: turnUsage)
+            turnUsage: turnUsage,
+            turnStartedAt: turnStartedAt)
         layoutCache[block.id] = CachedLayout(width: width, layout: layout)
         // Hot path — count only (one integer bump), never log here. The
         // summary is logged once per attach by reading the delta (see
@@ -724,7 +732,8 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         highlights: [Transcript2HighlightKey: HighlightValue] = [:],
         folds: [UUID: Bool] = [:],
         statuses: [UUID: ToolStatus] = [:],
-        turnUsage: TurnTokenUsage = .zero
+        turnUsage: TurnTokenUsage = .zero,
+        turnStartedAt: Date? = nil
     ) -> RowLayout {
         let contentWidth = max(0, width - 2 * BlockStyle.blockHorizontalPadding)
         switch block.kind {
@@ -805,7 +814,8 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             // (`refillLayoutCache`, the backfill builder) can call it;
             // those pass the default `.zero` usage, and `setTurnUsage`
             // evicts + reloads the pill row to land the live figure.
-            return .loadingPill(LoadingPillLayout.make(usage: turnUsage))
+            return .loadingPill(
+                LoadingPillLayout.make(usage: turnUsage, startedAt: turnStartedAt))
         }
     }
 
@@ -975,6 +985,25 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     func setTurnUsage(_ usage: TurnTokenUsage) {
         guard usage != turnUsage else { return }
         turnUsage = usage
+        reloadPillRow()
+    }
+
+    /// Update the running pill's elapsed-clock anchor (the turn's start
+    /// instant). Same posture as `setTurnUsage`: store the value and reload the
+    /// pill row so its `LoadingPillUsageView` picks up the new start and resets
+    /// its self-ticking clock. No-op when unchanged or when no pill is installed
+    /// (the value is still stored so the next pill insert reads it).
+    func setTurnStartedAt(_ date: Date?) {
+        guard date != turnStartedAt else { return }
+        turnStartedAt = date
+        reloadPillRow()
+    }
+
+    /// Evict the loading-pill row's cached layout and reload that single row.
+    /// The pill reserves constant height whether or not a usage label / clock is
+    /// present, so there's no `noteHeightOfRows`. No-op when no table is bound or
+    /// no pill row is installed.
+    private func reloadPillRow() {
         guard let table = tableView else { return }
         guard
             let row = blocks.firstIndex(where: {

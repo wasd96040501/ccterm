@@ -108,6 +108,62 @@ final class SessionRuntimeIsRunningTests: XCTestCase {
         XCTAssertFalse(runtime.isRunning, "second .result closes the follow-up turn")
     }
 
+    // MARK: - Queued send preserves the running turn's usage + clock
+
+    /// Regression net for "the pill token vanishes the moment I type a queued
+    /// message". A send issued *while a turn is running* is a queued follow-up:
+    /// the CLI buffers it and opens its turn after the current `.result`. It
+    /// must NOT reset the in-flight turn's token counter or elapsed clock — the
+    /// user keeps seeing the live totals until the turn actually ends. The reset
+    /// lands only when the queued message's own turn starts, signalled by the
+    /// CLI's follow-up `.system(.init)`.
+    func testQueuedSendKeepsTurnUsageUntilFollowUpTurnStarts() async throws {
+        let (runtime, fake) = makeRuntime()
+        await bootstrap(runtime, fake)
+
+        // Turn 1: idle → fresh turn. The clock anchors here.
+        runtime.send(text: "first")
+        XCTAssertTrue(runtime.isRunning)
+        let turn1Start = try XCTUnwrap(
+            runtime.turnStartedAt, "an idle send anchors the turn clock")
+
+        // Accrue some usage on turn 1.
+        await push(
+            Message2Fixtures.assistantWithUsage(
+                messageId: "m1", text: "working", inputTokens: 120, outputTokens: 400),
+            into: fake)
+        let usageDuringTurn1 = runtime.turnUsage
+        XCTAssertFalse(usageDuringTurn1.isEmpty, "turn 1 accrued token usage")
+
+        // Queue a follow-up WHILE turn 1 is still running.
+        runtime.send(text: "second (queued)")
+        XCTAssertTrue(runtime.isRunning)
+        XCTAssertEqual(
+            runtime.turnUsage, usageDuringTurn1,
+            "a queued send must not zero the running turn's token counter")
+        XCTAssertEqual(
+            runtime.turnStartedAt, turn1Start,
+            "a queued send must not restart the running turn's clock")
+
+        // Turn 1 closes — the final total stays visible through turn end.
+        await push(Message2Fixtures.result(), into: fake)
+        XCTAssertFalse(runtime.isRunning)
+        XCTAssertEqual(
+            runtime.turnUsage, usageDuringTurn1,
+            "usage survives turn close so the final total stays on screen")
+
+        // The queued message's turn begins — the CLI re-inits. This is where
+        // the per-turn state finally resets.
+        await push(Message2Fixtures.systemInit(), into: fake)
+        XCTAssertTrue(runtime.isRunning, "follow-up init relights the spinner")
+        XCTAssertTrue(
+            runtime.turnUsage.isEmpty,
+            "the follow-up turn's start is where the counter resets")
+        let turn2Start = try XCTUnwrap(
+            runtime.turnStartedAt, "the follow-up turn re-anchors the clock")
+        XCTAssertGreaterThanOrEqual(turn2Start, turn1Start)
+    }
+
     // MARK: - Multi-send / single-result no-stuck
 
     /// Old counter design stuck on `pendingTurnCount = 1` if two sends

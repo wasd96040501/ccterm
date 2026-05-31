@@ -146,6 +146,10 @@ struct InputBarView2: View {
     /// default) disables builtins — the compose card and previews leave it
     /// unset.
     var onBuiltinCommand: ((BuiltinSlashCommand) -> Void)? = nil
+    /// When true, the text field grabs first responder as the bar appears.
+    /// Set by the `/new` / `/clear` draft-landing bar so the user can type
+    /// immediately; the chat resting bar and compose card leave it false.
+    var autofocus: Bool = false
 
     @Environment(InputDraftStore.self) private var draftStore
     @State private var text: String = ""
@@ -201,6 +205,7 @@ struct InputBarView2: View {
         }
         .onChange(of: text) { _, _ in scheduleDraftSave() }
         .onChange(of: attachments) { _, _ in scheduleDraftSave() }
+        .onAppear { if autofocus { isFocused = true } }
     }
 
     /// Snapshot the bar's persistable state and hand it to the store.

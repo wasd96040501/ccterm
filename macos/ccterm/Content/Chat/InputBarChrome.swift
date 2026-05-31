@@ -21,6 +21,9 @@ struct InputBarChrome: View {
     /// `InputBarView2`'s completion trigger context. Nil where builtins
     /// shouldn't be offered (the compose card).
     var onBuiltinCommand: ((BuiltinSlashCommand) -> Void)? = nil
+    /// Forwarded to `InputBarView2`: auto-focus the text field on appear.
+    /// True only for the `/new` / `/clear` draft-landing bar.
+    var autofocus: Bool = false
 
     @Environment(SessionManager.self) private var manager
 
@@ -67,7 +70,8 @@ struct InputBarChrome: View {
                 // warming.
                 knownSlashCommands: session.slashCommands.isEmpty ? nil : session.slashCommands,
                 draftKey: draftKey,
-                onBuiltinCommand: onBuiltinCommand
+                onBuiltinCommand: onBuiltinCommand,
+                autofocus: autofocus
             )
             InputBarSessionChrome(session: session)
         }

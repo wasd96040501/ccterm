@@ -252,7 +252,8 @@ struct DraftSessionLandingView: View {
             onSubmit: onSubmit,
             onAttachRect: { _ in },
             onPillRect: { _ in },
-            onBuiltinCommand: onBuiltinCommand
+            onBuiltinCommand: onBuiltinCommand,
+            autofocus: true
         )
     }
 

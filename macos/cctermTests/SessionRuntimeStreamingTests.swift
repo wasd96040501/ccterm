@@ -101,9 +101,39 @@ final class SessionRuntimeStreamingTests: XCTestCase {
         XCTAssertGreaterThan(partial.count, 0)
         XCTAssertLessThan(partial.count, 40, "the 40-char chunk must not pop in at once")
 
-        // Keep ticking → it converges to the full chunk.
-        for _ in 0..<60 { ticker.tick(1.0 / 60.0) }
+        // Keep ticking → it converges to the full chunk. (A larger playout
+        // cushion trails further, so convergence on a single un-sealed burst
+        // takes more frames — it lands once the rate estimate decays and the
+        // backlog snaps in.)
+        for _ in 0..<300 { ticker.tick(1.0 / 60.0) }
         XCTAssertEqual(revealedText(runtime).count, 40)
+    }
+
+    /// Under the **real** SSE cadence (~15-char chunks ~228ms apart), the tick
+    /// loop must not stop mid-stream: if the pacer drained its buffer between
+    /// chunks it would catch the boundary, hit `if !hasWork { stopTypewriter() }`,
+    /// and freeze until the next chunk — text landing a chunk (~1/3 line) at a
+    /// time. The cushion (`.text` `targetLatency`) is sized to bridge that gap;
+    /// here we assert the loop stays live across the gaps. (The pure pacing proof
+    /// is `StreamPacerTests.testRealHaikuCadenceKeepsTheBufferFull`.)
+    func testRevealDoesNotStallUnderRealCadence() {
+        let (runtime, ticker) = makeRuntime()
+        runtime.consumeStreamEvent(Message2Fixtures.streamMessageStart(messageId: "m1"))
+
+        let chunk = String(repeating: "x", count: 15)  // ~1/3 line per flush
+        let gapFrames = 14  // ~228ms median gap @60fps
+        var stalledFrames = 0
+        for _ in 0..<14 {
+            runtime.consumeStreamEvent(Message2Fixtures.streamTextDelta(index: 0, text: chunk))
+            for _ in 0..<gapFrames {
+                ticker.tick(1.0 / 60.0)
+                if !ticker.running { stalledFrames += 1 }
+            }
+        }
+        XCTAssertEqual(
+            stalledFrames, 0,
+            "the tick loop stopped on \(stalledFrames) mid-stream frame(s) — the reveal "
+                + "caught the boundary and froze between chunks (the 1/3-line stutter)")
     }
 
     func testFinalEnvelopeDefersUntilTypewriterCatchesUp() {

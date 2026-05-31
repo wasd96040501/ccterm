@@ -2,43 +2,37 @@ import AppKit
 
 /// The live turn-token-usage counter drawn beside the running dots
 /// (`↑in ↓out`). A dedicated subview rather than cell-bitmap text so the
-/// numbers can **roll up** — odometer / 翻牌器 style — toward each new target
+/// numbers can **count up** — odometer / 翻牌器 style — toward each new target
 /// instead of snapping.
 ///
 /// Why a roll is needed at all: the displayed output is a client-side estimate
-/// that climbs as text streams (and as the CLI's thinking estimate accrues),
-/// then takes one larger step when the authoritative `message_delta` total
-/// overtakes it. Easing the *displayed* value toward the target keeps both the
-/// per-delta climb and that final step a continuous count-up instead of a jitter
-/// or an abrupt snap. The runtime drives
-/// targets through `Transcript2Coordinator.setTurnUsage` → a single-row
+/// that climbs as text streams (and as the CLI's thinking estimate accrues in
+/// coarse `+50` cumulative jumps), then takes one larger step when the
+/// authoritative `message_delta` total overtakes it. Feeding the *target* into a
+/// `StreamPacer` (the same adaptive pacer the typewriter reveal uses) turns
+/// those jumps into a continuous `1,2,3,…` climb at the estimated arrival rate —
+/// not a decelerating ease-into-each-target, and never a `+50` snap. The runtime
+/// drives targets through `Transcript2Coordinator.setTurnUsage` → a single-row
 /// `reloadData`, which re-runs the subview plan and calls `apply(spec:)` here;
-/// the cell reconciler reuses this view across reloads, so the roll state
+/// the cell reconciler reuses this view across reloads, so the pacer state
 /// survives every tick.
 final class LoadingPillUsageView: NSView {
 
-    private var targetInput: Int = 0
-    private var targetOutput: Int = 0
-    /// Currently-displayed (fractional) values; eased toward the targets.
-    private var shownInput: Double = 0
-    private var shownOutput: Double = 0
+    /// Generic stream pacers that turn the bursty `(input, output)` targets into
+    /// a smooth, continuously-counting display. Tokens, not characters, so the
+    /// `.counter` tuning (slow readable climb between coarse jumps).
+    private var inputPacer = StreamPacer(params: .counter)
+    private var outputPacer = StreamPacer(params: .counter)
     /// First `apply` snaps (no roll) so a freshly-created view — first
     /// appearance, or a pill re-pin that recycles a different cell mid-turn —
-    /// shows the real total immediately instead of wrongly rolling up from 0.
-    /// Every subsequent `apply` rolls.
+    /// shows the real total immediately instead of wrongly counting up from 0.
+    /// Every subsequent `apply` counts.
     private var hasValue = false
 
     private var font: NSFont = .systemFont(ofSize: 11)
     private var color: NSColor = .tertiaryLabelColor
 
     private var tweenTimer: Timer?
-
-    /// Per-frame easing toward the target. ~0.22 converges a step in ~0.25s at
-    /// 60fps — fast enough to feel responsive, slow enough to read as a roll.
-    private static let easing: Double = 0.22
-    /// Snap threshold: once within this many tokens, jump to the target and
-    /// stop the timer (avoids an asymptotic crawl that never settles).
-    private static let snapEpsilon: Double = 0.5
 
     override var isFlipped: Bool { true }
     override var wantsDefaultClipping: Bool { false }
@@ -53,7 +47,7 @@ final class LoadingPillUsageView: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     /// Point the counter at a new `(input, output)` target. Typography updates
-    /// apply immediately; the numbers ease toward the new values.
+    /// apply immediately; the numbers count up toward the new values.
     func apply(_ spec: SubviewPlan.UsageCounter) {
         var styleChanged = false
         if font != spec.font {
@@ -64,14 +58,14 @@ final class LoadingPillUsageView: NSView {
             color = spec.color
             styleChanged = true
         }
-        targetInput = spec.inputTokens
-        targetOutput = spec.outputTokens
+        inputPacer.setTarget(Double(spec.inputTokens))
+        outputPacer.setTarget(Double(spec.outputTokens))
 
         if !hasValue {
-            // Snap on first sight — no roll from 0.
+            // Snap on first sight — no count-up from 0.
             hasValue = true
-            shownInput = Double(targetInput)
-            shownOutput = Double(targetOutput)
+            inputPacer.snap()
+            outputPacer.snap()
             tweenTimer?.invalidate()
             tweenTimer = nil
             needsDisplay = true
@@ -86,13 +80,12 @@ final class LoadingPillUsageView: NSView {
     }
 
     private var needsTween: Bool {
-        abs(Double(targetInput) - shownInput) > Self.snapEpsilon
-            || abs(Double(targetOutput) - shownOutput) > Self.snapEpsilon
+        inputPacer.hasBacklog || outputPacer.hasBacklog
     }
 
     private func startTweenIfNeeded() {
         guard tweenTimer == nil else { return }
-        // `.common` mode so the roll keeps animating while the transcript is
+        // `.common` mode so the count-up keeps animating while the transcript is
         // being scrolled / tracked.
         let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] t in
             guard let self else {
@@ -106,11 +99,9 @@ final class LoadingPillUsageView: NSView {
     }
 
     private func stepTween(_ timer: Timer) {
-        shownInput += (Double(targetInput) - shownInput) * Self.easing
-        shownOutput += (Double(targetOutput) - shownOutput) * Self.easing
+        inputPacer.advance(dt: 1.0 / 60.0)
+        outputPacer.advance(dt: 1.0 / 60.0)
         if !needsTween {
-            shownInput = Double(targetInput)
-            shownOutput = Double(targetOutput)
             timer.invalidate()
             if tweenTimer === timer { tweenTimer = nil }
         }
@@ -139,8 +130,8 @@ final class LoadingPillUsageView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         let label =
-            "↑\(TurnTokenUsage.abbreviate(Int(shownInput.rounded()))) "
-            + "↓\(TurnTokenUsage.abbreviate(Int(shownOutput.rounded())))"
+            "↑\(TurnTokenUsage.abbreviate(inputPacer.displayed)) "
+            + "↓\(TurnTokenUsage.abbreviate(outputPacer.displayed))"
         let attr = NSAttributedString(
             string: label,
             attributes: [.font: font, .foregroundColor: color])

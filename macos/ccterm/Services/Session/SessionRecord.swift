@@ -2,6 +2,12 @@ import Foundation
 
 /// Persisted session lifecycle state (stored in CDSession.status).
 enum SessionStatus: String {
+    /// Persisted row for a `/new` / `/clear` session the user has never
+    /// sent a message to yet. Routes to the draft-landing page, survives
+    /// restart, and is hard-deleted (not archived) on dismiss. The first
+    /// send flips it to `.pending`. Treated as "fresh" everywhere a launch
+    /// mode is decided (`shouldResumeBootstrap` only resumes `.created`).
+    case draft
     /// DB row created; CLI has never successfully initialized (cwd unknown).
     case pending
     /// CLI initialized at least once; full metadata is available.

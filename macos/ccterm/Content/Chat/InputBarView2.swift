@@ -140,6 +140,16 @@ struct InputBarView2: View {
     /// mode passes `InputDraftStore.newSessionKey` so the draft
     /// survives the lazily-allocated `draftSessionId` regenerating.
     var draftKey: String? = nil
+    /// Dispatcher for CCTerm-native builtin slash commands (`/new`,
+    /// `/clear`). Injected by the host VC; threaded into the completion
+    /// trigger context so the slash rule can offer + fire them. `nil` (the
+    /// default) disables builtins — the compose card and previews leave it
+    /// unset.
+    var onBuiltinCommand: ((BuiltinSlashCommand) -> Void)? = nil
+    /// When true, the text field grabs first responder as the bar appears.
+    /// Set by the `/new` / `/clear` draft-landing bar so the user can type
+    /// immediately; the chat resting bar and compose card leave it false.
+    var autofocus: Bool = false
 
     @Environment(InputDraftStore.self) private var draftStore
     @State private var text: String = ""
@@ -195,6 +205,7 @@ struct InputBarView2: View {
         }
         .onChange(of: text) { _, _ in scheduleDraftSave() }
         .onChange(of: attachments) { _, _ in scheduleDraftSave() }
+        .onAppear { if autofocus { isFocused = true } }
     }
 
     /// Snapshot the bar's persistable state and hand it to the store.
@@ -473,7 +484,8 @@ struct InputBarView2: View {
             directory: directory,
             additionalDirs: additionalDirs,
             pluginDirs: pluginDirs,
-            knownSlashCommands: knownSlashCommands
+            knownSlashCommands: knownSlashCommands,
+            onBuiltinCommand: onBuiltinCommand
         )
     }
 

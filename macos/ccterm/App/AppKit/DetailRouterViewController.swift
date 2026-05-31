@@ -211,6 +211,7 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
     enum ChildKind: Equatable {
         case transcript
         case compose
+        case draftLanding
         case archive
         #if DEBUG
         case demo(DemoKind)
@@ -220,6 +221,12 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
     /// Pure routing decision: which kind of child VC `selection`
     /// should map to. Static + pure so the routing table is directly
     /// unit-testable — see `DetailRouterContainmentTests`.
+    ///
+    /// `.session(_)` maps to `.transcript` here unconditionally; whether a
+    /// session is actually a draft (→ `.draftLanding`) is a *runtime* fact
+    /// that needs `SessionManager`, so that refinement lives in the
+    /// instance method `resolvedChildKind(for:)`. Keeping this pure means
+    /// the basic table stays testable without standing up a manager.
     static func childKind(for selection: MainSelection) -> ChildKind {
         switch selection {
         case .none, .session:
@@ -233,6 +240,27 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
             return .demo(kind)
         #endif
         }
+    }
+
+    /// Phase-aware routing decision used by the live router. Refines the
+    /// pure `childKind(for:)` table with one runtime fact: a `.session(_)`
+    /// that is still a not-yet-sent draft routes to `.draftLanding` (the
+    /// no-card landing page), not `.transcript`. Read fresh on every
+    /// `applySelection` — never cached — so the draft → active phase flip
+    /// on first send swaps the landing VC for the transcript VC in place
+    /// (driven by `MainSelectionModel.promote(to:)`).
+    ///
+    /// `isDraftSession` (not the cache-only `existingSession(_:)?.isDraft`)
+    /// so a `.draft` row restored from disk after a cold restart — present in
+    /// the sidebar but not yet materialized as a `Session` — still routes to
+    /// the landing page instead of falling through to the transcript.
+    private func resolvedChildKind(for selection: MainSelection) -> ChildKind {
+        if case .session(let sid) = selection,
+            sessionManager.isDraftSession(sid)
+        {
+            return .draftLanding
+        }
+        return Self.childKind(for: selection)
     }
 
     /// Ensure the correct child VC **kind** is mounted for the current
@@ -254,7 +282,7 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
     /// cosmetic fade is deferred to CoreAnimation. Without a window (tests,
     /// cold start) it falls back to the synchronous teardown-then-mount.
     func installChildForCurrentSelection(animated: Bool = false) {
-        let kind = Self.childKind(for: model.selection)
+        let kind = resolvedChildKind(for: model.selection)
         if kind == currentKind, currentChild != nil { return }
 
         // Flush any still-running crossfade synchronously before staging a
@@ -354,6 +382,16 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
                 searchBus: searchBus,
                 inputDraftStore: inputDraftStore
             )
+        case .draftLanding:
+            return DraftSessionLandingViewController(
+                model: model,
+                sessionManager: sessionManager,
+                recentProjects: recentProjects,
+                notifications: notifications,
+                searchEngine: searchEngine,
+                searchBus: searchBus,
+                inputDraftStore: inputDraftStore
+            )
         case .archive:
             return ArchiveViewController(
                 model: model,
@@ -441,14 +479,26 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
         // inside `present` → `attachSession`.
         let animate = shouldAnimateTransition(to: selection)
         installChildForCurrentSelection(animated: animate)
-        if Self.childKind(for: selection) == .transcript {
+        let kind = resolvedChildKind(for: selection)
+        if kind == .transcript || kind == .draftLanding {
             // Settle the freshly-(re)mounted child so the transcript attach
             // typesets at the final width (the §2.19 single-width contract).
             view.layoutSubtreeIfNeeded()
             let sessionId: String?
             if case .session(let sid) = selection { sessionId = sid } else { sessionId = nil }
-            (currentChild as? ChatSessionViewController)?
-                .present(sessionId: sessionId, animated: animate)
+            if kind == .transcript {
+                (currentChild as? ChatSessionViewController)?
+                    .present(sessionId: sessionId, animated: animate)
+            } else {
+                // A draft session: hand the id to the landing VC, which
+                // renders the no-card metadata + draft input bar. On first
+                // send the session promotes `.draft → .active`;
+                // `MainSelectionModel.promote(to:)` re-fires this path and
+                // `resolvedChildKind` now returns `.transcript`, swapping in
+                // the live transcript VC.
+                (currentChild as? DraftSessionLandingViewController)?
+                    .present(sessionId: sessionId, animated: animate)
+            }
         }
         // Kick the staged crossfade (if a cross-kind swap parked an
         // outgoing child) now that the incoming content is live. No-op for

@@ -557,6 +557,14 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
                 guard let self else { return }
                 self.lastPillRect = rect
                 self.applyScrimCutouts()
+            },
+            onBuiltinCommand: { [weak self] command, sessionId in
+                guard let self else { return }
+                runBuiltinSlashCommand(
+                    command,
+                    currentSessionId: sessionId,
+                    sessionManager: self.sessionManager,
+                    model: self.model)
             }
         )
         .environment(sessionManager)
@@ -593,6 +601,9 @@ struct ChatComposeStack: View {
     let onSubmit: (InputBarView2.Submission, String) -> Void
     let onAttachRect: (CGRect) -> Void
     let onPillRect: (CGRect) -> Void
+    /// Builtin slash command dispatcher, carrying the bar's live session
+    /// id so `/new` / `/clear` can seed the new draft from it.
+    let onBuiltinCommand: (BuiltinSlashCommand, String) -> Void
 
     /// Routing decision for this overlay. Static + pure so the
     /// "which selection shows what input chrome" invariant is
@@ -644,7 +655,8 @@ struct ChatComposeStack: View {
                     draftKey: sid,
                     onSubmit: { submission in onSubmit(submission, sid) },
                     onAttachRect: onAttachRect,
-                    onPillRect: onPillRect
+                    onPillRect: onPillRect,
+                    onBuiltinCommand: { command in onBuiltinCommand(command, sid) }
                 )
                 .id(sid)
             }

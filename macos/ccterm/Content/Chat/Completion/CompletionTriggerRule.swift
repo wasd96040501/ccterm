@@ -41,6 +41,12 @@ struct CompletionTriggerContext {
     /// here — otherwise the rule would render an empty popup instead
     /// of routing through the store.
     let knownSlashCommands: [SlashCommand]?
+    /// Dispatcher for CCTerm-native builtin commands (`/new`, `/clear`).
+    /// Non-nil only where builtins should be offered — the chat resting
+    /// bar and the draft-landing bar. Nil on the New Session compose card
+    /// (builtins are redundant there) and in headless contexts. When nil
+    /// the slash rule offers no builtins and behaves exactly as before.
+    let onBuiltinCommand: ((BuiltinSlashCommand) -> Void)?
 }
 
 // MARK: - Helpers
@@ -69,39 +75,77 @@ struct SlashCommandTriggerRule: CompletionTriggerRule {
             text[text.startIndex] == "/"
         else { return nil }
 
-        let makeReplacement: (any CompletionItem, String, Int) -> (range: NSRange, replacement: String) = {
-            item, _, wordEnd in
-            (range: NSRange(location: 0, length: wordEnd), replacement: item.displayText + " ")
+        let onBuiltin = context.onBuiltinCommand
+
+        // Builtin items (`/new`, `/clear`) are offered only when the host
+        // bar wired a dispatcher; the compose card passes nil → none shown.
+        // Filtered by the typed query so `/ne` narrows to `/new`.
+        func builtinItems(matching query: String) -> [any CompletionItem] {
+            guard onBuiltin != nil else { return [] }
+            let q = query.lowercased()
+            return BuiltinSlashCommand.allCases
+                .filter { q.isEmpty || $0.rawValue.contains(q) }
+                .map { BuiltinCompletionItem(command: $0) }
         }
 
-        // No cwd → no source to ask. The popup still mounts in a
-        // "noDirectory" empty state so the user gets a hint instead of
-        // silent dismissal.
+        let makeReplacement: (any CompletionItem, String, Int) -> (range: NSRange, replacement: String) = {
+            item, _, wordEnd in
+            // A builtin fires its action on confirm and clears the typed
+            // "/cmd"; a CLI command splices "/name " so the user can keep
+            // typing arguments before sending.
+            if item is BuiltinCompletionItem {
+                return (range: NSRange(location: 0, length: wordEnd), replacement: "")
+            }
+            return (range: NSRange(location: 0, length: wordEnd), replacement: item.displayText + " ")
+        }
+
+        // Confirm-time side effect: dispatch the builtin's action. CLI
+        // commands have none — their text replacement is the whole effect.
+        let onItemConfirmed: (any CompletionItem) -> Void = { item in
+            if let builtin = (item as? BuiltinCompletionItem)?.command {
+                onBuiltin?(builtin)
+            }
+        }
+
+        // No cwd → no CLI source to ask, but builtins need no directory, so
+        // still surface them. Fall back to the "noDirectory" hint only when
+        // builtins are disabled too.
         guard let dir = context.directory else {
+            let builtinsAtRoot = builtinItems(matching: "")
             return .init(
                 anchorLocation: 0,
-                emptyReasonOverride: .noDirectory,
-                provider: { _, cb in cb([]) },
-                makeReplacement: makeReplacement
+                emptyReasonOverride: builtinsAtRoot.isEmpty ? .noDirectory : nil,
+                provider: { query, cb in cb(builtinItems(matching: query)) },
+                makeReplacement: makeReplacement,
+                onItemConfirmed: onItemConfirmed
             )
         }
 
         let pluginDirs = context.pluginDirs
         let known = context.knownSlashCommands
+        let builtinNames = Set(BuiltinSlashCommand.allCases.map(\.rawValue))
 
         return .init(
             anchorLocation: 0,
             provider: { query, cb in
+                let builtins = builtinItems(matching: query)
                 SlashCommandStore.shared.complete(
                     query: query,
                     path: dir,
                     pluginDirs: pluginDirs,
                     knownCommands: known
                 ) { matches in
-                    cb(matches)
+                    // Builtins lead the list and shadow any same-named CLI
+                    // command so the popup never shows a duplicate.
+                    let cliItems: [any CompletionItem] =
+                        onBuiltin == nil
+                        ? matches
+                        : matches.filter { !builtinNames.contains($0.name) }
+                    cb(builtins + cliItems)
                 }
             },
-            makeReplacement: makeReplacement
+            makeReplacement: makeReplacement,
+            onItemConfirmed: onItemConfirmed
         )
     }
 }

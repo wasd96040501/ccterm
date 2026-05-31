@@ -283,7 +283,8 @@ final class SidebarViewController: NSViewController {
                 SidebarItemNode(
                     kind: .history(
                         sessionId: record.sessionId,
-                        fallbackTitle: record.title),
+                        fallbackTitle: record.title,
+                        isDraft: record.status == .draft),
                     selection: .session(record.sessionId))
             }
             items.append(
@@ -301,6 +302,9 @@ final class SidebarViewController: NSViewController {
     }
 
     private func groupedRecords() -> [RecordGroup] {
+        // `/new` / `/clear` drafts are ordinary `.draft`-status rows in
+        // `records` now, so they group + sort like any other history row
+        // (their fresh `lastActiveAt` floats them to the top of the folder).
         let buckets = Dictionary(grouping: sessionManager.records) {
             $0.groupingFolderName ?? "Unknown"
         }
@@ -400,6 +404,9 @@ final class SidebarViewController: NSViewController {
             guard let self else { return }
             await withCheckedContinuation { cont in
                 withObservationTracking {
+                    // `records` now carries `/new` / `/clear` drafts too (as
+                    // `.draft`-status rows), so this single read covers draft
+                    // adds, promotions (in-place status flip), and archives.
                     _ = self.sessionManager.records
                 } onChange: {
                     Task { @MainActor in cont.resume() }
@@ -468,7 +475,7 @@ final class SidebarViewController: NSViewController {
         guard row >= 0, let node = outlineView.item(atRow: row) as? SidebarItemNode else {
             return
         }
-        guard case .history(let sessionId, _) = node.kind else { return }
+        guard case .history(let sessionId, _, _) = node.kind else { return }
         if model.selection == .session(sessionId) {
             model.select(.newSession)
         }
@@ -480,7 +487,7 @@ final class SidebarViewController: NSViewController {
         guard row >= 0, let node = outlineView.item(atRow: row) as? SidebarItemNode else {
             return
         }
-        guard case .history(let sessionId, _) = node.kind else { return }
+        guard case .history(let sessionId, _, _) = node.kind else { return }
         guard let path = jsonlPath(forSessionId: sessionId) else { return }
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
@@ -595,9 +602,9 @@ extension SidebarViewController: NSOutlineViewDelegate {
             let cell = SidebarFolderCellView()
             cell.configure(folderName: name, isExpanded: outlineView.isItemExpanded(node))
             return cell
-        case .history(let sessionId, let fallback):
+        case .history(let sessionId, let fallback, let isDraft):
             let cell = SidebarHistoryCellView()
-            configureHistoryCell(cell, sessionId: sessionId, fallback: fallback)
+            configureHistoryCell(cell, sessionId: sessionId, fallback: fallback, isDraft: isDraft)
             return cell
         }
     }
@@ -669,7 +676,7 @@ extension SidebarViewController: NSOutlineViewDelegate {
 
 extension SidebarViewController {
     fileprivate func configureHistoryCell(
-        _ cell: SidebarHistoryCellView, sessionId: String, fallback: String
+        _ cell: SidebarHistoryCellView, sessionId: String, fallback: String, isDraft: Bool
     ) {
         if let earlier = cell.observedSessionId, earlier != sessionId {
             rowObservations[earlier]?.cancel()
@@ -677,7 +684,8 @@ extension SidebarViewController {
         }
         cell.observedSessionId = sessionId
         cell.fallbackTitle = fallback
-        applyHistoryState(cell: cell, sessionId: sessionId, fallback: fallback)
+        cell.isDraftRow = isDraft
+        applyHistoryState(cell: cell, sessionId: sessionId, fallback: fallback, isDraft: isDraft)
         armRowObservation(cell: cell, sessionId: sessionId)
     }
 
@@ -700,20 +708,33 @@ extension SidebarViewController {
             }
             guard let refreshed = cell, refreshed.observedSessionId == sessionId else { return }
             controller.applyHistoryState(
-                cell: refreshed, sessionId: sessionId, fallback: refreshed.fallbackTitle)
+                cell: refreshed, sessionId: sessionId, fallback: refreshed.fallbackTitle,
+                isDraft: refreshed.isDraftRow)
             controller.armRowObservation(cell: refreshed, sessionId: sessionId)
         }
     }
 
     private func applyHistoryState(
-        cell: SidebarHistoryCellView, sessionId: String, fallback: String
+        cell: SidebarHistoryCellView, sessionId: String, fallback: String, isDraft: Bool
     ) {
         let session = sessionManager.existingSession(sessionId)
+        // A not-yet-sent `/new` / `/clear` draft is differentiated: it shows a
+        // dedicated "New Draft" placeholder (vs the generic "Untitled" used for
+        // a real session whose async title-gen hasn't landed) and a dimmed
+        // row. `isDraft` is the node-snapshot taken at tree-build time (from
+        // the record's `.draft` status), so the marker needs no per-row lookup
+        // and works for uncached rows after a cold restart.
+        let rawTitle = session?.title ?? fallback
+        let displayTitle: String =
+            rawTitle.isEmpty
+            ? (isDraft ? String(localized: "New Draft") : String(localized: "Untitled"))
+            : rawTitle
         cell.configure(
-            title: session?.title ?? fallback,
+            title: displayTitle,
             isRunning: session?.isRunning ?? false,
             hasUnread: session?.hasUnread ?? false,
-            isGeneratingTitle: session?.isGeneratingTitle ?? false)
+            isGeneratingTitle: session?.isGeneratingTitle ?? false,
+            isDraft: isDraft)
     }
 }
 
@@ -725,7 +746,7 @@ extension SidebarViewController: NSMenuDelegate {
         var historySessionId: String?
         if row >= 0,
             let node = outlineView.item(atRow: row) as? SidebarItemNode,
-            case .history(let sessionId, _) = node.kind
+            case .history(let sessionId, _, _) = node.kind
         {
             historySessionId = sessionId
         }

@@ -234,6 +234,11 @@ final class SidebarHistoryCellView: SidebarCellViewBase {
     /// hasn't been generated yet.
     var fallbackTitle: String = ""
 
+    /// Whether this row is a not-yet-sent `/new` / `/clear` draft. Snapshot
+    /// from the sidebar node at configure time so the row-observation re-arm
+    /// path can re-apply the draft styling without a lookup.
+    var isDraftRow: Bool = false
+
     init() {
         super.init(leadingInset: SidebarLayout.leadingInset)
         configureSubviews()
@@ -245,6 +250,7 @@ final class SidebarHistoryCellView: SidebarCellViewBase {
     override func prepareForReuse() {
         super.prepareForReuse()
         observedSessionId = nil
+        isDraftRow = false
         shimmerOverlay?.stop()
     }
 
@@ -273,9 +279,14 @@ final class SidebarHistoryCellView: SidebarCellViewBase {
         title newTitle: String,
         isRunning: Bool,
         hasUnread: Bool,
-        isGeneratingTitle: Bool
+        isGeneratingTitle: Bool,
+        isDraft: Bool = false
     ) {
         title.stringValue = newTitle.collapsedSingleLineForDisplay()
+        // A not-yet-sent draft row reads as "pending" — dim the label so it's
+        // visually subordinate to real sessions. Always reset to opaque
+        // otherwise, since cells are recycled.
+        title.alphaValue = isDraft ? 0.55 : 1.0
         statusIndicator.update(isRunning: isRunning, hasUnread: hasUnread)
         if isGeneratingTitle {
             if shimmerOverlay == nil {

@@ -193,6 +193,31 @@ final class Session {
             SessionDraft(sessionId: draftSessionId, repository: repository))
     }
 
+    /// Construct a draft-phase façade from a persisted `.draft`-status
+    /// record — a `/new` / `/clear` draft the user hasn't sent yet, rehydrated
+    /// after an app restart. `phase` is `.draft` (lands on the landing page,
+    /// promotes on first send) with the draft's `config` / `title` seeded from
+    /// the record. `sourceBranch` / `fastModeEnabled` aren't columns, so they
+    /// default per `SessionConfig(from:)` — harmless for an adopter, which
+    /// reuses an existing worktree and never re-forks.
+    init(
+        draftRecord record: SessionRecord,
+        repository: any SessionRepository,
+        cliClientFactory: @escaping CLIClientFactory,
+        onPromoted: ((SessionRuntime) -> Void)? = nil
+    ) {
+        self.sessionId = record.sessionId
+        self.repository = repository
+        self.cliClientFactory = cliClientFactory
+        self.onPromoted = onPromoted
+        self.controller = Transcript2Controller()
+        self.bridge = Transcript2EntryBridge(controller: controller)
+        let draft = SessionDraft(sessionId: record.sessionId, repository: repository)
+        draft.config = SessionConfig(from: record)
+        draft.title = record.title
+        self.phase = .draft(draft)
+    }
+
     /// Wrap a pre-built `SessionRuntime` in `.active` phase. Lets
     /// snapshot tests and other harness code seed runtime fields
     /// directly (the runtime is constructed and configured by the
@@ -261,6 +286,14 @@ final class Session {
     /// distinguish "still a draft" from "promoted".
     var hasRecord: Bool {
         if case .active = phase { return true }
+        return false
+    }
+
+    /// True iff `phase == .draft` — the inverse of `hasRecord`. The detail
+    /// router reads this to route a `.session(_)` selection to the
+    /// draft-landing page (draft) vs the live transcript (active).
+    var isDraft: Bool {
+        if case .draft = phase { return true }
         return false
     }
 

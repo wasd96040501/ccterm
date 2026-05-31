@@ -33,7 +33,7 @@ func submitSessionInput(
             draft.setCwd(home)
             draft.setOriginPath(home)
         }
-        if let picked = session.cwd {
+        if let picked = session.originPath {
             recentProjects.markLaunched(picked, useWorktree: session.isWorktree)
         }
     }
@@ -55,7 +55,14 @@ func submitSessionInput(
     }
     if isFirstStart {
         sessionManager.refreshRecords()
-        model.select(.session(sessionId))
+        // `promote` (not `select`) so a draft that's ALREADY the current
+        // selection — a `/new` / `/clear` sidebar draft viewed on the
+        // draft-landing page — still re-routes: its phase just flipped
+        // `.draft → .active`, but the selection VALUE is unchanged, so a
+        // plain `select` would no-op and the live transcript would never
+        // mount. For the compose card (selection was `.newSession`) this is
+        // a normal cross-kind transition and `promote` delegates to `select`.
+        model.promote(to: sessionId)
         model.draftSessionId = nil
     }
 }

@@ -56,6 +56,28 @@ final class MainSelectionModel {
         selectionObserver?.selectionDidChange(to: newSelection)
     }
 
+    /// Re-route the detail pane for `sessionId` even when it is already the
+    /// current selection. Used after a draft's first message promotes it
+    /// `.draft → .active`: the selection value is unchanged
+    /// (`.session(sessionId)` both before and after), so `select(_:)` would
+    /// no-op and the router would never swap the draft-landing VC for the
+    /// live transcript. Firing the observer directly forces the router to
+    /// re-read the (now `.active`) phase and install `ChatSessionViewController`
+    /// in the same source phase as the send.
+    ///
+    /// Idempotent and safe to call regardless of the current selection: if
+    /// it has since moved to a different session (e.g. the user clicked
+    /// another row mid-send), this falls back to a normal `select(_:)` into
+    /// the target.
+    func promote(to sessionId: String) {
+        let target = MainSelection.session(sessionId)
+        if selection == target {
+            selectionObserver?.selectionDidChange(to: target)
+        } else {
+            select(target)
+        }
+    }
+
     /// Lazily allocated when the user enters the "New Session" tab,
     /// becomes the real `sessionId` after the first send.
     ///

@@ -33,7 +33,7 @@ func submitSessionInput(
             draft.setCwd(home)
             draft.setOriginPath(home)
         }
-        if let picked = session.cwd {
+        if let picked = session.originPath {
             recentProjects.markLaunched(picked, useWorktree: session.isWorktree)
         }
     }

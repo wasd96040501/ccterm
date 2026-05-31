@@ -247,6 +247,9 @@ extension SessionRuntime {
             activeReveal?.target = text
         }
         activeReveal?.pendingFinalize = (entryId, message)
+        // The stream is done — drop the pacer's playout cushion so the head
+        // drains straight to the sealed end instead of trailing by the cushion.
+        activeReveal?.seal()
         startTypewriterIfNeeded()
     }
 }

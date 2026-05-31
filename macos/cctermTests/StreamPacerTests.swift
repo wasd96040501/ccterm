@@ -55,9 +55,13 @@ final class StreamPacerTests: XCTestCase {
 
     // MARK: - The bug: no stutter between bursts
 
-    /// The core anti-stutter proof. Under a realistic bursty schedule (a clump
-    /// of units every few frames, then a gap), once the loop reaches steady
-    /// state the display must:
+    /// The anti-stutter proof for the **fast** regime, where the arrival rate
+    /// (144 units/s here) sits *above* `minRate` so the floor never binds. This
+    /// is necessary but NOT sufficient — it does not exercise the slow regime
+    /// where the floor would wrongly force the display to outrun the arrivals
+    /// (see `testSlowStreamBelowFloorDoesNotStallAtBoundary`).
+    ///
+    /// Once the loop reaches steady state the display must:
     ///   1. **never freeze** — every frame advances (`Δemitted > 0`);
     ///   2. **never drain to the boundary mid-stream** — the playout cushion
     ///      keeps a backlog, so the display never idles waiting for the next
@@ -110,6 +114,43 @@ final class StreamPacerTests: XCTestCase {
         XCTAssertLessThan(
             maxStep / minStep, 2.2,
             "per-frame step swung too much (\(minStep)…\(maxStep)) — not smooth")
+    }
+
+    /// The regime the fast test misses: an arrival rate **below** what a fixed
+    /// speed floor would impose (a ~40 char/s CJK reply; the old `minRate` was
+    /// 60 char/s). A floor here forces the display to outrun the arrivals, so the
+    /// buffer drains to empty and the display stalls at the boundary every few
+    /// frames. We probe that directly by counting frames where the buffer has
+    /// **run dry** mid-stream — the drain events that ARE the stutter. With a
+    /// data-driven (0-floor) velocity the buffer never empties, so the count is 0.
+    func testSlowStreamBelowFloorDoesNotStallAtBoundary() {
+        var pacer = StreamPacer(params: .text)
+        var target = 0.0
+        // 2 units every 3 frames = 40 units/s — below a 60-unit/s floor.
+        var dryFrames = 0
+        var drainEvents = 0
+        var wasDry = false
+
+        for f in 0..<900 {
+            if f % 3 == 0 {
+                target += 2
+                pacer.setTarget(target)
+            }
+            pacer.advance(dt: frame)
+            // Steady state only (after the EWMA warm-up).
+            guard f >= 180 else { continue }
+            let dry = pacer.backlog < 0.5
+            if dry {
+                dryFrames += 1
+                if !wasDry { drainEvents += 1 }  // a fresh buffer-empty edge
+            }
+            wasDry = dry
+        }
+
+        XCTAssertEqual(
+            drainEvents, 0,
+            "buffer ran dry \(drainEvents) time(s) (\(dryFrames) frames) mid-stream — "
+                + "the display stalled at the boundary, i.e. the stutter")
     }
 
     // MARK: - Catch up when it falls behind
@@ -168,8 +209,9 @@ final class StreamPacerTests: XCTestCase {
 
     // MARK: - Convergence
 
-    /// Once the stream ends, the floor carries the last cushion-worth up to
-    /// target. `seal()` (finalize) drops the cushion so that tail drains faster.
+    /// Once the stream ends, the rate decays, the cushion shrinks to 0, and the
+    /// backlog drains into `snapEpsilon` to converge. `seal()` (finalize) drops
+    /// the cushion immediately so that tail drains at least as fast.
     func testSealDrainsTheTailFasterThanUnsealed() {
         func framesToCaughtUp(sealed: Bool) -> Int {
             var pacer = StreamPacer(params: .text)

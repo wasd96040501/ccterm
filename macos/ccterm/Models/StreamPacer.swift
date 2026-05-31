@@ -31,27 +31,40 @@ import Foundation
 ///    drives the backlog toward a small cushion:
 ///
 ///        cushion = r̂ · targetLatency           (jitter-buffer playout delay)
-///        v       = r̂ + (backlog − cushion) / τ_catchUp,   clamped to [minRate, maxRate]
+///        v       = r̂ + (backlog − cushion) / τ_catchUp,   clamped to [0, maxRate]
 ///        emitted = min(emitted + v·dt, target)  (never reveal unreceived units)
 ///
 ///    More backlog ⇒ faster drain (sebinsua's linear delay-vs-queue law, and a
 ///    VoIP playout deadline). The cushion is a *time* cushion — units worth of
 ///    `targetLatency` seconds at the current rate — so it scales with the
-///    stream: fast streams hold a larger buffer, slow streams a smaller one,
-///    matching the adaptive-playout formulation.
+///    stream: fast streams hold a larger buffer, slow streams a smaller one.
 ///
-/// ## Why it doesn't stutter, yet still converges
+/// ## No speed floor — the velocity is fully data-driven
 ///
-/// At a steady arrival rate `r` the loop settles to `v = r` and
-/// `backlog = cushion`: the display trails the receive boundary by a constant
-/// `targetLatency` seconds of content and advances at exactly the arrival rate —
-/// smooth, no idle. When arrivals pause for less than `targetLatency`, the
-/// feed-forward keeps draining the cushion, so the display keeps moving across
-/// the gap instead of freezing. When the stream truly ends (`target` stops
-/// growing), the `minRate` floor always carries `emitted` the last cushion-worth
-/// up to `target`, so `isCaughtUp` is reachable — `seal()` drops the cushion to
-/// drain that tail promptly. A first-order system is unconditionally stable, so
-/// there is no overshoot oscillation.
+/// The velocity is clamped to `[0, maxRate]`, **not** `[minRate, maxRate]`. The
+/// upper bound stops a single huge burst from teleporting; the lower bound is
+/// **0** — "no data ⇒ no advance". A non-zero floor (a fixed minimum char/s) is
+/// what breaks pacing: when the arrival rate falls *below* it — a slow CJK reply
+/// at ~40 char/s under a 60 char/s floor — the floor forces the display to
+/// outrun the arrivals, drain the buffer to empty, and stall at the boundary
+/// every few frames. With a 0 floor the steady-state velocity simply settles to
+/// the arrival rate (`v = r̂`, `backlog = cushion`): the display trails by a
+/// fixed playout delay and never catches the boundary, so it never stutters.
+///
+/// Two **boundary conditions** replace what a floor used to (mis)handle — both
+/// one-shot edges, not a sustained rule on the velocity:
+///
+///   • **End snap.** A first-order drain approaches `target` asymptotically and
+///     never quite reaches it, so `isCaughtUp` would never fire. Once the
+///     backlog falls within `snapEpsilon`, jump `emitted` to `target`. This is
+///     what makes the reveal converge once the stream ends (the rate decays, the
+///     cushion shrinks to 0, the backlog drains into `snapEpsilon`).
+///   • **First-unit kick.** The instant any unit has arrived, surface at least
+///     the first one (`emitted` lifted to 1 while it is still < 1) so a
+///     provisional entry exists from frame one — a finalized envelope for a
+///     3-char reply can land in the same runloop batch as its first delta.
+///
+/// First-order ⇒ unconditionally stable, no overshoot oscillation.
 ///
 /// ## Generic over the unit
 ///
@@ -74,20 +87,16 @@ struct StreamPacer {
         /// this much content at the current rate (`cushion = r̂ · targetLatency`).
         /// Must exceed the typical inter-burst gap to fully hide it.
         var targetLatency: Double
-        /// Floor display rate (units/sec) so a tiny backlog still advances and
-        /// the tail always converges onto `target`.
-        var minRate: Double
         /// Ceiling display rate (units/sec) so a single huge burst reveals
-        /// quickly but never teleports.
+        /// quickly but never teleports. There is no floor — see the type doc.
         var maxRate: Double
 
-        /// Characters: snappy, ~one glyph/frame floor, sized to hide the
-        /// ~50–120ms gaps between SSE `text_delta` flushes.
+        /// Characters: sized to hide the ~50–120ms gaps between SSE `text_delta`
+        /// flushes; the cap keeps a giant paste-in from teleporting.
         static let text = Params(
             rateTimeConstant: 0.25,
             catchUpTimeConstant: 0.18,
             targetLatency: 0.12,
-            minRate: 60,
             maxRate: 700)
 
         /// Token counters: a smooth, readable climb between the CLI's coarse
@@ -97,9 +106,12 @@ struct StreamPacer {
             rateTimeConstant: 0.4,
             catchUpTimeConstant: 0.25,
             targetLatency: 0.2,
-            minRate: 8,
             maxRate: 2000)
     }
+
+    /// Backlog (units) within which the display snaps to target — the end
+    /// boundary that makes a first-order drain actually reach `target`.
+    private static let snapEpsilon = 0.5
 
     private let params: Params
 
@@ -112,7 +124,8 @@ struct StreamPacer {
     private(set) var rate: Double = 0
     /// `target` at the previous `advance` — the per-frame growth sample source.
     private var lastTarget: Double = 0
-    /// Once sealed, the cushion is dropped so the display drains fully to target.
+    /// Once sealed, the cushion is dropped so the display drains all the way to
+    /// target (the stream is known to have ended).
     private var sealed = false
 
     init(params: Params = .text) {
@@ -174,13 +187,27 @@ struct StreamPacer {
         rate += alpha * (sample - rate)
 
         // 2. First-order servo: feed-forward rate + proportional backlog term,
-        //    targeting a rate-scaled playout cushion. Sealed ⇒ no cushion.
+        //    targeting a rate-scaled playout cushion. Sealed ⇒ no cushion. The
+        //    velocity is data-driven with a 0 floor — see the type doc on why a
+        //    non-zero floor is what stutters a slow stream.
         let cushion = sealed ? 0 : rate * params.targetLatency
         var velocity = rate + (backlog - cushion) / params.catchUpTimeConstant
-        velocity = min(max(velocity, params.minRate), params.maxRate)
+        velocity = min(max(velocity, 0), params.maxRate)
 
         // 3. Integrate and clamp — you cannot reveal units that have not arrived.
         emitted = min(emitted + velocity * dt, target)
+
+        // 4. Boundary conditions (one-shot edges, not a sustained floor):
+        //    • end snap — a first-order drain never quite reaches target, so
+        //      pull it in once it is within snapEpsilon (makes `isCaughtUp`
+        //      reachable when the stream ends and the backlog drains);
+        //    • first-unit kick — surface the first unit the instant any content
+        //      has arrived, so the provisional entry exists from frame one.
+        if backlog < Self.snapEpsilon {
+            emitted = target
+        } else if emitted < 1 {
+            emitted = 1
+        }
         return displayed
     }
 }

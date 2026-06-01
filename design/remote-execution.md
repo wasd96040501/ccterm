@@ -138,6 +138,8 @@ Each mirrors an existing pattern so none of this is novel infrastructure:
 | `RemoteEgressService` (`@Observable`, app-scope) | — | owns the Mac-side proxy process (or "use existing proxy" passthrough) lifecycle, status, logs; **shared across sessions** to the same host |
 | `SSHLaunchBuilder` (pure) | — | `(RemoteHost, egress decision, sessionId, workdir) → LaunchPlan.wrapped(...)` + remote env |
 | `RemoteHostProbe` | — | connectivity validation for the sheet's "Test Connection" (the §2 echo/fetch checks, in Swift) |
+| `RemoteProvisioner` | — | installs **our** pinned `claude` to a controlled remote path, idempotently (skip if already present + version matches); runs during the SSH-only provisioning status (§3g) |
+| `RemoteTranscriptFetcher` | `HistoryLoader` | on demand, pulls a remote session's `.jsonl` down to a local cache so the existing reverse-paging reader can read it (§3h) |
 
 **Why the proxy belongs in the app layer, not the SDK:** one proxy can be
 shared by many sessions to the same host (the pooled-channel goal); it has UI
@@ -149,9 +151,15 @@ shared by many sessions to the same host (the pooled-channel goal); it has UI
 The insertion point is structurally identical to how `cwd` and `worktreeBranch`
 already flow, so it is a known pattern, not a new spine:
 
-- `SessionConfig` gains `remoteHostId: String?`, persisted on `SessionRecord`
-  exactly like `cwd` / `worktreeBranch`
-  (`macos/ccterm/Services/Session/SessionConfig.swift`).
+- `SessionConfig` / `SessionRecord` gain new persisted fields, alongside the
+  existing `cwd` / `worktreeBranch`
+  (`macos/ccterm/Services/Session/SessionConfig.swift`,
+  `Services/Session/SessionRecord.swift`):
+  - `remoteHostId: String?` — which host the session runs on (nil = local). Also
+    the signal that history must be fetched from the remote (§3h).
+  - `remoteTranscriptPath: String?` — the remote `.jsonl` path for this session
+    (resolved once the remote `claude` reports its session file), so history can
+    be pulled later without re-deriving it.
 - `SessionConfig.toAgentSDKConfig(...)` (`SessionConfig.swift:135`), called from
   `SessionRuntime+Start.swift:431` (which already hoists `customCommand` from
   `UserDefaults`), resolves the host via `RemoteHostStore`, asks
@@ -198,6 +206,55 @@ Surviving laptop sleep / network change with the remote session intact (a
 remote supervisor that holds the `claude` process across reconnects) is a
 **later** milestone (M5), explicitly out of scope for v1.
 
+### 3g. Provisioning & the SSH-only session status
+
+We do **not** trust whatever `claude` happens to be on the remote. CCTerm
+installs **its own pinned** `claude` to a **controlled path** (e.g.
+`~/.ccterm/bin/claude`, version-stamped) so the protocol version is one we
+control (also retires the version-skew risk in §8). Installation is
+**idempotent**: if our binary already exists at that path with the expected
+version, provisioning is skipped. On a no-internet remote the download itself
+goes through the reverse tunnel established for the session, or — as a fallback —
+the binary is uploaded over the existing SSH/SFTP channel.
+
+This setup is work that only the SSH path performs, and it happens *before* the
+normal stream-json bootstrap. So `SessionRuntime.Status`
+(`SessionRuntime.swift:20`, today `notStarted → starting → idle → responding →
+interrupting → stopped`) gains a new case used **only** for remote sessions:
+
+```swift
+enum Status {
+    case notStarted
+    case starting
+    case provisioning   // NEW — SSH-only: open master, ensure remote claude, bring up tunnel
+    case idle
+    case responding
+    case interrupting
+    case stopped
+}
+```
+
+During `.provisioning` the UI shows a distinct "Connecting to <host>…" state
+(ensure ControlMaster, `RemoteProvisioner.ensureInstalled`, bring up the `-R`
+tunnel). Local sessions never enter `.provisioning` and go straight
+`starting → idle`.
+
+### 3h. Remote session history
+
+A remote session's transcript JSONL is written by the remote `claude` under the
+**remote** `~/.claude/projects/...`; the local `HistoryLoader` reads local files
+today. When the user clicks a session whose record has a `remoteHostId`:
+
+1. `RemoteTranscriptFetcher` pulls the remote `.jsonl`
+   (`remoteTranscriptPath`) down to a local cache file over the pooled SSH
+   channel (sftp / `ssh cat`), incrementally when possible.
+2. The existing reverse-streaming `JSONLReversePageSource` / backfill pipeline
+   then reads the **cached** file unchanged — no change to the reader, only to
+   *where the bytes come from*.
+
+This keeps the sidebar and the transcript renderer fully reused; only the source
+of the JSONL bytes is swapped behind `remoteHostId`.
+
 ---
 
 ## 4. UI
@@ -234,23 +291,49 @@ Swift (`Network.framework` `NWListener`/`NWConnection`, ~150 lines, wired to app
 lifecycle + `appLog`) — **not** the Python stand-in used for the §2
 verification.
 
+### 4a. Host switcher — a horizontal capsule strip in the Projects column
+
+The project list is **host-scoped** (resolves the earlier "A vs B" decision in
+favor of A). The switcher is a **horizontally-scrolling capsule strip** inserted
+in the left column **below the "Projects" header, above the recents list**
+(`NewSessionConfigurator.swift` `projectsColumn`, between `projectsHeader` and
+`recentsList`):
+
+```
+┌ Projects ─────────────────────  + ▾ ┐
+│ ( Local ) ( devbox ) ( build-01 ) …  │   ← horizontal scroll, tap a capsule to switch
+│ ───────────────────────────────────  │
+│  my-app           ~/src/my-app        │   ← recents, now scoped to the active host
+│  api              ~/src/api           │
+└───────────────────────────────────────┘
+```
+
+Tapping a capsule switches the active host context: the recents list, the
+folder picker, and the "Recent Sessions" section all operate in that host's
+namespace. `Local` is always the first capsule. The `+` menu (§4) still adds a
+local folder or a new SSH host.
+
+### 4b. Clicking a remote session
+
+A "Recent Sessions" / sidebar row for a session whose record carries a
+`remoteHostId` triggers the §3h fetch on click — the remote `.jsonl` is pulled to
+the local cache and the normal backfill renders it. A subtle "from <host>"
+affordance distinguishes remote rows.
+
 ---
 
-## 5. Open decisions
+## 5. Resolved decisions
 
-1. **Left-column project list when a remote host is selected.**
-   - **(A, recommended)** the whole column switches to that host's context — a
-     host switcher (Local / host A / host B) at the top, with the recents list +
-     folder picker operating in that host's namespace.
-   - (B) local and remote folders mixed in one list with a per-row host badge —
-     smaller change, muddier mental model.
-
-2. **v1 scope.** Recommended: **M1–M4** = v1 (bash + files genuinely run
-   remote; UI can configure a host; locked-down remotes reach the API via the
-   tunnel). **M5/M6** = v2. Open question: must v1 include remote session
-   **history** (M6)? Without it, remote sessions' transcript JSONL lives only on
-   the remote disk (`~/.claude/projects` on the remote) and won't appear in the
-   sidebar — the local `HistoryLoader` reads local files today.
+1. **Host-scoped project list (was A vs B) → A, with a specific style.** The left
+   column is host-scoped via a **horizontal capsule strip** placed below the
+   "Projects" header, above the recents list (§4a). `Local` is the first capsule.
+2. **Remote session history is in v1.** Clicking a remote session pulls its
+   `.jsonl` from the remote on demand and renders it through the existing
+   backfill pipeline (§3h). `SessionRecord` gains `remoteHostId` +
+   `remoteTranscriptPath` (§3c).
+3. **Remote `claude` is CCTerm-provisioned, not the remote's own.** Installed to a
+   controlled path, idempotently, during a new SSH-only `.provisioning` status
+   (§3g).
 
 ---
 
@@ -264,20 +347,24 @@ the `InterruptSmoke` / `*Smoke` convention in `macos/AgentSDK/Sources/`.
 | **M0** | Feasibility | ✅ done — clean transport + reverse-egress tunnel, verified on a real remote (§2) |
 | **M1** | SDK `LaunchPlan` (argv-based) | change `SessionConfiguration`; `RemoteSmoke` target launches real `claude` on the remote over ssh, runs one turn; verify protocol + lifecycle + no orphan |
 | **M2** | `RemoteEgressService` (proxy) | native Swift CONNECT proxy + "use existing proxy" passthrough; wire `ssh -R` into the argv; verify a no-internet remote reaches the API through the tunnel |
-| **M3** | `RemoteHost` model/store + `SSHLaunchBuilder` + `RemoteHostProbe` | + ControlMaster pool; `SessionConfig.remoteHostId` end-to-end: create a host-bound session, send a message, bash/files run remote |
-| **M4** | UI: menu + add-host sheet + proxy config | `+` → `Menu`; host submenu; sheet with Test Connection + proxy config; host-scoped project list (decision §5.1) |
-| **M5** | Lifecycle hardening | reconnect on sleep/wake/network change; orphan reaping; error surfacing; remote `claude` version check |
-| **M6** | Remote path / history semantics | remote folder picker (browse remote fs); per-host recents; remote session history (read `~/.claude` over sftp); disable/replace local-only path UI (Finder reveal, `--add-dir`, permission-prompt paths) |
+| **M3** | `RemoteProvisioner` + `.provisioning` status | install CCTerm's pinned `claude` to a controlled remote path, idempotent; new SSH-only runtime status (§3g); `RemoteSmoke` proves a fresh remote self-provisions then runs a turn |
+| **M4** | `RemoteHost` model/store + `SSHLaunchBuilder` + `RemoteHostProbe` | + ControlMaster pool; `SessionConfig.remoteHostId` end-to-end: create a host-bound session, send a message, bash/files run remote |
+| **M5** | Remote session history | `RemoteTranscriptFetcher` + `remoteTranscriptPath` field; clicking a remote session fetches its `.jsonl` and renders via the existing backfill (§3h) |
+| **M6** | UI | `+` → `Menu` (add local / remote ▸ hosts / add SSH host); add-host sheet with Test Connection + proxy config; host-scoped capsule switcher (§4a); remote-session click affordance (§4b) |
+| **M7** | Lifecycle hardening | reconnect on sleep/wake/network change; orphan reaping; surfaced errors |
+| **M8** | Remote path semantics | remote folder picker (browse remote fs); per-host recents; replace local-only path UI (Finder reveal, `--add-dir`, permission-prompt paths) |
 
-**M1–M3** = "works and is usable"; **M4** = productized; **M5/M6** = completeness.
+**M1–M6 = v1** (bash + files run remote, self-provisioned remote `claude`, remote
+history, full host UI). **M7/M8 = v2** (resilience + remote-path polish).
 
 ---
 
 ## 7. Non-goals (v1)
 
-- Surviving network drops / laptop sleep with the remote session intact (M5).
-- Reading remote session history into the sidebar (M6).
-- Remote-path-aware "Reveal in Finder", `--add-dir`, permission-prompt path UI (M6).
+- Surviving network drops / laptop sleep with the remote session intact (M7).
+- Remote-path-aware "Reveal in Finder", `--add-dir`, permission-prompt path UI (M8).
+- Browsing the remote filesystem in the folder picker — v1 takes a typed/remembered
+  remote workdir; the live remote browser is M8.
 - Authenticating the remote `claude` via the claude.ai OAuth browser flow on a
   headless box — v1 assumes API-key (or Bedrock/Vertex) credentials injectable as
   env at launch.
@@ -293,8 +380,13 @@ the `InterruptSmoke` / `*Smoke` convention in `macos/AgentSDK/Sources/`.
 - **Node proxy env coverage.** Claude runs on Node; confirm it honors
   `HTTPS_PROXY` for all API calls. Fallback: `ANTHROPIC_BASE_URL` → the tunnel +
   a remote `/etc/hosts` alias.
-- **Protocol version skew.** The Mac's AgentSDK targets a CLI protocol version;
-  the remote ships whatever `claude` is installed there. Add a version check at
-  launch (M5).
+- **Protocol version skew** — *mitigated by design.* Because CCTerm provisions
+  its **own** pinned `claude` to a controlled path (§3g), the remote protocol
+  version is one we choose, not whatever the box happened to have. Provisioning
+  verifies the stamped version and re-installs on mismatch.
+- **Provisioning on a no-internet remote (chicken-and-egg).** Installing `claude`
+  needs egress, but the egress tunnel is part of the session launch. Resolution:
+  bring up the `-R` tunnel first, install through it; fallback is uploading a
+  prebuilt binary over the existing SSH/SFTP channel.
 - **sshd `MaxSessions`.** Default 10 multiplexed channels per connection caps
   per-host concurrency; document and surface, raise on the remote if needed.

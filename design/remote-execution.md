@@ -245,17 +245,17 @@ Each mirrors an existing pattern so none of this is novel infrastructure:
 |---|---|---|
 | `RemoteHost` (Codable model) | `SessionConfig` | ssh alias/host/user/port/identity, remote workdir, proxy mode, and the `RemoteClaudePolicy` (`managed` / `useRemote(path:)`, §3g) |
 | `RemoteHostStore` (`@Observable`, app-scope) | `RecentProjectsStore` | persist the host list; injected via `.environment()` |
-| `RemoteEgressService` (`@Observable`, app-scope) | — | owns the Mac-side proxy process (or "use existing proxy" passthrough) lifecycle, status, logs; **shared across sessions** to the same host |
-| `SSHLaunchBuilder` (pure) | — | `(RemoteHost, egress decision, sessionId, workdir) → LaunchPlan.wrapped(...)` + remote env |
+| `RemoteEgressService` (`@Observable`, app-scope) | — | owns the **Mac-side proxy** lifecycle, status, logs. The *proxy process* (or the "use existing proxy" passthrough) is **shared across sessions to the same host**; the per-session `-R` tunnels (built into each session's ssh by `SSHLaunchBuilder`) all point at it. The ssh connection / tunnel itself is **not** shared in v1 (§3e). |
+| `SSHLaunchBuilder` (pure) | — | `(RemoteHost, egress decision, sessionId, workdir) → LaunchPlan.wrapped(...)` + remote env. Embeds this session's own `-R` reverse tunnel (→ the shared Mac proxy) into the ssh argv (§3e). |
 | `RemoteHostProbe` | — | connectivity validation for the sheet's "Test Connection" (the §2 echo/fetch checks, in Swift) |
 | `RemoteProvisioner` | — | `managed` mode only: installs **our** pinned `claude` to a controlled remote path, idempotently (skip if already present + version matches); runs during the SSH-only provisioning status (§3g) |
 | `RemoteCredentialResolver` | — | `managed` mode only: resolves the Mac's current credential (API key / refreshed claude.ai OAuth bearer) into launch-time env for `SSHLaunchBuilder`; refreshes OAuth on the Mac, never forwards the refresh token (§3i, §9) |
 | `RemoteTranscriptFetcher` | `HistoryLoader` | on demand, pulls a remote session's `.jsonl` down to a local cache so the existing reverse-paging reader can read it (§3h) |
 
-**Why the proxy belongs in the app layer, not the SDK:** one proxy can be
-shared by many sessions to the same host (the pooled-channel goal); it has UI
-(status/logs); it persists settings; its lifecycle is independent of any single
-`Session`. None of that belongs in a protocol wrapper.
+**Why the proxy belongs in the app layer, not the SDK:** one proxy is shared by
+every session to the same host (each session's own `-R` tunnel points at it); it
+has UI (status/logs); it persists settings; its lifecycle is independent of any
+single `Session`. None of that belongs in a protocol wrapper.
 
 ### 3c. Where it plugs into the session chain (same shape as `cwd`/`worktree`)
 
@@ -292,14 +292,36 @@ already flow, so it is a known pattern, not a new spine:
         one SSH connection carries both the protocol and the egress tunnel
 ```
 
-### 3e. Connection pool (ControlMaster) — the "pooled channel" goal
+### 3e. One ssh per session, per-session egress — ControlMaster is a later optimization
 
-Each remote session is its own `ssh` invocation running its own `claude`.
-SSH **ControlMaster** multiplexing lets them share one TCP + auth handshake per
-host (a persistent master), each session becoming a multiplexed channel — so
-spawning the Nth session pays almost no handshake cost. Lives in
-`SSHLaunchBuilder` / a per-host `SSHConnectionPool` owned by
-`RemoteEgressService`. (`ControlMaster auto` + `ControlPath` + `ControlPersist`.)
+**v1 is one `ssh` invocation per session, and the egress tunnel rides that same
+ssh.** Each remote session runs its own `ssh -T … exec claude`, and that command
+also carries its own `-R` reverse tunnel (`ssh -T -R <remotePort>:<macProxy> …`)
+pointing at the **host-scoped, shared Mac-side proxy** (§3b). This is exactly the
+shape §2b/§2d/§2e proved on a real remote: one ssh does transport *and* egress,
+self-contained, and a session closing tears down only its own ssh + its own `-R`,
+never affecting a sibling session.
+
+So two things are deliberately **not** shared at the connection level in v1:
+
+- **The TCP + auth handshake is per session.** Spawning the Nth session to a host
+  pays a fresh handshake. Fine for v1 (a host typically has one active session).
+- **The `-R` tunnel is per session**, each pointing at the same Mac proxy. We do
+  **not** try to share one tunnel across sessions — a shared tunnel can't hang off
+  any single session's ssh (that session closing would kill egress for the
+  others), so it would require a persistent host-level connection to own it.
+
+What *is* shared is the **Mac-side proxy** the tunnels all point at (one process /
+one passthrough per host — §3b), not the ssh connection.
+
+**ControlMaster multiplexing** (`ControlMaster auto` + `ControlPath` +
+`ControlPersist`) is the optimization that would let N per-host sessions share one
+TCP + auth handshake (each session a multiplexed channel) *and* give a natural
+home to a shared `-R` tunnel (hung off the persistent master, not a session). It
+is **deferred to M7** (lifecycle hardening): it is a per-host performance win that
+only matters once "many concurrent sessions to one host" is a real workload, and
+it co-designs with the reconnect-across-sleep master that M7 introduces anyway.
+v1 does not need it.
 
 ### 3f. Lifecycle / orphan handling
 
@@ -315,7 +337,7 @@ correctly**, not a supervisor:
 
 Surviving laptop sleep / network change with the remote session intact (a
 remote supervisor that holds the `claude` process across reconnects) is a
-**later** milestone (M5), explicitly out of scope for v1.
+**later** milestone (M7), explicitly out of scope for v1.
 
 ### 3g. Provisioning & the SSH-only session status
 
@@ -367,8 +389,9 @@ enum Status {
 ```
 
 During `.provisioning` the UI shows a distinct "Connecting to <host>…" state:
-ensure ControlMaster, bring up the `-R` tunnel, and — for `managed` only —
-`RemoteProvisioner.ensureInstalled` + resolve the credential to forward (§3i).
+bring up this session's `-R` tunnel (→ the shared Mac proxy, §3e), and — for
+`managed` only — `RemoteProvisioner.ensureInstalled` + resolve the credential to
+forward (§3i).
 For `useRemote` the provisioning step is just the path probe. Local sessions
 never enter `.provisioning` and go straight `starting → idle`.
 
@@ -379,8 +402,8 @@ A remote session's transcript JSONL is written by the remote `claude` under the
 today. When the user clicks a session whose record has a `remoteHostId`:
 
 1. `RemoteTranscriptFetcher` pulls the remote `.jsonl`
-   (`remoteTranscriptPath`) down to a local cache file over the pooled SSH
-   channel (sftp / `ssh cat`), incrementally when possible.
+   (`remoteTranscriptPath`) down to a local cache file over an SSH channel
+   (sftp / `ssh cat`), incrementally when possible.
 2. The existing reverse-streaming `JSONLReversePageSource` / backfill pipeline
    then reads the **cached** file unchanged — no change to the reader, only to
    *where the bytes come from*.
@@ -531,10 +554,10 @@ the `InterruptSmoke` / `*Smoke` convention in `macos/AgentSDK/Sources/`.
 | **M1** | SDK `LaunchPlan` (argv-based) | ✅ done — `SessionConfiguration.launchPlan` (`.local` / `.wrapped`) + `claudeArguments()` shipped; legacy `customCommand`/`binaryPath` path preserved. `RemoteSmoke` launches the real remote `claude` over `ssh -T`, runs one turn, and verifies protocol + lifecycle + no orphan with API egress **forced** through the Mac's `1081` proxy, proven by a tunnel on/off differential (decisive even when the remote can reach the API on its own) — §2d. |
 | **M2** | `RemoteEgressService` (proxy) | 🟡 proxy primitive + both egress modes done. Native Swift CONNECT proxy shipped as `RemoteEgress.ConnectProxy` (loopback-only); `RemoteEgressSmoke` verifies a no-internet remote borrows the Mac's egress through `ssh -R` in **both** modes — reusing an existing local proxy *and* CCTerm's own `ConnectProxy` (§2c). Wiring `ssh -R` into the session argv + the app-scope `RemoteEgressService` lifecycle lands with M4. |
 | **M3** | `RemoteProvisioner` + `.provisioning` status | 🟡 managed binary provisioning (Mac download + `ssh` upload → `~/.ccterm/bin/claude`, checksum-verified, idempotent) **and** login-state injection (§3i) smoke-proven on a real claude.ai-subscription turn (§2e). Still to wire: the app-layer `@Observable` `RemoteProvisioner` / `RemoteCredentialResolver` services and the SSH-only `.provisioning` runtime status (§3g). |
-| **M4** | `RemoteHost` model/store + `SSHLaunchBuilder` + `RemoteHostProbe` | + ControlMaster pool; `SessionConfig.remoteHostId` end-to-end: create a host-bound session, send a message, bash/files run remote |
+| **M4** | `RemoteHost` model/store + `SSHLaunchBuilder` + `RemoteHostProbe` | `SessionConfig.remoteHostId` end-to-end: create a host-bound session, send a message, bash/files run remote. One ssh per session; each carries its own `-R` → the host-scoped shared Mac proxy (§3e). **No ControlMaster pool** (deferred to M7). |
 | **M5** | Remote session history | `RemoteTranscriptFetcher` + `remoteTranscriptPath` field; clicking a remote session fetches its `.jsonl` and renders via the existing backfill (§3h) |
 | **M6** | UI | `+` → `Menu` (add local / remote ▸ hosts / add SSH host); add-host sheet with Test Connection + proxy config; host-scoped capsule switcher (§4a); remote-session click affordance (§4b) |
-| **M7** | Lifecycle hardening | reconnect on sleep/wake/network change; orphan reaping; surfaced errors |
+| **M7** | Lifecycle hardening | reconnect on sleep/wake/network change; orphan reaping; surfaced errors; **ControlMaster connection pool** per host (shared TCP + auth handshake across the host's sessions, and a home for a shared `-R` tunnel) — co-designed with the reconnect master (§3e) |
 | **M8** | Remote path semantics | remote folder picker (browse remote fs); per-host recents; replace local-only path UI (Finder reveal, `--add-dir`, permission-prompt paths) |
 
 **M1–M6 = v1** (bash + files run remote, self-provisioned remote `claude`, remote

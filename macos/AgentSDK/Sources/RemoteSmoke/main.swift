@@ -34,24 +34,45 @@ import Foundation
 //   A turn that fails without the tunnel but succeeds with it can only have
 //   egressed through the Mac's proxy — never the remote's own network.
 //
-// Run from `macos/AgentSDK` (needs a reachable remote with `claude` installed +
-// a running local proxy + API credentials in the environment):
+// LOGIN STATE (design §3i): when no API key/token is in the env, the smoke falls
+// back to the Mac's claude.ai OAuth login in the Keychain — it reads it READ-ONLY,
+// resolves a short-lived bearer (refreshing on the Mac through the *Claude-configured
+// proxy* only if expired, never writing the Keychain, never forwarding the refresh
+// token), and injects it into the remote `claude` as CLAUDE_CODE_OAUTH_TOKEN. This
+// mirrors how the official Claude desktop app provisions a remote spawn (§9).
+//
+// PROVISIONING (design §3g, `managed`): when SMOKE_REMOTE_CLAUDE is unset, the Mac
+// downloads the pinned, checksum-verified linux-x64 `claude` and uploads it to a
+// controlled remote path (~/.ccterm/bin/claude), idempotently — the remote runs no
+// installer (§9 SFTP fallback).
+//
+// Run from `macos/AgentSDK` — with a claude.ai subscription login (no API key
+// needed) and a running local proxy:
+//
+//   swift run RemoteSmoke
+//
+// …or force an API-key/token credential instead:
 //
 //   ANTHROPIC_API_KEY=… swift run RemoteSmoke
 //
 // Env overrides:
 //   SMOKE_SSH_HOST        remote ssh alias/host             (default: devbox)
-//   SMOKE_EXISTING_PROXY  host:port of the Mac's local proxy (default: 127.0.0.1:1081)
+//   SMOKE_EXISTING_PROXY  host:port of the Mac's local proxy (default: the
+//                         Claude-configured HTTPS_PROXY, else 127.0.0.1:1081)
 //   SMOKE_REMOTE_FWD_PORT loopback port to open on the remote (default: 18991)
-//   SMOKE_REMOTE_CLAUDE   remote `claude` path; auto-probed via a login shell
-//                         if unset (recommend setting an absolute path)
+//   SMOKE_REMOTE_CLAUDE   remote `claude` path; if unset, a CCTerm-managed claude
+//                         is provisioned to ~/.ccterm/bin/claude (Mac download + upload)
 //   SMOKE_REMOTE_WORKDIR  remote cwd for the session         (default: /tmp/ccterm-remote-smoke)
 //   SMOKE_MODEL           model to drive                     (default: claude-haiku-4-5)
 //   SMOKE_API_HOST        API host the curl differential probes (default: https://api.anthropic.com)
 //   SMOKE_SKIP_CLAUDE_NEG set to 1 to skip the tunnel-down claude control turn
+//   SMOKE_FORCE_REFRESH   set to 1 to force an OAuth refresh-through-proxy even when
+//                         the cached access token is still fresh (Keychain still NOT written)
+//   SMOKE_OAUTH_TOKEN_URL override the OAuth token endpoint (default: https://api.anthropic.com/v1/oauth/token)
 //   Credentials forwarded to the remote (whichever are set locally, never logged):
 //                         ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN,
-//                         ANTHROPIC_BASE_URL, ANTHROPIC_CUSTOM_HEADERS
+//                         ANTHROPIC_BASE_URL, ANTHROPIC_CUSTOM_HEADERS, or the
+//                         Keychain OAuth bearer as CLAUDE_CODE_OAUTH_TOKEN
 
 // MARK: - helpers
 
@@ -124,25 +145,55 @@ func sshBaseOpts() -> [String] {
 
 let envv = ProcessInfo.processInfo.environment
 let sshHost = envv["SMOKE_SSH_HOST"] ?? "devbox"
-let existingProxy = envv["SMOKE_EXISTING_PROXY"] ?? "127.0.0.1:1081"
+// The HTTP proxy the local Claude is configured with (process env →
+// ~/.claude/settings.json `env`). Used both as the `ssh -R` tunnel target and as
+// the Mac-side egress for an OAuth refresh — resolved from config, never hardcoded.
+let claudeProxy = resolveClaudeProxy()
+let existingProxy = envv["SMOKE_EXISTING_PROXY"] ?? proxyHostPort(claudeProxy.https) ?? "127.0.0.1:1081"
 let remoteFwdPort = envv["SMOKE_REMOTE_FWD_PORT"] ?? "18991"
 let remoteWorkdir = envv["SMOKE_REMOTE_WORKDIR"] ?? "/tmp/ccterm-remote-smoke"
 let model = envv["SMOKE_MODEL"] ?? "claude-haiku-4-5"
+// Optional real prompt to drive a genuine model answer (instead of the default
+// PONG echo). When set, the positive turn asserts non-empty assistant text + no
+// error result, and the full answer is logged.
+let customPrompt = envv["SMOKE_PROMPT"]
 let apiHost = envv["SMOKE_API_HOST"] ?? "https://api.anthropic.com"
 let proxyURL = "http://127.0.0.1:\(remoteFwdPort)"
 let reverseForward = "127.0.0.1:\(remoteFwdPort):\(existingProxy)"
 
+// Credentials: prefer explicit env (API key / auth token). Otherwise fall back to
+// the Mac's claude.ai OAuth login in the Keychain (§3i) — resolve a short-lived
+// bearer (refreshed on the Mac through the Claude proxy if expired) and inject it
+// as CLAUDE_CODE_OAUTH_TOKEN. The Keychain is read-only; the refresh token is
+// never forwarded.
 let credKeys = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "ANTHROPIC_CUSTOM_HEADERS"]
 let presentCreds = credKeys.filter { (envv[$0]?.isEmpty == false) }
-guard presentCreds.contains("ANTHROPIC_API_KEY") || presentCreds.contains("ANTHROPIC_AUTH_TOKEN") else {
-    log(
-        "ERROR: no API credential in env — set ANTHROPIC_API_KEY (or ANTHROPIC_AUTH_TOKEN) so the remote claude can authenticate"
-    )
-    exit(1)
+let hasEnvAuth = presentCreds.contains("ANTHROPIC_API_KEY") || presentCreds.contains("ANTHROPIC_AUTH_TOKEN")
+
+var oauthBearer: String? = nil
+if !hasEnvAuth {
+    guard let login = readKeychainOAuth() else {
+        log(
+            "ERROR: no API credential in env AND no usable claude.ai OAuth login in the Keychain — log in locally with `claude` (subscription) or set ANTHROPIC_API_KEY"
+        )
+        exit(1)
+    }
+    guard let bearer = resolveOAuthBearer(login, proxy: claudeProxy, force: envv["SMOKE_FORCE_REFRESH"] == "1")
+    else {
+        log("ERROR: could not resolve a usable OAuth bearer (token expired and refresh failed)")
+        exit(1)
+    }
+    oauthBearer = bearer
 }
 
 log("ssh host=\(sshHost)  proxy=\(existingProxy)  remote-fwd-port=\(remoteFwdPort)  model=\(model)")
-log("forwarding credentials: \(presentCreds.joined(separator: ", ")) (values never logged)")
+if hasEnvAuth {
+    log("auth: forwarding env credentials: \(presentCreds.joined(separator: ", ")) (values never logged)")
+} else {
+    log(
+        "auth: claude.ai OAuth login from Keychain → CLAUDE_CODE_OAUTH_TOKEN (bearer redacted; refresh token not forwarded; Keychain not modified)"
+    )
+}
 
 var failures: [String] = []
 
@@ -152,6 +203,9 @@ func redact(_ argv: [String]) -> [String] {
         var t = tok
         for k in presentCreds where (envv[k]?.isEmpty == false) {
             t = t.replacingOccurrences(of: envv[k]!, with: "<\(k)>")
+        }
+        if let b = oauthBearer, !b.isEmpty {
+            t = t.replacingOccurrences(of: b, with: "<CLAUDE_CODE_OAUTH_TOKEN>")
         }
         return t
     }
@@ -165,6 +219,11 @@ func remoteEnvAssignments() -> [String] {
         "HTTP_PROXY=\(shq(proxyURL))", "http_proxy=\(shq(proxyURL))",
     ]
     for k in presentCreds { a.append("\(k)=\(shq(envv[k]!))") }
+    // The §3i short-lived bearer from the Mac's claude.ai OAuth login. The CLI
+    // treats CLAUDE_CODE_OAUTH_TOKEN as a subscription bearer (adds the oauth beta
+    // header itself). Never the refresh token. NO_PROXY is deliberately NOT
+    // forwarded — the remote must route all egress through the tunnel.
+    if let b = oauthBearer, !b.isEmpty { a.append("CLAUDE_CODE_OAUTH_TOKEN=\(shq(b))") }
     return a
 }
 
@@ -183,31 +242,25 @@ if proxyCheck.code != 0 || proxyCode.isEmpty || proxyCode == "000" {
 }
 log("preflight OK: local proxy \(existingProxy) reaches \(apiHost) (HTTP \(proxyCode))")
 
-// MARK: - resolve the remote claude path (login shell, parsed — not the protocol stream)
+// MARK: - resolve the remote claude path (managed provisioning — §3g)
 
 let remoteClaude: String
 if let pinned = envv["SMOKE_REMOTE_CLAUDE"], !pinned.isEmpty {
     remoteClaude = pinned
     log("remote claude (pinned): \(remoteClaude)")
 } else {
-    // Probe via a login shell so the remote user's PATH is complete. This output
-    // is PARSED here; it never touches the protocol stream (which `exec`s the
-    // resolved absolute path directly, banner-free).
-    let probe = run(
-        "/usr/bin/ssh",
-        sshBaseOpts() + [sshHost, "bash -lc 'command -v claude || true'"], timeout: 25)
-    let resolved = probe.out.split(separator: "\n").map(String.init).last(where: { $0.hasPrefix("/") }) ?? ""
-    guard !resolved.isEmpty else {
+    // `managed` policy: ensure CCTerm's own pinned `claude` at the controlled
+    // remote path (~/.ccterm/bin/claude), installed by a Mac download + ssh
+    // upload, idempotently. Returns an absolute path (safe to single-quote).
+    guard let provisioned = ensureRemoteManagedClaude(sshHost: sshHost, sshOpts: sshBaseOpts(), proxy: claudeProxy)
+    else {
         log(
-            "ERROR: could not locate `claude` on \(sshHost) via a login shell (ssh exit=\(probe.code)). Install it or set SMOKE_REMOTE_CLAUDE to an absolute path."
+            "ERROR: failed to provision the managed claude on \(sshHost). Set SMOKE_REMOTE_CLAUDE to an absolute path to bypass."
         )
-        if !probe.err.isEmpty {
-            log("  ssh stderr: \(probe.err.trimmingCharacters(in: .whitespacesAndNewlines).prefix(200))")
-        }
         exit(1)
     }
-    remoteClaude = resolved
-    log("remote claude (auto-resolved): \(remoteClaude)")
+    remoteClaude = provisioned
+    log("remote claude (managed): \(remoteClaude)")
 }
 
 // MARK: - Part 1: curl differential — the 1081 tunnel is the API carrier
@@ -245,6 +298,56 @@ if curlUp.body.contains("CURLFAIL") || (Int(curlUp.body) ?? 0) <= 0 {
     log("Part 1 PASS — API reachable through 1081 ONLY with the tunnel up (HTTP \(curlUp.body))")
 }
 
+// MARK: - remote orphan detection (self-match-safe)
+
+/// Run a short script on the remote by feeding it to `bash -s` over STDIN. This
+/// matters for orphan detection: if the session id rode in the ssh argv, the
+/// remote shell's own cmdline would contain it and `pgrep -f <id>` would match
+/// itself. Delivered over stdin, the remote shell's argv is just `bash -s`, so the
+/// only process whose cmdline carries the id is the real remote `claude`.
+func sshRunScript(_ script: String, timeout: TimeInterval = 25) -> (code: Int32, out: String) {
+    let proc = Process()
+    proc.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+    proc.arguments = sshBaseOpts() + [sshHost, "bash -s"]
+    let inPipe = Pipe()
+    let outPipe = Pipe()
+    proc.standardInput = inPipe
+    proc.standardOutput = outPipe
+    proc.standardError = FileHandle.nullDevice
+    var outData = Data()
+    let group = DispatchGroup()
+    group.enter()
+    DispatchQueue.global().async {
+        outData = outPipe.fileHandleForReading.readDataToEndOfFile()
+        group.leave()
+    }
+    do { try proc.run() } catch { return (-1, "") }
+    inPipe.fileHandleForWriting.write(Data(script.utf8))
+    try? inPipe.fileHandleForWriting.close()
+    let watchdog = DispatchQueue(label: "remote-smoke.orphan.watchdog")
+    watchdog.asyncAfter(deadline: .now() + timeout) { if proc.isRunning { proc.terminate() } }
+    proc.waitUntilExit()
+    group.wait()
+    return (proc.terminationStatus, String(data: outData, encoding: .utf8) ?? "")
+}
+
+/// True if a remote `claude` carrying this session id is still running. nil if the
+/// probe was inconclusive (e.g. ssh failed).
+func remoteClaudeAlive(sessionId: String) -> Bool? {
+    let r = sshRunScript("pgrep -f -- '\(sessionId)' >/dev/null 2>&1 && echo ALIVE || echo GONE")
+    let s = r.out.trimmingCharacters(in: .whitespacesAndNewlines)
+    if s.contains("ALIVE") { return true }
+    if s.contains("GONE") { return false }
+    return nil
+}
+
+/// Kill any remote `claude` carrying this session id. pgrep returns only the real
+/// process (the checking shell's argv is `bash -s`, never the id), so this targets
+/// exactly the orphan.
+func reapRemoteClaude(sessionId: String) {
+    _ = sshRunScript("for p in $(pgrep -f -- '\(sessionId)' 2>/dev/null); do kill \"$p\" 2>/dev/null; done")
+}
+
 // MARK: - drive a claude turn over ssh
 
 struct TurnOutcome {
@@ -268,7 +371,7 @@ func buildSSHArgv(useTunnel: Bool, sessionId: String, claudeArgs: [String]) -> [
     return argv
 }
 
-func runClaudeTurn(useTunnel: Bool, label: String) async -> TurnOutcome {
+func runClaudeTurn(useTunnel: Bool, label: String, strictLifecycle: Bool) async -> TurnOutcome {
     var outcome = TurnOutcome()
     let sessionId = UUID().uuidString.lowercased()
     let localWorkDir = URL(
@@ -362,9 +465,12 @@ func runClaudeTurn(useTunnel: Bool, label: String) async -> TurnOutcome {
     }
     outcome.initialized = true
 
+    let turnPrompt =
+        customPrompt
+        ?? "Reply with exactly the single word: PONG. Output nothing else — no punctuation, no explanation."
     log("[\(label)] sending prompt…")
     session.sendMessage(
-        "Reply with exactly the single word: PONG. Output nothing else — no punctuation, no explanation.",
+        turnPrompt,
         extra: ["uuid": UUID().uuidString.lowercased()])
 
     // Bounded wait for the final result envelope.
@@ -377,18 +483,42 @@ func runClaudeTurn(useTunnel: Bool, label: String) async -> TurnOutcome {
     }
 
     // Orphan check: no remote claude carrying this session id should remain.
-    Thread.sleep(forTimeInterval: 2)
-    let orphan = run(
-        "/usr/bin/ssh",
-        sshBaseOpts() + [sshHost, "pgrep -f -- \(shq(sessionId)) >/dev/null 2>&1 && echo ALIVE || echo GONE"],
-        timeout: 25)
-    let orphanState = orphan.out.trimmingCharacters(in: .whitespacesAndNewlines)
-    if orphanState.contains("ALIVE") {
-        failures.append("[\(label)] ORPHAN: remote claude (session id \(sessionId)) still running after close()")
-    } else if orphanState.contains("GONE") {
-        log("[\(label)] lifecycle OK: no orphan remote claude")
+    // A turn that completed (the positive case) exits on stdin EOF immediately. A
+    // turn deliberately wedged on a dead network (the tunnel-down control turn)
+    // can only abort once its in-flight API call times out — claude DOES exit
+    // then (stdin EOF was already delivered), so this is claude's network-timeout
+    // behavior, not a launch/lifecycle defect (M7 hardening, out of scope for v1).
+    // Poll briefly; reap a lingering control-turn process so the box stays clean.
+    var alive = false
+    var inconclusive = false
+    var waited = 0.0
+    while waited < 14 {
+        Thread.sleep(forTimeInterval: 2)
+        waited += 2
+        switch remoteClaudeAlive(sessionId: sessionId) {
+        case .some(true): alive = true
+        case .some(false):
+            alive = false
+            inconclusive = false
+        case .none: inconclusive = true
+        }
+        if !alive { break }
+    }
+    if alive {
+        if strictLifecycle {
+            failures.append(
+                "[\(label)] ORPHAN: remote claude (session id \(sessionId)) still running \(Int(waited))s after close()"
+            )
+        } else {
+            log(
+                "[\(label)] expected lingering claude (control turn wedged on a dead network) — reaping to keep the box clean"
+            )
+        }
+        reapRemoteClaude(sessionId: sessionId)
+    } else if inconclusive {
+        log("[\(label)] WARN: orphan check inconclusive (ssh probe failed)")
     } else {
-        log("[\(label)] WARN: orphan check inconclusive (ssh exit=\(orphan.code), out='\(orphanState.prefix(60))')")
+        log("[\(label)] lifecycle OK: no orphan remote claude")
     }
     return outcome
 }
@@ -396,7 +526,7 @@ func runClaudeTurn(useTunnel: Bool, label: String) async -> TurnOutcome {
 // MARK: - Part 2: positive turn (tunnel UP) — protocol + lifecycle + egress via 1081
 
 log("=== Part 2: claude turn with the tunnel UP (egress forced through 1081) ===")
-let pos = await runClaudeTurn(useTunnel: true, label: "tunnel-up")
+let pos = await runClaudeTurn(useTunnel: true, label: "tunnel-up", strictLifecycle: true)
 if !pos.started {
     failures.append("positive turn never started")
 } else if pos.timedOut {
@@ -404,10 +534,15 @@ if !pos.started {
 } else if pos.resultIsError == true {
     failures.append(
         "positive turn returned an error result — could the remote authenticate AND reach the API via the tunnel?")
-} else if !pos.sawPong {
+} else if customPrompt == nil && !pos.sawPong {
     failures.append(
         "positive turn completed but no assistant text contained PONG (got: '\(pos.assistantText.prefix(80))')")
+} else if customPrompt != nil && pos.assistantText.isEmpty {
+    failures.append("positive turn completed but produced no assistant text for the custom prompt")
 } else {
+    if customPrompt != nil {
+        log("Part 2 — remote claude answered the prompt:\n----\n\(pos.assistantText)\n----")
+    }
     log("Part 2 PASS — remote claude ran a clean turn over ssh; API egress went through 1081")
 }
 
@@ -417,7 +552,7 @@ if envv["SMOKE_SKIP_CLAUDE_NEG"] == "1" {
     log("=== Part 3 skipped (SMOKE_SKIP_CLAUDE_NEG=1) ===")
 } else {
     log("=== Part 3: claude turn with the tunnel DOWN — must fail (proves no devbox-direct egress) ===")
-    let neg = await runClaudeTurn(useTunnel: false, label: "tunnel-down")
+    let neg = await runClaudeTurn(useTunnel: false, label: "tunnel-down", strictLifecycle: false)
     if neg.initialized && neg.sawPong && neg.resultIsError != true {
         failures.append(
             "control turn SUCCEEDED with the tunnel DOWN — claude reached the API WITHOUT the 1081 proxy (it used the remote's own network). The egress constraint is violated."

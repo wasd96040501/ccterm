@@ -1,6 +1,6 @@
 # Remote Execution — run Claude Code against a remote machine
 
-**Status:** Proposal — M1 (structured launch, §2d/§3a) + M2 egress-proxy primitive (§2c) landed; feasibility proven (§2)
+**Status:** Proposal — M1 (structured launch, §2d/§3a) + M2 egress-proxy primitive (§2c) + M3-partial (login-state injection §3i + managed binary provisioning §3g, smoke-proven §2e) landed; feasibility proven (§2)
 **Scope:** AgentSDK launch seam · new app-layer remote services · New-Session UI
 **Author:** design discussion, 2026-06
 
@@ -167,6 +167,38 @@ our `ssh -R` is up, then:
 
 A turn that fails without the tunnel but succeeds with it can only have egressed
 at the Mac.
+
+### 2e. Login-state injection + managed provisioning — a real subscription turn on a no-internet remote (M3-partial)
+
+§2d still required an `ANTHROPIC_API_KEY` in the environment. `RemoteSmoke` now
+also proves the §3i credential model and §3g `managed` provisioning end-to-end,
+driving the real `claude` on the dev box **on a claude.ai subscription (OAuth),
+with no API key anywhere**:
+
+- **Login state from the Keychain, read-only.** With no API key/token in the env,
+  the smoke reads the Mac's `Claude Code-credentials` OAuth login
+  (`security find-generic-password`, account = `$USER`), resolves a short-lived
+  bearer, and injects it into the remote `claude` as `CLAUDE_CODE_OAUTH_TOKEN`.
+  The Keychain is never written and the refresh token is never forwarded — a run
+  confirmed the Keychain `expiresAt` is identical before and after, so the local
+  login is untouched.
+- **Refresh-on-Mac through the *Claude-configured* proxy, not a hardcoded one.**
+  The proxy is resolved from process env → `~/.claude/settings.json` `env`
+  (`HTTPS_PROXY`/`NO_PROXY`) — exactly what the local CLI uses. Refresh is lazy
+  (only when the access token is expired) and uses client_id `9d1c250a`, the only
+  client a `Claude Code-credentials` token is bound to. This mirrors Claude.app,
+  which refreshes via Electron `net.fetch` (its own proxy) and persists to its own
+  store, never writing the CLI Keychain (§9).
+- **`managed` provisioning with no remote installer.** With `SMOKE_REMOTE_CLAUDE`
+  unset, the Mac downloads the pinned, checksum-verified `linux-x64` binary
+  through its proxy egress and uploads it (over `ssh`, stdin-stream) to a
+  controlled `~/.ccterm/bin/claude`, idempotently (version-stamped). The remote
+  runs no installer, edits no shell profile, needs no node — Claude.app's SFTP
+  fallback (§9).
+- **A genuine model answer.** Driven with a real prompt, the remote `claude`
+  returned a correct, model-generated answer (`result.success`, `isError=false`),
+  with API egress flowing only through the Mac's proxy — the full inference path
+  works over `ssh -T` on the subscription login.
 
 ---
 
@@ -356,7 +388,7 @@ today. When the user clicks a session whose record has a `remoteHostId`:
 This keeps the sidebar and the transcript renderer fully reused; only the source
 of the JSONL bytes is swapped behind `remoteHostId`.
 
-### 3i. Credentials / login state (aligned with Claude.app — §9)
+### 3i. Credentials / login state (aligned with Claude.app — §9) — ✅ smoke-proven (§2e)
 
 The egress tunnel is **network only** (`ConnectProxy` blind-forwards `CONNECT`,
 TLS stays end-to-end — §2b), so it can never inject auth. The remote `claude`
@@ -498,7 +530,7 @@ the `InterruptSmoke` / `*Smoke` convention in `macos/AgentSDK/Sources/`.
 | **M0** | Feasibility | ✅ done — clean transport + reverse-egress tunnel, verified on a real remote (§2) |
 | **M1** | SDK `LaunchPlan` (argv-based) | ✅ done — `SessionConfiguration.launchPlan` (`.local` / `.wrapped`) + `claudeArguments()` shipped; legacy `customCommand`/`binaryPath` path preserved. `RemoteSmoke` launches the real remote `claude` over `ssh -T`, runs one turn, and verifies protocol + lifecycle + no orphan with API egress **forced** through the Mac's `1081` proxy, proven by a tunnel on/off differential (decisive even when the remote can reach the API on its own) — §2d. |
 | **M2** | `RemoteEgressService` (proxy) | 🟡 proxy primitive + both egress modes done. Native Swift CONNECT proxy shipped as `RemoteEgress.ConnectProxy` (loopback-only); `RemoteEgressSmoke` verifies a no-internet remote borrows the Mac's egress through `ssh -R` in **both** modes — reusing an existing local proxy *and* CCTerm's own `ConnectProxy` (§2c). Wiring `ssh -R` into the session argv + the app-scope `RemoteEgressService` lifecycle lands with M4. |
-| **M3** | `RemoteProvisioner` + `.provisioning` status | install CCTerm's pinned `claude` to a controlled remote path, idempotent; new SSH-only runtime status (§3g); `RemoteSmoke` proves a fresh remote self-provisions then runs a turn |
+| **M3** | `RemoteProvisioner` + `.provisioning` status | 🟡 managed binary provisioning (Mac download + `ssh` upload → `~/.ccterm/bin/claude`, checksum-verified, idempotent) **and** login-state injection (§3i) smoke-proven on a real claude.ai-subscription turn (§2e). Still to wire: the app-layer `@Observable` `RemoteProvisioner` / `RemoteCredentialResolver` services and the SSH-only `.provisioning` runtime status (§3g). |
 | **M4** | `RemoteHost` model/store + `SSHLaunchBuilder` + `RemoteHostProbe` | + ControlMaster pool; `SessionConfig.remoteHostId` end-to-end: create a host-bound session, send a message, bash/files run remote |
 | **M5** | Remote session history | `RemoteTranscriptFetcher` + `remoteTranscriptPath` field; clicking a remote session fetches its `.jsonl` and renders via the existing backfill (§3h) |
 | **M6** | UI | `+` → `Menu` (add local / remote ▸ hosts / add SSH host); add-host sheet with Test Connection + proxy config; host-scoped capsule switcher (§4a); remote-session click affordance (§4b) |

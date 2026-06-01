@@ -1,6 +1,6 @@
 # Remote Execution — run Claude Code against a remote machine
 
-**Status:** Proposal — M1 (structured launch, §2d/§3a) + M2 egress-proxy primitive (§2c) + M3-partial (login-state injection §3i + managed binary provisioning §3g, smoke-proven §2e) landed; feasibility proven (§2)
+**Status:** Proposal — M1 (structured launch, §2d/§3a) + M2 egress-proxy primitive (§2c) + M3 (login-state injection §3i + managed provisioning §3g) + **M4 app-layer remote launch** (`RemoteHost`/store, `SSHLaunchBuilder`, `RemoteCredentialResolver`, `RemoteProvisioner`, `RemoteLaunchCoordinator`, `SessionConfig.remoteHostId` → `.provisioning` → ssh `LaunchPlan`) landed; feasibility proven (§2). Remaining for v1: M5 (remote history), M6 (UI — incl. `RemoteHostProbe`/Test-Connection + mode-B `ConnectProxy` wiring).
 **Scope:** AgentSDK launch seam · new app-layer remote services · New-Session UI
 **Author:** design discussion, 2026-06
 
@@ -168,7 +168,7 @@ our `ssh -R` is up, then:
 A turn that fails without the tunnel but succeeds with it can only have egressed
 at the Mac.
 
-### 2e. Login-state injection + managed provisioning — a real subscription turn on a no-internet remote (M3-partial)
+### 2e. Login-state injection + managed provisioning — a real subscription turn on a no-internet remote (M3)
 
 §2d still required an `ANTHROPIC_API_KEY` in the environment. `RemoteSmoke` now
 also proves the §3i credential model and §3g `managed` provisioning end-to-end,
@@ -411,7 +411,7 @@ today. When the user clicks a session whose record has a `remoteHostId`:
 This keeps the sidebar and the transcript renderer fully reused; only the source
 of the JSONL bytes is swapped behind `remoteHostId`.
 
-### 3i. Credentials / login state (aligned with Claude.app — §9) — ✅ smoke-proven (§2e)
+### 3i. Credentials / login state (aligned with Claude.app — §9) — ✅ smoke-proven (§2e) + app-landed (`RemoteCredentialResolver`, M3)
 
 The egress tunnel is **network only** (`ConnectProxy` blind-forwards `CONNECT`,
 TLS stays end-to-end — §2b), so it can never inject auth. The remote `claude`
@@ -552,9 +552,9 @@ the `InterruptSmoke` / `*Smoke` convention in `macos/AgentSDK/Sources/`.
 |---|---|---|
 | **M0** | Feasibility | ✅ done — clean transport + reverse-egress tunnel, verified on a real remote (§2) |
 | **M1** | SDK `LaunchPlan` (argv-based) | ✅ done — `SessionConfiguration.launchPlan` (`.local` / `.wrapped`) + `claudeArguments()` shipped; legacy `customCommand`/`binaryPath` path preserved. `RemoteSmoke` launches the real remote `claude` over `ssh -T`, runs one turn, and verifies protocol + lifecycle + no orphan with API egress **forced** through the Mac's `1081` proxy, proven by a tunnel on/off differential (decisive even when the remote can reach the API on its own) — §2d. |
-| **M2** | `RemoteEgressService` (proxy) | 🟡 proxy primitive + both egress modes done. Native Swift CONNECT proxy shipped as `RemoteEgress.ConnectProxy` (loopback-only); `RemoteEgressSmoke` verifies a no-internet remote borrows the Mac's egress through `ssh -R` in **both** modes — reusing an existing local proxy *and* CCTerm's own `ConnectProxy` (§2c). Wiring `ssh -R` into the session argv + the app-scope `RemoteEgressService` lifecycle lands with M4. |
-| **M3** | `RemoteProvisioner` + `.provisioning` status | 🟡 managed binary provisioning (Mac download + `ssh` upload → `~/.ccterm/bin/claude`, checksum-verified, idempotent) **and** login-state injection (§3i) smoke-proven on a real claude.ai-subscription turn (§2e). Still to wire: the app-layer `@Observable` `RemoteProvisioner` / `RemoteCredentialResolver` services and the SSH-only `.provisioning` runtime status (§3g). |
-| **M4** | `RemoteHost` model/store + `SSHLaunchBuilder` + `RemoteHostProbe` | `SessionConfig.remoteHostId` end-to-end: create a host-bound session, send a message, bash/files run remote. One ssh per session; each carries its own `-R` → the host-scoped shared Mac proxy (§3e). **No ControlMaster pool** (deferred to M7). |
+| **M2** | `RemoteEgressService` (proxy) | 🟡 proxy primitive + both egress modes done (`RemoteEgress.ConnectProxy`, loopback-only; `RemoteEgressSmoke` verifies both modes — §2c). **Mode A (reuse an existing local proxy) is now wired into the launch**: `SSHLaunchBuilder` embeds a per-session `ssh -R` → the resolved Mac proxy host:port (§3e), exercised by M4. **Still pending:** mode B — the app-scope `@Observable` `RemoteEgressService` that runs `ConnectProxy` (`RemoteProxyMode.ccTermRunsOne` is modeled but the coordinator rejects it for now); ships with M6's proxy config. |
+| **M3** | `RemoteProvisioner` + `.provisioning` status | ✅ done (app layer). `RemoteProvisioner` (managed Mac download + `ssh`-stdin upload → `~/.ccterm/bin/claude`, checksum-verified, idempotent) + `RemoteCredentialResolver` (Keychain-read-only OAuth → short-lived bearer, lazy refresh on the Mac; or env/settings API key — §3i) + the SSH-only `SessionRuntime.Status.provisioning` all landed under `Services/Remote/`. Built as `nonisolated` value types invoked off-main by `RemoteLaunchCoordinator` (not `@Observable` services — they hold no UI state in v1). Smoke-proven end-to-end on a real claude.ai-subscription turn (§2e). |
+| **M4** | `RemoteHost` model/store + `SSHLaunchBuilder` + `RemoteHostProbe` | ✅ done (app layer, AgentSDK untouched). `RemoteHost` (Codable) + `RemoteHostStore` (`@Observable`, UserDefaults, injected via `AppState`); `SSHLaunchBuilder` (pure) builds `LaunchPlan.wrapped` with this session's own `-R` → the host-scoped Mac proxy (§3e); `RemoteLaunchCoordinator` resolves host → provision/cred/egress off-main. `SessionConfig.remoteHostId` (persisted via `SessionExtra`, no migration) flows through `continueStartup` → `.provisioning` → bootstrap. One ssh per session; **no ControlMaster pool** (deferred to M7). Verified by `SSHLaunchBuilderTests` + `RemoteHostStoreTests` + `RemoteLaunchCoordinatorTests` (15 cases pin the argv shape, persistence, and the host→`LaunchPlan` path) + the real-ssh `RemoteSmoke` (managed/Mac-upload). **Deferred to M6:** `RemoteHostProbe` (Test Connection lives in the add-host sheet) and the in-app end-to-end (no UI to create a remote session yet). |
 | **M5** | Remote session history | `RemoteTranscriptFetcher` + `remoteTranscriptPath` field; clicking a remote session fetches its `.jsonl` and renders via the existing backfill (§3h) |
 | **M6** | UI | `+` → `Menu` (add local / remote ▸ hosts / add SSH host); add-host sheet with Test Connection + proxy config; host-scoped capsule switcher (§4a); remote-session click affordance (§4b) |
 | **M7** | Lifecycle hardening | reconnect on sleep/wake/network change; orphan reaping; surfaced errors; **ControlMaster connection pool** per host (shared TCP + auth handshake across the host's sessions, and a home for a shared `-R` tunnel) — co-designed with the reconnect master (§3e) |

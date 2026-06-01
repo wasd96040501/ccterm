@@ -45,6 +45,14 @@ struct SessionConfig: Equatable {
     var additionalDirectories: [String]
     var pluginDirectories: [String]
 
+    /// Stable id of the `RemoteHost` this session runs on (design
+    /// `remote-execution.md` §3c). nil = local — the session launches `claude`
+    /// the existing local way. Non-nil routes launch through `SSHLaunchBuilder`
+    /// (a `LaunchPlan.wrapped` over `ssh`) and marks the session's history as
+    /// remote-sourced (§3h). Launch-fixed: set at draft time, never edited at
+    /// runtime (like `cwd` / `worktreeBranch`).
+    var remoteHostId: String?
+
     /// Per-session "fast mode" opt-in. Memory-only (the CLI flag is
     /// documented as not persisted across sessions).
     var fastModeEnabled: Bool
@@ -60,7 +68,8 @@ struct SessionConfig: Equatable {
         permissionMode: PermissionMode = .default,
         additionalDirectories: [String] = [],
         pluginDirectories: [String] = [],
-        fastModeEnabled: Bool = false
+        fastModeEnabled: Bool = false,
+        remoteHostId: String? = nil
     ) {
         self.cwd = cwd
         self.isWorktree = isWorktree
@@ -73,6 +82,7 @@ struct SessionConfig: Equatable {
         self.additionalDirectories = additionalDirectories
         self.pluginDirectories = pluginDirectories
         self.fastModeEnabled = fastModeEnabled
+        self.remoteHostId = remoteHostId
     }
 
     /// Hydrate from a persisted `SessionRecord`. `sourceBranch` and
@@ -95,6 +105,7 @@ struct SessionConfig: Equatable {
         self.additionalDirectories = record.extra.addDirs ?? []
         self.pluginDirectories = record.extra.pluginDirs ?? []
         self.fastModeEnabled = false
+        self.remoteHostId = record.extra.remoteHostId
     }
 
     /// `SessionExtra` payload mirror, used as the inner field on
@@ -105,7 +116,8 @@ struct SessionConfig: Equatable {
             permissionMode: permissionMode.rawValue,
             addDirs: additionalDirectories.isEmpty ? nil : additionalDirectories,
             model: model,
-            effort: effort?.rawValue
+            effort: effort?.rawValue,
+            remoteHostId: remoteHostId
         )
     }
 

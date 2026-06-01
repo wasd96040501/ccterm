@@ -10,7 +10,9 @@ extension SessionRuntime {
     var isAttached: Bool {
         switch status {
         case .starting, .idle, .responding, .interrupting: return true
-        case .notStarted, .stopped: return false
+        // `.provisioning` is pre-attach — the ssh/remote setup runs before any
+        // CLI subprocess exists, so there is nothing to talk to yet.
+        case .provisioning, .notStarted, .stopped: return false
         }
     }
 

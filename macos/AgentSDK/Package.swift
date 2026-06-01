@@ -23,6 +23,14 @@ let package = Package(
             name: "RemoteEgressSmoke",
             dependencies: ["RemoteEgress"]
         ),
+        // Real-remote smoke for the structured launch seam (LaunchPlan.wrapped):
+        // launches the real `claude` on a remote over `ssh -T`, forcing its API
+        // egress through `ssh -R` → the Mac's existing local proxy. Proves the
+        // stream-json protocol + lifecycle + no-orphan over ssh (design M1).
+        .executableTarget(
+            name: "RemoteSmoke",
+            dependencies: ["AgentSDK"]
+        ),
         .executableTarget(
             name: "SmokeTest",
             dependencies: ["AgentSDK"]

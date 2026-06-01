@@ -1,6 +1,6 @@
 # Remote Execution — run Claude Code against a remote machine
 
-**Status:** Proposal (feasibility proven, see §2)
+**Status:** Proposal — M1 (structured launch, §2d/§3a) + M2 egress-proxy primitive (§2c) landed; feasibility proven (§2)
 **Scope:** AgentSDK launch seam · new app-layer remote services · New-Session UI
 **Author:** design discussion, 2026-06
 
@@ -127,6 +127,47 @@ directly.
 The smoke actively probes the proxy port over the Mac's LAN address and asserts
 it is refused.
 
+### 2d. Structured launch — real `claude` over ssh, proxy-forced (M1)
+
+The §2a transport check used a Python echo stand-in. `RemoteSmoke`
+(`swift run RemoteSmoke`) now drives the **real** `claude` on the remote through
+the shipped `LaunchPlan.wrapped` seam (§3a) and proves all three M1
+deliverables on one turn:
+
+- **structured argv** — the ssh command runs verbatim, with the full
+  `claudeArguments()` list shell-quoted into the remote command, so spaces in
+  any flag value no longer mangle the launch;
+- **protocol** — initialize + one prompt + the assistant reply + the final
+  result envelope all survive `ssh -T` (no PTY, 8-bit-clean);
+- **lifecycle / no orphan** — `session.close()` → stdin EOF → channel close →
+  the remote `claude` exits; the smoke asserts no remote process carrying the
+  session id survives.
+
+**Egress is forced through the Mac's proxy and proven decisive, not assumed.**
+Per project decision the remote `claude` must reach the API *only* via the Mac's
+existing local HTTP proxy (default `127.0.0.1:1081`), tunneled over `ssh -R` —
+never the remote's own network (mode A of §2c only; no `ConnectProxy` here).
+`HTTPS_PROXY` *forces* this (Node routes through the proxy and never silently
+falls back to a direct socket), and the smoke proves it with a **tunnel on/off
+differential** that holds even when the remote *does* have its own route to the
+API — the realistic case: the verified dev box refuses `api.ipify.org` but still
+allowlists `api.anthropic.com` (HTTP 403 direct). So "can the remote reach the
+API directly?" is the wrong question; "does a turn need our tunnel?" is the right
+one. The proxy env points at a remote loopback port that is alive **only** while
+our `ssh -R` is up, then:
+
+- **Part 1 — curl differential:** a remote `curl -x <proxy-port> api.anthropic.com`
+  is *refused* with the tunnel down and returns an HTTP code with it up — the
+  `ssh -R → 1081` path is the API carrier, dead without the tunnel.
+- **Part 2 — positive turn (tunnel up):** real `claude` runs a clean turn; its API
+  egress flows through `1081`.
+- **Part 3 — control turn (tunnel down):** the same launch *minus* `-R` must
+  **fail** — claude cannot complete a turn without the proxy, so it provably is
+  not using the remote's own network.
+
+A turn that fails without the tunnel but succeeds with it can only have egressed
+at the Mac.
+
 ---
 
 ## 3. Architecture & layering
@@ -135,26 +176,34 @@ it is refused.
 Claude CLI stream-json protocol. It must not learn what "ssh" or "proxy" means.
 Everything stateful and domain-specific lives in the CCTerm app layer.
 
-### 3a. The one AgentSDK change — structured launch (argv, not a string)
+### 3a. The one AgentSDK change — structured launch (argv, not a string) ✅ landed (M1)
 
-Today the only launch seam is `SessionConfiguration.customCommand`, parsed by a
-naive space split (`AgentSDK/Sources/AgentSDK/AgentSDK.swift:122`,
-`customCommand.split(separator: " ")`). That is fatal for an ssh launch: the
-remote `env KEY=val … claude` segment breaks the moment any value (a path, a
-workdir) contains a space.
+The only launch seam used to be `SessionConfiguration.customCommand`, parsed by a
+naive space split (`customCommand.split(separator: " ")`). That is fatal for an
+ssh launch: the remote `env KEY=val … claude` segment breaks the moment any
+value (a path, a workdir) contains a space.
 
-Replace/augment it with a structured plan:
+It is now augmented with a structured plan (`SessionConfiguration.launchPlan`):
 
 ```swift
 public enum LaunchPlan {
     case local(binaryPath: String?)                    // current behavior
-    case wrapped(executable: String, argv: [String])   // app builds the full ssh argv
+    case wrapped(executable: String, argv: [String])   // app builds the full argv
 }
 ```
 
-The SDK simply runs `executable` with `argv` (no tokenizing) and keeps owning
-the `Process` lifecycle. It **still does not know about ssh**. ~20 lines;
-`customCommand` can remain for back-compat.
+The SDK runs `executable` with **exactly** `argv` (no tokenizing, nothing
+appended) and keeps owning the `Process` lifecycle. It **still does not know
+about ssh**. When `launchPlan` is nil the legacy resolution
+(`customCommand` → `binaryPath` → auto-locate) is preserved byte-for-byte, so
+existing callers are unaffected.
+
+`.wrapped` solves the *local* tokenizing problem; the *remote command* handed to
+ssh is still a single shell string, so its quoting is the caller's job (the app
+layer / M4's `SSHLaunchBuilder`), never the SDK's. To let the caller embed the
+real claude flags into that command, the argv list the SDK would pass to `claude`
+is exposed as `SessionConfiguration.claudeArguments()` — so what runs remotely is
+byte-for-byte what would run locally.
 
 ### 3b. New app-layer components
 
@@ -375,7 +424,7 @@ the `InterruptSmoke` / `*Smoke` convention in `macos/AgentSDK/Sources/`.
 | # | Milestone | Deliverable / verification |
 |---|---|---|
 | **M0** | Feasibility | ✅ done — clean transport + reverse-egress tunnel, verified on a real remote (§2) |
-| **M1** | SDK `LaunchPlan` (argv-based) | change `SessionConfiguration`; `RemoteSmoke` target launches real `claude` on the remote over ssh, runs one turn; verify protocol + lifecycle + no orphan |
+| **M1** | SDK `LaunchPlan` (argv-based) | ✅ done — `SessionConfiguration.launchPlan` (`.local` / `.wrapped`) + `claudeArguments()` shipped; legacy `customCommand`/`binaryPath` path preserved. `RemoteSmoke` launches the real remote `claude` over `ssh -T`, runs one turn, and verifies protocol + lifecycle + no orphan with API egress **forced** through the Mac's `1081` proxy, proven by a tunnel on/off differential (decisive even when the remote can reach the API on its own) — §2d. |
 | **M2** | `RemoteEgressService` (proxy) | 🟡 proxy primitive + both egress modes done. Native Swift CONNECT proxy shipped as `RemoteEgress.ConnectProxy` (loopback-only); `RemoteEgressSmoke` verifies a no-internet remote borrows the Mac's egress through `ssh -R` in **both** modes — reusing an existing local proxy *and* CCTerm's own `ConnectProxy` (§2c). Wiring `ssh -R` into the session argv + the app-scope `RemoteEgressService` lifecycle lands with M4. |
 | **M3** | `RemoteProvisioner` + `.provisioning` status | install CCTerm's pinned `claude` to a controlled remote path, idempotent; new SSH-only runtime status (§3g); `RemoteSmoke` proves a fresh remote self-provisions then runs a turn |
 | **M4** | `RemoteHost` model/store + `SSHLaunchBuilder` + `RemoteHostProbe` | + ControlMaster pool; `SessionConfig.remoteHostId` end-to-end: create a host-bound session, send a message, bash/files run remote |

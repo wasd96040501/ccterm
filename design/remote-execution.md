@@ -211,12 +211,13 @@ Each mirrors an existing pattern so none of this is novel infrastructure:
 
 | New component | Mirrors | Responsibility |
 |---|---|---|
-| `RemoteHost` (Codable model) | `SessionConfig` | ssh alias/host/user/port/identity, remote `claude` path, remote workdir, proxy mode |
+| `RemoteHost` (Codable model) | `SessionConfig` | ssh alias/host/user/port/identity, remote workdir, proxy mode, and the `RemoteClaudePolicy` (`managed` / `useRemote(path:)`, §3g) |
 | `RemoteHostStore` (`@Observable`, app-scope) | `RecentProjectsStore` | persist the host list; injected via `.environment()` |
 | `RemoteEgressService` (`@Observable`, app-scope) | — | owns the Mac-side proxy process (or "use existing proxy" passthrough) lifecycle, status, logs; **shared across sessions** to the same host |
 | `SSHLaunchBuilder` (pure) | — | `(RemoteHost, egress decision, sessionId, workdir) → LaunchPlan.wrapped(...)` + remote env |
 | `RemoteHostProbe` | — | connectivity validation for the sheet's "Test Connection" (the §2 echo/fetch checks, in Swift) |
-| `RemoteProvisioner` | — | installs **our** pinned `claude` to a controlled remote path, idempotently (skip if already present + version matches); runs during the SSH-only provisioning status (§3g) |
+| `RemoteProvisioner` | — | `managed` mode only: installs **our** pinned `claude` to a controlled remote path, idempotently (skip if already present + version matches); runs during the SSH-only provisioning status (§3g) |
+| `RemoteCredentialResolver` | — | `managed` mode only: resolves the Mac's current credential (API key / refreshed claude.ai OAuth bearer) into launch-time env for `SSHLaunchBuilder`; refreshes OAuth on the Mac, never forwards the refresh token (§3i, §9) |
 | `RemoteTranscriptFetcher` | `HistoryLoader` | on demand, pulls a remote session's `.jsonl` down to a local cache so the existing reverse-paging reader can read it (§3h) |
 
 **Why the proxy belongs in the app layer, not the SDK:** one proxy can be
@@ -286,14 +287,35 @@ remote supervisor that holds the `claude` process across reconnects) is a
 
 ### 3g. Provisioning & the SSH-only session status
 
-We do **not** trust whatever `claude` happens to be on the remote. CCTerm
-installs **its own pinned** `claude` to a **controlled path** (e.g.
-`~/.ccterm/bin/claude`, version-stamped) so the protocol version is one we
-control (also retires the version-skew risk in §8). Installation is
-**idempotent**: if our binary already exists at that path with the expected
-version, provisioning is skipped. On a no-internet remote the download itself
-goes through the reverse tunnel established for the session, or — as a fallback —
-the binary is uploaded over the existing SSH/SFTP channel.
+Provisioning is a **per-host policy**, not one fixed behavior (resolved
+decision #3):
+
+```swift
+enum RemoteClaudePolicy {
+    case managed                  // CCTerm installs + pins its own claude (and owns login state, §3i)
+    case useRemote(path: String?) // trust the remote's own claude; no download, no credential push
+}
+```
+
+- **`managed`** — CCTerm installs **its own pinned** `claude` to a **controlled
+  path** (e.g. `~/.ccterm/bin/claude`, version-stamped) so the protocol version
+  is one we control. Installation is **idempotent**: if our binary already exists
+  at that path with the expected version, provisioning is skipped. On a
+  no-internet remote the download goes through the reverse tunnel established for
+  the session, or — as a fallback — the binary is uploaded over the existing
+  SSH/SFTP channel. In this mode CCTerm also **owns the login state**: it forwards
+  the Mac's refreshed credential into the launch (§3i). This is the mode that
+  mirrors how the official Claude desktop app provisions a remote (§9).
+
+- **`useRemote(path:)`** — trust the `claude` already on the remote (a pinned
+  absolute path, or login-shell-probed like `RemoteSmoke` does today). CCTerm
+  **downloads nothing, writes nothing**, and — per decision #3 — **does not manage
+  login state**: the remote `claude` authenticates with whatever credentials the
+  user has configured on the remote (its own `~/.claude` / env). The user
+  guarantees both a protocol-compatible binary and working auth. Provisioning
+  degrades to a path probe plus an optional soft `--version` sanity check (warn,
+  don't block). This mode is only possible because our transport is the vanilla
+  stream-json protocol, not a bespoke daemon (contrast §9).
 
 This setup is work that only the SSH path performs, and it happens *before* the
 normal stream-json bootstrap. So `SessionRuntime.Status`
@@ -312,10 +334,11 @@ enum Status {
 }
 ```
 
-During `.provisioning` the UI shows a distinct "Connecting to <host>…" state
-(ensure ControlMaster, `RemoteProvisioner.ensureInstalled`, bring up the `-R`
-tunnel). Local sessions never enter `.provisioning` and go straight
-`starting → idle`.
+During `.provisioning` the UI shows a distinct "Connecting to <host>…" state:
+ensure ControlMaster, bring up the `-R` tunnel, and — for `managed` only —
+`RemoteProvisioner.ensureInstalled` + resolve the credential to forward (§3i).
+For `useRemote` the provisioning step is just the path probe. Local sessions
+never enter `.provisioning` and go straight `starting → idle`.
 
 ### 3h. Remote session history
 
@@ -332,6 +355,45 @@ today. When the user clicks a session whose record has a `remoteHostId`:
 
 This keeps the sidebar and the transcript renderer fully reused; only the source
 of the JSONL bytes is swapped behind `remoteHostId`.
+
+### 3i. Credentials / login state (aligned with Claude.app — §9)
+
+The egress tunnel is **network only** (`ConnectProxy` blind-forwards `CONNECT`,
+TLS stays end-to-end — §2b), so it can never inject auth. The remote `claude`
+must hold a credential itself. Reverse-engineering the official Claude desktop
+app (§9) settles how to provide it, and `managed` mode aligns with it exactly:
+
+- **The Mac owns the credential and pushes a short-lived one as env.** Whatever
+  the Mac is already authed with — an API key, or a claude.ai **subscription
+  (OAuth)** — CCTerm resolves it to the launch-time env the CLI understands:
+  `ANTHROPIC_API_KEY` (x-api-key) or `ANTHROPIC_AUTH_TOKEN` / `CLAUDE_CODE_OAUTH_TOKEN`
+  (bearer), plus `ANTHROPIC_CUSTOM_HEADERS` and the cloud-provider vars
+  (`CLAUDE_CODE_USE_BEDROCK` / `…_VERTEX`, etc.) where relevant.
+- **Refresh happens on the Mac; the refresh token never leaves it.** For OAuth,
+  CCTerm refreshes the access token locally (it expires) and forwards only the
+  resulting **short-lived bearer** per launch. This is exactly Claude.app's
+  behavior — it strips `claudeAiOauth.refreshToken` before any handoff and
+  re-mints a fresh access token from the Keychain-stored credential each spawn.
+  It solves the OAuth-expiry problem that a naive token copy would hit.
+- **Env, not a file.** The token rides as process env at launch (embedded in the
+  remote command / forwarded through the launch), not written to the remote disk.
+  Prefer keeping it off `argv` (visible in `ps`); env is readable only to the
+  same user / root via `/proc/<pid>/environ`. (Claude.app makes the same
+  trade-off and deliberately does **not** copy its staged `.credentials.json` to
+  the remote — that staged dir is its local-transport path only.)
+- **Auth ⟂ egress.** The bearer/key handles *who you are*; the `ssh -R` tunnel
+  handles *how the packets get out*. They are independent: a no-internet remote
+  needs both (token + tunnel); a remote with its own internet needs only the
+  token (and could skip the tunnel).
+- **`useRemote` forwards nothing** (decision #3): the user's remote `claude` uses
+  its own login state; CCTerm injects no credential. The user guarantees auth.
+
+This lives in `SSHLaunchBuilder` (resolve + inject for `managed`) fed by the same
+credential store the local app already uses; a `RemoteCredentialResolver` owns
+the OAuth-refresh-on-Mac step. **Divergence from Claude.app:** it assumes the
+remote reaches the API directly and runs **no tunnel**; our target remotes are
+locked-down, so we keep the `ssh -R` egress (§2c/§2d). We adopt its *auth* model
+and keep our *egress* model.
 
 ---
 
@@ -354,10 +416,16 @@ SwiftUI `Menu` (SwiftUI-by-default per the architecture rules):
 
 **Add-SSH-Host sheet** (SwiftUI `.sheet`):
 
-- ssh fields: alias, host, user, port, identity file, remote `claude` path,
-  remote workdir base.
+- ssh fields: alias, host, user, port, identity file, remote workdir base.
+- **Claude on the remote** — radio (the §3g policy):
+  - *Let CCTerm manage it* (`managed`) — installs CCTerm's pinned `claude` and
+    forwards the Mac's credential into the launch (§3i). No remote setup needed.
+  - *Use the remote's own* (`useRemote`) — a `claude` path (or auto-probe); CCTerm
+    downloads nothing and **forwards no credential** — the remote's own login
+    state is used, guaranteed by the user.
 - **Test Connection** — drives `RemoteHostProbe`, shows the green/red result
-  from the §2 checks (reachable? interpreter present? egress via tunnel works?).
+  from the §2 checks (reachable? `claude` present/compatible? egress via tunnel
+  works? — for `managed`, credential resolvable?).
 - **Proxy config** — radio:
   - *Use an existing local HTTP proxy* — host:port (zero extra process; `ssh -R`
     targets it directly).
@@ -410,9 +478,13 @@ affordance distinguishes remote rows.
    `.jsonl` from the remote on demand and renders it through the existing
    backfill pipeline (§3h). `SessionRecord` gains `remoteHostId` +
    `remoteTranscriptPath` (§3c).
-3. **Remote `claude` is CCTerm-provisioned, not the remote's own.** Installed to a
-   controlled path, idempotently, during a new SSH-only `.provisioning` status
-   (§3g).
+3. **Provisioning is a per-host policy: `managed` or `useRemote` (§3g).**
+   `managed` installs CCTerm's **pinned** `claude` to a controlled path,
+   idempotently, during the SSH-only `.provisioning` status — and **owns the
+   login state**, forwarding the Mac's refreshed credential into the launch
+   (§3i), aligned with Claude.app (§9). `useRemote` trusts the remote's own
+   `claude` (no download) and **does not manage login state** — the user
+   guarantees a compatible binary and working auth on the remote.
 
 ---
 
@@ -444,9 +516,11 @@ history, full host UI). **M7/M8 = v2** (resilience + remote-path polish).
 - Remote-path-aware "Reveal in Finder", `--add-dir`, permission-prompt path UI (M8).
 - Browsing the remote filesystem in the folder picker — v1 takes a typed/remembered
   remote workdir; the live remote browser is M8.
-- Authenticating the remote `claude` via the claude.ai OAuth browser flow on a
-  headless box — v1 assumes API-key (or Bedrock/Vertex) credentials injectable as
-  env at launch.
+- Running the claude.ai OAuth **browser flow on the headless remote** — we never
+  do this. The Mac authenticates (API key or claude.ai subscription) and forwards
+  a short-lived credential as launch env (§3i), refreshing on the Mac. Subscription
+  (OAuth) is therefore *in scope* for v1 via forwarding — what is out of scope is
+  doing the interactive login on the remote itself.
 
 ---
 
@@ -459,13 +533,58 @@ history, full host UI). **M7/M8 = v2** (resilience + remote-path polish).
 - **Node proxy env coverage.** Claude runs on Node; confirm it honors
   `HTTPS_PROXY` for all API calls. Fallback: `ANTHROPIC_BASE_URL` → the tunnel +
   a remote `/etc/hosts` alias.
-- **Protocol version skew** — *mitigated by design.* Because CCTerm provisions
-  its **own** pinned `claude` to a controlled path (§3g), the remote protocol
-  version is one we choose, not whatever the box happened to have. Provisioning
-  verifies the stamped version and re-installs on mismatch.
+- **Protocol version skew** — *mitigated in `managed`, accepted in `useRemote`.*
+  In `managed` mode CCTerm provisions its **own** pinned `claude` to a controlled
+  path (§3g), so the remote protocol version is one we choose; provisioning
+  verifies the stamped version and re-installs on mismatch. In `useRemote` the
+  user opts into whatever the box has — we run a soft `--version` check and warn,
+  but do not block; protocol compatibility is the user's responsibility.
 - **Provisioning on a no-internet remote (chicken-and-egg).** Installing `claude`
   needs egress, but the egress tunnel is part of the session launch. Resolution:
   bring up the `-R` tunnel first, install through it; fallback is uploading a
   prebuilt binary over the existing SSH/SFTP channel.
 - **sshd `MaxSessions`.** Default 10 multiplexed channels per connection caps
   per-host concurrency; document and surface, raise on the remote if needed.
+
+---
+
+## 9. Prior art — how the official Claude desktop app does remote (reverse-engineered)
+
+`/Applications/Claude.app` (`com.anthropic.claudefordesktop`, an Electron app)
+already does SSH-remote sessions on a **claude.ai subscription**, so its handling
+is a useful reference. Reverse-engineering the main bundle (`app.asar` →
+`.vite/build/index.js`) shows:
+
+- **Transport — an RPC daemon, not a pipe.** It does *not* run `ssh host "claude
+  …"`. Using the vendored `ssh2` library it **SFTP-deploys a pinned
+  `claude-ssh`/`ccd-cli` daemon** to `~/.claude/remote/srv/<ver>/server`, starts
+  it `server --serve --socket <run/<id>/rpc.sock> --token-file <tok>`, opens an
+  `ssh exec` `--bridge` channel, and drives everything over newline-delimited
+  **JSON-RPC** (`process.spawn` / `process.stdin` / `files.*` / `git.*`). The
+  daemon spawns the remote `claude`.
+- **Auth — refreshed-on-Mac bearer, forwarded as env.** The credential is read
+  from the macOS **Keychain** (`security find-generic-password`), the OAuth access
+  token is **refreshed locally** (`POST /v1/oauth/token`, `grant_type=refresh_token`,
+  PKCE S256) before use, and the **short-lived bearer** is forwarded into the
+  remote spawn as env (`ANTHROPIC_AUTH_TOKEN` / `CLAUDE_CODE_OAUTH_TOKEN` /
+  `ANTHROPIC_API_KEY`, via a per-provider `sessionEnvVars()`). Its env forwarder
+  passes `CLAUDE_*`/`ANTHROPIC_*` but **explicitly excludes `CLAUDE_CONFIG_DIR`**
+  and never SFTPs its staged `.credentials.json` to the remote (that staged dir
+  is its *local* transport path); the **refresh token never leaves the Mac**.
+- **Egress — direct from the remote, no tunnel.** The SSH channel carries only
+  RPC; the remote `claude` reaches `api.anthropic.com` **directly** over the
+  remote's own network. Its `vmAllowedDomains` / `vmEgressPolicy` allowlist is for
+  the Cowork **micro-VM sandbox**, not SSH remotes.
+- **Provisioning — always `managed`.** It deploys its own pinned daemon **and**
+  CLI (remote `--cli-url` fetch of `claude.zst`, SFTP fallback), version-checked.
+  It has **no `useRemote` mode** — its transport *requires* the bespoke daemon.
+
+**What we take, what we differ on.** We adopt its **auth** model verbatim
+(Mac-refresh + forward a short-lived bearer as env; refresh token stays local —
+§3i) and its **`managed` provisioning** spirit (§3g). We differ in two ways, both
+deliberate: (1) our transport is the **vanilla stream-json protocol over `ssh
+-T`**, not a custom RPC daemon — simpler, and it is exactly what makes a
+**`useRemote`** mode possible (any protocol-compatible `claude` works); (2) our
+target remotes are **locked-down**, so we keep the **`ssh -R` egress tunnel**
+(§2c/§2d) that Claude.app does not need. Net: **same auth, our egress, plus a
+no-install `useRemote` option they can't offer.**

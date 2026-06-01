@@ -98,6 +98,35 @@ URL rewrite, no injected cert.
 - Zero remote install — `sshd` + the remote's own `claude` binary are all that's
   needed.
 
+### 2c. Egress proxy — both modes implemented & verified (M2)
+
+The §2b feasibility used Python stand-ins. The real proxy now ships as
+`RemoteEgress.ConnectProxy` (a separate SwiftPM target in the `AgentSDK`
+package, kept out of `AgentSDK` itself so the protocol wrapper stays
+proxy-agnostic — §3). It is a `Network.framework` forward proxy: blind-forwards
+`CONNECT` (HTTPS stays end-to-end TLS) and forwards absolute-form plain HTTP.
+
+`RemoteEgressSmoke` (`swift run RemoteEgressSmoke`) drives a real remote over
+`ssh -R` and proves both egress modes end-to-end:
+
+| mode | `ssh -R` target | result |
+|---|---|---|
+| **A — reuse existing proxy** | the user's own local HTTP proxy | remote's `curl` egresses at the Mac |
+| **B — CCTerm's own proxy** | `ConnectProxy` on an ephemeral loopback port | remote's `curl` egresses at the Mac (CONNECT **and** plain HTTP) |
+
+The decisive, non-flaky assertion: a packet can only egress at the remote (its
+own NAT — one stable `/24`) or at the Mac, so the smoke asserts the IP a remote
+`curl` reports through the tunnel is a valid public IP whose `/24` is **not** the
+remote's own egress `/24`. (It does *not* try to match the Mac's egress pool —
+that NAT spans many subnets per destination and equality there is flaky.) A
+negative control confirms the HTTPS IP endpoint is unreachable from the remote
+directly.
+
+**Security:** `ConnectProxy` binds `127.0.0.1` only (via
+`requiredLocalEndpoint`) — never an open CONNECT relay on a routable interface.
+The smoke actively probes the proxy port over the Mac's LAN address and asserts
+it is refused.
+
 ---
 
 ## 3. Architecture & layering
@@ -287,9 +316,10 @@ SwiftUI `Menu` (SwiftUI-by-default per the architecture rules):
 - Save → `RemoteHostStore.add`.
 
 The Mac-side proxy for the "CCTerm runs one" mode is implemented natively in
-Swift (`Network.framework` `NWListener`/`NWConnection`, ~150 lines, wired to app
-lifecycle + `appLog`) — **not** the Python stand-in used for the §2
-verification.
+Swift as `RemoteEgress.ConnectProxy` (`Network.framework`
+`NWListener`/`NWConnection`, loopback-only, `onLog` hook for the app to wire to
+`appLog`) — **not** the Python stand-in used for the §2 verification. Already
+landed and verified in both modes (§2c).
 
 ### 4a. Host switcher — a horizontal capsule strip in the Projects column
 
@@ -346,7 +376,7 @@ the `InterruptSmoke` / `*Smoke` convention in `macos/AgentSDK/Sources/`.
 |---|---|---|
 | **M0** | Feasibility | ✅ done — clean transport + reverse-egress tunnel, verified on a real remote (§2) |
 | **M1** | SDK `LaunchPlan` (argv-based) | change `SessionConfiguration`; `RemoteSmoke` target launches real `claude` on the remote over ssh, runs one turn; verify protocol + lifecycle + no orphan |
-| **M2** | `RemoteEgressService` (proxy) | native Swift CONNECT proxy + "use existing proxy" passthrough; wire `ssh -R` into the argv; verify a no-internet remote reaches the API through the tunnel |
+| **M2** | `RemoteEgressService` (proxy) | 🟡 proxy primitive + both egress modes done. Native Swift CONNECT proxy shipped as `RemoteEgress.ConnectProxy` (loopback-only); `RemoteEgressSmoke` verifies a no-internet remote borrows the Mac's egress through `ssh -R` in **both** modes — reusing an existing local proxy *and* CCTerm's own `ConnectProxy` (§2c). Wiring `ssh -R` into the session argv + the app-scope `RemoteEgressService` lifecycle lands with M4. |
 | **M3** | `RemoteProvisioner` + `.provisioning` status | install CCTerm's pinned `claude` to a controlled remote path, idempotent; new SSH-only runtime status (§3g); `RemoteSmoke` proves a fresh remote self-provisions then runs a turn |
 | **M4** | `RemoteHost` model/store + `SSHLaunchBuilder` + `RemoteHostProbe` | + ControlMaster pool; `SessionConfig.remoteHostId` end-to-end: create a host-bound session, send a message, bash/files run remote |
 | **M5** | Remote session history | `RemoteTranscriptFetcher` + `remoteTranscriptPath` field; clicking a remote session fetches its `.jsonl` and renders via the existing backfill (§3h) |

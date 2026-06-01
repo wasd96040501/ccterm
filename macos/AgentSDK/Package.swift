@@ -7,10 +7,21 @@ let package = Package(
     platforms: [.macOS(.v13)],
     products: [
         .library(name: "AgentSDK", targets: ["AgentSDK"]),
+        .library(name: "RemoteEgress", targets: ["RemoteEgress"]),
     ],
     targets: [
         .target(
             name: "AgentSDK"
+        ),
+        // Native CONNECT forward proxy for the "CCTerm runs one" egress mode.
+        // Deliberately separate from AgentSDK: the protocol wrapper must stay
+        // transport-agnostic and never learn about ssh/proxy (design §3).
+        .target(
+            name: "RemoteEgress"
+        ),
+        .executableTarget(
+            name: "RemoteEgressSmoke",
+            dependencies: ["RemoteEgress"]
         ),
         .executableTarget(
             name: "SmokeTest",

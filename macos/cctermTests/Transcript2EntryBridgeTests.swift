@@ -89,6 +89,59 @@ final class Transcript2EntryBridgeTests: XCTestCase {
         XCTAssertEqual(bridge.entryBlockIds[entryId], afterThird, "reverse map stays in sync")
     }
 
+    /// Regression for the streaming-text-then-tool flicker: when an assistant
+    /// entry grows from text-only to text + tool_use (append-only growth), the
+    /// settled text block above the new tool block must be **inserted past, not
+    /// removed and re-faded**. The block-id list alone cannot catch this — a
+    /// remove+reinsert of the same id leaves an identical final list (which is
+    /// exactly why `testUpdateAppendOnlyGrowthPreservesSettledBlocks` passed
+    /// against the buggy `.replace(boundary)` too). We witness via
+    /// coordinator-side status state instead: `.remove` drops `statusStates[id]`
+    /// (Coordinator's `.remove` arm), while `.insert` leaves it untouched. So a
+    /// surviving status proves the boundary row was never torn out.
+    func testAppendOnlyGrowthDoesNotEvictBoundaryBlock() throws {
+        let controller = Transcript2Controller()
+        let bridge = Transcript2EntryBridge(controller: controller)
+
+        let entryId = UUID()
+        let textOnly = MessageEntry.single(
+            SingleEntry(
+                id: entryId,
+                payload: .remote(
+                    Message2Fixtures.assistantText("Let me check.", messageId: "m1")),
+                delivery: nil, toolResults: [:]))
+        bridge.apply(.appended(textOnly))
+        let beforeIds = controller.coordinator.blockIds
+        let boundaryId = try XCTUnwrap(beforeIds.last, "text-only entry produced a block")
+
+        // Seed a coordinator-side status on the settled text block. The old
+        // `.replace([boundary], [boundary, tool])` would `.remove` the boundary
+        // and drop this; the new `.insert(after: boundary, [tool])` leaves it.
+        controller.setToolStatus(id: boundaryId, status: .running)
+        XCTAssertEqual(controller.coordinator.status(for: boundaryId), .running)
+
+        // Same entry id grows to text + a Read tool_use — append-only growth.
+        let textThenTool = MessageEntry.single(
+            SingleEntry(
+                id: entryId,
+                payload: .remote(
+                    Message2Fixtures.assistantTextThenRead(
+                        "Let me check.", toolUseId: "tool_1",
+                        filePath: "a.swift", messageId: "m1")),
+                delivery: nil, toolResults: [:]))
+        bridge.apply(.updated(textThenTool))
+
+        let afterIds = controller.coordinator.blockIds
+        XCTAssertEqual(
+            Array(afterIds.prefix(beforeIds.count)), beforeIds,
+            "the settled text block keeps its id and position")
+        XCTAssertGreaterThan(afterIds.count, beforeIds.count, "the tool block was appended")
+        XCTAssertEqual(
+            controller.coordinator.status(for: boundaryId), .running,
+            "the boundary text block was not removed — its status survives; a "
+                + "`.replace` boundary-restate would have dropped it")
+    }
+
     /// `.removed` drops the entry's blocks and forgets it.
     func testRemoveDropsBlocks() {
         let controller = Transcript2Controller()

@@ -308,12 +308,12 @@ final class Transcript2EntryBridge {
     ///   grow-the-last-block streaming tick): `.update` only the blocks whose
     ///   `kind` actually moved — settled rows aren't re-typeset every tick.
     /// - **Append-only growth** (old ids are a prefix of new — the dominant
-    ///   streaming shape as paragraphs accrue): update any changed prefix block
-    ///   in place, then insert *only* the new trailing blocks. The settled
-    ///   blocks above are never removed, so there is no whole-message
-    ///   `.effectFade` flicker. The insert is anchored inside the entry's own
-    ///   range (by re-stating the last existing block through `.replace`), so
-    ///   the new blocks never land at the table tail past the loading pill.
+    ///   streaming shape as paragraphs accrue, and the text-then-tool finalize):
+    ///   `.update` any changed prefix block in place (including the boundary),
+    ///   then `.insert(after:)` *only* the new trailing blocks anchored after
+    ///   the boundary. No existing block is removed, so there is no
+    ///   `.effectFade` flicker — and the new blocks land inside the entry's own
+    ///   range, not at the table tail past the loading pill.
     /// - **Structural change** (a shared index changed kind, or blocks were
     ///   dropped — rare): fall back to the explicit full segment swap.
     private func applyUpdate(_ entry: MessageEntry) {
@@ -342,19 +342,25 @@ final class Transcript2EntryBridge {
             Array(newIds.prefix(oldIds.count)) == oldIds
         {
             let boundary = oldIds.count - 1
-            // Update changed blocks strictly *before* the boundary (settled
-            // prose rarely changes once a later block exists, so usually none).
+            // Update every prefix block whose kind moved — **including the
+            // boundary** — in place via `.update` (id-keyed `reloadData`, no
+            // remove/insert, no fade). Settled blocks whose kind didn't move
+            // are skipped. `old` and `new[0...boundary]` share an id at each
+            // index (the prefix match above guarantees it), so this satisfies
+            // `changedUpdates`' precondition.
             let prefixUpdates = Self.changedUpdates(
-                old: Array(old[0..<boundary]), new: Array(new[0..<boundary]))
+                old: old, new: Array(new[0...boundary]))
             if !prefixUpdates.isEmpty {
                 controller.coordinator.apply(prefixUpdates, scroll: .none)
             }
-            // Re-state the boundary block + new tail in one anchored replace.
-            // The boundary id is unchanged, so if its content didn't move this
-            // is a same-content crossfade (invisible); only the genuinely-new
-            // tail blocks fade in. Settled blocks above are untouched.
-            let replacement = Array(new[boundary...])
-            controller.apply(.replace(oldIds: [oldIds[boundary]], with: replacement))
+            // Insert *only* the genuinely-new tail, anchored after the boundary.
+            // The boundary block is never removed, so it doesn't fade out/in —
+            // this is the fix for the streaming-text-then-tool flicker, where
+            // the old `.replace([boundary], [boundary, …tail])` re-stated the
+            // unchanged boundary through remove+insert (NSTableView is
+            // index-based, so a same-id remove+insert still animates a fade).
+            let tail = Array(new[(boundary + 1)...])
+            controller.apply(.insert(after: oldIds[boundary], tail))
             entryBlocks[entry.id] = new
             return
         }

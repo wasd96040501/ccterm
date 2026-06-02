@@ -169,6 +169,35 @@ enum Message2Fixtures {
         ])
     }
 
+    /// Assistant message that opens with a text block, then a Read tool_use —
+    /// the common "say a sentence, then call a tool" turn. Drives the
+    /// streaming-text-then-tool append-only growth path (text block at content
+    /// index 0 → same md block ids as a text-only `assistantText` with the same
+    /// `messageId`, then a trailing toolGroup).
+    static func assistantTextThenRead(
+        _ text: String, toolUseId: String, filePath: String, messageId: String = "m"
+    ) -> Message2 {
+        resolve([
+            "type": "assistant",
+            "uuid": UUID().uuidString,
+            "session_id": "s",
+            "message": [
+                "id": messageId,
+                "type": "message",
+                "role": "assistant",
+                "content": [
+                    ["type": "text", "text": text],
+                    [
+                        "type": "tool_use",
+                        "id": toolUseId,
+                        "name": "Read",
+                        "input": ["file_path": filePath],
+                    ],
+                ],
+            ],
+        ])
+    }
+
     /// A user message carrying a single `tool_result` block (the CLI's
     /// envelope for a tool's output). Pairs with `assistantRead(...)` /
     /// any tool_use of the same `toolUseId`.

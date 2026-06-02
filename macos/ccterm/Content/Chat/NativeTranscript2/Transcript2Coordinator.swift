@@ -395,6 +395,14 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
             }
             insertBlocks(after: appendAnchor, new, in: table)
 
+        case .insert(let after, let new):
+            // Anchored insert: land `new` right after `after` with no removal
+            // of the anchor. The bridge's append-only growth uses this so the
+            // settled block above a streaming tail keeps its row (the `.replace`
+            // boundary-restate fades it out/in; this does not). `after == nil`
+            // → head; unknown `after` → no-op, both handled by `insertBlocks`.
+            insertBlocks(after: after, new, in: table)
+
         case .replace(let oldIds, let newBlocks):
             // Segment swap: remove the contiguous `oldIds` and insert
             // `newBlocks` at the same start index, atomically. Anchor on the
@@ -1279,6 +1287,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
     private func warmCandidateIds(_ change: Transcript2Controller.Change) -> [UUID] {
         switch change {
         case .prepend(let new), .append(let new): return new.map(\.id)
+        case .insert(_, let new): return new.map(\.id)
         case .replace(_, let new): return new.map(\.id)
         case .update, .remove: return []
         }

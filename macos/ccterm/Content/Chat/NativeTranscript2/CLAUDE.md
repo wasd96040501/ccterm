@@ -20,7 +20,7 @@ AppKit host VC (ChatSessionViewController, TranscriptDemoViewController, …)
                └─ BlockCellView (NSView, override draw(_:), .onSetNeedsDisplay)
 ```
 
-`Transcript2Coordinator.blocks: [Block]` is the single source of truth — no `rows` mirror, no parallel diff structure. Mutation enters via `Controller.Change` (`.prepend` / `.append` / `.replace` / `.remove` / `.update` — all intrinsic-position; the shared `insertBlocks(after:)` primitive is private) through the single `apply(_:scroll:)` entry (sync; layouts lazy on `heightOfRow`, or precomputed off-main by the backfill pipeline and landed as cache hits).
+`Transcript2Coordinator.blocks: [Block]` is the single source of truth — no `rows` mirror, no parallel diff structure. Mutation enters via `Controller.Change` (`.prepend` / `.append` / `.insert(after:)` / `.replace` / `.remove` / `.update` — position-free except `.insert(after:)`, the one anchored case, whose caller-named anchor is validated against live `blocks` so an unknown anchor is a no-op rather than a misplacement) through the single `apply(_:scroll:)` entry (sync; layouts lazy on `heightOfRow`, or precomputed off-main by the backfill pipeline and landed as cache hits). See §3.4 for why append-only growth uses `.insert(after:)` not `.replace`.
 
 ### 1.1 Why two types: Controller vs. Coordinator
 
@@ -211,11 +211,13 @@ The `Change` enum (emitted by `Transcript2Controller`) is the only shape `applyS
 
 | Case | NSTableView call | Cache effect |
 |---|---|---|
-| `.prepend(blocks)` / `.append(blocks)` / `.replace(…)` | `insertBlocks(after:)` → `insertRows(at:withAnimation:[.effectFade])` | None (lazy lookup on next `viewFor` / `heightOfRow`) |
+| `.prepend(blocks)` / `.append(blocks)` / `.insert(after:, blocks)` / `.replace(…)` | `insertBlocks(after:)` → `insertRows(at:withAnimation:[.effectFade])` | None (lazy lookup on next `viewFor` / `heightOfRow`) |
 | `.remove(ids)` | `removeRows(at:withAnimation:[.effectFade])` | `removeCachedLayout(for: id)` + `selection.dropEntry` + `highlightStorage.drop` + remove from `foldStates` / `statusStates` |
 | `.update(id, kind)` | `reloadData(forRowIndexes:) + noteHeightOfRows(withIndexesChanged:)` | `removeCachedLayout` + `highlightStorage.schedule(new)` (per-scope diff — unchanged sibling scopes keep their tokens; see §2.15) + `selection.dropEntry` |
 
 All mutations run inside `beginUpdates` / `endUpdates` ([Transcript2Coordinator.swift:257-261](Transcript2Coordinator.swift:257)). Never `reloadData()` (see §2.11).
+
+**`.insert(after:)` vs `.replace` — append-only growth.** `.insert(after: id, blocks)` lands `blocks` immediately after the named block (`after == nil` → head; unknown `after` → no-op). It is the **one** anchored case — the rest are position-free. Its purpose: when an entry grows append-only (an assistant message streaming new paragraphs, or settling text then adding a tool block), the bridge updates any changed prefix block in place via `.update` and `.insert(after:)`s **only** the genuinely-new tail — the settled block above the new tail is never removed. `.replace(oldIds, with:)` is `removeRows` + `insertBlocks`, so re-stating an *unchanged* boundary block through it (the pre-fix append-only shape did) fades that row out and back in — NSTableView is index-based, so a same-id remove+insert still animates `.effectFade`. `.replace` is therefore reserved for genuine structural swaps (e.g. a thinking-first message reflowing once at finalize, where the block ids actually change); append-only growth uses `.insert(after:)`. The bridge's `applyUpdate` ([Transcript2EntryBridge.swift](../NativeTranscript2Bridge/Transcript2EntryBridge.swift)) owns this split.
 
 ## 4. Layout boundaries
 

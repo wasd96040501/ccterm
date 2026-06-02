@@ -40,17 +40,27 @@ struct ImagePreviewRequest: Identifiable, Equatable {
 @MainActor
 @Observable
 final class Transcript2Controller {
-    /// Structural mutation vocabulary. Position is
-    /// **intrinsic** to each case — top (`prepend`), tail (`append`), or in
-    /// place (`replace` / `update` / `remove`) — so callers never thread an
-    /// arbitrary anchor through a generic insert. Scroll intent rides with the
-    /// case: `append` sticks to the bottom, everything else preserves the
-    /// visible viewport.
+    /// Structural mutation vocabulary. Position is **intrinsic** for the
+    /// position-free cases — top (`prepend`), tail (`append`), or in place
+    /// (`replace` / `update` / `remove`). `insert(after:)` is the **one**
+    /// anchored case: the caller names the block to insert behind, used by the
+    /// bridge's append-only growth so a settled block above the new tail is
+    /// never removed/reinserted (no `.effectFade` flicker). The anchor is
+    /// validated against live `blocks` — an unknown (or `nil`-but-no-head)
+    /// anchor degrades to a no-op / head insert, the same posture as `.update`
+    /// / `.remove` for unknown ids — so a stale anchor can never misplace a
+    /// row. Scroll intent rides with the case: `append` sticks to the bottom,
+    /// everything else preserves the visible viewport.
     enum Change: Sendable {
         /// Prepend `blocks` at the head (index 0). Drives backfill batches.
         case prepend(_ blocks: [Block])
         /// Append `blocks` at the tail. Drives live tail entries + the pill.
         case append(_ blocks: [Block])
+        /// Insert `blocks` immediately **after** the block with id `after`
+        /// (`after == nil` → head). Unknown `after` is a no-op. The anchored
+        /// in-place insert: append-only entry growth re-states nothing, so the
+        /// settled block above the new tail keeps its row (no fade churn).
+        case insert(after: UUID?, _ blocks: [Block])
         /// Swap the contiguous run of `oldIds` for `with` **at the same start
         /// index**, atomically — the structure-changed segment swap. A
         /// degenerate `oldIds == []` (or none present) routes to `.append`.

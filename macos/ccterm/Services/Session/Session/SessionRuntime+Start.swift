@@ -789,6 +789,13 @@ extension SessionRuntime {
         )
         pendingPermissions.append(pending)
 
+        // A permission card is just another unread trigger — same one-shot
+        // semantics as a live message landing on an unfocused session
+        // (see `appendToTimeline`'s `hasUnread` write). Mark unread so the
+        // sidebar dot appears; `setFocused(true)` clears it when the user
+        // opens the session, exactly like every other unread source.
+        if !isFocused { hasUnread = true }
+
         // Surface "your input is needed" through the same sink that posts
         // a turn-end banner. A pending permission blocks the turn, so the
         // `.responding` → `.idle` edge that drives `onTurnEnded` never

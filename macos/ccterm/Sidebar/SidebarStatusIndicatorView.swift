@@ -4,9 +4,10 @@ import AppKit
 /// fixed rows + folder headers use for their SF Symbol, so the title
 /// column lines up across heterogeneous rows.
 ///
-/// Precedence: running wins over unread. Once a session goes idle and
-/// unread accumulates, the dot replaces the dots. They never render
-/// simultaneously.
+/// Precedence: unread wins over running. An unfocused session with
+/// something the user hasn't seen (a finished turn, or a permission card
+/// awaiting approval) shows the dot even mid-turn — "needs you" outranks
+/// "busy". They never render simultaneously.
 final class SidebarStatusIndicatorView: NSView {
 
     /// Diameter of the unread dot.
@@ -63,10 +64,10 @@ final class SidebarStatusIndicatorView: NSView {
 
     func update(isRunning: Bool, hasUnread: Bool) {
         let newState: State
-        if isRunning {
-            newState = .running
-        } else if hasUnread {
+        if hasUnread {
             newState = .unread
+        } else if isRunning {
+            newState = .running
         } else {
             newState = .none
         }

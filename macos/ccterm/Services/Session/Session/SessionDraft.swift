@@ -94,6 +94,14 @@ final class SessionDraft {
         config.additionalDirectories = dirs
     }
 
+    /// Bind this draft to a remote host (nil = local). Launch-fixed like
+    /// `cwd` — set while composing, consumed by `RemoteLaunchCoordinator` at
+    /// promotion (design `remote-execution.md` §3c). The compose card also sets
+    /// `cwd` to the host's remote workdir alongside this.
+    func setRemoteHostId(_ id: String?) {
+        config.remoteHostId = id
+    }
+
     func setFocused(_ focused: Bool) {
         isFocused = focused
         if focused {
@@ -114,4 +122,5 @@ final class SessionDraft {
     var fastModeEnabled: Bool { config.fastModeEnabled }
     var additionalDirectories: [String] { config.additionalDirectories }
     var pluginDirectories: [String] { config.pluginDirectories }
+    var remoteHostId: String? { config.remoteHostId }
 }

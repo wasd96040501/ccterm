@@ -100,6 +100,7 @@ final class NewSessionConfiguratorSnapshotTests: XCTestCase {
         .frame(width: 1100, height: 760)
         .environment(recents)
         .environment(manager)
+        .environment(RemoteHostStore())
 
         let image = ViewSnapshot.render(
             view, size: CGSize(width: 1100, height: 760), settle: 0.9)
@@ -159,6 +160,7 @@ final class NewSessionConfiguratorSnapshotTests: XCTestCase {
         .frame(width: 1100, height: 760)
         .environment(recents)
         .environment(manager)
+        .environment(RemoteHostStore())
 
         let image = ViewSnapshot.render(
             view, size: CGSize(width: 1100, height: 760), settle: 0.9)
@@ -232,6 +234,7 @@ final class NewSessionConfiguratorSnapshotTests: XCTestCase {
         .frame(width: 1100, height: 760)
         .environment(recents)
         .environment(manager)
+        .environment(RemoteHostStore())
         .preferredColorScheme(.light)
 
         let image = ViewSnapshot.render(

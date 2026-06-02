@@ -71,6 +71,7 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
     let model: MainSelectionModel
     let sessionManager: SessionManager
     let recentProjects: RecentProjectsStore
+    let remoteHosts: RemoteHostStore
     let notifications: NotificationService
     let searchEngine: SyntaxHighlightEngine
     let searchBus: TranscriptSearchBus
@@ -115,6 +116,7 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
         model: MainSelectionModel,
         sessionManager: SessionManager,
         recentProjects: RecentProjectsStore,
+        remoteHosts: RemoteHostStore,
         notifications: NotificationService,
         searchEngine: SyntaxHighlightEngine,
         searchBus: TranscriptSearchBus,
@@ -123,6 +125,7 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
         self.model = model
         self.sessionManager = sessionManager
         self.recentProjects = recentProjects
+        self.remoteHosts = remoteHosts
         self.notifications = notifications
         self.searchEngine = searchEngine
         self.searchBus = searchBus
@@ -377,6 +380,7 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
                 model: model,
                 sessionManager: sessionManager,
                 recentProjects: recentProjects,
+                remoteHosts: remoteHosts,
                 notifications: notifications,
                 searchEngine: searchEngine,
                 searchBus: searchBus,

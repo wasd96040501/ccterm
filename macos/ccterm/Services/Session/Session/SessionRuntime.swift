@@ -140,6 +140,10 @@ final class SessionRuntime {
         get { config.pluginDirectories }
         set { config.pluginDirectories = newValue }
     }
+    /// The remote host this session runs on (nil = local). Launch-fixed —
+    /// read-only at runtime; the value is copied verbatim from the draft at
+    /// promotion (design `remote-execution.md` §3c).
+    var remoteHostId: String? { config.remoteHostId }
 
     // MARK: - Runtime
 

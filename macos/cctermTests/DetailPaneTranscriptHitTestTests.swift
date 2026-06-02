@@ -118,6 +118,7 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
             model: model,
             sessionManager: manager,
             recentProjects: recentProjects,
+            remoteHosts: RemoteHostStore(),
             notifications: notifications,
             searchEngine: syntaxEngine,
             searchBus: searchBus,

@@ -29,6 +29,12 @@ struct NewSessionConfigurator<InputBar: View>: View {
     @Binding var folderPath: String?
     @Binding var useWorktree: Bool
     @Binding var sourceBranch: String?
+    /// Active remote host this draft runs on (nil = Local). Set by the capsule
+    /// strip / `+` menu; bound straight to `session.draft.config.remoteHostId`
+    /// (design `remote-execution.md` §4a). When non-nil the left column shows the
+    /// host detail panel instead of local recents, and `folderPath` carries the
+    /// remote working directory.
+    @Binding var remoteHostId: String?
     /// Invoked when the user clicks a row in the "Recent Sessions"
     /// section. The detail VC flips `MainSelectionModel.selection` to
     /// `.session(id)`, swapping the compose card out for the chosen
@@ -89,6 +95,14 @@ struct NewSessionConfigurator<InputBar: View>: View {
 
     @Environment(RecentProjectsStore.self) private var recents
     @Environment(SessionManager.self) private var manager
+    @Environment(RemoteHostStore.self) private var remoteHosts
+
+    /// Add / edit SSH-host sheet presentation. `editingHost` non-nil → edit mode.
+    @State private var showHostSheet: Bool = false
+    @State private var editingHost: RemoteHost?
+    /// Last local folder, stashed when switching to a remote host so flipping
+    /// back to `Local` restores the user's project instead of a stale remote path.
+    @State private var lastLocalFolder: String?
     /// Branch list + remote main + current-branch status are only ever shown
     /// inside `BranchPickerView`. The probe is preloaded asynchronously when
     /// the picked folder is a git repo (see `GitProbe.loadHeavy`) so the popover
@@ -102,12 +116,14 @@ struct NewSessionConfigurator<InputBar: View>: View {
         folderPath: Binding<String?>,
         useWorktree: Binding<Bool>,
         sourceBranch: Binding<String?>,
+        remoteHostId: Binding<String?> = .constant(nil),
         onResumeSession: ((String) -> Void)? = nil,
         @ViewBuilder inputBar: @escaping () -> InputBar
     ) {
         self._folderPath = folderPath
         self._useWorktree = useWorktree
         self._sourceBranch = sourceBranch
+        self._remoteHostId = remoteHostId
         self.onResumeSession = onResumeSession
         self.inputBar = inputBar
         // Seed the cheap probe synchronously so the branch pill renders on the
@@ -166,7 +182,19 @@ struct NewSessionConfigurator<InputBar: View>: View {
         // Tuned to be felt, not seen — small enough not to add visual
         // weight to the otherwise restrained surface.
         .shadow(color: .black.opacity(0.22), radius: 30, x: 0, y: 10)
+        .sheet(isPresented: $showHostSheet) {
+            AddRemoteHostSheet(editing: editingHost) { host in
+                remoteHosts.upsert(host)
+                activate(hostId: host.id)
+            }
+        }
         .task(id: folderPath) {
+            // Remote sessions have no local git repo — the workdir lives on the
+            // remote. Skip the probe entirely (the metaRow is hidden too).
+            guard remoteHostId == nil else {
+                probe.refresh(folderPath: nil)
+                return
+            }
             // Two-stage probe, both keyed off `folderPath`:
             //   1) Cheap, synchronous — `GitProbe.refresh` reads
             //      `.git/HEAD` and the `.git` existence flag, resolving
@@ -229,24 +257,86 @@ struct NewSessionConfigurator<InputBar: View>: View {
                 .padding(.top, 22)
                 .padding(.bottom, 8)
 
-            if recents.entries.isEmpty {
-                emptyRecents
-            } else {
-                ZStack {
-                    recentsList
-                    // Bottom-only fade so the last row dissolves into
-                    // the card's bottom edge. The matching top scrim
-                    // was dropped — the section header already
-                    // creates a clear visual boundary at the top, so
-                    // a fade band there just dimmed the first entry.
-                    FadeScrim(.bottomToTop, height: Self.recentsBottomScrimHeight, style: .ultraThinMaterial)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                        .allowsHitTesting(false)
+            // Host-scoped context switcher — only when remote hosts exist, so the
+            // local-only experience is byte-for-byte unchanged (§4a).
+            if !remoteHosts.hosts.isEmpty {
+                RemoteHostCapsuleStrip(
+                    hosts: remoteHosts.hosts,
+                    activeHostId: remoteHostId,
+                    onSelect: { activate(hostId: $0) }
+                )
+                .padding(.bottom, 8)
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(Color(nsColor: .separatorColor).opacity(0.5))
+                        .frame(height: 0.5)
+                        .padding(.horizontal, 16)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+
+            projectsColumnBody
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// The scrollable body under the header + capsule strip. Local → recents
+    /// list; remote → the active host's detail panel (local recents are
+    /// local-path-only until M8's per-host recents).
+    @ViewBuilder
+    private var projectsColumnBody: some View {
+        if let host = activeHost {
+            RemoteHostDetailPanel(
+                host: host,
+                onEdit: {
+                    editingHost = host
+                    showHostSheet = true
+                },
+                onRemove: { removeActiveHost(host) }
+            )
+        } else if recents.entries.isEmpty {
+            emptyRecents
+        } else {
+            ZStack {
+                recentsList
+                // Bottom-only fade so the last row dissolves into the card's
+                // bottom edge. The matching top scrim was dropped — the section
+                // header already creates a clear visual boundary at the top.
+                FadeScrim(.bottomToTop, height: Self.recentsBottomScrimHeight, style: .ultraThinMaterial)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .allowsHitTesting(false)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    /// The currently-active remote host, or nil when local.
+    private var activeHost: RemoteHost? {
+        guard let id = remoteHostId else { return nil }
+        return remoteHosts.host(id: id)
+    }
+
+    /// Switch the active context. `hostId == nil` → Local (restores the stashed
+    /// local folder). A remote host → stash the local pick (first time), bind
+    /// the host, and point `folderPath` at its remote workdir (§4a). Worktree /
+    /// source-branch are cleared — no worktree on remote in v1.
+    private func activate(hostId: String?) {
+        if let hostId, let host = remoteHosts.host(id: hostId) {
+            if remoteHostId == nil { lastLocalFolder = folderPath }
+            remoteHostId = hostId
+            useWorktree = false
+            sourceBranch = nil
+            folderPath = host.remoteWorkdir?.isEmpty == false ? host.remoteWorkdir : "~"
+        } else {
+            remoteHostId = nil
+            folderPath = lastLocalFolder
+        }
+    }
+
+    /// Remove the active host: drop it from the store and fall back to Local.
+    private func removeActiveHost(_ host: RemoteHost) {
+        activate(hostId: nil)
+        remoteHosts.remove(id: host.id)
     }
 
     /// Section label + `+` button. Uses an uppercase eyebrow style so
@@ -259,15 +349,33 @@ struct NewSessionConfigurator<InputBar: View>: View {
                 .tracking(0.6)
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)
-            Button(action: presentFolderPicker) {
+            Menu {
+                Button(String(localized: "Add Local Folder…"), action: presentFolderPicker)
+                Menu {
+                    ForEach(remoteHosts.hosts) { host in
+                        Button(host.displayName) { activate(hostId: host.id) }
+                    }
+                    if !remoteHosts.hosts.isEmpty {
+                        Divider()
+                    }
+                    Button(String(localized: "Add SSH Host…")) {
+                        editingHost = nil
+                        showHostSheet = true
+                    }
+                } label: {
+                    Label(String(localized: "Remote"), systemImage: "server.rack")
+                }
+            } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .frame(width: Self.plusButtonSize, height: Self.plusButtonSize)
                     .contentShape(Rectangle())
             }
+            .menuStyle(.button)
+            .menuIndicator(.hidden)
             .buttonStyle(PlusHoverButtonStyle())
-            .help(String(localized: "Choose Folder…"))
+            .help(String(localized: "Add Folder or Remote Host"))
         }
     }
 
@@ -374,7 +482,9 @@ struct NewSessionConfigurator<InputBar: View>: View {
     /// upward over the recents list rather than compress the pill.
     @ViewBuilder
     private var mainColumn: some View {
-        let branchVisible = probe.currentBranch != nil
+        // No worktree / branch picker on a remote session in v1 — the workdir
+        // lives on the remote, not a local git repo.
+        let branchVisible = probe.currentBranch != nil && remoteHostId == nil
         let recentSessions = recentSessionsForFolder
         VStack(alignment: .leading, spacing: 0) {
             titleRow
@@ -455,10 +565,27 @@ struct NewSessionConfigurator<InputBar: View>: View {
     }
 
     /// Subtitle: abbreviated path when a folder is picked, otherwise a
-    /// short prompt directing the user to the projects list on the left.
+    /// short prompt directing the user to the projects list on the left. For a
+    /// remote host the path is the remote workdir, prefixed with an "on <host>"
+    /// affordance so it's clear the session runs elsewhere.
     @ViewBuilder
     private var subtitleView: some View {
-        if let path = folderPath {
+        if let host = activeHost {
+            HStack(spacing: 5) {
+                Image(systemName: "server.rack")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.tint)
+                Text(String(localized: "on \(host.displayName)"))
+                    .foregroundStyle(.tint)
+                Text(verbatim: "·")
+                    .foregroundStyle(.tertiary)
+                Text(folderPath ?? "~")
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .font(.system(size: 12))
+        } else if let path = folderPath {
             Text(abbreviatedPath(path))
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
@@ -570,16 +697,27 @@ struct NewSessionConfigurator<InputBar: View>: View {
     /// via the sidebar.
     private static var resumeRowLimit: Int { 5 }
 
-    /// Top N non-archived, already-started sessions whose `groupingPath`
-    /// matches the picked folder, descending by `lastActiveAt`. `.draft` rows
-    /// (unsent `/new` / `/clear` drafts) are excluded — they aren't a
-    /// resumable conversation yet.
+    /// Top N non-archived, already-started sessions for the active context,
+    /// descending by `lastActiveAt`. `.draft` rows (unsent `/new` / `/clear`
+    /// drafts) are excluded — they aren't a resumable conversation yet.
+    ///
+    /// Scoping (§4a): a **remote** host shows that host's sessions
+    /// (`extra.remoteHostId == activeHostId`); **local** shows local-only
+    /// sessions (`remoteHostId == nil`) whose `groupingPath` matches the folder.
     private var recentSessionsForFolder: [SessionRecord] {
+        let started = manager.records.lazy
+            .filter { $0.status != .archived && $0.status != .draft }
+        if let hostId = remoteHostId {
+            return
+                started
+                .filter { $0.extra.remoteHostId == hostId }
+                .prefix(Self.resumeRowLimit)
+                .map { $0 }
+        }
         guard let folder = folderPath else { return [] }
         return
-            manager.records
-            .lazy
-            .filter { $0.status != .archived && $0.status != .draft && $0.groupingPath == folder }
+            started
+            .filter { $0.extra.remoteHostId == nil && $0.groupingPath == folder }
             .prefix(Self.resumeRowLimit)
             .map { $0 }
     }
@@ -892,4 +1030,5 @@ private struct HideEnclosingScrollerWidth: NSViewRepresentable {
     .frame(width: 1080, height: 760)
     .environment(RecentProjectsStore())
     .environment(SessionManager())
+    .environment(RemoteHostStore())
 }

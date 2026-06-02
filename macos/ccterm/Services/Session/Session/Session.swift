@@ -466,6 +466,15 @@ final class Session {
         case .active(let r): return r.sourceBranch
         }
     }
+    /// The remote host this session runs on (nil = local). Read-only forward —
+    /// it is set on the draft (`session.draft?.setRemoteHostId(...)`) before
+    /// promotion and never edited at runtime (design `remote-execution.md` §3c).
+    var remoteHostId: String? {
+        switch phase {
+        case .draft(let d): return d.remoteHostId
+        case .active(let r): return r.remoteHostId
+        }
+    }
     var worktreeBranch: String? {
         switch phase {
         case .draft(let d): return d.worktreeBranch

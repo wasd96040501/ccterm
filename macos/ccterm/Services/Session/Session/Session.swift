@@ -106,6 +106,17 @@ final class Session {
         }
     }
 
+    /// App-scope remote-launch coordinator (design `remote-execution.md` §3g),
+    /// forwarded to the runtime like the sinks above. `SessionManager` sets it
+    /// in `wireSessionCallbacks`; the runtime consults it at launch when the
+    /// session is host-bound. Draft phase has no runtime, so the setter is a
+    /// no-op there; `wireRuntimeMessagesSink` re-attaches it at promotion.
+    @ObservationIgnored var remoteLaunch: RemoteLaunchCoordinator? {
+        didSet {
+            runtime?.remoteLaunch = remoteLaunch
+        }
+    }
+
     /// Fresh-save / async-patch sink, forwarded to the runtime when one
     /// exists. `SessionManager` wires this to `refreshRecords()` so the
     /// sidebar picks up rows whose db row is saved asynchronously
@@ -261,6 +272,7 @@ final class Session {
         runtime.onTurnEnded = onTurnEnded
         runtime.onTurnUsageChange = onTurnUsageChange
         runtime.onPermissionPrompt = onPermissionPrompt
+        runtime.remoteLaunch = remoteLaunch
     }
 
     // MARK: - Phase accessors
@@ -452,6 +464,15 @@ final class Session {
         switch phase {
         case .draft(let d): return d.sourceBranch
         case .active(let r): return r.sourceBranch
+        }
+    }
+    /// The remote host this session runs on (nil = local). Read-only forward —
+    /// it is set on the draft (`session.draft?.setRemoteHostId(...)`) before
+    /// promotion and never edited at runtime (design `remote-execution.md` §3c).
+    var remoteHostId: String? {
+        switch phase {
+        case .draft(let d): return d.remoteHostId
+        case .active(let r): return r.remoteHostId
         }
     }
     var worktreeBranch: String? {

@@ -428,6 +428,39 @@ extension SessionRuntime {
         // rule. Hoisting the read here keeps the pure-derivation function
         // safe to call from tests.
         let customCommand = UserDefaults.standard.string(forKey: "customCLICommand")
+
+        // Remote session (design `remote-execution.md` §3c/§3g): resolve the ssh
+        // `LaunchPlan` through the coordinator during a `.provisioning` window
+        // (bring up egress, ensure the remote claude, resolve the credential),
+        // then bootstrap with that plan. Falls back to the local path when no
+        // host is bound or no coordinator was injected (tests / local sessions).
+        if let hostId = config.remoteHostId, let coordinator = remoteLaunch {
+            status = .provisioning
+            // The local SessionConfiguration supplies the claude argv + every
+            // non-launch field; the coordinator only swaps in the ssh
+            // `launchPlan` + a local scratch cwd.
+            let base = makeAgentConfig(customCommand: nil)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let result = await coordinator.resolveLaunch(
+                    hostId: hostId, sessionId: self.sessionId, claudeArguments: base.claudeArguments())
+                switch result {
+                case .failed(let reason):
+                    self.failLaunch(reason: "remote launch failed — \(reason)")
+                case .resolved(let resolved):
+                    var sdkConfig = base
+                    sdkConfig.launchPlan = resolved.launchPlan
+                    sdkConfig.workingDirectory = resolved.localWorkingDirectory
+                    // The launch binary is `/usr/bin/ssh`; the user login PATH is
+                    // irrelevant (and the costly login-shell env collection is
+                    // skipped). The env that matters is set inside the ssh command.
+                    sdkConfig.inheritsParentEnvironment = true
+                    await self.bootstrap(configuration: sdkConfig)
+                }
+            }
+            return
+        }
+
         let config = makeAgentConfig(customCommand: customCommand)
         Task { @MainActor [weak self] in
             await self?.bootstrap(configuration: config)

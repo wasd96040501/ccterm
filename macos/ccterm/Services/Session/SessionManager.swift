@@ -101,16 +101,24 @@ final class SessionManager {
     /// knowing the notification service exists.
     @ObservationIgnored var onPermissionPromptNotice: ((PermissionPromptNotice) -> Void)?
 
+    /// App-scope remote-launch coordinator, forwarded onto every `Session` it
+    /// creates (design `remote-execution.md` §3g). nil in tests / when no
+    /// remote-host store is wired — host-bound sessions then fail launch with a
+    /// clear reason rather than silently running locally.
+    @ObservationIgnored private let remoteLaunch: RemoteLaunchCoordinator?
+
     init(
         repository: any SessionRepository = CoreDataSessionRepository(),
         cliClientFactory: @escaping CLIClientFactory = AgentSDKCLIClient.defaultFactory,
         worktreeArchive: @escaping WorktreeSideEffect = SessionManager.defaultWorktreeArchive,
-        worktreeRestore: @escaping WorktreeSideEffect = SessionManager.defaultWorktreeRestore
+        worktreeRestore: @escaping WorktreeSideEffect = SessionManager.defaultWorktreeRestore,
+        remoteLaunch: RemoteLaunchCoordinator? = nil
     ) {
         self.repository = repository
         self.cliClientFactory = cliClientFactory
         self.worktreeArchive = worktreeArchive
         self.worktreeRestore = worktreeRestore
+        self.remoteLaunch = remoteLaunch
         self.records = repository.findAll()
     }
 
@@ -329,6 +337,9 @@ final class SessionManager {
     /// draft → active phase flip).
     private func wireSessionCallbacks(_ session: Session) {
         let sid = session.sessionId
+        // Forward the app-scope remote-launch coordinator before the session can
+        // start (UI calls activate()/send() only after this returns).
+        session.remoteLaunch = remoteLaunch
         session.onLaunchFailure = { [weak self] reason in
             // `reason` is the raw description the runtime already produced;
             // no localization or field reshuffle here.

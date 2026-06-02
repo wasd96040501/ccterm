@@ -71,6 +71,7 @@ final class SessionManagerLaunchFailureTests: XCTestCase {
             model: MainSelectionModel(),
             sessionManager: manager,
             recentProjects: recentProjects,
+            remoteHosts: RemoteHostStore(),
             notifications: notifications,
             searchEngine: SyntaxHighlightEngine(),
             searchBus: TranscriptSearchBus(),

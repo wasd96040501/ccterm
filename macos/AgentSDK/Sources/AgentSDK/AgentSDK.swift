@@ -108,48 +108,70 @@ public final class Session {
         let workingDirectory = configuration.workingDirectory
         let binaryPathOverride = configuration.binaryPath
         let customCommand = configuration.customCommand
+        let launchPlan = configuration.launchPlan
         let envOverrides = configuration.env
         let inheritsParentEnvironment = configuration.inheritsParentEnvironment
-        let arguments = buildArguments()
+        let arguments = configuration.claudeArguments()
 
         // Run binary lookup, env resolution, and Process.run() off the calling thread.
         let (proc, stdin, stdout, stderr) = try await Task.detached {
             let executablePath: String
             let finalArguments: [String]
 
-            if let customCommand, !customCommand.isEmpty {
-                // Custom command prefix: first token is the executable, the rest are prepended to arguments.
-                let tokens = customCommand.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
-                guard var firstToken = tokens.first else { throw AgentSDKError.binaryNotFound }
-                if !firstToken.hasPrefix("/") {
-                    let which = Process()
-                    which.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-                    which.arguments = [firstToken]
-                    // Use login shell environment so PATH is complete.
-                    which.environment = ShellEnvironment.loginEnvironment() ?? ProcessInfo.processInfo.environment
-                    let whichPipe = Pipe()
-                    which.standardOutput = whichPipe
-                    which.standardError = FileHandle.nullDevice
-                    try which.run()
-                    which.waitUntilExit()
-                    guard which.terminationStatus == 0,
-                        let resolved = String(
-                            data: whichPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-                            .trimmingCharacters(in: .whitespacesAndNewlines),
-                        !resolved.isEmpty
-                    else {
-                        throw AgentSDKError.binaryNotFound
-                    }
-                    firstToken = resolved
+            // Resolve a bare executable name through the login PATH via `which`.
+            // Absolute paths pass through untouched.
+            func resolveExecutable(_ name: String) throws -> String {
+                guard !name.hasPrefix("/") else { return name }
+                let which = Process()
+                which.executableURL = URL(fileURLWithPath: "/usr/bin/which")
+                which.arguments = [name]
+                // Use login shell environment so PATH is complete.
+                which.environment = ShellEnvironment.loginEnvironment() ?? ProcessInfo.processInfo.environment
+                let whichPipe = Pipe()
+                which.standardOutput = whichPipe
+                which.standardError = FileHandle.nullDevice
+                try which.run()
+                which.waitUntilExit()
+                guard which.terminationStatus == 0,
+                    let resolved = String(
+                        data: whichPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+                        .trimmingCharacters(in: .whitespacesAndNewlines),
+                    !resolved.isEmpty
+                else {
+                    throw AgentSDKError.binaryNotFound
                 }
-                executablePath = firstToken
-                finalArguments = Array(tokens.dropFirst()) + arguments
-            } else {
-                guard let resolved = binaryPathOverride ?? BinaryLocator.locate() else {
+                return resolved
+            }
+
+            switch launchPlan {
+            case .wrapped(let executable, let argv):
+                // The caller built the COMPLETE argv (claude args already
+                // embedded, e.g. inside an ssh remote command); run it verbatim,
+                // appending nothing. The SDK stays transport-agnostic.
+                executablePath = try resolveExecutable(executable)
+                finalArguments = argv
+            case .local(let binaryPath):
+                guard let resolved = binaryPath ?? BinaryLocator.locate() else {
                     throw AgentSDKError.binaryNotFound
                 }
                 executablePath = resolved
                 finalArguments = arguments
+            case nil:
+                // Legacy resolution (no explicit plan): customCommand prefix if
+                // set, else binaryPath / auto-locate. Behavior-preserving.
+                if let customCommand, !customCommand.isEmpty {
+                    // Custom command prefix: first token is the executable, the rest are prepended to arguments.
+                    let tokens = customCommand.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+                    guard let firstToken = tokens.first else { throw AgentSDKError.binaryNotFound }
+                    executablePath = try resolveExecutable(firstToken)
+                    finalArguments = Array(tokens.dropFirst()) + arguments
+                } else {
+                    guard let resolved = binaryPathOverride ?? BinaryLocator.locate() else {
+                        throw AgentSDKError.binaryNotFound
+                    }
+                    executablePath = resolved
+                    finalArguments = arguments
+                }
             }
 
             let proc = Process()
@@ -620,167 +642,6 @@ public final class Session {
                 completion(.empty)
             }
         }
-    }
-
-    // MARK: - Private: Process Arguments
-
-    private func buildArguments() -> [String] {
-        let config = configuration
-        var args = ["--output-format", "stream-json", "--verbose"]
-        args += ["--input-format", "stream-json"]
-        args += ["--permission-prompt-tool", "stdio"]
-        // Have the CLI echo our stdin user messages back on stdout (preserving our uuid) when
-        // they become the current turn. We use this as the local queued -> confirmed signal.
-        args += ["--replay-user-messages"]
-
-        // System prompt
-        switch config.systemPrompt {
-        case .custom(let prompt):
-            args += ["--system-prompt", prompt]
-        case .append(let text):
-            args += ["--append-system-prompt", text]
-        case .empty:
-            args += ["--system-prompt", ""]
-        case nil:
-            break
-        }
-
-        // Tools
-        switch config.tools {
-        case .list(let list):
-            args += ["--tools", list.isEmpty ? "" : list.joined(separator: ",")]
-        case .default:
-            args += ["--tools", "default"]
-        case nil:
-            break
-        }
-
-        if !config.allowedTools.isEmpty {
-            args += ["--allowedTools", config.allowedTools.joined(separator: ",")]
-        }
-        if !config.disallowedTools.isEmpty {
-            args += ["--disallowedTools", config.disallowedTools.joined(separator: ",")]
-        }
-
-        // Model
-        if let model = config.model {
-            args += ["--model", model]
-        }
-        if let fallbackModel = config.fallbackModel {
-            args += ["--fallback-model", fallbackModel]
-        }
-
-        // Limits
-        if let maxTurns = config.maxTurns {
-            args += ["--max-turns", String(maxTurns)]
-        }
-        if let maxBudgetUsd = config.maxBudgetUsd {
-            args += ["--max-budget-usd", String(maxBudgetUsd)]
-        }
-
-        // Permission mode
-        if let mode = config.permissionMode {
-            args += ["--permission-mode", mode.rawValue]
-        }
-        if config.allowDangerouslySkipPermissions {
-            args += ["--allow-dangerously-skip-permissions"]
-        }
-
-        // Session
-        if config.continueConversation {
-            args += ["--continue"]
-        }
-        if let sessionId = config.sessionId {
-            args += ["--session-id", sessionId]
-        }
-        if let resume = config.resume {
-            if resume.isEmpty {
-                args += ["--resume"]
-            } else {
-                args += ["--resume", resume]
-            }
-        }
-
-        // Settings & Sandbox
-        if let settings = config.settings {
-            args += ["--settings", settings]
-        }
-
-        // Additional directories
-        for dir in config.addDirs {
-            args += ["--add-dir", dir]
-        }
-
-        // MCP
-        if let mcpConfig = config.mcpConfig {
-            args += ["--mcp-config", mcpConfig]
-        }
-
-        // Streaming options
-        if config.includePartialMessages {
-            args += ["--include-partial-messages"]
-        }
-        if config.forkSession {
-            args += ["--fork-session"]
-        }
-        if let worktree = config.worktree {
-            if worktree.isEmpty {
-                args += ["--worktree"]
-            } else {
-                args += ["--worktree", worktree]
-            }
-        }
-
-        // Setting sources
-        if let sources = config.settingSources {
-            args += ["--setting-sources", sources.joined(separator: ",")]
-        }
-
-        // Plugins
-        for plugin in config.plugins {
-            args += ["--plugin-dir", plugin]
-        }
-
-        // Betas
-        if !config.betas.isEmpty {
-            args += ["--betas", config.betas.joined(separator: ",")]
-        }
-
-        // Thinking: thinking config takes precedence over maxThinkingTokens
-        var resolvedMaxThinkingTokens = config.maxThinkingTokens
-        if let thinking = config.thinking {
-            switch thinking {
-            case .adaptive:
-                if resolvedMaxThinkingTokens == nil {
-                    resolvedMaxThinkingTokens = 32_000
-                }
-            case .enabled(let budgetTokens):
-                resolvedMaxThinkingTokens = budgetTokens
-            case .disabled:
-                resolvedMaxThinkingTokens = 0
-            }
-        }
-        if let tokens = resolvedMaxThinkingTokens {
-            args += ["--max-thinking-tokens", String(tokens)]
-        }
-
-        // Effort
-        if let effort = config.effort {
-            args += ["--effort", effort.rawValue]
-        }
-
-        // Output format (structured output JSON schema)
-        if let outputFormat = config.outputFormat,
-            let type = outputFormat["type"] as? String, type == "json_schema",
-            let schema = outputFormat["schema"],
-            let schemaData = try? JSONSerialization.data(withJSONObject: schema),
-            let schemaJSON = String(data: schemaData, encoding: .utf8)
-        {
-            args += ["--json-schema", schemaJSON]
-        }
-
-        args += config.extraArguments
-        return args
     }
 
     // MARK: - Private: Stdout Reading

@@ -23,15 +23,23 @@ struct SessionExtra: Codable {
     var model: String?
     var effort: String?
 
+    /// Stable id of the `RemoteHost` this session runs on (design
+    /// `remote-execution.md` §3c). nil = local. Also the signal that history
+    /// must be fetched from the remote (§3h, M5). Persisted here in the
+    /// extensible blob rather than a top-level column so adding it needs no
+    /// CoreData migration; launch-fixed, never mutated at runtime.
+    var remoteHostId: String?
+
     init(
         pluginDirs: [String]? = nil, permissionMode: String? = nil, addDirs: [String]? = nil, model: String? = nil,
-        effort: String? = nil
+        effort: String? = nil, remoteHostId: String? = nil
     ) {
         self.pluginDirs = pluginDirs
         self.permissionMode = permissionMode
         self.addDirs = addDirs
         self.model = model
         self.effort = effort
+        self.remoteHostId = remoteHostId
     }
 }
 

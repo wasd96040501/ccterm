@@ -33,7 +33,10 @@ func submitSessionInput(
             draft.setCwd(home)
             draft.setOriginPath(home)
         }
-        if let picked = session.originPath {
+        // Only local sessions feed the local "recent projects" list — a remote
+        // host's workdir is not a path on this Mac (design `remote-execution.md`
+        // §4a; per-host recents are M8).
+        if session.remoteHostId == nil, let picked = session.originPath {
             recentProjects.markLaunched(picked, useWorktree: session.isWorktree)
         }
     }

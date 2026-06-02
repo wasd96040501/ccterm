@@ -111,6 +111,12 @@ public struct SessionConfiguration {
     /// Custom command prefix, e.g. `"trae-proxy claude --"`. When non-empty, replaces the default `claude` binary.
     public var customCommand: String?
 
+    /// Structured launch plan. When non-nil it decides how the CLI subprocess is
+    /// spawned and takes precedence over both `customCommand` and `binaryPath`.
+    /// nil keeps the existing behavior (`customCommand` if set, else auto-located
+    /// `claude`). See `LaunchPlan`.
+    public var launchPlan: LaunchPlan?
+
     /// Allows switching to bypass-permissions mode at runtime without enabling it by default. Maps to `--allow-dangerously-skip-permissions`.
     public var allowDangerouslySkipPermissions: Bool
 
@@ -149,6 +155,7 @@ public struct SessionConfiguration {
         settingSources: [String]? = nil,
         plugins: [String] = [],
         customCommand: String? = nil,
+        launchPlan: LaunchPlan? = nil,
         env: [String: String] = [:],
         inheritsParentEnvironment: Bool = false,
         allowDangerouslySkipPermissions: Bool = false,
@@ -183,6 +190,7 @@ public struct SessionConfiguration {
         self.settingSources = settingSources
         self.plugins = plugins
         self.customCommand = customCommand
+        self.launchPlan = launchPlan
         self.env = env
         self.inheritsParentEnvironment = inheritsParentEnvironment
         self.allowDangerouslySkipPermissions = allowDangerouslySkipPermissions
@@ -192,6 +200,28 @@ public struct SessionConfiguration {
 }
 
 // MARK: - Supporting Types
+
+/// How the CLI subprocess is launched.
+///
+/// The SDK stays transport-agnostic: it knows nothing about ssh, proxies, or any
+/// remote wrapper. A caller that needs to run `claude` somewhere other than a
+/// local binary (e.g. on a remote host over ssh) builds the **complete** argv
+/// itself — embedding the claude argument list from
+/// `SessionConfiguration.claudeArguments()` wherever it belongs — and hands it
+/// over via `.wrapped`. The SDK then just runs `executable` with that argv,
+/// owning only the `Process` lifecycle.
+public enum LaunchPlan {
+    /// Run the `claude` binary directly. `binaryPath` nil → auto-locate
+    /// (`$PATH` / `~/.claude/local/`). This is the default behavior.
+    case local(binaryPath: String?)
+
+    /// Run `executable` with **exactly** `argv` — no tokenizing, nothing
+    /// appended. The caller has already incorporated the claude arguments
+    /// (see `SessionConfiguration.claudeArguments()`) into `argv`, e.g. inside
+    /// an `ssh … 'env … exec claude <args>'` remote command. Quoting of any
+    /// nested shell command is the caller's responsibility, not the SDK's.
+    case wrapped(executable: String, argv: [String])
+}
 
 public enum SystemPromptConfig {
     /// Custom system prompt that replaces the default.
@@ -221,4 +251,174 @@ public enum Effort: String {
     case high
     case xhigh
     case max
+}
+
+// MARK: - CLI argument construction
+
+extension SessionConfiguration {
+    /// The argument list the SDK passes to `claude` for this configuration
+    /// (stream-json I/O, model, session-id, tools, …).
+    ///
+    /// Exposed so a `LaunchPlan.wrapped` caller can embed these into a remote
+    /// command (e.g. an ssh launch) without the SDK having to know about the
+    /// transport. The local launch path uses the same list, so what runs
+    /// remotely is byte-for-byte what would run locally.
+    public func claudeArguments() -> [String] {
+        let config = self
+        var args = ["--output-format", "stream-json", "--verbose"]
+        args += ["--input-format", "stream-json"]
+        args += ["--permission-prompt-tool", "stdio"]
+        // Have the CLI echo our stdin user messages back on stdout (preserving our uuid) when
+        // they become the current turn. We use this as the local queued -> confirmed signal.
+        args += ["--replay-user-messages"]
+
+        // System prompt
+        switch config.systemPrompt {
+        case .custom(let prompt):
+            args += ["--system-prompt", prompt]
+        case .append(let text):
+            args += ["--append-system-prompt", text]
+        case .empty:
+            args += ["--system-prompt", ""]
+        case nil:
+            break
+        }
+
+        // Tools
+        switch config.tools {
+        case .list(let list):
+            args += ["--tools", list.isEmpty ? "" : list.joined(separator: ",")]
+        case .default:
+            args += ["--tools", "default"]
+        case nil:
+            break
+        }
+
+        if !config.allowedTools.isEmpty {
+            args += ["--allowedTools", config.allowedTools.joined(separator: ",")]
+        }
+        if !config.disallowedTools.isEmpty {
+            args += ["--disallowedTools", config.disallowedTools.joined(separator: ",")]
+        }
+
+        // Model
+        if let model = config.model {
+            args += ["--model", model]
+        }
+        if let fallbackModel = config.fallbackModel {
+            args += ["--fallback-model", fallbackModel]
+        }
+
+        // Limits
+        if let maxTurns = config.maxTurns {
+            args += ["--max-turns", String(maxTurns)]
+        }
+        if let maxBudgetUsd = config.maxBudgetUsd {
+            args += ["--max-budget-usd", String(maxBudgetUsd)]
+        }
+
+        // Permission mode
+        if let mode = config.permissionMode {
+            args += ["--permission-mode", mode.rawValue]
+        }
+        if config.allowDangerouslySkipPermissions {
+            args += ["--allow-dangerously-skip-permissions"]
+        }
+
+        // Session
+        if config.continueConversation {
+            args += ["--continue"]
+        }
+        if let sessionId = config.sessionId {
+            args += ["--session-id", sessionId]
+        }
+        if let resume = config.resume {
+            if resume.isEmpty {
+                args += ["--resume"]
+            } else {
+                args += ["--resume", resume]
+            }
+        }
+
+        // Settings & Sandbox
+        if let settings = config.settings {
+            args += ["--settings", settings]
+        }
+
+        // Additional directories
+        for dir in config.addDirs {
+            args += ["--add-dir", dir]
+        }
+
+        // MCP
+        if let mcpConfig = config.mcpConfig {
+            args += ["--mcp-config", mcpConfig]
+        }
+
+        // Streaming options
+        if config.includePartialMessages {
+            args += ["--include-partial-messages"]
+        }
+        if config.forkSession {
+            args += ["--fork-session"]
+        }
+        if let worktree = config.worktree {
+            if worktree.isEmpty {
+                args += ["--worktree"]
+            } else {
+                args += ["--worktree", worktree]
+            }
+        }
+
+        // Setting sources
+        if let sources = config.settingSources {
+            args += ["--setting-sources", sources.joined(separator: ",")]
+        }
+
+        // Plugins
+        for plugin in config.plugins {
+            args += ["--plugin-dir", plugin]
+        }
+
+        // Betas
+        if !config.betas.isEmpty {
+            args += ["--betas", config.betas.joined(separator: ",")]
+        }
+
+        // Thinking: thinking config takes precedence over maxThinkingTokens
+        var resolvedMaxThinkingTokens = config.maxThinkingTokens
+        if let thinking = config.thinking {
+            switch thinking {
+            case .adaptive:
+                if resolvedMaxThinkingTokens == nil {
+                    resolvedMaxThinkingTokens = 32_000
+                }
+            case .enabled(let budgetTokens):
+                resolvedMaxThinkingTokens = budgetTokens
+            case .disabled:
+                resolvedMaxThinkingTokens = 0
+            }
+        }
+        if let tokens = resolvedMaxThinkingTokens {
+            args += ["--max-thinking-tokens", String(tokens)]
+        }
+
+        // Effort
+        if let effort = config.effort {
+            args += ["--effort", effort.rawValue]
+        }
+
+        // Output format (structured output JSON schema)
+        if let outputFormat = config.outputFormat,
+            let type = outputFormat["type"] as? String, type == "json_schema",
+            let schema = outputFormat["schema"],
+            let schemaData = try? JSONSerialization.data(withJSONObject: schema),
+            let schemaJSON = String(data: schemaData, encoding: .utf8)
+        {
+            args += ["--json-schema", schemaJSON]
+        }
+
+        args += config.extraArguments
+        return args
+    }
 }

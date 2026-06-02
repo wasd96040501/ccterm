@@ -7,6 +7,7 @@ final class AppState {
     let sessionManager: SessionManager
     let syntaxEngine = SyntaxHighlightEngine()
     let recentProjects = RecentProjectsStore()
+    let remoteHosts: RemoteHostStore
     let inputDraftStore = InputDraftStore()
     let sidebarGroupOrder = SidebarSessionGroupOrderStore()
     let activationTracker: AppActivationTracker
@@ -14,7 +15,11 @@ final class AppState {
     let openInService = OpenInAppService()
 
     init() {
-        self.sessionManager = SessionManager()
+        // Build the remote-host store first so the session manager can carry a
+        // remote-launch coordinator into every session it creates (§3g).
+        let hosts = RemoteHostStore()
+        self.remoteHosts = hosts
+        self.sessionManager = SessionManager(remoteLaunch: RemoteLaunchCoordinator(hosts: hosts))
         let tracker = AppActivationTracker()
         self.activationTracker = tracker
         let notifications = NotificationService(activation: tracker)

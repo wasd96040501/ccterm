@@ -34,6 +34,7 @@ final class ComposeSessionViewController: NSViewController {
     let model: MainSelectionModel
     let sessionManager: SessionManager
     let recentProjects: RecentProjectsStore
+    let remoteHosts: RemoteHostStore
     let notifications: NotificationService
     let searchEngine: SyntaxHighlightEngine
     let searchBus: TranscriptSearchBus
@@ -45,6 +46,7 @@ final class ComposeSessionViewController: NSViewController {
         model: MainSelectionModel,
         sessionManager: SessionManager,
         recentProjects: RecentProjectsStore,
+        remoteHosts: RemoteHostStore,
         notifications: NotificationService,
         searchEngine: SyntaxHighlightEngine,
         searchBus: TranscriptSearchBus,
@@ -53,6 +55,7 @@ final class ComposeSessionViewController: NSViewController {
         self.model = model
         self.sessionManager = sessionManager
         self.recentProjects = recentProjects
+        self.remoteHosts = remoteHosts
         self.notifications = notifications
         self.searchEngine = searchEngine
         self.searchBus = searchBus
@@ -99,6 +102,7 @@ final class ComposeSessionViewController: NSViewController {
             )
             .environment(sessionManager)
             .environment(recentProjects)
+            .environment(remoteHosts)
             .environment(inputDraftStore)
             .environment(\.syntaxEngine, searchEngine)
             .environment(searchBus)
@@ -173,13 +177,16 @@ struct ComposeSessionView: View {
                 folderPath: bindings.folder,
                 useWorktree: bindings.useWorktree,
                 sourceBranch: bindings.sourceBranch,
+                remoteHostId: bindings.remoteHostId,
                 onResumeSession: onResumeSession,
                 inputBar: {
                     InputBarChrome(
                         sessionId: draftSessionId,
                         draftKey: InputDraftStore.newSessionKey,
                         coordSpace: ChatSessionViewController.detailCoordSpace,
-                        submitEnabled: session.cwd != nil,
+                        // A remote session is launchable from its host alone —
+                        // the remote workdir lives on the host, not a local cwd.
+                        submitEnabled: session.cwd != nil || session.remoteHostId != nil,
                         onSubmit: onSubmit,
                         onAttachRect: { _ in },
                         onPillRect: { _ in }
@@ -200,6 +207,7 @@ struct ComposeSessionView: View {
         let folder: Binding<String?>
         let useWorktree: Binding<Bool>
         let sourceBranch: Binding<String?>
+        let remoteHostId: Binding<String?>
     }
 
     /// Bind the configurator's three controls straight to
@@ -224,6 +232,10 @@ struct ComposeSessionView: View {
             sourceBranch: Binding(
                 get: { session.sourceBranch },
                 set: { session.draft?.setSourceBranch($0) }
+            ),
+            remoteHostId: Binding(
+                get: { session.remoteHostId },
+                set: { session.draft?.setRemoteHostId($0) }
             )
         )
     }

@@ -198,6 +198,26 @@
         }
       }
     },
+    "A credential is available to forward.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有可转发的凭证。"
+          }
+        }
+      }
+    },
+    "API Egress": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API 出口"
+          }
+        }
+      }
+    },
     "About ccterm": {
       "localizations": {
         "zh-Hans": {
@@ -252,12 +272,52 @@
         }
       }
     },
+    "Add Folder or Remote Host": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加文件夹或远程主机"
+          }
+        }
+      }
+    },
+    "Add Local Folder…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加本地文件夹…"
+          }
+        }
+      }
+    },
     "Add Message": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "增加一条消息"
+          }
+        }
+      }
+    },
+    "Add SSH Host": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加 SSH 主机"
+          }
+        }
+      }
+    },
+    "Add SSH Host…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "添加 SSH 主机…"
           }
         }
       }
@@ -301,6 +361,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Agent：%@"
+          }
+        }
+      }
+    },
+    "Alias": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "别名"
           }
         }
       }
@@ -583,6 +653,16 @@
         }
       }
     },
+    "Auto-detect": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动检测"
+          }
+        }
+      }
+    },
     "Automatically determine when to ask": {
       "extractionState": "stale",
       "localizations": {
@@ -654,6 +734,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "跳过权限检查"
+          }
+        }
+      }
+    },
+    "CCTerm installs its own pinned claude and forwards this Mac's credential into the launch. No remote setup needed.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CCTerm 安装并固定自带的 claude，并在启动时转发本机的凭证。远程无需任何配置。"
+          }
+        }
+      }
+    },
+    "CCTerm will install its own claude on first launch": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CCTerm 将在首次启动时安装自带的 claude"
+          }
+        }
+      }
+    },
+    "CCTerm-run proxy": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CCTerm 运行的代理"
           }
         }
       }
@@ -730,12 +840,52 @@
         }
       }
     },
+    "Choose an SSH identity file": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择 SSH 身份密钥文件"
+          }
+        }
+      }
+    },
     "Choose an image to attach": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "选择要附加的图片"
+          }
+        }
+      }
+    },
+    "Choose…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择…"
+          }
+        }
+      }
+    },
+    "Claude": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude"
+          }
+        }
+      }
+    },
+    "Claude Path": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude 路径"
           }
         }
       }
@@ -758,6 +908,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Claude 有问题"
+          }
+        }
+      }
+    },
+    "Claude on the Remote": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "远程的 Claude"
           }
         }
       }
@@ -930,6 +1090,16 @@
         }
       }
     },
+    "Connection": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接"
+          }
+        }
+      }
+    },
     "Contains: %@": {
       "extractionState": "stale",
       "localizations": {
@@ -1034,7 +1204,27 @@
         }
       }
     },
+    "Credential": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "凭证"
+          }
+        }
+      }
+    },
     "Debug": {},
+    "Default": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认"
+          }
+        }
+      }
+    },
     "Delete": {
       "extractionState": "stale",
       "localizations": {
@@ -1114,6 +1304,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "编辑 %@"
+          }
+        }
+      }
+    },
+    "Edit Host…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑主机…"
+          }
+        }
+      }
+    },
+    "Edit SSH Host": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑 SSH 主机"
           }
         }
       }
@@ -1711,12 +1921,42 @@
         }
       }
     },
+    "Host": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主机"
+          }
+        }
+      }
+    },
+    "Hostname or ssh config alias": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主机名或 ssh 配置别名"
+          }
+        }
+      }
+    },
     "Identify existing patterns": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "识别已有模式"
+          }
+        }
+      }
+    },
+    "Identity File": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "身份密钥文件"
           }
         }
       }
@@ -1874,6 +2114,36 @@
         }
       }
     },
+    "Leave fields blank to inherit from your ~/.ssh/config.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "留空则沿用 ~/.ssh/config 中的设置。"
+          }
+        }
+      }
+    },
+    "Let CCTerm manage it": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "由 CCTerm 管理"
+          }
+        }
+      }
+    },
+    "Let CCTerm run one": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "让 CCTerm 自己运行一个"
+          }
+        }
+      }
+    },
     "Live": {
       "localizations": {
         "zh-Hans": {
@@ -1942,6 +2212,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "低"
+          }
+        }
+      }
+    },
+    "Managed claude": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "托管的 claude"
           }
         }
       }
@@ -2041,6 +2321,16 @@
         }
       }
     },
+    "No API key or claude.ai login found on this Mac.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机未找到 API key 或 claude.ai 登录。"
+          }
+        }
+      }
+    },
     "No Matching Branches": {
       "extractionState": "stale",
       "localizations": {
@@ -2068,6 +2358,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "没有归档的会话"
+          }
+        }
+      }
+    },
+    "No claude found on the remote — set an explicit path.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "远程上未找到 claude——请设置明确的路径。"
           }
         }
       }
@@ -2352,6 +2652,16 @@
         }
       }
     },
+    "Port": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "端口"
+          }
+        }
+      }
+    },
     "Present a plan for your approval": {
       "localizations": {
         "zh-Hans": {
@@ -2389,6 +2699,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "项目"
+          }
+        }
+      }
+    },
+    "Proxy": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代理"
+          }
+        }
+      }
+    },
+    "Proxy: %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代理：%@"
           }
         }
       }
@@ -2529,6 +2859,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "运行了智能体 %@"
+          }
+        }
+      }
+    },
+    "Reachable": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可达"
           }
         }
       }
@@ -2674,12 +3014,42 @@
         }
       }
     },
+    "Remote": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "远程"
+          }
+        }
+      }
+    },
     "Remote Main": {
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
             "value": "远端主分支"
+          }
+        }
+      }
+    },
+    "Remote's own claude": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "远程自带的 claude"
+          }
+        }
+      }
+    },
+    "Remove": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除"
           }
         }
       }
@@ -2742,6 +3112,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "结果"
+          }
+        }
+      }
+    },
+    "Reuse a local HTTP proxy": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "复用本地 HTTP 代理"
           }
         }
       }
@@ -2985,6 +3365,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在运行 agent：%@"
+          }
+        }
+      }
+    },
+    "SSH connection failed": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH 连接失败"
+          }
+        }
+      }
+    },
+    "SSH connection succeeded": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH 连接成功"
+          }
+        }
+      }
+    },
+    "Save": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存"
           }
         }
       }
@@ -3495,6 +3905,26 @@
         }
       }
     },
+    "Test Connection": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "测试连接"
+          }
+        }
+      }
+    },
+    "The remote reaches the Anthropic API by tunneling through a proxy on this Mac over ssh -R.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "远程通过 ssh -R 隧道，经由本机上的代理访问 Anthropic API。"
+          }
+        }
+      }
+    },
     "Transcript Demo": {
       "localizations": {
         "zh-Hans": {
@@ -3511,6 +3941,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "渲染压测"
+          }
+        }
+      }
+    },
+    "Trust the claude already on the remote. CCTerm downloads nothing and forwards no credential — the remote's own login is used.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "信任远程已有的 claude。CCTerm 不下载任何内容、不转发凭证——使用远程自身的登录状态。"
           }
         }
       }
@@ -3597,6 +4037,16 @@
         }
       }
     },
+    "Use the remote's own": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用远程自带的"
+          }
+        }
+      }
+    },
     "Used %lld tools": {
       "localizations": {
         "en": {
@@ -3633,6 +4083,16 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "User": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用户"
           }
         }
       }
@@ -4025,6 +4485,16 @@
         }
       }
     },
+    "on %@": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 %@"
+          }
+        }
+      }
+    },
     "path: %@": {
       "localizations": {
         "zh-Hans": {
@@ -4132,6 +4602,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "搜索文件"
+          }
+        }
+      }
+    },
+    "ssh-agent / config": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ssh-agent / 配置"
           }
         }
       }

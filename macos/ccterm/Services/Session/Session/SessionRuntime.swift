@@ -20,6 +20,14 @@ final class SessionRuntime {
     enum Status {
         case notStarted
         case starting
+        /// SSH-only, remote sessions only (design `remote-execution.md` §3g).
+        /// Entered before the normal stream-json bootstrap to do the work only
+        /// the ssh path needs: bring up this session's `-R` egress tunnel, and —
+        /// for `managed` hosts — ensure the remote `claude` is installed
+        /// (`RemoteProvisioner`) and resolve the credential to forward
+        /// (`RemoteCredentialResolver`). Local sessions never enter this and go
+        /// straight `starting → idle`.
+        case provisioning
         case idle
         case responding
         case interrupting
@@ -132,6 +140,10 @@ final class SessionRuntime {
         get { config.pluginDirectories }
         set { config.pluginDirectories = newValue }
     }
+    /// The remote host this session runs on (nil = local). Launch-fixed —
+    /// read-only at runtime; the value is copied verbatim from the draft at
+    /// promotion (design `remote-execution.md` §3c).
+    var remoteHostId: String? { config.remoteHostId }
 
     // MARK: - Runtime
 
@@ -379,6 +391,15 @@ final class SessionRuntime {
     /// stays agnostic of the underlying SDK type; default is
     /// `AgentSDKCLIClient.defaultFactory`.
     @ObservationIgnored internal let cliClientFactory: CLIClientFactory
+
+    /// App-scope remote-launch coordinator (design `remote-execution.md` §3g).
+    /// nil for local sessions and in tests/fixtures. Injected by
+    /// `SessionManager` via the `Session.remoteLaunch` sink (same shape as
+    /// `onLaunchFailure`), so the runtime stays free of `RemoteHostStore` / ssh
+    /// knowledge until launch. Consulted once in `continueStartup` when
+    /// `config.remoteHostId != nil`: resolves the ssh `LaunchPlan` during the
+    /// `.provisioning` status, then bootstrap proceeds normally.
+    @ObservationIgnored var remoteLaunch: RemoteLaunchCoordinator?
 
     /// Accumulated stderr buffer. Written into `termination` on process
     /// exit. Not persisted.

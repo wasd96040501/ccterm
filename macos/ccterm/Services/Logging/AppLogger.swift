@@ -18,10 +18,18 @@ enum LogLevel: Sendable {
 }
 
 /// Log a message. Thread-safe; can be called from any thread.
+///
+/// Explicitly `nonisolated` so background / off-main code (worktree provisioning,
+/// remote ssh provisioning + credential refresh) can log without a main-actor
+/// hop. The module defaults to `@MainActor` isolation
+/// (`SWIFT_DEFAULT_ACTOR_ISOLATION`), which would otherwise infer this global as
+/// main-actor-bound; `os.Logger` is itself thread-safe, so that inference is
+/// wrong for a pure logging sink.
+///
 /// Writes to macOS unified logging — visible in Console.app
 /// (filter by subsystem `com.ccterm.app`) or via
 /// `log stream --predicate 'subsystem == "com.ccterm.app"' --level debug`.
-func appLog(_ level: LogLevel, _ category: String, _ message: String) {
+nonisolated func appLog(_ level: LogLevel, _ category: String, _ message: String) {
     let osLogger = Logger(
         subsystem: Bundle.main.bundleIdentifier ?? "com.ccterm.app",
         category: category

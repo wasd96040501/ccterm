@@ -1,3 +1,4 @@
+import AgentSDK
 import Foundation
 import Security
 
@@ -160,6 +161,54 @@ extension Worktree {
     private static func isLFSAvailable() -> Bool {
         let r = runCommand("/usr/bin/env", ["which", "git-lfs"], cwd: "/", timeout: 2)
         return r.exitCode == 0
+    }
+}
+
+// MARK: - Subprocess environment
+
+extension Worktree {
+
+    /// The user's real login-shell environment, resolved once and cached.
+    /// `nil` when the login shell can't be probed (callers fall back to the
+    /// current process environment).
+    ///
+    /// Why this exists: a GUI app launched from Finder/Dock inherits a
+    /// minimal `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`) that omits Homebrew
+    /// (`/opt/homebrew/bin`). Running `git worktree add` under that PATH
+    /// means git can't find `git-lfs`, so an LFS repo's `post-checkout`
+    /// hook (`command -v git-lfs || exit 2`) fails the whole provision. The
+    /// CLI subprocess already launches under the login environment
+    /// (`AgentSDK.ShellEnvironment.loginEnvironment()`); resolving git
+    /// provisioning the same way keeps the two consistent, so git-lfs,
+    /// hooks, and credential helpers on the user's PATH are all found.
+    ///
+    /// Cached in a `static let` because `loginEnvironment()` spawns
+    /// `zsh -li -c env` (hundreds of ms+) and one provision issues many git
+    /// calls.
+    static let cachedLoginEnvironment: [String: String]? = ShellEnvironment.loginEnvironment()
+
+    /// Environment for a provisioning subprocess: the login environment (or
+    /// `fallback` when unavailable) with `extra` layered on top. Mirrors the
+    /// CLI's `loginEnvironment() ?? processEnvironment` precedence so the two
+    /// launch in the same environment.
+    static func resolvedEnvironment(extra: [String: String]) -> [String: String] {
+        mergedEnvironment(
+            base: cachedLoginEnvironment,
+            fallback: ProcessInfo.processInfo.environment,
+            extra: extra)
+    }
+
+    /// Pure merge used by `resolvedEnvironment`: `base` (or `fallback` when
+    /// `base == nil`) with `extra` layered on top. Extracted so the
+    /// precedence contract is unit-testable without spawning a shell.
+    static func mergedEnvironment(
+        base: [String: String]?,
+        fallback: [String: String],
+        extra: [String: String]
+    ) -> [String: String] {
+        var env = base ?? fallback
+        for (key, value) in extra { env[key] = value }
+        return env
     }
 }
 
@@ -531,9 +580,7 @@ extension Worktree {
         if FileManager.default.fileExists(atPath: cwd) {
             proc.currentDirectoryURL = URL(fileURLWithPath: cwd)
         }
-        var env = ProcessInfo.processInfo.environment
-        for (k, v) in extraEnv { env[k] = v }
-        proc.environment = env
+        proc.environment = Self.resolvedEnvironment(extra: extraEnv)
         let outPipe = Pipe()
         let errPipe = Pipe()
         proc.standardOutput = outPipe

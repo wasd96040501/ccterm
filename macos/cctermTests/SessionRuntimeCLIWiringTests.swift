@@ -163,4 +163,45 @@ final class SessionRuntimeCLIWiringTests: XCTestCase {
         XCTAssertNotNil(captured, "onLaunchFailure should fire on start() throw")
         XCTAssertNil(runtime.cliClient, "failed launch must clear cliClient")
     }
+
+    /// A failed worktree provision must fast-fail like any other launch
+    /// failure: stop the session, flip `isRunning` off so the loading pill
+    /// stops spinning, and fire `onLaunchFailure` so the error is surfaced.
+    /// Regression net for the hand-rolled `.failure` branch that set
+    /// `status` but left `isRunning == true` (spinner stuck forever) and
+    /// never called `onLaunchFailure` (error silently swallowed).
+    func testWorktreeProvisionFailureFunnelsThroughFailLaunch() async {
+        let runtime = SessionRuntime(
+            sessionId: UUID().uuidString,
+            repository: InMemorySessionRepository(),
+            cliClientFactory: { _ in FakeCLIClient() }
+        )
+        // Fresh worktree session that can't be provisioned: a nil
+        // originPath makes `WorktreeProvisioner.provision` short-circuit to
+        // `.failure(.notGitRepository)` without spawning any git subprocess.
+        runtime.config.cwd = "/tmp/worktree-provision-fail-tests"
+        runtime.config.isWorktree = true
+        runtime.config.originPath = nil
+
+        var captured: String?
+        runtime.onLaunchFailure = { captured = $0 }
+
+        runtime.send(text: "trigger")
+        XCTAssertTrue(runtime.isRunning, "send() flips the spinner on before provisioning runs")
+
+        // Provisioning hops to a background queue, then resumes the failure
+        // on the main actor — wait for it to land.
+        let stopped = XCTNSPredicateExpectation(
+            predicate: NSPredicate { _, _ in runtime.status == .stopped },
+            object: nil)
+        await fulfillment(of: [stopped], timeout: 5)
+
+        XCTAssertEqual(runtime.status, .stopped, "worktree provision failure must stop the session")
+        XCTAssertFalse(
+            runtime.isRunning,
+            "isRunning must flip false so the loading pill stops spinning (the hang bug)")
+        XCTAssertNotNil(
+            captured,
+            "onLaunchFailure must fire so the failure is surfaced to the user (the silent-fail bug)")
+    }
 }

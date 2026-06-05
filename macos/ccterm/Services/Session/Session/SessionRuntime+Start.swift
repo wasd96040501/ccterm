@@ -394,13 +394,14 @@ extension SessionRuntime {
                         "worktree provision FAILED \(self.sessionId) err=\(error)")
                     let desc =
                         (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-                    self.termination = desc
-                    self.status = .stopped
-                    // Persist the failure on the eagerly-saved row so
-                    // the user sees the error rather than a row that
-                    // silently never starts.
-                    self.repository.updateError(self.sessionId, error: desc)
-                    self.failQueuedEntries(reason: "worktree provision failed")
+                    // Funnel through the single launch-failure sink rather than
+                    // hand-rolling a subset of it. The old inline version set
+                    // `status`/error but omitted `isRunning = false` (so the
+                    // loading pill spun forever) and `onLaunchFailure` (so the
+                    // failure was never surfaced to the user). Fast-fail needs
+                    // both; `failLaunch` also does the queued-entry fail + repo
+                    // error write, so nothing is lost.
+                    self.failLaunch(reason: desc)
                 }
             }
             return

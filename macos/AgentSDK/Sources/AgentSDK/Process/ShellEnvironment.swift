@@ -1,9 +1,9 @@
 import Foundation
 
-enum ShellEnvironment {
+public enum ShellEnvironment {
 
     /// Loads the full environment from a login shell. Re-runs on every call so the freshest shell config is picked up.
-    static func loginEnvironment() -> [String: String]? {
+    public static func loginEnvironment() -> [String: String]? {
         let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/sh"
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: shell)

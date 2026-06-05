@@ -12,6 +12,7 @@ extension AgentSDK.Effort {
         case .high: return "High"
         case .xhigh: return "Extra high"
         case .max: return "Max"
+        case .ultracode: return "Ultracode"
         }
     }
 }

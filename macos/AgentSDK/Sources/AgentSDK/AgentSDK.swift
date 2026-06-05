@@ -341,9 +341,7 @@ public final class Session {
     // MARK: - Flag Settings Convenience
 
     public func setEffort(_ effort: Effort, completion: ((FlagSettingsResponse) -> Void)? = nil) {
-        var s = FlagSettings()
-        s.effortLevel = .set(effort)
-        applyFlagSettings(s, completion: completion)
+        applyFlagSettings(.effort(effort), completion: completion)
     }
 
     /// Clears the effort override (reverts to the default).
@@ -764,9 +762,12 @@ public final class Session {
             args += ["--max-thinking-tokens", String(tokens)]
         }
 
-        // Effort
+        // Effort. `.ultracode` is not a CLI effort value — it launches at
+        // xhigh and the ultracode flag rides in via `--settings` (the caller
+        // injects `{"ultracode":true}`).
         if let effort = config.effort {
-            args += ["--effort", effort.rawValue]
+            let level = effort == .ultracode ? Effort.xhigh.rawValue : effort.rawValue
+            args += ["--effort", level]
         }
 
         // Output format (structured output JSON schema)

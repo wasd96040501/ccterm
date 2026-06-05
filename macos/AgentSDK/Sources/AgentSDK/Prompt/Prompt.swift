@@ -40,7 +40,8 @@ public enum Prompt {
             }
             if let effort = config.effort {
                 args.append("--effort")
-                args.append(effort)
+                // `ultracode` is not a CLI effort value — launch at xhigh.
+                args.append(effort == Effort.ultracode.rawValue ? Effort.xhigh.rawValue : effort)
             }
 
             args.append("--")

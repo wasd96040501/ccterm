@@ -97,6 +97,11 @@ public struct FlagSettings: DictionarySerializable {
     /// Fast mode is not persisted across sessions.
     public var fastModePerSessionOptIn: Removable<Bool> = .unset
 
+    /// Enable "ultracode" for the session: xhigh effort plus standing
+    /// dynamic-workflow orchestration. Pair with `effortLevel = .set(.xhigh)`.
+    /// Requires workflows enabled and an xhigh-capable model CLI-side.
+    public var ultracode: Removable<Bool> = .unset
+
     // MARK: Auth & credentials
 
     /// Path to a script that prints the auth value.
@@ -329,6 +334,7 @@ public struct FlagSettings: DictionarySerializable {
         add("alwaysThinkingEnabled", alwaysThinkingEnabled.serialized())
         add("fastMode", fastMode.serialized())
         add("fastModePerSessionOptIn", fastModePerSessionOptIn.serialized())
+        add("ultracode", ultracode.serialized())
 
         // Auth & credentials
         add("apiKeyHelper", apiKeyHelper.serialized())
@@ -416,6 +422,28 @@ public struct FlagSettings: DictionarySerializable {
         add("allowedChannelPlugins", allowedChannelPlugins.serialized { $0.map { $0.toDictionary() } })
 
         return dict
+    }
+}
+
+// MARK: - Effort factory
+
+extension FlagSettings {
+
+    /// Build the flag settings for an effort selection. The `.ultracode`
+    /// tier is not a real CLI `effortLevel` — it maps to `xhigh` plus the
+    /// `ultracode` flag. Every other tier sends `ultracode: false` so the
+    /// two are mutually exclusive: picking a normal effort turns ultracode
+    /// off, and picking ultracode forces xhigh.
+    public static func effort(_ effort: Effort) -> FlagSettings {
+        var settings = FlagSettings()
+        if effort == .ultracode {
+            settings.effortLevel = .set(.xhigh)
+            settings.ultracode = .set(true)
+        } else {
+            settings.effortLevel = .set(effort)
+            settings.ultracode = .set(false)
+        }
+        return settings
     }
 }
 

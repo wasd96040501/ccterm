@@ -221,4 +221,11 @@ public enum Effort: String {
     case high
     case xhigh
     case max
+
+    /// App-level "ultracode" tier. Not a real CLI `effortLevel` value —
+    /// at every CLI boundary it is translated to `effortLevel: xhigh`
+    /// plus the `ultracode: true` flag (see `FlagSettings.effort(_:)` and
+    /// the `--effort` argv builder). Selecting any other tier sends
+    /// `ultracode: false`, so the tiers are mutually exclusive.
+    case ultracode
 }

@@ -65,7 +65,10 @@ struct ModelEffortPicker: View {
                     },
                     onSelectEffort: { effort in
                         session.setEffort(effort)
-                        if let value = session.model {
+                        // Ultracode is a session choice, not a per-model
+                        // default — and it isn't in `supportedEffortLevels`,
+                        // so `EffortDefaultStore` would clamp it away anyway.
+                        if effort != .ultracode, let value = session.model {
                             EffortDefaultStore.shared.remember(effort, for: value)
                         }
                         isPresented = false
@@ -229,13 +232,20 @@ private struct ModelEffortPopoverContent: View {
     /// Effort levels strictly from the active model's
     /// `supportedEffortLevels`. Returns nil to hide the section when
     /// no model is selected or the model declares no effort support.
+    ///
+    /// `.ultracode` is appended as a final tier for xhigh-capable models —
+    /// it isn't a CLI effort level, but the picker offers it as "effort one
+    /// notch past xhigh" (selecting it sends `ultracode: true` + xhigh).
     private var activeEffortLevels: [Effort]? {
         guard let value = selectedModelValue,
             let info = models.first(where: { $0.value == value }),
             info.supportsEffort == true,
             let raw = info.supportedEffortLevels
         else { return nil }
-        let mapped = raw.compactMap(Effort.init(rawValue:))
+        var mapped = raw.compactMap(Effort.init(rawValue:))
+        if mapped.contains(.xhigh), !mapped.contains(.ultracode) {
+            mapped.append(.ultracode)
+        }
         return mapped.isEmpty ? nil : mapped
     }
 }

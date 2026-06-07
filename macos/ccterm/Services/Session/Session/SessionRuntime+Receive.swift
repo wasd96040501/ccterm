@@ -292,7 +292,13 @@ extension SessionRuntime {
             change = .appended(messages.last!)
         }
 
-        if mode == .live, !isFocused { hasUnread = true }
+        // `hasUnread` is deliberately NOT written here. A live append fires
+        // for every mid-turn signal (each tool_use, each intermediate
+        // assistant block), which would light the sidebar dot the instant the
+        // agent starts working — long before the turn ends and with no
+        // permission card. The dot is set only at the two banner-equivalent
+        // moments: turn end (`finishTurn`'s `.responding → .idle` edge) and a
+        // permission card appearing (`enqueuePermission`).
         return change
     }
 
@@ -474,6 +480,15 @@ extension SessionRuntime {
             // continuation, …), the next `.assistant` in `receive`
             // flips us back true.
             isRunning = false
+            // Canonical unread trigger: the sidebar dot corresponds to the
+            // turn-finish event (every live `.result`) plus the permission
+            // request (see `enqueuePermission`) — nothing else. It lights on
+            // *any* turn close on a session the user isn't viewing, including
+            // CLI-spontaneous continuations (background-bash completions etc.)
+            // that never enter `.responding`. `setFocused(true)` clears it on
+            // entry. This is the same edge as `onTurnFinishedLive`, so dot ↔
+            // turn-finish is exact.
+            if !isFocused { hasUnread = true }
             // Notify the renderer so any tool surface still in
             // `.running` (no matching `tool_result` arrived before
             // turn-close) flips to `.completed`. Fires on every live
@@ -483,9 +498,11 @@ extension SessionRuntime {
         if mode == .live, case .responding = status {
             status = .idle
             // The `.responding → .idle` edge is the "user-initiated turn
-            // just finished" signal. CLI-driven follow-ups (background
-            // bash continuations etc.) flip `isRunning` but never enter
-            // `.responding`, so they don't trip a duplicate notification.
+            // just finished" signal — it drives the turn-end *banner* only.
+            // CLI-driven follow-ups (background bash continuations etc.) flip
+            // `isRunning` but never enter `.responding`, so they don't post a
+            // duplicate banner. (Unread is not gated here — see the
+            // turn-finish write above.)
             let displayTitle =
                 title.isEmpty ? String(localized: "Untitled") : title
             let body = snapshotLastAssistantText() ?? ""

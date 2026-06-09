@@ -24,9 +24,42 @@ final class ModelStore {
     /// "clear" (a transient init failure shouldn't blank the menu).
     func update(_ newModels: [ModelInfo]) {
         guard !newModels.isEmpty else { return }
-        models = newModels
+        models = Self.withExtendedModels(newModels)
         isLoading = false
     }
+
+    /// Merge extended-context models into any model list (deduped by value).
+    /// Called from UI sites that resolve `session.availableModels` vs `store.models`.
+    static func withExtendedModels(_ base: [ModelInfo]) -> [ModelInfo] {
+        let existing = Set(base.map(\.value))
+        let extras = extendedContextModels.filter { !existing.contains($0.value) }
+        return base + extras
+    }
+
+    // 1M-context Opus variants not (yet) returned by the CLI catalog.
+    private static let extendedContextModels: [ModelInfo] = {
+        let dicts: [[String: Any]] = [
+            [
+                "value": "claude-opus-4-6[1m]",
+                "displayName": "Opus 4.6 [1M]",
+                "description": "Claude Opus 4.6 with 1M context",
+                "supportsEffort": true,
+                "supportedEffortLevels": ["low", "medium", "high", "xhigh"],
+                "supportsFastMode": true,
+                "supportsAutoMode": true,
+            ],
+            [
+                "value": "claude-opus-4-7[1m]",
+                "displayName": "Opus 4.7 [1M]",
+                "description": "Claude Opus 4.7 with 1M context",
+                "supportsEffort": true,
+                "supportedEffortLevels": ["low", "medium", "high", "xhigh"],
+                "supportsFastMode": true,
+                "supportsAutoMode": true,
+            ],
+        ]
+        return dicts.compactMap { try? ModelInfo(json: $0) }
+    }()
 
     /// Kick off a one-shot CLI session in a temp directory, harvest the
     /// model catalog from its init response, and stop. Fires every

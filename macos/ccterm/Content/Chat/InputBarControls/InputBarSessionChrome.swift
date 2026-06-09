@@ -48,7 +48,8 @@ struct InputBarSessionChrome: View {
     private var activeModel: ModelInfo? {
         guard let value = session.model else { return nil }
         let live = session.availableModels
-        let pool = live.isEmpty ? ModelStore.shared.models : live
+        let base = live.isEmpty ? ModelStore.shared.models : live
+        let pool = ModelStore.withExtendedModels(base)
         return pool.first(where: { $0.value == value })
     }
 }

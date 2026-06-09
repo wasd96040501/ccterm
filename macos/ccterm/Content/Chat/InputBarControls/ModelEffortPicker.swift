@@ -94,7 +94,8 @@ struct ModelEffortPicker: View {
     /// `ModelStore` snapshot when the session hasn't replied yet.
     private var visibleModels: [ModelInfo] {
         let live = session.availableModels
-        return live.isEmpty ? store.models : live
+        let base = live.isEmpty ? store.models : live
+        return ModelStore.withExtendedModels(base)
     }
 
     private var selectedModelInfo: ModelInfo? {

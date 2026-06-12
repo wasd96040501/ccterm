@@ -136,6 +136,25 @@ extension Worktree {
             : ((path as NSString).appendingPathComponent(commonDir) as NSString).standardizingPath
         return (absCommon as NSString).deletingLastPathComponent
     }
+
+    /// Whether git considers `path` a checked-out, **registered** worktree —
+    /// independent of the exit code of the command that created it.
+    ///
+    /// `git worktree add` registers the worktree (writes
+    /// `.git/worktrees/<name>` + the worktree's `.git` file) and checks the
+    /// files out *before* running the `post-checkout` hook, then propagates
+    /// the hook's exit code as its own. An LFS repo's `post-checkout` hook
+    /// (`git lfs post-checkout`) failing therefore makes `worktree add` exit
+    /// non-zero even though the worktree is fully present and usable. These
+    /// hooks are advisory — git's own `git checkout` doesn't abort on them —
+    /// so `create` uses this to tell that case apart from a real provision
+    /// failure: a registered worktree's git-dir is `…/.git/worktrees/<name>`
+    /// (the same criterion `resolveBaseRepo` keys off), whereas a half-failed
+    /// add that never registered resolves up to the base repo's plain `.git`.
+    static func isRegisteredWorktree(at path: String) -> Bool {
+        guard let gitDir = GitQuery.gitDir(at: path) else { return false }
+        return gitDir.contains("/.git/worktrees/")
+    }
 }
 
 // MARK: - LFS

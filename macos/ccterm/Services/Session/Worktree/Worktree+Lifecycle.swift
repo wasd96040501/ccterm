@@ -69,8 +69,32 @@ extension Worktree {
                     "worktree", "add", "-b", name, path, startPoint,
                 ]
             let r = runCommand("/usr/bin/git", args, cwd: baseRepo, timeout: 60)
+            let stderr = r.stderr ?? ""
 
-            if r.exitCode == 0 {
+            // `git worktree add` checks out the files and registers the
+            // worktree *before* running the `post-checkout` hook, then
+            // propagates the hook's exit code as its own. An LFS repo's
+            // `post-checkout` (`git lfs post-checkout`) failing thus makes
+            // the command exit non-zero even though the worktree is fully
+            // present and usable — and such hooks are advisory (git's own
+            // `git checkout` doesn't abort on them). Keep the worktree in
+            // that case instead of deleting a good checkout and failing
+            // session start. A name/dir collision (`already exists`) is the
+            // opposite: git refused to create *our* worktree, so we must
+            // retry under a fresh name and never adopt (the registered
+            // worktree there belongs to a prior session).
+            let adoptDespiteHookFailure =
+                r.exitCode != 0
+                && !stderr.contains("already exists")
+                && isRegisteredWorktree(at: path)
+
+            if r.exitCode == 0 || adoptDespiteHookFailure {
+                if adoptDespiteHookFailure {
+                    appLog(
+                        .warning, "Worktree",
+                        "git worktree add for \(name) exited \(r.exitCode) but the worktree is checked out and registered — keeping it (a post-checkout hook failed). stderr: \(stderr)"
+                    )
+                }
                 enableWorktreeConfigExtensions(at: path)
                 inheritHooksPath(source: baseRepo, worktree: path)
                 // Source is the original input repoPath (matches slice line
@@ -86,7 +110,6 @@ extension Worktree {
                 )
             }
 
-            let stderr = r.stderr ?? ""
             lastStderr = stderr
             // Clean up the empty directory we created
             try? FileManager.default.removeItem(atPath: path)

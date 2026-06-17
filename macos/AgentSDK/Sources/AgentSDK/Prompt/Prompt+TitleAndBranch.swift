@@ -29,17 +29,16 @@ extension Prompt {
         )
 
         return try await Task.detached {
-            let (executablePath, prefixArgs) = try resolveTitleExecutable(config: configuration)
-
-            var args = prefixArgs
-            args.append(contentsOf: [
+            var sdkArgs: [String] = [
                 "-p",
                 "--output-format", "json",
                 "--no-session-persistence",
                 "--tools", "",
-            ])
-            args.append("--")
-            args.append(filledPrompt)
+            ]
+            sdkArgs.append("--")
+            sdkArgs.append(filledPrompt)
+
+            let (executablePath, args) = try resolveTitleLaunch(config: configuration, sdkArgs: sdkArgs)
 
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: executablePath)
@@ -175,43 +174,20 @@ extension Prompt {
         return inner.isEmpty ? nil : inner
     }
 
-    /// Same semantics as `resolveExecutable`, but kept separate so the original `run`
-    /// implementation stays untouched.
-    private static func resolveTitleExecutable(
-        config: PromptConfiguration
-    ) throws -> (executablePath: String, prefixArgs: [String]) {
+    /// Same launch semantics as `Prompt.resolveLaunch`, kept separate so the title-gen
+    /// runner stays self-contained. A custom command goes through the login shell so
+    /// aliases / env-prefixes work; otherwise the located `claude` binary is exec'd.
+    private static func resolveTitleLaunch(
+        config: PromptConfiguration,
+        sdkArgs: [String]
+    ) throws -> (executablePath: String, arguments: [String]) {
         if let customCommand = config.customCommand, !customCommand.isEmpty {
-            let tokens = customCommand.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
-            guard var first = tokens.first else { throw AgentSDKError.binaryNotFound }
-            if !first.hasPrefix("/") {
-                first = try whichPath(for: first)
-            }
-            return (first, Array(tokens.dropFirst()))
+            return CustomCommand.shellInvocation(customCommand, sdkArgs: sdkArgs)
         }
         guard let resolved = config.binaryPath ?? BinaryLocator.locate() else {
             throw AgentSDKError.binaryNotFound
         }
-        return (resolved, [])
-    }
-
-    private static func whichPath(for name: String) throws -> String {
-        let which = Process()
-        which.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-        which.arguments = [name]
-        which.environment = ShellEnvironment.loginEnvironment() ?? ProcessInfo.processInfo.environment
-        let pipe = Pipe()
-        which.standardOutput = pipe
-        which.standardError = FileHandle.nullDevice
-        try which.run()
-        which.waitUntilExit()
-        guard which.terminationStatus == 0,
-            let resolved = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-            !resolved.isEmpty
-        else {
-            throw AgentSDKError.binaryNotFound
-        }
-        return resolved
+        return (resolved, sdkArgs)
     }
 
     /// Coding-session template, based on Claude.app's `HMr` (`/tmp/claude-index.beautified.js` L232130).

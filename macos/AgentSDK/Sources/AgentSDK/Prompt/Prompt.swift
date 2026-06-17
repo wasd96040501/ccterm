@@ -11,41 +11,41 @@ public enum Prompt {
         let config = configuration
 
         return try await Task.detached {
-            let (executablePath, prefixArgs) = try resolveExecutable(config: config)
-
-            var args = prefixArgs
-            args.append("-p")
-            args.append("--output-format")
-            args.append("json")
-            args.append("--no-session-persistence")
+            var sdkArgs: [String] = []
+            sdkArgs.append("-p")
+            sdkArgs.append("--output-format")
+            sdkArgs.append("json")
+            sdkArgs.append("--no-session-persistence")
 
             if let model = config.model {
-                args.append("--model")
-                args.append(model)
+                sdkArgs.append("--model")
+                sdkArgs.append(model)
             }
             if let systemPrompt = config.systemPrompt {
-                args.append("--system-prompt")
-                args.append(systemPrompt)
+                sdkArgs.append("--system-prompt")
+                sdkArgs.append(systemPrompt)
             }
             if let tools = config.tools {
-                args.append("--tools")
-                args.append(tools.joined(separator: ","))
+                sdkArgs.append("--tools")
+                sdkArgs.append(tools.joined(separator: ","))
             }
             if let jsonSchema = config.jsonSchema {
-                args.append("--json-schema")
-                args.append(jsonSchema)
+                sdkArgs.append("--json-schema")
+                sdkArgs.append(jsonSchema)
             }
             if config.disableSlashCommands {
-                args.append("--disable-slash-commands")
+                sdkArgs.append("--disable-slash-commands")
             }
             if let effort = config.effort {
-                args.append("--effort")
+                sdkArgs.append("--effort")
                 // `ultracode` is not a CLI effort value — launch at xhigh.
-                args.append(effort == Effort.ultracode.rawValue ? Effort.xhigh.rawValue : effort)
+                sdkArgs.append(effort == Effort.ultracode.rawValue ? Effort.xhigh.rawValue : effort)
             }
 
-            args.append("--")
-            args.append(message)
+            sdkArgs.append("--")
+            sdkArgs.append(message)
+
+            let (executablePath, args) = try resolveLaunch(config: config, sdkArgs: sdkArgs)
 
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: executablePath)
@@ -101,42 +101,19 @@ public enum Prompt {
 
     // MARK: - Private
 
-    /// Resolves the executable path and the prefix arguments (the intermediate tokens from splitting `customCommand`).
-    private static func resolveExecutable(
-        config: PromptConfiguration
-    ) throws -> (executablePath: String, prefixArgs: [String]) {
+    /// Resolves the executable and full argument vector for the launch. A custom command
+    /// runs through the user's login shell (see `CustomCommand`); otherwise the located
+    /// `claude` binary is exec'd directly with `sdkArgs`.
+    private static func resolveLaunch(
+        config: PromptConfiguration,
+        sdkArgs: [String]
+    ) throws -> (executablePath: String, arguments: [String]) {
         if let customCommand = config.customCommand, !customCommand.isEmpty {
-            let tokens = customCommand.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
-            guard var firstToken = tokens.first else { throw AgentSDKError.binaryNotFound }
-            if !firstToken.hasPrefix("/") {
-                firstToken = try resolveViaWhich(firstToken)
-            }
-            return (firstToken, Array(tokens.dropFirst()))
+            return CustomCommand.shellInvocation(customCommand, sdkArgs: sdkArgs)
         }
-
         guard let resolved = config.binaryPath ?? BinaryLocator.locate() else {
             throw AgentSDKError.binaryNotFound
         }
-        return (resolved, [])
-    }
-
-    private static func resolveViaWhich(_ name: String) throws -> String {
-        let which = Process()
-        which.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-        which.arguments = [name]
-        which.environment = ShellEnvironment.loginEnvironment() ?? ProcessInfo.processInfo.environment
-        let pipe = Pipe()
-        which.standardOutput = pipe
-        which.standardError = FileHandle.nullDevice
-        try which.run()
-        which.waitUntilExit()
-        guard which.terminationStatus == 0,
-            let resolved = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-            !resolved.isEmpty
-        else {
-            throw AgentSDKError.binaryNotFound
-        }
-        return resolved
+        return (resolved, sdkArgs)
     }
 }

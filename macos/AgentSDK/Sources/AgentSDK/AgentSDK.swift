@@ -118,32 +118,10 @@ public final class Session {
             let finalArguments: [String]
 
             if let customCommand, !customCommand.isEmpty {
-                // Custom command prefix: first token is the executable, the rest are prepended to arguments.
-                let tokens = customCommand.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
-                guard var firstToken = tokens.first else { throw AgentSDKError.binaryNotFound }
-                if !firstToken.hasPrefix("/") {
-                    let which = Process()
-                    which.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-                    which.arguments = [firstToken]
-                    // Use login shell environment so PATH is complete.
-                    which.environment = ShellEnvironment.loginEnvironment() ?? ProcessInfo.processInfo.environment
-                    let whichPipe = Pipe()
-                    which.standardOutput = whichPipe
-                    which.standardError = FileHandle.nullDevice
-                    try which.run()
-                    which.waitUntilExit()
-                    guard which.terminationStatus == 0,
-                        let resolved = String(
-                            data: whichPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
-                            .trimmingCharacters(in: .whitespacesAndNewlines),
-                        !resolved.isEmpty
-                    else {
-                        throw AgentSDKError.binaryNotFound
-                    }
-                    firstToken = resolved
-                }
-                executablePath = firstToken
-                finalArguments = Array(tokens.dropFirst()) + arguments
+                // Run the custom command through the user's interactive login shell so
+                // aliases, shell functions, env-var prefixes, quoting and ~/$VAR expansion
+                // all behave as they would at a terminal prompt. SDK args ride in via "$@".
+                (executablePath, finalArguments) = CustomCommand.shellInvocation(customCommand, sdkArgs: arguments)
             } else {
                 guard let resolved = binaryPathOverride ?? BinaryLocator.locate() else {
                     throw AgentSDKError.binaryNotFound

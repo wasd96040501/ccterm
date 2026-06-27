@@ -10,30 +10,29 @@ import AppKit
 final class MainSplitViewController: NSSplitViewController {
     let model: MainSelectionModel
     let appState: AppState
-    let searchBus: TranscriptSearchBus
 
     let detailRouter: DetailRouterViewController
     private let sidebarViewController: SidebarViewController
 
-    init(model: MainSelectionModel, appState: AppState, searchBus: TranscriptSearchBus) {
+    init(model: MainSelectionModel, appState: AppState) {
         self.model = model
         self.appState = appState
-        self.searchBus = searchBus
 
         sidebarViewController = SidebarViewController(
-            model: model,
-            sessionManager: appState.sessionManager,
-            groupOrderStore: appState.sidebarGroupOrder,
-            openInService: appState.openInService)
+            context: SidebarContext(
+                model: model,
+                sessionManager: appState.sessionManager,
+                groupOrderStore: appState.sidebarGroupOrder,
+                openInService: appState.openInService))
 
         detailRouter = DetailRouterViewController(
-            model: model,
-            sessionManager: appState.sessionManager,
-            recentProjects: appState.recentProjects,
-            notifications: appState.notificationService,
-            syntaxEngine: appState.syntaxEngine,
-            searchBus: searchBus,
-            inputDraftStore: appState.inputDraftStore
+            context: DetailContext(
+                model: model,
+                sessionManager: appState.sessionManager,
+                recentProjects: appState.recentProjects,
+                inputDraftStore: appState.inputDraftStore,
+                syntaxEngine: appState.syntaxEngine),
+            notifications: appState.notificationService
         )
 
         super.init(nibName: nil, bundle: nil)

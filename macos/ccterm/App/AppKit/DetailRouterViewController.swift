@@ -71,13 +71,15 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
     /// `SessionRuntime.swift` for the full writeup.
     nonisolated deinit {}
 
-    let model: MainSelectionModel
-    let sessionManager: SessionManager
-    let recentProjects: RecentProjectsStore
+    /// The detail-scope dependency bag, threaded down to every child VC.
+    /// `model` and the four injected services are read through this; the
+    /// router never declares them as separate properties anymore.
+    let context: DetailContext
+    /// App→detail signal owner, kept separate from `context`: the router is
+    /// the sole, window-lifetime consumer of `NotificationService` (no child
+    /// reads it), so it's passed in on its own rather than riding the bag the
+    /// children also receive.
     let notifications: NotificationService
-    let syntaxEngine: SyntaxHighlightEngine
-    let searchBus: TranscriptSearchBus
-    let inputDraftStore: InputDraftStore
 
     /// The kind of VC currently mounted as the single child. Compared
     /// against `childKind(for:)` on selection change to decide whether
@@ -114,22 +116,9 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
     /// that is applied synchronously from `selectionDidChange(to:)`.
     private var didInitialApply = false
 
-    init(
-        model: MainSelectionModel,
-        sessionManager: SessionManager,
-        recentProjects: RecentProjectsStore,
-        notifications: NotificationService,
-        syntaxEngine: SyntaxHighlightEngine,
-        searchBus: TranscriptSearchBus,
-        inputDraftStore: InputDraftStore
-    ) {
-        self.model = model
-        self.sessionManager = sessionManager
-        self.recentProjects = recentProjects
+    init(context: DetailContext, notifications: NotificationService) {
+        self.context = context
         self.notifications = notifications
-        self.syntaxEngine = syntaxEngine
-        self.searchBus = searchBus
-        self.inputDraftStore = inputDraftStore
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -156,19 +145,19 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
         super.viewDidLoad()
         // Become the model's sole structural observer — `select(_:)`
         // now drives `selectionDidChange(to:)` synchronously.
-        model.selectionObserver = self
+        context.model.selectionObserver = self
         // Own the app→detail signals that used to be observed by every
         // (leaky) `ChatSessionViewController`: a notification click maps
         // straight to a selection change. The router is the single,
         // window-lifetime owner, so there's exactly one consumer and no
         // per-detail-VC observation task to retain a torn-down VC.
         notifications.onActivateSession = { [weak self] sid in
-            self?.model.select(.session(sid))
+            self?.context.model.select(.session(sid))
         }
         // Likewise own the launch-failure alert here. Per-VC observation
         // stacked one alert per leaked transcript VC; one owner presents
         // exactly one.
-        sessionManager.onLaunchFailure = { [weak self] failure in
+        context.sessionManager.onLaunchFailure = { [weak self] failure in
             self?.presentLaunchFailureAlert(failure)
         }
         // Notification subsystem bootstrap, kicked once per main-window
@@ -188,7 +177,7 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
         // `selectionDidChange(to:)` synchronously.
         guard !didInitialApply, view.bounds.width > 0, view.bounds.height > 0 else { return }
         didInitialApply = true
-        applySelection(model.selection)
+        applySelection(context.model.selection)
     }
 
     // MARK: - Launch-failure alert
@@ -259,7 +248,7 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
     /// the landing page instead of falling through to the transcript.
     private func resolvedChildKind(for selection: MainSelection) -> ChildKind {
         if case .session(let sid) = selection,
-            sessionManager.isDraftSession(sid)
+            context.sessionManager.isDraftSession(sid)
         {
             return .draftLanding
         }
@@ -285,7 +274,7 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
     /// cosmetic fade is deferred to CoreAnimation. Without a window (tests,
     /// cold start) it falls back to the synchronous teardown-then-mount.
     func installChildForCurrentSelection(animated: Bool = false) {
-        let kind = resolvedChildKind(for: model.selection)
+        let kind = resolvedChildKind(for: context.model.selection)
         if kind == currentKind, currentChild != nil { return }
 
         // Flush any still-running crossfade synchronously before staging a
@@ -366,45 +355,13 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
     private func makeChild(for kind: ChildKind) -> NSViewController {
         switch kind {
         case .transcript:
-            return ChatSessionViewController(
-                model: model,
-                sessionManager: sessionManager,
-                recentProjects: recentProjects,
-                notifications: notifications,
-                syntaxEngine: syntaxEngine,
-                searchBus: searchBus,
-                inputDraftStore: inputDraftStore
-            )
+            return ChatSessionViewController(context: context)
         case .compose:
-            return ComposeSessionViewController(
-                model: model,
-                sessionManager: sessionManager,
-                recentProjects: recentProjects,
-                notifications: notifications,
-                syntaxEngine: syntaxEngine,
-                searchBus: searchBus,
-                inputDraftStore: inputDraftStore
-            )
+            return ComposeSessionViewController(context: context)
         case .draftLanding:
-            return DraftSessionLandingViewController(
-                model: model,
-                sessionManager: sessionManager,
-                recentProjects: recentProjects,
-                notifications: notifications,
-                syntaxEngine: syntaxEngine,
-                searchBus: searchBus,
-                inputDraftStore: inputDraftStore
-            )
+            return DraftSessionLandingViewController(context: context)
         case .archive:
-            return ArchiveViewController(
-                model: model,
-                sessionManager: sessionManager,
-                recentProjects: recentProjects,
-                notifications: notifications,
-                syntaxEngine: syntaxEngine,
-                searchBus: searchBus,
-                inputDraftStore: inputDraftStore
-            )
+            return ArchiveViewController(context: context)
         #if DEBUG
         case .demo(let demoKind):
             return makeDemoChild(demoKind)
@@ -416,28 +373,26 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
     private func makeDemoChild(_ kind: DemoKind) -> NSViewController {
         switch kind {
         case .transcript:
-            return TranscriptDemoViewController(syntaxEngine: syntaxEngine)
+            return TranscriptDemoViewController(syntaxEngine: context.syntaxEngine)
         case .transcriptStress:
-            return TranscriptStressViewController(syntaxEngine: syntaxEngine)
+            return TranscriptStressViewController(syntaxEngine: context.syntaxEngine)
         case .transcriptPerf:
-            return TranscriptPerfDemoViewController(syntaxEngine: syntaxEngine)
+            return TranscriptPerfDemoViewController(syntaxEngine: context.syntaxEngine)
         case .permissionSession:
-            return PermissionSessionDemoViewController(syntaxEngine: syntaxEngine)
+            return PermissionSessionDemoViewController(syntaxEngine: context.syntaxEngine)
         case .permissionCards:
             // The only demo that's a pure SwiftUI view — host it via
             // `NSHostingController` so the surrounding `addChild`
             // plumbing matches the other branches. Same environment
-            // injections the production app uses. Un-erased from the
+            // injections the production app uses, via the shared
+            // `injectDetailEnvironment(_:)` modifier. Un-erased from the
             // former `AnyView(...)` so the construction + modifier chain
             // are type-checked; this host IS the child VC the router pins,
             // so it does NOT route through `mountFillPaneHost` (which mounts
             // a host *inside* a container VC).
             let host = NSHostingController(
                 rootView: PermissionCardsDemoView()
-                    .environment(sessionManager)
-                    .environment(recentProjects)
-                    .environment(inputDraftStore)
-                    .environment(\.syntaxEngine, syntaxEngine)
+                    .injectDetailEnvironment(context)
             )
             // Fill-the-pane detail child — clear `sizingOptions` so the
             // SwiftUI body's fitting size doesn't bubble up through the
@@ -522,7 +477,7 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
         case .newSession, .archive:
             return true
         case .session(let sid):
-            let state = sessionManager.existingSession(sid)?.historyLoadState ?? .notLoaded
+            let state = context.sessionManager.existingSession(sid)?.historyLoadState ?? .notLoaded
             return state == .notLoaded
         case .none:
             return false

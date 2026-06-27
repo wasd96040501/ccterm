@@ -31,7 +31,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
         self.searchBus = searchBus
 
         splitController = MainSplitViewController(
-            model: model, appState: appState, searchBus: searchBus)
+            model: model, appState: appState)
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1200, height: 860),

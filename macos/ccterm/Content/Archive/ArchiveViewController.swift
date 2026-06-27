@@ -21,13 +21,9 @@ final class ArchiveViewController: NSViewController {
     /// `TaskLocal` teardown bug). See `SessionRuntime.swift`.
     nonisolated deinit {}
 
-    let model: MainSelectionModel
-    let sessionManager: SessionManager
-    let recentProjects: RecentProjectsStore
-    let notifications: NotificationService
-    let syntaxEngine: SyntaxHighlightEngine
-    let searchBus: TranscriptSearchBus
-    let inputDraftStore: InputDraftStore
+    /// The detail-scope dependency bag, handed down from the router.
+    /// `model` and the four injected services are read through this.
+    let context: DetailContext
 
     /// The mounted host. Typed as `NSViewController` because
     /// `mountFillPaneHost` returns an `NSHostingController<Content>` whose
@@ -36,22 +32,8 @@ final class ArchiveViewController: NSViewController {
     /// spelling that type out. Retained so the host outlives `viewDidLoad`.
     private var host: NSViewController?
 
-    init(
-        model: MainSelectionModel,
-        sessionManager: SessionManager,
-        recentProjects: RecentProjectsStore,
-        notifications: NotificationService,
-        syntaxEngine: SyntaxHighlightEngine,
-        searchBus: TranscriptSearchBus,
-        inputDraftStore: InputDraftStore
-    ) {
-        self.model = model
-        self.sessionManager = sessionManager
-        self.recentProjects = recentProjects
-        self.notifications = notifications
-        self.syntaxEngine = syntaxEngine
-        self.searchBus = searchBus
-        self.inputDraftStore = inputDraftStore
+    init(context: DetailContext) {
+        self.context = context
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -69,8 +51,8 @@ final class ArchiveViewController: NSViewController {
         // the toolbar's folder-filter button writes to the same field,
         // so a two-way binding keeps the popover and the list in sync.
         let folderBinding = Binding<String?>(
-            get: { [weak self] in self?.model.archiveSelectedFolderPath },
-            set: { [weak self] in self?.model.archiveSelectedFolderPath = $0 }
+            get: { [weak self] in self?.context.model.archiveSelectedFolderPath },
+            set: { [weak self] in self?.context.model.archiveSelectedFolderPath = $0 }
         )
 
         // Fill-the-pane detail child: `mountFillPaneHost` clears
@@ -87,13 +69,10 @@ final class ArchiveViewController: NSViewController {
             ArchiveView(
                 selectedFolderPath: folderBinding,
                 onUnarchive: { [weak self] resumeSid in
-                    self?.model.select(.session(resumeSid))
+                    self?.context.model.select(.session(resumeSid))
                 }
             )
-            .environment(sessionManager)
-            .environment(recentProjects)
-            .environment(inputDraftStore)
-            .environment(\.syntaxEngine, syntaxEngine),
+            .injectDetailEnvironment(context),
             in: self
         )
     }

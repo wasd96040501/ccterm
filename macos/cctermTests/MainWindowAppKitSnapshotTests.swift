@@ -24,12 +24,11 @@ final class MainWindowAppKitSnapshotTests: XCTestCase {
 
     func testComposeModeSnapshot() throws {
         let appState = AppState()
-        let searchBus = TranscriptSearchBus()
         let model = MainSelectionModel()
         // Default: compose mode (`__new_session__` tag).
 
         let split = MainSplitViewController(
-            model: model, appState: appState, searchBus: searchBus)
+            model: model, appState: appState)
 
         let size = CGSize(width: 1200, height: 800)
         let window = NSWindow(

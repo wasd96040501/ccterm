@@ -33,10 +33,10 @@ import Observation
 @MainActor
 final class SidebarViewController: NSViewController {
 
-    let model: MainSelectionModel
-    let sessionManager: SessionManager
-    let groupOrderStore: SidebarSessionGroupOrderStore
-    let openInService: OpenInAppService
+    /// The sidebar-scope dependency bag, handed down from the split.
+    /// `model`, `sessionManager`, `groupOrderStore`, and `openInService` are
+    /// read through this.
+    let context: SidebarContext
 
     private let scrollView = NSScrollView()
     private let outlineView = NoDisclosureOutlineView()
@@ -76,16 +76,8 @@ final class SidebarViewController: NSViewController {
     private var selectionObservationTask: Task<Void, Never>?
     private var isApplyingSelectionFromModel = false
 
-    init(
-        model: MainSelectionModel,
-        sessionManager: SessionManager,
-        groupOrderStore: SidebarSessionGroupOrderStore,
-        openInService: OpenInAppService
-    ) {
-        self.model = model
-        self.sessionManager = sessionManager
-        self.groupOrderStore = groupOrderStore
-        self.openInService = openInService
+    init(context: SidebarContext) {
+        self.context = context
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -203,7 +195,7 @@ final class SidebarViewController: NSViewController {
     /// or the resolved path no longer exists as a directory on disk —
     /// the caller greys out "Open in" in that case.
     private func openablePath(forSessionId sessionId: String) -> String? {
-        guard let record = sessionManager.records.first(where: { $0.sessionId == sessionId })
+        guard let record = context.sessionManager.records.first(where: { $0.sessionId == sessionId })
         else { return nil }
         guard let candidate = record.cwd ?? record.originPath, !candidate.isEmpty else {
             return nil
@@ -220,7 +212,7 @@ final class SidebarViewController: NSViewController {
     /// CLI live file → project-dir scan). Returns nil when no JSONL
     /// exists yet — the caller greys out "Copy Session File Path".
     private func jsonlPath(forSessionId sessionId: String) -> String? {
-        let slug = sessionManager.records.first { $0.sessionId == sessionId }?.slug
+        let slug = context.sessionManager.records.first { $0.sessionId == sessionId }?.slug
         return HistoryLoader.locate(sessionId: sessionId, slug: slug)?.path
     }
 
@@ -233,7 +225,7 @@ final class SidebarViewController: NSViewController {
         submenu.removeAllItems()
 
         let path = openablePath(forSessionId: sessionId)
-        let targets = openInService.targets
+        let targets = context.openInService.targets
         openInItem.isEnabled = path != nil && !targets.isEmpty
 
         guard let path, !targets.isEmpty else { return }
@@ -257,7 +249,7 @@ final class SidebarViewController: NSViewController {
 
     @objc private func openInApp(_ sender: NSMenuItem) {
         guard let request = sender.representedObject as? OpenInRequest else { return }
-        openInService.open(path: request.path, with: request.target)
+        context.openInService.open(path: request.path, with: request.target)
     }
 
     // MARK: - Items
@@ -305,11 +297,11 @@ final class SidebarViewController: NSViewController {
         // `/new` / `/clear` drafts are ordinary `.draft`-status rows in
         // `records` now, so they group + sort like any other history row
         // (their fresh `lastActiveAt` floats them to the top of the folder).
-        let buckets = Dictionary(grouping: sessionManager.records) {
+        let buckets = Dictionary(grouping: context.sessionManager.records) {
             $0.groupingFolderName ?? "Unknown"
         }
         let folderNames = Array(buckets.keys)
-        let ordered = groupOrderStore.arrange(folderNames)
+        let ordered = context.groupOrderStore.arrange(folderNames)
         return ordered.compactMap { name -> RecordGroup? in
             guard let records = buckets[name] else { return nil }
             return RecordGroup(
@@ -329,7 +321,7 @@ final class SidebarViewController: NSViewController {
 
     private func currentGroupSet() -> Set<String> {
         var s: Set<String> = []
-        for record in sessionManager.records {
+        for record in context.sessionManager.records {
             if let name = record.groupingFolderName {
                 s.insert(name)
             }
@@ -373,13 +365,13 @@ final class SidebarViewController: NSViewController {
     // MARK: - Selection / records observation
 
     private func applyModelSelection() {
-        if model.selection == .none {
+        if context.model.selection == .none {
             isApplyingSelectionFromModel = true
             outlineView.deselectAll(nil)
             isApplyingSelectionFromModel = false
             return
         }
-        selectRow(for: model.selection)
+        selectRow(for: context.model.selection)
     }
 
     private func startSelectionObservation() {
@@ -388,7 +380,7 @@ final class SidebarViewController: NSViewController {
             guard let self else { return }
             await withCheckedContinuation { cont in
                 withObservationTracking {
-                    _ = self.model.selection
+                    _ = self.context.model.selection
                 } onChange: {
                     Task { @MainActor in cont.resume() }
                 }
@@ -407,7 +399,7 @@ final class SidebarViewController: NSViewController {
                     // `records` now carries `/new` / `/clear` drafts too (as
                     // `.draft`-status rows), so this single read covers draft
                     // adds, promotions (in-place status flip), and archives.
-                    _ = self.sessionManager.records
+                    _ = self.context.sessionManager.records
                 } onChange: {
                     Task { @MainActor in cont.resume() }
                 }
@@ -426,7 +418,7 @@ final class SidebarViewController: NSViewController {
         let current = currentGroupSet()
         let newlyAppeared = current.subtracting(lastSeenGroups)
         for name in newlyAppeared {
-            groupOrderStore.prependIfAbsent(name)
+            context.groupOrderStore.prependIfAbsent(name)
         }
         lastSeenGroups = current
         rebuildItems()
@@ -476,10 +468,10 @@ final class SidebarViewController: NSViewController {
             return
         }
         guard case .history(let sessionId, _, _) = node.kind else { return }
-        if model.selection == .session(sessionId) {
-            model.select(.newSession)
+        if context.model.selection == .session(sessionId) {
+            context.model.select(.newSession)
         }
-        sessionManager.archive(sessionId)
+        context.sessionManager.archive(sessionId)
     }
 
     @objc private func copySessionFilePath(_ sender: Any?) {
@@ -575,7 +567,7 @@ extension SidebarViewController: NSOutlineViewDataSource {
 
         // Persist the new full order of folder names (not session ids).
         let newOrder = rootChildren.compactMap(\.folderName)
-        groupOrderStore.replace(with: newOrder)
+        context.groupOrderStore.replace(with: newOrder)
         return true
     }
 
@@ -643,8 +635,8 @@ extension SidebarViewController: NSOutlineViewDelegate {
             let node = outlineView.item(atRow: row) as? SidebarItemNode,
             let selection = node.selection
         else { return }
-        if model.selection != selection {
-            model.select(selection)
+        if context.model.selection != selection {
+            context.model.select(selection)
         }
     }
 
@@ -697,7 +689,7 @@ extension SidebarViewController {
             else { return }
             await withCheckedContinuation { cont in
                 withObservationTracking {
-                    let session = controller.sessionManager.existingSession(sessionId)
+                    let session = controller.context.sessionManager.existingSession(sessionId)
                     _ = session?.title
                     _ = session?.isRunning
                     _ = session?.hasUnread
@@ -717,7 +709,7 @@ extension SidebarViewController {
     private func applyHistoryState(
         cell: SidebarHistoryCellView, sessionId: String, fallback: String, isDraft: Bool
     ) {
-        let session = sessionManager.existingSession(sessionId)
+        let session = context.sessionManager.existingSession(sessionId)
         // A not-yet-sent `/new` / `/clear` draft is differentiated: it shows a
         // dedicated "New Draft" placeholder (vs the generic "Untitled" used for
         // a real session whose async title-gen hasn't landed) and a dimmed

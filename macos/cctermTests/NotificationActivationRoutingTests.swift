@@ -77,7 +77,6 @@ final class NotificationActivationRoutingTests: XCTestCase {
 
         let notifications = NotificationService(activation: AppActivationTracker())
         let syntaxEngine = SyntaxHighlightEngine()
-        let searchBus = TranscriptSearchBus()
 
         let draftDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("ccterm-notif-routing-\(UUID().uuidString)", isDirectory: true)
@@ -87,13 +86,13 @@ final class NotificationActivationRoutingTests: XCTestCase {
         model.selection = initialSelection
 
         let router = DetailRouterViewController(
-            model: model,
-            sessionManager: manager,
-            recentProjects: recentProjects,
-            notifications: notifications,
-            syntaxEngine: syntaxEngine,
-            searchBus: searchBus,
-            inputDraftStore: inputDraftStore
+            context: DetailContext(
+                model: model,
+                sessionManager: manager,
+                recentProjects: recentProjects,
+                inputDraftStore: inputDraftStore,
+                syntaxEngine: syntaxEngine),
+            notifications: notifications
         )
 
         addTeardownBlock {

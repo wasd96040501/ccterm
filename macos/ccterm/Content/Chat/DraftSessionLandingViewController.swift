@@ -24,13 +24,9 @@ final class DraftSessionLandingViewController: NSViewController, DetailRouterChi
     /// `TaskLocal` teardown bug). See `SessionRuntime.swift`.
     nonisolated deinit {}
 
-    let model: MainSelectionModel
-    let sessionManager: SessionManager
-    let recentProjects: RecentProjectsStore
-    let notifications: NotificationService
-    let syntaxEngine: SyntaxHighlightEngine
-    let searchBus: TranscriptSearchBus
-    let inputDraftStore: InputDraftStore
+    /// The detail-scope dependency bag, handed down from the router.
+    /// `model` and the four injected services are read through this.
+    let context: DetailContext
 
     /// The draft session this VC is currently bound to. Driven by the
     /// router's `present(sessionId:)`; the SwiftUI body keys its identity on
@@ -44,22 +40,8 @@ final class DraftSessionLandingViewController: NSViewController, DetailRouterChi
     /// `mountHost` works on that supertype surface.
     private var host: NSViewController?
 
-    init(
-        model: MainSelectionModel,
-        sessionManager: SessionManager,
-        recentProjects: RecentProjectsStore,
-        notifications: NotificationService,
-        syntaxEngine: SyntaxHighlightEngine,
-        searchBus: TranscriptSearchBus,
-        inputDraftStore: InputDraftStore
-    ) {
-        self.model = model
-        self.sessionManager = sessionManager
-        self.recentProjects = recentProjects
-        self.notifications = notifications
-        self.syntaxEngine = syntaxEngine
-        self.searchBus = searchBus
-        self.inputDraftStore = inputDraftStore
+    init(context: DetailContext) {
+        self.context = context
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -96,9 +78,9 @@ final class DraftSessionLandingViewController: NSViewController, DetailRouterChi
     /// no unread state yet, but participating in the sweep keeps the
     /// presence model consistent across the draft → active flip.
     private func updateFocus(activeSessionId: String) {
-        sessionManager.existingSession(activeSessionId)?.setFocused(true)
-        for sid in sessionManager.records.map(\.sessionId) where sid != activeSessionId {
-            sessionManager.existingSession(sid)?.setFocused(false)
+        context.sessionManager.existingSession(activeSessionId)?.setFocused(true)
+        for sid in context.sessionManager.records.map(\.sessionId) where sid != activeSessionId {
+            context.sessionManager.existingSession(sid)?.setFocused(false)
         }
     }
 
@@ -119,23 +101,20 @@ final class DraftSessionLandingViewController: NSViewController, DetailRouterChi
                     submitSessionInput(
                         submission,
                         sessionId: sessionId,
-                        sessionManager: self.sessionManager,
-                        recentProjects: self.recentProjects,
-                        model: self.model)
+                        sessionManager: self.context.sessionManager,
+                        recentProjects: self.context.recentProjects,
+                        model: self.context.model)
                 },
                 onBuiltinCommand: { [weak self] command in
                     guard let self else { return }
                     runBuiltinSlashCommand(
                         command,
                         currentSessionId: sessionId,
-                        sessionManager: self.sessionManager,
-                        model: self.model)
+                        sessionManager: self.context.sessionManager,
+                        model: self.context.model)
                 }
             )
-            .environment(sessionManager)
-            .environment(recentProjects)
-            .environment(inputDraftStore)
-            .environment(\.syntaxEngine, syntaxEngine),
+            .injectDetailEnvironment(context),
             in: self
         )
     }

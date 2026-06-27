@@ -76,8 +76,6 @@ final class ArchiveViewController: NSViewController {
             .environment(recentProjects)
             .environment(inputDraftStore)
             .environment(\.syntaxEngine, searchEngine)
-            .environment(searchBus)
-            .environment(notifications)
         )
 
         let host = NSHostingController(rootView: root)

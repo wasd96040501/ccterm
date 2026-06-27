@@ -431,8 +431,6 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
                     .environment(recentProjects)
                     .environment(inputDraftStore)
                     .environment(\.syntaxEngine, searchEngine)
-                    .environment(searchBus)
-                    .environment(notifications)
             )
             let host = NSHostingController(rootView: root)
             // Fill-the-pane detail child — clear `sizingOptions` so the

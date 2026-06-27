@@ -580,8 +580,6 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
         .environment(recentProjects)
         .environment(inputDraftStore)
         .environment(\.syntaxEngine, searchEngine)
-        .environment(searchBus)
-        .environment(notifications)
     }
 
     /// `nonisolated` so dealloc skips the `@MainActor` deinit

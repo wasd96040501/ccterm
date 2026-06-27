@@ -187,8 +187,15 @@ final class DetailRouterContainmentTests: XCTestCase {
             case .permissionSession:
                 XCTAssertTrue(child is PermissionSessionDemoViewController, "\(kind)")
             case .permissionCards:
-                // SwiftUI-only demo — hosted via NSHostingController.
-                XCTAssertTrue(child is NSHostingController<AnyView>, "\(kind)")
+                // SwiftUI-only demo — hosted via NSHostingController. The
+                // root view was un-erased from `AnyView` to the concrete
+                // `PermissionCardsDemoView` + `.environment(...)` chain (an
+                // unspellable `ModifiedContent<…>` generic), so match on the
+                // runtime class — every `NSHostingController<T>`
+                // specialization shares the same ObjC class.
+                XCTAssertTrue(
+                    String(describing: type(of: child)).hasPrefix("NSHostingController"),
+                    "\(kind)")
             }
             XCTAssertTrue(child.view.superview === router.view)
             XCTAssertEqual(router.children.count, 1)

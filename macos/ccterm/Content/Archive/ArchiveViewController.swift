@@ -7,10 +7,13 @@ import SwiftUI
 /// is selected and is fully torn down on selection change (no
 /// lingering subviews, no observation tasks left armed).
 ///
-/// Wraps an `NSHostingController<AnyView>` so the SwiftUI tree is
-/// hosted with proper child-VC plumbing — `NSHostingController`
-/// forwards `viewDidLoad` / `viewWillAppear` / etc. into the SwiftUI
-/// runtime, which `NSHostingView` alone does not.
+/// Mounted via `mountFillPaneHost(_:in:)` (regime-A: `NSHostingController`
+/// + `sizingOptions = []` + four-edge pin) so the SwiftUI tree is hosted
+/// with proper child-VC plumbing — `NSHostingController` forwards
+/// `viewDidLoad` / `viewWillAppear` / etc. into the SwiftUI runtime, which
+/// `NSHostingView` alone does not — and its fitting size can't leak up
+/// through the split and collapse the window. See the helper for the full
+/// rationale.
 @MainActor
 final class ArchiveViewController: NSViewController {
     /// `nonisolated` so dealloc skips the `@MainActor` deinit executor-hop
@@ -26,7 +29,12 @@ final class ArchiveViewController: NSViewController {
     let searchBus: TranscriptSearchBus
     let inputDraftStore: InputDraftStore
 
-    private var host: NSHostingController<AnyView>!
+    /// The mounted host. Typed as `NSViewController` because
+    /// `mountFillPaneHost` returns an `NSHostingController<Content>` whose
+    /// `Content` is a long `ModifiedContent` generic — storing it at the
+    /// `NSViewController` supertype keeps the property declarable without
+    /// spelling that type out. Retained so the host outlives `viewDidLoad`.
+    private var host: NSViewController?
 
     init(
         model: MainSelectionModel,
@@ -65,7 +73,17 @@ final class ArchiveViewController: NSViewController {
             set: { [weak self] in self?.model.archiveSelectedFolderPath = $0 }
         )
 
-        let root = AnyView(
+        // Fill-the-pane detail child: `mountFillPaneHost` clears
+        // `sizingOptions` (regime-A) so `ArchiveView`'s `ScrollView` fitting
+        // height — just the header (~176pt before the async list lands) —
+        // can't bubble up through the detail VC → the split's
+        // `view.fittingSize` and collapse the whole window down to it the
+        // instant Archive is selected. The four-edge pin inside the helper
+        // makes the pane take whatever height the window gives it instead of
+        // driving it. Confirmed offscreen: with the default options
+        // `host.view.fittingSize` ≈ 545×276; cleared, it's 0×0 and the split
+        // fills the window.
+        host = mountFillPaneHost(
             ArchiveView(
                 selectedFolderPath: folderBinding,
                 onUnarchive: { [weak self] resumeSid in
@@ -75,38 +93,8 @@ final class ArchiveViewController: NSViewController {
             .environment(sessionManager)
             .environment(recentProjects)
             .environment(inputDraftStore)
-            .environment(\.syntaxEngine, syntaxEngine)
+            .environment(\.syntaxEngine, syntaxEngine),
+            in: self
         )
-
-        let host = NSHostingController(rootView: root)
-        // `NSHostingController`'s default `sizingOptions` binds the
-        // SwiftUI body's fitting size into the hosting view's layout, so
-        // `host.view.fittingSize` tracks the content's ideal size. That's
-        // right for a standalone window's `contentViewController` (Settings
-        // / About / Logs size to their content), but this host is a
-        // fill-the-pane detail child: `ArchiveView`'s root is a `ScrollView`
-        // whose fitting height is just the header (~176pt before the async
-        // list lands). With the default options that small fitting height
-        // bubbles up through the detail VC → the `NSSplitViewController`'s
-        // `view.fittingSize`, and the window resizes its content down to it
-        // — the whole window collapses to ~176pt the instant Archive is
-        // selected (and stays collapsed when you switch back, since chat
-        // contributes no fitting height to grow it again). Confirmed
-        // offscreen: with the default, `host.view.fittingSize` ≈ 545×276;
-        // cleared, it's 0×0 and the split fills the window. The pane must
-        // take whatever height the window gives it via the 4-edge
-        // constraints below — never drive it. `[]` matches `NSHostingView`'s
-        // default, which the chat pane's compose host already relies on.
-        host.sizingOptions = []
-        addChild(host)
-        host.view.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(host.view)
-        NSLayoutConstraint.activate([
-            host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            host.view.topAnchor.constraint(equalTo: view.topAnchor),
-            host.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ])
-        self.host = host
     }
 }

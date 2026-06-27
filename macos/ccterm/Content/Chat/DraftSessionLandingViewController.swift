@@ -13,9 +13,10 @@ import SwiftUI
 /// this VC instead binds a draft id the router hands it via `present(sessionId:)`,
 /// so the same VC instance can re-bind across draft → draft switches. The
 /// host-sizing posture is identical to Compose and `ArchiveViewController`:
-/// `NSHostingController` with `sizingOptions = []` so the SwiftUI body's
-/// fitting size can't bubble up through the split and collapse the window —
-/// the four-edge pin lets layout size the host from the pane.
+/// mounted via `mountFillPaneHost(_:in:)` (`NSHostingController` with
+/// regime-A `sizingOptions = []`) so the SwiftUI body's fitting size can't
+/// bubble up through the split and collapse the window — the four-edge pin
+/// inside the helper lets layout size the host from the pane.
 @MainActor
 final class DraftSessionLandingViewController: NSViewController, DetailRouterChild {
     /// `nonisolated` so dealloc skips the `@MainActor` deinit executor-hop
@@ -35,7 +36,13 @@ final class DraftSessionLandingViewController: NSViewController, DetailRouterChi
     /// router's `present(sessionId:)`; the SwiftUI body keys its identity on
     /// this so a draft → draft switch rebuilds the hosted tree cleanly.
     private var boundSessionId: String?
-    private var host: NSHostingController<AnyView>?
+    /// The mounted host. Typed as `NSViewController` because
+    /// `mountFillPaneHost` returns an `NSHostingController<Content>` whose
+    /// `Content` is a long `ModifiedContent` generic — storing it at the
+    /// `NSViewController` supertype keeps the property declarable, and the
+    /// `removeFromSuperview()` / `removeFromParent()` teardown in
+    /// `mountHost` works on that supertype surface.
+    private var host: NSViewController?
 
     init(
         model: MainSelectionModel,
@@ -99,7 +106,12 @@ final class DraftSessionLandingViewController: NSViewController, DetailRouterChi
         host?.view.removeFromSuperview()
         host?.removeFromParent()
 
-        let root = AnyView(
+        // Fill-the-pane detail child — `mountFillPaneHost` is regime-A
+        // (`sizingOptions = []` + four-edge pin), so the body's fitting size
+        // can't leak into the split's `view.fittingSize` and resize /
+        // collapse the window. See `ComposeSessionViewController` /
+        // `ArchiveViewController` / the helper for the full rationale.
+        host = mountFillPaneHost(
             DraftSessionLandingView(
                 sessionId: sessionId,
                 onSubmit: { [weak self] submission in
@@ -123,25 +135,9 @@ final class DraftSessionLandingViewController: NSViewController, DetailRouterChi
             .environment(sessionManager)
             .environment(recentProjects)
             .environment(inputDraftStore)
-            .environment(\.syntaxEngine, syntaxEngine)
+            .environment(\.syntaxEngine, syntaxEngine),
+            in: self
         )
-
-        let host = NSHostingController(rootView: root)
-        // Fill-the-pane detail child — see `ComposeSessionViewController` /
-        // `ArchiveViewController` for the full rationale. `[]` severs the
-        // body's fitting-size leak into the split's `view.fittingSize` that
-        // would otherwise resize / collapse the window.
-        host.sizingOptions = []
-        addChild(host)
-        host.view.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(host.view)
-        NSLayoutConstraint.activate([
-            host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            host.view.topAnchor.constraint(equalTo: view.topAnchor),
-            host.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ])
-        self.host = host
     }
 }
 

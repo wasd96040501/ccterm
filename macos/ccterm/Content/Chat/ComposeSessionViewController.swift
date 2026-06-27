@@ -19,11 +19,11 @@ import SwiftUI
 /// bottom-anchored — it never has to be full-bleed, so there is no
 /// non-bar footprint left to cover the transcript.
 ///
-/// Wraps an `NSHostingController` (not a bare `NSHostingView`) so the
-/// SwiftUI tree gets proper child-VC lifecycle plumbing — same rationale
-/// as `ArchiveViewController`, including `sizingOptions = []` so the
-/// card's fitting size doesn't bubble up through the split and collapse
-/// the window.
+/// Mounted via `mountFillPaneHost(_:in:)` (an `NSHostingController`, not a
+/// bare `NSHostingView`) so the SwiftUI tree gets proper child-VC lifecycle
+/// plumbing — same rationale as `ArchiveViewController`, including the
+/// regime-A `sizingOptions = []` so the card's fitting size doesn't bubble
+/// up through the split and collapse the window.
 @MainActor
 final class ComposeSessionViewController: NSViewController {
     /// `nonisolated` so dealloc skips the `@MainActor` deinit executor-hop
@@ -39,7 +39,12 @@ final class ComposeSessionViewController: NSViewController {
     let searchBus: TranscriptSearchBus
     let inputDraftStore: InputDraftStore
 
-    private var host: NSHostingController<AnyView>!
+    /// The mounted host. Typed as `NSViewController` because
+    /// `mountFillPaneHost` returns an `NSHostingController<Content>` whose
+    /// `Content` is a long `ModifiedContent` generic — storing it at the
+    /// `NSViewController` supertype keeps the property declarable. Retained
+    /// so the host outlives `viewDidLoad`.
+    private var host: NSViewController?
 
     init(
         model: MainSelectionModel,
@@ -79,7 +84,13 @@ final class ComposeSessionViewController: NSViewController {
         // card stable until it's torn down.
         let draftSessionId = ensureDraftSession()
 
-        let root = AnyView(
+        // Fill-the-pane detail child: `mountFillPaneHost` clears
+        // `sizingOptions` (regime-A) so the compose card's fitting size can't
+        // leak up through the split's `view.fittingSize` and resize the
+        // window — see `ArchiveViewController` / the helper for the full
+        // rationale. The four-edge pin inside the helper makes the host take
+        // whatever height the window gives it.
+        host = mountFillPaneHost(
             ComposeSessionView(
                 draftSessionId: draftSessionId,
                 onSubmit: { [weak self] submission in
@@ -100,27 +111,9 @@ final class ComposeSessionViewController: NSViewController {
             .environment(sessionManager)
             .environment(recentProjects)
             .environment(inputDraftStore)
-            .environment(\.syntaxEngine, syntaxEngine)
+            .environment(\.syntaxEngine, syntaxEngine),
+            in: self
         )
-
-        let host = NSHostingController(rootView: root)
-        // See `ArchiveViewController` for the full rationale: a
-        // fill-the-pane detail child must take whatever height the window
-        // gives it via the 4-edge constraints below, never drive it. The
-        // default `sizingOptions` would leak the compose card's fitting
-        // size up through the split's `view.fittingSize` and resize the
-        // window. `[]` severs that.
-        host.sizingOptions = []
-        addChild(host)
-        host.view.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(host.view)
-        NSLayoutConstraint.activate([
-            host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            host.view.topAnchor.constraint(equalTo: view.topAnchor),
-            host.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ])
-        self.host = host
     }
 
     /// Lazy-allocate `model.draftSessionId` on first entry into New

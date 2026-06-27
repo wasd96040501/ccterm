@@ -407,9 +407,40 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
                 applyStructuralChange(.append(newBlocks), in: table)
                 return
             }
-            let anchorId: UUID? = firstIdx > 0 ? blocks[firstIdx - 1].id : nil
-            applyStructuralChange(.remove(ids: oldIds), in: table)
-            insertBlocks(after: anchorId, newBlocks, in: table)
+            // Keep the shared leading prefix in place: ids that match at the
+            // same position in both `oldIds` and `newBlocks` are NOT removed
+            // and re-inserted — they stay put (kind-update in place only if the
+            // content moved). This is the streaming "append a tool after
+            // settled markdown" shape (the bridge re-states the unchanged
+            // boundary block to anchor the insert). Removing + re-inserting an
+            // unchanged block gives it a needless `.effectFade` crossfade and
+            // drops its layout / highlight cache — the markdown row visibly
+            // blinks out as the tool appears. Only the divergent suffix is
+            // structurally swapped.
+            var shared = 0
+            while shared < oldIds.count, shared < newBlocks.count,
+                oldIds[shared] == newBlocks[shared].id
+            {
+                let nb = newBlocks[shared]
+                if let i = blocks.firstIndex(where: { $0.id == nb.id }),
+                    blocks[i].kind != nb.kind
+                {
+                    applyStructuralChange(.update(id: nb.id, kind: nb.kind), in: table)
+                }
+                shared += 1
+            }
+            let remainingOld = Array(oldIds[shared...])
+            let remainingNew = Array(newBlocks[shared...])
+            // Anchor the suffix on the last kept block, else the block just
+            // above the run.
+            let anchorId: UUID? =
+                shared > 0
+                ? newBlocks[shared - 1].id
+                : (firstIdx > 0 ? blocks[firstIdx - 1].id : nil)
+            if !remainingOld.isEmpty {
+                applyStructuralChange(.remove(ids: remainingOld), in: table)
+            }
+            insertBlocks(after: anchorId, remainingNew, in: table)
 
         case .remove(let ids):
             let idSet = Set(ids)

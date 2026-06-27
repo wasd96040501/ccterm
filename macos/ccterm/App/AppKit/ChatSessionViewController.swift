@@ -66,7 +66,7 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
     let sessionManager: SessionManager
     let recentProjects: RecentProjectsStore
     let notifications: NotificationService
-    let searchEngine: SyntaxHighlightEngine
+    let syntaxEngine: SyntaxHighlightEngine
     let searchBus: TranscriptSearchBus
     let inputDraftStore: InputDraftStore
 
@@ -129,7 +129,7 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
         sessionManager: SessionManager,
         recentProjects: RecentProjectsStore,
         notifications: NotificationService,
-        searchEngine: SyntaxHighlightEngine,
+        syntaxEngine: SyntaxHighlightEngine,
         searchBus: TranscriptSearchBus,
         inputDraftStore: InputDraftStore
     ) {
@@ -137,7 +137,7 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
         self.sessionManager = sessionManager
         self.recentProjects = recentProjects
         self.notifications = notifications
-        self.searchEngine = searchEngine
+        self.syntaxEngine = syntaxEngine
         self.searchBus = searchBus
         self.inputDraftStore = inputDraftStore
         super.init(nibName: nil, bundle: nil)
@@ -392,7 +392,7 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
             session.controller.mainThreadLayoutComputes &- layoutComputesBeforeTile
 
         // Attach syntax engine (idempotent).
-        session.controller.attachSyntaxEngine(searchEngine)
+        session.controller.attachSyntaxEngine(syntaxEngine)
 
         // Sheet presenter is per-attach: it captures `view` (for
         // `window`) and the session's controller. The presenter
@@ -579,7 +579,7 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
         .environment(sessionManager)
         .environment(recentProjects)
         .environment(inputDraftStore)
-        .environment(\.syntaxEngine, searchEngine)
+        .environment(\.syntaxEngine, syntaxEngine)
     }
 
     /// `nonisolated` so dealloc skips the `@MainActor` deinit

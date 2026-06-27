@@ -72,7 +72,7 @@ final class SessionManagerLaunchFailureTests: XCTestCase {
             sessionManager: manager,
             recentProjects: recentProjects,
             notifications: notifications,
-            searchEngine: SyntaxHighlightEngine(),
+            syntaxEngine: SyntaxHighlightEngine(),
             searchBus: TranscriptSearchBus(),
             inputDraftStore: inputDraftStore
         )

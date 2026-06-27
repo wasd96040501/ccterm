@@ -31,7 +31,7 @@ final class MainSplitViewController: NSSplitViewController {
             sessionManager: appState.sessionManager,
             recentProjects: appState.recentProjects,
             notifications: appState.notificationService,
-            searchEngine: appState.syntaxEngine,
+            syntaxEngine: appState.syntaxEngine,
             searchBus: searchBus,
             inputDraftStore: appState.inputDraftStore
         )

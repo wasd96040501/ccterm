@@ -72,7 +72,7 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
     let sessionManager: SessionManager
     let recentProjects: RecentProjectsStore
     let notifications: NotificationService
-    let searchEngine: SyntaxHighlightEngine
+    let syntaxEngine: SyntaxHighlightEngine
     let searchBus: TranscriptSearchBus
     let inputDraftStore: InputDraftStore
 
@@ -116,7 +116,7 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
         sessionManager: SessionManager,
         recentProjects: RecentProjectsStore,
         notifications: NotificationService,
-        searchEngine: SyntaxHighlightEngine,
+        syntaxEngine: SyntaxHighlightEngine,
         searchBus: TranscriptSearchBus,
         inputDraftStore: InputDraftStore
     ) {
@@ -124,7 +124,7 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
         self.sessionManager = sessionManager
         self.recentProjects = recentProjects
         self.notifications = notifications
-        self.searchEngine = searchEngine
+        self.syntaxEngine = syntaxEngine
         self.searchBus = searchBus
         self.inputDraftStore = inputDraftStore
         super.init(nibName: nil, bundle: nil)
@@ -368,7 +368,7 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
                 sessionManager: sessionManager,
                 recentProjects: recentProjects,
                 notifications: notifications,
-                searchEngine: searchEngine,
+                syntaxEngine: syntaxEngine,
                 searchBus: searchBus,
                 inputDraftStore: inputDraftStore
             )
@@ -378,7 +378,7 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
                 sessionManager: sessionManager,
                 recentProjects: recentProjects,
                 notifications: notifications,
-                searchEngine: searchEngine,
+                syntaxEngine: syntaxEngine,
                 searchBus: searchBus,
                 inputDraftStore: inputDraftStore
             )
@@ -388,7 +388,7 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
                 sessionManager: sessionManager,
                 recentProjects: recentProjects,
                 notifications: notifications,
-                searchEngine: searchEngine,
+                syntaxEngine: syntaxEngine,
                 searchBus: searchBus,
                 inputDraftStore: inputDraftStore
             )
@@ -398,7 +398,7 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
                 sessionManager: sessionManager,
                 recentProjects: recentProjects,
                 notifications: notifications,
-                searchEngine: searchEngine,
+                syntaxEngine: syntaxEngine,
                 searchBus: searchBus,
                 inputDraftStore: inputDraftStore
             )
@@ -413,13 +413,13 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
     private func makeDemoChild(_ kind: DemoKind) -> NSViewController {
         switch kind {
         case .transcript:
-            return TranscriptDemoViewController(syntaxEngine: searchEngine)
+            return TranscriptDemoViewController(syntaxEngine: syntaxEngine)
         case .transcriptStress:
-            return TranscriptStressViewController(syntaxEngine: searchEngine)
+            return TranscriptStressViewController(syntaxEngine: syntaxEngine)
         case .transcriptPerf:
-            return TranscriptPerfDemoViewController(syntaxEngine: searchEngine)
+            return TranscriptPerfDemoViewController(syntaxEngine: syntaxEngine)
         case .permissionSession:
-            return PermissionSessionDemoViewController(syntaxEngine: searchEngine)
+            return PermissionSessionDemoViewController(syntaxEngine: syntaxEngine)
         case .permissionCards:
             // The only demo that's a pure SwiftUI view — host it via
             // `NSHostingController` so the surrounding `addChild`
@@ -430,7 +430,7 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
                     .environment(sessionManager)
                     .environment(recentProjects)
                     .environment(inputDraftStore)
-                    .environment(\.syntaxEngine, searchEngine)
+                    .environment(\.syntaxEngine, syntaxEngine)
             )
             let host = NSHostingController(rootView: root)
             // Fill-the-pane detail child — clear `sizingOptions` so the

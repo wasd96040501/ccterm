@@ -147,4 +147,67 @@ final class SessionFacadeTests: XCTestCase {
         XCTAssertEqual(activeSession.runtime?.model, "sonnet")
         XCTAssertTrue(fake.modelCalls.isEmpty, "detached runtime setter doesn't RPC either")
     }
+
+    // MARK: - stopBackgroundTask forwarding
+
+    /// `session.stopBackgroundTask(taskId:)` on an active session
+    /// forwards to the runtime, flipping the matching task to `.stopped`
+    /// (the BackgroundTaskButton stop-action path, kept off
+    /// `session.runtime`).
+    func testStopBackgroundTaskForwardsToRuntime() {
+        let repo = InMemorySessionRepository()
+        let sid = UUID().uuidString
+        repo.save(SessionRecord(sessionId: sid, status: .created))
+        let session = ccterm.Session(
+            record: repo.find(sid)!,
+            repository: repo,
+            cliClientFactory: { _ in FakeCLIClient() }
+        )
+        session.runtime!.receive(taskStarted(taskId: "x", toolUseId: "tu_x"))
+        XCTAssertEqual(session.tasks.first?.status, .running)
+
+        session.stopBackgroundTask(taskId: "x")
+
+        XCTAssertEqual(session.tasks.first?.status, .stopped)
+        XCTAssertNotNil(session.tasks.first?.endedAt)
+    }
+
+    /// On a `.draft` session there is no runtime and `tasks` is always
+    /// empty, so `stopBackgroundTask` is a safe no-op.
+    func testStopBackgroundTaskOnDraftIsNoOp() {
+        let session = ccterm.Session(
+            draftSessionId: UUID().uuidString,
+            repository: InMemorySessionRepository(),
+            cliClientFactory: { _ in FakeCLIClient() }
+        )
+
+        session.stopBackgroundTask(taskId: "whatever")  // must not crash
+
+        XCTAssertTrue(session.tasks.isEmpty)
+        XCTAssertNil(session.runtime)
+    }
+
+    // MARK: - Fixtures (local copy, mirrors SessionRuntimeTasksTests)
+
+    private func taskStarted(
+        taskId: String,
+        toolUseId: String,
+        description: String = "",
+        taskType: String = "local_bash"
+    ) -> Message2 {
+        resolve([
+            "type": "system",
+            "subtype": "task_started",
+            "uuid": UUID().uuidString,
+            "session_id": "s",
+            "task_id": taskId,
+            "tool_use_id": toolUseId,
+            "description": description,
+            "task_type": taskType,
+        ])
+    }
+
+    private func resolve(_ dict: [String: Any]) -> Message2 {
+        try! Message2Resolver().resolve(dict)
+    }
 }

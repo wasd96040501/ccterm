@@ -23,10 +23,13 @@ protocol DetailRouterChild: NSViewController {
 /// The router's purpose is to **let each selection have its own VC**,
 /// instead of cramming archive / demos / chat / compose into one
 /// always-mounted detail VC and toggling them via overlay opacity +
-/// hit-test heuristics. The earlier single-VC shape was what forced
-/// the now-deleted `PassthroughHostingView` and its "is super.hitTest
-/// === self" gate to exist (which then silently dropped clicks on
-/// every plain-style SwiftUI button in the input bar's chrome row).
+/// hit-test heuristics. The earlier single-VC shape forced a full-pane
+/// `PassthroughHostingView` whose `super.hitTest === self` gate sat on
+/// top of the input bar's chrome row and silently swallowed clicks on
+/// every plain-style SwiftUI button there. (`PassthroughHostingView`
+/// was later re-introduced for the permission-card overlay — but that
+/// host is a separate full-pane sibling whose chrome lives in another
+/// host beneath it, so its passthrough no longer covers any buttons.)
 ///
 /// Routing table:
 /// - `.none` / `.session(_)` → `ChatSessionViewController`

@@ -5,9 +5,20 @@ import XCTest
 
 @testable import ccterm
 
-/// Renders `PermissionCardView` in two contexts and writes PNGs so
-/// the card surface and the over-input-bar composition can both be
-/// reviewed without launching the app.
+/// Renders `PermissionCardView` and the production `PermissionCardOverlay`
+/// in a few contexts and writes PNGs so the card surface and the
+/// floats-over-the-bar composition can be reviewed without launching the
+/// app.
+///
+/// Post-PR5 the card no longer lives inside `ChatRestingBar`: it floats in
+/// a dedicated full-pane click-through `permissionCardHost`
+/// (`PassthroughHostingView` hosting `PermissionCardOverlay`), bottom-pinned
+/// with `chatBottomInset` (36) so it visually extends *up* from the bar's
+/// bottom edge — and crucially the bar host's height is NOT pumped by the
+/// card. The `OverInputBar` fixture reproduces that geometry (card on a
+/// separate z-layer above an unchanged input-bar stack), and the new
+/// `Overlay` snapshot renders the real overlay over a transcript-height
+/// canvas so the float position + bottom inset can be eyeballed.
 @MainActor
 final class PermissionCardSnapshotTests: XCTestCase {
 
@@ -117,6 +128,13 @@ final class PermissionCardSnapshotTests: XCTestCase {
         capture(view, size: size, name: "PermissionCard-AskUserQuestion-Multi")
     }
 
+    /// The card floating over the input-bar stack, post-PR5 geometry: the
+    /// card sits on a SEPARATE z-layer (a `ZStack` mirroring the dedicated
+    /// `permissionCardHost`) bottom-pinned with `chatBottomInset`, so it
+    /// extends up from the bar's bottom edge WITHOUT growing the bar stack's
+    /// height. Verifies the three geometric claims of the design at once —
+    /// the bar band stays its intrinsic height, the card overlaps it from a
+    /// higher layer, and the card is bottom-flush at the bar inset.
     func testCardOverInputBarSnapshot() throws {
         let session = Self.makeSession()
         Self.enqueuePermission(
@@ -131,6 +149,29 @@ final class PermissionCardSnapshotTests: XCTestCase {
             .background(Color(nsColor: .windowBackgroundColor))
 
         capture(view, size: size, name: "PermissionCard-OverInputBar")
+    }
+
+    /// Renders the REAL `PermissionCardOverlay` resolved through a
+    /// `SessionManager` + `MainSelectionModel`, exactly as
+    /// `ChatSessionViewController.permissionCardHost` mounts it. The pane is
+    /// transcript-height so the bottom-pinned card (at `chatBottomInset`)
+    /// floats at the bottom with the rest of the pane transparent —
+    /// confirming the overlay's full-pane / bottom-anchor geometry rather
+    /// than an over-input-bar mock.
+    func testOverlaySnapshot() throws {
+        let (model, manager) = Self.makeSelectedSessionWithPermission(
+            requestId: "req-overlay",
+            toolName: "Bash",
+            input: ["command": "rm -rf build"])
+
+        let size = CGSize(width: 820, height: 600)
+        let view = PermissionCardOverlay(model: model)
+            .environment(manager)
+            .environment(InputDraftStore())
+            .frame(width: size.width, height: size.height)
+            .background(Color(nsColor: .windowBackgroundColor))
+
+        capture(view, size: size, name: "PermissionCard-Overlay")
     }
 
     // MARK: - Helpers
@@ -182,6 +223,38 @@ final class PermissionCardSnapshotTests: XCTestCase {
             respond: { _ in })
         runtime.pendingPermissions.append(pending)
     }
+
+    /// Builds a `SessionManager` (in-memory repo) holding one active
+    /// session with a pending permission, plus a `MainSelectionModel`
+    /// selected on it — the exact inputs `PermissionCardOverlay` resolves
+    /// through (`manager.prepareDraftSession(sid)` +
+    /// `model.selection`). Lets the overlay snapshot render the production
+    /// view rather than a hand-built mock.
+    private static func makeSelectedSessionWithPermission(
+        requestId: String,
+        toolName: String,
+        input: [String: Any]
+    ) -> (MainSelectionModel, SessionManager) {
+        let repo = InMemorySessionRepository()
+        let sid = UUID().uuidString
+        repo.save(
+            SessionRecord(
+                sessionId: sid, title: "Permission demo", cwd: "/tmp/perm", status: .created))
+        let manager = SessionManager(
+            repository: repo, cliClientFactory: { _ in FakeCLIClient() })
+        guard let session = manager.session(sid), case .active(let runtime) = session.phase else {
+            XCTFail("expected an active session for overlay seeding")
+            return (MainSelectionModel(), manager)
+        }
+        let request = PermissionRequest.makePreview(
+            requestId: requestId, toolName: toolName, input: input)
+        runtime.pendingPermissions.append(
+            PendingPermission(id: requestId, request: request, respond: { _ in }))
+
+        let model = MainSelectionModel()
+        model.selection = .session(sid)
+        return (model, manager)
+    }
 }
 
 /// Standalone card on a transparent canvas. Padding mirrors the
@@ -205,40 +278,54 @@ private struct StandalonePermissionCardFixture: View {
     }
 }
 
-/// Mirrors the visible composition of `ChatRestingBar`: the input bar +
-/// session chrome stack with the permission card layered on the z-axis
-/// over it via `ZStack(alignment: .bottom)` (the card covers the bar,
-/// bottom-flush, rather than stacking above it on the y-axis). Uses
-/// production constants verbatim — `barSpacing`, the unmodified card
-/// view, no alternate fixture geometry.
+/// Mirrors the POST-PR5 composition: the input-bar stack
+/// (`InputBarView2` + `InputBarSessionChrome`) bottom-anchored, with the
+/// permission card on a SEPARATE full-pane z-layer above it — the way
+/// `ChatSessionViewController` splits `composeOrBarHost` (bottom-anchored,
+/// intrinsic height) from `permissionCardHost` (full-pane,
+/// `PermissionCardOverlay`). The card is bottom-pinned with
+/// `ChatSessionViewController.chatBottomInset` (36) so it floats up from the
+/// bar's bottom edge, and lives outside the bar's VStack so it can't pump the
+/// bar's height. `ChatRestingBar` no longer carries the card, so this fixture
+/// reproduces the layering rather than the old single-stack ZStack.
 private struct InputBarChromeMirrorFixture: View {
     let session: ccterm.Session
 
     var body: some View {
-        VStack {
-            Spacer(minLength: 0)
-            ZStack(alignment: .bottom) {
-                VStack(alignment: .leading, spacing: InputBarSessionChrome.barSpacing) {
-                    InputBarView2(
-                        onSubmit: { _ in },
-                        onStop: {},
-                        isRunning: session.isRunning,
-                        submitEnabled: true
-                    )
-                    InputBarSessionChrome(session: session)
-                }
-                if let pending = session.pendingPermissions.first {
-                    PermissionCardView(
-                        request: pending.request,
-                        onAllowOnce: {},
-                        onAllowAlways: {},
-                        onDeny: {}
-                    )
-                }
+        // Two siblings in a bottom-aligned ZStack, mirroring the two AppKit
+        // hosts: the bar band (its own intrinsic height) and the full-pane
+        // card overlay layered on top.
+        ZStack(alignment: .bottom) {
+            // Bar host analog: bottom-anchored, height = its own content.
+            VStack(alignment: .leading, spacing: InputBarSessionChrome.barSpacing) {
+                InputBarView2(
+                    onSubmit: { _ in },
+                    onStop: {},
+                    isRunning: session.isRunning,
+                    submitEnabled: true
+                )
+                InputBarSessionChrome(session: session)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 16)
+            .frame(maxHeight: .infinity, alignment: .bottom)
+
+            // Permission-card overlay analog: full-pane, card bottom-pinned
+            // at `chatBottomInset` so it overlaps the bar from a higher layer
+            // without growing it.
+            if let pending = session.pendingPermissions.first {
+                PermissionCardView(
+                    request: pending.request,
+                    onAllowOnce: {},
+                    onAllowAlways: {},
+                    onDeny: {}
+                )
+                .frame(maxWidth: BlockStyle.maxLayoutWidth)
+                .padding(.horizontal, 20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .padding(.bottom, ChatSessionViewController.chatBottomInset)
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 16)
         // `InputBarView2` reads `@Environment(InputDraftStore.self)`;
         // inject a fresh in-memory store so the offscreen render doesn't
         // trap on a missing environment object.

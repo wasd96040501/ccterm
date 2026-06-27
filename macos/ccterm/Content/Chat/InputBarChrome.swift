@@ -81,33 +81,17 @@ struct InputBarChrome: View {
     }
 }
 
-/// Chat-mode resting input region: `InputBarChrome` plus the floating
-/// `PermissionCardView` (when one is pending). The card is **layered
-/// on the z-axis over the bar** — a `ZStack(alignment: .bottom)` whose
-/// later child (the card) draws on top of and covers the bar, sharing
-/// the same `chatBottomInset` so the card's bottom edge sits flush with
-/// the chrome row and it extends *up* from there. It does NOT stack
-/// above the bar on the y-axis (that pushed the bar down into a separate
-/// tier and broke the floating-overlay look the card was designed for).
-///
-/// `ZStack` (not `.overlay`) is deliberate: an overlay is sized to its
-/// host and never grows the parent, so under the bottom-anchored bar
-/// host — whose height tracks this body's intrinsic content height — an
-/// overlaid card would be clipped (and its upper half would fall outside
-/// the host's hit-test bounds, killing its buttons). A `ZStack` reports
-/// the union of its children, so the card's footprint correctly grows
-/// the host to contain it. When no card is pending the ZStack collapses
-/// back to the bar's height, so the host shrinks and the transcript
-/// scroll view keeps receiving clicks in the empty band above the bar.
-///
-/// The card's `.frame(maxWidth: BlockStyle.maxLayoutWidth = 780)` is
-/// hoisted out of `InputBarChrome`'s own `.frame(maxWidth: composeMaxWidth
-/// = 512)` so it gets its full width budget — see the pre-AppKit
-/// `RootView2` for the original geometry derivation.
-///
-/// `maxHeight: .infinity` is intentionally absent: the bar host is
-/// bottom-anchored in `ChatSessionViewController`'s chat mode and takes
-/// this body's intrinsic height via the host's `.intrinsicContentSize`.
+/// Chat-mode resting input region: just `InputBarChrome`, bottom-padded
+/// and width-capped. The floating `PermissionCardView` is **no longer**
+/// here — it lives in a dedicated full-pane `permissionCardHost`
+/// (`PermissionCardOverlay` inside a `PassthroughHostingView`) layered over
+/// the transcript by `ChatSessionViewController`. Moving the card out is
+/// the whole point: when the card was a `ZStack` child here, its footprint
+/// pumped the union height this body reports, and the bottom-anchored bar
+/// host (regime-B, `.intrinsicContentSize`) grew to contain it — the bar
+/// band visibly ballooned up when a card appeared. Now this body's
+/// intrinsic height is a pure function of the bar's own content
+/// (multi-line input still grows it), fully decoupled from the card.
 struct ChatRestingBar: View {
     let sessionId: String
     let draftKey: String
@@ -119,50 +103,23 @@ struct ChatRestingBar: View {
     /// the builtins.
     var onBuiltinCommand: ((BuiltinSlashCommand) -> Void)? = nil
 
-    @Environment(SessionManager.self) private var manager
-
     var body: some View {
-        let session = manager.prepareDraftSession(sessionId)
-        ZStack(alignment: .bottom) {
-            InputBarChrome(
-                sessionId: sessionId,
-                draftKey: draftKey,
-                coordSpace: ChatSessionViewController.detailCoordSpace,
-                submitEnabled: true,
-                onSubmit: onSubmit,
-                onAttachRect: onAttachRect,
-                onPillRect: onPillRect,
-                onBuiltinCommand: onBuiltinCommand
-            )
-            .frame(
-                minWidth: BlockStyle.minLayoutWidth,
-                maxWidth: ChatSessionViewController.composeMaxWidth
-            )
-            .padding(.horizontal, ChatSessionViewController.detailHorizontalInset)
-
-            if let pending = session.pendingPermissions.first {
-                PermissionCardView(
-                    request: pending.request,
-                    onAllowOnce: { session.respond(to: pending.id, decision: pending.request.allowOnce()) },
-                    onAllowAlways: {
-                        session.respond(to: pending.id, decision: pending.request.allowAlways())
-                    },
-                    onDeny: { session.respond(to: pending.id, decision: pending.request.deny()) },
-                    onAllowWithInput: { updated in
-                        session.respond(
-                            to: pending.id,
-                            decision: pending.request.allowOnce(updatedInput: updated))
-                    }
-                )
-                .frame(maxWidth: BlockStyle.maxLayoutWidth)
-                .padding(.horizontal, ChatSessionViewController.detailHorizontalInset)
-                .transition(
-                    .scale(scale: 0.96, anchor: .bottom)
-                        .combined(with: .opacity))
-            }
-        }
+        InputBarChrome(
+            sessionId: sessionId,
+            draftKey: draftKey,
+            coordSpace: ChatSessionViewController.detailCoordSpace,
+            submitEnabled: true,
+            onSubmit: onSubmit,
+            onAttachRect: onAttachRect,
+            onPillRect: onPillRect,
+            onBuiltinCommand: onBuiltinCommand
+        )
+        .frame(
+            minWidth: BlockStyle.minLayoutWidth,
+            maxWidth: ChatSessionViewController.composeMaxWidth
+        )
+        .padding(.horizontal, ChatSessionViewController.detailHorizontalInset)
         .padding(.bottom, ChatSessionViewController.chatBottomInset)
         .frame(maxWidth: .infinity)
-        .animation(.smooth(duration: 0.25), value: session.pendingPermissions.first?.id)
     }
 }

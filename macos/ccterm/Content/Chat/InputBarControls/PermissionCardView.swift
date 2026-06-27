@@ -2,28 +2,30 @@ import AgentSDK
 import SwiftUI
 
 /// Floating decision card shown over the input bar when the CLI is
-/// waiting on a permission request. Layered as the top child of
-/// `ChatRestingBar`'s `ZStack(alignment: .bottom)` — the detail-pane-wide
-/// stack that contains `InputBarChrome`, NOT mounted on `InputBarChrome`
-/// itself:
+/// waiting on a permission request. Hosted by `PermissionCardOverlay`
+/// inside `ChatSessionViewController`'s dedicated full-pane, click-through
+/// `permissionCardHost` (a `PassthroughHostingView`) — NOT inside the
+/// input-bar host:
 ///
-/// - Bottom edge sits flush with the chrome row (permission mode /
-///   model+effort) by way of the same `chatBottomInset` padding the
-///   bar uses, so the card visually extends *up* from there.
-/// - The host is the detail-wide stack, not the bar's 512pt-capped
-///   frame, so the card's `.frame(maxWidth: BlockStyle.maxLayoutWidth)`
-///   can actually reach 780 (the transcript column width) instead of
-///   silently clipping to the bar's width.
-/// - Z-order is above the input bar: the card draws on top of and covers
-///   the bar rather than pushing it down a tier. A `ZStack` (not
-///   `.overlay`) is what lets the card's footprint grow `ChatRestingBar`'s
-///   measured height so the bottom-anchored bar host stays tall enough to
-///   contain it (clip + hit-test) — see `ChatRestingBar`.
+/// - The card lives in its own full-pane overlay so its footprint never
+///   pumps the bottom-anchored bar host's intrinsic height. (Earlier the
+///   card was a `ZStack` child of `ChatRestingBar`; its union height grew
+///   the `.intrinsicContentSize` bar host and the bar band ballooned up
+///   when a card appeared.)
+/// - `PermissionCardOverlay` pins the card's bottom edge with the same
+///   `chatBottomInset` the bar uses, so the card sits flush with the
+///   chrome row and visually extends *up* from there.
+/// - The overlay is detail-pane-wide, so the card's
+///   `.frame(maxWidth: BlockStyle.maxLayoutWidth)` reaches the full 780
+///   (the transcript column width) instead of clipping to the bar's width.
+/// - The host is layered above the bar host, and everything outside the
+///   card passes clicks through to the transcript (see
+///   `PassthroughHostingView`).
 ///
-/// Pure UI: the card receives a `PermissionRequest` plus three
-/// decision callbacks and renders the body. Wiring through to
-/// `session.respond(...)` lives in `ChatRestingBar` — keeping this
-/// view free of session state so it stays snapshot-friendly.
+/// Pure UI: the card receives a `PermissionRequest` plus four decision
+/// callbacks and renders the body. Wiring through to `session.respond(...)`
+/// lives in `PermissionCardOverlay` (`decisionHandlers(for:session:)`) —
+/// keeping this view free of session state so it stays snapshot-friendly.
 ///
 /// The body shape varies per category — see `PermissionCardKind`.
 /// Each kind owns a small sibling view next to this file (e.g.

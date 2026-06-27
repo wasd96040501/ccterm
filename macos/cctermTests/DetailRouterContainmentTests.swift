@@ -157,9 +157,9 @@ final class DetailRouterContainmentTests: XCTestCase {
         XCTAssertTrue(newChild.view.superview === router.view)
 
         // Old child must be fully detached — no lingering subview, no
-        // lingering parent-child registration. This is the property
-        // that let us delete `PassthroughHostingView`: the old VC's
-        // overlays vanish with it, so there's nothing left to swallow
+        // lingering parent-child registration. This is the property that
+        // let us retire the old full-pane chrome-covering overlay: the old
+        // VC's overlays vanish with it, so there's nothing left to swallow
         // clicks on top of the new child.
         XCTAssertNil(initialChild.view.superview, "old child's view must be unmounted")
         XCTAssertNil(initialChild.parent, "old child must be removed from parent chain")

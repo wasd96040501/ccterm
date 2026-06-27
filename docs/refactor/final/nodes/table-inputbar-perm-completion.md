@@ -1,0 +1,95 @@
+# Ownership table — Input bar · Permission cards · Completion
+
+Scope: `Content/Chat/InputBarView2.swift`, `InputBarChrome.swift` (incl. `ChatRestingBar`), `AttachButton.swift`, `NewSessionConfigurator.swift`, `Content/Chat/InputBarControls/*`, `Content/Chat/Completion/*`, `Services/Completion/*`, `Content/Chat/BuiltinSlashCommandHandler.swift`, and the target-new `PermissionCardOverlay`.
+
+Conventions: TARGET rows; as-is noted in parentheses. Host regime letters cite `BOUNDARY-SPEC.md §1`. PR labels are stable mnemonics mapped to REFACTOR-PLAN §9 phases (A=cleanup, B=card-overlay/DI/un-erase/naming, C/D=splits). FACT = read in source; INFERENCE = judgment.
+
+> Verified host facts: the chat resting bar host is the **only** production regime-B `«HV»` (`ChatSessionViewController.swift:169,182-208`; BOUNDARY-SPEC §3). The new `permissionCardHost` is regime-A sizing (`[]` + 4-edge pin) **with passthrough hit-testing** — a documented hybrid, not B″ (REFACTOR-PLAN §7.8). Every permission card body and popover sub-view is a **value-in / closures-out leaf** with no host boundary of its own (they render inside the SwiftUI subtree of the bar/overlay host) → Host regime `—`.
+
+## Table
+
+| Component | Layer | Kind | Constructed by | Owner / lifetime | Reads state via | Emits via | Host regime | Target Δ (PR#) | Conformant |
+|---|---|---|---|---|---|---|---|---|---|
+| `InputBarView2` | SwiftUI-view | SU-View | `InputBarChrome.body` | view identity (per-render) | ctor-injected (values + closures) | injected closure (`onSubmit`/`onStop`/`onAttachRect`/`onPillRect`/`onBuiltinCommand`) | — (leaf inside bar host) | unchanged | ✓ |
+| `InputBarView2.Attachment` | Pure-value | value/MDL | `InputBarView2` | value | n/a | none | — | unchanged | ✓ |
+| `InputBarView2.Submission` | Pure-value | value/MDL | `InputBarView2.handleSend` | value | n/a | none | — | unchanged | ✓ |
+| `ReportFrame` (private modifier) | SwiftUI-view | SU-View | `InputBarView2.body` | view identity | ctor-injected | injected closure (rect action) | — | unchanged | ✓ |
+| `AttachmentCard` (private) | SwiftUI-view | SU-View | `InputBarView2` | view identity | ctor-injected | injected closure (`onRemove`) | — | unchanged | ✓ |
+| `ImagePreviewView` (private) | SwiftUI-view | SU-View | `InputBarView2.sheet` | view identity | ctor-injected | `\.dismiss` | D (sheet) | unchanged | ✓ |
+| `InputBarChrome` | SwiftUI-view | SU-View | `ChatRestingBar` / `ComposeSessionView` / draft-landing bar | view identity | `@Observable pull` (`session.*` via `@Environment SessionManager`) | injected closure (forwards bar closures) | — (leaf inside bar host) | unchanged | ✓ |
+| `ChatRestingBar` | SwiftUI-view | SU-View | `restingBarHost` («HV», via `ChatComposeStack`) | view identity (`.id(sid)`) | `@Observable pull` (`session.pendingPermissions` removed in target) | injected closure (bar closures) | B (component; via host) | **PR-Card** (★CHANGED §7: card ZStack/`if let pending`/body `.animation` removed → "just the bar") | ✓ (target). **As-is ✗**: dual-concern — hosts the input bar **and** the permission-card ZStack whose union height pumps the host's intrinsic height (REFACTOR-PLAN §7.1) |
+| `ChatComposeStack` | SwiftUI-view | SU-View | `restingBarHost` («HV») | host lifetime | `@Observable pull` (`model.selection`) | none (routes bar \| `EmptyView`) | B (component) | unchanged (renamed host only) | ✓ |
+| `AttachButton` | SwiftUI-view | SU-View | `InputBarView2.body` | view identity | ctor-injected | injected closure (`onPick`) | — | unchanged | ✓ |
+| `NewSessionConfigurator<InputBar>` | SwiftUI-view | SU-View | `ComposeSessionView` | view identity | ctor-injected `@Binding` + `@Environment` (`RecentProjectsStore`/`SessionManager`) + `@State GitProbe` | `@Binding` write (`folderPath`/`useWorktree`/`sourceBranch`) + injected closure (`onResumeSession`) | — (inside fill-pane compose host) | unchanged | ✓ |
+| `GitProbe` | View-scope-state | @Observable-SVC | `NewSessionConfigurator.init` (`@State`) | view identity | n/a (probe results) | `@Observable write` | — | PR-Layer (P15: add `@MainActor`) | ✓ (view-private interaction state machine, Rule 5) |
+| `PlusHoverButtonStyle` / `ResumeRowButtonStyle` / `HideEnclosingScrollerWidth` (private) | SwiftUI-view | SU-View | `NewSessionConfigurator` | view identity | n/a | none | — | unchanged | ✓ |
+| `InputBarSessionChrome` | SwiftUI-view | SU-View | `InputBarChrome.body` | view identity | ctor-injected `Session` + `.shared` (`ModelStore`) | none (lays out child controls) | — | unchanged | ✓ |
+| `PermissionModePicker` | SwiftUI-view | SU-View | `InputBarSessionChrome` | view identity | ctor-injected `Session` + `.shared` (`NewSessionDefaultsStore`) | Session method (`setPermissionMode`) + `@State` (popover) | — | unchanged | ✓ |
+| `PermissionModePopoverContent` (private) | SwiftUI-view | SU-View | `PermissionModePicker.popover` | view identity | ctor-injected | injected closure (`onSelect`) | B″ (system popover; not a CCTerm host) | unchanged | ✓ |
+| `ModelEffortPicker` | SwiftUI-view | SU-View | `InputBarSessionChrome` | view identity | ctor-injected `Session` + `@State ModelStore.shared` + `.shared` (`EffortDefaultStore`/`NewSessionDefaultsStore`) | Session method (`setModel`/`setEffort`/`setFastMode`) | — | unchanged | ✓ (`.shared` reads documented Rule-11 exception) |
+| `ModelEffortPopoverContent` / `ModelPopoverRow` / `FastModeToggleRow` (private) | SwiftUI-view | SU-View | `ModelEffortPicker.popover` | view identity | ctor-injected | injected closure | B″ (popover) | unchanged | ✓ |
+| `ContextRingButton` | SwiftUI-view | SU-View | `InputBarSessionChrome` | view identity | `@Observable pull` (`session.contextUsage`/`contextUsedTokens`/`contextWindowTokens`) | Session method (`requestContextUsage`) | — | unchanged (reads `session.contextUsage` → target backed by `ContextUsageCache` projection, P8) | ✓ |
+| `ContextPopoverContent` / `ContextBreakdownView` / `CategoryRow` / `ExpandableGroup` (private) | SwiftUI-view | SU-View | `ContextRingButton` | view identity | ctor-injected (`ContextUsage` value / `Session`) | Session method (`requestContextUsage`) | B″ (popover) | unchanged | ✓ |
+| `BackgroundTaskButton` | SwiftUI-view | SU-View | `InputBarSessionChrome` | view identity | `@Observable pull` (`session.tasks`) | **TARGET: Session method (`session.stopBackgroundTask(taskId:)`)** | — | **PR-Facade** (★CHANGED P4) | ✓ (target). **As-is ✗**: only production flow violation — `stopAction` calls `session.runtime.markTaskStoppedLocally` across the `Session` façade (REFACTOR-PLAN §6.1 / P4) |
+| `BackgroundTaskList` | SwiftUI-view | SU-View | `BackgroundTaskButton.popover` | view identity | ctor-injected `Session` (`session.tasks`) | injected closure (`onSelectTask`) | B″ (popover) | unchanged | ✓ |
+| `BackgroundTaskList.TaskGroup` + `group(tasks:)` | Pure-value | value/MDL | `BackgroundTaskList` | value | n/a | none | — | unchanged | ✓ |
+| `BackgroundTaskRow` | SwiftUI-view | SU-View | `BackgroundTaskList.section` | view identity | ctor-injected (`BackgroundTask` value) | injected closure (`onSelect`) | — | unchanged | ✓ |
+| `BackgroundTaskFormat` | Pure-value | value/MDL | static enum | n/a | n/a | none | — | unchanged | ✓ |
+| `BackgroundTaskDetailSheet` | SwiftUI-view | SU-View | `BackgroundTaskButton.sheet` | view identity | ctor-injected (`BackgroundTask`) + `@State stream` | injected closure (`onStop`/`onDismiss`) | D (sheet) | unchanged | ✓ |
+| `BackgroundTaskOutputView` | SwiftUI-view | SU-View | `BackgroundTaskDetailSheet.outputBody` | view identity | `@Bindable` (`stream.text`) | none | — | unchanged | ✓ |
+| `BackgroundTaskOutputStream` | View-scope-state | @Observable-SVC | `BackgroundTaskDetailSheet.rebindStream` (`@State`) | view identity (per spool path) | n/a (tails file) | `@Observable write` | — | unchanged | ✓ (view-private interaction state machine, Rule 5; `@MainActor` + `nonisolated deinit`) |
+| `TodoButton` | SwiftUI-view | SU-View | `InputBarSessionChrome` | view identity | `@Observable pull` (`session.todos`) | none (read-only popover trigger) | — | unchanged (reads `session.todos` → target backed by `TodoTracker` projection, P8) | ✓ |
+| `TodoList` / `TodoRow` | SwiftUI-view | SU-View | `TodoButton.popover` | view identity | ctor-injected `Session` (`session.todos`) / value | none | B″ (popover) | unchanged | ✓ |
+| `TodoStatusGlyph` (+ `CompletedRingAndDotShape`/`RotatingDottedRing`) | SwiftUI-view | SU-View | `TodoButton`/`TodoRow` | view identity | ctor-injected (`TodoEntry.Status`) | none | — | unchanged | ✓ |
+| `PopoverList` (+ `PopoverSectionHeader`/`PopoverRow`/`PopoverRowHoverStyle`) | SwiftUI-view | SU-View | popover bodies | value/view identity | ctor-injected | injected closure (`onSelect`) | — | unchanged | ✓ |
+| `BarChromeButton<Content>` | SwiftUI-view | SU-View | picker/button views | view identity | ctor-injected (`label`) | injected closure (`action`) | — | unchanged | ✓ |
+| `SedEditInfo` | Pure-value | value/MDL | `SedEditParser.parse` | value | n/a | none | — | unchanged | ✓ |
+| `SedEditParser` | Pure-value | translator | static enum | n/a | n/a | none | — | unchanged | ✓ |
+| `ShellTokenizer` | Pure-value | translator | static enum | n/a | n/a | none | — | unchanged | ✓ |
+| `PermissionCardView` | SwiftUI-view | SU-View | **TARGET: `PermissionCardOverlay`** (as-is: `ChatRestingBar`) | view identity | ctor-injected (`PermissionRequest` + 4 decision closures) | injected closure (decisions) | — (leaf inside card-overlay host) | **PR-Card** (★MOVED §7; body bytes unchanged) | ✓ |
+| `PermissionCardCopy` | Pure-value | value/MDL | static enum | n/a | n/a | none | — | unchanged | ✓ |
+| `PermissionFallbackCardBody` (private) | SwiftUI-view | SU-View | `PermissionCardView.body(for:)` | view identity | ctor-injected (`PermissionRequest`) | none | — | unchanged | ✓ |
+| `PermissionCardSurface` (private modifier) | SwiftUI-view | SU-View | `PermissionCardView.body` | view identity | `@Environment(\.colorScheme)` | none | — | unchanged | ✓ |
+| `PermissionDecisionButton` | SwiftUI-view | SU-View | `PermissionCardView`/`...AskUserQuestionCardBody` | view identity | ctor-injected (title/role) | injected closure (`action`) | — | unchanged | ✓ |
+| `PermissionCardKind` | Pure-value | value/MDL | `PermissionCardKind.kind(for:)` | value | n/a | none | — | unchanged | ✓ |
+| `PermissionShellCardBody` | SwiftUI-view | SU-View | `PermissionCardView.body(for:)` | view identity | ctor-injected (`PermissionRequest`,`kind`) | none | — | unchanged | ✓ |
+| `PermissionSedEditCardBody` | SwiftUI-view | SU-View | `PermissionCardView.body(for:)` | view identity | ctor-injected | none | — | unchanged | ✓ |
+| `PermissionFileWriteCardBody` | SwiftUI-view | SU-View | `PermissionCardView.body(for:)` | view identity | ctor-injected (`PermissionRequest`,`kind`) | none | — | unchanged | ✓ |
+| `PermissionNotebookEditCardBody` | SwiftUI-view | SU-View | `PermissionCardView.body(for:)` | view identity | ctor-injected | none | — | unchanged | ✓ |
+| `PermissionWebFetchCardBody` | SwiftUI-view | SU-View | `PermissionCardView.body(for:)` | view identity | ctor-injected | none | — | unchanged | ✓ |
+| `PermissionFilesystemReadCardBody` | SwiftUI-view | SU-View | `PermissionCardView.body(for:)` | view identity | ctor-injected | none | — | unchanged | ✓ |
+| `PermissionTaskAgentCardBody` | SwiftUI-view | SU-View | `PermissionCardView.body(for:)` | view identity | ctor-injected | none | — | unchanged | ✓ |
+| `PermissionSkillCardBody` | SwiftUI-view | SU-View | `PermissionCardView.body(for:)` | view identity | ctor-injected | none | — | unchanged | ✓ |
+| `PermissionMcpCardBody` | SwiftUI-view | SU-View | `PermissionCardView.body(for:)` | view identity | ctor-injected | none | — | unchanged | ✓ |
+| `PermissionEnterPlanModeCardBody` | SwiftUI-view | SU-View | `PermissionCardView.body(for:)` | view identity | ctor-injected | none | — | unchanged | ✓ |
+| `PermissionExitPlanModeCardBody` | SwiftUI-view | SU-View | `PermissionCardView.body(for:)` | view identity | ctor-injected | none | — | unchanged | ✓ |
+| `PermissionAskUserQuestionCardBody` | SwiftUI-view | SU-View | `PermissionCardView.body(for:)` | view identity | ctor-injected (`PermissionRequest`) | injected closure (`onSubmit`/`onCancel`) | — | unchanged | ✓ |
+| **`PermissionCardOverlay`** | SwiftUI-view | SU-View | **`permissionCardHost` («HV»)** ★NEW | host lifetime (VC-resident, like scrim) | `@Observable pull` (`session.pendingPermissions.first`, resolved by `model.selection` + `.id(sid)`) | Session method (`session.respond(...)`, 4 closures moved verbatim from `ChatRestingBar`) | A-hybrid (`sizingOptions=[]` + 4-edge pin + `PassthroughHostingView` hit/cursor passthrough; REFACTOR-PLAN §7.3/§7.8) | **PR-Card** ★NEW-§7 | ✓ |
+| `CompletionState` (as-is `CompletionViewModel`) | View-scope-state | @Observable-SVC | `InputBarView2` (`@State`) | view identity | n/a (input-method state machine) | `@Observable write` (`items`/`isActive`) → View → NSTextView | — | **PR-Naming** (★RENAMED P12) | ✓ (Rule-5 sanctioned view-private state machine; rename removes "VM in no-VM zone" confusion) |
+| `CompletionState.CompletionSession` (as-is nested) | Pure-value | value/MDL | trigger rules | value | n/a | injected closures (provider/makeReplacement/…) | — | PR-Naming (nests under renamed type) | ✓ |
+| `CompletionItem` (protocol) | Pure-value | value/MDL | conformers | n/a | n/a | none | — | unchanged | ✓ |
+| `CompletionTriggerRule` (protocol) | Pure-value | translator | conformers | n/a | ctor-injected (`CompletionTriggerContext`) | returns `CompletionSession?` | — | unchanged | ✓ |
+| `CompletionTriggerContext` | Pure-value | value/MDL | `InputBarView2.triggerContext` | value | n/a | carries `onBuiltinCommand` closure | — | unchanged | ✓ |
+| `SlashCommandTriggerRule` | Pure-value | translator | `CompletionState.rules` | process (rule list) | ctor-injected (context) | `.shared` (`SlashCommandStore`) + injected closure (`onBuiltinCommand`) | — | unchanged | ✓ |
+| `FileMentionTriggerRule` | Pure-value | translator | `CompletionState.rules` | process (rule list) | ctor-injected (context) | `.shared` (`FileCompletionStore`) | — | unchanged | ✓ |
+| `CompletionListView` | SwiftUI-view | SU-View | `InputBarView2.pill` | view identity | `@Bindable` (`viewModel`) | injected closure (`onConfirm`/`onDeleteRecent`) | — | PR-DeadCode (P13/C14: `onDeleteRecent`/`isRecent` recent-dir wiring removed — touches live file) | ✓ (target) |
+| `DirectoryCompletionItem` | Pure-value | value/MDL | (no constructor — dead) | — | n/a | none | — | **PR-DeadCode** (★DELETED P13/C14) | ✓ (slated for behavior-preserving deletion; 0 construction sites) |
+| `DirectoryCompletionProvider` | App-scope-service | AK-NSObject | static enum (`.shared`-style on `UserDefaults`) | process | n/a | UserDefaults write | — | **PR-DeadCode** (★DELETED P13/C14) | ✓ (dead with `DirectoryCompletionItem`) |
+| `DirectoryTreeMonitor` | App-scope-service | AK-NSObject | (callers in dead dir-completion path) | per-directory | n/a | injected closure (`onChange`) | — | **PR-DeadCode** (★DELETED P13/C14, if no live caller remains) | ✓ |
+| `BuiltinSlashCommand` (+ `BuiltinCompletionItem`) | Pure-value | value/MDL | `SlashCommandTriggerRule` | value | n/a | none | — | unchanged | ✓ |
+| `runBuiltinSlashCommand(_:…)` | AppKit-coordinator | AK-NSObject (free `@MainActor` func) | call site (`onBuiltinCommand` closure) | call-scoped | ctor-injected (`SessionManager`,`MainSelectionModel`) | imperative controller call (`manager.createSidebarDraft`/`archive`) + `model.select` | — | unchanged | ✓ |
+| `CompletionPrewarmer` | App-scope-service | value/MDL (static façade) | static enum | n/a | n/a | `.shared` (`FileCompletionStore`/`SlashCommandStore`) | — | unchanged | ✓ |
+| `FileCompletionStore` | App-scope-service | @Observable-SVC (singleton) | `.shared` static | process | n/a | callback | — | unchanged (`invalidate*` dead methods deleted, P13) | ✓ (per-cwd cache; documented `.shared` exception, Rule 5 / §11) |
+| `SlashCommandStore` | App-scope-service | @Observable-SVC (singleton) | `.shared` static | process | n/a | callback | — | unchanged | ✓ (per-cwd cache; documented `.shared` exception) |
+
+## Non-conformant / design defects (as-is; resolved by target)
+
+1. **`ChatRestingBar` (as-is) — dual concern + sizing pump (HIGH).** The bar's `ZStack(alignment:.bottom)` hosts the input bar **and** the pending permission card; the ZStack reports the *union* height, so a card appearing grows the `[.intrinsicContentSize]` bar host's intrinsic height and the body-level `.animation(.smooth)` animates the whole band upward — the user-named "input box drops / steals focus" defect (`InputBarChrome.swift:126,143-166`; REFACTOR-PLAN §7.1). **Resolved by PR-Card**: card moves to the new fill-pane-hybrid `permissionCardHost` / `PermissionCardOverlay`; bar collapses back to "just the bar," host intrinsic height becomes a pure function of bar content.
+
+2. **`BackgroundTaskButton` (as-is) — façade bypass (HIGH, only production unidirectional-flow violation).** `stopAction` reaches `session.runtime.markTaskStoppedLocally(taskId:)`, crossing the `Session` façade that every other consumer respects (`BackgroundTaskButton.swift:80-85`; REFACTOR-PLAN §6.1 row, P4). **Resolved by PR-Facade**: phase-aware `Session.stopBackgroundTask(taskId:) -> Void` forwarder (`guard let runtime`, `.draft` no-op).
+
+3. **`CompletionViewModel` (as-is) — name implies a coordinating VM in a documented "no-ViewModel" zone (LOW, naming/clarity).** It is actually a self-contained input-method state machine (Rule 5 exception), but its `…ViewModel` suffix invites the reader to assume a session/transcript coordination mirror the architecture forbids (REFACTOR-PLAN §5.1, P12). **Resolved by PR-Naming**: rename to `CompletionState`. (Placement is clean — flagged for naming only, not an ownership defect.)
+
+4. **`DirectoryCompletionItem` / `DirectoryCompletionProvider` / `DirectoryTreeMonitor` + `CompletionListView` recent-dir wiring (as-is) — never-triggered live wiring, not structural dead code (LOW).** `DirectoryCompletionItem` has 0 construction sites, but its surrounding wiring (`InputBarView2` swipe-delete-recent, `CompletionListView.onDeleteRecent`/`isRecent` pill) is referenced by *live* views and only never fires because the data source is permanently empty (REFACTOR-PLAN §8 C14). **Resolved by PR-DeadCode**: behavior-preserving removal of the never-triggered wiring; touches live files so it is gated by `CompletionListSnapshotTests` + `CustomCommandTests`.
+
+> No type in this scope is *unplaceable* (ambiguous owner / unclear channel / wrong host regime) under the TARGET design. The four items above are the as-is defects the plan explicitly fixes; each places cleanly once its mapped PR lands. The card-body family (12 `Permission*CardBody`) and all popover sub-views are textbook value-in / closures-out leaves — they conform unchanged and simply move host (overlay vs bar) without touching their own data channels.

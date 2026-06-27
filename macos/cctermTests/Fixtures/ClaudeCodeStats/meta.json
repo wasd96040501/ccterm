@@ -1,7 +1,0 @@
-{
-  "_doc": "ClaudeCodeStatsTests pins time at referenceToday under the given timezone so the aggregation is deterministic. Regenerate this fixture with macos/scripts/generate-claude-code-stats-fixtures.py.",
-  "lastComputedDate": "2026-05-18",
-  "referenceToday": "2026-05-23",
-  "sampleJsonl": 3,
-  "timezone": "UTC"
-}

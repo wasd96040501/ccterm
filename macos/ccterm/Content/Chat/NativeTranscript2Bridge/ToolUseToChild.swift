@@ -25,7 +25,7 @@ enum ToolUseToChild {
     ) -> ToolGroupBlock.Child {
         let label = toolUse.completedFragment ?? toolUse.caseName
         let activeLabel = toolUse.activeFragment ?? toolUse.caseName
-        let id = StableBlockID.derive("tool", toolUseId)
+        let id = StableBlockID.derive(StableBlockID.toolChildPrefix, toolUseId)
         let resultObject: ToolUseResultObject? = {
             if case .object(let obj) = result?.typed { return obj }
             return nil

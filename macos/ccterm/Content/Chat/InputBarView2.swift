@@ -250,14 +250,7 @@ struct InputBarView2: View {
             if completion.isActive {
                 CompletionListView(
                     viewModel: completion,
-                    onConfirm: { item in confirmCompletion(item: item) },
-                    onDeleteRecent: { item in
-                        guard let dirItem = item as? DirectoryCompletionItem else { return }
-                        DirectoryCompletionProvider.removeFromRecent(dirItem.path)
-                        completion.removeItem {
-                            ($0 as? DirectoryCompletionItem)?.path == dirItem.path
-                        }
-                    }
+                    onConfirm: { item in confirmCompletion(item: item) }
                 )
                 Divider()
             }

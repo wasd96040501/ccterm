@@ -141,20 +141,6 @@ final class FileCompletionStore {
         }
     }
 
-    /// 移除指定 cwd 的缓存和监听
-    func invalidate(directory: String) {
-        queue.async { [weak self] in
-            self?.entries.removeValue(forKey: directory)
-        }
-    }
-
-    /// 移除所有缓存和监听
-    func invalidateAll() {
-        queue.async { [weak self] in
-            self?.entries.removeAll()
-        }
-    }
-
     // MARK: - Private Methods
 
     /// 确保指定目录已加载，返回文件列表

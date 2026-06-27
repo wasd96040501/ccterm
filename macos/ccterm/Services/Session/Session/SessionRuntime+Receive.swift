@@ -218,10 +218,22 @@ extension SessionRuntime {
             // tool envelope falls through to `.append` and lands as its own
             // tool group.
             if let msgId = a.message?.id,
-                !message.isGroupableAssistant,
                 let entryId = streamingPreviewEntryIds[msgId],
                 messages.contains(where: { $0.id == entryId })
             {
+                // A tool-only (groupable) envelope sharing a streamed text
+                // preview's `message.id` must NOT converge onto it — that would
+                // swap the entry's text payload for the tool payload and the
+                // streamed text would vanish (`[stream_text, tool] → [tool]`).
+                // Let it fall through to `.append` as its own tool group.
+                if message.isGroupableAssistant {
+                    appLog(
+                        .debug, "SessionRuntime",
+                        "[stream-text-guard] tool-only finalize msgId=\(msgId.prefix(12)) "
+                            + "shares preview entry \(entryId.uuidString.prefix(8)) — NOT claiming it, "
+                            + "appending as tool group (streamed text preserved)")
+                    return .append
+                }
                 return .replaceAssistant(entryId: entryId)
             }
             return .append

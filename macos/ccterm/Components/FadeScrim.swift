@@ -9,9 +9,12 @@ import SwiftUI
 ///
 /// - **Top of a transcript / list** — `.topToBottom`, fades the row that
 ///   would otherwise butt up against the window's top edge.
-/// - **Bottom of a transcript** — `.bottomToTop`, used by `RootView2`
-///   under the input bar so the last visible row dissolves into the
-///   chrome rather than being clipped by the bar.
+/// - **Bottom of a transcript** — `.bottomToTop`, fades the last visible
+///   row so it dissolves into the chrome under the input bar rather than
+///   being clipped by the bar. (The chat transcript's own top/bottom
+///   fades are now the AppKit `TranscriptTopScrimView` /
+///   `TranscriptBottomScrimView` on `ChatSessionViewController`; this
+///   SwiftUI scrim is used for the New Session card's recents list.)
 ///
 /// Generic over `ShapeStyle` so callers can fade to whatever underlies
 /// the scroll region — `Color(nsColor: .windowBackgroundColor)` over the
@@ -54,8 +57,8 @@ struct FadeScrim<S: ShapeStyle>: View {
 
 extension FadeScrim where S == Color {
     /// Convenience: default to `windowBackgroundColor` (NS-managed, so
-    /// it tracks the system appearance automatically). Matches the
-    /// original `RootView2` scrims that lived directly over the window.
+    /// it tracks the system appearance automatically). For a fade laid
+    /// directly over the window background.
     init(_ direction: Direction, height: CGFloat) {
         self.init(direction, height: height, style: Color(nsColor: .windowBackgroundColor))
     }

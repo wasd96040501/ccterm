@@ -63,7 +63,8 @@ final class SessionManagerObservationTests: XCTestCase {
     }
 
     /// `session(_:)` is the other code path that mutates `handles` (the
-    /// record-required variant used by `RootView2.onChange`). Same
+    /// record-required variant used when presenting an existing session).
+    /// Same
     /// observation contract: a prior `existingSession` read must wake.
     func testSessionCreationAlsoTriggersObservation() {
         let repo = InMemorySessionRepository()

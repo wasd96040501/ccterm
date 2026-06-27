@@ -1,10 +1,10 @@
 import Foundation
 import Observation
 
-// MARK: - CompletionViewModel
+// MARK: - CompletionState
 
 @Observable
-final class CompletionViewModel {
+final class CompletionState {
 
     /// macOS 26 SDK workaround — same posture as `Session.deinit` /
     /// `SessionRuntime.deinit`. The default `@MainActor` class deinit
@@ -15,7 +15,7 @@ final class CompletionViewModel {
     /// the host-aware reentry test: tearing down a
     /// `ChatSessionViewController` deallocates the input bar's
     /// hosted SwiftUI graph, which tears down the per-session
-    /// `CompletionViewModel` from a Task continuation.
+    /// `CompletionState` from a Task continuation.
     nonisolated deinit {}
 
     // MARK: - Public State

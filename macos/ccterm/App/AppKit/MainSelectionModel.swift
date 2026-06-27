@@ -20,8 +20,8 @@ protocol MainSelectionObserver: AnyObject {
     func selectionDidChange(to selection: MainSelection)
 }
 
-/// Top-of-window selection state, factored out of `RootView2`'s
-/// `@State` cluster so the AppKit `MainSplitViewController` and its
+/// Top-of-window selection state. Owns the shared `selection` / draft
+/// cluster so the AppKit `MainSplitViewController` and its
 /// SwiftUI-hosted children (sidebar, compose configurator, input bar
 /// chrome) can all read/write the same source.
 ///

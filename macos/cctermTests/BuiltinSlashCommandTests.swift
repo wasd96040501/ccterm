@@ -29,7 +29,7 @@ final class BuiltinSlashCommandTests: XCTestCase {
 
     /// Synchronously drain the (possibly main-async) provider callback.
     private func providerItems(
-        _ session: CompletionViewModel.CompletionSession, query: String
+        _ session: CompletionState.CompletionSession, query: String
     ) -> [any CompletionItem] {
         let exp = expectation(description: "provider")
         var out: [any CompletionItem] = []

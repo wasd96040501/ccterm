@@ -13,8 +13,8 @@ import XCTest
 /// row at its natural width.
 ///
 /// The handle is seeded directly via its `internal(set)` fields plus
-/// the public setters — no production-code seam. `InputBarChrome` is
-/// private to RootView2 and depends on `SessionManager` from the
+/// the public setters — no production-code seam. `InputBarChrome`
+/// depends on `SessionManager` from the
 /// environment + a `.task`-driven `prepareDraft`; neither fires
 /// reliably offscreen, so this test composes the two visible parts
 /// (`InputBarView2` and `InputBarSessionChrome`) in the same VStack

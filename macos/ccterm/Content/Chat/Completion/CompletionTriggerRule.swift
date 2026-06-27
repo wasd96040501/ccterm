@@ -10,7 +10,7 @@ protocol CompletionTriggerRule {
         text: String,
         cursorLocation: Int,
         context: CompletionTriggerContext
-    ) -> CompletionViewModel.CompletionSession?
+    ) -> CompletionState.CompletionSession?
 }
 
 /// Data passed to each trigger rule. Built fresh per
@@ -69,7 +69,7 @@ extension CompletionTriggerRule {
 struct SlashCommandTriggerRule: CompletionTriggerRule {
     func match(
         text: String, cursorLocation: Int, context: CompletionTriggerContext
-    ) -> CompletionViewModel.CompletionSession? {
+    ) -> CompletionState.CompletionSession? {
         guard cursorLocation == 1,
             cursorLocation <= text.count,
             text[text.startIndex] == "/"
@@ -155,7 +155,7 @@ struct SlashCommandTriggerRule: CompletionTriggerRule {
 struct FileMentionTriggerRule: CompletionTriggerRule {
     func match(
         text: String, cursorLocation: Int, context: CompletionTriggerContext
-    ) -> CompletionViewModel.CompletionSession? {
+    ) -> CompletionState.CompletionSession? {
         guard let dir = context.directory,
             isTriggerPosition(text: text, cursorLocation: cursorLocation, for: "@")
         else { return nil }

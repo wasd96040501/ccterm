@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Completion list for file/slash command completions.
 struct CompletionListView: View {
-    @Bindable var viewModel: CompletionViewModel
+    @Bindable var viewModel: CompletionState
     var onConfirm: (any CompletionItem) -> Void
 
     private let rowHeight: CGFloat = 24

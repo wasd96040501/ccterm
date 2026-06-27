@@ -15,16 +15,18 @@ import SwiftUI
 ///   "Start Building <project>" title with the project name tinted),
 ///   abbreviated path, branch + worktree meta pills, divider, a
 ///   "Recent Sessions" list for the picked folder, divider, and the
-///   *embedded input bar* (passed in via `inputBar:` from `RootView2`,
-///   so the bar's structural identity and pill style are owned by
-///   `RootView2` — this view just decides where the bar lives).
+///   *embedded input bar* (passed in via `inputBar:` from
+///   `ComposeSessionView`, so the bar's structural identity and pill
+///   style are owned by the caller — this view just decides where the
+///   bar lives).
 ///
 /// State for the chosen folder / branch / worktree flag is owned by the
-/// caller (`RootView2`) so the same values feed straight into the
-/// submit path — this view holds only derived caches (git probe
-/// results). The embedded input bar is a `@ViewBuilder` slot rather
-/// than a constructed child here so the bar's session-aware wiring
-/// (submit / stop / running state) stays at `RootView2`'s level.
+/// caller (`ComposeSessionView`, bound to `Session.draft.config`) so the
+/// same values feed straight into the submit path — this view holds only
+/// derived caches (git probe results). The embedded input bar is a
+/// `@ViewBuilder` slot rather than a constructed child here so the bar's
+/// session-aware wiring (submit / stop / running state) stays at the
+/// caller's level.
 struct NewSessionConfigurator<InputBar: View>: View {
     @Binding var folderPath: String?
     @Binding var useWorktree: Bool
@@ -34,7 +36,7 @@ struct NewSessionConfigurator<InputBar: View>: View {
     /// `.session(id)`, swapping the compose card out for the chosen
     /// session's history.
     var onResumeSession: ((String) -> Void)? = nil
-    /// Embedded input bar. Provided by `RootView2` so the bar's
+    /// Embedded input bar. Provided by `ComposeSessionView` so the bar's
     /// per-session wiring (submit / interrupt / running state) and pill
     /// style live there — this view only owns the bar's *position*
     /// inside the card.
@@ -47,9 +49,9 @@ struct NewSessionConfigurator<InputBar: View>: View {
     /// readable at the smallest window size: Projects column is fixed
     /// at 280pt, leaving ~360pt for the main column, enough for the
     /// hero, recents list and the embedded input bar.
-    /// `RootView2.minWidth` (880) = sidebar min (220) + this `minWidth`
-    /// + a small buffer, guaranteeing the card never clips when the
-    /// user shrinks the window.
+    /// The window's minimum width (`MainWindowController` 880) = sidebar
+    /// min (220) + this `minWidth` + a small buffer, guaranteeing the
+    /// card never clips when the user shrinks the window.
     static var minWidth: CGFloat { 640 }
     static var idealWidth: CGFloat { 960 }
     static var maxWidth: CGFloat { 960 }

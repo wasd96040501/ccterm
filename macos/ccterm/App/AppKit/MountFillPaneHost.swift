@@ -30,7 +30,7 @@ import SwiftUI
 /// does NOT route through here; its container is sized by something else and
 /// it *wants* the content to drive its own size. See `CLAUDE.md` §
 /// "Embedding SwiftUI in AppKit: host sizing" and
-/// `ChatSessionViewController.composeOrBarHost`.
+/// `ChatSessionViewController.restingBarHost`.
 @MainActor
 @discardableResult
 func mountFillPaneHost<Content: View>(

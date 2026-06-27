@@ -354,4 +354,5 @@ Apple primary: NSHostingSizingOptions, NSHostingController(.sizingOptions /
 .preferredContentSize), NSHostingView, WWDC22 "Use SwiftUI with AppKit".
 Community: Brian Webster "How NSHostingView determines its sizing" (the
 full-default-set fact). CCTerm: the file:line citations throughout and the four
-research nodes under `docs/refactor/boundary/nodes/`.
+research nodes under `docs/refactor/boundary/nodes/` (removed from this PR's
+tip to keep it lean, preserved in branch git history).

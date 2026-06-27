@@ -1,6 +1,6 @@
 # REFACTOR-PLAN.md · 干净上下文对抗审查记录
 
-> 本文是对 [`REFACTOR-PLAN.md`](REFACTOR-PLAN.md) 的**最终对抗审查**汇总。4 个**上下文干净**的独立审核员（各只读最终方案 + 真实代码库 + 项目自带的 4 份 CLAUDE.md 不变量文档，**不读**任何 `nodes/` 推演产物）从不同视角挑战。原始产物：`nodes/review-architecture.md`、`nodes/review-perf-runloop.md`、`nodes/review-parity-card.md`、`nodes/review-clarity-impl.md`。
+> 本文是对 [`REFACTOR-PLAN.md`](REFACTOR-PLAN.md) 的**最终对抗审查**汇总。4 个**上下文干净**的独立审核员（各只读最终方案 + 真实代码库 + 项目自带的 4 份 CLAUDE.md 不变量文档，**不读**任何 `nodes/` 推演产物）从不同视角挑战。原始产物：`nodes/review-architecture.md`、`nodes/review-perf-runloop.md`、`nodes/review-parity-card.md`、`nodes/review-clarity-impl.md`（这些 `nodes/` 产物已从本 PR 移除,保留在分支历史）。
 
 ## 总裁决
 

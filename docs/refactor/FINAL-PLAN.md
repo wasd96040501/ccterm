@@ -9,7 +9,7 @@
 > 配套权威文档(本文档不复制其内容,只引用):
 > - 重构动机与目标树:[`REFACTOR-PLAN.md`](REFACTOR-PLAN.md)(§5 目标树 / §6 数据流宪法 / §8 逐项 / §9 迁移 / §10 契约墙 / §11 不做)
 > - AppKit↔SwiftUI 边界 host 制式:[`boundary/BOUNDARY-SPEC.md`](boundary/BOUNDARY-SPEC.md)(A/B/B′/B″/C/D/E 决策表 + 回归门)
-> - 现状组件树 + P1–P15 问题排名:[`nodes/analysis-component-tree.md`](nodes/analysis-component-tree.md)
+> - 现状组件树 + P1–P15 问题排名:`nodes/analysis-component-tree.md`（推演产物;已从本 PR 移除,完整保留在分支历史）
 
 ---
 
@@ -69,7 +69,7 @@
   controller call, @Observable write, none}。
 - **Host regime** ∈ {A, B, B′, B″, C, D, E}(BOUNDARY-SPEC)或 "—"(非 host 边界)。
 - **Target Δ (PR#)** = §4 多-PR 计划中的 PR 编号,或 "unchanged"。
-  > (修订 S1:PR 编号的权威表在 §4 / [`nodes/pr-plan.md`](final/nodes/pr-plan.md);spec 早期版本误写"§7 below",此处已校正。)
+  > (修订 S1:PR 编号的权威表在 §4 / `final/nodes/pr-plan.md`;spec 早期版本误写"§7 below",此处已校正。)
 - **Conformant** = ✓,或 ✗ + 一句话问题。
 
 ### 2.1 分层模型(允许的层 + 依赖方向)
@@ -729,7 +729,9 @@ PR3、PR9/PR10、PR11 与 Phase B 正交。
 | 重构动机 / 现状数据流 / 目标树 / 7 条宪法 / 逐项 / 迁移 4 阶段 / 不做 | [`REFACTOR-PLAN.md`](REFACTOR-PLAN.md)(§5 目标树、§6 宪法、§7 卡片、§8 逐项、§9 迁移、§11 不做) |
 | **不可触碰契约墙** | [`REFACTOR-PLAN.md` §10](REFACTOR-PLAN.md)(本文档 §2.5 DNT-1…DNT-8 是其浓缩) |
 | AppKit↔SwiftUI 边界 host 制式(A/B/B′/B″/C/D/E)+ 回归门 | [`boundary/BOUNDARY-SPEC.md`](boundary/BOUNDARY-SPEC.md) |
-| 现状组件树 + P1–P15 问题排名 | [`nodes/analysis-component-tree.md`](nodes/analysis-component-tree.md) |
+| 现状组件树 + P1–P15 问题排名 | `nodes/analysis-component-tree.md`（已从本 PR 移除,保留在分支历史） |
 | 各区源码约定(触前先读) | `Content/Chat/CLAUDE.md`、`Services/Session/CLAUDE.md`、`Content/Chat/NativeTranscript2/CLAUDE.md`、`cctermTests/CLAUDE.md` |
 
 > 本 FINAL-PLAN 的源节点(已合并入本文,留作追溯):`final/nodes/spec.md`、`final/nodes/table-*.md`(6 片段)、`final/nodes/pr-plan.md`、`final/nodes/review.md`。
+>
+> **关于推演产物。** 全部 `*/nodes/` 调研/设计/验证/审查节点(共 41 份)已从本 PR 的 tip 移除以保持评审面精简,**完整保留在分支 git 历史中**(`git log` / `git show <commit>:<path>` 可追溯)。要执行重构,只需读本 FINAL-PLAN + 上表三份配套文档即可。

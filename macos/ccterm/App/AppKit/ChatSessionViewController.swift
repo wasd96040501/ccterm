@@ -91,7 +91,10 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
     /// compose card stays SwiftUI-hosted via a plain `NSHostingView`.
     private var topScrim: TranscriptTopScrimView!
     private var bottomScrim: TranscriptBottomScrimView!
-    private var composeOrBarHost: NSHostingView<AnyView>!
+    // `internal` (not `private`) is an access-modifier-only test seam: the
+    // `HostedComponentCenteringTests` CI gate samples this host's frame to
+    // assert the regime-B centering + width-cap contract. No behavior change.
+    var composeOrBarHost: NSHostingView<AnyView>!
 
     /// Latest attach / pill rects reported by the chat resting bar
     /// in `detailCoordSpace`. Used to drive `bottomScrim`'s cutouts.

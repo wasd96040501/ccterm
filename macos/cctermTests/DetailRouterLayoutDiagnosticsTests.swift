@@ -162,6 +162,21 @@ final class DetailRouterLayoutDiagnosticsTests: XCTestCase {
             archiveHeight, chatHeight - 1,
             "Archive selection flattened the window: \(chatHeight) → \(archiveHeight). "
                 + "The detail content's fitting size is driving the window height.")
+
+        // The real teeth (the window-height assertion above is toothless
+        // offscreen — a borderless/headless window does not run the live
+        // constraint-solver autosize pass, so the frame stays put under BOTH
+        // sizing regimes). The regime IS discriminated, stably and offscreen,
+        // by the archive child's published `fittingSize.height`:
+        // `sizingOptions = []` (the fix) ⇒ ≈ 0; default options (the leak) ⇒
+        // ≈ 276. Asserting on that value is what actually catches a reverted
+        // fix — see docs/refactor/boundary/BOUNDARY-SPEC.md §2.4 and the
+        // `AppKitSwiftUIBoundaryTests` fitting-size gates.
+        XCTAssertLessThanOrEqual(
+            childFitting.height, 1,
+            "Archive child leaked a non-zero fittingSize.height (\(childFitting.height)) — "
+                + "the fill-pane host's `sizingOptions` are not `[]`, so its fitting size "
+                + "bubbles up the split and collapses the window in the live app.")
     }
 
     // MARK: - Bug #2 — history session attach at an unsettled frame

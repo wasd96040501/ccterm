@@ -206,7 +206,19 @@ extension SessionRuntime {
             // If this message streamed a live preview, converge onto that
             // entry instead of appending a duplicate. Gated on an existing
             // preview, so non-streamed sessions keep the exact append path.
+            //
+            // A streaming preview entry only ever carries text (it is the
+            // synthetic `[text@0]` shape from `applyStreamingPreview`). The CLI
+            // splits one streamed `message.id` into separate finalized
+            // envelopes — a text-only one and a tool-only one — that **share
+            // that id**. A tool-only (groupable) envelope must NOT converge onto
+            // the text preview: doing so swaps the entry's text payload for the
+            // tool payload and the streamed text vanishes (the `[text, tool] →
+            // [tool]` bug). Only a text-bearing finalize claims the preview; the
+            // tool envelope falls through to `.append` and lands as its own
+            // tool group.
             if let msgId = a.message?.id,
+                !message.isGroupableAssistant,
                 let entryId = streamingPreviewEntryIds[msgId],
                 messages.contains(where: { $0.id == entryId })
             {

@@ -52,6 +52,25 @@ enum Message2Fixtures {
         ])
     }
 
+    /// One assistant message with caller-supplied content blocks — for
+    /// reproducing exact wire shapes (e.g. a tool_use-only envelope that
+    /// shares a `messageId` with a sibling text envelope).
+    static func assistantContent(
+        messageId: String, content: [[String: Any]]
+    ) -> Message2 {
+        resolve([
+            "type": "assistant",
+            "uuid": UUID().uuidString,
+            "session_id": "s",
+            "message": [
+                "id": messageId,
+                "type": "message",
+                "role": "assistant",
+                "content": content,
+            ],
+        ])
+    }
+
     /// One user message containing a plain text content array. `uuid` is
     /// settable so tests can pretend the CLI is echoing back a specific
     /// `SingleEntry.id`.

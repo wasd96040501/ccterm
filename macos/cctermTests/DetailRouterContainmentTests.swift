@@ -89,7 +89,7 @@ final class DetailRouterContainmentTests: XCTestCase {
         _ = router.view
         let initialChild = try XCTUnwrap(router.currentChild)
 
-        router.model.selection = .session("sid-abc")
+        router.context.model.selection = .session("sid-abc")
         router.installChildForCurrentSelection()
         XCTAssertTrue(
             router.currentChild === initialChild,
@@ -121,7 +121,7 @@ final class DetailRouterContainmentTests: XCTestCase {
         // Submitting the compose card flips selection to `.session(_)` —
         // a cross-kind transition (`.compose` → `.transcript`). The
         // compose VC must be fully torn down and a fresh chat VC mounted.
-        router.model.selection = .session("sid-promoted")
+        router.context.model.selection = .session("sid-promoted")
         router.installChildForCurrentSelection()
 
         let chatChild = try XCTUnwrap(router.currentChild)
@@ -143,7 +143,7 @@ final class DetailRouterContainmentTests: XCTestCase {
         let initialChild = try XCTUnwrap(router.currentChild)
         XCTAssertTrue(initialChild is ChatSessionViewController)
 
-        router.model.selection = .archive
+        router.context.model.selection = .archive
         router.installChildForCurrentSelection()
 
         let newChild = try XCTUnwrap(router.currentChild)
@@ -209,7 +209,7 @@ final class DetailRouterContainmentTests: XCTestCase {
         let demoChild = try XCTUnwrap(router.currentChild)
         XCTAssertTrue(demoChild is TranscriptDemoViewController)
 
-        router.model.selection = .session("sid")
+        router.context.model.selection = .session("sid")
         router.installChildForCurrentSelection()
 
         let chatChild = try XCTUnwrap(router.currentChild)
@@ -233,7 +233,7 @@ final class DetailRouterContainmentTests: XCTestCase {
         let archiveChild = try XCTUnwrap(router.currentChild)
         XCTAssertTrue(archiveChild is ArchiveViewController)
 
-        router.model.selection = .session("sid-xyz")
+        router.context.model.selection = .session("sid-xyz")
         router.installChildForCurrentSelection()
 
         let newChild = try XCTUnwrap(router.currentChild)
@@ -261,7 +261,7 @@ final class DetailRouterContainmentTests: XCTestCase {
         autoreleasepool {
             weakChild = router.currentChild as? ChatSessionViewController
             XCTAssertNotNil(weakChild, "fixture should start on a transcript child")
-            router.model.selection = .archive
+            router.context.model.selection = .archive
             router.installChildForCurrentSelection()
         }
 
@@ -300,7 +300,6 @@ final class DetailRouterContainmentTests: XCTestCase {
         let activation = AppActivationTracker()
         let notifications = NotificationService(activation: activation)
         let syntaxEngine = SyntaxHighlightEngine()
-        let searchBus = TranscriptSearchBus()
 
         // Per-test draft directory so the bar's InputDraftStore writes
         // nowhere shared.
@@ -312,13 +311,13 @@ final class DetailRouterContainmentTests: XCTestCase {
         model.selection = initialSelection
 
         let router = DetailRouterViewController(
-            model: model,
-            sessionManager: manager,
-            recentProjects: recentProjects,
-            notifications: notifications,
-            syntaxEngine: syntaxEngine,
-            searchBus: searchBus,
-            inputDraftStore: inputDraftStore
+            context: DetailContext(
+                model: model,
+                sessionManager: manager,
+                recentProjects: recentProjects,
+                inputDraftStore: inputDraftStore,
+                syntaxEngine: syntaxEngine),
+            notifications: notifications
         )
 
         addTeardownBlock {

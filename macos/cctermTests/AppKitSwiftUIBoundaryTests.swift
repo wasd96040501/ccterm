@@ -138,7 +138,6 @@ final class AppKitSwiftUIBoundaryTests: XCTestCase {
         let activation = AppActivationTracker()
         let notifications = NotificationService(activation: activation)
         let syntaxEngine = SyntaxHighlightEngine()
-        let searchBus = TranscriptSearchBus()
         let draftDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("ccterm-boundary-\(UUID().uuidString)", isDirectory: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: draftDir) }
@@ -146,13 +145,13 @@ final class AppKitSwiftUIBoundaryTests: XCTestCase {
 
         let model = MainSelectionModel()
         let router = DetailRouterViewController(
-            model: model,
-            sessionManager: manager,
-            recentProjects: recentProjects,
-            notifications: notifications,
-            syntaxEngine: syntaxEngine,
-            searchBus: searchBus,
-            inputDraftStore: inputDraftStore)
+            context: DetailContext(
+                model: model,
+                sessionManager: manager,
+                recentProjects: recentProjects,
+                inputDraftStore: inputDraftStore,
+                syntaxEngine: syntaxEngine),
+            notifications: notifications)
 
         return Fixture(
             model: model, manager: manager, router: router,

@@ -54,18 +54,14 @@ final class AppKitSwiftUIBoundarySnapshotTests: XCTestCase {
         let manager: SessionManager
         let router: DetailRouterViewController
         let sessionIds: [String]
-        /// The six deps the router was built from, retained so the same
-        /// set can build a standalone `ChatSessionViewController` for the
-        /// input-bar snapshot.
+        /// The deps the router was built from, retained so the same
+        /// `DetailContext` can build a standalone `ChatSessionViewController`
+        /// for the input-bar snapshot.
         let deps: Deps
     }
 
     private struct Deps {
-        let recentProjects: RecentProjectsStore
-        let notifications: NotificationService
-        let syntaxEngine: SyntaxHighlightEngine
-        let searchBus: TranscriptSearchBus
-        let inputDraftStore: InputDraftStore
+        let context: DetailContext
     }
 
     private func makeFixture(sessionCount: Int) -> Fixture {
@@ -89,7 +85,6 @@ final class AppKitSwiftUIBoundarySnapshotTests: XCTestCase {
         let activation = AppActivationTracker()
         let notifications = NotificationService(activation: activation)
         let syntaxEngine = SyntaxHighlightEngine()
-        let searchBus = TranscriptSearchBus()
         let draftDir = FileManager.default.temporaryDirectory
             .appendingPathComponent(
                 "ccterm-boundary-snap-\(UUID().uuidString)", isDirectory: true)
@@ -97,26 +92,21 @@ final class AppKitSwiftUIBoundarySnapshotTests: XCTestCase {
         let inputDraftStore = InputDraftStore(directory: draftDir, debounceInterval: 0.05)
 
         let model = MainSelectionModel()
-        let router = DetailRouterViewController(
+        let context = DetailContext(
             model: model,
             sessionManager: manager,
             recentProjects: recentProjects,
-            notifications: notifications,
-            syntaxEngine: syntaxEngine,
-            searchBus: searchBus,
-            inputDraftStore: inputDraftStore)
+            inputDraftStore: inputDraftStore,
+            syntaxEngine: syntaxEngine)
+        let router = DetailRouterViewController(
+            context: context, notifications: notifications)
 
         return Fixture(
             model: model,
             manager: manager,
             router: router,
             sessionIds: ids,
-            deps: Deps(
-                recentProjects: recentProjects,
-                notifications: notifications,
-                syntaxEngine: syntaxEngine,
-                searchBus: searchBus,
-                inputDraftStore: inputDraftStore))
+            deps: Deps(context: context))
     }
 
     private func drainMainLoop(seconds: TimeInterval) {
@@ -251,14 +241,7 @@ final class AppKitSwiftUIBoundarySnapshotTests: XCTestCase {
         }
         fx.model.selection = .session(sid)
 
-        let chat = ChatSessionViewController(
-            model: fx.model,
-            sessionManager: fx.manager,
-            recentProjects: fx.deps.recentProjects,
-            notifications: fx.deps.notifications,
-            syntaxEngine: fx.deps.syntaxEngine,
-            searchBus: fx.deps.searchBus,
-            inputDraftStore: fx.deps.inputDraftStore)
+        let chat = ChatSessionViewController(context: fx.deps.context)
 
         // Mount into a sized container so the VC gets a real frame; width
         // (1100) > maxHostWidth cap (820) is what makes centering visible.

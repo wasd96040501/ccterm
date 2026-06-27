@@ -68,13 +68,13 @@ final class SessionManagerLaunchFailureTests: XCTestCase {
         XCTAssertNil(manager.onLaunchFailure, "no owner before the router loads")
 
         let router = DetailRouterViewController(
-            model: MainSelectionModel(),
-            sessionManager: manager,
-            recentProjects: recentProjects,
-            notifications: notifications,
-            syntaxEngine: SyntaxHighlightEngine(),
-            searchBus: TranscriptSearchBus(),
-            inputDraftStore: inputDraftStore
+            context: DetailContext(
+                model: MainSelectionModel(),
+                sessionManager: manager,
+                recentProjects: recentProjects,
+                inputDraftStore: inputDraftStore,
+                syntaxEngine: SyntaxHighlightEngine()),
+            notifications: notifications
         )
         _ = router.view  // forces viewDidLoad
 

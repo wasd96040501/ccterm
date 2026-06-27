@@ -106,7 +106,6 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
         let activation = AppActivationTracker()
         let notifications = NotificationService(activation: activation)
         let syntaxEngine = SyntaxHighlightEngine()
-        let searchBus = TranscriptSearchBus()
         let draftDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("ccterm-hittest-\(UUID().uuidString)", isDirectory: true)
         let inputDraftStore = InputDraftStore(directory: draftDir, debounceInterval: 0.05)
@@ -116,13 +115,13 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
         model.selection = initialSelection
 
         let router = DetailRouterViewController(
-            model: model,
-            sessionManager: manager,
-            recentProjects: recentProjects,
-            notifications: notifications,
-            syntaxEngine: syntaxEngine,
-            searchBus: searchBus,
-            inputDraftStore: inputDraftStore)
+            context: DetailContext(
+                model: model,
+                sessionManager: manager,
+                recentProjects: recentProjects,
+                inputDraftStore: inputDraftStore,
+                syntaxEngine: syntaxEngine),
+            notifications: notifications)
 
         let window = NSWindow(
             contentRect: NSRect(
@@ -200,7 +199,7 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
     /// subtree mounts inside the passthrough host.
     @discardableResult
     private func seedPermission(_ fx: Fixture, sessionId: String, requestId: String) -> Bool {
-        guard let session = fx.router.sessionManager.session(sessionId),
+        guard let session = fx.router.context.sessionManager.session(sessionId),
             case .active(let runtime) = session.phase
         else { return false }
         let request = PermissionRequest.makePreview(

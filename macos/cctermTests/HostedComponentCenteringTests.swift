@@ -82,10 +82,7 @@ final class HostedComponentCenteringTests: XCTestCase {
         let defaults = UserDefaults(suiteName: defaultsSuite)!
         addTeardownBlock { defaults.removePersistentDomain(forName: defaultsSuite) }
         let recentProjects = RecentProjectsStore(defaults: defaults)
-        let activation = AppActivationTracker()
-        let notifications = NotificationService(activation: activation)
         let syntaxEngine = SyntaxHighlightEngine()
-        let searchBus = TranscriptSearchBus()
         let draftDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("ccterm-centering-\(UUID().uuidString)", isDirectory: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: draftDir) }
@@ -93,13 +90,12 @@ final class HostedComponentCenteringTests: XCTestCase {
 
         let model = MainSelectionModel()
         let vc = ChatSessionViewController(
-            model: model,
-            sessionManager: manager,
-            recentProjects: recentProjects,
-            notifications: notifications,
-            syntaxEngine: syntaxEngine,
-            searchBus: searchBus,
-            inputDraftStore: inputDraftStore)
+            context: DetailContext(
+                model: model,
+                sessionManager: manager,
+                recentProjects: recentProjects,
+                inputDraftStore: inputDraftStore,
+                syntaxEngine: syntaxEngine))
 
         return Fixture(model: model, manager: manager, vc: vc, sessionId: sid)
     }

@@ -22,13 +22,13 @@ final class DetailRouterDraftRoutingTests: XCTestCase {
                 cliClientFactory: { _ in FakeCLIClient() }
             )
         let router = DetailRouterViewController(
-            model: model,
-            sessionManager: manager,
-            recentProjects: RecentProjectsStore(),
-            notifications: NotificationService(activation: AppActivationTracker()),
-            syntaxEngine: SyntaxHighlightEngine(),
-            searchBus: TranscriptSearchBus(),
-            inputDraftStore: InputDraftStore()
+            context: DetailContext(
+                model: model,
+                sessionManager: manager,
+                recentProjects: RecentProjectsStore(),
+                inputDraftStore: InputDraftStore(),
+                syntaxEngine: SyntaxHighlightEngine()),
+            notifications: NotificationService(activation: AppActivationTracker())
         )
         _ = router.view  // force viewDidLoad + initial child install
         return (router, model, manager)

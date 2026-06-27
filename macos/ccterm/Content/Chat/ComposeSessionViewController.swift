@@ -31,13 +31,9 @@ final class ComposeSessionViewController: NSViewController {
     /// `TaskLocal` teardown bug). See `SessionRuntime.swift`.
     nonisolated deinit {}
 
-    let model: MainSelectionModel
-    let sessionManager: SessionManager
-    let recentProjects: RecentProjectsStore
-    let notifications: NotificationService
-    let syntaxEngine: SyntaxHighlightEngine
-    let searchBus: TranscriptSearchBus
-    let inputDraftStore: InputDraftStore
+    /// The detail-scope dependency bag, handed down from the router.
+    /// `model` and the four injected services are read through this.
+    let context: DetailContext
 
     /// The mounted host. Typed as `NSViewController` because
     /// `mountFillPaneHost` returns an `NSHostingController<Content>` whose
@@ -46,22 +42,8 @@ final class ComposeSessionViewController: NSViewController {
     /// so the host outlives `viewDidLoad`.
     private var host: NSViewController?
 
-    init(
-        model: MainSelectionModel,
-        sessionManager: SessionManager,
-        recentProjects: RecentProjectsStore,
-        notifications: NotificationService,
-        syntaxEngine: SyntaxHighlightEngine,
-        searchBus: TranscriptSearchBus,
-        inputDraftStore: InputDraftStore
-    ) {
-        self.model = model
-        self.sessionManager = sessionManager
-        self.recentProjects = recentProjects
-        self.notifications = notifications
-        self.syntaxEngine = syntaxEngine
-        self.searchBus = searchBus
-        self.inputDraftStore = inputDraftStore
+    init(context: DetailContext) {
+        self.context = context
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -98,20 +80,17 @@ final class ComposeSessionViewController: NSViewController {
                     submitSessionInput(
                         submission,
                         sessionId: draftSessionId,
-                        sessionManager: self.sessionManager,
-                        recentProjects: self.recentProjects,
-                        model: self.model)
+                        sessionManager: self.context.sessionManager,
+                        recentProjects: self.context.recentProjects,
+                        model: self.context.model)
                 },
                 onResumeSession: { [weak self] resumeSid in
                     guard let self else { return }
-                    self.model.select(.session(resumeSid))
-                    self.model.draftSessionId = nil
+                    self.context.model.select(.session(resumeSid))
+                    self.context.model.draftSessionId = nil
                 }
             )
-            .environment(sessionManager)
-            .environment(recentProjects)
-            .environment(inputDraftStore)
-            .environment(\.syntaxEngine, syntaxEngine),
+            .injectDetailEnvironment(context),
             in: self
         )
     }
@@ -124,11 +103,11 @@ final class ComposeSessionViewController: NSViewController {
     /// fill in off the git probe. Returns the resolved id. (Moved here
     /// verbatim from the pre-split `ChatSessionViewController`.)
     private func ensureDraftSession() -> String {
-        if let existing = model.draftSessionId { return existing }
+        if let existing = context.model.draftSessionId { return existing }
         let sid = UUID().uuidString.lowercased()
-        model.draftSessionId = sid
-        if let cwd = recentProjects.lastLaunchedPath,
-            let draft = sessionManager.prepareDraftSession(sid).draft
+        context.model.draftSessionId = sid
+        if let cwd = context.recentProjects.lastLaunchedPath,
+            let draft = context.sessionManager.prepareDraftSession(sid).draft
         {
             draft.setCwd(cwd)
             draft.setOriginPath(cwd)

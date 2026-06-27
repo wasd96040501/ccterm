@@ -65,13 +65,9 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
     static let detailHorizontalInset: CGFloat = 20
     static let detailVerticalInset: CGFloat = 20
 
-    let model: MainSelectionModel
-    let sessionManager: SessionManager
-    let recentProjects: RecentProjectsStore
-    let notifications: NotificationService
-    let syntaxEngine: SyntaxHighlightEngine
-    let searchBus: TranscriptSearchBus
-    let inputDraftStore: InputDraftStore
+    /// The detail-scope dependency bag, handed down from the router.
+    /// `model` and the four injected services are read through this.
+    let context: DetailContext
 
     /// The session currently driving the transcript, or nil for
     /// archive / demo branches.
@@ -141,22 +137,8 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
     /// animation rides CoreAnimation's clock from `beforeWaiting`.
     private static let transcriptCrossfadeDuration: CFTimeInterval = 0.18
 
-    init(
-        model: MainSelectionModel,
-        sessionManager: SessionManager,
-        recentProjects: RecentProjectsStore,
-        notifications: NotificationService,
-        syntaxEngine: SyntaxHighlightEngine,
-        searchBus: TranscriptSearchBus,
-        inputDraftStore: InputDraftStore
-    ) {
-        self.model = model
-        self.sessionManager = sessionManager
-        self.recentProjects = recentProjects
-        self.notifications = notifications
-        self.syntaxEngine = syntaxEngine
-        self.searchBus = searchBus
-        self.inputDraftStore = inputDraftStore
+    init(context: DetailContext) {
+        self.context = context
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -216,11 +198,8 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
         // card click-through so the transcript keeps its clicks + I-beam.
         permissionCardHost = PassthroughHostingView(
             rootView: AnyView(
-                PermissionCardOverlay(model: model)
-                    .environment(sessionManager)
-                    .environment(recentProjects)
-                    .environment(inputDraftStore)
-                    .environment(\.syntaxEngine, syntaxEngine)
+                PermissionCardOverlay(model: context.model)
+                    .injectDetailEnvironment(context)
             ))
         permissionCardHost.translatesAutoresizingMaskIntoConstraints = false
         permissionCardHost.sizingOptions = []
@@ -315,11 +294,11 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
     /// unread state clears on entry. (Draft `sessionId` allocation for
     /// New Session lives in `ComposeSessionViewController`.)
     private func updateFocus(activeSessionId: String?) {
-        if let active = activeSessionId, let session = sessionManager.session(active) {
+        if let active = activeSessionId, let session = context.sessionManager.session(active) {
             session.setFocused(true)
         }
-        for sid in sessionManager.records.map(\.sessionId) where sid != activeSessionId {
-            sessionManager.existingSession(sid)?.setFocused(false)
+        for sid in context.sessionManager.records.map(\.sessionId) where sid != activeSessionId {
+            context.sessionManager.existingSession(sid)?.setFocused(false)
         }
     }
 
@@ -335,7 +314,7 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
             return
         }
 
-        let session = sessionManager.prepareDraftSession(sessionId)
+        let session = context.sessionManager.prepareDraftSession(sessionId)
         if currentSession?.sessionId == sessionId, transcriptScroll != nil {
             return
         }
@@ -436,7 +415,7 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
             session.controller.mainThreadLayoutComputes &- layoutComputesBeforeTile
 
         // Attach syntax engine (idempotent).
-        session.controller.attachSyntaxEngine(syntaxEngine)
+        session.controller.attachSyntaxEngine(context.syntaxEngine)
 
         // Sheet presenter is per-attach: it captures `view` (for
         // `window`) and the session's controller. The presenter
@@ -596,19 +575,15 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
     /// owned by this VC with the same `[weak self]` semantics as before.
     private func makeComposeOrBarRoot() -> ChatComposeHostRoot {
         ChatComposeHostRoot(
-            model: model,
-            sessionManager: sessionManager,
-            recentProjects: recentProjects,
-            inputDraftStore: inputDraftStore,
-            syntaxEngine: syntaxEngine,
+            context: context,
             onSubmit: { [weak self] submission, sessionId in
                 guard let self else { return }
                 submitSessionInput(
                     submission,
                     sessionId: sessionId,
-                    sessionManager: self.sessionManager,
-                    recentProjects: self.recentProjects,
-                    model: self.model)
+                    sessionManager: self.context.sessionManager,
+                    recentProjects: self.context.recentProjects,
+                    model: self.context.model)
             },
             onAttachRect: { [weak self] rect in
                 guard let self else { return }
@@ -625,8 +600,8 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
                 runBuiltinSlashCommand(
                     command,
                     currentSessionId: sessionId,
-                    sessionManager: self.sessionManager,
-                    model: self.model)
+                    sessionManager: self.context.sessionManager,
+                    model: self.context.model)
             }
         )
     }
@@ -649,19 +624,16 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
 /// `composeOrBarHost` declaration carries a concrete generic parameter
 /// (`NSHostingView<ChatComposeHostRoot>`) and the root view's construction +
 /// modifier chain are type-checked. The VC owns the callbacks; this struct
-/// only threads them — and the environment values — into `ChatComposeStack`.
+/// only threads them — and the `DetailContext` — into `ChatComposeStack`.
 ///
 /// Un-erasing does **not** by itself turn a missing `.environment(...)`
 /// injection into a compile error — Observable-object / keyed-environment
 /// values resolve at runtime. What it guards is the *construction
-/// expression*: the wrapper's body has to name each injection explicitly, so
-/// the chain can't silently drift to the wrong type.
+/// expression*: the wrapper's body has to name the injection explicitly (now
+/// via `injectDetailEnvironment(_:)`), so the chain can't silently drift to
+/// the wrong type.
 struct ChatComposeHostRoot: View {
-    @Bindable var model: MainSelectionModel
-    let sessionManager: SessionManager
-    let recentProjects: RecentProjectsStore
-    let inputDraftStore: InputDraftStore
-    let syntaxEngine: SyntaxHighlightEngine
+    let context: DetailContext
     let onSubmit: (InputBarView2.Submission, String) -> Void
     let onAttachRect: (CGRect) -> Void
     let onPillRect: (CGRect) -> Void
@@ -669,16 +641,13 @@ struct ChatComposeHostRoot: View {
 
     var body: some View {
         ChatComposeStack(
-            model: model,
+            model: context.model,
             onSubmit: onSubmit,
             onAttachRect: onAttachRect,
             onPillRect: onPillRect,
             onBuiltinCommand: onBuiltinCommand
         )
-        .environment(sessionManager)
-        .environment(recentProjects)
-        .environment(inputDraftStore)
-        .environment(\.syntaxEngine, syntaxEngine)
+        .injectDetailEnvironment(context)
     }
 }
 

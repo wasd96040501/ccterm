@@ -135,10 +135,7 @@ final class TranscriptHostReentryLayoutCacheTests: XCTestCase {
         let defaults = UserDefaults(suiteName: defaultsSuite)!
         defer { defaults.removePersistentDomain(forName: defaultsSuite) }
         let recentProjects = RecentProjectsStore(defaults: defaults)
-        let activation = AppActivationTracker()
-        let notifications = NotificationService(activation: activation)
         let syntaxEngine = SyntaxHighlightEngine()
-        let searchBus = TranscriptSearchBus()
         let draftDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("ccterm-host-reentry-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: draftDir) }
@@ -150,13 +147,12 @@ final class TranscriptHostReentryLayoutCacheTests: XCTestCase {
         model.selection = .session(sessionId1)
 
         let vc = ChatSessionViewController(
-            model: model,
-            sessionManager: manager,
-            recentProjects: recentProjects,
-            notifications: notifications,
-            syntaxEngine: syntaxEngine,
-            searchBus: searchBus,
-            inputDraftStore: inputDraftStore)
+            context: DetailContext(
+                model: model,
+                sessionManager: manager,
+                recentProjects: recentProjects,
+                inputDraftStore: inputDraftStore,
+                syntaxEngine: syntaxEngine))
 
         let window = NSWindow(
             contentRect: NSRect(

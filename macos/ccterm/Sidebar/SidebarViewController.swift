@@ -112,7 +112,7 @@ final class SidebarViewController: NSViewController {
         // repository state. Without this, the first records-observation
         // fire after launch would treat every existing group as
         // newly-appeared and prepend them in iteration order.
-        lastSeenGroups = currentGroupSet()
+        lastSeenGroups = SidebarTreeModel.currentGroupSet(context.sessionManager.records)
         rebuildItems()  // also runs expandAllFolders + restores selection
         applyModelSelection()
         startRecordsObservation()
@@ -256,57 +256,21 @@ final class SidebarViewController: NSViewController {
 
     private func rebuildItems() {
         let previousSelection = currentSelection()
-        rootChildren = buildRootChildren()
+        // `build` is pure: it takes the store's persisted order as a
+        // snapshot input and returns fresh nodes. New-folder detection and
+        // the `prependIfAbsent` writes already ran in `handleRecordsChanged`
+        // *before* this call, so `storedOrder()` here reflects any just-
+        // prepended folders. `lastSeenGroups` is irrelevant to the nodes,
+        // so the returned `newGroups` is ignored on this path.
+        let result = SidebarTreeModel.build(
+            records: context.sessionManager.records,
+            groupOrder: context.groupOrderStore.storedOrder(),
+            previouslySeenGroups: lastSeenGroups)
+        rootChildren = result.nodes
         outlineView.reloadData()
         expandAllFolders()
         if let selection = previousSelection {
             selectRow(for: selection)
-        }
-    }
-
-    private func buildRootChildren() -> [SidebarItemNode] {
-        var items: [SidebarItemNode] = []
-        for kind in FixedKind.allCases {
-            items.append(
-                SidebarItemNode(kind: .fixed(kind), selection: kind.selection))
-        }
-        for group in groupedRecords() {
-            let children = group.records.map { record in
-                SidebarItemNode(
-                    kind: .history(
-                        sessionId: record.sessionId,
-                        fallbackTitle: record.title,
-                        isDraft: record.status == .draft),
-                    selection: .session(record.sessionId))
-            }
-            items.append(
-                SidebarItemNode(
-                    kind: .folder(name: group.folderName),
-                    selection: nil,
-                    children: children))
-        }
-        return items
-    }
-
-    private struct RecordGroup {
-        let folderName: String
-        let records: [SessionRecord]
-    }
-
-    private func groupedRecords() -> [RecordGroup] {
-        // `/new` / `/clear` drafts are ordinary `.draft`-status rows in
-        // `records` now, so they group + sort like any other history row
-        // (their fresh `lastActiveAt` floats them to the top of the folder).
-        let buckets = Dictionary(grouping: context.sessionManager.records) {
-            $0.groupingFolderName ?? "Unknown"
-        }
-        let folderNames = Array(buckets.keys)
-        let ordered = context.groupOrderStore.arrange(folderNames)
-        return ordered.compactMap { name -> RecordGroup? in
-            guard let records = buckets[name] else { return nil }
-            return RecordGroup(
-                folderName: name,
-                records: records.sorted { $0.lastActiveAt > $1.lastActiveAt })
         }
     }
 
@@ -317,16 +281,6 @@ final class SidebarViewController: NSViewController {
         let start = FixedKind.allCases.count
         let end = rootChildren.count
         return start..<end
-    }
-
-    private func currentGroupSet() -> Set<String> {
-        var s: Set<String> = []
-        for record in context.sessionManager.records {
-            if let name = record.groupingFolderName {
-                s.insert(name)
-            }
-        }
-        return s
     }
 
     private func currentSelection() -> MainSelection? {
@@ -415,9 +369,20 @@ final class SidebarViewController: NSViewController {
         // order store so the new project rides to the top. Cold-start
         // (no prior snapshot) is excluded by initializing
         // `lastSeenGroups` in `viewDidLoad` to the current set.
-        let current = currentGroupSet()
+        //
+        // Ordering is load-bearing: `prependIfAbsent` mutates the store's
+        // persisted order, and `rebuildItems` reads `storedOrder()` to lay
+        // out folders — so the prepends MUST run before `rebuildItems`.
+        // Detection itself is the pure `currentGroupSet` helper; `build`
+        // only produces nodes here, so the new-folder set is computed
+        // separately rather than from `build`'s `newGroups` (which would
+        // use the pre-prepend order for its nodes).
+        let current = SidebarTreeModel.currentGroupSet(context.sessionManager.records)
         let newlyAppeared = current.subtracting(lastSeenGroups)
-        for name in newlyAppeared {
+        // Sort for a deterministic prepend order. The old code iterated an
+        // unordered `Set`; this only changes the relative slot of several
+        // groups appearing in one refresh (see SidebarTreeModel notes).
+        for name in newlyAppeared.sorted(by: { $0.localizedStandardCompare($1) == .orderedAscending }) {
             context.groupOrderStore.prependIfAbsent(name)
         }
         lastSeenGroups = current

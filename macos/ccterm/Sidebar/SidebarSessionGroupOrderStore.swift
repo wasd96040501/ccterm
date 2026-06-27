@@ -5,12 +5,11 @@ import Foundation
 /// drag-and-drop and "new project sent" both write to it.
 ///
 /// Semantics:
-/// - `arrange(_:)` orders a list of currently-present group names.
-///   Names that appear in the stored order keep their stored relative
-///   position. Names that aren't in the stored order are appended at
-///   the end, sorted by `localizedStandardCompare` (case-insensitive,
-///   numeric-aware), so cold-start migration produces a stable
-///   alphabetical fallback rather than random iteration order.
+/// - `storedOrder()` returns the raw persisted order. The pure ordering
+///   logic — filtering it down to currently-present folders, then
+///   appending the alphabetical remainder — lives in `SidebarTreeModel`
+///   (its private `arrange`), which takes this snapshot as input rather
+///   than reading UserDefaults itself.
 /// - `prependIfAbsent(_:)` is called when the sidebar detects a newly-
 ///   appeared group between two records refreshes (i.e., the user just
 ///   created a session in a folder that had no prior sessions). The
@@ -35,23 +34,6 @@ final class SidebarSessionGroupOrderStore {
     /// so they retain their slot if sessions land in them again).
     func storedOrder() -> [String] {
         defaults.stringArray(forKey: key) ?? []
-    }
-
-    /// Arrange `groups` for display: stored ones first in stored order,
-    /// then everything else sorted alphabetically. Caller hands in the
-    /// set of groups currently present in the repository; this filters
-    /// the stored order down to "still-present" before tacking on the
-    /// unknown remainder.
-    func arrange(_ groups: [String]) -> [String] {
-        let presentSet = Set(groups)
-        let stored = storedOrder()
-        let knownInOrder = stored.filter { presentSet.contains($0) }
-        let knownSet = Set(knownInOrder)
-        let unknown =
-            groups
-            .filter { !knownSet.contains($0) }
-            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
-        return knownInOrder + unknown
     }
 
     /// Push `group` to the front of the stored order if it isn't there

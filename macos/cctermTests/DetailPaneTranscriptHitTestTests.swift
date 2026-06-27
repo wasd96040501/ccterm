@@ -1,3 +1,4 @@
+import AgentSDK
 import AppKit
 import Observation
 import SwiftUI
@@ -181,6 +182,34 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
         return nil
     }
 
+    /// Walk up from `view` to the enclosing `permissionCardHost`
+    /// (`PassthroughHostingView`), or nil if the hit landed outside it.
+    private func enclosingPassthroughHost(_ view: NSView?) -> PassthroughHostingView? {
+        var node = view
+        while let cur = node {
+            if let host = cur as? PassthroughHostingView { return host }
+            node = cur.superview
+        }
+        return nil
+    }
+
+    /// Seed a pending permission onto the shown session's runtime, the same
+    /// way the production CLI sink does (`pendingPermissions.append`). The
+    /// `permissionCardHost`'s `PermissionCardOverlay` observes
+    /// `session.pendingPermissions`, so after a runloop drain the card
+    /// subtree mounts inside the passthrough host.
+    @discardableResult
+    private func seedPermission(_ fx: Fixture, sessionId: String, requestId: String) -> Bool {
+        guard let session = fx.router.sessionManager.session(sessionId),
+            case .active(let runtime) = session.phase
+        else { return false }
+        let request = PermissionRequest.makePreview(
+            requestId: requestId, toolName: "Bash", input: ["command": "rm -rf build"])
+        runtime.pendingPermissions.append(
+            PendingPermission(id: requestId, request: request, respond: { _ in }))
+        return true
+    }
+
     private struct SelectionAttempt {
         let selected: Bool
         let diag: String
@@ -331,6 +360,119 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
             anyPersistentDead,
             "Transcript selection stayed dead even after settling post-switch:\n\n"
                 + report.joined(separator: "\n\n"))
+    }
+
+    /// PR5 passthrough regression net. With a permission card mounted in
+    /// the full-pane `permissionCardHost` (`PassthroughHostingView`), the
+    /// card must NOT swallow transcript clicks: a point in the open
+    /// transcript band still hit-tests to a `BlockCellView` (transcript
+    /// selectable — M4/M5: the full-pane host doesn't occlude the table),
+    /// while a point inside the floating card resolves into the
+    /// passthrough host (the card's buttons stay clickable).
+    func testPermissionCardPassesTranscriptClicksThrough() async throws {
+        let fx = makeFixture(sessionCount: 1, initialSessionIndex: 0)
+        await settle(fx)
+
+        // Seed the permission, then drain so `PermissionCardOverlay`
+        // (observing `session.pendingPermissions`) mounts the card subtree
+        // inside the passthrough host.
+        XCTAssertTrue(
+            seedPermission(fx, sessionId: fx.sessionIds[0], requestId: "perm-hit"),
+            "could not seed a pending permission on the shown session")
+        await settle(fx, rounds: 8)
+
+        guard let chatVC = fx.router.currentChild as? ChatSessionViewController else {
+            XCTFail("currentChild is not a ChatSessionViewController")
+            return
+        }
+        guard let host = chatVC.permissionCardHost else {
+            XCTFail("permissionCardHost is nil")
+            return
+        }
+        guard let table = findSubview(Transcript2TableView.self, in: chatVC.view) else {
+            XCTFail("no Transcript2TableView mounted")
+            return
+        }
+
+        // The card mounted: probe a grid of points across the host for the
+        // first one whose `hitTest` lands on a card subview
+        // (PassthroughHostingView maps non-card points to nil). Scan the full
+        // height so the search is independent of the host's flipped-ness —
+        // the card sits at one vertical extreme (bottom-pinned) either way.
+        // `NSView.hitTest` takes a point in the receiver's SUPERVIEW coords,
+        // so each candidate (built in host bounds) is converted up to the
+        // host's superview before probing, and we record the window point so
+        // the real router-level hitTest can be replayed below.
+        guard let hostSuper = host.superview else {
+            XCTFail("permissionCardHost has no superview")
+            return
+        }
+        let hostBounds = host.bounds
+        var cardPointInWindow: NSPoint?
+        let xs = stride(from: hostBounds.midX - 200, through: hostBounds.midX + 200, by: 40)
+        let ys = stride(from: hostBounds.minY + 8, through: hostBounds.maxY - 8, by: 12)
+        outer: for y in ys {
+            for x in xs {
+                let pInHost = NSPoint(x: x, y: y)
+                let pInSuper = host.convert(pInHost, to: hostSuper)
+                if let hit = host.hitTest(pInSuper), enclosingPassthroughHost(hit) === host {
+                    cardPointInWindow = host.convert(pInHost, to: nil)
+                    break outer
+                }
+            }
+        }
+        XCTAssertNotNil(
+            cardPointInWindow,
+            "permission card never became hit-eligible inside the passthrough host")
+
+        // (a) Outside the card → through to the transcript. Pick a point in
+        // the middle of a visible row, well above the bottom card band.
+        let visible = table.rows(in: table.visibleRect)
+        XCTAssertGreaterThan(visible.length, 0, "no visible transcript rows")
+        let row = visible.location + visible.length / 2
+        let rowRect = table.rect(ofRow: row)
+        let transcriptPointInTable = CGPoint(x: rowRect.minX + 120, y: rowRect.midY)
+        let transcriptPointInWindow = table.convert(transcriptPointInTable, to: nil)
+        let transcriptHit = fx.router.view.hitTest(transcriptPointInWindow)
+        let resolvedToCell = findEnclosing(BlockCellView.self, transcriptHit) != nil
+        let leakedToCard = enclosingPassthroughHost(transcriptHit) != nil
+
+        // (b) Inside the card → the passthrough host (buttons clickable).
+        var cardHit: NSView?
+        if let cardPointInWindow {
+            cardHit = fx.router.view.hitTest(cardPointInWindow)
+        }
+        let resolvedToCard = enclosingPassthroughHost(cardHit) != nil
+
+        let diag = """
+            host.bounds=\(hostBounds) \
+            cardPointInWindow=\(String(describing: cardPointInWindow)) \
+            transcriptHit=\(transcriptHit.map { String(describing: type(of: $0)) } ?? "nil") \
+            resolvedToCell=\(resolvedToCell) leakedToCard=\(leakedToCard) \
+            cardHit=\(cardHit.map { String(describing: type(of: $0)) } ?? "nil") \
+            resolvedToCard=\(resolvedToCard)
+            """
+        add(attachment(diag, "permission-card passthrough"))
+
+        XCTAssertFalse(
+            leakedToCard,
+            "transcript-band click leaked into the permission card host:\n\(diag)")
+        XCTAssertTrue(
+            resolvedToCell,
+            "transcript-band click did not reach a BlockCellView:\n\(diag)")
+        XCTAssertTrue(
+            resolvedToCard,
+            "in-card click did not resolve to the passthrough host:\n\(diag)")
+    }
+
+    /// Walk up from `view` to the first enclosing `T`, or nil.
+    private func findEnclosing<T: NSView>(_ type: T.Type, _ view: NSView?) -> T? {
+        var node = view
+        while let cur = node {
+            if let match = cur as? T { return match }
+            node = cur.superview
+        }
+        return nil
     }
 
     private func attachment(_ s: String, _ name: String) -> XCTAttachment {

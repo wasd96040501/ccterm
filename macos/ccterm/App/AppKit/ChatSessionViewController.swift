@@ -27,9 +27,8 @@ import SwiftUI
 /// and only ever renders the chat resting bar (or nothing for `.none`),
 /// so it never covers more of the transcript than the bar itself.
 ///
-/// Around the transcript we mount three full-bleed overlays, all
-/// attached for the lifetime of the VC; their *contents* react to
-/// `model.selection`:
+/// Around the transcript we mount full-bleed overlays, all attached for
+/// the lifetime of the VC; their *contents* react to `model.selection`:
 /// - top scrim — `TranscriptScrimView` (AppKit, hitTest passthrough)
 /// - bottom scrim — `TranscriptBottomScrimView` (AppKit, hitTest
 ///   passthrough, even-odd cutouts at the attach button + pill)
@@ -38,10 +37,14 @@ import SwiftUI
 ///   → chat resting bar, everything else → `EmptyView`. `.newSession` /
 ///   `.archive` / `.demo(_)` are routed away from this VC entirely by
 ///   `DetailRouterViewController` and never land here.
+/// - permission card — `permissionCardHost` (`PassthroughHostingView`
+///   hosting `PermissionCardOverlay`), a dedicated full-pane click-through
+///   host **on top** of the bar. The card floats here instead of inside
+///   the bar host so its footprint never pumps the bar host's height.
 ///
-/// The host is bottom-anchored and takes only the bar (+ optional
-/// permission card) intrinsic height, so the transcript scroll view
-/// receives clicks in the scrim band above it.
+/// The bar host is bottom-anchored and takes only the bar's own intrinsic
+/// height, so the transcript scroll view receives clicks in the scrim band
+/// above it (and everywhere outside the permission card).
 @MainActor
 final class ChatSessionViewController: NSViewController, DetailRouterChild {
     /// Coordinate-space identifier for SwiftUI `GeometryReader`/
@@ -95,6 +98,16 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
     // `HostedComponentCenteringTests` CI gate samples this host's frame to
     // assert the regime-B centering + width-cap contract. No behavior change.
     var composeOrBarHost: NSHostingView<AnyView>!
+
+    /// Full-pane floating host for the permission card (`PermissionCardOverlay`).
+    /// A `PassthroughHostingView` (regime-A: `sizingOptions = []` + four-edge
+    /// pin) layered **above** the transcript and `composeOrBarHost`. The card
+    /// fades in place inside it; because this host's geometry is the full pane
+    /// (not driven by the card), the bar host's intrinsic height stays a pure
+    /// function of the bar content — the card never pumps the bar band. Clicks
+    /// outside the card pass straight through to the transcript (see
+    /// `PassthroughHostingView`).
+    var permissionCardHost: PassthroughHostingView!
 
     /// Latest attach / pill rects reported by the chat resting bar
     /// in `detailCoordSpace`. Used to drive `bottomScrim`'s cutouts.
@@ -167,17 +180,19 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
         // hit-testing, shadowing the transcript table below it. We keep its
         // bounds to just the bar: the HEIGHT is left to the content's own
         // intrinsic size (`.intrinsicContentSize`), so the host is only as
-        // tall as the bar — multi-line input or a permission card grows it,
-        // nothing else — and the transcript receives clicks everywhere above.
+        // tall as the bar — multi-line input grows it, nothing else (the
+        // permission card no longer lives here; it floats in
+        // `permissionCardHost`) — and the transcript receives clicks above.
         composeOrBarHost.sizingOptions = [.intrinsicContentSize]
         view.addSubview(composeOrBarHost)
 
         // WIDTH is owned by AppKit, HEIGHT by the content (above):
         // - centerX  → the bar is horizontally centered in the pane.
-        // - width <= maxHostWidth (required) caps it at the widest content it
-        //   hosts — the permission card (`BlockStyle.maxLayoutWidth`) plus its
-        //   horizontal padding — so the card is never clipped; the narrower
-        //   input pill (`composeMaxWidth`) self-centers inside via its own frame.
+        // - width <= maxHostWidth (required) caps the host; the input pill
+        //   (`composeMaxWidth`) self-centers inside via its own frame. The cap
+        //   is the transcript column width (`BlockStyle.maxLayoutWidth`) plus
+        //   horizontal padding — kept aligned with the column so the bar's
+        //   centered axis matches the transcript's.
         // - width == maxHostWidth @high fills up to that cap on a wide pane,
         //   but yields to `leading >=` on a pane narrower than the cap (detail
         //   can be as small as 680) so the bar shrinks to fit the pane instead
@@ -186,6 +201,26 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
         let composeOrBarHostWidthFill = composeOrBarHost.widthAnchor.constraint(
             equalToConstant: maxHostWidth)
         composeOrBarHostWidthFill.priority = .defaultHigh
+
+        // Dedicated full-pane host for the permission card. Added AFTER
+        // `composeOrBarHost` so it sits **on top** in z-order (the card
+        // floats over the bar). `sizingOptions = []` is regime-A: the host
+        // does NOT publish its content's `fittingSize`, so it can't leak a
+        // size up into the window's constraint solver and collapse the window
+        // — the four-edge pin below makes layout drive it from the pane
+        // instead. `PassthroughHostingView` then makes everything outside the
+        // card click-through so the transcript keeps its clicks + I-beam.
+        permissionCardHost = PassthroughHostingView(
+            rootView: AnyView(
+                PermissionCardOverlay(model: model)
+                    .environment(sessionManager)
+                    .environment(recentProjects)
+                    .environment(inputDraftStore)
+                    .environment(\.syntaxEngine, syntaxEngine)
+            ))
+        permissionCardHost.translatesAutoresizingMaskIntoConstraints = false
+        permissionCardHost.sizingOptions = []
+        view.addSubview(permissionCardHost)
 
         // Each scrim is sized to its visible band, anchored to its
         // edge. Cutout coordinates arrive in `composeOrBarHost`'s
@@ -208,6 +243,11 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
             composeOrBarHost.leadingAnchor.constraint(
                 greaterThanOrEqualTo: view.leadingAnchor),
             composeOrBarHostWidthFill,
+
+            permissionCardHost.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            permissionCardHost.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            permissionCardHost.topAnchor.constraint(equalTo: view.topAnchor),
+            permissionCardHost.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
     }
 

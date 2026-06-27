@@ -64,7 +64,7 @@ final class TodoListSnapshotTests: XCTestCase {
             sessionId: UUID().uuidString,
             repository: InMemorySessionRepository()
         )
-        runtime.todos = todos
+        runtime.todoTracker.todos = todos
         return ccterm.Session(runtime: runtime)
     }
 

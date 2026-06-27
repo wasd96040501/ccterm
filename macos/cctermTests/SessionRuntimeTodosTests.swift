@@ -328,4 +328,62 @@ final class SessionRuntimeTodosTests: XCTestCase {
         XCTAssertEqual(runtime.todos.count, 1)
         XCTAssertEqual(runtime.todos.first?.status, .completed)
     }
+
+    // MARK: - Live re-render (observation nesting)
+
+    /// The todo plan moved off `SessionRuntime` into the `@Observable`
+    /// `TodoTracker` reference owned by the runtime. Reading
+    /// `session.todos` (→ `runtime.todoTracker.todos`) must register an
+    /// observation that fires when the merger **appends** a new entry —
+    /// otherwise the input-bar popover would not re-render when a
+    /// `TaskCreate` lands. Making the tracker a value type would copy the
+    /// array on read and silently drop this dependency. Driven through
+    /// the public `Session.todos` façade so the nesting chain is exercised
+    /// end to end.
+    func testTaskCreateTriggersObservationOnSessionTodos() {
+        let runtime = makeRuntime()
+        let session = ccterm.Session(runtime: runtime)
+
+        let changed = expectation(description: "session.todos observer fires on create")
+        withObservationTracking {
+            _ = session.todos
+        } onChange: {
+            changed.fulfill()
+        }
+
+        runtime.receive(taskCreateToolUse(toolUseId: "tu_obs", subject: "Observe me"))
+        runtime.receive(
+            taskCreateResult(toolUseId: "tu_obs", taskId: "1", subject: "Observe me"))
+
+        wait(for: [changed], timeout: 1.0)
+        XCTAssertEqual(session.todos.first?.subject, "Observe me")
+    }
+
+    /// An in-place status patch (`todos[idx] = entry`) is the highest-risk
+    /// mutation for the projection: a value type would break live
+    /// re-render here while still passing the terminal-value assertions.
+    /// Re-arm the observation after the create lands, then assert the
+    /// `TaskUpdate` patch fires it again.
+    func testTaskUpdateInPlacePatchTriggersObservationOnSessionTodos() {
+        let runtime = makeRuntime()
+        let session = ccterm.Session(runtime: runtime)
+
+        runtime.receive(taskCreateToolUse(toolUseId: "tu_c", subject: "Run tests"))
+        runtime.receive(taskCreateResult(toolUseId: "tu_c", taskId: "1", subject: "Run tests"))
+
+        let changed = expectation(description: "session.todos observer fires on in-place patch")
+        withObservationTracking {
+            _ = session.todos
+        } onChange: {
+            changed.fulfill()
+        }
+
+        runtime.receive(
+            taskUpdateToolUse(toolUseId: "tu_u", taskId: "1", status: "completed"))
+        runtime.receive(
+            taskUpdateResult(toolUseId: "tu_u", taskId: "1", from: "pending", to: "completed"))
+
+        wait(for: [changed], timeout: 1.0)
+        XCTAssertEqual(session.todos.first?.status, .completed)
+    }
 }

@@ -116,7 +116,7 @@ final class BackgroundTaskSheetSnapshotTests: XCTestCase {
             sessionId: UUID().uuidString,
             repository: InMemorySessionRepository()
         )
-        runtime.tasks = tasks
+        runtime.taskTracker.tasks = tasks
         return ccterm.Session(runtime: runtime)
     }
 

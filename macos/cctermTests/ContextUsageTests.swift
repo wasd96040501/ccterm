@@ -174,6 +174,35 @@ final class ContextUsageTests: XCTestCase {
         XCTAssertFalse(session.isFetchingContextUsage)
     }
 
+    /// The context-usage cache moved off `SessionRuntime` into the
+    /// `@Observable` `ContextUsageCache` reference owned by the runtime.
+    /// The request's `[weak self]` completion lands on a **later** runloop
+    /// tick and writes `contextUsage` / `contextUsageFetchedAt` /
+    /// `isFetchingContextUsage` (whole-value assignments). Reading
+    /// `session.contextUsage` (→ `runtime.contextUsageCache.contextUsage`)
+    /// must register an observation that fires when that async write lands
+    /// — otherwise the `ContextRingButton` popover would never refresh.
+    /// A value-type cache captured by the closure would write a copy that
+    /// observation never sees. Driven through the public façade.
+    func testAsyncResponseTriggersObservationOnSessionContextUsage() async throws {
+        let fake = FakeCLIClient()
+        let session = try await makeActivatedSession(client: fake)
+
+        let changed = expectation(description: "session.contextUsage observer fires on async landing")
+        withObservationTracking {
+            _ = session.contextUsage
+        } onChange: {
+            changed.fulfill()
+        }
+
+        session.requestContextUsage()
+        let usage = try ContextUsage(json: ["rawMaxTokens": 321, "totalTokens": 99])
+        fake.completeContextUsage(.usage(usage))
+
+        await fulfillment(of: [changed], timeout: 2.0)
+        XCTAssertEqual(session.contextUsage?.rawMaxTokens, 321)
+    }
+
     func testDraftSessionShortCircuitsToUnsupported() {
         let session = ccterm.Session(
             draftSessionId: UUID().uuidString,

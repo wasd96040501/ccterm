@@ -7,10 +7,15 @@ import Foundation
 /// receive grouped + tool-paired `MessageEntry` values back in **document
 /// order** as runs finalize. This is the proper death of `buildEntries`'
 /// throwaway in-memory `SessionRuntime`: the grouping +
-/// tool-pairing rules that live in `SessionRuntime.receive` are reproduced here
-/// as a pure function — no CLI, no CoreData, no actor, no lifecycle side
-/// effects. `TranscriptReverseBuilderTests.A6` pins the 1:1 parity with the
-/// live `receive` grouping.
+/// tool-pairing rules that the live path runs in `SessionRuntime`'s
+/// `appendToTimeline` (the method `receive` dispatches to, which actually walks
+/// the group boundary by inspecting `messages.last`) are reproduced here as a
+/// pure function — no CLI, no CoreData, no actor, no lifecycle side effects.
+/// `TranscriptReverseBuilderTests.A6` pins the 1:1 parity with that live
+/// grouping. Both engines share the same `isGroupableAssistant` predicate (the
+/// single grouping rule); the forward (`appendToTimeline`) and reverse
+/// (this builder) implementations stay intentionally separate because their
+/// traversal directions differ, with A6 locking their equivalence.
 ///
 /// ### Why reverse makes tool pairing free (§4.2)
 ///

@@ -26,7 +26,7 @@ final class DetailRouterDraftRoutingTests: XCTestCase {
             sessionManager: manager,
             recentProjects: RecentProjectsStore(),
             notifications: NotificationService(activation: AppActivationTracker()),
-            searchEngine: SyntaxHighlightEngine(),
+            syntaxEngine: SyntaxHighlightEngine(),
             searchBus: TranscriptSearchBus(),
             inputDraftStore: InputDraftStore()
         )

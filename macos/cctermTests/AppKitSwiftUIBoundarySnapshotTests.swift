@@ -102,7 +102,7 @@ final class AppKitSwiftUIBoundarySnapshotTests: XCTestCase {
             sessionManager: manager,
             recentProjects: recentProjects,
             notifications: notifications,
-            searchEngine: syntaxEngine,
+            syntaxEngine: syntaxEngine,
             searchBus: searchBus,
             inputDraftStore: inputDraftStore)
 
@@ -256,7 +256,7 @@ final class AppKitSwiftUIBoundarySnapshotTests: XCTestCase {
             sessionManager: fx.manager,
             recentProjects: fx.deps.recentProjects,
             notifications: fx.deps.notifications,
-            searchEngine: fx.deps.syntaxEngine,
+            syntaxEngine: fx.deps.syntaxEngine,
             searchBus: fx.deps.searchBus,
             inputDraftStore: fx.deps.inputDraftStore)
 

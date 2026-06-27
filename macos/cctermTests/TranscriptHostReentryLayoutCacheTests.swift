@@ -154,7 +154,7 @@ final class TranscriptHostReentryLayoutCacheTests: XCTestCase {
             sessionManager: manager,
             recentProjects: recentProjects,
             notifications: notifications,
-            searchEngine: syntaxEngine,
+            syntaxEngine: syntaxEngine,
             searchBus: searchBus,
             inputDraftStore: inputDraftStore)
 

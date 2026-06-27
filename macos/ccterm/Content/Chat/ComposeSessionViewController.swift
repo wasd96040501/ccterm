@@ -35,7 +35,7 @@ final class ComposeSessionViewController: NSViewController {
     let sessionManager: SessionManager
     let recentProjects: RecentProjectsStore
     let notifications: NotificationService
-    let searchEngine: SyntaxHighlightEngine
+    let syntaxEngine: SyntaxHighlightEngine
     let searchBus: TranscriptSearchBus
     let inputDraftStore: InputDraftStore
 
@@ -46,7 +46,7 @@ final class ComposeSessionViewController: NSViewController {
         sessionManager: SessionManager,
         recentProjects: RecentProjectsStore,
         notifications: NotificationService,
-        searchEngine: SyntaxHighlightEngine,
+        syntaxEngine: SyntaxHighlightEngine,
         searchBus: TranscriptSearchBus,
         inputDraftStore: InputDraftStore
     ) {
@@ -54,7 +54,7 @@ final class ComposeSessionViewController: NSViewController {
         self.sessionManager = sessionManager
         self.recentProjects = recentProjects
         self.notifications = notifications
-        self.searchEngine = searchEngine
+        self.syntaxEngine = syntaxEngine
         self.searchBus = searchBus
         self.inputDraftStore = inputDraftStore
         super.init(nibName: nil, bundle: nil)
@@ -100,7 +100,7 @@ final class ComposeSessionViewController: NSViewController {
             .environment(sessionManager)
             .environment(recentProjects)
             .environment(inputDraftStore)
-            .environment(\.syntaxEngine, searchEngine)
+            .environment(\.syntaxEngine, syntaxEngine)
         )
 
         let host = NSHostingController(rootView: root)

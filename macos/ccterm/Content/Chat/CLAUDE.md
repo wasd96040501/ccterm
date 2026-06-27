@@ -37,7 +37,7 @@ AppDelegate (NSApplicationDelegate)
             │   │   └── session.controller drives blocks; isRunning → setLoading
             │   ├── topScrim: TranscriptScrimView (AppKit, hitTest passthrough)
             │   ├── bottomScrim: TranscriptBottomScrimView (AppKit, attach/pill cutouts)
-            │   ├── composeOrBarHost: NSHostingView<AnyView>  (bottom-anchored, chat resting bar)
+            │   ├── composeOrBarHost: NSHostingView<ChatComposeHostRoot>  (bottom-anchored, chat resting bar)
             │   └── permissionCardHost: PassthroughHostingView (full-pane, click-through, permission card overlay)
             ├── .newSession → ComposeSessionViewController
             │   └── NSHostingController<ComposeSessionView>  (full-bleed compose card)

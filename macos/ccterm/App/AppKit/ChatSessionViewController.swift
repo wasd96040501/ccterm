@@ -32,11 +32,11 @@ import SwiftUI
 /// - top scrim — `TranscriptScrimView` (AppKit, hitTest passthrough)
 /// - bottom scrim — `TranscriptBottomScrimView` (AppKit, hitTest
 ///   passthrough, even-odd cutouts at the attach button + pill)
-/// - input bar — `NSHostingView<AnyView>`. Its SwiftUI body switches on
-///   `model.selection` via `ChatComposeStack.content(...)`: `.session(_)`
-///   → chat resting bar, everything else → `EmptyView`. `.newSession` /
-///   `.archive` / `.demo(_)` are routed away from this VC entirely by
-///   `DetailRouterViewController` and never land here.
+/// - input bar — `NSHostingView<ChatComposeHostRoot>`. Its SwiftUI body
+///   switches on `model.selection` via `ChatComposeStack.content(...)`:
+///   `.session(_)` → chat resting bar, everything else → `EmptyView`.
+///   `.newSession` / `.archive` / `.demo(_)` are routed away from this VC
+///   entirely by `DetailRouterViewController` and never land here.
 /// - permission card — `permissionCardHost` (`PassthroughHostingView`
 ///   hosting `PermissionCardOverlay`), a dedicated full-pane click-through
 ///   host **on top** of the bar. The card floats here instead of inside
@@ -97,7 +97,11 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
     // `internal` (not `private`) is an access-modifier-only test seam: the
     // `HostedComponentCenteringTests` CI gate samples this host's frame to
     // assert the regime-B centering + width-cap contract. No behavior change.
-    var composeOrBarHost: NSHostingView<AnyView>!
+    // The root view is a named `ChatComposeHostRoot` wrapper (not `AnyView`)
+    // so the construction expression + environment chain are type-checked;
+    // the tests touch this only through `NSView` APIs (`.frame` /
+    // `.fittingSize`), so the concrete generic parameter doesn't affect them.
+    var composeOrBarHost: NSHostingView<ChatComposeHostRoot>!
 
     /// Full-pane floating host for the permission card (`PermissionCardOverlay`).
     /// A `PassthroughHostingView` (regime-A: `sizingOptions = []` + four-edge
@@ -174,7 +178,7 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
         bottomScrim.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(bottomScrim)
 
-        composeOrBarHost = NSHostingView(rootView: AnyView(makeComposeOrBarStack()))
+        composeOrBarHost = NSHostingView(rootView: makeComposeOrBarRoot())
         composeOrBarHost.translatesAutoresizingMaskIntoConstraints = false
         // A plain `NSHostingView` claims every point in its bounds for
         // hit-testing, shadowing the transcript table below it. We keep its
@@ -585,9 +589,18 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
 
     // MARK: - SwiftUI overlay builders
 
-    private func makeComposeOrBarStack() -> some View {
-        ChatComposeStack(
+    /// Build the chat resting-bar host root. The environment chain is
+    /// encapsulated in the named `ChatComposeHostRoot` wrapper (un-erased
+    /// from the former `AnyView(...)`), so the construction expression +
+    /// modifier chain are type-checked at the call site. The closures stay
+    /// owned by this VC with the same `[weak self]` semantics as before.
+    private func makeComposeOrBarRoot() -> ChatComposeHostRoot {
+        ChatComposeHostRoot(
             model: model,
+            sessionManager: sessionManager,
+            recentProjects: recentProjects,
+            inputDraftStore: inputDraftStore,
+            syntaxEngine: syntaxEngine,
             onSubmit: { [weak self] submission, sessionId in
                 guard let self else { return }
                 submitSessionInput(
@@ -616,10 +629,6 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
                     model: self.model)
             }
         )
-        .environment(sessionManager)
-        .environment(recentProjects)
-        .environment(inputDraftStore)
-        .environment(\.syntaxEngine, syntaxEngine)
     }
 
     /// `nonisolated` so dealloc skips the `@MainActor` deinit
@@ -633,6 +642,45 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
 }
 
 // MARK: - SwiftUI overlay subviews
+
+/// Named root wrapper for `ChatSessionViewController.composeOrBarHost`.
+/// Encapsulates the environment-injection chain that used to be erased
+/// behind an `AnyView(...)` at the host's construction site, so the
+/// `composeOrBarHost` declaration carries a concrete generic parameter
+/// (`NSHostingView<ChatComposeHostRoot>`) and the root view's construction +
+/// modifier chain are type-checked. The VC owns the callbacks; this struct
+/// only threads them — and the environment values — into `ChatComposeStack`.
+///
+/// Un-erasing does **not** by itself turn a missing `.environment(...)`
+/// injection into a compile error — Observable-object / keyed-environment
+/// values resolve at runtime. What it guards is the *construction
+/// expression*: the wrapper's body has to name each injection explicitly, so
+/// the chain can't silently drift to the wrong type.
+struct ChatComposeHostRoot: View {
+    @Bindable var model: MainSelectionModel
+    let sessionManager: SessionManager
+    let recentProjects: RecentProjectsStore
+    let inputDraftStore: InputDraftStore
+    let syntaxEngine: SyntaxHighlightEngine
+    let onSubmit: (InputBarView2.Submission, String) -> Void
+    let onAttachRect: (CGRect) -> Void
+    let onPillRect: (CGRect) -> Void
+    let onBuiltinCommand: (BuiltinSlashCommand, String) -> Void
+
+    var body: some View {
+        ChatComposeStack(
+            model: model,
+            onSubmit: onSubmit,
+            onAttachRect: onAttachRect,
+            onPillRect: onPillRect,
+            onBuiltinCommand: onBuiltinCommand
+        )
+        .environment(sessionManager)
+        .environment(recentProjects)
+        .environment(inputDraftStore)
+        .environment(\.syntaxEngine, syntaxEngine)
+    }
+}
 
 /// Chat-mode resting input bar (or nothing). The always-mounted bar
 /// host of `ChatSessionViewController` renders this; it reads state from

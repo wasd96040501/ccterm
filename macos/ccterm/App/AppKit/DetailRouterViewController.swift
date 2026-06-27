@@ -427,15 +427,18 @@ final class DetailRouterViewController: NSViewController, MainSelectionObserver 
             // The only demo that's a pure SwiftUI view — host it via
             // `NSHostingController` so the surrounding `addChild`
             // plumbing matches the other branches. Same environment
-            // injections the production app uses.
-            let root = AnyView(
-                PermissionCardsDemoView()
+            // injections the production app uses. Un-erased from the
+            // former `AnyView(...)` so the construction + modifier chain
+            // are type-checked; this host IS the child VC the router pins,
+            // so it does NOT route through `mountFillPaneHost` (which mounts
+            // a host *inside* a container VC).
+            let host = NSHostingController(
+                rootView: PermissionCardsDemoView()
                     .environment(sessionManager)
                     .environment(recentProjects)
                     .environment(inputDraftStore)
                     .environment(\.syntaxEngine, syntaxEngine)
             )
-            let host = NSHostingController(rootView: root)
             // Fill-the-pane detail child — clear `sizingOptions` so the
             // SwiftUI body's fitting size doesn't bubble up through the
             // split's `view.fittingSize` and collapse the window height

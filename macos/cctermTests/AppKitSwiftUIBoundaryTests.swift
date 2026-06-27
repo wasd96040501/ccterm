@@ -20,9 +20,10 @@ import XCTest
 /// window height** to the content's ideal — the archive "squashed window"
 /// the user reported. The fix is regime A's recipe:
 /// `sizingOptions = []` (publish no intrinsic size) + pin all four edges
-/// so the *container* drives the host's size. See
-/// `ArchiveViewController.swift:83-113` for the canonical implementation
-/// and its ≈ 545×276 fittingSize-leak comment.
+/// so the *container* drives the host's size. See `mountFillPaneHost`
+/// (`MountFillPaneHost.swift`) for the canonical implementation, and
+/// `ArchiveViewController.viewDidLoad` for the ≈ 545×276 fittingSize-leak
+/// measurement comment at its call site.
 ///
 /// ## Why this file is NOT a copy of the existing archive gate
 ///

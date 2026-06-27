@@ -422,4 +422,55 @@ final class SessionRuntimeTasksTests: XCTestCase {
         XCTAssertEqual(runtime.tasks.first?.status, .stopped)
         XCTAssertNotNil(runtime.tasks.first?.endedAt)
     }
+
+    // MARK: - Live re-render (observation nesting)
+
+    /// The task list moved off `SessionRuntime` into the `@Observable`
+    /// `TaskTracker` reference owned by the runtime. Reading
+    /// `session.tasks` (→ `runtime.taskTracker.tasks`) must register an
+    /// observation that fires when `task_started` **appends** a new
+    /// entry — otherwise the input-bar tasks popover would not re-render
+    /// when a background bash launches. A value-type projection would
+    /// copy the array on read and drop this dependency. Driven through
+    /// the public `Session.tasks` façade.
+    func testTaskStartedTriggersObservationOnSessionTasks() {
+        let runtime = makeRuntime()
+        let session = ccterm.Session(runtime: runtime)
+
+        let changed = expectation(description: "session.tasks observer fires on start")
+        withObservationTracking {
+            _ = session.tasks
+        } onChange: {
+            changed.fulfill()
+        }
+
+        runtime.receive(taskStarted(taskId: "obs", toolUseId: "tu_obs", description: "Observe"))
+
+        wait(for: [changed], timeout: 1.0)
+        XCTAssertEqual(session.tasks.first?.id, "obs")
+    }
+
+    /// An in-place status flip (`tasks[idx] = task`) via the public
+    /// `Session.stopBackgroundTask` façade — which forwards to
+    /// `runtime.markTaskStoppedLocally` → `taskTracker.markTaskStoppedLocally`
+    /// — must fire the `session.tasks` observation. This is the
+    /// highest-risk mutation for the projection: a value type would keep
+    /// the terminal-value assertion green while breaking live re-render.
+    func testMarkStoppedTriggersObservationOnSessionTasks() {
+        let runtime = makeRuntime()
+        let session = ccterm.Session(runtime: runtime)
+        runtime.receive(taskStarted(taskId: "x", toolUseId: "tu_x"))
+
+        let changed = expectation(description: "session.tasks observer fires on stop")
+        withObservationTracking {
+            _ = session.tasks
+        } onChange: {
+            changed.fulfill()
+        }
+
+        session.stopBackgroundTask(taskId: "x")
+
+        wait(for: [changed], timeout: 1.0)
+        XCTAssertEqual(session.tasks.first?.status, .stopped)
+    }
 }

@@ -22,6 +22,7 @@ import Observation
 /// directly testable — a unit test constructs one, calls these methods
 /// against a temp git repo, and asserts on the @Observable properties.
 @Observable
+@MainActor
 final class GitProbe {
 
     /// Branch list from `git for-each-ref refs/heads`. Empty when the
@@ -65,6 +66,12 @@ final class GitProbe {
             pendingFolder = path
         }
     }
+
+    /// @MainActor class deinit would otherwise route through
+    /// `swift_task_deinitOnExecutorImpl`, hitting a macOS 26 SDK bug in
+    /// libswift_Concurrency. nonisolated deinit skips the executor-hop
+    /// path and avoids the bug (mirrors `SessionRuntime`).
+    nonisolated deinit {}
 
     /// Synchronous, cheap probe. Updates `isGitRepo` and `currentBranch`,
     /// and resets the heavy cache when `folderPath` differs from the
@@ -127,8 +134,15 @@ final class GitProbe {
     }
 
     // MARK: - Git subprocess helpers
+    //
+    // `nonisolated` because `loadHeavy` runs these inside a
+    // `Task.detached` so the three `git` subprocesses spawn off the main
+    // thread. They are pure functions of `path` (no `GitProbe` state),
+    // so dropping the actor isolation is behavior-neutral — the class is
+    // `@MainActor`, which would otherwise make these statics
+    // main-actor-isolated and un-callable from the detached task.
 
-    static func listBranches(at path: String) -> [String] {
+    nonisolated static func listBranches(at path: String) -> [String] {
         let result = Worktree.runGit(
             ["for-each-ref", "--format=%(refname:short)", "refs/heads"],
             cwd: path,
@@ -142,7 +156,7 @@ final class GitProbe {
             .filter { !$0.isEmpty }
     }
 
-    static func remoteMainBranchName(at path: String) -> String? {
+    nonisolated static func remoteMainBranchName(at path: String) -> String? {
         let result = Worktree.runGit(
             ["symbolic-ref", "--short", "--quiet", "refs/remotes/origin/HEAD"],
             cwd: path,
@@ -157,7 +171,7 @@ final class GitProbe {
         return stdout
     }
 
-    static func gitStatusSummary(at path: String) -> String? {
+    nonisolated static func gitStatusSummary(at path: String) -> String? {
         var parts: [String] = []
         let porcelain = Worktree.runGit(
             ["status", "--porcelain"],

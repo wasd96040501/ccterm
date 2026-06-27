@@ -303,23 +303,29 @@ final class SessionRuntime {
     /// `TimerFrameTicker`. See `SessionRuntime+Streaming`.
     @ObservationIgnored internal let frameTicker: FrameTicker
 
+    /// Cached `get_context_usage` breakdown. Reference-type `@Observable`
+    /// projection so the async completion's writes are tracked through the
+    /// nested chain `session.contextUsage` → `contextUsageCache.contextUsage`
+    /// (see `ContextUsageCache`). The runtime keeps a thin
+    /// `requestContextUsage` forwarder (`SessionRuntime+ContextUsage.swift`)
+    /// that hands the bound `cliClient` to the cache; reads are forwarded
+    /// through the computed accessors below.
+    let contextUsageCache = ContextUsageCache()
+
     /// Most-recent typed `get_context_usage` response from the CLI. `nil`
     /// until the popover has fetched at least once. The popover reads
     /// this directly so the panel can render synchronously on re-open;
     /// the request is fired-and-forgotten by the UI when the user opens
     /// the popover.
-    internal(set) var contextUsage: ContextUsage?
+    var contextUsage: ContextUsage? { contextUsageCache.contextUsage }
 
     /// When the cached `contextUsage` was last refreshed.
-    internal(set) var contextUsageFetchedAt: Date?
+    var contextUsageFetchedAt: Date? { contextUsageCache.contextUsageFetchedAt }
 
     /// True while a `getContextUsage` request is in flight. Lets the
     /// popover show a spinner instead of stale numbers during a refresh.
-    internal(set) var isFetchingContextUsage: Bool = false
+    var isFetchingContextUsage: Bool { contextUsageCache.isFetchingContextUsage }
 
-    /// Completions queued while a `getContextUsage` is in flight. All
-    /// fire with the same outcome when the in-flight request settles.
-    @ObservationIgnored internal var contextUsagePendingCallbacks: [(ContextUsageOutcome) -> Void] = []
     internal(set) var slashCommands: [SlashCommand] = []
 
     /// Command descriptions keyed by name, sourced from the desc-rich
@@ -331,30 +337,34 @@ final class SessionRuntime {
     /// completion popup's footer would lose its description.
     @ObservationIgnored internal var slashCommandDescriptions: [String: String] = [:]
 
-    /// Background bash tasks the CLI is tracking for this session. Updated
-    /// in receive() from system.task_started / task_updated /
-    /// task_notification — these events are otherwise dropped from the
-    /// transcript timeline (they are control signals, not user content).
-    /// Ordered chronologically (oldest first); the popover groups them by
-    /// running vs. terminal at render time.
-    internal(set) var tasks: [BackgroundTask] = []
+    /// Background bash tasks the CLI is tracking for this session.
+    /// Reference-type `@Observable` projection (`TaskTracker`) so in-place
+    /// `tasks[idx] = ...` mutations are tracked through the nested chain
+    /// `session.tasks` → `taskTracker.tasks`. Updated in `receive()` from
+    /// system.task_started / task_updated / task_notification — these
+    /// events are otherwise dropped from the transcript timeline (they are
+    /// control signals, not user content). Ordered chronologically
+    /// (oldest first); the popover groups them by running vs. terminal at
+    /// render time.
+    let taskTracker = TaskTracker()
 
-    /// The assistant's live todo plan. Built from the CLI's `TaskCreate`
-    /// / `TaskUpdate` tool calls — see [Services/Session/SessionRuntime+Todos.swift]
-    /// for the merger. The matching tool_use / tool_result blocks remain
-    /// visible in the transcript; this collection is a structured
-    /// off-band projection so the input-bar popover can render the plan
-    /// without re-parsing the timeline.
-    internal(set) var todos: [TodoEntry] = []
+    /// Background bash tasks read surface. Forwards into `taskTracker`.
+    var tasks: [BackgroundTask] { taskTracker.tasks }
 
-    /// Internal scratch — `TaskCreate` input keyed by `tool_use_id`,
-    /// captured the moment the assistant emits the tool_use so we can
-    /// pair it with the subsequent tool_result (which only echoes
-    /// `task.id` + `subject`, dropping the description / activeForm).
-    /// Entries are removed once consumed; the dict stays small even on
-    /// long sessions.
-    @ObservationIgnored internal var pendingTodoCreates: [String: TodoEntry.CreateScratch] = [:]
-    @ObservationIgnored internal var pendingTodoUpdates: [String: TodoEntry.UpdateScratch] = [:]
+    /// The assistant's live todo plan. Reference-type `@Observable`
+    /// projection (`TodoTracker`) so in-place `todos[idx] = ...` patches
+    /// are tracked through the nested chain `session.todos` →
+    /// `todoTracker.todos`. Built from the CLI's `TaskCreate` /
+    /// `TaskUpdate` tool calls — see `TodoTracker` for the merger. The
+    /// matching tool_use / tool_result blocks remain visible in the
+    /// transcript; this collection is a structured off-band projection so
+    /// the input-bar popover can render the plan without re-parsing the
+    /// timeline.
+    let todoTracker = TodoTracker()
+
+    /// Todo-plan read surface. Forwards into `todoTracker`.
+    var todos: [TodoEntry] { todoTracker.todos }
+
     /// Model catalog from the CLI's `InitializeResponse.models`. Source of
     /// truth for the model picker — display name, supported effort levels,
     /// and feature flags (auto / fast / adaptive thinking) per model. Set

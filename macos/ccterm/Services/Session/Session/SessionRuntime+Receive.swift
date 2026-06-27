@@ -29,7 +29,7 @@ extension SessionRuntime {
             // pairing user.tool_result can materialize / patch the
             // entry in `todos`. Runs in both live and replay so the
             // popover list is correct after a JSONL reload.
-            captureTodoToolUses(in: a)
+            todoTracker.captureTodoToolUses(in: a)
             noteUsage(a.message?.usage)
             // Fold this message's authoritative usage into the turn total.
             // Live mode only — replay reloads don't drive the turn counter.
@@ -111,22 +111,23 @@ extension SessionRuntime {
             // self-heal that pulls UI state back to reality.
             adoptPermissionMode(s.permissionMode)
         case .system(.taskStarted(let started)) where mode == .live:
-            handleTaskStarted(started)
+            taskTracker.handleTaskStarted(
+                started, command: bashCommand(forToolUseId: started.toolUseId))
         case .system(.taskNotification(let notif)) where mode == .live:
-            handleTaskNotification(notif)
+            taskTracker.handleTaskNotification(notif)
         case .system(.taskUpdated(let updated)) where mode == .live:
-            handleTaskUpdated(updated)
+            taskTracker.handleTaskUpdated(updated)
         case .user(let u) where u.toolResultBlock?.toolUseId != nil:
             // Capture backgroundTaskId → outputFile mapping when the bash
             // tool's tool_result lands. system.task_started doesn't carry
             // the output path (it's allocated lazily when the CLI writes
             // its first byte to the spool file), so this is the earliest
             // reliable point to record where to tail from.
-            if mode == .live { rememberOutputFileFromBashResult(u) }
+            if mode == .live { taskTracker.rememberOutputFileFromBashResult(u) }
             // Fold any TaskCreate / TaskUpdate result into `todos`. Runs
             // for both live and replay so the popover state survives a
             // JSONL reload.
-            applyTodoToolResult(u)
+            todoTracker.applyTodoToolResult(u)
         default: break
         }
 

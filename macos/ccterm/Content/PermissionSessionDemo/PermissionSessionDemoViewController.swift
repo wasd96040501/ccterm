@@ -528,7 +528,7 @@ fileprivate struct Seed {
             status: .failed,
             summary: "Background command \"Migration smoke\" failed (exit code 1)"
         )
-        runtime.tasks = [completed, failed, running]
+        runtime.taskTracker.tasks = [completed, failed, running]
     }
 
     /// Push a representative todo plan onto the runtime so the
@@ -539,7 +539,7 @@ fileprivate struct Seed {
     private func seedTodos() {
         guard let runtime = session.runtime else { return }
         let now = Date()
-        runtime.todos = [
+        runtime.todoTracker.todos = [
             TodoEntry(
                 id: "1",
                 subject: "Read the existing transcript renderer doc",

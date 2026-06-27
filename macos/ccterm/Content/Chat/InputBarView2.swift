@@ -85,8 +85,8 @@ struct InputBarView2: View {
 
     /// Payload handed to `onSubmit`. Any combination of `text`, `images`,
     /// and `filePaths` can be non-empty (at least one is, by `canSend`).
-    /// `RootView2.submit(_:sessionId:)` composes them into one or more
-    /// `Session.send(...)` calls.
+    /// The shared `submitSessionInput(_:sessionId:…)` helper composes them
+    /// into one or more `Session.send(...)` calls.
     struct Submission {
         let text: String
         let images: [(data: Data, mediaType: String)]
@@ -103,8 +103,8 @@ struct InputBarView2: View {
     /// button gated by `canSend`. No local `@State` copy — avoids drift from
     /// the handle.
     var isRunning: Bool = false
-    /// External gate stacked on top of the text/attachment check. RootView2
-    /// sets it to `false` in compose mode while no project folder is picked,
+    /// External gate stacked on top of the text/attachment check. The
+    /// compose card sets it to `false` while no project folder is picked,
     /// so the send button greys out until the user chooses a target — the
     /// draft would otherwise silently fall back to `$HOME` at submit.
     var submitEnabled: Bool = true
@@ -164,7 +164,7 @@ struct InputBarView2: View {
     /// thumbnail strip (or directly above the text row when no
     /// attachment is present). Created once per InputBarView2; the bar
     /// rewires its provider closures every render via `triggerContext`.
-    @State private var completion = CompletionViewModel()
+    @State private var completion = CompletionState()
 
     var body: some View {
         // `.bottom` (not `.center`) so the attach button always sits at

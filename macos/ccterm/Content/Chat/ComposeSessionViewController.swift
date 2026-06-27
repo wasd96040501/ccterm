@@ -7,7 +7,7 @@ import SwiftUI
 ///
 /// **Why compose is its own VC.** Compose used to be a *mode* of
 /// `ChatSessionViewController`, sharing its always-mounted
-/// `composeOrBarHost`. That single `NSHostingView` had to morph between
+/// `restingBarHost`. That single `NSHostingView` had to morph between
 /// a full-bleed configurator (compose) and a bottom-anchored bar (chat)
 /// on every selection flip, which meant keeping an AppKit constraint
 /// switch in sync with the SwiftUI body across runloop phases. The two

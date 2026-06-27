@@ -12,7 +12,7 @@ import XCTest
 /// with its **height** driven by the content (`sizingOptions =
 /// [.intrinsicContentSize]`).
 ///
-/// Subject under test: `ChatSessionViewController.composeOrBarHost` — the
+/// Subject under test: `ChatSessionViewController.restingBarHost` — the
 /// always-mounted `NSHostingView<AnyView>` that renders the chat resting
 /// input bar. Its constraint recipe (`ChatSessionViewController.swift`
 /// `loadView()`):
@@ -206,7 +206,7 @@ final class HostedComponentCenteringTests: XCTestCase {
             window.close()
         }
 
-        let host = fx.vc.composeOrBarHost!
+        let host = fx.vc.restingBarHost!
         let bounds = fx.vc.view.bounds
         let frame = host.frame
 
@@ -249,7 +249,7 @@ final class HostedComponentCenteringTests: XCTestCase {
             window.close()
         }
 
-        let host = fx.vc.composeOrBarHost!
+        let host = fx.vc.restingBarHost!
         let bounds = fx.vc.view.bounds
         let frame = host.frame
 

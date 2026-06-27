@@ -281,7 +281,7 @@ private struct StandalonePermissionCardFixture: View {
 /// Mirrors the POST-PR5 composition: the input-bar stack
 /// (`InputBarView2` + `InputBarSessionChrome`) bottom-anchored, with the
 /// permission card on a SEPARATE full-pane z-layer above it — the way
-/// `ChatSessionViewController` splits `composeOrBarHost` (bottom-anchored,
+/// `ChatSessionViewController` splits `restingBarHost` (bottom-anchored,
 /// intrinsic height) from `permissionCardHost` (full-pane,
 /// `PermissionCardOverlay`). The card is bottom-pinned with
 /// `ChatSessionViewController.chatBottomInset` (36) so it floats up from the

@@ -18,7 +18,7 @@ import SwiftUI
 /// Fixed to `NSHostingView<AnyView>` (non-generic): a generic `<Content>`
 /// triggers a Swift 6.3 SIL inliner crash on the synthesized
 /// `__deallocating_deinit` in Release builds. The same pattern the
-/// `composeOrBarHost` / scrim hosts already follow.
+/// `restingBarHost` / scrim hosts already follow.
 final class PassthroughHostingView: NSHostingView<AnyView> {
     override func hitTest(_ point: NSPoint) -> NSView? {
         let result = super.hitTest(point)

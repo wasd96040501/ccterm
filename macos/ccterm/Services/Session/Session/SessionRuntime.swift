@@ -175,7 +175,8 @@ final class SessionRuntime {
     ///
     /// Needed because the worktree-provisioning path runs the save
     /// asynchronously (after `Worktree.create` returns 10-20s later) — by
-    /// then RootView2's inline `refreshRecords()` call has already executed
+    /// then the submit path's inline `sessionManager.refreshRecords()` call
+    /// (`submitSessionInput`) has already executed
     /// against an empty repo, so without this callback the sidebar stays
     /// stale until the next refresh-triggering event.
     @ObservationIgnored var onRecordPersisted: (() -> Void)?

@@ -18,7 +18,7 @@ Native macOS client for Claude Code. SwiftUI + AppKit, minimum target macOS 14 (
   - **Model** — plain data, `struct` first, `Codable` where it crosses a boundary.
   - **View** — SwiftUI structs, declarative.
   - **Service** — `@Observable`, injected via initializer or `.environment()`. Views never construct services themselves.
-  - **AppState** — process-scope container owned by `AppDelegate`, injected through `.environment()`. Currently holds `SessionManager`, `SyntaxHighlightEngine`, `RecentProjectsStore`, `InputDraftStore`, `SidebarSessionGroupOrderStore`, `AppActivationTracker`, `NotificationService`.
+  - **AppState** — process-scope container owned by `AppDelegate`, passed down by **initializer** (`AppDelegate` → `MainWindowController` → `MainSplitViewController`), not injected wholesale via `.environment(appState)`. `MainSplitViewController` unpacks its members: the sidebar's needs are bundled into a `SidebarContext`, and the four detail-scope services are bundled into a `DetailContext` that reaches SwiftUI children via `injectDetailEnvironment(_:)`. Holds `SessionManager`, `SyntaxHighlightEngine`, `RecentProjectsStore`, `InputDraftStore`, `SidebarSessionGroupOrderStore`, `AppActivationTracker`, `NotificationService`, `OpenInAppService`.
 
 ### Embedding SwiftUI in AppKit: host sizing
 

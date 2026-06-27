@@ -4,8 +4,8 @@ import AppKit
 /// `SidebarViewController` on the leading side and a
 /// `DetailRouterViewController` on the trailing side. The router
 /// owns whichever detail child VC the current selection asks for —
-/// see its doc comment for the scaffolding plan. Replaces
-/// `RootView2`'s `NavigationSplitView` wrapper.
+/// see its doc comment for the scaffolding plan. This
+/// `NSSplitViewController` is the window's sidebar/detail split.
 @MainActor
 final class MainSplitViewController: NSSplitViewController {
     let model: MainSelectionModel

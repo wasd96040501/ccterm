@@ -17,7 +17,7 @@ final class CompletionListSnapshotTests: XCTestCase {
     }
 
     func testSlashCommandsSelectedDetail() throws {
-        let vm = CompletionViewModel()
+        let vm = CompletionState()
         vm.items = [
             SlashCommandStore.Match(
                 name: "commit",
@@ -43,7 +43,7 @@ final class CompletionListSnapshotTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func capture(viewModel: CompletionViewModel, name: String) {
+    private func capture(viewModel: CompletionState, name: String) {
         let size = CGSize(width: 420, height: 240)
         let view = ZStack {
             Color(nsColor: .windowBackgroundColor)

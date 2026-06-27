@@ -42,20 +42,13 @@ final class SidebarViewController: NSViewController {
     private let outlineView = NoDisclosureOutlineView()
     private let column = NSTableColumn(identifier: .init("Sidebar"))
 
-    /// "Open in" context-menu item. Its submenu (the per-app list) is
-    /// rebuilt on every right-click in `menuNeedsUpdate`, and the item
-    /// itself is disabled (greyed) when the clicked session has no
-    /// openable directory on disk.
-    private let openInItem = NSMenuItem(
-        title: String(localized: "Open in"), action: nil, keyEquivalent: "")
-
-    /// "Copy Session File Path" context-menu item. Held as a field so
-    /// `menuNeedsUpdate` can grey it out when the clicked session has no
-    /// JSONL on disk yet (same enable/disable discipline as `openInItem`).
-    private let copyPathItem = NSMenuItem(
-        title: String(localized: "Copy Session File Path"),
-        action: #selector(copySessionFilePath(_:)),
-        keyEquivalent: "")
+    /// Owns the right-click context menu (build + `NSMenuDelegate` update +
+    /// the Archive / "Open in" / Copy actions). **Strongly held** — AppKit
+    /// does not retain an `NSMenu.delegate` or `NSMenuItem.target`, both of
+    /// which point at this controller, so dropping the reference would
+    /// silently disable the menu. Constructed in `configureOutline`, once
+    /// `context` is available.
+    private var contextMenuController: SidebarContextMenuController!
 
     /// Flat list of the outline's root children. Folder nodes inside
     /// hold their own `children` arrays for the hierarchy. Recomputed
@@ -148,7 +141,12 @@ final class SidebarViewController: NSViewController {
         outlineView.delegate = self
         outlineView.target = self
         outlineView.action = #selector(handleOutlineClick(_:))
-        outlineView.menu = makeContextMenu()
+        contextMenuController = SidebarContextMenuController(
+            context: context,
+            nodeAtRow: { [weak self] in self?.outlineView.item(atRow: $0) as? SidebarItemNode },
+            clickedRow: { [weak self] in self?.outlineView.clickedRow ?? -1 },
+            selectedRow: { [weak self] in self?.outlineView.selectedRow ?? -1 })
+        outlineView.menu = contextMenuController.menu
         outlineView.registerForDraggedTypes([SidebarLayout.folderDragType])
         outlineView.setDraggingSourceOperationMask([.move], forLocal: true)
         outlineView.setDraggingSourceOperationMask([], forLocal: false)
@@ -163,93 +161,6 @@ final class SidebarViewController: NSViewController {
         scrollView.borderType = .noBorder
         scrollView.scrollerStyle = .overlay
         scrollView.autohidesScrollers = true
-    }
-
-    private func makeContextMenu() -> NSMenu {
-        let menu = NSMenu()
-        menu.delegate = self
-        // Manage enabled state ourselves — the default autoenable path
-        // would route through `validateMenuItem`/responder chain and
-        // override the greyed-out "Open in" state we set explicitly.
-        menu.autoenablesItems = false
-
-        let archive = NSMenuItem(
-            title: String(localized: "Archive"),
-            action: #selector(archiveSelectedRow(_:)),
-            keyEquivalent: "")
-        archive.target = self
-        menu.addItem(archive)
-
-        copyPathItem.target = self
-        menu.addItem(copyPathItem)
-
-        let openInSubmenu = NSMenu()
-        openInSubmenu.autoenablesItems = false
-        openInItem.submenu = openInSubmenu
-        menu.addItem(openInItem)
-        return menu
-    }
-
-    /// Resolve the directory to open for a history session: prefer
-    /// `cwd`, fall back to `originPath`. Returns nil when neither is set
-    /// or the resolved path no longer exists as a directory on disk —
-    /// the caller greys out "Open in" in that case.
-    private func openablePath(forSessionId sessionId: String) -> String? {
-        guard let record = context.sessionManager.records.first(where: { $0.sessionId == sessionId })
-        else { return nil }
-        guard let candidate = record.cwd ?? record.originPath, !candidate.isEmpty else {
-            return nil
-        }
-        var isDir: ObjCBool = false
-        guard FileManager.default.fileExists(atPath: candidate, isDirectory: &isDir),
-            isDir.boolValue
-        else { return nil }
-        return candidate
-    }
-
-    /// On-disk path of the session's history JSONL, resolved through the
-    /// same `HistoryLoader.locate` the runtime uses (ccterm export →
-    /// CLI live file → project-dir scan). Returns nil when no JSONL
-    /// exists yet — the caller greys out "Copy Session File Path".
-    private func jsonlPath(forSessionId sessionId: String) -> String? {
-        let slug = context.sessionManager.records.first { $0.sessionId == sessionId }?.slug
-        return HistoryLoader.locate(sessionId: sessionId, slug: slug)?.path
-    }
-
-    /// Rebuild the "Open in" submenu for the clicked session. Enabled
-    /// only when there's a valid directory and at least one installed
-    /// app; otherwise the parent item is left disabled and the submenu
-    /// empty.
-    private func rebuildOpenInSubmenu(forSessionId sessionId: String) {
-        let submenu = openInItem.submenu ?? NSMenu()
-        submenu.removeAllItems()
-
-        let path = openablePath(forSessionId: sessionId)
-        let targets = context.openInService.targets
-        openInItem.isEnabled = path != nil && !targets.isEmpty
-
-        guard let path, !targets.isEmpty else { return }
-        for target in targets {
-            let item = NSMenuItem(
-                title: target.name, action: #selector(openInApp(_:)), keyEquivalent: "")
-            item.target = self
-            item.image = target.icon
-            item.representedObject = OpenInRequest(path: path, target: target)
-            submenu.addItem(item)
-        }
-    }
-
-    /// Captured at submenu-build time so the action handler has both the
-    /// directory and the chosen app without re-reading `clickedRow`
-    /// (which is no longer valid by the time the item fires).
-    private struct OpenInRequest {
-        let path: String
-        let target: OpenInAppService.Target
-    }
-
-    @objc private func openInApp(_ sender: NSMenuItem) {
-        guard let request = sender.representedObject as? OpenInRequest else { return }
-        context.openInService.open(path: request.path, with: request.target)
     }
 
     // MARK: - Items
@@ -425,30 +336,6 @@ final class SidebarViewController: NSViewController {
         {
             cell.setExpanded(!isExpanded, animated: true)
         }
-    }
-
-    @objc private func archiveSelectedRow(_ sender: Any?) {
-        let row = outlineView.clickedRow >= 0 ? outlineView.clickedRow : outlineView.selectedRow
-        guard row >= 0, let node = outlineView.item(atRow: row) as? SidebarItemNode else {
-            return
-        }
-        guard case .history(let sessionId, _, _) = node.kind else { return }
-        if context.model.selection == .session(sessionId) {
-            context.model.select(.newSession)
-        }
-        context.sessionManager.archive(sessionId)
-    }
-
-    @objc private func copySessionFilePath(_ sender: Any?) {
-        let row = outlineView.clickedRow >= 0 ? outlineView.clickedRow : outlineView.selectedRow
-        guard row >= 0, let node = outlineView.item(atRow: row) as? SidebarItemNode else {
-            return
-        }
-        guard case .history(let sessionId, _, _) = node.kind else { return }
-        guard let path = jsonlPath(forSessionId: sessionId) else { return }
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(path, forType: .string)
     }
 }
 
@@ -692,27 +579,6 @@ extension SidebarViewController {
             hasUnread: session?.hasUnread ?? false,
             isGeneratingTitle: session?.isGeneratingTitle ?? false,
             isDraft: isDraft)
-    }
-}
-
-// MARK: - Context menu validation
-
-extension SidebarViewController: NSMenuDelegate {
-    func menuNeedsUpdate(_ menu: NSMenu) {
-        let row = outlineView.clickedRow
-        var historySessionId: String?
-        if row >= 0,
-            let node = outlineView.item(atRow: row) as? SidebarItemNode,
-            case .history(let sessionId, _, _) = node.kind
-        {
-            historySessionId = sessionId
-        }
-        let allowed = historySessionId != nil
-        for item in menu.items { item.isHidden = !allowed }
-        if let historySessionId {
-            copyPathItem.isEnabled = jsonlPath(forSessionId: historySessionId) != nil
-            rebuildOpenInSubmenu(forSessionId: historySessionId)
-        }
     }
 }
 

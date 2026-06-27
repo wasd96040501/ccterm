@@ -4,7 +4,6 @@ import SwiftUI
 struct CompletionListView: View {
     @Bindable var viewModel: CompletionViewModel
     var onConfirm: (any CompletionItem) -> Void
-    var onDeleteRecent: ((any CompletionItem) -> Void)?
 
     private let rowHeight: CGFloat = 24
     private let verticalInset: CGFloat = 4
@@ -150,7 +149,7 @@ struct CompletionListView: View {
     }
 
     /// The command-name line — icon (file/dir only) + optional source
-    /// badge + display text + the recent-dir affordances.
+    /// badge + display text.
     @ViewBuilder
     private func commandLine(item: any CompletionItem) -> some View {
         HStack(spacing: 0) {
@@ -181,24 +180,6 @@ struct CompletionListView: View {
                 .padding(.leading, textLeading(for: item))
 
             Spacer(minLength: 8)
-
-            if let dirItem = item as? DirectoryCompletionItem, dirItem.isRecent {
-                Text("recent")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .hoverCapsule(staticFill: Color(nsColor: .tertiaryLabelColor).opacity(0.15))
-
-                Button {
-                    onDeleteRecent?(item)
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-                .frame(width: 16, height: 16)
-                .padding(.trailing, 4)
-            }
         }
         .frame(height: rowHeight)
     }

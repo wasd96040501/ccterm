@@ -13,6 +13,11 @@ import Foundation
 /// Implementation: SHA256(seed) → first 16 bytes → UUID v5/variant. Same seed
 /// → same UUID.
 enum StableBlockID {
+    /// Seed prefix for a tool-use child UUID, shared across the bridge's
+    /// status-push paths and `ToolUseToChild` so the same `(prefix, toolUseId)`
+    /// coordinate always folds to the same `Child.id`.
+    static let toolChildPrefix = "tool"
+
     /// Folds any list of strings into one stable UUID. The `|` separator is
     /// purely for legibility when inspecting the seed; it doesn't affect
     /// correctness.

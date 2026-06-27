@@ -222,7 +222,7 @@ final class Transcript2EntryBridge {
         for (idx, block) in blocks.enumerated() {
             guard case .toolUse(let tu) = block else { continue }
             let toolUseId = tu.id ?? "tu|\(single.id.uuidString)|\(idx)"
-            let childId = StableBlockID.derive("tool", toolUseId)
+            let childId = StableBlockID.derive(StableBlockID.toolChildPrefix, toolUseId)
             let result = tu.id.flatMap { single.toolResults[$0] }
             let status = Self.status(for: result, mode: mode)
             controller.setToolStatus(id: childId, status: status)
@@ -246,7 +246,7 @@ final class Transcript2EntryBridge {
                 let toolUseId =
                     tu.id
                     ?? "tu|\(group.id.uuidString)|\(itemIdx)|\(blockIdx)"
-                let childId = StableBlockID.derive("tool", toolUseId)
+                let childId = StableBlockID.derive(StableBlockID.toolChildPrefix, toolUseId)
                 let result = tu.id.flatMap { item.toolResults[$0] }
                 let status = Self.status(for: result, mode: mode)
                 if case .running = status { anyRunning = true }

@@ -586,7 +586,7 @@ ChatSessionViewController.view : NSView                            [AppKit, 整 
 
 **第一轮 · 逐设计验证**（4 份 `nodes/verify-*.md`，每份在设计完成时立即挑战）——结论均 **sound-with-fixes，无一破坏性能契约**。关键修正已折叠进正文：卡片常量 36（非 100）+ 无条件 `PassthroughHostingView`（§7.4）；P7 grouping 缩小/放弃（§8）；P8 排除 `TurnUsageMeter` + 观察嵌套（§8）；P6 crossfade helper 降为可选（§8/§11）；P5 接缝点名（§8）；C14 改「永不触发的布线」（§8）；P4 用 `guard let runtime`（§8）。
 
-**第二轮 · 最终稿干净上下文审查**（4 份 `nodes/review-*.md`，4 个审核员**只读本文 + 代码库 + 项目 CLAUDE.md，不读任何推演产物**——满足用户「审查者上下文要干净」的要求）。**总裁决：4/4 sound-with-fixes，0 blocker，不破坏 §2/§2.19/runloop 契约，不降级功能，不过度设计。** 卡片根因、M1=36、M2=`PassthroughHostingView` 均经**独立**核实属实。完整记录见 [`REVIEW.md`](REVIEW.md)。
+**第二轮 · 最终稿干净上下文审查**（4 份 `nodes/review-*.md`，4 个审核员**只读本文 + 代码库 + 项目 CLAUDE.md，不读任何推演产物**——满足用户「审查者上下文要干净」的要求）。**总裁决：4/4 sound-with-fixes，0 blocker，不破坏 §2/§2.19/runloop 契约，不降级功能，不过度设计。** 卡片根因、M1=36、M2=`PassthroughHostingView` 均经**独立**核实属实。完整记录 `REVIEW.md`(审查产物,已从本 PR 移除,保留在分支历史)。
 
 本轮新暴露的问题与**处置（均已回填本文）**：
 
@@ -599,7 +599,7 @@ ChatSessionViewController.view : NSView                            [AppKit, 整 
 | R5 | `PermissionCardWiringTests` 不守门 card-button→闭包→respond | §7.7 新增 spy-Session 决策路由 test |
 | R6 | step 13 cross-VC 接缝（`currentSession` 归属等）merge gate 不覆盖 | §8 P5 升级接缝契约 + `DetailPaneTranscriptHitTestTests` |
 | R7 | demo VC 迁移是真实工作量 | §7.4 M3 + §9 step 5 标为显式子任务 |
-| 一致性 | `contextUsage` 实为 @Observable（非纯值）；卡片闭包在 `ChatRestingBar`；P4 forwarder 返回 `Void`；体量/行号微误 | §5/§8/§7 标注已统一（详见 REVIEW.md） |
+| 一致性 | `contextUsage` 实为 @Observable（非纯值）；卡片闭包在 `ChatRestingBar`；P4 forwarder 返回 `Void`；体量/行号微误 | §5/§8/§7 标注已统一（详见分支历史中的 REVIEW.md） |
 
 审核员一致背书：核心诊断（架构已约 90% 单向、外科手术非重写）、两条主轴 + 唯一向上结构边、P1/P2 最高价值最低风险、P4 在产品里闭合唯一真违例、§6 数据流宪法忠实描述既有行为、§7 卡片修复方向正确、§11「明确不做」表——**且未发现任何应砍而未砍的过度设计**。
 
@@ -627,7 +627,7 @@ ChatSessionViewController.view : NSView                            [AppKit, 整 
 | 分析 | `nodes/analysis-component-tree.md`（权威现状树 + P1–P15） |
 | 设计 | `nodes/design-target-component-tree.md`、`design-target-data-flow.md`、`design-painpoint-fixes.md`、`design-migration-plan.md` |
 | 对抗验证（第一轮，逐设计） | `nodes/verify-target-component-tree.md`、`verify-target-data-flow.md`、`verify-painpoint-fixes.md`、`verify-migration-plan.md` |
-| 最终审查（第二轮，干净上下文） | `nodes/review-architecture.md`、`review-perf-runloop.md`、`review-parity-card.md`、`review-clarity-impl.md`；汇总记录 [`REVIEW.md`](REVIEW.md) |
+| 最终审查（第二轮，干净上下文） | `nodes/review-architecture.md`、`review-perf-runloop.md`、`review-parity-card.md`、`review-clarity-impl.md`；汇总记录 `REVIEW.md`(已从本 PR 移除,保留在分支历史) |
 
 ### 13.3 已知调研瑕疵（诚实记录）
 

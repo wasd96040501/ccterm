@@ -401,6 +401,15 @@ final class Session {
         runtime.requestContextUsage(timeout: timeout, completion: completion)
     }
 
+    /// Phase-aware façade forwarder for the popover's task stop button.
+    /// Marks a background task stopped on the runtime. No-op on `.draft`
+    /// sessions — a draft has no runtime and `tasks` is always empty, so
+    /// there is nothing to stop. Keeps views off `session.runtime`.
+    func stopBackgroundTask(taskId: String) {
+        guard let runtime else { return }
+        runtime.markTaskStoppedLocally(taskId: taskId)
+    }
+
     /// Ask a `/btw`-style side question against the running CLI without
     /// interrupting the current turn. On `.draft` sessions (no CLI yet) the
     /// completion fires `.unsupported`. Completion runs on the main actor once.

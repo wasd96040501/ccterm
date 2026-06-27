@@ -77,11 +77,8 @@ struct BackgroundTaskButton: View {
         )
     }
 
-    private var stopAction: ((String) -> Void)? {
-        guard let runtime = session.runtime else { return nil }
-        return { taskId in
-            runtime.markTaskStoppedLocally(taskId: taskId)
-        }
+    private var stopAction: (String) -> Void {
+        { [session] taskId in session.stopBackgroundTask(taskId: taskId) }
     }
 
     /// Single 6pt dot, color-coded by whether anything is still running:

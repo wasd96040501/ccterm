@@ -70,20 +70,16 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
     /// `model` and the four injected services are read through this.
     let context: DetailContext
 
-    /// The session currently driving the transcript, or nil for
-    /// archive / demo branches.
-    private var currentSession: Session?
-    /// AppKit-native transcript scroll view. Re-created when the
-    /// selected session's controller changes; nil for archive /
-    /// demo branches.
-    private var transcriptScroll: Transcript2ScrollView?
-    /// AppKit-native sheet presenter for the transcript controller's
-    /// `pendingUserBubbleSheet` / `pendingImagePreview` request
-    /// fields. Replaces the SwiftUI `.sheet(item:)` bindings the old
-    /// `NativeTranscript2View` carried. Re-instantiated per session
-    /// attach (same lifecycle as `transcriptScroll`); nil for
-    /// archive / demo branches (those VCs own their own presenter).
-    private var transcriptSheetPresenter: Transcript2SheetPresenter?
+    /// Owns the transcript-swap state machine (build / bind / anchor /
+    /// crossfade / tear-down + the per-attach turn-usage + `isRunning`
+    /// sinks). The VC keeps "what the pane shows" (scrims, resting bar,
+    /// permission-card host, focus, cutouts); the coordinator owns the
+    /// transcript-attach mechanism and is the single owner of
+    /// `currentSession`. Lazily built on first `present` so it can capture
+    /// `view` (`loadView` has run by then). Released when the VC deinits;
+    /// `prepareForRemoval` / `present(nil)` tear the transcript down through
+    /// it without dropping the coordinator itself.
+    private var swapCoordinator: TranscriptSwapCoordinator?
     /// Full-bleed overlays. All three are added to `view` once and
     /// stay mounted for the lifetime of the VC. The scrims are pure
     /// AppKit (no `NSHostingView` so they don't register cursor rects
@@ -116,27 +112,6 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
     /// need to read these.
     private var lastAttachRect: CGRect = .zero
     private var lastPillRect: CGRect = .zero
-
-    /// Sink for `session.isRunning` → `controller.setLoading(_:)`.
-    /// Re-armed on every session swap.
-    private var runningObservationTask: Task<Void, Never>?
-
-    /// The outgoing transcript scroll view mid-crossfade, kept mounted
-    /// (behind the incoming one) until the fade-out completes, paired with
-    /// the session whose controller it must be dismantled against. `nil`
-    /// when no same-session-swap crossfade is in flight. A new attach
-    /// flushes it synchronously first (`finishTranscriptFadeOut`) — see the
-    /// load-bearing note in `attachSession`.
-    private var fadingOutTranscript: (scroll: Transcript2ScrollView, session: Session)?
-
-    /// Crossfade duration for a session→session transcript swap. Matches
-    /// `DetailRouterViewController.childCrossfadeDuration` so a same-kind
-    /// switch and a cross-kind switch feel identical. Only the fade is
-    /// non-atomic: the build → settle → bind → `scrollToTail` attach runs
-    /// synchronously in the click's source phase (the §2.19 single-width
-    /// contract is untouched — alpha is composite-only), then the opacity
-    /// animation rides CoreAnimation's clock from `beforeWaiting`.
-    private static let transcriptCrossfadeDuration: CFTimeInterval = 0.18
 
     init(context: DetailContext) {
         self.context = context
@@ -276,10 +251,10 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
     func present(sessionId: String?, animated: Bool = false) {
         updateFocus(activeSessionId: sessionId)
         guard let sessionId else {
-            tearDownTranscript()
+            swapCoordinator?.tearDownTranscript()
             return
         }
-        attachSession(sessionId, animated: animated)
+        transcriptSwapCoordinator().attachSession(sessionId, animated: animated)
     }
 
     /// `DetailRouterChild` — the router calls this right before it swaps
@@ -288,7 +263,36 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
     /// the scroll view, sheet presenter, and `isRunning` task are released
     /// here rather than whenever ARC gets around to freeing the VC.
     func prepareForRemoval() {
-        tearDownTranscript()
+        swapCoordinator?.tearDownTranscript()
+    }
+
+    /// Lazily build (and cache) the transcript-swap coordinator. Deferred to
+    /// first `present` so it can capture `view` after `loadView` has run. The
+    /// `insertScroll` seam keeps the sibling-z knowledge here — the scroll
+    /// goes **below `topScrim`**, i.e. beneath every overlay sibling
+    /// (`bottomScrim` / `restingBarHost` / `permissionCardHost`), so the card
+    /// is never covered and the transcript's clicks aren't swallowed (M5). The
+    /// `onFirstScreenReady` seam keeps the first-screen latency log here, fed
+    /// the `(attachStart, sessionId)` the coordinator captured.
+    private func transcriptSwapCoordinator() -> TranscriptSwapCoordinator {
+        if let swapCoordinator { return swapCoordinator }
+        let coordinator = TranscriptSwapCoordinator(
+            container: view,
+            context: context,
+            insertScroll: { [weak self] scroll in
+                guard let self else { return }
+                self.view.addSubview(scroll, positioned: .below, relativeTo: self.topScrim)
+            },
+            onFirstScreenReady: { attachStart, sessionId in
+                let ms = (CFAbsoluteTimeGetCurrent() - attachStart) * 1000
+                appLog(
+                    .info, "TranscriptDetailVC",
+                    "[firstScreen] sidebar→first view=\(String(format: "%.1f", ms))ms "
+                        + "session=\(sessionId.prefix(8))…")
+            }
+        )
+        swapCoordinator = coordinator
+        return coordinator
     }
 
     /// Keep `Session.setFocused` in sync with the shown session so
@@ -300,270 +304,6 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
         }
         for sid in context.sessionManager.records.map(\.sessionId) where sid != activeSessionId {
             context.sessionManager.existingSession(sid)?.setFocused(false)
-        }
-    }
-
-    // MARK: - Transcript mount
-
-    private func attachSession(_ sessionId: String, animated: Bool = false) {
-        // Contract: the router only calls `present` on a mounted, framed
-        // VC, so the geometry-sensitive attach below (pin scroll view →
-        // `layoutSubtreeIfNeeded` settles the table width → `scrollToTail`
-        // anchors the clip) always has a real frame to work against.
-        guard view.bounds.width > 0, view.bounds.height > 0 else {
-            assertionFailure("attachSession called before the host view was framed")
-            return
-        }
-
-        let session = context.sessionManager.prepareDraftSession(sessionId)
-        if currentSession?.sessionId == sessionId, transcriptScroll != nil {
-            return
-        }
-
-        // Flush a still-running transcript crossfade synchronously before
-        // building the incoming scroll. **Load-bearing for A→B→A re-entry:**
-        // `TranscriptScrollViewFactory.dismantle` calls a blanket
-        // `removeObserver(coordinator)`, so if the outgoing scroll for the
-        // SAME session is still parked when we re-enter it, deferring its
-        // teardown would rip the frameDidChange / liveScroll observers off
-        // the freshly-bound incoming scroll (same coordinator). Tearing the
-        // parked scroll down here — before `bindData` below re-registers
-        // them — keeps the incoming scroll's observers intact. A rapid
-        // A→B→C collapses the same way: B snaps out as C builds.
-        finishTranscriptFadeOut()
-
-        // Stopwatch for "sidebar click → first rendered screen". Cold attaches
-        // paint blank for the first tick (block building is off-main), so this
-        // measures the gap the cold-load first-screen edge closes. Reported in
-        // the `onFirstScreenReady` callback wired just before `loadHistory`.
-        let attachStart = CFAbsoluteTimeGetCurrent()
-
-        // Atomic structural swap: build, mount, bind, and anchor the
-        // INCOMING transcript — all inside one disabled-animation
-        // transaction — then either drop the OUTGOING one synchronously
-        // (no window / cold start) or crossfade it out (the common
-        // session→session switch). Building the new scroll on top of the
-        // old and never removing the old before the new is live means the
-        // user never sees an empty pane.
-        let outgoingScroll = transcriptScroll
-        let outgoingSession = currentSession
-        // Crossfade only when the router asked for it (a first entry into
-        // this session — never a warm re-entry), there's an outgoing
-        // transcript, AND we're on a live window. Without a window (the
-        // §2.19 reentry merge gate, any headless attach) the swap stays
-        // synchronous — identical to the pre-animation behavior, so the
-        // probe sees the same writes.
-        let animateSwap = animated && outgoingScroll != nil && view.window != nil
-
-        // Explicit begin/commit (not `defer`): the crossfade below must run
-        // OUTSIDE this disabled-animation transaction, or the opacity
-        // animation would be suppressed by `setDisableActions(true)`. There
-        // are no early returns between here and the commit.
-        NSAnimationContext.beginGrouping()
-        NSAnimationContext.current.duration = 0
-        NSAnimationContext.current.allowsImplicitAnimation = false
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-
-        let scroll = TranscriptScrollViewFactory.make(controller: session.controller)
-        scroll.translatesAutoresizingMaskIntoConstraints = false
-        // Start the incoming scroll transparent when we're going to fade it
-        // in. Set inside the disabled transaction so the 0 itself doesn't
-        // animate; the fade up to 1 is a separate group after commit.
-        if animateSwap {
-            scroll.wantsLayer = true
-            scroll.alphaValue = 0
-        }
-        // Insert just below the top scrim — i.e. in front of the still-mounted
-        // outgoing scroll view — so the incoming transcript covers it (or,
-        // when animating, crossfades over it).
-        view.addSubview(scroll, positioned: .below, relativeTo: topScrim)
-        NSLayoutConstraint.activate([
-            scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            scroll.topAnchor.constraint(equalTo: view.topAnchor),
-            scroll.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ])
-        // Pull layout into the current call stack so the table reaches
-        // its real width before we bind the dataSource — with the bind
-        // deferred until now, AppKit has no rows to query and the
-        // autolayout pass settles without any `heightOfRow` queries at
-        // transient widths. The downstream `scrollToTail` and history
-        // load can then run in the same source phase.
-        view.layoutSubtreeIfNeeded()
-        TranscriptScrollViewFactory.bindData(scroll, controller: session.controller)
-        transcriptScroll = scroll
-        currentSession = session
-
-        // Re-attach scroll: bridge-accumulated blocks from a previous
-        // mount land here with no setHistory follow-up (loadHistory is
-        // idempotent and short-circuits). Anchor to the tail synchronously
-        // now that the table has real width.
-        //
-        // Resident reentry telemetry: the first tile `scrollToTail` forces
-        // queries `heightOfRow` for every row, and cache *misses* (blocks the
-        // bridge appended while this session was detached, or a width change
-        // since it was last displayed) recompute their `RowLayout` on the main
-        // thread right here. We read the coordinator's monotonic compute
-        // counter as a delta around this one tile so the cost is logged ONCE
-        // per attach (session switches are user-paced — not a hot path); the
-        // per-row typeset itself is never logged.
-        let layoutComputesBeforeTile = session.controller.mainThreadLayoutComputes
-        let reentryTileStart = CFAbsoluteTimeGetCurrent()
-        session.controller.scrollToTail()
-        let reentryTileMs = (CFAbsoluteTimeGetCurrent() - reentryTileStart) * 1000
-        let reentryTypeset =
-            session.controller.mainThreadLayoutComputes &- layoutComputesBeforeTile
-
-        // Attach syntax engine (idempotent).
-        session.controller.attachSyntaxEngine(context.syntaxEngine)
-
-        // Sheet presenter is per-attach: it captures `view` (for
-        // `window`) and the session's controller. The presenter
-        // observes `pendingUserBubbleSheet` / `pendingImagePreview`
-        // and presents AppKit-native sheets via
-        // `view.window?.beginSheet`. Replaces the SwiftUI
-        // `.sheet(item:)` bindings the old `NativeTranscript2View`
-        // carried. Stop the outgoing one first.
-        transcriptSheetPresenter?.stop()
-        transcriptSheetPresenter = Transcript2SheetPresenter(
-            controller: session.controller, hostView: view)
-
-        // Kick history load + initial running pill sync (mirrors
-        // `ChatHistoryView.task(id: sessionId)`).
-        appLog(
-            .info, "TranscriptDetailVC",
-            "[history] attach session=\(sessionId.prefix(8))… "
-                + "loadState=\(String(describing: session.historyLoadState)) "
-                + "msgCount=\(session.messages.count) "
-                + "blockCount=\(session.controller.blockCount) "
-                + "reentryTypeset=\(reentryTypeset) "
-                + "reentryTile=\(String(format: "%.1f", reentryTileMs))ms")
-        // Log the cold-load first-screen latency once it lands. Capture only
-        // the sessionId string + start time (no `self` / `session`) so the
-        // closure stored on the controller can't form a retain cycle. On a warm
-        // re-entry the edge already fired during the original cold load, so the
-        // latched callback never re-fires — no spurious log.
-        session.controller.onFirstScreenReady = {
-            let ms = (CFAbsoluteTimeGetCurrent() - attachStart) * 1000
-            appLog(
-                .info, "TranscriptDetailVC",
-                "[firstScreen] sidebar→first view=\(String(format: "%.1f", ms))ms "
-                    + "session=\(sessionId.prefix(8))…")
-        }
-        session.loadHistory()
-        session.controller.setLoading(session.isRunning)
-        // turnUsage rides the imperative channel: push the current value once on
-        // mount, then let `onTurnUsageChange` drive live updates (the runtime
-        // fires it synchronously at each write — no observation pull). The turn
-        // clock's start anchor rides the same site: it only changes at a turn
-        // boundary (which always coincides with a usage write), so re-reading
-        // `session.turnStartedAt` here keeps the pill's elapsed clock in sync
-        // without a second sink.
-        session.controller.setTurnUsage(session.turnUsage)
-        session.controller.setTurnStartedAt(session.turnStartedAt)
-        session.onTurnUsageChange = { [weak self, weak session] usage in
-            guard let self, let session, self.currentSession === session else { return }
-            session.controller.setTurnUsage(usage)
-            session.controller.setTurnStartedAt(session.turnStartedAt)
-        }
-
-        // Re-arm the `isRunning` → controller sink (cancels the old).
-        startRunningObservation(for: session)
-
-        // Synchronous path: drop the outgoing transcript last, now that the
-        // incoming one is live and on top — no blank frame in between. Stays
-        // inside the disabled-animation transaction so the teardown doesn't
-        // flicker. The animated path leaves the outgoing scroll mounted and
-        // hands it to the crossfade below.
-        if !animateSwap, let outgoingScroll, let outgoingSession {
-            TranscriptScrollViewFactory.dismantle(
-                outgoingScroll, controller: outgoingSession.controller)
-            outgoingScroll.removeFromSuperview()
-        }
-
-        CATransaction.commit()
-        NSAnimationContext.endGrouping()
-
-        // Cosmetic crossfade, OUTSIDE the disabled transaction so it can
-        // actually animate. The incoming content is already live (typeset,
-        // bound, scrolled to tail above), so the first composited fade frame
-        // shows real content over the outgoing transcript.
-        if animateSwap, let outgoingScroll, let outgoingSession {
-            crossfadeTranscriptSwap(
-                incoming: scroll, outgoing: outgoingScroll, outgoingSession: outgoingSession)
-        }
-    }
-
-    /// Fade the incoming transcript in and the outgoing one out together,
-    /// then dismantle the outgoing scroll on completion. Parks the outgoing
-    /// scroll in `fadingOutTranscript` so a follow-up attach can flush it
-    /// synchronously (see `attachSession`'s load-bearing note on the
-    /// blanket `removeObserver`).
-    private func crossfadeTranscriptSwap(
-        incoming: Transcript2ScrollView,
-        outgoing: Transcript2ScrollView,
-        outgoingSession: Session
-    ) {
-        outgoing.wantsLayer = true
-        fadingOutTranscript = (outgoing, outgoingSession)
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = Self.transcriptCrossfadeDuration
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            ctx.allowsImplicitAnimation = true
-            incoming.animator().alphaValue = 1
-            outgoing.animator().alphaValue = 0
-        } completionHandler: { [weak self] in
-            self?.finishTranscriptFadeOut(expected: outgoing)
-        }
-    }
-
-    /// Tear down the parked outgoing transcript scroll. Idempotent and
-    /// called from three places: the crossfade completion (with `expected`
-    /// set), synchronously at the head of a new attach to flush an in-flight
-    /// fade, and from `tearDownTranscript`. The `expected` guard makes a
-    /// late completion for an already-flushed scroll a no-op.
-    private func finishTranscriptFadeOut(expected: Transcript2ScrollView? = nil) {
-        guard let parked = fadingOutTranscript else { return }
-        if let expected, expected !== parked.scroll { return }
-        fadingOutTranscript = nil
-        TranscriptScrollViewFactory.dismantle(
-            parked.scroll, controller: parked.session.controller)
-        parked.scroll.removeFromSuperview()
-    }
-
-    private func tearDownTranscript() {
-        // Drop a parked outgoing scroll first — otherwise tearing down only
-        // the current scroll would leave a mid-fade ghost mounted when the
-        // router swaps this VC out cross-kind during a session→session fade.
-        finishTranscriptFadeOut()
-        if let scroll = transcriptScroll, let session = currentSession {
-            TranscriptScrollViewFactory.dismantle(scroll, controller: session.controller)
-            scroll.removeFromSuperview()
-        }
-        transcriptScroll = nil
-        currentSession = nil
-        transcriptSheetPresenter?.stop()
-        transcriptSheetPresenter = nil
-        runningObservationTask?.cancel()
-        runningObservationTask = nil
-    }
-
-    private func startRunningObservation(for session: Session) {
-        runningObservationTask?.cancel()
-        runningObservationTask = Task { @MainActor [weak self, weak session] in
-            while !Task.isCancelled {
-                guard let session else { return }
-                await withCheckedContinuation { cont in
-                    withObservationTracking {
-                        _ = session.isRunning
-                    } onChange: {
-                        Task { @MainActor in cont.resume() }
-                    }
-                }
-                guard let self, self.currentSession === session else { return }
-                session.controller.setLoading(session.isRunning)
-            }
         }
     }
 
@@ -611,10 +351,12 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
     /// executor-hop (`swift_task_deinitOnExecutorImpl`) that aborts in the
     /// XCTest process — the macOS 26 libswift_Concurrency `TaskLocal`
     /// teardown bug the rest of the codebase already guards against (see
-    /// `SessionRuntime.swift`). Cancelling a `Task` needs no isolation.
-    nonisolated deinit {
-        runningObservationTask?.cancel()
-    }
+    /// `SessionRuntime.swift`). The transcript's `isRunning` task is now
+    /// owned (and cancelled in its own `nonisolated deinit`) by
+    /// `TranscriptSwapCoordinator`; releasing `swapCoordinator` here cascades
+    /// into that. This VC keeps no `Task` of its own, so the body is empty —
+    /// the `nonisolated` attribute is what matters.
+    nonisolated deinit {}
 }
 
 // MARK: - SwiftUI overlay subviews

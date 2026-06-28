@@ -14,7 +14,7 @@ struct InputBarChrome: View {
     let draftKey: String
     let coordSpace: String
     let submitEnabled: Bool
-    let onSubmit: (InputBarView2.Submission) -> Void
+    let onSubmit: (Submission) -> Void
     let onAttachRect: (CGRect) -> Void
     let onPillRect: (CGRect) -> Void
     /// Builtin slash command (`/new`, `/clear`) dispatcher. Forwarded to
@@ -95,7 +95,7 @@ struct InputBarChrome: View {
 struct ChatRestingBar: View {
     let sessionId: String
     let draftKey: String
-    let onSubmit: (InputBarView2.Submission) -> Void
+    let onSubmit: (Submission) -> Void
     let onAttachRect: (CGRect) -> Void
     let onPillRect: (CGRect) -> Void
     /// Builtin slash command (`/new`, `/clear`) dispatcher, forwarded to

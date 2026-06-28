@@ -50,48 +50,11 @@ struct InputBarView2: View {
         .fileURL, .image, .png, .jpeg, .tiff, .heic, .gif, .bmp, .webP,
     ]
 
-    /// One attached file or in-memory image. Identifiable so the thumbnail
-    /// strip can `ForEach` with stable per-card hover state.
-    struct Attachment: Equatable, Identifiable {
-        enum Kind: Equatable {
-            /// Decoded once at attach-time so we don't pay an `NSImage`
-            /// decode each layout pass; sent via
-            /// `Session.send(image:mediaType:caption:)`.
-            case image(data: Data, mediaType: String)
-            /// Absolute path on disk; sent inline as `@<path>` in the
-            /// outgoing text so the CLI can read it on demand.
-            case file(path: String)
-        }
-
-        let id: UUID
-        let kind: Kind
-        /// Image thumbnail or system file icon, used by the thumbnail
-        /// strip; for files this is `NSWorkspace.shared.icon(forFile:)`.
-        let thumbnail: NSImage
-        /// Display name for the file row (and tooltip for image rows).
-        let filename: String
-
-        init(id: UUID = UUID(), kind: Kind, thumbnail: NSImage, filename: String) {
-            self.id = id
-            self.kind = kind
-            self.thumbnail = thumbnail
-            self.filename = filename
-        }
-
-        static func == (lhs: Attachment, rhs: Attachment) -> Bool {
-            lhs.id == rhs.id && lhs.kind == rhs.kind && lhs.filename == rhs.filename
-        }
-    }
-
-    /// Payload handed to `onSubmit`. Any combination of `text`, `images`,
-    /// and `filePaths` can be non-empty (at least one is, by `canSend`).
-    /// The shared `submitSessionInput(_:sessionId:…)` helper composes them
-    /// into one or more `Session.send(...)` calls.
-    struct Submission {
-        let text: String
-        let images: [(data: Data, mediaType: String)]
-        let filePaths: [String]
-    }
+    // `Attachment` (+ `Attachment.Kind`) and `Submission` used to be
+    // nested here; they now live at top level in `InputBarSubmission.swift`
+    // (SwiftUI-free) so the AppKit input bar and the SwiftUI compose / draft
+    // chain share one type each. All references below stay unqualified and
+    // resolve to those top-level types.
 
     /// Injected by the caller. Only fired when the message has at least a
     /// non-whitespace text OR an attachment.

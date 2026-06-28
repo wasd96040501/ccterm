@@ -14,7 +14,7 @@ import AppKit
 /// `ChatSessionViewController.submit`.
 @MainActor
 func submitSessionInput(
-    _ submission: InputBarView2.Submission,
+    _ submission: Submission,
     sessionId: String,
     sessionManager: SessionManager,
     recentProjects: RecentProjectsStore,

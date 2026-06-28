@@ -129,7 +129,7 @@ final class ComposeSessionViewController: NSViewController {
 /// to `session.draft.config`.
 struct ComposeSessionView: View {
     let draftSessionId: String
-    let onSubmit: (InputBarView2.Submission) -> Void
+    let onSubmit: (Submission) -> Void
     let onResumeSession: (String) -> Void
 
     @Environment(SessionManager.self) private var manager

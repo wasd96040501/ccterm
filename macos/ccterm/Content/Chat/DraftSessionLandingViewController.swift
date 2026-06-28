@@ -130,7 +130,7 @@ final class DraftSessionLandingViewController: NSViewController, DetailRouterChi
 /// not-yet-persisted input keyed on the draft `sessionId`.
 struct DraftSessionLandingView: View {
     let sessionId: String
-    let onSubmit: (InputBarView2.Submission) -> Void
+    let onSubmit: (Submission) -> Void
     let onBuiltinCommand: (BuiltinSlashCommand) -> Void
 
     @Environment(SessionManager.self) private var manager

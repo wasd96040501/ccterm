@@ -377,7 +377,7 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
 /// the wrong type.
 struct ChatComposeHostRoot: View {
     let context: DetailContext
-    let onSubmit: (InputBarView2.Submission, String) -> Void
+    let onSubmit: (Submission, String) -> Void
     let onAttachRect: (CGRect) -> Void
     let onPillRect: (CGRect) -> Void
     let onBuiltinCommand: (BuiltinSlashCommand, String) -> Void
@@ -405,7 +405,7 @@ struct ChatComposeHostRoot: View {
 /// for every other selection.
 struct ChatComposeStack: View {
     @Bindable var model: MainSelectionModel
-    let onSubmit: (InputBarView2.Submission, String) -> Void
+    let onSubmit: (Submission, String) -> Void
     let onAttachRect: (CGRect) -> Void
     let onPillRect: (CGRect) -> Void
     /// Builtin slash command dispatcher, carrying the bar's live session

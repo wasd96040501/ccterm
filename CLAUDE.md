@@ -116,6 +116,7 @@ Detailed conventions live next to the code they govern. When you touch one of th
 | `Session` / `SessionRuntime` runtime, render-side comms, mutation rules | [Services/Session/CLAUDE.md](macos/ccterm/Services/Session/CLAUDE.md) |
 | Native transcript internals (layouts, diff, tool rendering) | [Content/Chat/NativeTranscript2/CLAUDE.md](macos/ccterm/Content/Chat/NativeTranscript2/CLAUDE.md) |
 | Unit test conventions (parallel safety, in-memory fixtures) | [cctermTests/CLAUDE.md](macos/cctermTests/CLAUDE.md) |
+| AppKit verification harness (real-tree mount, geometry / animation / interaction probes) | [cctermTests/Harness/CLAUDE.md](macos/cctermTests/Harness/CLAUDE.md) |
 
 ## Directory layout
 

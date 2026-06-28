@@ -135,24 +135,18 @@ private struct ContextBreakdownView: View {
 
     /// Pre-sorted category list mirroring the JS reference's display
     /// order: active rows by tokens desc, then deferred rows by tokens
-    /// desc, then the buffer row, then Free space.
+    /// desc, then the buffer row, then Free space. The ordering math lives
+    /// in the SwiftUI-free `ContextBarLayout` so the AppKit `ContextBarView`
+    /// renders the identical layout (migration plan §4.2).
     private var ordered: [ContextUsage.Category] {
-        let buffer = usage.categories.first { isBufferName($0.name) }
-        let free = usage.categories.first { $0.name == "Free space" }
-        let active = usage.categories
-            .filter { !$0.isDeferred && $0.name != "Free space" && !isBufferName($0.name) }
-            .sorted { $0.tokens > $1.tokens }
-        let deferred = usage.categories
-            .filter { $0.isDeferred }
-            .sorted { $0.tokens > $1.tokens }
-        return active + deferred + (buffer.map { [$0] } ?? []) + (free.map { [$0] } ?? [])
+        ContextBarLayout.ordered(usage)
     }
 
     /// Sum used for bar segment widths. Includes every visible category
     /// (active + deferred + buffer + free) so the bar always fills the
-    /// full width.
+    /// full width. Delegates to the shared `ContextBarLayout`.
     private var displaySum: Int {
-        max(1, ordered.reduce(0) { $0 + $1.tokens })
+        ContextBarLayout.displaySum(ordered)
     }
 
     var body: some View {
@@ -236,39 +230,29 @@ private struct ContextBreakdownView: View {
     /// How many active (non-deferred / non-buffer / non-free) entries
     /// come at or before this index. Used to colour-step the active
     /// segments while keeping deferred + buffer + free uniformly gray.
+    /// Delegates to the shared `ContextBarLayout`.
     private func rankInActive(at index: Int) -> Int {
-        var rank = 0
-        for i in 0...index {
-            let cat = ordered[i]
-            if !cat.isDeferred && cat.name != "Free space" && !isBufferName(cat.name) {
-                if i == index { return rank }
-                rank += 1
-            }
-        }
-        return rank
+        ContextBarLayout.rankInActive(ordered: ordered, at: index)
     }
 
     private func barColor(for cat: ContextUsage.Category, rankInActive: Int) -> Color {
         Self.color(for: cat, rankInActive: rankInActive)
     }
 
+    /// Resolve the shared `ContextBarLayout.SegmentKind` color intent to a
+    /// SwiftUI `Color`. The AppKit `ContextBarView` resolves the same kind to
+    /// a semantic `NSColor` — keeping the *kind* in `ContextBarLayout` means
+    /// the ordering / step / sliver math is shared and tested once.
     static func color(for cat: ContextUsage.Category, rankInActive: Int) -> Color {
-        if cat.name == "Free space" {
+        switch ContextBarLayout.segmentKind(for: cat, rankInActive: rankInActive) {
+        case .free:
             return Color(nsColor: .quaternaryLabelColor).opacity(0.4)
-        }
-        if cat.isDeferred || isBufferName(cat.name) {
+        case .muted:
             return Color(nsColor: .quaternaryLabelColor)
+        case .active(let opacity):
+            return Color.accentColor.opacity(opacity)
         }
-        // Active rows: step from full accent down toward a pale tint as
-        // rank grows. Cap at 6 steps so very long lists still differ.
-        let step = min(rankInActive, 6)
-        let opacity = 1.0 - Double(step) * 0.12
-        return Color.accentColor.opacity(max(0.35, opacity))
     }
-}
-
-private func isBufferName(_ name: String) -> Bool {
-    name == "Autocompact buffer" || name == "Compact buffer"
 }
 
 // MARK: - Single category row

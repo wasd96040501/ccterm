@@ -1108,6 +1108,16 @@
         }
       }
     },
+    "Done": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完成"
+          }
+        }
+      }
+    },
     "Edit %@": {
       "localizations": {
         "zh-Hans": {

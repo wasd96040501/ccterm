@@ -91,6 +91,12 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
     /// regime-B host constraints + scrim anchor wiring.
     private(set) var barView: InputBarView!
 
+    /// Owned image-preview presenter (plan §4.7-1, R5). Built in `loadView`
+    /// over the bar view; dismissed in `prepareForRemoval()` so a tapped
+    /// preview can never outlive the bar's teardown and wedge the window.
+    /// `private(set)` so tests can assert lifecycle without a write seam.
+    private(set) var imagePreviewPresenter: ImagePreviewPresenter!
+
     // MARK: - Init
 
     /// Production init. The chat / compose / draft hosts call this.
@@ -128,6 +134,22 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
         bar.sendStopButton.onSend = { [weak self] in self?.handleSend() }
         bar.sendStopButton.onStop = { [weak self] in self?.boundSession?.interrupt() }
         bar.attachButton.onPick = { [weak self] in self?.presentPicker() }
+        // Attachment strip: card tap → owned image preview; remove-X → drop by id.
+        bar.attachmentStrip.onImageTapped = { [weak self] image in
+            self?.presentImagePreview(image)
+        }
+        bar.attachmentStrip.onRemove = { [weak self] id in
+            self?.remove(attachmentId: id)
+        }
+        // Drop handling on the bar root (plan §4.1-9, §4.7-1): the dashed
+        // highlight flips both strokes through `setDropTargeted`; the drop
+        // routes the reconstructed providers through the verbatim loaders.
+        bar.onDropTargetedChanged = { [weak self] targeted in
+            self?.barView.setDropTargeted(targeted)
+        }
+        bar.onPerformDrop = { [weak self] providers in
+            self?.handleDrop(providers: providers) ?? false
+        }
         // Tap-to-confirm: the row reports its index; set selectedIndex THEN
         // confirm so confirm acts on the clicked row (set-then-confirm,
         // matching SwiftUI `onTapGesture { selectedIndex = index; onConfirm }`).
@@ -141,6 +163,8 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
         wireTextCallbacks(on: bar.textView, scroll: bar.textScrollView)
         barView = bar
         view = bar
+        // Owned image-preview presenter over the bar view (plan §4.7-1, R5).
+        imagePreviewPresenter = ImagePreviewPresenter(hostView: bar)
 
         applySendKeyBehavior()
         observeSendKeyBehavior()
@@ -160,6 +184,10 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
         draftLoadTask = nil
         completion.dismiss()
         refreshCompletionPopup()
+        // Dismiss any open image preview so a tapped preview can't outlive the
+        // bar's teardown and wedge the window (plan §4.7-1, R5). Idempotent +
+        // window-guarded.
+        imagePreviewPresenter?.stop()
         isRunningObservationActive = false
         cwdObservationActive = false
         prewarmObservationActive = false
@@ -168,6 +196,14 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
             notificationCenter.removeObserver(token)
             sendKeyObserver = nil
         }
+        // Drop the strong `Session` reference at deterministic teardown. The
+        // re-armed observation onChange closures already guard on the matching
+        // `*ObservationActive` flag (now all false) before touching the bar, so
+        // clearing these is correctness-neutral — it just keeps the controller
+        // from outliving its `Session` after final VC teardown.
+        boundSession = nil
+        boundSessionId = nil
+        boundDraftKey = nil
     }
 
     // MARK: - Rebind in place (plan §4.0, §4.1-5/6)
@@ -199,8 +235,12 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
         // (3) reset model fields in place.
         applyProgrammatic { barView.textView.string = "" }
         attachments = []
+        barView.setAttachmentStrip(attachments)
         completion.dismiss()
         barView.setCompletionPopup(active: false, listHeight: 0)
+        // Dismiss any open preview on rebind — a new session must not strand a
+        // preview begun against the previous one (R5).
+        imagePreviewPresenter?.dismiss()
         barView.relayout()
 
         // (4) resolve the new Session (idempotent get-or-create).
@@ -264,6 +304,7 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
         // compose mode), NOT the onSubmit session id.
         applyProgrammatic { barView.textView.string = "" }
         attachments = []
+        barView.setAttachmentStrip(attachments)
         completion.dismiss()
         barView.setCompletionPopup(active: false, listHeight: 0)
         barView.relayout()
@@ -287,6 +328,8 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
             guard self.barView.textView.string.isEmpty, self.attachments.isEmpty else { return }
             self.applyProgrammatic { self.barView.textView.string = draft.text }
             self.attachments = draft.filePaths.map { Self.restoreFileAttachment(path: $0) }
+            // Render the restored `.file` cards before re-summing the bar.
+            self.barView.setAttachmentStrip(self.attachments)
             self.barView.relayout()
             self.updateSubmitEnabled()
         }
@@ -473,11 +516,33 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
 
     private func appendAttachment(_ attachment: Attachment) {
         attachments.append(attachment)
-        // Attachment add/remove animates the pill grow/shrink at .smooth(0.35)
-        // (matching `InputBarView2`'s `.animation(_, value: attachments.isEmpty)`).
+        // Render the strip from the new array BEFORE relayout so the strip
+        // band height is up to date when the bar re-sums (§4.1-9). The strip
+        // presence (empty↔non-empty) + the per-card add then ride the pill
+        // grow/shrink animation at .smooth(0.35) (matching `InputBarView2`'s
+        // `.animation(_, value: attachments.isEmpty)`).
+        barView.setAttachmentStrip(attachments)
         barView.relayout(animated: true)
         updateSubmitEnabled()
         scheduleDraftSave()
+    }
+
+    /// Remove the attachment with `id` (the strip's remove-X chip). Mirrors
+    /// `InputBarView2.remove(_:)` (`attachments.removeAll { $0.id == }`), then
+    /// re-renders the strip + re-sums the bar at .smooth(0.35).
+    func remove(attachmentId id: UUID) {
+        guard attachments.contains(where: { $0.id == id }) else { return }
+        attachments.removeAll { $0.id == id }
+        barView.setAttachmentStrip(attachments)
+        barView.relayout(animated: true)
+        updateSubmitEnabled()
+        scheduleDraftSave()
+    }
+
+    /// Present a tapped image card's thumbnail through the owned presenter
+    /// (plan §4.7-1) — never a free-hand `beginSheet` from the tap closure (R5).
+    func presentImagePreview(_ image: NSImage) {
+        imagePreviewPresenter?.present(image)
     }
 
     private func mediaType(for url: URL) -> String {
@@ -485,6 +550,106 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
             return mime
         }
         return "image/png"
+    }
+
+    /// Image data dropped without an associated file URL (e.g. screenshot HUD
+    /// drag) — verbatim from `InputBarView2.attachImageData(_:mediaType:filename:)`.
+    private func attachImageData(_ data: Data, mediaType: String, filename: String) {
+        let thumb = NSImage(data: data) ?? NSImage()
+        appendAttachment(
+            Attachment(
+                kind: .image(data: data, mediaType: mediaType), thumbnail: thumb,
+                filename: filename))
+    }
+
+    // MARK: - Drag and drop (verbatim loaders from InputBarView2)
+
+    /// Process every provider in the drop. Each is tried as (1) a file URL,
+    /// then (2) in-memory image data. Returns `true` if ≥1 provider was
+    /// scheduled to load. Verbatim from `InputBarView2.handleDrop(providers:)`.
+    func handleDrop(providers: [NSItemProvider]) -> Bool {
+        var consumedAny = false
+        for provider in providers {
+            if loadAsURL(provider) {
+                consumedAny = true
+                continue
+            }
+            if loadAsImageData(provider) {
+                consumedAny = true
+                continue
+            }
+        }
+        return consumedAny
+    }
+
+    /// Try to coerce the provider into a `URL`. Two paths because not every
+    /// drag source registers URL conformance, but most expose `public.file-url`
+    /// as a typed item. Verbatim from `InputBarView2.loadAsURL(_:)` — the
+    /// `DispatchQueue.main.async` hop is preserved (load callbacks fire off-main).
+    private func loadAsURL(_ provider: NSItemProvider) -> Bool {
+        if provider.canLoadObject(ofClass: URL.self) {
+            _ = provider.loadObject(ofClass: URL.self) { object, _ in
+                guard let url = object as? URL else { return }
+                DispatchQueue.main.async {
+                    self.attachPickedURL(url)
+                }
+            }
+            return true
+        }
+        let identifier = UTType.fileURL.identifier
+        guard provider.hasItemConformingToTypeIdentifier(identifier) else { return false }
+        provider.loadItem(forTypeIdentifier: identifier, options: nil) { item, _ in
+            let url: URL?
+            if let directURL = item as? URL {
+                url = directURL
+            } else if let data = item as? Data {
+                url = URL(dataRepresentation: data, relativeTo: nil)
+            } else {
+                url = nil
+            }
+            guard let url else { return }
+            DispatchQueue.main.async {
+                self.attachPickedURL(url)
+            }
+        }
+        return true
+    }
+
+    /// Try to read raw image bytes from the provider. Walks the common bitmap
+    /// UTTypes in priority order (PNG first since the screenshot HUD always
+    /// advertises `public.png`). Verbatim from `InputBarView2.loadAsImageData(_:)`.
+    private func loadAsImageData(_ provider: NSItemProvider) -> Bool {
+        let candidates: [(UTType, String, String)] = [
+            (.png, "image/png", "png"),
+            (.jpeg, "image/jpeg", "jpg"),
+            (.heic, "image/heic", "heic"),
+            (.tiff, "image/tiff", "tiff"),
+            (.gif, "image/gif", "gif"),
+            (.bmp, "image/bmp", "bmp"),
+            (.webP, "image/webp", "webp"),
+        ]
+        for (type, mediaType, ext) in candidates {
+            guard provider.hasItemConformingToTypeIdentifier(type.identifier) else { continue }
+            let suggested = provider.suggestedName
+            provider.loadDataRepresentation(forTypeIdentifier: type.identifier) { data, _ in
+                guard let data, !data.isEmpty else { return }
+                let filename = Self.imageDropFilename(suggested: suggested, ext: ext)
+                DispatchQueue.main.async {
+                    self.attachImageData(data, mediaType: mediaType, filename: filename)
+                }
+            }
+            return true
+        }
+        return false
+    }
+
+    /// Verbatim from `InputBarView2.imageDropFilename(suggested:ext:)`.
+    private static func imageDropFilename(suggested: String?, ext: String) -> String {
+        if let name = suggested, !name.isEmpty {
+            return ((name as NSString).pathExtension.isEmpty) ? "\(name).\(ext)" : name
+        }
+        let stamp = ISO8601DateFormatter().string(from: Date())
+        return "screenshot-\(stamp).\(ext)"
     }
 
     // MARK: - NSTextViewDelegate (plan §4.1-6/7)

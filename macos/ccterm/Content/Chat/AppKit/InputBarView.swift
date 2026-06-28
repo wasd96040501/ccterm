@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 
 /// AppKit replacement for the SwiftUI `InputBarView2` pill (migration plan
 /// §4.1) — the SPINE: a hand-laid-out NSView that places the standalone
@@ -75,6 +76,17 @@ final class InputBarView: NSView {
     /// A SwiftUI `Divider()` is a 1pt hairline.
     static let completionDividerHeight: CGFloat = 1
 
+    /// The attachment thumbnail strip (§4.1, §4.7-1), mounted ABOVE the text
+    /// row and BELOW the completion popup (the SwiftUI pill ordered the
+    /// completion popup above the strip — InputBarView2.swift:206-223). Hidden
+    /// until the controller reconciles it with ≥1 attachment; its fixed 64pt
+    /// height feeds `extraPillContentHeight` so the pill grows up to contain it.
+    let attachmentStrip = AttachmentStripView()
+    /// 1pt hairline between the strip and the bottom text row, reproducing the
+    /// SwiftUI `Divider()` between `thumbnailStrip` and the text `HStack`
+    /// (InputBarView2.swift:220-223). Lives OUTSIDE the strip's framed height.
+    private let stripDivider = NSView()
+
     private let pillSurface = BarSurfaceView(cornerRadius: InputBarView.cornerRadius)
     /// The pill's interior content view (clipped to the rounded shape by
     /// `pillSurface.setContentView`). The text scroll + send button live
@@ -86,13 +98,22 @@ final class InputBarView: NSView {
 
     /// Extra height the pill must reserve ABOVE the bottom text row — the
     /// completion popup (§4.3) and the thumbnail strip (§4.1-9) add their
-    /// fixed heights here. The spine keeps it 0. Setting it re-funnels.
+    /// fixed heights here. It is the SUM of `completionBandHeight` +
+    /// `stripBandHeight`, recomputed whenever either band toggles. The spine
+    /// keeps both at 0. Setting it re-funnels.
     var extraPillContentHeight: CGFloat = 0 {
         didSet {
             guard extraPillContentHeight != oldValue else { return }
             relayout()
         }
     }
+
+    /// The completion popup's reserved height (popup `listHeight` + 1pt
+    /// divider, 0 when inactive). Summed into `extraPillContentHeight`.
+    private var completionBandHeight: CGFloat = 0
+    /// The attachment strip's reserved height (64pt strip + 1pt divider, 0 when
+    /// no attachment). Summed into `extraPillContentHeight`.
+    private var stripBandHeight: CGFloat = 0
 
     /// The view scrim-cutout rects are reported relative to — set by the
     /// controller to `inputBarController.view` (the new `convert(from:)`
@@ -105,9 +126,36 @@ final class InputBarView: NSView {
     /// `scrimAnchorView`. Reported separately so the 8pt gap is not cut.
     var onPillRect: ((CGRect) -> Void)?
 
+    // MARK: - Drop wiring (plan §4.1-9, §4.7-1)
+
+    /// `acceptedDropTypes` mapped to pasteboard type identifiers
+    /// (`InputBarView2.swift:49-51` — `.fileURL, .image, .png, .jpeg, .tiff,
+    /// .heic, .gif, .bmp, .webP`). Registered in `init`.
+    private static let acceptedDragPasteboardTypes: [NSPasteboard.PasteboardType] = {
+        let utTypes: [UTType] = [.fileURL, .image, .png, .jpeg, .tiff, .heic, .gif, .bmp, .webP]
+        return utTypes.map { NSPasteboard.PasteboardType($0.identifier) }
+    }()
+
+    /// Called when a drag enters / updates over the bar. The controller drives
+    /// the dashed-stroke highlight via `setDropTargeted(_:)`.
+    var onDropTargetedChanged: ((Bool) -> Void)?
+    /// Called on `performDragOperation` with the drop's `NSItemProvider`s
+    /// reconstructed from the dragging pasteboard so the controller's verbatim
+    /// `loadAsURL` / `loadAsImageData` loaders run unchanged. Returns whether
+    /// at least one provider was consumed.
+    var onPerformDrop: (([NSItemProvider]) -> Bool)?
+
     // MARK: - Constraints driven by relayout
 
     private var pillHeightConstraint: NSLayoutConstraint!
+    /// Pins the text row top to the completion divider (strip inactive). Active
+    /// when no attachment strip is shown — preserves the spine's exact chain.
+    private var completionDividerToText: NSLayoutConstraint!
+    /// Pins the text row top to the strip divider (strip active). Active only
+    /// while ≥1 attachment is shown.
+    private var stripDividerToText: NSLayoutConstraint!
+    /// Whether the attachment strip is currently in the chain.
+    private(set) var isAttachmentStripActive = false
     private var lastReportedAttachRect: CGRect = .null
     private var lastReportedPillRect: CGRect = .null
 
@@ -122,6 +170,7 @@ final class InputBarView: NSView {
 
         configureTextCore()
         assemble()
+        registerForDraggedTypes(Self.acceptedDragPasteboardTypes)
     }
 
     @available(*, unavailable)
@@ -201,6 +250,19 @@ final class InputBarView: NSView {
         applyCompletionDividerColor()
         pillContent.addSubview(completionDivider)
 
+        // Attachment strip + its divider, mounted between the completion popup
+        // divider and the text row. Hidden (collapsed to 0 in the chain) until
+        // the controller reconciles ≥1 attachment.
+        attachmentStrip.translatesAutoresizingMaskIntoConstraints = false
+        attachmentStrip.isHidden = true
+        pillContent.addSubview(attachmentStrip)
+
+        stripDivider.translatesAutoresizingMaskIntoConstraints = false
+        stripDivider.wantsLayer = true
+        stripDivider.isHidden = true
+        applyStripDividerColor()
+        pillContent.addSubview(stripDivider)
+
         // Drop-target stroke overlay on the pill (hidden until targeted).
         dropStrokeLayer.fillColor = nil
         dropStrokeLayer.lineWidth = Self.dropStrokeLineWidth
@@ -257,12 +319,36 @@ final class InputBarView: NSView {
             completionPopup.trailingAnchor.constraint(equalTo: pillContent.trailingAnchor),
             completionPopup.bottomAnchor.constraint(equalTo: completionDivider.topAnchor),
 
-            // The 1pt hairline between popup and text row.
+            // The 1pt hairline between popup and the band below it (the strip
+            // when active, else the text row).
             completionDivider.leadingAnchor.constraint(equalTo: pillContent.leadingAnchor),
             completionDivider.trailingAnchor.constraint(equalTo: pillContent.trailingAnchor),
-            completionDivider.bottomAnchor.constraint(equalTo: textScrollView.topAnchor),
             completionDivider.heightAnchor.constraint(equalToConstant: Self.completionDividerHeight),
+
+            // Attachment strip: full-width, between the completion divider and
+            // the strip divider. Its OWN @required 64pt height drives the band;
+            // the bar reserves it via `extraPillContentHeight`. Edges only here.
+            attachmentStrip.leadingAnchor.constraint(equalTo: pillContent.leadingAnchor),
+            attachmentStrip.trailingAnchor.constraint(equalTo: pillContent.trailingAnchor),
+            attachmentStrip.topAnchor.constraint(equalTo: completionDivider.bottomAnchor),
+
+            // The 1pt hairline between the strip and the text row.
+            stripDivider.leadingAnchor.constraint(equalTo: pillContent.leadingAnchor),
+            stripDivider.trailingAnchor.constraint(equalTo: pillContent.trailingAnchor),
+            stripDivider.topAnchor.constraint(equalTo: attachmentStrip.bottomAnchor),
+            stripDivider.heightAnchor.constraint(equalToConstant: Self.completionDividerHeight),
         ])
+
+        // The text row's top pins to EITHER the completion divider (strip
+        // inactive — preserves the spine's exact chain so the completion popup
+        // tests are unaffected) OR the strip divider (strip active). Exactly one
+        // is active at a time; toggled in `setAttachmentStrip(active:)`.
+        completionDividerToText = completionDivider.bottomAnchor.constraint(
+            equalTo: textScrollView.topAnchor)
+        stripDividerToText = stripDivider.bottomAnchor.constraint(
+            equalTo: textScrollView.topAnchor)
+        completionDividerToText.isActive = true
+        stripDividerToText.isActive = false
 
         let popupTop = completionPopup.topAnchor.constraint(
             greaterThanOrEqualTo: pillContent.topAnchor)
@@ -336,7 +422,44 @@ final class InputBarView: NSView {
         // Reserve the popup's framed height PLUS the 1pt divider (which the
         // SwiftUI `Divider()` added outside `listHeight`), so the pill grows up
         // to contain both. 0 when inactive.
-        extraPillContentHeight = active ? listHeight + Self.completionDividerHeight : 0
+        completionBandHeight = active ? listHeight + Self.completionDividerHeight : 0
+        extraPillContentHeight = completionBandHeight + stripBandHeight
+
+        NSAnimationContext.endGrouping()
+        CATransaction.commit()
+    }
+
+    // MARK: - Attachment strip show/hide (plan §4.1-9, §4.7-1)
+
+    /// Reconcile the attachment strip's cards from `attachments` and show/hide
+    /// the strip band. Mirrors `setCompletionPopup`: the strip's fixed 64pt
+    /// height (+ 1pt divider) reserves room in `extraPillContentHeight` so the
+    /// pill grows UP to contain it; an empty array collapses the band to 0. The
+    /// strip's presence drives the bar's grow/shrink, which the caller animates
+    /// via `relayout(animated:)` at `.smooth(0.35)` (the band toggle here is
+    /// instant — the height re-sum is the animated part).
+    func setAttachmentStrip(_ attachments: [Attachment]) {
+        let active = !attachments.isEmpty
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        NSAnimationContext.beginGrouping()
+        NSAnimationContext.current.allowsImplicitAnimation = false
+
+        // Always reconcile — `reconcile([])` removes all cards so the strip is
+        // empty when it collapses (the cards must not linger after a send/clear).
+        attachmentStrip.reconcile(attachments)
+        attachmentStrip.isHidden = !active
+        stripDivider.isHidden = !active
+        // active (preserves the spine's exact chain when no attachment).
+        if active != isAttachmentStripActive {
+            isAttachmentStripActive = active
+            completionDividerToText.isActive = !active
+            stripDividerToText.isActive = active
+        }
+
+        stripBandHeight = active ? AttachmentStripView.stripHeight + Self.completionDividerHeight : 0
+        extraPillContentHeight = completionBandHeight + stripBandHeight
 
         NSAnimationContext.endGrouping()
         CATransaction.commit()
@@ -402,6 +525,16 @@ final class InputBarView: NSView {
         completionDivider.layer?.backgroundColor = resolved
     }
 
+    /// Resolve the strip divider's `separatorColor` against the current
+    /// appearance (R14 — `CALayer.backgroundColor` freezes on a dark/light flip).
+    private func applyStripDividerColor() {
+        var resolved: CGColor = NSColor.separatorColor.cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            resolved = NSColor.separatorColor.cgColor
+        }
+        stripDivider.layer?.backgroundColor = resolved
+    }
+
     /// Fired when the view moves into a non-nil window — the controller uses
     /// this to drive window-gated autofocus from a guaranteed hook, since a
     /// child VC added after its parent already appeared may never get a fresh
@@ -463,7 +596,61 @@ final class InputBarView: NSView {
         CATransaction.setDisableActions(true)
         applyDropStrokeColor()
         applyCompletionDividerColor()
+        applyStripDividerColor()
         CATransaction.commit()
+    }
+
+    // MARK: - NSDraggingDestination (plan §4.1-9, §4.7-1)
+
+    /// Whether `sender`'s pasteboard advertises at least one accepted type.
+    private func canAcceptDrag(_ sender: NSDraggingInfo) -> Bool {
+        guard let types = sender.draggingPasteboard.types else { return false }
+        return types.contains { Self.acceptedDragPasteboardTypes.contains($0) }
+    }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        guard canAcceptDrag(sender) else { return [] }
+        onDropTargetedChanged?(true)
+        return .copy
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        canAcceptDrag(sender) ? .copy : []
+    }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) {
+        onDropTargetedChanged?(false)
+    }
+
+    override func draggingEnded(_ sender: NSDraggingInfo) {
+        onDropTargetedChanged?(false)
+    }
+
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        canAcceptDrag(sender)
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        defer { onDropTargetedChanged?(false) }
+        // NSDraggingInfo exposes an NSPasteboard, not [NSItemProvider]; the
+        // verbatim `loadAsURL` / `loadAsImageData` loaders take NSItemProvider.
+        // Reconstruct providers from the dragging pasteboard so the loaders stay
+        // byte-for-byte unchanged (R: screenshot-HUD public.png-only drags would
+        // silently drop otherwise). `pasteboardItems` → one provider per item.
+        let providers: [NSItemProvider] =
+            sender.draggingPasteboard.pasteboardItems?.map { item in
+                let provider = NSItemProvider()
+                for type in item.types {
+                    provider.registerDataRepresentation(
+                        forTypeIdentifier: type.rawValue, visibility: .all
+                    ) { completion in
+                        completion(item.data(forType: type), nil)
+                        return nil
+                    }
+                }
+                return provider
+            } ?? []
+        return onPerformDrop?(providers) ?? false
     }
 }
 

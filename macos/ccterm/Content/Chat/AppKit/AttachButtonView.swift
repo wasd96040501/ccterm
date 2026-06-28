@@ -89,6 +89,14 @@ final class AttachButtonView: NSControl {
         NSSize(width: Self.size, height: Self.size)
     }
 
+    /// The `+` glyph's current alpha (1.0 idle / ~0.5 while pressed) and the
+    /// glass circle's alpha — TEST-OBSERVATION GETTERS (read-only) surfacing
+    /// the press-dim invariant (the `+` dims while the circle stays solid,
+    /// §4.1-10). No production code reads these; they follow the documented
+    /// `BarSurfaceView.glassCornerRadius` test-observation-getter precedent.
+    var glyphAlphaForTestObservation: CGFloat { iconView.alphaValue }
+    var surfaceAlphaForTestObservation: CGFloat { surface.alphaValue }
+
     // MARK: - Press feedback + click (non-blocking press tracking)
 
     /// Whether the current drag is over the button bounds — set in

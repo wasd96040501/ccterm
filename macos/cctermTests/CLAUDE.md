@@ -14,6 +14,17 @@
    pixel-diff regression gate.** See [Snapshot tests](#snapshot-tests)
    below before adding one.
 
+3. **AppKit verification tests** — mount a **real** production view
+   tree (`MainSplitViewController` → real sidebar + router +
+   `SessionManager`, or any production VC) off-screen and assert on its
+   geometry / animation curve / interaction outcome. Built on the
+   `Harness/` scaffold (`AppKitStage` + `Geometry` + `AnimationProbe` +
+   `InteractionDriver`); assertion-driven, so they run on the default
+   suite + CI as merge gates (no PNG, no `Snapshot` filename suffix).
+   See [Harness/CLAUDE.md](Harness/CLAUDE.md) before adding one — it
+   covers the factories, the production-sourced default window size, and
+   the off-screen / non-key-window limits the harness cannot observe.
+
 ## Parallel execution: hard rules
 
 XCTest runs unit tests **in parallel across `XCTestCase` classes**, each in

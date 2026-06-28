@@ -237,18 +237,22 @@ final class ChromeRowViewTests: XCTestCase {
 
     func testPermissionSeedsFromDefaultsOnSupportsAutoTransition() async throws {
         // Drive the seed transition for a DRAFT session: the draft's activeModel
-        // resolves via ModelStore.shared (the production fallback for a draft
-        // with no runtime catalog). `.shared` is process-isolated (each test
-        // class is its own fork), so populating it here is parallel-safe.
+        // resolves via the picker's injected `modelStore` (the production
+        // fallback for a draft with no runtime catalog). We inject a FRESH,
+        // isolated `ModelStore()` rather than mutating the process-wide
+        // `.shared` singleton — keeping the test parallel-safe both across
+        // classes AND across the sequentially-run methods in this class.
         let (_, newSessionDefaults, _, _) = makeStores()
         newSessionDefaults.setPermissionMode(.auto)
 
         let session = makeDraftSession()
         // Set the draft's model so activeModel can resolve once the catalog
-        // (ModelStore.shared) arrives.
+        // (the injected modelStore) arrives.
         session.setModel("seed-auto-model")
 
-        let permission = PermissionModePickerController(defaultsStore: newSessionDefaults)
+        let modelStore = ModelStore()
+        let permission = PermissionModePickerController(
+            defaultsStore: newSessionDefaults, modelStore: modelStore)
         let row = ChromeRowView(permissionPicker: permission)
         let window = mount(row)
         defer {
@@ -264,9 +268,9 @@ final class ChromeRowViewTests: XCTestCase {
             session.permissionMode, .default,
             "With no supportsAuto model, .auto must not be seeded yet.")
 
-        // Flip supportsAuto false→true: populate ModelStore.shared with a model
-        // whose value matches session.model and supportsAutoMode == true.
-        ModelStore.shared.update([
+        // Flip supportsAuto false→true: populate the injected modelStore with a
+        // model whose value matches session.model and supportsAutoMode == true.
+        modelStore.update([
             Self.model(value: "seed-auto-model", supportsAuto: true)
         ])
         await settle()
@@ -277,7 +281,7 @@ final class ChromeRowViewTests: XCTestCase {
                 + "the seed must fire (§4.2-2).")
 
         // Idempotent: a further catalog change does not re-seed / flip the mode.
-        ModelStore.shared.update([
+        modelStore.update([
             Self.model(value: "seed-auto-model", supportsAuto: true),
             Self.model(value: "another"),
         ])

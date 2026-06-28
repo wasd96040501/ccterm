@@ -148,11 +148,16 @@ final class AttachmentCardView: NSView {
         layer.borderColor = NSColor.separatorColor.cgColor
 
         let imageView = NSImageView()
-        imageView.image = attachment.thumbnail
-        // aspect-FILL = cover (InputBarView2.swift:276 `.aspectRatio(.fill)`):
-        // the CALayer route gives an exact cover without letterboxing.
+        // aspect-FILL = cover (InputBarView2.swift:276 `.aspectRatio(.fill)`).
+        // NSImageView paints through its CELL using `imageScaling`, which has no
+        // true cover mode — `.scaleAxesIndependently` would distort a non-square
+        // thumbnail and `.scaleProportionallyUpOrDown` would letterbox it. So we
+        // drive the LAYER directly: feed the thumbnail to `layer.contents` (NOT
+        // `.image`, which an NSImageView would not mirror into `contents`) and
+        // let `.resizeAspectFill` + `masksToBounds` crop to an exact cover.
         imageView.wantsLayer = true
-        imageView.imageScaling = .scaleAxesIndependently
+        imageView.image = nil
+        imageView.layer?.contents = attachment.thumbnail
         imageView.layer?.contentsGravity = .resizeAspectFill
         imageView.layer?.masksToBounds = true
         imageView.translatesAutoresizingMaskIntoConstraints = false

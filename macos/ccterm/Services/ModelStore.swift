@@ -17,7 +17,12 @@ final class ModelStore {
     /// progress indicator next to the model trigger.
     private(set) var isLoading: Bool = false
 
-    private init() {}
+    /// `.shared` is the production instance. The initializer is `internal` (not
+    /// `private`) so a fresh, isolated catalog can be injected through the
+    /// `modelStore:` dependency seams (e.g. `PermissionModePickerController`) —
+    /// production keeps using `.shared` via the default parameter; this exists
+    /// purely so a unit test can avoid mutating the process-wide singleton.
+    init() {}
 
     /// Refresh from a session's `InitializeResponse.models` payload.
     /// Idempotent — empty input is treated as "no update" rather than

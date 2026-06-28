@@ -257,7 +257,7 @@ final class AppKitSwiftUIBoundaryTests: XCTestCase {
     ///
     /// ## What the harness CAN and CANNOT prove (load-bearing honesty)
     ///
-    /// Investigation result (see `docs/refactor/boundary`): in the **offscreen
+    /// Investigation result: in the **offscreen
     /// XCTest** environment the window *frame* is NOT a regime-discriminating
     /// signal. Empirically, for BOTH regimes:
     ///   - adopt path  ⇒ 540 (the `minSize` clamp — the SwiftUI ScrollView

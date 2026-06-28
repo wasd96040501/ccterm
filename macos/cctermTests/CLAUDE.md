@@ -194,6 +194,22 @@ Inventory:
 
 All six reuse an offscreen-window scaffold; the four mount-based probes (the three backfill probes + the detached-warm probe) share the [`Helpers/MountedTranscript.swift`](Helpers/MountedTranscript.swift) mount + geometry-sampling helper, while the two reentry probes each stand up their own window inline.
 
+#### AppKit↔SwiftUI host-sizing gates
+
+The host-sizing invariants from the root `CLAUDE.md` ("Embedding SwiftUI in AppKit") are gated by three merge-gate probes (no `Snapshot` suffix → run on CI):
+
+| File | What it asserts |
+|---|---|
+| [`AppKitSwiftUIBoundaryTests.swift`](AppKitSwiftUIBoundaryTests.swift) | Regime-A (fill-pane) no-collapse: an A/B over the `ArchiveViewController` containment shape isolates `sizingOptions` as the leak — default options publish a non-trivial fitting height (≈ 276), `[]` publishes ≈ 0. Also gates Compose / DraftSessionLanding fill panes and that the `archiveSelectedFolderPath` binding is height-neutral. |
+| [`HostedComponentCenteringTests.swift`](HostedComponentCenteringTests.swift) | Regime-B (subordinate component): `restingBarHost` centers + width-caps at `BlockStyle.maxLayoutWidth + 2 * detailHorizontalInset`, shrinks-to-fit on a narrow pane, bottom-anchors, and keeps a small intrinsic height. |
+| [`DetailRouterLayoutDiagnosticsTests.swift`](DetailRouterLayoutDiagnosticsTests.swift) | The fixed archive path through the real router swap, asserting the fill-pane child publishes `fittingSize.height ≤ 1`. |
+
+Durable rules for any new host-sizing gate:
+
+- Assert regime-A no-collapse on the child's published `fittingSize.height ≈ 0` — that is the offscreen-stable signal. The window **frame** does not collapse in a headless offscreen window (it runs no live `_changeWindowFrameFromConstraintsIfNecessary` autosize pass), so a window-height assertion is toothless and must not be the discriminator.
+- Mount in a **large** window (≥ ~1100×760, healthy height dwarfing the ≈ 276 collapse target with `minSize` strictly between) so a partial collapse can't hide under the min clamp.
+- Exhibit the bad default-sizing regime with a **test-local throwaway host**; never mutate a production VC's `sizingOptions` (production-code rule).
+
 When you add a new test that's "drive a real view + assert on a property at the boundary," follow these naming rules:
 
 - Filename: `<Subject>Tests.swift` (e.g. `TranscriptHostReentryLayoutCacheTests.swift`) — no `Snapshot` suffix.

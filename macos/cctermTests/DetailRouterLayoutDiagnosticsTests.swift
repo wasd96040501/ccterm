@@ -169,8 +169,7 @@ final class DetailRouterLayoutDiagnosticsTests: XCTestCase {
         // by the archive child's published `fittingSize.height`:
         // `sizingOptions = []` (the fix) ⇒ ≈ 0; default options (the leak) ⇒
         // ≈ 276. Asserting on that value is what actually catches a reverted
-        // fix — see docs/refactor/boundary/BOUNDARY-SPEC.md §2.4 and the
-        // `AppKitSwiftUIBoundaryTests` fitting-size gates.
+        // fix — see the `AppKitSwiftUIBoundaryTests` fitting-size gates.
         XCTAssertLessThanOrEqual(
             childFitting.height, 1,
             "Archive child leaked a non-zero fittingSize.height (\(childFitting.height)) — "

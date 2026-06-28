@@ -119,7 +119,14 @@ struct PermissionCardView: View {
         case .exitPlanMode:
             PermissionExitPlanModeCardBody(request: request)
         case .askUserQuestion:
-            PermissionAskUserQuestionCardBody(
+            // The AskUserQuestion wizard is now pure AppKit
+            // (`AskUserQuestionCardViewController`, migration plan §4.5). The
+            // production path mounts it directly via the AppKit
+            // `PermissionCardContentView`; this SwiftUI card survives only for
+            // the DEBUG `PermissionCardsDemoView`, so it bridges to the same
+            // AppKit VC through a representable rather than re-hosting a
+            // now-deleted SwiftUI body.
+            AskUserQuestionCardRepresentable(
                 request: request,
                 onSubmit: onAllowWithInput,
                 onCancel: onDeny)
@@ -319,6 +326,28 @@ struct PermissionDecisionButton: View {
         case .destructive: return Color.red.opacity(0.4)
         }
     }
+}
+
+// MARK: - AskUserQuestion bridge (DEBUG demo only)
+
+/// Hosts the pure-AppKit `AskUserQuestionCardViewController` (migration plan
+/// §4.5) inside the still-SwiftUI `PermissionCardView`, which now survives only
+/// for the DEBUG `PermissionCardsDemoView`. Production mounts the wizard VC
+/// directly via the AppKit `PermissionCardContentView` — there is no SwiftUI
+/// AskUserQuestion body anymore.
+private struct AskUserQuestionCardRepresentable: NSViewControllerRepresentable {
+    let request: PermissionRequest
+    let onSubmit: ([String: Any]?) -> Void
+    let onCancel: () -> Void
+
+    func makeNSViewController(context: Context) -> AskUserQuestionCardViewController {
+        AskUserQuestionCardViewController(
+            request: request, onSubmit: onSubmit, onCancel: onCancel)
+    }
+
+    func updateNSViewController(
+        _ controller: AskUserQuestionCardViewController, context: Context
+    ) {}
 }
 
 #Preview("Bash") {

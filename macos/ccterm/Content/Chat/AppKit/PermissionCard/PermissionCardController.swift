@@ -259,11 +259,39 @@ final class PermissionCardController {
         // reconcile) — outside any swap's disabled CATransaction.
         card.alphaValue = 0
         layerView.layoutSubtreeIfNeeded()
+
+        // §4.5-1 focus ownership: the AskUserQuestion wizard takes first
+        // responder so Esc (`cancelOperation`) / Return reach it. The wizard VC
+        // is a DETACHED view-owner — its `view` is mounted into the card stack
+        // but it is intentionally NOT `addChild`-ed, so AppKit never fires its
+        // appearance lifecycle automatically; `viewDidAppear()` is its only
+        // lifecycle hook and we drive it manually here (no `viewWillDisappear`
+        // teardown is relied upon — teardown is `prepareForRemoval`, §4.5-5).
+        // When the host is windowed, drive focus SYNCHRONOUSLY in the same
+        // source phase as mount — resign whatever held focus first (the input
+        // bar) so it stops contending, then hand focus to the wizard root (no
+        // async makeFirstResponder hop, §4.5-3). When the host is NOT yet
+        // windowed (a session swap can mount the card before the full-pane host
+        // joins a window), the wizard root's own `viewDidMoveToWindow` retry
+        // acquires focus once the window arrives (§4.5-1 / R4).
+        if let wizard = card.askUserQuestionController, layerView.window != nil {
+            layerView.window?.makeFirstResponder(nil)
+            wizard.viewDidAppear()
+        }
+
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = Self.fadeDuration
             ctx.allowsImplicitAnimation = true
             card.animator().alphaValue = 1
         }
+    }
+
+    /// Tear down a card's owned resources before it leaves the tree. Today only
+    /// the AskUserQuestion wizard owns teardown-sensitive state (its model
+    /// callback, §4.5-5) — clear it so a late rebuild can't fire after the host
+    /// is removed.
+    private func teardownCard(_ card: PermissionCardContentView?) {
+        card?.askUserQuestionController?.prepareForRemoval()
     }
 
     /// Fade the card out (opacity only, D5) and remove it in the completion.
@@ -281,6 +309,10 @@ final class PermissionCardController {
         // A previous fade may still be in flight; drop it now so we never hold
         // two fading cards (and bump the generation so its completion is inert).
         cancelInFlightFade()
+
+        // Tear down the card's owned resources (the AskUserQuestion wizard's
+        // model callback, §4.5-5) before it begins fading out.
+        teardownCard(card)
 
         mountedCard = nil
         mountedPendingId = nil
@@ -313,6 +345,7 @@ final class PermissionCardController {
     /// completion (timing finding #3).
     private func dismissCardSynchronously() {
         cancelInFlightFade()
+        teardownCard(mountedCard)
         mountedCard?.removeFromSuperview()
         mountedCard = nil
         mountedPendingId = nil
@@ -331,6 +364,7 @@ final class PermissionCardController {
     private func cancelInFlightFade() {
         guard fadingOutCard != nil else { return }
         dismissGeneration &+= 1
+        teardownCard(fadingOutCard)
         fadingOutCard?.removeFromSuperview()
         fadingOutCard = nil
         layerView.isDismissing = false

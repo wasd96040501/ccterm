@@ -79,6 +79,10 @@ final class PermissionCardContentView: NSView {
     /// The per-kind body view, retained so the highlight Task it may own stays
     /// alive for the card's lifetime.
     private let bodyView: NSView
+    /// The AskUserQuestion wizard VC, retained for the card's lifetime when
+    /// `bodyOwnsChrome` (its `view` is the `bodyView`). nil for every other kind.
+    /// The card controller drives its focus + teardown (§4.5-1, §4.5-5).
+    private(set) var askUserQuestionController: AskUserQuestionCardViewController?
 
     // MARK: - Init
 
@@ -103,8 +107,20 @@ final class PermissionCardContentView: NSView {
         self.request = request
         let resolvedKind = PermissionCardKind.kind(for: request)
         self.kind = resolvedKind
-        let builder = (bodyBuilder ?? permissionCardBodyBuilder(for:))(resolvedKind)
-        self.bodyView = builder.makeBody(request: request, engine: engine)
+        if resolvedKind == .askUserQuestion {
+            // §4.5 delegation: AskUserQuestion owns its full chrome. Build the
+            // wizard VC (onSubmit ← onAllowWithInput, onCancel ← onDeny) and use
+            // its `view` as the body section — `bodyOwnsChrome` suppresses the
+            // generic header / reason / button row.
+            let wizard = AskUserQuestionCardViewController(
+                request: request, onSubmit: onAllowWithInput, onCancel: onDeny)
+            self.askUserQuestionController = wizard
+            self.bodyView = wizard.view
+        } else {
+            self.askUserQuestionController = nil
+            let builder = (bodyBuilder ?? permissionCardBodyBuilder(for:))(resolvedKind)
+            self.bodyView = builder.makeBody(request: request, engine: engine)
+        }
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
 

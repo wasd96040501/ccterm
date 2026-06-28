@@ -155,7 +155,6 @@ struct DraftSessionLandingView: View {
             .padding(.vertical, ChatSessionViewController.detailVerticalInset)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .coordinateSpace(name: ChatSessionViewController.detailCoordSpace)
         // Full-bleed: let the dot-grid backdrop extend under the unified
         // toolbar's safe-area inset instead of starting below it.
         .ignoresSafeArea()
@@ -220,11 +219,8 @@ struct DraftSessionLandingView: View {
             // from `InputDraftStore.newSessionKey` (the compose card's
             // shared key), so a draft's text never collides with compose's.
             draftKey: sessionId,
-            coordSpace: ChatSessionViewController.detailCoordSpace,
             submitEnabled: manager.prepareDraftSession(sessionId).cwd != nil,
             onSubmit: onSubmit,
-            onAttachRect: { _ in },
-            onPillRect: { _ in },
             onBuiltinCommand: onBuiltinCommand,
             autofocus: true
         )

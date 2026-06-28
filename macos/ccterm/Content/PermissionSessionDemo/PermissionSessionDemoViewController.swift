@@ -4,26 +4,17 @@ import AgentSDK
 import AppKit
 import SwiftUI
 
-/// Carries the resting bar's measured natural height out to the AppKit host
-/// so the bottom-anchored host can size to exactly the bar. (Demo-local; the
-/// production `ChatSessionViewController` now sizes its bar host via
-/// `NSHostingView.sizingOptions = [.intrinsicContentSize]` instead.)
-private struct DemoBarHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
 /// AppKit-rooted host for the end-to-end permission card layout demo.
 /// Replaces the former SwiftUI `PermissionSessionDemoView` +
 /// `ChatHistoryView` combo: the transcript is mounted directly via
-/// `TranscriptScrollViewFactory`, the input bar (`ChatRestingBar`) and
-/// the floating permission-card controller stay SwiftUI but are now
-/// hosted via `NSHostingView`. The mocked `SessionManager` /
-/// `Session` pair, seed payload (`TranscriptDemoViewController.initialBlocks`),
-/// and ControlPanel behavior are carried over verbatim from the old
-/// view; only the mount strategy changed.
+/// `TranscriptScrollViewFactory`, and the merged bottom cluster
+/// (`ChatBottomCluster` — fade + input bar + permission card in one
+/// SwiftUI tree) is hosted via a single bottom-anchored `NSHostingView`,
+/// exactly as production's `ChatSessionViewController.bottomClusterHost`.
+/// The mocked `SessionManager` / `Session` pair, seed payload
+/// (`TranscriptDemoViewController.initialBlocks`), and ControlPanel
+/// behavior are carried over verbatim from the old view; only the mount
+/// strategy changed.
 @MainActor
 final class PermissionSessionDemoViewController: NSViewController {
 
@@ -45,18 +36,14 @@ final class PermissionSessionDemoViewController: NSViewController {
     private let seed: Seed
     private var scroll: Transcript2ScrollView?
     private var sheetPresenter: Transcript2SheetPresenter?
-    private var inputBarHost: NSHostingView<AnyView>?
-    /// Full-pane permission-card host, mirroring production's
-    /// `ChatSessionViewController.permissionCardHost`. Without it the
-    /// `showCurrent()` control would set `pendingPermissions` but no card
-    /// would ever render (PR5 moved the card out of `ChatRestingBar`).
-    private var permissionCardHost: PassthroughHostingView?
-    /// Resolves `PermissionCardOverlay` to the seed session — selection is set
+    /// Single bottom-cluster host (fade + bar + card), mirroring production's
+    /// `ChatSessionViewController.bottomClusterHost`. Bottom-anchored,
+    /// full-width, content-height via `.intrinsicContentSize` — the same
+    /// regime-B posture production uses (no hand-rolled `PreferenceKey` height).
+    private var bottomClusterHost: NSHostingView<ChatBottomClusterRoot>?
+    /// Resolves `ChatBottomCluster` to the seed session — selection is set
     /// to `.session(seed.sessionId)` once the seed exists (in `viewDidLoad`).
     private let demoModel = MainSelectionModel()
-    /// Bottom-anchored bar host height, driven by the bar's measured natural
-    /// height (demo-local; production sizes its host via `.intrinsicContentSize`).
-    private var inputBarHeightConstraint: NSLayoutConstraint?
     private var controlPanelHost: NSHostingView<ControlPanelHostView>?
     private let controlPanelState = ControlPanelState()
     /// Demo-local draft store so the hosted `InputBarView2` resolves its
@@ -73,13 +60,12 @@ final class PermissionSessionDemoViewController: NSViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        // Point the overlay's selection at the seed session so
-        // `PermissionCardOverlay` resolves to it (same routing as production
-        // via `ChatComposeStack.content`).
+        // Point the cluster's selection at the seed session so
+        // `ChatBottomCluster` resolves to it (same routing as production
+        // via `ChatBottomCluster.content`).
         demoModel.selection = .session(seed.sessionId)
         mountTranscript()
-        installInputBar()
-        installPermissionCardHost()
+        installBottomCluster()
         installControlPanel()
         sheetPresenter = Transcript2SheetPresenter(controller: seed.controller, hostView: view)
         if let syntaxEngine {
@@ -115,71 +101,33 @@ final class PermissionSessionDemoViewController: NSViewController {
         self.scroll = scroll
     }
 
-    private func installInputBar() {
-        let bar = ChatRestingBar(
-            sessionId: seed.sessionId,
-            draftKey: seed.sessionId,
-            onSubmit: { _ in },
-            onAttachRect: { _ in },
-            onPillRect: { _ in }
+    /// Mount the merged bottom cluster exactly as production does: a single
+    /// full-width, bottom-anchored `NSHostingView<ChatBottomClusterRoot>`
+    /// whose height comes from `.intrinsicContentSize`. The cluster renders
+    /// the fade + input bar + permission card in one tree, so a pending
+    /// permission set by `showCurrent()` renders inline above the bar — no
+    /// separate card host needed.
+    private func installBottomCluster() {
+        let root = ChatBottomClusterRoot(
+            context: DetailContext(
+                model: demoModel,
+                sessionManager: seed.manager,
+                recentProjects: RecentProjectsStore(defaults: UserDefaults.standard),
+                inputDraftStore: inputDraftStore,
+                syntaxEngine: syntaxEngine ?? SyntaxHighlightEngine()),
+            onSubmit: { _, _ in },
+            onBuiltinCommand: { _, _ in }
         )
-        .environment(seed.manager)
-        .environment(inputDraftStore)
-        // Bottom-anchor the bar at its OWN height, exactly as
-        // `ChatSessionViewController` does. Measure the bar's natural height
-        // and feed it to the host's height constraint; pinning the host
-        // full-bleed (or letting a plain `NSHostingView` publish its intrinsic
-        // height) leaks a required height up into the window's constraints and
-        // collapses the window. `sizingOptions = []` below severs that path.
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity)
-        .background {
-            GeometryReader { proxy in
-                Color.clear.preference(
-                    key: DemoBarHeightKey.self, value: proxy.size.height)
-            }
-        }
-        .onPreferenceChange(DemoBarHeightKey.self) { [weak self] height in
-            self?.inputBarHeightConstraint?.constant = height
-        }
-        .ignoresSafeArea()
-        let host = NSHostingView(rootView: AnyView(bar))
-        host.sizingOptions = []
-        host.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(host)
-        let heightConstraint = host.heightAnchor.constraint(equalToConstant: 0)
-        inputBarHeightConstraint = heightConstraint
-        NSLayoutConstraint.activate([
-            host.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            host.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            host.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            heightConstraint,
-        ])
-        inputBarHost = host
-    }
-
-    /// Mirror production's `permissionCardHost`: a full-pane click-through
-    /// host for `PermissionCardOverlay`, layered above the bar host. PR5
-    /// moved the card out of `ChatRestingBar` into this overlay, so the demo
-    /// must mount it too or `showCurrent()` would set `pendingPermissions`
-    /// with nothing on screen.
-    private func installPermissionCardHost() {
-        let host = PassthroughHostingView(
-            rootView: AnyView(
-                PermissionCardOverlay(model: demoModel)
-                    .environment(seed.manager)
-                    .environment(inputDraftStore)
-            ))
-        host.sizingOptions = []
+        let host = NSHostingView(rootView: root)
+        host.sizingOptions = [.intrinsicContentSize]
         host.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(host)
         NSLayoutConstraint.activate([
             host.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             host.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            host.topAnchor.constraint(equalTo: view.topAnchor),
             host.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
-        permissionCardHost = host
+        bottomClusterHost = host
     }
 
     private func installControlPanel() {

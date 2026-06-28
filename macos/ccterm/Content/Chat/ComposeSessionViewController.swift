@@ -6,8 +6,8 @@ import SwiftUI
 /// `.newSession`; `.session(_)` / `.none` go to `ChatSessionViewController`.
 ///
 /// **Why compose is its own VC.** Compose used to be a *mode* of
-/// `ChatSessionViewController`, sharing its always-mounted
-/// `restingBarHost`. That single `NSHostingView` had to morph between
+/// `ChatSessionViewController`, sharing its always-mounted bottom-band
+/// host. That single `NSHostingView` had to morph between
 /// a full-bleed configurator (compose) and a bottom-anchored bar (chat)
 /// on every selection flip, which meant keeping an AppKit constraint
 /// switch in sync with the SwiftUI body across runloop phases. The two
@@ -15,9 +15,9 @@ import SwiftUI
 /// the transcript for a window after a fast switch and swallowed its
 /// clicks / text selection. Giving compose its own VC deletes the shared
 /// surface: this VC is full-bleed with nothing behind it (full-bleed
-/// hit-testing harms nothing), and the chat VC's bar host is now *always*
-/// bottom-anchored — it never has to be full-bleed, so there is no
-/// non-bar footprint left to cover the transcript.
+/// hit-testing harms nothing), and the chat VC's bottom-cluster host is
+/// now *always* bottom-anchored — it never has to be full-bleed, so there
+/// is no non-bar footprint left to cover the transcript.
 ///
 /// Mounted via `mountFillPaneHost(_:in:)` (an `NSHostingController`, not a
 /// bare `NSHostingView`) so the SwiftUI tree gets proper child-VC lifecycle
@@ -148,11 +148,8 @@ struct ComposeSessionView: View {
                     InputBarChrome(
                         sessionId: draftSessionId,
                         draftKey: InputDraftStore.newSessionKey,
-                        coordSpace: ChatSessionViewController.detailCoordSpace,
                         submitEnabled: session.cwd != nil,
-                        onSubmit: onSubmit,
-                        onAttachRect: { _ in },
-                        onPillRect: { _ in }
+                        onSubmit: onSubmit
                     )
                 }
             )
@@ -160,7 +157,6 @@ struct ComposeSessionView: View {
             .padding(.vertical, ChatSessionViewController.detailVerticalInset)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .coordinateSpace(name: ChatSessionViewController.detailCoordSpace)
         // Full-bleed: let the dot-grid backdrop extend under the unified
         // toolbar's safe-area inset instead of starting below it.
         .ignoresSafeArea()

@@ -108,18 +108,6 @@ struct InputBarView2: View {
     /// so the send button greys out until the user chooses a target — the
     /// draft would otherwise silently fall back to `$HOME` at submit.
     var submitEnabled: Bool = true
-    /// Coordinate space in which to report `onAttachRect` / `onPillRect`.
-    /// `nil` disables geometry reporting (e.g. previews).
-    var coordSpace: String? = nil
-    /// Fired with the attach button's frame (in `coordSpace`). The bottom
-    /// scrim uses it to cut a *Circle* hole — bar chrome should never see
-    /// a gray gradient on top of the LG button.
-    var onAttachRect: ((CGRect) -> Void)? = nil
-    /// Fired with the pill's frame (in `coordSpace`). The bottom scrim
-    /// uses it to cut a *RoundedRectangle* hole. Reported separately from
-    /// `onAttachRect` so the 8pt spacing between the two is NOT cut,
-    /// letting the scrim's gradient bridge them naturally.
-    var onPillRect: ((CGRect) -> Void)? = nil
     /// Working directory for file mentions and slash command lookups.
     /// Nil while still composing a draft with no folder picked — both
     /// triggers display a "pick a folder first" hint in that state.
@@ -179,9 +167,7 @@ struct InputBarView2: View {
                 onPick: presentPicker,
                 isDropTargeted: isDropTargeted
             )
-            .modifier(ReportFrame(coordSpace: coordSpace, action: onAttachRect))
             pill
-                .modifier(ReportFrame(coordSpace: coordSpace, action: onPillRect))
         }
         .onDrop(of: Self.acceptedDropTypes, isTargeted: $isDropTargeted, perform: handleDrop)
         .animation(.easeOut(duration: 0.12), value: isDropTargeted)
@@ -719,29 +705,6 @@ struct InputBarView2: View {
                 .background(Circle().fill(color))
         }
         .buttonStyle(.plain)
-    }
-}
-
-// MARK: - Geometry reporting
-
-/// Attaches an `.onGeometryChange` in `coordSpace` (when both `coordSpace`
-/// and `action` are non-nil) and forwards the rect. Centralized so attach
-/// and pill report through identical machinery; no-op when the host
-/// doesn't need geometry (previews, isolated screenshots).
-private struct ReportFrame: ViewModifier {
-    let coordSpace: String?
-    let action: ((CGRect) -> Void)?
-
-    func body(content: Content) -> some View {
-        if let coordSpace, let action {
-            content.onGeometryChange(for: CGRect.self) { proxy in
-                proxy.frame(in: .named(coordSpace))
-            } action: { rect in
-                action(rect)
-            }
-        } else {
-            content
-        }
     }
 }
 

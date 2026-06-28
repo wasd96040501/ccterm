@@ -3,14 +3,14 @@ import XCTest
 @testable import ccterm
 
 /// Pins the routing decision that translates `MainSelection` →
-/// `ChatComposeStack.content(for:draftSessionId:)`,
-/// which is what the (still always-mounted) input-bar overlay
+/// `ChatBottomCluster.content(for:draftSessionId:)`,
+/// which is what the (always-mounted) bottom-cluster host
 /// inside `ChatSessionViewController` renders. The invariants:
 /// `.newSession` / `.archive` / `.demo` / `.none` collapse to `.none`,
 /// so no input chrome floats on top of pages where the VC is
 /// unexpectedly mounted; only `.session(_)` renders the chat resting
-/// bar. (New Session's compose card lives in its own
-/// `ComposeSessionViewController` now, not in this stack.)
+/// bar (+ permission card). (New Session's compose card lives in its own
+/// `ComposeSessionViewController` now, not in this cluster.)
 ///
 /// Pre-fix, the `.archive` branch fell through to
 /// `ChatRestingBar(sessionId: "__archive__")`, mounting a SwiftUI
@@ -39,19 +39,19 @@ final class ChatComposeStackRoutingTests: XCTestCase {
         // bottom-anchored ChatRestingBar (and its embedded
         // InputBarChrome) eats clicks on the Archive list, making
         // the per-row Unarchive button unpressable.
-        let content = ChatComposeStack.content(
+        let content = ChatBottomCluster.content(
             for: .archive, draftSessionId: "draft-1")
         XCTAssertEqual(content, .none)
     }
 
     func testComposeContent_noneSelectionRendersNothing() {
-        let content = ChatComposeStack.content(
+        let content = ChatBottomCluster.content(
             for: .none, draftSessionId: nil)
         XCTAssertEqual(content, .none)
     }
 
     func testComposeContent_historySessionRoutesToChat() {
-        let content = ChatComposeStack.content(
+        let content = ChatBottomCluster.content(
             for: .session("session-abc"), draftSessionId: nil)
         XCTAssertEqual(content, .chat(sessionId: "session-abc"))
     }
@@ -62,17 +62,17 @@ final class ChatComposeStackRoutingTests: XCTestCase {
         // still collapses it to `.none` (regardless of draft state) so a
         // stray mount can't float the chat bar over the compose card.
         XCTAssertEqual(
-            ChatComposeStack.content(for: .newSession, draftSessionId: "draft-xyz"),
+            ChatBottomCluster.content(for: .newSession, draftSessionId: "draft-xyz"),
             .none)
         XCTAssertEqual(
-            ChatComposeStack.content(for: .newSession, draftSessionId: nil),
+            ChatBottomCluster.content(for: .newSession, draftSessionId: nil),
             .none)
     }
 
     #if DEBUG
     func testComposeContent_demoSelectionsRenderNoInputChrome() {
         for kind in DemoKind.allCases {
-            let content = ChatComposeStack.content(
+            let content = ChatBottomCluster.content(
                 for: .demo(kind), draftSessionId: nil)
             XCTAssertEqual(content, .none, "demo(.\(kind.rawValue)) should not render input chrome")
         }

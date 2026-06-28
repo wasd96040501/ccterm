@@ -11,10 +11,11 @@ import SwiftUI
 ///   would otherwise butt up against the window's top edge.
 /// - **Bottom of a transcript** — `.bottomToTop`, fades the last visible
 ///   row so it dissolves into the chrome under the input bar rather than
-///   being clipped by the bar. (The chat transcript's own top/bottom
-///   fades are now the AppKit `TranscriptTopScrimView` /
-///   `TranscriptBottomScrimView` on `ChatSessionViewController`; this
-///   SwiftUI scrim is used for the New Session card's recents list.)
+///   being clipped by the bar. The chat transcript's top fade is the AppKit
+///   `TranscriptTopScrimView` (its band doubles as the title-bar drag/zoom
+///   region); the bottom fade is this SwiftUI `FadeScrim`, composited inside
+///   `ChatBottomCluster` behind the input bar + permission card, and it's
+///   also used for the New Session card's recents list.
 ///
 /// Generic over `ShapeStyle` so callers can fade to whatever underlies
 /// the scroll region — `Color(nsColor: .windowBackgroundColor)` over the

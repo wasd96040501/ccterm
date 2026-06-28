@@ -12,11 +12,8 @@ import SwiftUI
 struct InputBarChrome: View {
     let sessionId: String
     let draftKey: String
-    let coordSpace: String
     let submitEnabled: Bool
     let onSubmit: (InputBarView2.Submission) -> Void
-    let onAttachRect: (CGRect) -> Void
-    let onPillRect: (CGRect) -> Void
     /// Builtin slash command (`/new`, `/clear`) dispatcher. Forwarded to
     /// `InputBarView2`'s completion trigger context. Nil where builtins
     /// shouldn't be offered (the compose card).
@@ -53,9 +50,6 @@ struct InputBarChrome: View {
                 onStop: { session.interrupt() },
                 isRunning: session.isRunning,
                 submitEnabled: submitEnabled,
-                coordSpace: coordSpace,
-                onAttachRect: onAttachRect,
-                onPillRect: onPillRect,
                 directory: session.cwd,
                 additionalDirs: session.additionalDirectories,
                 pluginDirs: session.pluginDirectories,
@@ -82,22 +76,19 @@ struct InputBarChrome: View {
 }
 
 /// Chat-mode resting input region: just `InputBarChrome`, bottom-padded
-/// and width-capped. The floating `PermissionCardView` is **no longer**
-/// here — it lives in a dedicated full-pane `permissionCardHost`
-/// (`PermissionCardOverlay` inside a `PassthroughHostingView`) layered over
-/// the transcript by `ChatSessionViewController`. Moving the card out is
-/// the whole point: when the card was a `ZStack` child here, its footprint
-/// pumped the union height this body reports, and the bottom-anchored bar
-/// host (regime-B, `.intrinsicContentSize`) grew to contain it — the bar
-/// band visibly ballooned up when a card appeared. Now this body's
-/// intrinsic height is a pure function of the bar's own content
+/// and width-capped. The floating `PermissionCardView` is **not** here —
+/// it's composited as a higher z-layer in the same `ChatBottomCluster`
+/// tree by `ChatSessionViewController`. Keeping the card out of this body
+/// is the whole point: when the card was a `ZStack` child here, its
+/// footprint pumped the union height this body reports, and the
+/// bottom-anchored cluster host (regime-B, `.intrinsicContentSize`) grew to
+/// contain it — the bar band visibly ballooned up when a card appeared. Now
+/// this body's intrinsic height is a pure function of the bar's own content
 /// (multi-line input still grows it), fully decoupled from the card.
 struct ChatRestingBar: View {
     let sessionId: String
     let draftKey: String
     let onSubmit: (InputBarView2.Submission) -> Void
-    let onAttachRect: (CGRect) -> Void
-    let onPillRect: (CGRect) -> Void
     /// Builtin slash command (`/new`, `/clear`) dispatcher, forwarded to
     /// `InputBarChrome`. Non-nil in chat mode so the resting bar offers
     /// the builtins.
@@ -107,11 +98,8 @@ struct ChatRestingBar: View {
         InputBarChrome(
             sessionId: sessionId,
             draftKey: draftKey,
-            coordSpace: ChatSessionViewController.detailCoordSpace,
             submitEnabled: true,
             onSubmit: onSubmit,
-            onAttachRect: onAttachRect,
-            onPillRect: onPillRect,
             onBuiltinCommand: onBuiltinCommand
         )
         .frame(

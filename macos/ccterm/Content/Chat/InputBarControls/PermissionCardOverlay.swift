@@ -1,38 +1,33 @@
 import AgentSDK
 import SwiftUI
 
-/// Full-pane floating overlay that hosts the `PermissionCardView` when the
-/// CLI is waiting on a permission decision. Lives in its own dedicated,
-/// click-through `PassthroughHostingView` (regime-A: `sizingOptions = []` +
-/// four-edge pin) **separate from the input-bar host**, so the card's
-/// footprint never pumps the bottom-anchored bar host's intrinsic height —
-/// the bar's height is now purely a function of the bar's own content
-/// (multi-line input still grows it), never a function of whether a card is
-/// pending. The card fades in place above the transcript; the rest of the
-/// overlay is transparent and passes clicks through to the table.
+/// Standalone permission-card view + the home of the four decision handlers.
 ///
-/// Session routing mirrors `ChatComposeStack` exactly — both read the same
-/// `MainSelectionModel.selection` through `ChatComposeStack.content(...)`, so
-/// "the bar host renders nothing" implies "the card host renders nothing"
-/// for the same selection. That symmetry is what prevents a stale/wrong
-/// session's card from rendering on the new transcript during a fast session
-/// switch: the moment selection flips, both hosts resolve the new session id
-/// together. `.id(sid)` keys the resolved session so SwiftUI rebuilds the
-/// card subtree (not just re-renders it) across switches.
+/// Production no longer mounts this in its own host: the permission card is
+/// rendered inline by `ChatBottomCluster` (the merged fade + bar + card tree
+/// hosted by `ChatSessionViewController.bottomClusterHost`), which calls
+/// `decisionHandlers(for:session:)` directly. This type survives for two
+/// reasons:
+///   1. `decisionHandlers(for:session:)` / `Handlers` package the
+///      button→`session.respond(...)` wiring in one unit-testable place
+///      (`PermissionCardWiringTests`), shared with `ChatBottomCluster`.
+///   2. It renders the full overlay (card bottom-pinned at `chatBottomInset`,
+///      resolved through the same `MainSelectionModel` routing) as a single
+///      view, which `PermissionCardSnapshotTests` exercises for visual review.
 ///
-/// Card content (the `PermissionCardView` + its four decision callbacks) is
-/// carried verbatim from the former `ChatRestingBar` ZStack — only the host
-/// moved. The read path is still `session.pendingPermissions.first`
+/// Session routing mirrors `ChatBottomCluster` exactly — both read the same
+/// `MainSelectionModel.selection` through `ChatBottomCluster.content(...)`, so
+/// "the cluster renders nothing" implies "this overlay renders nothing" for
+/// the same selection. The read path is `session.pendingPermissions.first`
 /// (`@Observable`, no cached copy).
 struct PermissionCardOverlay: View {
     @Bindable var model: MainSelectionModel
     @Environment(SessionManager.self) private var manager
 
     var body: some View {
-        // Resolve the displayed session the same way the input-bar host does.
-        // `.none` (every non-`.session(_)` selection) renders nothing, so the
-        // card host stays empty exactly when the bar host is empty.
-        let content = ChatComposeStack.content(
+        // Resolve the displayed session the same way the bottom cluster does.
+        // `.none` (every non-`.session(_)` selection) renders nothing.
+        let content = ChatBottomCluster.content(
             for: model.selection, draftSessionId: model.draftSessionId)
         ZStack(alignment: .bottom) {
             switch content {
@@ -44,9 +39,9 @@ struct PermissionCardOverlay: View {
             }
         }
         // Fill the pane and bottom-align the card; the card self-limits +
-        // centers inside via its own frame. No hit-eligible background is
-        // painted, so `PassthroughHostingView` passes through everywhere
-        // outside the card.
+        // centers inside via its own frame. This standalone overlay keeps the
+        // full-pane frame for the snapshot fixture; production renders the
+        // card inline in `ChatBottomCluster` instead (no full-pane frame).
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
     }
 
@@ -75,9 +70,8 @@ struct PermissionCardOverlay: View {
             }
         }
         // Bottom edge flush with the resting bar's bottom (same inset the bar
-        // uses), so the card visually extends *up* from there — reproduces the
-        // pre-overlay position. Only the card animates; the host geometry is
-        // fixed (full pane), so nothing pumps the bar host.
+        // uses), so the card visually extends *up* from there. Only the card
+        // animates; nothing here pumps the bar's height.
         .frame(maxWidth: .infinity, alignment: .bottom)
         .padding(.bottom, ChatSessionViewController.chatBottomInset)
         .animation(.smooth(duration: 0.25), value: session.pendingPermissions.first?.id)

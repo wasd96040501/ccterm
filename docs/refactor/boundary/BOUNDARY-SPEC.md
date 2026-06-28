@@ -29,6 +29,25 @@ the probe behavior). With the default set the host publishes the SwiftUI body's
 fitting size as Auto Layout intrinsic/preferred size. That is correct when the
 content should drive the size, and catastrophic when the container should.
 
+### 0.1 The hit-test invariant (passthrough is geometry, not transparency)
+
+> **A plain `NSHostingView` returns `self` for any point inside its bounds that
+> no SwiftUI subview claims; `.allowsHitTesting(false)` does NOT turn a
+> transparent region into a "click-through" region.** Whether a click reaches a
+> sibling view is decided **only** by host-frame geometry: a host that should
+> not occlude a sibling must keep its own frame off that sibling. (FACT —
+> measured with a real `hitTest` probe against a sentinel transcript;
+> `DetailPaneTranscriptHitTestTests`.)
+
+The corollary is the rule the bottom-cluster merge follows: do **not** reach for
+a `hitTest`-override "passthrough host" to let clicks fall through a transparent
+overlay. Make the host's frame not cover what it shouldn't — a full-width,
+**bottom-anchored, content-height** host (regime B) leaves the transcript band
+above it uncovered, so the transcript receives its clicks by geometry, with no
+override. The deleted `PassthroughHostingView` was a patch on the *wrong* shape
+(a full-pane card host that, being full-pane, swallowed in-bounds points); the
+fix was to delete the full-pane host, not the passthrough.
+
 ---
 
 ## 1. The decision table (one screen)
@@ -40,7 +59,7 @@ class/method that guards the rule, or "not yet tested."
 | Situation | Host kind | `sizingOptions` | Constraint pattern | Two-way binding rule | Canonical rule | Backing test |
 |---|---|---|---|---|---|---|
 | **A. Fill-a-pane** — host *is* the detail pane's content | `NSHostingController` | `[]` | pin **all 4 edges** to container | Binding/`@Bindable` OK; **not** the collapse cause; under `[]` it is height-neutral | Container drives size; host publishes none. `[]` + 4-edge pin. | `AppKitSwiftUIBoundaryTests.testComposeAndDraftLandingFillPanesDoNotCollapse`, `.testArchiveBindingWriteStaysHeightNeutral`, `.testSizingRegimeGovernsPublishedFittingSize`, `.testDefaultSizingOptionsHostCollapsesWindowInLargeSplit`; `DetailRouterLayoutDiagnosticsTests.testArchiveSelectionDoesNotFlattenWindow` |
-| **B. Centered, width-capped, bottom-anchored component** — input bar over a transcript | `NSHostingView` | `[.intrinsicContentSize]` | `centerX` + `width≤cap`(req) + `width==cap`(@high) + `leading≥`inset + `bottom==`edge | read-mostly `@Bindable` OK; intrinsic height ⇒ no split leak even on write | Content drives the cross-axis (height); AppKit centers + caps the main axis (width). | `HostedComponentCenteringTests.testRestingBarCapsAndCentersInWidePane`, `.testRestingBarShrinksToFitAndCentersInNarrowPane` |
+| **B. Centered, width-capped, bottom-anchored component** — input bar over a transcript (the bar's centering + cap; when co-hosted with a full-width fade the host is full-width and the cap moves into SwiftUI — see §3 preface) | `NSHostingView` | `[.intrinsicContentSize]` | `centerX` + `width≤cap`(req) + `width==cap`(@high) + `leading≥`inset + `bottom==`edge  ·OR·  full-width (`leading==`/`trailing==`) + `bottom==`edge | read-mostly `@Bindable` OK; intrinsic height ⇒ no split leak even on write | Content drives the cross-axis (height); AppKit drives the main axis (width). | `HostedComponentCenteringTests.testBottomClusterIsFullWidthAndBottomAnchoredInWidePane`, `.testBottomClusterIsFullWidthAndBottomAnchoredInNarrowPane`, `.testPermissionCardGrowsHostUpwardWithoutMovingBarAnchor` |
 | **B′. Toolbar-slot component** | `NSHostingView` | `[.intrinsicContentSize]` | none — `NSToolbar` auto-measures via intrinsic size | `@Bindable` OK (one writes `archiveSelectedFolderPath`) | Let intrinsic size feed the toolbar; pin nothing. | not yet tested (by-design; no collapse failure mode) |
 | **B″. Floating / positioned overlay** (corner / bottom-center; DEBUG demos) | `NSHostingView` | default (benign) | position-only (centerX+bottom / trailing+bottom / centerX+centerY) — **never 4-edge** | `@Bindable` OK | Position it; never pin 4 edges, so its fitting size can't escape into a split. | not yet tested (DEBUG-only; no failure mode) |
 | **C. Window-content host** (`NSWindow.contentViewController`) | `NSHostingController` | **default** (intended) | `NSWindow(contentViewController:)`; optionally `.preferredContentSize` | usually none | Keep the default; you *want* the window to snap to the content. | not yet tested (collapse-to-content is the goal) |
@@ -58,7 +77,7 @@ Reference implementations:
   `DraftSessionLandingViewController.swift:136`,
   `DetailRouterViewController.swift:443` (DEBUG),
   `PermissionSessionDemoViewController.swift:134` (DEBUG).
-- B — `ChatSessionViewController.swift:169,182-208`.
+- B — `ChatSessionViewController.swift` (`bottomClusterHost` in `loadView()`).
 - B′ — `MainWindowController.swift:253,280`.
 - B″ — `TranscriptDemoViewController.swift:113-117` and the other DEBUG demos.
 - C — `SettingsWindowController.swift:15`, `AboutWindowController.swift:23`.
@@ -181,10 +200,27 @@ test as evidence. (FACT — gate window setup; INFERENCE on detectability.)
 
 ## 3. Input-bar centering — best practice, and is the current code optimal?
 
+> **Post bottom-cluster merge (BOTTOM-CLUSTER-MERGE.md):** the chat bottom band
+> is now a single `bottomClusterHost` (`NSHostingView<ChatBottomClusterRoot>`)
+> that holds the fade + input bar + permission card in one SwiftUI tree. Because
+> the fade is full-width, the **host** is now full-width + bottom-anchored
+> (`leading == view.leading`, `trailing == view.trailing`, `bottom ==
+> view.bottom`, `[.intrinsicContentSize]` height) — still regime B (the content
+> drives height; the container drives width). The centering + width cap below
+> did not disappear; it **moved one layer down** into the SwiftUI tree
+> (`ChatRestingBar` caps at `composeMaxWidth` and centers via `.frame(maxWidth:
+> .infinity)`; the card caps at `BlockStyle.maxLayoutWidth`). So §3's recipe is
+> the historical *host-level* form of the same rule, and remains the reference
+> for any future centered-and-capped **host** (e.g. a bar that is NOT
+> co-hosted with a full-width fade). The `HostedComponentCenteringTests` gate now
+> asserts the host is full-width + bottom-anchored + content-height, plus a
+> card-present leg (card grows the host upward without moving the bar's bottom
+> anchor).
+
 The chat resting bar is the textbook regime-B component: it sits over a
 transcript that already fills the pane, so the *content* drives its height while
-*AppKit* owns its horizontal placement and width cap. (FACT —
-`ChatSessionViewController.swift:161-208`; `Content/Chat/CLAUDE.md`.)
+*AppKit* owns its horizontal placement (and, when the host isn't full-width, its
+width cap). (FACT — `ChatSessionViewController.swift`; `Content/Chat/CLAUDE.md`.)
 
 ```swift
 composeOrBarHost.sizingOptions = [.intrinsicContentSize]              // HEIGHT from content
@@ -232,26 +268,30 @@ Why each piece (FACT — `ChatSessionViewController.swift:163-208`):
    hand-rolled shape (`sizingOptions = []` + a `PreferenceKey` height) and must
    **not** be copied; `ChatSessionViewController` is the exemplar.
 
-Guard: `HostedComponentCenteringTests` verifies both legs offscreen (FACT —
-verify-results §3):
-- `testRestingBarCapsAndCentersInWidePane` — pane wider than the 820 cap: host
-  width == 820 (capped), midX == pane midX (centered), height small (component,
-  not pane-filling).
-- `testRestingBarShrinksToFitAndCentersInNarrowPane` — pane 680 (the split detail
-  minimum, < 820): host width == 680 (shrunk via `leading ≥`), minX == 0 (no
-  overflow), midX == pane midX (still centered).
+Guard: `HostedComponentCenteringTests` verifies the merged `bottomClusterHost`
+offscreen at two widths plus a card-present leg:
+- `testBottomClusterIsFullWidthAndBottomAnchoredInWidePane` — pane 1100: host
+  is full-width (== pane), bottom-anchored, height small (component, not
+  pane-filling).
+- `testBottomClusterIsFullWidthAndBottomAnchoredInNarrowPane` — pane 680 (the
+  split detail minimum): host full-width (== pane), no leading-edge overflow,
+  bottom-anchored, height small.
+- `testPermissionCardGrowsHostUpwardWithoutMovingBarAnchor` — seed a pending
+  permission: the host grows TALLER (card composites above the bar) but stays
+  bounded (never near pane height), and the host's bottom edge — where the bar
+  sits — does NOT move (the card grows upward; the bar's `frame.minY` is
+  invariant). This is the PR#235→#281 "card pumps / lifts the bar" regression
+  guard.
 
-  Note: the narrow leg requires pinning the container to an explicit size with
-  *required* width/height constraints — a borderless offscreen window otherwise
-  adopts the bar's intrinsic width (820) and the shrink-to-fit branch never
-  exercises. (FACT — verify-results §3.)
+  Note: the legs pin the container to an explicit size with *required*
+  width/height constraints — a borderless offscreen window otherwise adopts the
+  content's fitting width. (FACT — verify-results §3.)
 
-  Honesty note (review Issue B): in the narrow leg the host fills the full pane
-  width (680 == pane 680), so `midX == pane.midX` is *trivially* satisfied — that
-  leg's real teeth are `minX >= -0.5` (no leading-edge overflow) and
-  `width <= pane.width`. **Centering-under-cap is proven by the WIDE leg**, where
-  width is capped (820 < pane) so an off-center bar would shift midX and fail. The
-  narrow leg proves "shrink-to-fit without overflow," not centering.
+  Historical note: pre-merge the host itself was centered + width-capped (its
+  WIDE leg proved centering-under-cap at width == 820 < pane). Post-merge the
+  host is full-width and that centering moved into the SwiftUI tree (§3
+  preface), so the host-frame asserts are full-width; the bar's centering is
+  now a content concern, reviewed in the opt-in `InputBar-Centered` snapshot.
 
 ---
 
@@ -318,6 +358,9 @@ two-way binding on the model — that is precisely why
 - Don't test in a small/flat window — it cannot distinguish filled from collapsed.
 - Don't mutate a production VC's `sizingOptions` to exhibit the bad regime in a
   test — build a test-local throwaway host instead.
+- Don't add a `hitTest`-override "passthrough host" to fake click-through
+  through a transparent overlay — passthrough is geometry, not transparency
+  (§0.1). Keep the host's frame off the sibling it shouldn't occlude.
 - Don't expose mutable internals / add `forceXxxForTest()` / `#if DEBUG` UI
   variants. Access-modifier-only widening is the most a test may ask of
   production code.
@@ -333,8 +376,10 @@ two-way binding on the model — that is precisely why
 | Sizing regime governs published fitting size (A/B teeth: default ⇒ leak, `[]` ⇒ 0) | `AppKitSwiftUIBoundaryTests.testSizingRegimeGovernsPublishedFittingSize` | same |
 | Full-split large-window probe + frame-path documentation | `AppKitSwiftUIBoundaryTests.testDefaultSizingOptionsHostCollapsesWindowInLargeSplit` | same |
 | Archive selection does not flatten window (legacy gate, **now hardened** to assert `currentChild.view.fittingSize.height <= 1` — the window-height assertion alone is toothless offscreen) | `DetailRouterLayoutDiagnosticsTests.testArchiveSelectionDoesNotFlattenWindow` | `cctermTests/DetailRouterLayoutDiagnosticsTests.swift` |
-| Component caps + centers in a wide pane | `HostedComponentCenteringTests.testRestingBarCapsAndCentersInWidePane` | `cctermTests/HostedComponentCenteringTests.swift` |
-| Component shrinks-to-fit + centers in a narrow pane | `HostedComponentCenteringTests.testRestingBarShrinksToFitAndCentersInNarrowPane` | same |
+| Bottom cluster is full-width + bottom-anchored in a wide pane | `HostedComponentCenteringTests.testBottomClusterIsFullWidthAndBottomAnchoredInWidePane` | `cctermTests/HostedComponentCenteringTests.swift` |
+| Bottom cluster is full-width + bottom-anchored in a narrow pane | `HostedComponentCenteringTests.testBottomClusterIsFullWidthAndBottomAnchoredInNarrowPane` | same |
+| Permission card grows the cluster host upward without moving the bar's bottom anchor | `HostedComponentCenteringTests.testPermissionCardGrowsHostUpwardWithoutMovingBarAnchor` | same |
+| Hit-test invariant: cluster host doesn't occlude the transcript above; in-card click resolves into the host (passthrough is geometry, not transparency — §0.1) | `DetailPaneTranscriptHitTestTests.testPermissionCardPassesTranscriptClicksThrough` | `cctermTests/DetailPaneTranscriptHitTestTests.swift` |
 | Archive fills pane in a large window (visual) | `AppKitSwiftUIBoundarySnapshotTests.testArchiveInLargeWindow` (opt-in, CI-skipped) | `cctermTests/AppKitSwiftUIBoundarySnapshotTests.swift` |
 | Input bar centered (visual) | `AppKitSwiftUIBoundarySnapshotTests.testInputBarCentered` (opt-in, CI-skipped) | same |
 | Toolbar-slot (B′), floating overlay (B″), window-content (C), sheet (D) | **not yet tested** — by-design regimes with no collapse failure mode | — |

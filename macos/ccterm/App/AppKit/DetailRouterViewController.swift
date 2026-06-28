@@ -26,10 +26,12 @@ protocol DetailRouterChild: NSViewController {
 /// hit-test heuristics. The earlier single-VC shape forced a full-pane
 /// `PassthroughHostingView` whose `super.hitTest === self` gate sat on
 /// top of the input bar's chrome row and silently swallowed clicks on
-/// every plain-style SwiftUI button there. (`PassthroughHostingView`
-/// was later re-introduced for the permission-card overlay — but that
-/// host is a separate full-pane sibling whose chrome lives in another
-/// host beneath it, so its passthrough no longer covers any buttons.)
+/// every plain-style SwiftUI button there. That passthrough host has
+/// since been deleted entirely: the chat VC now hosts its bottom band as
+/// a single full-width, bottom-anchored, content-height
+/// `bottomClusterHost`, which is non-occluding by geometry (it never
+/// covers the transcript or any chrome above it), so no hit-test trick
+/// remains anywhere.
 ///
 /// Routing table:
 /// - `.none` / `.session(_)` → `ChatSessionViewController`

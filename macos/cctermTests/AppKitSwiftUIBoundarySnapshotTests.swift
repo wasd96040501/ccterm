@@ -233,7 +233,7 @@ final class AppKitSwiftUIBoundarySnapshotTests: XCTestCase {
         let fx = makeFixture(sessionCount: 1)
         let sid = fx.sessionIds[0]
         // Materialize the session so the resting-bar branch of
-        // ChatComposeStack.content(for:) renders (it returns EmptyView for
+        // ChatBottomCluster.content(for:) renders (it returns EmptyView for
         // every selection except `.session(_)`).
         guard fx.manager.session(sid) != nil else {
             XCTFail("session materialization failed")

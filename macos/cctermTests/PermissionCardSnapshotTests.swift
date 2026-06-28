@@ -5,20 +5,20 @@ import XCTest
 
 @testable import ccterm
 
-/// Renders `PermissionCardView` and the production `PermissionCardOverlay`
+/// Renders `PermissionCardView` and the standalone `PermissionCardOverlay`
 /// in a few contexts and writes PNGs so the card surface and the
 /// floats-over-the-bar composition can be reviewed without launching the
 /// app.
 ///
-/// Post-PR5 the card no longer lives inside `ChatRestingBar`: it floats in
-/// a dedicated full-pane click-through `permissionCardHost`
-/// (`PassthroughHostingView` hosting `PermissionCardOverlay`), bottom-pinned
+/// Post-merge the card is composited inline by `ChatBottomCluster` (fade +
+/// input bar + permission card in one bottom-anchored host), bottom-pinned
 /// with `chatBottomInset` (36) so it visually extends *up* from the bar's
-/// bottom edge — and crucially the bar host's height is NOT pumped by the
-/// card. The `OverInputBar` fixture reproduces that geometry (card on a
-/// separate z-layer above an unchanged input-bar stack), and the new
-/// `Overlay` snapshot renders the real overlay over a transcript-height
-/// canvas so the float position + bottom inset can be eyeballed.
+/// bottom edge — and the bar's `frame.minY` is NOT moved by the card. The
+/// `OverInputBar` fixture reproduces that geometry (card on a higher z-layer
+/// above an unchanged input-bar stack), and the `Overlay` snapshot renders
+/// the standalone `PermissionCardOverlay` (the same card subtree + decision
+/// wiring) over a transcript-height canvas so the float position + bottom
+/// inset can be eyeballed.
 @MainActor
 final class PermissionCardSnapshotTests: XCTestCase {
 
@@ -151,13 +151,13 @@ final class PermissionCardSnapshotTests: XCTestCase {
         capture(view, size: size, name: "PermissionCard-OverInputBar")
     }
 
-    /// Renders the REAL `PermissionCardOverlay` resolved through a
-    /// `SessionManager` + `MainSelectionModel`, exactly as
-    /// `ChatSessionViewController.permissionCardHost` mounts it. The pane is
+    /// Renders the standalone `PermissionCardOverlay` resolved through a
+    /// `SessionManager` + `MainSelectionModel` — the same card subtree +
+    /// decision wiring `ChatBottomCluster` composites inline. The pane is
     /// transcript-height so the bottom-pinned card (at `chatBottomInset`)
     /// floats at the bottom with the rest of the pane transparent —
-    /// confirming the overlay's full-pane / bottom-anchor geometry rather
-    /// than an over-input-bar mock.
+    /// confirming the card's bottom-anchor geometry rather than an
+    /// over-input-bar mock.
     func testOverlaySnapshot() throws {
         let (model, manager) = Self.makeSelectedSessionWithPermission(
             requestId: "req-overlay",
@@ -278,23 +278,22 @@ private struct StandalonePermissionCardFixture: View {
     }
 }
 
-/// Mirrors the POST-PR5 composition: the input-bar stack
+/// Mirrors the merged-cluster composition: the input-bar stack
 /// (`InputBarView2` + `InputBarSessionChrome`) bottom-anchored, with the
-/// permission card on a SEPARATE full-pane z-layer above it — the way
-/// `ChatSessionViewController` splits `restingBarHost` (bottom-anchored,
-/// intrinsic height) from `permissionCardHost` (full-pane,
-/// `PermissionCardOverlay`). The card is bottom-pinned with
-/// `ChatSessionViewController.chatBottomInset` (36) so it floats up from the
-/// bar's bottom edge, and lives outside the bar's VStack so it can't pump the
-/// bar's height. `ChatRestingBar` no longer carries the card, so this fixture
-/// reproduces the layering rather than the old single-stack ZStack.
+/// permission card on a higher z-layer above it — the way `ChatBottomCluster`
+/// composites the bar (its own intrinsic height) and the card in one tree. The
+/// card is bottom-pinned with `ChatSessionViewController.chatBottomInset` (36)
+/// so it floats up from the bar's bottom edge, and lives outside the bar's
+/// VStack so it can't pump the bar's height. `ChatRestingBar` no longer
+/// carries the card, so this fixture reproduces the layering rather than the
+/// old single-stack ZStack.
 private struct InputBarChromeMirrorFixture: View {
     let session: ccterm.Session
 
     var body: some View {
-        // Two siblings in a bottom-aligned ZStack, mirroring the two AppKit
-        // hosts: the bar band (its own intrinsic height) and the full-pane
-        // card overlay layered on top.
+        // Two siblings in a bottom-aligned ZStack, mirroring the merged
+        // cluster: the bar band (its own intrinsic height) and the card
+        // overlay layered on top.
         ZStack(alignment: .bottom) {
             // Bar host analog: bottom-anchored, height = its own content.
             VStack(alignment: .leading, spacing: InputBarSessionChrome.barSpacing) {

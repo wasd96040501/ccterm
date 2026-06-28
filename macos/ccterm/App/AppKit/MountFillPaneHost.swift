@@ -25,12 +25,12 @@ import SwiftUI
 ///   fills the container.
 ///
 /// This is the FILL-A-PANE host shape. A subordinate component (the chat
-/// resting bar, a toolbar slot) is regime-B — `sizingOptions =
+/// bottom cluster, a toolbar slot) is regime-B — `sizingOptions =
 /// [.intrinsicContentSize]` + position-only constraints — and deliberately
 /// does NOT route through here; its container is sized by something else and
 /// it *wants* the content to drive its own size. See `CLAUDE.md` §
 /// "Embedding SwiftUI in AppKit: host sizing" and
-/// `ChatSessionViewController.restingBarHost`.
+/// `ChatSessionViewController.bottomClusterHost`.
 @MainActor
 @discardableResult
 func mountFillPaneHost<Content: View>(

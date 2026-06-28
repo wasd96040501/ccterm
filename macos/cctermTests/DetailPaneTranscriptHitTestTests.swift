@@ -181,22 +181,11 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
         return nil
     }
 
-    /// Walk up from `view` to the enclosing `permissionCardHost`
-    /// (`PassthroughHostingView`), or nil if the hit landed outside it.
-    private func enclosingPassthroughHost(_ view: NSView?) -> PassthroughHostingView? {
-        var node = view
-        while let cur = node {
-            if let host = cur as? PassthroughHostingView { return host }
-            node = cur.superview
-        }
-        return nil
-    }
-
     /// Seed a pending permission onto the shown session's runtime, the same
     /// way the production CLI sink does (`pendingPermissions.append`). The
-    /// `permissionCardHost`'s `PermissionCardOverlay` observes
+    /// `bottomClusterHost`'s `ChatBottomCluster` observes
     /// `session.pendingPermissions`, so after a runloop drain the card
-    /// subtree mounts inside the passthrough host.
+    /// subtree mounts inside the cluster host.
     @discardableResult
     private func seedPermission(_ fx: Fixture, sessionId: String, requestId: String) -> Bool {
         guard let session = fx.router.context.sessionManager.session(sessionId),
@@ -361,20 +350,32 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
                 + report.joined(separator: "\n\n"))
     }
 
-    /// PR5 passthrough regression net. With a permission card mounted in
-    /// the full-pane `permissionCardHost` (`PassthroughHostingView`), the
-    /// card must NOT swallow transcript clicks: a point in the open
-    /// transcript band still hit-tests to a `BlockCellView` (transcript
-    /// selectable — M4/M5: the full-pane host doesn't occlude the table),
-    /// while a point inside the floating card resolves into the
-    /// passthrough host (the card's buttons stay clickable).
+    /// The merged-cluster hit-test gate (replaces the PR5 passthrough net).
+    /// With a permission card mounted inside the single bottom-anchored
+    /// `bottomClusterHost` (a plain `NSHostingView`, no hit-test trick), the
+    /// gate asserts three things with teeth:
+    ///
+    /// (a) **A transcript point ABOVE the cluster host** hit-tests to a
+    ///     `BlockCellView` — the host is geometrically below the transcript
+    ///     band, so it can't occlude it. (If the host were ever wrongly made
+    ///     full-pane / full-height, this point would land in the host and the
+    ///     assert would fail — the teeth the old "probe the page middle" test
+    ///     lacked.)
+    /// (b) **An in-card opaque point** resolves INTO `bottomClusterHost` and
+    ///     onto a real card subview — i.e. the card's buttons are clickable
+    ///     (the regression guard for the original "card not clickable" bug
+    ///     that the deleted `PassthroughHostingView` had introduced).
+    /// (c) **`bottomClusterHost.frame.maxY < probed-row midY`** (window
+    ///     coords): the host's top edge is strictly below the probed transcript
+    ///     row, making "the host does not cover the transcript" a load-bearing
+    ///     geometric assertion rather than an incidental one.
     func testPermissionCardPassesTranscriptClicksThrough() async throws {
         let fx = makeFixture(sessionCount: 1, initialSessionIndex: 0)
         await settle(fx)
 
-        // Seed the permission, then drain so `PermissionCardOverlay`
-        // (observing `session.pendingPermissions`) mounts the card subtree
-        // inside the passthrough host.
+        // Seed the permission, then drain so `ChatBottomCluster`
+        // (observing `session.pendingPermissions`) mounts the card layer
+        // inside the cluster host.
         XCTAssertTrue(
             seedPermission(fx, sessionId: fx.sessionIds[0], requestId: "perm-hit"),
             "could not seed a pending permission on the shown session")
@@ -384,8 +385,12 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
             XCTFail("currentChild is not a ChatSessionViewController")
             return
         }
-        guard let host = chatVC.permissionCardHost else {
-            XCTFail("permissionCardHost is nil")
+        guard let host = chatVC.bottomClusterHost else {
+            XCTFail("bottomClusterHost is nil")
+            return
+        }
+        guard let hostSuper = host.superview else {
+            XCTFail("bottomClusterHost has no superview")
             return
         }
         guard let table = findSubview(Transcript2TableView.self, in: chatVC.view) else {
@@ -394,18 +399,14 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
         }
 
         // The card mounted: probe a grid of points across the host for the
-        // first one whose `hitTest` lands on a card subview
-        // (PassthroughHostingView maps non-card points to nil). Scan the full
-        // height so the search is independent of the host's flipped-ness —
-        // the card sits at one vertical extreme (bottom-pinned) either way.
-        // `NSView.hitTest` takes a point in the receiver's SUPERVIEW coords,
-        // so each candidate (built in host bounds) is converted up to the
-        // host's superview before probing, and we record the window point so
-        // the real router-level hitTest can be replayed below.
-        guard let hostSuper = host.superview else {
-            XCTFail("permissionCardHost has no superview")
-            return
-        }
+        // first one whose `hitTest` resolves to a card subview INSIDE the
+        // cluster host. A plain `NSHostingView` returns `self` (or a subview)
+        // for in-bounds points, so a card hit walks up to `host`. Scan the
+        // full height so the search is independent of flipped-ness — the card
+        // sits at the bottom-pinned extreme either way. `NSView.hitTest` takes
+        // a point in the receiver's SUPERVIEW coords, so each host-bounds
+        // candidate is converted up before probing, and we record the window
+        // point so the real router-level hitTest can be replayed below.
         let hostBounds = host.bounds
         var cardPointInWindow: NSPoint?
         let xs = stride(from: hostBounds.midX - 200, through: hostBounds.midX + 200, by: 40)
@@ -414,7 +415,10 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
             for x in xs {
                 let pInHost = NSPoint(x: x, y: y)
                 let pInSuper = host.convert(pInHost, to: hostSuper)
-                if let hit = host.hitTest(pInSuper), enclosingPassthroughHost(hit) === host {
+                if let hit = host.hitTest(pInSuper),
+                    findEnclosing(NSHostingView<ChatBottomClusterRoot>.self, hit) === host,
+                    hit !== host  // a real card SUBVIEW claimed it, not just the host backstop
+                {
                     cardPointInWindow = host.convert(pInHost, to: nil)
                     break outer
                 }
@@ -422,10 +426,10 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
         }
         XCTAssertNotNil(
             cardPointInWindow,
-            "permission card never became hit-eligible inside the passthrough host")
+            "permission card never became hit-eligible inside the cluster host")
 
-        // (a) Outside the card → through to the transcript. Pick a point in
-        // the middle of a visible row, well above the bottom card band.
+        // (a) ABOVE the cluster host → the transcript. Pick a point in the
+        // middle of a visible row, well above the bottom cluster band.
         let visible = table.rows(in: table.visibleRect)
         XCTAssertGreaterThan(visible.length, 0, "no visible transcript rows")
         let row = visible.location + visible.length / 2
@@ -434,34 +438,49 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
         let transcriptPointInWindow = table.convert(transcriptPointInTable, to: nil)
         let transcriptHit = fx.router.view.hitTest(transcriptPointInWindow)
         let resolvedToCell = findEnclosing(BlockCellView.self, transcriptHit) != nil
-        let leakedToCard = enclosingPassthroughHost(transcriptHit) != nil
+        let leakedToCluster =
+            findEnclosing(NSHostingView<ChatBottomClusterRoot>.self, transcriptHit) != nil
 
-        // (b) Inside the card → the passthrough host (buttons clickable).
+        // (b) Inside the card → the cluster host (buttons clickable).
         var cardHit: NSView?
         if let cardPointInWindow {
             cardHit = fx.router.view.hitTest(cardPointInWindow)
         }
-        let resolvedToCard = enclosingPassthroughHost(cardHit) != nil
+        let resolvedToCard =
+            findEnclosing(NSHostingView<ChatBottomClusterRoot>.self, cardHit) === host
+
+        // (c) Geometric safety: the host's TOP edge (max y in window coords —
+        // the window/container is non-flipped) is strictly below the probed
+        // row's midpoint, so the host cannot occlude that transcript row.
+        let hostFrameInWindow = host.convert(host.bounds, to: nil)
+        let probedRowMidYInWindow = transcriptPointInWindow.y
+        let hostTopYInWindow = hostFrameInWindow.maxY
 
         let diag = """
-            host.bounds=\(hostBounds) \
+            host.bounds=\(hostBounds) hostFrameInWindow=\(hostFrameInWindow) \
             cardPointInWindow=\(String(describing: cardPointInWindow)) \
             transcriptHit=\(transcriptHit.map { String(describing: type(of: $0)) } ?? "nil") \
-            resolvedToCell=\(resolvedToCell) leakedToCard=\(leakedToCard) \
+            resolvedToCell=\(resolvedToCell) leakedToCluster=\(leakedToCluster) \
             cardHit=\(cardHit.map { String(describing: type(of: $0)) } ?? "nil") \
-            resolvedToCard=\(resolvedToCard)
+            resolvedToCard=\(resolvedToCard) \
+            hostTopYInWindow=\(hostTopYInWindow) probedRowMidYInWindow=\(probedRowMidYInWindow)
             """
-        add(attachment(diag, "permission-card passthrough"))
+        add(attachment(diag, "bottom-cluster hit-test"))
 
         XCTAssertFalse(
-            leakedToCard,
-            "transcript-band click leaked into the permission card host:\n\(diag)")
+            leakedToCluster,
+            "transcript-band click leaked into the bottom cluster host:\n\(diag)")
         XCTAssertTrue(
             resolvedToCell,
             "transcript-band click did not reach a BlockCellView:\n\(diag)")
         XCTAssertTrue(
             resolvedToCard,
-            "in-card click did not resolve to the passthrough host:\n\(diag)")
+            "in-card click did not resolve into the bottom cluster host:\n\(diag)")
+        XCTAssertLessThan(
+            hostTopYInWindow, probedRowMidYInWindow,
+            "bottom cluster host top edge is NOT below the probed transcript row — the host "
+                + "occludes the transcript (it must be bottom-anchored + content-height, never "
+                + "full-pane):\n\(diag)")
     }
 
     /// Walk up from `view` to the first enclosing `T`, or nil.

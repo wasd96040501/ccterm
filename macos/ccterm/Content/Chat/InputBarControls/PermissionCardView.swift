@@ -2,25 +2,24 @@ import AgentSDK
 import SwiftUI
 
 /// Floating decision card shown over the input bar when the CLI is
-/// waiting on a permission request. Hosted by `PermissionCardOverlay`
-/// inside `ChatSessionViewController`'s dedicated full-pane, click-through
-/// `permissionCardHost` (a `PassthroughHostingView`) — NOT inside the
-/// input-bar host:
+/// waiting on a permission request. Composited inline by `ChatBottomCluster`
+/// (the merged fade + input bar + permission card tree hosted by
+/// `ChatSessionViewController.bottomClusterHost`) as a higher z-layer above
+/// the bar — NOT inside the input-bar subtree:
 ///
-/// - The card lives in its own full-pane overlay so its footprint never
-///   pumps the bottom-anchored bar host's intrinsic height. (Earlier the
-///   card was a `ZStack` child of `ChatRestingBar`; its union height grew
-///   the `.intrinsicContentSize` bar host and the bar band ballooned up
-///   when a card appeared.)
-/// - `PermissionCardOverlay` pins the card's bottom edge with the same
-///   `chatBottomInset` the bar uses, so the card sits flush with the
-///   chrome row and visually extends *up* from there.
-/// - The overlay is detail-pane-wide, so the card's
+/// - The card sits on its own layer of the cluster `ZStack` so its footprint
+///   never pumps the bar's intrinsic height. (Earlier the card was a `ZStack`
+///   child of `ChatRestingBar`; its union height grew the bar band, which
+///   ballooned up when a card appeared.) It is bottom-aligned with the same
+///   `chatBottomInset` the bar uses, so it sits flush with the chrome row and
+///   extends *up* from there, growing the cluster host upward without moving
+///   the bar's bottom anchor.
+/// - The cluster is detail-pane-wide, so the card's
 ///   `.frame(maxWidth: BlockStyle.maxLayoutWidth)` reaches the full 780
 ///   (the transcript column width) instead of clipping to the bar's width.
-/// - The host is layered above the bar host, and everything outside the
-///   card passes clicks through to the transcript (see
-///   `PassthroughHostingView`).
+/// - The cluster host is full-width, bottom-anchored, and content-height, so
+///   it is non-occluding by geometry — there is no `hitTest` trick and the
+///   card's buttons are directly clickable.
 ///
 /// Pure UI: the card receives a `PermissionRequest` plus four decision
 /// callbacks and renders the body. Wiring through to `session.respond(...)`

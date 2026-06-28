@@ -79,6 +79,11 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
     private var prewarmObservationActive = false
     private var lastPrewarmKey: CompletionPrewarmer.Key?
     private var sendKeyObserver: NSObjectProtocol?
+    /// Whether the completion-items observation loop is armed. The popup
+    /// observes ONLY the async provider-result arrival (`items` + the empty
+    /// branch fields), NEVER `selectedIndex` (only the imperative nav/tap paths
+    /// write it — one writer per field per phase, §4.3-3).
+    private var completionObservationActive = false
 
     // MARK: - The view
 
@@ -123,6 +128,12 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
         bar.sendStopButton.onSend = { [weak self] in self?.handleSend() }
         bar.sendStopButton.onStop = { [weak self] in self?.boundSession?.interrupt() }
         bar.attachButton.onPick = { [weak self] in self?.presentPicker() }
+        // Tap-to-confirm: the row reports its index; set selectedIndex THEN
+        // confirm so confirm acts on the clicked row (set-then-confirm,
+        // matching SwiftUI `onTapGesture { selectedIndex = index; onConfirm }`).
+        bar.completionPopup.onRowClicked = { [weak self] index in
+            self?.confirmRow(at: index)
+        }
         // Window-gated autofocus from a guaranteed hook: a child VC added after
         // its parent already appeared may never get a fresh `viewDidAppear`,
         // so also focus when the bar first lands in a window (plan §4.1-5).
@@ -133,6 +144,7 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
 
         applySendKeyBehavior()
         observeSendKeyBehavior()
+        startCompletionObservation()
     }
 
     override func viewDidAppear() {
@@ -147,9 +159,11 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
         draftLoadTask?.cancel()
         draftLoadTask = nil
         completion.dismiss()
+        refreshCompletionPopup()
         isRunningObservationActive = false
         cwdObservationActive = false
         prewarmObservationActive = false
+        completionObservationActive = false
         if let token = sendKeyObserver {
             notificationCenter.removeObserver(token)
             sendKeyObserver = nil
@@ -186,7 +200,7 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
         applyProgrammatic { barView.textView.string = "" }
         attachments = []
         completion.dismiss()
-        barView.extraPillContentHeight = 0
+        barView.setCompletionPopup(active: false, listHeight: 0)
         barView.relayout()
 
         // (4) resolve the new Session (idempotent get-or-create).
@@ -251,7 +265,7 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
         applyProgrammatic { barView.textView.string = "" }
         attachments = []
         completion.dismiss()
-        barView.extraPillContentHeight = 0
+        barView.setCompletionPopup(active: false, listHeight: 0)
         barView.relayout()
         if let draftKey = boundDraftKey { inputDraftStore.clear(draftKey) }
         updateSubmitEnabled()
@@ -508,6 +522,12 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
             // suppressed during IME composition.
             hasMarkedText: barView.textView.hasMarkedText(),
             context: triggerContext)
+        // Show/hide + re-reconcile the popup synchronously off the same source
+        // phase as the text change — `isActive` may have flipped (a typed `/`
+        // starts a session, a deleted anchor dismisses) and the popup's
+        // visibility + the bar's reserved height must land THIS tick, not one
+        // tick late via an observation hop (§4.3-3).
+        refreshCompletionPopup()
     }
 
     private var triggerContext: CompletionTriggerContext {
@@ -535,10 +555,17 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
             // dispatched command out of sync. The live keyDown path already
             // blocks the interceptor on `hasMarkedText`; match it here so the
             // controller-level path is robust regardless of caller.
+            //
+            // NOTE: when completion is active the `keyInterceptor` already
+            // confirms on keyCode 36 (Return) — including with Command held —
+            // and returns true BEFORE `InputNSTextView`'s send switch reaches
+            // `onCommandReturn`, so this confirm arm only fires for callers
+            // that wire NO interceptor; there is no double-confirm.
             if self.completion.isActive, !self.barView.textView.hasMarkedText(),
                 let result = self.completion.confirmSelection()
             {
                 self.applyReplacement(result)
+                self.refreshCompletionPopup()
                 return
             }
             self.handleSend()
@@ -555,6 +582,8 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
     private func handleEscape() {
         if completion.isActive {
             completion.dismiss()
+            // Esc-to-dismiss must hide the popup + shrink the bar THIS phase.
+            refreshCompletionPopup()
             return
         }
         if boundSession?.isRunning == true {
@@ -567,9 +596,14 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
         switch event.keyCode {
         case 126:  // Up
             completion.moveSelectionUp()
+            // Imperative inline reconcile (§4.3-3): the highlight move + the
+            // selected-row detail height change must land THIS source phase,
+            // not one tick late via an observation hop.
+            refreshCompletionPopup()
             return true
         case 125:  // Down
             completion.moveSelectionDown()
+            refreshCompletionPopup()
             return true
         case 48, 36:  // Tab or Return — confirm.
             // Don't confirm (and don't fire `onItemConfirmed` / dismiss) while
@@ -579,6 +613,9 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
             if let result = completion.confirmSelection() {
                 applyReplacement(result)
             }
+            // confirmSelection() dismissed the session; the popup must hide +
+            // the bar height shrink THIS source phase (§4.3-3).
+            refreshCompletionPopup()
             return true
         default:
             return false
@@ -605,6 +642,73 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
         barView.relayout()
         updateSubmitEnabled()
         scheduleDraftSave()
+    }
+
+    // MARK: - Completion popup (plan §4.3)
+
+    /// Tap-to-confirm: a row reports its index → set `selectedIndex` to that
+    /// row THEN confirm so `confirmSelection()` (which reads the highlighted
+    /// row) acts on the clicked one (set-then-confirm, matching SwiftUI's
+    /// `onTapGesture { selectedIndex = index; onConfirm }`,
+    /// `CompletionListView.swift:145-148`).
+    private func confirmRow(at index: Int) {
+        guard completion.isActive, !barView.textView.hasMarkedText() else { return }
+        guard index >= 0, index < completion.items.count else { return }
+        completion.selectedIndex = index
+        if let result = completion.confirmSelection() {
+            applyReplacement(result)
+        }
+        refreshCompletionPopup()
+    }
+
+    /// Reconcile the popup view from the live `CompletionState` and show/hide
+    /// it (reserving its `listHeight` in the bar) INSTANTLY. Called inline
+    /// from every consumed nav/confirm/dismiss key + after `checkTrigger`
+    /// (imperative carve-out, §4.3-3) AND from the async items-arrival
+    /// observation. Idempotent and view-lifetime-safe (the popup is created
+    /// with the bar, never deallocated mid-life).
+    private func refreshCompletionPopup() {
+        guard barView != nil else { return }
+        let active = completion.isActive
+        if active {
+            barView.completionPopup.reconcile(state: completion)
+            barView.setCompletionPopup(
+                active: true, listHeight: barView.completionPopup.currentListHeight)
+        } else {
+            barView.setCompletionPopup(active: false, listHeight: 0)
+        }
+        // Show/hide + the height reservation changed the bar band; settle the
+        // regime-B host in the same beforeWaiting flush (explicit settle, §4.3).
+        barView.invalidateIntrinsicContentSize()
+        barView.superview?.layoutSubtreeIfNeeded()
+    }
+
+    /// Arm the items-arrival observation loop (re-armed, like `isRunning`).
+    /// Observes ONLY the async provider-result fields (`items` + the empty
+    /// branch fields the popup renders) — NEVER `selectedIndex` (only the
+    /// imperative nav/tap paths write it, §4.3-3). The reconcile closure reads
+    /// every rendered field so the tracking is fully armed.
+    private func startCompletionObservation() {
+        completionObservationActive = true
+        observeCompletion()
+    }
+
+    private func observeCompletion() {
+        withObservationTracking {
+            // Read the async-driven fields the popup renders so they're all in
+            // the tracked set. selectedIndex is deliberately NOT read.
+            _ = completion.items.count
+            _ = completion.isLoading
+            _ = completion.emptyReason
+            _ = completion.headerText
+            _ = completion.isActive
+        } onChange: { [weak self] in
+            DispatchQueue.main.async {
+                guard let self, self.completionObservationActive else { return }
+                self.refreshCompletionPopup()
+                self.observeCompletion()
+            }
+        }
     }
 
     // MARK: - Programmatic-write guard

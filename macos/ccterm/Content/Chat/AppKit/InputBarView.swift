@@ -58,6 +58,22 @@ final class InputBarView: NSView {
     /// The raw text core, embedded directly (UNWRAP — no `TextInputView`).
     let textScrollView: InputTextScrollView
     let textView: InputNSTextView
+    /// The in-pane completion popup (§4.3), mounted ABOVE the text row inside
+    /// the pill content. Created once, hidden/shown via `isHidden`; its fixed
+    /// height feeds `extraPillContentHeight` so the bottom-anchored pill grows
+    /// UP to contain it (the attach button + text row never move).
+    let completionPopup = CompletionPopupView()
+
+    /// 1pt hairline separating the completion popup from the bottom text row,
+    /// reproducing the SwiftUI `Divider()` between `CompletionListView` and the
+    /// text `HStack` (`InputBarView2.swift:213-219`). Lives OUTSIDE the popup's
+    /// `listHeight`-framed height (exactly as the SwiftUI `Divider` lived
+    /// outside the popup's `.frame(height: listHeight)`), so the bar reserves
+    /// `listHeight + dividerHeight` when the popup is active. Hidden with the
+    /// popup.
+    private let completionDivider = NSView()
+    /// A SwiftUI `Divider()` is a 1pt hairline.
+    static let completionDividerHeight: CGFloat = 1
 
     private let pillSurface = BarSurfaceView(cornerRadius: InputBarView.cornerRadius)
     /// The pill's interior content view (clipped to the rounded shape by
@@ -170,6 +186,21 @@ final class InputBarView: NSView {
         pillContent.addSubview(textScrollView)
         pillContent.addSubview(sendStopButton)
 
+        // Completion popup mounted ABOVE the text row inside the pill content.
+        // Hidden until the controller reconciles it active; its height is owned
+        // by its own @required constraint and routed into the bar's
+        // `extraPillContentHeight` so the pill grows up to contain it.
+        completionPopup.translatesAutoresizingMaskIntoConstraints = false
+        pillContent.addSubview(completionPopup)
+
+        // 1pt hairline between the popup and the text row (matches the SwiftUI
+        // `Divider()`); hidden with the popup.
+        completionDivider.translatesAutoresizingMaskIntoConstraints = false
+        completionDivider.wantsLayer = true
+        completionDivider.isHidden = true
+        applyCompletionDividerColor()
+        pillContent.addSubview(completionDivider)
+
         // Drop-target stroke overlay on the pill (hidden until targeted).
         dropStrokeLayer.fillColor = nil
         dropStrokeLayer.lineWidth = Self.dropStrokeLineWidth
@@ -213,7 +244,30 @@ final class InputBarView: NSView {
             // Text scroll's trailing meets the send button's leading (4pt gap).
             textScrollView.trailingAnchor.constraint(
                 equalTo: sendStopButton.leadingAnchor, constant: -Self.textTrailingPadding),
+
+            // Completion popup: full-width above the text row. Its OWN
+            // @required height constraint governs its height; the bar reserves
+            // that height (plus the divider) via `extraPillContentHeight` (so
+            // the pill grows up). Its bottom sits at the divider's top, and the
+            // divider's bottom meets the text scroll's top (so the bottom text
+            // row never moves); its top is a NON-required `>=` so the popup's
+            // own height drives it and there's no over-constraint with the pill
+            // height. When inactive the popup + divider are hidden (height 0).
+            completionPopup.leadingAnchor.constraint(equalTo: pillContent.leadingAnchor),
+            completionPopup.trailingAnchor.constraint(equalTo: pillContent.trailingAnchor),
+            completionPopup.bottomAnchor.constraint(equalTo: completionDivider.topAnchor),
+
+            // The 1pt hairline between popup and text row.
+            completionDivider.leadingAnchor.constraint(equalTo: pillContent.leadingAnchor),
+            completionDivider.trailingAnchor.constraint(equalTo: pillContent.trailingAnchor),
+            completionDivider.bottomAnchor.constraint(equalTo: textScrollView.topAnchor),
+            completionDivider.heightAnchor.constraint(equalToConstant: Self.completionDividerHeight),
         ])
+
+        let popupTop = completionPopup.topAnchor.constraint(
+            greaterThanOrEqualTo: pillContent.topAnchor)
+        popupTop.priority = .defaultHigh
+        popupTop.isActive = true
 
         // Hook the text view's intrinsic-height funnel into our relayout.
         textScrollView.onIntrinsicHeightChanged = { [weak self] in
@@ -257,6 +311,35 @@ final class InputBarView: NSView {
             pillHeightConstraint.constant = pillHeight
             invalidateIntrinsicContentSize()
         }
+    }
+
+    // MARK: - Completion popup show/hide (plan §4.3)
+
+    /// Show/hide the completion popup and reserve its fixed height, INSTANTLY
+    /// (matching the SwiftUI `.animation(nil)` resize, §4.3). Wrapped in a
+    /// disabled `CATransaction` so an enclosing animation context can't make
+    /// the popup crossfade/slide. `extraPillContentHeight`'s `didSet` funnels
+    /// through `relayout()`, which re-sums and re-publishes the bar height.
+    ///
+    /// - Parameters:
+    ///   - active: whether the popup is visible (`completion.isActive`).
+    ///   - listHeight: the popup's fixed height from `CompletionListLayout`.
+    func setCompletionPopup(active: Bool, listHeight: CGFloat) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        NSAnimationContext.beginGrouping()
+        NSAnimationContext.current.allowsImplicitAnimation = false
+
+        completionPopup.isHidden = !active
+        completionDivider.isHidden = !active
+        if !active { completionPopup.prepareForHide() }
+        // Reserve the popup's framed height PLUS the 1pt divider (which the
+        // SwiftUI `Divider()` added outside `listHeight`), so the pill grows up
+        // to contain both. 0 when inactive.
+        extraPillContentHeight = active ? listHeight + Self.completionDividerHeight : 0
+
+        NSAnimationContext.endGrouping()
+        CATransaction.commit()
     }
 
     // MARK: - Sizing (regime B — content drives height; width is free)
@@ -306,6 +389,17 @@ final class InputBarView: NSView {
             resolved = NSColor.controlAccentColor.cgColor
         }
         dropStrokeLayer.strokeColor = resolved
+    }
+
+    /// Resolve the completion divider's `separatorColor` against the current
+    /// appearance — `CALayer.backgroundColor` doesn't auto-flip on a dark/light
+    /// change (R14), so re-resolve it in `viewDidChangeEffectiveAppearance`.
+    private func applyCompletionDividerColor() {
+        var resolved: CGColor = NSColor.separatorColor.cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            resolved = NSColor.separatorColor.cgColor
+        }
+        completionDivider.layer?.backgroundColor = resolved
     }
 
     /// Fired when the view moves into a non-nil window — the controller uses
@@ -368,6 +462,7 @@ final class InputBarView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         applyDropStrokeColor()
+        applyCompletionDividerColor()
         CATransaction.commit()
     }
 }

@@ -1,0 +1,2565 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CCTerm 架构导览 · 写给小白的第一张地图</title>
+<style>
+  :root {
+    --swiftui: #2563eb;
+    --swiftui-bg: #eff5ff;
+    --appkit: #ea580c;
+    --appkit-bg: #fff3ec;
+    --service: #16a34a;
+    --service-bg: #ecfdf3;
+    --neutral: #64748b;
+    --neutral-bg: #f1f5f9;
+    --ink: #1f2733;
+    --ink-soft: #475569;
+    --line: #e2e8f0;
+    --bg: #f7f9fc;
+    --card: #ffffff;
+    --accent: #6d28d9;
+    --shadow: 0 1px 3px rgba(15,23,42,.06), 0 8px 24px rgba(15,23,42,.05);
+    --radius: 14px;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    font-family: var(--sans);
+    color: var(--ink);
+    background: var(--bg);
+    line-height: 1.78;
+    font-size: 16.5px;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* ---------- 页面布局：左侧固定目录 + 右侧正文 ---------- */
+  .layout {
+    display: grid;
+    grid-template-columns: 264px minmax(0, 1fr);
+    gap: 0;
+    max-width: 1320px;
+    margin: 0 auto;
+  }
+
+  .toc {
+    position: sticky;
+    top: 0;
+    align-self: start;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 30px 22px 40px;
+    border-right: 1px solid var(--line);
+    background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
+  }
+  .toc-brand {
+    font-weight: 800;
+    font-size: 18px;
+    letter-spacing: .2px;
+    margin-bottom: 4px;
+    color: var(--ink);
+  }
+  .toc-brand span { color: var(--accent); }
+  .toc-sub {
+    font-size: 12.5px;
+    color: var(--neutral);
+    margin-bottom: 22px;
+  }
+  .toc ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    counter-reset: toc;
+  }
+  .toc li { margin: 2px 0; }
+  .toc a {
+    display: block;
+    padding: 7px 11px;
+    border-radius: 9px;
+    color: var(--ink-soft);
+    text-decoration: none;
+    font-size: 14px;
+    transition: background .15s, color .15s;
+    counter-increment: toc;
+  }
+  .toc a::before {
+    content: counter(toc) "  ";
+    color: var(--neutral);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+  .toc a:hover { background: var(--neutral-bg); color: var(--ink); }
+
+  .main {
+    padding: 0 clamp(20px, 4vw, 56px) 80px;
+    min-width: 0;
+  }
+
+  /* ---------- 页头 ---------- */
+  .hero {
+    padding: 56px 0 30px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 8px;
+  }
+  .hero h1 {
+    font-size: clamp(28px, 4vw, 40px);
+    line-height: 1.25;
+    margin: 0 0 14px;
+    letter-spacing: -.4px;
+  }
+  .hero p {
+    font-size: 17px;
+    color: var(--ink-soft);
+    margin: 0;
+    max-width: 60ch;
+  }
+  .hero .kicker {
+    display: inline-block;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 14px;
+  }
+
+  /* ---------- 章节 ---------- */
+  .section {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 34px clamp(22px, 3vw, 42px) 38px;
+    margin: 30px 0;
+    scroll-margin-top: 20px;
+  }
+  .section > h2 {
+    font-size: 25px;
+    margin: 0 0 6px;
+    letter-spacing: -.3px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--neutral-bg);
+  }
+  .section h3 {
+    font-size: 19px;
+    margin: 30px 0 10px;
+    color: var(--ink);
+  }
+  .section h4 { font-size: 16px; margin: 20px 0 8px; }
+  .section p { margin: 12px 0; }
+  .section ul, .section ol { margin: 12px 0; padding-left: 24px; }
+  .section li { margin: 5px 0; }
+  .section strong { color: var(--ink); font-weight: 700; }
+
+  /* 每节开头一句话主旨 */
+  .section-lead {
+    font-size: 16px;
+    color: var(--ink-soft);
+    background: linear-gradient(90deg, var(--neutral-bg), transparent);
+    border-left: 4px solid var(--accent);
+    padding: 12px 16px;
+    border-radius: 0 8px 8px 0;
+    margin: 4px 0 22px !important;
+  }
+
+  /* 行内代码与代码块 */
+  code {
+    font-family: var(--mono);
+    font-size: .9em;
+    background: #f3f4f8;
+    color: #b3146a;
+    padding: 2px 6px;
+    border-radius: 5px;
+    word-break: break-word;
+  }
+  pre {
+    font-family: var(--mono);
+    font-size: 13.5px;
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 16px 18px;
+    border-radius: 10px;
+    overflow-x: auto;
+    line-height: 1.6;
+  }
+  pre code { background: none; color: inherit; padding: 0; }
+
+  /* ---------- 提示卡 callout ---------- */
+  .callout {
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin: 18px 0;
+    border: 1px solid var(--line);
+    background: var(--neutral-bg);
+    font-size: 15.3px;
+  }
+  .callout > :first-child { margin-top: 0; }
+  .callout > :last-child { margin-bottom: 0; }
+  .callout.note { background: var(--swiftui-bg); border-color: #c7dbff; }
+  .callout.why  { background: #fff7ed; border-color: #fed7aa; }
+  .callout.why::before {
+    content: "为什么这么做？";
+    display: block;
+    font-weight: 700;
+    color: var(--appkit);
+    margin-bottom: 4px;
+    font-size: 13.5px;
+    letter-spacing: .3px;
+  }
+  .callout.tip { background: #f5f3ff; border-color: #ddd6fe; }
+  .callout.tip::before {
+    content: "💡 一个观点（不是定论）";
+    display: block;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 4px;
+    font-size: 13.5px;
+  }
+
+  /* ---------- 技术标签 tag ---------- */
+  .tag, .legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 2px 9px;
+    border-radius: 999px;
+    line-height: 1.7;
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+  .tag::before {
+    content: "";
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: .9;
+  }
+  .tag.swiftui { color: var(--swiftui); background: var(--swiftui-bg); }
+  .tag.appkit  { color: var(--appkit);  background: var(--appkit-bg); }
+  .tag.service { color: var(--service); background: var(--service-bg); }
+  .tag.neutral { color: var(--neutral); background: var(--neutral-bg); }
+
+  /* ---------- 图容器 + 图例 ---------- */
+  .diagram {
+    border: 1px solid var(--line);
+    background: #fbfcfe;
+    border-radius: 12px;
+    padding: 22px;
+    margin: 22px 0;
+  }
+  .diagram-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--ink-soft);
+    text-align: center;
+    margin: 0 0 18px;
+    letter-spacing: .3px;
+  }
+  .diagram-title::before { content: ""; }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    justify-content: center;
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px dashed var(--line);
+    font-size: 12.5px;
+  }
+  .legend-item { background: #fff; border: 1px solid var(--line); color: var(--ink-soft); }
+  .legend-item .sw { width:10px;height:10px;border-radius:3px;display:inline-block; }
+
+  /* ---------- 通用节点 / 盒子 / 泳道（供各 section 图复用） ---------- */
+  .node {
+    border: 1.5px solid var(--neutral);
+    background: #fff;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 14px;
+    text-align: center;
+    box-shadow: 0 1px 2px rgba(15,23,42,.05);
+  }
+  .node.swiftui { border-color: var(--swiftui); background: var(--swiftui-bg); }
+  .node.appkit  { border-color: var(--appkit);  background: var(--appkit-bg); }
+  .node.service { border-color: var(--service); background: var(--service-bg); }
+  .lane {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px;
+    background: #fff;
+    margin: 10px 0;
+  }
+
+  /* ---------- 树形图 ---------- */
+  .tree, .tree ul { list-style: none; margin: 0; padding: 0; }
+  .tree ul { margin-left: 22px; border-left: 1.5px dashed #cbd5e1; padding-left: 18px; }
+  .tree li { margin: 7px 0; position: relative; }
+  .tree li > .node, .tree li > span.node { display: inline-block; text-align: left; }
+
+  /* ---------- 对比表 / 术语表 / 普通表 ---------- */
+  table, .compare, .termtable {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 18px 0;
+    font-size: 14.5px;
+    background: #fff;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  thead th {
+    background: var(--neutral-bg);
+    font-size: 13.5px;
+    color: var(--ink);
+    letter-spacing: .2px;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: #fafbfe; }
+  .compare th:first-child { width: 22%; }
+
+  /* ---------- 页脚 ---------- */
+  .foot {
+    margin-top: 40px;
+    padding-top: 24px;
+    border-top: 1px solid var(--line);
+    color: var(--neutral);
+    font-size: 13.5px;
+    text-align: center;
+  }
+
+  /* ---------- 窄屏 ---------- */
+  @media (max-width: 880px) {
+    .layout { grid-template-columns: 1fr; }
+    .toc {
+      position: static;
+      height: auto;
+      border-right: none;
+      border-bottom: 1px solid var(--line);
+    }
+    .section { padding: 24px 18px 28px; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav class="toc">
+    <div class="toc-brand">CCTerm <span>架构导览</span></div>
+    <div class="toc-sub">写给第一次接触本项目的你</div>
+    <ol>
+      <li><a href="#intro">这是个什么 App · 导读</a></li>
+      <li><a href="#birdseye">鸟瞰：四大区域</a></li>
+      <li><a href="#bootstrap">启动链路：从双击到见面</a></li>
+      <li><a href="#tree">组件树总览</a></li>
+      <li><a href="#parts-shell">逐块讲解（一）窗口外壳</a></li>
+      <li><a href="#parts-chat">逐块讲解（二）聊天区</a></li>
+      <li><a href="#parts-session">逐块讲解（三）会话与数据层</a></li>
+      <li><a href="#dataflow">一条消息的旅程</a></li>
+      <li><a href="#decisions">关键设计抉择（为什么）</a></li>
+      <li><a href="#improve">可以怎么更好</a></li>
+      <li><a href="#glossary">名词表 / 术语对照</a></li>
+    </ol>
+  </nav>
+
+  <main class="main">
+    <header class="hero">
+      <span class="kicker">第一张地图</span>
+      <h1>CCTerm 是怎么搭起来的</h1>
+      <p>这是一份写给小白的架构导览。我们从整体到局部、从直觉到机制，带你认识这个 macOS 原生应用由哪几大块组成、它们怎么拼在一起，以及为什么这么设计。</p>
+    </header>
+
+    <section class="section" id="intro">
+      <h2>这是个什么 App，以及这篇文章怎么读</h2>
+      <p class="section-lead">本节用一句话讲清 CCTerm 是什么，告诉你读完能带走哪三样东西，再给出一份可点击的章节目录，方便随时跳转。</p>
+
+      <h3>一句话：CCTerm 是 Claude Code 的原生 macOS 客户端</h3>
+      <p>很多人第一次用 <strong>Claude Code</strong>，都是在终端里敲命令、看回复刷屏。这种方式能用，但体验就像“在一个终端标签页里跟 AI 聊天”：聊天记录混在命令行里，多个项目挤在同一个窗口，想回头翻某次对话也不方便。</p>
+      <p><strong>CCTerm</strong> 做的事，就是把“终端里的一个标签页”升级成一个真正的 Mac App。打个比方：终端里的 Claude Code 像是在记事本里跟人发消息，而 CCTerm 把它搬进了一个专门的聊天软件——窗口、列表、滚动条、弹窗一样不少，而且都是 macOS 原生的样子。</p>
+
+      <div class="callout note">
+        <p><strong>用过它，你会得到这些：</strong></p>
+        <ul>
+          <li><strong>左侧的会话侧边栏</strong>——每一次对话叫一个<strong>会话</strong>（对应代码里的 <code>Session</code>）。会话整齐列在左边，可以拖进文件夹分组，也可以拖动重新排序。</li>
+          <li><strong>能瞬间滚动的长聊天记录</strong>——中间那块滚动显示历史消息的区域叫<strong>聊天记录</strong>（对应代码里的 <code>NativeTranscript2</code>）。哪怕对话已经很长，上下拖动也不卡顿。</li>
+          <li><strong>实时流式回复</strong>——Claude 的回答像打字机一样一个字一个字刷出来，不用等全部生成完才一次性显示。</li>
+          <li><strong>原生的权限确认框</strong>——Claude 想执行某条命令时，App 会在输入栏上方浮出一张 macOS 原生风格的确认卡片，让你点“允许”或“拒绝”，而不是把决定权藏进命令行参数。这张卡片对应代码里的 <code>PermissionCardView</code>。</li>
+        </ul>
+      </div>
+
+      <p>技术上，CCTerm 用 <strong>SwiftUI</strong> 和 <strong>AppKit</strong> 两套界面框架搭成（这两个名词后面会详细解释，这里先记住：它们是苹果做 Mac 界面的两套工具），最低支持 <strong>macOS 14（Sonoma）</strong>。它的入口非常干净：一个标了 <code>@main</code> 的 <code>CCTermApp</code>，通过 <code>@NSApplicationDelegateAdaptor</code> 把启动权交给 <code>AppDelegate</code>；<code>AppDelegate</code> 再在 <code>applicationDidFinishLaunching</code> 里亲手创建主窗口（<code>MainWindowController</code>）。具体怎么一步步搭起来，后面的“启动链路”一章会拆开讲。</p>
+
+      <h3>读完这篇，你会带走三样东西</h3>
+      <p>这篇文章不是 API 手册，不会把每个函数都列一遍。它的目标，是让第一次接触本项目的开发者不迷路，对整个 App 建立起直觉。读完它，你应该能带走下面三样：</p>
+
+      <div class="diagram">
+        <div class="diagram-title">图 1-1：读完本文你会获得的三样东西</div>
+        <div class="s0-cards">
+          <div class="s0-card">
+            <div class="s0-card-num">1</div>
+            <div class="s0-card-title">一张心智地图</div>
+            <div class="s0-card-body">这个 App 由哪几大块组成、它们怎么拼在一起，脑子里有一张图。</div>
+          </div>
+          <div class="s0-card-arrow" aria-hidden="true">›</div>
+          <div class="s0-card">
+            <div class="s0-card-num">2</div>
+            <div class="s0-card-title">每一块是干什么的</div>
+            <div class="s0-card-body">用听得懂的比喻理解每个组件的职责，而不是面对一串冷冰冰的类名。</div>
+          </div>
+          <div class="s0-card-arrow" aria-hidden="true">›</div>
+          <div class="s0-card">
+            <div class="s0-card-num">3</div>
+            <div class="s0-card-title">为什么这么设计</div>
+            <div class="s0-card-body">关键架构决策背后的原因，尤其是 SwiftUI 与 AppKit 怎么分工、数据为什么要单向流动。</div>
+          </div>
+        </div>
+        <div class="legend">
+          <span class="legend-item">阅读收获：结构认知 → 职责认知 → 设计认知，三步递进</span>
+        </div>
+      </div>
+
+      <div class="callout tip">
+        <p><strong>怎么读最省力：</strong>本文按“先看全局、再看局部”的顺序铺开，像剥洋葱一样一层层往里走。建议你从上往下顺着读——先在“鸟瞰”里记住 App 的几大区域，再到“组件树”把这些区域对应到具体对象，最后才进入逐块细节。如果只想快速查一个名词，直接跳到文末的“名词表”。</p>
+      </div>
+
+      <div class="callout note">
+        <p><strong>记住三种颜色，全文通用：</strong>本文后续所有图里，<span class="s0-swatch s0-swatch-swiftui"></span><strong>蓝色</strong>代表 <strong>SwiftUI</strong>（苹果较新的声明式界面框架），<span class="s0-swatch s0-swatch-appkit"></span><strong>橙色</strong>代表 <strong>AppKit</strong>（苹果传统的命令式界面框架），<span class="s0-swatch s0-swatch-service"></span><strong>绿色</strong>代表<strong>服务与数据层</strong>（不画界面、只管数据和逻辑的那部分），<span class="s0-swatch s0-swatch-neutral"></span><strong>灰色</strong>代表<strong>中性外壳</strong>。每张图还会配文字标签，不会只靠颜色区分。</p>
+      </div>
+
+      <h3>章节导读（点击跳转）</h3>
+      <p>下面是这篇文章的全部章节。每一项都是可点击的链接，点它就能直接跳到对应位置。整体节奏是：<strong>先建立直觉，再深入机制</strong>。</p>
+
+      <div class="diagram">
+        <div class="diagram-title">图 1-2：本文章节地图</div>
+        <ol class="s0-toc">
+          <li><a href="#birdseye"><span class="s0-toc-tag">鸟瞰</span><span class="s0-toc-text">四大区域</span><span class="s0-toc-desc">先用一张全局图，把整个 App 切成几大块记住。</span></a></li>
+          <li><a href="#bootstrap"><span class="s0-toc-tag">启动链路</span><span class="s0-toc-text">从双击到见面</span><span class="s0-toc-desc">看对象怎么一个接一个被创建、挂载出来。</span></a></li>
+          <li><a href="#tree"><span class="s0-toc-tag">组件树</span><span class="s0-toc-text">总览全貌</span><span class="s0-toc-desc">一棵清晰的树，标出每块用 SwiftUI 还是 AppKit。</span></a></li>
+          <li><a href="#parts-shell"><span class="s0-toc-tag">逐块讲解一</span><span class="s0-toc-text">窗口外壳与导航</span><span class="s0-toc-desc">主窗口骨架、详情路由器、侧边栏、工具栏各干什么。</span></a></li>
+          <li><a href="#parts-chat"><span class="s0-toc-tag">逐块讲解二</span><span class="s0-toc-text">聊天区</span><span class="s0-toc-desc">聊天记录、桥接层、输入栏、补全、Markdown 怎么协作。</span></a></li>
+          <li><a href="#parts-session"><span class="s0-toc-tag">逐块讲解三</span><span class="s0-toc-text">会话与数据层</span><span class="s0-toc-desc">会话、会话运行时、底层 CLI 通信、git 隔离分别是什么。</span></a></li>
+          <li><a href="#dataflow"><span class="s0-toc-tag">消息旅程</span><span class="s0-toc-text">一条消息怎么流动</span><span class="s0-toc-desc">把静态结构串成动态故事：从你敲字到 Claude 回复。</span></a></li>
+          <li><a href="#decisions"><span class="s0-toc-tag">设计抉择</span><span class="s0-toc-text">为什么这么做</span><span class="s0-toc-desc">集中讲 SwiftUI 与 AppKit 的取舍、单向数据流、runloop 时序。</span></a></li>
+          <li><a href="#improve"><span class="s0-toc-tag">优化建议</span><span class="s0-toc-text">可以怎么更好</span><span class="s0-toc-desc">克制地提几处主观改进空间，帮你建立批判视角。</span></a></li>
+          <li><a href="#glossary"><span class="s0-toc-tag">名词表</span><span class="s0-toc-text">术语对照</span><span class="s0-toc-desc">一站式查词，巩固全文统一的术语。</span></a></li>
+        </ol>
+        <div class="legend">
+          <span class="legend-item">阅读顺序：从上到下递进，越往下越深入</span>
+        </div>
+      </div>
+
+      <p>准备好了吗？我们先退到最远处，看看 CCTerm 从整体上分成哪几大块——这正是下一节“鸟瞰：四大区域”要做的事。</p>
+
+      <style>
+        /* S0 专用样式，全部用 .s0- 前缀避免与其它 section 冲突 */
+        .s0-cards {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: stretch;
+          gap: 0.5rem;
+          justify-content: center;
+        }
+        .s0-card {
+          flex: 1 1 220px;
+          min-width: 200px;
+          border: 2px solid var(--neutral, #64748b);
+          border-radius: 10px;
+          padding: 1rem 1.1rem;
+          background: #ffffff;
+          position: relative;
+        }
+        .s0-card-num {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 1.6rem;
+          height: 1.6rem;
+          border-radius: 50%;
+          background: var(--neutral, #64748b);
+          color: #ffffff;
+          font-weight: 700;
+          font-size: 0.9rem;
+          margin-bottom: 0.5rem;
+        }
+        .s0-card-title { font-weight: 700; font-size: 1.05rem; margin-bottom: 0.35rem; }
+        .s0-card-body { font-size: 0.95rem; line-height: 1.6; color: #334155; }
+        .s0-card-arrow {
+          align-self: center;
+          font-size: 1.6rem;
+          color: var(--neutral, #64748b);
+          font-weight: 700;
+        }
+        .s0-swatch {
+          display: inline-block;
+          width: 0.85rem;
+          height: 0.85rem;
+          border-radius: 3px;
+          margin: 0 0.15rem 0 0.1rem;
+          vertical-align: middle;
+        }
+        .s0-swatch-swiftui { background: var(--swiftui, #2563eb); }
+        .s0-swatch-appkit { background: var(--appkit, #ea580c); }
+        .s0-swatch-service { background: var(--service, #16a34a); }
+        .s0-swatch-neutral { background: var(--neutral, #64748b); }
+
+        .s0-toc {
+          list-style: none;
+          counter-reset: s0toc;
+          margin: 0;
+          padding: 0;
+          display: grid;
+          gap: 0.5rem;
+        }
+        .s0-toc li { counter-increment: s0toc; }
+        .s0-toc a {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: baseline;
+          gap: 0.6rem;
+          text-decoration: none;
+          color: inherit;
+          border: 1px solid #e2e8f0;
+          border-left: 4px solid var(--neutral, #64748b);
+          border-radius: 8px;
+          padding: 0.6rem 0.9rem;
+          background: #ffffff;
+          transition: background 0.15s ease, border-color 0.15s ease;
+        }
+        .s0-toc a:hover {
+          background: #f1f5f9;
+        }
+        .s0-toc a::before {
+          content: counter(s0toc);
+          flex: 0 0 auto;
+          width: 1.5rem;
+          height: 1.5rem;
+          border-radius: 50%;
+          background: var(--neutral, #64748b);
+          color: #ffffff;
+          font-size: 0.8rem;
+          font-weight: 700;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .s0-toc-tag {
+          flex: 0 0 auto;
+          font-weight: 700;
+          color: #334155;
+          min-width: 5.5em;
+        }
+        .s0-toc-text { font-weight: 600; }
+        .s0-toc-desc {
+          flex: 1 1 100%;
+          font-size: 0.9rem;
+          color: #475569;
+          padding-left: 2.1rem;
+        }
+      </style>
+    </section>
+
+    <section class="section" id="birdseye">
+      <h2>鸟瞰：四大区域</h2>
+      <p class="section-lead">本节给你画出整个 App 窗口的第一张全局地图：它由四个一眼能记住的可见区域拼成，每个区域用哪套 UI 框架（SwiftUI 还是 AppKit），图上也一并标清楚。</p>
+
+      <p>钻进细节之前，先把窗口当成一栋房子来看。打开 CCTerm，你的目光会落在四个固定位置：最上面横着一条<strong>窗口工具栏</strong>，左边竖着一列<strong>侧边栏</strong>，右侧的大块区域主体显示<strong>聊天记录</strong>，底部浮着一个<strong>输入栏</strong>。先记住这四块的相对位置，后面所有组件和数据流都挂在它们身上。</p>
+
+      <div class="diagram">
+        <div class="diagram-title">图 2-1：窗口分区示意图（四大可见区域 + 技术归属）</div>
+        <div class="s2-window">
+          <!-- 顶部工具栏 -->
+          <div class="s2-toolbar s2-zone s2-appkit">
+            <div class="s2-zone-name">窗口工具栏</div>
+            <div class="s2-zone-desc">顶部横条：项目信息、搜索框</div>
+            <span class="tag appkit">AppKit · NSToolbar</span>
+          </div>
+          <!-- 工具栏下方的主体：左侧边栏 + 右详情 -->
+          <div class="s2-body">
+            <!-- 侧边栏 -->
+            <div class="s2-sidebar s2-zone s2-appkit">
+              <div class="s2-zone-name">侧边栏</div>
+              <div class="s2-zone-desc">左侧会话列表，可分组、可拖拽排序</div>
+              <span class="tag appkit">AppKit · NSOutlineView</span>
+            </div>
+            <!-- 右侧详情区：聊天记录(底) + 输入栏(浮在底部) -->
+            <div class="s2-detail">
+              <div class="s2-transcript s2-zone s2-appkit">
+                <div class="s2-zone-name">聊天记录</div>
+                <div class="s2-zone-desc">右侧主体：滚动显示历史消息，回复实时流式刷出</div>
+                <span class="tag appkit">AppKit · NSTableView 自绘</span>
+              </div>
+              <div class="s2-input s2-zone s2-swiftui">
+                <div class="s2-zone-name">输入栏</div>
+                <div class="s2-zone-desc">底部居中，浮在聊天记录之上：敲字、发送的地方</div>
+                <span class="tag swiftui">SwiftUI · 经 NSHostingView 寄宿</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="legend">
+          <span class="legend-title">图例：</span>
+          <span class="legend-item"><span class="legend-swatch s2-sw-appkit"></span>橙色 = AppKit（系统原生 UI 框架）</span>
+          <span class="legend-item"><span class="legend-swatch s2-sw-swiftui"></span>蓝色 = SwiftUI（声明式 UI 框架）</span>
+          <span class="legend-note">颜色之外，每块都另配文字标签，不仅靠颜色区分。</span>
+        </div>
+      </div>
+
+      <p>下面把图里的四块逐一点名，说清楚每块干什么、用哪套框架、为什么这么选：</p>
+
+      <ul class="s2-list">
+        <li>
+          <span class="s2-pin">①</span>
+          <strong>侧边栏</strong>（<code>SidebarViewController</code>）——窗口最左边的会话列表。<em>会话</em>指一次完整的对话；侧边栏把你所有的会话竖着列出来，还能把它们装进文件夹分组、拖来拖去重新排序。它用 <span class="tag appkit">AppKit</span> 的 <code>NSOutlineView</code>（系统的「来源列表」样式）来画。之所以直接用 AppKit，是因为只有这样才能拿到标准的文件夹拖拽和现成的展开/折叠动画。
+        </li>
+        <li>
+          <span class="s2-pin">②</span>
+          <strong>聊天记录</strong>（<code>NativeTranscript2</code>）——右侧大块区域的主体，一行接一行滚动显示历史消息，Claude 的回复在这里逐字流式刷出。每一行（一个渲染单元）在代码里叫一个<em>块</em>（<code>Block</code>）。它用 <span class="tag appkit">AppKit</span> 的 <code>NSTableView</code> 加 Core Text 自己画。原因是：会话一长，SwiftUI 的 <code>List</code> 和 <code>LazyVStack</code> 扛不住那么多行，也扛不住这种自定义布局和选择语义。这是全项目下沉到 AppKit 最核心的理由——性能。
+        </li>
+        <li>
+          <span class="s2-pin">③</span>
+          <strong>输入栏</strong>（<code>InputBarView2</code>）——浮在聊天记录底部之上的输入区，你在这里敲字、发送给 Claude。它是地地道道的 <span class="tag swiftui">SwiftUI</span> 视图，靠<em>寄宿</em>（把 SwiftUI 视图放进 AppKit 容器，用的是 <code>NSHostingView</code>）叠在聊天记录上面。它体现了本项目的总策略：默认用 SwiftUI，只有性能或时序逼到墙角时才下沉到 AppKit。
+        </li>
+        <li>
+          <span class="s2-pin">④</span>
+          <strong>窗口工具栏</strong>——窗口最上面的横条，放着当前项目信息和聊天记录的搜索框。横条本身是 <span class="tag appkit">AppKit</span> 的 <code>NSToolbar</code>（搜索框是 <code>NSSearchToolbarItem</code>）。因为搜索框需要首响应者切换和 ⌘F 语义，而 SwiftUI 的 <code>.searchable</code> 给不了这两样。横条里那些小控件（项目信息块、归档筛选器）又是 <span class="tag swiftui">SwiftUI</span>，同样靠寄宿放进工具栏的格子里。
+        </li>
+      </ul>
+
+      <div class="callout why">
+        <strong>为什么橙色这么多？</strong>本项目的口号是「默认 SwiftUI，AppKit 是例外」，可这张鸟瞰图里偏偏三块是橙色。道理在于：越靠近窗口骨架、越需要精确控制性能和时间顺序的地方，越要用 AppKit；真正承载「内容」的小块（输入栏、工具栏里的控件）才放心交给 SwiftUI。换句话说，橙色是<strong>外壳与骨架</strong>，蓝色是<strong>填进骨架的内容</strong>——这条分界线会贯穿后面所有章节。
+      </div>
+
+      <p>这张鸟瞰图只回答了「窗口长什么样、各块归谁管」。接下来我们顺着时间往回倒一步，看看双击图标之后，这四块是谁、按什么顺序一个接一个搭起来的——这就是下一节的「启动链路」。</p>
+
+      <style>
+        #birdseye .s2-window {
+          border: 2px solid var(--neutral, #64748b);
+          border-radius: 10px;
+          overflow: hidden;
+          background: #f8fafc;
+          max-width: 760px;
+          margin: 0 auto;
+        }
+        #birdseye .s2-zone {
+          position: relative;
+          padding: 14px 16px;
+        }
+        #birdseye .s2-zone-name {
+          font-weight: 700;
+          font-size: 15px;
+          margin-bottom: 4px;
+        }
+        #birdseye .s2-zone-desc {
+          font-size: 13px;
+          color: #475569;
+          line-height: 1.5;
+          margin-bottom: 8px;
+        }
+        #birdseye .s2-appkit {
+          background: rgba(234, 88, 12, 0.08);
+          border-left: 5px solid var(--appkit, #ea580c);
+        }
+        #birdseye .s2-swiftui {
+          background: rgba(37, 99, 235, 0.08);
+          border-left: 5px solid var(--swiftui, #2563eb);
+        }
+        #birdseye .s2-toolbar {
+          border-bottom: 2px dashed var(--neutral, #64748b);
+        }
+        #birdseye .s2-body {
+          display: flex;
+          align-items: stretch;
+          min-height: 320px;
+        }
+        #birdseye .s2-sidebar {
+          flex: 0 0 30%;
+          border-right: 2px dashed var(--neutral, #64748b);
+          display: flex;
+          flex-direction: column;
+          justify-content: flex-start;
+        }
+        #birdseye .s2-detail {
+          flex: 1 1 70%;
+          display: flex;
+          flex-direction: column;
+          position: relative;
+        }
+        #birdseye .s2-transcript {
+          flex: 1 1 auto;
+        }
+        #birdseye .s2-input {
+          margin: 0 16px 16px;
+          border-radius: 8px;
+          box-shadow: 0 -2px 10px rgba(15, 23, 42, 0.08);
+          border: 1px solid rgba(37, 99, 235, 0.35);
+        }
+        #birdseye .tag {
+          display: inline-block;
+          font-size: 11px;
+          font-weight: 600;
+          padding: 2px 8px;
+          border-radius: 999px;
+          white-space: nowrap;
+        }
+        #birdseye .tag.appkit {
+          background: var(--appkit, #ea580c);
+          color: #fff;
+        }
+        #birdseye .tag.swiftui {
+          background: var(--swiftui, #2563eb);
+          color: #fff;
+        }
+        #birdseye .legend {
+          margin-top: 14px;
+          font-size: 13px;
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 12px;
+          color: #334155;
+        }
+        #birdseye .legend-title { font-weight: 700; }
+        #birdseye .legend-item { display: inline-flex; align-items: center; gap: 6px; }
+        #birdseye .legend-swatch {
+          display: inline-block;
+          width: 14px;
+          height: 14px;
+          border-radius: 3px;
+        }
+        #birdseye .s2-sw-appkit { background: var(--appkit, #ea580c); }
+        #birdseye .s2-sw-swiftui { background: var(--swiftui, #2563eb); }
+        #birdseye .legend-note { color: #64748b; font-style: italic; }
+        #birdseye .s2-list {
+          list-style: none;
+          padding: 0;
+          margin: 18px 0;
+        }
+        #birdseye .s2-list li {
+          position: relative;
+          padding: 12px 14px 12px 48px;
+          margin-bottom: 10px;
+          background: #f8fafc;
+          border-radius: 8px;
+          line-height: 1.7;
+        }
+        #birdseye .s2-pin {
+          position: absolute;
+          left: 12px;
+          top: 12px;
+          width: 26px;
+          height: 26px;
+          line-height: 26px;
+          text-align: center;
+          border-radius: 50%;
+          background: var(--neutral, #64748b);
+          color: #fff;
+          font-weight: 700;
+          font-size: 13px;
+        }
+        @media (max-width: 560px) {
+          #birdseye .s2-body { flex-direction: column; }
+          #birdseye .s2-sidebar {
+            flex-basis: auto;
+            border-right: none;
+            border-bottom: 2px dashed var(--neutral, #64748b);
+          }
+        }
+      </style>
+    </section>
+
+    <section class="section" id="bootstrap">
+      <h2>启动链路：从双击到见面</h2>
+      <p class="section-lead">本节只讲清楚一件事：你双击 Dock 里的图标后，App 内部按什么顺序、一层接一层把对象创建并拼装起来，最后才显示出那张熟悉的"左侧边栏 + 右聊天区"界面。</p>
+
+      <p>上一节的鸟瞰图告诉你 App 由哪几大块组成，那是一张静态地图。可地图不会告诉你这些块<strong>谁先出生、谁把谁创建出来</strong>。这一节就把镜头切到"出生顺序"：从最顶层的 App 入口出发，沿一条单向的创建链往下走，一直走到屏幕上挂出第一块可见面板。先理解这条链，等你后面看组件树时，就能一眼看出每个节点"在哪一步、被谁、装了进来"。</p>
+
+      <p>先交代一个贯穿全程的术语。<strong>视图控制器</strong>（代码里是 <code>NSViewController</code>，AppKit 的概念）是 AppKit 里"管理一块界面"的基本单位，负责一块视图的生命周期与内容。你可以把它想成一个房间的"房间管理员"；对应到代码就是：本节出现的 <code>MainWindowController</code>、<code>MainSplitViewController</code>、<code>DetailRouterViewController</code> 都属于这一族。它们用<strong>橙色</strong>标记，因为主窗口骨架是用 AppKit 搭的。最顶层的 App 入口、以及具体面板里寄宿的内容则属于 SwiftUI，用<strong>蓝色</strong>标记。</p>
+
+      <!-- 图：纵向创建/挂载时间线 -->
+      <div class="diagram">
+        <div class="diagram-title">图 3-1：启动创建链（从上到下 = 先到后的创建顺序）</div>
+
+        <div class="s2-timeline">
+
+          <div class="s2-step">
+            <div class="node s2-card s2-swiftui">
+              <span class="tag swiftui">SwiftUI 入口</span>
+              <div class="s2-title"><code>@main CCTermApp</code></div>
+              <div class="s2-desc">App 真正的入口。它是个 SwiftUI <code>App</code>，但身上挂了一个适配器 <code>@NSApplicationDelegateAdaptor(AppDelegate.self)</code>，把 App 的生命周期交给 AppKit 的代理来管。它的 <code>body</code> 里只放了一个空的占位场景 <code>Settings { EmptyView() }</code>（<code>Settings</code> 是唯一一种系统不会在启动时自动开窗的内置场景），所以启动时它不弹出任何窗口。</div>
+            </div>
+          </div>
+
+          <div class="s2-arrow" aria-hidden="true">
+            <span class="s2-arrow-line"></span>
+            <span class="s2-arrow-label">适配器把生命周期交给它</span>
+          </div>
+
+          <div class="s2-step">
+            <div class="node s2-card s2-appkit">
+              <span class="tag appkit">AppKit 应用代理</span>
+              <div class="s2-title"><code>AppDelegate</code></div>
+              <div class="s2-desc">App 级别的"大管家"。它持有<strong>进程级状态容器</strong>（<code>AppState</code>，全 App 共享的状态袋子）和选择状态 <code>MainSelectionModel</code>，并在系统回调 <code>applicationDidFinishLaunching</code> 里亲手创建主窗口。换句话说，主窗口不是 SwiftUI 自动开出来的，而是它在这一刻显式 new 出来的。</div>
+            </div>
+          </div>
+
+          <div class="s2-arrow" aria-hidden="true">
+            <span class="s2-arrow-line"></span>
+            <span class="s2-arrow-label">在 applicationDidFinishLaunching 里创建</span>
+          </div>
+
+          <div class="s2-step">
+            <div class="node s2-card s2-appkit">
+              <span class="tag appkit">窗口控制器</span>
+              <div class="s2-title"><code>MainWindowController</code></div>
+              <div class="s2-desc">主窗口本身的管理员。它创建那扇 <code>NSWindow</code>（设好标题、最小尺寸、透明标题栏），装上窗口工具栏 <code>NSToolbar</code>（含搜索框），再把下一层 <code>MainSplitViewController</code> 设为窗口的内容视图控制器。窗口的"门面"和"骨架的下一节"都由它接上。</div>
+            </div>
+          </div>
+
+          <div class="s2-arrow" aria-hidden="true">
+            <span class="s2-arrow-line"></span>
+            <span class="s2-arrow-label">设为窗口内容，并分出两个分栏项</span>
+          </div>
+
+          <div class="s2-step">
+            <div class="node s2-card s2-appkit">
+              <span class="tag appkit">分栏控制器</span>
+              <div class="s2-title"><code>MainSplitViewController</code></div>
+              <div class="s2-desc">它把窗口横向切成左右两半（<code>NSSplitViewController</code>）。初始化时，它就先创建好左右两侧的视图控制器；到 <code>loadView</code> 里，再把它们各自包成一个<strong>分栏项</strong>：左侧装<strong>侧边栏</strong>（<code>SidebarViewController</code>，会话列表），右侧装<strong>详情路由器</strong>（<code>DetailRouterViewController</code>）。它还顺手把 <code>AppState</code> 里需要的成员拆成 <code>SidebarContext</code> 和 <code>DetailContext</code> 两个小包，分别下传给两侧。</div>
+              <div class="s2-split">
+                <span class="s2-pill s2-pill-side">左：侧边栏 <code>SidebarViewController</code></span>
+                <span class="s2-pill s2-pill-detail">右：详情路由器（下一层）</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="s2-arrow" aria-hidden="true">
+            <span class="s2-arrow-line"></span>
+            <span class="s2-arrow-label">右侧分栏项就是它</span>
+          </div>
+
+          <div class="s2-step">
+            <div class="node s2-card s2-appkit">
+              <span class="tag appkit">详情路由器</span>
+              <div class="s2-title"><code>DetailRouterViewController</code></div>
+              <div class="s2-desc">右半边的"调度台"。它本身不画内容，而是<strong>根据当前选了什么，挂上恰好一个</strong>子面板视图控制器。选了一个会话，就挂聊天区；点了"新建会话"，就挂配置器；其余情况依此类推。任意时刻，它名下只挂着一个子面板。</div>
+            </div>
+          </div>
+
+          <div class="s2-arrow" aria-hidden="true">
+            <span class="s2-arrow-line"></span>
+            <span class="s2-arrow-label">按当前选择，挂上其中一个</span>
+          </div>
+
+          <div class="s2-step">
+            <div class="node s2-card s2-leaf">
+              <span class="tag appkit">恰好一个子面板</span>
+              <div class="s2-title">当前选中的那一个 <code>DetailRouterChild</code></div>
+              <div class="s2-desc">详情路由器同时只挂一个子面板。下面的"路由表"列出每种选择对应哪一个。举个例子：选中一个会话，挂的就是聊天区 <code>ChatSessionViewController</code>（它本身是 AppKit 的视图控制器），里面再寄宿 SwiftUI 的输入栏等内容。走到这一步，界面就显示在屏幕上了。</div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- 图例 -->
+        <div class="legend">
+          <span class="legend-item"><span class="legend-swatch" style="background:#2563eb"></span>蓝色 = SwiftUI（App 入口，以及面板内寄宿的内容）</span>
+          <span class="legend-item"><span class="legend-swatch" style="background:#ea580c"></span>橙色 = AppKit（主窗口骨架的视图控制器）</span>
+          <span class="legend-item"><span class="legend-swatch s2-swatch-arrow"></span>向下箭头 = "上面这个创建/挂载下面这个"的先后顺序</span>
+        </div>
+      </div>
+
+      <p>看懂了纵向链条，最后一站"挂哪一个子面板"还差一张对照表。详情路由器做的就是一道单选题：读当前选择，查下面这张<strong>路由表</strong>，挂上对应的那一个面板。这里的"选择"是一个枚举（代码里是 <code>MainSelection</code>），它把"选的是真实会话还是某个标签页"变成编译器能检查的类型，避免把一个标签页当会话误用。</p>
+
+      <!-- 表：路由表 -->
+      <div class="diagram">
+        <div class="diagram-title">表 3-1：详情路由器的路由表（当前选择 → 挂哪一个面板）</div>
+        <table class="compare s2-routetable">
+          <thead>
+            <tr>
+              <th>当前选择（<code>MainSelection</code>）</th>
+              <th>挂上的子面板（恰好一个）</th>
+              <th>这块面板是干什么的</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>.session(_)</code> 或 <code>.none</code></td>
+              <td><code>ChatSessionViewController</code></td>
+              <td>聊天区：上面是<strong>聊天记录</strong>，下面是<strong>输入栏</strong>。<code>.none</code>（什么都没选）也落到这里，显示一个空的聊天区。</td>
+            </tr>
+            <tr>
+              <td><code>.newSession</code></td>
+              <td><code>ComposeSessionViewController</code></td>
+              <td>新会话配置器：选目录、选分支，为开一段新对话做准备的页面。</td>
+            </tr>
+            <tr>
+              <td>还是草稿的 <code>.session(_)</code></td>
+              <td><code>DraftSessionLandingViewController</code></td>
+              <td>草稿落地页：会话已选中，但还没发出第一条消息，先显示一个没有聊天卡片的过渡页。首条消息发出后，它会就地换成聊天区。</td>
+            </tr>
+            <tr>
+              <td><code>.archive</code></td>
+              <td><code>ArchiveViewController</code></td>
+              <td>归档页：只看已归档的会话列表，没有输入栏。</td>
+            </tr>
+            <tr>
+              <td><code>.demo(_)</code>（仅 DEBUG）</td>
+              <td>对应的 demo 视图控制器</td>
+              <td>开发调试用的演示页，正式构建里没有。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>有一个细节值得点明，它解释了"为什么点一下侧边栏，右边能马上整块换掉，而且不卡顿、不撕裂"。用户点击时，侧边栏（AppKit）调用 <code>MainSelectionModel.select(_:)</code> 写入新选择；这个方法在<strong>更新状态的同一刻</strong>，就直接同步通知详情路由器去换面板。详情路由器是这个选择的<strong>唯一结构性观察者</strong>——换句话说，整套"换面板"的动作都收口在它一个人身上。正是这条同步通路，保证了"换会话"这件事在点击的同一个 source 阶段里一次做完，不会拖到下一帧。</p>
+
+      <div class="callout why">
+        <strong>为什么主窗口骨架要用 AppKit，而不是全用 SwiftUI？</strong>
+        <p>本项目的总策略是"默认 SwiftUI，AppKit 是例外"，而主窗口这条骨架链恰好踩中了例外。原因在于<strong>时序</strong>：聊天记录的挂载、以及随之而来的尺寸级联，必须跑在 AppKit 的 <code>source 阶段</code>（也就是处理点击事件的那一刻），不能拖到 SwiftUI 的提交阶段。所以 <code>AppDelegate</code> 选择在 <code>applicationDidFinishLaunching</code> 里亲手创建窗口，而不是声明一个 SwiftUI <code>Window</code> 场景让系统自动开窗——只有这样，换会话、滚动到底这类动作才能和用户的点击落在同一帧里。至于"source 阶段是什么、为什么差一帧就会出问题"，本文后面"关键设计抉择"一节会专门讲透，这里先记住结论即可。</p>
+      </div>
+
+      <p>到这里，对象的"出生顺序"就理清了：SwiftUI 入口交棒给 AppKit 代理，代理造出窗口，窗口里分出左右两栏，右栏的路由器再按当前选择挂上恰好一个面板。下一节我们把镜头拉远，用一棵<strong>组件树</strong>把这些块连同它们寄宿的 SwiftUI 内容一并铺开，并逐个标出谁是 SwiftUI、谁是 AppKit。</p>
+
+      <style>
+        /* 本节专用样式，全部以 .s2- 前缀隔离，避免与其它 section 冲突 */
+        #bootstrap .s2-timeline {
+          display: flex;
+          flex-direction: column;
+          align-items: stretch;
+          gap: 0;
+          max-width: 760px;
+          margin: 0 auto;
+        }
+        #bootstrap .s2-step { display: flex; justify-content: center; }
+        #bootstrap .s2-card {
+          width: 100%;
+          box-sizing: border-box;
+          border-radius: 10px;
+          padding: 14px 18px;
+          background: #fff;
+          border: 1px solid #e2e8f0;
+          box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+        }
+        /* SwiftUI 入口节点：左侧蓝色粗边 + 文字标签，不只靠颜色 */
+        #bootstrap .s2-swiftui { border-left: 5px solid #2563eb; background: #eff6ff; }
+        /* AppKit 节点：左侧橙色粗边 + 文字标签，不只靠颜色 */
+        #bootstrap .s2-appkit { border-left: 5px solid #ea580c; }
+        #bootstrap .s2-leaf { border-left: 5px solid #ea580c; background: #fff7ed; }
+        #bootstrap .s2-title {
+          font-size: 16px;
+          font-weight: 600;
+          margin: 6px 0 6px;
+          color: #0f172a;
+        }
+        #bootstrap .s2-title code { font-size: 15px; }
+        #bootstrap .s2-desc { color: #334155; line-height: 1.7; font-size: 14px; }
+        /* 标签：复用全局 .tag 语义色，这里补足底色与文字标签 */
+        #bootstrap .tag {
+          display: inline-block;
+          font-size: 12px;
+          font-weight: 600;
+          padding: 2px 8px;
+          border-radius: 999px;
+          color: #fff;
+          letter-spacing: 0.02em;
+        }
+        #bootstrap .tag.appkit { background: #ea580c; }
+        #bootstrap .tag.swiftui { background: #2563eb; }
+        #bootstrap .tag.service { background: #16a34a; }
+        /* 向下箭头 */
+        #bootstrap .s2-arrow {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          padding: 6px 0;
+        }
+        #bootstrap .s2-arrow-line {
+          width: 2px;
+          height: 22px;
+          background: #64748b;
+          position: relative;
+        }
+        #bootstrap .s2-arrow-line::after {
+          content: "";
+          position: absolute;
+          bottom: -1px;
+          left: 50%;
+          transform: translateX(-50%);
+          border-left: 6px solid transparent;
+          border-right: 6px solid transparent;
+          border-top: 8px solid #64748b;
+        }
+        #bootstrap .s2-arrow-label {
+          font-size: 12px;
+          color: #64748b;
+          margin-top: 4px;
+          text-align: center;
+        }
+        /* 分栏控制器里那两个并排的小药丸 */
+        #bootstrap .s2-split {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          margin-top: 10px;
+        }
+        #bootstrap .s2-pill {
+          font-size: 12.5px;
+          padding: 4px 10px;
+          border-radius: 6px;
+          border: 1px solid #fed7aa;
+          background: #fff7ed;
+          color: #7c2d12;
+        }
+        #bootstrap .s2-pill-detail { font-weight: 600; }
+        /* 图例里那个箭头色块 */
+        #bootstrap .legend { margin-top: 14px; }
+        #bootstrap .legend-swatch.s2-swatch-arrow {
+          background: #64748b;
+          position: relative;
+        }
+        /* 路由表 */
+        #bootstrap .s2-routetable { width: 100%; }
+        #bootstrap .s2-routetable th,
+        #bootstrap .s2-routetable td {
+          vertical-align: top;
+          line-height: 1.7;
+        }
+        @media (max-width: 640px) {
+          #bootstrap .s2-arrow-label { padding: 0 12px; }
+        }
+      </style>
+    </section>
+
+    <section class="section" id="tree">
+      <h2>组件树总览</h2>
+      <p class="section-lead">本节把第 2 章鸟瞰图里的"四大区域"落实成一棵真实的对象树：从 App 入口往下，每一层是谁、归 SwiftUI 还是 AppKit，一眼看清。</p>
+
+      <p>第 2 章告诉我们 App 分成几大块，第 3 章讲了它们启动时按什么顺序被创建。现在我们把这些块装进一棵<strong>组件树</strong>——也就是"谁包含谁"的层级图。先把这棵主干树打好底，第 5 章再钻进每一块讲细节，读者就不会迷路。</p>
+
+      <div class="callout note">
+        <strong>怎么读这棵树。</strong>树表达的是"父子包含"关系：上一层是容器，下一层是被它装进去的内容。本节<strong>只画主干结构节点</strong>——也就是搭起骨架的那几个关键对象。每个文件都塞进来，反而看不清主干。叶子级的细节（比如聊天记录内部还挂了哪些协调器）留到第 5 章逐块讲。</p>
+      </div>
+
+      <div class="diagram s3-treebox">
+        <div class="diagram-title">图 4-1：CCTerm 主干组件树（根在最上，缩进越深层级越深）</div>
+
+        <ul class="tree s3-tree">
+          <li>
+            <span class="node s3-node"><span class="tag swiftui">SwiftUI</span> <code>CCTermApp</code></span>
+            <span class="s3-desc">App 入口。它只放一个空壳的 <code>Settings</code> 占位场景，把窗口与状态的主导权交给下面的 <code>AppDelegate</code>。</span>
+            <ul>
+              <li>
+                <span class="node s3-node"><span class="tag appkit">AppKit</span> <code>AppDelegate</code></span>
+                <span class="s3-desc">应用代理。它持有进程级状态容器 <code>AppState</code>，并在 <code>applicationDidFinishLaunching</code> 里亲手创建主窗口。</span>
+                <ul>
+                  <li>
+                    <span class="node s3-node"><span class="tag appkit">AppKit</span> <code>MainWindowController</code></span>
+                    <span class="s3-desc">主窗口骨架的第一层。它管窗口本体和顶部工具栏（<code>NSToolbar</code>：项目名片、搜索框、归档筛选）。</span>
+                    <ul>
+                      <li>
+                        <span class="node s3-node"><span class="tag appkit">AppKit</span> <code>MainSplitViewController</code></span>
+                        <span class="s3-desc">左右分栏控制器。它把窗口切成"侧边栏 + 详情"两半，再把 <code>AppState</code> 拆包成 <code>SidebarContext</code> 和 <code>DetailContext</code>，分发给两侧。</span>
+                        <ul>
+                          <li>
+                            <span class="node s3-node s3-leaf"><span class="tag appkit">AppKit</span> <code>SidebarViewController</code>　<span class="s3-region">左半：侧边栏</span></span>
+                            <span class="s3-desc">左侧会话列表，基于 <code>NSOutlineView</code>，支持分组、文件夹拖拽排序、展开折叠。用户点哪条会话，它就把这个选择写进 <code>MainSelectionModel</code>。</span>
+                          </li>
+                          <li>
+                            <span class="node s3-node"><span class="tag appkit">AppKit</span> <code>DetailRouterViewController</code>　<span class="s3-region">右半：详情路由器</span></span>
+                            <span class="s3-desc">详情路由器。它是侧边栏选择的<strong>唯一结构性观察者</strong>，根据当前选了什么，挂载下面恰好一个面板。</span>
+                            <ul class="s3-router-children">
+                              <li>
+                                <span class="node s3-node s3-leaf"><span class="tag appkit">AppKit</span> <code>ChatSessionViewController</code>　<span class="s3-badge-active">默认面板</span></span>
+                                <span class="s3-desc">聊天面板。选中一个会话、或什么都没选（<code>.none</code>）时显示。它是装聊天记录、输入栏、各种浮层的容器，详见下方子树。</span>
+                              </li>
+                              <li>
+                                <span class="node s3-node s3-leaf"><span class="tag appkit">AppKit</span> <code>ComposeSessionViewController</code></span>
+                                <span class="s3-desc">新会话配置面板。点"新建会话"时显示，让用户先选目录、选分支（以及是否用 worktree 隔离），再开聊。</span>
+                              </li>
+                              <li>
+                                <span class="node s3-node s3-leaf"><span class="tag appkit">AppKit</span> <code>DraftSessionLandingViewController</code></span>
+                                <span class="s3-desc">草稿落地页。会话还没发出第一条消息（仍是草稿）时显示，发出后就换成聊天面板。</span>
+                              </li>
+                              <li>
+                                <span class="node s3-node s3-leaf"><span class="tag appkit">AppKit</span> <code>ArchiveViewController</code></span>
+                                <span class="s3-desc">归档面板。查看已归档会话时显示。</span>
+                              </li>
+                              <li>
+                                <span class="node s3-node s3-leaf s3-debug"><span class="tag appkit">AppKit</span> demo 面板（仅 DEBUG）</span>
+                                <span class="s3-desc">开发期的演示与压测面板。正式版里没有，可以忽略。</span>
+                              </li>
+                            </ul>
+                          </li>
+                        </ul>
+                      </li>
+                    </ul>
+                  </li>
+                </ul>
+              </li>
+            </ul>
+          </li>
+        </ul>
+      </div>
+
+      <p>上面这棵树画到聊天面板就收住了。可聊天面板自己也是个小容器，里面又挂了几块协作的零件。下面这棵子树把它单独展开——这里也是整个 App 里"AppKit 外壳 + SwiftUI 叶子"混搭得最典型的地方。</p>
+
+      <div class="diagram s3-treebox">
+        <div class="diagram-title">图 4-2：聊天面板 <code>ChatSessionViewController</code> 内部子树</div>
+
+        <ul class="tree s3-tree">
+          <li>
+            <span class="node s3-node"><span class="tag appkit">AppKit</span> <code>ChatSessionViewController</code></span>
+            <span class="s3-desc">聊天面板容器。它只管"这个面板里显示哪些块"（遮罩、输入栏、浮层、焦点），把聊天记录的挂载与切换交给下面的协调器。</span>
+            <ul>
+              <li>
+                <span class="node s3-node"><span class="tag appkit">AppKit</span> <code>TranscriptSwapCoordinator</code></span>
+                <span class="s3-desc">聊天记录切换协调器。换会话时，它负责拆掉旧的聊天记录、装上新的。它是当前会话 <code>currentSession</code> 的单一所有者。</span>
+                <ul>
+                  <li>
+                    <span class="node s3-node s3-leaf"><span class="tag appkit">AppKit</span> <code>NativeTranscript2</code>（聊天记录）</span>
+                    <span class="s3-desc">滚动显示历史消息的区域，用 <code>NSTableView</code> + Core Text 自绘，超长对话也能流畅滚动。</span>
+                  </li>
+                </ul>
+              </li>
+              <li>
+                <span class="node s3-node s3-leaf"><span class="tag swiftui">SwiftUI</span> <code>InputBarView2</code>（输入栏）</span>
+                <span class="s3-desc">底部输入框区域，经 <code>NSHostingView</code> <strong>寄宿</strong>进来（也就是把 SwiftUI 视图放进 AppKit 容器）。它承载打字、附件和斜杠命令补全。</span>
+              </li>
+              <li>
+                <span class="node s3-node s3-leaf"><span class="tag appkit">AppKit</span> + <span class="tag swiftui">SwiftUI</span> 顶/底渐隐遮罩 + 权限卡浮层</span>
+                <span class="s3-desc">覆盖在聊天记录之上的几层浮层。上下边缘的渐隐遮罩是纯 AppKit 自绘视图；权限确认卡是 SwiftUI 视图，经一个 AppKit 的点击穿透宿主寄宿进来。Claude 要执行命令时，它会弹出来。</span>
+              </li>
+            </ul>
+          </li>
+        </ul>
+      </div>
+
+      <div class="legend s3-legend">
+        <span class="s3-legend-title">图例（颜色加文字双重标注，不只靠颜色区分）：</span>
+        <span class="s3-legend-item"><span class="tag swiftui">SwiftUI</span> 声明式 UI，本项目的默认选择</span>
+        <span class="s3-legend-item"><span class="tag appkit">AppKit</span> 传统原生 UI，只在性能 / 时序 / 能力需要时才下沉到此</span>
+        <span class="s3-legend-item"><span class="s3-badge-active">默认面板</span> 没特别选择时落到这块</span>
+        <span class="s3-legend-item"><span class="s3-debug-key">DEBUG</span> 仅开发期存在</span>
+      </div>
+
+      <div class="callout why">
+        <strong>为什么主干几乎全是橙色（AppKit），叶子才变蓝（SwiftUI）。</strong>本项目的策略是"默认 SwiftUI，AppKit 是例外"。但窗口、分栏、路由这条主干，恰好踩中了 AppKit 的三个例外理由。第一，聊天记录要扛超长行数（性能），<code>List</code> / <code>LazyVStack</code> 顶不住。第二，面板切换必须和点击落在同一个 runloop 时间段内完成（生命周期时序）。第三，侧边栏要标准的文件夹拖拽（缺失能力）。所以主干用 AppKit 搭骨架，再把输入栏这类普通组件做成 SwiftUI 叶子寄宿进来。对应到代码里，就是 <code>ChatSessionViewController</code>（AppKit 容器）里挂着 <code>InputBarView2</code>（SwiftUI 叶子）这种混搭。
+      </div>
+
+      <p>有了这两棵树，读者心里就有了一张完整的骨架图：根在 <code>CCTermApp</code>，主干一路向下到聊天面板，叶子处 SwiftUI 与 AppKit 交接。接下来第 5 章会拿着这张图，一块一块地讲"它是什么、像什么、为什么这么做"。</p>
+
+      <style>
+        #tree .s3-treebox { padding: 18px 20px; }
+        #tree .s3-tree { list-style: none; margin: 4px 0 0; padding-left: 0; }
+        #tree .s3-tree ul { list-style: none; margin: 0; padding-left: 26px; position: relative; }
+        /* 竖直连线 */
+        #tree .s3-tree ul::before {
+          content: ""; position: absolute; top: 0; bottom: 16px; left: 8px;
+          border-left: 2px solid var(--neutral, #64748b); opacity: 0.45;
+        }
+        #tree .s3-tree li { position: relative; padding: 7px 0 7px 0; }
+        #tree .s3-tree ul > li::before {
+          content: ""; position: absolute; top: 18px; left: -18px; width: 16px;
+          border-top: 2px solid var(--neutral, #64748b); opacity: 0.45;
+        }
+        #tree .s3-node {
+          display: inline-block; padding: 4px 10px; border-radius: 7px;
+          border: 1px solid #cbd5e1; background: #f8fafc; font-weight: 600;
+          line-height: 1.5;
+        }
+        #tree .s3-node code { font-weight: 600; }
+        #tree .s3-leaf { background: #ffffff; }
+        #tree .s3-region {
+          font-weight: 500; color: var(--neutral, #64748b); font-size: 0.85em;
+          margin-left: 6px;
+        }
+        #tree .s3-desc {
+          display: block; margin: 4px 0 0 2px; color: #475569;
+          font-weight: 400; font-size: 0.92em; line-height: 1.7; max-width: 56ch;
+        }
+        #tree .s3-router-children > li::before { border-color: var(--appkit, #ea580c); opacity: 0.5; }
+        #tree .s3-router-children::before { border-color: var(--appkit, #ea580c); opacity: 0.5; }
+        #tree .s3-badge-active {
+          display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px;
+          font-size: 0.75em; font-weight: 600; color: #fff; background: var(--service, #16a34a);
+        }
+        #tree .s3-debug .s3-node, #tree .s3-debug { opacity: 0.85; }
+        #tree .s3-debug { font-style: normal; }
+        #tree .tag {
+          display: inline-block; padding: 1px 7px; border-radius: 5px;
+          font-size: 0.72em; font-weight: 700; letter-spacing: 0.02em; vertical-align: 1px;
+          margin-right: 5px; color: #fff;
+        }
+        #tree .tag.swiftui { background: var(--swiftui, #2563eb); }
+        #tree .tag.appkit { background: var(--appkit, #ea580c); }
+        #tree .tag.service { background: var(--service, #16a34a); }
+        #tree .s3-legend {
+          margin-top: 14px; padding: 12px 16px; border-radius: 8px;
+          background: #f1f5f9; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center;
+          font-size: 0.9em;
+        }
+        #tree .s3-legend-title { font-weight: 600; width: 100%; margin-bottom: 2px; }
+        #tree .s3-legend-item { display: inline-flex; align-items: center; gap: 4px; }
+        #tree .s3-debug-key {
+          display: inline-block; padding: 1px 7px; border-radius: 5px; font-size: 0.72em;
+          font-weight: 700; background: #e2e8f0; color: var(--neutral, #64748b);
+        }
+        @media (max-width: 640px) {
+          #tree .s3-tree ul { padding-left: 18px; }
+          #tree .s3-desc { max-width: none; }
+        }
+      </style>
+    </section>
+
+    <section class="section" id="parts-shell">
+      <h2>逐块讲解（一）：窗口外壳与导航</h2>
+      <p class="section-lead">本节把"主窗口骨架"这条链一块一块拆开：窗口、左右分栏、详情路由器、选择状态、侧边栏、窗口工具栏，各自是什么、像什么、为什么大多用 AppKit 写。</p>
+
+      <p>上一节的组件树给了你一张全景图。现在我们走进树的左半边，也就是用户打开 App 就直接面对的那副"骨架"：一个窗口，一道把屏幕劈成左右两半的分栏，左边的<strong>侧边栏</strong>，右边随选择切换的面板，再加上顶上那条工具栏。这几块只有一处例外，其余都用 AppKit 写，原因下面会逐块点明。先用一张小表摆出"谁负责什么、用什么技术"，再逐块展开。</p>
+
+      <div class="diagram">
+        <div class="diagram-title">表 5-1：窗口外壳与导航——组件、职责、技术</div>
+        <table class="compare s4-roletable">
+          <thead>
+            <tr><th>组件</th><th>它负责什么</th><th>技术</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>MainWindowController</code></td>
+              <td>持有整个 macOS 窗口，挂上工具栏，是<strong>主窗口骨架</strong>这条链的根</td>
+              <td><span class="tag appkit">AppKit</span></td>
+            </tr>
+            <tr>
+              <td><code>MainSplitViewController</code></td>
+              <td>把窗口劈成左右两栏（左侧边栏、右详情），并把<strong>进程级状态容器</strong>拆包成两个小袋子下发</td>
+              <td><span class="tag appkit">AppKit</span></td>
+            </tr>
+            <tr>
+              <td><code>DetailRouterViewController</code></td>
+              <td><strong>详情路由器</strong>：按当前选择，在右侧挂上唯一一个子面板</td>
+              <td><span class="tag appkit">AppKit</span></td>
+            </tr>
+            <tr>
+              <td><code>MainSelectionModel</code></td>
+              <td>记住"现在选中了哪一项"以及草稿状态，是选择的唯一真相</td>
+              <td><span class="tag swiftui">@Observable 状态</span></td>
+            </tr>
+            <tr>
+              <td><code>SidebarViewController</code></td>
+              <td><strong>侧边栏</strong>：左侧会话列表，支持文件夹拖拽排序、展开折叠</td>
+              <td><span class="tag appkit">AppKit</span></td>
+            </tr>
+            <tr>
+              <td>窗口工具栏（<code>NSToolbar</code>）</td>
+              <td>顶部一条：项目信息、归档过滤、聊天记录搜索框</td>
+              <td><span class="tag appkit">AppKit</span></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="legend">
+          <span><span class="tag appkit">AppKit</span> 苹果较老的命令式 UI 框架，对时序和细节的控制更直接</span>
+          <span><span class="tag swiftui">@Observable 状态</span> 用 SwiftUI 的 Observation 标注的共享状态，值一变，观察它的 SwiftUI 视图就自动刷新（它本身不是一个 SwiftUI 视图）</span>
+        </div>
+      </div>
+
+      <p>读这张表时记住一句话：这条骨架链从上到下是<strong>窗口 → 分栏 → 路由器 → 面板</strong>。下面按这个顺序逐块讲，每块都给"是什么 / 打个比方 / 为什么这么做"三段。</p>
+
+      <!-- 1. MainWindowController -->
+      <div class="callout note s4-card">
+        <div class="s4-card-head">
+          <span class="s4-card-name"><code>MainWindowController</code></span>
+          <span class="tag appkit">AppKit</span>
+        </div>
+        <p><strong>是什么。</strong>它持有那个真正的 macOS 窗口（<code>NSWindow</code>），设好标题、尺寸、透明标题栏，把工具栏装上去，再把<strong>左右分栏</strong>塞进窗口当内容。它是<strong>主窗口骨架</strong>这条链的最顶端。</p>
+        <p><strong>打个比方。</strong>它像一栋楼的"地基加外墙"：先把这一圈框架立起来，里面才能隔房间、摆家具。对应到代码里，它在 <code>AppDelegate</code> 的 <code>applicationDidFinishLaunching</code> 里被创建，是 App 启动后第一个立起来的可见对象。</p>
+      </div>
+      <div class="callout why s4-card-why">
+        <p><strong>为什么用 AppKit？</strong> SwiftUI 也能用一个 <code>Window</code> 场景开窗口，但本项目刻意不走那条路。原因写在代码注释里：<strong>聊天记录</strong>（<code>NativeTranscript2</code>）的挂载和尺寸变化级联，必须跑在 AppKit 的 <code>source 阶段</code>，不能和 SwiftUI 的 commit 阶段交错。<span class="s4-defn">（<code>source 阶段</code>是 macOS 一次界面刷新周期里"你的代码真正在跑"的那一段，下文还会提到。）</span>把窗口的根握在 AppKit 手里，时序才可控。</p>
+      </div>
+
+      <!-- 2. MainSplitViewController -->
+      <div class="callout note s4-card">
+        <div class="s4-card-head">
+          <span class="s4-card-name"><code>MainSplitViewController</code></span>
+          <span class="tag appkit">AppKit</span>
+        </div>
+        <p><strong>是什么。</strong>它是一个两栏分栏控制器：左边那栏放<strong>侧边栏</strong>，右边那栏放<strong>详情路由器</strong>。它还干一件关键的"分发"活——把<strong>进程级状态容器</strong>（<code>AppState</code>，全 App 共享的状态袋子）拆开，按需要打包成两个更小的袋子分别下发。</p>
+        <p><strong>打个比方。</strong>它像办公室里的一道隔断墙，把空间分成"会客区"和"工作区"；同时又像前台分拣员，把进来的一大箱物资拆成"左屋要的"和"右屋要的"两小箱，各送各家。对应到代码里，左栏拿到的是 <code>SidebarContext</code>，右栏拿到的是 <code>DetailContext</code>。</p>
+        <p><strong>为什么这么拆？</strong> 项目的规矩是<strong>不</strong>把整个状态袋子一股脑塞给所有人，而是谁用什么就只给什么。所以这里把侧边栏要用的四样（选择状态、会话管理、文件夹排序、"在某 App 中打开"服务）装进 <code>SidebarContext</code>，把右侧面板要用的五样（选择状态、会话管理、最近项目、输入草稿、语法高亮引擎）装进 <code>DetailContext</code>。这样以后增减一个依赖，只改这一个袋子，不用动一长串初始化器。</p>
+      </div>
+
+      <!-- 3. DetailRouterViewController -->
+      <div class="callout note s4-card">
+        <div class="s4-card-head">
+          <span class="s4-card-name"><code>DetailRouterViewController</code></span>
+          <span class="tag appkit">AppKit</span>
+        </div>
+        <p><strong>是什么。</strong>它是右侧那块空容器，叫<strong>详情路由器</strong>。它的工作很专一：看当前选中了什么，就在右侧挂上<strong>恰好一个</strong>对应的子面板，绝不同时挂两个。选会话就挂聊天面板（<code>ChatSessionViewController</code>），选"新建会话"就挂配置面板（<code>ComposeSessionViewController</code>），选"归档"就挂归档面板（<code>ArchiveViewController</code>），选中的会话还只是草稿就挂草稿落地页（<code>DraftSessionLandingViewController</code>）。</p>
+        <p><strong>打个比方。</strong>它像剧院舞台的换景机制：同一块舞台，根据剧目换上不同布景，但台上任何时刻只有一套布景。对应到代码里，只有"换剧目"（切到不同类型的面板）才真的拆旧搭新；如果只是从一个会话切到另一个会话（同属"聊天"这一类），它复用同一块面板，只把新会话通过 <code>present(sessionId:)</code> 递进去，省下重建开销。</p>
+      </div>
+      <div class="callout why s4-card-why">
+        <p><strong>为什么它是选择状态的"唯一结构性观察者"？</strong> 这是本项目最讲究的一处时序设计。用户在侧边栏点一下，切换面板这件事必须发生在<strong>点击的同一刷新周期</strong>里，否则会话切换会"跨帧撕裂"——右侧面板晚一拍才换，画面闪一下。SwiftUI 的 <code>@Observable</code> 自动刷新会把这件事推迟到下一段（<code>beforeWaiting</code>），来不及。所以路由器专门注册成选择状态的<strong>结构性观察者</strong>（<code>selectionObserver</code>），由选择写入时<strong>同步</strong>叫醒它，当场把面板换好；之后的淡入只是一层不影响结构的动画。项目明确规定：这条"向上的结构性通路"只此一条，不要再加第二个。</p>
+      </div>
+
+      <!-- 4. MainSelectionModel -->
+      <div class="callout note s4-card">
+        <div class="s4-card-head">
+          <span class="s4-card-name"><code>MainSelectionModel</code></span>
+          <span class="tag neutral">@Observable 状态</span>
+        </div>
+        <p><strong>是什么。</strong>它记住"现在选中的是哪一项"，是选择的唯一真相。它是一块共享状态（用 <code>@Observable</code> 标注），既不是 AppKit 控件，也不是 SwiftUI 视图，而是两边都来读写的同一份数据。选项不是一串随便的字符串，而是一个类型明确的枚举 <code>MainSelection</code>：要么"什么都没选"，要么"新建会话"，要么"某个具体会话"，要么"归档"。它还顺带记着草稿会话的 id、归档页的文件夹过滤等小状态。</p>
+        <p><strong>打个比方。</strong>它像电视遥控器上的"当前频道"指示：所有人想知道"现在在看哪个台"，都来问它。对应到代码里，<strong>侧边栏</strong>一被点中，就调它的 <code>select(_:)</code> 写入新选择；这个方法做两件事——先更新 <code>@Observable</code> 的值（这样 SwiftUI 的输入栏、侧边栏单元格等会自动重画），再<strong>同步</strong>通知上面那个详情路由器去换面板。</p>
+        <p><strong>为什么把选项做成枚举？</strong> 代码注释解释得很直白：早先这里是一个"拿字符串当类型用"的字段，值要么是真实会话的 id、要么是 <code>__archive__</code> 这种占位符。结果每个用到它的地方都得先判断"这到底是会话还是某个标签页"，一旦漏判，就会出现"在归档页上画出聊天界面"这种 bug。改成枚举后，编译器逼着每处都把所有情况列全，错误在编译期就被挡住。</p>
+      </div>
+
+      <!-- 5. SidebarViewController -->
+      <div class="callout note s4-card">
+        <div class="s4-card-head">
+          <span class="s4-card-name"><code>SidebarViewController</code></span>
+          <span class="tag appkit">AppKit</span>
+        </div>
+        <p><strong>是什么。</strong>它就是左侧那列<strong>侧边栏</strong>：顶部两个固定入口（新建会话、归档），下面按文件夹分组列出历史会话。它基于 <code>NSOutlineView</code>（macOS 标准的"源列表"树形列表）写成，会话可以折叠进文件夹，文件夹之间可以拖拽换顺序。</p>
+        <p><strong>打个比方。</strong>它像访达（Finder）左边那条边栏，又像文件管理器里可展开的目录树：点文件夹能收起展开，拖一下能换位置。对应到代码里，文件夹的展开/折叠用的就是 <code>NSOutlineView</code> 自带的 <code>expandItem(_:)</code> / <code>collapseItem(_:)</code> 动画，文件夹的拖拽用的是 AppKit 标准那套 <code>pasteboardWriterForItem</code> / <code>validateDrop</code> / <code>acceptDrop</code>。</p>
+      </div>
+      <div class="callout why s4-card-why">
+        <p><strong>为什么用 AppKit？</strong> SwiftUI 的 <code>.listStyle(.sidebar)</code> 底层其实也是 <code>NSOutlineView</code>，可隔着一层就拿不全想要的能力。直接用 AppKit，才能一次性拿到标准的<strong>文件夹拖拽排序</strong>和<strong>内建的展开/折叠动画</strong>——这两样正是侧边栏的核心交互。换句话说，这里下沉到 AppKit 是为了"补齐 SwiftUI 给不了的能力"，符合"默认 SwiftUI、AppKit 是例外"的总原则。</p>
+      </div>
+
+      <!-- 6. Toolbar -->
+      <div class="callout note s4-card">
+        <div class="s4-card-head">
+          <span class="s4-card-name">窗口工具栏 · <code>NSToolbar</code></span>
+          <span class="tag appkit">AppKit</span>
+        </div>
+        <p><strong>是什么。</strong>它是窗口顶部那条横栏，由 <code>MainWindowController</code> 装配。上面有切换侧边栏的按钮、显示当前项目名/分支的小标签、归档页才出现的文件夹过滤按钮，以及右侧的<strong>聊天记录搜索框</strong>（用专门的 <code>NSSearchToolbarItem</code>）。这些条目会跟着当前选择动态增减——比如不在某个会话里时，项目标签就不显示。</p>
+        <p><strong>打个比方。</strong>它像浏览器顶上的地址栏加工具条：你在看什么页面，上面的按钮就跟着变。对应到代码里，工具栏里那些用 SwiftUI 写的小部件（项目标签、过滤按钮）是<strong>寄宿</strong>进来的——也就是用 <code>NSHostingView</code> 把 SwiftUI 视图放进 AppKit 容器里显示。</p>
+        <p><strong>为什么搜索框用 AppKit？</strong> SwiftUI 有现成的 <code>.searchable</code> 修饰符，但它给不了<strong>聊天记录</strong>搜索需要的两样东西：让搜索框成为"首响应者"（键盘焦点落在它身上），以及响应 ⌘F 这个快捷键。所以这里改用 <code>NSSearchToolbarItem</code>，再用一个桥接对象（<code>TranscriptSearchToolbarBridge</code>）把"在框里打字、回车跳下一个、Shift+回车跳上一个、⌘F 抢焦点"接到聊天记录的搜索逻辑上。</p>
+      </div>
+
+      <p>到这里，窗口外壳与导航这一层就讲完了：一个 AppKit 窗口立起骨架，分栏把屏幕劈成两半，侧边栏负责"选什么"、路由器负责"右边显示什么"，中间用一块 <code>@Observable</code> 的选择状态串起来，顶上还有一条随选择变化的工具栏。下一节我们走进右侧最重的那块——聊天区，看看一条对话记录是怎么被画出来、又怎么瞬间滚动的。</p>
+    </section>
+
+    <section class="section" id="parts-chat">
+      <h2>逐块讲解（二）：聊天区</h2>
+      <p class="section-lead">本节拆开屏幕中间最热闹的那块区域——聊天区，讲清楚它由哪几块拼成：谁负责"这个面板显示什么"，谁负责"把历史消息高速画出来"，谁负责"把后台数据翻译成一行行能渲染的内容"，以及底部那条输入栏和它的自动补全。</p>
+
+      <p>上一节我们看完了主窗口骨架：窗口、分栏、详情路由器、侧边栏、工具栏。用户在侧边栏选中一个会话（一次完整的对话，对应代码里的 <code>Session</code>）时，详情路由器（按选择挂载对应面板的那一层，对应 <code>DetailRouterViewController</code>）就挂载聊天面板。下面这些组件全都住在这块面板里。</p>
+
+      <div class="callout note">
+        <strong>读这一节前先记住一个原则：</strong>聊天区大约九成是"单向数据流"——状态向下流，事件少量向上。这里的"九成"是个约数、不是实测统计，意思只在强调"绝大多数数据向下走、极少量事件向上回报"。说白了就是 <span class="tag appkit">AppKit</span> 搭外壳，<span class="tag swiftui">SwiftUI</span> 当叶子。哪块用 AppKit、哪块用 SwiftUI，下面每张卡片都用颜色加文字标签标了出来。
+      </div>
+
+      <!-- 图例 -->
+      <div class="legend s5-legend" aria-label="颜色与标签图例">
+        <span class="s5-legend-title">图例：</span>
+        <span class="tag swiftui">SwiftUI（蓝）</span>
+        <span class="tag appkit">AppKit（橙）</span>
+        <span class="tag service">服务 / 数据层（绿）</span>
+        <span class="tag neutral">中性 / 纯逻辑（灰）</span>
+        <span class="s5-legend-note">颜色只是辅助；每块都另带文字标签，不靠颜色单独区分。</span>
+      </div>
+
+      <h3 id="s5-pane">一、聊天面板：ChatSessionViewController</h3>
+
+      <p>打个比方，<code>ChatSessionViewController</code> 像一间房子的"软装管家"：它不亲手砌墙（不直接管聊天记录怎么渲染），只负责房间里挂什么、摆在哪——顶部和底部的渐隐遮罩、底部寄宿（把 SwiftUI 视图放进 AppKit 容器，对应 <code>NSHostingView</code>／<code>NSHostingController</code>）进去的输入栏、悬浮在最上层的权限确认卡，还有焦点处理。对应到代码里，它就是详情路由器为 <code>.session(_)</code>／<code>.none</code> 这两种选择挂载的那个面板。</p>
+
+      <p>它有意把一件重活交了出去：聊天记录的<strong>构建、绑定、滚到底、换台和淡入</strong>，全都委托给下面要讲的 <code>TranscriptSwapCoordinator</code>。这样分工是因为聊天记录的挂载和尺寸级联必须跑在 AppKit 的 source 阶段（runloop 一个迭代里"你的代码在跑"的那一段），所以面板本身用 AppKit 的 <code>NSViewController</code>，而不是 SwiftUI 视图。</p>
+
+      <div class="s5-card s5-card-appkit">
+        <div class="s5-card-head">
+          <span class="s5-card-name"><code>ChatSessionViewController</code></span>
+          <span class="tag appkit">AppKit · NSViewController</span>
+        </div>
+        <p class="s5-card-role">聊天面板。只管"这个面板显示什么"：上下渐隐遮罩、底部输入栏寄宿、权限确认卡、焦点。聊天记录的活全部委托给 <code>TranscriptSwapCoordinator</code>。</p>
+        <p class="s5-card-why"><strong>它管的几样东西：</strong>上下渐隐遮罩（<code>TranscriptTopScrimView</code>／<code>TranscriptBottomScrimView</code>，点击会"穿透"到底下的表格，不挡住交互）、底部贴边的输入栏寄宿（<code>restingBarHost</code>）、悬浮在最上层且点击可穿透的权限卡寄宿（<code>permissionCardHost</code>）。它不亲自观察选择状态，而是由详情路由器调用 <code>present(sessionId:)</code> 来驱动挂载。</p>
+      </div>
+
+      <h3 id="s5-swap">二、聊天记录的"换台员"：TranscriptSwapCoordinator</h3>
+
+      <p>用户在侧边栏来回切换会话时，中间这块聊天记录要跟着"换一整套内容"。<code>TranscriptSwapCoordinator</code> 就是专门干这件事的"换台员"。它有一个很关键的身份：它是 <code>currentSession</code>（当前正在显示的会话）以及"每次挂载所用资源"（滚动视图 <code>Transcript2ScrollView</code>、弹窗呈现器 <code>Transcript2SheetPresenter</code> 等）的<strong>单一所有者</strong>。</p>
+
+      <p>"单一所有者"听起来抽象，落到代码里就是：判断要不要换、记下要换走的旧会话、绑定新会话、清理现场，这一整套都只在它一个对象里发生。面板和它绝不能各持一份 <code>currentSession</code>。否则切换动画进行到一半时，两边记的"当前会话"会对不上，就乱了。</p>
+
+      <p>它还负责<strong>同会话淡入</strong>：详情路由器判定这是一次"新鲜内容"的首次进入、而且窗口可见时，新旧聊天记录之间只做一个透明度的淡入淡出过渡。换台时它遵守一条铁律——<em>先在上层把新的搭好、绑好、滚到底，最后才拆掉旧的</em>。整个结构性切换裹在一个关闭隐式动画的事务里，这样面板永远不会闪出一块空白。</p>
+
+      <div class="s5-card s5-card-appkit">
+        <div class="s5-card-head">
+          <span class="s5-card-name"><code>TranscriptSwapCoordinator</code></span>
+          <span class="tag appkit">AppKit · @MainActor 类</span>
+        </div>
+        <p class="s5-card-role"><code>currentSession</code> 与每次挂载资源的单一所有者。负责聊天记录的构建、绑定、滚到底、换台和同会话淡入。</p>
+        <p class="s5-card-why"><strong>为什么单独抽出来：</strong>"换台"这套逻辑有先后顺序、又容易出错，把它收进一个对象，边界就清晰了——面板只管"显示什么"，换台员只管"怎么换"。代价是新人得先理解这套"谁拥有什么"的划分，才好动它。</p>
+      </div>
+
+      <h3 id="s5-transcript">三、聊天记录本体：NativeTranscript2</h3>
+
+      <p>聊天记录（滚动显示历史消息的区域，对应 <code>NativeTranscript2</code>）是整个 App 性能要求最高的地方。一次长对话可能有上万行（每一行是一个"块"，对应 <code>Block</code>），用户拖动滚动条时还得稳稳保持 60 帧。它的做法是：用 AppKit 的 <code>NSTableView</code> 当表格骨架，每一行的内容用 Core Text 亲手画出来（自绘），而不是交给现成的视图。</p>
+
+      <div class="callout why">
+        <strong>为什么聊天记录非用 AppKit 自绘不可？</strong>
+        <p>SwiftUI 的 <code>List</code> 和 <code>LazyVStack</code> 在这里扛不住，原因有三：</p>
+        <ul>
+          <li><strong>行数太多。</strong>上万行的滚动需要一套"只画看得见的行、其余惰性计算"的机制，而且行高必须能<em>同步</em>算出来。<code>NSTableView</code> 会同步问"这一行多高"，自绘方案能立刻从缓存里答上来；<code>List</code>／<code>LazyVStack</code> 要么阻塞，要么先用估算值、滚动时再跳变。</li>
+          <li><strong>自定义布局太复杂。</strong>代码块、差异对比、工具调用折叠、用户气泡截断……每种块的排版规则都不一样，自绘能把"行高是宽度的纯函数"算清楚，并按块缓存。</li>
+          <li><strong>选择语义太特殊。</strong>跨行选中文字、搜索高亮叠在选中之上，这些都得精确控制每个字形的位置，只有自绘才做得到。</li>
+        </ul>
+        <p>所以这里是"默认 SwiftUI、AppKit 是例外"原则里的一个明确例外。<strong>这是项目里写明的性能契约，不能随手换回 SwiftUI。</strong></p>
+      </div>
+
+      <p>聊天记录的"行数据真相"只有一处：<code>Transcript2Coordinator.blocks</code> 这一个块数组。没有第二份镜像，也没有并行的差异结构。所有的增删改都从一个入口流进去。一句话总结这块的内部分工：</p>
+
+      <div class="diagram s5-diagram" aria-label="聊天记录内部分工示意">
+        <div class="diagram-title">图 6-1：聊天记录（<code>NativeTranscript2</code>）内部分工</div>
+        <div class="s5-flow">
+          <div class="node s5-node-appkit">
+            <div class="s5-node-title"><code>Transcript2Controller</code></div>
+            <div class="s5-node-sub">面向外部的命令通道：<code>apply</code>／<code>scrollToTail</code>／<code>setLoading</code>／搜索</div>
+            <span class="tag appkit">AppKit</span>
+          </div>
+          <div class="s5-arrow" aria-hidden="true">▼ 下发命令</div>
+          <div class="node s5-node-appkit">
+            <div class="s5-node-title"><code>Transcript2Coordinator</code></div>
+            <div class="s5-node-sub">表格的数据源 / 代理；持有 <code>blocks</code>（行数据真相）</div>
+            <span class="tag appkit">AppKit</span>
+          </div>
+          <div class="s5-arrow" aria-hidden="true">▼ 驱动</div>
+          <div class="node s5-node-appkit">
+            <div class="s5-node-title"><code>NSTableView</code> + Core Text 自绘</div>
+            <div class="s5-node-sub">只画可见行；每行行高同步从缓存读出</div>
+            <span class="tag appkit">AppKit</span>
+          </div>
+        </div>
+        <div class="legend s5-mini-legend">
+          <span class="tag appkit">全部为 AppKit</span>
+          <span class="s5-legend-note">这是聊天记录之所以快的核心：自绘 + 行高缓存 + 只动可见行。</span>
+        </div>
+      </div>
+
+      <div class="s5-card s5-card-appkit">
+        <div class="s5-card-head">
+          <span class="s5-card-name"><code>NativeTranscript2</code></span>
+          <span class="tag appkit">AppKit · NSTableView + Core Text</span>
+        </div>
+        <p class="s5-card-role">聊天记录本体。自绘的高速长列表，<code>Transcript2Coordinator.blocks</code> 是唯一的行数据真相。</p>
+        <p class="s5-card-why"><strong>类比：</strong>像一台只渲染镜头里那几格画面、其余画面提前算好缓存的放映机——胶片再长也不卡。对应到代码就是"只画可见行 + 行高缓存 + 块 id 稳定不变"。</p>
+      </div>
+
+      <h3 id="s5-bridge">四、翻译层：NativeTranscript2Bridge</h3>
+
+      <p>聊天记录只认"块"，可后台传来的是 <code>MessageEntry</code>（一条条消息条目）。中间需要一层"翻译官"，把消息条目翻成一行行能渲染的块——这就是桥接层 <code>NativeTranscript2Bridge</code> 干的活。它由几个各司其职的小文件组成。下面这张表列出几个关键的，理解大意即可，不必逐个深究。</p>
+
+      <table class="compare s5-bridge-table">
+        <caption class="s5-table-caption">表：桥接层关键文件的职责（点到为止）</caption>
+        <thead>
+          <tr><th>文件</th><th>它干什么（一句话）</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>Transcript2EntryBridge</code></td><td>翻译层的总入口：把会话消息的变化翻成给聊天记录下发的块级命令；它只算最小改动，不维护一份完整的块镜像去做差异比对。</td></tr>
+          <tr><td><code>MessageEntryBlockBuilder</code></td><td>把一条 <code>MessageEntry</code> 转成一组 <code>Block</code>，并给每个块派发一个稳定不变的 id。</td></tr>
+          <tr><td><code>MarkdownToBlocks</code></td><td>把助手回复里的 Markdown 文本转成聊天记录用的块（复用项目自己的 Markdown 解析器）。</td></tr>
+          <tr><td><code>StreamingMarkdownCommit</code></td><td>流式回复时，判断"现在哪段 Markdown 可以安全上屏"——段落可以边长边显示，没写完的代码块和表格则整段先扣住。</td></tr>
+          <tr><td><code>ToolUseToChild</code></td><td>把一次工具调用及其结果转成工具组里的一个子项（读文件、改文件、跑命令等各有各的渲染形态）。</td></tr>
+          <tr><td><code>StableBlockID</code></td><td>从条目信息推导出稳定的块 id——同一条消息在不同状态下推出同一个 id，避免重复行错乱。</td></tr>
+        </tbody>
+      </table>
+
+      <p>除了"实时翻译新消息"，桥接层还管"冷启动时把历史灌进来"：回填管线 <code>TranscriptBackfillPipeline</code> 配合反向分页（<code>JSONLReversePageSource</code>／<code>ReverseLineReader</code>）从磁盘倒着读历史，在后台线程把块和排版都算好，再交给主线程分批落进聊天记录。这就是为什么打开一段很长的旧对话也不会卡死。</p>
+
+      <div class="callout note">
+        <strong>记住翻译层的边界就够了：</strong>它的输入是 <code>MessageEntry</code>，输出是 <code>Block</code>；它<em>不</em>自己维护一份完整的块镜像去做差异比对，只是把"该增哪几块、该改哪一块"的命令告诉聊天记录。小白读者不必记住每个文件名，记住"消息条目 → 块"这条翻译线就行。
+      </div>
+
+      <h3 id="s5-input">五、输入栏：InputBarView2</h3>
+
+      <p>底部那条输入框区域就是输入栏（对应 <code>InputBarView2</code>）。它是一个纯 SwiftUI 视图，只负责"长什么样"——文本框、发送／停止按钮、附件缩略图条；至于发送、停止、是否正在运行这些行为，都由外部注入进来，它自己不持有会话句柄。它通过寄宿放进面板底部，贴着下边缘，只占自己内容那么高。</p>
+
+      <div class="s5-card s5-card-swiftui">
+        <div class="s5-card-head">
+          <span class="s5-card-name"><code>InputBarView2</code></span>
+          <span class="tag swiftui">SwiftUI · View</span>
+        </div>
+        <p class="s5-card-role">输入栏。纯 UI：文本框 + 发送／停止按钮 + 附件条；发送、停止、运行状态都靠外部注入。</p>
+        <p class="s5-card-why"><strong>为什么用 SwiftUI：</strong>它是一个小小的声明式组件，没有聊天记录那种性能压力，正好落在"默认 SwiftUI"的常规情形里。它通过寄宿（<code>NSHostingView</code>）放进 AppKit 面板的底部。</p>
+      </div>
+
+      <h3 id="s5-completion">六、自动补全：Completion</h3>
+
+      <p>在输入栏里敲 <code>@</code> 提文件、敲 <code>/</code> 调命令时弹出的那个候选列表，就是自动补全。它分成两侧：UI 侧负责弹窗和键盘交互，服务侧负责"从哪儿取候选项"。</p>
+
+      <div class="s5-grid">
+        <div class="s5-card s5-card-swiftui s5-card-mini">
+          <div class="s5-card-head">
+            <span class="s5-card-name">UI 侧</span>
+            <span class="tag swiftui">SwiftUI</span>
+          </div>
+          <p class="s5-card-role"><code>CompletionState</code>（补全的交互状态，是个 <code>@Observable</code> 对象）加 <code>CompletionListView</code>（候选列表视图），配 <code>CompletionItem</code>、<code>CompletionTriggerRule</code>（哪个字符触发补全）。</p>
+        </div>
+        <div class="s5-card s5-card-service s5-card-mini">
+          <div class="s5-card-head">
+            <span class="s5-card-name">服务侧</span>
+            <span class="tag service">服务层</span>
+          </div>
+          <p class="s5-card-role"><code>FileCompletionStore</code>（文件名候选）与 <code>SlashCommandStore</code>（斜杠命令候选）。两者是按当前目录缓存的 <code>.shared</code> 单例，不走依赖注入。</p>
+        </div>
+      </div>
+
+      <div class="callout note">
+        <strong>一个小细节，体现了"克制"原则：</strong><code>FileCompletionStore</code> 和 <code>SlashCommandStore</code> 之所以保持 <code>.shared</code>、而不像别的服务那样注入，是因为它们本质上是"按当前目录的缓存"，并不是要随会话切换重建的服务。这是项目里一个明确标注"不要改成注入"的设计选择。
+      </div>
+
+      <h3 id="s5-markdown">七、Markdown 解析：Components/Markdown</h3>
+
+      <p>助手的回复里满是 Markdown——标题、列表、代码块、表格、链接。这些文本要变成聊天记录里的块，先得有人把它解析成结构化的中间表示（IR）。<code>Components/Markdown/</code> 就是这个解析器：它读 GFM（GitHub 风格 Markdown），产出一套内部 IR（由 <code>MarkdownDocument</code>／<code>MarkdownTypes</code>／<code>MarkdownConvert</code>／<code>MarkdownAutolink</code>／<code>MarkdownMath</code> 组成），再交给上面提到的 <code>MarkdownToBlocks</code> 转成块，最终被聊天记录消费。</p>
+
+      <p>这里要澄清一个容易踩的归属问题：<code>Components/Markdown/</code> 虽然放在"可复用组件"目录下，但它<strong>不是 SwiftUI 视图</strong>——这几个文件只引入 <code>Foundation</code> 和底层的 <code>Markdown</code> 解析库，既不碰 SwiftUI，也不碰 AppKit。它是一段与界面框架无关的纯解析逻辑，只把文本拆成数据结构，所以下面这张卡片用中性灰，不套蓝色（SwiftUI）或橙色（AppKit）的标签。</p>
+
+      <div class="s5-card s5-card-neutral">
+        <div class="s5-card-head">
+          <span class="s5-card-name"><code>Components/Markdown</code></span>
+          <span class="tag neutral">中性 · 纯解析逻辑（非 UI 框架）</span>
+        </div>
+        <p class="s5-card-role">GFM 解析器 → 内部 IR。把 Markdown 源码拆成有序的片段，供聊天记录的翻译层消费。只引入 <code>Foundation</code> 与 <code>Markdown</code> 库，不依赖 SwiftUI／AppKit。</p>
+        <p class="s5-card-why"><strong>它在链条里的位置：</strong>Markdown 源码 → 这里解析成 IR → <code>MarkdownToBlocks</code> 转成块 → 聊天记录渲染。它本身只解析、不渲染，职责单一。</p>
+      </div>
+
+      <p>到这里，聊天区这一大块就拆完了：<code>ChatSessionViewController</code> 管"显示什么"，<code>TranscriptSwapCoordinator</code> 管"怎么换台"，<code>NativeTranscript2</code> 管"高速把块画出来"，桥接层管"把消息翻成块"，再加上底部的输入栏、自动补全和 Markdown 解析。下一节我们走进更靠后的一层——会话与数据层，看看这些块背后的消息、状态，以及它们和底层命令行的通信是怎么运转的。</p>
+
+      <style>
+        #parts-chat .s5-legend { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem .8rem; margin:1rem 0 1.4rem; padding:.7rem .9rem; border:1px solid #e2e8f0; border-radius:10px; background:#f8fafc; }
+        #parts-chat .s5-legend-title { font-weight:600; color:#334155; }
+        #parts-chat .s5-legend-note { color:#64748b; font-size:.9em; }
+        #parts-chat .s5-card { border:1px solid #e2e8f0; border-radius:12px; padding:1rem 1.1rem; margin:1rem 0 1.3rem; background:#fff; border-left-width:5px; }
+        #parts-chat .s5-card-appkit { border-left-color:#ea580c; }
+        #parts-chat .s5-card-swiftui { border-left-color:#2563eb; }
+        #parts-chat .s5-card-service { border-left-color:#16a34a; }
+        #parts-chat .s5-card-neutral { border-left-color:#64748b; }
+        #parts-chat .s5-card-head { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.5rem; margin-bottom:.55rem; }
+        #parts-chat .s5-card-name { font-weight:700; font-size:1.05em; color:#0f172a; }
+        #parts-chat .s5-card-role { margin:.2rem 0 .5rem; }
+        #parts-chat .s5-card-why { margin:.2rem 0 0; color:#475569; font-size:.96em; }
+        #parts-chat .s5-card-why ul { margin:.4rem 0 0; padding-left:1.2rem; }
+        #parts-chat .s5-card-why li { margin:.25rem 0; }
+        #parts-chat .s5-grid { display:flex; flex-wrap:wrap; gap:1rem; }
+        #parts-chat .s5-card-mini { flex:1 1 280px; margin:.6rem 0 1rem; }
+        #parts-chat .s5-diagram { border:1px solid #e2e8f0; border-radius:12px; padding:1.1rem; margin:1.2rem 0 1.4rem; background:#fdfdfd; }
+        #parts-chat .s5-flow { display:flex; flex-direction:column; align-items:stretch; gap:.2rem; max-width:560px; margin:.6rem auto .2rem; }
+        #parts-chat .s5-flow .node { border:1px solid #fed7aa; background:#fff7ed; border-radius:10px; padding:.7rem .9rem; }
+        #parts-chat .s5-node-title { font-weight:600; color:#9a3412; }
+        #parts-chat .s5-node-sub { color:#7c2d12; font-size:.9em; margin-top:.2rem; }
+        #parts-chat .s5-flow .tag { margin-top:.45rem; display:inline-block; }
+        #parts-chat .s5-arrow { text-align:center; color:#ea580c; font-weight:700; font-size:.95em; padding:.1rem 0; }
+        #parts-chat .s5-mini-legend { display:flex; flex-wrap:wrap; gap:.5rem .9rem; align-items:center; margin-top:.7rem; padding-top:.6rem; border-top:1px dashed #e2e8f0; }
+        #parts-chat .s5-bridge-table { width:100%; border-collapse:collapse; margin:1rem 0 1.3rem; }
+        #parts-chat .s5-table-caption { caption-side:top; text-align:left; font-weight:600; color:#334155; margin-bottom:.5rem; }
+        #parts-chat .s5-bridge-table th, #parts-chat .s5-bridge-table td { border:1px solid #e2e8f0; padding:.55rem .7rem; text-align:left; vertical-align:top; }
+        #parts-chat .s5-bridge-table thead th { background:#f1f5f9; color:#0f172a; }
+        #parts-chat .s5-bridge-table td code { white-space:nowrap; }
+        #parts-chat .tag { display:inline-block; padding:.12rem .55rem; border-radius:999px; font-size:.82em; font-weight:600; line-height:1.5; border:1px solid transparent; }
+        #parts-chat .tag.appkit { background:#fff7ed; color:#9a3412; border-color:#fdba74; }
+        #parts-chat .tag.swiftui { background:#eff6ff; color:#1e40af; border-color:#93c5fd; }
+        #parts-chat .tag.service { background:#f0fdf4; color:#166534; border-color:#86efac; }
+        #parts-chat .tag.neutral { background:#f1f5f9; color:#334155; border-color:#cbd5e1; }
+        @media (max-width:640px){ #parts-chat .s5-bridge-table td code { white-space:normal; } }
+      </style>
+    </section>
+
+    <section class="section" id="parts-session">
+      <h2>逐块讲解（三）：会话与数据层</h2>
+      <p class="section-lead">本节讲清楚一次<strong>会话</strong>（<code>Session</code>，一次完整的对话）背后那一摞"看不见的零件"：谁存数据、谁干活、谁跟底层命令行程序说话、流式回复怎么变成逐字打出来的效果，以及这一层为什么坚持"服务靠注入、视图绝不自己造服务"。</p>
+
+      <p>前两节讲的是用户能看见的外壳和聊天区。但屏幕上的每一条消息、每一个运行状态，都来自下面这一层默默工作的对象。这一层属于<strong>服务层</strong>（负责业务逻辑与数据的对象，本文统一用绿色标注）。它不画任何界面，只管"数据是什么、行为怎么发生"。我们从最核心的两块讲起：装数据的 <code>Session</code> 和干活的 <code>SessionRuntime</code>。</p>
+
+      <style>
+        #parts-session .s6-card { border: 1px solid #d1d5db; border-left: 4px solid var(--service, #16a34a); border-radius: 8px; padding: 16px 18px; margin: 14px 0; background: #f8fafc; }
+        #parts-session .s6-card h4 { margin: 0 0 6px; font-size: 1.05rem; }
+        #parts-session .s6-card .s6-meta { font-size: 0.82rem; color: var(--neutral, #64748b); margin: 0 0 8px; }
+        #parts-session .s6-card .s6-analogy { background: #ecfdf5; border-radius: 6px; padding: 8px 12px; margin: 8px 0 0; font-size: 0.93rem; }
+        #parts-session .s6-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        @media (max-width: 720px) { #parts-session .s6-grid { grid-template-columns: 1fr; } }
+        #parts-session .s6-ext-wrap { border: 1px solid #bbf7d0; border-radius: 8px; padding: 14px; background: #f0fdf4; margin: 12px 0; }
+        #parts-session .s6-ext-title { font-weight: 600; margin-bottom: 10px; }
+        #parts-session .s6-ext-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+        #parts-session .s6-chip { background: #fff; border: 1px solid #86efac; border-radius: 16px; padding: 4px 12px; font-size: 0.85rem; font-family: ui-monospace, Menlo, monospace; color: #166534; white-space: nowrap; }
+        #parts-session .s6-flow { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; margin: 10px 0; }
+        #parts-session .s6-flow .s6-stage { flex: 1 1 130px; min-width: 120px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; text-align: center; background: #fff; position: relative; }
+        #parts-session .s6-flow .s6-arrow { align-self: center; padding: 0 6px; color: var(--neutral, #64748b); font-weight: 700; }
+        #parts-session .s6-flow .s6-stage code { display: block; font-size: 0.82rem; margin-bottom: 4px; }
+        #parts-session .s6-flow .s6-stage small { color: var(--neutral, #64748b); font-size: 0.78rem; }
+        #parts-session table.s6-tbl { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.92rem; }
+        #parts-session table.s6-tbl th, #parts-session table.s6-tbl td { border: 1px solid #d1d5db; padding: 8px 10px; text-align: left; vertical-align: top; }
+        #parts-session table.s6-tbl th { background: #f1f5f9; }
+        #parts-session table.s6-tbl code { font-size: 0.85rem; }
+        #parts-session .s6-twocol { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 10px 0; }
+        #parts-session .s6-box { border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 12px; background: #fff; flex: 1 1 200px; }
+        #parts-session .s6-box.s6-draft { border-left: 4px solid var(--neutral, #64748b); }
+        #parts-session .s6-box.s6-active { border-left: 4px solid var(--service, #16a34a); }
+        #parts-session .s6-bigarrow { font-size: 1.4rem; color: var(--service, #16a34a); font-weight: 700; }
+      </style>
+
+      <h3>核心两块：装数据的 <code>Session</code> 与干活的 <code>SessionRuntime</code></h3>
+
+      <p>这两块是一对搭档，职责严格分开：一个管"是什么"，一个管"做什么"。</p>
+
+      <div class="s6-grid">
+        <div class="s6-card">
+          <h4><span class="tag service">服务层</span> <code>Session</code></h4>
+          <p class="s6-meta">@Observable · 一次会话的数据真相</p>
+          <p>它是一次会话的"档案袋"，把这次对话的全部事实装在一起：消息时间线、当前状态（是否在运行、是否报错）、Claude 列出的待办计划（<code>todos</code>）、后台执行的任务（<code>tasks</code>），以及上下文窗口用量。界面上凡是想知道"这次对话现在怎么样"的地方，都来读它。</p>
+          <p class="s6-analogy">打个比方：<code>Session</code> 像一份病历本，只记录事实，本身不做检查。</p>
+        </div>
+        <div class="s6-card">
+          <h4><span class="tag service">服务层</span> <code>SessionRuntime</code></h4>
+          <p class="s6-meta">会话运行时 · 驱动一次会话行为的对象</p>
+          <p>会话运行时是真正干活的引擎。它隔着一层 <code>CLIClient</code>，间接驱动底层命令行子进程：把用户输入发出去，把 Claude 的回复收进来，一路维护运行状态。界面上的"发送""中断""换模型"等动作，最终都落到它身上。</p>
+          <p class="s6-analogy">接着上面的比方：<code>SessionRuntime</code> 像主治医生，做检查、开处方，再把结果写回病历本。</p>
+        </div>
+      </div>
+
+      <p>一次会话有两个阶段，<code>Session</code> 用一个内部的 <code>Phase</code> 状态在两者之间切换。在底部新建卡片里填配置时，会话处于<strong>草稿</strong>阶段（<code>.draft(SessionDraft)</code>）：没有子进程、没有持久记录、也没有消息。用户发出第一条消息的那一刻，<code>Session</code> 造出一个 <code>SessionRuntime</code>，把阶段翻成<strong>活动</strong>阶段（<code>.active(SessionRuntime)</code>）。这个翻转<strong>只发生一次</strong>，之后所有动作都转交给运行时。界面代码只读 <code>session.title</code>、<code>session.messages</code> 这类转发属性，从不直接去看它处在哪个阶段。</p>
+
+      <div class="diagram">
+        <div class="diagram-title">图 7-1：会话的两个阶段——发出第一条消息时一次性翻转</div>
+        <div class="s6-twocol">
+          <div class="s6-box s6-draft"><strong>草稿阶段</strong><br><code>.draft(SessionDraft)</code><br><small>只攒配置；无子进程、无记录、无消息</small></div>
+          <div class="s6-bigarrow">→ 发出第一条消息 →</div>
+          <div class="s6-box s6-active"><strong>活动阶段</strong><br><code>.active(SessionRuntime)</code><br><small>运行时接管：子进程、消息时间线、状态</small></div>
+        </div>
+        <div class="legend">
+          <span><span style="display:inline-block;width:12px;height:12px;background:#64748b;border-radius:2px;"></span> 灰=尚未启动的中性状态</span>
+          &nbsp;&nbsp;
+          <span><span style="display:inline-block;width:12px;height:12px;background:#16a34a;border-radius:2px;"></span> 绿=已接管的服务层运行时</span>
+        </div>
+      </div>
+
+      <h3>为什么把 <code>SessionRuntime</code> 拆成一摞扩展文件</h3>
+
+      <p>会话运行时要管的事很多。如果全塞进一个文件，几千行代码挤在一起，读起来非常吃力。代码采用 Swift 的"扩展（extension）"机制，按职责把它切成多个文件——类还是同一个类，只是把不同职责的方法分门别类，放进不同文件。</p>
+
+      <div class="s6-ext-wrap">
+        <div class="s6-ext-title">一个 <code>SessionRuntime</code>，按职责切成多个扩展文件（每块只管一件事）：</div>
+        <div class="s6-ext-grid">
+          <span class="s6-chip" title="启动、停止、发送、从草稿创建运行时">+Start</span>
+          <span class="s6-chip" title="中断、取消消息">+Messaging</span>
+          <span class="s6-chip" title="从 CLI 收消息、拼进时间线">+Receive</span>
+          <span class="s6-chip" title="流式文字的逐字呈现节奏">+Streaming</span>
+          <span class="s6-chip" title="历史记录文件路径转发">+History</span>
+          <span class="s6-chip" title="请求上下文窗口用量">+ContextUsage</span>
+          <span class="s6-chip" title="待办计划转发给 TodoTracker">+Todos</span>
+          <span class="s6-chip" title="后台任务转发给 TaskTracker">+Tasks</span>
+          <span class="s6-chip" title="/btw 式旁路提问">+SideQuestion</span>
+          <span class="s6-chip" title="运行期可改的设置：模型、强度、权限模式等">+Configuration</span>
+        </div>
+      </div>
+
+      <div class="callout why">
+        <p><strong>为什么这么做：</strong>这是<strong>单一职责</strong>原则的落地。每个扩展文件只回答一个问题——<code>+Start</code> 管启停、<code>+Receive</code> 管收消息、<code>+Streaming</code> 管逐字效果。你想改哪件事，就打开对应那一个文件，不必在巨型文件里大海捞针。代价很小：文件多了几个，但每个都短、好读，改动影响面也清晰。这并不是把一个类拆成多个类，运行起来它仍是同一个 <code>SessionRuntime</code>。</p>
+      </div>
+
+      <h3>上一层与外围：谁管全部会话、谁存盘、谁隔离 git</h3>
+
+      <p>一个 App 里同时有很多会话，重启后还要记得它们。这件事由几块外围服务分工完成。</p>
+
+      <div class="s6-grid">
+        <div class="s6-card">
+          <h4><span class="tag service">服务层</span> <code>SessionManager</code></h4>
+          <p class="s6-meta">会话注册表 · 管所有会话的集合与生命周期</p>
+          <p>它是会话的"花名册"，按会话 id 惰性创建并缓存每一个 <code>Session</code> 档案袋：第一次取就造出来并存下，之后再取，拿到的是同一个实例。侧边栏列表读的就是它手里的会话记录。</p>
+        </div>
+        <div class="s6-card">
+          <h4><span class="tag service">服务层</span> <code>SessionRepository</code></h4>
+          <p class="s6-meta">持久化 · 把会话存进磁盘</p>
+          <p>它是"存盘口"，本身是一个协议（接口）。生产环境用 <code>CoreDataSessionRepository</code>，把数据落到本地数据库；单元测试换成 <code>InMemorySessionRepository</code>，只在内存里跑，不碰真磁盘。</p>
+        </div>
+      </div>
+
+      <div class="s6-card">
+        <h4><span class="tag neutral">工具命名空间</span> <code>WorktreeProvisioner</code>（配 <code>Worktree</code> 数据）</h4>
+        <p class="s6-meta">git worktree 隔离</p>
+        <p>git worktree 是 git 的一个能力：在同一个仓库下开出一个独立的工作目录，挂在自己的分支上，彼此互不干扰。CCTerm 用它给某些会话开一块隔离的工作区——Claude 在这块区域里改文件，不会污染你正在用的主目录。<code>WorktreeProvisioner</code> 负责在后台线程调用 <code>git worktree add</code> 把它建出来，归档会话时再把它移除；至于"这个工作区在哪、叫什么名、从哪个分支来"，则由一个朴素的数据结构 <code>Worktree</code> 记着（它属于 Model 层的纯数据）。要补一句：<code>WorktreeProvisioner</code> 本身是一个 <code>enum</code> 命名空间，里面只有一组静态函数，并不是一个会被注入、带自身状态的服务对象——这一点和上面 <code>SessionManager</code>、<code>SessionRepository</code> 那类真正的服务不同，所以这里用中性色标注。</p>
+        <p class="s6-analogy">打个比方：worktree 像给每位访客单独开一间样板房，让他随便摆弄，而你自己住的主卧始终保持原样。</p>
+      </div>
+
+      <h3>跟底层命令行说话：<code>CLIClient</code> 与 <code>AgentSDK</code></h3>
+
+      <p>Claude 的真正"大脑"跑在一个命令行子进程里。会话运行时不直接去摆弄那个进程，而是隔着两层：一层薄薄的接口 <code>CLIClient</code>，一层独立的 Swift Package <code>AgentSDK</code>。</p>
+
+      <div class="diagram">
+        <div class="diagram-title">图 7-2：从会话运行时到命令行子进程的两层抽象</div>
+        <div class="s6-flow">
+          <div class="s6-stage" style="border-left:4px solid var(--service,#16a34a);">
+            <code>SessionRuntime</code>
+            <small>会话运行时（行为侧）</small>
+          </div>
+          <div class="s6-arrow">→</div>
+          <div class="s6-stage" style="border-left:4px solid var(--service,#16a34a);">
+            <code>CLIClient</code>（协议）
+            <small>真实：<code>AgentSDKCLIClient</code><br>测试：<code>FakeCLIClient</code></small>
+          </div>
+          <div class="s6-arrow">→</div>
+          <div class="s6-stage" style="border-left:4px solid var(--service,#16a34a);">
+            <code>AgentSDK</code>
+            <small>独立 Swift Package<br>启停子进程、收发消息</small>
+          </div>
+          <div class="s6-arrow">→</div>
+          <div class="s6-stage" style="border-left:4px solid var(--neutral,#64748b);">
+            命令行子进程
+            <small>Claude Code CLI</small>
+          </div>
+        </div>
+        <div class="legend">
+          <span><span style="display:inline-block;width:12px;height:12px;background:#16a34a;border-radius:2px;"></span> 绿=服务层对象</span>
+          &nbsp;&nbsp;
+          <span><span style="display:inline-block;width:12px;height:12px;background:#64748b;border-radius:2px;"></span> 灰=外部进程（不在本 App 进程内）</span>
+        </div>
+      </div>
+
+      <ul>
+        <li><strong><code>CLIClient</code></strong>：一个协议（接口），把"会话运行时需要的那几件事"抽象出来——启动、发消息、中断、改模型、收回调。生产环境用 <code>AgentSDKCLIClient</code> 这个真实实现；测试时换成 <code>FakeCLIClient</code>，不启动任何真进程也能验证逻辑。两者能互换，正是因为它们都满足同一个 <code>CLIClient</code> 协议。</li>
+        <li><strong><code>AgentSDK</code></strong>：一个<strong>独立的 Swift Package</strong>（与主 App 分开的代码包），干最底层的脏活——真正用 <code>Process</code> 拉起命令行子进程，用管道（<code>Pipe</code>）读写，把进程吐出的字节解析成结构化消息。把它拆成独立包，是为了让"怎么跟 CLI 通信"这件事和 App 的界面代码彻底解耦。</li>
+      </ul>
+
+      <h3>流式装配：把网络的"一团一团"变成屏幕上的"逐字打出"</h3>
+
+      <p>命令行子进程返回 Claude 的回复时，文字是<strong>一团一团</strong>到的：网络每刷一次就来一截，长短不齐。如果照原样直接显示，文字会一块一块地"蹦"出来，画面很跳。会话运行时内部用四个协作零件，把"接收的节奏"和"显示的节奏"解耦，做出平滑的逐字效果。</p>
+
+      <div class="diagram">
+        <div class="diagram-title">图 7-3：流式装配四件套——从 SDK 增量到逐字呈现</div>
+        <div class="s6-flow">
+          <div class="s6-stage" style="border-left:4px solid var(--service,#16a34a);">
+            <code>StreamingTurnAssembler</code>
+            <small>把 SDK 的增量片段累积成"这一轮的完整文字"</small>
+          </div>
+          <div class="s6-arrow">→</div>
+          <div class="s6-stage" style="border-left:4px solid var(--service,#16a34a);">
+            <code>TypewriterReveal</code>
+            <small>记录"目标文字"与"已揭示到第几个字"</small>
+          </div>
+          <div class="s6-arrow">→</div>
+          <div class="s6-stage" style="border-left:4px solid var(--service,#16a34a);">
+            <code>StreamPacer</code>
+            <small>算节奏：让揭示的"头"平滑追上收到的"尾"</small>
+          </div>
+          <div class="s6-arrow">→</div>
+          <div class="s6-stage" style="border-left:4px solid var(--service,#16a34a);">
+            <code>FrameTicker</code>
+            <small>逐帧驱动：每一帧推进一点，直到追平</small>
+          </div>
+        </div>
+        <div class="legend">
+          <span><span style="display:inline-block;width:12px;height:12px;background:#16a34a;border-radius:2px;"></span> 绿=参与流式逐字呈现的几个协作零件（一起把"一团团"变成"逐字打"）</span>
+        </div>
+      </div>
+
+      <ul>
+        <li><code>StreamingTurnAssembler</code> 把零碎到达的文字片段累积起来，得到"当前这一轮已经收到的全部文字"。</li>
+        <li><code>TypewriterReveal</code> 是单条消息的"打字状态"，记着两件事：要揭示到的完整目标文字，以及现在揭示到第几个字。</li>
+        <li><code>StreamPacer</code> 是节奏控制器，让"已揭示的头"平稳地追上"已收到的尾"。速度自己平滑变化，既不会撞到每一截的边界，也不会忽快忽慢。它是一个朴素的 <code>struct</code>，归在 Model 层，不属于会话运行时本身。</li>
+        <li><code>FrameTicker</code> 是逐帧时钟，每一帧调用一次，把揭示进度往前推一点点，直到头追上尾。要点明：<code>FrameTicker</code> 是一个协议（<code>protocol</code>），生产环境用的具体实现叫 <code>TimerFrameTicker</code>，测试时则换成可以手动步进的 <code>ManualFrameTicker</code>。</li>
+      </ul>
+
+      <div class="callout note">
+        <p><strong>一句话理解：</strong>网络按"团"给字，屏幕按"帧"吐字。中间这四件套就像一个缓冲水池——一边进水忽急忽缓，一边出水恒定平稳，于是你看到的是顺滑的逐字打字，而不是一块块文字硬蹦。这也是聊天区为什么能给人"Claude 正在打字"的手感。</p>
+      </div>
+
+      <h3>这一层的规矩：分层与注入</h3>
+
+      <p>会话与数据层的行为对象全部属于<strong>服务层</strong>。整个 App 遵循一条清晰的分层：</p>
+
+      <table class="s6-tbl">
+        <thead><tr><th>层</th><th>是什么</th><th>本节对应</th></tr></thead>
+        <tbody>
+          <tr><td>Model（模型）</td><td>朴素数据，结构体优先，跨边界时可编码</td><td><code>SessionConfig</code>、<code>SessionRecord</code>、<code>Worktree</code></td></tr>
+          <tr><td>View（视图）</td><td>SwiftUI 声明式界面</td><td>（不在本节，见聊天区一节）</td></tr>
+          <tr><td>Service（服务）</td><td><code>@Observable</code>，靠注入获得，干业务的活</td><td><code>Session</code>、<code>SessionRuntime</code>、<code>SessionManager</code> 等</td></tr>
+          <tr><td>AppState（进程级状态容器）</td><td>全 App 共享的状态袋子，靠初始化器逐级下传</td><td>持有 <code>SessionManager</code> 等服务</td></tr>
+        </tbody>
+      </table>
+
+      <p>这里有两条铁律。理解它们，就理解了这一层的"装配方式"：</p>
+
+      <div class="callout why">
+        <p><strong>规矩一：视图绝不自己 <code>new</code> 服务，服务靠注入。</strong>界面想用某个服务，必须由外部"注入"给它，而不是在视图里就地造一个。好处有两点：测试时可以注入一个假的实现（比如 <code>FakeCLIClient</code>、<code>InMemorySessionRepository</code>），把真实的子进程和真磁盘换掉；同一个服务实例也能被多处共享，而不是每个视图各造一份、各说各话。</p>
+      </div>
+
+      <div class="callout why">
+        <p><strong>规矩二：<code>AppState</code> 靠初始化器逐级下传，而不是整包 <code>.environment</code> 注入。</strong>进程级状态容器（<code>AppState</code>）是全 App 共享的状态袋子，由 <code>AppDelegate</code> 持有。它不会被原封不动地塞进整个界面环境，而是<strong>逐级拆包、按需下传</strong>：每一层只拿到它真正需要的那几样东西。这样依赖关系是显式的——看一个对象的初始化器，就知道它到底用了哪些服务，而不是"环境里啥都有，谁都能伸手拿"。</p>
+      </div>
+
+      <p>下表列出进程级状态容器 <code>AppState</code> 实际持有的服务清单（与源码逐项核对）：</p>
+
+      <table class="s6-tbl">
+        <thead><tr><th>服务</th><th>一句话职责</th></tr></thead>
+        <tbody>
+          <tr><td><code>SessionManager</code></td><td>会话注册表，管所有会话的集合与生命周期</td></tr>
+          <tr><td><code>SyntaxHighlightEngine</code></td><td>代码语法高亮引擎</td></tr>
+          <tr><td><code>RecentProjectsStore</code></td><td>最近打开的项目目录列表</td></tr>
+          <tr><td><code>InputDraftStore</code></td><td>输入栏未发送内容的草稿暂存</td></tr>
+          <tr><td><code>SidebarSessionGroupOrderStore</code></td><td>侧边栏会话分组的排序记忆</td></tr>
+          <tr><td><code>AppActivationTracker</code></td><td>跟踪 App 是否处于前台激活状态</td></tr>
+          <tr><td><code>NotificationService</code></td><td>系统通知</td></tr>
+          <tr><td><code>OpenInAppService</code></td><td>"用外部 App 打开"相关能力</td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout note">
+        <p><strong>一个例外值得记住：</strong>聊天记录搜索用的 <code>TranscriptSearchBus</code> <strong>不在</strong> <code>AppState</code> 上，它住在 <code>AppDelegate</code>，由工具栏搜索桥接和 ⌘F 命令读取。这正体现了"状态住在所有读它的人共享的最低作用域"这条原则——搜索只跟窗口工具栏有关，就没必要挤进全 App 的状态袋子。</p>
+      </div>
+
+      <p>到这里，数据层的静态结构就清楚了：<code>Session</code> 装事实，<code>SessionRuntime</code> 干活，外围服务管集合、存盘与 git 隔离，<code>CLIClient</code> 与 <code>AgentSDK</code> 通向真正的命令行大脑，四件套把回复变成逐字效果。接下来一节，会把这些静态零件串成一个动态故事——跟着一条消息，看它从你敲下回车到屏幕上逐字浮现，究竟流过了哪些组件。</p>
+    </section>
+
+    <section class="section" id="dataflow">
+      <h2>一条消息的旅程（数据流）</h2>
+      <p class="section-lead">本节把前面拆开讲的组件重新串成一个动态故事：你在输入栏敲下一句话、按下发送，到 Claude 的回复一个字一个字刷进聊天记录，数据先后流经了哪些对象，谁把什么交给了谁。</p>
+
+      <style>
+        /* 本 section 专用样式，全部以 s7- 前缀避免与其它 section 冲突 */
+        .s7-flow {
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+        }
+        .s7-lane {
+          border: 1px solid #e2e8f0;
+          border-radius: 12px;
+          padding: 14px 16px 16px;
+          background: #f8fafc;
+        }
+        .s7-lane-head {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-weight: 700;
+          font-size: 0.95rem;
+          margin-bottom: 12px;
+        }
+        .s7-lane-head .s7-dot {
+          width: 11px;
+          height: 11px;
+          border-radius: 50%;
+          flex: 0 0 auto;
+        }
+        .s7-lane-head .s7-lane-sub {
+          font-weight: 400;
+          font-size: 0.82rem;
+          color: #64748b;
+        }
+        .s7-row {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: stretch;
+          gap: 6px;
+        }
+        .s7-node {
+          flex: 1 1 150px;
+          min-width: 140px;
+          border: 2px solid #cbd5e1;
+          border-radius: 10px;
+          padding: 9px 11px;
+          background: #ffffff;
+        }
+        .s7-node .s7-tech {
+          font-size: 0.68rem;
+          font-weight: 700;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+          display: inline-block;
+          padding: 1px 6px;
+          border-radius: 5px;
+          margin-bottom: 5px;
+        }
+        .s7-node code {
+          font-size: 0.84rem;
+          font-weight: 600;
+          word-break: break-word;
+        }
+        .s7-node p {
+          margin: 5px 0 0;
+          font-size: 0.8rem;
+          line-height: 1.55;
+          color: #475569;
+        }
+        /* 颜色语义：蓝=SwiftUI 橙=AppKit 绿=服务层 灰=中性外壳 */
+        .s7-swiftui { border-color: #2563eb; }
+        .s7-swiftui .s7-tech { background: #dbeafe; color: #1d4ed8; }
+        .s7-appkit { border-color: #ea580c; }
+        .s7-appkit .s7-tech { background: #ffedd5; color: #c2410c; }
+        .s7-service { border-color: #16a34a; }
+        .s7-service .s7-tech { background: #dcfce7; color: #15803d; }
+        .s7-neutral { border-color: #64748b; }
+        .s7-neutral .s7-tech { background: #e2e8f0; color: #475569; }
+
+        .s7-lane-swiftui .s7-dot { background: #2563eb; }
+        .s7-lane-service .s7-dot { background: #16a34a; }
+        .s7-lane-appkit .s7-dot { background: #ea580c; }
+
+        .s7-arrow-down {
+          text-align: center;
+          color: #64748b;
+          font-size: 1.4rem;
+          line-height: 1;
+          margin: -4px 0 -2px;
+        }
+        .s7-arrow-label {
+          display: block;
+          font-size: 0.74rem;
+          color: #64748b;
+          margin-top: 2px;
+        }
+        .s7-legend {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 14px;
+          margin-top: 14px;
+          padding: 10px 14px;
+          border: 1px dashed #cbd5e1;
+          border-radius: 10px;
+          font-size: 0.8rem;
+          color: #475569;
+        }
+        .s7-legend .s7-key {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+        }
+        .s7-legend .s7-swatch {
+          width: 14px;
+          height: 14px;
+          border-radius: 4px;
+          border: 2px solid;
+          flex: 0 0 auto;
+        }
+        .s7-steps {
+          counter-reset: s7step;
+          margin: 18px 0 0;
+          padding: 0;
+          list-style: none;
+        }
+        .s7-steps > li {
+          position: relative;
+          padding: 0 0 14px 40px;
+          line-height: 1.75;
+        }
+        .s7-steps > li::before {
+          counter-increment: s7step;
+          content: counter(s7step);
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 26px;
+          height: 26px;
+          border-radius: 50%;
+          background: #2563eb;
+          color: #fff;
+          font-size: 0.85rem;
+          font-weight: 700;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .s7-mini-legend {
+          font-size: 0.74rem;
+          color: #94a3b8;
+          margin-top: 4px;
+        }
+      </style>
+
+      <p>这趟旅程背后有一条统领全局的设计原则，得先记住：<strong>聊天区大约九成是单向数据流</strong>。所谓单向数据流（对应到代码里就是 <code>data-flow rules</code>），意思是<strong>状态向下流、事件少量向上</strong>——会话的真相数据从底层一路往上推，交给界面去显示；界面真正需要往回报告的，只有“用户点了发送”“用户切换了会话”这类零星动作。把这条原则记牢，下面每一步的流向就都有了依据。</p>
+
+      <h3>横向数据流图：消息从输入到渲染</h3>
+      <p>下图分成三条泳道：<strong>输入侧</strong>，用户在这里发起动作；<strong>运行时与服务侧</strong>，会话的真相数据在这里被装配；<strong>渲染侧</strong>，数据在这里被翻译成界面。每个节点都标注了它属于哪一技术层，颜色与全文一致。竖直箭头表示数据的去向，箭头上的文字说明“谁把什么交给了谁”。</p>
+
+      <div class="diagram">
+        <div class="diagram-title">图 8-1：一条消息从发送到刷出的完整流向</div>
+        <div class="s7-flow">
+
+          <div class="s7-lane s7-lane-swiftui">
+            <div class="s7-lane-head"><span class="s7-dot"></span>输入侧<span class="s7-lane-sub">用户发起的少量“向上”事件</span></div>
+            <div class="s7-row">
+              <div class="s7-node s7-swiftui">
+                <span class="s7-tech">SwiftUI</span>
+                <code>InputBarView2</code>
+                <p>底部输入栏。用户敲字、按发送，回调把这次提交交出去。</p>
+              </div>
+              <div class="s7-node s7-neutral">
+                <span class="s7-tech">共享函数</span>
+                <code>submitSessionInput</code>
+                <p>发送的统一入口。它把文本和图片附件拼成一条消息，再调用会话的 <code>send</code>。</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="s7-arrow-down">↓<span class="s7-arrow-label">把“这次提交的内容”交给会话</span></div>
+
+          <div class="s7-lane s7-lane-service">
+            <div class="s7-lane-head"><span class="s7-dot"></span>运行时与服务侧<span class="s7-lane-sub">会话真相数据在这里被写入、装配</span></div>
+            <div class="s7-row">
+              <div class="s7-node s7-service">
+                <span class="s7-tech">服务层</span>
+                <code>Session.send</code>
+                <p>会话的发送门面。它把动作转交给会话运行时，界面不直接碰运行时。</p>
+              </div>
+              <div class="s7-node s7-service">
+                <span class="s7-tech">服务层</span>
+                <code>SessionRuntime +Start</code>
+                <p>发送主路（<code>enqueueAndSend</code>）就在这里。它立即在消息时间线里追加一条“排队中”的本地用户消息，于是气泡马上出现，不必等底层回应。</p>
+              </div>
+              <div class="s7-node s7-service">
+                <span class="s7-tech">服务层</span>
+                <code>CLIClient</code>
+                <p>与底层 CLI 通信的薄抽象。它把消息写进 CLI 的标准输入，真实实现是 <code>AgentSDKCLIClient</code>。</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="s7-arrow-down">↓ &nbsp;&nbsp; ↑<span class="s7-arrow-label">经 <code>AgentSDK</code> 把消息发给底层 CLI；Claude 的回复又从这里流回来</span></div>
+
+          <div class="s7-row">
+            <div class="s7-node s7-service" style="flex-basis:100%;">
+              <span class="s7-tech">独立 Swift Package</span>
+              <code>AgentSDK</code> ↔ 底层 Claude Code CLI 子进程
+              <p>真正与 Claude 对话的进程。回复以<strong>流式增量</strong>返回，一小段一小段地分两路推回运行时：流式增量走 <code>onStreamEvent</code>，定稿的整条消息走 <code>onMessage</code>。</p>
+            </div>
+          </div>
+
+          <div class="s7-arrow-down">↑<span class="s7-arrow-label">两路回调把增量 / 定稿消息推回运行时</span></div>
+
+          <div class="s7-lane s7-lane-service">
+            <div class="s7-lane-head"><span class="s7-dot"></span>运行时与服务侧<span class="s7-lane-sub">把回复装配进消息时间线</span></div>
+            <div class="s7-row">
+              <div class="s7-node s7-service">
+                <span class="s7-tech">服务层</span>
+                <code>SessionRuntime +Streaming</code>
+                <p>消费流式增量，用打字机效果把文字一个字一个字揭示出来，先放一条“临时预览”消息。</p>
+              </div>
+              <div class="s7-node s7-service">
+                <span class="s7-tech">服务层</span>
+                <code>SessionRuntime +Receive</code>
+                <p>消费定稿消息。它更新 <code>Session</code> 的消息时间线，再触发一次变更通知。</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="s7-arrow-down">↓<span class="s7-arrow-label">触发 <code>onMessagesChange</code>，把这条变更同步交给桥接层</span></div>
+
+          <div class="s7-lane s7-lane-appkit">
+            <div class="s7-lane-head"><span class="s7-dot"></span>渲染侧<span class="s7-lane-sub">把消息翻译成界面行</span></div>
+            <div class="s7-row">
+              <div class="s7-node s7-appkit">
+                <span class="s7-tech">AppKit</span>
+                <code>NativeTranscript2Bridge</code>
+                <p>桥接层。<code>MessageEntryBlockBuilder</code> 把一条消息（<code>MessageEntry</code>）翻译成一个或多个块（<code>Block</code>）。</p>
+              </div>
+              <div class="s7-node s7-appkit">
+                <span class="s7-tech">AppKit</span>
+                <code>Transcript2Coordinator.blocks</code>
+                <p>聊天记录的行数据真相。桥接层经 <code>Transcript2Controller</code> 把“增量”交给它，它按差量更新这份块列表。</p>
+              </div>
+              <div class="s7-node s7-appkit">
+                <span class="s7-tech">AppKit</span>
+                <code>NativeTranscript2</code>
+                <p>基于 <code>NSTableView</code> 自绘的聊天记录。它渲染新行并滚动到底，新内容随即出现在眼前。</p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="s7-legend">
+          <span class="s7-key"><span class="s7-swatch" style="border-color:#2563eb;"></span>蓝 = SwiftUI（声明式界面）</span>
+          <span class="s7-key"><span class="s7-swatch" style="border-color:#ea580c;"></span>橙 = AppKit（自绘 / 表格 / 桥接）</span>
+          <span class="s7-key"><span class="s7-swatch" style="border-color:#16a34a;"></span>绿 = 服务层 / 数据层</span>
+          <span class="s7-key"><span class="s7-swatch" style="border-color:#64748b;"></span>灰 = 中性外壳 / 共享函数</span>
+        </div>
+      </div>
+
+      <h3>逐步解说这趟旅程</h3>
+      <p>把上图按时间顺序走一遍。前半程（第 1 到 4 步）是用户的输入“向下”流；后半程（第 5 到 9 步）是 Claude 的回复“向上”流回界面，这正是单向数据流的主体。</p>
+
+      <ol class="s7-steps">
+        <li><strong>用户在输入栏敲字、按发送。</strong>输入栏 <code>InputBarView2</code> 是一个纯粹的 SwiftUI 视图。它不知道会话是谁，只通过回调把“这次提交”（文本加图片附件）交出去。提交落到共享函数 <code>submitSessionInput</code>，由它把附件和文本拼成一条完整消息。</li>
+
+        <li><strong>消息交给会话门面。</strong><code>submitSessionInput</code> 调用 <code>Session.send</code>。界面只跟 <code>Session</code> 这个门面打交道，从不直接碰底层的会话运行时——这正体现了单向数据流“事件向上只走一条窄路”的原则。</li>
+
+        <li><strong>会话运行时先把气泡显示出来。</strong>会话运行时 <code>SessionRuntime</code> 的发送主路 <code>enqueueAndSend</code>（位于 <code>SessionRuntime+Start</code>）马上往消息时间线里追加一条标记为“排队中”的本地用户消息，并同步发出一次变更通知。这样你的气泡瞬间出现，不必等底层 CLI 回应，否则会有约 100 到 300 毫秒的空白。
+          <div class="s7-mini-legend">这一步解释了为什么发送后界面“零延迟”就有反应：界面先行，确认随后补上。</div>
+        </li>
+
+        <li><strong>通过 CLIClient 把消息发给底层 CLI。</strong>运行时把消息写进 <code>CLIClient</code>。<code>CLIClient</code> 是一层薄抽象，真实实现是 <code>AgentSDKCLIClient</code>，测试用 <code>FakeCLIClient</code>。它把消息经 <code>AgentSDK</code> 这个独立 Swift Package 写进底层 Claude Code CLI 子进程的标准输入。到这里，用户输入的“向下”流就走完了。</li>
+
+        <li><strong>Claude 的回复以流式增量回来。</strong>底层 CLI 不会一次性吐出整段回复，而是一小段一小段地流式返回。<code>AgentSDK</code> 把这些回复经两路回调推回运行时：细碎的文字增量走 <code>onStreamEvent</code>，一条定稿的完整消息走 <code>onMessage</code>。</li>
+
+        <li><strong>运行时装配这些回复。</strong>流式增量由 <code>SessionRuntime+Streaming</code> 消费，它用打字机效果把文字一个字一个字揭示出来，先放一条“临时预览”消息；定稿消息由 <code>SessionRuntime+Receive</code> 消费，它更新 <code>Session</code> 的消息时间线，必要时把临时预览原地换成定稿内容。
+          <div class="s7-mini-legend">打字机效果对应到代码里就是 <code>StreamingTurnAssembler</code> / <code>TypewriterReveal</code> / <code>FrameTicker</code>，它们把网络上忽快忽慢的数据块解耦成均匀的逐字显示。</div>
+        </li>
+
+        <li><strong>消息时间线发出变更通知。</strong>运行时每次改动消息，都会同步触发 <code>onMessagesChange</code>。会话在创建时就把这个通知接到了桥接层（<code>wireRuntimeMessagesSink</code>），所以变更会立刻流向渲染侧——哪怕这个会话此刻没显示在屏幕上，也照样被处理。</li>
+
+        <li><strong>桥接层把消息翻译成块。</strong><code>NativeTranscript2Bridge</code> 收到变更后，由 <code>MessageEntryBlockBuilder</code> 把一条消息翻译成一个或多个<strong>块</strong>（<code>Block</code>，即聊天记录里的一行、一个渲染单元）。它给每个块算一个稳定的 id，于是“排队中”气泡变成“已确认”时，同一行能就地更新，不必整行重画。翻译好的增量经 <code>Transcript2Controller</code> 交给 <code>Transcript2Coordinator</code>，更新它持有的 <code>blocks</code>——这份块列表就是聊天记录的行数据真相。</li>
+
+        <li><strong>聊天记录渲染并滚到底。</strong>块列表一变，基于 <code>NSTableView</code> 自绘的 <code>NativeTranscript2</code> 就按差量插入、更新对应的行，并滚动到底部。于是 Claude 的回复一行行刷到你眼前，整趟旅程闭环。</li>
+      </ol>
+
+      <div class="callout why">
+        <strong>为什么这条回程是“单向”的？</strong>从第 5 步到第 9 步，数据始终朝一个方向流：底层回复 → 运行时装配 → 写入消息时间线 → 翻译成块 → 渲染。界面（聊天记录）只负责“显示真相”，从不反过来去改运行时的状态。真正“向上”的事件，只有用户的发送（第 1 步）和切换会话这类零星动作。把绝大多数数据流锁成单向，正是这套聊天区“AppKit 外壳 + SwiftUI 叶子”能保持清晰的根本原因：中间没有一个居中的协调式 ViewModel 双向搅动状态，每一步该把什么交给谁都一目了然。
+      </div>
+
+      <p>这趟旅程把前几节的静态组件都用了起来：输入栏和发送函数属于<strong>输入侧</strong>，会话、会话运行时和 <code>CLIClient</code> 属于<strong>会话与数据层</strong>，桥接层和聊天记录属于<strong>渲染侧</strong>。它们各司其职，靠一条主要为单向的数据流串成一个整体。下一节会把这背后最关键的三个“为什么”集中讲清楚：SwiftUI 与 AppKit 的取舍、单向数据流，以及 runloop 时序。</p>
+    </section>
+
+    <section class="section" id="decisions">
+      <h2>关键设计抉择（为什么）</h2>
+      <p class="section-lead">本节集中回答三个"为什么"：为什么大部分界面用 SwiftUI，少数地方却下沉到 AppKit；为什么状态只朝一个方向流动；为什么有些切换必须在"同一帧的同一段时间"里同步完成。读懂这三点，前面看到的结构就不再是死规矩，而是有理由的选择。</p>
+
+      <p>前面几节讲的是"有哪些块、怎么拼"。这一节换个角度，讲"为什么这样拼，而不是别的样子"。三个抉择层层相扣：第一个决定界面的技术分工，第二个决定状态怎么传递，第三个决定这些传递必须卡在哪一刻发生。我们从最直观的技术选型说起。</p>
+
+      <h3>抉择一：SwiftUI 是默认，AppKit 是例外</h3>
+
+      <p>先定义两个名词。<strong>SwiftUI</strong> 是苹果较新的声明式界面框架，写起来简洁，你只描述"界面长什么样"，框架自己负责刷新；<strong>AppKit</strong> 是苹果传统的命令式界面框架，更老、更底层，但你能精确控制每一步发生的时机。这个项目的总原则只有一句：默认用 SwiftUI，只有当 SwiftUI 满足不了需求时，才针对那一处下沉到 AppKit。</p>
+
+      <p>打个比方：盖房子默认用预制板（SwiftUI），又快又省力；承重墙、地基这类对受力和时机有硬要求的地方，才现场浇筑混凝土（AppKit）。绝不会因为某处用了混凝土，就把整栋楼都现浇。对应到代码里，全 App 只有五处用了 AppKit，每一处都有明确的、SwiftUI 给不了的理由。下表逐条列出。</p>
+
+      <div class="diagram">
+        <div class="diagram-title">图 9-1：当前下沉到 AppKit 的五处，以及"为什么不用 SwiftUI"</div>
+        <table class="compare">
+          <thead>
+            <tr>
+              <th>用 AppKit 的地方</th>
+              <th>对应代码</th>
+              <th>为什么 SwiftUI 不行</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="tag appkit">AppKit</span> 聊天记录</td>
+              <td><code>NativeTranscript2</code>（<code>NSTableView</code> + Core Text 自绘）</td>
+              <td>一次会话可能有成千上万行。SwiftUI 的 <code>List</code> / <code>LazyVStack</code> 扛不住这个行数、自定义布局和选择语义，会卡顿。<code>NSTableView</code> 只渲染屏幕上看得见的行，自绘文字又省去中间层，才能做到"瞬间滚动"。</td>
+            </tr>
+            <tr>
+              <td><span class="tag appkit">AppKit</span> 主窗口骨架</td>
+              <td><code>MainWindowController</code> → <code>MainSplitViewController</code> → <code>DetailRouterViewController</code> → <code>ChatSessionViewController</code></td>
+              <td>切换会话时，聊天记录的挂载和尺寸级联（<code>frameDidChange</code>）必须跑在 AppKit 的 source 阶段，而不是 SwiftUI 的 commit 阶段。时机差一拍，画面就会撕裂——这正是抉择三要讲的事。</td>
+            </tr>
+            <tr>
+              <td><span class="tag appkit">AppKit</span> 侧边栏</td>
+              <td><code>SidebarViewController</code>（基于 <code>NSOutlineView</code>）</td>
+              <td>会话要支持拖拽分组、文件夹式展开/折叠。直接用 <code>NSOutlineView</code>，才能拿到标准的拖拽三件套（<code>pasteboardWriterForItem</code> / <code>validateDrop</code> / <code>acceptDrop</code>）和内建的展开/折叠动画，不必自己重造。</td>
+            </tr>
+            <tr>
+              <td><span class="tag appkit">AppKit</span> 窗口工具栏</td>
+              <td><code>NSToolbar</code> + <code>NSSearchToolbarItem</code></td>
+              <td>聊天记录的搜索需要"首响应者 + ⌘F"这套精确的键盘焦点语义。SwiftUI 的 <code>.searchable</code> 给不了这种控制，按下 ⌘F 没法稳定地把光标送进搜索框。</td>
+            </tr>
+            <tr>
+              <td><span class="tag appkit">AppKit</span> App 生命周期</td>
+              <td><code>AppDelegate</code>（经 <code>@NSApplicationDelegateAdaptor</code>）</td>
+              <td>它持有进程级状态，并在 <code>applicationDidFinishLaunching</code> 里亲手创建主窗口。这个启动时机，SwiftUI 的纯声明式生命周期表达不出来。</td>
+            </tr>
+            <tr>
+              <td><span class="tag swiftui">SwiftUI</span> 其它一切</td>
+              <td>输入栏、配置器、各种浮层、设置/关于窗口、所有可复用组件</td>
+              <td>不需要下沉。这些都通过<strong>寄宿</strong>（把 SwiftUI 视图放进 AppKit 容器，用 <code>NSHostingController</code> 或 <code>NSHostingView</code>）放进上面的 AppKit 外壳里。</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="legend">
+          <span><span class="tag appkit">AppKit</span> 命令式、可精确控制时机（橙）</span>
+          <span><span class="tag swiftui">SwiftUI</span> 声明式、默认选择（蓝）</span>
+        </div>
+      </div>
+
+      <div class="callout why">
+        <strong>为什么这么定？</strong> 把规则定成"默认 SwiftUI、例外才 AppKit"，而不是"哪个顺手用哪个"，是为了让边界可控。每新增一处 AppKit，都得拿出一个具体理由（性能、生命周期时机，或某个缺失的能力），否则就该用 SwiftUI。这样一来，混合两种框架的复杂度被锁在五个已知的点上，不会到处蔓延。
+      </div>
+
+      <p>技术分工定了，接下来的问题是：这些 SwiftUI 叶子和 AppKit 外壳之间，状态该怎么传？答案是单向数据流。</p>
+
+      <h3>抉择二：单向数据流——状态住在最低的共享作用域</h3>
+
+      <p>先定义术语。<strong>单向数据流</strong>指状态主要朝一个方向流动：从上往下传给界面，界面产生的事件只有极少量往上回传。聊天区大约 90% 是这种模式：AppKit 当外壳，SwiftUI 当叶子，数据从外壳流向叶子。</p>
+
+      <p>关键规则是：<strong>每份状态都住在"所有读它的人都够得到的最低作用域"</strong>，不往上拔高。打个比方，公司里的文件不会一股脑全堆进 CEO 办公室；全公司要看的放公共区，一个部门用的放部门柜子，一个人用的就放自己抽屉。放得越低，能改它的人越少，出错的面就越小。对应到代码里，就是下面这座作用域阶梯。</p>
+
+      <div class="diagram">
+        <div class="diagram-title">图 9-2：状态作用域阶梯：每份状态住在恰好够用的最低层</div>
+        <div class="s8-ladder">
+          <div class="s8-step s8-step-1">
+            <div class="s8-step-scope">进程级（全 App 共享）</div>
+            <div class="s8-step-body"><span class="tag service">服务层</span> <code>AppState</code> ——<strong>进程级状态容器</strong>，装着全 App 都要用的服务（如 <code>SessionManager</code>）。它靠初始化器逐级下传，不整包注入。</div>
+          </div>
+          <div class="s8-arrow-down" aria-hidden="true">▼ 下传</div>
+          <div class="s8-step s8-step-2">
+            <div class="s8-step-scope">窗口级（一个窗口共享）</div>
+            <div class="s8-step-body"><span class="tag neutral">中性外壳</span> <code>MainSelectionModel</code> —— 当前选中哪个会话、是不是草稿。它由 AppKit 主窗口骨架持有；一个窗口的导航状态只需住在窗口这层。</div>
+          </div>
+          <div class="s8-arrow-down" aria-hidden="true">▼ 下传</div>
+          <div class="s8-step s8-step-3">
+            <div class="s8-step-scope">会话级（一次对话共享）</div>
+            <div class="s8-step-body"><span class="tag service">服务层</span> <code>Session</code> —— 一次<strong>会话</strong>的数据真相：消息时间线、状态、todos、上下文用量。它只属于这一次对话。</div>
+          </div>
+          <div class="s8-arrow-down" aria-hidden="true">▼ 下传</div>
+          <div class="s8-step s8-step-4">
+            <div class="s8-step-scope">行级（聊天记录里的一行）</div>
+            <div class="s8-step-body"><span class="tag appkit">AppKit 渲染层</span> <code>Transcript2Coordinator.blocks</code> —— 行数据真相。<strong>块</strong>（聊天记录里的一个渲染单元）只在渲染层使用，不必往上知道。</div>
+          </div>
+        </div>
+        <div class="legend">
+          <span>箭头方向＝数据向下流动；越往下作用域越小、读者越少</span>
+          <span><span class="tag service">服务层</span> 进程/会话级 <code>@Observable</code> 模型（绿）</span>
+          <span><span class="tag appkit">AppKit</span> 住在 AppKit 外壳/渲染层里的状态（橙）</span>
+        </div>
+      </div>
+
+      <p>数据向下流好理解，那"事件往上回传"呢？整个聊天区只保留<strong>一条</strong>结构性的向上边：<code>selectionObserver</code>。当用户在侧边栏点了另一个会话，这个事件需要"往上"通知<strong>详情路由器</strong>（按选择挂载对应面板的那一层，<code>DetailRouterViewController</code>）去换面板。它是<strong>唯一</strong>的结构性向上通道，刻意没有做成一个通用的"通知总线"，也没有加第二个观察者槽位。</p>
+
+      <div class="callout why">
+        <strong>为什么只留一条向上边？</strong> 多一条向上通道，就多一处状态可能被两个地方同时改、改得不一致。把"对选择做结构性反应"这件事收归到唯一一个观察者（详情路由器）；其它视图各自观察自己作用域里的 <code>@Observable</code> 状态，自动刷新就够了，谁也不需要"往上喊话"。这样数据流向始终清晰：一条主干向下，仅一条细线向上。
+      </div>
+
+      <p>这条向上边不只"唯一"，还有个苛刻的时机要求——它必须在点击的那一瞬间<strong>同步</strong>触发，不能晚一拍。要讲清这个"一拍"是什么，就得请出最后一个抉择：runloop 时序。</p>
+
+      <h3>抉择三：runloop 时序——为什么"同一帧的同一段"很重要</h3>
+
+      <p>先建立直觉。macOS 上，AppKit、SwiftUI、CoreAnimation 这三方共用同一个 <strong>runloop</strong>（运行循环）。你可以把它想成一条流水线，循环往复地转。每转一圈（一个迭代，也叫一个"tick"）分成几段，顺序固定，下图把它简化成三段来看。</p>
+
+      <div class="diagram">
+        <div class="diagram-title">图 9-3：一个 runloop 迭代的时序条带：各段依次发生，不可乱序</div>
+        <div class="s8-band">
+          <div class="s8-seg s8-seg-source">
+            <div class="s8-seg-name">① source 阶段</div>
+            <div class="s8-seg-tag">你的代码在这里跑</div>
+            <ul class="s8-seg-list">
+              <li>鼠标 / 键盘事件派发</li>
+              <li><code>DispatchQueue.main.async</code> 排空</li>
+              <li>通知、Timer、IBAction</li>
+              <li>对 frame、<code>setNeedsLayout</code> 的修改只是"登记"，还没真画</li>
+            </ul>
+          </div>
+          <div class="s8-seg-divider" aria-hidden="true">→</div>
+          <div class="s8-seg s8-seg-before">
+            <div class="s8-seg-name">② beforeWaiting 观察者</div>
+            <div class="s8-seg-tag">框架统一刷新（AppKit + SwiftUI + CoreAnimation 一起 flush）</div>
+            <ul class="s8-seg-list">
+              <li>SwiftUI 在这里<strong>重算失效视图的 body</strong></li>
+              <li>布局 → 显示，遍历视图树</li>
+              <li>聊天记录首次显示时，惰性算行数、行高并铺排</li>
+              <li>CoreAnimation 把这一帧提交去渲染</li>
+            </ul>
+          </div>
+          <div class="s8-seg-divider" aria-hidden="true">→</div>
+          <div class="s8-seg s8-seg-sleep">
+            <div class="s8-seg-name">③ sleep</div>
+            <div class="s8-seg-tag">休眠等下一个事件</div>
+            <ul class="s8-seg-list">
+              <li>线程阻塞，等下一次鼠标/键盘/定时器把它唤醒</li>
+              <li>唤醒后处理那个事件，又从 ① 开始转下一圈</li>
+            </ul>
+          </div>
+        </div>
+        <div class="legend">
+          <span>① 写"想做什么"　② 框架统一"真的去做"　③ 等下一个事件</span>
+          <span>关键：你在 ① 写下的状态修改，SwiftUI 要到 ② 才看见</span>
+          <span>注：三个框架共用同一个 runloop，颜色只标"哪段以谁的活儿为主"，不代表该段只有一个框架在跑</span>
+        </div>
+      </div>
+
+      <p>这张图带出两个承重结论，正是前两个抉择背后的时机依据。</p>
+
+      <p><strong>结论一：<code>@Observable</code> 写入不会在同一个 tick 到达 SwiftUI 的 body。</strong> 你在 source 阶段（①）改了一个被观察的状态，SwiftUI 并不会立刻刷新——它要等到本圈的 beforeWaiting（②）才重算 body。打个比方：你在 ① 段往收件箱投了封信，对方要到 ② 段才开箱读信，绝不会"投完瞬间就读到"。所以凡是讲究先后次序、必须"此刻就生效"的操作，都不能依赖 <code>@Observable</code> 自动刷新，得在 ① 段当场用代码做掉。</p>
+
+      <p><strong>结论二：结构性切换必须在点击的 source 阶段同步完成，否则会跨帧撕裂。</strong> 回到抉择二那条唯一的向上边。用户点击会话发生在 ① 段，<code>MainSelectionModel.select(_:)</code> 在<strong>同一个 ① 段</strong>里先更新 <code>@Observable</code> 的选择值，<strong>紧接着同步</strong>通知详情路由器去换面板、挂载新会话的聊天记录。三件事卡在同一段时间里一次做完。</p>
+
+      <div class="callout why">
+        <strong>为什么不能交给 <code>@Observable</code> 自动驱动换面板？</strong> 如果让详情路由器靠观察选择值来反应，那个反应会被推迟到下一段（beforeWaiting，甚至下一圈）才发生——这正是结论一说的"晚一拍"。结果就是：SwiftUI 的输入栏在这一帧按新会话刷新了，而聊天记录的挂载落在下一帧，画面在两帧之间裂成两半，看得见的撕裂。所以 <code>select(_:)</code> 选择"自己当场同步喊一声"，让换面板和聊天记录挂载与点击落在<strong>同一帧的同一段</strong>。这也是为什么主窗口骨架必须用 AppKit：只有它能精确地把这些动作钉在 source 阶段，SwiftUI 的声明式刷新做不到。
+      </div>
+
+      <p>这就把三个抉择串成了一条逻辑链：因为聊天记录要快、切换要不撕裂，所以外壳下沉到 AppKit（抉择一）；因为要让状态流向清晰、只留一条向上边，所以采用单向数据流（抉择二）；而这条向上边之所以必须同步触发，根子就在 runloop 一个 tick 分段、跨段就晚一拍这个时序事实上（抉择三）。理解了"为什么"，下一节我们再聊聊"现状未必最优、哪里还能更好"。</p>
+
+      <style>
+        #decisions .s8-ladder { display: flex; flex-direction: column; gap: 0; }
+        #decisions .s8-step { border: 2px solid var(--neutral); border-radius: 10px; padding: 12px 16px; background: #f8fafc; }
+        #decisions .s8-step-scope { font-weight: 700; font-size: 0.9em; color: var(--neutral); margin-bottom: 4px; }
+        #decisions .s8-step-body { line-height: 1.7; }
+        #decisions .s8-step-1 { margin-left: 0%; }
+        #decisions .s8-step-2 { margin-left: 6%; }
+        #decisions .s8-step-3 { margin-left: 12%; }
+        #decisions .s8-step-4 { margin-left: 18%; }
+        #decisions .s8-arrow-down { text-align: left; padding-left: 6px; color: var(--neutral); font-size: 0.85em; font-weight: 700; line-height: 1.6; }
+        #decisions .s8-band { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+        #decisions .s8-seg { flex: 1 1 200px; border-radius: 10px; padding: 12px 14px; color: #fff; min-width: 180px; }
+        #decisions .s8-seg-source { background: var(--appkit); }
+        #decisions .s8-seg-before { background: var(--swiftui); }
+        #decisions .s8-seg-sleep { background: var(--neutral); }
+        #decisions .s8-seg-name { font-weight: 700; font-size: 1.05em; margin-bottom: 2px; }
+        #decisions .s8-seg-tag { font-size: 0.85em; opacity: 0.92; margin-bottom: 8px; }
+        #decisions .s8-seg-list { margin: 0; padding-left: 18px; line-height: 1.65; font-size: 0.92em; }
+        #decisions .s8-seg-list code { background: rgba(255,255,255,0.22); color: #fff; padding: 0 3px; border-radius: 3px; }
+        #decisions .s8-seg-divider { align-self: center; padding: 0 6px; font-size: 1.4em; font-weight: 700; color: var(--neutral); }
+        @media (max-width: 720px) {
+          #decisions .s8-seg-divider { transform: rotate(90deg); padding: 4px 0; }
+          #decisions .s8-step-2, #decisions .s8-step-3, #decisions .s8-step-4 { margin-left: 0; }
+        }
+      </style>
+    </section>
+
+    <section class="section" id="improve">
+      <h2>可以怎么更好（克制的优化建议）</h2>
+      <p class="section-lead">本节想提醒你一件事：你刚读到的架构是深思熟虑的产物，但"深思熟虑"不等于"已是最优"，保留一点批判的眼光，是健康的工程习惯。</p>
+
+      <p>前面几节解释了项目"为什么这么设计"，每一处取舍都有它的理由。但任何真实的工程都会留下权衡的痕迹：为了拿到某个好处，往往要在别处付出成本。下面挑出两处<strong>可以再想一想</strong>的地方，供你日后熟悉代码后参考。它们都是观点，不是定论——项目维护者很可能早已权衡过，并有意选择了现在的做法。</p>
+
+      <div class="callout note">
+        <strong>先把边界说清楚。</strong>这里只点 2 处，而且都停留在"主观感受"这一层，不涉及任何确凿的缺陷。凡是没有把握的地方，本节一律不写——无中生有地批评，比不批评更糟。
+      </div>
+
+      <h3>观点一：跨框架的边界依赖 runloop 时序，这是一种隐式契约</h3>
+
+      <p>这里先补一句定义。所谓 <strong>runloop 时序</strong>，指的是 AppKit、SwiftUI、CoreAnimation 共享同一轮事件循环，而这一轮内部又分成几段：<code>source</code> 阶段（你的代码在此运行）、<code>beforeWaiting</code> 阶段（界面在此刷新）等等（第 7 节有详细的时序条带图）。本项目里大量关键操作的正确性，都建立在一个前提之上：某件事必须发生在某一段，而不能发生在另一段。</p>
+
+      <p>举两个例子。其一，<code>MainSelectionModel</code> 的 <code>select(_:)</code> 必须在点击的同一个 <code>source</code> 阶段，同步通知它唯一的结构性观察者 <code>DetailRouterViewController</code>，由后者立即切换面板；否则<strong>会话</strong>切换会跨帧撕裂。其二，<code>TranscriptSwapCoordinator</code> 在挂载新<strong>聊天记录</strong>时，会"先建新的、后拆旧的"，并把那些一旦跨帧就会撕裂画面的结构性步骤（构建、绑定、锚定、同步拆旧）一并装进同一个事务，这个事务关闭了隐式动画；而真正可见的淡入淡出，则被刻意放在事务<strong>之外</strong>、交给动画系统去跑——不这样做，透明度动画会被"关闭隐式动画"这条设置一并压掉。这些规则真实存在，也确有必要。</p>
+
+      <div class="callout tip">
+        <p><strong>【这是一个观点，不是事实】</strong></p>
+        <p>这类"X 必须发生在某个 runloop 阶段"的约束，本质上是一种<strong>隐式契约</strong>——类型系统和编译器都不会强制它，只能靠开发者记在脑子里。这就像一栋老宅里"哪扇门不能猛关、哪级台阶要踩边上"的住户默契：本地人门儿清，新搬来的人却容易撞上。对应到代码就是：约束没写进语法，只能口口相传。项目已经很努力地把规则写在代码旁边——主 <code>CLAUDE.md</code> 里专门画了 runloop 时序图，每个协调器旁也都有注释，这很值得肯定。但即便如此，这类契约的心智负担依然偏重：新人改动边界附近的代码时，<strong>或许</strong>会在不知情的情况下踩到时序假设，而出错的表现往往是"偶发一帧的视觉抖动"这种难复现的现象。<strong>可以考虑</strong>的方向是：有没有办法把更多这类约束从"靠文档约定"变成"靠代码结构强制"，从而降低误用的概率。这只是一个值得探讨的方向，并非说现状有错。</p>
+      </div>
+
+      <h3>观点二：协调器集中了很多"单一所有者"职责，上手有门槛</h3>
+
+      <p>这里也先补一句定义。项目里把像 <code>TranscriptSwapCoordinator</code> 这样的对象叫做<strong>协调器</strong>：它负责把若干零散的部件按正确的顺序拼到一起，又不让这些部件彼此直接知道对方。<code>TranscriptSwapCoordinator</code> 是<strong>聊天记录</strong>挂载机制的协调器，同时也是多项状态的<strong>单一所有者</strong>——它独占 <code>currentSession</code>、每次挂载的滚动视图 <code>Transcript2ScrollView</code>、弹窗呈现器 <code>Transcript2SheetPresenter</code> 等。</p>
+
+      <p>"单一所有者"是一个清晰的设计：把某项状态的归属收拢到一处，避免两个对象各持一份、互相不同步。源码注释讲得很明白：正在进行的淡入淡出会读取被暂存的旧<strong>会话</strong>，一旦出现第二个持有者，两份状态就会失步。这样收拢之后，边界确实干净。</p>
+
+      <div class="callout tip">
+        <p><strong>【这是一个观点，不是事实】</strong></p>
+        <p>代价在于：这样的协调器，从结构上看更接近一个聚焦的小型状态机——它内部有"幂等短路、暂存旧会话、赋值、清理"等多个环环相扣的步骤，还顺带管着滚动视图、弹窗呈现器这两类每次挂载都要重建的附属资源。它的好处是边界清晰，但<strong>或许能</strong>预见到一项成本：新人想安全地改动它，得先在脑子里建立起这套所有权划分和挂载顺序，否则很容易破坏不变量。这不是说应该把职责拆散——拆散反而会引入失步风险，源码已经说明过。这里只想点出"上手门槛"这项客观存在的取舍，让你在阅读这部分代码时心里有数。</p>
+      </div>
+
+      <div class="callout why">
+        <p><strong>读到这里，请带走一个心态，而不是一份待办清单。</strong>上面两点的共同主题是同一个：本项目为了换取性能和正确的渲染时序，主动选择了一些"靠人来维护"的精巧约定。这些约定目前运转良好，文档也写得很用心。提出它们，不是要否定现状，而是希望你将来动这部分代码时，既理解它"为什么这么做"，也意识到"它的成本在哪里"——这正是从"小白"成长为这个项目贡献者的关键一步。</p>
+      </div>
+    </section>
+
+    <section class="section" id="glossary">
+      <h2>名词表 / 术语对照</h2>
+      <p class="section-lead">本节把全文用到的术语收成一张查词卡：每行给出统一中文术语、一句话含义、以及对应的代码标识符；读到上文哪里卡住了，回到这里对一眼就能接上。</p>
+
+      <p>前面各节为了让你"从直觉上理解"，反复用类比和图来铺垫。这一节正好相反：它不讲故事，只做对照。下面三张表分别收录<strong>核心术语</strong>（贯穿全文的骨架词）、<strong>常见配套术语</strong>（正文里高频出现的名字），以及<strong>颜色与技术标签的含义</strong>（图里那几种颜色到底代表什么）。代码标识符一律保留英文原形，用 <code>等宽字体</code> 标出，方便你回到源码里搜索。</p>
+
+      <div class="callout note">
+        <strong>怎么用这张表：</strong>同一个概念，全文只用同一个中文词。比如"一次完整的对话"始终叫<strong>会话</strong>，绝不会一会儿叫"对话"、一会儿叫"session"。如果你在别处看到不一致的叫法，以本表为准。
+      </div>
+
+      <h3 class="s10-subhead">核心术语</h3>
+      <p>这十二个词撑起了全文的主干。先把它们记住，再回头看鸟瞰图、组件树和数据流图，就不会迷路。</p>
+
+      <table class="termtable s10-table">
+        <thead>
+          <tr>
+            <th class="s10-col-term">统一中文术语</th>
+            <th class="s10-col-meaning">含义（一句话）</th>
+            <th class="s10-col-code">对应代码标识符</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>会话</strong></td>
+            <td>一次完整的对话，包含它的全部消息时间线与状态。</td>
+            <td><code>Session</code></td>
+          </tr>
+          <tr>
+            <td><strong>聊天记录</strong></td>
+            <td>中间那块滚动显示历史消息的区域。它由 AppKit 用 <code>NSTableView</code> 加 Core Text 自绘，以扛住超长行数。</td>
+            <td><code>NativeTranscript2</code></td>
+          </tr>
+          <tr>
+            <td><strong>侧边栏</strong></td>
+            <td>左侧的会话列表，可分组，可拖拽排序。</td>
+            <td><code>SidebarViewController</code></td>
+          </tr>
+          <tr>
+            <td><strong>输入栏</strong></td>
+            <td>底部那块敲字、发消息的输入区域。</td>
+            <td><code>InputBarView2</code></td>
+          </tr>
+          <tr>
+            <td><strong>主窗口骨架</strong></td>
+            <td>"窗口 → 分栏 → 路由 → 面板"这条把界面拼起来的骨架链。</td>
+            <td><code>MainWindowController</code>（及其下游）</td>
+          </tr>
+          <tr>
+            <td><strong>详情路由器</strong></td>
+            <td>根据当前选择，挂载恰好一个对应面板的那一层。</td>
+            <td><code>DetailRouterViewController</code></td>
+          </tr>
+          <tr>
+            <td><strong>会话运行时</strong></td>
+            <td>驱动一次会话各种行为的对象，管启动、发送、接收和流式装配。</td>
+            <td><code>SessionRuntime</code></td>
+          </tr>
+          <tr>
+            <td><strong>进程级状态容器</strong></td>
+            <td>整个 App 共享的"状态袋子"，由 <code>AppDelegate</code> 持有并逐级下传。</td>
+            <td><code>AppState</code></td>
+          </tr>
+          <tr>
+            <td><strong>寄宿</strong></td>
+            <td>把一个 SwiftUI 视图放进 AppKit 容器里显示。</td>
+            <td><code>NSHostingController</code> / <code>NSHostingView</code></td>
+          </tr>
+          <tr>
+            <td><strong>source 阶段 / beforeWaiting</strong></td>
+            <td>runloop 一个迭代内的两个时间段：前者跑你的代码，后者由系统统一刷新布局与绘制。</td>
+            <td>runloop tick model</td>
+          </tr>
+          <tr>
+            <td><strong>单向数据流</strong></td>
+            <td>状态自上而下流，事件只少量向上回传的设计原则。</td>
+            <td>data-flow rules</td>
+          </tr>
+          <tr>
+            <td><strong>块</strong></td>
+            <td>聊天记录里的一行，也就是一个独立的渲染单元。</td>
+            <td><code>Block</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="callout note">
+        <strong>关于 source 阶段 / beforeWaiting：</strong>这两个英文词按规范保留原文，不强行翻译。简单记：<strong>source 阶段</strong>是"你的代码在跑"的那一刻，<strong>beforeWaiting</strong>是"系统把界面真正画出来"的那一刻——两者同属一个 runloop 迭代，但有先后。第 8 节"关键设计抉择"里那些"为什么差一个 tick"的解释，都建立在这个先后顺序上。
+      </div>
+
+      <h3 class="s10-subhead">常见配套术语</h3>
+      <p>这些名字在正文里频繁露面，但不属于上面的主干词。把它们的定义和主干词放在一起，方便你随手对照，不必临时去翻别的章节。</p>
+
+      <table class="termtable s10-table">
+        <thead>
+          <tr>
+            <th class="s10-col-term">统一中文术语</th>
+            <th class="s10-col-meaning">含义（一句话）</th>
+            <th class="s10-col-code">对应代码标识符</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>SwiftUI</strong></td>
+            <td>苹果较新的声明式 UI 框架，本项目的默认选择。你描述界面"长什么样"，框架负责更新。</td>
+            <td>SwiftUI</td>
+          </tr>
+          <tr>
+            <td><strong>AppKit</strong></td>
+            <td>苹果较老牌、更底层的 Mac UI 框架。本项目只在 SwiftUI 力不能及处才动用它。</td>
+            <td>AppKit</td>
+          </tr>
+          <tr>
+            <td><strong>会话管理器</strong></td>
+            <td>管理所有会话集合与生命周期的服务。</td>
+            <td><code>SessionManager</code></td>
+          </tr>
+          <tr>
+            <td><strong>选择模型</strong></td>
+            <td>持有"当前选中了哪个会话/草稿/归档"这一状态真相。详情路由器是它唯一的结构性观察者，只通过它的同步回调读取选择。</td>
+            <td><code>MainSelectionModel</code></td>
+          </tr>
+          <tr>
+            <td><strong>分栏控制器</strong></td>
+            <td>把窗口左右切成"侧边栏 + 详情"两栏，并把状态拆包下发的那一层。</td>
+            <td><code>MainSplitViewController</code></td>
+          </tr>
+          <tr>
+            <td><strong>聊天面板控制器</strong></td>
+            <td>承载一个会话画面的面板，管理浮层、焦点等"这个面板显示什么"。</td>
+            <td><code>ChatSessionViewController</code></td>
+          </tr>
+          <tr>
+            <td><strong>聊天记录切换协调器</strong></td>
+            <td>独占负责聊天记录的挂载、落定、绑定、滚到底与同会话淡入的"单一所有者"。</td>
+            <td><code>TranscriptSwapCoordinator</code></td>
+          </tr>
+          <tr>
+            <td><strong>桥接层</strong></td>
+            <td>把一条原始消息记录翻译成可渲染的"块"的那层翻译器。</td>
+            <td><code>NativeTranscript2Bridge</code></td>
+          </tr>
+          <tr>
+            <td><strong>命令行客户端</strong></td>
+            <td>会话运行时与底层 Claude Code CLI 通信的接口（协议），生产实现是 <code>AgentSDKCLIClient</code>。</td>
+            <td><code>CLIClient</code></td>
+          </tr>
+          <tr>
+            <td><strong>Agent SDK</strong></td>
+            <td>承接命令行通信的独立 Swift 包，是最底层的对外通道。</td>
+            <td><code>AgentSDK</code></td>
+          </tr>
+          <tr>
+            <td><strong>worktree</strong></td>
+            <td>git 的"工作树"机制，本项目用它为会话做目录隔离（术语保留英文）。</td>
+            <td><code>Worktree*</code></td>
+          </tr>
+          <tr>
+            <td><strong>消息记录条目</strong></td>
+            <td>桥接层翻译前的原始消息数据，翻译后才变成"块"。</td>
+            <td><code>MessageEntry</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3 class="s10-subhead">颜色与技术标签的含义</h3>
+      <p>全文每张图都用同一套配色给组件"贴标签"。颜色只是辅助，每个色块旁边都配了文字标签，所以即便不看颜色也能读懂。下表把这套约定固定下来。</p>
+
+      <table class="termtable s10-table s10-legendtable">
+        <thead>
+          <tr>
+            <th class="s10-col-term">标签</th>
+            <th class="s10-col-meaning">代表什么</th>
+            <th class="s10-col-code">典型成员</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="tag swiftui">SwiftUI</span></td>
+            <td>用 SwiftUI 写的声明式界面，是本项目的默认选择。</td>
+            <td><code>InputBarView2</code>、<code>NewSessionConfigurator</code></td>
+          </tr>
+          <tr>
+            <td><span class="tag appkit">AppKit</span></td>
+            <td>下沉到 AppKit 的部分，因性能或时序需求而存在。</td>
+            <td><code>NativeTranscript2</code>、<code>SidebarViewController</code></td>
+          </tr>
+          <tr>
+            <td><span class="tag service">服务层</span></td>
+            <td>不直接画界面、只提供数据与行为的对象。</td>
+            <td><code>SessionManager</code>、<code>SyntaxHighlightEngine</code></td>
+          </tr>
+          <tr>
+            <td><span class="tag neutral">中性外壳</span></td>
+            <td>把各块拼起来的骨架与容器，本身不偏向某一框架。</td>
+            <td><code>AppState</code>、<code>MainSelectionModel</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p class="s10-closing">到这里，从"这是个什么 App"到"一条消息怎么流过整套组件"，再到这张查词卡，整篇导览就走完了一圈。下次再翻开源码，希望你能在脑子里把每个英文类名对上一个中文概念，而不再是一串陌生的字母。</p>
+    </section>
+
+    <footer class="foot">
+      本页离线自包含，无任何外部依赖，可直接用浏览器打开。内容由 CCTerm 源码导览整理生成，面向初次接触本项目的读者。<br>
+      配色约定：<span class="tag swiftui">SwiftUI</span> <span class="tag appkit">AppKit</span> <span class="tag service">服务层</span> <span class="tag neutral">中性外壳</span>
+    </footer>
+  </main>
+</div>
+</body>
+</html>

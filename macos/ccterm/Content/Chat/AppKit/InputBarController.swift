@@ -97,6 +97,15 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
     /// `private(set)` so tests can assert lifecycle without a write seam.
     private(set) var imagePreviewPresenter: ImagePreviewPresenter!
 
+    /// The per-session chrome controls row (`InputBarSessionChrome` analogue,
+    /// §4.2): permission / bg-task / todo / model+effort / context-ring pickers.
+    /// Created ONCE here (never recreated per session); rebound in place from
+    /// `rebind(sessionId:)`. Exposed so the chat VC can stack it below the bar
+    /// as its own fixed-height arranged subview (the SwiftUI `VStack { bar; chrome }`
+    /// analogue). The pickers are injectable so tests can pass fresh in-memory
+    /// stores.
+    let chromeRow: ChromeRowView
+
     // MARK: - Init
 
     /// Production init. The chat / compose / draft hosts call this.
@@ -108,6 +117,7 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
         autofocus: Bool = false,
         onBuiltinCommand: ((BuiltinSlashCommand) -> Void)? = nil,
         submitEnabledProvider: @escaping (Session) -> Bool = { _ in true },
+        chromeRow: ChromeRowView? = nil,
         onSubmit: @escaping (Submission, String) -> Void
     ) {
         self.sessionManager = sessionManager
@@ -117,6 +127,7 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
         self.autofocus = autofocus
         self.onBuiltinCommand = onBuiltinCommand
         self.submitEnabledProvider = submitEnabledProvider
+        self.chromeRow = chromeRow ?? ChromeRowView()
         self.onSubmit = onSubmit
         super.init(nibName: nil, bundle: nil)
     }
@@ -188,6 +199,9 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
         // bar's teardown and wedge the window (plan §4.7-1, R5). Idempotent +
         // window-guarded.
         imagePreviewPresenter?.stop()
+        // Close every chrome-row popover + invalidate the per-open timers + the
+        // bg-task detail sheet (§4.2-9, R5, R17). Deterministic teardown.
+        chromeRow.teardown()
         isRunningObservationActive = false
         cwdObservationActive = false
         prewarmObservationActive = false
@@ -253,6 +267,11 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
         startRunningObservation(for: session)
         startCwdObservation(for: session)
         startPrewarmObservation(for: session)
+
+        // Rebind the chrome row's 5 pickers in place (each cancels its open
+        // popover + per-open observation/timers at the top of its own rebind,
+        // §4.2-9). Driven ONLY here — the row is not a selection observer.
+        chromeRow.rebind(session: session, textView: barView.textView)
 
         // Reflect the resolved session immediately.
         barView.sendStopButton.setRunning(session.isRunning, animated: false)

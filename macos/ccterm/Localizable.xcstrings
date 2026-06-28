@@ -1238,6 +1238,16 @@
         }
       }
     },
+    "Enable fast mode": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启用快速模式"
+          }
+        }
+      }
+    },
     "Ended": {
       "localizations": {
         "zh-Hans": {
@@ -1890,6 +1900,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "实时"
+          }
+        }
+      }
+    },
+    "Loading context breakdown…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在加载上下文明细…"
+          }
+        }
+      }
+    },
+    "Loading models…": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在加载模型…"
           }
         }
       }

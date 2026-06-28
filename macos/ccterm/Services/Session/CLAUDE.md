@@ -30,12 +30,26 @@ Source lives in `Session/`:
 | `SessionRuntime+Messaging.swift` | `interrupt`, `cancelMessage`. |
 | `SessionRuntime+Configuration.swift` | Runtime-mutable setters (`setModel` / `setEffort` / `setPermissionMode` / `setFastMode` / `setAdditionalDirectories`) + `respond` / `setFocused`. **No** draft-only setters — those live on `SessionDraft`. |
 | `SessionRuntime+History.swift` | `historyJSONLURL` path forwarder. (History-load orchestration moved to `Session.loadHistory()` + `TranscriptBackfillPipeline`.) |
-| `SessionRuntime+Receive.swift` | Incoming-message path from the CLI. |
+| `SessionRuntime+Receive.swift` | Incoming-message path from the CLI; `appendToTimeline` walks the live group boundary by inspecting `messages.last`. |
+| `SessionRuntime+Streaming.swift` | Typewriter-reveal pacing of streaming assistant text (`frameTicker` / `StreamingTurnAssembler`). |
+| `SessionRuntime+Tasks.swift` | Background-bash-task forwarders into `taskTracker` (incl. `markTaskStoppedLocally`). |
+| `SessionRuntime+Todos.swift` | Todo-plan forwarders into `todoTracker`. |
+| `SessionRuntime+ContextUsage.swift` | `requestContextUsage` forwarder handing the bound `cliClient` to `contextUsageCache`. |
+| `SessionRuntime+SideQuestion.swift` | `/btw`-style side-question call against the running CLI. |
+| `TodoTracker.swift` / `TaskTracker.swift` / `ContextUsageCache.swift` | `@Observable @MainActor` child objects held by `SessionRuntime` via plain `let` props (`todoTracker` / `taskTracker` / `contextUsageCache`). Runtime accessors (`todos` / `tasks` / `contextUsage`) forward into them so in-place element patches are tracked through the nested chain. |
 | `SessionTypes.swift` | `PendingPermission`, `SlashCommand`, `deriveTitleFromFirstMessage`. |
 | `MessageEntry.swift` | Render-ready entries (`SingleEntry` / `GroupEntry`), `LocalUserInput`. |
 | `MessagesChange.swift` | Live timeline change events the bridge consumes (`.appended` / `.updated` / `.removed`). History load is **not** a `MessagesChange`. |
 
-History load no longer lives on the runtime: `Session.loadHistory()` drives a `TranscriptBackfillPipeline` (`Content/Chat/NativeTranscript2Bridge/`) over a reverse-streaming `JSONLReversePageSource`, building already-paired blocks off-main and applying them straight to the controller. The old two-phase Phase A/B read, the `tailBaseline`/`newTailStart` offset math, the throwaway in-memory `SessionRuntime` (`buildEntries`), and `ToolResultReresolver` are deleted; grouping + tool-pairing is now `ReverseEntryBuilder.swift`.
+History load no longer lives on the runtime: `Session.loadHistory()` drives a `TranscriptBackfillPipeline` (`Content/Chat/NativeTranscript2Bridge/`) over a reverse-streaming `JSONLReversePageSource`, building already-paired blocks off-main and applying them straight to the controller. The old two-phase Phase A/B read, the `tailBaseline`/`newTailStart` offset math, the throwaway in-memory `SessionRuntime` (`buildEntries`), and `ToolResultReresolver` are deleted; grouping + tool-pairing is now `ReverseEntryBuilder.swift` (in `Session/`, beside the live path it mirrors).
+
+### Load vs. live parity invariants
+
+History load and the live CLI stream produce the same blocks two different ways; these invariants keep them identical:
+
+- **History load never goes through the bridge.** `TranscriptBackfillPipeline` builds already-paired blocks off-main and applies them straight to `controller` (`.prepend` for older pages). A history load emits **no** `MessagesChange` and fires no `.update` — emitting a partial group then growing it would force a `.replace` the load path forbids.
+- **One grouping predicate, two traversals.** The live `SessionRuntime+Receive.appendToTimeline` (forward, inspects `messages.last`) and the cold `ReverseEntryBuilder` (reverse, newest-first) share the single `isGroupableAssistant` predicate. They stay separate implementations because traversal direction differs; `TranscriptReverseBuilderTests` locks their 1:1 equivalence.
+- **Cross-page tool-result pairing is withheld + buffered.** Reading bottom-up hits a `tool_result` before its `tool_use`, so an orphan result is held in `ReverseEntryBuilder.withheld` keyed by `tool_use_id` and attached when its `tool_use` is reached — the buffer spans page boundaries, and results resolve in document order.
 
 `SessionManager` (one level up at `Services/Session/SessionManager.swift`) is the registry: lazily creates and caches one `Session` façade per `sessionId`. `session(_:)` returns an active-phase façade for an existing record; `prepareDraftSession(_:)` returns a draft-phase façade (or active when a record happens to already exist for that id — idempotent get-or-create).
 
@@ -72,6 +86,7 @@ The AppKit path deliberately skips `AsyncStream` and `@Observable`:
 - **Adding a new notification on the AppKit path** — add the closure on the runtime, fire it synchronously at the mutation site, expose a matching forwarder on `Session`, add a dispatch arm to the bridge, then call `controller.apply(...)`.
 - **Never emit a state change on both channels.** Pick one. `SessionRuntime.messages` is delivered only through `onMessagesChange`; there is no shadow snapshot.
 - **Views never cache session properties as their own state.** Read the `@Observable` field directly or expose a computed property. The transcript controller is owned by `Session` (`session.controller`) — `ChatSessionViewController` reads it, never constructs one.
+- **Views call the `Session` façade, never `session.runtime.*`.** Action forwarders live on `Session` and are phase-aware. Example: `Session.stopBackgroundTask(taskId:)` returns `Void`, no-ops on `.draft` (no runtime, `tasks` empty), and forwards to `runtime.markTaskStoppedLocally`; `BackgroundTaskButton` calls the façade. Add new actions the same way rather than reaching into the runtime from a view.
 - **Local actions** (`send` / `interrupt` / `setPermissionMode`) either issue a stdin request or perform a local state transition. They never write to observables behind the runtime's back.
 - **New change variants** — add a `case` to `MessagesChange`, fire `onMessagesChange?(...)` at the mutation site in `SessionRuntime`, add the matching arm in `Transcript2EntryBridge.apply`. The bridge is wired once per session, so no view-side attach work is needed.
 

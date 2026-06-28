@@ -3299,7 +3299,16 @@
         }
       }
     },
-    "Send a message": {},
+    "Send a message": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送消息"
+          }
+        }
+      }
+    },
     "Send message with": {
       "localizations": {
         "zh-Hans": {

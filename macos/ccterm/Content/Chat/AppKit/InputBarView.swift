@@ -1,0 +1,380 @@
+import AppKit
+
+/// AppKit replacement for the SwiftUI `InputBarView2` pill (migration plan
+/// §4.1) — the SPINE: a hand-laid-out NSView that places the standalone
+/// attach button and the rounded "pill" (text field + send/stop button) with
+/// the exact pixel-numeric frame math the SwiftUI bar used. The thumbnail
+/// strip and the completion popup are co-delivered components (§4.3) that
+/// plug into the same `relayout()` funnel via the `extraPillContentHeight`
+/// accumulator; the spine leaves them at 0.
+///
+/// Layout mirrors `InputBarView2.body`:
+///
+/// ```
+/// HStack(alignment: .bottom, spacing: attachToPillSpacing) {
+///     AttachButtonView          // 32pt circle, bottom-anchored
+///     pill                      // BarSurfaceView(16), grows up
+/// }
+/// ```
+///
+/// - The attach button is bottom-aligned to the pill so the `+` stays glued
+///   to the bottom text row even when the pill grows upward (matching the
+///   SwiftUI `.bottom` alignment rationale, `InputBarView2.swift:132-139`).
+/// - The pill's bottom 32pt row holds the text scroll + the send/stop button
+///   (concentric with the bottom-right corner: `sendButtonInset = 4`).
+/// - HEIGHT is content-driven (regime B): `relayout()` sums the text view's
+///   own intrinsic height (clamped to `pillMinHeight`) plus any extra pill
+///   content, and publishes it through `intrinsicContentSize`. WIDTH is
+///   `noIntrinsicMetric` so it never leaks `fittingSize.width` up into the
+///   window constraint solver (plan R1).
+final class InputBarView: NSView {
+
+    // MARK: - Constants (verbatim from InputBarView2.swift)
+
+    static let cornerRadius: CGFloat = 16
+    static let pillMinHeight: CGFloat = 32
+    static let sendButtonInset: CGFloat = 4
+    static let attachToPillSpacing: CGFloat = 8
+    static let textLeadingPadding: CGFloat = 12
+    static let textTrailingPadding: CGFloat = 4
+    /// `textContainerInset` height — makes the scroll frame fill the full
+    /// 32pt pill so clicks on the padded strip focus the field
+    /// (`InputBarView2.swift:29`, `InputTextView.swift:13-17`).
+    static let textVerticalPadding: CGFloat = 7.5
+    /// Drop-target pill stroke (`InputBarView2.swift:273-276`).
+    private static let dropStrokeLineWidth: CGFloat = 1.5
+    private static let dropStrokeDash: [CGFloat] = [6, 4]
+    /// `.smooth(duration: 0.35)` attachment grow/shrink animation
+    /// (`InputBarView2.swift:152`, `animationDuration`).
+    static let attachmentAnimationDuration: TimeInterval = 0.35
+    /// `.easeOut(duration: 0.12)` drop-target stroke toggle
+    /// (`InputBarView2.swift:150`).
+    static let dropStrokeAnimationDuration: TimeInterval = 0.12
+
+    // MARK: - Subviews
+
+    let attachButton = AttachButtonView()
+    let sendStopButton = SendStopButton()
+    /// The raw text core, embedded directly (UNWRAP — no `TextInputView`).
+    let textScrollView: InputTextScrollView
+    let textView: InputNSTextView
+
+    private let pillSurface = BarSurfaceView(cornerRadius: InputBarView.cornerRadius)
+    /// The pill's interior content view (clipped to the rounded shape by
+    /// `pillSurface.setContentView`). The text scroll + send button live
+    /// here; the completion popup / strip mount here later.
+    private let pillContent = FlippedView()
+    private let dropStrokeLayer = CAShapeLayer()
+
+    // MARK: - Layout accumulators (filled by co-delivered components)
+
+    /// Extra height the pill must reserve ABOVE the bottom text row — the
+    /// completion popup (§4.3) and the thumbnail strip (§4.1-9) add their
+    /// fixed heights here. The spine keeps it 0. Setting it re-funnels.
+    var extraPillContentHeight: CGFloat = 0 {
+        didSet {
+            guard extraPillContentHeight != oldValue else { return }
+            relayout()
+        }
+    }
+
+    /// The view scrim-cutout rects are reported relative to — set by the
+    /// controller to `inputBarController.view` (the new `convert(from:)`
+    /// anchor, plan §4.1-2). When nil, reporting is disabled (previews).
+    weak var scrimAnchorView: NSView?
+    /// Fired in `layout()` (post-`super.layout()`, frames settled) with the
+    /// attach button's frame converted to `scrimAnchorView`.
+    var onAttachRect: ((CGRect) -> Void)?
+    /// Fired in `layout()` with the pill's frame converted to
+    /// `scrimAnchorView`. Reported separately so the 8pt gap is not cut.
+    var onPillRect: ((CGRect) -> Void)?
+
+    // MARK: - Constraints driven by relayout
+
+    private var pillHeightConstraint: NSLayoutConstraint!
+    private var lastReportedAttachRect: CGRect = .null
+    private var lastReportedPillRect: CGRect = .null
+
+    // MARK: - Init
+
+    init() {
+        textScrollView = InputTextScrollView()
+        textView = InputNSTextView(usingTextLayoutManager: true)
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+
+        configureTextCore()
+        assemble()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+
+    nonisolated deinit {}
+
+    // MARK: - Text core (verbatim setup from TextInputView.makeNSView)
+
+    private func configureTextCore() {
+        textScrollView.hasVerticalScroller = false
+        textScrollView.hasHorizontalScroller = false
+        textScrollView.verticalScrollElasticity = .none
+        textScrollView.drawsBackground = false
+        textScrollView.borderType = .noBorder
+        textScrollView.translatesAutoresizingMaskIntoConstraints = false
+
+        textView.isRichText = false
+        textView.allowsUndo = true
+        // 14pt — the chat bar's font (`InputBarView2.swift:328`); NOT the
+        // 13pt `TextInputView` default.
+        textView.font = .systemFont(ofSize: 14)
+        textView.textColor = .labelColor
+        textView.backgroundColor = .clear
+        textView.drawsBackground = false
+        textView.isEditable = true
+        textView.isSelectable = true
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.textContainerInset = NSSize(width: 0, height: Self.textVerticalPadding)
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.isAutomaticSpellingCorrectionEnabled = false
+        textView.placeholderString = String(localized: "Send a message")
+        textView.placeholderFont = .systemFont(ofSize: 14)
+
+        textScrollView.documentView = textView
+
+        let lineHeight = NSLayoutManager().defaultLineHeight(for: .systemFont(ofSize: 14))
+        textScrollView.lineHeight = lineHeight
+        textScrollView.minLines = 1
+        textScrollView.maxLines = 10
+        textScrollView.updateIntrinsicHeight()
+    }
+
+    // MARK: - Assembly
+
+    private func assemble() {
+        attachButton.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(attachButton)
+
+        pillSurface.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(pillSurface)
+
+        pillContent.translatesAutoresizingMaskIntoConstraints = false
+        pillSurface.setContentView(pillContent)
+
+        // Text scroll + send button live in the bottom 32pt row of the pill.
+        pillContent.addSubview(textScrollView)
+        pillContent.addSubview(sendStopButton)
+
+        // Drop-target stroke overlay on the pill (hidden until targeted).
+        dropStrokeLayer.fillColor = nil
+        dropStrokeLayer.lineWidth = Self.dropStrokeLineWidth
+        dropStrokeLayer.lineDashPattern = Self.dropStrokeDash.map { NSNumber(value: Double($0)) }
+        dropStrokeLayer.isHidden = true
+        dropStrokeLayer.opacity = 0
+        layer?.addSublayer(dropStrokeLayer)
+
+        pillHeightConstraint = pillSurface.heightAnchor.constraint(
+            equalToConstant: Self.pillMinHeight)
+        pillHeightConstraint.priority = .required
+
+        NSLayoutConstraint.activate([
+            // Attach button: bottom-left, fixed 32×32.
+            attachButton.leadingAnchor.constraint(equalTo: leadingAnchor),
+            attachButton.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+            // Pill: fills the remaining width, 8pt to the right of attach,
+            // bottom-anchored, top pins the view's top so the bar grows up.
+            pillSurface.leadingAnchor.constraint(
+                equalTo: attachButton.trailingAnchor, constant: Self.attachToPillSpacing),
+            pillSurface.trailingAnchor.constraint(equalTo: trailingAnchor),
+            pillSurface.topAnchor.constraint(equalTo: topAnchor),
+            pillSurface.bottomAnchor.constraint(equalTo: bottomAnchor),
+            pillHeightConstraint,
+
+            // Text scroll: leading 12 / trailing 4, sized for the BOTTOM
+            // 32pt row (its own intrinsic height drives the row height,
+            // capped at pillMinHeight by the row), bottom-anchored.
+            textScrollView.leadingAnchor.constraint(
+                equalTo: pillContent.leadingAnchor, constant: Self.textLeadingPadding),
+            textScrollView.bottomAnchor.constraint(equalTo: pillContent.bottomAnchor),
+            textScrollView.heightAnchor.constraint(
+                greaterThanOrEqualToConstant: Self.pillMinHeight),
+
+            // Send button: concentric with the bottom-right corner.
+            sendStopButton.trailingAnchor.constraint(
+                equalTo: pillContent.trailingAnchor, constant: -Self.sendButtonInset),
+            sendStopButton.bottomAnchor.constraint(
+                equalTo: pillContent.bottomAnchor, constant: -Self.sendButtonInset),
+            // Text scroll's trailing meets the send button's leading (4pt gap).
+            textScrollView.trailingAnchor.constraint(
+                equalTo: sendStopButton.leadingAnchor, constant: -Self.textTrailingPadding),
+        ])
+
+        // Hook the text view's intrinsic-height funnel into our relayout.
+        textScrollView.onIntrinsicHeightChanged = { [weak self] in
+            self?.relayout()
+        }
+
+        relayout()
+    }
+
+    // MARK: - Relayout funnel (plan §4.1-1)
+
+    /// The SINGLE funnel that recomputes the pill height from the text view's
+    /// own intrinsic height (clamped to `pillMinHeight`) + any extra content,
+    /// then re-publishes the bar's intrinsic height. EVERY mutator (text
+    /// height change, attachment add/remove, completion show/hide) calls this.
+    /// Never compute the pill height independently of the text view.
+    ///
+    /// - Parameter animated: when `true`, the height-constant change + the
+    ///   superview settle run inside an `NSAnimationContext.runAnimationGroup`
+    ///   at `.smooth(0.35)` — matching the SwiftUI bar's
+    ///   `.animation(.smooth(duration: 0.35), value: attachments.isEmpty)` for
+    ///   the attachment grow/shrink. Text-driven height changes stay instant
+    ///   (the SwiftUI bar did NOT animate text growth), so the text funnel
+    ///   passes `animated: false`.
+    func relayout(animated: Bool = false) {
+        let textHeight = max(Self.pillMinHeight, textScrollView.intrinsicContentSize.height)
+        let pillHeight = textHeight + extraPillContentHeight
+        guard abs(pillHeightConstraint.constant - pillHeight) > 0.5 else {
+            invalidateIntrinsicContentSize()
+            return
+        }
+        if animated {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = Self.attachmentAnimationDuration
+                ctx.allowsImplicitAnimation = true
+                pillHeightConstraint.animator().constant = pillHeight
+                invalidateIntrinsicContentSize()
+                superview?.layoutSubtreeIfNeeded()
+            }
+        } else {
+            pillHeightConstraint.constant = pillHeight
+            invalidateIntrinsicContentSize()
+        }
+    }
+
+    // MARK: - Sizing (regime B — content drives height; width is free)
+
+    override var intrinsicContentSize: NSSize {
+        // WIDTH must stay noIntrinsicMetric (R1) so it can never leak
+        // `fittingSize.width` up. HEIGHT = the pill's current height (the
+        // attach button is shorter and bottom-aligned, so it never governs).
+        //
+        // NOTE: `height == pillHeight` is only correct because
+        // `pillMinHeight (32) >= AttachButtonView.size (32)` — the two
+        // coincide today. If the attach button ever exceeds the pill's
+        // minimum, this must become `max(pillHeight, attachButton bottom)`.
+        NSSize(width: NSView.noIntrinsicMetric, height: pillHeightConstraint.constant)
+    }
+
+    // MARK: - Drop-target stroke
+
+    private(set) var isDropTargeted: Bool = false
+
+    /// Toggle the dashed accent stroke on the pill AND the attach button in
+    /// ONE `NSAnimationContext` group so they fade in/out together at
+    /// `.easeOut(0.12)` — matching `InputBarView2`'s
+    /// `.animation(.easeOut(duration: 0.12), value: isDropTargeted)` on both
+    /// surfaces (§4.1-9). Opacity-driven so the dashed stroke never pops.
+    func setDropTargeted(_ targeted: Bool) {
+        guard targeted != isDropTargeted else { return }
+        isDropTargeted = targeted
+        // Keep both layers present; animate alpha so easeOut reads.
+        dropStrokeLayer.isHidden = false
+        applyDropStrokeColor()
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = Self.dropStrokeAnimationDuration
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            ctx.allowsImplicitAnimation = true
+            dropStrokeLayer.opacity = targeted ? 1 : 0
+            attachButton.setDropTargeted(targeted, in: ctx)
+        } completionHandler: { [weak self] in
+            // Hide once fully faded out so it can't intercept anything.
+            if self?.isDropTargeted == false { self?.dropStrokeLayer.isHidden = true }
+        }
+    }
+
+    private func applyDropStrokeColor() {
+        var resolved: CGColor = NSColor.controlAccentColor.cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            resolved = NSColor.controlAccentColor.cgColor
+        }
+        dropStrokeLayer.strokeColor = resolved
+    }
+
+    /// Fired when the view moves into a non-nil window — the controller uses
+    /// this to drive window-gated autofocus from a guaranteed hook, since a
+    /// child VC added after its parent already appeared may never get a fresh
+    /// `viewDidAppear` (plan §4.1-5).
+    var onDidMoveToWindow: (() -> Void)?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window != nil { onDidMoveToWindow?() }
+    }
+
+    // MARK: - Layout / scrim-cutout reporting (plan §4.1-2)
+
+    override func layout() {
+        super.layout()
+
+        // Drop stroke path follows the pill's rounded silhouette.
+        let inset = Self.dropStrokeLineWidth / 2
+        dropStrokeLayer.frame = pillSurface.frame
+        dropStrokeLayer.path = CGPath(
+            roundedRect: pillSurface.bounds.insetBy(dx: inset, dy: inset),
+            cornerWidth: Self.cornerRadius, cornerHeight: Self.cornerRadius, transform: nil)
+        applyDropStrokeColor()
+
+        // Recompute the attach/pill cutout rects AFTER super.layout() (frames
+        // settled), converted to the scrim anchor. Report from the
+        // bottom-anchored subviews so they're independent of any popup that
+        // grows the pill upward (the attach/pill don't move when it opens).
+        reportScrimRects()
+    }
+
+    private func reportScrimRects() {
+        guard let anchor = scrimAnchorView else { return }
+        let attachRect = attachButton.convert(attachButton.bounds, to: anchor)
+        // The pill's cutout is its BOTTOM text row, not the whole grown pill:
+        // a RoundedRectangle the height of the bottom 32pt row anchored to the
+        // pill's bottom edge, so the popup growing up never moves the cutout.
+        let pillFull = pillSurface.convert(pillSurface.bounds, to: anchor)
+        let rowHeight = Self.pillMinHeight
+        // In the anchor's (non-flipped window) space, "bottom" is min-Y; the
+        // cutout is the bottom `rowHeight` band of the pill.
+        let pillRow = CGRect(
+            x: pillFull.minX, y: pillFull.minY,
+            width: pillFull.width, height: min(rowHeight, pillFull.height))
+
+        if !attachRect.equalTo(lastReportedAttachRect) {
+            lastReportedAttachRect = attachRect
+            onAttachRect?(attachRect)
+        }
+        if !pillRow.equalTo(lastReportedPillRect) {
+            lastReportedPillRect = pillRow
+            onPillRect?(pillRow)
+        }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        applyDropStrokeColor()
+        CATransaction.commit()
+    }
+}
+
+/// A top-left-origin (flipped) container so subviews lay out from the top,
+/// matching SwiftUI's top-down stack order inside the pill.
+private final class FlippedView: NSView {
+    override var isFlipped: Bool { true }
+    nonisolated deinit {}
+}

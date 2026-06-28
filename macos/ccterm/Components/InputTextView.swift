@@ -338,6 +338,15 @@ final class InputTextScrollView: NSScrollView {
     var minLines: Int = 2
     var maxLines: Int = 10
 
+    /// Fired AFTER `currentIntrinsicHeight` changes (and from
+    /// `viewDidEndLiveResize`). The AppKit input bar (`InputBarController`)
+    /// hooks this to re-sum the pill height when the text grows / shrinks —
+    /// the single `relayout()` funnel of plan §4.1-1. `TextInputView` (the
+    /// SwiftUI representable, still alive until Phase 4) leaves this nil: its
+    /// height flows up through `intrinsicContentSize` / `[.intrinsicContentSize]`
+    /// instead, so the closure is inert on the SwiftUI path.
+    var onIntrinsicHeightChanged: (() -> Void)?
+
     private var currentIntrinsicHeight: CGFloat = 0
 
     override init(frame frameRect: NSRect) {
@@ -389,6 +398,11 @@ final class InputTextScrollView: NSScrollView {
         if abs(currentIntrinsicHeight - clamped) > 0.5 {
             currentIntrinsicHeight = clamped
             invalidateIntrinsicContentSize()
+            // Notify the AppKit owner (if any) that the content height
+            // changed so it can re-sum the pill and re-publish its own
+            // intrinsic height. Inert on the SwiftUI representable path
+            // (the closure stays nil there).
+            onIntrinsicHeightChanged?()
         }
     }
 }

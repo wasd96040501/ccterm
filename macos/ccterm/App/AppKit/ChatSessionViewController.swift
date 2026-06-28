@@ -28,19 +28,22 @@ import SwiftUI
 /// so it never covers more of the transcript than the bar itself.
 ///
 /// Around the transcript we mount full-bleed overlays, all attached for
-/// the lifetime of the VC; their *contents* react to `model.selection`:
+/// the lifetime of the VC; their *contents* react to `present(sessionId:)`:
 /// - top scrim — `TranscriptTopScrimView` (AppKit, hitTest passthrough)
 /// - bottom scrim — `TranscriptBottomScrimView` (AppKit, hitTest
 ///   passthrough, even-odd cutouts at the attach button + pill)
-/// - input bar — `NSHostingView<ChatComposeHostRoot>`. Its SwiftUI body
-///   switches on `model.selection` via `ChatComposeStack.content(...)`:
-///   `.session(_)` → chat resting bar, everything else → `EmptyView`.
-///   `.newSession` / `.archive` / `.demo(_)` are routed away from this VC
-///   entirely by `DetailRouterViewController` and never land here.
+/// - input bar — `restingBarHost` (a pure-AppKit `RestingBarContainerView`,
+///   migration plan §4.0/§4.1). It hosts a once-built child
+///   `InputBarController` (the pill + chrome row), rebound in place via
+///   `rebind(sessionId:)`. The bar is built ONCE in `loadView` and lives for
+///   the VC's lifetime — `present(sessionId:)` only resets the model fields,
+///   so the bar's frame/constraints never change on a session switch and
+///   contribute nothing to `attachSession`'s single-width typeset pass.
 /// - permission card — `permissionCardHost` (`PassthroughHostingView`
 ///   hosting `PermissionCardOverlay`), a dedicated full-pane click-through
-///   host **on top** of the bar. The card floats here instead of inside
-///   the bar host so its footprint never pumps the bar host's height.
+///   host **on top** of the bar. Still SwiftUI this phase (ported in Phase 2);
+///   the card floats here instead of inside the bar host so its footprint
+///   never pumps the bar host's height.
 ///
 /// The bar host is bottom-anchored and takes only the bar's own intrinsic
 /// height, so the transcript scroll view receives clicks in the scrim band
@@ -51,6 +54,8 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
     /// `PreferenceKey` callbacks that report the attach button +
     /// pill rects. The canonical name for the detail pane's coordinate
     /// space, shared with `ComposeSessionViewController`'s compose card.
+    /// The chat bar no longer uses it (it reports rects via AppKit
+    /// `convert(_:to:)`); it survives only for compose/draft until Phase 4.
     static let detailCoordSpace = "ChatSessionViewController.detail"
     /// Top fade band height. Sized to match the unified toolbar so the
     /// gradient fades in exactly the strip the toolbar visually covers.
@@ -58,7 +63,7 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
     /// Bottom fade band height. Sized to match the input bar's top
     /// edge, so the gradient stops where the bar begins. Derived from
     /// `chatBottomInset` (36) + `InputBarSessionChrome` row (~22) +
-    /// `InputBarSessionChrome.barSpacing` (10) + `InputBarView2` pill
+    /// `InputBarSessionChrome.barSpacing` (10) + `InputBarView` pill
     /// (32) = 100. Hardcoded — those constants don't change at runtime.
     private static let bottomFadeScrimHeight: CGFloat = 100
     static let composeMaxWidth: CGFloat = 512
@@ -83,18 +88,26 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
     /// Full-bleed overlays. All three are added to `view` once and
     /// stay mounted for the lifetime of the VC. The scrims are pure
     /// AppKit (no `NSHostingView` so they don't register cursor rects
-    /// that would shadow the transcript's I-beam); the input bar /
-    /// compose card stays SwiftUI-hosted via a plain `NSHostingView`.
+    /// that would shadow the transcript's I-beam).
     private var topScrim: TranscriptTopScrimView!
     private var bottomScrim: TranscriptBottomScrimView!
+
+    /// The once-built input bar. A child `NSViewController` (NOT a
+    /// `DetailRouterChild`) added in `loadView`; its `view` (the pill) and its
+    /// `chromeRow` are stacked inside `restingBarHost`. `present(sessionId:)`
+    /// calls `rebind(sessionId:)` to reset its model fields in place — never
+    /// re-`addChild` (a freshly-added child resolving its intrinsicContentSize
+    /// would corrupt `attachSession`'s single-width typeset pass, plan §4.0).
+    private(set) var inputBarController: InputBarController!
+
     // `internal` (not `private`) is an access-modifier-only test seam: the
     // `HostedComponentCenteringTests` CI gate samples this host's frame to
     // assert the regime-B centering + width-cap contract. No behavior change.
-    // The root view is a named `ChatComposeHostRoot` wrapper (not `AnyView`)
-    // so the construction expression + environment chain are type-checked;
-    // the tests touch this only through `NSView` APIs (`.frame` /
-    // `.fittingSize`), so the concrete generic parameter doesn't affect them.
-    var restingBarHost: NSHostingView<ChatComposeHostRoot>!
+    // It is now a pure-AppKit `RestingBarContainerView` hosting the input bar
+    // child VC; it carries the SAME five regime-B constraints the SwiftUI
+    // `NSHostingView<ChatComposeHostRoot>` used to, plus an intrinsic height so
+    // the host shrinks to the bar's content (the regime-B contract).
+    var restingBarHost: RestingBarContainerView!
 
     /// Full-pane floating host for the permission card (`PermissionCardOverlay`).
     /// A `PassthroughHostingView` (regime-A: `sizingOptions = []` + four-edge
@@ -103,13 +116,13 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
     /// (not driven by the card), the bar host's intrinsic height stays a pure
     /// function of the bar content — the card never pumps the bar band. Clicks
     /// outside the card pass straight through to the transcript (see
-    /// `PassthroughHostingView`).
+    /// `PassthroughHostingView`). Still SwiftUI this phase (ported in Phase 2).
     var permissionCardHost: PassthroughHostingView!
 
-    /// Latest attach / pill rects reported by the chat resting bar
-    /// in `detailCoordSpace`. Used to drive `bottomScrim`'s cutouts.
-    /// Local to this VC — there's no cross-VC consumer that would
-    /// need to read these.
+    /// Latest attach / pill rects reported by the input bar, converted to
+    /// `inputBarController.view` (the scrim anchor). Used to drive
+    /// `bottomScrim`'s cutouts. Local to this VC — there's no cross-VC consumer
+    /// that would need to read these.
     private var lastAttachRect: CGRect = .zero
     private var lastPillRect: CGRect = .zero
 
@@ -136,25 +149,78 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
         bottomScrim.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(bottomScrim)
 
-        restingBarHost = NSHostingView(rootView: makeComposeOrBarRoot())
+        // Build the input bar ONCE (plan §4.0). It is a child VC so its
+        // child-VC lifecycle (`viewDidAppear` gating autofocus) fires; the
+        // chat resting bar leaves `autofocus` false. The closures are wired
+        // directly into init — no `ChatComposeHostRoot` relay.
+        let inputBar = InputBarController(
+            sessionManager: context.sessionManager,
+            inputDraftStore: context.inputDraftStore,
+            onBuiltinCommand: { [weak self] command in
+                guard let self, let sessionId = self.inputBarController.boundSessionId else {
+                    return
+                }
+                runBuiltinSlashCommand(
+                    command,
+                    currentSessionId: sessionId,
+                    sessionManager: self.context.sessionManager,
+                    model: self.context.model)
+            },
+            onSubmit: { [weak self] submission, sessionId in
+                guard let self else { return }
+                submitSessionInput(
+                    submission,
+                    sessionId: sessionId,
+                    sessionManager: self.context.sessionManager,
+                    recentProjects: self.context.recentProjects,
+                    model: self.context.model)
+            })
+        addChild(inputBar)
+        inputBarController = inputBar
+        // Force the child's `loadView` now so `barView` / `chromeRow` exist
+        // before we wire the scrim anchor + build the host container (the bar's
+        // implicitly-unwrapped `barView` is nil until its view loads).
+        inputBar.loadViewIfNeeded()
+
+        // Scrim cutout data path: the bar reports its attach/pill rects
+        // converted TO `inputBarController.view` (the new `convert(from:)`
+        // anchor, plan §4.1-2 / R6). The consume side converts FROM that
+        // exact view.
+        inputBar.barView.scrimAnchorView = inputBar.view
+        inputBar.barView.onAttachRect = { [weak self] rect in
+            guard let self else { return }
+            self.lastAttachRect = rect
+            self.applyScrimCutouts()
+        }
+        inputBar.barView.onPillRect = { [weak self] rect in
+            guard let self else { return }
+            self.lastPillRect = rect
+            self.applyScrimCutouts()
+        }
+
+        // The regime-B host: a pure-AppKit container stacking the pill + the
+        // chrome row, applying the chat bar's inner width-cap + insets (the
+        // SwiftUI `ChatRestingBar` padding/frame chain, now in constraints).
+        restingBarHost = RestingBarContainerView(
+            barView: inputBar.barView,
+            chromeRow: inputBar.chromeRow,
+            innerMaxWidth: Self.composeMaxWidth,
+            horizontalInset: Self.detailHorizontalInset,
+            bottomInset: Self.chatBottomInset,
+            barSpacing: InputBarSessionChrome.barSpacing)
         restingBarHost.translatesAutoresizingMaskIntoConstraints = false
-        // A plain `NSHostingView` claims every point in its bounds for
-        // hit-testing, shadowing the transcript table below it. We keep its
-        // bounds to just the bar: the HEIGHT is left to the content's own
-        // intrinsic size (`.intrinsicContentSize`), so the host is only as
-        // tall as the bar — multi-line input grows it, nothing else (the
-        // permission card no longer lives here; it floats in
-        // `permissionCardHost`) — and the transcript receives clicks above.
-        restingBarHost.sizingOptions = [.intrinsicContentSize]
         view.addSubview(restingBarHost)
 
-        // WIDTH is owned by AppKit, HEIGHT by the content (above):
+        // WIDTH is owned by AppKit, HEIGHT by the content (the container
+        // publishes its intrinsic height — pill + spacing + chrome + bottom
+        // inset). The five regime-B constraints are inherited VERBATIM from the
+        // SwiftUI host they replace:
         // - centerX  → the bar is horizontally centered in the pane.
         // - width <= maxHostWidth (required) caps the host; the input pill
-        //   (`composeMaxWidth`) self-centers inside via its own frame. The cap
-        //   is the transcript column width (`BlockStyle.maxLayoutWidth`) plus
-        //   horizontal padding — kept aligned with the column so the bar's
-        //   centered axis matches the transcript's.
+        //   (`composeMaxWidth`) self-centers inside via the container's own
+        //   inner cap. The cap is the transcript column width
+        //   (`BlockStyle.maxLayoutWidth`) plus horizontal padding — kept aligned
+        //   with the column so the bar's centered axis matches the transcript's.
         // - width == maxHostWidth @high fills up to that cap on a wide pane,
         //   but yields to `leading >=` on a pane narrower than the cap (detail
         //   can be as small as 680) so the bar shrinks to fit the pane instead
@@ -181,10 +247,6 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
         permissionCardHost.sizingOptions = []
         view.addSubview(permissionCardHost)
 
-        // Each scrim is sized to its visible band, anchored to its
-        // edge. Cutout coordinates arrive in `restingBarHost`'s
-        // SwiftUI coord space; `applyScrimCutouts` translates them
-        // into the bottom scrim's local coord via `convert(_:from:)`.
         NSLayoutConstraint.activate([
             topScrim.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             topScrim.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -227,12 +289,14 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
     }
 
     /// Push the latest reported rects into the bottom scrim. Called
-    /// every time the chat resting bar fires a geometry callback —
-    /// no Observation hop in between because the rects are local to
-    /// this VC and there's no other consumer.
+    /// every time the input bar fires a geometry callback — no Observation
+    /// hop in between because the rects are local to this VC and there's no
+    /// other consumer. The from-base is `inputBarController.view`, the exact
+    /// view that anchors the bar (plan §4.1-2 / R6).
     private func applyScrimCutouts() {
-        bottomScrim.attachRect = bottomScrim.convert(lastAttachRect, from: restingBarHost)
-        bottomScrim.pillRect = bottomScrim.convert(lastPillRect, from: restingBarHost)
+        guard let anchor = inputBarController?.view else { return }
+        bottomScrim.attachRect = bottomScrim.convert(lastAttachRect, from: anchor)
+        bottomScrim.pillRect = bottomScrim.convert(lastPillRect, from: anchor)
     }
 
     // MARK: - Imperative presentation (driven by the router)
@@ -252,8 +316,25 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
         updateFocus(activeSessionId: sessionId)
         guard let sessionId else {
             swapCoordinator?.tearDownTranscript()
+            // `.none` reproduces `ChatComposeStack.content`'s `.none → EmptyView`
+            // collapse: the whole bar host disappears (no pill, no chrome row) on
+            // the empty chat backdrop. HIDING the host — not just clearing its
+            // model — is what matches the old `EmptyView`; `clearBinding()`
+            // additionally resets text/attachments/completion + drops the
+            // `Session` so a stale chrome row isn't staged behind the hidden host.
+            // The host is un-hidden again on the next non-nil `present`.
+            restingBarHost.isHidden = true
+            inputBarController.clearBinding()
             return
         }
+        // Re-reveal the bar host (it may have been hidden by a prior `.none`).
+        restingBarHost.isHidden = false
+        // Rebind the bar in the SAME source phase as the transcript attach so
+        // both overlays bind the same instance (plan §4.0 stale-card fix). The
+        // bar's constraints are invariant across rebind, so the resting bar
+        // host frame is identical before/after — `attachSession`'s layout pass
+        // stays bar-invariant.
+        inputBarController.rebind(sessionId: sessionId)
         transcriptSwapCoordinator().attachSession(sessionId, animated: animated)
     }
 
@@ -264,6 +345,7 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
     /// here rather than whenever ARC gets around to freeing the VC.
     func prepareForRemoval() {
         swapCoordinator?.tearDownTranscript()
+        inputBarController?.prepareForRemoval()
     }
 
     /// Lazily build (and cache) the transcript-swap coordinator. Deferred to
@@ -307,46 +389,6 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
         }
     }
 
-    // MARK: - SwiftUI overlay builders
-
-    /// Build the chat resting-bar host root. The environment chain is
-    /// encapsulated in the named `ChatComposeHostRoot` wrapper (un-erased
-    /// from the former `AnyView(...)`), so the construction expression +
-    /// modifier chain are type-checked at the call site. The closures stay
-    /// owned by this VC with the same `[weak self]` semantics as before.
-    private func makeComposeOrBarRoot() -> ChatComposeHostRoot {
-        ChatComposeHostRoot(
-            context: context,
-            onSubmit: { [weak self] submission, sessionId in
-                guard let self else { return }
-                submitSessionInput(
-                    submission,
-                    sessionId: sessionId,
-                    sessionManager: self.context.sessionManager,
-                    recentProjects: self.context.recentProjects,
-                    model: self.context.model)
-            },
-            onAttachRect: { [weak self] rect in
-                guard let self else { return }
-                self.lastAttachRect = rect
-                self.applyScrimCutouts()
-            },
-            onPillRect: { [weak self] rect in
-                guard let self else { return }
-                self.lastPillRect = rect
-                self.applyScrimCutouts()
-            },
-            onBuiltinCommand: { [weak self] command, sessionId in
-                guard let self else { return }
-                runBuiltinSlashCommand(
-                    command,
-                    currentSessionId: sessionId,
-                    sessionManager: self.context.sessionManager,
-                    model: self.context.model)
-            }
-        )
-    }
-
     /// `nonisolated` so dealloc skips the `@MainActor` deinit
     /// executor-hop (`swift_task_deinitOnExecutorImpl`) that aborts in the
     /// XCTest process — the macOS 26 libswift_Concurrency `TaskLocal`
@@ -359,68 +401,132 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
     nonisolated deinit {}
 }
 
-// MARK: - SwiftUI overlay subviews
+// MARK: - Resting-bar container (regime-B host, AppKit)
 
-/// Named root wrapper for `ChatSessionViewController.restingBarHost`.
-/// Encapsulates the environment-injection chain that used to be erased
-/// behind an `AnyView(...)` at the host's construction site, so the
-/// `restingBarHost` declaration carries a concrete generic parameter
-/// (`NSHostingView<ChatComposeHostRoot>`) and the root view's construction +
-/// modifier chain are type-checked. The VC owns the callbacks; this struct
-/// only threads them — and the `DetailContext` — into `ChatComposeStack`.
+/// The pure-AppKit replacement for the SwiftUI `NSHostingView<ChatComposeHostRoot>`
+/// that used to host the chat resting bar (migration plan §4.0/§4.1). It stacks
+/// the input bar pill on top of the chrome row, applying the chat bar's inner
+/// width-cap + insets — the constraints translated verbatim from `ChatRestingBar`'s
+/// `.frame(maxWidth: composeMaxWidth).padding(.horizontal, 20).padding(.bottom, 36)`.
 ///
-/// Un-erasing does **not** by itself turn a missing `.environment(...)`
-/// injection into a compile error — Observable-object / keyed-environment
-/// values resolve at runtime. What it guards is the *construction
-/// expression*: the wrapper's body has to name the injection explicitly (now
-/// via `injectDetailEnvironment(_:)`), so the chain can't silently drift to
-/// the wrong type.
-struct ChatComposeHostRoot: View {
-    let context: DetailContext
-    let onSubmit: (Submission, String) -> Void
-    let onAttachRect: (CGRect) -> Void
-    let onPillRect: (CGRect) -> Void
-    let onBuiltinCommand: (BuiltinSlashCommand, String) -> Void
+/// Sizing is regime B: it publishes an **intrinsic height** (so the
+/// `ChatSessionViewController`'s `[.intrinsicContentSize]`-equivalent contract
+/// holds and the host shrinks to the bar's content) but **no intrinsic width**
+/// (`noIntrinsicMetric`, so it never leaks `fittingSize.width` up into the
+/// window's constraint solver and collapses the window, plan R1). The five
+/// outer regime-B constraints (centerX / width<=cap / width==cap@high /
+/// leading>= / bottom==) live on the VC; this view only owns its inner content
+/// layout + its intrinsic height.
+@MainActor
+final class RestingBarContainerView: NSView {
+    private let barView: NSView
+    private let chromeRow: NSView
+    private let bottomInset: CGFloat
+    private let barSpacing: CGFloat
 
-    var body: some View {
-        ChatComposeStack(
-            model: context.model,
-            onSubmit: onSubmit,
-            onAttachRect: onAttachRect,
-            onPillRect: onPillRect,
-            onBuiltinCommand: onBuiltinCommand
-        )
-        .injectDetailEnvironment(context)
+    /// The inner content stack (pill + chrome row), capped + inset. The
+    /// container's intrinsic height = this stack's fitting height + the bottom
+    /// inset.
+    private let innerContent = NSView()
+
+    init(
+        barView: InputBarView,
+        chromeRow: NSView,
+        innerMaxWidth: CGFloat,
+        horizontalInset: CGFloat,
+        bottomInset: CGFloat,
+        barSpacing: CGFloat
+    ) {
+        self.barView = barView
+        self.chromeRow = chromeRow
+        self.bottomInset = bottomInset
+        self.barSpacing = barSpacing
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+
+        // When the bar re-sums its height (text grow/shrink, attachment band,
+        // completion popup), re-query our cached `intrinsicContentSize` (which
+        // reads `innerContent.fittingSize.height`) so the intrinsic-size path
+        // can't win with a stale value (R7). The `top==top` / `bottom==bottom`
+        // constraint chain also pins our height, so this is belt-and-suspenders.
+        barView.onIntrinsicHeightChanged = { [weak self] in
+            self?.invalidateIntrinsicContentSize()
+        }
+
+        innerContent.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(innerContent)
+
+        barView.translatesAutoresizingMaskIntoConstraints = false
+        chromeRow.translatesAutoresizingMaskIntoConstraints = false
+        innerContent.addSubview(barView)
+        innerContent.addSubview(chromeRow)
+
+        // Inner content: width-capped at `innerMaxWidth` (the SwiftUI
+        // `.frame(maxWidth: composeMaxWidth)`), centered, with `horizontalInset`
+        // on each side (`.padding(.horizontal, 20)`). The `<= cap @required`
+        // never overflows; `== cap @high` fills up to the cap on a wide host but
+        // yields to `leading >=` so the bar shrinks to fit a narrow host.
+        let innerWidthFill = innerContent.widthAnchor.constraint(equalToConstant: innerMaxWidth)
+        innerWidthFill.priority = .defaultHigh
+
+        NSLayoutConstraint.activate([
+            innerContent.centerXAnchor.constraint(equalTo: centerXAnchor),
+            innerContent.widthAnchor.constraint(lessThanOrEqualToConstant: innerMaxWidth),
+            innerContent.leadingAnchor.constraint(
+                greaterThanOrEqualTo: leadingAnchor, constant: horizontalInset),
+            innerWidthFill,
+            // Top pins so the container's height is driven by the inner content
+            // top → the container top; bottom pins at the bottom inset.
+            innerContent.topAnchor.constraint(equalTo: topAnchor),
+            innerContent.bottomAnchor.constraint(
+                equalTo: bottomAnchor, constant: -bottomInset),
+
+            // Pill on top (its own content drives its height — regime B).
+            barView.topAnchor.constraint(equalTo: innerContent.topAnchor),
+            barView.leadingAnchor.constraint(equalTo: innerContent.leadingAnchor),
+            barView.trailingAnchor.constraint(equalTo: innerContent.trailingAnchor),
+
+            // Chrome row `barSpacing` below the pill, full width, fixed 22pt
+            // height (the row's own intrinsic height), bottom of the stack.
+            chromeRow.topAnchor.constraint(
+                equalTo: barView.bottomAnchor, constant: barSpacing),
+            chromeRow.leadingAnchor.constraint(equalTo: innerContent.leadingAnchor),
+            chromeRow.trailingAnchor.constraint(equalTo: innerContent.trailingAnchor),
+            chromeRow.bottomAnchor.constraint(equalTo: innerContent.bottomAnchor),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+
+    nonisolated deinit {}
+
+    /// Regime B: publish the content-driven HEIGHT (so the host shrinks to the
+    /// bar, never fills the pane) but NO intrinsic width (so it never leaks
+    /// `fittingSize.width` up into the window's constraint solver, plan R1). The
+    /// height is the inner content's fitting height (which the bar's
+    /// `invalidateIntrinsicContentSize` cascades into) plus the bottom inset.
+    override var intrinsicContentSize: NSSize {
+        let innerHeight = innerContent.fittingSize.height
+        return NSSize(width: NSView.noIntrinsicMetric, height: innerHeight + bottomInset)
     }
 }
 
-/// Chat-mode resting input bar (or nothing). The always-mounted bar
-/// host of `ChatSessionViewController` renders this; it reads state from
-/// the shared `MainSelectionModel` so the AppKit VC can drive selection
-/// flips imperatively from outside SwiftUI.
-///
-/// New Session's compose card is NOT here — it has its own
-/// `ComposeSessionViewController` / `ComposeSessionView`. This stack only
-/// ever shows the chat resting bar for `.session(_)`, and `EmptyView`
-/// for every other selection.
-struct ChatComposeStack: View {
-    @Bindable var model: MainSelectionModel
-    let onSubmit: (Submission, String) -> Void
-    let onAttachRect: (CGRect) -> Void
-    let onPillRect: (CGRect) -> Void
-    /// Builtin slash command dispatcher, carrying the bar's live session
-    /// id so `/new` / `/clear` can seed the new draft from it.
-    let onBuiltinCommand: (BuiltinSlashCommand, String) -> Void
+// MARK: - ChatComposeStack routing (KEEP — consumed by PermissionCardOverlay)
 
-    /// Routing decision for this overlay. Static + pure so the
-    /// "which selection shows what input chrome" invariant is
-    /// directly unit-testable — see `ChatComposeStackRoutingTests`.
-    /// Only `.session(_)` renders a bar; everything else collapses to
-    /// `.none`, which is what keeps the input bar from rendering on top
-    /// of (and intercepting clicks on) pages where this VC might be
-    /// mounted. `.newSession` is routed to `ComposeSessionViewController`
-    /// by the router and never reaches this stack, but it still maps to
-    /// `.none` here as belt-and-suspenders.
+/// The selection→content routing decision for the chat overlays. The chat bar
+/// no longer renders this (it is driven imperatively by `present(sessionId:)`),
+/// but the static `content(for:draftSessionId:)` helper survives because
+/// `PermissionCardOverlay` (the still-SwiftUI permission card, Phase 2) reads
+/// the same `MainSelectionModel.selection` through it, and
+/// `ChatComposeStackRoutingTests` pins the routing invariants. Only
+/// `.session(_)` renders a card; everything else collapses to `.none`.
+enum ChatComposeStack {
+    /// Routing decision. Static + pure so the "which selection shows what input
+    /// chrome" invariant is directly unit-testable — see
+    /// `ChatComposeStackRoutingTests`. `.newSession` is routed to
+    /// `ComposeSessionViewController` by the router and never reaches the chat
+    /// VC, but it still maps to `.none` here as belt-and-suspenders.
     enum Content: Equatable {
         case none
         case chat(sessionId: String)
@@ -437,44 +543,5 @@ struct ChatComposeStack: View {
         case .session(let sid):
             return .chat(sessionId: sid)
         }
-    }
-
-    var body: some View {
-        let content = Self.content(for: model.selection, draftSessionId: model.draftSessionId)
-        ZStack {
-            switch content {
-            case .none:
-                EmptyView()
-            case .chat(let sid):
-                // `.id(sid)` resets `InputBarView2`'s `@State`
-                // (text, attachments, focus, completion) on every
-                // session switch. Without it, the bar's local state
-                // persists across sessions — the bar's `.task(id:
-                // draftKey)` restore is gated on `text.isEmpty &&
-                // attachments.isEmpty`, so a non-empty bar would
-                // both display the previous session's body and
-                // overwrite the new session's draft on the next
-                // keystroke. Pre-#195 this reset came for free from
-                // `.id(sid)` on `ChatHistoryView`, which used to
-                // bracket the overlay-hosted input bar.
-                ChatRestingBar(
-                    sessionId: sid,
-                    draftKey: sid,
-                    onSubmit: { submission in onSubmit(submission, sid) },
-                    onAttachRect: onAttachRect,
-                    onPillRect: onPillRect,
-                    onBuiltinCommand: { command in onBuiltinCommand(command, sid) }
-                )
-                .id(sid)
-            }
-        }
-        // Fill the width the AppKit host hands us — the host is centered and
-        // width-capped (at the widest content) by `ChatSessionViewController`.
-        // Height is left to the content's own intrinsic size, which the host
-        // reads via its `.intrinsicContentSize` sizing option. The pill and
-        // permission card self-limit and center inside this width via their
-        // own frames.
-        .frame(maxWidth: .infinity)
-        .coordinateSpace(name: ChatSessionViewController.detailCoordSpace)
     }
 }

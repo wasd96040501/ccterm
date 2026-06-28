@@ -46,7 +46,10 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
 
     // MARK: - Bound session state
 
-    private var boundSessionId: String?
+    /// The bound session id (`onSubmit`/builtin-command target). `private(set)`
+    /// so the chat VC can read it for the `onBuiltinCommand` relay (an
+    /// access-modifier-only seam; only `rebind`/`clearBinding` write it).
+    private(set) var boundSessionId: String?
     private var boundSession: Session?
     /// The key the persisted draft is loaded/saved under. In chat mode this
     /// coincides with `boundSessionId`; in compose mode it is the stable
@@ -284,6 +287,45 @@ final class InputBarController: NSViewController, NSTextViewDelegate {
         // (7) focus is fired from viewDidAppear / after draft load via
         //     focusIfNeeded (window-gated).
         focusIfNeeded()
+    }
+
+    /// Clear the bar to an empty, unbound state for the `.none` selection —
+    /// the AppKit analogue of `ChatComposeStack.content`'s `.none → EmptyView`
+    /// collapse (plan §4.0). Reset the model fields in place (never rebuild the
+    /// view), cancel observation, and drop the `Session` reference so the bar
+    /// stops reflecting a session it no longer shows. Does NOT tear the bar
+    /// down (the VC stays mounted) — a subsequent `rebind(sessionId:)` re-arms
+    /// it. The chrome row + observation flags follow the same posture as
+    /// `prepareForRemoval`, minus the popover-sheet teardown (the bar is still
+    /// alive).
+    func clearBinding() {
+        loadViewIfNeeded()
+        draftLoadTask?.cancel()
+        draftLoadTask = nil
+        if view.window?.firstResponder === barView.textView {
+            view.window?.makeFirstResponder(nil)
+        }
+        applyProgrammatic { barView.textView.string = "" }
+        attachments = []
+        barView.setAttachmentStrip(attachments)
+        completion.dismiss()
+        barView.setCompletionPopup(active: false, listHeight: 0)
+        imagePreviewPresenter?.dismiss()
+        barView.relayout()
+        // Stop the chrome row from reflecting the session it no longer shows:
+        // close any open popover + cancel each picker's per-open observation /
+        // timers (the same posture as dropping `boundSession`). The host is
+        // hidden on `.none` (the EmptyView collapse), so the pickers' last labels
+        // are never visible; a subsequent `rebind` re-arms them in place.
+        chromeRow.teardown()
+        isRunningObservationActive = false
+        cwdObservationActive = false
+        prewarmObservationActive = false
+        boundSession = nil
+        boundSessionId = nil
+        boundDraftKey = nil
+        barView.sendStopButton.setRunning(false, animated: false)
+        updateSubmitEnabled()
     }
 
     // MARK: - canSend (plan §4.1, verbatim from InputBarView2.canSend)

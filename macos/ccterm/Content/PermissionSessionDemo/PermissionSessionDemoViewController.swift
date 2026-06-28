@@ -4,26 +4,16 @@ import AgentSDK
 import AppKit
 import SwiftUI
 
-/// Carries the resting bar's measured natural height out to the AppKit host
-/// so the bottom-anchored host can size to exactly the bar. (Demo-local; the
-/// production `ChatSessionViewController` now sizes its bar host via
-/// `NSHostingView.sizingOptions = [.intrinsicContentSize]` instead.)
-private struct DemoBarHeightKey: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
 /// AppKit-rooted host for the end-to-end permission card layout demo.
 /// Replaces the former SwiftUI `PermissionSessionDemoView` +
 /// `ChatHistoryView` combo: the transcript is mounted directly via
-/// `TranscriptScrollViewFactory`, the input bar (`ChatRestingBar`) and
-/// the floating permission-card controller stay SwiftUI but are now
-/// hosted via `NSHostingView`. The mocked `SessionManager` /
-/// `Session` pair, seed payload (`TranscriptDemoViewController.initialBlocks`),
-/// and ControlPanel behavior are carried over verbatim from the old
-/// view; only the mount strategy changed.
+/// `TranscriptScrollViewFactory`, the input bar is now a pure-AppKit
+/// `InputBarController` hosted in a `RestingBarContainerView` (mirroring
+/// production's `ChatSessionViewController.restingBarHost`), and the floating
+/// permission-card controller stays SwiftUI but is hosted via `NSHostingView`.
+/// The mocked `SessionManager` / `Session` pair, seed payload
+/// (`TranscriptDemoViewController.initialBlocks`), and ControlPanel behavior
+/// are carried over verbatim from the old view; only the mount strategy changed.
 @MainActor
 final class PermissionSessionDemoViewController: NSViewController {
 
@@ -45,7 +35,9 @@ final class PermissionSessionDemoViewController: NSViewController {
     private let seed: Seed
     private var scroll: Transcript2ScrollView?
     private var sheetPresenter: Transcript2SheetPresenter?
-    private var inputBarHost: NSHostingView<AnyView>?
+    /// The pure-AppKit input bar (mirrors production's `inputBarController`),
+    /// hosted in a `RestingBarContainerView` bottom-anchored to the pane.
+    private var inputBarController: InputBarController?
     /// Full-pane permission-card host, mirroring production's
     /// `ChatSessionViewController.permissionCardHost`. Without it the
     /// `showCurrent()` control would set `pendingPermissions` but no card
@@ -54,15 +46,11 @@ final class PermissionSessionDemoViewController: NSViewController {
     /// Resolves `PermissionCardOverlay` to the seed session — selection is set
     /// to `.session(seed.sessionId)` once the seed exists (in `viewDidLoad`).
     private let demoModel = MainSelectionModel()
-    /// Bottom-anchored bar host height, driven by the bar's measured natural
-    /// height (demo-local; production sizes its host via `.intrinsicContentSize`).
-    private var inputBarHeightConstraint: NSLayoutConstraint?
     private var controlPanelHost: NSHostingView<ControlPanelHostView>?
     private let controlPanelState = ControlPanelState()
-    /// Demo-local draft store so the hosted `InputBarView2` resolves its
-    /// required `@Environment(InputDraftStore.self)` (production supplies it
-    /// from `AppState`). Temp-dir backed so the demo never touches the user's
-    /// real input drafts.
+    /// Demo-local draft store so the hosted input bar resolves its draft
+    /// (production supplies it from `AppState`). Temp-dir backed so the demo
+    /// never touches the user's real input drafts.
     private let inputDraftStore = InputDraftStore(
         directory: FileManager.default.temporaryDirectory
             .appendingPathComponent("ccterm-permission-demo-drafts", isDirectory: true))
@@ -96,6 +84,7 @@ final class PermissionSessionDemoViewController: NSViewController {
     override func viewWillDisappear() {
         super.viewWillDisappear()
         sheetPresenter?.stop()
+        inputBarController?.prepareForRemoval()
     }
 
     private func mountTranscript() {
@@ -116,46 +105,40 @@ final class PermissionSessionDemoViewController: NSViewController {
     }
 
     private func installInputBar() {
-        let bar = ChatRestingBar(
-            sessionId: seed.sessionId,
-            draftKey: seed.sessionId,
-            onSubmit: { _ in },
-            onAttachRect: { _ in },
-            onPillRect: { _ in }
-        )
-        .environment(seed.manager)
-        .environment(inputDraftStore)
-        // Bottom-anchor the bar at its OWN height, exactly as
-        // `ChatSessionViewController` does. Measure the bar's natural height
-        // and feed it to the host's height constraint; pinning the host
-        // full-bleed (or letting a plain `NSHostingView` publish its intrinsic
-        // height) leaks a required height up into the window's constraints and
-        // collapses the window. `sizingOptions = []` below severs that path.
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity)
-        .background {
-            GeometryReader { proxy in
-                Color.clear.preference(
-                    key: DemoBarHeightKey.self, value: proxy.size.height)
-            }
-        }
-        .onPreferenceChange(DemoBarHeightKey.self) { [weak self] height in
-            self?.inputBarHeightConstraint?.constant = height
-        }
-        .ignoresSafeArea()
-        let host = NSHostingView(rootView: AnyView(bar))
-        host.sizingOptions = []
+        // Mirror production: build the input bar ONCE as a child VC, host its
+        // pill + chrome row in a `RestingBarContainerView` bottom-anchored at
+        // its own intrinsic height, then `rebind` it to the seed session.
+        let controller = InputBarController(
+            sessionManager: seed.manager,
+            inputDraftStore: inputDraftStore,
+            onSubmit: { _, _ in })
+        addChild(controller)
+        inputBarController = controller
+        // Force the child's `loadView` now so `barView` / `chromeRow` exist
+        // before we build the host container (mirrors production's
+        // `ChatSessionViewController.loadView`).
+        controller.loadViewIfNeeded()
+
+        let host = RestingBarContainerView(
+            barView: controller.barView,
+            chromeRow: controller.chromeRow,
+            innerMaxWidth: ChatSessionViewController.composeMaxWidth,
+            horizontalInset: ChatSessionViewController.detailHorizontalInset,
+            bottomInset: ChatSessionViewController.chatBottomInset,
+            barSpacing: InputBarSessionChrome.barSpacing)
         host.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(host)
-        let heightConstraint = host.heightAnchor.constraint(equalToConstant: 0)
-        inputBarHeightConstraint = heightConstraint
+        let maxHostWidth = BlockStyle.maxLayoutWidth + 2 * ChatSessionViewController.detailHorizontalInset
+        let widthFill = host.widthAnchor.constraint(equalToConstant: maxHostWidth)
+        widthFill.priority = .defaultHigh
         NSLayoutConstraint.activate([
-            host.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            host.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            host.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             host.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            heightConstraint,
+            host.widthAnchor.constraint(lessThanOrEqualToConstant: maxHostWidth),
+            host.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor),
+            widthFill,
         ])
-        inputBarHost = host
+        controller.rebind(sessionId: seed.sessionId)
     }
 
     /// Mirror production's `permissionCardHost`: a full-pane click-through

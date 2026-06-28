@@ -156,8 +156,13 @@ final class InputBarView: NSView {
     private var stripDividerToText: NSLayoutConstraint!
     /// Whether the attachment strip is currently in the chain.
     private(set) var isAttachmentStripActive = false
-    private var lastReportedAttachRect: CGRect = .null
-    private var lastReportedPillRect: CGRect = .null
+    /// The last attach/pill rects reported through `onAttachRect`/`onPillRect`
+    /// (converted to `scrimAnchorView`). `private(set)` is an access-modifier-only
+    /// test seam — the integration gate asserts the rects production REPORTS are
+    /// stable across a completion-popup open/close (plan §4.1-2 / R6) without a
+    /// re-implementation. No behavior change.
+    private(set) var lastReportedAttachRect: CGRect = .null
+    private(set) var lastReportedPillRect: CGRect = .null
 
     // MARK: - Init
 
@@ -397,6 +402,10 @@ final class InputBarView: NSView {
             pillHeightConstraint.constant = pillHeight
             invalidateIntrinsicContentSize()
         }
+        // The published intrinsic HEIGHT changed; tell the regime-B host to
+        // re-query its own cached intrinsic size (which reads our fitting height)
+        // so the intrinsic-size path can't keep a stale value (R7).
+        onIntrinsicHeightChanged?()
     }
 
     // MARK: - Completion popup show/hide (plan §4.3)
@@ -472,6 +481,17 @@ final class InputBarView: NSView {
         // `fittingSize.width` up. HEIGHT = the pill's current height (the
         // attach button is shorter and bottom-aligned, so it never governs).
         //
+        // INVARIANT: the pill height is owned SOLELY by `pillHeightConstraint`
+        // (set imperatively in `relayout()` from the text height + the reserved
+        // strip/popup bands). The content chain only pins `textScrollView.bottom`
+        // to `pillContent.bottom` — the attachment strip + dividers are pinned
+        // ABOVE the text row, never to `pillContent.bottom`. This matters because
+        // `AttachmentStripView.heightConstraint` is @required and always-active
+        // (it is not deactivated when the strip is hidden); if the strip/divider
+        // chain were ever pinned to `pillContent.bottom`, the hidden 64pt strip
+        // would pump the idle bar height. Keep the bottom of the content chain
+        // anchored to the text row only.
+        //
         // NOTE: `height == pillHeight` is only correct because
         // `pillMinHeight (32) >= AttachButtonView.size (32)` — the two
         // coincide today. If the attach button ever exceeds the pill's
@@ -540,6 +560,16 @@ final class InputBarView: NSView {
     /// child VC added after its parent already appeared may never get a fresh
     /// `viewDidAppear` (plan §4.1-5).
     var onDidMoveToWindow: (() -> Void)?
+
+    /// Fired from `relayout()` whenever the bar's published intrinsic HEIGHT
+    /// changes (text grow/shrink, attachment band, completion popup). The
+    /// regime-B host (`RestingBarContainerView`) wires this to
+    /// `invalidateIntrinsicContentSize()` so its own cached intrinsic height —
+    /// which reads `innerContent.fittingSize.height` — is re-queried (R7). The
+    /// constraint chain pins the host height too, so this is belt-and-suspenders;
+    /// without it a host that relied solely on the intrinsic-size path would
+    /// keep a stale cached height after text growth.
+    var onIntrinsicHeightChanged: (() -> Void)?
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()

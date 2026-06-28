@@ -83,35 +83,16 @@ struct PermissionCardOverlay: View {
         .animation(.smooth(duration: 0.25), value: session.pendingPermissions.first?.id)
     }
 
-    /// The four decision actions for a pending permission, packaged so both
-    /// the body and `PermissionCardWiringTests` build them the same way. Each
-    /// closure turns a `PermissionRequest` convenience decision into a
-    /// `session.respond(to:decision:)` call — keeping the wire-up
-    /// (which decision maps to which button, and that `updatedInput` survives)
-    /// in one unit-testable place.
-    struct Handlers {
-        let onAllowOnce: () -> Void
-        let onAllowAlways: () -> Void
-        let onDeny: () -> Void
-        let onAllowWithInput: ([String: Any]?) -> Void
-    }
+    /// The four decision actions for a pending permission. The canonical
+    /// factory now lives in the SwiftUI-free `permissionDecisionHandlers(for:session:)`
+    /// (`PermissionDecisionHandlers.swift`) so the AppKit `PermissionCardController`
+    /// shares it. This static method + `Handlers` typealias survive as a thin
+    /// forwarding shim so the still-SwiftUI overlay body + `PermissionCardWiringTests`
+    /// compile unchanged through the parallel per-kind body port (migration plan
+    /// §4.4 reusedVerbatim + the "decisionHandlers factory location" risk).
+    typealias Handlers = PermissionDecisionHandlers
 
     static func decisionHandlers(for pending: PendingPermission, session: Session) -> Handlers {
-        Handlers(
-            onAllowOnce: {
-                session.respond(to: pending.id, decision: pending.request.allowOnce())
-            },
-            onAllowAlways: {
-                session.respond(to: pending.id, decision: pending.request.allowAlways())
-            },
-            onDeny: {
-                session.respond(to: pending.id, decision: pending.request.deny())
-            },
-            onAllowWithInput: { updated in
-                session.respond(
-                    to: pending.id,
-                    decision: pending.request.allowOnce(updatedInput: updated))
-            }
-        )
+        permissionDecisionHandlers(for: pending, session: session)
     }
 }

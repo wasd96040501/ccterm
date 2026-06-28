@@ -182,11 +182,11 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
     }
 
     /// Walk up from `view` to the enclosing `permissionCardHost`
-    /// (`PassthroughHostingView`), or nil if the hit landed outside it.
-    private func enclosingPassthroughHost(_ view: NSView?) -> PassthroughHostingView? {
+    /// (`PermissionCardLayerView`), or nil if the hit landed outside it.
+    private func enclosingCardHost(_ view: NSView?) -> PermissionCardLayerView? {
         var node = view
         while let cur = node {
-            if let host = cur as? PassthroughHostingView { return host }
+            if let host = cur as? PermissionCardLayerView { return host }
             node = cur.superview
         }
         return nil
@@ -194,9 +194,9 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
 
     /// Seed a pending permission onto the shown session's runtime, the same
     /// way the production CLI sink does (`pendingPermissions.append`). The
-    /// `permissionCardHost`'s `PermissionCardOverlay` observes
-    /// `session.pendingPermissions`, so after a runloop drain the card
-    /// subtree mounts inside the passthrough host.
+    /// `PermissionCardController` (armed by `present(sessionId:)`) observes
+    /// `session.pendingPermissions.first?.id`, so after a runloop drain the
+    /// AppKit card mounts inside the `PermissionCardLayerView`.
     @discardableResult
     private func seedPermission(_ fx: Fixture, sessionId: String, requestId: String) -> Bool {
         guard let session = fx.router.context.sessionManager.session(sessionId),
@@ -361,20 +361,21 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
                 + report.joined(separator: "\n\n"))
     }
 
-    /// PR5 passthrough regression net. With a permission card mounted in
-    /// the full-pane `permissionCardHost` (`PassthroughHostingView`), the
-    /// card must NOT swallow transcript clicks: a point in the open
+    /// PR5 passthrough regression net, rewritten for the AppKit card host.
+    /// With a permission card mounted in the full-pane `permissionCardHost`
+    /// (`PermissionCardLayerView`, driven by the `PermissionCardController`),
+    /// the card must NOT swallow transcript clicks: a point in the open
     /// transcript band still hit-tests to a `BlockCellView` (transcript
-    /// selectable — M4/M5: the full-pane host doesn't occlude the table),
-    /// while a point inside the floating card resolves into the
-    /// passthrough host (the card's buttons stay clickable).
+    /// selectable — the full-pane host doesn't occlude the table), while a
+    /// point inside the floating card resolves into the layer view (the card's
+    /// buttons stay clickable).
     func testPermissionCardPassesTranscriptClicksThrough() async throws {
         let fx = makeFixture(sessionCount: 1, initialSessionIndex: 0)
         await settle(fx)
 
-        // Seed the permission, then drain so `PermissionCardOverlay`
-        // (observing `session.pendingPermissions`) mounts the card subtree
-        // inside the passthrough host.
+        // Seed the permission, then drain so the `PermissionCardController`
+        // (observing `session.pendingPermissions.first?.id`) mounts the AppKit
+        // card inside the layer view.
         XCTAssertTrue(
             seedPermission(fx, sessionId: fx.sessionIds[0], requestId: "perm-hit"),
             "could not seed a pending permission on the shown session")
@@ -392,16 +393,19 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
             XCTFail("no Transcript2TableView mounted")
             return
         }
+        XCTAssertNotNil(
+            chatVC.permissionCardController.currentCard,
+            "the AppKit permission card never mounted")
 
         // The card mounted: probe a grid of points across the host for the
-        // first one whose `hitTest` lands on a card subview
-        // (PassthroughHostingView maps non-card points to nil). Scan the full
-        // height so the search is independent of the host's flipped-ness —
-        // the card sits at one vertical extreme (bottom-pinned) either way.
-        // `NSView.hitTest` takes a point in the receiver's SUPERVIEW coords,
-        // so each candidate (built in host bounds) is converted up to the
-        // host's superview before probing, and we record the window point so
-        // the real router-level hitTest can be replayed below.
+        // first one whose `hitTest` lands on a card subview (the layer view
+        // maps non-card points to nil). Scan the full height so the search is
+        // independent of the host's flipped-ness — the card sits at one
+        // vertical extreme (bottom-pinned) either way. `NSView.hitTest` takes a
+        // point in the receiver's SUPERVIEW coords, so each candidate (built in
+        // host bounds) is converted up to the host's superview before probing,
+        // and we record the window point so the real router-level hitTest can
+        // be replayed below.
         guard let hostSuper = host.superview else {
             XCTFail("permissionCardHost has no superview")
             return
@@ -414,7 +418,7 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
             for x in xs {
                 let pInHost = NSPoint(x: x, y: y)
                 let pInSuper = host.convert(pInHost, to: hostSuper)
-                if let hit = host.hitTest(pInSuper), enclosingPassthroughHost(hit) === host {
+                if let hit = host.hitTest(pInSuper), enclosingCardHost(hit) === host {
                     cardPointInWindow = host.convert(pInHost, to: nil)
                     break outer
                 }
@@ -422,7 +426,7 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
         }
         XCTAssertNotNil(
             cardPointInWindow,
-            "permission card never became hit-eligible inside the passthrough host")
+            "permission card never became hit-eligible inside the layer view")
 
         // (a) Outside the card → through to the transcript. Pick a point in
         // the middle of a visible row, well above the bottom card band.
@@ -434,14 +438,14 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
         let transcriptPointInWindow = table.convert(transcriptPointInTable, to: nil)
         let transcriptHit = fx.router.view.hitTest(transcriptPointInWindow)
         let resolvedToCell = findEnclosing(BlockCellView.self, transcriptHit) != nil
-        let leakedToCard = enclosingPassthroughHost(transcriptHit) != nil
+        let leakedToCard = enclosingCardHost(transcriptHit) != nil
 
-        // (b) Inside the card → the passthrough host (buttons clickable).
+        // (b) Inside the card → the layer view (buttons clickable).
         var cardHit: NSView?
         if let cardPointInWindow {
             cardHit = fx.router.view.hitTest(cardPointInWindow)
         }
-        let resolvedToCard = enclosingPassthroughHost(cardHit) != nil
+        let resolvedToCard = enclosingCardHost(cardHit) != nil
 
         let diag = """
             host.bounds=\(hostBounds) \
@@ -461,7 +465,132 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
             "transcript-band click did not reach a BlockCellView:\n\(diag)")
         XCTAssertTrue(
             resolvedToCard,
-            "in-card click did not resolve to the passthrough host:\n\(diag)")
+            "in-card click did not resolve to the layer view:\n\(diag)")
+    }
+
+    /// Hit-through DURING the dismiss fade (§4.4-4). Two real-surface checks:
+    /// (a) with a card MOUNTED and `isDismissing` set (the exact flag the
+    /// controller raises for the fade window), the layer view's `hitTest`
+    /// returns nil over the still-visible card (click-through to the
+    /// transcript) AND a transcript-band point resolves to a `BlockCellView`;
+    /// (b) the controller-driven Deny actually clears the pending permission
+    /// and removes the card from the tree (end state). The offscreen animation
+    /// timeline is non-deterministic, so (a) drives the production `hitTest` +
+    /// `isDismissing` directly while the real card is mounted, and (b) asserts
+    /// the observable end state.
+    func testPermissionCardHitThroughDuringDismiss() async throws {
+        let fx = makeFixture(sessionCount: 1, initialSessionIndex: 0)
+        await settle(fx)
+
+        // Seed a pending permission whose `respond` closure pops its own entry
+        // (the production CLI-sink shape) so firing Deny actually clears the
+        // pending list → the observation wakes → the controller dismisses.
+        guard let session = fx.router.context.sessionManager.session(fx.sessionIds[0]),
+            case .active(let runtime) = session.phase
+        else {
+            XCTFail("could not resolve the active session to seed a permission")
+            return
+        }
+        let dismissReqId = "perm-dismiss"
+        let dismissRequest = PermissionRequest.makePreview(
+            requestId: dismissReqId, toolName: "Bash", input: ["command": "rm -rf build"])
+        runtime.pendingPermissions.append(
+            PendingPermission(
+                id: dismissReqId, request: dismissRequest,
+                respond: { [weak runtime] _ in
+                    Task { @MainActor [weak runtime] in
+                        runtime?.pendingPermissions.removeAll { $0.id == dismissReqId }
+                    }
+                }))
+        await settle(fx, rounds: 8)
+
+        guard let chatVC = fx.router.currentChild as? ChatSessionViewController,
+            let host = chatVC.permissionCardHost,
+            let card = chatVC.permissionCardController.currentCard
+        else {
+            XCTFail("the AppKit permission card never mounted")
+            return
+        }
+        guard let table = findSubview(Transcript2TableView.self, in: chatVC.view) else {
+            XCTFail("no Transcript2TableView mounted")
+            return
+        }
+
+        // Find a window point inside the still-mounted card.
+        guard let hostSuper = host.superview else {
+            XCTFail("permissionCardHost has no superview")
+            return
+        }
+        let hostBounds = host.bounds
+        var cardPointInWindow: NSPoint?
+        let xs = stride(from: hostBounds.midX - 200, through: hostBounds.midX + 200, by: 40)
+        let ys = stride(from: hostBounds.minY + 8, through: hostBounds.maxY - 8, by: 12)
+        outer: for y in ys {
+            for x in xs {
+                let pInHost = NSPoint(x: x, y: y)
+                let pInSuper = host.convert(pInHost, to: hostSuper)
+                if let hit = host.hitTest(pInSuper), enclosingCardHost(hit) === host {
+                    cardPointInWindow = host.convert(pInHost, to: nil)
+                    break outer
+                }
+            }
+        }
+        guard let cardPointInWindow else {
+            XCTFail("card never became hit-eligible before dismiss")
+            return
+        }
+
+        // Sanity: BEFORE dismiss, the in-card point resolves to the layer view.
+        XCTAssertTrue(
+            enclosingCardHost(host.hitTest(host.convert(cardPointInWindow, from: nil))) === host,
+            "the mounted card should be hit-eligible before the dismiss window")
+
+        // (a) Raise `isDismissing` — the EXACT flag the controller sets for the
+        // fade window — while the real card is still mounted, and assert the
+        // production `PermissionCardLayerView.hitTest` returns nil over it
+        // (visually present, hit-transparent, §4.4-4), while a transcript-band
+        // point still resolves to a `BlockCellView`.
+        XCTAssertNotNil(card.superview, "card must still be in the tree for the dismiss probe")
+        host.isDismissing = true
+        let cardHitDuringDismiss = host.hitTest(host.convert(cardPointInWindow, from: nil))
+        XCTAssertNil(
+            cardHitDuringDismiss,
+            "card host must be hit-transparent over the still-visible card while dismissing")
+
+        let visible = table.rows(in: table.visibleRect)
+        XCTAssertGreaterThan(visible.length, 0, "no visible transcript rows")
+        let row = visible.location + visible.length / 2
+        let rowRect = table.rect(ofRow: row)
+        let transcriptPointInWindow = table.convert(
+            CGPoint(x: rowRect.minX + 120, y: rowRect.midY), to: nil)
+        let transcriptHit = fx.router.view.hitTest(transcriptPointInWindow)
+        XCTAssertNotNil(
+            findEnclosing(BlockCellView.self, transcriptHit),
+            "transcript-band click did not reach a BlockCellView during dismiss")
+        host.isDismissing = false
+
+        // (b) Controller-driven Deny clears the pending permission and removes
+        // the card (the observable end state). Fire the card's real Deny
+        // action and wait for the card to leave the tree.
+        guard let denyButton = card.decisionButtons.first else {
+            XCTFail("card has no decision buttons")
+            return
+        }
+        denyButton.onClick?()
+        let removed = await { () async -> Bool in
+            let deadline = Date().addingTimeInterval(2.0)
+            while Date() < deadline {
+                if chatVC.permissionCardController.currentCard == nil
+                    && host.subviews.isEmpty
+                {
+                    return true
+                }
+                try? await Task.sleep(for: .milliseconds(20))
+                drainMainLoop(seconds: 0.01)
+            }
+            return chatVC.permissionCardController.currentCard == nil && host.subviews.isEmpty
+        }()
+        XCTAssertTrue(removed, "the controller-driven Deny should dismiss + remove the card")
     }
 
     /// Walk up from `view` to the first enclosing `T`, or nil.

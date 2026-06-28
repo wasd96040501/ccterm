@@ -39,11 +39,11 @@ import SwiftUI
 ///   the VC's lifetime — `present(sessionId:)` only resets the model fields,
 ///   so the bar's frame/constraints never change on a session switch and
 ///   contribute nothing to `attachSession`'s single-width typeset pass.
-/// - permission card — `permissionCardHost` (`PassthroughHostingView`
-///   hosting `PermissionCardOverlay`), a dedicated full-pane click-through
-///   host **on top** of the bar. Still SwiftUI this phase (ported in Phase 2);
-///   the card floats here instead of inside the bar host so its footprint
-///   never pumps the bar host's height.
+/// - permission card — `permissionCardHost` (a plain pure-AppKit
+///   `PermissionCardLayerView`), a dedicated full-pane click-through host
+///   **on top** of the bar, driven by a once-built `permissionCardController`
+///   (migration plan §4.0/§4.4). The card floats here instead of inside the
+///   bar host so its footprint never pumps the bar host's height.
 ///
 /// The bar host is bottom-anchored and takes only the bar's own intrinsic
 /// height, so the transcript scroll view receives clicks in the scrim band
@@ -109,15 +109,22 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
     // the host shrinks to the bar's content (the regime-B contract).
     var restingBarHost: RestingBarContainerView!
 
-    /// Full-pane floating host for the permission card (`PermissionCardOverlay`).
-    /// A `PassthroughHostingView` (regime-A: `sizingOptions = []` + four-edge
-    /// pin) layered **above** the transcript and `restingBarHost`. The card
-    /// fades in place inside it; because this host's geometry is the full pane
-    /// (not driven by the card), the bar host's intrinsic height stays a pure
-    /// function of the bar content — the card never pumps the bar band. Clicks
-    /// outside the card pass straight through to the transcript (see
-    /// `PassthroughHostingView`). Still SwiftUI this phase (ported in Phase 2).
-    var permissionCardHost: PassthroughHostingView!
+    /// Full-pane floating host for the permission card. A plain
+    /// `PermissionCardLayerView` (regime-A: `intrinsicContentSize = .zero` +
+    /// four-edge pin) layered **above** the transcript and `restingBarHost`.
+    /// `permissionCardController` mounts the AppKit card inside it; because this
+    /// host's geometry is the full pane (not driven by the card), the bar
+    /// host's intrinsic height stays a pure function of the bar content — the
+    /// card never pumps the bar band. Clicks outside the card pass straight
+    /// through to the transcript (see `PermissionCardLayerView`).
+    var permissionCardHost: PermissionCardLayerView!
+
+    /// The once-built permission-card coordinator (migration plan §4.0/§4.4).
+    /// Owned by this VC (not a `DetailRouterChild`), mirroring
+    /// `Transcript2SheetPresenter` ownership. `present(sessionId:)` calls
+    /// `rebind(for:)` to bind it to the shown session in place; `nil` →
+    /// `clearBinding()`; teardown → `stop()`.
+    private(set) var permissionCardController: PermissionCardController!
 
     /// Latest attach / pill rects reported by the input bar, converted to
     /// `inputBarController.view` (the scrim anchor). Used to drive
@@ -231,21 +238,24 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
         restingBarHostWidthFill.priority = .defaultHigh
 
         // Dedicated full-pane host for the permission card. Added AFTER
-        // `restingBarHost` so it sits **on top** in z-order (the card
-        // floats over the bar). `sizingOptions = []` is regime-A: the host
-        // does NOT publish its content's `fittingSize`, so it can't leak a
-        // size up into the window's constraint solver and collapse the window
-        // — the four-edge pin below makes layout drive it from the pane
-        // instead. `PassthroughHostingView` then makes everything outside the
-        // card click-through so the transcript keeps its clicks + I-beam.
-        permissionCardHost = PassthroughHostingView(
-            rootView: AnyView(
-                PermissionCardOverlay(model: context.model)
-                    .injectDetailEnvironment(context)
-            ))
+        // `restingBarHost` so it sits **on top** in z-order (the card floats
+        // over the bar). A plain `PermissionCardLayerView` (regime-A:
+        // `intrinsicContentSize = .zero` + the four-edge pin below) does NOT
+        // publish its content's `fittingSize`, so it can't leak a size up into
+        // the window's constraint solver and collapse the window. The layer
+        // view's `hitTest` makes everything outside the mounted card
+        // click-through so the transcript keeps its clicks + I-beam.
+        permissionCardHost = PermissionCardLayerView()
         permissionCardHost.translatesAutoresizingMaskIntoConstraints = false
-        permissionCardHost.sizingOptions = []
         view.addSubview(permissionCardHost)
+
+        // The once-built card coordinator (plan §4.0). It mounts / dismisses
+        // the AppKit card inside the layer view; `present(sessionId:)` rebinds
+        // it to the shown session in place.
+        permissionCardController = PermissionCardController(
+            layerView: permissionCardHost,
+            sessionManager: context.sessionManager,
+            syntaxEngine: context.syntaxEngine)
 
         NSLayoutConstraint.activate([
             topScrim.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -325,16 +335,29 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
             // The host is un-hidden again on the next non-nil `present`.
             restingBarHost.isHidden = true
             inputBarController.clearBinding()
+            // Synchronously dismiss any mounted card + drop the card's binding
+            // (mirrors `inputBarController.clearBinding`, plan §4.0).
+            permissionCardController.clearBinding()
             return
         }
         // Re-reveal the bar host (it may have been hidden by a prior `.none`).
         restingBarHost.isHidden = false
+        // Resolve the `Session` ONCE (idempotent get-or-create) and hand the
+        // SAME instance to BOTH the card controller AND the transcript
+        // coordinator in the same source phase, so the card observes the exact
+        // `Session` object the transcript is bound to (plan §4.0 stale-card
+        // fix). The bar's `rebind(sessionId:)` re-resolves the same cached
+        // instance internally — `prepareDraftSession` is idempotent.
+        let session = context.sessionManager.prepareDraftSession(sessionId)
         // Rebind the bar in the SAME source phase as the transcript attach so
-        // both overlays bind the same instance (plan §4.0 stale-card fix). The
-        // bar's constraints are invariant across rebind, so the resting bar
-        // host frame is identical before/after — `attachSession`'s layout pass
-        // stays bar-invariant.
+        // both overlays bind the same instance. The bar's constraints are
+        // invariant across rebind, so the resting bar host frame is identical
+        // before/after — `attachSession`'s layout pass stays bar-invariant.
         inputBarController.rebind(sessionId: sessionId)
+        // Bind the card controller to the resolved session — cancels A's
+        // observation, synchronously dismisses A's card, arms B's observation,
+        // and runs the construction-time reconcile (plan §4.4-3).
+        permissionCardController.rebind(for: session)
         transcriptSwapCoordinator().attachSession(sessionId, animated: animated)
     }
 
@@ -346,6 +369,10 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
     func prepareForRemoval() {
         swapCoordinator?.tearDownTranscript()
         inputBarController?.prepareForRemoval()
+        // Cancel the card's observation + synchronously dismiss any mounted
+        // card (NO async work that would perturb an in-flight swap's disabled
+        // CATransaction, plan §4.0 / R16). Idempotent.
+        permissionCardController?.stop()
     }
 
     /// Lazily build (and cache) the transcript-swap coordinator. Deferred to

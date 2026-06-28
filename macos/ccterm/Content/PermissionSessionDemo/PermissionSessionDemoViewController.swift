@@ -42,10 +42,10 @@ final class PermissionSessionDemoViewController: NSViewController {
     /// `ChatSessionViewController.permissionCardHost`. Without it the
     /// `showCurrent()` control would set `pendingPermissions` but no card
     /// would ever render (PR5 moved the card out of `ChatRestingBar`).
-    private var permissionCardHost: PassthroughHostingView?
-    /// Resolves `PermissionCardOverlay` to the seed session — selection is set
-    /// to `.session(seed.sessionId)` once the seed exists (in `viewDidLoad`).
-    private let demoModel = MainSelectionModel()
+    private var permissionCardHost: PermissionCardLayerView?
+    /// The AppKit card coordinator, mirroring production's
+    /// `permissionCardController`. Bound to the seed session in `viewDidLoad`.
+    private var permissionCardController: PermissionCardController?
     private var controlPanelHost: NSHostingView<ControlPanelHostView>?
     private let controlPanelState = ControlPanelState()
     /// Demo-local draft store so the hosted input bar resolves its draft
@@ -61,10 +61,6 @@ final class PermissionSessionDemoViewController: NSViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        // Point the overlay's selection at the seed session so
-        // `PermissionCardOverlay` resolves to it (same routing as production
-        // via `ChatComposeStack.content`).
-        demoModel.selection = .session(seed.sessionId)
         mountTranscript()
         installInputBar()
         installPermissionCardHost()
@@ -85,6 +81,7 @@ final class PermissionSessionDemoViewController: NSViewController {
         super.viewWillDisappear()
         sheetPresenter?.stop()
         inputBarController?.prepareForRemoval()
+        permissionCardController?.stop()
     }
 
     private func mountTranscript() {
@@ -142,18 +139,12 @@ final class PermissionSessionDemoViewController: NSViewController {
     }
 
     /// Mirror production's `permissionCardHost`: a full-pane click-through
-    /// host for `PermissionCardOverlay`, layered above the bar host. PR5
-    /// moved the card out of `ChatRestingBar` into this overlay, so the demo
-    /// must mount it too or `showCurrent()` would set `pendingPermissions`
-    /// with nothing on screen.
+    /// `PermissionCardLayerView` + `PermissionCardController`, layered above the
+    /// bar host. PR5 moved the card out of `ChatRestingBar` into this overlay,
+    /// so the demo must mount it too or `showCurrent()` would set
+    /// `pendingPermissions` with nothing on screen.
     private func installPermissionCardHost() {
-        let host = PassthroughHostingView(
-            rootView: AnyView(
-                PermissionCardOverlay(model: demoModel)
-                    .environment(seed.manager)
-                    .environment(inputDraftStore)
-            ))
-        host.sizingOptions = []
+        let host = PermissionCardLayerView()
         host.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(host)
         NSLayoutConstraint.activate([
@@ -163,6 +154,12 @@ final class PermissionSessionDemoViewController: NSViewController {
             host.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         permissionCardHost = host
+        let controller = PermissionCardController(
+            layerView: host,
+            sessionManager: seed.manager,
+            syntaxEngine: syntaxEngine)
+        controller.rebind(for: seed.session)
+        permissionCardController = controller
     }
 
     private func installControlPanel() {

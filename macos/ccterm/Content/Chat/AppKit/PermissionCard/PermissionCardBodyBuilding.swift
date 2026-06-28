@@ -11,10 +11,12 @@ import AppKit
 /// per-kind bodies (Shell / SedEdit / FileWrite / NotebookEdit / WebFetch /
 /// FilesystemRead / TaskAgent / Skill / Mcp / EnterPlanMode / ExitPlanMode)
 /// are authored independently and in parallel against THIS protocol — none of
-/// them touch the dispatch switch. This task ships ONE STUB conformer per kind
-/// (each returns an empty `NSView()` so the spine builds + the card mounts
-/// without a crash); the parallel fan-out swaps each STUB body for the real
-/// one without editing `bodyBuilder(for:)`.
+/// them touch the dispatch switch. Each real builder lives in its own file
+/// under `Content/Chat/InputBarControls/AppKit/` and keeps the canonical
+/// `Permission<Kind>CardBodyBuilder` name the switch below already returns, so
+/// the dispatch never needed editing. The only stubs that remain here are the
+/// two arms that never get a per-kind body: `AskUserQuestion` (owns its chrome,
+/// §4.5) and the `.unknown` fallback.
 ///
 /// The `askUserQuestion` arm is NOT a body builder here — it is the §4.5
 /// delegation point (`PermissionCardContentView.bodyOwnsChrome`), so the card
@@ -80,127 +82,53 @@ func permissionCardBodyBuilder(for kind: PermissionCardKind) -> PermissionCardBo
     }
 }
 
-// MARK: - STUB conformers (one per kind — empty NSView, no crash)
+// MARK: - Chrome-only / fallback conformers (no per-kind body)
 //
-// Each STUB returns a bare `NSView()` so the dispatch + card spine build and
-// the card mounts. The 11 real bodies (and the fallback) are authored
-// independently in the parallel fan-out against `PermissionCardBodyBuilding`,
-// each swapping its STUB's `makeBody` for the real port. DO NOT inline the real
-// body here — that would collide with the parallel subtasks.
+// The 11 per-kind body builders live in their own files under
+// `Content/Chat/InputBarControls/AppKit/` (e.g. `PermissionShellCardBody.swift`
+// declares `PermissionShellCardBodyBuilder`). Only the two arms that never get a
+// real per-kind body remain here.
 
-/// STUB — Bash / PowerShell. Real body: command + diff (sed-as-edit goes to
-/// `PermissionSedEditCardBodyBuilder`), bash rule count.
-struct PermissionShellCardBodyBuilder: PermissionCardBodyBuilding {
-    func makeBody(request: PermissionRequest, engine: SyntaxHighlightEngine?) -> NSView {
-        // TODO(parallel fan-out): port `PermissionShellCardBody` — command
-        // mono block + optional command-diff (DiffNSView) + bash rule count.
-        NSView()
-    }
-}
-
-/// STUB — sed-in-place edit (a Bash command `parseSedEditCommand` matched).
-struct PermissionSedEditCardBodyBuilder: PermissionCardBodyBuilding {
-    func makeBody(request: PermissionRequest, engine: SyntaxHighlightEngine?) -> NSView {
-        // TODO(parallel fan-out): port `PermissionSedEditCardBody` — diff +
-        // literal command fallback.
-        NSView()
-    }
-}
-
-/// STUB — Edit / MultiEdit / FileEdit / Write / FileWrite.
-struct PermissionFileWriteCardBodyBuilder: PermissionCardBodyBuilding {
-    func makeBody(request: PermissionRequest, engine: SyntaxHighlightEngine?) -> NSView {
-        // TODO(parallel fan-out): port `PermissionFileWriteCardBody` — file
-        // path + basename + diff (FS read at build time) + subtitle.
-        NSView()
-    }
-}
-
-/// STUB — NotebookEdit.
-struct PermissionNotebookEditCardBodyBuilder: PermissionCardBodyBuilding {
-    func makeBody(request: PermissionRequest, engine: SyntaxHighlightEngine?) -> NSView {
-        // TODO(parallel fan-out): port `PermissionNotebookEditCardBody`.
-        NSView()
-    }
-}
-
-/// STUB — WebFetch.
-struct PermissionWebFetchCardBodyBuilder: PermissionCardBodyBuilding {
-    func makeBody(request: PermissionRequest, engine: SyntaxHighlightEngine?) -> NSView {
-        // TODO(parallel fan-out): port `PermissionWebFetchCardBody` — domain
-        // chip + prompt.
-        NSView()
-    }
-}
-
-/// STUB — Read / Glob / Grep / FileRead.
-struct PermissionFilesystemReadCardBodyBuilder: PermissionCardBodyBuilding {
-    func makeBody(request: PermissionRequest, engine: SyntaxHighlightEngine?) -> NSView {
-        // TODO(parallel fan-out): port `PermissionFilesystemReadCardBody`.
-        NSView()
-    }
-}
-
-/// STUB — Task / Agent.
-struct PermissionTaskAgentCardBodyBuilder: PermissionCardBodyBuilding {
-    func makeBody(request: PermissionRequest, engine: SyntaxHighlightEngine?) -> NSView {
-        // TODO(parallel fan-out): port `PermissionTaskAgentCardBody` — chip +
-        // description.
-        NSView()
-    }
-}
-
-/// STUB — Skill.
-struct PermissionSkillCardBodyBuilder: PermissionCardBodyBuilding {
-    func makeBody(request: PermissionRequest, engine: SyntaxHighlightEngine?) -> NSView {
-        // TODO(parallel fan-out): port `PermissionSkillCardBody` — cwd chip +
-        // skill detail.
-        NSView()
-    }
-}
-
-/// STUB — `mcp__*` tools.
-struct PermissionMcpCardBodyBuilder: PermissionCardBodyBuilding {
-    func makeBody(request: PermissionRequest, engine: SyntaxHighlightEngine?) -> NSView {
-        // TODO(parallel fan-out): port `PermissionMcpCardBody` — server chip +
-        // tool detail.
-        NSView()
-    }
-}
-
-/// STUB — EnterPlanMode.
-struct PermissionEnterPlanModeCardBodyBuilder: PermissionCardBodyBuilding {
-    func makeBody(request: PermissionRequest, engine: SyntaxHighlightEngine?) -> NSView {
-        // TODO(parallel fan-out): port `PermissionEnterPlanModeCardBody`.
-        NSView()
-    }
-}
-
-/// STUB — ExitPlanMode / ExitPlanModeV2.
-struct PermissionExitPlanModeCardBodyBuilder: PermissionCardBodyBuilding {
-    func makeBody(request: PermissionRequest, engine: SyntaxHighlightEngine?) -> NSView {
-        // TODO(parallel fan-out): port `PermissionExitPlanModeCardBody` — the
-        // plan markdown.
-        NSView()
-    }
-}
-
-/// STUB — AskUserQuestion. The card never asks for this body (it takes over
-/// the chrome, §4.5); kept as a no-op so the dispatch is total.
+/// AskUserQuestion. The card never asks for this body (it takes over the chrome,
+/// §4.5); kept as a no-op so the dispatch is total.
 struct PermissionAskUserQuestionCardBodyBuilder: PermissionCardBodyBuilding {
     func makeBody(request: PermissionRequest, engine: SyntaxHighlightEngine?) -> NSView {
-        // TODO(§4.5): the AskUserQuestion wizard owns its own chrome via a
-        // dedicated view controller — it is not built through this path.
+        // The AskUserQuestion wizard owns its own chrome via a dedicated view
+        // controller (§4.5) — it is not built through this path.
         NSView()
     }
 }
 
-/// STUB — fallback for `.unknown` / uncurated tools. Real body: a single
-/// monospace line from `PermissionCardCopy.parameter(for:)`.
+/// Fallback for `.unknown` / uncurated tools — a single monospace line from
+/// `PermissionCardCopy.parameter(for:)`, 1:1 with the SwiftUI
+/// `PermissionFallbackCardBody` (`PermissionCardView.swift:208-222`): size-12
+/// monospaced, primary (labelColor), 3-line cap, middle truncation, selectable,
+/// full-width leading. Renders nothing when no parameter resolves.
 struct PermissionFallbackCardBodyBuilder: PermissionCardBodyBuilding {
     func makeBody(request: PermissionRequest, engine: SyntaxHighlightEngine?) -> NSView {
-        // TODO(parallel fan-out): port the fallback body — a single
-        // monospace `PermissionCardCopy.parameter(for:)` line (lineLimit 3).
-        NSView()
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        guard let parameter = PermissionCardCopy.parameter(for: request) else {
+            return container
+        }
+        let label = NSTextField(wrappingLabelWithString: parameter)
+        label.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        label.textColor = .labelColor  // SwiftUI `.primary`
+        label.maximumNumberOfLines = 3  // SwiftUI `.lineLimit(3)`
+        label.lineBreakMode = .byTruncatingMiddle  // SwiftUI `.truncationMode(.middle)`
+        label.isSelectable = true  // SwiftUI `.textSelection(.enabled)`
+        label.isEditable = false
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        container.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            label.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            label.topAnchor.constraint(equalTo: container.topAnchor),
+            label.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+        return container
     }
 }

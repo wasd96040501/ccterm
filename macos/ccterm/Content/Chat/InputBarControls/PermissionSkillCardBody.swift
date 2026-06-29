@@ -1,6 +1,5 @@
 import AgentSDK
 import Foundation
-import SwiftUI
 
 /// Body for `.skill` permission requests. Mirrors
 /// `SkillPermissionRequest` upstream: the skill name as the
@@ -13,38 +12,8 @@ import SwiftUI
 /// so we fall back to the process's current working directory —
 /// same value the CLI would have echoed when the request was
 /// queued.
-struct PermissionSkillCardBody: View {
+struct PermissionSkillCardBody {
     let request: PermissionRequest
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(headline)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.primary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if let args, !args.isEmpty {
-                Text(args)
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(.primary)
-                    .lineLimit(3)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            if let cwdLabel {
-                HStack(spacing: 4) {
-                    Image(systemName: "folder")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                    Text(cwdLabel)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
 
     // MARK: - Data
 
@@ -82,45 +51,4 @@ struct PermissionSkillCardBody: View {
         let base = (cwd as NSString).lastPathComponent
         return base.isEmpty ? nil : base
     }
-}
-
-#Preview("Skill · with args") {
-    PermissionSkillCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-1",
-            toolName: "Skill",
-            input: [
-                "skill": "review",
-                "args": "--scope diff",
-            ])
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
-}
-
-#Preview("Skill · no args") {
-    PermissionSkillCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-2",
-            toolName: "Skill",
-            input: [
-                "skill": "commit"
-            ])
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
-}
-
-#Preview("Skill · missing name") {
-    PermissionSkillCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-3",
-            toolName: "Skill",
-            input: [:])
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
 }

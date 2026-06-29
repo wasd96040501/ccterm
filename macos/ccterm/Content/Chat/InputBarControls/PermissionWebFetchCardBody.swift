@@ -1,5 +1,5 @@
 import AgentSDK
-import SwiftUI
+import Foundation
 
 /// Body for `.webFetch` permission requests. Mirrors
 /// `WebFetchPermissionRequest` upstream: prominent URL, a domain
@@ -12,38 +12,8 @@ import SwiftUI
 /// `permissionSuggestions` (those typically encode `domain:<host>`).
 /// No per-domain branching at the button level — the rule the
 /// request would install is opaque, just like every other kind.
-struct PermissionWebFetchCardBody: View {
+struct PermissionWebFetchCardBody {
     let request: PermissionRequest
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(url ?? "—")
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(.primary)
-                .lineLimit(2)
-                .truncationMode(.middle)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if let host = hostname {
-                HStack(spacing: 4) {
-                    Image(systemName: "network")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                    Text(host)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            if let prompt = prompt, !prompt.isEmpty {
-                Text(prompt)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(3)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
 
     // MARK: - Data
 
@@ -64,45 +34,4 @@ struct PermissionWebFetchCardBody: View {
         let raw = request.rawInput["prompt"] as? String
         return (raw?.isEmpty == false) ? raw : nil
     }
-}
-
-#Preview("URL · with prompt") {
-    PermissionWebFetchCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-1",
-            toolName: "WebFetch",
-            input: [
-                "url": "https://docs.swift.org/swift-book/documentation/the-swift-programming-language/",
-                "prompt": "Summarise the section on optionals and protocol extensions.",
-            ])
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
-}
-
-#Preview("URL · no prompt") {
-    PermissionWebFetchCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-2",
-            toolName: "WebFetch",
-            input: [
-                "url": "https://example.com/release-notes"
-            ])
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
-}
-
-#Preview("Missing URL") {
-    PermissionWebFetchCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-3",
-            toolName: "WebFetch",
-            input: [:])
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
 }

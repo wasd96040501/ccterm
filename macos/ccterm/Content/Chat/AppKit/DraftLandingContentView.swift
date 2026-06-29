@@ -50,7 +50,7 @@ final class DraftLandingContentView: NSView {
             innerMaxWidth: ChatSessionViewController.composeMaxWidth,
             horizontalInset: 0,
             bottomInset: 0,
-            barSpacing: InputBarSessionChrome.barSpacing)
+            barSpacing: RestingBarContainerView.barSpacing)
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
 

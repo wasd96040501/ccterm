@@ -1,6 +1,5 @@
 import AgentSDK
 import Foundation
-import SwiftUI
 
 /// Body for `.exitPlanMode` permission requests
 /// (`ExitPlanMode` / `ExitPlanModeV2`). Upstream's
@@ -22,33 +21,8 @@ import SwiftUI
 /// we don't surface in `rawInput`. When we can't read a plan body
 /// we show a brief note so the user still knows what the request
 /// is — same trust budget, different inputs.
-struct PermissionExitPlanModeCardBody: View {
+struct PermissionExitPlanModeCardBody {
     let request: PermissionRequest
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(headline)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            if let plan, !plan.isEmpty {
-                ScrollView(.vertical, showsIndicators: true) {
-                    Text(plan)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(.primary)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(maxHeight: 480)
-            } else {
-                Text(emptyPlanHint)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
 
     // MARK: - Data
 
@@ -79,54 +53,4 @@ struct PermissionExitPlanModeCardBody: View {
         }
         return String(localized: "No plan body — review the transcript before approving.")
     }
-}
-
-#Preview("ExitPlanMode · with plan") {
-    PermissionExitPlanModeCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-1",
-            toolName: "ExitPlanMode",
-            input: [
-                "plan": """
-                ## Refactor permission cards
-
-                1. Extract per-kind body views into their own files.
-                2. Add #Preview to each body so designers can iterate.
-                3. Wire the dispatch into PermissionCardView.
-                4. Cover the new bodies with unit tests.
-
-                ## Risks
-
-                - Snapshot diffs may shift; re-bless after review.
-                - Localisation keys need translation updates.
-                """
-            ])
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
-}
-
-#Preview("ExitPlanModeV2 · file-backed") {
-    PermissionExitPlanModeCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-2",
-            toolName: "ExitPlanModeV2",
-            input: [:])
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
-}
-
-#Preview("ExitPlanMode · empty plan") {
-    PermissionExitPlanModeCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-3",
-            toolName: "ExitPlanMode",
-            input: [:])
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
 }

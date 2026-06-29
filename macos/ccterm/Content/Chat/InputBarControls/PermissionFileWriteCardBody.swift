@@ -1,11 +1,13 @@
 import AgentSDK
-import SwiftUI
+import Foundation
 
-/// Body for `.fileEdit` and `.fileWrite` permission requests.
-/// Mirrors `FileEditPermissionRequest` and `FileWritePermissionRequest`
-/// upstream: a one-line subtitle ("Edit / Create / Overwrite
-/// basename") followed by a `DiffView` preview so the user can see
-/// exactly what will change before granting.
+/// Per-kind **data getters** for `.fileEdit` and `.fileWrite` permission
+/// requests (`FileEditPermissionRequest` / `FileWritePermissionRequest`): the
+/// resolved `filePath` / `basename` / `fileExists`, the one-line subtitle
+/// ("Edit / Create / Overwrite basename"), and the `DiffBlock` preview. The
+/// SwiftUI chrome (subtitle + `DiffView` in `BoundedHeightScrollView`, with the
+/// nil-diff fallback hint) now lives in the AppKit `PermissionFileWriteCardBodyView`;
+/// D8 stripped the dead SwiftUI `body`/`#Preview`.
 ///
 /// **Edit** — diff is rendered against the snippet pair
 /// (`old_string` → `new_string`) rather than the full file content.
@@ -19,49 +21,13 @@ import SwiftUI
 /// file doesn't exist the diff is constructed in `isNewFile` mode
 /// (`oldString = nil`), which `DiffLayout` paints as a line-numbered
 /// view of the new content without `+`-insertion chrome.
-///
-/// The DiffView is wrapped in `BoundedHeightScrollView` so a short
-/// diff sizes to its intrinsic height and a runaway edit caps at
-/// `diffMaxHeight` and scrolls — buttons always stay reachable.
-struct PermissionFileWriteCardBody: View {
+struct PermissionFileWriteCardBody {
     let request: PermissionRequest
     let kind: PermissionCardKind
 
     /// Maximum visible height for the embedded `DiffView`. Hit it and
     /// the wrapper switches from intrinsic sizing to scroll.
     static let diffMaxHeight: CGFloat = 240
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let subtitle {
-                Text(subtitle)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            if let diff = diffBlock {
-                BoundedHeightScrollView(maxHeight: Self.diffMaxHeight) {
-                    // The card's own subtitle already names the file
-                    // (Edit / Create / Overwrite <basename>) and the
-                    // diff is not yet applied — there's nothing useful
-                    // to copy out of a pending edit. Strip both chrome
-                    // affordances so the preview reads as a clean
-                    // change summary.
-                    DiffView(
-                        diff: diff,
-                        showsLangBadge: false,
-                        showsCopyIcon: false)
-                }
-            } else {
-                Text(String(localized: "Path missing — open the transcript to inspect"))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
 
     // MARK: - Data
 
@@ -146,66 +112,4 @@ struct PermissionFileWriteCardBody: View {
         }
         return DiffBlock(filePath: filePath, oldString: oldContent, newString: newContent)
     }
-}
-
-#Preview("Edit · snippet diff") {
-    PermissionFileWriteCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-1",
-            toolName: "Edit",
-            input: [
-                "file_path": "/Users/example/Project/Sources/Greeter.swift",
-                "old_string": "print(\"hello\")",
-                "new_string": "print(\"hello, world\")",
-            ]),
-        kind: .fileEdit
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
-}
-
-#Preview("Write · create new file") {
-    PermissionFileWriteCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-2",
-            toolName: "Write",
-            input: [
-                "file_path": "/tmp/ccterm-preview-new-file.txt",
-                "content": "Hello\nThis is a brand new file.\n",
-            ]),
-        kind: .fileWrite
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
-}
-
-#Preview("Write · overwrite /etc/hosts") {
-    PermissionFileWriteCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-3",
-            toolName: "Write",
-            input: [
-                "file_path": "/etc/hosts",
-                "content": "127.0.0.1 localhost\n::1 localhost\n# updated by preview\n",
-            ]),
-        kind: .fileWrite
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
-}
-
-#Preview("Edit · missing path") {
-    PermissionFileWriteCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-4",
-            toolName: "Edit",
-            input: [:]),
-        kind: .fileEdit
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
 }

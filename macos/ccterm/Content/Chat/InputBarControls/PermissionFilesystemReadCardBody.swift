@@ -1,5 +1,5 @@
 import AgentSDK
-import SwiftUI
+import Foundation
 
 /// Body for `.filesystemRead` permission requests (Read / Glob /
 /// Grep / FileRead). Mirrors `FilesystemPermissionRequest` upstream:
@@ -11,42 +11,8 @@ import SwiftUI
 /// `getPath(input)` returns null; this body folds that branch in by
 /// showing whichever field is populated. The decision buttons stay
 /// on the shared chrome — no per-tool branching.
-struct PermissionFilesystemReadCardBody: View {
+struct PermissionFilesystemReadCardBody {
     let request: PermissionRequest
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Image(systemName: iconName)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .frame(width: 14, alignment: .center)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(toolLabel)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.primary)
-                if let primary = primary {
-                    Text(primary)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(.primary)
-                        .lineLimit(2)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                if let secondary = secondary {
-                    Text(secondary)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
 
     // MARK: - Data
 
@@ -124,49 +90,4 @@ struct PermissionFilesystemReadCardBody: View {
         }
         return nil
     }
-}
-
-#Preview("Read") {
-    PermissionFilesystemReadCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-1",
-            toolName: "Read",
-            input: [
-                "file_path": "/Users/example/Project/Sources/Greeter.swift"
-            ])
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
-}
-
-#Preview("Glob") {
-    PermissionFilesystemReadCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-2",
-            toolName: "Glob",
-            input: [
-                "pattern": "**/*.swift",
-                "path": "/Users/example/Project/Sources",
-            ])
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
-}
-
-#Preview("Grep · with mode") {
-    PermissionFilesystemReadCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-3",
-            toolName: "Grep",
-            input: [
-                "pattern": "TODO|FIXME",
-                "path": "/Users/example/Project",
-                "output_mode": "files_with_matches",
-            ])
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
 }

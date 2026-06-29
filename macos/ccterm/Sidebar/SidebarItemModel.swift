@@ -55,7 +55,6 @@ enum FixedKind: CaseIterable {
     case transcriptDemo
     case transcriptStress
     case transcriptPerf
-    case permissionCardsDemo
     case permissionSessionDemo
     #endif
 
@@ -71,7 +70,6 @@ enum FixedKind: CaseIterable {
         case .transcriptDemo: return "Transcript Demo"
         case .transcriptStress: return "Transcript Stress"
         case .transcriptPerf: return "Transcript Perf"
-        case .permissionCardsDemo: return "Permission Cards Demo"
         case .permissionSessionDemo: return "Permission Session Demo"
         #endif
         }
@@ -85,7 +83,6 @@ enum FixedKind: CaseIterable {
         case .transcriptDemo: return "doc.text.image"
         case .transcriptStress: return "speedometer"
         case .transcriptPerf: return "waveform.path.ecg"
-        case .permissionCardsDemo: return "hand.raised.fill"
         case .permissionSessionDemo: return "hand.raised.app.fill"
         #endif
         }
@@ -99,7 +96,6 @@ enum FixedKind: CaseIterable {
         case .transcriptDemo: return .demo(.transcript)
         case .transcriptStress: return .demo(.transcriptStress)
         case .transcriptPerf: return .demo(.transcriptPerf)
-        case .permissionCardsDemo: return .demo(.permissionCards)
         case .permissionSessionDemo: return .demo(.permissionSession)
         #endif
         }

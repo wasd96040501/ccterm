@@ -1,24 +1,20 @@
 import AgentSDK
-import SwiftUI
+import Foundation
 
-/// Body for `.bash` and `.powerShell` permission requests. Mirrors
-/// the upstream `BashPermissionRequest` shape: full command rendered
-/// in a code-block card (the same `DiffView` chrome the file-write
-/// body uses for its diff preview, in `isNewFile` mode so there is no
-/// `+`/`-` chrome — gives the command the same gutter / syntax
-/// highlight treatment as a file body), `description` rendered dim
-/// below, and a compact "compound command" hint when the CLI flagged
-/// the request as having per-subcommand rules.
+/// Per-kind **data getters** for `.bash` and `.powerShell` permission requests
+/// (`BashPermissionRequest` shape): the full command, optional `description`,
+/// the compound-command hint, and the `DiffBlock` wrapper the AppKit body
+/// renders. The SwiftUI rendering chrome (a `DiffView` in `isNewFile` mode
+/// wrapped in `BoundedHeightScrollView`, dim description, compound hint) now
+/// lives in `PermissionShellCardBodyView` (`AppKit/PermissionShellCardBodyAppKit.swift`),
+/// which constructs this struct purely for its getters; D8 stripped the dead
+/// SwiftUI `body`/`#Preview` so the chat page carries no SwiftUI.
 ///
-/// The DiffView is wrapped in `BoundedHeightScrollView` so a short
-/// command sizes to its intrinsic height and a runaway heredoc caps
-/// at `commandMaxHeight` and scrolls — buttons always stay reachable.
-///
-/// Sandboxing / classifier / destructive-warning surfacing from the
-/// upstream are intentionally deferred — the CLI doesn't ship those
-/// fields through `PermissionRequest` today and we can layer them in
-/// when the SDK grows the structured channel.
-struct PermissionShellCardBody: View {
+/// Sandboxing / classifier / destructive-warning surfacing from the upstream
+/// are intentionally deferred — the CLI doesn't ship those fields through
+/// `PermissionRequest` today and we can layer them in when the SDK grows the
+/// structured channel.
+struct PermissionShellCardBody {
     let request: PermissionRequest
     let kind: PermissionCardKind
 
@@ -29,44 +25,10 @@ struct PermissionShellCardBody: View {
     /// in a narrow window.
     static let commandMaxHeight: CGFloat = 240
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            BoundedHeightScrollView(maxHeight: Self.commandMaxHeight) {
-                // Strip the codeblock-style chrome: the language pill
-                // would always read "bash" / "powershell" (redundant
-                // with the kind icon on the card), and the copy button
-                // hands out a command the user hasn't yet authorised.
-                DiffView(
-                    diff: commandDiffBlock,
-                    showsLangBadge: false,
-                    showsCopyIcon: false)
-            }
-            if let description = description, !description.isEmpty {
-                Text(description)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            if let hint = compoundHint {
-                Label {
-                    Text(hint)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                } icon: {
-                    Image(systemName: "list.bullet.indent")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
     /// Pure derivations from `request`. Marked `internal` (not
     /// `private`) so logic tests can assert on the same inputs the
-    /// view's body reads — see `PermissionShellCardBodyTests`. No
-    /// state lives here; the view is a function of these getters.
+    /// AppKit body reads — see `PermissionShellCardBodyTests`. No
+    /// state lives here; the body is a function of these getters.
     var command: String {
         (request.rawInput["command"] as? String) ?? ""
     }
@@ -136,53 +98,4 @@ struct PermissionShellCardBody: View {
         default: return "command.sh"
         }
     }
-}
-
-#Preview("Bash · simple") {
-    PermissionShellCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-1",
-            toolName: "Bash",
-            input: [
-                "command": "rm -rf node_modules",
-                "description": "Reset deps",
-            ]),
-        kind: .bash
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
-}
-
-#Preview("Bash · multi-line heredoc") {
-    PermissionShellCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-2",
-            toolName: "Bash",
-            input: [
-                "command":
-                    "git commit -m \"$(cat <<'EOF'\nfeat: add preview\n\nLong body explaining the change in detail.\nEOF\n)\"",
-                "description": "Commit current changes",
-            ]),
-        kind: .bash
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
-}
-
-#Preview("PowerShell") {
-    PermissionShellCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-3",
-            toolName: "PowerShell",
-            input: [
-                "command": "Get-ChildItem -Recurse -Filter *.swift | Measure-Object",
-                "description": "Count Swift files",
-            ]),
-        kind: .powerShell
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
 }

@@ -43,7 +43,6 @@ enum DemoKind: String, CaseIterable, Equatable {
     case transcript
     case transcriptStress
     case transcriptPerf
-    case permissionCards
     case permissionSession
 }
 #endif

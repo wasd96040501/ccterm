@@ -122,7 +122,7 @@ final class PermissionSessionDemoViewController: NSViewController {
             innerMaxWidth: ChatSessionViewController.composeMaxWidth,
             horizontalInset: ChatSessionViewController.detailHorizontalInset,
             bottomInset: ChatSessionViewController.chatBottomInset,
-            barSpacing: InputBarSessionChrome.barSpacing)
+            barSpacing: RestingBarContainerView.barSpacing)
         host.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(host)
         let maxHostWidth = BlockStyle.maxLayoutWidth + 2 * ChatSessionViewController.detailHorizontalInset

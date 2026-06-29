@@ -1,6 +1,5 @@
 import AgentSDK
 import Foundation
-import SwiftUI
 
 /// Body for `.mcp` permission requests (tools whose name starts
 /// with `mcp__`). Upstream has no dedicated component — these fall
@@ -14,42 +13,8 @@ import SwiftUI
 ///
 /// `description` (when the agent supplied one) is dimmed under the
 /// headline so a chatty MCP doesn't dilute the surface.
-struct PermissionMcpCardBody: View {
+struct PermissionMcpCardBody {
     let request: PermissionRequest
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(toolDisplayName)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                if let server = serverName {
-                    serverChip(server)
-                }
-                Spacer(minLength: 0)
-            }
-            if let description, !description.isEmpty {
-                Text(description)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(3)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            if let json = inputJSON, !json.isEmpty {
-                ScrollView(.vertical, showsIndicators: true) {
-                    Text(json)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(.primary)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(maxHeight: 200)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
 
     // MARK: - Data
 
@@ -113,61 +78,4 @@ struct PermissionMcpCardBody: View {
             return ""
         }
     }
-
-    @ViewBuilder
-    private func serverChip(_ name: String) -> some View {
-        Text(name)
-            .font(.system(size: 10, weight: .medium))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(Color.primary.opacity(0.06))
-            }
-    }
-}
-
-#Preview("Standard server__tool") {
-    PermissionMcpCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-1",
-            toolName: "mcp__linear__create_issue",
-            input: [
-                "description": "Create a Linear ticket from the failing test report.",
-                "title": "Investigate CI flake on snapshot tests",
-                "team": "ENG",
-                "priority": 2,
-            ])
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
-}
-
-#Preview("Nested tool name") {
-    PermissionMcpCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-2",
-            toolName: "mcp__chrome__tabs__create",
-            input: [
-                "url": "https://example.com",
-                "active": true,
-            ])
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
-}
-
-#Preview("Empty input") {
-    PermissionMcpCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-3",
-            toolName: "mcp__weather__current",
-            input: [:])
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
 }

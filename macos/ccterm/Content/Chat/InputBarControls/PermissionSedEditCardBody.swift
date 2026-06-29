@@ -1,62 +1,25 @@
 import AgentSDK
 import Foundation
-import SwiftUI
 
-/// Body for `.sedEdit` permission requests — Bash commands of the
-/// form `sed -i 's/foo/bar/g' file`. Mirrors `SedEditPermissionRequest`
-/// upstream: read the target file, apply the substitution, and show
-/// the resulting full-file diff via the same `DiffView` the
-/// transcript uses for Edit/Write previews.
+/// Per-kind **data getters** for `.sedEdit` permission requests — Bash commands
+/// of the form `sed -i 's/foo/bar/g' file` (`SedEditPermissionRequest`): the
+/// literal command, the parsed `SedEditInfo`, the file basename, the subtitle,
+/// and the full-file `DiffBlock` the AppKit body renders. The SwiftUI chrome
+/// (a `DiffView` plus the parse-failure fallback that prints the literal
+/// command) now lives in the AppKit `PermissionSedEditCardBodyView`; D8 stripped
+/// the dead SwiftUI `body`/`#Preview`.
 ///
 /// When the parser can't make sense of the command (alternate
 /// delimiter, multiple `-e` expressions, shell metacharacters), the
 /// dispatch layer routes the request to `PermissionShellCardBody`
 /// instead — the user still sees the literal sed command. This body
 /// only takes over when we have enough structure to render a diff.
-struct PermissionSedEditCardBody: View {
+struct PermissionSedEditCardBody {
     let request: PermissionRequest
 
     /// Cap for the embedded `DiffView`. Short substitutions size to
     /// their intrinsic height; long ones cap here and scroll.
     static let diffMaxHeight: CGFloat = 240
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let subtitle {
-                Text(subtitle)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            if let diff = diffBlock {
-                BoundedHeightScrollView(maxHeight: Self.diffMaxHeight) {
-                    // Same rationale as `PermissionFileWriteCardBody`:
-                    // the subtitle already names the file, and the
-                    // diff hasn't been applied — chrome would only add
-                    // noise.
-                    DiffView(
-                        diff: diff,
-                        showsLangBadge: false,
-                        showsCopyIcon: false)
-                }
-            } else {
-                Text(String(localized: "Could not preview sed substitution"))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                if let command {
-                    Text(command)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(.primary)
-                        .lineLimit(4)
-                        .truncationMode(.tail)
-                        .textSelection(.enabled)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
 
     // MARK: - Data
 
@@ -103,32 +66,4 @@ struct PermissionSedEditCardBody: View {
             oldString: oldContent,
             newString: newContent)
     }
-}
-
-#Preview("sed -i · readable file") {
-    PermissionSedEditCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-1",
-            toolName: "Bash",
-            input: [
-                "command": "sed -i '' 's/localhost/local-host/g' /etc/hosts"
-            ])
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
-}
-
-#Preview("sed -i · missing file") {
-    PermissionSedEditCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-2",
-            toolName: "Bash",
-            input: [
-                "command": "sed -i 's/foo/bar/g' /tmp/ccterm-preview-missing.txt"
-            ])
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
 }

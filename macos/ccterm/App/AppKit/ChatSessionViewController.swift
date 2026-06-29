@@ -62,8 +62,8 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
     private static let topFadeScrimHeight: CGFloat = 52
     /// Bottom fade band height. Sized to match the input bar's top
     /// edge, so the gradient stops where the bar begins. Derived from
-    /// `chatBottomInset` (36) + `InputBarSessionChrome` row (~22) +
-    /// `InputBarSessionChrome.barSpacing` (10) + `InputBarView` pill
+    /// `chatBottomInset` (36) + `ChromeRowView` row (~22) +
+    /// `RestingBarContainerView.barSpacing` (10) + `InputBarView` pill
     /// (32) = 100. Hardcoded — those constants don't change at runtime.
     private static let bottomFadeScrimHeight: CGFloat = 100
     static let composeMaxWidth: CGFloat = 512
@@ -214,7 +214,7 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
             innerMaxWidth: Self.composeMaxWidth,
             horizontalInset: Self.detailHorizontalInset,
             bottomInset: Self.chatBottomInset,
-            barSpacing: InputBarSessionChrome.barSpacing)
+            barSpacing: RestingBarContainerView.barSpacing)
         restingBarHost.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(restingBarHost)
 
@@ -446,6 +446,16 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
 /// layout + its intrinsic height.
 @MainActor
 final class RestingBarContainerView: NSView {
+
+    /// Vertical gap between the input pill and the chrome row below it. 10pt
+    /// reads as a deliberate "second tier" without feeling detached from the
+    /// bar (4pt fused the row with the pill stroke; 16pt let the transcript
+    /// scrim creep between them). Re-homed here from the deleted SwiftUI
+    /// `InputBarSessionChrome.barSpacing` — this container is the single
+    /// consumer at every live call site (the chat resting bar, the
+    /// draft-landing bar host, and the permission-session demo).
+    static let barSpacing: CGFloat = 10
+
     private let barView: NSView
     private let chromeRow: NSView
     private let bottomInset: CGFloat
@@ -536,39 +546,5 @@ final class RestingBarContainerView: NSView {
     override var intrinsicContentSize: NSSize {
         let innerHeight = innerContent.fittingSize.height
         return NSSize(width: NSView.noIntrinsicMetric, height: innerHeight + bottomInset)
-    }
-}
-
-// MARK: - ChatComposeStack routing (KEEP — consumed by PermissionCardOverlay)
-
-/// The selection→content routing decision for the chat overlays. The chat bar
-/// no longer renders this (it is driven imperatively by `present(sessionId:)`),
-/// but the static `content(for:draftSessionId:)` helper survives because
-/// `PermissionCardOverlay` (the still-SwiftUI permission card, Phase 2) reads
-/// the same `MainSelectionModel.selection` through it, and
-/// `ChatComposeStackRoutingTests` pins the routing invariants. Only
-/// `.session(_)` renders a card; everything else collapses to `.none`.
-enum ChatComposeStack {
-    /// Routing decision. Static + pure so the "which selection shows what input
-    /// chrome" invariant is directly unit-testable — see
-    /// `ChatComposeStackRoutingTests`. `.newSession` is routed to
-    /// `ComposeSessionViewController` by the router and never reaches the chat
-    /// VC, but it still maps to `.none` here as belt-and-suspenders.
-    enum Content: Equatable {
-        case none
-        case chat(sessionId: String)
-    }
-
-    static func content(for selection: MainSelection, draftSessionId: String?) -> Content {
-        switch selection {
-        case .none, .newSession, .archive:
-            return .none
-        #if DEBUG
-        case .demo:
-            return .none
-        #endif
-        case .session(let sid):
-            return .chat(sessionId: sid)
-        }
     }
 }

@@ -1,5 +1,5 @@
 import AgentSDK
-import SwiftUI
+import Foundation
 
 /// Body for `.notebookEdit` permission requests. Mirrors the
 /// upstream `NotebookEditPermissionRequest` shape: a subtitle that
@@ -12,37 +12,8 @@ import SwiftUI
 /// extract the cell, render old vs. new) is deferred until a
 /// follow-up — the v1 card mirrors the same trust budget as the
 /// shell body: "see what the agent proposes, then decide."
-struct PermissionNotebookEditCardBody: View {
+struct PermissionNotebookEditCardBody {
     let request: PermissionRequest
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if let subtitle {
-                Text(subtitle)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            if let cellLabel {
-                Text(cellLabel)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
-            if let preview = sourcePreview, !preview.isEmpty {
-                ScrollView(.vertical, showsIndicators: true) {
-                    Text(preview)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(.primary)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(maxHeight: 200)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
 
     // MARK: - Data
 
@@ -102,57 +73,4 @@ struct PermissionNotebookEditCardBody: View {
             ?? (request.rawInput["newSource"] as? String)
         return raw?.isEmpty == false ? raw : nil
     }
-}
-
-#Preview("replace · python cell") {
-    PermissionNotebookEditCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-1",
-            toolName: "NotebookEdit",
-            input: [
-                "notebook_path": "/Users/example/notebooks/analysis.ipynb",
-                "edit_mode": "replace",
-                "cell_type": "code",
-                "cell_id": "abc-123",
-                "new_source": "import pandas as pd\ndf = pd.read_csv('data.csv')\ndf.head()",
-            ])
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
-}
-
-#Preview("insert · markdown cell") {
-    PermissionNotebookEditCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-2",
-            toolName: "NotebookEdit",
-            input: [
-                "notebook_path": "/Users/example/notebooks/analysis.ipynb",
-                "edit_mode": "insert",
-                "cell_type": "markdown",
-                "cell_id": "intro",
-                "new_source": "## Overview\n\nThis notebook explores the dataset.",
-            ])
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
-}
-
-#Preview("delete · empty source") {
-    PermissionNotebookEditCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-3",
-            toolName: "NotebookEdit",
-            input: [
-                "notebook_path": "/Users/example/notebooks/analysis.ipynb",
-                "edit_mode": "delete",
-                "cell_type": "code",
-                "cell_id": "stale-cell-7",
-            ])
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
 }

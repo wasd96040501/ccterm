@@ -1,5 +1,5 @@
 import AgentSDK
-import SwiftUI
+import Foundation
 
 /// Body for `.enterPlanMode` permission requests. Mirrors the
 /// upstream `EnterPlanModePermissionRequest` shape: a static
@@ -16,7 +16,7 @@ import SwiftUI
 /// follow-up work tracked in the handoff. The body remains
 /// recognisable on the existing `.barSurface` chrome via the
 /// "wand.and.stars" icon row.
-struct PermissionEnterPlanModeCardBody: View {
+struct PermissionEnterPlanModeCardBody {
     let request: PermissionRequest
 
     /// Bullet copy matching the upstream Ink layout verbatim. Kept
@@ -28,36 +28,6 @@ struct PermissionEnterPlanModeCardBody: View {
         String(localized: "Design an implementation strategy"),
         String(localized: "Present a plan for your approval"),
     ]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Image(systemName: "wand.and.stars")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.tint)
-                Text(intro)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                Text(bulletHeader)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                ForEach(Self.bullets, id: \.self) { bullet in
-                    Text(" · \(bullet)")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-            Text(closing)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
 
     // MARK: - Copy
 
@@ -75,16 +45,4 @@ struct PermissionEnterPlanModeCardBody: View {
     var closing: String {
         String(localized: "No code changes will be made until you approve the plan.")
     }
-}
-
-#Preview("EnterPlanMode") {
-    PermissionEnterPlanModeCardBody(
-        request: PermissionRequest.makePreview(
-            requestId: "preview-1",
-            toolName: "EnterPlanMode",
-            input: [:])
-    )
-    .padding(14)
-    .frame(width: 520)
-    .background(Color(nsColor: .windowBackgroundColor))
 }

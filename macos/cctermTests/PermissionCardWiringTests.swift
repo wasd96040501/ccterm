@@ -3,16 +3,17 @@ import XCTest
 
 @testable import ccterm
 
-/// Verifies that the four decision handlers `PermissionCardOverlay` builds
-/// for a `PermissionCardView` — via `decisionHandlers(for:session:)` — route
-/// to the right `PermissionDecision` at the `Session.respond(to:decision:)`
-/// boundary with the right pending `id`, and that the runtime pops the entry
-/// off `pendingPermissions` once a decision has been delivered. We build the
-/// SAME `Handlers` the body builds and invoke each closure (per
-/// `cctermTests/CLAUDE.md` § What goes here — drive the underlying method the
-/// button invokes), so a regression that swaps Allow-once ↔ Allow-always,
-/// drops the deny reason, loses the `updatedInput` payload, or routes a
-/// handler to the wrong card's `id` trips here.
+/// Verifies that the four decision handlers the AppKit permission card builds
+/// for a pending request — via the SwiftUI-free `permissionDecisionHandlers(for:session:)`
+/// factory — route to the right `PermissionDecision` at the
+/// `Session.respond(to:decision:)` boundary with the right pending `id`, and
+/// that the runtime pops the entry off `pendingPermissions` once a decision has
+/// been delivered. We build the SAME `PermissionDecisionHandlers` the card body
+/// builds and invoke each closure (per `cctermTests/CLAUDE.md` § What goes here
+/// — drive the underlying method the button invokes), so a regression that
+/// swaps Allow-once ↔ Allow-always, drops the deny reason, loses the
+/// `updatedInput` payload, or routes a handler to the wrong card's `id` trips
+/// here.
 @MainActor
 final class PermissionCardWiringTests: XCTestCase {
 
@@ -22,7 +23,7 @@ final class PermissionCardWiringTests: XCTestCase {
 
     func testAllowOnceDeliversAllowDecisionAndClearsPending() async throws {
         let (session, runtime, captured, pending) = Self.seedSession(requestId: "perm-allow-once")
-        let handlers = PermissionCardOverlay.decisionHandlers(for: pending, session: session)
+        let handlers = permissionDecisionHandlers(for: pending, session: session)
 
         handlers.onAllowOnce()
         await Self.drainPendingRemoval()
@@ -40,7 +41,7 @@ final class PermissionCardWiringTests: XCTestCase {
     func testAllowAlwaysDeliversAllowAlwaysAndClearsPending() async throws {
         let (session, runtime, captured, pending) = Self.seedSession(
             requestId: "perm-allow-always")
-        let handlers = PermissionCardOverlay.decisionHandlers(for: pending, session: session)
+        let handlers = permissionDecisionHandlers(for: pending, session: session)
 
         handlers.onAllowAlways()
         await Self.drainPendingRemoval()
@@ -56,7 +57,7 @@ final class PermissionCardWiringTests: XCTestCase {
 
     func testDenyDeliversDenyWithReasonAndInterrupt() async throws {
         let (session, runtime, captured, pending) = Self.seedSession(requestId: "perm-deny")
-        let handlers = PermissionCardOverlay.decisionHandlers(for: pending, session: session)
+        let handlers = permissionDecisionHandlers(for: pending, session: session)
 
         handlers.onDeny()
         await Self.drainPendingRemoval()
@@ -77,7 +78,7 @@ final class PermissionCardWiringTests: XCTestCase {
     /// regression that drops `updatedInput` (the answer dict) on the floor.
     func testAllowWithInputCarriesUpdatedInput() async throws {
         let (session, runtime, captured, pending) = Self.seedSession(requestId: "perm-allow-input")
-        let handlers = PermissionCardOverlay.decisionHandlers(for: pending, session: session)
+        let handlers = permissionDecisionHandlers(for: pending, session: session)
 
         handlers.onAllowWithInput(["answers": ["yes"]])
         await Self.drainPendingRemoval()
@@ -119,7 +120,7 @@ final class PermissionCardWiringTests: XCTestCase {
         runtime.pendingPermissions.append(first)
         runtime.pendingPermissions.append(second)
 
-        let handlers = PermissionCardOverlay.decisionHandlers(for: second, session: session)
+        let handlers = permissionDecisionHandlers(for: second, session: session)
         handlers.onAllowOnce()
         await Self.drainPendingRemoval()
 

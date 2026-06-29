@@ -1,5 +1,4 @@
 import AppKit
-import SwiftUI
 
 /// Full-pane child VC for a `.session(_)` selection whose `Session` is
 /// still in `.draft` phase — the landing page for a `/new` / `/clear`
@@ -11,12 +10,16 @@ import SwiftUI
 /// **Why its own VC (vs reusing Compose).** `ComposeSessionViewController`
 /// serves the `.newSession` tab and lazily allocates `model.draftSessionId`;
 /// this VC instead binds a draft id the router hands it via `present(sessionId:)`,
-/// so the same VC instance can re-bind across draft → draft switches. The
-/// host-sizing posture is identical to Compose and `ArchiveViewController`:
-/// mounted via `mountFillPaneHost(_:in:)` (`NSHostingController` with
-/// regime-A `sizingOptions = []`) so the SwiftUI body's fitting size can't
-/// bubble up through the split and collapse the window — the four-edge pin
-/// inside the helper lets layout size the host from the pane.
+/// so the same VC instance can re-bind across draft → draft switches.
+///
+/// **Pure AppKit (migration plan §4.6).** This VC no longer hosts the SwiftUI
+/// `DraftSessionLandingView → InputBarChrome`. It builds an AppKit
+/// `InputBarController` ONCE in `loadView` (the bar is never rebuilt — a
+/// draft → draft switch calls `rebind(sessionId:)` in place) and a
+/// `DraftLandingContentView` (`DotGridView` backdrop + centered hero + embedded
+/// bar) pinned 4-edge. Regime-A no-collapse is by constraint topology
+/// (`DraftLandingContentView.intrinsicContentSize = .zero`), not by
+/// `NSHostingController.sizingOptions`.
 @MainActor
 final class DraftSessionLandingViewController: NSViewController, DetailRouterChild {
     /// `nonisolated` so dealloc skips the `@MainActor` deinit executor-hop
@@ -28,17 +31,21 @@ final class DraftSessionLandingViewController: NSViewController, DetailRouterChi
     /// `model` and the four injected services are read through this.
     let context: DetailContext
 
-    /// The draft session this VC is currently bound to. Driven by the
-    /// router's `present(sessionId:)`; the SwiftUI body keys its identity on
-    /// this so a draft → draft switch rebuilds the hosted tree cleanly.
+    /// The draft session this VC is currently bound to. Driven by the router's
+    /// `present(sessionId:)`; a draft → draft switch re-keys the bar + re-renders
+    /// the hero in place (never rebuilds either).
     private var boundSessionId: String?
-    /// The mounted host. Typed as `NSViewController` because
-    /// `mountFillPaneHost` returns an `NSHostingController<Content>` whose
-    /// `Content` is a long `ModifiedContent` generic — storing it at the
-    /// `NSViewController` supertype keeps the property declarable, and the
-    /// `removeFromSuperview()` / `removeFromParent()` teardown in
-    /// `mountHost` works on that supertype surface.
-    private var host: NSViewController?
+
+    /// The embedded input bar, built ONCE in `loadView` (plan §4.0/§4.6). Draft
+    /// landing passes `autofocus: true` so the field focuses once the bar is
+    /// windowed; `rebind(sessionId:)` re-fires focus on every bind. `private(set)`
+    /// so the CI-gate tests can drive `handleSend` + assert identity-stability
+    /// across rebind without a write seam.
+    private(set) var inputBarController: InputBarController!
+
+    /// The fill-the-pane content root (`DotGridView` + hero + embedded bar). The
+    /// hero re-renders per bind via `update(session:)`; the bar is left untouched.
+    private var contentView: DraftLandingContentView!
 
     init(context: DetailContext) {
         self.context = context
@@ -50,192 +57,97 @@ final class DraftSessionLandingViewController: NSViewController, DetailRouterChi
 
     override func loadView() {
         view = NSView()
+
+        // Build the embedded bar ONCE (plan §4.0). It is a child VC so its
+        // child-VC lifecycle (`viewDidAppear` autofocus gating) fires; draft
+        // landing sets `autofocus: true`. `onBuiltinCommand` runs the builtin
+        // (`/new`, `/clear`) against the controller's bound session id, mirroring
+        // `ChatSessionViewController`'s relay.
+        let bar = InputBarController(
+            sessionManager: context.sessionManager,
+            inputDraftStore: context.inputDraftStore,
+            autofocus: true,
+            onBuiltinCommand: { [weak self] command in
+                guard let self, let sessionId = self.inputBarController.boundSessionId else {
+                    return
+                }
+                runBuiltinSlashCommand(
+                    command,
+                    currentSessionId: sessionId,
+                    sessionManager: self.context.sessionManager,
+                    model: self.context.model)
+            },
+            submitEnabledProvider: { $0.cwd != nil },
+            onSubmit: { [weak self] submission, sessionId in
+                guard let self else { return }
+                submitSessionInput(
+                    submission,
+                    sessionId: sessionId,
+                    sessionManager: self.context.sessionManager,
+                    recentProjects: self.context.recentProjects,
+                    model: self.context.model)
+            })
+        addChild(bar)
+        inputBarController = bar
+        // Force the bar's `loadView` now so `barView` / `chromeRow` exist before
+        // the content view stacks them (their implicitly-unwrapped properties are
+        // nil until the view loads).
+        bar.loadViewIfNeeded()
+
+        // Fill-the-pane content: hero + embedded bar over the dot grid. Pinned
+        // 4-edge; regime-A no-collapse is by constraint topology (the content
+        // view publishes `.zero` intrinsic).
+        contentView = DraftLandingContentView(barView: bar.barView, chromeRow: bar.chromeRow)
+        contentView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(contentView)
+        NSLayoutConstraint.activate([
+            contentView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            contentView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            contentView.topAnchor.constraint(equalTo: view.topAnchor),
+            contentView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
     }
 
-    /// `DetailRouterChild` — nothing per-session to tear down (the hosted
-    /// SwiftUI tree releases with the VC), but conforming lets the router
-    /// treat every child uniformly.
-    func prepareForRemoval() {}
+    /// `DetailRouterChild` — the router calls this right before it swaps this VC
+    /// out on a cross-kind transition (draft → transcript on promotion). Tear the
+    /// bar down deterministically (cancel draft-load Task, `completion.dismiss`,
+    /// image-preview stop, chrome-row popover/timer teardown) so it doesn't leak
+    /// during the crossfade window (plan §4.6-7, R5) — was a no-op before the
+    /// AppKit re-point.
+    func prepareForRemoval() {
+        inputBarController?.prepareForRemoval()
+    }
 
-    /// Bind (or re-bind) the landing page to `sessionId`. Called by the
-    /// router synchronously after this VC is mounted and framed, mirroring
-    /// `ChatSessionViewController.present(sessionId:)`. Idempotent for the
-    /// same id; a different id rebuilds the host so the new draft's metadata
-    /// + input bar render.
+    /// Bind (or re-bind) the landing page to `sessionId`. Called by the router
+    /// synchronously after this VC is mounted and framed, mirroring
+    /// `ChatSessionViewController.present(sessionId:)`. Idempotent for the same
+    /// id; a different id re-keys the bar in place (`rebind(sessionId:)`, NEVER
+    /// rebuild) and re-renders the hero (`update(session:)`).
     func present(sessionId: String?, animated: Bool = false) {
         guard let sessionId else { return }
         guard sessionId != boundSessionId else { return }
         boundSessionId = sessionId
         updateFocus(activeSessionId: sessionId)
-        mountHost(sessionId: sessionId)
+        // Resolve the draft once (idempotent get-or-create) and hand the SAME
+        // instance to both the hero re-render and the bar's `rebind`.
+        let session = context.sessionManager.prepareDraftSession(sessionId)
+        // Per-draft key (`draftKey` defaults to `sessionId`): each draft has its
+        // own unsent input, distinct from compose's `newSessionKey`. `rebind`
+        // resets text/attachments/completion + re-arms cwd/prewarm observation +
+        // re-fires autofocus.
+        inputBarController.rebind(sessionId: sessionId)
+        contentView.update(session: session)
     }
 
-    /// Mark the bound draft focused and defocus every other session — the
-    /// same sweep `ChatSessionViewController.updateFocus` runs on attach.
-    /// Without the sweep, a session the user just navigated AWAY from via
-    /// `/new` would keep `isFocused == true` and so suppress its unread dot
-    /// when its CLI produces output in the background. The draft itself has
-    /// no unread state yet, but participating in the sweep keeps the
-    /// presence model consistent across the draft → active flip.
+    /// Mark the bound draft focused and defocus every other session — the same
+    /// sweep `ChatSessionViewController.updateFocus` runs on attach. Without it a
+    /// session the user just navigated AWAY from via `/new` would keep
+    /// `isFocused == true` and suppress its unread dot when its CLI produces
+    /// background output. (Preserved verbatim from the SwiftUI-host version.)
     private func updateFocus(activeSessionId: String) {
         context.sessionManager.existingSession(activeSessionId)?.setFocused(true)
         for sid in context.sessionManager.records.map(\.sessionId) where sid != activeSessionId {
             context.sessionManager.existingSession(sid)?.setFocused(false)
         }
-    }
-
-    private func mountHost(sessionId: String) {
-        host?.view.removeFromSuperview()
-        host?.removeFromParent()
-
-        // Fill-the-pane detail child — `mountFillPaneHost` is regime-A
-        // (`sizingOptions = []` + four-edge pin), so the body's fitting size
-        // can't leak into the split's `view.fittingSize` and resize /
-        // collapse the window. See `ComposeSessionViewController` /
-        // `ArchiveViewController` / the helper for the full rationale.
-        host = mountFillPaneHost(
-            DraftSessionLandingView(
-                sessionId: sessionId,
-                onSubmit: { [weak self] submission in
-                    guard let self else { return }
-                    submitSessionInput(
-                        submission,
-                        sessionId: sessionId,
-                        sessionManager: self.context.sessionManager,
-                        recentProjects: self.context.recentProjects,
-                        model: self.context.model)
-                },
-                onBuiltinCommand: { [weak self] command in
-                    guard let self else { return }
-                    runBuiltinSlashCommand(
-                        command,
-                        currentSessionId: sessionId,
-                        sessionManager: self.context.sessionManager,
-                        model: self.context.model)
-                }
-            )
-            .injectDetailEnvironment(context),
-            in: self
-        )
-    }
-}
-
-// MARK: - SwiftUI body
-
-/// The draft landing page: a `DotGridBackground` backdrop with a centered
-/// hero (sparkles + "Start Building <project>"), the abbreviated path, an
-/// optional branch pill, and the embedded input bar — the same surface as
-/// the New Session compose card minus the card chrome, folder picker, and
-/// recents list. Everything is centered; the bar is a draft-style,
-/// not-yet-persisted input keyed on the draft `sessionId`.
-struct DraftSessionLandingView: View {
-    let sessionId: String
-    let onSubmit: (Submission) -> Void
-    let onBuiltinCommand: (BuiltinSlashCommand) -> Void
-
-    @Environment(SessionManager.self) private var manager
-
-    var body: some View {
-        let session = manager.prepareDraftSession(sessionId)
-        ZStack {
-            DotGridBackground()
-            VStack(spacing: 14) {
-                heroRow(folderName: session.cwd.map { ($0 as NSString).lastPathComponent })
-                if let cwd = session.cwd {
-                    subtitle(path: cwd)
-                }
-                if let branch = session.sourceBranch ?? session.worktreeBranch {
-                    branchPill(branch: branch, isWorktree: session.isWorktree)
-                }
-                inputBar
-                    .padding(.top, 6)
-            }
-            .frame(maxWidth: ChatSessionViewController.composeMaxWidth)
-            .padding(.horizontal, ChatSessionViewController.detailHorizontalInset)
-            .padding(.vertical, ChatSessionViewController.detailVerticalInset)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .coordinateSpace(name: ChatSessionViewController.detailCoordSpace)
-        // Full-bleed: let the dot-grid backdrop extend under the unified
-        // toolbar's safe-area inset instead of starting below it.
-        .ignoresSafeArea()
-    }
-
-    /// "Start Building <name>" with the project name tinted — mirrors
-    /// `NewSessionConfigurator.titleRow` so the landing hero reads as the
-    /// same family as the compose card, just centered and card-less.
-    private func heroRow(folderName: String?) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.tint)
-                .alignmentGuide(.firstTextBaseline) { d in d[.firstTextBaseline] + 2 }
-            Text(String(localized: "Start Building"))
-                .foregroundStyle(.primary)
-            if let name = folderName, !name.isEmpty {
-                Text(name)
-                    .foregroundStyle(.tint)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-        }
-        .font(.title.weight(.semibold))
-    }
-
-    private func subtitle(path: String) -> some View {
-        Text(abbreviatedPath(path))
-            .font(.system(size: 12))
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .truncationMode(.middle)
-    }
-
-    /// Read-only branch chip — the landing page shows the inherited branch
-    /// but doesn't offer a picker (the draft's metadata is fixed at the
-    /// moment `/new` / `/clear` copied it from the source session). Styled
-    /// like `NewSessionConfigurator.branchPill` for visual continuity.
-    private func branchPill(branch: String, isWorktree: Bool) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: isWorktree ? "folder.badge.plus" : "arrow.triangle.branch")
-                .font(.system(size: 12, weight: .medium))
-                .frame(width: 14, height: 14)
-            Text(branch)
-                .font(.system(size: 12))
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-        .overlay(
-            Capsule()
-                .strokeBorder(Color(nsColor: .separatorColor).opacity(0.7), lineWidth: 0.5)
-        )
-    }
-
-    private var inputBar: some View {
-        InputBarChrome(
-            sessionId: sessionId,
-            // Per-draft key: each draft has its own unsent input. Distinct
-            // from `InputDraftStore.newSessionKey` (the compose card's
-            // shared key), so a draft's text never collides with compose's.
-            draftKey: sessionId,
-            coordSpace: ChatSessionViewController.detailCoordSpace,
-            submitEnabled: manager.prepareDraftSession(sessionId).cwd != nil,
-            onSubmit: onSubmit,
-            onAttachRect: { _ in },
-            onPillRect: { _ in },
-            onBuiltinCommand: onBuiltinCommand,
-            autofocus: true
-        )
-    }
-
-    private func abbreviatedPath(_ path: String) -> String {
-        let home = NSHomeDirectory()
-        if path == home { return "~" }
-        if path.hasPrefix(home + "/") {
-            return "~" + path.dropFirst(home.count)
-        }
-        return path
     }
 }

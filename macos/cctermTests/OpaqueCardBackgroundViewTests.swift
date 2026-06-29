@@ -3,19 +3,19 @@ import XCTest
 
 @testable import ccterm
 
-/// CI-gate measurement test (non-snapshot) for `PermissionCardSurfaceView`
+/// CI-gate measurement test (non-snapshot) for `OpaqueCardBackgroundView`
 /// (migration plan §4.4-1, §9). The card surface MUST be OPAQUE — the §4.4-1
 /// anti-bleed invariant — with its own shadow params, NOT the bar's glass.
 /// Drives the real production object and asserts on resolved layer state.
 @MainActor
-final class PermissionCardSurfaceViewTests: XCTestCase {
+final class OpaqueCardBackgroundViewTests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
     }
 
     private func mounted(
-        _ surface: PermissionCardSurfaceView,
+        _ surface: OpaqueCardBackgroundView,
         appearance: NSAppearance.Name = .aqua,
         size: CGSize = CGSize(width: 400, height: 200)
     ) -> NSView {
@@ -59,7 +59,7 @@ final class PermissionCardSurfaceViewTests: XCTestCase {
     // MARK: - §4.4-1 BLOCKER: the fill is fully OPAQUE
 
     func testFillIsFullyOpaqueControlBackgroundColor() {
-        let surface = PermissionCardSurfaceView()
+        let surface = OpaqueCardBackgroundView()
         _ = mounted(surface)
         let fill = try? XCTUnwrap(surface.resolvedFillColor)
         let comps = rgba(fill!)
@@ -78,7 +78,7 @@ final class PermissionCardSurfaceViewTests: XCTestCase {
     // MARK: - Geometry
 
     func testCornerRadiusIs16() {
-        let surface = PermissionCardSurfaceView()
+        let surface = OpaqueCardBackgroundView()
         _ = mounted(surface)
         XCTAssertEqual(
             surface.resolvedCornerRadius, 16, accuracy: 0.5,
@@ -89,10 +89,10 @@ final class PermissionCardSurfaceViewTests: XCTestCase {
     }
 
     func testStrokeIsSeparatorColorAtHalfPointLineWidth() {
-        let surface = PermissionCardSurfaceView()
+        let surface = OpaqueCardBackgroundView()
         _ = mounted(surface)
         XCTAssertEqual(
-            PermissionCardSurfaceView.strokeLineWidth, 0.5,
+            OpaqueCardBackgroundView.strokeLineWidth, 0.5,
             "The separator stroke is 0.5pt (PermissionCardView.swift:246).")
         let stroke = rgba(try! XCTUnwrap(surface.resolvedStrokeColor))
         let expected = rgba(.separatorColor, like: surface)
@@ -102,18 +102,18 @@ final class PermissionCardSurfaceViewTests: XCTestCase {
         XCTAssertEqual(stroke.a, expected.a, accuracy: 0.05, "Stroke = separatorColor (A).")
     }
 
-    // MARK: - Shadow params (DIFFER from BarSurfaceView)
+    // MARK: - Shadow params (DIFFER from GlassBackgroundView)
 
     func testShadowOpacityIsDarkAwareWithCardParams() {
         // Light: 0.12.
-        let light = PermissionCardSurfaceView()
+        let light = OpaqueCardBackgroundView()
         _ = mounted(light, appearance: .aqua)
         XCTAssertEqual(
             light.resolvedShadowOpacity, 0.12, accuracy: 0.001,
             "Light shadow opacity = 0.12 (PermissionCardView.swift:249).")
 
         // Dark: 0.35.
-        let dark = PermissionCardSurfaceView()
+        let dark = OpaqueCardBackgroundView()
         let container = mounted(dark, appearance: .darkAqua)
         _ = container
         XCTAssertEqual(
@@ -128,7 +128,7 @@ final class PermissionCardSurfaceViewTests: XCTestCase {
     }
 
     func testShadowOpacityReResolvesOnAppearanceFlip() {
-        let surface = PermissionCardSurfaceView()
+        let surface = OpaqueCardBackgroundView()
         let container = mounted(surface, appearance: .aqua)
         XCTAssertEqual(surface.resolvedShadowOpacity, 0.12, accuracy: 0.001)
         // The surface has its own forced appearance (mounted() pins it); flip it
@@ -142,7 +142,7 @@ final class PermissionCardSurfaceViewTests: XCTestCase {
     }
 
     func testShadowPathTracksRoundedSilhouette() {
-        let surface = PermissionCardSurfaceView()
+        let surface = OpaqueCardBackgroundView()
         _ = mounted(surface)
         XCTAssertNotNil(
             surface.resolvedShadowPath,
@@ -152,7 +152,7 @@ final class PermissionCardSurfaceViewTests: XCTestCase {
     // MARK: - Window-collapse guard (R1)
 
     func testPublishesNoIntrinsicMetricBothAxes() {
-        let surface = PermissionCardSurfaceView()
+        let surface = OpaqueCardBackgroundView()
         XCTAssertEqual(
             surface.intrinsicContentSize.width, NSView.noIntrinsicMetric,
             "Surface width = noIntrinsicMetric (R1 — can't leak fittingSize).")

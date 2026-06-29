@@ -3,7 +3,7 @@ import AppKit
 /// AppKit replacement for the (now-deleted) SwiftUI attach button (migration
 /// plan §4.1-10,
 /// component-mapping table). A standalone 32pt circle backed by the Phase-0
-/// `BarSurfaceView(cornerRadius: 16, drawsShadow: false)` (the shadowless
+/// `GlassBackgroundView(cornerRadius: 16, drawsShadow: false)` (the shadowless
 /// glass circle that matched the original's `surface`), with a centered `+`
 /// template image.
 ///
@@ -16,7 +16,7 @@ import AppKit
 /// The dashed accent drop-target stroke (accent,
 /// `lineWidth 1.5, dash [4,3]`) is drawn as a `CAShapeLayer` overlay toggled
 /// by `isDropTargeted`; the idle 0.5pt `separatorColor` stroke is the
-/// `BarSurfaceView`'s own border, so we only add the *drop* stroke here.
+/// `GlassBackgroundView`'s own border, so we only add the *drop* stroke here.
 final class AttachButton: NSControl {
 
     /// 32pt circle (`AttachButton.size = 32`).
@@ -33,7 +33,7 @@ final class AttachButton: NSControl {
     /// the pill's stroke so they animate in sync (§4.1-9).
     private(set) var isDropTargeted: Bool = false
 
-    private let surface = BarSurfaceView(cornerRadius: AttachButton.size / 2, drawsShadow: false)
+    private let surface = GlassBackgroundView(cornerRadius: AttachButton.size / 2, drawsShadow: false)
     private let iconView = NSImageView()
     private let dropStrokeLayer = CAShapeLayer()
 
@@ -94,7 +94,7 @@ final class AttachButton: NSControl {
     /// glass circle's alpha — TEST-OBSERVATION GETTERS (read-only) surfacing
     /// the press-dim invariant (the `+` dims while the circle stays solid,
     /// §4.1-10). No production code reads these; they follow the documented
-    /// `BarSurfaceView.glassCornerRadius` test-observation-getter precedent.
+    /// `GlassBackgroundView.glassCornerRadius` test-observation-getter precedent.
     var glyphAlphaForTestObservation: CGFloat { iconView.alphaValue }
     var surfaceAlphaForTestObservation: CGFloat { surface.alphaValue }
 

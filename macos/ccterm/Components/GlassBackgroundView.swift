@@ -28,7 +28,7 @@ import AppKit
 /// Structure (both branches):
 ///
 /// ```
-/// BarSurfaceView (outer wrapper — UNMASKED; holds the shadow)
+/// GlassBackgroundView (outer wrapper — UNMASKED; holds the shadow)
 /// └─ effectView (NSGlassEffectView | NSVisualEffectView — MASKED to the
 /// │   rounded shape; the material)
 /// ├─ contentClipView (the hosted content; layer.mask rounds it to the
@@ -48,7 +48,7 @@ import AppKit
 /// When a shadow is drawn it follows the clamped continuous-rounded
 /// silhouette via `layer.shadowPath`, so a rounded surface (or the attach
 /// circle) never casts a square bounds-shaped shadow.
-final class BarSurfaceView: NSView {
+final class GlassBackgroundView: NSView {
 
     // MARK: - Constants (verbatim from BarSurfaceModifier.swift)
 
@@ -259,7 +259,7 @@ final class BarSurfaceView: NSView {
 
     // MARK: - Sizing (regime B — content drives height; publish nothing)
 
-    /// Publish `noIntrinsicMetric` on **both** axes. `BarSurfaceView` is a
+    /// Publish `noIntrinsicMetric` on **both** axes. `GlassBackgroundView` is a
     /// regime-B background pinned to its content's four edges — the content
     /// drives height. A non-trivial intrinsic size could leak up through
     /// `restingBarHost.fittingSize` into the window constraint solver and
@@ -396,7 +396,7 @@ final class BarSurfaceView: NSView {
         // the NSVisualEffectView — NOT a CAShapeLayer mask on its own layer
         // (that can drop vibrancy, §4.8).
         if !isGlassBranch, let vev = visualEffectView, size.width > 0, size.height > 0 {
-            vev.maskImage = BarSurfaceGeometry.maskImage(cornerRadius: radius, scale: backingScale)
+            vev.maskImage = GlassBackgroundGeometry.maskImage(cornerRadius: radius, scale: backingScale)
         }
 
         // Stroke path inset by half the line width so the 0.5pt border sits
@@ -406,7 +406,7 @@ final class BarSurfaceView: NSView {
         let strokeRect = bounds.insetBy(dx: inset, dy: inset)
         let strokeRadius = max(0, radius - inset)
         strokeLayer.frame = bounds
-        strokeLayer.path = BarSurfaceGeometry.continuousRoundedPath(
+        strokeLayer.path = GlassBackgroundGeometry.continuousRoundedPath(
             in: strokeRect, cornerRadius: strokeRadius)
 
         // Shadow path follows the rounded/circular silhouette so the soft
@@ -414,7 +414,7 @@ final class BarSurfaceView: NSView {
         // (and CoreAnimation skips the per-relayout offscreen alpha pass).
         // Only meaningful when a shadow is drawn; harmless otherwise.
         if size.width > 0, size.height > 0 {
-            layer?.shadowPath = BarSurfaceGeometry.continuousRoundedPath(
+            layer?.shadowPath = GlassBackgroundGeometry.continuousRoundedPath(
                 in: bounds, cornerRadius: radius)
         } else {
             layer?.shadowPath = nil
@@ -431,7 +431,7 @@ final class BarSurfaceView: NSView {
 }
 
 /// Pure-math helper for the surface's rounded-corner clip — lifted out of
-/// `BarSurfaceView` so the geometry is assertable without mounting a view
+/// `GlassBackgroundView` so the geometry is assertable without mounting a view
 /// (CI-gate test). Two products:
 ///
 /// - `maskImage(cornerRadius:scale:)` — a resizable continuous-rounded-rect
@@ -442,7 +442,7 @@ final class BarSurfaceView: NSView {
 /// - `continuousRoundedPath(in:cornerRadius:)` — the `CGPath` for the
 ///   separator stroke, drawn with a continuous (squircle) corner curve to
 ///   match SwiftUI `.continuous`.
-enum BarSurfaceGeometry {
+enum GlassBackgroundGeometry {
 
     /// `capInsets` for the resizable mask: `cornerRadius` on every edge, so
     /// the four corner caps are preserved and only the 1pt center stretches.

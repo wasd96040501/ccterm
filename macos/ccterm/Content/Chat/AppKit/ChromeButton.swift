@@ -4,7 +4,7 @@ import AppKit
 /// (`InputBarControls/BarChromeButton.swift`; migration plan §4.2). A 22pt
 /// pill-style trigger used by every chrome-row picker (permission /
 /// model+effort / context ring / background tasks / todos). The surface is the
-/// same `BarSurfaceView` glass material as the input pill, at `cornerRadius =
+/// same `GlassBackgroundView` glass material as the input pill, at `cornerRadius =
 /// 8`; a hover overlay paints `labelColor @ 0.08` (the AppKit analogue of
 /// SwiftUI `Color.primary.opacity(0.08)`) over 0.1s linear, matching
 /// `BarChromeButton`'s `.animation(.linear(duration: 0.1), value: hovering)`.
@@ -13,7 +13,7 @@ import AppKit
 ///
 /// ```
 /// ChromeButton (NSControl, wantsLayer)
-/// └─ surface: BarSurfaceView(cornerRadius: 8, drawsShadow: true)
+/// └─ surface: GlassBackgroundView(cornerRadius: 8, drawsShadow: true)
 ///    └─ content stack (label + optional leading glyph / trailing accessory)
 /// (hoverOverlay CALayer painted on the button's own layer, ABOVE the surface
 ///  but BELOW key events, sized to bounds, r8 .continuous, labelColor@0.08)
@@ -52,7 +52,7 @@ final class ChromeButton: NSControl {
     /// shadow, unlike the attach button which opts out). Nil when
     /// `showsSurface == false` (the ContextRing bare trigger — its SwiftUI
     /// original is a `.buttonStyle(.plain)` ring with no `.barSurface`).
-    private let surface: BarSurfaceView?
+    private let surface: GlassBackgroundView?
 
     /// Whether the pill surface + hover overlay are present. `false` for the
     /// ContextRing trigger, which is a bare ring (no pill, no hover, no
@@ -78,7 +78,7 @@ final class ChromeButton: NSControl {
         self.showsSurface = showsSurface
         self.surface =
             showsSurface
-            ? BarSurfaceView(cornerRadius: ChromeButton.cornerRadius, drawsShadow: true) : nil
+            ? GlassBackgroundView(cornerRadius: ChromeButton.cornerRadius, drawsShadow: true) : nil
         self.hoverOverlay = showsSurface ? CALayer() : nil
         super.init(frame: NSRect(x: 0, y: 0, width: 60, height: ChromeButton.height))
         wantsLayer = true

@@ -3,7 +3,7 @@ import XCTest
 
 @testable import ccterm
 
-/// Review-only (opt-in, NOT a CI gate) snapshot of `BarSurfaceView` in the
+/// Review-only (opt-in, NOT a CI gate) snapshot of `GlassBackgroundView` in the
 /// three consumer geometries — input pill (r16), chrome button (r8), attach
 /// circle (r16) — rendered in BOTH light and dark appearances. Used to
 /// settle D3 (the macOS 14/15 `NSVisualEffectView.Material` choice) and to
@@ -11,11 +11,11 @@ import XCTest
 /// separator stroke all read correctly.
 ///
 /// Run for the PNG:
-///   make test-unit FILTER=BarSurfaceViewSnapshotTests
+///   make test-unit FILTER=GlassBackgroundViewSnapshotTests
 ///   open /tmp/ccterm-screenshots/BarSurface-light.png
 ///   open /tmp/ccterm-screenshots/BarSurface-dark.png
 @MainActor
-final class BarSurfaceViewSnapshotTests: XCTestCase {
+final class GlassBackgroundViewSnapshotTests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -70,9 +70,9 @@ final class BarSurfaceViewSnapshotTests: XCTestCase {
     private func makeSurface(
         cornerRadius: CGFloat, label: String, drawsShadow: Bool = true
     )
-        -> BarSurfaceView
+        -> GlassBackgroundView
     {
-        let surface = BarSurfaceView(cornerRadius: cornerRadius, drawsShadow: drawsShadow)
+        let surface = GlassBackgroundView(cornerRadius: cornerRadius, drawsShadow: drawsShadow)
         let field = NSTextField(labelWithString: label)
         field.font = .systemFont(ofSize: 12, weight: .medium)
         field.alignment = .center
@@ -88,7 +88,7 @@ final class BarSurfaceViewSnapshotTests: XCTestCase {
         return surface
     }
 
-    private func place(_ surface: BarSurfaceView, in root: NSView, frame: CGRect) {
+    private func place(_ surface: GlassBackgroundView, in root: NSView, frame: CGRect) {
         surface.translatesAutoresizingMaskIntoConstraints = true
         surface.autoresizingMask = []
         root.addSubview(surface)

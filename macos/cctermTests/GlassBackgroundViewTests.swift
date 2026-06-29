@@ -3,7 +3,7 @@ import XCTest
 
 @testable import ccterm
 
-/// CI-gate (non-snapshot) tests for `BarSurfaceView` + `BarSurfaceGeometry`.
+/// CI-gate (non-snapshot) tests for `GlassBackgroundView` + `GlassBackgroundGeometry`.
 /// These run on the unfiltered `make test-unit` suite and drive the real
 /// production object:
 ///
@@ -15,7 +15,7 @@ import XCTest
 ///   on a dark↔light flip),
 /// - backing-scale tracking of the mask helper.
 @MainActor
-final class BarSurfaceViewTests: XCTestCase {
+final class GlassBackgroundViewTests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -24,20 +24,20 @@ final class BarSurfaceViewTests: XCTestCase {
     // MARK: - Window-collapse guard (plan R1)
 
     func testIntrinsicContentSizeIsNoIntrinsicMetricBothAxes() {
-        let surface = BarSurfaceView(cornerRadius: 16)
+        let surface = GlassBackgroundView(cornerRadius: 16)
         XCTAssertEqual(surface.intrinsicContentSize.width, NSView.noIntrinsicMetric)
         XCTAssertEqual(surface.intrinsicContentSize.height, NSView.noIntrinsicMetric)
     }
 
     func testIntrinsicContentSizeStaysNoIntrinsicMetricAfterCornerRadiusChange() {
-        let surface = BarSurfaceView(cornerRadius: 16)
+        let surface = GlassBackgroundView(cornerRadius: 16)
         surface.cornerRadius = 8
         XCTAssertEqual(surface.intrinsicContentSize.width, NSView.noIntrinsicMetric)
         XCTAssertEqual(surface.intrinsicContentSize.height, NSView.noIntrinsicMetric)
     }
 
     func testIntrinsicContentSizeStaysNoIntrinsicMetricAfterLayoutAtFixedFrame() {
-        let surface = BarSurfaceView(cornerRadius: 16)
+        let surface = GlassBackgroundView(cornerRadius: 16)
         surface.frame = NSRect(x: 0, y: 0, width: 200, height: 32)
         surface.layoutSubtreeIfNeeded()
         XCTAssertEqual(surface.intrinsicContentSize.width, NSView.noIntrinsicMetric)
@@ -52,7 +52,7 @@ final class BarSurfaceViewTests: XCTestCase {
         content.translatesAutoresizingMaskIntoConstraints = false
         // A content view that does NOT pin its own height: the surface must
         // not invent a height of its own.
-        let surface = BarSurfaceView(cornerRadius: 16)
+        let surface = GlassBackgroundView(cornerRadius: 16)
         surface.setContentView(content)
         surface.frame = NSRect(x: 0, y: 0, width: 200, height: 32)
         surface.layoutSubtreeIfNeeded()
@@ -65,7 +65,7 @@ final class BarSurfaceViewTests: XCTestCase {
     // MARK: - cornerRadius wiring
 
     func testCornerRadiusReflectedOnMaskedSurface() {
-        let surface = BarSurfaceView(cornerRadius: 16)
+        let surface = GlassBackgroundView(cornerRadius: 16)
         surface.frame = NSRect(x: 0, y: 0, width: 200, height: 32)
         surface.layoutSubtreeIfNeeded()
 
@@ -85,7 +85,7 @@ final class BarSurfaceViewTests: XCTestCase {
     }
 
     func testCornerRadiusChangeRetypesetsSurface() {
-        let surface = BarSurfaceView(cornerRadius: 16)
+        let surface = GlassBackgroundView(cornerRadius: 16)
         surface.frame = NSRect(x: 0, y: 0, width: 200, height: 64)
         surface.layoutSubtreeIfNeeded()
 
@@ -98,20 +98,20 @@ final class BarSurfaceViewTests: XCTestCase {
         } else {
             // Mask regenerated at the new radius: side == 2*8+1 == 17.
             let side = surface.fallbackMaskImage?.size.width
-            XCTAssertEqual(side, BarSurfaceGeometry.resizableImageSide(cornerRadius: 8))
+            XCTAssertEqual(side, GlassBackgroundGeometry.resizableImageSide(cornerRadius: 8))
         }
     }
 
     func testAttachCircleClampsCornerRadiusToHalfSmallerSide() {
         // Attach button: 32x32, cornerRadius = size/2 = 16 → degenerate
         // circle, no over-rounding.
-        let surface = BarSurfaceView(cornerRadius: 16)
+        let surface = GlassBackgroundView(cornerRadius: 16)
         surface.frame = NSRect(x: 0, y: 0, width: 32, height: 32)
         surface.layoutSubtreeIfNeeded()
         XCTAssertEqual(surface.resolvedContentCornerRadius, 16, accuracy: 0.01)
 
         // A too-large requested radius on a small box still clamps.
-        let over = BarSurfaceView(cornerRadius: 100)
+        let over = GlassBackgroundView(cornerRadius: 100)
         over.frame = NSRect(x: 0, y: 0, width: 32, height: 32)
         over.layoutSubtreeIfNeeded()
         XCTAssertEqual(over.resolvedContentCornerRadius, 16, accuracy: 0.01)
@@ -120,7 +120,7 @@ final class BarSurfaceViewTests: XCTestCase {
     // MARK: - Mask geometry (pure-math helper)
 
     func testMaskCapInsetsEqualCornerRadiusOnEveryEdge() {
-        let insets = BarSurfaceGeometry.capInsets(cornerRadius: 16)
+        let insets = GlassBackgroundGeometry.capInsets(cornerRadius: 16)
         XCTAssertEqual(insets.top, 16)
         XCTAssertEqual(insets.left, 16)
         XCTAssertEqual(insets.bottom, 16)
@@ -128,12 +128,12 @@ final class BarSurfaceViewTests: XCTestCase {
     }
 
     func testResizableImageSideIsTwiceRadiusPlusOne() {
-        XCTAssertEqual(BarSurfaceGeometry.resizableImageSide(cornerRadius: 16), 33)
-        XCTAssertEqual(BarSurfaceGeometry.resizableImageSide(cornerRadius: 8), 17)
+        XCTAssertEqual(GlassBackgroundGeometry.resizableImageSide(cornerRadius: 16), 33)
+        XCTAssertEqual(GlassBackgroundGeometry.resizableImageSide(cornerRadius: 8), 17)
     }
 
     func testMaskImageIsResizableWithCornerCaps() {
-        let img = BarSurfaceGeometry.maskImage(cornerRadius: 16, scale: 2.0)
+        let img = GlassBackgroundGeometry.maskImage(cornerRadius: 16, scale: 2.0)
         XCTAssertEqual(img.size.width, 33)
         XCTAssertEqual(img.size.height, 33)
         XCTAssertEqual(img.resizingMode, .stretch)
@@ -149,8 +149,8 @@ final class BarSurfaceViewTests: XCTestCase {
         // the requested scale so the rounded edge stays crisp on Retina.
         // Assert the rep's PIXEL dimensions track the scale (load-bearing:
         // this fails if production ignores the `scale` parameter).
-        let oneX = BarSurfaceGeometry.maskImage(cornerRadius: 16, scale: 1.0)
-        let twoX = BarSurfaceGeometry.maskImage(cornerRadius: 16, scale: 2.0)
+        let oneX = GlassBackgroundGeometry.maskImage(cornerRadius: 16, scale: 1.0)
+        let twoX = GlassBackgroundGeometry.maskImage(cornerRadius: 16, scale: 2.0)
 
         // Both share the same logical point size (33 = 2*16 + 1).
         XCTAssertEqual(oneX.size, twoX.size)
@@ -177,13 +177,13 @@ final class BarSurfaceViewTests: XCTestCase {
         // bounding-box-within-bounds check alone is insensitive to removing
         // the clamp, since CGPath self-clamps internally.)
         let rect = CGRect(x: 0, y: 0, width: 32, height: 32)
-        let overLarge = BarSurfaceGeometry.continuousRoundedPath(in: rect, cornerRadius: 100)
-        let clampedExplicit = BarSurfaceGeometry.continuousRoundedPath(in: rect, cornerRadius: 16)
+        let overLarge = GlassBackgroundGeometry.continuousRoundedPath(in: rect, cornerRadius: 100)
+        let clampedExplicit = GlassBackgroundGeometry.continuousRoundedPath(in: rect, cornerRadius: 16)
         XCTAssertEqual(overLarge, clampedExplicit, "over-large radius must clamp to half the smaller side")
 
         // And the clamped path differs from a small-radius path (proving the
         // radius actually drives the geometry).
-        let smallRadius = BarSurfaceGeometry.continuousRoundedPath(in: rect, cornerRadius: 4)
+        let smallRadius = GlassBackgroundGeometry.continuousRoundedPath(in: rect, cornerRadius: 4)
         XCTAssertNotEqual(overLarge, smallRadius)
 
         // The clamped path stays inside the rect (bounds-safety).
@@ -193,7 +193,7 @@ final class BarSurfaceViewTests: XCTestCase {
     // MARK: - Appearance re-resolve mechanism (§4.2-3, §4.8)
 
     func testStrokeAndShadowReResolveOnAppearanceFlip() {
-        let surface = BarSurfaceView(cornerRadius: 16)
+        let surface = GlassBackgroundView(cornerRadius: 16)
         surface.frame = NSRect(x: 0, y: 0, width: 200, height: 32)
 
         // Force a dark appearance, drive the re-resolve, snapshot the
@@ -230,7 +230,7 @@ final class BarSurfaceViewTests: XCTestCase {
     func testShadowOffsetUsesFlippedCALayerSign() {
         // SwiftUI y is positive-down; CALayer shadowOffset y is positive-up.
         // The SwiftUI y:4 (glass) / y:1 (fallback) becomes a NEGATIVE height.
-        let surface = BarSurfaceView(cornerRadius: 16)
+        let surface = GlassBackgroundView(cornerRadius: 16)
         surface.appearance = NSAppearance(named: .aqua)
         surface.viewDidChangeEffectiveAppearance()
         XCTAssertLessThan(
@@ -244,7 +244,7 @@ final class BarSurfaceViewTests: XCTestCase {
         // The original AttachButton.surface is flat (no .shadow). A surface
         // built with drawsShadow:false must paint no shadow regardless of
         // appearance — opacity 0 in both light and dark.
-        let attach = BarSurfaceView(cornerRadius: 16, drawsShadow: false)
+        let attach = GlassBackgroundView(cornerRadius: 16, drawsShadow: false)
 
         attach.appearance = NSAppearance(named: .aqua)
         attach.viewDidChangeEffectiveAppearance()
@@ -258,7 +258,7 @@ final class BarSurfaceViewTests: XCTestCase {
     func testShadowDrawingSurfaceHasNonZeroOpacity() {
         // The pill / chrome buttons (drawsShadow defaults true) DO paint a
         // shadow — distinguishes the opt-out from a global "no shadow".
-        let pill = BarSurfaceView(cornerRadius: 16)
+        let pill = GlassBackgroundView(cornerRadius: 16)
         pill.appearance = NSAppearance(named: .aqua)
         pill.viewDidChangeEffectiveAppearance()
         XCTAssertGreaterThan(pill.resolvedShadowOpacity, 0, "the pill surface must paint a shadow")
@@ -270,7 +270,7 @@ final class BarSurfaceViewTests: XCTestCase {
         // shadow follows the rounded shape. Assert the path exists and is
         // strictly inset from the corners of the bounds (a rectangular path
         // would touch the corners; a rounded one does not).
-        let pill = BarSurfaceView(cornerRadius: 16)
+        let pill = GlassBackgroundView(cornerRadius: 16)
         pill.frame = NSRect(x: 0, y: 0, width: 200, height: 32)
         pill.layoutSubtreeIfNeeded()
 
@@ -292,7 +292,7 @@ final class BarSurfaceViewTests: XCTestCase {
         // The 32x32 attach circle's shadow path (when drawn) must be the
         // circular silhouette, not a square — verify a corner is excluded
         // even though the requested radius equals size/2.
-        let attach = BarSurfaceView(cornerRadius: 16)  // drawsShadow default; path is set regardless
+        let attach = GlassBackgroundView(cornerRadius: 16)  // drawsShadow default; path is set regardless
         attach.frame = NSRect(x: 0, y: 0, width: 32, height: 32)
         attach.layoutSubtreeIfNeeded()
         let path = try? XCTUnwrap(attach.resolvedShadowPath)

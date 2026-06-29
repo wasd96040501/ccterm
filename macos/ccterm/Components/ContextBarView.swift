@@ -156,7 +156,7 @@ final class ContextBarView: NSView {
         let trackRect = CGRect(x: 0, y: trackY, width: bounds.width, height: trackHeight)
         guard trackRect.width > 0 else { return }
 
-        let clipPath = BarSurfaceGeometry.continuousRoundedPath(
+        let clipPath = GlassBackgroundGeometry.continuousRoundedPath(
             in: trackRect, cornerRadius: Self.cornerRadius)
 
         // 1. Track background — quaternaryLabelColor @ 0.6, clipped rounded.

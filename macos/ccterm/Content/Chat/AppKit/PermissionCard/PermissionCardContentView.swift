@@ -5,7 +5,7 @@ import AppKit
 /// (`PermissionCardView.swift:35-149`) — the floating decision card's chrome:
 /// header → per-kind body → optional decision-reason → Deny/Allow button row,
 /// laid out in a vertical `NSStackView` and backed by the OPAQUE
-/// `PermissionCardSurfaceView` (NOT the glass `BarSurfaceView` — §4.4-1
+/// `OpaqueCardBackgroundView` (NOT the glass `GlassBackgroundView` — §4.4-1
 /// BLOCKER: the bar's material bled through and made diffs unreadable).
 ///
 /// Named `PermissionCardContentView` (not `PermissionCardView`) — the original
@@ -74,7 +74,7 @@ final class PermissionCardContentView: NSView {
 
     // MARK: - Subviews
 
-    private let surface = PermissionCardSurfaceView()
+    private let surface = OpaqueCardBackgroundView()
     private let stack = NSStackView()
     /// The per-kind body view, retained so the highlight Task it may own stays
     /// alive for the card's lifetime.
@@ -154,7 +154,7 @@ final class PermissionCardContentView: NSView {
 
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel(PermissionCardCopy.title(for: request))
+        setAccessibilityLabel(PermissionCardStrings.title(for: request))
     }
 
     @available(*, unavailable)
@@ -259,7 +259,7 @@ final class PermissionCardContentView: NSView {
         icon.translatesAutoresizingMaskIntoConstraints = false
         icon.setContentHuggingPriority(.required, for: .horizontal)
 
-        let title = NSTextField(labelWithString: PermissionCardCopy.title(for: request))
+        let title = NSTextField(labelWithString: PermissionCardStrings.title(for: request))
         title.font = .systemFont(ofSize: Self.titleSize, weight: .semibold)
         title.textColor = .labelColor
         title.lineBreakMode = .byTruncatingTail

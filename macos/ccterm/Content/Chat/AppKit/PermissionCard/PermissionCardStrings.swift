@@ -9,8 +9,8 @@ import Foundation
 ///
 /// Lifted verbatim out of the deleted SwiftUI `PermissionCardView.swift` during
 /// the D8 dead-SwiftUI sweep — the getters are reused-verbatim (migration plan
-/// §4.4 reusedVerbatim: `PermissionCardCopy` is on the REUSE list).
-enum PermissionCardCopy {
+/// §4.4 reusedVerbatim: `PermissionCardStrings` is on the REUSE list).
+enum PermissionCardStrings {
 
     /// One-line headline. Falls back to a generic verb when the tool
     /// isn't in the curated list.

@@ -14,7 +14,7 @@ import UniformTypeIdentifiers
 /// ```
 /// HStack(alignment: .bottom, spacing: attachToPillSpacing) {
 ///     AttachButton          // 32pt circle, bottom-anchored
-///     pill                      // BarSurfaceView(16), grows up
+///     pill                      // GlassBackgroundView(16), grows up
 /// }
 /// ```
 ///
@@ -87,7 +87,7 @@ final class InputBarView: NSView {
     /// (InputBarView2.swift:220-223). Lives OUTSIDE the strip's framed height.
     private let stripDivider = NSView()
 
-    private let pillSurface = BarSurfaceView(cornerRadius: InputBarView.cornerRadius)
+    private let pillSurface = GlassBackgroundView(cornerRadius: InputBarView.cornerRadius)
     /// The pill's interior content view (clipped to the rounded shape by
     /// `pillSurface.setContentView`). The text scroll + send button live
     /// here; the completion popup / strip mount here later.

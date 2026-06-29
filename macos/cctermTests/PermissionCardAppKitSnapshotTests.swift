@@ -7,7 +7,7 @@ import XCTest
 /// Review-only snapshots (NOT a CI gate — `*SnapshotTests` are skipped on the
 /// unfiltered suite) of the AppKit permission-card spine: the
 /// `PermissionCardContentView` chrome (header + STUB body + Deny/Allow row) on
-/// its opaque `PermissionCardSurfaceView`, plus the three
+/// its opaque `OpaqueCardBackgroundView`, plus the three
 /// `PermissionDecisionButton` roles. The per-kind bodies are empty STUBs
 /// this phase (the 11 real bodies arrive in the parallel fan-out), so the body
 /// slot renders blank — these snapshots exist to eyeball the chrome / surface /

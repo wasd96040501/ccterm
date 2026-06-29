@@ -7,7 +7,7 @@ import XCTest
 /// `*SnapshotTests.swift` on the unfiltered suite). Renders the three shared
 /// permission-card pieces so parity can be eyeballed. The real CI gates are the
 /// non-snapshot `PermissionDecisionButtonTests` /
-/// `PermissionCardSurfaceViewTests` / `PermissionBodyChipTests` /
+/// `OpaqueCardBackgroundViewTests` / `PermissionBodyChipTests` /
 /// `PermissionMonospaceScrollViewTests` / `PermissionBoundedDiffViewTests`.
 ///
 /// Run: `make test-unit FILTER=PermissionCardPiecesSnapshotTests`, then open the
@@ -81,7 +81,7 @@ final class PermissionCardPiecesSnapshotTests: XCTestCase {
 
     func testCardSurfaceSnapshot() throws {
         for appearance in [NSAppearance.Name.aqua, .darkAqua] {
-            let surface = PermissionCardSurfaceView()
+            let surface = OpaqueCardBackgroundView()
             // Give it some content so it has a believable size.
             let label = NSTextField(labelWithString: "Opaque permission card panel")
             label.translatesAutoresizingMaskIntoConstraints = false

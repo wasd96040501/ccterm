@@ -51,7 +51,7 @@ final class AttachButtonTests: XCTestCase {
     func testSizeIs32AndCornerRadiusIsHalf() {
         XCTAssertEqual(AttachButton.size, 32, accuracy: 0.5, "Attach button is a 32pt circle.")
         // The glass circle's corner radius is `size/2` (a circle) — the init
-        // passes exactly `AttachButton.size / 2 = 16` to `BarSurfaceView`.
+        // passes exactly `AttachButton.size / 2 = 16` to `GlassBackgroundView`.
         XCTAssertEqual(AttachButton.size / 2, 16, accuracy: 0.5, "Circle radius = size/2 = 16.")
         let button = AttachButton()
         XCTAssertEqual(button.intrinsicContentSize.width, 32, accuracy: 0.5)

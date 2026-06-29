@@ -79,7 +79,7 @@ final class PermissionFileWriteCardBodyView: NSView {
 
         setAccessibilityElement(true)
         setAccessibilityRole(.group)
-        setAccessibilityLabel(data.subtitle ?? PermissionCardCopy.title(for: request))
+        setAccessibilityLabel(data.subtitle ?? PermissionCardStrings.title(for: request))
     }
 
     @available(*, unavailable)

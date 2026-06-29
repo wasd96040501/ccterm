@@ -42,7 +42,7 @@ protocol PermissionCardBodyBuilding {
 /// `PermissionCardView.body(for:kind:)` (`PermissionCardView.swift:97-129`).
 /// One builder instance per kind; `.askUserQuestion` is handled by the card's
 /// chrome-takeover branch (it never reaches a body builder), and `default`
-/// (`.unknown`) falls to the fallback that reads `PermissionCardCopy.parameter`.
+/// (`.unknown`) falls to the fallback that reads `PermissionCardStrings.parameter`.
 ///
 /// Authored once. The parallel per-kind subtasks replace each STUB conformer's
 /// `makeBody` body with the real port WITHOUT editing this function.
@@ -100,7 +100,7 @@ struct PermissionAskUserQuestionCardBodyBuilder: PermissionCardBodyBuilding {
 }
 
 /// Fallback for `.unknown` / uncurated tools — a single monospace line from
-/// `PermissionCardCopy.parameter(for:)`, 1:1 with the SwiftUI
+/// `PermissionCardStrings.parameter(for:)`, 1:1 with the SwiftUI
 /// `PermissionFallbackCardBody` (`PermissionCardView.swift:208-222`): size-12
 /// monospaced, primary (labelColor), 3-line cap, middle truncation, selectable,
 /// full-width leading. Renders nothing when no parameter resolves.
@@ -108,7 +108,7 @@ struct PermissionFallbackCardBodyBuilder: PermissionCardBodyBuilding {
     func makeBody(request: PermissionRequest, engine: SyntaxHighlightEngine?) -> NSView {
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
-        guard let parameter = PermissionCardCopy.parameter(for: request) else {
+        guard let parameter = PermissionCardStrings.parameter(for: request) else {
             return container
         }
         let label = NSTextField(wrappingLabelWithString: parameter)

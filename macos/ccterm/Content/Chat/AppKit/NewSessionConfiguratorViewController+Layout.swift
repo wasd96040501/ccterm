@@ -9,7 +9,7 @@ extension NewSessionConfiguratorViewController {
         // Card root. `intrinsicContentSize = .zero` is published by the card
         // surface view; this controller's `view` IS the card (the surface +
         // columns), pinned by `ComposeContentView` centerX/centerY (plan R1).
-        let card = CardSurfaceView(cornerRadius: Self.cardCornerRadius)
+        let card = GlassCardBackgroundView(cornerRadius: Self.cardCornerRadius)
         card.translatesAutoresizingMaskIntoConstraints = false
 
         let projects = buildProjectsColumn()

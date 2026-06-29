@@ -58,7 +58,7 @@ final class AttachmentStripView: NSView {
     ///
     /// TEST-OBSERVATION GETTER (read-only): `private(set)` — tests read the
     /// arranged-card count + geometry; production never reads it (matches the
-    /// `CompletionPopupView.rowViews` / `BarSurfaceView` precedent).
+    /// `CompletionPopupView.rowViews` / `GlassBackgroundView` precedent).
     private(set) var cardViews: [AttachmentCardView] = []
 
     private var heightConstraint: NSLayoutConstraint!

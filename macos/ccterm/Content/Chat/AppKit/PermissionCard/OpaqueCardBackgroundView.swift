@@ -6,9 +6,9 @@ import AppKit
 ///
 /// **OPAQUE, not glass (§4.4-1 BLOCKER).** The permission card deliberately
 /// fills a solid `controlBackgroundColor` rather than reusing the bar's glass
-/// `BarSurfaceView`: the card sits directly above the input bar and the bar's
+/// `GlassBackgroundView`: the card sits directly above the input bar and the bar's
 /// translucent material was bleeding through, which made the diff / command
-/// preview hard to read. So this view does NOT share `BarSurfaceView` — it is
+/// preview hard to read. So this view does NOT share `GlassBackgroundView` — it is
 /// its own fully-opaque panel with its own shadow params:
 ///
 /// - fill = solid (alpha 1) `controlBackgroundColor`
@@ -22,15 +22,15 @@ import AppKit
 ///   (pixel deviation is allowed; behavior/layout parity is preserved).
 /// - shadow = black, opacity 0.35 dark / 0.12 light, radius 10, SwiftUI `y: +4`
 ///   → CALayer `shadowOffset.height = -4` (these params DIFFER from
-///   `BarSurfaceView`'s radius-12/8 — do not share)
+///   `GlassBackgroundView`'s radius-12/8 — do not share)
 ///
 /// This is a 1:1 visual relocation of `PermissionCardSurface`
 /// (`PermissionCardView.swift:233-252`), not a redesign.
 ///
-/// Structure mirrors `BarSurfaceView`'s shadow-outside-clip discipline:
+/// Structure mirrors `GlassBackgroundView`'s shadow-outside-clip discipline:
 ///
 /// ```
-/// PermissionCardSurfaceView (outer wrapper — UNMASKED; holds the shadow)
+/// OpaqueCardBackgroundView (outer wrapper — UNMASKED; holds the shadow)
 /// ├─ fillLayer    (solid controlBackgroundColor, rounded + clipped)
 /// └─ strokeLayer  (0.5pt separatorColor continuous-rounded path on top)
 /// ```
@@ -39,7 +39,7 @@ import AppKit
 /// content drives the size, so the surface publishes `noIntrinsicMetric` on
 /// both axes (window-collapse guard, plan R1). The mask / stroke / shadow paths
 /// are recomputed in `layout()` after `super.layout()` (settled bounds).
-final class PermissionCardSurfaceView: NSView {
+final class OpaqueCardBackgroundView: NSView {
 
     // MARK: - Constants (verbatim from PermissionCardSurface, PermissionCardView.swift:49,233-252)
 
@@ -50,7 +50,7 @@ final class PermissionCardSurfaceView: NSView {
     /// 0.5pt `separatorColor` border (`PermissionCardView.swift:246`).
     static let strokeLineWidth: CGFloat = 0.5
 
-    /// Shadow params — DIFFERENT from `BarSurfaceView`'s
+    /// Shadow params — DIFFERENT from `GlassBackgroundView`'s
     /// (`PermissionCardView.swift:248-250`).
     static let shadowRadius: CGFloat = 10
     /// SwiftUI `y: +4`; CALayer `shadowOffset` y is positive-up, so a
@@ -105,7 +105,7 @@ final class PermissionCardSurfaceView: NSView {
 
     // MARK: - Test-observation points (read-only; not consumed in production)
     //
-    // Mirror `BarSurfaceView`'s precedent (BarSurfaceView.swift:207-258): these
+    // Mirror `GlassBackgroundView`'s precedent (GlassBackgroundView.swift:207-258): these
     // expose resolved layer state so CI-gate tests can assert the §4.4-1
     // opaque-fill invariant + appearance re-resolve mechanism against the real
     // production object. Read-only, no mutation seam, no production consumers.
@@ -212,7 +212,7 @@ final class PermissionCardSurfaceView: NSView {
     /// Shadow on the outer wrapper's layer (outside the rounded clip), with the
     /// card's own params (radius 10 / opacity 0.35-dark, 0.12-light / y4). The
     /// colorScheme-dependent opacity is picked via the shared
-    /// `NSAppearance.isBarSurfaceDark` helper (BarSurfaceView.swift:524-531).
+    /// `NSAppearance.isBarSurfaceDark` helper (GlassBackgroundView.swift:524-531).
     private func applyShadow() {
         guard let layer else { return }
         layer.shadowColor = NSColor.black.cgColor
@@ -223,7 +223,7 @@ final class PermissionCardSurfaceView: NSView {
     }
 
     /// Recompute the fill frame / corner, the stroke path, and the shadow path
-    /// against the settled bounds. Reuses `BarSurfaceGeometry.continuousRoundedPath`
+    /// against the settled bounds. Reuses `GlassBackgroundGeometry.continuousRoundedPath`
     /// for the stroke + shadowPath silhouette.
     private func applyGeometry() {
         let size = bounds.size
@@ -242,9 +242,9 @@ final class PermissionCardSurfaceView: NSView {
         let strokeRadius = max(0, radius - inset)
         strokeLayer.frame = bounds
         if size.width > 0, size.height > 0 {
-            strokeLayer.path = BarSurfaceGeometry.continuousRoundedPath(
+            strokeLayer.path = GlassBackgroundGeometry.continuousRoundedPath(
                 in: strokeRect, cornerRadius: strokeRadius)
-            layer?.shadowPath = BarSurfaceGeometry.continuousRoundedPath(
+            layer?.shadowPath = GlassBackgroundGeometry.continuousRoundedPath(
                 in: bounds, cornerRadius: max(0, radius))
         } else {
             strokeLayer.path = nil

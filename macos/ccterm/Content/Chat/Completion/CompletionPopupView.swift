@@ -61,7 +61,7 @@ final class CompletionPopupView: NSView {
     /// (`CompletionPopupReconcileTests`); the row stack itself stays private.
     /// No production code reads this — do NOT add a production reader purely to
     /// justify it (matches the documented test-observation-getter precedent for
-    /// `BarSurfaceView`).
+    /// `GlassBackgroundView`).
     private(set) var rowViews: [CompletionRowView] = []
 
     /// Fired when a row is clicked (set-then-confirm, §4.3). The controller

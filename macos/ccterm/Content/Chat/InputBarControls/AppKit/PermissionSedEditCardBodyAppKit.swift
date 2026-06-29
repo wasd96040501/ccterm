@@ -175,7 +175,7 @@ final class PermissionSedEditCardBodyView: NSView {
         setAccessibilityRole(.group)
         // Announce the action so VoiceOver doesn't read an unlabeled group when
         // the diff is the only content (sibling FileWrite / Skill convention).
-        setAccessibilityLabel(data.subtitle ?? PermissionCardCopy.title(for: data.request))
+        setAccessibilityLabel(data.subtitle ?? PermissionCardStrings.title(for: data.request))
     }
 
     @available(*, unavailable)

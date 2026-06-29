@@ -141,7 +141,7 @@ final class PermissionDecisionButton: NSControl {
 
     // MARK: - Test-observation points (read-only; not consumed in production)
     //
-    // Mirror `BarSurfaceView`'s precedent (BarSurfaceView.swift:207-258): expose
+    // Mirror `GlassBackgroundView`'s precedent (GlassBackgroundView.swift:207-258): expose
     // resolved layer / label state so CI-gate tests can assert the role→color
     // mapping + hover flip against the real production object. Read-only, no
     // mutation seam, no production consumers.
@@ -327,7 +327,7 @@ final class PermissionDecisionButton: NSControl {
         let strokeRadius = max(0, radius - inset)
         strokeLayer.frame = bounds
         if size.width > 0, size.height > 0 {
-            strokeLayer.path = BarSurfaceGeometry.continuousRoundedPath(
+            strokeLayer.path = GlassBackgroundGeometry.continuousRoundedPath(
                 in: strokeRect, cornerRadius: strokeRadius)
         } else {
             strokeLayer.path = nil

@@ -182,14 +182,14 @@ final class ComposeBarHostView: NSView {
 /// The compose card's surface: an `NSVisualEffectView` (.ultraThinMaterial
 /// analogue) with a continuous-rounded mask + 0.5pt `separatorColor` border + a
 /// shadow on an OUTER compositing wrapper (shadow-outside-clip, mirroring
-/// `BarSurfaceView`). Migration plan §4.6 appkitMapping.
+/// `GlassBackgroundView`). Migration plan §4.6 appkitMapping.
 ///
 /// CRITICAL (plan R1): the root publishes `intrinsicContentSize = .zero` so its
 /// min-size constraints never leak up into `ComposeContentView`'s 4-edge-pinned
 /// root and collapse the window. The card is sized by the centerX/centerY +
 /// width/height band the parent applies; this view contributes no `fittingSize`.
 @MainActor
-final class CardSurfaceView: NSView {
+final class GlassCardBackgroundView: NSView {
     nonisolated deinit {}
 
     private let cornerRadius: CGFloat

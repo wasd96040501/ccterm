@@ -43,7 +43,7 @@ final class ContextRingPickerController: ChromePickerController {
         // overlay, no horizontal padding) — matching SwiftUI's
         // `Button { ProgressRingView }.buttonStyle(.plain)`
         // (ContextRingButton.swift:18-23). Build the trigger with
-        // `showsSurface: false` so the BarSurfaceView glass + hover fill are
+        // `showsSurface: false` so the GlassBackgroundView glass + hover fill are
         // never created, and the footprint is exactly the 22pt ring.
         super.init(button: ChromeButton(showsSurface: false))
         ring.translatesAutoresizingMaskIntoConstraints = false

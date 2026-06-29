@@ -90,3 +90,4 @@ Load-bearing ordering (the most fragile in the app):
 
 - [NativeTranscript2/CLAUDE.md](NativeTranscript2/CLAUDE.md) — the transcript renderer (layouts, diff, tool rendering).
 - [Services/Session/CLAUDE.md](../../Services/Session/CLAUDE.md) — `Session` / `SessionRuntime` / `SessionDraft` internals and how state reaches the UI.
+- [Root CLAUDE.md § AppKit component naming](../../../../CLAUDE.md#appkit-component-naming) — suffix = honest base class/role for the now-AppKit chat-page types.

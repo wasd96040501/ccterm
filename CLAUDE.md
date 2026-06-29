@@ -293,7 +293,32 @@ Strings live in `Localizable.xcstrings`. Source language is English; `zh-Hans` i
 
 ## Naming
 
-Follow the Swift API Design Guidelines, plus: suffix `View` / `Service` / `Delegate` / `Coordinator` where the role applies. Data models carry no suffix.
+Follow the Swift API Design Guidelines, plus: suffix `View` / `Service` / `Delegate` / `Coordinator` where the role applies. Data models carry no suffix. For AppKit view/control/layer/controller types specifically, see [§ AppKit component naming](#appkit-component-naming) below.
+
+## AppKit component naming
+
+The chat / transcript detail page is now AppKit-by-default (the SwiftUI compose chain, permission card, pickers, completion popup, sheets, and compose/draft surfaces were ported to `NSView` / `NSControl` / `NSViewController`). The page is dense with custom-drawn leaves and coordinator objects, so an honest suffix is the difference between a name that tells you the base class at the call site and one that lies about it. This rule governs every `NSView` / `NSControl` / `CALayer` / `NSViewController` across `Components/`, `Content/Chat/AppKit/`, `Sidebar/`, and `App/AppKit/`.
+
+**The type suffix must name the honest AppKit base class or role — never a more impressive-sounding term, and never a filler word bolted on to dodge a name clash.**
+
+| Base class / role | Suffix | Conforming example | Why |
+|---|---|---|---|
+| `NSView` subclass | `...View` | `AttachmentStripView`, `ChromeRowView`, `DotGridView`, `PermissionCardHostView` (`Content/Chat/AppKit/PermissionCard/PermissionCardHostView.swift`) | A layer-backed view that draws via `CALayer`s is still a *view*. |
+| `NSControl` subclass (target/action, interactive role) | role word, **no** trailing `View` (`...Button`) | `SendStopButton`, `ChromeButton`, `AttachButton`, `PermissionDecisionButton` | A control is not a view-with-a-suffix; `...ButtonView` on an `NSControl` is wrong. |
+| `CALayer` subclass | `...Layer` | (none on the chat page — see below) | `...Layer` is **reserved for actual `CALayer` subclasses**; never put it on an `NSView`. |
+| `NSViewController` subclass | `...ViewController` (IS-A) | `AskUserQuestionCardViewController`, `ImagePreviewSheetViewController`, `ContextBreakdownContentViewController` | …**except** the established coordinator/owner set below. |
+| Lifecycle / state-machine coordinator (owns a lifecycle, not a view tree) | bare `...Controller` | `InputBarController`, `PermissionCardController`, the picker controllers (`ChromePickerController` / `PermissionModePickerController` / `ModelEffortPickerController` / `ContextRingPickerController` / `BackgroundTaskPickerController` / `TodoPickerController`) | Sanctioned exception; coordinator first. `InputBarController` happens to subclass `NSViewController` but is named for its coordinator role, not its base class — do not "promote" it to `...ViewController`. |
+| Pure-computation helper (no drawing surface, no `CALayer`) | `...Layout` / `...Geometry` / `...Metrics` / `...Format` | `CompletionListLayout`, `ContextBarLayout`, `BackgroundTaskFormat`, `GlassBackgroundGeometry` | Never name a pure-math helper with a `CALayer`/animation term like `...Layer`. |
+| Coordinator / Presenter role | `...Coordinator` / `...Presenter` (as-is) | `TranscriptSwapCoordinator`, `Transcript2Coordinator`, `ImagePreviewPresenter`, `BackgroundTaskDetailPresenter`, `Transcript2SheetPresenter` | The role suffixes already sanctioned by `## Naming`. |
+| Static-string / localized-copy provider | `...Strings` | `PermissionCardStrings` | Never bare `...Copy` — `Copy` reads as the clipboard verb / ⌘C, not "the prose strings." |
+
+Three meta-rules behind the table:
+
+- **`...Layer` is reserved for `CALayer` subclasses, full stop.** A layer-backed `NSView` that happens to draw via `CALayer`s is a *View*. (Worked: `ProgressRingLayer` → `ProgressRingView` and `TodoStatusGlyphLayer` → `TodoStatusGlyphView` were both `final class …: NSView` mis-suffixed `...Layer`; corrected homes are `Components/ProgressRingView.swift` and `Components/TodoStatusGlyphView.swift`.)
+- **Don't add a filler word (`View`, `Impl`, `Box`, `Container`) just to dodge a clash with a symbol you're deleting in the same change.** Delete the dead symbol first, then take the clean name. (Worked: `PermissionDecisionButtonView` → `PermissionDecisionButton` and `AttachButtonView` → `AttachButton` — both `NSControl`s wore a `View` filler only to avoid colliding with the then-still-present SwiftUI structs, now deleted; corrected homes `…/PermissionCard/PermissionDecisionButton.swift` and `Content/Chat/AppKit/AttachButton.swift`. Also `PermissionCardLayerView` → `PermissionCardHostView`: it is the click-through full-pane host, not a `CALayer`, so the dishonest `LayerView` became the honest `HostView`.)
+- **When a glass/translucent surface and an opaque surface co-exist as siblings, encode the material in the name** so the distinction is legible at the call site; when there's only one, the plain name is fine. (Worked: the glass `BarSurfaceView` → `GlassBackgroundView` — "BarSurface" alone doesn't say *glass*, and its opaque sibling `OpaqueCardBackgroundView`, documented "OPAQUE, not glass §4.4-1", makes the distinction load-bearing.)
+
+These renames are descriptive of an applied ledger, not aspirational — every "before" above already existed in its violating form and was corrected in the AppKit-migration rename phase. Cite them as the worked shape of the rule; don't regress them, and don't propose renaming the sanctioned bare-`...Controller` coordinator set (that would contradict both the migration plan and `## Naming`).
 
 ## Workflow conventions
 

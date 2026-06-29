@@ -1034,6 +1034,16 @@
         }
       }
     },
+    "Current Branch": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前分支"
+          }
+        }
+      }
+    },
     "Debug": {},
     "Delete": {
       "extractionState": "stale",

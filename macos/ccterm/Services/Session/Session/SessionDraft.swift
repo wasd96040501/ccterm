@@ -54,6 +54,16 @@ final class SessionDraft {
         config.cwd = cwd
     }
 
+    /// Clear the picked folder back to "no project selected" — the compose
+    /// card's `removeFromRecents` of the current folder resets the card to the
+    /// "Pick a project" state. (The SwiftUI configurator routed this through a
+    /// `@Binding<String?>` whose setter dropped nil writes, so the clear was a
+    /// silent no-op there; the AppKit port models it as a first-class draft
+    /// capability instead.)
+    func clearCwd() {
+        config.cwd = nil
+    }
+
     func setWorktree(_ isWorktree: Bool) {
         config.isWorktree = isWorktree
     }

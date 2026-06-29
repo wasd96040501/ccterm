@@ -1,23 +1,16 @@
 import AppKit
-import SwiftUI
 import XCTest
 
 @testable import ccterm
 
-/// Renders the redesigned compose card (`NewSessionConfigurator`) into
-/// an offscreen window so the new three-column layout — recents nav on
-/// the left, hero / recents-for-folder / embedded input bar on the
-/// right — can be eyeballed without launching the app.
+/// Renders the AppKit `NewSessionConfiguratorViewController` (the de-SwiftUI'd
+/// compose card, migration plan §4.6) into an offscreen window so the
+/// three-column layout — recents nav on the left, hero / recents-for-folder /
+/// embedded input bar on the right — can be eyeballed without launching the app.
 ///
-/// Two folders are created in a temp directory and registered with a
-/// scratch `RecentProjectsStore` (so the production `fileExists`
-/// pruner sees real paths). A handful of `SessionRecord`s are seeded
-/// into an `InMemorySessionRepository` against the first folder so
-/// the "Recent Sessions" list renders with real titles + relative
-/// timestamps.
-///
-/// The PNG is attached to the xcresult for human review only; there
-/// is no golden-image diff. Open
+/// Migrated from the SwiftUI `NewSessionConfigurator` struct (deleted in this
+/// phase) to the AppKit VC, rendered via `ViewSnapshot.renderViewController`.
+/// Review-only (the `*SnapshotTests` suffix is skipped on the CI gate); open
 /// `/tmp/ccterm-screenshots/NewSessionConfigurator.png` after running.
 @MainActor
 final class NewSessionConfiguratorSnapshotTests: XCTestCase {
@@ -26,12 +19,18 @@ final class NewSessionConfiguratorSnapshotTests: XCTestCase {
         continueAfterFailure = false
     }
 
-    func testNewSessionConfiguratorLayout() throws {
-        // Two temp project folders, registered as recents. Real paths
-        // are required — RecentProjectsStore prunes anything that does
-        // not pass `FileManager.fileExists`.
+    private struct Scene {
+        let vc: NewSessionConfiguratorViewController
+        let tmp: URL
+    }
+
+    /// Build the configurator VC with a scratch recents store + an
+    /// in-memory-repo manager seeded (optionally) with Recent Sessions, and the
+    /// real `InputBarController` embedded. `pickFolder` seeds the draft cwd so
+    /// the right column shows the hero + meta + recents-for-folder.
+    private func makeScene(pickFolder: Bool, seedSessions: Bool) throws -> Scene {
         let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ncs-snapshot-\(UUID().uuidString)")
+            .appendingPathComponent("ncs-snap-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: tmp) }
 
@@ -40,209 +39,108 @@ final class NewSessionConfiguratorSnapshotTests: XCTestCase {
         try FileManager.default.createDirectory(at: projectA, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: projectB, withIntermediateDirectories: true)
 
-        // Scratch UserDefaults so the store does not bleed into the
-        // user's real recents list during parallel test runs.
-        let defaults = UserDefaults(suiteName: "ccterm.test.\(UUID().uuidString)")!
+        let suite = "ccterm.test.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
         let recents = RecentProjectsStore(defaults: defaults)
         recents.add(projectB.path)
-        recents.add(projectA.path)  // adds at the front → ends up selected
+        recents.add(projectA.path)  // front → selected
 
-        // Five session records all rooted at projectA — gives the
-        // "Recent Sessions" list real content.
         let repo = InMemorySessionRepository()
-        let now = Date()
-        let titles = [
-            "Give me a story",
-            "Are you still there?",
-            "Hello?",
-            "Are you a pig?",
-            "Are you dumb?",
-        ]
-        for (idx, title) in titles.enumerated() {
-            let record = SessionRecord(
-                sessionId: UUID().uuidString.lowercased(),
-                title: title,
-                cwd: projectA.path,
-                originPath: projectA.path,
-                lastActiveAt: now.addingTimeInterval(TimeInterval(-3600 * (10 + idx))),
-                status: .created
-            )
-            repo.save(record)
+        if seedSessions {
+            let now = Date()
+            let titles = [
+                "Give me a story", "Are you still there?", "Hello?",
+                "Are you a pig?", "Are you dumb?",
+            ]
+            for (idx, title) in titles.enumerated() {
+                repo.save(
+                    SessionRecord(
+                        sessionId: UUID().uuidString.lowercased(), title: title, cwd: projectA.path,
+                        originPath: projectA.path,
+                        lastActiveAt: now.addingTimeInterval(TimeInterval(-3600 * (10 + idx))),
+                        status: .created))
+            }
         }
-        let manager = SessionManager(repository: repo)
+        let manager = SessionManager(repository: repo, cliClientFactory: { _ in FakeCLIClient() })
 
-        // Inject the picked folder so the right column shows the
-        // hero with the project name + branch + recent sessions.
-        let folderBinding = Binding<String?>.constant(projectA.path)
-        let worktreeBinding = Binding<Bool>.constant(false)
-        let branchBinding = Binding<String?>.constant(nil)
-
-        let view = ZStack {
-            Color(nsColor: .windowBackgroundColor).ignoresSafeArea()
-            NewSessionConfigurator(
-                folderPath: folderBinding,
-                useWorktree: worktreeBinding,
-                sourceBranch: branchBinding,
-                inputBar: {
-                    // Placeholder bar with the same height the real
-                    // pill produces — keeps the layout truthful
-                    // without dragging the session-aware
-                    // `InputBarChrome` (and its required `Session`)
-                    // into the test surface.
-                    Color.gray.opacity(0.18)
-                        .frame(height: 64)
-                        .clipShape(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        )
-                }
-            )
+        let draftDir = tmp.appendingPathComponent("drafts")
+        let draftId = UUID().uuidString.lowercased()
+        let session = manager.prepareDraftSession(draftId)
+        if pickFolder {
+            session.draft?.setCwd(projectA.path)
+            session.draft?.setOriginPath(projectA.path)
         }
-        .frame(width: 1100, height: 760)
-        .environment(recents)
-        .environment(manager)
 
-        let image = ViewSnapshot.render(
-            view, size: CGSize(width: 1100, height: 760), settle: 0.9)
-        let url = ViewSnapshot.writePNG(image, name: "NewSessionConfigurator")
+        let controller = InputBarController(
+            sessionManager: manager,
+            inputDraftStore: InputDraftStore(directory: draftDir, debounceInterval: 0.05),
+            userDefaults: UserDefaults(suiteName: "ncs-snap-bar-\(UUID().uuidString)")!,
+            notificationCenter: NotificationCenter(),
+            submitEnabledProvider: { $0.cwd != nil },
+            onSubmit: { _, _ in })
 
+        let vc = NewSessionConfiguratorViewController(
+            sessionManager: manager,
+            recents: recents,
+            inputBarController: controller,
+            draftSessionId: draftId,
+            onResumeSession: { _ in })
+        return Scene(vc: vc, tmp: tmp)
+    }
+
+    /// Wrap the card VC in a DotGrid-backed container so the snapshot mirrors
+    /// the real `ComposeContentView` layering (backdrop + centered card).
+    private func render(_ scene: Scene, name: String, light: Bool) -> NSImage {
+        let host = NSViewController()
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 1100, height: 760))
+        if light { root.appearance = NSAppearance(named: .aqua) }
+        let grid = DotGridView()
+        grid.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(grid)
+        scene.vc.loadViewIfNeeded()
+        host.addChild(scene.vc)
+        scene.vc.view.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(scene.vc.view)
+        NSLayoutConstraint.activate([
+            grid.topAnchor.constraint(equalTo: root.topAnchor),
+            grid.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            grid.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            grid.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            scene.vc.view.centerXAnchor.constraint(equalTo: root.centerXAnchor),
+            scene.vc.view.centerYAnchor.constraint(equalTo: root.centerYAnchor),
+            scene.vc.view.widthAnchor.constraint(
+                equalToConstant: NewSessionConfiguratorViewController.idealWidth),
+            scene.vc.view.heightAnchor.constraint(
+                equalToConstant: NewSessionConfiguratorViewController.height),
+        ])
+        host.view = root
+        let image = ViewSnapshot.renderViewController(
+            host, size: CGSize(width: 1100, height: 760), settle: 0.9)
+        let url = ViewSnapshot.writePNG(image, name: name)
         let attachment = XCTAttachment(contentsOfFile: url)
-        attachment.name = "NewSessionConfigurator.png"
+        attachment.name = "\(name).png"
         attachment.lifetime = .keepAlways
         add(attachment)
+        return image
+    }
 
+    func testNewSessionConfiguratorLayout() throws {
+        let scene = try makeScene(pickFolder: true, seedSessions: true)
+        let image = render(scene, name: "NewSessionConfigurator", light: false)
         XCTAssertGreaterThanOrEqual(image.size.width, 1000)
         XCTAssertGreaterThanOrEqual(image.size.height, 700)
     }
 
-    /// Same fixture as the main test, but with no folder picked yet —
-    /// captures the empty hero ("Start Building" without a project
-    /// name), the "Pick a project on the left to begin." subtitle,
-    /// and the empty recent-sessions placeholder.
     func testNewSessionConfiguratorEmptyState() throws {
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ncs-snapshot-empty-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: tmp) }
-
-        let projectA = tmp.appendingPathComponent("worldquant-brain")
-        let projectB = tmp.appendingPathComponent("ccterm")
-        try FileManager.default.createDirectory(at: projectA, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: projectB, withIntermediateDirectories: true)
-
-        let defaults = UserDefaults(suiteName: "ccterm.test.\(UUID().uuidString)")!
-        let recents = RecentProjectsStore(defaults: defaults)
-        recents.add(projectB.path)
-        recents.add(projectA.path)
-
-        let repo = InMemorySessionRepository()
-        let manager = SessionManager(repository: repo)
-
-        let folderBinding = Binding<String?>.constant(nil)
-        let worktreeBinding = Binding<Bool>.constant(false)
-        let branchBinding = Binding<String?>.constant(nil)
-
-        let view = ZStack {
-            Color(nsColor: .windowBackgroundColor).ignoresSafeArea()
-            NewSessionConfigurator(
-                folderPath: folderBinding,
-                useWorktree: worktreeBinding,
-                sourceBranch: branchBinding,
-                inputBar: {
-                    Color.gray.opacity(0.18)
-                        .frame(height: 64)
-                        .clipShape(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        )
-                }
-            )
-        }
-        .frame(width: 1100, height: 760)
-        .environment(recents)
-        .environment(manager)
-
-        let image = ViewSnapshot.render(
-            view, size: CGSize(width: 1100, height: 760), settle: 0.9)
-        let url = ViewSnapshot.writePNG(image, name: "NewSessionConfigurator-empty")
-
-        let attachment = XCTAttachment(contentsOfFile: url)
-        attachment.name = "NewSessionConfigurator-empty.png"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-
+        let scene = try makeScene(pickFolder: false, seedSessions: false)
+        let image = render(scene, name: "NewSessionConfigurator-empty", light: false)
         XCTAssertGreaterThanOrEqual(image.size.width, 1000)
     }
 
-    /// Same fixture as the main test, but rendered in **light**
-    /// appearance. Catches issues where the left-column tint reads
-    /// as a saturated patch on the lighter `ultraThinMaterial` base.
     func testNewSessionConfiguratorLightAppearance() throws {
-        let tmp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("ncs-snapshot-light-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: tmp) }
-
-        let projectA = tmp.appendingPathComponent("worldquant-brain")
-        let projectB = tmp.appendingPathComponent("ccterm")
-        try FileManager.default.createDirectory(at: projectA, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: projectB, withIntermediateDirectories: true)
-
-        let defaults = UserDefaults(suiteName: "ccterm.test.\(UUID().uuidString)")!
-        let recents = RecentProjectsStore(defaults: defaults)
-        recents.add(projectB.path)
-        recents.add(projectA.path)
-
-        let repo = InMemorySessionRepository()
-        let now = Date()
-        let titles = [
-            "Give me a story", "Are you still there?", "Hello?",
-            "Are you a pig?", "Are you dumb?",
-        ]
-        for (idx, title) in titles.enumerated() {
-            let record = SessionRecord(
-                sessionId: UUID().uuidString.lowercased(),
-                title: title,
-                cwd: projectA.path,
-                originPath: projectA.path,
-                lastActiveAt: now.addingTimeInterval(TimeInterval(-3600 * (10 + idx))),
-                status: .created
-            )
-            repo.save(record)
-        }
-        let manager = SessionManager(repository: repo)
-
-        let folderBinding = Binding<String?>.constant(projectA.path)
-        let worktreeBinding = Binding<Bool>.constant(false)
-        let branchBinding = Binding<String?>.constant(nil)
-
-        let view = ZStack {
-            Color(nsColor: .windowBackgroundColor).ignoresSafeArea()
-            NewSessionConfigurator(
-                folderPath: folderBinding,
-                useWorktree: worktreeBinding,
-                sourceBranch: branchBinding,
-                inputBar: {
-                    Color.gray.opacity(0.18)
-                        .frame(height: 64)
-                        .clipShape(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        )
-                }
-            )
-        }
-        .frame(width: 1100, height: 760)
-        .environment(recents)
-        .environment(manager)
-        .preferredColorScheme(.light)
-
-        let image = ViewSnapshot.render(
-            view, size: CGSize(width: 1100, height: 760), settle: 0.9)
-        let url = ViewSnapshot.writePNG(image, name: "NewSessionConfigurator-light")
-
-        let attachment = XCTAttachment(contentsOfFile: url)
-        attachment.name = "NewSessionConfigurator-light.png"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-
+        let scene = try makeScene(pickFolder: true, seedSessions: true)
+        let image = render(scene, name: "NewSessionConfigurator-light", light: true)
         XCTAssertGreaterThanOrEqual(image.size.width, 1000)
     }
 }

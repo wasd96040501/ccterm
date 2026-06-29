@@ -8,12 +8,12 @@ import AppKit
 /// `PermissionCardSurfaceView` (NOT the glass `BarSurfaceView` — §4.4-1
 /// BLOCKER: the bar's material bled through and made diffs unreadable).
 ///
-/// Named `PermissionCardContentView` (not `PermissionCardView`) because the
-/// SwiftUI `struct PermissionCardView: View` still exists this phase (it hosts
-/// the 11 per-kind SwiftUI bodies + the `PermissionCardsDemoView`, ported in
-/// the parallel fan-out); two top-level `PermissionCardView` declarations would
-/// be a duplicate-declaration error. Same precedent as `PermissionDecisionButton`,
-/// which took over its bare name once the SwiftUI button was deleted.
+/// Named `PermissionCardContentView` (not `PermissionCardView`) — the original
+/// SwiftUI `struct PermissionCardView: View` (which hosted the 11 per-kind
+/// bodies + the `PermissionCardsDemoView`) was deleted in the D8 sweep; the
+/// name is kept distinct because this AppKit type renders only the card chrome,
+/// not the demo host. Same precedent as `PermissionDecisionButton`, which took
+/// over its bare name once the SwiftUI button was deleted.
 ///
 /// This is a 1:1 visual relocation, constants lifted verbatim:
 /// - outer VStack(alignment:.leading, spacing:12) (`PermissionCardView.swift:59`)

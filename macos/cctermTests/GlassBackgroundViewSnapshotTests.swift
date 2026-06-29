@@ -12,8 +12,8 @@ import XCTest
 ///
 /// Run for the PNG:
 ///   make test-unit FILTER=GlassBackgroundViewSnapshotTests
-///   open /tmp/ccterm-screenshots/BarSurface-light.png
-///   open /tmp/ccterm-screenshots/BarSurface-dark.png
+///   open /tmp/ccterm-screenshots/GlassBackground-light.png
+///   open /tmp/ccterm-screenshots/GlassBackground-dark.png
 @MainActor
 final class GlassBackgroundViewSnapshotTests: XCTestCase {
 
@@ -22,11 +22,11 @@ final class GlassBackgroundViewSnapshotTests: XCTestCase {
     }
 
     func testBarSurfaceLight() throws {
-        try render(appearanceName: .aqua, pngName: "BarSurface-light")
+        try render(appearanceName: .aqua, pngName: "GlassBackground-light")
     }
 
     func testBarSurfaceDark() throws {
-        try render(appearanceName: .darkAqua, pngName: "BarSurface-dark")
+        try render(appearanceName: .darkAqua, pngName: "GlassBackground-dark")
     }
 
     // MARK: - Harness

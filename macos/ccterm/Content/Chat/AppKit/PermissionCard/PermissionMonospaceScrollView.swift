@@ -34,7 +34,7 @@ import AppKit
 /// init parameter.
 ///
 /// `isEditable == false` ⇒ no IME marked text (don't copy that machinery).
-final class PermissionMonospaceScrollBlock: NSView {
+final class PermissionMonospaceScrollView: NSView {
 
     // MARK: - Constants (verbatim from PermissionMcpCardBody.swift:40-49)
 

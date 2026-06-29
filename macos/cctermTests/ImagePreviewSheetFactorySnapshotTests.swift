@@ -5,17 +5,17 @@ import XCTest
 
 /// Review-only snapshot (opt-in; SKIPPED on the default `make test-unit` /
 /// CI suite) for the transcript image-preview sheet body
-/// (`ImagePreviewSheetBody`, migration plan §4.7). Renders the REAL
+/// (`ImagePreviewSheetFactory`, migration plan §4.7). Renders the REAL
 /// `ImagePreviewSheetViewController` the transcript path routes to, at the
 /// transcript ideal envelope (880 × 660), so the aspect-fit image area, the
 /// divider, and the trailing Done button can be eyeballed against the SwiftUI
 /// `ImagePreviewSheetView` original.
 ///
 /// To view:
-///   make test-unit FILTER=ImagePreviewSheetBodySnapshotTests
-///   open /tmp/ccterm-screenshots/ImagePreviewSheetBody.png
+///   make test-unit FILTER=ImagePreviewSheetFactorySnapshotTests
+///   open /tmp/ccterm-screenshots/ImagePreviewSheetFactory.png
 @MainActor
-final class ImagePreviewSheetBodySnapshotTests: XCTestCase {
+final class ImagePreviewSheetFactorySnapshotTests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -28,14 +28,14 @@ final class ImagePreviewSheetBodySnapshotTests: XCTestCase {
         let fixture = Self.makeFixtureImage(
             size: NSSize(width: 480, height: 200))
 
-        let vc = ImagePreviewSheetBody.makeTranscriptViewController(image: fixture) {}
+        let vc = ImagePreviewSheetFactory.makeTranscriptViewController(image: fixture) {}
 
         let image = ViewSnapshot.renderViewController(
             vc, size: CGSize(width: 880, height: 660))
-        let url = ViewSnapshot.writePNG(image, name: "ImagePreviewSheetBody")
+        let url = ViewSnapshot.writePNG(image, name: "ImagePreviewSheetFactory")
 
         let attachment = XCTAttachment(contentsOfFile: url)
-        attachment.name = "ImagePreviewSheetBody.png"
+        attachment.name = "ImagePreviewSheetFactory.png"
         attachment.lifetime = .keepAlways
         add(attachment)
 

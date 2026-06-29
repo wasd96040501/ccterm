@@ -38,7 +38,7 @@ import AppKit
 /// constraint solver and collapse the window (root `CLAUDE.md` host-sizing +
 /// plan R1). `intrinsicContentSize = .zero` severs that path.
 @MainActor
-final class PermissionCardLayerView: NSView {
+final class PermissionCardHostView: NSView {
 
     /// Set by `PermissionCardController` for the duration of a dismiss fade.
     /// While true the whole host is hit-transparent (the card is visually

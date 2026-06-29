@@ -3,7 +3,7 @@ import XCTest
 
 @testable import ccterm
 
-/// CI-gate (non-snapshot) tests for `TodoStatusGlyphLayer` — the AppKit
+/// CI-gate (non-snapshot) tests for `TodoStatusGlyphView` — the AppKit
 /// replacement for the SwiftUI `TodoStatusGlyph`. These run on the unfiltered
 /// `make test-unit` suite and drive the **real** public surface
 /// (`setState(_:muted:)`), asserting on the produced `CAShapeLayer`'s
@@ -20,7 +20,7 @@ import XCTest
 /// - the appearance-flip cgColor re-resolve (R14 — `CALayer.cgColor` freeze),
 /// - the three-ellipse completed path + the `dotScale` inner-dot diameter.
 @MainActor
-final class TodoStatusGlyphLayerTests: XCTestCase {
+final class TodoStatusGlyphViewTests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -29,7 +29,7 @@ final class TodoStatusGlyphLayerTests: XCTestCase {
     // MARK: - R18: completed even-odd fill rule
 
     func testCompletedGlyphUsesEvenOddFillRule() {
-        let glyph = TodoStatusGlyphLayer()
+        let glyph = TodoStatusGlyphView()
         glyph.setState(.completed, muted: false)
         XCTAssertEqual(
             glyph.resolvedFillRule, .evenOdd,
@@ -43,7 +43,7 @@ final class TodoStatusGlyphLayerTests: XCTestCase {
     func testCompletedGlyphReassertsEvenOddAfterRelayout() {
         // The fillRule must be reapplied on every completed-path rebuild in
         // layout() (R18). Resize → relayout → still even-odd.
-        let glyph = TodoStatusGlyphLayer()
+        let glyph = TodoStatusGlyphView()
         glyph.setState(.completed, muted: false)
         glyph.frame = NSRect(x: 0, y: 0, width: 14, height: 14)
         glyph.layoutSubtreeIfNeeded()
@@ -57,7 +57,7 @@ final class TodoStatusGlyphLayerTests: XCTestCase {
     }
 
     func testCompletedGlyphIsFillOnly() {
-        let glyph = TodoStatusGlyphLayer()
+        let glyph = TodoStatusGlyphView()
         glyph.setState(.completed, muted: false)
         XCTAssertNotNil(glyph.resolvedFillColor, "completed glyph fills")
         XCTAssertNil(glyph.resolvedStrokeColor, "completed glyph has no stroke")
@@ -69,7 +69,7 @@ final class TodoStatusGlyphLayerTests: XCTestCase {
     // MARK: - Completed path identity (3 ellipses + dot diameter)
 
     func testCompletedPathHasThreeSubpaths() {
-        let glyph = TodoStatusGlyphLayer()
+        let glyph = TodoStatusGlyphView()
         glyph.frame = NSRect(x: 0, y: 0, width: 14, height: 14)
         glyph.setState(.completed, muted: false)
         glyph.layoutSubtreeIfNeeded()
@@ -86,7 +86,7 @@ final class TodoStatusGlyphLayerTests: XCTestCase {
         // so it fails if the production geometry regresses (a tautology that
         // re-computes `min(w,h) * dotScale` on both sides could not).
         let rect = CGRect(x: 0, y: 0, width: 14, height: 14)
-        let path = TodoStatusGlyphLayer.completedPath(in: rect)
+        let path = TodoStatusGlyphView.completedPath(in: rect)
 
         // The three addEllipse calls run largest → smallest, so the inner dot
         // is the last sub-path. Split the path at each moveTo and take the
@@ -142,14 +142,14 @@ final class TodoStatusGlyphLayerTests: XCTestCase {
     // MARK: - R17: rotation present IFF inProgress && !muted
 
     func testRotationPresentForLiveInProgressOnly() throws {
-        let glyph = TodoStatusGlyphLayer()
+        let glyph = TodoStatusGlyphView()
 
         glyph.setState(.inProgress, muted: false)
         let anim = try? XCTUnwrap(glyph.resolvedRotationAnimation)
         XCTAssertNotNil(anim, "live inProgress must spin")
         if let anim {
             XCTAssertEqual(anim.keyPath, "transform.rotation.z")
-            XCTAssertEqual(anim.duration, TodoStatusGlyphLayer.rotationDuration, accuracy: 0.0001)
+            XCTAssertEqual(anim.duration, TodoStatusGlyphView.rotationDuration, accuracy: 0.0001)
             XCTAssertEqual(anim.duration, 6.0, accuracy: 0.0001)
             XCTAssertEqual(anim.repeatCount, .infinity)
             XCTAssertEqual(anim.fromValue as? Double, 0)
@@ -178,7 +178,7 @@ final class TodoStatusGlyphLayerTests: XCTestCase {
     func testRotationSeededFromLiveInProgressInit() {
         // A glyph constructed directly at live inProgress installs the spin in
         // init (the predicate-keyed lifecycle, not viewDidMoveToWindow).
-        let glyph = TodoStatusGlyphLayer(status: .inProgress, muted: false)
+        let glyph = TodoStatusGlyphView(status: .inProgress, muted: false)
         XCTAssertNotNil(glyph.resolvedRotationAnimation)
     }
 
@@ -189,7 +189,7 @@ final class TodoStatusGlyphLayerTests: XCTestCase {
         // guard can't restart the spin on an unchanged (status, muted). So the
         // glyph re-arms the rotation in viewDidMoveToWindow (the onAppear
         // equivalent). Drive the real attach/detach lifecycle and assert.
-        let glyph = TodoStatusGlyphLayer(status: .inProgress, muted: false)
+        let glyph = TodoStatusGlyphView(status: .inProgress, muted: false)
         let host = NSView(frame: NSRect(x: 0, y: 0, width: 40, height: 40))
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 40, height: 40),
@@ -219,7 +219,7 @@ final class TodoStatusGlyphLayerTests: XCTestCase {
     func testNonLiveGlyphDoesNotSpinOnWindowAttach() {
         // A muted-inProgress (or pending/completed) glyph must never install
         // the rotation on attach — the live-spinner predicate gates it.
-        let glyph = TodoStatusGlyphLayer(status: .inProgress, muted: true)
+        let glyph = TodoStatusGlyphView(status: .inProgress, muted: true)
         let host = NSView(frame: NSRect(x: 0, y: 0, width: 40, height: 40))
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 40, height: 40),
@@ -235,7 +235,7 @@ final class TodoStatusGlyphLayerTests: XCTestCase {
     // MARK: - Dash + cap present IFF live inProgress (muted == pending)
 
     func testDashPatternPresentForLiveInProgressOnly() {
-        let glyph = TodoStatusGlyphLayer()
+        let glyph = TodoStatusGlyphView()
 
         glyph.setState(.inProgress, muted: false)
         let dash = glyph.resolvedLineDashPattern
@@ -243,7 +243,7 @@ final class TodoStatusGlyphLayerTests: XCTestCase {
         XCTAssertEqual(dash?[0].doubleValue ?? -1, 0, accuracy: 0.0001)
         XCTAssertEqual(
             dash?[1].doubleValue ?? -1,
-            Double(TodoStatusGlyphLayer.strokeWidth * TodoStatusGlyphLayer.dashGapMultiplier),
+            Double(TodoStatusGlyphView.strokeWidth * TodoStatusGlyphView.dashGapMultiplier),
             accuracy: 0.0001)
         XCTAssertEqual(dash?[1].doubleValue ?? -1, 3.08, accuracy: 0.0001)
         XCTAssertEqual(glyph.resolvedLineCap, .round, "dotted ring needs a round cap")
@@ -261,7 +261,7 @@ final class TodoStatusGlyphLayerTests: XCTestCase {
 
     func testMutedInProgressMatchesPendingStrokeGeometry() {
         // Both are plain inset rings: lineWidth 1.4, fillColor clear, no dash.
-        let glyph = TodoStatusGlyphLayer()
+        let glyph = TodoStatusGlyphView()
         glyph.frame = NSRect(x: 0, y: 0, width: 14, height: 14)
 
         glyph.setState(.pending, muted: false)
@@ -290,7 +290,7 @@ final class TodoStatusGlyphLayerTests: XCTestCase {
     func testRingPathInsetByHalfStrokeWidth() {
         // strokeBorder reproduced: ellipse inset by strokeWidth/2 (= 0.7) on
         // each edge → bbox origin (0.7, 0.7), size (12.6, 12.6) at a 14×14 box.
-        let glyph = TodoStatusGlyphLayer()
+        let glyph = TodoStatusGlyphView()
         glyph.frame = NSRect(x: 0, y: 0, width: 14, height: 14)
         glyph.setState(.pending, muted: false)
         glyph.layoutSubtreeIfNeeded()
@@ -304,7 +304,7 @@ final class TodoStatusGlyphLayerTests: XCTestCase {
         }
 
         // The static helper agrees.
-        let staticBox = TodoStatusGlyphLayer.ringPath(in: NSRect(x: 0, y: 0, width: 14, height: 14))
+        let staticBox = TodoStatusGlyphView.ringPath(in: NSRect(x: 0, y: 0, width: 14, height: 14))
             .boundingBox
         XCTAssertEqual(staticBox.origin.x, 0.7, accuracy: 0.05)
         XCTAssertEqual(staticBox.width, 12.6, accuracy: 0.05)
@@ -313,7 +313,7 @@ final class TodoStatusGlyphLayerTests: XCTestCase {
     // MARK: - One reused shape layer (no per-state recreation)
 
     func testSingleShapeLayerReusedAcrossStates() {
-        let glyph = TodoStatusGlyphLayer()
+        let glyph = TodoStatusGlyphView()
         let initial = glyph.resolvedShapeLayer
         glyph.setState(.inProgress, muted: false)
         XCTAssertTrue(glyph.resolvedShapeLayer === initial)
@@ -328,7 +328,7 @@ final class TodoStatusGlyphLayerTests: XCTestCase {
     // MARK: - Footprint invariance across all four combos
 
     func testFootprintInvariantAcrossAllStates() {
-        let glyph = TodoStatusGlyphLayer()
+        let glyph = TodoStatusGlyphView()
         let frame = NSRect(x: 0, y: 0, width: 14, height: 14)
         glyph.frame = frame
 
@@ -359,7 +359,7 @@ final class TodoStatusGlyphLayerTests: XCTestCase {
         // flaky. Instead prove the value TRACKS effectiveAppearance — after each
         // flip the layer's stroke equals the accent freshly resolved against the
         // current appearance (i.e. it is not frozen at first-paint).
-        let glyph = TodoStatusGlyphLayer(status: .inProgress, muted: false)
+        let glyph = TodoStatusGlyphView(status: .inProgress, muted: false)
 
         func accent(_ appearance: NSAppearance) -> CGColor {
             var out = NSColor.controlAccentColor.cgColor
@@ -386,7 +386,7 @@ final class TodoStatusGlyphLayerTests: XCTestCase {
 
     func testCompletedColorReResolvesOnAppearanceFlip() {
         // Completed paints secondaryLabelColor (appearance-dynamic) as fill.
-        let glyph = TodoStatusGlyphLayer(status: .completed, muted: false)
+        let glyph = TodoStatusGlyphView(status: .completed, muted: false)
 
         glyph.appearance = NSAppearance(named: .aqua)
         glyph.viewDidChangeEffectiveAppearance()
@@ -406,7 +406,7 @@ final class TodoStatusGlyphLayerTests: XCTestCase {
     // MARK: - Color mapping (accent vs secondary)
 
     func testColorMappingMatchesSwiftUI() {
-        let glyph = TodoStatusGlyphLayer()
+        let glyph = TodoStatusGlyphView()
         glyph.appearance = NSAppearance(named: .aqua)
         glyph.viewDidChangeEffectiveAppearance()
 
@@ -436,7 +436,7 @@ final class TodoStatusGlyphLayerTests: XCTestCase {
     // MARK: - intrinsicContentSize is noIntrinsicMetric on both axes
 
     func testIntrinsicContentSizeIsNoIntrinsicMetric() {
-        let glyph = TodoStatusGlyphLayer()
+        let glyph = TodoStatusGlyphView()
         XCTAssertEqual(glyph.intrinsicContentSize.width, NSView.noIntrinsicMetric)
         XCTAssertEqual(glyph.intrinsicContentSize.height, NSView.noIntrinsicMetric)
     }
@@ -444,7 +444,7 @@ final class TodoStatusGlyphLayerTests: XCTestCase {
     // MARK: - Idempotence
 
     func testSetStateIdempotentForSameInput() {
-        let glyph = TodoStatusGlyphLayer(status: .inProgress, muted: false)
+        let glyph = TodoStatusGlyphView(status: .inProgress, muted: false)
         let firstAnim = glyph.resolvedRotationAnimation
         glyph.setState(.inProgress, muted: false)  // no-op
         // Same animation instance preserved (not restacked).

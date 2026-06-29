@@ -26,7 +26,7 @@ import AppKit
 /// drawing appearance for the duration of `draw(_:)`, so each `.setFill()`
 /// re-resolves against the live appearance every draw — there is no frozen
 /// `CALayer.cgColor` to re-resolve on a dark/light flip (the R14 hazard the
-/// layer-backed `ProgressRingLayer` had to guard). The colors re-resolve for
+/// layer-backed `ProgressRingView` had to guard). The colors re-resolve for
 /// free, but a *redraw still has to be scheduled* on an appearance flip, which
 /// is exactly what the explicit `viewDidChangeEffectiveAppearance` override
 /// does — it is the load-bearing repaint trigger, not redundant.
@@ -156,7 +156,7 @@ final class ContextBarView: NSView {
         let trackRect = CGRect(x: 0, y: trackY, width: bounds.width, height: trackHeight)
         guard trackRect.width > 0 else { return }
 
-        let clipPath = BarSurfaceMask.continuousRoundedPath(
+        let clipPath = BarSurfaceGeometry.continuousRoundedPath(
             in: trackRect, cornerRadius: Self.cornerRadius)
 
         // 1. Track background — quaternaryLabelColor @ 0.6, clipped rounded.

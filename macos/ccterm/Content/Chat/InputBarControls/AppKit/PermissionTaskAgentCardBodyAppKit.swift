@@ -5,7 +5,7 @@ import AppKit
 /// relocation of the SwiftUI `PermissionTaskAgentCardBody`
 /// (`InputBarControls/PermissionTaskAgentCardBody.swift:19-135`). Built for the
 /// pure-AppKit permission card (migration plan §4.4): an `NSStackView` column of
-/// `NSTextField`s + the shared `PermissionBodyChip` / `PermissionMonospaceScrollBlock`
+/// `NSTextField`s + the shared `PermissionBodyChip` / `PermissionMonospaceScrollView`
 /// helpers.
 ///
 /// Surfaces the structured sub-task so the user can read it before approving:
@@ -50,7 +50,7 @@ final class PermissionTaskAgentCardBodyView: NSView {
     /// Optional — present only when `chips` is non-empty.
     private var chipRow: NSStackView?
     /// Optional — present only when `prompt` is non-nil/non-empty.
-    private var promptBlock: PermissionMonospaceScrollBlock?
+    private var promptBlock: PermissionMonospaceScrollView?
 
     // MARK: - Init
 
@@ -156,7 +156,7 @@ final class PermissionTaskAgentCardBodyView: NSView {
 
         // Prompt — 200pt-cap monospace scroll (`PermissionTaskAgentCardBody.swift:44-53`).
         if let prompt = data.prompt, !prompt.isEmpty {
-            let block = PermissionMonospaceScrollBlock(
+            let block = PermissionMonospaceScrollView(
                 text: prompt, maxHeight: Self.promptScrollMaxHeight)
             promptBlock = block
             stack.addArrangedSubview(block)

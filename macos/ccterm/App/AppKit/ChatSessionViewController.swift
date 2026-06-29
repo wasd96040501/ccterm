@@ -40,7 +40,7 @@ import SwiftUI
 ///   so the bar's frame/constraints never change on a session switch and
 ///   contribute nothing to `attachSession`'s single-width typeset pass.
 /// - permission card — `permissionCardHost` (a plain pure-AppKit
-///   `PermissionCardLayerView`), a dedicated full-pane click-through host
+///   `PermissionCardHostView`), a dedicated full-pane click-through host
 ///   **on top** of the bar, driven by a once-built `permissionCardController`
 ///   (migration plan §4.0/§4.4). The card floats here instead of inside the
 ///   bar host so its footprint never pumps the bar host's height.
@@ -110,14 +110,14 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
     var restingBarHost: RestingBarContainerView!
 
     /// Full-pane floating host for the permission card. A plain
-    /// `PermissionCardLayerView` (regime-A: `intrinsicContentSize = .zero` +
+    /// `PermissionCardHostView` (regime-A: `intrinsicContentSize = .zero` +
     /// four-edge pin) layered **above** the transcript and `restingBarHost`.
     /// `permissionCardController` mounts the AppKit card inside it; because this
     /// host's geometry is the full pane (not driven by the card), the bar
     /// host's intrinsic height stays a pure function of the bar content — the
     /// card never pumps the bar band. Clicks outside the card pass straight
-    /// through to the transcript (see `PermissionCardLayerView`).
-    var permissionCardHost: PermissionCardLayerView!
+    /// through to the transcript (see `PermissionCardHostView`).
+    var permissionCardHost: PermissionCardHostView!
 
     /// The once-built permission-card coordinator (migration plan §4.0/§4.4).
     /// Owned by this VC (not a `DetailRouterChild`), mirroring
@@ -239,13 +239,13 @@ final class ChatSessionViewController: NSViewController, DetailRouterChild {
 
         // Dedicated full-pane host for the permission card. Added AFTER
         // `restingBarHost` so it sits **on top** in z-order (the card floats
-        // over the bar). A plain `PermissionCardLayerView` (regime-A:
+        // over the bar). A plain `PermissionCardHostView` (regime-A:
         // `intrinsicContentSize = .zero` + the four-edge pin below) does NOT
         // publish its content's `fittingSize`, so it can't leak a size up into
         // the window's constraint solver and collapse the window. The layer
         // view's `hitTest` makes everything outside the mounted card
         // click-through so the transcript keeps its clicks + I-beam.
-        permissionCardHost = PermissionCardLayerView()
+        permissionCardHost = PermissionCardHostView()
         permissionCardHost.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(permissionCardHost)
 

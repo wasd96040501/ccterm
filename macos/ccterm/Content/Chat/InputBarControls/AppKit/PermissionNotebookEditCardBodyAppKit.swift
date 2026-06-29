@@ -5,7 +5,7 @@ import AppKit
 /// the SwiftUI `PermissionNotebookEditCardBody`
 /// (`InputBarControls/PermissionNotebookEditCardBody.swift:15-105`). Built for the
 /// pure-AppKit permission card (migration plan §4.4): a vertical `NSStackView`
-/// column of `NSTextField`s + the shared `PermissionMonospaceScrollBlock` helper.
+/// column of `NSTextField`s + the shared `PermissionMonospaceScrollView` helper.
 ///
 /// Mirrors the upstream `NotebookEditPermissionRequest` shape:
 /// - `subtitle` — names the action (insert / delete / replace) and the target
@@ -50,7 +50,7 @@ final class PermissionNotebookEditCardBodyView: NSView {
     /// Optional — present only when `cellLabel` is non-nil (requires a `cell_id`).
     private var cellLabelField: NSTextField?
     /// Optional — present only when `sourcePreview` is non-nil/non-empty.
-    private var sourceBlock: PermissionMonospaceScrollBlock?
+    private var sourceBlock: PermissionMonospaceScrollView?
 
     // MARK: - Init
 
@@ -140,12 +140,12 @@ final class PermissionNotebookEditCardBodyView: NSView {
 
         // Source preview — 200pt-cap monospace scroll
         // (`PermissionNotebookEditCardBody.swift:33-42`). The shared
-        // `PermissionMonospaceScrollBlock` reproduces the
+        // `PermissionMonospaceScrollView` reproduces the
         // `ScrollView(.vertical, showsIndicators: true) { Text(...monospaced...,
         // .textSelection(.enabled)) }.frame(maxHeight: 200)` pattern. Suppressed
         // for "delete" (empty `new_source`).
         if let preview = data.sourcePreview, !preview.isEmpty {
-            let block = PermissionMonospaceScrollBlock(
+            let block = PermissionMonospaceScrollView(
                 text: preview, maxHeight: Self.sourceScrollMaxHeight)
             sourceBlock = block
             stack.addArrangedSubview(block)

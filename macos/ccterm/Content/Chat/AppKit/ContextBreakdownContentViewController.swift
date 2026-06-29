@@ -22,7 +22,7 @@ final class ContextBreakdownContentViewController: NSViewController {
     private var observationActive = false
 
     private let rootStack = NSStackView()
-    private let summaryRing = ProgressRingLayer(percent: 0, size: 22)
+    private let summaryRing = ProgressRingView(percent: 0, size: 22)
     private let usageLineLabel = NSTextField(labelWithString: "")
     private let percentLineLabel = NSTextField(labelWithString: "")
 

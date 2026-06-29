@@ -10,7 +10,7 @@ import XCTest
 /// `PermissionRequest.makePreview` payloads per kind, asserts the dispatch
 /// returns the expected concrete STUB builder type and a non-nil `NSView`, and
 /// drives the real production objects (`PermissionCardContentView`,
-/// `PermissionDecisionButtonView`) — no re-implemented approximation.
+/// `PermissionDecisionButton`) — no re-implemented approximation.
 @MainActor
 final class PermissionCardDispatchTests: XCTestCase {
 
@@ -147,17 +147,17 @@ final class PermissionCardDispatchTests: XCTestCase {
         XCTAssertTrue(card.resolvedBodyView is MarkerBody)
     }
 
-    // MARK: - PermissionDecisionButtonView role/title/action (real object)
+    // MARK: - PermissionDecisionButton role/title/action (real object)
 
     /// Each role constructs with its title and fires its `onClick` exactly
     /// once on a synthetic click (measurement, not snapshot).
     func testDecisionButtonRolesFireActionOnce() throws {
         for role in [
-            PermissionDecisionButtonView.Role.primary,
+            PermissionDecisionButton.Role.primary,
             .secondary, .destructive,
         ] {
             var fired = 0
-            let button = PermissionDecisionButtonView(
+            let button = PermissionDecisionButton(
                 title: "Title-\(role)", role: role, onClick: { fired += 1 })
             XCTAssertEqual(button.title, "Title-\(role)")
             XCTAssertEqual(button.role, role)

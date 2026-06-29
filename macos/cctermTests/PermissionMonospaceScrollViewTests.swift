@@ -3,14 +3,14 @@ import XCTest
 
 @testable import ccterm
 
-/// CI-gate measurement test (non-snapshot) for `PermissionMonospaceScrollBlock`
+/// CI-gate measurement test (non-snapshot) for `PermissionMonospaceScrollView`
 /// (migration plan §4.4-7, §9). Reproduces `BoundedHeightScrollView`'s
 /// `min(content.idealHeight, maxHeight)`: intrinsic when the text fits, capped +
 /// scrolling when it overflows. Drives the real production object — mounts at a
 /// fixed settled width, lays out, and reads the resolved height — never a
 /// re-implemented approximation.
 @MainActor
-final class PermissionMonospaceScrollBlockTests: XCTestCase {
+final class PermissionMonospaceScrollViewTests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -20,7 +20,7 @@ final class PermissionMonospaceScrollBlockTests: XCTestCase {
     /// view's content width settles (the used-height is meaningless before
     /// the wrap width is real).
     private func mounted(
-        _ block: PermissionMonospaceScrollBlock, width: CGFloat = 400
+        _ block: PermissionMonospaceScrollView, width: CGFloat = 400
     ) -> NSWindow {
         let window = NSWindow(
             contentRect: NSRect(x: -30_000, y: -30_000, width: width, height: 600),
@@ -49,12 +49,12 @@ final class PermissionMonospaceScrollBlockTests: XCTestCase {
     /// production measurement path did not produce.
     private func monospacedLineHeight() -> CGFloat {
         let font = NSFont.monospacedSystemFont(
-            ofSize: PermissionMonospaceScrollBlock.textFontSize, weight: .regular)
+            ofSize: PermissionMonospaceScrollView.textFontSize, weight: .regular)
         return NSLayoutManager().defaultLineHeight(for: font)
     }
 
     func testShortTextSizesToUsedHeightBelowCap() {
-        let block = PermissionMonospaceScrollBlock(text: "one line", maxHeight: 200)
+        let block = PermissionMonospaceScrollView(text: "one line", maxHeight: 200)
         let window = mounted(block)
         defer {
             window.contentView = nil
@@ -83,7 +83,7 @@ final class PermissionMonospaceScrollBlockTests: XCTestCase {
         // Five short, non-wrapping lines at a wide width → ~5 line heights,
         // checked against an INDEPENDENT line-height × count, not the production
         // measurement function.
-        let block = PermissionMonospaceScrollBlock(
+        let block = PermissionMonospaceScrollView(
             text: (0..<5).map { "line \($0)" }.joined(separator: "\n"), maxHeight: 200)
         let window = mounted(block, width: 500)
         defer {
@@ -102,7 +102,7 @@ final class PermissionMonospaceScrollBlockTests: XCTestCase {
         // A short block must NOT stretch to fill a parent that offers MUCH more
         // vertical space than min(used, cap). Pin the block's bottom to a tall
         // container so a stretch would show up as a too-tall frame.
-        let block = PermissionMonospaceScrollBlock(text: "one line", maxHeight: 200)
+        let block = PermissionMonospaceScrollView(text: "one line", maxHeight: 200)
         let width: CGFloat = 400
         let window = NSWindow(
             contentRect: NSRect(x: -30_000, y: -30_000, width: width, height: 600),
@@ -145,7 +145,7 @@ final class PermissionMonospaceScrollBlockTests: XCTestCase {
     func testLongTextCapsAt200() {
         let lines = (0..<120).map { "line \($0) of a very long monospaced block" }
             .joined(separator: "\n")
-        let block = PermissionMonospaceScrollBlock(text: lines, maxHeight: 200)
+        let block = PermissionMonospaceScrollView(text: lines, maxHeight: 200)
         let window = mounted(block)
         defer {
             window.contentView = nil
@@ -163,7 +163,7 @@ final class PermissionMonospaceScrollBlockTests: XCTestCase {
 
     func testLongTextCapsAt480WhenThatCapIsPassed() {
         let lines = (0..<200).map { "line \($0)" }.joined(separator: "\n")
-        let block = PermissionMonospaceScrollBlock(text: lines, maxHeight: 480)
+        let block = PermissionMonospaceScrollView(text: lines, maxHeight: 480)
         let window = mounted(block)
         defer {
             window.contentView = nil
@@ -179,7 +179,7 @@ final class PermissionMonospaceScrollBlockTests: XCTestCase {
     // MARK: - Read-only + selectable (no IME; ⌘C works)
 
     func testTextViewIsNonEditableAndSelectable() {
-        let block = PermissionMonospaceScrollBlock(text: "x", maxHeight: 200)
+        let block = PermissionMonospaceScrollView(text: "x", maxHeight: 200)
         let window = mounted(block)
         defer {
             window.contentView = nil

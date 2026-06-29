@@ -318,7 +318,7 @@ final class AskOptionRowView: NSView {
         let strokeRadius = max(0, radius - inset)
         strokeLayer.frame = bounds
         if bounds.width > 0, bounds.height > 0 {
-            strokeLayer.path = BarSurfaceMask.continuousRoundedPath(
+            strokeLayer.path = BarSurfaceGeometry.continuousRoundedPath(
                 in: strokeRect, cornerRadius: strokeRadius)
         } else {
             strokeLayer.path = nil

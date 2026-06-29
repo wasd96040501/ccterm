@@ -4,7 +4,7 @@ import XCTest
 @testable import ccterm
 
 /// CI-gate measurement test (non-snapshot → runs on the default suite) for the
-/// shared `PermissionDecisionButtonView` (migration plan §4.4, §9). Drives the
+/// shared `PermissionDecisionButton` (migration plan §4.4, §9). Drives the
 /// REAL production object — the role→color mapping, the hover flip through the
 /// real `NSTrackingArea` mouseEntered/Exited path, and the click action — and
 /// asserts on the resolved layer / label colors against the SwiftUI source
@@ -29,7 +29,7 @@ final class PermissionDecisionButtonTests: XCTestCase {
     /// button reverts to the (dark) XCTest host default and a later color read
     /// disagrees with the value it resolved while mounted.
     private func mounted(
-        _ button: PermissionDecisionButtonView,
+        _ button: PermissionDecisionButton,
         appearance: NSAppearance.Name = .aqua,
         width: CGFloat = 120
     ) -> NSView {
@@ -88,7 +88,7 @@ final class PermissionDecisionButtonTests: XCTestCase {
     // MARK: - Dimensions / shape
 
     func testHeightIs24AndCornerRadiusIs8() {
-        let button = PermissionDecisionButtonView(title: "Deny", role: .destructive)
+        let button = PermissionDecisionButton(title: "Deny", role: .destructive)
         let container = mounted(button)
         XCTAssertEqual(
             button.frame.height, 24, accuracy: 0.5,
@@ -112,7 +112,7 @@ final class PermissionDecisionButtonTests: XCTestCase {
     // production mapping is correct.
 
     func testPrimaryRestColors() {
-        let button = PermissionDecisionButtonView(title: "Allow always", role: .primary)
+        let button = PermissionDecisionButton(title: "Allow always", role: .primary)
         _ = mounted(button)
         let fill = rgba(button.resolvedFillColor!)
         // Fill alpha = 1.0 (rest), and the RGB matches controlAccentColor
@@ -133,7 +133,7 @@ final class PermissionDecisionButtonTests: XCTestCase {
     }
 
     func testSecondaryRestColors() {
-        let button = PermissionDecisionButtonView(title: "Allow once", role: .secondary)
+        let button = PermissionDecisionButton(title: "Allow once", role: .secondary)
         _ = mounted(button)
         let fill = rgba(button.resolvedFillColor!)
         // Fill = labelColor@0.04 — exact alpha + desaturated gray (R≈G≈B).
@@ -148,7 +148,7 @@ final class PermissionDecisionButtonTests: XCTestCase {
     }
 
     func testDestructiveRestColors() {
-        let button = PermissionDecisionButtonView(title: "Deny", role: .destructive)
+        let button = PermissionDecisionButton(title: "Deny", role: .destructive)
         _ = mounted(button)
         let fill = rgba(button.resolvedFillColor!)
         // Fill = systemRed@0.08 — exact alpha + red-dominant hue.
@@ -169,7 +169,7 @@ final class PermissionDecisionButtonTests: XCTestCase {
 
     func testHoverFlipsFillForEachRole() {
         // Primary: rest accent@1.0 → hover accent@0.92 (alpha shift only).
-        let primary = PermissionDecisionButtonView(title: "Allow always", role: .primary)
+        let primary = PermissionDecisionButton(title: "Allow always", role: .primary)
         _ = mounted(primary)
         XCTAssertEqual(
             rgba(primary.resolvedFillColor!).a, 1.0, accuracy: 0.02,
@@ -190,7 +190,7 @@ final class PermissionDecisionButtonTests: XCTestCase {
             "Primary returns to controlAccentColor@1.0 on exit.")
 
         // Secondary: 0.04 → 0.10.
-        let secondary = PermissionDecisionButtonView(title: "Allow once", role: .secondary)
+        let secondary = PermissionDecisionButton(title: "Allow once", role: .secondary)
         _ = mounted(secondary)
         XCTAssertEqual(
             rgba(secondary.resolvedFillColor!).a, 0.04, accuracy: 0.005,
@@ -201,7 +201,7 @@ final class PermissionDecisionButtonTests: XCTestCase {
             "Secondary hover fill = labelColor@0.10.")
 
         // Destructive: 0.08 → 0.16.
-        let destructive = PermissionDecisionButtonView(title: "Deny", role: .destructive)
+        let destructive = PermissionDecisionButton(title: "Deny", role: .destructive)
         _ = mounted(destructive)
         XCTAssertEqual(
             rgba(destructive.resolvedFillColor!).a, 0.08, accuracy: 0.005,
@@ -221,7 +221,7 @@ final class PermissionDecisionButtonTests: XCTestCase {
         // (animation-duration-parity risk). No hover animation is pending after
         // init: the rest-state write snaps under a disabled CATransaction and
         // adds no `hoverFill` CABasicAnimation.
-        let button = PermissionDecisionButtonView(title: "Deny", role: .destructive)
+        let button = PermissionDecisionButton(title: "Deny", role: .destructive)
         _ = mounted(button)
         XCTAssertFalse(
             button.hasPendingHoverAnimation,
@@ -236,7 +236,7 @@ final class PermissionDecisionButtonTests: XCTestCase {
         // must change on the flip — proving the cgColor was re-resolved, not
         // frozen (R14). A production-to-production comparison sidesteps the
         // XCTest dynamic-color resolution quirk entirely.
-        let button = PermissionDecisionButtonView(title: "Allow once", role: .secondary)
+        let button = PermissionDecisionButton(title: "Allow once", role: .secondary)
         let container = mounted(button, appearance: .aqua)
         let lightFill = rgba(button.resolvedFillColor!)
 
@@ -260,7 +260,7 @@ final class PermissionDecisionButtonTests: XCTestCase {
     // MARK: - Click action
 
     func testClickFiresOnClickOnceOnMouseUpInside() {
-        let button = PermissionDecisionButtonView(title: "Deny", role: .destructive)
+        let button = PermissionDecisionButton(title: "Deny", role: .destructive)
         var fired = 0
         button.onClick = { fired += 1 }
         let window = windowed(button)
@@ -276,7 +276,7 @@ final class PermissionDecisionButtonTests: XCTestCase {
     }
 
     func testMouseUpOutsideDoesNotFire() {
-        let button = PermissionDecisionButtonView(title: "Deny", role: .destructive)
+        let button = PermissionDecisionButton(title: "Deny", role: .destructive)
         var fired = 0
         button.onClick = { fired += 1 }
         let window = windowed(button)
@@ -301,11 +301,11 @@ final class PermissionDecisionButtonTests: XCTestCase {
         var denied = 0
         var allowedOnce = 0
         var allowedAlways = 0
-        let deny = PermissionDecisionButtonView(
+        let deny = PermissionDecisionButton(
             title: "Deny", role: .destructive, onClick: { denied += 1 })
-        let allowOnce = PermissionDecisionButtonView(
+        let allowOnce = PermissionDecisionButton(
             title: "Allow once", role: .secondary, onClick: { allowedOnce += 1 })
-        let allowAlways = PermissionDecisionButtonView(
+        let allowAlways = PermissionDecisionButton(
             title: "Allow always", role: .primary, onClick: { allowedAlways += 1 })
 
         for button in [deny, allowOnce, allowAlways] {
@@ -332,7 +332,7 @@ final class PermissionDecisionButtonTests: XCTestCase {
             windowNumber: 0, context: nil, eventNumber: 0, clickCount: 0, pressure: 0)!
     }
 
-    private func windowed(_ button: PermissionDecisionButtonView) -> NSWindow {
+    private func windowed(_ button: PermissionDecisionButton) -> NSWindow {
         let window = NSWindow(
             contentRect: NSRect(x: -30_000, y: -30_000, width: 200, height: 80),
             styleMask: [.borderless], backing: .buffered, defer: false)

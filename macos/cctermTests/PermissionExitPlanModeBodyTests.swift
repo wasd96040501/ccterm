@@ -108,7 +108,7 @@ final class PermissionExitPlanModeBodyTests: XCTestCase {
 
         XCTAssertTrue(
             body.hasPlanBlock,
-            "A non-empty v1 plan renders into the shared PermissionMonospaceScrollBlock.")
+            "A non-empty v1 plan renders into the shared PermissionMonospaceScrollView.")
         XCTAssertNil(
             body.renderedEmptyHint,
             "With a plan present, the empty-plan hint branch is not taken.")

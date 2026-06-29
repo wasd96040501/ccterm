@@ -8,7 +8,7 @@ import XCTest
 /// unfiltered suite) of the AppKit permission-card spine: the
 /// `PermissionCardContentView` chrome (header + STUB body + Deny/Allow row) on
 /// its opaque `PermissionCardSurfaceView`, plus the three
-/// `PermissionDecisionButtonView` roles. The per-kind bodies are empty STUBs
+/// `PermissionDecisionButton` roles. The per-kind bodies are empty STUBs
 /// this phase (the 11 real bodies arrive in the parallel fan-out), so the body
 /// slot renders blank — these snapshots exist to eyeball the chrome / surface /
 /// button parity against the SwiftUI original now, and will fill in as the
@@ -73,11 +73,11 @@ final class PermissionCardAppKitSnapshotTests: XCTestCase {
         row.orientation = .horizontal
         row.spacing = 8
         row.addArrangedSubview(
-            PermissionDecisionButtonView(title: "Deny", role: .destructive))
+            PermissionDecisionButton(title: "Deny", role: .destructive))
         row.addArrangedSubview(
-            PermissionDecisionButtonView(title: "Allow once", role: .secondary))
+            PermissionDecisionButton(title: "Allow once", role: .secondary))
         row.addArrangedSubview(
-            PermissionDecisionButtonView(title: "Allow always", role: .primary))
+            PermissionDecisionButton(title: "Allow always", role: .primary))
 
         let size = CGSize(width: 360, height: 48)
         let image = ViewSnapshot.renderViewController(HostVC(content: row), size: size)

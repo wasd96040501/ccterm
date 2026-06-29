@@ -3,12 +3,12 @@ import Observation
 
 /// AppKit replacement for `TodoButton.swift` (migration plan §4.2). Footer-row
 /// trigger HIDDEN until `session.todos` is non-empty (§4.2 — `isHidden` toggle,
-/// height-invariant). Label = leading `TodoStatusGlyphLayer` (muted) +
+/// height-invariant). Label = leading `TodoStatusGlyphView` (muted) +
 /// "completed of total". Opens the todo-list popover.
 @MainActor
 final class TodoPickerController: ChromePickerController {
 
-    private let glyph = TodoStatusGlyphLayer(status: .pending, muted: true)
+    private let glyph = TodoStatusGlyphView(status: .pending, muted: true)
     private let label = NSTextField(labelWithString: "")
     private var triggerObservationActive = false
     private weak var openContentVC: TodoListContentViewController?
@@ -93,7 +93,7 @@ final class TodoPickerController: ChromePickerController {
     }
 
     override func popoverWillBecomeShown() {
-        // The todo rotation re-keys on window attach inside TodoStatusGlyphLayer;
+        // The todo rotation re-keys on window attach inside TodoStatusGlyphView;
         // the content VC arms its own per-open observation.
         openContentVC?.startObserving()
     }
@@ -172,7 +172,7 @@ final class TodoRowView: NSView {
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
 
-        let glyph = TodoStatusGlyphLayer(status: todo.status, muted: false)
+        let glyph = TodoStatusGlyphView(status: todo.status, muted: false)
         glyph.translatesAutoresizingMaskIntoConstraints = false
         addSubview(glyph)
 

@@ -396,7 +396,7 @@ final class BarSurfaceView: NSView {
         // the NSVisualEffectView — NOT a CAShapeLayer mask on its own layer
         // (that can drop vibrancy, §4.8).
         if !isGlassBranch, let vev = visualEffectView, size.width > 0, size.height > 0 {
-            vev.maskImage = BarSurfaceMask.maskImage(cornerRadius: radius, scale: backingScale)
+            vev.maskImage = BarSurfaceGeometry.maskImage(cornerRadius: radius, scale: backingScale)
         }
 
         // Stroke path inset by half the line width so the 0.5pt border sits
@@ -406,7 +406,7 @@ final class BarSurfaceView: NSView {
         let strokeRect = bounds.insetBy(dx: inset, dy: inset)
         let strokeRadius = max(0, radius - inset)
         strokeLayer.frame = bounds
-        strokeLayer.path = BarSurfaceMask.continuousRoundedPath(
+        strokeLayer.path = BarSurfaceGeometry.continuousRoundedPath(
             in: strokeRect, cornerRadius: strokeRadius)
 
         // Shadow path follows the rounded/circular silhouette so the soft
@@ -414,7 +414,7 @@ final class BarSurfaceView: NSView {
         // (and CoreAnimation skips the per-relayout offscreen alpha pass).
         // Only meaningful when a shadow is drawn; harmless otherwise.
         if size.width > 0, size.height > 0 {
-            layer?.shadowPath = BarSurfaceMask.continuousRoundedPath(
+            layer?.shadowPath = BarSurfaceGeometry.continuousRoundedPath(
                 in: bounds, cornerRadius: radius)
         } else {
             layer?.shadowPath = nil
@@ -442,7 +442,7 @@ final class BarSurfaceView: NSView {
 /// - `continuousRoundedPath(in:cornerRadius:)` — the `CGPath` for the
 ///   separator stroke, drawn with a continuous (squircle) corner curve to
 ///   match SwiftUI `.continuous`.
-enum BarSurfaceMask {
+enum BarSurfaceGeometry {
 
     /// `capInsets` for the resizable mask: `cornerRadius` on every edge, so
     /// the four corner caps are preserved and only the 1pt center stretches.

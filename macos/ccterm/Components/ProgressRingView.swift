@@ -1,26 +1,24 @@
 import AppKit
 
-/// AppKit replacement for the SwiftUI `ProgressRingView`
-/// (`Components/ProgressRingView.swift`; migration plan §4.2, §4.8). A
+/// AppKit replacement for the (now-deleted) SwiftUI `ProgressRingView`
+/// (migration plan §4.2, §4.8). A
 /// layer-backed `NSView` that draws the input bar's context-usage ring: a
 /// full-circle gray **track** behind a trimmed **progress** arc whose end
 /// maps from `percent` (0..100), color-stepping accent → orange → red as the
 /// session nears the cap.
 ///
-/// This is a 1:1 geometry/color relocation of `ProgressRingView`, not a
-/// redesign — every constant is reused verbatim from `ProgressRingView.swift`
+/// This is a 1:1 geometry/color relocation of the original SwiftUI ring, not a
+/// redesign — every constant is reused verbatim
 /// (`lineWidth = 2`, `size = 12`, thresholds `[(70, accent), (90, orange),
 /// (100, red)]`, track `separatorColor`, round progress cap, -90° start, 0.4s
-/// easeInOut animation). Named `ProgressRingLayer` (not `ProgressRingView`)
-/// only to avoid a symbol clash with the still-present SwiftUI struct during
-/// the coexistence window; the SwiftUI `ProgressRingView.swift` is deleted in
-/// Phase 5. No production wiring lands in this phase — the only observable
+/// easeInOut animation). The SwiftUI `ProgressRingView` was deleted in Phase 5,
+/// so this AppKit `NSView` now carries the bare name. The only observable
 /// surface is the rendered geometry + color, driven by the `percent` setter.
 ///
 /// Structure (mirrors SwiftUI's `ZStack` of two `Circle`s):
 ///
 /// ```
-/// ProgressRingLayer (NSView, wantsLayer)
+/// ProgressRingView (NSView, wantsLayer)
 /// ├─ trackLayer    (CAShapeLayer — full circle, separatorColor, butt cap)
 /// └─ progressLayer (CAShapeLayer — same circle path trimmed to strokeEnd,
 ///                   ringColor, round cap, ON TOP)
@@ -40,7 +38,7 @@ import AppKit
 /// survives the `.frame(22, 22)` wrap of a size-12 ring at the call site
 /// (`ContextRingButton.swift:19`); `intrinsicContentSize` still publishes
 /// `size × size` so it sizes itself in an `NSStackView`.
-final class ProgressRingLayer: NSView {
+final class ProgressRingView: NSView {
 
     // MARK: - Constants (verbatim from ProgressRingView.swift)
 
@@ -121,9 +119,9 @@ final class ProgressRingLayer: NSView {
 
     init(
         percent: Double = 0,
-        lineWidth: CGFloat = ProgressRingLayer.defaultLineWidth,
-        size: CGFloat = ProgressRingLayer.defaultSize,
-        colorThresholds: [(Double, NSColor)] = ProgressRingLayer.defaultColorThresholds()
+        lineWidth: CGFloat = ProgressRingView.defaultLineWidth,
+        size: CGFloat = ProgressRingView.defaultSize,
+        colorThresholds: [(Double, NSColor)] = ProgressRingView.defaultColorThresholds()
     ) {
         self.percent = percent
         self.lineWidth = lineWidth

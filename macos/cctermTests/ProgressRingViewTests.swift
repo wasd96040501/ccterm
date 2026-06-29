@@ -3,7 +3,7 @@ import XCTest
 
 @testable import ccterm
 
-/// CI-gate (non-snapshot) tests for `ProgressRingLayer` — the AppKit
+/// CI-gate (non-snapshot) tests for `ProgressRingView` — the AppKit
 /// replacement for the SwiftUI `ProgressRingView`. These run on the
 /// unfiltered `make test-unit` suite and drive the real production object:
 ///
@@ -18,7 +18,7 @@ import XCTest
 ///   hazard, plan §4.2-3 / R14),
 /// - the round line cap on the progress arc.
 @MainActor
-final class ProgressRingLayerTests: XCTestCase {
+final class ProgressRingViewTests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -38,7 +38,7 @@ final class ProgressRingLayerTests: XCTestCase {
             (100, 1.0),
             (150, 1.0),
         ]
-        let ring = ProgressRingLayer()
+        let ring = ProgressRingView()
         for (percent, expected) in cases {
             ring.percent = percent
             XCTAssertEqual(
@@ -50,51 +50,51 @@ final class ProgressRingLayerTests: XCTestCase {
     func testStrokeEndAtConstructionMatchesInitialPercent() {
         // Seeded once in init, without animation — the initial percent is
         // geometry, not a user-driven change.
-        let ring = ProgressRingLayer(percent: 42)
+        let ring = ProgressRingView(percent: 42)
         XCTAssertEqual(ring.resolvedStrokeEnd, 0.42, accuracy: 0.0001)
     }
 
     func testStaticStrokeEndHelperClampsBeforeDivide() {
-        XCTAssertEqual(ProgressRingLayer.strokeEnd(for: -5), 0, accuracy: 0.0001)
-        XCTAssertEqual(ProgressRingLayer.strokeEnd(for: 0), 0, accuracy: 0.0001)
-        XCTAssertEqual(ProgressRingLayer.strokeEnd(for: 50), 0.5, accuracy: 0.0001)
-        XCTAssertEqual(ProgressRingLayer.strokeEnd(for: 100), 1.0, accuracy: 0.0001)
-        XCTAssertEqual(ProgressRingLayer.strokeEnd(for: 250), 1.0, accuracy: 0.0001)
+        XCTAssertEqual(ProgressRingView.strokeEnd(for: -5), 0, accuracy: 0.0001)
+        XCTAssertEqual(ProgressRingView.strokeEnd(for: 0), 0, accuracy: 0.0001)
+        XCTAssertEqual(ProgressRingView.strokeEnd(for: 50), 0.5, accuracy: 0.0001)
+        XCTAssertEqual(ProgressRingView.strokeEnd(for: 100), 1.0, accuracy: 0.0001)
+        XCTAssertEqual(ProgressRingView.strokeEnd(for: 250), 1.0, accuracy: 0.0001)
     }
 
     // MARK: - ringColor threshold selection (ProgressRingView.swift:28-33)
 
     func testRingColorThresholdSelectionMatchesSwiftUI() {
-        let thresholds = ProgressRingLayer.defaultColorThresholds()
+        let thresholds = ProgressRingView.defaultColorThresholds()
         // [0,70) → accent
-        XCTAssertEqual(ProgressRingLayer.ringColor(percent: 0, thresholds: thresholds), .controlAccentColor)
-        XCTAssertEqual(ProgressRingLayer.ringColor(percent: 69.9, thresholds: thresholds), .controlAccentColor)
+        XCTAssertEqual(ProgressRingView.ringColor(percent: 0, thresholds: thresholds), .controlAccentColor)
+        XCTAssertEqual(ProgressRingView.ringColor(percent: 69.9, thresholds: thresholds), .controlAccentColor)
         // [70,90) → orange (70 is NOT < 70, falls past the accent pair)
-        XCTAssertEqual(ProgressRingLayer.ringColor(percent: 70, thresholds: thresholds), .systemOrange)
-        XCTAssertEqual(ProgressRingLayer.ringColor(percent: 89.9, thresholds: thresholds), .systemOrange)
+        XCTAssertEqual(ProgressRingView.ringColor(percent: 70, thresholds: thresholds), .systemOrange)
+        XCTAssertEqual(ProgressRingView.ringColor(percent: 89.9, thresholds: thresholds), .systemOrange)
         // [90,100] → red (90 NOT < 90; 100 NOT < 100 → falls through to last)
-        XCTAssertEqual(ProgressRingLayer.ringColor(percent: 90, thresholds: thresholds), .systemRed)
-        XCTAssertEqual(ProgressRingLayer.ringColor(percent: 100, thresholds: thresholds), .systemRed)
+        XCTAssertEqual(ProgressRingView.ringColor(percent: 90, thresholds: thresholds), .systemRed)
+        XCTAssertEqual(ProgressRingView.ringColor(percent: 100, thresholds: thresholds), .systemRed)
         // Over-cap still red (falls through to last pair).
-        XCTAssertEqual(ProgressRingLayer.ringColor(percent: 150, thresholds: thresholds), .systemRed)
+        XCTAssertEqual(ProgressRingView.ringColor(percent: 150, thresholds: thresholds), .systemRed)
     }
 
     func testRingColorEmptyLadderFallsBackToAccent() {
-        XCTAssertEqual(ProgressRingLayer.ringColor(percent: 50, thresholds: []), .controlAccentColor)
+        XCTAssertEqual(ProgressRingView.ringColor(percent: 50, thresholds: []), .controlAccentColor)
     }
 
     // MARK: - lineWidth applied to both layers
 
     func testDefaultLineWidthAppliedToBothLayers() {
-        let ring = ProgressRingLayer()
-        XCTAssertEqual(ring.resolvedTrackLineWidth, ProgressRingLayer.defaultLineWidth, accuracy: 0.0001)
-        XCTAssertEqual(ring.resolvedProgressLineWidth, ProgressRingLayer.defaultLineWidth, accuracy: 0.0001)
+        let ring = ProgressRingView()
+        XCTAssertEqual(ring.resolvedTrackLineWidth, ProgressRingView.defaultLineWidth, accuracy: 0.0001)
+        XCTAssertEqual(ring.resolvedProgressLineWidth, ProgressRingView.defaultLineWidth, accuracy: 0.0001)
         // Default is verbatim from ProgressRingView.swift:10.
-        XCTAssertEqual(ProgressRingLayer.defaultLineWidth, 2.0, accuracy: 0.0001)
+        XCTAssertEqual(ProgressRingView.defaultLineWidth, 2.0, accuracy: 0.0001)
     }
 
     func testCustomLineWidthAppliedToBothLayers() {
-        let ring = ProgressRingLayer(lineWidth: 4)
+        let ring = ProgressRingView(lineWidth: 4)
         XCTAssertEqual(ring.resolvedTrackLineWidth, 4, accuracy: 0.0001)
         XCTAssertEqual(ring.resolvedProgressLineWidth, 4, accuracy: 0.0001)
 
@@ -111,7 +111,7 @@ final class ProgressRingLayerTests: XCTestCase {
         // the path must center in BOUNDS, not assume `size`. radius =
         // (min(22,22) - 2) / 2 = 10, center (11,11) → bbox origin (1,1) size
         // (20,20).
-        let ring = ProgressRingLayer(lineWidth: 2, size: 12)
+        let ring = ProgressRingView(lineWidth: 2, size: 12)
         ring.frame = NSRect(x: 0, y: 0, width: 22, height: 22)
         ring.layoutSubtreeIfNeeded()
 
@@ -128,7 +128,7 @@ final class ProgressRingLayerTests: XCTestCase {
     func testRingPathCentersAtNativeSizeFrame() {
         // At the native 12×12 frame: radius = (12 - 2)/2 = 5, center (6,6) →
         // bbox origin (1,1) size (10,10).
-        let ring = ProgressRingLayer(lineWidth: 2, size: 12)
+        let ring = ProgressRingView(lineWidth: 2, size: 12)
         ring.frame = NSRect(x: 0, y: 0, width: 12, height: 12)
         ring.layoutSubtreeIfNeeded()
 
@@ -146,7 +146,7 @@ final class ProgressRingLayerTests: XCTestCase {
         // the same frame); only the trim + cap + color differ. The production
         // code assigns ONE `CGPath` local to both layers, so their bounding
         // boxes must be equal — assert it directly, not by re-deriving.
-        let ring = ProgressRingLayer(size: 22)
+        let ring = ProgressRingView(size: 22)
         ring.frame = NSRect(x: 0, y: 0, width: 22, height: 22)
         ring.layoutSubtreeIfNeeded()
 
@@ -165,19 +165,19 @@ final class ProgressRingLayerTests: XCTestCase {
     // MARK: - intrinsicContentSize == size × size
 
     func testIntrinsicContentSizeIsSizeSquaredDefault() {
-        let ring = ProgressRingLayer()  // default size 12
+        let ring = ProgressRingView()  // default size 12
         XCTAssertEqual(ring.intrinsicContentSize.width, 12, accuracy: 0.0001)
         XCTAssertEqual(ring.intrinsicContentSize.height, 12, accuracy: 0.0001)
     }
 
     func testIntrinsicContentSizeIsSizeSquaredExplicit22() {
-        let ring = ProgressRingLayer(size: 22)  // popover summary call site
+        let ring = ProgressRingView(size: 22)  // popover summary call site
         XCTAssertEqual(ring.intrinsicContentSize.width, 22, accuracy: 0.0001)
         XCTAssertEqual(ring.intrinsicContentSize.height, 22, accuracy: 0.0001)
     }
 
     func testIntrinsicContentSizeTracksSizeMutation() {
-        let ring = ProgressRingLayer(size: 12)
+        let ring = ProgressRingView(size: 12)
         ring.size = 22
         XCTAssertEqual(ring.intrinsicContentSize.width, 22, accuracy: 0.0001)
         XCTAssertEqual(ring.intrinsicContentSize.height, 22, accuracy: 0.0001)
@@ -186,7 +186,7 @@ final class ProgressRingLayerTests: XCTestCase {
     // MARK: - Round line cap (ProgressRingView.swift:21)
 
     func testProgressArcUsesRoundLineCap() {
-        let ring = ProgressRingLayer()
+        let ring = ProgressRingView()
         XCTAssertEqual(ring.resolvedProgressLineCap, .round)
     }
 
@@ -196,7 +196,7 @@ final class ProgressRingLayerTests: XCTestCase {
         // Put percent in the orange band so the progress color is the
         // semantic systemOrange (which differs across appearances), then flip
         // the appearance and assert the cgColor was re-resolved (not frozen).
-        let ring = ProgressRingLayer(percent: 80)
+        let ring = ProgressRingView(percent: 80)
 
         ring.appearance = NSAppearance(named: .aqua)
         ring.viewDidChangeEffectiveAppearance()
@@ -217,7 +217,7 @@ final class ProgressRingLayerTests: XCTestCase {
 
     func testTrackStrokeColorReResolvesOnAppearanceFlip() {
         // separatorColor is appearance-dynamic; the track must re-resolve too.
-        let ring = ProgressRingLayer(percent: 30)
+        let ring = ProgressRingView(percent: 30)
 
         ring.appearance = NSAppearance(named: .aqua)
         ring.viewDidChangeEffectiveAppearance()
@@ -240,7 +240,7 @@ final class ProgressRingLayerTests: XCTestCase {
         // Drive the production `percent` setter across band boundaries and
         // assert the resolved progress color tracks the band — this is the
         // observable consequence of ringColor selection wired into the layer.
-        let ring = ProgressRingLayer(percent: 10)
+        let ring = ProgressRingView(percent: 10)
         ring.appearance = NSAppearance(named: .aqua)
         ring.viewDidChangeEffectiveAppearance()
 
@@ -272,7 +272,7 @@ final class ProgressRingLayerTests: XCTestCase {
         // A freshly-constructed ring installs NO animation (init seeds via the
         // animated:false path), so the first percent setter call below is the
         // only animation source — no reset seam needed.
-        let ring = ProgressRingLayer(percent: 30)  // accent band, un-animated seed
+        let ring = ProgressRingView(percent: 30)  // accent band, un-animated seed
         XCTAssertNil(ring.resolvedStrokeColorAnimation)
 
         ring.percent = 80  // accent → orange (band crossing)
@@ -281,7 +281,7 @@ final class ProgressRingLayerTests: XCTestCase {
         XCTAssertNotNil(colorAnim, "band-crossing change must crossfade the stroke color")
         if let colorAnim {
             XCTAssertEqual(
-                colorAnim.duration, ProgressRingLayer.animationDuration, accuracy: 0.0001)
+                colorAnim.duration, ProgressRingView.animationDuration, accuracy: 0.0001)
             XCTAssertEqual(
                 colorAnim.timingFunction, CAMediaTimingFunction(name: .easeInEaseOut))
         }
@@ -298,7 +298,7 @@ final class ProgressRingLayerTests: XCTestCase {
         // A move WITHIN a band (30→35, both accent) must NOT crossfade the
         // color — SwiftUI re-derives the same `Color`, so no color animation
         // runs (only the trim tweens). Guards against a spurious crossfade.
-        let ring = ProgressRingLayer(percent: 30)  // accent band, un-animated seed
+        let ring = ProgressRingView(percent: 30)  // accent band, un-animated seed
         XCTAssertNil(ring.resolvedStrokeColorAnimation)
 
         ring.percent = 35  // still accent
@@ -313,7 +313,7 @@ final class ProgressRingLayerTests: XCTestCase {
     func testInitDoesNotAnimateStrokeColor() {
         // Construction seeds the color un-animated (initial percent is
         // geometry, not a user-driven change).
-        let ring = ProgressRingLayer(percent: 80)
+        let ring = ProgressRingView(percent: 80)
         XCTAssertNil(ring.resolvedStrokeColorAnimation)
         XCTAssertNil(ring.resolvedStrokeEndAnimation)
     }
@@ -324,7 +324,7 @@ final class ProgressRingLayerTests: XCTestCase {
         // transaction). A fresh ring at a settled percent installs no
         // animation, and the flips below select the SAME band, so no color
         // animation may appear.
-        let ring = ProgressRingLayer(percent: 80)  // orange band, un-animated seed
+        let ring = ProgressRingView(percent: 80)  // orange band, un-animated seed
         ring.appearance = NSAppearance(named: .aqua)
         ring.viewDidChangeEffectiveAppearance()
         XCTAssertNil(ring.resolvedStrokeColorAnimation)

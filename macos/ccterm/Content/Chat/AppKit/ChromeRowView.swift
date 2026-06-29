@@ -8,7 +8,7 @@ import AppKit
 /// [Permission][BgTask][Todo] ──spacer── [ModelEffort][ContextRing]
 /// ```
 ///
-/// with a leading inset of `AttachButtonView.size (32) + 8 = 40` so the row
+/// with a leading inset of `AttachButton.size (32) + 8 = 40` so the row
 /// lines up with the pill's leading edge (the attach button floats to the bar's
 /// left). Visibility of BgTask / Todo / ModelEffort toggles via arranged-subview
 /// `isHidden` — the row's band height is fixed 22pt, so a show/hide never
@@ -30,7 +30,7 @@ final class ChromeRowView: NSView {
     /// Horizontal spacing between pills (`InputBarSessionChrome.swift:32`).
     static let spacing: CGFloat = 8
     /// Leading inset aligning the row with the pill (`InputBarSessionChrome.swift:29`).
-    static let leadingInset: CGFloat = AttachButtonView.size + 8
+    static let leadingInset: CGFloat = AttachButton.size + 8
 
     // MARK: - Pickers (owned)
 

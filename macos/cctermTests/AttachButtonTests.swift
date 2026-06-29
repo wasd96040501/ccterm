@@ -3,13 +3,13 @@ import XCTest
 
 @testable import ccterm
 
-/// CI-gate measurement test (non-snapshot) for `AttachButtonView` (migration
+/// CI-gate measurement test (non-snapshot) for `AttachButton` (migration
 /// plan §4.1-10, §9): 32pt size (so the glass circle's corner radius is
 /// `size/2 = 16`), press-dim that lowers ONLY the `+` glyph alpha to ~0.5
 /// while the glass circle stays solid, and a click that fires `onPick` exactly
 /// once. Drives the REAL mouse event path (`mouseDown` / `mouseUp`).
 @MainActor
-final class AttachButtonViewTests: XCTestCase {
+final class AttachButtonTests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -17,7 +17,7 @@ final class AttachButtonViewTests: XCTestCase {
 
     /// Mount in an offscreen window so `convert(_:from: nil)` maps window
     /// coordinates into the button's bounds for the press tracking.
-    private func mounted(_ button: AttachButtonView) -> NSWindow {
+    private func mounted(_ button: AttachButton) -> NSWindow {
         let window = NSWindow(
             contentRect: NSRect(x: -30_000, y: -30_000, width: 100, height: 100),
             styleMask: [.borderless], backing: .buffered, defer: false)
@@ -49,11 +49,11 @@ final class AttachButtonViewTests: XCTestCase {
     // MARK: - Size / corner radius
 
     func testSizeIs32AndCornerRadiusIsHalf() {
-        XCTAssertEqual(AttachButtonView.size, 32, accuracy: 0.5, "Attach button is a 32pt circle.")
+        XCTAssertEqual(AttachButton.size, 32, accuracy: 0.5, "Attach button is a 32pt circle.")
         // The glass circle's corner radius is `size/2` (a circle) — the init
-        // passes exactly `AttachButtonView.size / 2 = 16` to `BarSurfaceView`.
-        XCTAssertEqual(AttachButtonView.size / 2, 16, accuracy: 0.5, "Circle radius = size/2 = 16.")
-        let button = AttachButtonView()
+        // passes exactly `AttachButton.size / 2 = 16` to `BarSurfaceView`.
+        XCTAssertEqual(AttachButton.size / 2, 16, accuracy: 0.5, "Circle radius = size/2 = 16.")
+        let button = AttachButton()
         XCTAssertEqual(button.intrinsicContentSize.width, 32, accuracy: 0.5)
         XCTAssertEqual(button.intrinsicContentSize.height, 32, accuracy: 0.5)
     }
@@ -61,7 +61,7 @@ final class AttachButtonViewTests: XCTestCase {
     // MARK: - Press-dim is glyph-only (§4.1-10)
 
     func testPressDimsGlyphOnlyNotSurface() {
-        let button = AttachButtonView()
+        let button = AttachButton()
         let window = mounted(button)
         defer {
             window.contentView = nil
@@ -90,7 +90,7 @@ final class AttachButtonViewTests: XCTestCase {
     // MARK: - Click fires onPick exactly once
 
     func testClickFiresOnPickOnce() {
-        let button = AttachButtonView()
+        let button = AttachButton()
         let window = mounted(button)
         defer {
             window.contentView = nil
@@ -107,7 +107,7 @@ final class AttachButtonViewTests: XCTestCase {
     }
 
     func testMouseUpOutsideDoesNotFireOnPick() {
-        let button = AttachButtonView()
+        let button = AttachButton()
         let window = mounted(button)
         defer {
             window.contentView = nil

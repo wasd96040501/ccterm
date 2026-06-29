@@ -1,7 +1,7 @@
 import AppKit
 
-/// AppKit replacement for the SwiftUI `PermissionDecisionButton`
-/// (`PermissionCardView.swift:262-322`). A compact decision button — 24pt
+/// AppKit replacement for the (now-deleted) SwiftUI permission decision button.
+/// A compact decision button — 24pt
 /// tall, 8pt radius, three visual weights (primary / secondary / destructive).
 /// Hover lifts the fill so the affordance reads on top of the card surface.
 /// Shared across the permission card's generic chrome button row AND the
@@ -32,13 +32,10 @@ import AppKit
 /// immediately. The hit target is the full 24pt-tall rounded pill
 /// (`PermissionCardView.swift:289` `.contentShape(Rectangle())`).
 ///
-/// Named `PermissionDecisionButtonView` (not `PermissionDecisionButton`) only
-/// because the SwiftUI `struct PermissionDecisionButton: View`
-/// (`PermissionCardView.swift:262`) still exists in this phase — two top-level
-/// declarations with the same name would be a duplicate-declaration error. When
-/// the SwiftUI `PermissionCardView` is deleted (Phase 2b, per the plan), this
-/// type takes over the bare `PermissionDecisionButton` name.
-final class PermissionDecisionButtonView: NSControl {
+/// The SwiftUI `struct PermissionDecisionButton: View` (in the old
+/// `PermissionCardView.swift`) was deleted in Phase 2b, so this AppKit
+/// `NSControl` now carries the bare `PermissionDecisionButton` name.
+final class PermissionDecisionButton: NSControl {
 
     enum Role {
         case primary, secondary, destructive
@@ -330,7 +327,7 @@ final class PermissionDecisionButtonView: NSControl {
         let strokeRadius = max(0, radius - inset)
         strokeLayer.frame = bounds
         if size.width > 0, size.height > 0 {
-            strokeLayer.path = BarSurfaceMask.continuousRoundedPath(
+            strokeLayer.path = BarSurfaceGeometry.continuousRoundedPath(
                 in: strokeRect, cornerRadius: strokeRadius)
         } else {
             strokeLayer.path = nil

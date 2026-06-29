@@ -18,15 +18,14 @@ import AppKit
 ///     **single even-odd filled path** (outer disc − inner hole + inner dot)
 ///     so the ring band and the dot share one rasterizer pass.
 ///
-/// This is a 1:1 geometry/color relocation of `TodoStatusGlyph`, not a
+/// This is a 1:1 geometry/color relocation of the original SwiftUI glyph, not a
 /// redesign — every constant (`strokeWidth = 1.4`, `dotScale = 0.62`, the
 /// 6s linear rotation, the `[0, strokeWidth * 2.2]` dash, the three-ellipse
-/// even-odd winding, the muted semantics) is reused verbatim from
-/// `TodoStatusGlyph.swift`. Named `TodoStatusGlyphLayer` (not
-/// `TodoStatusGlyphView`) to follow the plan's `ProgressRingLayer` /
-/// `ContextBarView` naming for the layer-backed AppKit leaves, and to avoid
-/// a symbol clash with the still-present SwiftUI struct during the
-/// coexistence window. No production wiring lands in this phase (Phase 0,
+/// even-odd winding, the muted semantics) is reused verbatim. Named
+/// `TodoStatusGlyphView` to follow the plan's `ProgressRingView` /
+/// `ContextBarView` naming for the layer-backed AppKit leaves. The SwiftUI
+/// `TodoStatusGlyph` was deleted in Phase 5, so this AppKit `NSView` now
+/// carries the bare name. No production wiring lands in this phase (Phase 0,
 /// standalone component); the owning todo row / chrome button drives it via
 /// `setState(_:muted:)` later (Phase 1).
 ///
@@ -38,7 +37,7 @@ import AppKit
 /// edge and bleeds `lineWidth/2` outside the frame. We reproduce
 /// `strokeBorder` by insetting the ring path by `strokeWidth/2` on every
 /// edge — `bounds.insetBy(dx: 0.7, dy: 0.7)` for `strokeWidth = 1.4`.
-final class TodoStatusGlyphLayer: NSView {
+final class TodoStatusGlyphView: NSView {
 
     // MARK: - Constants (verbatim from TodoStatusGlyph.swift)
 

@@ -3,7 +3,7 @@ import XCTest
 
 @testable import ccterm
 
-/// Review-only (opt-in, NOT a CI gate) snapshot of `ProgressRingLayer` —
+/// Review-only (opt-in, NOT a CI gate) snapshot of `ProgressRingView` —
 /// the AppKit replacement for the SwiftUI `ProgressRingView`. Renders the
 /// ring at the two consumer sizes ({12, 22}) across the three preview
 /// percents ({30, 75, 95} — the same fractions as `ProgressRingView`'s
@@ -13,22 +13,22 @@ import XCTest
 /// eyeballed for parity against the SwiftUI original.
 ///
 /// Run for the PNG:
-///   make test-unit FILTER=ProgressRingLayerSnapshotTests
-///   open /tmp/ccterm-screenshots/ProgressRingLayer-light.png
-///   open /tmp/ccterm-screenshots/ProgressRingLayer-dark.png
+///   make test-unit FILTER=ProgressRingViewSnapshotTests
+///   open /tmp/ccterm-screenshots/ProgressRingView-light.png
+///   open /tmp/ccterm-screenshots/ProgressRingView-dark.png
 @MainActor
-final class ProgressRingLayerSnapshotTests: XCTestCase {
+final class ProgressRingViewSnapshotTests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
     }
 
     func testProgressRingLight() throws {
-        try render(appearanceName: .aqua, pngName: "ProgressRingLayer-light")
+        try render(appearanceName: .aqua, pngName: "ProgressRingView-light")
     }
 
     func testProgressRingDark() throws {
-        try render(appearanceName: .darkAqua, pngName: "ProgressRingLayer-dark")
+        try render(appearanceName: .darkAqua, pngName: "ProgressRingView-dark")
     }
 
     // MARK: - Harness
@@ -52,7 +52,7 @@ final class ProgressRingLayerSnapshotTests: XCTestCase {
 
         for (rowIdx, size) in sizes.enumerated() {
             for (colIdx, percent) in percents.enumerated() {
-                let ring = ProgressRingLayer(percent: percent, size: size)
+                let ring = ProgressRingView(percent: percent, size: size)
                 ring.translatesAutoresizingMaskIntoConstraints = true
                 ring.autoresizingMask = []
                 // Center the ring inside its cell.

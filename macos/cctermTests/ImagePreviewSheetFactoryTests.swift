@@ -4,7 +4,7 @@ import XCTest
 @testable import ccterm
 
 /// CI-gate measurement test (non-snapshot) for the transcript image-preview
-/// sheet body (`ImagePreviewSheetBody`, migration plan §4.7). The transcript
+/// sheet body (`ImagePreviewSheetFactory`, migration plan §4.7). The transcript
 /// path does NOT introduce a second preview view — it routes to the shared
 /// `ImagePreviewSheetViewController` (Phase 1) with the wider transcript
 /// envelope. These tests drive the REAL VC built through the seam and assert
@@ -18,7 +18,7 @@ import XCTest
 ///   button (Return default action, keyEquivalent `\r`), Esc
 ///   (`cancelOperation`), and a click on the image area.
 @MainActor
-final class ImagePreviewSheetBodyTests: XCTestCase {
+final class ImagePreviewSheetFactoryTests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -28,7 +28,7 @@ final class ImagePreviewSheetBodyTests: XCTestCase {
 
     func testTranscriptVCShowsTheExactImage() {
         let image = NSImage(size: NSSize(width: 120, height: 80))
-        let vc = ImagePreviewSheetBody.makeTranscriptViewController(image: image) {}
+        let vc = ImagePreviewSheetFactory.makeTranscriptViewController(image: image) {}
         vc.loadViewIfNeeded()
 
         guard let imageView = findImageView(in: vc.view) else {
@@ -45,7 +45,7 @@ final class ImagePreviewSheetBodyTests: XCTestCase {
     // MARK: - Transcript envelope + padding (the wider one, NOT input-bar)
 
     func testTranscriptEnvelopeAndPadding() {
-        let vc = ImagePreviewSheetBody.makeTranscriptViewController(
+        let vc = ImagePreviewSheetFactory.makeTranscriptViewController(
             image: NSImage(size: NSSize(width: 40, height: 40))
         ) {}
         vc.loadViewIfNeeded()
@@ -53,8 +53,8 @@ final class ImagePreviewSheetBodyTests: XCTestCase {
         XCTAssertEqual(
             vc.envelope, .transcript,
             "Transcript path uses the wider transcript envelope, not .inputBar.")
-        XCTAssertEqual(ImagePreviewSheetBody.envelope, .transcript)
-        XCTAssertEqual(ImagePreviewSheetBody.imagePadding, 24, accuracy: 0.5)
+        XCTAssertEqual(ImagePreviewSheetFactory.envelope, .transcript)
+        XCTAssertEqual(ImagePreviewSheetFactory.imagePadding, 24, accuracy: 0.5)
 
         // Verbatim from ImagePreviewSheetView.swift:35-37.
         XCTAssertEqual(vc.envelope.minWidth, 480, accuracy: 0.5)
@@ -85,7 +85,7 @@ final class ImagePreviewSheetBodyTests: XCTestCase {
     /// refactor that dropped the padding wiring in `makeTranscriptViewController`
     /// (or hard-coded a different inset) fails here, not silently passes.
     func testTranscriptImageInsetIsAppliedAt24() {
-        let vc = ImagePreviewSheetBody.makeTranscriptViewController(
+        let vc = ImagePreviewSheetFactory.makeTranscriptViewController(
             image: NSImage(size: NSSize(width: 200, height: 200))
         ) {}
         vc.view.frame = NSRect(x: 0, y: 0, width: 880, height: 660)
@@ -110,7 +110,7 @@ final class ImagePreviewSheetBodyTests: XCTestCase {
 
     func testDoneButtonDismisses() {
         var dismissed = 0
-        let vc = ImagePreviewSheetBody.makeTranscriptViewController(
+        let vc = ImagePreviewSheetFactory.makeTranscriptViewController(
             image: NSImage(size: NSSize(width: 40, height: 40))
         ) { dismissed += 1 }
         vc.loadViewIfNeeded()
@@ -131,7 +131,7 @@ final class ImagePreviewSheetBodyTests: XCTestCase {
 
     func testEscDismisses() {
         var dismissed = 0
-        let vc = ImagePreviewSheetBody.makeTranscriptViewController(
+        let vc = ImagePreviewSheetFactory.makeTranscriptViewController(
             image: NSImage(size: NSSize(width: 40, height: 40))
         ) { dismissed += 1 }
         vc.loadViewIfNeeded()
@@ -143,7 +143,7 @@ final class ImagePreviewSheetBodyTests: XCTestCase {
 
     func testClickOnImageAreaDismisses() {
         var dismissed = 0
-        let vc = ImagePreviewSheetBody.makeTranscriptViewController(
+        let vc = ImagePreviewSheetFactory.makeTranscriptViewController(
             image: NSImage(size: NSSize(width: 40, height: 40))
         ) { dismissed += 1 }
         // Size at the transcript ideal so the image area has real bounds.

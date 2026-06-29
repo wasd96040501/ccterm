@@ -12,7 +12,7 @@ import Foundation
 /// to the fallback. We parse the canonical `mcp__<server>__<tool>` triple so the
 /// user sees both the originating MCP server (the trust boundary) and the bare
 /// tool name. The full `rawInput` renders as pretty-printed JSON inside a
-/// 200pt-cap monospace scroll (`PermissionMonospaceScrollBlock`), matching the
+/// 200pt-cap monospace scroll (`PermissionMonospaceScrollView`), matching the
 /// shape of the `taskAgent` / `notebook` bodies. The optional agent-supplied
 /// `description` is dimmed under the headline.
 ///
@@ -24,7 +24,7 @@ import Foundation
 ///   chip (`PermissionBodyChip`, the rounded-pill form, §4.4 chip-shape note) +
 ///   trailing spacer.
 /// - description: size-11 `secondaryLabelColor`, up to 3 lines, full width.
-/// - JSON block: `PermissionMonospaceScrollBlock(maxHeight: 200)` — size-12
+/// - JSON block: `PermissionMonospaceScrollView(maxHeight: 200)` — size-12
 ///   monospaced, selectable, scroller present at rest, capped at 200pt.
 ///
 /// **Per-kind data getters reused VERBATIM** from the SwiftUI body
@@ -81,7 +81,7 @@ final class PermissionMcpCardBodyView: NSView {
     private(set) var descriptionLabel: NSTextField?
     /// The capped monospace JSON scroll, present only when `inputJSON` is
     /// non-nil and non-empty.
-    private(set) var jsonBlock: PermissionMonospaceScrollBlock?
+    private(set) var jsonBlock: PermissionMonospaceScrollView?
 
     /// The stack's currently-arranged subviews, in order — for a measurement
     /// test asserting the 4-branch row composition.
@@ -162,7 +162,7 @@ final class PermissionMcpCardBodyView: NSView {
         // size-12 monospaced, capped at 200pt + scrolling
         // (`PermissionMcpCardBody.swift:40-49`).
         if let json = request.mcpInputJSON, !json.isEmpty {
-            let block = PermissionMonospaceScrollBlock(
+            let block = PermissionMonospaceScrollView(
                 text: json, maxHeight: PermissionMcpCardBodyBuilder.jsonMaxHeight)
             block.translatesAutoresizingMaskIntoConstraints = false
             jsonBlock = block

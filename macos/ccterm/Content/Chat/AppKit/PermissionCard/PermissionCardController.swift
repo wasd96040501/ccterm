@@ -3,7 +3,7 @@ import Observation
 
 /// AppKit coordinator that mounts / dismisses the floating permission card
 /// inside `ChatSessionViewController.permissionCardHost` (a
-/// `PermissionCardLayerView`). Replaces the SwiftUI `PermissionCardOverlay`'s
+/// `PermissionCardHostView`). Replaces the SwiftUI `PermissionCardOverlay`'s
 /// `session.pendingPermissions.first` reactive read + `.id(sid)` subtree
 /// rebuild (migration plan §4.0, §4.4). Created ONCE in the chat VC's
 /// `loadView` and lives for its lifetime — `present(sessionId:)` calls
@@ -61,7 +61,7 @@ final class PermissionCardController {
 
     // MARK: - Dependencies
 
-    private unowned let layerView: PermissionCardLayerView
+    private unowned let layerView: PermissionCardHostView
     private let sessionManager: SessionManager
     private weak var syntaxEngine: SyntaxHighlightEngine?
 
@@ -94,7 +94,7 @@ final class PermissionCardController {
     // MARK: - Init
 
     init(
-        layerView: PermissionCardLayerView,
+        layerView: PermissionCardHostView,
         sessionManager: SessionManager,
         syntaxEngine: SyntaxHighlightEngine?
     ) {

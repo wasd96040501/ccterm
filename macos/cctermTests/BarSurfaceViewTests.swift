@@ -3,7 +3,7 @@ import XCTest
 
 @testable import ccterm
 
-/// CI-gate (non-snapshot) tests for `BarSurfaceView` + `BarSurfaceMask`.
+/// CI-gate (non-snapshot) tests for `BarSurfaceView` + `BarSurfaceGeometry`.
 /// These run on the unfiltered `make test-unit` suite and drive the real
 /// production object:
 ///
@@ -98,7 +98,7 @@ final class BarSurfaceViewTests: XCTestCase {
         } else {
             // Mask regenerated at the new radius: side == 2*8+1 == 17.
             let side = surface.fallbackMaskImage?.size.width
-            XCTAssertEqual(side, BarSurfaceMask.resizableImageSide(cornerRadius: 8))
+            XCTAssertEqual(side, BarSurfaceGeometry.resizableImageSide(cornerRadius: 8))
         }
     }
 
@@ -120,7 +120,7 @@ final class BarSurfaceViewTests: XCTestCase {
     // MARK: - Mask geometry (pure-math helper)
 
     func testMaskCapInsetsEqualCornerRadiusOnEveryEdge() {
-        let insets = BarSurfaceMask.capInsets(cornerRadius: 16)
+        let insets = BarSurfaceGeometry.capInsets(cornerRadius: 16)
         XCTAssertEqual(insets.top, 16)
         XCTAssertEqual(insets.left, 16)
         XCTAssertEqual(insets.bottom, 16)
@@ -128,12 +128,12 @@ final class BarSurfaceViewTests: XCTestCase {
     }
 
     func testResizableImageSideIsTwiceRadiusPlusOne() {
-        XCTAssertEqual(BarSurfaceMask.resizableImageSide(cornerRadius: 16), 33)
-        XCTAssertEqual(BarSurfaceMask.resizableImageSide(cornerRadius: 8), 17)
+        XCTAssertEqual(BarSurfaceGeometry.resizableImageSide(cornerRadius: 16), 33)
+        XCTAssertEqual(BarSurfaceGeometry.resizableImageSide(cornerRadius: 8), 17)
     }
 
     func testMaskImageIsResizableWithCornerCaps() {
-        let img = BarSurfaceMask.maskImage(cornerRadius: 16, scale: 2.0)
+        let img = BarSurfaceGeometry.maskImage(cornerRadius: 16, scale: 2.0)
         XCTAssertEqual(img.size.width, 33)
         XCTAssertEqual(img.size.height, 33)
         XCTAssertEqual(img.resizingMode, .stretch)
@@ -149,8 +149,8 @@ final class BarSurfaceViewTests: XCTestCase {
         // the requested scale so the rounded edge stays crisp on Retina.
         // Assert the rep's PIXEL dimensions track the scale (load-bearing:
         // this fails if production ignores the `scale` parameter).
-        let oneX = BarSurfaceMask.maskImage(cornerRadius: 16, scale: 1.0)
-        let twoX = BarSurfaceMask.maskImage(cornerRadius: 16, scale: 2.0)
+        let oneX = BarSurfaceGeometry.maskImage(cornerRadius: 16, scale: 1.0)
+        let twoX = BarSurfaceGeometry.maskImage(cornerRadius: 16, scale: 2.0)
 
         // Both share the same logical point size (33 = 2*16 + 1).
         XCTAssertEqual(oneX.size, twoX.size)
@@ -177,13 +177,13 @@ final class BarSurfaceViewTests: XCTestCase {
         // bounding-box-within-bounds check alone is insensitive to removing
         // the clamp, since CGPath self-clamps internally.)
         let rect = CGRect(x: 0, y: 0, width: 32, height: 32)
-        let overLarge = BarSurfaceMask.continuousRoundedPath(in: rect, cornerRadius: 100)
-        let clampedExplicit = BarSurfaceMask.continuousRoundedPath(in: rect, cornerRadius: 16)
+        let overLarge = BarSurfaceGeometry.continuousRoundedPath(in: rect, cornerRadius: 100)
+        let clampedExplicit = BarSurfaceGeometry.continuousRoundedPath(in: rect, cornerRadius: 16)
         XCTAssertEqual(overLarge, clampedExplicit, "over-large radius must clamp to half the smaller side")
 
         // And the clamped path differs from a small-radius path (proving the
         // radius actually drives the geometry).
-        let smallRadius = BarSurfaceMask.continuousRoundedPath(in: rect, cornerRadius: 4)
+        let smallRadius = BarSurfaceGeometry.continuousRoundedPath(in: rect, cornerRadius: 4)
         XCTAssertNotEqual(overLarge, smallRadius)
 
         // The clamped path stays inside the rect (bounds-safety).

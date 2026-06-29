@@ -182,11 +182,11 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
     }
 
     /// Walk up from `view` to the enclosing `permissionCardHost`
-    /// (`PermissionCardLayerView`), or nil if the hit landed outside it.
-    private func enclosingCardHost(_ view: NSView?) -> PermissionCardLayerView? {
+    /// (`PermissionCardHostView`), or nil if the hit landed outside it.
+    private func enclosingCardHost(_ view: NSView?) -> PermissionCardHostView? {
         var node = view
         while let cur = node {
-            if let host = cur as? PermissionCardLayerView { return host }
+            if let host = cur as? PermissionCardHostView { return host }
             node = cur.superview
         }
         return nil
@@ -196,7 +196,7 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
     /// way the production CLI sink does (`pendingPermissions.append`). The
     /// `PermissionCardController` (armed by `present(sessionId:)`) observes
     /// `session.pendingPermissions.first?.id`, so after a runloop drain the
-    /// AppKit card mounts inside the `PermissionCardLayerView`.
+    /// AppKit card mounts inside the `PermissionCardHostView`.
     @discardableResult
     private func seedPermission(_ fx: Fixture, sessionId: String, requestId: String) -> Bool {
         guard let session = fx.router.context.sessionManager.session(sessionId),
@@ -363,7 +363,7 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
 
     /// PR5 passthrough regression net, rewritten for the AppKit card host.
     /// With a permission card mounted in the full-pane `permissionCardHost`
-    /// (`PermissionCardLayerView`, driven by the `PermissionCardController`),
+    /// (`PermissionCardHostView`, driven by the `PermissionCardController`),
     /// the card must NOT swallow transcript clicks: a point in the open
     /// transcript band still hit-tests to a `BlockCellView` (transcript
     /// selectable — the full-pane host doesn't occlude the table), while a
@@ -547,7 +547,7 @@ final class DetailPaneTranscriptHitTestTests: XCTestCase {
 
         // (a) Raise `isDismissing` — the EXACT flag the controller sets for the
         // fade window — while the real card is still mounted, and assert the
-        // production `PermissionCardLayerView.hitTest` returns nil over it
+        // production `PermissionCardHostView.hitTest` returns nil over it
         // (visually present, hit-transparent, §4.4-4), while a transcript-band
         // point still resolves to a `BlockCellView`.
         XCTAssertNotNil(card.superview, "card must still be in the tree for the dismiss probe")

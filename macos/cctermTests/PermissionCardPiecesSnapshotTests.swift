@@ -8,7 +8,7 @@ import XCTest
 /// permission-card pieces so parity can be eyeballed. The real CI gates are the
 /// non-snapshot `PermissionDecisionButtonTests` /
 /// `PermissionCardSurfaceViewTests` / `PermissionBodyChipTests` /
-/// `PermissionMonospaceScrollBlockTests` / `PermissionBoundedDiffViewTests`.
+/// `PermissionMonospaceScrollViewTests` / `PermissionBoundedDiffViewTests`.
 ///
 /// Run: `make test-unit FILTER=PermissionCardPiecesSnapshotTests`, then open the
 /// PNGs under `/tmp/ccterm-screenshots/`.
@@ -58,9 +58,9 @@ final class PermissionCardPiecesSnapshotTests: XCTestCase {
             let row = NSStackView()
             row.orientation = .horizontal
             row.spacing = 8
-            let deny = PermissionDecisionButtonView(title: "Deny", role: .destructive)
-            let once = PermissionDecisionButtonView(title: "Allow once", role: .secondary)
-            let always = PermissionDecisionButtonView(title: "Allow always", role: .primary)
+            let deny = PermissionDecisionButton(title: "Deny", role: .destructive)
+            let once = PermissionDecisionButton(title: "Allow once", role: .secondary)
+            let always = PermissionDecisionButton(title: "Allow always", role: .primary)
             // Force one button into hover so the snapshot shows the lift.
             once.mouseEntered(
                 with: NSEvent.mouseEvent(
@@ -115,11 +115,11 @@ final class PermissionCardPiecesSnapshotTests: XCTestCase {
     }
 
     func testMonospaceBlockSnapshot() throws {
-        let block = PermissionMonospaceScrollBlock(
+        let block = PermissionMonospaceScrollView(
             text: "{\n  \"title\": \"hi\",\n  \"team\": \"ENG\"\n}", maxHeight: 200)
         let vc = host(block, appearance: .aqua)
         let image = ViewSnapshot.renderViewController(vc, size: CGSize(width: 360, height: 160))
-        attach(image, "PermissionMonospaceScrollBlock")
+        attach(image, "PermissionMonospaceScrollView")
         XCTAssertGreaterThanOrEqual(image.size.width, 320)
     }
 

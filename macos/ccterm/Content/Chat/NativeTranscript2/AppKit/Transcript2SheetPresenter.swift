@@ -162,7 +162,7 @@ final class Transcript2SheetPresenter {
             controller.pendingImagePreview = nil
             return
         }
-        let vc = ImagePreviewSheetBody.makeTranscriptViewController(image: request.image) {
+        let vc = ImagePreviewSheetFactory.makeTranscriptViewController(image: request.image) {
             [weak self] in
             self?.endCurrentSheet()
         }

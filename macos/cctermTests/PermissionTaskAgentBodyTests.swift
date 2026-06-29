@@ -36,7 +36,7 @@ final class PermissionTaskAgentBodyTests: XCTestCase {
     }
 
     /// Mount at a fixed settled width so the prompt block's used-height resolves
-    /// (mirrors `PermissionMonospaceScrollBlockTests.mounted`).
+    /// (mirrors `PermissionMonospaceScrollViewTests.mounted`).
     @discardableResult
     private func mount(_ view: NSView, width: CGFloat = 480) -> NSWindow {
         let window = NSWindow(

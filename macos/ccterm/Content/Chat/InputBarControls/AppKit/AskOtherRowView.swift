@@ -181,7 +181,7 @@ final class AskOtherRowView: NSView, NSTextFieldDelegate {
         editStrokeLayer.frame = bounds
         if bounds.width > 0, bounds.height > 0 {
             let inset: CGFloat = 0.5
-            editStrokeLayer.path = BarSurfaceMask.continuousRoundedPath(
+            editStrokeLayer.path = BarSurfaceGeometry.continuousRoundedPath(
                 in: bounds.insetBy(dx: inset, dy: inset),
                 cornerRadius: AskUserQuestionLayout.rowCornerRadius - inset)
         } else {

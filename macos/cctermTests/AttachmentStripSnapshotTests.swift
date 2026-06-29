@@ -48,8 +48,8 @@ final class AttachmentStripSnapshotTests: XCTestCase {
     // MARK: - Attach button idle vs drop-targeted
 
     func testAttachButtonIdleVsDropTargeted() throws {
-        let idle = AttachButtonView()
-        let targeted = AttachButtonView()
+        let idle = AttachButton()
+        let targeted = AttachButton()
         targeted.setDropTargeted(true, in: NSAnimationContext.current)
 
         let row = NSStackView(views: [idle, targeted])

@@ -1,9 +1,10 @@
 import AppKit
 
-/// AppKit replacement for the SwiftUI `AttachButton` (migration plan §4.1-10,
+/// AppKit replacement for the (now-deleted) SwiftUI attach button (migration
+/// plan §4.1-10,
 /// component-mapping table). A standalone 32pt circle backed by the Phase-0
 /// `BarSurfaceView(cornerRadius: 16, drawsShadow: false)` (the shadowless
-/// glass circle that matched `AttachButton.surface`), with a centered `+`
+/// glass circle that matched the original's `surface`), with a centered `+`
 /// template image.
 ///
 /// The SwiftUI original used a single-item `Menu` ("Attach Image or File")
@@ -12,11 +13,11 @@ import AppKit
 /// `.buttonStyle(.plain)` press-dim is reimplemented by lowering the `+`
 /// template alpha to ~0.5 on `mouseDown` (the glass circle stays solid).
 ///
-/// The dashed accent drop-target stroke (`AttachButton.swift:76` — accent,
+/// The dashed accent drop-target stroke (accent,
 /// `lineWidth 1.5, dash [4,3]`) is drawn as a `CAShapeLayer` overlay toggled
 /// by `isDropTargeted`; the idle 0.5pt `separatorColor` stroke is the
 /// `BarSurfaceView`'s own border, so we only add the *drop* stroke here.
-final class AttachButtonView: NSControl {
+final class AttachButton: NSControl {
 
     /// 32pt circle (`AttachButton.size = 32`).
     static let size: CGFloat = 32
@@ -32,7 +33,7 @@ final class AttachButtonView: NSControl {
     /// the pill's stroke so they animate in sync (§4.1-9).
     private(set) var isDropTargeted: Bool = false
 
-    private let surface = BarSurfaceView(cornerRadius: AttachButtonView.size / 2, drawsShadow: false)
+    private let surface = BarSurfaceView(cornerRadius: AttachButton.size / 2, drawsShadow: false)
     private let iconView = NSImageView()
     private let dropStrokeLayer = CAShapeLayer()
 

@@ -4,7 +4,7 @@ import XCTest
 @testable import ccterm
 
 /// Opt-in (filename ends in `SnapshotTests`; see CLAUDE.md) visual review of
-/// the **AppKit** `TodoStatusGlyphLayer` — the replacement for the SwiftUI
+/// the **AppKit** `TodoStatusGlyphView` — the replacement for the SwiftUI
 /// `TodoStatusGlyph` (whose own snapshot lives in
 /// `TodoStatusGlyphSnapshotTests` until the SwiftUI struct is deleted). Renders
 /// each glyph by wrapping the bare layer-backed `NSView` in a throwaway VC and
@@ -16,7 +16,7 @@ import XCTest
 ///   - one frame of live `.inProgress` (`muted: false`) — eyeball the dotted
 ///     ring (zero-length dashes + round caps render as dots).
 @MainActor
-final class TodoStatusGlyphLayerSnapshotTests: XCTestCase {
+final class TodoStatusGlyphViewSnapshotTests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -27,15 +27,15 @@ final class TodoStatusGlyphLayerSnapshotTests: XCTestCase {
         let canvas = CGSize(width: 560, height: 90)
         let controller = makeRow(canvas: canvas) { container in
             self.layOutGlyphs(in: container, sizes: sizes) { side in
-                let glyph = TodoStatusGlyphLayer()
+                let glyph = TodoStatusGlyphView()
                 glyph.setState(.completed, muted: true)
                 return glyph
             }
         }
 
         let image = ViewSnapshot.renderViewController(controller, size: canvas, settle: 0.4)
-        let url = ViewSnapshot.writePNG(image, name: "TodoStatusGlyphLayer-completed")
-        attach(url, name: "TodoStatusGlyphLayer-completed.png")
+        let url = ViewSnapshot.writePNG(image, name: "TodoStatusGlyphView-completed")
+        attach(url, name: "TodoStatusGlyphView-completed.png")
 
         XCTAssertGreaterThanOrEqual(image.size.width, 500)
     }
@@ -45,15 +45,15 @@ final class TodoStatusGlyphLayerSnapshotTests: XCTestCase {
         let canvas = CGSize(width: 360, height: 90)
         let controller = makeRow(canvas: canvas) { container in
             self.layOutGlyphs(in: container, sizes: sizes) { side in
-                let glyph = TodoStatusGlyphLayer()
+                let glyph = TodoStatusGlyphView()
                 glyph.setState(.inProgress, muted: false)
                 return glyph
             }
         }
 
         let image = ViewSnapshot.renderViewController(controller, size: canvas, settle: 0.4)
-        let url = ViewSnapshot.writePNG(image, name: "TodoStatusGlyphLayer-inProgress")
-        attach(url, name: "TodoStatusGlyphLayer-inProgress.png")
+        let url = ViewSnapshot.writePNG(image, name: "TodoStatusGlyphView-inProgress")
+        attach(url, name: "TodoStatusGlyphView-inProgress.png")
 
         XCTAssertGreaterThanOrEqual(image.size.width, 300)
     }
@@ -77,7 +77,7 @@ final class TodoStatusGlyphLayerSnapshotTests: XCTestCase {
     /// Lay the glyphs out left-to-right, each centered vertically and pinned
     /// to its ship size via constraints (mirrors SwiftUI `.frame(w,h)`).
     private func layOutGlyphs(
-        in container: NSView, sizes: [CGFloat], make: (CGFloat) -> TodoStatusGlyphLayer
+        in container: NSView, sizes: [CGFloat], make: (CGFloat) -> TodoStatusGlyphView
     ) {
         var x: CGFloat = 24
         let spacing: CGFloat = 48

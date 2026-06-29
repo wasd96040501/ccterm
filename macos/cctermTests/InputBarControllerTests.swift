@@ -435,8 +435,8 @@ final class InputBarControllerTests: XCTestCase {
         let baselineAttach = attachRects.last!
         let baselinePill = pillRects.last!
         // The attach button is 32×32 in the anchor space.
-        XCTAssertEqual(baselineAttach.width, AttachButtonView.size, accuracy: 1)
-        XCTAssertEqual(baselineAttach.height, AttachButtonView.size, accuracy: 1)
+        XCTAssertEqual(baselineAttach.width, AttachButton.size, accuracy: 1)
+        XCTAssertEqual(baselineAttach.height, AttachButton.size, accuracy: 1)
         // The pill cutout is the bottom 32pt row.
         XCTAssertEqual(baselinePill.height, InputBarView.pillMinHeight, accuracy: 1)
 

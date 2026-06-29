@@ -6,7 +6,7 @@ import AppKit
 /// `PermissionExitPlanModeCardBody`
 /// (`InputBarControls/PermissionExitPlanModeCardBody.swift:25-82`). Built for the
 /// pure-AppKit permission card (migration plan §4.4): an `NSStackView` column of
-/// an `NSTextField` headline + the shared `PermissionMonospaceScrollBlock` helper.
+/// an `NSTextField` headline + the shared `PermissionMonospaceScrollView` helper.
 ///
 /// **v1 in ccterm** (mirroring the SwiftUI body's doc): render the plan as plain
 /// monospaced text in a 480pt-cap scroll so a long plan stays inspectable without
@@ -16,7 +16,7 @@ import AppKit
 ///
 /// Two-branch body (verbatim from `PermissionExitPlanModeCardBody.body`, `:28-51`):
 /// - headline: size-12 medium, primary (labelColor), full-width leading.
-/// - if `plan` non-empty → a 480pt-cap monospace scroll (`PermissionMonospaceScrollBlock`,
+/// - if `plan` non-empty → a 480pt-cap monospace scroll (`PermissionMonospaceScrollView`,
 ///   which reproduces the verbatim `ScrollView(.vertical, showsIndicators: true) {
 ///   Text(...size12 monospaced .primary .textSelection(.enabled)) }.frame(maxHeight: 480)`).
 /// - else → the empty-plan hint as size-11 secondary text, full-width leading.
@@ -50,7 +50,7 @@ final class PermissionExitPlanModeCardBodyView: NSView {
     private let stack = NSStackView()
     private let headlineLabel = NSTextField(labelWithString: "")
     /// Present only when `plan` is non-nil/non-empty (the v1-with-plan branch).
-    private var planBlock: PermissionMonospaceScrollBlock?
+    private var planBlock: PermissionMonospaceScrollView?
     /// Present only when `plan` is nil/empty (the V2 / empty-plan branch).
     private var emptyHintLabel: NSTextField?
 
@@ -125,7 +125,7 @@ final class PermissionExitPlanModeCardBodyView: NSView {
             // (`PermissionExitPlanModeCardBody.swift:34-42`). The shared block
             // reproduces the size-12 monospaced, primary, selectable text in a
             // `showsIndicators: true` vertical scroll capped at 480.
-            let block = PermissionMonospaceScrollBlock(
+            let block = PermissionMonospaceScrollView(
                 text: plan, maxHeight: Self.planScrollMaxHeight)
             planBlock = block
             stack.addArrangedSubview(block)

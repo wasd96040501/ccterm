@@ -223,7 +223,7 @@ final class PermissionCardSurfaceView: NSView {
     }
 
     /// Recompute the fill frame / corner, the stroke path, and the shadow path
-    /// against the settled bounds. Reuses `BarSurfaceMask.continuousRoundedPath`
+    /// against the settled bounds. Reuses `BarSurfaceGeometry.continuousRoundedPath`
     /// for the stroke + shadowPath silhouette.
     private func applyGeometry() {
         let size = bounds.size
@@ -242,9 +242,9 @@ final class PermissionCardSurfaceView: NSView {
         let strokeRadius = max(0, radius - inset)
         strokeLayer.frame = bounds
         if size.width > 0, size.height > 0 {
-            strokeLayer.path = BarSurfaceMask.continuousRoundedPath(
+            strokeLayer.path = BarSurfaceGeometry.continuousRoundedPath(
                 in: strokeRect, cornerRadius: strokeRadius)
-            layer?.shadowPath = BarSurfaceMask.continuousRoundedPath(
+            layer?.shadowPath = BarSurfaceGeometry.continuousRoundedPath(
                 in: bounds, cornerRadius: max(0, radius))
         } else {
             strokeLayer.path = nil

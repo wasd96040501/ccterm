@@ -8,7 +8,7 @@ import AppKit
 ///
 /// `PermissionCardContentView` renders NO generic chrome for `askUserQuestion`
 /// (`bodyOwnsChrome`); it mounts this VC's `view` as its sole body section and
-/// retains the VC. Reuses the shared AppKit `PermissionDecisionButtonView`
+/// retains the VC. Reuses the shared AppKit `PermissionDecisionButton`
 /// (ported in Phase 2a) for the Cancel / Confirm row.
 ///
 /// **State machine.** All decode / answer / nav logic lives in
@@ -56,8 +56,8 @@ final class AskUserQuestionCardViewController: NSViewController {
     private var headerView: AskQuestionHeaderView?
     private var otherRow: AskOtherRowView?
     private var optionRows: [AskOptionRowView] = []
-    private var confirmButton: PermissionDecisionButtonView?
-    private var cancelButton: PermissionDecisionButtonView?
+    private var confirmButton: PermissionDecisionButton?
+    private var cancelButton: PermissionDecisionButton?
 
     // MARK: - Init
 
@@ -254,7 +254,7 @@ final class AskUserQuestionCardViewController: NSViewController {
         row.spacing = AskUserQuestionLayout.chipRowSpacing  // 8 (`:314`)
         row.translatesAutoresizingMaskIntoConstraints = false
 
-        let cancel = PermissionDecisionButtonView(
+        let cancel = PermissionDecisionButton(
             title: String(localized: "Cancel"), role: .destructive,
             onClick: { [weak self] in self?.model.cancel() })
         cancel.setContentHuggingPriority(.required, for: .horizontal)
@@ -264,7 +264,7 @@ final class AskUserQuestionCardViewController: NSViewController {
         spacer.translatesAutoresizingMaskIntoConstraints = false
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        let confirm = PermissionDecisionButtonView(
+        let confirm = PermissionDecisionButton(
             title: model.confirmLabel, role: .primary,
             onClick: { [weak self] in self?.confirm() })
         confirm.setContentHuggingPriority(.required, for: .horizontal)
@@ -355,7 +355,7 @@ final class AskUserQuestionCardViewController: NSViewController {
         row.alignment = .centerY
         row.spacing = AskUserQuestionLayout.chipRowSpacing
         row.translatesAutoresizingMaskIntoConstraints = false
-        let cancel = PermissionDecisionButtonView(
+        let cancel = PermissionDecisionButton(
             title: String(localized: "Cancel"), role: .destructive,
             onClick: { [weak self] in self?.model.cancel() })
         cancel.setContentHuggingPriority(.required, for: .horizontal)
@@ -379,8 +379,8 @@ final class AskUserQuestionCardViewController: NSViewController {
     var headerForTesting: AskQuestionHeaderView? { headerView }
     var optionRowsForTesting: [AskOptionRowView] { optionRows }
     var otherRowForTesting: AskOtherRowView? { otherRow }
-    var confirmButtonForTesting: PermissionDecisionButtonView? { confirmButton }
-    var cancelButtonForTesting: PermissionDecisionButtonView? { cancelButton }
+    var confirmButtonForTesting: PermissionDecisionButton? { confirmButton }
+    var cancelButtonForTesting: PermissionDecisionButton? { cancelButton }
 
     // MARK: - Wizard root view
 

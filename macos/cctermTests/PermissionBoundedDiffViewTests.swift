@@ -145,7 +145,7 @@ final class PermissionBoundedDiffViewTests: XCTestCase {
     // MARK: - cursor rects NOT suppressed on descendants (§4.4-2)
 
     func testDoesNotSuppressDescendantCursorRects() {
-        // §4.4-2: only the full-pane PermissionCardLayerView is cursor-rect-free.
+        // §4.4-2: only the full-pane PermissionCardHostView is cursor-rect-free.
         // This host MUST NOT override resetCursorRects (which would suppress its
         // descendants' rects, e.g. the embedded DiffNSView's pointing-hand over
         // the copy button). Verify behaviorally that the wrapper inherits

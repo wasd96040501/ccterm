@@ -20,19 +20,19 @@ enum ContextTokenFormat {
 }
 
 /// AppKit replacement for `ContextRingButton.swift` (migration plan §4.2).
-/// Footer-row indicator: a `ProgressRingLayer` trigger (always rendered, even at
+/// Footer-row indicator: a `ProgressRingView` trigger (always rendered, even at
 /// 0 tokens — §4.2 ContextRing constants) opening a breakdown + summary popover.
 /// `requestContextUsage()` fires once per open from the content VC's
 /// `viewWillAppear` (§4.2-8), NOT from bind/rebind.
 ///
-/// The trigger is a `ProgressRingLayer` framed 22×22 (size param stays 12, the
+/// The trigger is a `ProgressRingView` framed 22×22 (size param stays 12, the
 /// path centers in bounds) inside a plain clickable host (NOT a `ChromeButton`
 /// — the ring is the affordance, no pill surface, matching SwiftUI's bare
 /// `Button { ProgressRingView }.buttonStyle(.plain)`).
 @MainActor
 final class ContextRingPickerController: ChromePickerController {
 
-    private let ring = ProgressRingLayer(percent: 0, size: 12)
+    private let ring = ProgressRingView(percent: 0, size: 12)
     private var triggerObservationActive = false
     /// Held so `viewWillAppear` can fire the once-per-open request against the
     /// live session; rebuilt each show.

@@ -1,6 +1,6 @@
 import AppKit
 
-/// The transcript-side image-preview sheet body — the AppKit replacement for
+/// The transcript-side image-preview sheet factory — the AppKit replacement for
 /// the SwiftUI `ImagePreviewSheetView` body that `Transcript2SheetPresenter`
 /// hosts via `NSHostingController` today (migration plan §4.7).
 ///
@@ -18,13 +18,13 @@ import AppKit
 /// So this file is the **one shared seam** the transcript path uses to build
 /// that VC with its own (wider) envelope and padding. When the integration
 /// step flips `Transcript2SheetPresenter.presentImage` off the SwiftUI body, it
-/// calls `ImagePreviewSheetBody.makeTranscriptViewController(image:onDismiss:)`
+/// calls `ImagePreviewSheetFactory.makeTranscriptViewController(image:onDismiss:)`
 /// instead of constructing an `NSHostingController(rootView: ImagePreviewSheetView)`.
 /// Keeping the transcript's envelope/padding constants pinned here (rather than
 /// inline at the call site) means the transcript ↔ input-bar parity is checked
 /// by a test against this seam, not by re-reading the presenter.
 @MainActor
-enum ImagePreviewSheetBody {
+enum ImagePreviewSheetFactory {
 
     /// The transcript image-preview envelope — the generous full-text preview
     /// size from `ImagePreviewSheetView.swift:35-37` (`minWidth: 480`,

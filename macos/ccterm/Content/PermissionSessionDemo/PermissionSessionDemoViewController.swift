@@ -42,7 +42,7 @@ final class PermissionSessionDemoViewController: NSViewController {
     /// `ChatSessionViewController.permissionCardHost`. Without it the
     /// `showCurrent()` control would set `pendingPermissions` but no card
     /// would ever render (PR5 moved the card out of `ChatRestingBar`).
-    private var permissionCardHost: PermissionCardLayerView?
+    private var permissionCardHost: PermissionCardHostView?
     /// The AppKit card coordinator, mirroring production's
     /// `permissionCardController`. Bound to the seed session in `viewDidLoad`.
     private var permissionCardController: PermissionCardController?
@@ -139,12 +139,12 @@ final class PermissionSessionDemoViewController: NSViewController {
     }
 
     /// Mirror production's `permissionCardHost`: a full-pane click-through
-    /// `PermissionCardLayerView` + `PermissionCardController`, layered above the
+    /// `PermissionCardHostView` + `PermissionCardController`, layered above the
     /// bar host. PR5 moved the card out of `ChatRestingBar` into this overlay,
     /// so the demo must mount it too or `showCurrent()` would set
     /// `pendingPermissions` with nothing on screen.
     private func installPermissionCardHost() {
-        let host = PermissionCardLayerView()
+        let host = PermissionCardHostView()
         host.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(host)
         NSLayoutConstraint.activate([

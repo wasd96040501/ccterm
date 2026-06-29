@@ -13,7 +13,7 @@ import UniformTypeIdentifiers
 ///
 /// ```
 /// HStack(alignment: .bottom, spacing: attachToPillSpacing) {
-///     AttachButtonView          // 32pt circle, bottom-anchored
+///     AttachButton          // 32pt circle, bottom-anchored
 ///     pill                      // BarSurfaceView(16), grows up
 /// }
 /// ```
@@ -54,7 +54,7 @@ final class InputBarView: NSView {
 
     // MARK: - Subviews
 
-    let attachButton = AttachButtonView()
+    let attachButton = AttachButton()
     let sendStopButton = SendStopButton()
     /// The raw text core, embedded directly (UNWRAP — no `TextInputView`).
     let textScrollView: InputTextScrollView
@@ -493,7 +493,7 @@ final class InputBarView: NSView {
         // anchored to the text row only.
         //
         // NOTE: `height == pillHeight` is only correct because
-        // `pillMinHeight (32) >= AttachButtonView.size (32)` — the two
+        // `pillMinHeight (32) >= AttachButton.size (32)` — the two
         // coincide today. If the attach button ever exceeds the pill's
         // minimum, this must become `max(pillHeight, attachButton bottom)`.
         NSSize(width: NSView.noIntrinsicMetric, height: pillHeightConstraint.constant)

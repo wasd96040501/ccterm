@@ -12,8 +12,8 @@ import AppKit
 /// SwiftUI `struct PermissionCardView: View` still exists this phase (it hosts
 /// the 11 per-kind SwiftUI bodies + the `PermissionCardsDemoView`, ported in
 /// the parallel fan-out); two top-level `PermissionCardView` declarations would
-/// be a duplicate-declaration error. Same precedent as
-/// `PermissionDecisionButtonView` vs the SwiftUI `PermissionDecisionButton`.
+/// be a duplicate-declaration error. Same precedent as `PermissionDecisionButton`,
+/// which took over its bare name once the SwiftUI button was deleted.
 ///
 /// This is a 1:1 visual relocation, constants lifted verbatim:
 /// - outer VStack(alignment:.leading, spacing:12) (`PermissionCardView.swift:59`)
@@ -182,7 +182,7 @@ final class PermissionCardContentView: NSView {
     private(set) var buttonRow: NSView?
     /// The three decision buttons (Deny / Allow once / Allow always), in row
     /// order, when the button row is present.
-    private(set) var decisionButtons: [PermissionDecisionButtonView] = []
+    private(set) var decisionButtons: [PermissionDecisionButton] = []
     /// The per-kind body view (always present).
     var resolvedBodyView: NSView { bodyView }
 
@@ -321,14 +321,14 @@ final class PermissionCardContentView: NSView {
         row.spacing = Self.rowSpacing
         row.translatesAutoresizingMaskIntoConstraints = false
 
-        let deny = PermissionDecisionButtonView(
+        let deny = PermissionDecisionButton(
             title: String(localized: "Deny"), role: .destructive, onClick: onDeny)
         let spacer = NSView()
         spacer.translatesAutoresizingMaskIntoConstraints = false
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let allowOnce = PermissionDecisionButtonView(
+        let allowOnce = PermissionDecisionButton(
             title: String(localized: "Allow once"), role: .secondary, onClick: onAllowOnce)
-        let allowAlways = PermissionDecisionButtonView(
+        let allowAlways = PermissionDecisionButton(
             title: String(localized: "Allow always"), role: .primary, onClick: onAllowAlways)
 
         decisionButtons = [deny, allowOnce, allowAlways]

@@ -1,0 +1,3005 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AppKit 入门 · 从零到一（面向零基础）</title>
+<style>
+/* ============================================================
+   AppKit 入门教程 · 外壳样式
+   设计目标：macOS 浅色风格、阅读舒适、组件近似原生外观
+   ============================================================ */
+
+/* ---------- 设计变量 ---------- */
+:root{
+  --bg:#eef0f3;
+  --panel:#ffffff;
+  --ink:#1d1d1f;
+  --ink-soft:#3c3c43;
+  --ink-dim:#6e6e73;
+  --line:#d8dade;
+  --line-soft:#e7e8ec;
+  --accent:#0a64ff;      /* macOS 蓝 */
+  --accent-press:#0a55d6;
+  --sel:#0a64ff;
+  --sel-soft:#e8f0ff;
+  --code-bg:#1e2230;
+  --code-ink:#e6e9f0;
+  --radius:12px;
+  --radius-sm:7px;
+  --shadow:0 1px 2px rgba(0,0,0,.06),0 12px 32px rgba(20,30,60,.10);
+  --shadow-win:0 8px 24px rgba(15,25,55,.16),0 2px 6px rgba(0,0,0,.10);
+  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue","PingFang SC","Microsoft YaHei",sans-serif;
+  --mono:"SF Mono",ui-monospace,"JetBrains Mono","Menlo","Consolas",monospace;
+}
+
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:24px}
+body{
+  margin:0;background:var(--bg);color:var(--ink);
+  font-family:var(--sans);font-size:16px;line-height:1.72;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+}
+
+/* ---------- 整体布局：左目录 + 右内容 ---------- */
+.layout{display:flex;align-items:flex-start;max-width:1280px;margin:0 auto;gap:28px;padding:0 24px}
+.sidebar{
+  position:sticky;top:0;height:100vh;width:264px;flex:0 0 264px;
+  padding:26px 8px 26px 6px;overflow-y:auto;
+}
+.sidebar h1{font-size:17px;margin:0 8px 4px;letter-spacing:-.2px}
+.sidebar .subtitle{font-size:12.5px;color:var(--ink-dim);margin:0 8px 18px}
+.toc{list-style:none;margin:0;padding:0}
+.toc li{margin:1px 0}
+.toc a{
+  display:flex;gap:10px;align-items:baseline;
+  text-decoration:none;color:var(--ink-soft);
+  font-size:13.5px;padding:7px 10px;border-radius:8px;line-height:1.4;
+  transition:background .15s,color .15s;
+}
+.toc a .num{color:var(--ink-dim);font-variant-numeric:tabular-nums;font-size:12px;min-width:14px}
+.toc a:hover{background:#e3e6ec;color:var(--ink)}
+.toc a.active{background:var(--accent);color:#fff}
+.toc a.active .num{color:rgba(255,255,255,.85)}
+.progress-rail{height:3px;background:var(--line);border-radius:3px;margin:14px 8px 6px;overflow:hidden}
+.progress-rail i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+
+.content{flex:1 1 auto;min-width:0;padding:0 0 140px}
+
+/* ---------- Hero ---------- */
+.hero{
+  background:linear-gradient(135deg,#0a64ff 0%,#5b3df5 100%);
+  color:#fff;border-radius:18px;padding:38px 36px;margin:26px 0 8px;
+  box-shadow:var(--shadow);
+}
+.hero h1{margin:0 0 10px;font-size:30px;letter-spacing:-.5px}
+.hero p{margin:0;font-size:15.5px;color:rgba(255,255,255,.92);max-width:64ch}
+.hero .meta{margin-top:18px;display:flex;flex-wrap:wrap;gap:8px}
+.hero .pill{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.25);
+  padding:4px 11px;border-radius:999px;font-size:12.5px;backdrop-filter:blur(4px)}
+
+/* ---------- 章节排版 ---------- */
+.chapter{
+  background:var(--panel);border:1px solid var(--line-soft);
+  border-radius:var(--radius);padding:30px 34px;margin:22px 0;
+  box-shadow:0 1px 2px rgba(0,0,0,.04);scroll-margin-top:20px;
+}
+.chapter h2{
+  font-size:23px;margin:0 0 4px;letter-spacing:-.4px;
+  padding-bottom:14px;border-bottom:1px solid var(--line-soft);
+  display:flex;align-items:center;gap:12px;
+}
+.chapter h2::before{
+  content:attr(data-n);flex:0 0 auto;
+  width:30px;height:30px;border-radius:8px;background:var(--sel-soft);color:var(--accent);
+  font-size:15px;font-weight:700;display:grid;place-items:center;
+}
+.chapter h3{font-size:17.5px;margin:26px 0 6px;letter-spacing:-.2px}
+.chapter h4{font-size:15px;margin:18px 0 4px;color:var(--ink-soft)}
+.chapter p{margin:10px 0}
+.chapter .lead{font-size:16.5px;color:var(--ink-soft);margin:14px 0 6px}
+.chapter ul,.chapter ol{margin:10px 0;padding-left:22px}
+.chapter li{margin:5px 0}
+.chapter strong,.chapter b{color:var(--ink)}
+.chapter code:not(pre code){
+  font-family:var(--mono);font-size:13px;background:#eef0f4;
+  border:1px solid var(--line-soft);padding:1px 6px;border-radius:5px;color:#9333ea;
+  word-break:break-word;
+}
+
+/* ---------- 术语框 ---------- */
+.termbox{border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden;margin:16px 0;background:#fbfcfe}
+.termbox .term{display:flex;gap:0;border-top:1px solid var(--line-soft);padding:0}
+.termbox .term:first-child{border-top:none}
+.termbox .term-name{
+  flex:0 0 168px;background:#f3f5f9;padding:11px 14px;font-family:var(--mono);
+  font-size:13px;color:#0a55d6;border-right:1px solid var(--line-soft);line-height:1.5;
+}
+.termbox .term-def{padding:11px 15px;font-size:14px;color:var(--ink-soft)}
+
+/* ---------- callout ---------- */
+.callout{border-radius:var(--radius-sm);padding:14px 18px;margin:18px 0;border:1px solid;position:relative}
+.callout b{display:block;font-size:13px;letter-spacing:.4px;text-transform:uppercase;margin-bottom:4px}
+.callout p{margin:4px 0}
+.callout.essence{background:#fff7ed;border-color:#fed7aa}
+.callout.essence b{color:#c2410c}
+.callout.tip{background:#eefcf3;border-color:#bbf7d0}
+.callout.tip b{color:#15803d}
+.callout.warn{background:#fef2f2;border-color:#fecaca}
+.callout.warn b{color:#b91c1c}
+
+/* ---------- 思考题 ---------- */
+.qa{border:1px dashed #c7b8ff;background:#f7f5ff;border-radius:var(--radius-sm);padding:14px 18px;margin:18px 0}
+.qa .q{font-weight:600;margin:0 0 6px;color:#5b21b6}
+.qa details{margin-top:6px}
+.qa summary{cursor:pointer;color:var(--accent);font-size:14px;font-weight:500;user-select:none;list-style:none}
+.qa summary::-webkit-details-marker{display:none}
+.qa summary::before{content:"▸ ";}
+.qa details[open] summary::before{content:"▾ ";}
+.qa .a{margin-top:10px;padding-top:10px;border-top:1px solid #e4dcff;color:var(--ink-soft);font-size:14.5px}
+.qa .a p:first-child{margin-top:0}
+
+/* ---------- 代码块 ---------- */
+pre{
+  background:var(--code-bg);color:var(--code-ink);border-radius:10px;
+  padding:16px 18px;overflow-x:auto;margin:16px 0;font-size:13.2px;line-height:1.62;
+  border:1px solid #2b3142;position:relative;
+}
+pre code{font-family:var(--mono);white-space:pre}
+pre:has(code.language-swift)::before{
+  content:"swift";position:absolute;top:8px;right:12px;
+  font-family:var(--sans);font-size:10.5px;letter-spacing:.5px;
+  color:#8a93a8;text-transform:uppercase;
+}
+/* Swift 语法高亮配色 */
+.tok-kw{color:#ff7ab2}
+.tok-type{color:#5ec8ff}
+.tok-str{color:#7ee787}
+.tok-com{color:#8a93a8;font-style:italic}
+.tok-num{color:#ffab70}
+.tok-attr{color:#d2a8ff}
+.tok-fn{color:#ffd866}
+
+/* ============================================================
+   mac-kit：用 CSS 近似复刻 AppKit 控件外观
+   ============================================================ */
+.demo{border:1px solid var(--line);border-radius:var(--radius-sm);margin:18px 0;overflow:hidden;background:#f6f7f9}
+.demo-stage{padding:22px;background:
+   linear-gradient(0deg,#f0f2f6,#f0f2f6),
+   repeating-linear-gradient(45deg,transparent,transparent 9px,rgba(0,0,0,.012) 9px,rgba(0,0,0,.012) 18px);
+  display:flex;flex-direction:column;gap:14px}
+.demo-note{margin:0;padding:11px 16px;border-top:1px solid var(--line);background:#fbfcfe;
+  font-size:13px;color:var(--ink-dim)}
+.demo-note b{color:var(--ink-soft)}
+
+/* 窗口 */
+.mac-window{background:#ececec;border:1px solid #c3c5cc;border-radius:11px;overflow:hidden;
+  box-shadow:var(--shadow-win);max-width:560px;width:100%}
+.mac-titlebar{height:38px;display:flex;align-items:center;gap:10px;padding:0 14px;
+  background:linear-gradient(180deg,#fbfbfc,#e9eaee);border-bottom:1px solid #c8cace;position:relative}
+.mac-traffic{display:flex;gap:8px}
+.mac-traffic i{width:12px;height:12px;border-radius:50%;display:block;border:.5px solid rgba(0,0,0,.18)}
+.mac-traffic i:nth-child(1){background:#ff5f57}
+.mac-traffic i:nth-child(2){background:#febc2e}
+.mac-traffic i:nth-child(3){background:#28c840}
+.mac-title{position:absolute;left:0;right:0;text-align:center;font-size:13px;font-weight:600;
+  color:#4b4b4f;pointer-events:none}
+.mac-body{background:#ffffff;padding:20px}
+
+/* 通用控件 */
+.mac-btn{font-family:var(--sans);font-size:13.5px;color:#1d1d1f;background:linear-gradient(180deg,#fff,#f3f3f5);
+  border:1px solid #c4c6cc;border-radius:7px;padding:5px 14px;cursor:pointer;line-height:1.4;
+  box-shadow:0 1px 1px rgba(0,0,0,.04);transition:filter .1s}
+.mac-btn:hover{filter:brightness(.985)}
+.mac-btn:active{filter:brightness(.94)}
+.mac-btn.primary{background:linear-gradient(180deg,#3a86ff,#0a64ff);color:#fff;border-color:#0a55d6;
+  box-shadow:0 1px 2px rgba(10,100,255,.35)}
+.mac-btn:disabled{opacity:.45;cursor:default}
+
+.mac-field{font-family:var(--sans);font-size:13.5px;color:#1d1d1f;background:#fff;
+  border:1px solid #c0c2c8;border-radius:6px;padding:5px 9px;line-height:1.4;
+  box-shadow:inset 0 1px 1.5px rgba(0,0,0,.05);outline:none;min-width:0}
+.mac-field:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,100,255,.22)}
+.mac-textarea{font-family:var(--sans);font-size:13.5px;color:#1d1d1f;background:#fff;
+  border:1px solid #c0c2c8;border-radius:6px;padding:7px 9px;line-height:1.5;resize:vertical;
+  box-shadow:inset 0 1px 1.5px rgba(0,0,0,.05);outline:none;min-height:64px;width:100%}
+.mac-textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(10,100,255,.22)}
+.mac-label{font-size:13.5px;color:#3c3c43}
+
+.mac-check,.mac-radio{display:inline-flex;align-items:center;gap:7px;font-size:13.5px;color:#1d1d1f;cursor:pointer;user-select:none}
+.mac-check input,.mac-radio input{width:15px;height:15px;accent-color:var(--accent);margin:0}
+
+/* NSSwitch */
+.mac-switch{display:inline-flex;align-items:center;cursor:pointer}
+.mac-switch input{display:none}
+.mac-switch span{width:38px;height:22px;background:#c9ccd2;border-radius:999px;position:relative;transition:background .2s}
+.mac-switch span::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;background:#fff;
+  border-radius:50%;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:left .2s}
+.mac-switch input:checked + span{background:#28c840}
+.mac-switch input:checked + span::after{left:18px}
+
+.mac-range{-webkit-appearance:none;appearance:none;height:4px;border-radius:3px;background:#c9ccd2;outline:none;cursor:pointer}
+.mac-range::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;
+  background:#fff;border:.5px solid #b6b8bf;box-shadow:0 1px 3px rgba(0,0,0,.3);cursor:pointer}
+
+.mac-select{font-family:var(--sans);font-size:13.5px;color:#1d1d1f;
+  background:linear-gradient(180deg,#fff,#f3f3f5);border:1px solid #c4c6cc;border-radius:7px;
+  padding:5px 28px 5px 10px;cursor:pointer;line-height:1.4;
+  appearance:none;-webkit-appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='14' viewBox='0 0 10 14'%3E%3Cpath fill='%230a64ff' d='M5 0l4 5H1zM5 14l4-5H1z'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 9px center;box-shadow:0 1px 1px rgba(0,0,0,.04)}
+
+.mac-seg{display:inline-flex;border:1px solid #c4c6cc;border-radius:7px;overflow:hidden;
+  background:#f3f3f5;box-shadow:0 1px 1px rgba(0,0,0,.04)}
+.mac-seg button{font-family:var(--sans);font-size:13px;color:#1d1d1f;background:transparent;border:none;
+  border-left:1px solid #d2d4da;padding:5px 14px;cursor:pointer;line-height:1.4}
+.mac-seg button:first-child{border-left:none}
+.mac-seg button.on{background:linear-gradient(180deg,#3a86ff,#0a64ff);color:#fff}
+
+.mac-progress{-webkit-appearance:none;appearance:none;width:100%;height:6px;border-radius:4px;overflow:hidden;border:none}
+.mac-progress::-webkit-progress-bar{background:#d4d6dc;border-radius:4px}
+.mac-progress::-webkit-progress-value{background:var(--accent);border-radius:4px}
+
+.mac-box{border:1px solid #cfd1d7;border-radius:8px;padding:14px 16px 16px;margin:0;background:#fcfcfd}
+.mac-box-title{font-size:12.5px;font-weight:600;color:#6e6e73;padding:0 6px}
+
+/* 表格 */
+.mac-table{border:1px solid #c8cace;border-radius:7px;overflow:hidden;background:#fff;font-size:13.5px}
+.mac-thead{display:flex;background:linear-gradient(180deg,#fafafb,#f0f0f2);border-bottom:1px solid #d6d8dd;
+  font-weight:600;color:#5c5c61;font-size:12.5px}
+.mac-tr{display:flex;border-top:1px solid #eef0f3;cursor:default}
+.mac-tr:first-child{border-top:none}
+.mac-tr:nth-child(even of .mac-tr){background:#fafbfc}
+.mac-table .mac-td{flex:1;padding:6px 12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mac-thead .mac-td{padding:5px 12px}
+.mac-tr.selected{background:var(--sel)!important;color:#fff}
+
+/* 大纲 */
+.mac-outline{border:1px solid #c8cace;border-radius:7px;background:#f4f6f9;padding:6px;font-size:13.5px;min-width:220px}
+.mac-node{display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:5px;cursor:default;color:#2c2c2e}
+.mac-node:hover{background:#e6eaf0}
+.mac-node.sel{background:var(--sel);color:#fff}
+.mac-disclosure{font-size:9px;color:#8a8a8e;width:12px;display:inline-block;transition:transform .15s;cursor:pointer}
+.mac-node.sel .mac-disclosure{color:#fff}
+.mac-children{padding-left:18px}
+
+/* 布局辅助 */
+.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.col{display:flex;flex-direction:column;gap:10px}
+.gap{gap:14px}.gap-sm{gap:7px}
+.fill{flex:1 1 auto}
+.center{justify-content:center;align-items:center}
+
+/* demo 内常用的实时输出区 */
+.demo-output{font-family:var(--mono);font-size:12.5px;background:#1e2230;color:#cfe3ff;
+  border-radius:7px;padding:10px 13px;line-height:1.6;white-space:pre-wrap;word-break:break-word}
+.demo-output .k{color:#8a93a8}
+.demo-output .v{color:#7ee787}
+
+/* 移动端 */
+.menu-toggle{display:none}
+@media(max-width:920px){
+  .layout{flex-direction:column;padding:0 14px}
+  .sidebar{position:static;height:auto;width:100%;flex:none;
+    padding:12px;background:var(--panel);border:1px solid var(--line-soft);border-radius:12px;margin-top:14px}
+  .toc{display:none}
+  .toc.open{display:block}
+  .menu-toggle{display:inline-flex;align-items:center;gap:8px;cursor:pointer;
+    background:none;border:none;font-size:15px;font-weight:600;color:var(--ink)}
+  .progress-rail{display:none}
+  .chapter{padding:22px 18px}
+  .hero{padding:28px 22px}
+  .hero h1{font-size:24px}
+  .termbox .term{flex-direction:column}
+  .termbox .term-name{flex-basis:auto;border-right:none;border-bottom:1px solid var(--line-soft)}
+}
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <h1>AppKit 入门</h1>
+    <p class="subtitle">从零到一 · 程序化（现代）写法</p>
+    <button class="menu-toggle" id="menuToggle">☰ 目录</button>
+    <nav>
+      <ul class="toc" id="toc">
+        <li><a href="#ch-1"><span class="num">1</span><span>心智模型与核心术语</span></a></li>
+        <li><a href="#ch-2"><span class="num">2</span><span>应用骨架：入口到窗口</span></a></li>
+        <li><a href="#ch-3"><span class="num">3</span><span>视图与坐标系</span></a></li>
+        <li><a href="#ch-4"><span class="num">4</span><span>布局全景：四种摆放</span></a></li>
+        <li><a href="#ch-5"><span class="num">5</span><span>常用控件与 Target-Action</span></a></li>
+        <li><a href="#ch-6"><span class="num">6</span><span>列表与数据驱动</span></a></li>
+        <li><a href="#ch-7"><span class="num">7</span><span>事件、响应链与委托</span></a></li>
+        <li><a href="#ch-8"><span class="num">8</span><span>综合实战 + 思考题</span></a></li>
+      </ul>
+    </nav>
+    <div class="progress-rail"><i id="progBar"></i></div>
+  </aside>
+
+  <main class="content">
+    <header class="hero">
+      <h1>AppKit 入门：从零到一</h1>
+      <p>AppKit 是 macOS 的原生用户界面框架。这份教程用现代的「纯代码 + 控制器」写法，配合可交互演示，带你从最朴素的直觉一步步理解一个 Mac 应用是怎么搭起来的。每一章都有代码、对应的可点效果，以及一道帮你打通本质的思考题。</p>
+      <div class="meta">
+        <span class="pill">Swift · 程序化 AppKit</span>
+        <span class="pill">面向零基础</span>
+        <span class="pill">每章可交互演示</span>
+        <span class="pill">含进阶思考题</span>
+      </div>
+    </header>
+
+    <section class="chapter" id="ch-1">
+<h2 data-n="1">心智模型与核心术语</h2>
+<p class="lead">在写第一行代码之前，先在脑子里装一张地图。AppKit 的世界由“一个应用 + 若干窗口 + 一棵视图树”构成，被一个永不停歇的“事件循环”驱动着转。这一章不写复杂代码，只帮你把这些名词从陌生符号变成你能“看见”的东西——之后所有章节都是在这张地图上添砖加瓦。</p>
+
+<h3>1. AppKit 是什么</h3>
+<p><b>AppKit</b> 是苹果为 macOS 提供的原生图形界面框架：你屏幕上 Mac 程序里的窗口、菜单栏、按钮、文本框、表格、滚动条……几乎都是它画出来、管起来的。你可以用 Swift 或 Objective-C 来调用它。</p>
+<p>它有个“老灵魂”。你很快会注意到 AppKit 里的类名几乎都以 <code>NS</code> 开头：<code>NSWindow</code>、<code>NSView</code>、<code>NSButton</code>……这个 <code>NS</code> 不是随便取的，它是 <b>NeXTSTEP</b> 的缩写——乔布斯 1985 年离开苹果后创立的 NeXT 公司所做的操作系统。1996 年底苹果收购 NeXT，把 NeXTSTEP 的技术变成了后来 macOS 的基础，那套界面框架也一路沿用下来，类名前缀就这样保留成了历史的“指纹”。所以当你看到 <code>NS</code>，可以读作“这是从 NeXTSTEP 一脉相承下来的老牌、稳定的 API”。</p>
+
+<div class="termbox">
+  <div class="term"><b class="term-name">AppKit</b><span class="term-def">macOS 的原生 UI 框架，负责窗口、控件、事件、绘制与应用生命周期。用 Swift / Objective-C 调用。</span></div>
+  <div class="term"><b class="term-name">NS 前缀</b><span class="term-def">类名前的 <code>NS</code> 源自 NeXTSTEP（NeXT 公司的操作系统，后被苹果收购并成为 macOS 的技术源头），是历史命名习惯。</span></div>
+  <div class="term"><b class="term-name">框架（Framework）</b><span class="term-def">苹果打包好的一整套现成代码库；你不必从零造轮子，<code>import</code> 进来就能直接用它定义的类。</span></div>
+</div>
+
+<h4>它和 SwiftUI 是什么关系</h4>
+<p><b>SwiftUI</b> 是苹果 2019 年推出的更新、更“声明式”的界面框架。打个比方：如果说 AppKit 是让你“亲手把每块砖摆到位”（命令式：先创建按钮，再设置标题，再加到窗口里），那么 SwiftUI 更像是“你描述墙长什么样，系统去帮你砌”（声明式：你写 <code>Button("点我")</code>，框架决定怎么落地）。</p>
+<div class="termbox">
+  <div class="term"><b class="term-name">命令式（imperative）</b><span class="term-def">你一步步下达指令：创建谁、改谁的属性、把谁加到哪。怎么变、何时变都由你亲手安排。AppKit 是这种风格。</span></div>
+  <div class="term"><b class="term-name">声明式（declarative）</b><span class="term-def">你只描述“在某个数据状态下界面应该长什么样”，由框架负责把界面同步成那个样子。SwiftUI 是这种风格。</span></div>
+</div>
+<p>关键事实：<b>在 macOS 上，SwiftUI 的很多控件底层其实就是由 AppKit 支撑的</b>——你写一个 SwiftUI 的侧边栏列表，系统内部很可能用的就是 AppKit 的表格/大纲视图。两者也能互相嵌套（用 <code>NSHostingView</code> 把 SwiftUI 塞进 AppKit，用 <code>NSViewRepresentable</code> 把 AppKit 塞进 SwiftUI）。</p>
+<div class="callout tip"><b>本教程的选择</b><p>本教程聚焦 <b>AppKit</b>。原因有二：一是它能让你看清 UI 框架“底下到底发生了什么”（这套心智模型对理解 SwiftUI 也极有帮助）；二是在需要精细控制窗口、性能、事件时机的场景里，AppKit 往往是不可替代的。学会 AppKit，你就握住了 macOS 界面的“地基”。</p></div>
+
+<h3>2. 对象模型的三大基石</h3>
+<p>无论一个 AppKit 程序多复杂，它的骨架永远是这三个对象，从大到小、从外到内层层包裹，最终连成一棵 <b>对象树</b>：</p>
+<div class="termbox">
+  <div class="term"><b class="term-name">NSApplication</b><span class="term-def">应用的“总管”，整个进程里<b>只有一个</b>（单例），通过全局变量 <code>NSApp</code> 或 <code>NSApplication.shared</code> 拿到。它负责取系统事件并分发、管理所有窗口、驱动主事件循环。</span></div>
+  <div class="term"><b class="term-name">NSWindow</b><span class="term-def">屏幕上的一扇窗口。它有标题栏区域和一块“内容区域”；事件先送到窗口，再由窗口找到合适的视图来处理。</span></div>
+  <div class="term"><b class="term-name">NSView</b><span class="term-def">视图——窗口里负责“画一块矩形区域 + 响应这块区域里事件”的基本单元，是 AppKit 里最常见的对象。按钮、文本框都是 <code>NSView</code> 的子类。</span></div>
+</div>
+<p>它们怎么连成一棵树？打个比方，像俄罗斯套娃：</p>
+<ul>
+  <li><b>NSApplication</b>（唯一的总管）→ 管理着若干 <b>NSWindow</b>。</li>
+  <li>每个 <b>NSWindow</b> 有一个 <b>内容视图</b>（content view），它是这扇窗里视图树的顶端。</li>
+  <li>内容视图里再放更多 <b>NSView</b>。官方的说法是：每个视图都有一个 <b>父视图（superview）</b>，并可以拥有任意多个 <b>子视图（subview）</b>，它们连接成一个 <b>视图层级（view hierarchy）</b>。</li>
+</ul>
+<p>本质上，“界面长什么样”就等于“这棵对象树长什么样”。你之后写的每一行界面代码，做的事都可以归结为：<i>往这棵树上加节点、改节点、或删节点</i>。</p>
+
+<h3>3. AppKit 是个 MVC 框架</h3>
+<p>AppKit 的设计遵循 <b>MVC</b>（Model-View-Controller）模式。逐词拆开看：</p>
+<div class="termbox">
+  <div class="term"><b class="term-name">M — Model（模型）</b><span class="term-def">你的“数据与业务逻辑”。比如一份待办清单的内容、一个文档的文字。它不关心界面长什么样。</span></div>
+  <div class="term"><b class="term-name">V — View（视图）</b><span class="term-def">“看得见、点得到”的界面部分，负责显示数据、接收用户操作。对应 <code>NSView</code> 及其子类。</span></div>
+  <div class="term"><b class="term-name">C — Controller（控制器）</b><span class="term-def">夹在 M 和 V 中间的“协调员”：把模型的数据摆到视图上，把视图上的操作翻译成对模型的修改。AppKit 里常用 <code>NSViewController</code> 充当它。</span></div>
+</div>
+<p>对照一下：SwiftUI 是<b>声明式</b>的，你描述“在某个数据状态下界面应该是什么样”，由框架负责保持同步；AppKit 是<b>命令式 + MVC</b> 的，当数据变了，你要明确地“亲手去更新对应的视图”。本教程会用 <code>NSViewController</code> 来组织界面，正是扮演那个 C 的角色。</p>
+
+<h3>4. 主线程与 RunLoop 的直觉</h3>
+<p>这是初学者最容易忽略、却最关键的一条心智模型。两句话先记住：</p>
+<p><b>第一，UI 必须在主线程上操作。</b>所有创建窗口、改控件、刷新界面的代码，都只能在 <b>主线程（main thread）</b> 跑。别的线程去碰 UI，行为是未定义的（轻则不刷新，重则崩溃）。</p>
+<p><b>第二，你的程序不是“从头跑到尾就结束”，而是被一个事件循环驱动着等待 → 响应 → 再等待。</b>这个循环就是 <b>RunLoop（运行循环）</b>；应用启动时由 <code>NSApplication</code> 调用 <code>run()</code> 把它转起来，这条专门处理用户事件的循环称为 <b>主事件循环（main event loop）</b>。</p>
+<p>一次完整的“点一下”在内部是这样走的：</p>
+<ol>
+  <li>你点了一下鼠标 → <b>窗口服务器（window server，macOS 负责合成画面与采集输入的系统进程）</b> 产生一个底层事件。</li>
+  <li>事件被放进应用的一个 <b>先进先出的事件队列（event queue）</b> 排队。</li>
+  <li><code>NSApplication</code> 从队头取出事件，把它表示成一个 <b><code>NSEvent</code></b> 对象。</li>
+  <li>它把这个事件 <b>分发给事件发生的那扇 NSWindow</b>。</li>
+  <li>窗口再找到“最该处理它的那个视图”（鼠标事件→指针下方的视图；键盘事件→第一响应者），<b>回调你写的代码</b>。</li>
+  <li>你的代码处理完、控制权交还，应用就去取下一个事件——如此往复，直到应用退出。</li>
+</ol>
+<div class="termbox">
+  <div class="term"><b class="term-name">主线程（main thread）</b><span class="term-def">程序里专门跑 UI 与事件处理的那条执行线索。一切界面操作必须在它上面进行。</span></div>
+  <div class="term"><b class="term-name">RunLoop / 主事件循环</b><span class="term-def">主线程上一个“取事件 → 分发 → 等下一个”的循环。由 <code>NSApplication.run()</code> 启动并持续运行。</span></div>
+  <div class="term"><b class="term-name">第一响应者（first responder）</b><span class="term-def">当前“握着键盘焦点”的那个视图。键盘事件优先送给它（比如正在输入的文本框）。</span></div>
+  <div class="term"><b class="term-name">NSEvent</b><span class="term-def">一次用户输入（点击、按键、滚轮等）被表示成的事件对象。</span></div>
+  <div class="term"><b class="term-name">事件队列（event queue）</b><span class="term-def">底层事件排队等待处理的先进先出缓冲区，保证按到达顺序逐个处理。</span></div>
+</div>
+<div class="callout tip"><b>为什么“卡住主线程”会让界面冻住</b><p>因为界面刷新和事件处理都靠主线程的这个循环。如果你在主线程上做了很耗时的事（比如同步下载一个大文件），循环就转不动了——取不到新事件、画不了新帧，窗口就“转菊花/无响应”。这也是后面所有“耗时操作放到后台线程、改 UI 再切回主线程”规矩的根源。</p></div>
+
+<h3>5. 三大协作模式预告</h3>
+<p>“事件回调你的代码”具体怎么回调？AppKit 反复用到三种约定俗成的模式。这里只点名，后续章节各有专章细讲：</p>
+<div class="termbox">
+  <div class="term"><b class="term-name">target-action（目标-动作）</b><span class="term-def">控件被触发时，向一个指定的“目标对象（target）”发送一条“动作消息（action）”。比如：按钮被点 → 调用 <code>self</code> 的某个方法。最常用于按钮、菜单。</span></div>
+  <div class="term"><b class="term-name">delegate（委托）</b><span class="term-def">一个对象把“某些决策/通知”委托给另一个对象处理。比如窗口即将关闭时，先问它的委托“该不该关”。是“问一问、报一报”式的一对一协作。</span></div>
+  <div class="term"><b class="term-name">dataSource（数据源）</b><span class="term-def">表格/列表这类视图不自己存数据，而是反过来向“数据源”对象索要：一共几行？第 3 行该显示什么？把“数据”和“显示”解耦。</span></div>
+</div>
+<p>记住一句话就够了：<b>target-action 是“我被点了，我来通知你”；delegate 是“做决定前，我先问你”；dataSource 是“要显示了，我来问你要数据”。</b></p>
+
+<h3>6. 用代码看一眼这棵树</h3>
+<p>下面是一段最小、现代、纯程序化（不依赖 Storyboard/xib）的代码，把本章的概念落地：一个 <code>NSViewController</code> 充当控制器（C），在它的内容视图（V）里用 <b>Auto Layout</b> 摆一个标题和一个按钮，按钮用 <b>target-action</b> 绑定点击。读的时候，对照前面那棵“对象树”和那条“事件循环”。</p>
+<pre><code class="language-swift">import AppKit
+
+// 控制器（MVC 里的 C）：负责把界面搭起来，并接住用户操作。
+final class GreetingViewController: NSViewController {
+
+    // 不连 Storyboard 时，必须自己提供 view，它是这一层视图树的根（content view）。
+    override func loadView() {
+        view = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 160))
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        // 一个标签：NSTextField 在“只读 + 无边框”的便捷初始化器下当标签用。
+        let titleLabel = NSTextField(labelWithString: "你好，AppKit")
+        titleLabel.font = .systemFont(ofSize: 20, weight: .semibold)
+
+        // 一个按钮：用 target-action 绑定点击事件。
+        // target 指向 self（本控制器），action 指向下面的 sayHello 方法。
+        // 默认就是标准的圆角推送按钮，无需再设 bezelStyle。
+        let button = NSButton(title: "打个招呼", target: self, action: #selector(sayHello))
+        button.keyEquivalent = "\r"   // 让回车键也能触发，它便成为“默认蓝”按钮
+
+        // 用 NSStackView 做纵向布局，省去逐条手写约束。
+        let stack = NSStackView(views: [titleLabel, button])
+        stack.orientation = .vertical
+        stack.spacing = 16
+        // 关键：用 Auto Layout 时必须关掉自动转换的旧式约束，否则约束会打架。
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        view.addSubview(stack)   // 把 stack 挂到视图树上：view 是 superview，stack 是 subview
+
+        // 用 anchors 把 stack 居中固定在内容视图里。
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+        ])
+    }
+
+    // target-action 的“action”：按钮被点击时，事件循环最终回调到这里。
+    // 现代 AppKit 里仍需 @objc，因为 action 通过 Objective-C 的消息机制派发。
+    @objc private func sayHello() {
+        // 这一句运行在主线程上 —— 因为事件循环本就跑在主线程。
+        print("按钮被点击了！事件已从 NSEvent 一路分发到这个方法。")
+    }
+}
+</code></pre>
+<p>把它对回地图：<code>NSViewController</code> 是 C；它的 <code>view</code> 是这一层视图树的根（V）；<code>titleLabel</code> 和 <code>button</code> 是挂在树上的子视图；点击按钮时，<code>NSApplication</code> 取到 <code>NSEvent</code> → 分发给窗口 → 命中按钮 → 通过 target-action 回调 <code>sayHello()</code>。整条链路你现在都能叫出名字了。</p>
+
+<h3>7. 动手摸一摸：窗口解剖图</h3>
+<p>下面这张图是一扇“近似成品”的 macOS 窗口。<b>点击不同的层</b>（应用层标注 / 窗口 / 内容视图 / 里面的控件），它会高亮被点中的那一层，并在下方解释这个术语。请边点边把它和前面那段代码、那棵对象树对应起来。</p>
+<div class="demo">
+  <div class="demo-stage">
+    <div class="col gap">
+      <button class="mac-btn" id="ch1-layer-app" style="align-self:flex-start;">① NSApplication（应用层 · 单例 · 点这里）</button>
+      <div class="mac-window" id="ch1-layer-window" style="max-width:420px;">
+        <div class="mac-titlebar">
+          <span class="mac-traffic"><i></i><i></i><i></i></span>
+          <span class="mac-title">GreetingWindow</span>
+        </div>
+        <div class="mac-body" id="ch1-layer-content">
+          <div class="col gap center" style="padding:8px 0;">
+            <span class="mac-label" style="font-size:16px;font-weight:600;" id="ch1-layer-label">你好，AppKit</span>
+            <button class="mac-btn primary" id="ch1-layer-button">打个招呼</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="demo-note" id="ch1-note">点击上面任意一层，这里会显示它对应代码里的哪个对象、是哪一级“套娃”。</p>
+</div>
+<script>
+(function () {
+  var note = document.getElementById("ch1-note");
+  // 每一层：对应的 DOM、以及与上方 Swift 代码的对应说明
+  var layers = {
+    "ch1-layer-app": {
+      el: document.getElementById("ch1-layer-app"),
+      text: "NSApplication —— 整个进程唯一的“总管”（NSApp / NSApplication.shared）。它驱动主事件循环，并管理下面这扇窗口。代码里你不直接写它，但你的按钮点击事件，就是由它取出 NSEvent 再分发下来的。"
+    },
+    "ch1-layer-window": {
+      el: document.getElementById("ch1-layer-window"),
+      text: "NSWindow —— 屏幕上的一扇窗口。标题栏 + 红绿灯按钮 + 下方内容区都属于它。事件先送到这扇窗口，再由它转交给合适的视图。"
+    },
+    "ch1-layer-content": {
+      el: document.getElementById("ch1-layer-content"),
+      text: "内容视图（content view，一个 NSView）—— 窗口里视图树的“顶端”。对应代码里 NSViewController 的 view；代码中我们往它上面 addSubview 了一个 NSStackView，标签和按钮再挂在 stack 里。"
+    },
+    "ch1-layer-label": {
+      el: document.getElementById("ch1-layer-label"),
+      text: "NSTextField（当标签用）—— 一个 NSView 子类，负责显示文字“你好，AppKit”。对应代码里的 titleLabel，它是 stack 的一个 subview。"
+    },
+    "ch1-layer-button": {
+      el: document.getElementById("ch1-layer-button"),
+      text: "NSButton —— 也是 NSView 的子类。点它时，事件经 NSApplication → NSWindow 一路分发，最终通过 target-action 回调 sayHello() 方法。这就是“点一下 → 进事件循环 → 回调你的代码”。"
+    }
+  };
+  function clear() {
+    for (var k in layers) {
+      layers[k].el.style.outline = "";
+      layers[k].el.style.outlineOffset = "";
+    }
+  }
+  function pick(key, evt) {
+    if (evt) evt.stopPropagation(); // 防止点内层时同时触发外层（套娃嵌套）
+    clear();
+    var L = layers[key];
+    L.el.style.outline = "2px solid #0a64ff";
+    L.el.style.outlineOffset = "2px";
+    note.textContent = L.text;
+  }
+  for (var key in layers) {
+    (function (k) {
+      layers[k].el.addEventListener("click", function (e) { pick(k, e); });
+    })(key);
+  }
+})();
+</script>
+<p>注意到了吗？点最里层的“打个招呼”按钮时，它只高亮按钮自己——但事件其实是从最外的 <code>NSApplication</code> 一层层传进来的。这正是 demo 想让你“看见”的：<b>界面是一棵嵌套的树，事件从外向内分发，最后回调到你写的那个方法。</b>这与上面 Swift 代码里 target-action 绑定 <code>sayHello()</code> 一一对应。</p>
+
+<div class="callout essence"><b>本质</b><p>一个 AppKit 程序 = <b>一棵对象树</b>（NSApplication → 若干 NSWindow → 每扇窗的 NSView 视图层级）+ <b>一个事件循环</b>（主线程上 <code>NSApplication.run()</code> 不停地：取 NSEvent → 分发给窗口 → 命中视图 → 回调你的代码）。你后续学的一切——加控件、做布局、响应点击、加载数据——本质都是“往这棵树上动手脚”和“在循环回调你时填上你的逻辑”这两件事。把这张地图记牢，后面就不会迷路。</p></div>
+
+<div class="qa">
+  <p class="q">思考题：为什么“在后台线程下载完文件后，直接在那个后台线程里更新窗口上的文字”是错误的做法？请用本章的两条心智模型来解释。</p>
+  <details><summary>查看答案</summary>
+  <div class="a">
+    <p>因为本章第 4 节的第一条规则：<b>所有 UI 操作必须在主线程进行</b>。窗口、视图（<code>NSView</code>/<code>NSTextField</code>）都不是线程安全的，后台线程去改它们属于未定义行为，可能不刷新、显示错乱，甚至崩溃。</p>
+    <p>更深一层（第二条心智模型）：界面的刷新与事件处理都依赖<b>主线程上的那个事件循环</b>。视图状态的改动需要被这个循环纳入下一帧的绘制，而后台线程根本不在这个循环里。正确做法是：耗时下载放后台线程，拿到结果后把“更新文字”这一步切回主线程执行（例如 <code>DispatchQueue.main.async { ... }</code>），让它回到事件循环的轨道上。</p>
+  </div>
+  </details>
+</div>
+</section>
+
+<section class="chapter" id="ch-2">
+<h2 data-n="2">应用骨架：从入口到一个窗口</h2>
+<p class="lead">每一个 macOS 应用，剥到最里面，都是同一副骨架：一个"应用本体"在后台不停地转圈听消息，前台摆着一块或几块"玻璃壳"——也就是窗口。本章我们从程序的第一行代码出发，一步步搭出这副骨架：搞清楚谁是应用、谁在听消息、窗口又是怎么被造出来并显示到屏幕上的。读完你会明白，所谓"启动应用"和"打开窗口"是两件完全不同的事。</p>
+
+<h3>2.1 应用只有一个：NSApplication</h3>
+
+<p>先打个比方。把一个 macOS 应用想象成一家餐厅：餐厅本身（招牌、营业执照、那个一直在前台接待的经理）<b>只有一个</b>；而餐厅里的<b>桌子</b>可以有很多张，客人来了摆一张，走了收一张。在 AppKit 里，这家"餐厅"就是 <code>NSApplication</code>，而每一张"桌子"就是一个窗口 <code>NSWindow</code>。</p>
+
+<p>整个应用进程里，<code>NSApplication</code> 的实例<b>有且只有一个</b>（术语叫"单例 / singleton"）。你不会自己去 <code>new</code> 它，而是通过一个全局入口拿到这个唯一的实例：</p>
+
+<div class="termbox">
+  <div class="term"><b class="term-name">单例（Singleton）</b><span class="term-def">一个类在整个程序里只允许存在一个实例，所有人都通过同一个全局入口访问它。<code>NSApplication.shared</code> 第一次被访问时创建那个唯一实例，以后每次返回的都是同一个；在代码里也常写作 <code>NSApp</code>（同一个对象的简写）。</span></div>
+  <div class="term"><b class="term-name">事件循环（Event Loop / Run Loop）</b><span class="term-def">应用启动后进入的一个"永不停歇的圈"：不断地向系统要事件（鼠标点击、键盘敲击、窗口缩放……），拿到后分发给对应的窗口和视图处理，处理完再回头继续要下一个。它是应用"活着"的标志。</span></div>
+</div>
+
+<p>这个唯一实例最核心的工作，就是跑<b>事件循环</b>。启动它的方法是 <code>run()</code>：调用之后程序就钻进了那个"永不停歇的圈"里，不停地接收事件、用 <code>sendEvent(_:)</code> 把事件派发给该处理它的窗口/视图，直到你调用 <code>terminate(_:)</code> 让它退出。</p>
+
+<p>下面这段代码展示的是"程序化路线"最赤裸的心智模型——假设你新建了一个名叫 <code>main.swift</code> 的文件（这是 Swift 里唯一允许写顶层可执行语句的文件名），手动把这几步串起来：</p>
+
+<pre><code class="language-swift">import AppKit
+
+// NSApplication.shared 拿到的永远是同一个应用单例
+let app = NSApplication.shared
+
+// 给应用装一个"代理"（下一节讲），它会在关键时刻被回调
+app.delegate = AppDelegate()
+
+// 让应用以普通带 Dock 图标的方式激活
+app.setActivationPolicy(.regular)
+
+// 进入事件循环。这一行不会"返回"——程序从此活在循环里，
+// 直到用户退出。可以把它理解为"餐厅开始营业，经理开始接待"。
+app.run()</code></pre>
+
+<div class="callout tip">
+<b>提示</b>
+<p>注意 <code>run()</code> 这一行"不会返回"——它不是普通函数调用完就往下走，而是一头扎进循环里。写在 <code>run()</code> 后面的代码，要等应用退出后才会执行。这正是"应用一直活着"的代码体现。</p>
+</div>
+
+<h3>2.2 入口怎么写：@main 与现代/传统两条路</h3>
+
+<p>程序总得有个"第一行代码从哪开始执行"的起点，这就是<b>入口</b>。在 AppKit 的世界里，入口有几种写法，你选一条就好——但要注意：<code>@main</code> 标记和上面那种顶层语句<b>二选一</b>，不能同时用（编译器只认一个 main）。</p>
+
+<div class="termbox">
+  <div class="term"><b class="term-name">@main</b><span class="term-def">Swift 的属性标记，贴在某个类型上，告诉编译器"程序从这里开始跑"。它替你生成了真正的 main 入口函数。一个程序里只能有一个 <code>@main</code>。</span></div>
+  <div class="term"><b class="term-name">@NSApplicationDelegateAdaptor</b><span class="term-def">SwiftUI 提供的桥，写在 SwiftUI 的 <code>App</code> 结构体里，把一个传统的 AppKit <code>NSApplicationDelegate</code> 接进来。等于"用 SwiftUI 的外壳，包住一个 AppKit 的内核"。</span></div>
+  <div class="term"><b class="term-name">NSApplicationMain</b><span class="term-def">传统 AppKit 入口：贴 <code>@main</code> 在你的 <code>AppDelegate</code> 上，由 AppKit 自动创建应用单例、装好代理、调用 <code>run()</code> 一条龙（早期是手写 <code>main.swift</code> 调用 <code>NSApplicationMain(...)</code> 函数，现在用 <code>@main</code> 标记代替）。</span></div>
+</div>
+
+<p>三条路本质做的是同一件事：<b>创建应用单例 → 装上代理 → 调 run() 进入事件循环</b>。区别只在"谁来替你写这几步"：</p>
+
+<ul>
+<li><b>现代 SwiftUI 包 AppKit</b>：用 <code>@main struct CCTermApp: App</code>（这里的 <code>App</code> 是 SwiftUI 的协议），配合 <code>@NSApplicationDelegateAdaptor(AppDelegate.self)</code> 把 AppKit 代理接进来。本项目（CCTerm）走的就是这条——SwiftUI 当外壳，真正的窗口和界面交给 AppKit。</li>
+<li><b>传统纯 AppKit</b>：在 <code>AppDelegate</code> 上贴 <code>@main</code>，由系统自动完成上面那一套。</li>
+<li><b>完全程序化</b>：自己写一个 <code>main.swift</code>，手动 <code>NSApplication.shared</code> → <code>app.delegate = ...</code> → <code>app.run()</code>，就是 2.1 那段代码。</li>
+</ul>
+
+<p><b>本教程的所有示例走"程序化路线"</b>：所有窗口、视图都用代码创建，不用 Storyboard、不用 xib（这两者是 Xcode 里用鼠标拖拽界面、再存成文件的可视化方案）。不走那条路的理由很简单——代码<b>可读、可 diff、可控</b>。界面长什么样、布局怎么写，全在 Swift 文件里看得见、改得动、能进版本管理对比，不会藏在一个拖出来的、人眼难读的文件里。（Storyboard / xib 当然存在，也有它的舞台，本教程只是不走那条路。）</p>
+
+<h3>2.3 谁在关键时刻被叫到：NSApplicationDelegate</h3>
+
+<p>应用单例自己只管"跑循环"，但它跑到一些关键节点时（启动完成了、快退出了……）需要通知"业主"来做点事。这个"业主"就是<b>代理（delegate）</b>——一个遵守 <code>NSApplicationDelegate</code> 协议的对象，被赋值给 <code>app.delegate</code>。</p>
+
+<div class="termbox">
+  <div class="term"><b class="term-name">代理 / 委托（Delegate）</b><span class="term-def">一种回调模式：A 在特定时机"回头喊一声"B，把决定权或后续动作交给 B。这样不用改 A 的源码、也不用去继承 A，就能定制行为。<code>NSApplication</code> 通过代理把生命周期事件交给你处理，你不需要去继承 <code>NSApplication</code>。</span></div>
+  <div class="term"><b class="term-name">生命周期（Lifecycle）</b><span class="term-def">应用从启动、激活、隐藏到退出的一系列阶段。每个阶段都有对应的代理方法被回调。</span></div>
+  <div class="term"><b class="term-name">协议（Protocol）</b><span class="term-def">一份"方法清单/契约"。某类型声明"遵守"某协议，就承诺实现清单上的方法。<code>NSApplicationDelegate</code> 列出的就是各生命周期回调，你按需实现其中几个即可。</span></div>
+</div>
+
+<p>最重要的一个回调是 <code>applicationDidFinishLaunching(_:)</code>：它在应用<b>启动流程全部完成之后</b>被调用一次。这是"造主窗口、把它显示出来"的标准时机。</p>
+
+<pre><code class="language-swift">import AppKit
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+
+    // 持有窗口控制器，避免它被提前释放（下一节解释为什么用控制器）
+    var mainWindowController: MainWindowController?
+
+    // 启动流程跑完后，系统回调这里。我们在这里造窗口、显示窗口。
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        let controller = MainWindowController()
+        self.mainWindowController = controller   // 先攥住，再显示
+        controller.showWindow(nil)               // 加载窗口并推到最前、变成 key 窗口
+    }
+
+    // 关掉最后一个窗口时，是否顺带退出整个应用。
+    // 返回 true：窗口全关了 = 应用退出（很多文档型/工具型 app 的习惯）
+    func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -&gt; Bool {
+        true
+    }
+
+    // 应用即将退出前的最后一站，适合做收尾（保存状态等）
+    func applicationWillTerminate(_ notification: Notification) {
+        // 收尾工作写这里
+    }
+}</code></pre>
+
+<div class="callout warn">
+<b>注意</b>
+<p>上面把 <code>mainWindowController</code> 存成了 <code>AppDelegate</code> 的属性。这一步不是凑数——如果你只在 <code>applicationDidFinishLaunching</code> 里造一个局部变量，方法一返回它就没人引用、被回收，窗口也跟着消失了。让代理"攥住"控制器，窗口才活得下来。</p>
+</div>
+
+<h3>2.4 程序化造一个窗口：NSWindow</h3>
+
+<p>现在来造那张"桌子"。窗口由 <code>NSWindow</code> 表示，它的指定初始化器是 <code>init(contentRect:styleMask:backing:defer:)</code>。四个参数里，<code>styleMask</code> 最值得一讲。</p>
+
+<div class="termbox">
+  <div class="term"><b class="term-name">styleMask（样式掩码）</b><span class="term-def">一个"选项集合"（<code>OptionSet</code>），用 <code>[ ... ]</code> 把若干开关组合起来，决定窗口长什么样、有哪些能力。常见开关：<code>.titled</code> 有标题栏、<code>.closable</code> 有关闭按钮、<code>.resizable</code> 可缩放、<code>.miniaturizable</code> 可最小化、<code>.borderless</code> 无边框（不能和 <code>.titled</code> 一起用）。</span></div>
+  <div class="term"><b class="term-name">contentViewController</b><span class="term-def">窗口的内容视图控制器。给它赋值，窗口就用这个控制器的 <code>view</code> 当自己的内容区——这就是"以控制器为单位组织界面"的接口。</span></div>
+</div>
+
+<p>左上角那三颗"红黄绿"交通灯按钮，其实就是 <code>styleMask</code> 里几个开关的直接产物：<code>.closable</code> 点亮红灯（关闭）、<code>.miniaturizable</code> 点亮黄灯（最小化）、<code>.resizable</code> 点亮绿灯（缩放/全屏）。没开对应的开关，那颗灯就是灰的、点不动。</p>
+
+<pre><code class="language-swift">import AppKit
+
+func makeMainWindow(content: NSViewController) -&gt; NSWindow {
+    let window = NSWindow(
+        contentRect: NSRect(x: 0, y: 0, width: 720, height: 460),
+        // 标题栏 + 关闭 + 缩放 + 最小化，四个开关组合成一扇标准窗口
+        styleMask: [.titled, .closable, .resizable, .miniaturizable],
+        backing: .buffered,   // 离屏缓冲后再合成上屏，标准选择
+        defer: false
+    )
+    window.title = "CCTerm"
+    window.center()                       // 居中到屏幕
+    // 把"界面是什么"交给一个视图控制器，而不是直接往窗口塞视图
+    window.contentViewController = content
+    return window
+}</code></pre>
+
+<p>窗口造好后，光"存在"还不够，它默认是不在屏幕上的。要让它<b>显示并接收键盘事件</b>，调用 <code>makeKeyAndOrderFront(_:)</code>：</p>
+
+<pre><code class="language-swift">// 把窗口推到同层级的最前面，并使它成为 key 窗口（接收键盘输入的那一个）
+window.makeKeyAndOrderFront(nil)</code></pre>
+
+<div class="callout essence">
+<b>本质</b>
+<p>"造窗口"和"显示窗口"是<b>两步</b>：<code>NSWindow(...)</code> 只是在内存里捏出一个对象；<code>makeKeyAndOrderFront</code> 才把它真正请上屏幕、并交给它键盘焦点。这也解释了为什么应用可以早就启动着、却一扇窗口都不显示——应用的"活"靠事件循环，窗口的"显"靠这一声召唤。</p>
+</div>
+
+<h3>2.5 为什么用控制器：NSWindowController 与 NSViewController</h3>
+
+<p>你完全可以裸用 <code>NSWindow</code>，但 AppKit 鼓励再包两层"控制器"。它们各管一摊：</p>
+
+<div class="termbox">
+  <div class="term"><b class="term-name">NSWindowController</b><span class="term-def">管理一扇窗口的<b>生命周期</b>：持有窗口、用 <code>showWindow(_:)</code> 显示、用 <code>close()</code> 关闭，常兼任窗口的 delegate（接收 <code>windowWillClose</code> 等回调）。它是窗口级逻辑的安放处，也可复用。</span></div>
+  <div class="term"><b class="term-name">NSViewController</b><span class="term-def">管理一棵<b>视图树</b>（界面内容）：它有一个 <code>view</code> 属性作为根视图，负责把控件搭起来、配置数据与交互。现代 AppKit 提倡"以控制器为单位"组织界面——一块界面 = 一个 view controller。</span></div>
+</div>
+
+<p>分工很清晰：<b>WindowController 管"壳"（窗口的生老病死），ViewController 管"瓤"（窗口里装的界面）。</b>本项目 CCTerm 的主窗口正是这套结构：<code>MainWindowController</code> 管窗口本身，里面挂着负责具体内容的视图控制器。</p>
+
+<div class="callout tip">
+<b>提示</b>
+<p>你可能在文档里看到 "NSWindowController 会懒加载窗口"——那说的是它从 Storyboard/nib 加载窗口的情况（第一次 <code>showWindow(_:)</code> 时才读文件造窗口）。走纯代码路线时我们更常在控制器的 <code>init</code> 里就 <code>super.init(window:)</code> 把窗口造好（CCTerm 的 <code>MainWindowController</code> 就是这样），窗口是<b>立即</b>就位的——<code>showWindow(_:)</code> 只负责把它显示出来。两种都对，知道区别即可。</p>
+</div>
+
+<p>对 <code>NSViewController</code>，初学者最容易混的是两个方法的分工：</p>
+
+<div class="termbox">
+  <div class="term"><b class="term-name">loadView()</b><span class="term-def">负责<b>创建</b>根视图。第一次访问 <code>view</code> 属性、而它还没被加载时，系统自动调用一次。纯代码搭界面时，<b>在这里 new 出根视图并赋给 <code>self.view</code></b>。你不要主动调用它。</span></div>
+  <div class="term"><b class="term-name">viewDidLoad()</b><span class="term-def">在 <code>loadView()</code> 完成、<code>view</code> 已就绪之后被调用一次。负责<b>配置</b>：加子视图、设约束、绑数据、装监听。记得先调 <code>super.viewDidLoad()</code>。</span></div>
+</div>
+
+<p>一句话记法：<b><code>loadView()</code> 造根视图，<code>viewDidLoad()</code> 配内容</b>。执行顺序是 <code>访问 view → loadView() → view 就绪 → viewDidLoad()</code>。下面是一个纯代码视图控制器的样板，里面也演示了本教程偏好的布局方式——Auto Layout 的 anchors 配合 <code>NSStackView</code>：</p>
+
+<pre><code class="language-swift">import AppKit
+
+final class ContentViewController: NSViewController {
+
+    // —— 造根视图：纯代码路线必须自己 new 出 view 并赋值 ——
+    override func loadView() {
+        // 给一个初始尺寸；约束会接管后续布局
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 720, height: 460))
+        self.view = root        // 关键：必须赋给 self.view
+    }
+
+    // —— 配内容：搭控件、设约束 ——
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        // labelWithString: 是现代 view-based 工厂方法，造一个只读文本标签
+        let title = NSTextField(labelWithString: "你好，AppKit")
+
+        // 用 target/action 把按钮点击连到自身的方法上
+        let closeButton = NSButton(
+            title: "关闭窗口", target: self, action: #selector(closeWindow))
+
+        // 用纵向 StackView 把控件竖着排好，间距交给 StackView 管
+        let stack = NSStackView(views: [title, closeButton])
+        stack.orientation = .vertical
+        stack.spacing = 16
+        // 用 Auto Layout 时，这一行必须关掉旧的 autoresizing 转换
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        view.addSubview(stack)
+
+        // anchors：把 stack 钉在父视图正中央
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+        ])
+    }
+
+    @objc private func closeWindow() {
+        view.window?.close()    // 通过视图找到所在窗口并关闭
+    }
+}</code></pre>
+
+<div class="callout tip">
+<b>提示</b>
+<p>用 Auto Layout 时，凡是自己 new 出来、要用约束摆放的视图，都得把 <code>translatesAutoresizingMaskIntoConstraints</code> 设成 <code>false</code>——否则系统会偷偷给它加一套基于 frame 的旧约束，和你的 anchors 打架。如果某个场景你想完全手动算坐标（不用 Auto Layout），那就改成 override <code>func layout()</code>，在里面直接写每个子视图的 frame，两条路线别混用。至于已废弃的 cell-based 老 API（比如直接摆弄 <code>NSCell</code>），本教程一律不碰。</p>
+</div>
+
+<h3>2.6 把骨架连起来看一遍</h3>
+
+<p>现在从入口到屏幕，整条链路是这样的：</p>
+
+<pre><code class="language-swift">// 入口（程序化路线的心智模型）
+let app = NSApplication.shared   // ① 拿到唯一的应用单例
+app.delegate = AppDelegate()     // ② 装上代理
+app.run()                        // ③ 进入事件循环（应用"活"起来）
+
+// —— 事件循环跑起来后，代理在启动完成时被回调 ——
+// applicationDidFinishLaunching:
+//   ④ MainWindowController()                造控制器（管壳）
+//   ⑤ 窗口的 contentViewController 挂 ContentViewController（管瓤）
+//   ⑥ showWindow(nil) → makeKeyAndOrderFront 窗口"显"上屏幕</code></pre>
+
+<p>记住这条链：<b>单例活着（事件循环）→ 启动完成回调代理 → 代理造窗口控制器 → 控制器显示窗口 → 窗口里装着视图控制器的界面</b>。下面的 demo 就是把这条链做成了能点的动画。</p>
+
+<div class="demo">
+  <div class="demo-stage">
+    <fieldset class="mac-box">
+      <legend class="mac-box-title">应用单例（NSApplication）</legend>
+      <div class="row gap center" style="align-items:center;">
+        <span class="mac-label">事件循环：</span>
+        <span id="ch2-loopState" class="mac-label" style="font-weight:600;">未启动</span>
+        <progress id="ch2-loopBar" class="mac-progress" max="100" value="0"></progress>
+      </div>
+      <div class="row gap" style="margin-top:10px;">
+        <button id="ch2-runBtn" class="mac-btn primary">启动应用 run()</button>
+        <button id="ch2-showBtn" class="mac-btn" disabled>显示窗口 makeKeyAndOrderFront</button>
+        <button id="ch2-termBtn" class="mac-btn" disabled>退出 terminate()</button>
+      </div>
+      <p class="mac-label" id="ch2-log" style="margin-top:10px; min-height:1.4em; opacity:.8;">提示：应用还没启动。先点"启动应用 run()"。</p>
+    </fieldset>
+
+    <div id="ch2-windowSlot" style="margin-top:0;">
+      <!-- 窗口在点击"显示窗口"后才被插进来；未显示时不占高度 -->
+    </div>
+  </div>
+  <p class="demo-note">这个 demo 一一对应上面的 Swift 代码：点 <b>启动应用 run()</b> = <code>app.run()</code> 进入事件循环（进度条开始转圈，代表"应用活着"），但此刻屏幕上<b>一扇窗口都没有</b>——这就是"应用 = 单例 + 事件循环"。点 <b>显示窗口</b> = <code>makeKeyAndOrderFront(nil)</code>，窗口这才被造出来并请上屏；窗口里那颗"关闭窗口"按钮对应 <code>window.close()</code>，点它窗口消失、但应用照样活着（循环还在转）。点窗口左上角的红色交通灯（=<code>.closable</code>）同样能关窗。最后 <b>退出 terminate()</b> 才让循环停下、应用谢幕。把"应用活着"和"窗口显示"分成两步，正是本章的本质。</p>
+</div>
+
+<script>
+(function () {
+  var runBtn = document.getElementById('ch2-runBtn');
+  var showBtn = document.getElementById('ch2-showBtn');
+  var termBtn = document.getElementById('ch2-termBtn');
+  var loopState = document.getElementById('ch2-loopState');
+  var loopBar = document.getElementById('ch2-loopBar');
+  var log = document.getElementById('ch2-log');
+  var slot = document.getElementById('ch2-windowSlot');
+
+  var running = false;
+  var timer = null;
+  var tick = 0;
+
+  function say(msg) { log.textContent = msg; }
+
+  function startLoop() {
+    running = true;
+    loopState.textContent = '运行中（不停接收/分发事件）';
+    timer = setInterval(function () {
+      tick = (tick + 4) % 100;     // 循环转圈，象征事件循环永不停歇
+      loopBar.value = tick;
+    }, 80);
+  }
+
+  function stopLoop() {
+    running = false;
+    if (timer) { clearInterval(timer); timer = null; }
+    loopBar.value = 0;
+    loopState.textContent = '已停止';
+  }
+
+  function closeWindow() {
+    var hadWindow = !!slot.querySelector('.mac-window');
+    slot.innerHTML = '';
+    slot.style.marginTop = '0';      // 窗口消失后收回空白
+    if (hadWindow && running) {
+      say('window.close()：窗口关了，但应用单例还活着——事件循环照转。');
+    }
+  }
+
+  function showWindow() {
+    if (slot.querySelector('.mac-window')) {  // 已经显示了就不重复造
+      say('窗口已经在屏幕上了。');
+      return;
+    }
+    var win = document.createElement('div');
+    win.className = 'mac-window';
+    win.innerHTML =
+      '<div class="mac-titlebar">' +
+        '<span class="mac-traffic"><i></i><i></i><i></i></span>' +
+        '<span class="mac-title">CCTerm</span>' +
+      '</div>' +
+      '<div class="mac-body">' +
+        '<div class="col gap center" style="padding:14px 6px;">' +
+          '<span class="mac-label" style="font-weight:600;">你好，AppKit</span>' +
+          '<button class="mac-btn" data-role="ch2-closeInside">关闭窗口</button>' +
+        '</div>' +
+      '</div>';
+    slot.style.marginTop = '14px';   // 窗口出现时才留出上边距
+    slot.appendChild(win);
+
+    // 左上角红色交通灯 = .closable，点它关窗
+    var traffic = win.querySelectorAll('.mac-traffic i');
+    if (traffic.length) {
+      traffic[0].style.cursor = 'pointer';
+      traffic[0].addEventListener('click', closeWindow);
+    }
+    // 窗口里的"关闭窗口"按钮 = window.close()
+    var closeInside = win.querySelector('[data-role="ch2-closeInside"]');
+    closeInside.addEventListener('click', closeWindow);
+
+    say('makeKeyAndOrderFront(nil)：窗口被造出来并请上屏，成为 key 窗口。');
+  }
+
+  runBtn.addEventListener('click', function () {
+    if (running) return;
+    startLoop();
+    runBtn.disabled = true;
+    showBtn.disabled = false;
+    termBtn.disabled = false;
+    say('app.run()：进入事件循环。注意——此刻还没有任何窗口。');
+  });
+
+  showBtn.addEventListener('click', function () {
+    if (!running) { say('应用还没启动，先点"启动应用 run()"。'); return; }
+    showWindow();
+  });
+
+  termBtn.addEventListener('click', function () {
+    stopLoop();
+    slot.innerHTML = '';
+    slot.style.marginTop = '0';
+    runBtn.disabled = false;
+    showBtn.disabled = true;
+    termBtn.disabled = true;
+    say('terminate()：事件循环停止，应用退出。一切归零——可重新点"启动应用 run()"再走一遍。');
+  });
+})();
+</script>
+
+<div class="qa">
+<p class="q">思考题：在 <code>applicationDidFinishLaunching</code> 里，如果你写成 <code>let c = MainWindowController(); c.showWindow(nil)</code>，把控制器只放在一个局部变量里，没有让 <code>AppDelegate</code> 持有它。运行后窗口可能一闪就没了、或者干脆没出现。为什么？怎么修？</p>
+<details><summary>查看答案</summary>
+<div class="a">
+<p>因为局部变量 <code>c</code> 是这个方法内唯一引用控制器的地方。方法一返回，<code>c</code> 离开作用域、引用计数归零，控制器（连同它管理的窗口）被 ARC 回收，窗口自然消失。应用单例本身靠事件循环活着，不会因此退出，但"壳"没了。</p>
+<p>修法：让一个生命周期更长的对象<b>持有</b>这个控制器。最常见的就是把它存成 <code>AppDelegate</code> 的属性（<code>self.mainWindowController = c</code>）——只要代理活着，窗口控制器就活着。这也正是 2.3 节样板里"先攥住、再 <code>showWindow</code>"的原因，呼应了"WindowController 负责窗口生命周期"这件事：但前提是它自己得先有人攥着。</p>
+</div>
+</details>
+</div>
+</section>
+
+<section class="chapter" id="ch-3">
+<h2 data-n="3">视图与坐标系：NSView 的世界</h2>
+<p class="lead">上一章我们让窗口出现在屏幕上。但窗口本身只是一个空房间——真正住进去的家具、墙上的画、能按的开关，全都是「视图」。这一章我们把房间拆开看：屏幕上每一块能看见、能点的东西，本质上都是一个矩形，叫 <code>NSView</code>。理解它的两套尺寸（frame / bounds）和那个让无数人栽跟头的坐标原点，你就拿到了 AppKit 的「空间观」。</p>
+
+<h3>3.1 一切都是矩形：NSView 与视图树</h3>
+<p>先建立一个最朴素的直觉：<b>你在 macOS 应用里看到的任何东西，都是一个矩形区域。</b>一个按钮是矩形，一段文字是矩形，整块侧边栏也是矩形。这些矩形就是 <code>NSView</code>。</p>
+<p>这些矩形不是平铺散落的，而是像「俄罗斯套娃」一样层层嵌套：窗口里有一个最大的根视图（即上一章提到的 <code>contentView</code>），根视图里放着侧边栏视图和内容视图，内容视图里又放着按钮、文字……每个视图都知道自己的「父亲」是谁（<code>superview</code>），也知道自己装了哪些「孩子」（<code>subviews</code>）。这就构成了一棵<b>视图树</b>。</p>
+
+<div class="termbox">
+<div class="term"><b class="term-name">NSView</b><span class="term-def">AppKit 中屏幕上一切可见 / 可交互内容的基本单元。本质是一个矩形区域，负责在这块区域内绘制内容、响应鼠标键盘事件。</span></div>
+<div class="term"><b class="term-name">superview（父视图）</b><span class="term-def">包含当前视图的那个视图。一个视图最多只有一个 superview。</span></div>
+<div class="term"><b class="term-name">subviews（子视图）</b><span class="term-def">当前视图所包含的视图数组。子视图被「画」在父视图内部。</span></div>
+<div class="term"><b class="term-name">视图树（view hierarchy）</b><span class="term-def">由 superview / subviews 关系串起来的一棵树。窗口持有一个根视图（contentView），其余视图都挂在它下面。</span></div>
+</div>
+
+<p>把一个视图挂到另一个视图下面，用的是 <code>addSubview(_:)</code>：</p>
+
+<pre><code class="language-swift">let parent = NSView()                 // 一个空白矩形当容器
+let blue = NSView()
+parent.addSubview(blue)               // blue 成为 parent 的子视图
+// 此时 blue.superview === parent，且 parent.subviews 里包含 blue</code></pre>
+
+<p>这里有一个常被忽略的细节：<b>subviews 数组的顺序就是绘制（遮挡）顺序</b>。越靠后加入的子视图，画得越「晚」，也就越「靠上」、越容易盖住前面的兄弟视图——就像往桌上一张张叠纸，后放的盖住先放的。如果两个子视图位置重叠，后 <code>addSubview</code> 的那个会显示在上面。</p>
+
+<h3>3.2 两套尺寸：frame 与 bounds</h3>
+<p>每个 <code>NSView</code> 都同时拥有两个矩形：<code>frame</code> 和 <code>bounds</code>。初学者最容易把它们搞混，但只要抓住一句话就再也不会错：</p>
+<p class="center"><b>frame 是「别人眼里的我」，bounds 是「我眼里的我」。</b></p>
+
+<p>打个比方。你住在一栋楼里：</p>
+<ul>
+<li><b>frame</b>：相当于「你家在这栋楼里的门牌号 + 房间大小」。它用<b>父视图的坐标系</b>来描述「我在哪、我多大」。比如「我在父视图里位于 (50, 100)，宽 200、高 150」。父视图想挪动你、放大你，改的就是你的 frame。</li>
+<li><b>bounds</b>：相当于「站在你自己家门口，从你自己内部往外量」。它用<b>视图自身的坐标系</b>来描述这块区域，origin 默认是 <code>(0, 0)</code>。你在自己内部画东西、摆放子视图时，参照的就是 bounds。</li>
+</ul>
+
+<div class="termbox">
+<div class="term"><b class="term-name">frame</b><span class="term-def">视图在其 <b>superview 坐标系</b>中的位置和尺寸（一个 NSRect，含 origin 与 size）。决定「这个视图被摆在父视图的哪个地方、占多大」。</span></div>
+<div class="term"><b class="term-name">bounds</b><span class="term-def">视图在<b>自身坐标系</b>中的可绘制区域，origin 默认为 (0, 0)。视图内部绘制、摆放子视图时以它为参照。</span></div>
+<div class="term"><b class="term-name">NSRect</b><span class="term-def">描述一个矩形的结构体：包含 origin（x, y 起点）和 size（width, height）。frame 和 bounds 都是 NSRect。（它是 CGRect 的别名。）</span></div>
+</div>
+
+<pre><code class="language-swift">// 创建一个视图，告诉它在父坐标系里的位置和大小
+let view = NSView(frame: NSRect(x: 50, y: 100, width: 200, height: 150))
+
+print(view.frame)   // (50.0, 100.0, 200.0, 150.0) —— 相对于父视图
+print(view.bounds)  // (0.0,  0.0,   200.0, 150.0) —— 相对于自己，origin 归零</code></pre>
+
+<p>注意两者的 <b>size 一样</b>（都是 200×150，先不考虑旋转 / 缩放），但 <b>origin 不同</b>：frame 的 origin 是「我在父视图的哪个角落」，bounds 的 origin 默认是 (0, 0)「我自己内部从头开始算」。</p>
+
+<h3>3.3 那个让所有人栽跟头的坑：坐标原点在左下角</h3>
+<p>现在到了这一章最关键、也最反直觉的地方。请记住：</p>
+<p class="center"><b>AppKit 默认的坐标原点在视图的左下角，Y 轴朝上。</b></p>
+
+<p>这意味着：当你写 <code>frame.origin = (0, 0)</code>，视图会贴在父视图的<b>左下角</b>；增大 Y 值，视图会往<b>上</b>跑。这和你熟悉的几乎所有东西都相反：</p>
+
+<div class="mac-table">
+<div class="mac-thead"><div class="mac-td">环境</div><div class="mac-td">原点位置</div><div class="mac-td">Y 增大方向</div></div>
+<div class="mac-tr"><div class="mac-td">AppKit（默认）</div><div class="mac-td">左下角</div><div class="mac-td">向上 ↑</div></div>
+<div class="mac-tr"><div class="mac-td">iOS / UIKit</div><div class="mac-td">左上角</div><div class="mac-td">向下 ↓</div></div>
+<div class="mac-tr"><div class="mac-td">网页 / CSS</div><div class="mac-td">左上角</div><div class="mac-td">向下 ↓</div></div>
+</div>
+
+<p>为什么 AppKit 这么特立独行？因为它的血统来自数学课本里的笛卡尔坐标系（原点在左下、Y 朝上），这套体系在排版和 PostScript 打印时代很自然。但对今天习惯了网页和手机的我们来说，它就是个坑。</p>
+
+<p>好消息是：你可以<b>翻转</b>它。<code>NSView</code> 有一个只读属性 <code>isFlipped</code>，默认返回 <code>false</code>。在子类里把它重写为返回 <code>true</code>，<b>这个视图的坐标系</b>（也就是它内部摆放子视图、以及 <code>draw(_:)</code> 里作画时所用的坐标系）就变成「原点在左上角、Y 轴朝下」——和 iOS、网页一致：</p>
+
+<pre><code class="language-swift">/// 一个翻转坐标系的视图：原点在左上角、Y 向下
+final class FlippedView: NSView {
+    // isFlipped 是只读属性，不能直接赋值，只能通过重写来改变
+    override var isFlipped: Bool { true }
+}</code></pre>
+
+<div class="callout warn">
+<b>注意：isFlipped 是「类的属性」，不是开关</b>
+<p><code>isFlipped</code> 只读，意味着你<b>不能</b>在运行时把某个实例从 <code>false</code> 改成 <code>true</code>。它的取值是「这个视图子类天生是否翻转」。所以本章 demo 里那个「翻转开关」，在真实代码里对应的不是「改一个 Bool」，而是「换用另一个子类的视图」（或在重写里读一个标志位、并在切换后重建 / 重新布局）。心里要清楚：翻转影响的是<b>子视图如何被定位</b>，不只是「重画一下」。</p>
+</div>
+
+<div class="callout tip">
+<b>实务提示</b>
+<p>在真实项目里，给自定义容器视图重写 <code>isFlipped { true }</code> 非常常见——尤其是要「从上往下」摆放内容（列表、表单）时，左上原点的心智模型更顺手。本教程后面的很多布局也默认这么做。</p>
+</div>
+
+<h3>3.4 视图怎么把自己画出来：needsDisplay 与 draw(_:)</h3>
+<p>视图不只是占位的矩形，它得在自己那块区域里画出内容（背景色、边框、图形）。AppKit 的绘制模型可以用一句话概括：</p>
+<p class="center"><b>你不主动「画」，你只负责「喊脏」；系统在合适的时机回头叫你画。</b></p>
+
+<p>具体流程是：当视图的内容需要更新时，你把 <code>needsDisplay</code> 设为 <code>true</code>（相当于举手喊「我这块脏了，要重画」）。你不会立刻被重画——系统会把这些请求攒起来，在当前 runloop 的合适时机统一回调你重写的 <code>draw(_ dirtyRect:)</code> 方法。<code>dirtyRect</code> 参数告诉你「这次实际需要重画的区域」，性能敏感时可以只画这一块。</p>
+
+<div class="termbox">
+<div class="term"><b class="term-name">needsDisplay</b><span class="term-def">Bool 属性。设为 true 表示「这个视图需要重画」，向系统登记一次重绘请求，并不会立即重画。</span></div>
+<div class="term"><b class="term-name">draw(_ dirtyRect:)</b><span class="term-def">你在子类里重写、由系统在重绘时机回调的方法。在里面用 Core Graphics / NSBezierPath 自己绘制内容。<b>绝不要直接调用它</b>，要重画就设 needsDisplay = true。</span></div>
+<div class="term"><b class="term-name">NSBezierPath</b><span class="term-def">AppKit 里描述路径（直线、矩形、椭圆、贝塞尔曲线）的类，配合 NSColor 的 setFill / setStroke 完成填充和描边。</span></div>
+</div>
+
+<pre><code class="language-swift">/// 自绘一块画布：填背景 + 画一个白色椭圆边框
+final class CanvasView: NSView {
+    override var isFlipped: Bool { true }   // 用左上原点，心智更顺
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        // 1) 用 bounds（自身坐标系）填整块背景
+        NSColor.systemBlue.setFill()
+        bounds.fill()                       // NSRect.fill() 填满这个矩形
+
+        // 2) 在内部缩一圈，画一个白色椭圆边框
+        let path = NSBezierPath(ovalIn: bounds.insetBy(dx: 20, dy: 20))
+        path.lineWidth = 2
+        NSColor.white.setStroke()
+        path.stroke()
+    }
+}</code></pre>
+
+<p>要让它重画，外部只需 <code>canvas.needsDisplay = true</code>，绝不要去手动调 <code>canvas.draw(_:)</code>。</p>
+
+<h3>3.5 不想自己画？交给图层：wantsLayer 与 CALayer</h3>
+<p>自绘很灵活，但有些常见效果（圆角、阴影、平滑动画）用 <code>draw(_:)</code> 手画又累又卡。这时候请出「图层支持视图」：把 <code>wantsLayer</code> 设为 <code>true</code>，AppKit 就给这个视图配一块 <b>CALayer</b>——一块由 GPU 缓存、专门负责合成与动画的「画布底板」。</p>
+<p>直觉上：<code>draw(_:)</code> 是你拿画笔在纸上一笔笔画；而 CALayer 像是一张可以贴在玻璃上、能整体平移、缩放、加圆角阴影的「贴纸」，移动它不需要重画内容，所以又快又顺。圆角 / 阴影 / 动画这类需求，<b>一律走 layer</b>：</p>
+
+<div class="termbox">
+<div class="term"><b class="term-name">wantsLayer</b><span class="term-def">Bool 属性。设为 true 表示「请给这个视图配一块 CALayer 做底板」，此后视图内容被缓存成 GPU 纹理。</span></div>
+<div class="term"><b class="term-name">CALayer</b><span class="term-def">Core Animation 的图层对象。承载视图的合成内容，圆角（cornerRadius）、阴影（shadow*）、变换、动画都作用在它身上。访问时用可选链 view.layer?。</span></div>
+</div>
+
+<pre><code class="language-swift">let card = NSView()
+card.wantsLayer = true                               // 开启图层支持
+card.layer?.backgroundColor = NSColor.white.cgColor  // 背景色走 layer（注意是 cgColor）
+card.layer?.cornerRadius = 12                        // 圆角走 layer
+card.layer?.shadowOpacity = 0.2                      // 阴影走 layer
+card.layer?.shadowRadius = 8</code></pre>
+
+<div class="callout warn">
+<b>注意</b>
+<p>开了 <code>wantsLayer</code> 后，内容会被缓存成 GPU 纹理，所以 <code>draw(_:)</code> 被调用的次数变少——只在缓存真正失效时才重画。圆角、阴影这些属性写在 <code>layer</code> 上，而不是去 <code>draw(_:)</code> 里手画。还有一个易错点：<code>layer</code> 上的颜色是 <code>CGColor</code>，要用 <code>.cgColor</code> 转换，不能直接塞 <code>NSColor</code>。</p>
+</div>
+
+<h3>3.6 把它们装进 NSViewController</h3>
+<p>按本教程的约定，界面不靠 Storyboard，全程序化、用 <code>NSViewController</code> 组织，布局用 Auto Layout 的 anchors / <code>NSStackView</code>。下面把上面的画布、一个翻转开关、两个滑块拼起来——这正是本章 demo 对应的 Swift 实现骨架。其中<b>画布</b>用约束（anchors）填充，而<b>子视图刻意用 frame 定位</b>，因为这一章要演示的正是 frame.origin：</p>
+
+<pre><code class="language-swift">final class CoordinateDemoController: NSViewController {
+
+    private let canvas = CanvasView()      // 父画布（看它的 bounds）
+    private let child  = NSView()          // 子视图（看它的 frame）
+
+    private let flipSwitch = NSSwitch()
+    private let xSlider = NSSlider(value: 30, minValue: 0, maxValue: 170,
+                                   target: nil, action: nil)
+    private let ySlider = NSSlider(value: 30, minValue: 0, maxValue: 170,
+                                   target: nil, action: nil)
+
+    override func loadView() {
+        // 程序化界面：自己给控制器造一个根视图并指定初始尺寸
+        view = NSView(frame: NSRect(x: 0, y: 0, width: 440, height: 360))
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        // 子视图：用 layer 画出橙色圆角方块；位置由 frame.origin 决定
+        child.wantsLayer = true
+        child.layer?.backgroundColor = NSColor.systemOrange.cgColor
+        child.layer?.cornerRadius = 6
+        child.frame = NSRect(x: 30, y: 30, width: 90, height: 90)
+        canvas.addSubview(child)            // child 挂到 canvas 下，成为子视图
+
+        // 控件接 target-action
+        flipSwitch.target = self; flipSwitch.action = #selector(toggleFlip)
+        xSlider.target = self;   xSlider.action = #selector(moveX)
+        ySlider.target = self;   ySlider.action = #selector(moveY)
+
+        // 用 NSStackView 把「控制台」竖直堆起来
+        let controls = NSStackView(views: [flipSwitch, xSlider, ySlider])
+        controls.orientation = .vertical
+        controls.alignment = .leading
+        controls.spacing = 8
+
+        // 画布 + 控制台横向并排
+        let root = NSStackView(views: [canvas, controls])
+        root.orientation = .horizontal
+        root.spacing = 16
+        root.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(root)
+
+        NSLayoutConstraint.activate([
+            root.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            root.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+            root.topAnchor.constraint(equalTo: view.topAnchor, constant: 20),
+            root.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20),
+            canvas.widthAnchor.constraint(equalToConstant: 260),
+        ])
+    }
+
+    // 翻转开关：注意 isFlipped 不能直接改，真实代码要换用翻转 / 不翻转的子类。
+    // 这里只示意「翻转后，子视图 frame.origin 的含义随之改变，需要重新摆放」。
+    @objc private func toggleFlip(_ sender: NSSwitch) {
+        canvas.needsDisplay = true          // 触发画布重画
+        layoutChild()                       // 按当前坐标系语义重新放 child
+    }
+
+    // 滑块改子视图的 frame.x / frame.y —— 直接挪动它在父坐标系里的位置
+    @objc private func moveX(_ sender: NSSlider) {
+        child.frame.origin.x = CGFloat(sender.doubleValue)
+    }
+    @objc private func moveY(_ sender: NSSlider) {
+        child.frame.origin.y = CGFloat(sender.doubleValue)
+    }
+
+    private func layoutChild() {
+        child.frame.origin = NSPoint(x: CGFloat(xSlider.doubleValue),
+                                     y: CGFloat(ySlider.doubleValue))
+    }
+}</code></pre>
+
+<h3>3.7 动手玩：坐标可视化画布</h3>
+<p>下面这个 demo 复刻了上面 Swift 代码的效果。<b>蓝色大框</b>是父画布（对应 <code>canvas</code>，你看到的是它的 <code>bounds</code>——内部坐标系）；<b>橙色小方块</b>是子视图（对应 <code>child</code>，它的位置由 <code>frame.origin</code> 决定）。拨动开关翻转坐标系，看原点标记（带十字的小圆）在左下 / 左上之间跳动，子视图也随之换算位置；拖两个滑块，直接改 <code>frame.origin.x</code> / <code>frame.origin.y</code>，盯着小方块移动。两个滑块的范围都是 0–170，正好是「父边长 − 子边长」，所以无论怎么拖，方块都不会跑出蓝框——和 Swift 代码里 <code>maxValue: 170</code> 完全对应。</p>
+
+<div class="demo">
+<div class="demo-stage">
+<div class="mac-window">
+<div class="mac-titlebar"><span class="mac-traffic"><i></i><i></i><i></i></span><span class="mac-title">坐标可视化画布</span></div>
+<div class="mac-body">
+<div class="row gap">
+<fieldset class="mac-box" style="flex:0 0 auto;">
+<legend class="mac-box-title">控制台</legend>
+<div class="col gap-sm">
+<label class="mac-switch"><input type="checkbox" id="ch3-flip"><span></span></label>
+<span class="mac-label" id="ch3-flip-label">isFlipped = false（原点左下，Y↑）</span>
+<div style="height:8px"></div>
+<span class="mac-label">frame.origin.x</span>
+<input class="mac-range" type="range" id="ch3-x" min="0" max="170" value="30">
+<span class="mac-label">frame.origin.y</span>
+<input class="mac-range" type="range" id="ch3-y" min="0" max="170" value="30">
+<div style="height:8px"></div>
+<span class="mac-label" id="ch3-readout">frame = (30, 30, 90, 90)</span>
+</div>
+</fieldset>
+<div class="fill center">
+<svg id="ch3-canvas" width="300" height="300" viewBox="0 0 300 300" style="background:#0a1830;border-radius:8px;">
+<rect x="20" y="20" width="260" height="260" fill="#1f6feb22" stroke="#2f81f7" stroke-width="2"></rect>
+<text x="28" y="40" fill="#7fb0ff" font-size="11" font-family="-apple-system,sans-serif">父视图 bounds</text>
+<rect id="ch3-child" x="50" y="160" width="90" height="90" rx="6" fill="#f0883e" stroke="#ffd6a8" stroke-width="1.5"></rect>
+<text id="ch3-child-label" x="55" y="178" fill="#3a1c00" font-size="10" font-family="-apple-system,sans-serif">子视图 frame</text>
+<g id="ch3-origin">
+<circle cx="20" cy="280" r="9" fill="none" stroke="#3fb950" stroke-width="2"></circle>
+<line x1="11" y1="280" x2="29" y2="280" stroke="#3fb950" stroke-width="2"></line>
+<line x1="20" y1="271" x2="20" y2="289" stroke="#3fb950" stroke-width="2"></line>
+</g>
+<text id="ch3-origin-label" x="34" y="284" fill="#3fb950" font-size="11" font-family="-apple-system,sans-serif">(0,0) 原点</text>
+</svg>
+</div>
+</div>
+</div>
+</div>
+<p class="demo-note">开关对应 Swift 里的 <code>override var isFlipped</code>：关时原点在左下、Y 朝上（AppKit 默认），子方块从底部往上摆；开时原点跳到左上、Y 朝下（与 iOS / 网页一致），子方块从顶部往下摆。两个滑块就是代码里的 <code>child.frame.origin.x / .y</code>——你拖动它们时，改的正是「子视图在父坐标系里的位置」，而蓝框（父 bounds）始终不动。把 demo 的每个控件和上一节 Swift 代码里的同名属性一一对上，你就把「代码 ↔ 效果」连起来了。</p>
+</div>
+
+<script>
+(function () {
+  var flip = document.getElementById('ch3-flip');
+  var flipLabel = document.getElementById('ch3-flip-label');
+  var sx = document.getElementById('ch3-x');
+  var sy = document.getElementById('ch3-y');
+  var child = document.getElementById('ch3-child');
+  var childLabel = document.getElementById('ch3-child-label');
+  var originG = document.getElementById('ch3-origin');
+  var originLabel = document.getElementById('ch3-origin-label');
+  var readout = document.getElementById('ch3-readout');
+
+  // 父 bounds 在 SVG 里的范围：x∈[20,280], y∈[20,280]，边长 260
+  var PAD = 20, SIZE = 260, CW = 90; // 画布内边距、父边长、子视图边长
+
+  function render() {
+    var fx = parseInt(sx.value, 10);   // frame.origin.x（父坐标系）
+    var fy = parseInt(sy.value, 10);   // frame.origin.y（父坐标系）
+    var flipped = flip.checked;
+
+    // SVG 自身是「左上原点、Y 向下」。
+    // 子视图左上角的 SVG x 始终 = PAD + fx
+    var svgX = PAD + fx;
+    var svgY;
+    if (flipped) {
+      // 翻转坐标系：原点左上、Y 向下 —— 和 SVG 一致，直接用
+      svgY = PAD + fy;
+      originG.setAttribute('transform', 'translate(0,-260)'); // 原点移到左上
+      originLabel.setAttribute('y', '24');
+      flipLabel.textContent = 'isFlipped = true（原点左上，Y↓）';
+    } else {
+      // AppKit 默认：原点左下、Y 向上。
+      // frame.y 是「离父视图底边的距离」，换算成 SVG 的 y：
+      // svgY = 顶边 + (父高 - 子高 - fy)
+      svgY = PAD + (SIZE - CW - fy);
+      originG.setAttribute('transform', 'translate(0,0)');    // 原点在左下
+      originLabel.setAttribute('y', '284');
+      flipLabel.textContent = 'isFlipped = false（原点左下，Y↑）';
+    }
+
+    child.setAttribute('x', svgX);
+    child.setAttribute('y', svgY);
+    childLabel.setAttribute('x', svgX + 5);
+    childLabel.setAttribute('y', svgY + 18);
+
+    readout.textContent = 'frame = (' + fx + ', ' + fy + ', ' + CW + ', ' + CW + ')';
+  }
+
+  flip.addEventListener('change', render);
+  sx.addEventListener('input', render);
+  sy.addEventListener('input', render);
+  render();
+})();
+</script>
+
+<div class="callout essence">
+<b>本质</b>
+<p>NSView 就是一棵嵌套矩形的树，每个节点同时握着两套坐标：<b>frame</b>（在父坐标系里「我在哪、多大」）和 <b>bounds</b>（在自身坐标系里「我内部从哪算起」）。AppKit 默认把原点钉在<b>左下角、Y 朝上</b>，这是与 iOS / 网页最大的认知差，重写 <code>isFlipped</code> 返回 <code>true</code> 能把它翻回左上（注意这是「类的属性」，不是运行时开关）。绘制是「<b>声明式</b>」的——你只设 <code>needsDisplay</code> 喊脏，系统择机回调 <code>draw(_:)</code> 让你用路径作画；而圆角、阴影、动画这类合成层面的效果，则交给 <code>wantsLayer</code> 背后的 CALayer。一切空间问题，归根结底都是「这个矩形，是在谁的坐标系里被谁度量」。</p>
+</div>
+
+<div class="qa">
+<p class="q">思考题：在默认（未翻转）的 AppKit 视图里，一个父视图高 300。你把子视图的 <code>frame.origin.y</code> 从 0 增大到 100，子视图在屏幕上是往上移还是往下移？如果改用一个重写了 <code>isFlipped { true }</code> 的父视图，同样的操作结果又是什么？</p>
+<details><summary>查看答案</summary>
+<div class="a">
+<p><b>默认（未翻转）：</b>原点在左下、Y 朝上，<code>frame.origin.y</code> 表示「离父视图底边的距离」。从 0 增大到 100，子视图离底边更远，所以<b>向上移动</b> 100 点。</p>
+<p><b>翻转后（isFlipped = true）：</b>原点跳到左上、Y 朝下，<code>frame.origin.y</code> 变成「离父视图顶边的距离」。同样从 0 增到 100，子视图离顶边更远，于是<b>向下移动</b> 100 点。</p>
+<p>关键点：<b>同一行代码（改 frame.origin.y）的视觉效果，完全取决于该父视图的坐标系是否翻转。</b>这正是新手最常踩的坑——位置算错、视图「跑反了」，十有八九是忘了确认父视图的 <code>isFlipped</code> 状态。</p>
+</div>
+</details>
+</div>
+</section>
+
+<section class="chapter" id="ch-4">
+<h2 data-n="4">布局全景：四种摆放视图的方式</h2>
+<p class="lead">你已经会把一个 <code>NSView</code> 放进窗口里了。但"放进去"只是第一步——真正的问题是：当窗口被拉宽、拉窄、最大化时，里面的标题、输入框、按钮该怎么跟着动？这一章把 AppKit 里"摆放视图"的四条路线一次讲透，并诚实回答你最关心的问题：<b>到底谁用得多、谁更好用？</b></p>
+
+<p>先建立一个心智模型。任何一个视图最终都靠一个叫 <b>frame</b> 的东西决定"我在哪、我多大"。所谓"布局"，无非就是<b>谁来填写每个视图的 frame</b>。四条路线的区别，仅仅是"填写 frame 这件事，由谁、在什么时候、用什么规则来做"。</p>
+
+<div class="termbox">
+  <div class="term"><b class="term-name">frame</b><span class="term-def">一个视图在它父视图坐标系里的位置和尺寸，本质是一个矩形 <code>NSRect</code>（含 x、y、宽、高）。所有布局方式最后都归结为给每个视图填一个 frame。</span></div>
+  <div class="term"><b class="term-name">父视图 / 子视图（superview / subview）</b><span class="term-def">视图是一棵树。子视图的 frame 坐标是相对父视图来算的。父视图变大变小，子视图要不要跟着变、怎么变，正是布局要解决的事。</span></div>
+  <div class="term"><b class="term-name">macOS 坐标系</b><span class="term-def">默认 <code>NSView</code> 的坐标系原点 (0,0) 在<b>左下角</b>，y 轴向上为正（这点和 iOS 的 UIKit 相反，UIKit 原点在左上、y 向下）。手动算坐标时务必记住这一点。<i>（补充：很多自绘视图会重写 <code>isFlipped</code> 返回 <code>true</code> 把坐标翻成"左上原点、y 向下"，这样画文字、排行更顺手——但那是后话，本章用默认坐标系讲。）</i></span></div>
+</div>
+
+<h3>路线一：手动 frame —— 自己当"排版工"</h3>
+<p>最朴素的办法：每个视图的位置我亲自算、亲自填。打个比方，这就像在一张方格纸上，拿尺子量好每个零件该钉在第几行第几列，然后一颗一颗钉上去。</p>
+<p>关键不在于"我会写 <code>view.frame = ...</code>"，而在于<b>写在哪里</b>。新手常犯的错是把坐标写在 <code>viewDidLoad</code> 里——那只在加载时算一次，窗口一缩放就全乱了。正确的位置是重写 <code>NSView</code> 的 <code>layout()</code> 方法：系统保证<b>每次需要重新布局时（包括尺寸变化）都会调用它</b>，你把所有坐标计算集中写在这里，就能在任何尺寸下都重新算对。</p>
+
+<div class="termbox">
+  <div class="term"><b class="term-name">override func layout()</b><span class="term-def"><code>NSView</code> 的布局回调。系统在视图需要重新摆放子视图时调用（首次显示、尺寸改变、你主动把 <code>needsLayout</code> 设为 <code>true</code> 之后）。重写它、在里面读自己的 <code>bounds</code> 再给子视图填 frame，是"手动布局"的标准姿势。<b>注意</b>：重写时务必先调 <code>super.layout()</code>。</span></div>
+  <div class="term"><b class="term-name">bounds</b><span class="term-def">视图<b>自己内部</b>的坐标系矩形（默认原点为 0,0，尺寸等于自身大小）。在 <code>layout()</code> 里你读 <code>bounds</code> 来知道"我现在多大"，据此分配子视图位置。区别于 frame：frame 是"我在父视图里多大/在哪"，bounds 是"从我自己看出去多大"。</span></div>
+</div>
+
+<h3>路线二：autoresizingMask —— 老式的"弹簧与支柱"</h3>
+<p>在 Auto Layout 出现之前，AppKit 就有一套轻量的自动伸缩规则，叫 <b>autoresizingMask</b>。直觉模型是"弹簧（spring）和支柱（strut）"：你给每个视图声明——它和父视图四条边之间的距离，是"钉死的支柱"（固定不变），还是"会拉伸的弹簧"（跟着父视图一起变）。父视图一缩放，子视图就按这套规则自动重排。</p>
+<p>比如 <code>view.autoresizingMask = [.width, .height]</code> 表示宽和高都是弹簧——父视图变大，它就等比变大。它比手动 <code>layout()</code> 省事，但表达能力很弱：只能描述"我和父视图边距的关系"，无法描述"我和<b>兄弟视图</b>的关系"（例如"按钮永远在输入框右边 8 点"）。这正是它被 Auto Layout 取代的原因——今天你只会在很老的代码或极简场景里见到它，了解概念即可。</p>
+
+<h3>路线三：Auto Layout —— 描述"关系"，让系统去解</h3>
+<p>这是现代 AppKit 的主力，也是你日常该默认选的方式。它的思路根本性地变了：你不再亲手算坐标，而是<b>描述视图之间的关系（约束）</b>，剩下的算术交给系统的"约束求解器"。</p>
+<p>打个比方：手动 frame 是你告诉工人"把这块板钉在 (120, 40) 这个点"；Auto Layout 是你说"这块板要贴着上面那块、左右各留 16 的边"——具体钉哪个坐标，由系统现场算。窗口怎么变，关系不变，坐标自动重算。</p>
+
+<div class="termbox">
+  <div class="term"><b class="term-name">约束（NSLayoutConstraint）</b><span class="term-def">一条关于位置/尺寸的"等式或不等式"，例如"A 的左边 = B 的右边 + 8"。一组约束凑齐后，系统解出每个视图唯一的 frame。</span></div>
+  <div class="term"><b class="term-name">anchors API</b><span class="term-def">写约束的现代简洁写法。每个视图暴露 <code>leadingAnchor</code>、<code>trailingAnchor</code>、<code>topAnchor</code>、<code>widthAnchor</code> 等"锚点"，用 <code>a.leadingAnchor.constraint(equalTo: b.trailingAnchor, constant: 8)</code> 连起来，再 <code>.isActive = true</code> 激活（或用 <code>NSLayoutConstraint.activate([...])</code> 批量激活）。比手动 <code>init</code> 一个 <code>NSLayoutConstraint</code> 可读得多。</span></div>
+  <div class="term"><b class="term-name">translatesAutoresizingMaskIntoConstraints</b><span class="term-def">一个开关。默认 <code>true</code>，意思是"把我老式的 autoresizingMask 自动翻译成约束"——这会和你手写的约束打架。<b>凡是用 Auto Layout 摆放的视图，第一件事就是把它设成 <code>false</code></b>，否则会报"约束冲突"。这是初学者最常踩的坑。</span></div>
+  <div class="term"><b class="term-name">NSStackView</b><span class="term-def">一个"会自动排队"的容器视图。你把子视图 <code>addArrangedSubview</code> 进去，告诉它方向（横/竖）、间距、对齐，它就在内部自动生成一堆约束帮你排好。绝大多数表单、工具栏、列表行用它就够了，几乎不用手写约束。</span></div>
+  <div class="term"><b class="term-name">内容拥抱 / 抗压优先级（hugging / compression resistance）</b><span class="term-def">当空间有富余或不足时，"谁该被拉伸、谁该被压扁"的优先级。<b>拥抱优先级高 = 不爱变大</b>（紧贴自己内容，像标签）；<b>抗压优先级高 = 不爱被压小</b>（宁可挤别人也保住自己内容，像必须完整显示的按钮）。直觉记法：拥抱=抗拉伸，抗压=抗压缩。把输入框的水平拥抱优先级设低，它就会主动"长大"去吃掉多余空间。</span></div>
+</div>
+
+<h3>路线四：把 SwiftUI 嵌进来 —— NSHostingView（点到为止）</h3>
+<p>如果某块界面你想用 SwiftUI 写，可以用 <code>NSHostingView(rootView:)</code>（或视图控制器版 <code>NSHostingController</code>）把一段 SwiftUI 视图包成一个普通 <code>NSView</code>，再用上面任意一种方式摆进 AppKit 里。它对外就是个 <code>NSView</code>，SwiftUI 内部自己负责布局。本教程聚焦 AppKit，这里知道"有这扇门、能混用"即可，细节后续章节再谈。</p>
+
+<div class="callout tip">
+  <b>那到底谁用得多、谁更好用？（诚实结论）</b>
+  <p>Apple 官方推荐、绝大多数 App 和初学者的标准答案是 <b>Auto Layout + NSStackView</b>：写得快、改得稳、窗口缩放自动适配，可读性好。这应当是你的默认选择。</p>
+  <p>但"更好用"不等于"永远最优"。在<b>高性能、海量 cell、复杂自绘</b>的专业 UI 里，Auto Layout 的约束求解会成为瓶颈，于是这类项目常常下沉到手动 <code>layout()</code>，用直接写 frame 换取性能和像素级控制。两者不是对错，是不同场景的不同取舍。</p>
+</div>
+
+<div class="callout warn">
+  <b>来自真实项目的证据（已核实）</b>
+  <p><b>偏手动 layout()：</b> Telegram 的 macOS 客户端 <code>overtake/TelegramSwift</code> 自建了 UI 框架 TGUIKit，其基础 <code>View</code> 类<b>重写了 <code>layout()</code>、<code>setFrameSize(_:)</code>、<code>setFrameOrigin(_:)</code>，并在初始化里把 <code>autoresizesSubviews</code> 设为 <code>false</code></b>——典型的"全程手动算 frame"，为的是聊天列表里海量 cell 的滚动性能。</p>
+  <p><b>偏 Auto Layout：</b> 更常见的开源 macOS 应用走标准路线——大量项目（如 <code>Ranchero-Software/NetNewsWire</code>、CotEditor、IINA 等）的界面用 Interface Builder 的 xib/storyboard 搭建，背后即 Auto Layout，配合 <code>NSStackView</code> 手写少量约束。结论照旧：<b>日常选 Auto Layout，性能敏感再手动</b>。</p>
+</div>
+
+<h3>并排对照：同一组控件，两种写法</h3>
+<p>需求：一个标题、一个输入框、一个按钮，横向排成一行，整体随容器宽度变化。先看 <b>Auto Layout（NSStackView + anchors）</b> 的写法。</p>
+
+<pre><code class="language-swift">import Cocoa
+
+// 路线三：Auto Layout —— 描述关系，系统自动重排
+final class AutoLayoutFormController: NSViewController {
+
+    override func loadView() {
+        // 这个根视图就是“容器”，宽度由外部（窗口 / 分割视图）决定
+        view = NSView()
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        let title = NSTextField(labelWithString: "名称")     // 只读标签
+        let field = NSTextField(string: "")                  // 单行输入框
+        let button = NSButton(title: "保存", target: self, action: #selector(save))
+
+        // 一个横向栈：方向 .horizontal，子视图间距 8
+        let stack = NSStackView(views: [title, field, button])
+        stack.orientation = .horizontal
+        stack.spacing = 8
+        stack.alignment = .centerY                           // 垂直方向居中对齐
+
+        // 关键：凡是用 Auto Layout 摆的视图，先关掉自动转换的旧 mask
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(stack)
+
+        // 让输入框“爱长大”：水平拥抱优先级调低 -> 多余宽度被它吃掉；
+        // 标题和按钮拥抱优先级拉满，紧贴自己内容、不被拉伸。
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        title.setContentHuggingPriority(.required, for: .horizontal)
+        button.setContentHuggingPriority(.required, for: .horizontal)
+
+        // 用 anchors 把栈钉在容器内、左右留 16 的边距、垂直居中
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+        ])
+        // 注意：从头到尾没有出现任何坐标数字。容器变宽变窄，
+        // 系统自动重解约束、自动重排，输入框自动伸缩。
+    }
+
+    @objc private func save() {
+        // 按钮点击：现代写法用 target:action:，不碰任何废弃的 cell API
+        print("保存")
+    }
+}</code></pre>
+
+<p>再看 <b>手动 frame（重写 layout()）</b> 的写法。逻辑完全等价，但每个坐标都得你亲手算。</p>
+
+<pre><code class="language-swift">import Cocoa
+
+// 路线一：手动 frame —— 所有坐标集中写在 layout() 里
+final class ManualLayoutFormController: NSViewController {
+
+    private let title  = NSTextField(labelWithString: "名称")
+    private let field  = NSTextField(string: "")
+    private let button = NSButton(title: "保存", target: nil, action: nil)
+
+    override func loadView() {
+        let root = NSView()
+        button.target = self
+        button.action = #selector(save)
+        root.addSubview(title)
+        root.addSubview(field)
+        root.addSubview(button)
+        view = root
+    }
+
+    // 系统在“首次显示 / 尺寸改变 / needsLayout 之后”都会调用这里。
+    // 把全部算术集中在此，任何宽度都能重新算对。
+    override func layout() {
+        super.layout()
+
+        let inset: CGFloat = 16
+        let gap: CGFloat = 8
+        let h: CGFloat = 24
+        let b = view.bounds                            // 读“我现在多大”
+        // 垂直居中：因为是对称的 (height - h) / 2，无论 y 朝上还是朝下都成立
+        let y = (b.height - h) / 2
+
+        // 标题：宽度按内容算（fittingSize 给出“刚好装下内容”的尺寸）
+        let titleW = title.fittingSize.width
+        title.frame = NSRect(x: inset, y: y, width: titleW, height: h)
+
+        // 按钮：同样按内容宽，钉在最右侧（默认坐标系 x 向右）
+        let buttonW = button.fittingSize.width
+        button.frame = NSRect(x: b.width - inset - buttonW, y: y,
+                              width: buttonW, height: h)
+
+        // 输入框：吃掉中间剩下的所有宽度 —— 这一步“吃满”全靠你减出来，
+        // 没有自动伸缩，容器一变就得重算（而这正是 layout() 会重跑的原因）
+        let fieldX = inset + titleW + gap
+        let fieldW = (b.width - inset - buttonW - gap) - fieldX
+        field.frame = NSRect(x: fieldX, y: y, width: max(0, fieldW), height: h)
+    }
+
+    @objc private func save() { print("保存") }
+}</code></pre>
+
+<p>对照着读，差别一目了然：Auto Layout 版本里没有一个坐标数字，"输入框吃满剩余宽度"是靠拥抱优先级<b>声明</b>出来的；手动版本里每个 x、宽都得你减出来，"吃满"是 <code>(b.width - inset - buttonW - gap) - fieldX</code> 这一行<b>算</b>出来的。容器一变宽变窄——前者系统自动重解，后者靠 <code>layout()</code> 被重新调用、你重新算。</p>
+
+<h3>动手感受：切换两种摆放，拖动容器宽度</h3>
+<div class="demo">
+  <div class="demo-stage">
+    <div class="mac-window">
+      <div class="mac-titlebar"><span class="mac-traffic"><i></i><i></i><i></i></span><span class="mac-title">布局对照</span></div>
+      <div class="mac-body">
+        <div class="row gap center" style="flex-wrap:wrap">
+          <span class="mac-label">摆放方式</span>
+          <div class="mac-seg" id="ch4-seg">
+            <button class="on" data-mode="auto">Auto Layout 栈</button>
+            <button data-mode="manual">手动 frame</button>
+          </div>
+          <span class="mac-label" style="margin-left:12px">容器宽度</span>
+          <input class="mac-range" type="range" id="ch4-width" min="260" max="560" value="460">
+          <span class="mac-label" id="ch4-wlabel">460pt</span>
+        </div>
+
+        <fieldset class="mac-box" style="margin-top:14px">
+          <legend class="mac-box-title">容器（拖上面的滑块改变它的宽度）</legend>
+          <!-- 这一层就是“容器”，它的宽度由滑块决定 -->
+          <div id="ch4-container" style="height:48px;border:1px dashed var(--mac-sep,#c7c7cc);border-radius:8px;overflow:hidden;transition:width .12s ease">
+            <!-- “Auto Layout 栈”模式：真用 flex 让浏览器自己排，输入框 flex:1 吃满 -->
+            <!-- “手动 frame”模式：JS 关掉 flex、亲手给每个控件写 left/width，模拟 layout() -->
+            <div id="ch4-row" style="display:flex;align-items:center;gap:8px;height:100%;padding:0 16px;box-sizing:border-box">
+              <span class="mac-label" id="ch4-title" style="white-space:nowrap;flex:0 0 auto">名称</span>
+              <input class="mac-field" id="ch4-field" type="text" value="我的会话" style="flex:1 1 auto;min-width:0">
+              <button class="mac-btn primary" id="ch4-btn" style="white-space:nowrap;flex:0 0 auto">保存</button>
+            </div>
+          </div>
+        </fieldset>
+        <p class="mac-label" id="ch4-explain" style="margin-top:10px"></p>
+      </div>
+    </div>
+  </div>
+  <p class="demo-note">这个 demo 和上面两段 Swift 一一对应：选「Auto Layout 栈」时，这一行<b>真的用 flex 布局</b>（输入框 <code>flex:1</code>，对应低拥抱优先级）——拖滑块只改容器宽，<b>浏览器自己重排</b>，你没写一个坐标，正如 <code>NSStackView</code>。选「手动 frame」时，JS 会关掉 flex、改用绝对定位，像重写的 <code>layout()</code> 一样<b>亲手把每个控件的 left/width 重算一遍</b>，下方文字会显示它当前算出的坐标。两种方式变宽/变窄时"输入框伸缩"的结果一致，但一个是声明出来的、一个是算出来的——这就是本质区别。</p>
+</div>
+
+<script>
+(function () {
+  var seg = document.getElementById('ch4-seg');
+  var width = document.getElementById('ch4-width');
+  var wlabel = document.getElementById('ch4-wlabel');
+  var container = document.getElementById('ch4-container');
+  var row = document.getElementById('ch4-row');
+  var title = document.getElementById('ch4-title');
+  var field = document.getElementById('ch4-field');
+  var btn = document.getElementById('ch4-btn');
+  var explain = document.getElementById('ch4-explain');
+  var mode = 'auto';
+  var INSET = 16, GAP = 8;
+
+  function relayout() {
+    var W = parseInt(width.value, 10);
+    container.style.width = W + 'px';
+    wlabel.textContent = W + 'pt';
+
+    if (mode === 'auto') {
+      // 模拟 NSStackView：真用 flex 排队，输入框 flex:1 自动吃满剩余空间。
+      // 我们一个坐标都不写——浏览器（=约束求解器）自己重排。
+      row.style.display = 'flex';
+      row.style.position = '';     // 复位：交回正常文档流
+      field.style.position = '';
+      field.style.left = '';
+      field.style.width = '';      // 交回给 flex 决定
+      title.style.position = '';
+      title.style.left = '';
+      btn.style.position = '';
+      btn.style.left = '';
+      // 仅用于“讲解文字”：把 flex 实际撑出的宽度读出来展示，不参与布局
+      var shownW = Math.round(field.getBoundingClientRect().width);
+      explain.innerHTML = '<b>Auto Layout 栈：</b>你只声明了“间距 8 + 输入框低拥抱优先级（flex:1）”，'
+        + '系统按规则把输入框拉到约 ' + shownW + 'pt 来填满剩余空间。规则不变，缩放自适应——你没写任何坐标。';
+    } else {
+      // 模拟重写的 layout()：关掉 flex，每个坐标都“亲手算”
+      row.style.display = 'block';
+      row.style.position = 'relative';  // 让子控件的 absolute 以本容器为基准定位
+      var titleW = Math.ceil(title.getBoundingClientRect().width) || 36;
+      var btnW = Math.ceil(btn.getBoundingClientRect().width) || 56;
+      var h = 26;
+      var y = (48 - h) / 2;
+      var fieldX = INSET + titleW + GAP;
+      var fieldW = (W - INSET - btnW - GAP) - fieldX;
+
+      title.style.position = 'absolute'; title.style.left = INSET + 'px'; title.style.top = (48 - 18) / 2 + 'px';
+      field.style.position = 'absolute'; field.style.left = fieldX + 'px'; field.style.top = y + 'px';
+      field.style.width = Math.max(0, fieldW) + 'px'; field.style.height = h + 'px';
+      btn.style.position = 'absolute'; btn.style.left = (W - INSET - btnW) + 'px'; btn.style.top = y + 'px';
+
+      explain.innerHTML = '<b>手动 frame：layout() 又被调用了。</b> 我刚刚亲手算出：'
+        + 'title.x=' + INSET + '，field.x=' + Math.round(fieldX) + '、field.width='
+        + Math.max(0, Math.round(fieldW)) + '，button.x=' + Math.round(W - INSET - btnW)
+        + '。容器一变，这串数字就得重算一遍。';
+    }
+  }
+
+  Array.prototype.forEach.call(seg.querySelectorAll('button'), function (b) {
+    b.addEventListener('click', function () {
+      Array.prototype.forEach.call(seg.querySelectorAll('button'), function (x) { x.classList.remove('on'); });
+      b.classList.add('on');
+      mode = b.getAttribute('data-mode');
+      relayout();
+    });
+  });
+  width.addEventListener('input', relayout);
+  relayout();
+})();
+</script>
+
+<div class="callout essence">
+  <b>本质</b>
+  <p>布局只有一件事：<b>给每个视图填一个 frame</b>。四条路线的唯一区别是"谁来填、何时填、按什么规则填"。手动 <code>layout()</code> 是你亲手算坐标（最大控制力、最高性能、最累）；autoresizingMask 是父子边距的弹簧规则（很弱，基本退役）；Auto Layout 是你只描述视图间的<b>关系</b>、由求解器算出坐标（现代默认、最省心）；NSHostingView 则是把 SwiftUI 当成一块 <code>NSView</code> 嵌进来。记住那条诚实结论：<b>日常默认 Auto Layout + NSStackView；只有当性能/海量 cell/复杂自绘逼你下沉时，才回到手动 layout()。</b></p>
+</div>
+
+<div class="qa">
+  <p class="q">思考题：在手动 <code>layout()</code> 那段代码里，"输入框吃满剩余宽度"是用 <code>fieldW = (b.width - inset - buttonW - gap) - fieldX</code> 算出来的。如果改用 Auto Layout，你<b>不写任何坐标</b>，又是靠什么让输入框自动吃满？为什么标题和按钮不会跟着一起被拉伸？</p>
+  <details><summary>查看答案</summary>
+    <div class="a">
+      <p>靠 <b>内容拥抱优先级（content hugging priority）</b>。在栈里，三个视图共享一行宽度，多余的空间会分给"最不爱拥抱自己内容"的那个。我们把输入框的水平拥抱优先级设成 <code>.defaultLow</code>（低，"我不介意被拉大"），把标题和按钮设成 <code>.required</code>（高，"我要紧贴内容、别拉我"）。于是求解器把所有富余宽度都塞给输入框，标题和按钮保持各自的内容宽度不变。</p>
+      <p>对照之下你会发现两种范式的根本差异：手动版把"吃满"<b>算成了一个具体数字</b>，容器一变就得重算；Auto Layout 版把"吃满"<b>声明成了一条优先级规则</b>，容器怎么变，规则都成立，系统自动重解——这正是它在日常开发里更省心的原因。</p>
+    </div>
+  </details>
+</div>
+</section>
+
+<section class="chapter" id="ch-5">
+<h2 data-n="5">常用控件与 Target-Action</h2>
+<p class="lead">界面上能点、能拖、能勾、能选的那些小东西，叫"控件"（control）。但控件只负责"长成那个样子，并感知用户的手指"，它自己并不知道点完之后该干嘛——真正干活的代码住在另一个对象里。这一章我们先弄清楚控件怎么把"我被操作了"这件事告诉你的代码——这就是 AppKit 几十年没变的核心套路 <b>Target-Action</b>——然后挨个认识一遍最常用的控件，最后亲手搭一个"控件画廊"，让每一次操作都实时反映到屏幕上。</p>
+
+<h3>5.1 控件为什么需要"告诉别人"</h3>
+<p>想象一个真实的开关面板：墙上的开关只管"被按下 / 弹起"，它并不知道接的是客厅灯还是排风扇——那是电线另一头的事。控件也一样：一个 <code>NSButton</code> 只懂"我被点了"，至于点完要保存文件、要发消息、还是要弹窗，它一概不管。</p>
+<p>那它怎么把"我被点了"传出去？AppKit 的答案不是回调函数、也不是事件监听器，而是一个非常"Cocoa 味"的机制：每个控件身上挂着两个属性——一个 <b>target</b>（接收消息的对象，相当于电线另一头接的电器）和一个 <b>action</b>（要调用对象身上的哪个方法，相当于"按一下要做的那个动作"）。控件被操作时，就向 target 发送 action 这条消息。</p>
+
+<div class="termbox">
+<div class="term"><b class="term-name">控件 (Control)</b><span class="term-def">界面上可交互的元素，AppKit 里几乎都是抽象基类 <code>NSControl</code> 的子类，如按钮、滑块、文本框。它负责显示自己并感知用户操作，但不负责"操作之后做什么"。</span></div>
+<div class="term"><b class="term-name">Target-Action</b><span class="term-def">一种把"谁触发"和"做什么"解耦的设计模式：控件存着一个 target 对象引用和一个 action 选择器，被操作时就向 target 发送 action 这条消息。这样控件无需被子类化，就能驱动任意逻辑。</span></div>
+<div class="term"><b class="term-name">target</b><span class="term-def">控件的属性，类型 <code>AnyObject?</code>，是动作消息的接收者。它是 <b>weak</b>（弱引用）的，避免控件和它的处理者互相强引用造成内存泄漏。若为 <code>nil</code>，消息会沿"响应者链"向上寻找谁能处理。</span></div>
+<div class="term"><b class="term-name">action</b><span class="term-def">控件的属性，类型 <code>Selector?</code>。Selector（选择器）是"一个方法名的运行时身份证"，用 <code>#selector(方法名)</code> 写出来。</span></div>
+</div>
+
+<h3>5.2 #selector 与 @objc：为什么要这两个"咒语"</h3>
+<p>Target-Action 这套机制比 Swift 还老——它来自 Objective-C 的运行时（runtime）。在 Objective-C 里，"调用一个方法"叫"发送一条消息"，而消息靠名字（selector）在运行时动态查找。Swift 想用这套机制，就得满足两个条件：</p>
+<ul>
+<li><b><code>@objc</code></b>：给你的处理方法加上这个标记，等于告诉编译器"把这个方法暴露给 Objective-C 运行时，让它能被名字找到"。不加，运行时就看不见它，触发时会因为"找不到这个 selector"而崩溃。</li>
+<li><b><code>#selector(...)</code></b>：把方法名安全地转换成一个 <code>Selector</code> 值。比起手写字符串 <code>"buttonClicked:"</code>，<code>#selector</code> 会让编译器帮你检查这个方法真的存在，写错了当场报错。</li>
+</ul>
+<p>action 方法有个固定长相：接收一个参数 <code>sender</code>，就是"是谁触发了我"。在方法里通常立刻把 <code>sender</code> 转回它的真实类型，去读它现在的值：</p>
+
+<pre><code class="language-swift">@objc func buttonClicked(_ sender: NSButton) {
+    // sender 就是被点击的那个按钮本身
+    print("按钮被点了，当前状态：\(sender.state == .on)")
+}</code></pre>
+
+<div class="callout tip">
+<b>提示</b>
+<p>你可能在 iOS（UIKit）里见过 <code>UIAction</code> 这种"直接传一个闭包"的写法，没有 selector 也没有 <code>@objc</code>。AppKit 的 <code>NSButton</code> 等控件<b>没有</b>内置这种闭包式初始化器，连接控件和逻辑一律走 target-action。所以本章的 <code>#selector</code> / <code>@objc</code> 不是可选项，而是必修课。</p>
+</div>
+
+<h3>5.3 两种"挂钩"写法</h3>
+<p>把控件和处理方法连起来，现代 AppKit 有两条等价的路，区别只是"分两步写还是一步写"：</p>
+
+<pre><code class="language-swift">// 写法一：先建控件，再分别赋值 target 和 action（最原始，能看清机制）
+let button = NSButton(title: "保存", target: nil, action: nil)
+button.target = self
+button.action = #selector(save(_:))
+
+// 写法二：用便利初始化器一步到位（推荐，最常见）
+let button2 = NSButton(title: "保存", target: self, action: #selector(save(_:)))</code></pre>
+
+<p>本章代码主要用<b>写法二</b>，因为它最能体现 target-action 的本质："这个控件的动作 = 调用 self 的某个方法"。当一个控件先建出来、target/action 暂时填 <code>nil</code>（比如要先存进属性、稍后再统一接线），就退回写法一补上——两者效果完全一样。</p>
+
+<div class="callout tip">
+<b>提示</b>
+<p>一组 <code>NSButton(radioButtonWithTitle:...)</code> 单选按钮，只要共用<b>同一个 action 选择器</b>，AppKit 就会自动把它们识别成互斥的一组——选中一个，其余自动取消。不需要你手动管理"分组"。</p>
+</div>
+
+<h3>5.4 控件巡礼</h3>
+<p>下面这张表是你的"工具箱清单"。每个控件记住三件事就够用：<b>它是什么、怎么读它现在的值、怎么设它的值</b>。它们绝大多数是 <code>NSControl</code> 的子类，所以都共享 target-action，也都共享下面这组通用的取值 / 设值属性。</p>
+
+<div class="termbox">
+<div class="term"><b class="term-name">stringValue</b><span class="term-def">把控件的值当成文字（<code>String</code>）读写。</span></div>
+<div class="term"><b class="term-name">integerValue</b><span class="term-def">当成整数（<code>Int</code>）读写。</span></div>
+<div class="term"><b class="term-name">doubleValue</b><span class="term-def">当成小数（<code>Double</code>）读写。</span></div>
+<div class="term"><b class="term-name">state</b><span class="term-def">开 / 关类控件的状态，取值 <code>.on</code> / <code>.off</code>（还有第三态 <code>.mixed</code> 表示"部分选中"）。</span></div>
+</div>
+
+<p>关键直觉：这几个属性读写的是<b>同一个底层值</b>，只是换了不同"眼镜"去看。给 <code>stringValue = "42"</code>，那么 <code>integerValue</code> 自动变成 <code>42</code>、<code>doubleValue</code> 变成 <code>42.0</code>；反过来设 <code>doubleValue = 3.7</code>，<code>integerValue</code> 会被截断成 <code>3</code>。</p>
+
+<div class="mac-table">
+<div class="mac-thead"><div class="mac-td">控件</div><div class="mac-td">用途</div><div class="mac-td">怎么取值 / 设值</div></div>
+<div class="mac-tr"><div class="mac-td">NSButton</div><div class="mac-td">按钮；靠 <code>buttonType</code> 还能当复选框 / 单选按钮 / 开关式切换</div><div class="mac-td">复选 / 单选读 <code>state</code>（<code>.on</code> / <code>.off</code>）；普通按钮在 action 里做事，不取值</div></div>
+<div class="mac-tr"><div class="mac-td">NSTextField</div><div class="mac-td">单行文本框；把 <code>isEditable</code> 设为 <code>false</code> 就变成纯展示的"标签"</div><div class="mac-td"><code>stringValue</code> 读写文字</div></div>
+<div class="mac-tr"><div class="mac-td">NSSecureTextField</div><div class="mac-td">密码框；输入显示成圆点，但内部存的是明文</div><div class="mac-td"><code>stringValue</code>（拿到的是明文，给你校验用）</div></div>
+<div class="mac-tr"><div class="mac-td">NSTextView</div><div class="mac-td">多行、可滚动的富文本编辑区</div><div class="mac-td"><code>string</code> 属性读写全部文字（注意不是 <code>stringValue</code>，它不是 <code>NSControl</code>）</div></div>
+<div class="mac-tr"><div class="mac-td">NSSlider</div><div class="mac-td">拖动滑块在一个范围内选连续值</div><div class="mac-td"><code>doubleValue</code>；范围用 <code>minValue</code> / <code>maxValue</code></div></div>
+<div class="mac-tr"><div class="mac-td">NSStepper</div><div class="mac-td">上 / 下小箭头，点一下加 / 减一步，常和文本框配对</div><div class="mac-td"><code>integerValue</code> / <code>doubleValue</code>；步长 <code>increment</code></div></div>
+<div class="mac-tr"><div class="mac-td">NSSwitch</div><div class="mac-td">macOS 10.15+ 的开关，二态 on / off</div><div class="mac-td"><code>state</code>（<code>.on</code> / <code>.off</code>）</div></div>
+<div class="mac-tr"><div class="mac-td">NSPopUpButton</div><div class="mac-td">下拉菜单，从一组互斥选项里挑一个</div><div class="mac-td"><code>titleOfSelectedItem</code> / <code>indexOfSelectedItem</code></div></div>
+<div class="mac-tr"><div class="mac-td">NSComboBox</div><div class="mac-td">下拉框 + 可自由输入，介于文本框和下拉之间</div><div class="mac-td"><code>stringValue</code>（最终文字）/ <code>indexOfSelectedItem</code></div></div>
+<div class="mac-tr"><div class="mac-td">NSSegmentedControl</div><div class="mac-td">连成一排的分段按钮，常用作"选一个标签页"</div><div class="mac-td"><code>selectedSegment</code>（选中段的下标，没选是 <code>-1</code>）</div></div>
+<div class="mac-tr"><div class="mac-td">NSProgressIndicator</div><div class="mac-td">进度条 / 转圈圈，表示"正在忙"或"完成了几成"</div><div class="mac-td"><code>doubleValue</code>（设值）；菊花式用 <code>startAnimation(_:)</code></div></div>
+<div class="mac-tr"><div class="mac-td">NSImageView</div><div class="mac-td">显示一张图片</div><div class="mac-td"><code>image</code> 属性读写 <code>NSImage</code></div></div>
+</div>
+
+<div class="callout warn">
+<b>注意</b>
+<p><code>NSTextView</code> 的取值习惯和别人不同：它<b>不是</b> <code>NSControl</code> 的子类，所以用 <code>string</code> 而非 <code>stringValue</code>，也通常用 <b>delegate</b>（委托）而非 target-action 来感知文字变化。<code>NSImageView</code> 虽然是 <code>NSControl</code>，但日常只用 <code>image</code> 展示图片，很少走 target-action。其余表里的控件都老老实实走 target-action。</p>
+</div>
+
+<h3>5.5 动手：用代码搭一个控件画廊</h3>
+<p>下面这个 <code>NSViewController</code> 程序化地放进若干控件，全部接到<b>同一个</b> <code>controlChanged(_:)</code> 方法上。这正是 target-action 的威力：一个回调，靠 <code>sender</code> 是谁、靠 <code>tag</code>（给控件编号的小整数）来分辨是谁触发的，然后统一刷新底部那块"输出区"。布局沿用上一章学的 <code>NSStackView</code> + anchors。</p>
+
+<pre><code class="language-swift">import Cocoa
+
+final class GalleryViewController: NSViewController {
+
+    // 给每个控件一个 tag 编号，便于在回调里区分
+    private enum Tag: Int { case button, check, toggle, slider, popup, segment, field }
+
+    // 底部的输出标签（用不可编辑的 NSTextField 当"标签"）
+    private let output = NSTextField(labelWithString: "等待操作…")
+
+    // 持有各控件的引用，方便随时读它们的当前值；target/action 先留空，viewDidLoad 里统一接线
+    private let slider  = NSSlider(value: 50, minValue: 0, maxValue: 100,
+                                   target: nil, action: nil)
+    private let popup   = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let segment = NSSegmentedControl(labels: ["列表", "网格", "分栏"],
+                                             trackingMode: .selectOne,
+                                             target: nil, action: nil)
+    private let field   = NSTextField(string: "")
+    private let check   = NSButton(checkboxWithTitle: "接收通知",
+                                   target: nil, action: nil)
+    private let toggle  = NSSwitch()
+
+    override func loadView() {
+        // 控制器没连 xib，必须自己给一个根视图
+        view = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: 320))
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        // 1) 普通按钮：便利初始化器一步连好 target-action（写法二）
+        let button = NSButton(title: "执行",
+                              target: self,
+                              action: #selector(controlChanged(_:)))
+        button.tag = Tag.button.rawValue
+
+        // 2) 复选框（先建好、这里补 target/action，即写法一）
+        check.tag    = Tag.check.rawValue
+        check.target = self
+        check.action = #selector(controlChanged(_:))
+
+        // 3) 开关 NSSwitch
+        toggle.tag    = Tag.toggle.rawValue
+        toggle.target = self
+        toggle.action = #selector(controlChanged(_:))
+
+        // 4) 滑块（前面初始化时 target/action 留空，这里补上）
+        slider.tag    = Tag.slider.rawValue
+        slider.target = self
+        slider.action = #selector(controlChanged(_:))
+
+        // 5) 下拉菜单：加几个选项
+        popup.addItems(withTitles: ["红", "绿", "蓝"])
+        popup.selectItem(withTitle: "绿")
+        popup.tag    = Tag.popup.rawValue
+        popup.target = self
+        popup.action = #selector(controlChanged(_:))
+
+        // 6) 分段控件
+        segment.selectedSegment = 0
+        segment.tag    = Tag.segment.rawValue
+        segment.target = self
+        segment.action = #selector(controlChanged(_:))
+
+        // 7) 文本框：回车提交时触发 action
+        field.placeholderString = "输入后按回车…"
+        field.tag    = Tag.field.rawValue
+        field.target = self
+        field.action = #selector(controlChanged(_:))
+
+        // 输出标签换行显示
+        output.lineBreakMode = .byWordWrapping
+        output.maximumNumberOfLines = 0
+
+        // 用竖直 stack 把所有控件码起来
+        let stack = NSStackView(views: [button, check, toggle, slider,
+                                        popup, segment, field, output])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 12
+        // 程序化布局必须关掉自动转换 mask，改用 anchors
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 20),
+            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
+        ])
+    }
+
+    // 唯一的回调：所有控件都连到这里，靠 sender / tag 区分
+    @objc private func controlChanged(_ sender: NSControl) {
+        let what: String
+        switch Tag(rawValue: sender.tag) {
+        case .button:  what = "点击了「执行」按钮"
+        case .check:   what = "复选框：\((sender as! NSButton).state == .on ? "勾选" : "取消")"
+        case .toggle:  what = "开关：\((sender as! NSSwitch).state == .on ? "开" : "关")"
+        case .slider:  what = "滑块拖到 \(Int(sender.doubleValue))"
+        case .popup:   what = "下拉选了 \((sender as! NSPopUpButton).titleOfSelectedItem ?? "")"
+        case .segment: what = "分段选了第 \((sender as! NSSegmentedControl).selectedSegment) 段"
+        case .field:   what = "文本框提交：\(sender.stringValue)"
+        case .none:    what = "未知控件"
+        }
+
+        // 汇总当前所有控件的值，一并显示
+        let summary = """
+        最近操作：\(what)
+        ──────────
+        复选框：\(check.state == .on ? "✓" : "✗")  开关：\(toggle.state == .on ? "开" : "关")
+        滑块：\(Int(slider.doubleValue))  下拉：\(popup.titleOfSelectedItem ?? "")
+        分段：第 \(segment.selectedSegment) 段  文本：\(field.stringValue)
+        """
+        output.stringValue = summary
+    }
+}</code></pre>
+
+<p>读这段代码时，把目光锁定一条主线：<b>操作发生 → 控件向 target（self）发送 action（<code>controlChanged</code>）→ 在方法里读 <code>sender</code> 的当前值 → 更新 <code>output</code></b>。七个控件、一个回调，这就是 Cocoa 几十年来组织交互的标准骨架。</p>
+
+<h3>5.6 看得见的版本</h3>
+<p>下面这个网页 demo 用普通的 HTML 表单元素，化妆成 macOS 控件的样子，行为和上面的 Swift 代码一一对应：每个控件的 <code>change</code> / <code>input</code> 事件就相当于 target-action 的回调，底部那块 <code>ch5-output</code> 就相当于代码里的 <code>output</code> 标签。动一动任何一个控件，盯着底部看它怎么实时变化。</p>
+
+<div class="demo">
+<div class="demo-stage">
+<div class="mac-window">
+<div class="mac-titlebar"><span class="mac-traffic"><i></i><i></i><i></i></span><span class="mac-title">控件画廊</span></div>
+<div class="mac-body">
+<fieldset class="mac-box">
+<legend class="mac-box-title">控件</legend>
+<div class="col gap">
+<div class="row gap center"><button class="mac-btn primary" id="ch5-button">执行</button><label class="mac-check"><input type="checkbox" id="ch5-check"><span>接收通知</span></label></div>
+<div class="row gap center"><span class="mac-label">开关</span><label class="mac-switch"><input type="checkbox" id="ch5-toggle"><span></span></label></div>
+<div class="row gap center"><span class="mac-label">滑块</span><input class="mac-range fill" type="range" id="ch5-slider" min="0" max="100" value="50"></div>
+<div class="row gap center"><span class="mac-label">下拉</span><select class="mac-select" id="ch5-popup"><option>红</option><option selected>绿</option><option>蓝</option></select></div>
+<div class="row gap center"><span class="mac-label">分段</span><div class="mac-seg" id="ch5-segment"><button class="on" data-i="0">列表</button><button data-i="1">网格</button><button data-i="2">分栏</button></div></div>
+<div class="row gap center"><span class="mac-label">文本</span><input class="mac-field fill" type="text" id="ch5-field" placeholder="输入后按回车…"></div>
+</div>
+</fieldset>
+<fieldset class="mac-box">
+<legend class="mac-box-title">输出</legend>
+<pre id="ch5-output" style="margin:0;white-space:pre-wrap;font:inherit">等待操作…</pre>
+</fieldset>
+</div>
+</div>
+<p class="demo-note">每个控件的事件回调就对应 Swift 里的 <code>controlChanged(_:)</code>：操作发生 → 触发回调 → 读出当前值 → 重绘底部输出。注意"最近操作"那一行随着你动的不同控件而变，正如代码里靠 <code>sender</code> 的 <code>tag</code> 分辨触发者；而下方的汇总区始终显示<b>所有</b>控件的当前值，对应代码里那段 <code>summary</code>。文本框故意只在按下回车时才触发，对应 <code>NSTextField</code> 的 action 默认在回车时才发。</p>
+</div>
+<script>
+(function () {
+  var out     = document.getElementById('ch5-output');
+  var button  = document.getElementById('ch5-button');
+  var check   = document.getElementById('ch5-check');
+  var toggle  = document.getElementById('ch5-toggle');
+  var slider  = document.getElementById('ch5-slider');
+  var popup   = document.getElementById('ch5-popup');
+  var seg     = document.getElementById('ch5-segment');
+  var field   = document.getElementById('ch5-field');
+  var last    = '等待操作…';
+
+  function selectedSegment() {
+    var btns = seg.querySelectorAll('button');
+    for (var i = 0; i < btns.length; i++) {
+      if (btns[i].classList.contains('on')) return i;
+    }
+    return -1;
+  }
+
+  // 相当于 Swift 的 controlChanged(_:)：先记录"最近操作"，再重绘汇总
+  function render(what) {
+    last = what;
+    out.textContent =
+      '最近操作：' + last + '\n' +
+      '──────────\n' +
+      '复选框：' + (check.checked ? '✓' : '✗') +
+      '  开关：' + (toggle.checked ? '开' : '关') + '\n' +
+      '滑块：' + slider.value +
+      '  下拉：' + popup.value + '\n' +
+      '分段：第 ' + selectedSegment() + ' 段' +
+      '  文本：' + (field.value || '(空)');
+  }
+
+  button.addEventListener('click', function () { render('点击了「执行」按钮'); });
+  check.addEventListener('change', function () {
+    render('复选框：' + (check.checked ? '勾选' : '取消'));
+  });
+  toggle.addEventListener('change', function () {
+    render('开关：' + (toggle.checked ? '开' : '关'));
+  });
+  slider.addEventListener('input', function () { render('滑块拖到 ' + slider.value); });
+  popup.addEventListener('change', function () { render('下拉选了 ' + popup.value); });
+  seg.addEventListener('click', function (e) {
+    var t = e.target.closest('button');
+    if (!t) return;
+    seg.querySelectorAll('button').forEach(function (b) { b.classList.remove('on'); });
+    t.classList.add('on');
+    render('分段选了第 ' + t.getAttribute('data-i') + ' 段');
+  });
+  // 回车提交，对应 NSTextField 的 action 在回车时触发
+  field.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') render('文本框提交：' + (field.value || '(空)'));
+  });
+})();
+</script>
+</div>
+
+<div class="callout essence">
+<b>本质</b>
+<p>Target-Action 把一次交互拆成三段、解耦成两个对象：控件只负责"感知操作并发出一条具名消息"，处理逻辑住在另一个对象（target）里，两者用一个方法名（action / selector）作为约定连接。这样做的回报是：控件无需被你子类化就能驱动任意逻辑；多个控件可以共用一个回调；连接关系还能在运行时改写。你后面会反复见到的菜单项（<code>NSMenuItem</code>）、工具栏按钮，背后都是这同一套"发消息给 target"的思路——认准它，AppKit 的交互层就只剩下"换皮"的区别。</p>
+</div>
+
+<div class="qa">
+<p class="q">思考题：代码里七个控件全部把 <code>action</code> 设成同一个 <code>#selector(controlChanged(_:))</code>，靠每个控件不同的 <code>tag</code> 在回调里分辨是谁。换个思路：如果给每个控件单独写一个 action 方法（<code>buttonClicked</code>、<code>sliderChanged</code>……），各有什么利弊？什么场景下你会倾向"一个回调 + tag"，什么场景下倾向"一控件一方法"？</p>
+<details><summary>查看答案</summary>
+<div class="a">
+<p><b>一个回调 + tag</b>：优点是省代码、便于"统一处理"（比如这里要把所有控件的值汇总成一段文本，集中在一处最自然），新增控件只要加个 tag 分支。缺点是回调内部要做 <code>switch</code> 分发、还要把 <code>sender</code> 强转回具体类型（<code>sender as! NSButton</code>），类型不安全且容易写错；逻辑一多，这个方法会变成又长又杂的"大杂烩"。</p>
+<p><b>一控件一方法</b>：优点是每个方法职责单一、参数类型可以直接写成具体控件类型（<code>_ sender: NSSlider</code>），可读性和类型安全都更好。缺点是方法多、有重复的样板代码。</p>
+<p>经验法则：当多个控件<b>本质上在做同一类事、且需要共享 / 汇总状态</b>时（如本章的画廊、或一组筛选条件联动刷新列表），用"一个回调"更顺手；当每个控件触发的是<b>语义完全不同的独立动作</b>时（保存、删除、分享……），用"一控件一方法"更清晰、也更容易让编译器替你检查参数类型。</p>
+</div>
+</details>
+</div>
+</section>
+
+<section class="chapter" id="ch-6">
+<h2 data-n="6">列表与数据驱动：NSTableView / NSOutlineView</h2>
+<p class="lead">从邮件列表到访达侧边栏，从设置面板到聊天记录——你在 macOS 上看到的几乎每一份"上下滚动的列表"，背后都是同一个主角：<code>NSTableView</code>。它和树形版本 <code>NSOutlineView</code> 一起，撑起了系统里所有"行与列"的界面。本章我们要弄懂一件最反直觉、却最关键的事：<b>表格自己并不存数据</b>。它更像一个尽职的服务员，需要展示哪一行，就转头问你要——这就是"数据驱动"。理解了这一点，你才会明白为什么一个表格能轻松装下上万行还丝般顺滑，也才会明白本项目为什么用 <code>NSTableView</code> 自绘整段聊天记录。</p>
+
+<h3>1. 先建立直觉：表格是"服务员"，不是"仓库"</h3>
+<p>初学者最容易犯的错，是把表格想象成一个"装满了行的盒子"——好像你得把 100 行数据一行行塞进去，它才能显示。事实恰恰相反。</p>
+<p>打个比方：餐厅里有一张能坐很多人的长桌（屏幕上可见的那几行），但厨房里的菜单（你的真实数据）可能有上千道菜。服务员（表格）不会把上千道菜一次端上来，而是<b>你坐到第几桌、想看第几页菜单，他才去厨房取对应的那几样</b>。表格也是如此：它只关心"现在屏幕上能看见的那十几行"，需要显示第 37 行时，它才回过头问你："第 37 行的内容是什么？"</p>
+<p>这种"用到才问、按需索取"的工作方式，有个专门的名字。</p>
+
+<div class="termbox">
+  <div class="term"><b class="term-name">Pull 模型（拉取模型）</b><span class="term-def">表格不主动持有全部数据，而是在需要绘制某一行时，临时向"数据源"提问、索取那一行的内容。与之相对的是 Push 模型（你把全部数据一次性推给控件，控件自己存着）。AppKit 的表格、大纲都采用 Pull 模型。</span></div>
+  <div class="term"><b class="term-name">数据驱动（data-driven）</b><span class="term-def">界面上显示什么，完全由背后的数据决定。你改数据、然后告诉表格"刷新一下"，界面就跟着变；你从不直接去操作某一行的像素。</span></div>
+</div>
+
+<h3>2. NSTableView：行与列的根基</h3>
+<p><code>NSTableView</code> 是一个把数据按"行（记录）+ 列（字段）"排布的视图。一个表格可以只有一列（就是最常见的竖直列表），也可以有多列（像一张电子表格）。每一列由一个 <code>NSTableColumn</code> 描述。表格几乎总是被放进一个 <code>NSScrollView</code> 里，这样行多了就能滚动。</p>
+<p>关键在于：表格把"要数据"和"怎么显示"这两件事，<b>交给了两个不同的助手</b>。这是本章最重要的分工。</p>
+
+<div class="termbox">
+  <div class="term"><b class="term-name">dataSource（数据源）</b><span class="term-def">遵循 <code>NSTableViewDataSource</code> 协议的对象，负责回答"一共有多少行"（<code>numberOfRows(in:)</code>）以及提供每一行背后的原始数据。它管"有什么"。</span></div>
+  <div class="term"><b class="term-name">delegate（委托）</b><span class="term-def">遵循 <code>NSTableViewDelegate</code> 协议的对象，负责"怎么把数据变成画面"——提供每行的视图（<code>tableView(_:viewFor:row:)</code>）、行高，以及处理用户的选择（<code>tableViewSelectionDidChange(_:)</code>）。它管"长什么样、怎么交互"。</span></div>
+</div>
+
+<div class="callout tip"><b>记忆法</b><p>dataSource 回答 <b>"有什么"</b>（多少行、每行的数据）；delegate 回答 <b>"怎么样"</b>（每行长成什么视图、被选中了怎么办）。在小程序里，常常让同一个 <code>NSViewController</code> 同时兼任这两个角色——本章的示例就是这么做的。</p></div>
+
+<h3>3. view-based vs cell-based：现代写法只用 view-based</h3>
+<p>历史上 <code>NSTableView</code> 有两种模式。老的叫 <b>cell-based（基于单元格）</b>，每个格子是一个轻量的 <code>NSCell</code> 对象——这套 API 已过时，新代码不要用。现代写法是 <b>view-based（基于视图）</b>：每个格子就是一个真正的 <code>NSView</code>，通常是系统提供的 <code>NSTableCellView</code>，里面预置了 <code>textField</code>（文本）和 <code>imageView</code>（图标）两个常用控件出口。view-based 能让你用 Auto Layout 自由排版每一行，能放按钮、进度条、任何视图。</p>
+
+<div class="termbox">
+  <div class="term"><b class="term-name">NSTableCellView</b><span class="term-def">view-based 表格里一个格子的标准容器视图，继承自 <code>NSView</code>。自带可选的 <code>textField: NSTextField?</code> 和 <code>imageView: NSImageView?</code> 两个出口，让你快速放文字和图标。</span></div>
+  <div class="term"><b class="term-name">复用（reuse）/ 复用标识符（identifier）</b><span class="term-def">表格只为"屏幕上看得见的那几行"创建视图；当某行滚出屏幕，它的视图不会被销毁，而是被回收、擦干净、拿去装即将滚入的新行。<code>makeView(withIdentifier:owner:)</code> 就是"领一个回收好的视图来用"的方法，<code>identifier</code> 是给这一类视图起的名字（领回来的就是同名的那批）。</span></div>
+</div>
+
+<div class="callout essence"><b>本质</b><p>复用机制是表格能"上万行也流畅"的根本原因。屏幕上同时可见的可能就 20 行，所以内存里<b>永远只活着大约 20 多个行视图</b>，它们被反复擦写、循环利用。无论你的数据是 100 行还是 100 万行，创建的视图数量几乎不变——成本只取决于"屏幕多大"，不取决于"数据多大"。本项目的聊天记录（transcript）正是基于这个理由直接用 <code>NSTableView</code> 自绘：SwiftUI 的 <code>List</code> / <code>LazyVStack</code> 在这种行数、自定义布局和滚动语义下扛不住，而 <code>NSTableView</code> 的复用 + 自绘恰好稳定高效。</p></div>
+
+<h3>4. 用代码搭一个 view-based 表格</h3>
+<p>下面是一个完全程序化（不依赖 Storyboard / xib）的最小可用表格。它用 <code>NSViewController</code> 组织界面，用一个 Swift 数组当"真实数据"。请重点看三处：<b>数组就是数据源背后的仓库</b>、<b>三个协议方法如何被表格"提问"</b>、以及<b>添加数据后调用 <code>reloadData()</code> 触发重绘</b>。</p>
+
+<pre><code class="language-swift">import AppKit
+
+// 这个控制器同时兼任 dataSource 与 delegate 两个角色
+final class FruitListViewController: NSViewController {
+
+    // ① 真正的“数据”就住在这里——一个普通数组。表格本身不存它。
+    private var items: [String] = ["苹果", "香蕉", "樱桃"]
+
+    private let tableView = NSTableView()
+    private let inputField = NSTextField()                       // 顶部输入框
+    private let selectionLabel = NSTextField(labelWithString: "未选中")
+
+    // 给这一类行视图起的“复用名字”
+    private let cellID = NSUserInterfaceItemIdentifier("FruitCell")
+
+    override func loadView() {
+        // 程序化创建根视图（不走 xib）
+        view = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: 360))
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        setupTable()
+        setupLayout()
+    }
+
+    private func setupTable() {
+        // ② 单列表格：建一列、把表格的两个角色都交给 self
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("name"))
+        column.title = "水果"
+        tableView.addTableColumn(column)
+        tableView.dataSource = self     // 数据源：管“有多少行 / 每行什么数据”
+        tableView.delegate = self       // 委托：管“每行长什么视图 / 选中了怎么办”
+        tableView.headerView = NSTableHeaderView()
+    }
+
+    private func setupLayout() {
+        // 把表格放进可滚动容器（行多了能滚动）
+        let scrollView = NSScrollView()
+        scrollView.documentView = tableView
+        scrollView.hasVerticalScroller = true
+
+        // 顶部：输入框 + 添加按钮，横向排布（按钮用 target/action 绑回调）
+        let addButton = NSButton(title: "添加", target: self, action: #selector(addItem))
+        addButton.bezelStyle = .rounded
+        inputField.placeholderString = "输入水果名，回车或点添加"
+        inputField.target = self
+        inputField.action = #selector(addItem)                  // 回车也触发添加
+
+        let inputRow = NSStackView(views: [inputField, addButton])
+        inputRow.orientation = .horizontal
+        inputRow.spacing = 8
+
+        // 用垂直 NSStackView 把“输入行 / 表格 / 选中标签”叠起来
+        let stack = NSStackView(views: [inputRow, scrollView, selectionLabel])
+        stack.orientation = .vertical
+        stack.spacing = 12
+        stack.translatesAutoresizingMaskIntoConstraints = false  // 用 anchors，必须关掉它
+
+        view.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 16),
+            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+            stack.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -16),
+        ])
+    }
+
+    // ③ 添加：改数组 + 让表格重绘。这就是“数据驱动”的全部精髓。
+    @objc private func addItem() {
+        let text = inputField.stringValue.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return }
+        items.append(text)             // 先改“真实数据”
+        tableView.reloadData()         // 再让表格回过头来重新提问 → 多出一行
+        inputField.stringValue = ""
+    }
+}
+
+// MARK: - 数据源：回答“有什么”
+extension FruitListViewController: NSTableViewDataSource {
+    // 表格问：“一共多少行？” → 答：数组有多长就多少行
+    func numberOfRows(in tableView: NSTableView) -> Int {
+        items.count
+    }
+}
+
+// MARK: - 委托：回答“怎么样”
+extension FruitListViewController: NSTableViewDelegate {
+
+    // 表格问：“第 row 行该用什么视图？” → 领一个复用视图，填上数据返回
+    func tableView(_ tableView: NSTableView,
+                   viewFor tableColumn: NSTableColumn?,
+                   row: Int) -&gt; NSView? {
+        // 先尝试领一个回收好的视图；领不到（首次）就新建一个
+        let cell = tableView.makeView(withIdentifier: cellID, owner: self) as? NSTableCellView
+            ?? makeFreshCell()
+        cell.textField?.stringValue = items[row]   // 用第 row 行的数据擦写它
+        return cell
+    }
+
+    // 表格通知：“选中行变了！” → 读 selectedRow，更新下方标签
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        let row = tableView.selectedRow            // 没有选中时为 -1
+        if row &gt;= 0 {
+            selectionLabel.stringValue = "已选中：\(items[row])（第 \(row + 1) 行）"
+        } else {
+            selectionLabel.stringValue = "未选中"
+        }
+    }
+
+    // 第一次没有可复用视图时，新建一个并打上复用标识符
+    private func makeFreshCell() -&gt; NSTableCellView {
+        let cell = NSTableCellView()
+        cell.identifier = cellID                   // 打上名字，将来才能被回收复用
+
+        let text = NSTextField(labelWithString: "")
+        text.translatesAutoresizingMaskIntoConstraints = false
+        cell.addSubview(text)
+        cell.textField = text                      // 接到标准出口上
+        NSLayoutConstraint.activate([
+            text.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 4),
+            text.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+        ])
+        return cell
+    }
+}</code></pre>
+
+<p>读完这段代码，请把它在脑子里"跑"一遍：表格要显示时，先问 <code>numberOfRows(in:)</code>——你回答"数组有几个就几行"；然后对每个可见行问 <code>tableView(_:viewFor:row:)</code>——你领一个复用视图、用 <code>items[row]</code> 擦写它的文本。用户点了某行，<code>tableViewSelectionDidChange(_:)</code> 被调用，你读 <code>selectedRow</code> 更新提示。新增数据时，你做的只有两步：<b>改数组、调 <code>reloadData()</code></b>，剩下的"提问—回答"循环表格会自动重跑一遍。</p>
+
+<h3>5. NSOutlineView：把列表"长出树枝"</h3>
+<p><code>NSOutlineView</code> 是 <code>NSTableView</code> 的子类，专门显示<b>树形（层级）数据</b>——访达的边栏、左侧的文件夹树、本应用的会话侧边栏都是它。它在普通表格的基础上多了"展开/折叠"的三角箭头（disclosure triangle）。</p>
+<p>它依然是 Pull 模型，只是提问的方式从"第几行"变成了"某个节点的第几个孩子"。每个树节点对外表现为一个不透明的 <code>item</code>（类型是 <code>Any</code>，AppKit 不关心它具体是什么，只把它原样还给你）；<b>整棵树的根用 <code>nil</code> 表示</b>。大纲会一层层向数据源发问：</p>
+
+<div class="termbox">
+  <div class="term"><b class="term-name">outlineView(_:numberOfChildrenOfItem:)</b><span class="term-def">某个节点（参数为 <code>nil</code> 表示根）有几个直接孩子？决定每一层要画几行。参数类型是 <code>Any?</code>，因为根用 <code>nil</code> 传入。</span></div>
+  <div class="term"><b class="term-name">outlineView(_:child:ofItem:)</b><span class="term-def">某个节点的第 index 个孩子是哪个 item 对象？把抽象的"第几个孩子"映射到你的真实模型，返回类型是 <code>Any</code>。</span></div>
+  <div class="term"><b class="term-name">outlineView(_:isItemExpandable:)</b><span class="term-def">这个节点能不能展开（要不要画三角箭头）？通常"有孩子就能展开"。注意这里参数是 <code>Any</code>（非可选）——只会针对真实节点发问，不会传 <code>nil</code>。</span></div>
+</div>
+
+<div class="callout warn"><b>易踩的坑：参数到底是 <code>Any</code> 还是 <code>Any?</code></b><p>这三个方法的 <code>item</code> 参数<b>不全是可选类型</b>：<code>numberOfChildrenOfItem</code> 和 <code>child:ofItem:</code> 收 <code>Any?</code>（要用 <code>nil</code> 代表根）；而 <code>isItemExpandable</code> 收的是<b>非可选的 <code>Any</code></b>。如果你把它也写成 <code>Any?</code>，Swift 会认为你<b>没有实现协议要求的方法</b>（签名对不上），编译能过但运行时该回调根本不被调用——所有节点都画不出三角、点了没反应。照抄 Xcode 的自动补全即可避开。</p></div>
+
+<p>关键直觉：<b>未展开的分支永远不会被提问</b>。哪怕一棵树有几万个节点，只要它们都收着，大纲就一个都不去碰——这正是 Pull 模型对又深又大的树极其高效的原因。下面是数据源核心方法的样子（视图提供方法 <code>outlineView(_:viewFor:item:)</code> 与表格的 <code>viewFor:row:</code> 同理，此处从略）：</p>
+
+<pre><code class="language-swift">// 一个最简单的树节点模型（用 class，因为 NSOutlineView 靠对象“身份”识别节点）
+final class Node {
+    let title: String
+    let children: [Node]
+    init(_ title: String, _ children: [Node] = []) {
+        self.title = title
+        self.children = children
+    }
+}
+
+final class TreeViewController: NSViewController, NSOutlineViewDataSource {
+
+    // 顶层节点（即“根 nil 的孩子”）
+    private let roots = [
+        Node("项目", [Node("源码", [Node("App.swift"), Node("View.swift")]),
+                     Node("资源")]),
+        Node("收藏夹", [Node("文档"), Node("下载")]),
+    ]
+
+    // 某节点（nil 即根）有几个孩子？
+    func outlineView(_ outlineView: NSOutlineView,
+                     numberOfChildrenOfItem item: Any?) -&gt; Int {
+        if let node = item as? Node { return node.children.count }
+        return roots.count               // item 为 nil → 返回顶层数量
+    }
+
+    // 某节点的第 index 个孩子是谁？
+    func outlineView(_ outlineView: NSOutlineView,
+                     child index: Int, ofItem item: Any?) -&gt; Any {
+        if let node = item as? Node { return node.children[index] }
+        return roots[index]
+    }
+
+    // 这个节点能展开吗？（有孩子就能）—— 注意 item 是 Any，不是 Any?
+    func outlineView(_ outlineView: NSOutlineView,
+                     isItemExpandable item: Any) -&gt; Bool {
+        guard let node = item as? Node else { return false }
+        return !node.children.isEmpty
+    }
+}</code></pre>
+
+<p>顺带一提：树节点这里用 <code>class</code> 而不是 <code>struct</code> 是有讲究的——<code>NSOutlineView</code> 靠对象的"身份"（同一个引用 <code>===</code>）来记住"哪个节点是展开的"。本项目的侧边栏 <code>SidebarItemNode</code> 正是 <code>final class</code>，原因就在这里。</p>
+
+<h3>6. 动手玩一玩</h3>
+<p>下面的 demo 把上面两段代码"翻译"成了网页：顶部输入框 + 添加按钮往表格塞行（对应改数组 + <code>reloadData()</code>），点击行高亮选中并在下方显示选中内容（对应 <code>selectedRow</code> + <code>tableViewSelectionDidChange</code>），最下方是一棵能展开/折叠的大纲树（对应 <code>NSOutlineView</code> 的层级与 Pull 模型）。</p>
+
+<div class="demo">
+  <div class="demo-stage">
+    <div class="mac-window">
+      <div class="mac-titlebar"><span class="mac-traffic"><i></i><i></i><i></i></span><span class="mac-title">列表与树 演示</span></div>
+      <div class="mac-body">
+        <div class="row gap-sm" style="margin-bottom:12px;">
+          <input id="ch6-input" class="mac-field fill" type="text" placeholder="输入水果名，回车或点添加">
+          <button id="ch6-add" class="mac-btn primary">添加</button>
+        </div>
+
+        <fieldset class="mac-box">
+          <legend class="mac-box-title">NSTableView（单列表格 · 点击行选中）</legend>
+          <div id="ch6-table" class="mac-table">
+            <div class="mac-thead"><div class="mac-td">水果</div></div>
+            <!-- 行由 JS 按“数据源数组”重绘 -->
+          </div>
+          <div id="ch6-selection" style="margin-top:10px;"><span class="mac-label">未选中</span></div>
+        </fieldset>
+
+        <fieldset class="mac-box" style="margin-top:14px;">
+          <legend class="mac-box-title">NSOutlineView（树形 · 点三角展开/折叠）</legend>
+          <div id="ch6-outline" class="mac-outline"></div>
+        </fieldset>
+      </div>
+    </div>
+  </div>
+  <p class="demo-note">这个网页 demo 与上面的 Swift 代码一一对应：JS 里那个 <code>items</code> 数组就是表格的<b>数据源</b>——点"添加"先 <code>items.push(...)</code> 再调 <code>render()</code> 整体重绘，正是 Swift 里"改数组 + <code>reloadData()</code>"的直觉；点击某一行把它标记为选中并在下方显示，对应 <code>selectedRow</code> 与 <code>tableViewSelectionDidChange(_:)</code>；下方的树点三角展开/折叠时，<b>只有"被展开的节点"才会去渲染它的孩子</b>，正是 <code>NSOutlineView</code> 的 Pull 模型——收起的分支根本不被询问。</p>
+</div>
+
+<script>
+(function () {
+  // ① “数据源”：一个普通数组，对应 Swift 里的 items
+  var items = ["苹果", "香蕉", "樱桃"];
+  var selected = -1;  // 对应 selectedRow，-1 表示未选中
+
+  var table = document.getElementById("ch6-table");
+  var input = document.getElementById("ch6-input");
+  var addBtn = document.getElementById("ch6-add");
+  var selLabel = document.getElementById("ch6-selection");
+
+  // 整体重绘表格 —— 对应 NSTableView 的 reloadData()
+  function render() {
+    // 先移除旧的数据行（保留表头 mac-thead）
+    var rows = table.querySelectorAll(".mac-tr");
+    for (var i = 0; i < rows.length; i++) { rows[i].remove(); }
+
+    // 表格“按需向数据源要数据”：遍历 items，逐行重建
+    items.forEach(function (name, row) {
+      var tr = document.createElement("div");
+      tr.className = "mac-tr" + (row === selected ? " selected" : "");
+      var td = document.createElement("div");
+      td.className = "mac-td";
+      td.textContent = name;            // 对应 cell.textField.stringValue = items[row]
+      tr.appendChild(td);
+      tr.addEventListener("click", function () {
+        selected = row;                 // 模拟 selectedRow 改变
+        render();
+        onSelectionChanged();           // 对应 tableViewSelectionDidChange(_:)
+      });
+      table.appendChild(tr);
+    });
+  }
+
+  // 选中变化的回调 —— 对应 tableViewSelectionDidChange(_:)
+  function onSelectionChanged() {
+    if (selected >= 0) {
+      selLabel.innerHTML = '<span class="mac-label">已选中：' +
+        items[selected] + '（第 ' + (selected + 1) + ' 行）</span>';
+    } else {
+      selLabel.innerHTML = '<span class="mac-label">未选中</span>';
+    }
+  }
+
+  // 添加 —— 改数组 + 重绘，体现“数据驱动”
+  function addItem() {
+    var text = input.value.trim();
+    if (!text) { return; }
+    items.push(text);     // 先改数据源
+    render();             // 再 reloadData
+    input.value = "";
+    input.focus();
+  }
+  addBtn.addEventListener("click", addItem);
+  input.addEventListener("keydown", function (e) {
+    if (e.key === "Enter") { addItem(); }
+  });
+
+  // ② 大纲树：演示 Pull 模型 —— 收起的分支不渲染孩子
+  var tree = [
+    { title: "项目", children: [
+      { title: "源码", children: [{ title: "App.swift" }, { title: "View.swift" }] },
+      { title: "资源", children: [] }
+    ]},
+    { title: "收藏夹", children: [
+      { title: "文档" }, { title: "下载" }
+    ]}
+  ];
+  var expanded = {};  // 记录哪些节点处于展开状态（按 key）
+
+  var outline = document.getElementById("ch6-outline");
+
+  function isExpandable(node) {        // 对应 isItemExpandable：有孩子就能展开
+    return node.children && node.children.length > 0;
+  }
+
+  function renderTree() {
+    outline.innerHTML = "";
+    // 根的孩子 = 顶层节点（对应 numberOfChildrenOfItem 传 nil）
+    tree.forEach(function (node, i) { renderNode(node, 0, "n" + i); });
+  }
+
+  function renderNode(node, depth, key) {
+    var row = document.createElement("div");
+    row.className = "mac-node";
+    row.style.paddingLeft = (depth * 18 + 6) + "px";
+
+    var tri = document.createElement("span");
+    tri.className = "mac-disclosure";
+    if (isExpandable(node)) {
+      tri.textContent = expanded[key] ? "▼" : "▶";
+      tri.style.cursor = "pointer";
+      tri.addEventListener("click", function () {
+        expanded[key] = !expanded[key];   // 切换展开状态
+        renderTree();                      // 仅展开时才会去渲染孩子
+      });
+    } else {
+      tri.textContent = "";                // 叶子节点没有三角
+    }
+    row.appendChild(tri);
+    row.appendChild(document.createTextNode(node.title));
+    outline.appendChild(row);
+
+    // Pull 模型关键：只有展开的节点，才向“数据源”要它的孩子
+    if (isExpandable(node) && expanded[key]) {
+      node.children.forEach(function (child, j) {
+        renderNode(child, depth + 1, key + "-" + j);
+      });
+    }
+  }
+
+  // 初次绘制
+  render();
+  onSelectionChanged();
+  renderTree();
+})();
+</script>
+
+<div class="callout essence"><b>本质</b><p>无论是 <code>NSTableView</code> 还是 <code>NSOutlineView</code>，它们都<b>不持有数据，只持有"向谁要数据"的引用（dataSource / delegate）</b>。你永远不直接往表格里"插一行视图"，而是：改你自己的数据 → 告诉表格"过期了，重问吧"（<code>reloadData()</code> / 展开节点）→ 表格按需重新提问、复用视图把屏幕画出来。把界面的"真相"留在数据里、把"渲染"留给控件，这就是数据驱动 UI 的内核，也是后面 SwiftUI 那套声明式思想的雏形。</p></div>
+
+<div class="qa">
+  <p class="q">思考题：假设一个表格要显示 100 万行数据，而屏幕一次只能看到约 25 行。运行过程中，内存里大概同时存在多少个"行视图"对象？为什么不是 100 万个？如果你在 <code>tableView(_:viewFor:row:)</code> 里领到复用视图后<b>忘了重新赋值文本</b>，滚动时会看到什么诡异现象？</p>
+  <details><summary>查看答案</summary>
+  <div class="a"><p>内存里大约只有 <b>25~30 个行视图</b>（可见行数再加上下边缘的少量缓冲），而不是 100 万个。原因是<b>复用机制</b>：滚出屏幕的行视图被回收进复用池，<code>makeView(withIdentifier:owner:)</code> 把它们交还给你后，你擦干净再拿去装即将滚入的新行。视图数量只取决于"屏幕多大"，与数据总量无关——这正是表格能扛住海量数据的根本。</p>
+  <p>如果你领到复用视图却忘了用 <code>items[row]</code> 重新赋值它的文本，那么这个视图会<b>残留上一行的旧内容</b>。滚动时你就会看到"文字串行 / 重影"——比如本该显示第 500 行的格子里，赫然写着之前第 12 行的水果名。这是 view-based 表格最经典的新手 bug：复用视图必须在每次 <code>viewFor</code> 里被完整地重新配置，绝不能假设它是干净的。</p></div>
+  </details>
+</div>
+</section>
+
+<section class="chapter" id="ch-7">
+<h2 data-n="7">事件与响应链 + 委托模式</h2>
+<p class="lead">界面画好了，但用户点一下、敲个键，"消息"到底流向了谁？这一章我们顺着鼠标和键盘走一遍 AppKit 的"消息传递路线图"——你会发现它像办公室里"逐级上报"的流程：能办的人就地办了，办不了的就往上递。理解了这条链，你才能真正掌控：谁来处理点击、谁来接收键盘，以及当一个对象想说"这种情况你帮我拿主意"时该用什么方式开口。</p>
+
+<div class="termbox">
+<div class="term"><b class="term-name">事件 (event)</b><span class="term-def">用户对硬件的一次操作被系统打包成的一个对象，类型是 NSEvent：一次鼠标按下、一次键盘敲击、一次滚轮滚动，都是一个 NSEvent。它带着"发生了什么、在哪个位置、按了哪个键"等信息。</span></div>
+<div class="term"><b class="term-name">响应者 (NSResponder)</b><span class="term-def">能接收并处理事件的对象。AppKit 里几乎所有能见到的东西都是响应者：NSView、NSWindow、NSViewController、NSApplication 全都继承自 NSResponder。换句话说，"视图、窗口、视图控制器、应用本身"都能接事件。</span></div>
+</div>
+
+<h3>7.1 一个直觉：事件像"逐级上报"</h3>
+<p>想象公司里一张报销单：先递给离你最近的<b>直属同事</b>。他能批就批了；批不了，就交给<b>组长</b>；组长搞不定，交给<b>部门经理</b>；再不行就到<b>总经理</b>。报销单一路向上传递，直到有人处理，或者没人能处理被丢弃。</p>
+<p>AppKit 处理事件就是这个流程，这条"逐级上报的路线"有个正式名字。</p>
+
+<div class="termbox">
+<div class="term"><b class="term-name">响应链 (responder chain)</b><span class="term-def">一串首尾相连的响应者对象。事件从链条的起点开始，如果当前对象不处理，就沿着链条传给"下一个响应者"，直到有人处理或到达终点。这个"传给上级"的动作，就是我们俗称的事件"冒泡"。</span></div>
+<div class="term"><b class="term-name">下一个响应者 (nextResponder)</b><span class="term-def">每个响应者身上的一个属性 var nextResponder: NSResponder?，指向链条上它的"上级"。当自己处理不了时，就把消息转交给 nextResponder。这正是响应链能一节一节连起来的原因。</span></div>
+</div>
+
+<p>对于一个普通视图里的事件，典型的上报路线大致是这样的（从近到远）：</p>
+<pre><code class="language-swift">// 一次事件大致沿这条链向上"冒泡":
+//
+//   被点中的那个 NSView          ← 离用户最近,先处理
+//        ↓ nextResponder
+//   管理它的 NSViewController     ← 视图的 nextResponder 通常指向它的控制器
+//        ↓
+//   各级父视图 (superview)        ← 顺着视图层级继续往上
+//        ↓
+//   NSWindow                     ← 视图所在的窗口
+//        ↓
+//   NSWindow 的 delegate
+//        ↓
+//   NSApplication (NSApp)        ← 链条顶端:整个应用
+//        ↓
+//   NSApplication 的 delegate    ← 还没人理,事件就被丢弃</code></pre>
+
+<div class="callout warn"><b>别死背顺序</b><p>响应链的<b>确切</b>形状会随视图层级、是否有控制器接管而变化（例如某个视图若由 NSViewController 管理，它的 nextResponder 会先指向那个控制器）。你只需要记住一个不变的<b>方向感</b>：从"离用户最近、最具体的对象"出发，一级级往"更大、更笼统的容器"上报。具体某一环的连接，用调试时打印 <code>view.nextResponder</code> 一看便知，不必背。</p></div>
+
+<p>记住这条链的<b>方向</b>，后面所有"为什么我点了却没反应""键盘事件跑去哪了"的疑惑，都能在这张图上找到答案。</p>
+
+<h3>7.2 鼠标事件：override mouseDown(with:)</h3>
+<p>想让一个视图响应鼠标按下，你只要重写它从 NSResponder 继承来的方法。鼠标事件会被精准地送到<b>鼠标位置正下方的那个视图</b>——它就是这条链的起点。</p>
+
+<pre><code class="language-swift">import Cocoa
+
+// 一个会响应点击的自定义视图
+final class ClickableView: NSView {
+
+    // 系统在用户按下鼠标左键时调用这里,event 携带了位置等信息
+    override func mouseDown(with event: NSEvent) {
+        // 把窗口坐标转换成"本视图内部坐标",方便判断点在哪
+        let p = convert(event.locationInWindow, from: nil)
+        print("我被点了,本地坐标 = \(p)")
+
+        // 关键选择:
+        // ① 自己处理掉 —— 那就到此为止,事件不再上报
+        // ② 自己不处理 —— 调用 super,事件会沿 nextResponder 继续"冒泡"给上级
+        super.mouseDown(with: event)   // 注释掉这一行,事件就被本视图"截胡"了
+    }
+}</code></pre>
+
+<div class="callout tip"><b>关键点</b><p>"调用 super 还是不调用"，就是你决定让事件"继续上报"还是"就地截停"的开关。这与 7.5 节 demo 里的冒泡演示是同一件事。</p></div>
+
+<h3>7.3 键盘事件：谁是"第一响应者"？</h3>
+<p>鼠标有明确的"点在哪个视图上"，可键盘没有位置——你敲一个字母，系统怎么知道送给谁？答案是：送给当前的<b>第一响应者</b>。</p>
+
+<div class="termbox">
+<div class="term"><b class="term-name">第一响应者 (firstResponder)</b><span class="term-def">当前窗口里"拥有键盘焦点"的那个响应者。键盘事件总是先交给它处理；它处理不了才沿响应链向上冒泡。一个窗口在同一时刻只有一个第一响应者（比如你正在输入的那个文本框）。</span></div>
+</div>
+
+<p>一个自定义视图默认<b>不</b>接收键盘焦点。要让它能当第一响应者、能收到 keyDown，需要两步：</p>
+
+<pre><code class="language-swift">final class KeyCatcherView: NSView {
+
+    // ① 声明"我愿意当第一响应者",默认是 false,必须重写为 true
+    override var acceptsFirstResponder: Bool { true }
+
+    // (可选) 真正成为第一响应者时被调用,返回 true 表示接受
+    override func becomeFirstResponder() -&gt; Bool {
+        needsDisplay = true   // 比如:获得焦点时重绘出高亮边框
+        return true
+    }
+
+    // ② 重写键盘按下;若它当前不是第一响应者,这里根本不会被调用
+    override func keyDown(with event: NSEvent) {
+        if event.charactersIgnoringModifiers == " " {
+            print("空格被按下,我自己处理掉")
+        } else {
+            // 不是我关心的键 —— 交给 super,沿响应链继续冒泡
+            super.keyDown(with: event)
+        }
+    }
+}
+
+// ③ 想让某个视图"现在就拿到键盘焦点",由它所在的窗口来指派:
+//    view.window?.makeFirstResponder(theView)
+//    makeFirstResponder 是 NSWindow 的方法,它负责切换焦点归属。</code></pre>
+
+<div class="callout warn"><b>常见坑</b><p>只重写了 keyDown 却没把 acceptsFirstResponder 改成 true，视图永远拿不到焦点，keyDown 一次都不会触发——这是新手最常见的"为什么键盘没反应"。两件事必须配齐：<b>愿意当焦点</b>（acceptsFirstResponder 返回 true）+ <b>被指派为焦点</b>（窗口调用 makeFirstResponder）。</p></div>
+
+<h3>7.4 三种"协作模式"+ 一种"广播"</h3>
+<p>响应链解决的是"系统的事件怎么找到对象"。但对象与对象之间还要互相协作——按钮要通知你"我被点了"，文本框要问你"用户这么输对不对"，表格要向你索取"该显示什么数据"。AppKit 把这些协作收口成几种固定套路，认全它们，你就读懂了大半 AppKit 代码。</p>
+
+<div class="termbox">
+<div class="term"><b class="term-name">target-action (目标-动作)</b><span class="term-def">控件 → 你。控件（如按钮）记着一个"目标对象 target"和一个"动作方法 action"，被触发时就向目标发送这个动作。一对一、即触发即调用。最简单直接，适合"点一下做一件事"。</span></div>
+<div class="term"><b class="term-name">delegate (委托)</b><span class="term-def">把"遇到这种情况该怎么办"的决定权，交给另一个对象去拍板。控件遇到某个时机就回头问它的 delegate："该怎么处理？"——比如 NSTextFieldDelegate 的 controlTextDidChange（文本变了）、NSTableViewDelegate（这一行长什么样）。一对一，可以带返回值（委托能回答"可以/不可以"）。</span></div>
+<div class="term"><b class="term-name">dataSource (数据源)</b><span class="term-def">委托的"近亲"，但专管<b>数据</b>：控件问它"一共多少行？第 3 行显示什么？"。delegate 管"外观与行为"，dataSource 管"内容与数量"，职责分开。</span></div>
+<div class="term"><b class="term-name">NotificationCenter (通知中心)</b><span class="term-def">一对多的"广播站"。一个对象 post 一条通知，所有事先订阅（addObserver）了这条通知的对象都会收到。发送方完全不知道、也不关心谁在听——这叫松耦合。</span></div>
+</div>
+
+<p>target-action 我们在按钮那章见过，这里聚焦最常用的 <b>delegate</b>。把它当成"回调问卷"：控件在关键时刻递给你一张问卷，你（delegate）填好答案交回去。</p>
+
+<pre><code class="language-swift">// 让控制器充当文本框的"委托",实时校验输入
+final class FormViewController: NSViewController, NSTextFieldDelegate {
+
+    private let field = NSTextField()
+    private let tip = NSTextField(labelWithString: "")
+
+    // 程序化界面:不依赖 Storyboard/xib,在 loadView 里自己搭
+    override func loadView() {
+        view = NSView()
+
+        field.placeholderString = "只能输入数字"
+        field.delegate = self          // ★ 把"该怎么办"的决定权交给 self
+
+        // 用 NSStackView 做程序化布局(回顾第 4 章)
+        let stack = NSStackView(views: [field, tip])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 8
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            field.widthAnchor.constraint(equalToConstant: 220),
+        ])
+    }
+
+    // controlTextDidChange 来自 NSControlTextEditingDelegate
+    // (NSTextFieldDelegate 继承了它),用户每敲一个字都会回调一次
+    func controlTextDidChange(_ obj: Notification) {
+        // 通知的 object 就是发生变化的那个控件
+        guard let tf = obj.object as? NSTextField else { return }
+        let text = tf.stringValue
+
+        if text.isEmpty {
+            tip.stringValue = "⚠️ 不能为空"
+        } else if !text.allSatisfy(\.isNumber) {
+            tip.stringValue = "⚠️ 只能是数字"
+        } else {
+            tip.stringValue = "✓ 输入合法"
+        }
+    }
+}</code></pre>
+
+<p>注意 controlTextDidChange 的参数是一个 Notification——这其实是个伏笔：delegate 与 NotificationCenter 在底层常常是同一套机制的两种用法。它们的取舍直觉是：</p>
+
+<div class="callout tip"><b>delegate vs notification 怎么选</b><p><b>一对一、需要回答 / 返回值</b>（比如"这个值合法吗？能不能结束编辑？"）→ 用 <b>delegate</b>，控件只认你一个，还能听你的裁决。<br><b>一对多、只是广播一个事实</b>（比如"语言切换了""登录状态变了"，可能十个界面都要跟着刷新）→ 用 <b>NotificationCenter</b>，发送方一声吼，谁订阅谁响应，彼此互不相识。</p></div>
+
+<h3>7.5 Demo ①：响应链可视化（事件冒泡）</h3>
+<p>三层嵌套视图——外层、中层、内层。点击<b>最内层</b>，事件会像 7.2 节那样从内向外逐级"上报"，每经过一层就让它<b>亮一下</b>，你能亲眼看到"冒泡"的方向（内 → 外）。试试切换"内层是否截停事件"，对应代码里调不调用 super.mouseDown。</p>
+
+<div class="demo">
+<div class="demo-stage">
+<div class="mac-window">
+<div class="mac-titlebar"><span class="mac-traffic"><i></i><i></i><i></i></span><span class="mac-title">响应链演示</span></div>
+<div class="mac-body">
+<div class="row gap center" style="margin-bottom:12px;">
+<label class="mac-check"><input type="checkbox" id="ch7-stop"><span>内层截停事件（不调用 super）</span></label>
+<button class="mac-btn" id="ch7-reset">重置</button>
+</div>
+<div id="ch7-outer" style="padding:28px;border:2px solid #8aa;border-radius:10px;background:#eef3f6;text-align:center;cursor:pointer;transition:background .08s;">
+<span class="mac-label">外层视图（superview）</span>
+<div id="ch7-mid" style="margin-top:14px;padding:24px;border:2px solid #8a8;border-radius:10px;background:#eef6ee;cursor:pointer;transition:background .08s;">
+<span class="mac-label">中层视图</span>
+<div id="ch7-inner" style="margin-top:14px;padding:22px;border:2px solid #a88;border-radius:10px;background:#f6eeee;cursor:pointer;transition:background .08s;">
+<span class="mac-label">最内层视图 ← 点这里</span>
+</div>
+</div>
+</div>
+<p class="mac-label" id="ch7-log" style="margin-top:12px;min-height:1.4em;">点击最内层视图，观察事件沿响应链向上冒泡…</p>
+</div>
+</div>
+</div>
+<p class="demo-note">点最内层时，三层会按"内 → 中 → 外"依次亮起——这正对应 Swift 里事件沿 nextResponder 一级级上报。勾选"内层截停"，内层就只调用自己的逻辑、不调用 super.mouseDown，事件被"截胡"，上层不再亮起——和 7.2 节代码里那行 super.mouseDown(with:) 的取舍完全对应。</p>
+</div>
+
+<script>
+(function () {
+  var inner = document.getElementById('ch7-inner');
+  var mid = document.getElementById('ch7-mid');
+  var outer = document.getElementById('ch7-outer');
+  var log = document.getElementById('ch7-log');
+  var stop = document.getElementById('ch7-stop');
+  var reset = document.getElementById('ch7-reset');
+  // 自内向外的响应链,对应 nextResponder 的指向
+  var chain = [
+    { el: inner, name: '最内层视图', base: '#f6eeee' },
+    { el: mid,   name: '中层视图',   base: '#eef6ee' },
+    { el: outer, name: '外层视图',   base: '#eef3f6' }
+  ];
+
+  function flash(node, delay) {
+    setTimeout(function () {
+      node.el.style.background = '#ffd84d';      // 亮起
+      setTimeout(function () { node.el.style.background = node.base; }, 320);
+    }, delay);
+  }
+
+  // 模拟事件从起点沿响应链冒泡
+  function bubble(startIndex) {
+    var visited = [];
+    for (var i = startIndex; i < chain.length; i++) {
+      flash(chain[i], (i - startIndex) * 260);
+      visited.push(chain[i].name);
+      // 内层"截停":只处理自己,不再上报(等价于不调用 super.mouseDown)
+      if (i === startIndex && stop.checked) break;
+    }
+    log.textContent = stop.checked
+      ? '截停事件 → 仅 ' + visited.join('、') + ' 收到（不调用 super，停止冒泡）'
+      : '事件冒泡路线：' + visited.join('  →  ');
+  }
+
+  // 注意:浏览器里点击事件本身也会冒泡,这里在每层 stopPropagation
+  // 再手动驱动动画,以便精确演示 AppKit 的逐级上报
+  inner.addEventListener('click', function (e) { e.stopPropagation(); bubble(0); });
+  mid.addEventListener('click',   function (e) { e.stopPropagation(); bubble(1); });
+  outer.addEventListener('click', function () { bubble(2); });
+
+  reset.addEventListener('click', function () {
+    stop.checked = false;
+    log.textContent = '点击最内层视图，观察事件沿响应链向上冒泡…';
+    chain.forEach(function (n) { n.el.style.background = n.base; });
+  });
+})();
+</script>
+
+<h3>7.6 Demo ②：文本框 delegate 实时校验</h3>
+<p>这正是 7.4 节那段 FormViewController 的"运行效果"。文本框把 delegate 设成控制器，每敲一个字就回调 controlTextDidChange，你就地校验：只允许数字、且不能为空，错了立刻给出提示。</p>
+
+<div class="demo">
+<div class="demo-stage">
+<div class="mac-window">
+<div class="mac-titlebar"><span class="mac-traffic"><i></i><i></i><i></i></span><span class="mac-title">输入校验</span></div>
+<div class="mac-body">
+<fieldset class="mac-box">
+<legend class="mac-box-title">数量</legend>
+<div class="row gap center">
+<span class="mac-label">请输入数字：</span>
+<input class="mac-field" type="text" id="ch7-field" placeholder="只能输入数字" style="width:200px;">
+</div>
+<p class="mac-label" id="ch7-valid" style="margin-top:10px;min-height:1.4em;">⚠️ 不能为空</p>
+</fieldset>
+<div class="row" style="margin-top:14px;justify-content:flex-end;">
+<button class="mac-btn primary" id="ch7-submit" disabled>提交</button>
+</div>
+</div>
+</div>
+</div>
+<p class="demo-note">每次按键触发的校验，就是 Swift 里的 controlTextDidChange(_:)——参数 obj 的 object 就是这个文本框（对应 demo 里读取 input 的值）。合法时"提交"按钮才可点击，这相当于在委托回调里联动其他控件的状态；它演示了 delegate 的本质：控件把"该怎么办"的决定交还给你。</p>
+</div>
+
+<script>
+(function () {
+  var field = document.getElementById('ch7-field');
+  var valid = document.getElementById('ch7-valid');
+  var submit = document.getElementById('ch7-submit');
+
+  // 等价于 NSTextFieldDelegate.controlTextDidChange(_:)
+  function controlTextDidChange() {
+    var text = field.value;                       // 对应 tf.stringValue
+    var ok = false;
+    if (text.length === 0) {
+      valid.textContent = '⚠️ 不能为空';
+    } else if (!/^[0-9]+$/.test(text)) {          // 对应 allSatisfy(\.isNumber)
+      valid.textContent = '⚠️ 只能是数字';
+    } else {
+      valid.textContent = '✓ 输入合法';
+      ok = true;
+    }
+    submit.disabled = !ok;                         // 委托回调里联动其他控件
+  }
+
+  field.addEventListener('input', controlTextDidChange);
+  submit.addEventListener('click', function () {
+    valid.textContent = '✓ 已提交：' + field.value;
+  });
+  controlTextDidChange();   // 进场先校验一次(空 → 不能为空)
+})();
+</script>
+
+<div class="callout essence"><b>本质</b><p>AppKit 的事件系统，本质是<b>一条按"远近 / 上下级"排好序的对象链</b>（响应链）：事件先给离用户最近、最具体的响应者（鼠标给点中的视图，键盘给第一响应者），处理不了就沿 nextResponder 向上冒泡，直到有人接手或被丢弃——"调不调用 super"就是你掌控冒泡的闸门。而 target-action / delegate / dataSource / NotificationCenter，本质都是<b>对象之间"把决定权或事实交出去"的不同耦合度</b>：从一对一即时调用（target-action），到一对一可问可答（delegate / dataSource），再到一对多互不相识的广播（notification）。先想清楚"谁该处理、是一对一还是一对多、要不要回答"，API 的选择自然就浮出来了。</p></div>
+
+<div class="qa">
+<p class="q">思考题：你做了一个自定义视图，重写了 keyDown(with:) 想接收回车键，但运行时无论怎么按它都毫无反应，keyDown 断点一次也没停。可能漏了哪一步？如果"漏的那一步"补上了仍然没反应，还可能是什么原因？</p>
+<details><summary>查看答案</summary>
+<div class="a">
+<p><b>最常见的一步</b>：没有重写 <code>acceptsFirstResponder</code> 返回 <code>true</code>。它默认是 <code>false</code>，视图根本不被允许成为第一响应者，自然拿不到键盘焦点，keyDown 永远不触发。</p>
+<p><b>补上后仍没反应，继续排查</b>：① 视图虽然"愿意"当焦点，但还没人"指派"它当焦点——需要在合适时机调用 <code>view.window?.makeFirstResponder(theView)</code> 把焦点交给它；② 键盘焦点此刻可能在别的控件（比如某个文本框）身上，那个第一响应者先把事件吃掉了；③ 视图还没被加到窗口里（window 为 nil），或窗口本身不是 key window，事件根本到不了它。把"愿意当焦点 + 被指派为焦点 + 处在 key 窗口的响应链上"三件事配齐，keyDown 才会如期触发。</p>
+</div>
+</details>
+</div>
+</section>
+
+<section class="chapter" id="ch-8">
+<h2 data-n="8">综合实战：迷你 To-Do + 综合思考题</h2>
+<p class="lead">前七章我们把零件一个个拆开看了：App 怎么启动、窗口怎么来、视图控制器怎么管界面、约束怎么排布局、按钮怎么响应点击、表格怎么显示数据。这一章不再讲新零件，而是把它们<b>拼成一台能跑的机器</b>——一个真正可用的迷你 To-Do。拼装的过程，就是检验你是否真正理解每个零件"为什么长这样"的过程。读完代码、玩过 demo，再用四道综合思考题逼自己想到本质。</p>
+
+<div class="termbox">
+<div class="term"><b class="term-name">迷你 To-Do</b><span class="term-def">一个最小的待办清单应用：输入框里打字、回车或点按钮把它加进列表、点选某一行高亮、点"删除选中"去掉它、顶部实时显示"总数 / 已选"。它麻雀虽小，却串起了输入、布局、事件、数据源、选择五件事。</span></div>
+<div class="term"><b class="term-name">程序化（programmatic）</b><span class="term-def">不用 Storyboard / xib 这种"拖控件"的图形文件，而是<b>纯用 Swift 代码</b>创建并摆放所有界面元素。好处是界面的来龙去脉全在代码里，可被搜索、可被 review、可被 diff。本教程全程程序化。</span></div>
+</div>
+
+<h3>1. 先在脑子里把数据流画出来</h3>
+<p>动手前，先想清楚"数据从哪来、到哪去"。一个 To-Do 的核心其实只有一个数组 <code>items</code>（待办文字的列表）。所有界面都只是这个数组的"镜子"：</p>
+<ul>
+<li><b>输入框</b>负责往数组里<b>追加</b>一条。</li>
+<li><b>表格</b>负责把数组<b>显示</b>出来（它问数据源："有几行？""第 N 行显示什么？"）。</li>
+<li><b>删除按钮</b>负责从数组里<b>移除</b>选中那条。</li>
+<li><b>顶部计数 label</b>负责<b>读</b>数组长度和"当前选中行"。</li>
+</ul>
+<p>记住这条铁律：<b>界面是数组的函数。</b>每次数组变了，就让相关界面"重新照一次镜子"（表格 <code>reloadData()</code>、label 重新赋值）。把"改数据"和"刷界面"分开想，后面所有代码都会顺理成章。</p>
+
+<div class="callout tip">
+<b>提示</b>
+<p>"先改数组、再刷界面"听起来啰嗦，但它是 AppKit 里最可靠的写法。千万别想着"我直接往表格里塞一行就好"——那样数组和界面会悄悄对不上，调试到崩溃。</p>
+</div>
+
+<h3>2. 完整代码（分块讲解）</h3>
+<p>下面把整个迷你 To-Do 拆成五块。每块开头我都标注它对应前面<b>哪一章</b>的知识，你可以边读边回忆。</p>
+
+<p><b>第 1 块 · 对应第 1、2 章（AppDelegate + 应用启动 + 窗口）。</b>程序化项目里我们通常去掉 main storyboard，让 <code>AppDelegate</code> 在"启动完成"这个时机里亲手把窗口造出来。<code>@main</code> 标记程序入口，<code>NSApp</code> 是那个全局唯一的应用对象。</p>
+<pre><code class="language-swift">import Cocoa
+
+@main
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    // 窗口要被 AppDelegate 强引用住，否则启动完就被释放、窗口一闪而过
+    var window: NSWindow!
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // 第 2 章：手动创建一个有标题栏、可关闭、可最小化、可缩放的窗口
+        window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 460),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false)
+        window.title = "迷你 To-Do"
+        window.center()
+
+        // 第 3 章：把窗口的内容交给一个视图控制器来管
+        window.contentViewController = TodoViewController()
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -&gt; Bool {
+        true // 关掉唯一窗口就退出，符合工具类小应用的预期
+    }
+}</code></pre>
+
+<p><b>第 2 块 · 对应第 3 章（NSViewController 的生命周期）。</b>我们重写 <code>loadView()</code> 给控制器一个根视图，再在 <code>viewDidLoad()</code> 里搭界面。因为<b>没有用 Storyboard</b>，所以必须自己提供 <code>view</code>。数组 <code>items</code> 就是上一节说的"唯一真相"。</p>
+<pre><code class="language-swift">final class TodoViewController: NSViewController,
+                                NSTableViewDataSource,
+                                NSTableViewDelegate,
+                                NSTextFieldDelegate {
+
+    // === 唯一真相：所有界面都是它的镜子 ===
+    private var items: [String] = []
+
+    // 持有几个待会要操作的控件
+    private let countLabel   = NSTextField(labelWithString: "")
+    private let inputField   = NSTextField()
+    private let tableView    = NSTableView()
+    private let deleteButton = NSButton()
+
+    // 程序化项目里手动提供根视图（不写就会去找 nib，找不到则崩溃）
+    override func loadView() {
+        view = NSView(frame: NSRect(x: 0, y: 0, width: 380, height: 460))
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        setupUI()        // 第 4 章：布局
+        refreshCount()   // 初始化顶部计数
+    }
+    // …setupUI 见下一块
+}</code></pre>
+
+<p><b>第 3 块 · 对应第 4 章（Auto Layout + NSStackView）+ 第 5 章（target-action）+ 第 6 章（NSTableView）。</b>这是界面装配的核心。用一个垂直 <code>NSStackView</code> 把"计数行 → 输入行 → 表格 → 删除按钮"从上到下码好；输入行内部再用一个水平 stack 装"输入框 + 添加按钮"。所有手动创建的视图都要把 <code>translatesAutoresizingMaskIntoConstraints</code> 关掉，否则系统会偷偷塞一堆和你打架的旧式约束。</p>
+<pre><code class="language-swift">private func setupUI() {
+    // --- 第 6 章：把表格放进可滚动容器，并接上数据源 / 代理 ---
+    let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("todo"))
+    column.title = "待办"
+    tableView.addTableColumn(column)
+    tableView.headerView = nil            // 单列，藏掉表头更清爽
+    tableView.dataSource = self           // “有几行 / 第 N 行什么内容”问我
+    tableView.delegate = self             // “选中变化 / 给我一个单元视图”也问我
+    tableView.style = .inset
+
+    let scroll = NSScrollView()
+    scroll.documentView = tableView       // 表格必须被 scrollView 包住才能滚动
+    scroll.hasVerticalScroller = true
+    scroll.translatesAutoresizingMaskIntoConstraints = false
+    // 关键：让滚动容器在垂直方向“乐意被拉长”。垂直 stack 默认按内容紧凑排，
+    // 不降这个优先级，表格就只会保持很矮的高度、撑不满中间区域。
+    scroll.setContentHuggingPriority(.defaultLow, for: .vertical)
+
+    // --- 第 5 章：输入框回车提交 + 添加按钮 target-action ---
+    inputField.placeholderString = "输入待办，回车或点“添加”"
+    inputField.delegate = self            // 监听回车（见第 5 块）
+    inputField.translatesAutoresizingMaskIntoConstraints = false
+    inputField.setContentHuggingPriority(.defaultLow, for: .horizontal) // 让它吃掉多余宽度
+
+    let addButton = NSButton(title: "添加", target: self, action: #selector(addTapped))
+    addButton.bezelStyle = .rounded
+
+    let inputRow = NSStackView(views: [inputField, addButton])
+    inputRow.orientation = .horizontal
+    inputRow.spacing = 8
+
+    // --- 第 5 章：删除按钮 ---
+    deleteButton.title = "删除选中"
+    deleteButton.bezelStyle = .rounded
+    deleteButton.target = self
+    deleteButton.action = #selector(deleteTapped)
+    deleteButton.isEnabled = false        // 没选中时不可点
+
+    // --- 计数 label ---
+    countLabel.font = .systemFont(ofSize: 13, weight: .medium)
+
+    // --- 第 4 章：用垂直 NSStackView 一把搞定主轴布局 ---
+    let root = NSStackView(views: [countLabel, inputRow, scroll, deleteButton])
+    root.orientation = .vertical
+    root.spacing = 10
+    root.alignment = .leading              // 子项左对齐
+    root.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(root)
+
+    // 用 anchors 把 root 钉在四边（留 16pt 边距）。
+    NSLayoutConstraint.activate([
+        root.topAnchor.constraint(equalTo: view.topAnchor, constant: 16),
+        root.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+        root.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+        root.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -16),
+        // stack 默认按内容紧凑排，下面两条让“输入行”和“表格”横向铺满
+        inputRow.widthAnchor.constraint(equalTo: root.widthAnchor),
+        scroll.widthAnchor.constraint(equalTo: root.widthAnchor),
+    ])
+}</code></pre>
+
+<div class="callout warn">
+<b>易踩的坑</b>
+<p>很多人照着写完发现"表格只剩薄薄一条、撑不满中间"。原因是垂直 <code>NSStackView</code> 默认让每个子项保持自己的内容大小（content hugging），没人主动"长高"。解法就是上面那行 <code>scroll.setContentHuggingPriority(.defaultLow, for: .vertical)</code>——把滚动容器的"垂直抗拉伸意愿"调低，它才会乖乖吃掉计数行、输入行、删除按钮之外的全部剩余高度。</p>
+</div>
+
+<p><b>第 4 块 · 对应第 6 章（dataSource 供数 + delegate 供视图与选择）。</b>表格自己不存数据，它靠"问问题"获取一切：<code>numberOfRows(in:)</code> 回答"有几行"，<code>tableView(_:viewFor:row:)</code> 回答"第 N 行该显示哪个视图"。这是<b>视图型（view-based）</b>表格的现代写法——每行是一个真正的 <code>NSView</code>，而不是老式 cell。选择变化由 <code>tableViewSelectionDidChange(_:)</code> 通知我们去刷新顶部计数和删除按钮的可用状态。</p>
+<pre><code class="language-swift">// MARK: - NSTableViewDataSource：供应“有几行”
+func numberOfRows(in tableView: NSTableView) -&gt; Int {
+    items.count
+}
+
+// MARK: - NSTableViewDelegate：供应“第 row 行长什么样”
+func tableView(_ tableView: NSTableView,
+               viewFor tableColumn: NSTableColumn?,
+               row: Int) -&gt; NSView? {
+    let id = NSUserInterfaceItemIdentifier("TodoCell")
+    // 先问表格“有没有可复用的旧视图”，有就拿来改文字，没有才新建
+    let cell = (tableView.makeView(withIdentifier: id, owner: self) as? NSTableCellView)
+        ?? makeCell(id: id)
+    cell.textField?.stringValue = items[row]   // 永远从 items 取值
+    return cell
+}
+
+// 新建一个内含 label 的单元视图（只在没有可复用视图时调用）
+private func makeCell(id: NSUserInterfaceItemIdentifier) -&gt; NSTableCellView {
+    let cell = NSTableCellView()
+    cell.identifier = id
+    let label = NSTextField(labelWithString: "")
+    label.translatesAutoresizingMaskIntoConstraints = false
+    cell.addSubview(label)
+    cell.textField = label
+    NSLayoutConstraint.activate([
+        label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 4),
+        label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
+        label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+    ])
+    return cell
+}
+
+// 选中变化 → 刷新计数 + 删除按钮可用性
+func tableViewSelectionDidChange(_ notification: Notification) {
+    deleteButton.isEnabled = (tableView.selectedRow != -1) // -1 表示没选中
+    refreshCount()
+}</code></pre>
+
+<p><b>第 5 块 · 对应第 5 章（target-action）+ 回车的 delegate 写法。</b>三个动作方法：添加、删除、刷新计数。<code>@objc</code> 是因为 target-action 走的是 Objective-C 的消息机制，方法必须暴露给运行时。回车提交则用 <code>NSTextField</code> 的<b>代理方法</b>来捕捉"按下了 Return 键"这个命令（思考题①会专门追问为什么是这种写法）。</p>
+<pre><code class="language-swift">// --- target-action：点“添加” ---
+@objc private func addTapped() {
+    let text = inputField.stringValue.trimmingCharacters(in: .whitespaces)
+    guard !text.isEmpty else { return }   // 空白不入列
+    items.append(text)                    // 1) 改数据
+    inputField.stringValue = ""           // 清空输入框
+    tableView.reloadData()                // 2) 刷界面：让表格重新照镜子
+    refreshCount()
+}
+
+// --- target-action：点“删除选中” ---
+@objc private func deleteTapped() {
+    let row = tableView.selectedRow
+    guard row != -1 else { return }
+    items.remove(at: row)                 // 1) 改数据
+    tableView.deselectAll(nil)            // 删除后清掉选中，避免 selectedRow 指向已不存在的行
+    tableView.reloadData()                // 2) 刷界面
+    refreshCount()                        // deselectAll 会触发 selectionDidChange，这里再保险刷一次
+}
+
+// --- 顶部计数：永远从 items 与表格状态读取，不自己记账 ---
+private func refreshCount() {
+    let total = items.count
+    let selected = tableView.selectedRow == -1 ? 0 : 1
+    countLabel.stringValue = "总数 \(total) · 已选 \(selected)"
+}
+
+// MARK: - NSTextFieldDelegate：捕捉回车
+// 该方法来自 NSControlTextEditingDelegate（NSTextFieldDelegate 继承了它）
+func control(_ control: NSControl,
+             textView: NSTextView,
+             doCommandBy commandSelector: Selector) -&gt; Bool {
+    // 回车在文本系统里对应 insertNewline(_:) 这个命令
+    if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+        addTapped()      // 复用同一个“添加”逻辑
+        return true      // 告诉系统：这个命令我处理了，别再走默认行为
+    }
+    return false         // 其它命令（Tab、方向键…）交还系统默认处理
+}</code></pre>
+
+<div class="callout tip">
+<b>提示</b>
+<p>注意"添加"逻辑只写了一份（<code>addTapped()</code>），点按钮和按回车都调用它。这正是"动作与触发解耦"的好处：触发方式可以有很多种，业务逻辑只有一处真相。</p>
+</div>
+
+<h3>3. 把代码跑起来看看（可交互 demo）</h3>
+<p>下面这个 demo 用网页控件模拟了上面那段 Swift 的<b>每一个行为</b>。请边玩边对照代码：输入框 ↔ <code>inputField</code>，添加按钮 ↔ <code>addTapped()</code>，列表 ↔ 表格的 <code>viewFor</code>，点行高亮 ↔ <code>tableViewSelectionDidChange</code>，删除 ↔ <code>deleteTapped()</code>，顶部那行字 ↔ <code>refreshCount()</code>。</p>
+
+<div class="demo">
+<div class="demo-stage">
+<div class="mac-window">
+<div class="mac-titlebar"><span class="mac-traffic"><i></i><i></i><i></i></span><span class="mac-title">迷你 To-Do</span></div>
+<div class="mac-body">
+<div class="col gap">
+<span class="mac-label" id="ch8-count">总数 0 · 已选 0</span>
+<div class="row gap-sm">
+<input class="mac-field fill" id="ch8-input" type="text" placeholder="输入待办，回车或点“添加”">
+<button class="mac-btn primary" id="ch8-add">添加</button>
+</div>
+<div class="mac-table" id="ch8-table" style="min-height:160px">
+<div class="mac-thead"><div class="mac-td">待办</div></div>
+</div>
+<button class="mac-btn" id="ch8-del" disabled>删除选中</button>
+</div>
+</div>
+</div>
+</div>
+<p class="demo-note">这个 demo 与代码一一对应：<b>回车或点"添加"</b> 调用同一份追加逻辑（对应 <code>addTapped()</code> 被两处触发）；<b>列表每一行</b> 由数组渲染（对应 <code>numberOfRows</code> + <code>viewFor</code>）；<b>点某行</b> 让它高亮、删除按钮变可用、顶部"已选"变 1（对应 <code>tableViewSelectionDidChange</code>）；<b>删除</b> 先改数组、清选中再重画（对应 <code>deleteTapped()</code> 里"先改数据、后刷界面"）。试着删到列表为空，看顶部计数和按钮状态怎么变。</p>
+</div>
+
+<script>
+(function () {
+  var items = [];
+  var selected = -1; // -1 表示没选中，和 NSTableView.selectedRow 一致
+  var input = document.getElementById('ch8-input');
+  var addBtn = document.getElementById('ch8-add');
+  var delBtn = document.getElementById('ch8-del');
+  var table = document.getElementById('ch8-table');
+  var countLabel = document.getElementById('ch8-count');
+
+  function refreshCount() { // 对应 refreshCount()
+    countLabel.textContent = '总数 ' + items.length + ' · 已选 ' + (selected === -1 ? 0 : 1);
+    delBtn.disabled = (selected === -1);
+  }
+
+  function reloadData() { // 对应 tableView.reloadData()：界面是数组的镜子
+    // 清掉除表头外的所有行
+    var rows = table.querySelectorAll('.mac-tr');
+    for (var i = 0; i < rows.length; i++) { rows[i].remove(); }
+    items.forEach(function (text, idx) { // 对应 numberOfRows + viewFor
+      var tr = document.createElement('div');
+      tr.className = 'mac-tr' + (idx === selected ? ' selected' : '');
+      var td = document.createElement('div');
+      td.className = 'mac-td';
+      td.textContent = text;
+      tr.appendChild(td);
+      tr.addEventListener('click', function () { // 对应 tableViewSelectionDidChange
+        selected = idx;
+        reloadData();
+        refreshCount();
+      });
+      table.appendChild(tr);
+    });
+  }
+
+  function addTapped() { // 对应 @objc addTapped()
+    var text = input.value.trim();
+    if (text === '') { return; } // guard !text.isEmpty
+    items.push(text);            // 1) 改数据
+    input.value = '';
+    reloadData();                // 2) 刷界面
+    refreshCount();
+  }
+
+  function deleteTapped() { // 对应 @objc deleteTapped()
+    if (selected === -1) { return; }
+    items.splice(selected, 1);   // 1) 改数据
+    selected = -1;               // 对应 deselectAll：删除后取消选中
+    reloadData();                // 2) 刷界面
+    refreshCount();
+  }
+
+  addBtn.addEventListener('click', addTapped);
+  delBtn.addEventListener('click', deleteTapped);
+  // 对应 control(_:textView:doCommandBy:) 捕捉回车
+  input.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); addTapped(); }
+  });
+
+  refreshCount();
+})();
+</script>
+
+<div class="callout essence">
+<b>本质</b>
+<p>一个 AppKit 界面 = <b>一份数据真相</b> + <b>把数据投影成视图的规则</b>（dataSource / delegate）+ <b>把用户动作翻译回数据修改的通道</b>（target-action / delegate / notification）。这台迷你 To-Do 没有任何"魔法"：你看到的每一行、每一个数字，都是 <code>items</code> 在某个时刻的影子。理解了这一点，再大的 AppKit 应用也只是这套循环的放大。</p>
+</div>
+
+<h3>4. 综合思考题</h3>
+<p>下面四道题都跨越多个知识点。先自己想，再展开看答案——答案不止给"怎么做"，更要点透"为什么本质上只能这么做"。</p>
+
+<div class="qa">
+<p class="q">思考题①：回车提交，为什么宜用 NSTextField 的 <b>delegate</b>（<code>control(_:textView:doCommandBy:)</code>），而不是"按下回车后去读它的 <code>stringValue</code>"？</p>
+<details><summary>查看答案</summary>
+<div class="a">
+<p><b>先厘清一个误解：</b><code>stringValue</code> 只是输入框里"当前有什么文字"，它<b>不携带任何"用户做了什么动作"的信息</b>。你随时都能读到它，但读到它并不代表"用户刚刚按了回车要提交"。换句话说，<code>stringValue</code> 是<b>状态</b>，而回车是<b>事件</b>——拿状态去推断事件，本身就错位了。更现实的问题是：你根本没有一个"按下回车后"的时机去读它，除非有人在那个时间点回调你——而那个回调正是 delegate。</p>
+<p><b>那"按下回车"这个事件由谁报告？</b>在 macOS 文本系统里，编辑文本的其实是一个隐藏的"字段编辑器"（field editor，本质是一个共享的 <code>NSTextView</code>）。你按下的每个键先经过它，被翻译成<b>命令</b>：回车 → <code>insertNewline(_:)</code>，Tab → <code>insertTab(_:)</code>，Esc → <code>cancelOperation(_:)</code>。<code>NSTextField</code> 会把这些命令转发给它的 delegate 的 <code>control(_:textView:doCommandBy:)</code>。所以代理方法是<b>系统为你准备的、能精确捕捉"回车这一下"的入口</b>。</p>
+<p><b>那 <code>action</code> 不也能触发吗？</b>能——<code>NSTextField</code> 在结束编辑（回车 / 失焦，取决于 <code>sendAction(on:)</code>）时也会发 action。但它的语义更模糊（你分不清是回车还是失焦触发的），且无法像代理那样"返回 <code>true</code> 吃掉这次回车、阻止换行 / 跳焦"。当你需要<b>精确区分是哪个键、并决定是否拦截默认行为</b>时，代理是更可控的工具。</p>
+<p><b>本质：</b>UI 编程里要分清"读状态"和"听事件"。提交是一个<b>时间点上的事件</b>，必须由系统在那个时间点主动告诉你（delegate 回调 / action），而不是你事后去翻一个静态字段猜它发生过。</p>
+</div>
+</details>
+</div>
+
+<div class="qa">
+<p class="q">思考题②：当待办上千条、表格滚动开始卡顿时，"全用 Auto Layout" 和 "在 <code>layout()</code> 里手动算 frame" 该怎么取舍？为什么？</p>
+<details><summary>查看答案</summary>
+<div class="a">
+<p><b>先想卡在哪。</b><code>NSTableView</code> 已经帮你做了<b>视图复用</b>（<code>makeView(withIdentifier:)</code> 回收离屏的行视图反复用），所以同时存在的视图数量只跟"屏幕能看到几行"有关，不随总条数膨胀——这一步本身不卡。真正可能卡的是<b>每一行内部的布局成本</b>：每次行被复用、重新填数据，约束系统都要为这行重新求解一遍。</p>
+<p><b>Auto Layout 的代价在哪？</b>约束不是免费的：每个 <code>NSLayoutConstraint</code> 都是布局引擎里的一条方程，引擎要把同一视图层级里所有方程联立求解。一行里几条约束没问题；但当行视图复杂（嵌套多层 stack、十几条约束）、又在快速滚动中<b>每秒重排几十次</b>时，求解开销会累积成可感的掉帧。Auto Layout 的优点是<b>声明式、自适应、好维护</b>——绝大多数界面都该首选它，本章的整体布局就用它。</p>
+<p><b>什么时候换手动 <code>layout()</code>？</b>当某个高频重排的视图（典型就是表格行 / 自绘 cell）的布局规则其实<b>非常简单且固定</b>（比如"label 距左 4pt、垂直居中"），用一行 <code>frame = ...</code> 直接算，比让引擎联立求解一组方程快得多。做法：在那个行视图的子类里重写 <code>override func layout()</code>，<code>super.layout()</code> 后按 <code>bounds</code> 手算每个子视图的 <code>frame</code>。这就是把"通用但偏重的求解器"换成"专用但极轻的算式"。</p>
+<p><b>取舍原则：</b>① 默认用 Auto Layout，别过早优化；② 只在<b>用 Instruments 测出布局确实是瓶颈</b>后，才把那个<b>高频、规则简单</b>的热点（几乎总是表格行）改成手动 frame；③ 不要全盘抛弃约束去手算整个界面——那样维护成本爆炸，且大部分视图根本不在热路径上。</p>
+<p><b>本质：</b>性能优化的方向永远是"把成本花在刀刃上"。Auto Layout 用"每次求解"换"开发期省心"；手动布局用"开发期多写几行算式"换"运行期省 CPU"。只有在<b>高频 × 简单</b>同时成立的地方，这笔交换才划算。</p>
+</div>
+</details>
+</div>
+
+<div class="qa">
+<p class="q">思考题③：macOS 视图的坐标系默认是"原点在左下、Y 轴向上"。这件事对自绘 <code>draw(_:)</code> 和命中测试 / 事件坐标分别有什么影响？</p>
+<details><summary>查看答案</summary>
+<div class="a">
+<p><b>先建立直觉。</b>大多数人脑子里的屏幕坐标是"原点在左上、Y 向下"（和 iOS / 网页一样）。但 macOS 的 <code>NSView</code> <b>默认相反</b>：原点在左下、Y 向上，像数学课的第一象限。这不是 bug，是历史约定（源自 PostScript 绘图模型）。</p>
+<p><b>对 <code>draw(_:)</code> 的影响：</b>你在 <code>draw(_:)</code> 里画的所有坐标都按这套系来。想"在顶部画一条线"，那条线的 Y 应该接近 <code>bounds.height</code>（顶边），而不是接近 0（那是底边）。文字、图片如果按"左上原点"的思维去摆，就会上下颠倒位置。两种解法：① 重写 <code>override var isFlipped: Bool { true }</code>，把这个视图<b>翻转</b>成"左上原点、Y 向下"，从此画图、布局都和直觉一致——这也是为什么很多自定义视图都加这一行；② 不翻转，但所有 Y 都用 <code>bounds.height - y</code> 自己换算。<b>推荐第一种</b>，省心且不易错。</p>
+<p><b>对命中测试 / 事件坐标的影响：</b>鼠标事件给你的是窗口坐标，你通常用 <code>convert(event.locationInWindow, from: nil)</code> 把它转成本视图坐标，再判断点中了哪里（命中测试）。关键是：<b>这个转换的结果一定遵循该视图当前的坐标系</b>。如果视图没翻转，转出来的点也是"左下原点"的；你拿它和某个用"左上思维"算出来的矩形比，就会判错。所以——<b>画图的坐标系和命中测试的坐标系必须是同一套</b>。这也是 <code>isFlipped</code> 如此好用的原因：翻转一次，画图、布局、命中全部统一到"左上原点"，三者天然对齐，不会出现"看着点在按钮上、判定却没中"的诡异现象。</p>
+<p><b>本质：</b>坐标系不是"画图的细节"，而是<b>视图里一切几何运算共享的参照系</b>。绘制、布局、命中测试只要用了不一致的参照系，就必然错位。<code>isFlipped</code> 的价值是把整套参照系一次性对齐到你大脑习惯的方向。</p>
+</div>
+</details>
+</div>
+
+<div class="qa">
+<p class="q">思考题④：同一个交互，有时 target-action 能做、delegate 也能做。该怎么选？顺便把 dataSource、notification 一起放进来辨析。</p>
+<details><summary>查看答案</summary>
+<div class="a">
+<p>这四种其实是<b>四种不同性质的"对话"</b>，区分它们最好的办法是问："谁在对谁说什么样的话？"</p>
+<ul>
+<li><b>target-action（"喂，发生了一件事，你处理一下"）：</b>控件 → 一个目标，<b>一对一、单向通知一个动作发生了</b>，没有返回值、不询问意见。适合<b>简单、独立、就一种结果</b>的交互——按钮被点、滑块被拖。本章"添加 / 删除"按钮就是它。优点是极轻、解耦（控件不认识谁在听）。</li>
+<li><b>delegate（"我要做某件事，先问问你该怎么办 / 要不要拦"）：</b>对象 → 它的一个代理，<b>一对一，可以有返回值、可以决定流程</b>。当交互需要"<b>决策、定制、或拦截默认行为</b>"时用它。本章回车的 <code>doCommandBy</code> 返回 <code>true</code> 来"吃掉"这次回车，就是 delegate 才有的拦截能力；target-action 给不了这种"我处理了，你别走默认了"的回话。</li>
+<li><b>dataSource（"我要显示东西，但数据在你那儿，给我"）：</b>本质是一种<b>专门负责"供应数据"的 delegate</b>。区别在语义：delegate 多用于"<b>行为 / 事件</b>"（选中了、要不要展开），dataSource 专管"<b>内容 / 数量</b>"（有几行、第 N 行是什么）。AppKit 故意把它们拆成两个协议（如 <code>NSTableViewDataSource</code> 与 <code>NSTableViewDelegate</code>），就是为了让"数据"和"行为"职责分明——本章表格里 <code>numberOfRows</code> 属前者、<code>tableView(_:viewFor:row:)</code> 属后者。</li>
+<li><b>notification（"我广播一声，谁关心谁来听"）：</b>发出者 → <b>任意多个、互不相识的监听者</b>，一对多、单向、无返回。适合"<b>一件事发生了，可能有好几处都想响应，且发出者不该认识它们</b>"。<code>tableViewSelectionDidChange(_:)</code> 收到的参数就是一个 <code>Notification</code>——表格选择变了，它广播出来，你恰好实现了这个代理方法去刷新计数。</li>
+</ul>
+<p><b>选择决策树：</b>① 需要<b>返回值 / 拦截 / 定制流程</b>吗？→ delegate。② 是在<b>供应数据（数量、内容）</b>吗？→ dataSource。③ 只是"<b>一个动作发生了、一对一处理</b>、不要回话"？→ target-action（最简就用最简）。④ 是"<b>一件事、多个互不相识的对象想各自响应</b>"？→ notification。</p>
+<p><b>本质：</b>四者的真正分野是两条轴——<b>基数</b>（一对一 vs 一对多）和<b>方向性</b>（单向通知 vs 双向问答）。target-action 是"一对一单向"，delegate / dataSource 是"一对一双向（可回话 / 可拦截）"，notification 是"一对多单向"。先想清楚这次交互在这两条轴上的位置，选哪个就不再纠结。</p>
+</div>
+</details>
+</div>
+
+<div class="callout essence">
+<b>本质</b>
+<p>恭喜你走完了入门。回头看，AppKit 并不神秘：它把"启动、窗口、控制器、布局、事件、数据"这几件事，用<b>明确的协议和回调</b>固定下来，让你只需填空——告诉系统"有几行""第 N 行什么""被点了怎么办"。真正难的从来不是记住 API，而是在每个岔路口分清"这是状态还是事件""谁该拥有这份数据""这次该用哪种对话方式"。把这几个判断练成直觉，你就从"会照着写"升级成了"知道为什么这么写"。</p>
+</div>
+</section>
+
+  </main>
+</div>
+
+<script>
+/* ============================================================
+   1) 轻量 Swift 语法高亮（离线、自包含）
+   思路：拿 <code> 的纯文本（textContent，已是真实字符），
+   用一个交替正则切出 注释/字符串/数字/属性/类型/关键字，
+   其余字符原样转义后拼回。避免破坏 HTML。
+   ============================================================ */
+(function(){
+  var KW = ("import class struct enum protocol extension func var let if else guard for while " +
+    "return self super init deinit override final static lazy weak unowned private fileprivate " +
+    "public internal open in is as try throws throw do catch defer switch case default break " +
+    "continue where nil true false some any inout mutating typealias associatedtype subscript " +
+    "convenience required get set willSet didSet repeat").split(" ");
+  var kwSet = {}; KW.forEach(function(k){kwSet[k]=1;});
+
+  function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+
+  // 顺序很重要：注释、字符串、属性、#xxx、数字、标识符
+  var RE = /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|("(?:\\.|[^"\\\n])*")|(@\w+)|(#\w+)|\b(\d[\d_]*\.?\d*)\b|([A-Za-z_]\w*)/g;
+
+  function hi(code){
+    var out="", last=0, m;
+    RE.lastIndex=0;
+    while((m=RE.exec(code))){
+      if(m.index>last) out+=esc(code.slice(last,m.index));
+      if(m[1])      out+='<span class="tok-com">'+esc(m[1])+'</span>';
+      else if(m[2]) out+='<span class="tok-str">'+esc(m[2])+'</span>';
+      else if(m[3]) out+='<span class="tok-attr">'+esc(m[3])+'</span>';
+      else if(m[4]) out+='<span class="tok-attr">'+esc(m[4])+'</span>';
+      else if(m[5]) out+='<span class="tok-num">'+esc(m[5])+'</span>';
+      else if(m[6]){
+        var w=m[6];
+        if(kwSet[w]) out+='<span class="tok-kw">'+w+'</span>';
+        else if(/^[A-Z]/.test(w)) out+='<span class="tok-type">'+w+'</span>';
+        else {
+          // 函数调用：后面紧跟 ( 视为函数名
+          var after=code[RE.lastIndex];
+          if(after==="(") out+='<span class="tok-fn">'+w+'</span>';
+          else out+=esc(w);
+        }
+      }
+      last=RE.lastIndex;
+    }
+    out+=esc(code.slice(last));
+    return out;
+  }
+
+  window.__highlightAll=function(){
+    document.querySelectorAll('pre code.language-swift').forEach(function(el){
+      if(el.dataset.hl) return;
+      el.innerHTML=hi(el.textContent);
+      el.dataset.hl="1";
+    });
+  };
+  window.__highlightAll();
+})();
+
+/* ============================================================
+   2) 目录滚动高亮（scrollspy）+ 阅读进度条
+   ============================================================ */
+(function(){
+  function links(){return Array.prototype.slice.call(document.querySelectorAll('#toc a'));}
+  function chapters(){return Array.prototype.slice.call(document.querySelectorAll('.chapter'));}
+
+  function setup(){
+    var ls=links();
+    var byId={}; ls.forEach(function(a){byId[a.getAttribute('href').slice(1)]=a;});
+    var io=new IntersectionObserver(function(ents){
+      ents.forEach(function(e){
+        if(e.isIntersecting){
+          ls.forEach(function(a){a.classList.remove('active');});
+          var a=byId[e.target.id]; if(a)a.classList.add('active');
+        }
+      });
+    },{rootMargin:"-12% 0px -70% 0px",threshold:0});
+    chapters().forEach(function(c){if(c.id)io.observe(c);});
+
+    window.addEventListener('scroll',function(){
+      var h=document.documentElement;
+      var p=h.scrollTop/(h.scrollHeight-h.clientHeight||1);
+      var bar=document.getElementById('progBar');
+      if(bar)bar.style.width=Math.max(0,Math.min(100,p*100))+"%";
+    },{passive:true});
+  }
+  window.__setupSpy=setup;
+  setup();
+
+  var mt=document.getElementById('menuToggle');
+  if(mt)mt.addEventListener('click',function(){document.getElementById('toc').classList.toggle('open');});
+})();
+</script>
+</body>
+</html>

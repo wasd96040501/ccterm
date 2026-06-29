@@ -94,10 +94,10 @@ final class ImagePreviewSheetViewController: NSViewController {
         root.wantsLayer = true
 
         // Image area on a windowBackground panel (ImagePreviewSheetView.swift:17).
+        // `ClickToDismissView` owns + re-resolves its own `windowBackgroundColor`
+        // fill across appearance flips (R14).
         let imageArea = ClickToDismissView()
         imageArea.onClick = { [weak self] in self?.onDismiss() }
-        imageArea.wantsLayer = true
-        imageArea.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         imageArea.translatesAutoresizingMaskIntoConstraints = false
 
         imageView.image = image
@@ -184,9 +184,48 @@ final class ImagePreviewSheetViewController: NSViewController {
 /// SwiftUI `.contentShape(Rectangle()).onTapGesture { onDismiss() }`
 /// (ImagePreviewSheetView.swift:24-25). A click anywhere on the panel (image
 /// or the surrounding padding) dismisses.
+///
+/// Owns its own `windowBackgroundColor` layer fill (the SwiftUI panel was
+/// `Color(nsColor: .windowBackgroundColor)`, ImagePreviewSheetView.swift:17)
+/// and re-resolves it in `viewDidChangeEffectiveAppearance` — `CALayer`'s
+/// `backgroundColor` does NOT auto-track a dark/light flip, so without this a
+/// preview open across an appearance switch keeps the stale panel color (R14,
+/// the same fix as `AttachmentCardView`). The re-resolution lives here, on the
+/// `NSView`, because `viewDidChangeEffectiveAppearance` is an `NSView` hook —
+/// `NSViewController` does not have one.
 private final class ClickToDismissView: NSView {
     var onClick: (() -> Void)?
     nonisolated deinit {}
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        applyBackground()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyBackground()
+    }
+
+    private func applyBackground() {
+        // `NSColor.windowBackgroundColor.cgColor` resolves against
+        // `NSColor.current`, which is NOT guaranteed to be this view's
+        // appearance inside `viewDidChangeEffectiveAppearance`, so resolve
+        // explicitly against `effectiveAppearance`.
+        var fill: CGColor = NSColor.windowBackgroundColor.cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            fill = NSColor.windowBackgroundColor.cgColor
+        }
+        // Wrapped in a disabled `CATransaction` so the color never crossfades.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer?.backgroundColor = fill
+        CATransaction.commit()
+    }
 
     override func mouseDown(with event: NSEvent) {
         // Hold for the up so a drag off the area doesn't dismiss.

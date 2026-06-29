@@ -1,6 +1,5 @@
 import AppKit
 import Observation
-import SwiftUI
 
 /// Bridges `Transcript2Controller`'s two `@Observable` sheet-request
 /// fields (`pendingUserBubbleSheet` / `pendingImagePreview`) to AppKit-
@@ -15,14 +14,16 @@ import SwiftUI
 /// `startObservation()` — same pattern as
 /// `ChatSessionViewController.startSelectionObservation`.
 ///
-/// **Sheet content.** SwiftUI bodies (`UserBubbleSheetView` /
-/// `ImagePreviewSheetView`) wrapped in `NSHostingController`. The body
-/// content stays SwiftUI by design (project rule: "SwiftUI by default,
-/// AppKit by exception" — the exception is the transcript's
-/// frame-time cascade, not sheet decoration). Each body is wired with
-/// an explicit `onDismiss` closure rather than `@Environment(\.dismiss)`
-/// because AppKit-presented sheets do not propagate the SwiftUI
-/// dismiss environment.
+/// **Sheet content.** Pure-AppKit `NSViewController`s
+/// (`UserBubbleSheetViewController` / `ImagePreviewSheetViewController`)
+/// set as the sheet window's `contentViewController` directly — no
+/// `NSHostingController`, no SwiftUI on the page (migration plan §4.7).
+/// Each VC is wired with an explicit `onDismiss` closure rather than
+/// `@Environment(\.dismiss)` because AppKit-presented sheets do not
+/// propagate the SwiftUI dismiss environment. The window's
+/// `contentMinSize` / `contentMaxSize` are pinned from each VC's
+/// `Envelope` (§4.7-3) since `beginSheet` honors no SwiftUI min/ideal/max
+/// frame; the VC's `preferredContentSize` seeds the ideal.
 ///
 /// **Coalescing.** The same source-phase tick can write both fields
 /// (rare but allowed); we present whichever side has a value, with
@@ -134,10 +135,13 @@ final class Transcript2SheetPresenter {
             controller.pendingUserBubbleSheet = nil
             return
         }
-        let body = UserBubbleSheetView(text: request.text) { [weak self] in
+        let vc = UserBubbleSheetViewController(text: request.text) { [weak self] in
             self?.endCurrentSheet()
         }
-        let sheet = Self.makeSheetWindow(rootView: body)
+        let sheet = Self.makeSheetWindow(
+            contentViewController: vc,
+            minSize: NSSize(width: vc.envelope.minWidth, height: vc.envelope.minHeight),
+            maxSize: NSSize(width: vc.envelope.maxWidth, height: vc.envelope.maxHeight))
         openSheet = (sheet, .userBubble(request.id))
         parent.beginSheet(sheet) { [weak self] _ in
             guard let self else { return }
@@ -158,10 +162,14 @@ final class Transcript2SheetPresenter {
             controller.pendingImagePreview = nil
             return
         }
-        let body = ImagePreviewSheetView(image: request.image) { [weak self] in
+        let vc = ImagePreviewSheetBody.makeTranscriptViewController(image: request.image) {
+            [weak self] in
             self?.endCurrentSheet()
         }
-        let sheet = Self.makeSheetWindow(rootView: body)
+        let sheet = Self.makeSheetWindow(
+            contentViewController: vc,
+            minSize: NSSize(width: vc.envelope.minWidth, height: vc.envelope.minHeight),
+            maxSize: NSSize(width: vc.envelope.maxWidth, height: vc.envelope.maxHeight))
         openSheet = (sheet, .imagePreview(request.id))
         parent.beginSheet(sheet) { [weak self] _ in
             guard let self else { return }
@@ -188,10 +196,20 @@ final class Transcript2SheetPresenter {
         openSheet = nil
     }
 
-    private static func makeSheetWindow<Content: View>(rootView: Content) -> NSWindow {
-        let hosting = NSHostingController(rootView: rootView)
-        let window = NSWindow(contentViewController: hosting)
+    /// Build the sheet window hosting a pure-AppKit `contentViewController`
+    /// directly (no `NSHostingController`). `beginSheet` ignores a SwiftUI
+    /// min/ideal/max envelope, so the resizable bounds are pinned explicitly
+    /// (§4.7-3); the VC's `preferredContentSize` (seeded from its `Envelope`
+    /// ideal) supplies the initial content size on assignment.
+    private static func makeSheetWindow(
+        contentViewController: NSViewController,
+        minSize: NSSize,
+        maxSize: NSSize
+    ) -> NSWindow {
+        let window = NSWindow(contentViewController: contentViewController)
         window.isReleasedWhenClosed = false
+        window.contentMinSize = minSize
+        window.contentMaxSize = maxSize
         return window
     }
 }

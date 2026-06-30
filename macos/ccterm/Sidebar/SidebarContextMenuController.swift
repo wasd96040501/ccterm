@@ -118,8 +118,8 @@ final class SidebarContextMenuController: NSObject, NSMenuDelegate {
     }
 
     /// On-disk path of the session's history JSONL, resolved through the
-    /// same `HistoryLoader.locate` the runtime uses (ccterm export →
-    /// CLI live file → project-dir scan). Returns nil when no JSONL
+    /// same `HistoryLoader.locate` the runtime uses (CLI live file →
+    /// project-dir scan). Returns nil when no JSONL
     /// exists yet — the caller greys out "Copy Session File Path".
     private func jsonlPath(forSessionId sessionId: String) -> String? {
         let slug = context.sessionManager.records.first { $0.sessionId == sessionId }?.slug

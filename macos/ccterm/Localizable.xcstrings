@@ -1034,7 +1034,16 @@
         }
       }
     },
-    "Debug": {},
+    "Debug": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "调试"
+          }
+        }
+      }
+    },
     "Delete": {
       "extractionState": "stale",
       "localizations": {
@@ -1320,6 +1329,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "深入探索代码库"
+          }
+        }
+      }
+    },
+    "Export session JSONL": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导出会话 JSONL"
           }
         }
       }
@@ -2985,6 +3004,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在运行 agent：%@"
+          }
+        }
+      }
+    },
+    "Save the raw message stream to ~/.cache/ccterm/export. Takes effect for newly started sessions.": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将原始消息流保存到 ~/.cache/ccterm/export。对新启动的会话生效。"
           }
         }
       }

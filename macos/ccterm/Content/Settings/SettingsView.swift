@@ -13,6 +13,8 @@ struct SettingsView: View {
             switch selection {
             case .general:
                 GeneralSettingsView()
+            case .debug:
+                DebugSettingsView()
             }
         }
         .navigationSplitViewStyle(.balanced)
@@ -22,16 +24,19 @@ struct SettingsView: View {
 
 private enum SettingsSection: CaseIterable {
     case general
+    case debug
 
     var title: String {
         switch self {
         case .general: return String(localized: "General")
+        case .debug: return String(localized: "Debug")
         }
     }
 
     var icon: String {
         switch self {
         case .general: return "gear"
+        case .debug: return "ladybug"
         }
     }
 }
@@ -67,5 +72,22 @@ private struct GeneralSettingsView: View {
         }
         .formStyle(.grouped)
         .navigationTitle("General")
+    }
+}
+
+private struct DebugSettingsView: View {
+    @AppStorage(SessionExportDefaults.enabledKey) private var exportSessionJSONL: Bool = false
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Export session JSONL", isOn: $exportSessionJSONL)
+            } footer: {
+                Text("Save the raw message stream to ~/.cache/ccterm/export. Takes effect for newly started sessions.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle("Debug")
     }
 }

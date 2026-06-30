@@ -132,10 +132,15 @@ struct SessionConfig: Equatable {
     /// `customCommand` is hoisted from `UserDefaults` by the call site
     /// (the test rule against reading `UserDefaults` from pure
     /// derivation paths still applies — see `cctermTests/CLAUDE.md`).
+    /// `messageExportDirectory` is likewise injected: when non-nil the SDK
+    /// writes every stdout/stdin JSONL line under it (one file per session
+    /// id). The call site passes `SessionConfig.exportDirectory` only when
+    /// the debug toggle is on; nil keeps the SDK from writing anything.
     func toAgentSDKConfig(
         sessionId: String,
         resume: Bool,
-        customCommand: String?
+        customCommand: String?,
+        messageExportDirectory: URL? = nil
     ) -> SessionConfiguration {
         let wd = URL(fileURLWithPath: cwd ?? originPath ?? FileManager.default.currentDirectoryPath)
         return SessionConfiguration(
@@ -157,7 +162,28 @@ struct SessionConfig: Equatable {
             includePartialMessages: true,
             plugins: pluginDirectories,
             customCommand: customCommand,
-            allowDangerouslySkipPermissions: true
+            allowDangerouslySkipPermissions: true,
+            messageExportDirectory: messageExportDirectory
         )
     }
+}
+
+extension SessionConfig {
+
+    /// CCTerm's own raw-message export directory
+    /// (`~/.cache/ccterm/export`). Used only when the debug "export session
+    /// JSONL" toggle is on; the SDK writes one `<sessionId>.jsonl` here
+    /// capturing every byte it forwarded. Not a history source — history
+    /// always loads from `~/.claude/projects` (`HistoryLoader`).
+    static var exportDirectory: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".cache/ccterm/export")
+    }
+}
+
+/// UserDefaults coordinates for the debug "export session JSONL" toggle,
+/// shared between the Settings UI (`@AppStorage`) and the launch path
+/// (`SessionRuntime.continueStartup`). Default is off.
+enum SessionExportDefaults {
+    static let enabledKey = "exportSessionJSONL"
 }

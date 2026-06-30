@@ -6,22 +6,18 @@ import XCTest
 /// Pins `HistoryLoader`'s resolution + parser contracts. Pure I/O over
 /// the filesystem, no MainActor, no handle state.
 ///
-/// Tests use the root-injected `locate(... exportRoot: projectsRoot:)`
-/// overload so they never touch `~/.cache/ccterm` or
-/// `~/.claude/projects` — see cctermTests/CLAUDE.md.
+/// Tests use the root-injected `locate(... projectsRoot:)` overload so
+/// they never touch `~/.claude/projects` — see cctermTests/CLAUDE.md.
 final class HistoryLoaderTests: XCTestCase {
 
     private var sandbox: URL!
-    private var exportRoot: URL!
     private var projectsRoot: URL!
 
     override func setUpWithError() throws {
         continueAfterFailure = false
         sandbox = FileManager.default.temporaryDirectory
             .appendingPathComponent("HistoryLoaderTests-\(UUID().uuidString)")
-        exportRoot = sandbox.appendingPathComponent("export")
         projectsRoot = sandbox.appendingPathComponent("projects")
-        try FileManager.default.createDirectory(at: exportRoot, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: projectsRoot, withIntermediateDirectories: true)
     }
 
@@ -31,34 +27,18 @@ final class HistoryLoaderTests: XCTestCase {
 
     // MARK: - locate resolution order
 
-    func testLocatePrefersExportOverSlugAndScan() throws {
+    func testLocatePrefersSlugOverScan() throws {
         let sid = UUID().uuidString
-        let export = exportRoot.appendingPathComponent("\(sid).jsonl")
-        try Data().write(to: export)
-
         let slugDir = projectsRoot.appendingPathComponent("my-slug")
-        try FileManager.default.createDirectory(at: slugDir, withIntermediateDirectories: true)
-        try Data().write(to: slugDir.appendingPathComponent("\(sid).jsonl"))
-
-        let resolved = HistoryLoader.locate(
-            sessionId: sid, slug: "my-slug",
-            exportRoot: exportRoot, projectsRoot: projectsRoot)
-
-        XCTAssertEqual(resolved, export, "export hit must win when present")
-    }
-
-    func testLocateFallsBackToSlugWhenExportMissing() throws {
-        let sid = UUID().uuidString
-        let slugDir = projectsRoot.appendingPathComponent("known-slug")
         try FileManager.default.createDirectory(at: slugDir, withIntermediateDirectories: true)
         let live = slugDir.appendingPathComponent("\(sid).jsonl")
         try Data().write(to: live)
 
         let resolved = HistoryLoader.locate(
-            sessionId: sid, slug: "known-slug",
-            exportRoot: exportRoot, projectsRoot: projectsRoot)
+            sessionId: sid, slug: "my-slug",
+            projectsRoot: projectsRoot)
 
-        XCTAssertEqual(resolved, live)
+        XCTAssertEqual(resolved, live, "slug hit must win when present")
     }
 
     func testLocateFallsBackToScanWhenSlugDirMissing() throws {
@@ -72,7 +52,7 @@ final class HistoryLoaderTests: XCTestCase {
 
         let resolved = HistoryLoader.locate(
             sessionId: sid, slug: "stale-cached-slug",
-            exportRoot: exportRoot, projectsRoot: projectsRoot)
+            projectsRoot: projectsRoot)
 
         // `contentsOfDirectory(at:)` returns URLs rooted at
         // `/private/var/folders/...`, while the constructed expected
@@ -93,7 +73,7 @@ final class HistoryLoaderTests: XCTestCase {
 
         let resolved = HistoryLoader.locate(
             sessionId: sid, slug: nil,
-            exportRoot: exportRoot, projectsRoot: projectsRoot)
+            projectsRoot: projectsRoot)
 
         XCTAssertEqual(
             resolved?.resolvingSymlinksInPath().path,
@@ -105,7 +85,7 @@ final class HistoryLoaderTests: XCTestCase {
         let sid = UUID().uuidString
         let resolved = HistoryLoader.locate(
             sessionId: sid, slug: "absent",
-            exportRoot: exportRoot, projectsRoot: projectsRoot)
+            projectsRoot: projectsRoot)
         XCTAssertNil(resolved)
     }
 

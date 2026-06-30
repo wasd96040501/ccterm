@@ -170,9 +170,8 @@ final class SidebarContextMenuControllerTests: XCTestCase {
         // No JSONL exists for a fresh sessionId, so `HistoryLoader.locate`
         // returns nil and the action writes nothing. We assert the pasteboard
         // is left untouched by stamping a sentinel first and confirming it
-        // survives. (The success path resolves through real `~/.cache/ccterm`
-        // / `~/.claude` roots, which the test conventions forbid touching;
-        // see notes.)
+        // survives. (The success path resolves through the real `~/.claude`
+        // root, which the test conventions forbid touching; see notes.)
         let sid = UUID().uuidString
         let (context, _, _) = makeContext(
             records: [SessionRecord(sessionId: sid, title: "Real", cwd: "/x/proj", status: .created)])

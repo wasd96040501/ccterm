@@ -429,7 +429,16 @@ extension SessionRuntime {
         // rule. Hoisting the read here keeps the pure-derivation function
         // safe to call from tests.
         let customCommand = UserDefaults.standard.string(forKey: "customCLICommand")
-        let config = makeAgentConfig(customCommand: customCommand)
+        // Debug toggle: when on, hand the SDK an export directory so it
+        // mirrors every JSONL line to `~/.cache/ccterm/export`. Read here
+        // (not in `makeAgentConfig`) for the same test-safety reason. The
+        // value is captured per launch, so flipping it takes effect on the
+        // next session start.
+        let exportEnabled = UserDefaults.standard.bool(forKey: SessionExportDefaults.enabledKey)
+        let config = makeAgentConfig(
+            customCommand: customCommand,
+            messageExportDirectory: exportEnabled ? SessionConfig.exportDirectory : nil
+        )
         Task { @MainActor [weak self] in
             await self?.bootstrap(configuration: config)
         }
@@ -553,12 +562,17 @@ extension SessionRuntime {
     /// `UserDefaults.standard["customCLICommand"]` in `continueStartup`;
     /// tests pass `nil` and assert on the produced config without tripping
     /// hosted-XCTest UserDefaults faults on CI.
-    func makeAgentConfig(customCommand: String?) -> SessionConfiguration {
+    ///
+    /// `messageExportDirectory` is injected for the same reason — production
+    /// passes `SessionConfig.exportDirectory` only when the debug toggle is
+    /// on (read at the call site), tests default it to nil.
+    func makeAgentConfig(customCommand: String?, messageExportDirectory: URL? = nil) -> SessionConfiguration {
         let useResume = Self.shouldResumeBootstrap(for: repository.find(sessionId))
         return config.toAgentSDKConfig(
             sessionId: sessionId,
             resume: useResume,
-            customCommand: customCommand
+            customCommand: customCommand,
+            messageExportDirectory: messageExportDirectory
         )
     }
 

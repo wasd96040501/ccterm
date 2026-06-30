@@ -21,24 +21,14 @@ enum HistoryLoader {
             .appendingPathComponent(".claude/projects")
     }
 
-    /// CCTerm's own export JSONL directory (contains the full stdio
-    /// stream). Preferred over the live file because it captures every
-    /// byte the SDK forwarded.
-    nonisolated static var exportRoot: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".cache/ccterm/export")
-    }
-
     /// History JSONL URL for `sessionId`. Resolution order:
-    /// 1. ccterm's own export at
-    ///    `~/.cache/ccterm/export/<sessionId>.jsonl`.
-    /// 2. CLI's live file at
+    /// 1. CLI's live file at
     ///    `~/.claude/projects/<slug>/<sessionId>.jsonl`. `slug` comes
     ///    from `SessionRecord.slug` and is intended to match Claude
     ///    CLI's `sanitizePath`.
-    /// 3. Fallback scan of `~/.claude/projects/*/<sessionId>.jsonl`. The
+    /// 2. Fallback scan of `~/.claude/projects/*/<sessionId>.jsonl`. The
     ///    CLI's on-disk layout is **exactly one level deep**, so this
-    ///    is a single shallow loop — cheap. Catches any case where (2)
+    ///    is a single shallow loop — cheap. Catches any case where (1)
     ///    misses (slug drift, canonicalize/realpath divergence, or a
     ///    worktree JSONL the CLI wrote under a different slug than our
     ///    record persisted).
@@ -46,22 +36,17 @@ enum HistoryLoader {
         locate(
             sessionId: sessionId,
             slug: slug,
-            exportRoot: exportRoot,
             projectsRoot: claudeProjectsRoot)
     }
 
-    /// Root-injected overload. Tests point `exportRoot` / `projectsRoot`
-    /// at a tmpdir so the same resolution order can be exercised
-    /// without touching `~/.cache/ccterm` or `~/.claude/projects`.
+    /// Root-injected overload. Tests point `projectsRoot` at a tmpdir so
+    /// the same resolution order can be exercised without touching
+    /// `~/.claude/projects`.
     nonisolated static func locate(
         sessionId: String,
         slug: String?,
-        exportRoot: URL,
         projectsRoot: URL
     ) -> URL? {
-        let export = exportRoot.appendingPathComponent("\(sessionId).jsonl")
-        if FileManager.default.fileExists(atPath: export.path) { return export }
-
         if let slug {
             let live =
                 projectsRoot

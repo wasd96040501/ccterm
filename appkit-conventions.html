@@ -1,0 +1,3352 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>纯 AppKit 开发规范手册 · Swift · 进阶</title>
+<style>
+/* ============================================================
+   纯 AppKit（Swift）开发规范手册 · 外壳样式
+   面向：已懂 AppKit 基础、要建立工程规范的中级读者
+   ============================================================ */
+:root{
+  --bg:#eef0f3;
+  --panel:#ffffff;
+  --ink:#1d1d1f;
+  --ink-soft:#3c3c43;
+  --ink-dim:#6e6e73;
+  --line:#d8dade;
+  --line-soft:#e7e8ec;
+  --accent:#0a64ff;
+  --accent-press:#0a55d6;
+  --do:#15803d;
+  --do-bg:#eefcf3;
+  --do-line:#bbf7d0;
+  --dont:#b91c1c;
+  --dont-bg:#fef2f2;
+  --dont-line:#fecaca;
+  --code-bg:#1e2230;
+  --code-ink:#e6e9f0;
+  --radius:12px;
+  --radius-sm:7px;
+  --shadow:0 1px 2px rgba(0,0,0,.06),0 12px 32px rgba(20,30,60,.10);
+  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue","PingFang SC","Microsoft YaHei",sans-serif;
+  --mono:"SF Mono",ui-monospace,"JetBrains Mono","Menlo","Consolas",monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:24px}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:var(--sans);font-size:16px;line-height:1.72;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+
+.layout{display:flex;align-items:flex-start;max-width:1320px;margin:0 auto;gap:28px;padding:0 24px}
+.sidebar{position:sticky;top:0;height:100vh;width:280px;flex:0 0 280px;padding:26px 8px 26px 6px;overflow-y:auto}
+.sidebar h1{font-size:16.5px;margin:0 8px 4px;letter-spacing:-.2px}
+.sidebar .subtitle{font-size:12.5px;color:var(--ink-dim);margin:0 8px 18px}
+.toc{list-style:none;margin:0;padding:0}
+.toc li{margin:1px 0}
+.toc a{display:flex;gap:10px;align-items:baseline;text-decoration:none;color:var(--ink-soft);
+  font-size:13px;padding:7px 10px;border-radius:8px;line-height:1.4;transition:background .15s,color .15s}
+.toc a .num{color:var(--ink-dim);font-variant-numeric:tabular-nums;font-size:12px;min-width:14px}
+.toc a:hover{background:#e3e6ec;color:var(--ink)}
+.toc a.active{background:var(--accent);color:#fff}
+.toc a.active .num{color:rgba(255,255,255,.85)}
+.progress-rail{height:3px;background:var(--line);border-radius:3px;margin:14px 8px 6px;overflow:hidden}
+.progress-rail i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+
+.content{flex:1 1 auto;min-width:0;padding:0 0 140px}
+
+.hero{background:linear-gradient(135deg,#0b3d91 0%,#0a64ff 55%,#5b3df5 100%);
+  color:#fff;border-radius:18px;padding:38px 36px;margin:26px 0 8px;box-shadow:var(--shadow)}
+.hero h1{margin:0 0 10px;font-size:29px;letter-spacing:-.5px}
+.hero p{margin:0;font-size:15.5px;color:rgba(255,255,255,.92);max-width:66ch}
+.hero .meta{margin-top:18px;display:flex;flex-wrap:wrap;gap:8px}
+.hero .pill{background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.25);
+  padding:4px 11px;border-radius:999px;font-size:12.5px}
+
+.chapter{background:var(--panel);border:1px solid var(--line-soft);border-radius:var(--radius);
+  padding:30px 34px;margin:22px 0;box-shadow:0 1px 2px rgba(0,0,0,.04);scroll-margin-top:20px}
+.chapter h2{font-size:23px;margin:0 0 4px;letter-spacing:-.4px;padding-bottom:14px;
+  border-bottom:1px solid var(--line-soft);display:flex;align-items:center;gap:12px}
+.chapter h2::before{content:attr(data-n);flex:0 0 auto;width:30px;height:30px;border-radius:8px;
+  background:#e8f0ff;color:var(--accent);font-size:15px;font-weight:700;display:grid;place-items:center}
+.chapter h3{font-size:17.5px;margin:26px 0 6px;letter-spacing:-.2px}
+.chapter h4{font-size:15px;margin:18px 0 4px;color:var(--ink-soft)}
+.chapter p{margin:10px 0}
+.chapter .lead{font-size:16.5px;color:var(--ink-soft);margin:14px 0 6px}
+.chapter ul,.chapter ol{margin:10px 0;padding-left:22px}
+.chapter li{margin:5px 0}
+.chapter strong,.chapter b{color:var(--ink)}
+.chapter code:not(pre code){font-family:var(--mono);font-size:13px;background:#eef0f4;
+  border:1px solid var(--line-soft);padding:1px 6px;border-radius:5px;color:#9333ea;word-break:break-word}
+
+/* 术语框 */
+.termbox{border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden;margin:16px 0;background:#fbfcfe}
+.termbox .term{display:flex;border-top:1px solid var(--line-soft)}
+.termbox .term:first-child{border-top:none}
+.termbox .term-name{flex:0 0 190px;background:#f3f5f9;padding:11px 14px;font-family:var(--mono);
+  font-size:12.5px;color:#0a55d6;border-right:1px solid var(--line-soft);line-height:1.5}
+.termbox .term-def{padding:11px 15px;font-size:14px;color:var(--ink-soft)}
+
+/* 规范条目 rule */
+.rule{border:1px solid;border-radius:var(--radius-sm);margin:14px 0;overflow:hidden}
+.rule-head{font-size:12px;font-weight:700;letter-spacing:.5px;padding:6px 14px;display:flex;align-items:center;gap:7px}
+.rule-head::before{font-size:13px}
+.rule-body{padding:12px 16px;font-size:14.5px;background:#fff}
+.rule-body p:first-child{margin-top:0}.rule-body p:last-child{margin-bottom:0}
+.rule-body pre{margin:10px 0}
+.rule.do{border-color:var(--do-line)}
+.rule.do .rule-head{background:var(--do-bg);color:var(--do)}
+.rule.do .rule-head::before{content:"✓"}
+.rule.dont{border-color:var(--dont-line)}
+.rule.dont .rule-head{background:var(--dont-bg);color:var(--dont)}
+.rule.dont .rule-head::before{content:"✕"}
+.rule-pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}
+.rule-pair .rule{margin:0}
+@media(max-width:800px){.rule-pair{grid-template-columns:1fr}}
+
+/* 真实项目引用 ref */
+.ref{display:flex;gap:12px;align-items:flex-start;border-left:3px solid #c7b8ff;background:#f7f5ff;
+  border-radius:0 var(--radius-sm) var(--radius-sm) 0;padding:10px 15px;margin:14px 0;font-size:13.5px}
+.ref-proj{flex:0 0 auto;color:#5b21b6;font-family:var(--mono);font-size:12.5px;padding-top:1px}
+.ref-note{color:var(--ink-soft)}
+
+/* callout */
+.callout{border-radius:var(--radius-sm);padding:14px 18px;margin:18px 0;border:1px solid}
+.callout b{display:block;font-size:13px;letter-spacing:.4px;text-transform:uppercase;margin-bottom:4px}
+.callout p{margin:4px 0}
+.callout.why{background:#eef4ff;border-color:#c7dbff}
+.callout.why b{color:#1d4ed8}
+.callout.essence{background:#fff7ed;border-color:#fed7aa}
+.callout.essence b{color:#c2410c}
+.callout.tip{background:#eefcf3;border-color:#bbf7d0}
+.callout.tip b{color:#15803d}
+.callout.warn{background:#fef2f2;border-color:#fecaca}
+.callout.warn b{color:#b91c1c}
+
+/* 对照表 */
+table.cmp{width:100%;border-collapse:collapse;margin:16px 0;font-size:13.8px;border:1px solid var(--line);border-radius:var(--radius-sm);overflow:hidden}
+table.cmp th{background:#f3f5f9;color:#41414a;text-align:left;padding:9px 13px;font-weight:600;border-bottom:1px solid var(--line);font-size:13px}
+table.cmp td{padding:9px 13px;border-bottom:1px solid var(--line-soft);vertical-align:top;color:var(--ink-soft)}
+table.cmp tr:last-child td{border-bottom:none}
+table.cmp td:first-child,table.cmp th:first-child{border-right:1px solid var(--line-soft)}
+table.cmp code{white-space:nowrap}
+
+/* 目录树 */
+pre.filetree{background:#fbfcfe;color:#2c2c33;border:1px solid var(--line);border-radius:10px;
+  padding:15px 18px;overflow-x:auto;margin:16px 0;font-family:var(--mono);font-size:12.8px;line-height:1.7}
+pre.filetree::before{content:none}
+pre.filetree b{color:#0a55d6;font-weight:600}
+pre.filetree i{color:var(--ink-dim);font-style:normal}
+
+/* 思考题 */
+.qa{border:1px dashed #c7b8ff;background:#f7f5ff;border-radius:var(--radius-sm);padding:14px 18px;margin:18px 0}
+.qa .q{font-weight:600;margin:0 0 6px;color:#5b21b6}
+.qa details{margin-top:6px}
+.qa summary{cursor:pointer;color:var(--accent);font-size:14px;font-weight:500;user-select:none;list-style:none}
+.qa summary::-webkit-details-marker{display:none}
+.qa summary::before{content:"▸ "}
+.qa details[open] summary::before{content:"▾ "}
+.qa .a{margin-top:10px;padding-top:10px;border-top:1px solid #e4dcff;color:var(--ink-soft);font-size:14.5px}
+.qa .a p:first-child{margin-top:0}
+
+/* 代码块 */
+pre{background:var(--code-bg);color:var(--code-ink);border-radius:10px;padding:16px 18px;
+  overflow-x:auto;margin:16px 0;font-size:13.2px;line-height:1.62;border:1px solid #2b3142;position:relative}
+pre code{font-family:var(--mono);white-space:pre}
+pre:has(code.language-swift)::before{content:"swift";position:absolute;top:8px;right:12px;
+  font-family:var(--sans);font-size:10.5px;letter-spacing:.5px;color:#8a93a8;text-transform:uppercase}
+.tok-kw{color:#ff7ab2}
+.tok-type{color:#5ec8ff}
+.tok-str{color:#7ee787}
+.tok-com{color:#8a93a8;font-style:italic}
+.tok-num{color:#ffab70}
+.tok-attr{color:#d2a8ff}
+.tok-fn{color:#ffd866}
+
+/* 架构示意（少量） */
+.demo{border:1px solid var(--line);border-radius:var(--radius-sm);margin:18px 0;overflow:hidden;background:#f6f7f9}
+.demo-stage{padding:22px;background:#f0f2f6;display:flex;flex-direction:column;gap:14px}
+.demo-note{margin:0;padding:11px 16px;border-top:1px solid var(--line);background:#fbfcfe;font-size:13px;color:var(--ink-dim)}
+.mac-window{background:#ececec;border:1px solid #c3c5cc;border-radius:11px;overflow:hidden;
+  box-shadow:0 8px 24px rgba(15,25,55,.16);max-width:560px;width:100%}
+.mac-titlebar{height:36px;display:flex;align-items:center;gap:10px;padding:0 14px;
+  background:linear-gradient(180deg,#fbfbfc,#e9eaee);border-bottom:1px solid #c8cace;position:relative}
+.mac-traffic{display:flex;gap:8px}
+.mac-traffic i{width:12px;height:12px;border-radius:50%;display:block;border:.5px solid rgba(0,0,0,.18)}
+.mac-traffic i:nth-child(1){background:#ff5f57}.mac-traffic i:nth-child(2){background:#febc2e}.mac-traffic i:nth-child(3){background:#28c840}
+.mac-title{position:absolute;left:0;right:0;text-align:center;font-size:13px;font-weight:600;color:#4b4b4f}
+.mac-body{background:#fff;padding:16px}
+.mac-btn{font-family:var(--sans);font-size:13.5px;color:#1d1d1f;background:linear-gradient(180deg,#fff,#f3f3f5);
+  border:1px solid #c4c6cc;border-radius:7px;padding:5px 14px;cursor:pointer}
+.mac-btn.primary{background:linear-gradient(180deg,#3a86ff,#0a64ff);color:#fff;border-color:#0a55d6}
+.mac-field{font-family:var(--sans);font-size:13.5px;background:#fff;border:1px solid #c0c2c8;border-radius:6px;padding:5px 9px}
+.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.col{display:flex;flex-direction:column;gap:10px}
+.gap{gap:14px}.gap-sm{gap:7px}.fill{flex:1 1 auto}.center{justify-content:center;align-items:center}
+.box{border:1px solid #c9ccd2;border-radius:8px;padding:12px 14px;background:#fff;font-size:13px}
+.box .box-t{font-size:11.5px;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px}
+
+.menu-toggle{display:none}
+@media(max-width:940px){
+  .layout{flex-direction:column;padding:0 14px}
+  .sidebar{position:static;height:auto;width:100%;flex:none;padding:12px;background:var(--panel);
+    border:1px solid var(--line-soft);border-radius:12px;margin-top:14px}
+  .toc{display:none}.toc.open{display:block}
+  .menu-toggle{display:inline-flex;align-items:center;gap:8px;cursor:pointer;background:none;border:none;font-size:15px;font-weight:600;color:var(--ink)}
+  .progress-rail{display:none}
+  .chapter{padding:22px 18px}.hero{padding:28px 22px}.hero h1{font-size:23px}
+  .termbox .term{flex-direction:column}
+  .termbox .term-name{flex-basis:auto;border-right:none;border-bottom:1px solid var(--line-soft)}
+}
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <h1>纯 AppKit 开发规范</h1>
+    <p class="subtitle">Swift · 进阶 · 面向重构</p>
+    <button class="menu-toggle" id="menuToggle">☰ 目录</button>
+    <nav>
+      <ul class="toc" id="toc">
+        <li><a href="#ch-1"><span class="num">1</span><span>架构总览与单向数据流</span></a></li>
+        <li><a href="#ch-2"><span class="num">2</span><span>项目结构与模块化</span></a></li>
+        <li><a href="#ch-3"><span class="num">3</span><span>控制器体系与容器化</span></a></li>
+        <li><a href="#ch-4"><span class="num">4</span><span>依赖注入与组合根</span></a></li>
+        <li><a href="#ch-5"><span class="num">5</span><span>Coordinator 与导航解耦</span></a></li>
+        <li><a href="#ch-6"><span class="num">6</span><span>视图构建与布局规范</span></a></li>
+        <li><a href="#ch-7"><span class="num">7</span><span>状态与数据流</span></a></li>
+        <li><a href="#ch-8"><span class="num">8</span><span>列表与数据源</span></a></li>
+        <li><a href="#ch-9"><span class="num">9</span><span>内存·并发·可测试性</span></a></li>
+      </ul>
+    </nav>
+    <div class="progress-rail"><i id="progBar"></i></div>
+  </aside>
+
+  <main class="content">
+    <header class="hero">
+      <h1>纯 AppKit 开发规范手册</h1>
+      <p>一份面向重构的进阶规范：从架构分层、模块化、控制器体系、依赖注入、Coordinator，到视图布局、状态数据流、列表数据源与内存并发可测试性。每条规范都配「简短 Swift 示例 + 为什么这样规定」，并对标成熟、星多的纯 AppKit(Swift) 项目的通行做法。全程纯 AppKit，不含 SwiftUI。</p>
+      <div class="meta">
+        <span class="pill">纯 AppKit · 无 SwiftUI</span>
+        <span class="pill">程序化 · Controller</span>
+        <span class="pill">依赖注入 · Coordinator</span>
+        <span class="pill">规范 + 示例 + 原因</span>
+      </div>
+    </header>
+
+    <section class="chapter" id="ch-1">
+<h2 data-n="1">架构总览：纯 AppKit 的分层与单向数据流</h2>
+<p class="lead">在动手写第一行 <code>NSView</code> 子类之前，我们要先回答一个更前置的问题：一个成熟的纯 AppKit 应用，其整体骨架长什么样？本章不讲控件用法，而是建立全局观——把代码切成 Model / View / Controller / Service / Coordinator 五层，定义每层的职责边界与依赖方向，讲清 Apple 的 MVC 基线为什么会退化成“巨型视图控制器”，以及成熟项目如何演进到 MVC+ / MVVM-C 来对抗它。贯穿全章的一条直觉是：<b>数据向下流、事件向上报</b>——这是我们后续所有规范的根。</p>
+
+<h3>1.1 为什么先谈架构，而不是先谈控件</h3>
+<p>AppKit 的入门材料几乎都从“把一个 <code>NSButton</code> 放到窗口里”开始。但当项目从几个窗口长到几十个模块、多人协作、需要重构时，真正决定生死的不是你会不会用某个控件，而是<b>职责有没有被切干净、依赖方向是不是单一的</b>。本手册的第 1 章，先给出一张“成熟应用应该长成什么样”的地图，后续每一章都是在这张地图上填细节。</p>
+
+<div class="termbox">
+  <div class="term"><b class="term-name">分层（Layering）</b><span class="term-def">把代码按职责划分为若干层（Model / View / Controller / Service / Coordinator），并规定<b>上层可依赖下层、下层不得依赖上层</b>。依赖是一张单向、无环的有向图。</span></div>
+  <div class="term"><b class="term-name">单向数据流（Unidirectional Data Flow）</b><span class="term-def">状态从数据源单向地流向视图（数据向下），用户交互以事件/回调的形式单向地上报给持有状态的一方（事件向上）。视图自己不持有业务真相，只渲染被传入的数据。</span></div>
+  <div class="term"><b class="term-name">组合根（Composition Root）</b><span class="term-def">应用中唯一集中创建并串联各层对象（把 Service 注入 Controller、把 Controller 交给 Coordinator）的地方，通常在 <code>NSApplicationDelegate</code> 或顶层 <code>NSWindowController</code>。第 4 章展开。</span></div>
+</div>
+
+<h3>1.2 五层职责：一张必须背下来的表</h3>
+<p>纯 AppKit 项目里，把每个类型明确归到下面五层之一，是所有规范的第一条纪律。归不进去的类型，往往就是耦合的藏身之处。</p>
+
+<table class="cmp">
+  <thead><tr><th>层</th><th>典型类型</th><th>该做</th><th>不该做</th></tr></thead>
+  <tbody>
+    <tr><td><b>Model</b></td><td><code>struct</code> / <code>enum</code></td><td>承载数据与领域规则；跨边界处 <code>Codable</code></td><td>不含任何 UI 逻辑、不 <code>import AppKit</code></td></tr>
+    <tr><td><b>View</b></td><td><code>NSView</code> 子类、自绘</td><td>只做“显示 + 上报”，是“笨”视图</td><td>不含业务、不直接访问 Service/网络</td></tr>
+    <tr><td><b>Controller</b></td><td><code>NSViewController</code> / <code>NSWindowController</code></td><td>协调视图与数据、管生命周期</td><td>不塞业务逻辑、不做网络/持久化</td></tr>
+    <tr><td><b>Service / Store</b></td><td>普通 <code>class</code>（可 <code>@MainActor</code>）</td><td>持有状态、封装 I/O，用 Combine/回调对外暴露</td><td>不引用 View、不做 UI</td></tr>
+    <tr><td><b>Coordinator</b></td><td>普通 <code>class</code></td><td>导航/流程编排、装配 Controller</td><td>不渲染、不持有领域数据真相（第 5 章）</td></tr>
+  </tbody>
+</table>
+
+<div class="ref"><b class="ref-proj">NetNewsWire</b><span class="ref-note">这类成熟的纯 AppKit 项目把代码切成严格自下而上依赖的层次：数据模型层（文章）依赖任何东西，数据库/账户层依赖其下的数据模型，而 UI 代码位于最顶层、依赖其下的一切——“共享代码到 UI 层为止”。下层对 UI 一无所知，这正是本表所规范的依赖方向。</span></div>
+
+<h4>Model：值类型优先，且对 AppKit 一无所知</h4>
+<div class="rule do">
+  <div class="rule-head">应当</div>
+  <div class="rule-body">
+    <p>用 <code>struct</code>/<code>enum</code> 表达领域数据，把跨边界（磁盘、网络、XPC）的类型标为 <code>Codable</code>。Model 里可以有纯函数式的领域规则，但不得 <code>import AppKit</code>。</p>
+<pre><code class="language-swift">// Model：纯数据 + 领域规则，零 UI 依赖
+struct Feed: Codable, Identifiable, Hashable {
+    let id: UUID
+    var title: String
+    var url: URL
+    var unreadCount: Int
+
+    // 领域规则可以放在这里——它不碰任何视图
+    var isUnread: Bool { unreadCount &gt; 0 }
+}</code></pre>
+  </div>
+</div>
+<div class="rule dont">
+  <div class="rule-head">避免</div>
+  <div class="rule-body">
+    <p>不要在 Model 里塞 <code>NSColor</code>、<code>NSImage</code> 或“这个字段该显示成什么”的表现逻辑。表现是 View（或 ViewModel）的事；一旦 Model 依赖 AppKit，它就无法被单元测试、无法跨平台复用，也无法沉进下层框架。</p>
+  </div>
+</div>
+
+<h4>View：只显示、只上报的“笨”视图</h4>
+<div class="rule do">
+  <div class="rule-head">应当</div>
+  <div class="rule-body">
+    <p>程序化构建视图：<code>translatesAutoresizingMaskIntoConstraints = false</code> + <code>NSLayoutConstraint.activate</code> + anchors / <code>NSStackView</code>。视图通过 <b>target-action / delegate / 闭包</b> 把用户意图上报出去，自己不决定业务后果，也不知道“点击后会发生什么”。</p>
+<pre><code class="language-swift">// View：接收数据用于显示，通过闭包上报事件
+final class FeedRowView: NSView {
+    var onToggleRead: (() -&gt; Void)?          // 事件向上：只上报，不处理
+
+    private let titleLabel = NSTextField(labelWithString: "")
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(titleLabel)
+        NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) 未使用——本项目纯程序化构建") }
+
+    // 数据向下：外部把要显示的数据喂进来。View 只按传入布尔量挑字体，
+    // 不自己判断“什么算未读”（那是 Model/ViewModel 的领域规则）
+    func configure(title: String, isUnread: Bool) {
+        titleLabel.stringValue = title
+        titleLabel.font = isUnread
+            ? .boldSystemFont(ofSize: 13) : .systemFont(ofSize: 13)
+    }
+}</code></pre>
+  </div>
+</div>
+<div class="callout warn"><b>关于 xib / Storyboard</b><p>本手册规范以<b>程序化构建</b>为准（可测、可 diff、可复用、无隐藏连线）。xib/Storyboard 仅在与既有工程对接时作为过渡，不作为新代码的推荐路径。</p></div>
+
+<h4>Controller：协调者，不是业务容器</h4>
+<div class="rule do">
+  <div class="rule-head">应当</div>
+  <div class="rule-body">
+    <p><code>NSViewController</code> 负责三件事：<b>装配视图层级</b>（在 <code>loadView()</code> / <code>viewDidLoad()</code>）、<b>把 Service 的状态喂给 View</b>、<b>把 View 上报的事件转成对 Service 的调用</b>。它是“翻译官”，不是业务实现地。</p>
+  </div>
+</div>
+<div class="rule dont">
+  <div class="rule-head">避免</div>
+  <div class="rule-body">
+    <p>不要在 VC 里直接写网络请求、SQL、文件解析、同步算法。那些属于 Service。VC 一旦开始“自己干活”，就走上了 Massive View Controller 的老路（见 1.4）。</p>
+  </div>
+</div>
+
+<h4>Service / Store：状态的真正主人</h4>
+<div class="rule do">
+  <div class="rule-head">应当</div>
+  <div class="rule-body">
+    <p>Service 是普通 <code>class</code>（因为它有身份、有生命周期、被多处共享），持有权威状态，用 <b>Combine <code>@Published</code></b> 或回调对外发布变化，经<b>初始化器注入</b>给需要它的 Controller。它绝不引用 AppKit 视图，也不知道谁在用它。</p>
+  </div>
+</div>
+
+<div class="callout why"><b>为什么 Model 用值类型、Service 用引用类型</b>
+<p>这不是风格偏好，而是语义匹配：Model 描述“一个值是什么”，复制即安全、易测试、无隐藏共享；Service 描述“一个持续存在、被共享、随时间改变的东西”（如“当前登录的账户”“文章数据库”），它需要唯一身份和引用语义。把二者搞反——可变引用类型的 Model、到处 <code>.shared</code> 的单例 Service——正是大型 AppKit 项目里状态不可追踪、bug 难复现的根源。</p></div>
+
+<h3>1.3 数据向下、事件向上：准单向数据流</h3>
+<p>五层职责表落到运行时，就是一条数据流的方向约定。把它记牢，很多“这个状态该放哪、这个回调该往哪走”的纠结会当场消失。</p>
+
+<pre class="filetree">
+   [Service/Store]  ← 状态的唯一真相（@Published / 回调）
+        │  数据向下（把状态喂给 VC，VC 再 configure 到 View）
+        ▼
+   [Controller]  ← 订阅 Service、把数据转成视图输入
+        │  数据向下
+        ▼
+   [View]  ── 只渲染传入的数据（笨视图）
+        │
+        │  事件向上（target-action / delegate / 闭包）
+        ▼
+   [Controller]  ← 把 View 事件翻译成对 Service 的方法调用
+        │  事件向上（调用 service.markAllRead() 等）
+        ▼
+   [Service/Store] ← 改自己的状态 → 触发新一轮“数据向下”
+</pre>
+
+<div class="rule do">
+  <div class="rule-head">应当</div>
+  <div class="rule-body">
+    <p>让状态<b>只住在一个源头</b>：View 不缓存业务真相，只显示 Controller 喂进来的东西；Controller 不发明真相，只订阅 Service。用户操作沿反方向以事件上报，最终落到 Service 改状态，再触发下一轮向下的渲染，形成闭环。</p>
+  </div>
+</div>
+<div class="rule dont">
+  <div class="rule-head">避免</div>
+  <div class="rule-body">
+    <p>避免让 View 直接改 Model、或 View 直接持有并调用 Service。那会形成双向乃至环状依赖，状态出现两份真相，随后就是“到底谁改了它”的调试地狱。</p>
+  </div>
+</div>
+
+<div class="callout tip"><b>“准”单向，不是教条</b><p>纯 AppKit 里这是<b>直觉与纪律</b>，不是像 Elm/Redux 那样的强制框架。target-action、delegate、KVO 天然是双向能力；我们靠规范把“数据下、事件上”约束成习惯，而不是引入一个 reducer 把每个点击都变成一个 action 对象。真正需要严格单向的重状态子系统，才考虑收敛到一个显式的 store（本手册后续章节按需展开）。</p></div>
+
+<h3>1.4 从 MVC 基线到 MVC+ / MVVM-C：对抗巨型视图控制器</h3>
+<p>Apple 的官方基线是 MVC——这是 Cocoa 的原生形状，也是每个 AppKit 开发者的起点。问题在于 MVC 的“C”职责太宽：装配视图、响应事件、格式化数据、发起请求、管导航……默认都会往 <code>NSViewController</code> 里堆。堆到一定程度，就是臭名昭著的 <b>Massive View Controller</b>。</p>
+
+<div class="termbox">
+  <div class="term"><b class="term-name">Massive View Controller（巨型视图控制器）</b><span class="term-def">因缺乏进一步分层，业务逻辑、网络、持久化、格式化、导航全被塞进一个 <code>NSViewController</code>，导致其膨胀到数百上千行、无法测试、难以复用的反模式。</span></div>
+  <div class="term"><b class="term-name">MVC+（增强型 MVC）</b><span class="term-def">保留 MVC 骨架，但把原本挤在 C 里的职责外移：业务/IO 下沉到 Service/Store，导航上移到 Coordinator，格式化交给专门的 formatter。VC 回归“协调者”本分。</span></div>
+  <div class="term"><b class="term-name">MVVM-C（Model-View-ViewModel + Coordinator）</b><span class="term-def">在 View 与 Model 之间插入无 UI 依赖、可测试的 <b>ViewModel</b>（负责把 Model 转成视图可直接显示的表现数据），并用 <b>Coordinator</b> 统管导航/流程。</span></div>
+</div>
+
+<div class="rule do">
+  <div class="rule-head">应当</div>
+  <div class="rule-body">
+    <p>把纯 MVC 当<b>起点</b>而非终点。随复杂度上升，按同一方向演进：</p>
+    <p>① 业务与 I/O 从 VC 下沉到 <b>Service/Store</b>；<br>② 表现逻辑（格式化、状态派生）抽到 <b>ViewModel</b>（普通值类型/类，无 AppKit 依赖，可单测）；<br>③ 导航与流程编排上移到 <b>Coordinator</b>。</p>
+    <p>这样 VC 永远停在“瘦协调者”状态。</p>
+  </div>
+</div>
+
+<div class="ref"><b class="ref-proj">CotEditor</b><span class="ref-note">这类文档型编辑器沿用 Cocoa 原生的文档架构（<code>NSDocument</code> / <code>NSWindowController</code> 等），把文档模型与窗口/视图职责清晰切开——说明 MVC 基线在成熟纯 AppKit 应用里依然是主干，关键是把业务与文档模型职责分离，而不是推翻 MVC。</span></div>
+<div class="ref"><b class="ref-proj">objc.io《App Architecture》</b><span class="ref-note">该书用同一个示例应用实现 MVC、MVVM-C 等多种模式，并专门讨论“巨型视图控制器”这类常见问题的解法：ViewModel 承接表现逻辑、Coordinator 承接导航。本节的演进阶梯正对应这一通行结论。</span></div>
+
+<div class="callout why"><b>为什么不一上来就 MVVM-C</b>
+<p>架构是<b>用来还债的，不是用来预付的</b>。小窗口、简单表单用纯 MVC 最省事，过早引入 ViewModel/Coordinator 只会增加样板。规范的价值在于<b>规定演进方向</b>——当某个 VC 开始变胖，你知道该往哪切、切成什么，而不是让每个人各自发明一套。方向一致，重构才能规模化。</p></div>
+
+<h3>1.5 最小分层切片示例</h3>
+<p>把前面的规范收拢成一个思路正确的最小切片：一个 Model <code>struct</code>、一个 Service 协议（面向协议便于替换与测试）、一个用它的 VC 骨架。注意依赖方向——VC 依赖 Service 协议，Service 与 Model 都不反向依赖 VC。</p>
+
+<pre><code class="language-swift">import AppKit
+import Combine
+
+// ── Model 层：值类型，零 UI 依赖（见 1.2）─────────────
+struct Feed: Identifiable, Hashable {
+    let id: UUID
+    var title: String
+    var unreadCount: Int
+}
+
+// ── Service 层：面向协议暴露状态（依赖倒置，便于注入假实现测试）──
+@MainActor
+protocol FeedStore: AnyObject {
+    var feeds: [Feed] { get }
+    var feedsPublisher: AnyPublisher&lt;[Feed], Never&gt; { get }  // 数据向下的水源
+    func markAllRead()                                        // 事件向上的落点
+}
+
+// 一个具体实现：状态的唯一真相住在这里
+@MainActor
+final class InMemoryFeedStore: FeedStore {
+    @Published private(set) var feeds: [Feed]
+    var feedsPublisher: AnyPublisher&lt;[Feed], Never&gt; { $feeds.eraseToAnyPublisher() }
+
+    init(feeds: [Feed]) { self.feeds = feeds }
+
+    func markAllRead() {
+        // 业务逻辑归 Service，不归 VC
+        feeds = feeds.map { var f = $0; f.unreadCount = 0; return f }
+    }
+}
+
+// ── Controller 层：瘦协调者——注入 Service、订阅状态、翻译事件 ──
+@MainActor
+final class FeedListViewController: NSViewController {
+    private let store: FeedStore                 // 经初始化器注入，不自造、不 .shared
+    private var cancellables = Set&lt;AnyCancellable&gt;()
+    private let tableView = NSTableView()
+
+    // 组合根（第 4 章）会在这里把 Service 传进来
+    init(store: FeedStore) {
+        self.store = store
+        super.init(nibName: nil, bundle: nil)     // 程序化：无 nib
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) 未使用") }
+
+    override func loadView() {
+        view = NSView()                           // 装配视图层级是 VC 的职责
+        // …此处 addSubview(tableView) + Auto Layout 约束，从略…
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        // 数据向下：订阅 Service，状态一变就刷新视图
+        store.feedsPublisher
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.tableView.reloadData() }
+            .store(in: &amp;cancellables)
+    }
+
+    // 事件向上：View 上报的意图 → 翻译成对 Service 的调用
+    @objc private func markAllReadClicked(_ sender: NSButton) {
+        store.markAllRead()                       // VC 不自己改数据，只转交给 Service
+    }
+}</code></pre>
+
+<div class="callout tip"><b>预告：这些对象由谁创建？</b><p>示例里 <code>FeedListViewController(store:)</code> 需要有人把 <code>InMemoryFeedStore</code> 造出来再传进去。这个“集中创建 + 串联”的地方就是<b>组合根</b>——通常在 <code>AppDelegate</code> 或顶层 <code>NSWindowController</code>。它让依赖注入有一个明确落点，也让整棵对象图一目了然。<b>第 4 章</b>专门展开。</p></div>
+
+<div class="callout essence"><b>本质</b>
+<p>纯 AppKit 的工程规范，根子上只有两句话：<b>把职责切成单向依赖的层</b>（Model 无 UI、View 只显示上报、Controller 瘦协调、Service 主状态、Coordinator 管流程），<b>让数据向下流、事件向上报</b>。MVC 是 Apple 给的起点，Massive View Controller 是不设防的终点；MVC+ / MVVM-C 是同一方向上的演进阶梯——不是推翻 MVC，而是把 C 里超载的职责各归各位。后续每一章，都是在这条主轴上补充某一层的细则。</p></div>
+
+<div class="qa">
+  <p class="q">思考题：某 AppKit 应用把“未读数徽标该显示成红色还是灰色”“时间戳该格式化成‘3 分钟前’”这两段逻辑直接写在了 <code>NSTableView</code> 的行视图（<code>NSView</code> 子类）里，同时该行视图又持有一个全局 <code>FeedStore.shared</code> 并在点击时直接调用 <code>store.markAllRead()</code>。请结合分层职责、单向数据流与“对抗巨型控制器”的演进思路，指出其中违反了哪些规范，会引发什么后果，并给出重构方案。</p>
+  <details><summary>查看答案</summary>
+  <div class="a">
+    <p><b>违规点一：View 里混入了表现/派生逻辑。</b>“红还是灰”属于表现映射、“3 分钟前”属于格式化，都不该硬编码在“笨”视图里。它们既不可单测（要构造整个视图才能验证），也无法复用到别处。<br>
+    → 重构：把它们抽到无 AppKit 依赖的 <b>ViewModel</b>（或轻量 formatter），产出一个语义状态枚举与 <code>relativeTime: String</code>，View 只 <code>configure</code> 这些成品（颜色映射也可放 View，但“何时红/灰”的判定归 ViewModel）。这正是从 MVC 向 <b>MVVM-C</b> 演进的第一步。</p>
+    <p><b>违规点二：View 直接持有并调用 Service，形成向上/环状依赖。</b>笨视图不该知道 <code>FeedStore</code> 的存在，更不该直接改状态——这违反“事件向上”：View 应通过闭包/delegate 把点击<b>上报</b>给 Controller，由 Controller 调用注入进来的 Service。<br>
+    → 重构：行视图暴露 <code>var onMarkAllRead: (() -&gt; Void)?</code>，Controller 在配置行时接线到 <code>store.markAllRead()</code>。</p>
+    <p><b>违规点三：<code>.shared</code> 全局单例。</b>它绕过了初始化器注入，制造隐藏耦合与第二份“真相入口”，也让测试无法替换假实现。<br>
+    → 重构：让 <code>FeedStore</code> 成为经<b>组合根</b>（第 4 章）注入的协议依赖，从 Controller 逐层传递，不再全局可达。</p>
+    <p><b>后果与本质：</b>这三点叠加，会把本该分散的职责重新塞回“视图 + 全局状态”的二元结构，等价于一个<b>分布式的巨型视图控制器</b>——状态两份真相、逻辑无法测试、行视图无法复用。修复的方向始终一致：<b>数据向下（ViewModel 产出成品交给 View 显示）、事件向上（View 上报、Controller 翻译、Service 改状态），依赖单向且经组合根注入。</b></p>
+  </div>
+  </details>
+</div>
+</section>
+
+<section class="chapter" id="ch-2">
+<h2 data-n="2">项目结构与模块化组织</h2>
+<p class="lead">一个纯 AppKit 项目走到几万行之后，真正拖慢开发的往往不是某个控件写得对不对，而是"东西放在哪里、谁能依赖谁"。本章给出一套可落地的目录与模块划分规范：按功能而非文件类型组织、把可复用可测试的核心下沉为独立框架 / SPM 包、一个类型一个文件、用角色后缀命名、彻底铲除 <code>Utils</code> 大杂烩。这些规范的共同目标只有三个——更短的编译时间、更强的可测试性、更清晰的归属与依赖方向。</p>
+
+<div class="termbox">
+<div class="term"><b class="term-name">功能（feature）</b><span class="term-def">围绕一件用户可感知的事而聚合的一组代码，例如"账户管理""订阅列表""编辑器面板"。一个 feature 内部通常同时含控制器、视图、状态与协调器。</span></div>
+<div class="term"><b class="term-name">模块（module）</b><span class="term-def">Swift 的编译与命名空间单位。App 主 target 是一个模块；每个 framework / SPM library 也是一个独立模块，模块间的依赖必须显式声明。</span></div>
+<div class="term"><b class="term-name">依赖方向</b><span class="term-def">"谁 import 谁"的箭头。健康的架构里箭头单向向下（UI → 核心 → 基础），核心永不 import UI。</span></div>
+<div class="term"><b class="term-name">Coordinator（协调器）</b><span class="term-def">承接跨控制器的导航与流程编排的对象，让 <code>NSViewController</code> 只管自己那块视图，不再互相直接持有与跳转。</span></div>
+</div>
+
+<h3>2.1 按功能组织，而非按文件类型</h3>
+
+<p>很多项目最初的目录是 <code>Controllers/</code>、<code>Views/</code>、<code>Models/</code> 三大堆。类型少时看着整齐，一旦上规模，改一个功能要在三个文件夹之间来回跳，且没有任何东西阻止"账户视图"去 import"编辑器控制器"。规范是：<b>顶层按 feature 切分，feature 内部再放它自己的 VC、视图、状态与协调器</b>。</p>
+
+<div class="rule-pair">
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>顶层目录是功能名，一个功能的所有协作类型住在一起：</p>
+<pre class="filetree">Sources/App/
+├─ Features/
+│  ├─ FeedList/                    // 订阅列表这一功能
+│  │  ├─ FeedListViewController.swift
+│  │  ├─ FeedListView.swift        // 程序化自定义 NSView
+│  │  ├─ FeedListState.swift       // @Published 视图状态
+│  │  ├─ FeedListCoordinator.swift // 该功能内的导航编排
+│  │  └─ Cells/
+│  │     └─ FeedRowView.swift
+│  ├─ ArticleReader/
+│  │  ├─ ArticleReaderViewController.swift
+│  │  ├─ ArticleReaderView.swift
+│  │  └─ ArticleReaderState.swift
+│  └─ Preferences/
+│     ├─ PreferencesWindowController.swift
+│     └─ Panes/
+│        ├─ GeneralPaneViewController.swift
+│        └─ AccountsPaneViewController.swift
+├─ AppDelegate.swift
+└─ MainWindowController.swift</pre>
+</div>
+</div>
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>按文件类型分层，把一个功能的协作者拆散到三处：</p>
+<pre class="filetree">Sources/App/
+├─ Controllers/
+│  ├─ FeedListViewController.swift
+│  ├─ ArticleReaderViewController.swift
+│  └─ GeneralPaneViewController.swift
+├─ Views/
+│  ├─ FeedListView.swift
+│  ├─ FeedRowView.swift
+│  └─ ArticleReaderView.swift
+└─ Models/
+   ├─ FeedListState.swift
+   └─ ArticleReaderState.swift
+// 改一个功能要横跨 3 个目录；无边界阻止跨功能乱引用</pre>
+</div>
+</div>
+</div>
+
+<div class="ref"><b class="ref-proj">CotEditor</b><span class="ref-note">这个纯 macOS 原生编辑器把代码拆成几个本地 SPM 包（一个与 UI 无关的编辑核心、一个专管语法的包、一个 AppKit UI 包），每个包聚合"做一件事所需的全部代码"，UI 只在最上层依赖它们——这正是"按功能而非文件类型聚合"在包一级的体现。</span></div>
+
+<div class="callout why"><b>为什么</b><p>功能是变更的自然单位：用户提一个需求，改动几乎总落在同一个 feature 内。把协作者放在一起，改动的局部性最好，代码评审时 diff 集中，删除一个废弃功能只需删一个目录。而按类型分层让"局部性"荡然无存，且天然鼓励跨层乱引用。</p></div>
+
+<h3>2.2 核心下沉为独立框架 / SPM 包</h3>
+
+<p>App target 里什么都能 import 什么，编译器不拦你。要建立<b>硬</b>的依赖边界，唯一可靠的办法是把可复用、可测试的核心抽成独立模块（framework 或本地 SPM package）。数据模型、账户 / 同步、解析、持久化——这些不该"知道"任何 <code>NSView</code> 的存在。</p>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>把核心按职责下沉成本地 SPM 包，UI 只在最上层：</p>
+<pre class="filetree">MyReader/                          // 仓库根
+├─ App/                            // AppKit 可执行 target（唯一 import UI 的层）
+│  └─ Sources/App/…                // 见 2.1 的 Features/
+├─ Core/                           // 本地 SPM package
+│  ├─ Sources/
+│  │  ├─ Articles/                 // 纯数据模型，谁都不依赖
+│  │  ├─ ArticlesDatabase/         // 持久化，依赖 Articles
+│  │  └─ Account/                  // 账户/同步，依赖上面两者
+│  └─ Package.swift                // Core 的清单，App 通过它引入</pre>
+<p>包清单里把依赖方向显式钉死：</p>
+<pre><code class="language-swift">// Core/Package.swift —— 依赖只能向下，编译器强制
+let package = Package(
+    name: "Core",
+    products: [
+        .library(name: "Articles", targets: ["Articles"]),
+        .library(name: "ArticlesDatabase", targets: ["ArticlesDatabase"]),
+        .library(name: "Account", targets: ["Account"]),
+    ],
+    targets: [
+        // 数据模型：不依赖任何本地模块
+        .target(name: "Articles"),
+        // 持久化：只依赖数据模型
+        .target(name: "ArticlesDatabase", dependencies: ["Articles"]),
+        // 账户：站在数据存储的顶端，依赖下面全部
+        .target(name: "Account", dependencies: ["Articles", "ArticlesDatabase"]),
+        // 每个核心模块自带测试 target（UI 无关，跑得快）
+        .testTarget(name: "AccountTests", dependencies: ["Account"]),
+    ]
+)</code></pre>
+</div>
+</div>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>让核心类型反向 import AppKit / UI，把边界变成一纸空文：</p>
+<pre><code class="language-swift">// ❌ 数据模型不该认识视图层
+import AppKit                       // 核心模块里出现 AppKit = 依赖方向已污染
+
+struct Article {
+    var title: String
+    // ❌ 把展示态塞进模型，Account 模块从此无法脱离 UI 独立测试
+    var titleColor: NSColor
+    func makeCell() -&gt; NSTableCellView { … }
+}</code></pre>
+</div>
+</div>
+
+<div class="ref"><b class="ref-proj">NetNewsWire</b><span class="ref-note">这个 AppKit / UIKit 双端客户端把核心拆成 Articles、ArticlesDatabase、SyncDatabase、Account 等一批本地 Swift 包，另有 RSCore、RSParser、RSWeb 等更底层的通用模块。依赖方向严格单向：Articles 是最底层的纯数据模型，Account 依赖它下面的数据存储层，UI 层则位于最顶端、依赖下面全部。用真正的 package 边界（而非"概念上的模块"）来立规矩，正是这类项目让"不想要的依赖绝无可能悄悄溜进来"的通行做法。</span></div>
+
+<div class="callout why"><b>为什么</b><p>三重收益。<b>编译时间</b>：模块是增量编译的边界，只改了 App 层不会重编 Core，改了 <code>Articles</code> 才会波及依赖它的 target；单一巨型 target 则任何改动都可能触发大面积重编。<b>可测试性</b>：不 import AppKit 的核心模块，其测试无需起窗口、无需主线程 runloop，几百个用例秒级跑完。<b>依赖方向</b>：模块边界由编译器强制——核心模块若未链接 AppKit，在其中写一句 <code>import AppKit</code> 就编译不过，错误在此处第一时间暴露，而不是等到某天想复用它时才发现被 UI 缠死。</p></div>
+
+<h3>2.3 一个类型一个文件</h3>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body"><p>每个 <code>class</code> / <code>struct</code> / <code>enum</code> 各占一个与其同名的文件（<code>FeedListViewController</code> → <code>FeedListViewController.swift</code>）。仅当一小段类型是宿主的私有实现细节（如私有嵌套 <code>enum</code>、该文件专用的小 <code>struct</code>），才可与宿主同文件；跨文件被引用的类型一律独立成文件。协议的默认实现放进该协议同名文件的 <code>extension</code> 中。</p></div>
+</div>
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body"><p>把三个 view controller 堆进一个 <code>Controllers.swift</code>，或用 <code>Models.swift</code> 装下十几个模型。文件名与类型名对不上，跳转、Git blame、冲突定位全部受损。</p></div>
+</div>
+
+<div class="callout why"><b>为什么</b><p>文件是版本控制与人脑检索的最小单位。类型名即文件名时，⌘⇧O / 文件树 / <code>git log &lt;File&gt;.swift</code> 都能一步命中；多人改不同类型时落在不同文件，合并冲突从"整天"降为"零星"。这也和 2.1 的功能聚合互补：功能靠目录聚，类型靠文件分。</p></div>
+
+<h3>2.4 命名：角色后缀，模型不带后缀</h3>
+
+<p>纯 AppKit 项目里，一个类型"是什么角色"应当从名字一眼可辨。规范：<b>承担框架角色的类型带角色后缀，纯数据模型不带任何后缀</b>。</p>
+
+<table class="cmp">
+<thead><tr><th>后缀</th><th>角色</th><th>示例</th></tr></thead>
+<tbody>
+<tr><td><code>View</code></td><td>自定义 <code>NSView</code> 子类，负责绘制 / 布局</td><td><code>FeedRowView</code></td></tr>
+<tr><td><code>Controller</code> / <code>ViewController</code> / <code>WindowController</code></td><td><code>NSViewController</code> / <code>NSWindowController</code></td><td><code>ArticleReaderViewController</code></td></tr>
+<tr><td><code>Service</code></td><td>无 UI 的能力提供者（网络、同步、通知）</td><td><code>SyncService</code></td></tr>
+<tr><td><code>Coordinator</code></td><td>导航 / 流程编排</td><td><code>PreferencesCoordinator</code></td></tr>
+<tr><td><code>Store</code></td><td>状态或缓存的持有者</td><td><code>RecentFilesStore</code></td></tr>
+<tr><td><i>（无后缀）</i></td><td>纯数据模型</td><td><code>Article</code>、<code>Feed</code>、<code>Account</code></td></tr>
+</tbody>
+</table>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<pre><code class="language-swift">// 数据模型：无后缀、纯值语义、不认识 UI
+struct Article: Identifiable, Sendable {
+    let id: String
+    var title: String
+    var isRead: Bool
+}
+
+// 服务：@MainActor 隔离，Combine 发布状态；带 Service 后缀
+@MainActor
+final class SyncService {
+    @Published private(set) var lastSyncedAt: Date?
+    func sync() async throws { … }
+}
+
+// 协调器：只管导航，不持有具体视图内容；带 Coordinator 后缀
+@MainActor
+final class PreferencesCoordinator {
+    private let windowController = PreferencesWindowController()
+    func show(pane: PreferencePane) { … }
+}</code></pre>
+</div>
+</div>
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body"><p>给数据模型硬套后缀（<code>ArticleModel</code>、<code>FeedData</code>——冗余且暗示它有行为），或让角色类型名字含糊（<code>FeedManager</code> 到底是 Service、Store 还是 Coordinator？）。<code>Manager</code> 是最常见的模糊后缀，能用更精确的角色词就替换掉。</p></div>
+</div>
+
+<div class="callout why"><b>为什么</b><p>后缀就是廉价的类型系统：看到 <code>Coordinator</code> 就知道它不该持有 <code>NSView</code> 内容，看到无后缀的 <code>Article</code> 就知道它是可自由拷贝、可脱离 UI 测试的值。命名一致后，评审时"这个职责放错类型了"一眼可见，也让 2.1 的目录结构自解释。</p></div>
+
+<h3>2.5 杜绝 Utils / Helpers 大杂烩</h3>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body"><p>建立 <code>Utils.swift</code> / <code>Helpers/</code> / <code>Common/</code> 这类无主题容器。它们是熵的聚集地：谁都往里塞，谁都不敢删，且天然跨越所有依赖边界（一个 <code>Utils</code> 同时被核心与 UI 引用，边界立刻失效）。</p></div>
+</div>
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>把散落的工具函数按<b>它扩展的类型</b>就近落到对应模块的 <code>extension</code>，或独立成一个职责明确的小类型：</p>
+<pre><code class="language-swift">// ❌ Utils.swift 里的孤儿函数
+// func trimmed(_ s: String) -&gt; String { … }
+
+// ✅ 就近扩展被操作的类型；放在拥有 String 相关逻辑的模块里
+extension String {
+    /// 去除首尾空白与换行
+    var trimmed: String {
+        trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+// ✅ 有状态的"工具"其实是个带角色后缀的类型，归到它所属的模块
+// 归属：Core 里与展示无关的相对时间格式化，缓存复用一个 formatter 实例
+enum RelativeDateFormatting {
+    static let formatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .full
+        return f
+    }()
+}</code></pre>
+</div>
+</div>
+
+<div class="callout why"><b>为什么</b><p><code>Utils</code> 没有归属，就没有依赖方向可言——它一旦同时被核心和 UI 引用，2.2 辛苦立起来的边界就漏了。就近扩展则让每段工具代码继承它所在模块的依赖约束：放在 <code>Articles</code> 模块的 <code>String</code> 扩展绝不可能引入 AppKit，编译器替你守着。</p></div>
+
+<h3>2.6 一份完整的目录示例</h3>
+
+<pre class="filetree">MyReader/                              // 仓库根
+├─ Core/                               // ── 核心：无 UI，可独立测试 ──
+│  ├─ Package.swift                    // Core 本地包清单（2.2）
+│  ├─ Sources/
+│  │  ├─ Articles/                     // 纯模型，无后缀命名
+│  │  │  ├─ Article.swift
+│  │  │  └─ Feed.swift
+│  │  ├─ ArticlesDatabase/             // 依赖 Articles
+│  │  │  └─ ArticlesDatabase.swift
+│  │  └─ Account/                      // 依赖 Articles + ArticlesDatabase
+│  │     ├─ Account.swift
+│  │     └─ SyncService.swift          // Service 后缀
+│  └─ Tests/
+│     └─ AccountTests/                 // 秒级、无窗口
+│        └─ AccountTests.swift
+└─ App/                                // ── UI：唯一 import AppKit 的层 ──
+   └─ Sources/App/
+      ├─ AppDelegate.swift
+      ├─ MainWindowController.swift
+      ├─ Coordination/
+      │  └─ AppCoordinator.swift       // 顶层导航编排
+      └─ Features/                     // 按功能聚合（2.1）
+         ├─ FeedList/
+         │  ├─ FeedListViewController.swift
+         │  ├─ FeedListView.swift
+         │  ├─ FeedListState.swift
+         │  ├─ FeedListCoordinator.swift
+         │  └─ Cells/FeedRowView.swift
+         └─ ArticleReader/
+            ├─ ArticleReaderViewController.swift
+            ├─ ArticleReaderView.swift
+            └─ ArticleReaderState.swift</pre>
+
+<p>依赖箭头始终单向向下：<code>App</code> → <code>Account</code> → <code>ArticlesDatabase</code> → <code>Articles</code>。UI 里的一个功能怎样组装其协作者，见下方的 feature 内部装配示例（程序化 Auto Layout、无 Storyboard）：</p>
+
+<pre><code class="language-swift">import AppKit
+import Account            // 允许：UI 向下依赖核心
+// 注意：Core 侧绝不会出现 `import AppKit` 的反向依赖
+
+@MainActor
+final class FeedListViewController: NSViewController {
+
+    private let state: FeedListState          // 该功能私有状态
+    private weak var coordinator: FeedListCoordinator?
+    private let tableView = NSTableView()
+    private let scrollView = NSScrollView()
+
+    init(state: FeedListState, coordinator: FeedListCoordinator) {
+        self.state = state
+        self.coordinator = coordinator
+        super.init(nibName: nil, bundle: nil)   // 程序化：不走 xib / Storyboard
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("不使用 Interface Builder") }
+
+    override func loadView() {
+        // 程序化根视图；容器由外层 split / window 决定尺寸
+        view = NSView()
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        scrollView.documentView = tableView
+        scrollView.hasVerticalScroller = true
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(scrollView)
+
+        // Auto Layout：关自动转换 + anchors + activate
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: view.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+    }
+}</code></pre>
+
+<div class="callout essence"><b>本质</b><p>项目结构的全部规范可以压成一句话：<b>让"变更的局部性"和"依赖的方向性"都由结构本身来保证，而不是靠人自觉。</b>功能聚合管住局部性，模块边界管住方向性，一类型一文件与角色命名让这两者可被人和工具一眼读懂，铲除 <code>Utils</code> 则堵死破坏边界的后门。编译器与文件系统替你把规范变成硬约束——这正是它比"写在 wiki 里的约定"更可靠的原因。</p></div>
+
+<div class="qa">
+<p class="q">思考题：团队想把订阅列表里的"未读计数"逻辑复用到 iOS 版和一个命令行导出工具中。目前 <code>FeedListState</code>（放在 <code>App/Features/FeedList/</code>）里有一段 <code>var unreadCount: Int</code> 的计算，它直接读了 <code>tableView.numberOfRows</code> 来推断可见项，还引用了一个 <code>NSColor</code> 来标记"全部已读"的徽标色。请结合本章的模块边界、依赖方向、命名与"杜绝 Utils"四条规范，说明如何重构才能安全复用，并指出当前设计违反了哪些规范。</p>
+<details><summary>查看答案</summary>
+<div class="a">
+<p><b>当前违反的规范：</b></p>
+<p>1）<b>依赖方向被污染（2.2）。</b>未读计数属于领域逻辑，本应在核心层，却住在 UI 层的 <code>Features/FeedList/</code>，还引用了 <code>NSColor</code> 与 <code>NSTableView</code>——核心逻辑反向依赖了 AppKit，导致它既进不了 iOS 版（<code>NSColor</code> / <code>NSTableView</code> 不存在），也进不了命令行工具（根本无 UI）。</p>
+<p>2）<b>计数逻辑与视图状态耦合（2.1 + 2.2）。</b>用 <code>tableView.numberOfRows</code> 推断未读数，是把"数据事实"建立在"视图当前渲染了多少行"之上——这不仅无法复用，还会在表格未加载 / 被过滤时算错。真正的事实应来自数据模型（<code>[Article]</code> 里 <code>isRead == false</code> 的数量）。</p>
+<p>3）<b>命名暗示职责错位（2.4）。</b><code>FeedListState</code> 带的是 UI 视图状态的语义，却塞进了可复用的领域计算；领域计算应落在无后缀的模型或一个核心 <code>Service</code> / <code>Store</code> 上。</p>
+<p>4）<b>徽标色属于展示，混进了逻辑里（2.4 + 2.5）。</b>"全部已读用什么颜色"是平台相关的展示决定，不该和计数逻辑同处，更不能顺手丢进某个 <code>Utils</code>。</p>
+<p><b>重构方案：</b></p>
+<p>a）把纯计数下沉到核心。在 <code>Core/Sources/Articles</code> 里给数据类型加就近扩展（2.5），只依赖模型、不 import 任何 UI：</p>
+<pre><code class="language-swift">// Core：无 UI，可被 macOS / iOS / CLI 三方复用
+extension Collection where Element == Article {
+    /// 未读数量：事实来自数据，而非视图渲染了多少行
+    var unreadCount: Int { lazy.filter { !$0.isRead }.count }
+}</code></pre>
+<p>b）<code>FeedListState</code> 回归"视图状态持有者"的本分：它引用核心的 <code>unreadCount</code> 得出数字，用 <code>@Published</code> 暴露给 VC，自己不再做领域计算；依赖方向恢复为 <code>App</code> → <code>Core</code> 单向向下。</p>
+<p>c）徽标色留在 UI 层，由视图按 <code>unreadCount == 0</code> 决定 <code>NSColor</code>，与计数逻辑彻底分离。</p>
+<p>d）在核心模块为 <code>unreadCount</code> 补一个无窗口的单元测试（2.2 的可测试性收益）——它无需主线程 runloop，iOS 版与 CLI 直接复用同一测试与同一实现。经此调整，同一段逻辑三端共享、编译边界清晰、且能被编译器强制不再回流 UI。</p>
+</div>
+</details>
+</div>
+</section>
+
+<section class="chapter" id="ch-3">
+<h2 data-n="3">控制器体系：Window/View Controller 与容器化</h2>
+<p class="lead">纯 AppKit 项目的可维护性，几乎完全取决于控制器如何切分职责。本章把三件事规范化：谁管窗口（<code>NSWindowController</code>），谁管一屏／一区的 UI（<code>NSViewController</code>），以及如何用容器化（containment）把一个会膨胀成上千行的巨型控制器，拆成一组各司其职、可确定性拆卸的子控制器。落点是：每屏一个 VC、以容器替代 Massive VC、窗口逻辑归 WindowController、建树在 <code>loadView</code>、绑定在 <code>viewDidLoad</code>。</p>
+
+<div class="termbox">
+<div class="term"><b class="term-name">NSWindowController</b><span class="term-def">管理一个 <code>NSWindow</code> 生命周期的控制器。持有窗口、负责其显示／关闭／持久化（frame autosave）、承接窗口级菜单与快捷键，并通过 <code>contentViewController</code> 挂载内容根 VC。</span></div>
+<div class="term"><b class="term-name">NSViewController</b><span class="term-def">管理一棵视图树及其生命周期的控制器。代表"一屏"或窗口内"一个区域"的 UI 单元，拥有 <code>view</code>、生命周期回调，以及父子容器关系。</span></div>
+<div class="term"><b class="term-name">容器化 / Containment</b><span class="term-def">通过 <code>addChild(_:)</code> / <code>removeFromParent()</code> 建立父子 VC 关系的机制。父 VC 负责装配子 VC 的视图，系统据此在父子间传递外观（appear/disappear）等生命周期事件。</span></div>
+<div class="term"><b class="term-name">每-attach 资源</b><span class="term-def">子 VC 每次被装入容器时才创建、随移除即释放的资源（订阅、定时器、异步任务、滚动视图等）。它们的生命周期应绑定"在场／离场"，而非绑定对象的 ARC 存活。</span></div>
+</div>
+
+<h3>3.1 NSWindowController：窗口级逻辑的唯一归属</h3>
+
+<p>裸用 <code>NSWindow</code> 意味着窗口的生命周期、frame 持久化、标题栏与工具栏装配、以及窗口级菜单响应全都散落在 <code>AppDelegate</code> 或某个 VC 里。规范要求：<b>每个可独立出现的窗口，都由一个 <code>NSWindowController</code>（或其子类）拥有</b>，窗口级逻辑只进这里。</p>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>用 <code>NSWindowController</code> 拥有窗口，程序化创建 <code>NSWindow</code>，并以 <code>contentViewController</code> 挂载内容根 VC。窗口级职责（frame autosave、标题、工具栏、窗口菜单响应）归 WindowController。</p>
+<pre><code class="language-swift">final class MainWindowController: NSWindowController, NSWindowDelegate {
+
+    // 程序化建窗；不使用 xib/Storyboard
+    init(rootViewController: NSViewController) {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1080, height: 720),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        // 内容根 VC —— 窗口把"内容尺寸/布局"整个交给它
+        window.contentViewController = rootViewController
+        window.setFrameAutosaveName("MainWindow")   // 窗口 frame 持久化归窗口层
+        window.minSize = NSSize(width: 720, height: 480)
+        super.init(window: window)
+        window.delegate = self
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("由代码构造，不支持 nib 归档") }
+
+    // 窗口级逻辑：例如关窗前确认，属于窗口层而非 VC
+    func windowShouldClose(_ sender: NSWindow) -&gt; Bool { true }
+}</code></pre>
+</div>
+</div>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>在 <code>AppDelegate</code> 里裸持有 <code>NSWindow</code> 并把窗口逻辑（frame 保存、菜单响应、关窗确认）写在那里；也避免让某个 VC 反向持有并操纵自己的 <code>window</code> 生命周期。窗口不是某个视图区域的私有物。</p>
+</div>
+</div>
+
+<div class="ref"><b class="ref-proj">CotEditor</b><span class="ref-note">这类成熟的 Cocoa 文档型编辑器，文档窗口都由一个专门的窗口控制器拥有并协调窗口内各 UI 区域——这是 Cocoa 文档架构里"窗口层逻辑集中到 WindowController"的通行做法：编辑器、导航栏、状态栏、侧栏都是窗口内的区域，而窗口本身的生命周期只有一个归属。</span></div>
+
+<div class="callout why">
+<b>为什么</b>
+<p><code>contentViewController</code> 是关键接缝：设了它，窗口会把"内容尺寸从哪来"这件事整个下放给根 VC —— 窗口会依据内容 VC 视图树的 Auto Layout 尺寸来约束自身内容区，你不必手写 <code>contentView</code> 的 frame。而 WindowController 与 VC 的分层，让"窗口能不能关""frame 存哪"这类问题只有一个查看点。把它散进 <code>AppDelegate</code>，多窗口场景下会立刻退化成一堆 <code>if window == …</code> 分支。</p>
+</div>
+
+<h3>3.2 NSViewController：一屏／一区一个 VC</h3>
+
+<p>VC 是"一屏"或"窗口内一个区域"的 UI 单元。规范的第一条硬约束：<b>一个可辨识的屏幕区域，对应且仅对应一个 VC</b>。侧栏是一个 VC，时间线是一个 VC，详情是一个 VC——而不是一个 VC 里塞三块视图 + 三套数据源。</p>
+
+<h4>loadView 建树，viewDidLoad 绑定</h4>
+
+<p>这两个回调的分工是纯 AppKit 工程里最常被搞混、也最值得立规的一点。</p>
+
+<div class="rule-pair">
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p><code>loadView()</code> 里<b>只建视图树</b>：创建视图、加子视图、激活约束，并把根视图赋给 <code>view</code>。不订阅、不请求数据。</p>
+</div>
+</div>
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>在 <code>loadView()</code> 里做数据绑定、Combine 订阅、网络/磁盘请求；程序化重写时也<b>不要</b>调 <code>super.loadView()</code>——默认实现会去按 nib 名加载归档视图，而你已经自己建好了树，调 <code>super</code> 只会白跑一遍加载路径。</p>
+</div>
+</div>
+</div>
+
+<pre><code class="language-swift">final class TimelineViewController: NSViewController {
+
+    private let tableView = NSTableView()
+    private let scrollView = NSScrollView()
+    private var cancellables = Set&lt;AnyCancellable&gt;()
+    private let store: TimelineStore
+
+    init(store: TimelineStore) {
+        self.store = store
+        super.init(nibName: nil, bundle: nil)   // 程序化：显式 nil，不走 nib
+    }
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("由代码构造，不支持 nib 归档") }
+
+    // loadView：只建树。程序化时"必须"赋 view，且"不要"调 super
+    override func loadView() {
+        scrollView.documentView = tableView
+        scrollView.hasVerticalScroller = true
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+
+        let root = NSView()
+        root.addSubview(scrollView)
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: root.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+        ])
+        self.view = root   // 关键：把根视图交给 view 属性
+    }
+
+    // viewDidLoad：一次性配置 + 绑定，此时视图树已存在
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        tableView.dataSource = self
+        tableView.delegate = self
+
+        // 数据订阅放这里——只做一次。UI 更新走 DispatchQueue.main，
+        // 避免 RunLoop.main 在滚动等 tracking 模式下漏发。
+        store.$items
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.tableView.reloadData() }
+            .store(in: &amp;cancellables)
+    }
+}</code></pre>
+
+<div class="callout why">
+<b>为什么</b>
+<p><code>loadView()</code> 由系统在<b>首次访问 <code>view</code> 时惰性触发</b>，且只此一次；此时"视图存在但尚未装入任何父级"。<code>viewDidLoad()</code> 紧随其后、同样只跑一次，此时视图树已完整，是做 dataSource/delegate 绑定、Combine 订阅的正确时机。把绑定塞进 <code>loadView</code> 会让"建树"与"生命周期语义"耦合，也让"视图还没准备好就收到数据回调"成为可能。</p>
+</div>
+
+<h4>viewWillAppear / viewDidAppear 的时机</h4>
+
+<p><code>viewDidLoad</code> 一生只跑一次；而 <code>viewWillAppear()</code> / <code>viewDidAppear()</code> 会在<b>每次</b>视图进入屏幕时触发，并与 <code>viewWillDisappear()</code> / <code>viewDidDisappear()</code> 成对配合。规范：<b>只跑一次的用 <code>viewDidLoad</code>；每次在场都要跑的用 will/did Appear</b>。</p>
+
+<table class="cmp">
+<thead><tr><th>回调</th><th>频次</th><th>该放什么</th></tr></thead>
+<tbody>
+<tr><td><code>loadView()</code></td><td>一次（惰性）</td><td>建视图树、激活约束、赋 <code>view</code></td></tr>
+<tr><td><code>viewDidLoad()</code></td><td>一次</td><td>dataSource/delegate、订阅、一次性配置</td></tr>
+<tr><td><code>viewWillAppear()</code></td><td>每次在场</td><td>刷新即将展示的数据、开始动画前的准备</td></tr>
+<tr><td><code>viewDidAppear()</code></td><td>每次在场</td><td>取焦、启动可见后才有意义的动画/计时器</td></tr>
+</tbody>
+</table>
+
+<div class="callout warn">
+<b>注意</b>
+<p>重写 will/did Appear 一族时<b>必须</b>调用对应的 <code>super</code>（如 <code>super.viewWillAppear()</code>），否则会掐断系统在父子容器间传递外观事件的链路，子 VC 可能收不到 appear。而重写程序化 <code>loadView()</code> 时相反：<b>不要</b>调 <code>super</code>。</p>
+</div>
+
+<h3>3.3 容器化：用子 VC 替代 Massive VC</h3>
+
+<p>当一个 VC 开始同时管理多块彼此独立的 UI（各自的数据源、各自的选择状态、各自的滚动位置），它就走上了 Massive View Controller 的老路。规范：<b>用容器化把它拆成多个子 VC</b>。系统提供了两个现成容器（<code>NSSplitViewController</code> / <code>NSTabViewController</code>），也支持自定义容器。</p>
+
+<h4>系统容器：NSSplitViewController</h4>
+
+<p><code>NSSplitViewController</code> 通过 <code>NSSplitViewItem</code> 把每个分栏包成一个子 VC，并自动处理拖拽分隔条、折叠、侧栏（sidebar）外观与分隔条位置持久化。三栏应用的标准骨架就是：一个 split controller + 三个各自独立的子 VC。</p>
+
+<pre><code class="language-swift">final class MainSplitViewController: NSSplitViewController {
+
+    private let sidebar: SidebarViewController
+    private let content: NSViewController   // 右侧内容区（可再是一层容器）
+
+    init(sidebar: SidebarViewController, content: NSViewController) {
+        self.sidebar = sidebar
+        self.content = content
+        super.init(nibName: nil, bundle: nil)
+    }
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("由代码构造，不支持 nib 归档") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        // sidebar 分项：系统会赋予源列表外观、折叠动画
+        let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebar)
+        sidebarItem.minimumThickness = 180
+        sidebarItem.maximumThickness = 320
+
+        // 内容分项：占满剩余空间
+        let contentItem = NSSplitViewItem(viewController: content)
+        contentItem.minimumThickness = 480
+
+        // 注意：addSplitViewItem 会"顺带"把子 VC addChild 进来，
+        // splitViewItems 与 children 保持同步 —— 无需再手动 addChild
+        addSplitViewItem(sidebarItem)
+        addSplitViewItem(contentItem)
+
+        splitView.autosaveName = "MainSplit"   // 分隔条位置持久化
+    }
+}</code></pre>
+
+<div class="ref"><b class="ref-proj">NetNewsWire</b><span class="ref-note">这个开源 RSS 阅读器的 macOS 端是经典三栏结构（侧栏 / 时间线 / 详情），正是"每栏一个独立 VC，用 split 装配"的通行实践：feed 侧栏、文章时间线、正文详情各自拥有数据源与选择状态，彼此通过上层协调而非共享一个巨型 VC。这是纯 AppKit 多栏窗口的常见骨架。</span></div>
+
+<h4>自定义容器：手动 addChild + 装配</h4>
+
+<p>当系统容器不满足需求（例如做一个"按选择动态切换单个子 VC"的路由容器），就自己写容器 VC。规范流程：<b>加入时先 <code>addChild</code>，再加子视图并约束；移除时先移视图，再 <code>removeFromParent</code></b>。</p>
+
+<pre><code class="language-swift">final class DetailRouterViewController: NSViewController {
+
+    override func loadView() { view = NSView() }
+
+    private var currentChild: NSViewController?
+
+    /// 切换当前展示的子 VC —— 路由容器的核心
+    func route(to child: NSViewController) {
+        guard child !== currentChild else { return }
+
+        // 1) 先拆掉旧的（确定性拆卸，见 3.4）
+        if let old = currentChild {
+            old.view.removeFromSuperview()
+            old.removeFromParent()
+        }
+        // 2) 建立父子关系，"再"装视图
+        addChild(child)
+        child.view.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(child.view)
+        NSLayoutConstraint.activate([
+            child.view.topAnchor.constraint(equalTo: view.topAnchor),
+            child.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            child.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            child.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+        currentChild = child
+    }
+}</code></pre>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>顺序固定：加入时 <code>addChild</code> → 加 <code>view</code> → 约束；移除时移 <code>view</code> → <code>removeFromParent</code>。用系统容器时，<code>addSplitViewItem</code> / <code>addTabViewItem</code> 已内含 <code>addChild</code>，<b>不要重复</b>调 <code>addChild</code>。</p>
+</div>
+</div>
+
+<h4>一个大 VC 何时该拆</h4>
+
+<div class="rule dont">
+<div class="rule-head">避免（这些是该拆的信号）</div>
+<div class="rule-body">
+<p>一个 VC 出现下列任一情况，就应拆成容器 + 子 VC：<b>（a）</b>同时实现多组 dataSource/delegate（如两张表各一套）；<b>（b）</b>持有多块互不相干的选择/滚动状态；<b>（c）</b><code>viewDidLoad</code> 里绑定分属不同数据域的多路订阅；<b>（d）</b>某块 UI 有独立的出现/消失生命周期（需要各自的 will/did Appear）。判据是"内部有几块能独立存在的区域"，而不是行数。</p>
+</div>
+</div>
+
+<div class="callout why">
+<b>为什么</b>
+<p>容器化不是为了"文件小"，而是为了让<b>生命周期、外观事件、每-attach 资源沿父子边界自动传递与释放</b>。拆成子 VC 后，"侧栏出现时才订阅、离开时就退订"这类逻辑可以就近写在子 VC 的 appear/disappear 里，父容器无需知道细节；而 Massive VC 里这些必须靠手写标志位模拟，极易漏关。</p>
+</div>
+
+<h3>3.4 确定性拆卸：removeFromParent 与每-attach 资源</h3>
+
+<p>容器化的收益要靠"拆卸也确定性"来兑现。规范：<b>子 VC 从容器移除的那一刻，就释放它的每-attach 资源</b>——订阅、定时器、异步任务、滚动视图等——而不是等 ARC 在某个不确定的时刻回收。</p>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>给可被装卸的子 VC 一个显式的拆卸钩子，在移除前调用；把每-attach 资源集中释放。容器负责在替换/移除子 VC 时调用它。</p>
+<pre><code class="language-swift">@MainActor
+protocol DetachableChild: NSViewController {
+    /// 容器在把本 VC 移出前调用：释放每-attach 资源
+    func prepareForRemoval()
+}
+
+final class TimelineViewController: NSViewController, DetachableChild {
+    private var cancellables = Set&lt;AnyCancellable&gt;()
+    private var loadTask: Task&lt;Void, Never&gt;?
+    private let tableView = NSTableView()
+    // ……（其余成员见 3.2）
+
+    func prepareForRemoval() {
+        cancellables.removeAll()        // 断开 Combine 订阅
+        loadTask?.cancel()              // 取消在飞的 async 任务
+        tableView.dataSource = nil      // 断开可能的强/循环引用
+        tableView.delegate = nil
+    }
+}
+
+// 容器侧：先拆卸资源，再断父子关系
+extension DetailRouterViewController {
+    func replace(with next: NSViewController) {
+        if let old = currentChild as? DetachableChild {
+            old.prepareForRemoval()
+        }
+        route(to: next)   // route 内部再做 removeFromSuperview / removeFromParent
+    }
+}</code></pre>
+</div>
+</div>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>把订阅/任务的清理只寄望于 <code>deinit</code>。子 VC 被 <code>removeFromParent</code> 后仍可能被容器短暂持有（切换动画、缓存），期间它的定时器和订阅仍在跑、仍在改已离场视图——释放时机于是不可预测。</p>
+</div>
+</div>
+
+<div class="callout why">
+<b>为什么</b>
+<p><code>removeFromParent()</code> 断的是<b>父子容器关系</b>，不是对象的最后一个引用。二者往往不同一时刻发生。把"离场即释放"绑定到显式钩子（而非 <code>deinit</code>），资源的生命周期就与"在场/离场"对齐——这正是容器化想要的确定性：切走一屏，它的订阅、任务、观察者当场停摆，绝不"背着屏幕继续跑"。</p>
+</div>
+
+<div class="callout essence">
+<b>本质</b>
+<p>控制器体系是一棵<b>职责树</b>：WindowController 是根，独占窗口层逻辑；每个 VC 是一个可独立存在的 UI 区域，用 <code>loadView</code>/<code>viewDidLoad</code> 把"建树"与"绑定"分离，用 will/did Appear 表达"在场语义"；容器化沿这棵树自动传递生命周期与外观事件，而确定性拆卸让每-attach 资源的存活精确对齐"在场/离场"。反 Massive VC 的方法不是把代码分文件，而是让树上每个节点都<b>只有一个理由存在、只有一个查看点</b>。</p>
+</div>
+
+<div class="qa">
+<p class="q">思考题：你要实现一个三栏窗口，右侧详情区需要根据侧栏选择在"文章详情 VC"和"空状态 VC"之间切换；切换动画期间旧详情 VC 会被容器多保留约 300ms。有人主张：右侧直接用一个 <code>NSSplitViewItem</code> 装 <code>DetailRouterViewController</code>，路由器内部 <code>addChild</code>/<code>removeFromParent</code> 切换子 VC，并把订阅清理放进各子 VC 的 <code>deinit</code>。请指出这个方案在生命周期与资源管理上的两个隐患，并给出符合本章规范的修正。</p>
+<details><summary>查看答案</summary>
+<div class="a">
+<p><b>隐患一：清理时机不可预测。</b> 切换动画让旧详情 VC 在 <code>removeFromParent()</code> 之后仍被容器保留约 300ms，若清理只写在 <code>deinit</code>，这段时间里它的 Combine 订阅、异步加载任务仍在跑，还可能对一个已从视图树移除的表做 <code>reloadData</code>——甚至在下一次数据推送时改动已离场的 UI。<code>removeFromParent()</code> 断的是父子关系，不是最后一个强引用，二者并不同刻。修正：定义 <code>prepareForRemoval()</code>（每-attach 资源集中释放），由路由器在替换/移除子 VC 前<b>显式调用</b>，让"离场即释放"与在场语义对齐，而非听任 ARC。</p>
+<p><b>隐患二：外观事件与切换语义。</b> 若在自定义路由里手动搬 <code>view</code> 却漏了 <code>addChild</code> 或把顺序弄反，或在子 VC 重写 <code>viewWillAppear</code> 时漏了 <code>super</code>，系统就不会正确地在父子间传递 appear/disappear，"每次在场才做"的逻辑（取焦、刷新、启动动画）会失灵。修正：严格遵守装配顺序（<code>addChild</code> → 加 <code>view</code> → 约束；移除时移 <code>view</code> → <code>removeFromParent</code>），且所有 will/did Appear 重写都调 <code>super</code>；把"每次在场刷新"的逻辑放进子 VC 的 <code>viewWillAppear</code> 而非 <code>viewDidLoad</code>（后者只跑一次，切回来不会再触发）。</p>
+<p><b>结构上</b>：右侧用 <code>DetailRouterViewController</code> 作自定义容器是合理的（系统 split 不提供"按选择动态切换单个子 VC"）；关键是把它做成职责单一的路由节点——只管"当前展示哪个子 VC"与"切换时先拆卸资源再断关系"，数据订阅下沉到各子 VC 的 <code>viewDidLoad</code>（一次性）与 <code>viewWillAppear</code>（每次在场），清理集中到 <code>prepareForRemoval()</code>。</p>
+</div>
+</details>
+</div>
+</section>
+
+<section class="chapter" id="ch-4">
+<h2 data-n="4">依赖注入与组合根（Composition Root）</h2>
+<p class="lead">一个能长期演进的 AppKit 工程，最先失控的往往不是布局代码，而是“依赖从哪来”。当 <code>NSViewController</code> 在 <code>viewDidLoad</code> 里随手 <code>SomeService.shared.doThing()</code>、当窗口控制器直接摸 <code>URLSession.shared</code>、当业务层散落着一堆单例，你就得到了一张没人能看清、也没人能测试的隐式对象图。本章把“依赖如何进入一个对象”规范化：默认用初始化器注入、面向协议依赖、在应用启动的<strong>一处</strong>（组合根）自上而下装配整张对象图，并把单例压缩到“真正的进程级缓存”这一极小集合。</p>
+
+<div class="termbox">
+<div class="term"><b class="term-name">依赖注入（DI）</b><span class="term-def">一个对象所需的协作者（服务、存储、网络客户端等）由<strong>外部传入</strong>，而不是它自己创建或全局查找。传入方式包括初始化器注入、属性注入、方法注入。</span></div>
+<div class="term"><b class="term-name">组合根（Composition Root）</b><span class="term-def">整个应用中唯一负责“把具体类型 <code>new</code> 出来并连成对象图”的地方。在纯 AppKit 应用里，它就是 <code>AppDelegate.applicationDidFinishLaunching(_:)</code> 及其调用的装配代码。除组合根外，任何类型都不应知道别人的<strong>具体</strong>实现。</span></div>
+<div class="term"><b class="term-name">对象图（Object Graph）</b><span class="term-def">应用运行时由“谁持有谁、谁依赖谁”构成的有向图。DI 的目标是让这张图<strong>显式、可见、可替换</strong>。</span></div>
+<div class="term"><b class="term-name">Context / 依赖包</b><span class="term-def">把一组会一起传递的依赖聚合进一个 <code>struct</code>，作为单个参数向下传，避免初始化器参数逐层膨胀（“构造函数参数爆炸”）。</span></div>
+</div>
+
+<h3>4.1 默认策略：初始化器注入</h3>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>把对象<strong>正常工作所必需</strong>的依赖，全部放进初始化器参数。初始化完成后对象即处于可用状态，不存在“还没配好”的中间态。</p>
+<pre><code class="language-swift">// 面向协议声明依赖，而非具体类型
+protocol FeedLoading {
+    func loadFeeds(for accountID: String) async throws -&gt; [Feed]
+}
+
+final class FeedListViewController: NSViewController {
+    private let loader: FeedLoading          // 依赖以协议形式持有
+    private let accountID: String
+
+    // 必需依赖全部经 init 传入
+    init(loader: FeedLoading, accountID: String) {
+        self.loader = loader
+        self.accountID = accountID
+        super.init(nibName: nil, bundle: nil) // 纯代码，不用 xib
+    }
+
+    // 本工程不用 Storyboard，从源头堵死“空构造后再零散赋值”的路径
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) 未实现") }
+
+    override func loadView() { view = NSView() }
+}</code></pre>
+</div>
+</div>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>在方法体内部“伸手去全局拿”依赖。这让依赖对调用者不可见，也无法在测试中替换。</p>
+<pre><code class="language-swift">final class FeedListViewController: NSViewController {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        // ❌ 隐藏依赖：从外部看不出这个 VC 需要网络与账号服务
+        let feeds = FeedService.shared.loadFeeds(for: AccountManager.shared.current.id)
+    }
+}</code></pre>
+</div>
+</div>
+
+<div class="callout why">
+<b>为什么</b>
+<p>初始化器注入把“这个对象需要什么”写在了它的类型签名上——编译器强制你在构造点提供全部依赖，任何人读 <code>init</code> 就能列全它的协作者。相比之下，方法体内的 <code>.shared</code> 查找把依赖藏了起来，既看不见也换不掉：想在测试里给它一个假的网络层，你根本没有插入点。</p>
+</div>
+
+<h4>关于 <code>init(coder:)</code></h4>
+<p>纯代码 AppKit 工程不用 Storyboard / xib，因此 <code>NSViewController</code> / <code>NSView</code> 的 <code>required init?(coder:)</code> 只是无法回避的协议残留。规范做法是标 <code>@available(*, unavailable)</code> 并 <code>fatalError</code>，明确宣告“本类型只能通过带依赖的初始化器创建”，杜绝“先空构造、再零散赋值”这条会绕过依赖检查的路径。</p>
+
+<div class="ref"><b class="ref-proj">NetNewsWire（成熟的开源纯 AppKit 应用）</b><span class="ref-note">这一类工程普遍采用“显式依赖传递”而非全局查找：核心对象（账号、数据存储、抓取协调器等）在启动阶段建立，再由持有者显式往下交给需要它们的控制器，而不是让每个控制器各自去摸单例。这条“依赖顺着持有链往下走”的惯例，是本章 4.1 与 4.4 的现实依据。</span></div>
+
+<h3>4.2 何时用属性注入 / 工厂闭包</h3>
+
+<p>初始化器注入是默认；但有两种情形它并不合适。</p>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p><strong>属性注入</strong>用于“可选的、可后设的、或与创建时机分离”的协作者——最典型的是 <code>delegate</code>。delegate 天然是弱引用且可缺省，用初始化器强塞反而制造循环持有与时序问题。</p>
+<pre><code class="language-swift">protocol SidebarSelectionDelegate: AnyObject {
+    func sidebar(_ sidebar: SidebarViewController, didSelect feed: Feed)
+}
+
+final class SidebarViewController: NSViewController {
+    // 可选、可后设、弱引用——用属性注入而非 init
+    weak var selectionDelegate: SidebarSelectionDelegate?
+}</code></pre>
+</div>
+</div>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p><strong>工厂闭包</strong>用于“需要时才创建、或每次都创建新实例”的依赖。把 <code>() -&gt; T</code>（或带参数的 <code>(Args) -&gt; T</code>）注入进来，既保留了延迟创建，又不让下游知道具体类型。</p>
+<pre><code class="language-swift">final class MainWindowController: NSWindowController {
+    // 详情面板按需创建、可能创建多次：注入工厂而非成品实例
+    private let makeDetailVC: (Feed) -&gt; NSViewController
+
+    init(window: NSWindow, makeDetailVC: @escaping (Feed) -&gt; NSViewController) {
+        self.makeDetailVC = makeDetailVC
+        super.init(window: window)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    func showDetail(for feed: Feed) {
+        let vc = makeDetailVC(feed)   // 延迟到真正需要时才构建对象图的这一枝
+        contentViewController = vc
+    }
+}</code></pre>
+</div>
+</div>
+
+<div class="callout why">
+<b>为什么</b>
+<p>工厂闭包让“何时创建”与“如何创建”解耦：<em>如何创建</em>（哪个具体类、连哪些依赖）留在组合根里定义，<em>何时创建</em>交给下游按交互时机决定。这样既避免了在启动时急切构建整张图（很多枝可能永远用不到），又没把具体类型泄漏给窗口控制器。而 delegate 这类可选、后设、需弱引用的边，用属性注入才符合 AppKit 既有的生命周期语义。</p>
+</div>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>把“必需依赖”做成可选属性再期望调用方记得赋值。这等于把编译期约束降级成运行期约定，迟早有人忘了配置，得到一个半初始化的对象。可选属性只留给<strong>本就可缺省</strong>的协作者。</p>
+</div>
+</div>
+
+<h3>4.3 面向协议依赖，而非具体类型</h3>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>每个跨边界的依赖都先声明一个<strong>能力协议</strong>（以 <code>-ing</code> / <code>Providing</code> / <code>Service</code> 命名其角色），持有者只认协议。具体类型只在组合根里出现一次。</p>
+<pre><code class="language-swift">// 能力协议：描述“做什么”，不暴露“怎么做”
+protocol ImageProviding {
+    func image(for url: URL) async throws -&gt; NSImage
+}
+
+// 生产实现（只有组合根 new 它）
+final class URLSessionImageProvider: ImageProviding {
+    private let session: URLSession
+    init(session: URLSession = .shared) { self.session = session }
+    func image(for url: URL) async throws -&gt; NSImage { /* … */ NSImage() }
+}
+
+// 测试替身：同一协议的另一实现
+final class StubImageProvider: ImageProviding {
+    var stubbed = NSImage()
+    func image(for url: URL) async throws -&gt; NSImage { stubbed }
+}</code></pre>
+</div>
+</div>
+
+<div class="callout why">
+<b>为什么</b>
+<p>协议是“替换点”。持有者只依赖 <code>ImageProviding</code>，就能在生产装配真实网络实现、在测试装配无网络的桩、在 DEBUG 装配返回占位图的假实现——三者都满足同一契约，被依赖方一行代码不用改。这正是可测试性的技术根基：<strong>没有协议缝，就没有替身的插入口</strong>。同时协议还切断编译依赖——上层模块不再需要 <code>import</code> 具体实现所在的模块。</p>
+</div>
+
+<div class="callout warn">
+<b>不要过度协议化</b>
+<p>只为“会被替换 / 会跨模块边界 / 会被测试打桩”的依赖抽协议。纯值类型（<code>struct</code> 模型）、以及本进程内绝不会有第二种实现的小工具，硬抽协议只增加样板与跳转成本，不产生任何替换收益。规范是“为替换而抽象”，不是“为抽象而抽象”。</p>
+</div>
+
+<h3>4.4 组合根：在 AppDelegate 一处装配对象图</h3>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>把所有“<code>new</code> 具体类型 + 连线”的代码集中到 <code>AppDelegate.applicationDidFinishLaunching(_:)</code>（或它调用的一个 <code>assemble()</code> 函数）。这里、且只有这里，同时 <code>import</code> 各具体实现；再自上而下把成品交给窗口控制器。</p>
+<pre><code class="language-swift">@main
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var mainWindowController: MainWindowController?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // —— 组合根：唯一装配对象图的地方 ——
+
+        // 1) 构造进程级服务（此处才出现具体类型）
+        let imageProvider: ImageProviding = URLSessionImageProvider()
+        let feedLoader: FeedLoading = RemoteFeedLoader(imageProvider: imageProvider)
+
+        // 2) 打包成 Context，避免逐层传一大把参数（见 4.5）
+        let appContext = AppContext(feedLoader: feedLoader,
+                                    imageProvider: imageProvider)
+
+        // 3) 用工厂闭包描述“详情面板如何创建”（见 4.2）
+        let makeDetail: (Feed) -&gt; NSViewController = { feed in
+            FeedDetailViewController(context: appContext, feed: feed)
+        }
+
+        // 4) 自上而下把成品交给窗口控制器
+        let window = NSWindow(contentRect: .init(x: 0, y: 0, width: 900, height: 600),
+                              styleMask: [.titled, .closable, .resizable],
+                              backing: .buffered, defer: false)
+        let wc = MainWindowController(window: window, makeDetailVC: makeDetail)
+        wc.showWindow(nil)
+        self.mainWindowController = wc
+    }
+
+    // macOS-26 上 @MainActor deinit 的执行器跳转会崩溃，保留空的 nonisolated deinit
+    nonisolated deinit {}
+}</code></pre>
+</div>
+</div>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>让“<code>new</code> 具体服务”的代码散落在多个 VC / 窗口控制器里。一旦分散，对象图就没有单一真相源：换一个实现要全局 grep，注入一个替身无从下手，服务的生命周期也没人说得清归谁。</p>
+</div>
+</div>
+
+<div class="callout why">
+<b>为什么“只此一处”</b>
+<p>组合根是唯一被允许知道“具体用哪个实现、谁持有谁、谁的生命周期多长”的地方。把这份知识收敛到一处，带来三件事：<strong>可替换</strong>（改一处即换整套实现或注入替身）、<strong>依赖显式</strong>（读组合根就读懂整张图）、<strong>消灭隐藏全局状态</strong>（服务由明确的持有者持有，不再是漂浮的单例）。这也划清了模块依赖：只有组合根 <code>import</code> 具体实现模块，其余代码只 <code>import</code> 协议所在模块。</p>
+</div>
+
+<h3>4.5 用 Context 结构体聚合依赖</h3>
+
+<p>随着服务变多，逐个往 <code>init</code> 里塞会造成参数爆炸，并且每加一个服务就要改一长串中间层的签名。规范做法是把“会一起传递”的依赖聚成一个 <code>struct</code>。</p>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>按<strong>作用域</strong>切分 Context：进程级一个、窗口级一个、会话级一个。中间层原样透传 Context，末端 VC 只从 Context 里取自己用得到的那几项。</p>
+<pre><code class="language-swift">// 进程作用域的依赖包
+struct AppContext {
+    let feedLoader: FeedLoading
+    let imageProvider: ImageProviding
+    // 新增服务：改这一处，中间层签名不动
+}
+
+final class FeedDetailViewController: NSViewController {
+    private let context: AppContext
+    private let feed: Feed
+    private let iconView = NSImageView()
+
+    init(context: AppContext, feed: Feed) {   // 只收一个 Context + 本地参数
+        self.context = context
+        self.feed = feed
+        super.init(nibName: nil, bundle: nil)
+    }
+    @available(*, unavailable) required init?(coder: NSCoder) { fatalError() }
+
+    override func loadView() { view = iconView }
+
+    func reload() {
+        Task { @MainActor in
+            // 用到哪个就取哪个，未用到的依赖不产生耦合
+            let img = try? await context.imageProvider.image(for: feed.iconURL)
+            self.iconView.image = img
+        }
+    }
+}</code></pre>
+</div>
+</div>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>把 Context 当成万能全局袋，往里塞一切、并让所有层都能写它。它是<strong>只读的依赖清单</strong>，不是共享可变状态容器。可变的运行时状态应放在各自作用域的模型对象里（`@Observable`/`ObservableObject` 或普通 class 皆可），不混进 Context。</p>
+</div>
+</div>
+
+<div class="ref"><b class="ref-proj">本工程约定（对照）</b><span class="ref-note">CCTerm 的进程级容器 <code>AppState</code> 由 <code>AppDelegate</code> 持有，并<strong>按初始化器逐层下发</strong>；<code>MainSplitViewController</code> 再把成员拆成 <code>SidebarContext</code> / <code>DetailContext</code> 两个更小的作用域包交给下游。“按作用域切分依赖包、顺持有链透传”即本节规范的现实落地。</span></div>
+
+<div class="callout why">
+<b>为什么按作用域切</b>
+<p>依赖的<strong>生命周期</strong>就是它的作用域：进程级服务活得和 App 一样长，窗口级依赖随窗口销毁。用一个大而全的 Context 会让“短命对象持有长命服务”的引用关系变得模糊，也让每个 VC 都“看得见全世界”。切分后，每层只拿到它作用域内该看到的东西，图更窄、耦合更小、销毁边界更清晰。</p>
+</div>
+
+<h3>4.6 单例：压缩到“真正的进程级缓存”</h3>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>把普通业务服务写成 <code>static let shared</code> 当默认注入手段。单例是全局可变状态的伪装：它绕过对象图、无法在测试间隔离（一个测试污染了它，下一个测试就受影响），也让依赖彻底隐形。</p>
+</div>
+</div>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>单例只留给<strong>确有进程级唯一性理由</strong>的对象——典型是“昂贵的、天然全局的、每进程/每工作目录只应存在一份的缓存或协调器”（例如：启动子进程枚举可用模型的清单缓存、按路径共享的补全数据源）。且必须在代码里写明为什么它是单例。</p>
+<pre><code class="language-swift">/// 进程级缓存：启动时 fork 一个 CLI 子进程枚举可用模型，结果昂贵、
+/// 与任何具体窗口无关，全进程共享一份。这是它作为单例的“理由”——
+/// 不是图省事，而是这份缓存的语义本就是进程级。
+final class ModelStore {
+    static let shared = ModelStore()
+    private init() {}
+    private(set) var models: [Model] = []
+}</code></pre>
+</div>
+</div>
+
+<div class="callout why">
+<b>为什么给单例设“举证责任”</b>
+<p>缓存的语义本就是“进程级共享一份”，用单例表达它是<em>诚实</em>的；而把一个业务服务做成单例，只是把“我懒得传”伪装成“它本该全局”。要求每个单例都写出理由，等于强制你分辨这两者：真缓存留下，伪全局回到组合根经 init 注入。这样测试才能对每个业务依赖单独换替身，而不是被一个跨测试残留状态的单例反复咬到。</p>
+</div>
+
+<h3>4.7 容器库 vs 手动组装</h3>
+
+<p>市面上有 DI 容器库（如 Swinject 等）提供“注册类型 → 运行时按类型解析”的能力。中小型纯 AppKit 工程<strong>不需要</strong>它。</p>
+
+<table class="cmp">
+<thead><tr><th>维度</th><th>手动组装（本章推荐）</th><th>容器库</th></tr></thead>
+<tbody>
+<tr><td>依赖可见性</td><td>组合根一眼读全，编译期可查</td><td>散在各处的 <code>register</code>，靠运行时解析</td></tr>
+<tr><td>出错时机</td><td>编译期（少传一个参数就报错）</td><td>常在运行时（漏注册 → 解析崩溃）</td></tr>
+<tr><td>调试跳转</td><td>点进 <code>init</code> 直达</td><td>需理解容器的解析规则</td></tr>
+<tr><td>适用规模</td><td>中小项目、单模块或少数模块</td><td>超大对象图、大量作用域生命周期管理</td></tr>
+</tbody>
+</table>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>默认手动组装（初始化器注入 + 组合根 + Context 包）。只有当对象图确实庞大到手动连线成为维护负担、且团队愿意承担运行时解析的心智成本时，才评估引入容器库——并且仍把它<strong>限制在组合根内部</strong>使用，业务代码依旧只见协议、不见容器。</p>
+</div>
+</div>
+
+<div class="ref"><b class="ref-proj">AppEnvironment 式 DI（Kickstarter 开源工程为著名范式）</b><span class="ref-note">以一个集中的、可整体替换为测试版本的环境对象来供给全部依赖，是“environment 式 DI”的知名做法。它虽出自 iOS 工程，但“把依赖收敛到一个可替换的环境、测试时整体换成 mock 环境”的思路可迁移到 AppKit。与本章 Context 的差异在于：environment 式偏向<strong>全局环境栈</strong>（隐式的全局读取点），本章推荐的是<strong>顺持有链显式下发的作用域包</strong>；后者依赖更显式、也不引入隐式全局读取点。两种风格都远胜满地单例。</span></div>
+
+<h3>4.8 收尾：测试如何吃到这套规范</h3>
+
+<p>前面所有规范的兑现点，都在测试里。因为依赖经 <code>init</code>、面向协议、在组合根装配，测试无需启动真实网络、无需触碰单例，直接构造 VC 并注入替身即可。</p>
+
+<pre><code class="language-swift">import XCTest
+
+@MainActor
+final class FeedDetailViewControllerTests: XCTestCase {
+    func test_reload_setsIconFromProvider() async {
+        // 1) 用桩实现装配一个“测试作用域”的 Context
+        let stub = StubImageProvider()
+        stub.stubbed = NSImage(size: NSSize(width: 4, height: 4))
+        let context = AppContext(feedLoader: StubFeedLoader(),
+                                 imageProvider: stub)
+
+        // 2) 直接经 init 注入——没有单例、没有网络
+        let sut = FeedDetailViewController(context: context, feed: .fixture())
+        _ = sut.view          // 触发 loadView
+
+        // 3) 驱动公开行为，断言可观察结果
+        sut.reload()
+        await Task.yield()
+        XCTAssertEqual(sut.iconView.image, stub.stubbed)
+    }
+}</code></pre>
+
+<div class="callout warn">
+<b>规范红线</b>
+<p>如果测试“够不到”某个真实控制点，正确做法是<strong>改测试去驱动公开接口</strong>，绝不能为迁就测试而在生产代码里开 <code>forceXxxForTest()</code>、加环境变量分支、或纯为测试放宽访问级别。测试的插入口应当是 4.1–4.5 建立的那些注入缝，而不是新凿的后门。</p>
+</div>
+
+<div class="callout essence">
+<b>本质</b>
+<p>DI 不是引入框架，而是一条纪律：<strong>“谁需要什么”写在类型签名上，“具体是什么”只在组合根决定，中间任何人都不许伸手去全局拿。</strong> 初始化器注入让依赖显式，协议让依赖可替换，组合根让对象图收敛到一处，Context 让传递不爆炸，单例被压回它唯一诚实的用途——进程级缓存。做到这五点，重构大型 AppKit 工程时你面对的是一张能读懂、能替换、能测试的图，而不是一团谁也不敢动的隐式全局状态。</p>
+</div>
+
+<div class="qa">
+<p class="q">思考题：你的 App 有一个 <code>AnalyticsTracking</code> 协议，生产环境用一个批量上报、依赖网络与磁盘队列的实现；它被侧栏、详情、设置面板等十余个 VC 用到。团队有人提议“干脆做成 <code>Analytics.shared</code>，省得到处传”。请结合本章规范说明：为什么不应这么做？如果“到处传”确实烦，正确的收敛手段是什么？并说明这个手段与直接单例在<strong>可测试性</strong>上的本质区别。</p>
+<details><summary>查看答案</summary>
+<div class="a">
+<p><strong>为什么不该做成单例。</strong> <code>AnalyticsTracking</code> 是业务服务而非进程级缓存——它没有“语义本就全局”的举证（4.6）。做成 <code>.shared</code> 会带来：依赖隐形（十余个 VC 的 <code>init</code> 里看不出它们会上报，违反 4.1 的“依赖显式”）；不可替换（想在某处换成不上报的实现或验证埋点，没有插入口，违反 4.3）；测试污染（它持有网络与磁盘队列，单例状态跨测试残留，一个测试触发的上报可能影响下一个，违反 4.8 的隔离要求）。</p>
+<p><strong>正确的收敛手段。</strong> 把它放进对应作用域的 Context（4.5）——若全窗口共享，就进进程级 <code>AppContext</code>；在<strong>组合根</strong>（4.4）里 <code>new</code> 出真实实现并装进 Context，之后各 VC 通过 <code>init(context:)</code> 拿到它，中间层原样透传。这样“到处传”被压成“传一个 Context”，新增埋点服务也只改组合根与 Context 定义，不动中间层签名。若这十余个 VC 只用到 Analytics 一项而不用 Context 其余成员，可为它们注入更窄的东西——甚至直接注入 <code>AnalyticsTracking</code> 单参数，按作用域切分。</p>
+<p><strong>可测试性上的本质区别。</strong> 二者“运行时都只有一个实例”看似等价，区别在<em>那个实例从哪来、能否被替换</em>。单例把“用哪个实现”硬编码在 <code>static let shared = 具体类()</code> 里，是编译期就钉死的全局读取点，测试无法在不改生产代码的前提下替换它；而经 Context / init 注入时，“用哪个实现”是组合根在<strong>运行时</strong>决定的一个参数——生产装配真实上报器，测试装配 <code>StubAnalytics</code> 并断言收到了哪些事件，两者共用同一 <code>AnalyticsTracking</code> 协议，被测 VC 一行不改。也就是说：注入把“选择实现”的权力从被依赖方交还给了组合根，而这个“可在装配点替换”的权力，正是替身得以存在的唯一前提。</p>
+</div>
+</details>
+</div>
+</section>
+
+<section class="chapter" id="ch-5">
+<h2 data-n="5">Coordinator 模式与导航解耦</h2>
+<p class="lead">上一章我们把依赖从 VC 里剥了出去，交给外部注入。但还有一样东西赖在 VC 里没走：<b>导航</b>——“点了这个按钮，接下来该展示哪个界面、由谁来创建它、创建时喂什么依赖”。只要这段逻辑住在 VC 里，VC 就永远知道自己“在流程里的位置”，于是它既不可复用、流程也无从测试。本章的规范只做一件事：把“页面怎么跳、谁创建谁”从 VC 里彻底搬走，集中到一类专门的对象——Coordinator（协调器）——手上。</p>
+
+<div class="termbox">
+<div class="term"><b class="term-name">Coordinator（协调器）</b><span class="term-def">一个不持有视图、专司“流程与导航”的对象。它负责创建 VC、给 VC 注入依赖、决定下一步路由，并把这段决策从 VC 里集中出来。它不是 AppKit 提供的类，而是我们自己定义的一层协调对象（通常只是一个 <code>final class</code> + 一个协议）。</span></div>
+<div class="term"><b class="term-name">流程（flow）</b><span class="term-def">一串有先后关系的界面构成的用户任务，例如“新建会话向导”或“登录 → 授权 → 完成”。一个流程通常由一个 Coordinator 全权掌管。</span></div>
+<div class="term"><b class="term-name">子协调器（child coordinator）</b><span class="term-def">被父协调器创建、用于负责某个子流程的 Coordinator。父强引用子、子弱引用父，共同构成一棵协调器树（coordinator tree）。</span></div>
+<div class="term"><b class="term-name">路由（routing）</b><span class="term-def">“下一步展示什么、以什么方式展示（present sheet / present modal window / 换 detail 面板 / 换 contentViewController）”这个决策。规范要求路由归 Coordinator，而非 VC。</span></div>
+</div>
+
+<h3>5.1 职责边界：VC 绑数据，Coordinator 管流程</h3>
+
+<p>先把两类对象的职责钉死。VC 的职责是<b>把一个 model 绑定到一个 view</b>，并通过 delegate / 回调把“用户干了什么”上报出去；至于“上报之后该跳哪”，与它无关。Coordinator 的职责是<b>创建 VC、注入依赖、决定路由、管理子流程的生命周期</b>。</p>
+
+<div class="ref"><b class="ref-proj">Soroush Khanlou《The Coordinator》</b><span class="ref-note">这一模式的经典论述指出：处理“用户流程”超出了 VC 的职责范围——VC 本质是个视图对象。把流程逻辑塞进 VC，会让 flow logic / view logic / business logic 缠在一起，导致 VC 无法复用。Coordinator 就是被提出来“统管其管辖范围内所有 VC”的更高层对象。这套术语（<code>Coordinator</code> / <code>childCoordinators</code> / <code>start()</code>）后来成为 iOS/macOS 社区的通行词汇。</span></div>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>让每个 VC 成为一座“孤岛”：它不认识流程中的任何其它 VC，只通过 delegate 把语义化事件（“用户请求打开第 N 项”“用户点了取消”）上报给它的 coordinator。</p>
+<pre><code class="language-swift">// VC 只声明“发生了什么”，不决定“接下来去哪”
+@MainActor
+protocol SessionListViewControllerDelegate: AnyObject {
+    // 语义化事件，而不是 “pushDetailViewController”
+    func sessionList(_ vc: SessionListViewController, didSelect session: Session)
+    func sessionListDidRequestNewSession(_ vc: SessionListViewController)
+}
+
+final class SessionListViewController: NSViewController {
+    weak var delegate: SessionListViewControllerDelegate?   // 弱引用，避免环（见第 9 章）
+
+    @objc private func rowDoubleClicked() {
+        guard let session = selectedSession else { return }
+        // 只上报，不导航
+        delegate?.sessionList(self, didSelect: session)
+    }
+}</code></pre>
+</div>
+</div>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>在 VC 内部直接创建、present 或以任何方式引入下一个 VC。下面这种写法把导航决策和目标 VC 的构造细节都焊死在了当前 VC 里：</p>
+<pre><code class="language-swift">final class SessionListViewController: NSViewController {
+    @objc private func rowDoubleClicked() {
+        guard let session = selectedSession else { return }
+        // ✗ VC 越权做了三件不该它做的事：
+        //   1. 知道“下一个界面是 SessionDetailViewController”
+        //   2. 亲手构造它、还得知道它需要哪些依赖
+        //   3. 决定用 presentAsSheet 这种展示方式
+        let detail = SessionDetailViewController(session: session,
+                                                 store: /* 从哪来？只能再向上要 */ ???)
+        presentAsSheet(detail)
+    }
+}</code></pre>
+<p>这样的 VC 无法在“不带 SessionDetailViewController”的场景复用，也无法在测试里独立验证“双击行会触发什么”——因为它触发的是一次真实的 present。</p>
+</div>
+</div>
+
+<div class="callout why">
+<b>为什么</b>
+<p>导航是流程知识，不是视图知识。VC 一旦知道“下一站是谁”，它的可复用范围就被这条边死死限制住了：换个流程复用同一张列表？做不到，因为它硬编码了 detail 的类型和展示方式。把决策上移到 coordinator 后，同一个 <code>SessionListViewController</code> 可以被“主窗口流程”和“归档浏览流程”两个不同的 coordinator 分别驱动，各自决定双击后去哪。</p>
+</div>
+
+<h3>5.2 Coordinator 协议：start() 与协调器树</h3>
+
+<p>我们给所有 coordinator 一个统一的最小协议。它只规定两件事：一个用于<b>启动流程</b>的 <code>start()</code>，一个用于<b>持有子协调器</b>的数组。</p>
+
+<pre><code class="language-swift">@MainActor
+protocol Coordinator: AnyObject {
+    // 父强引用子：子流程活着期间必须被 hold 住，否则会被立即释放
+    var childCoordinators: [Coordinator] { get set }
+
+    // 启动本协调器负责的流程（造 VC、注入依赖、决定首屏）
+    func start()
+}
+
+extension Coordinator {
+    // 统一的“接管一个子流程”入口
+    func addChild(_ child: Coordinator) {
+        childCoordinators.append(child)
+        child.start()
+    }
+
+    // 统一的“子流程结束、放手”入口
+    func removeChild(_ child: Coordinator) {
+        // 用身份比较：Coordinator 是引用类型，比的是“是不是同一个对象”
+        childCoordinators.removeAll { $0 === child }
+    }
+}</code></pre>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>父协调器<b>强引用</b>子协调器（放进 <code>childCoordinators</code>），子协调器<b>弱引用</b>父（或弱引用一个“完成回调 delegate”）。这条方向性是内存正确性的硬约束，与第 9 章的“强引用向下、弱引用向上”一致。</p>
+<pre><code class="language-swift">final class NewSessionCoordinator: Coordinator {
+    var childCoordinators: [Coordinator] = []
+    weak var delegate: NewSessionCoordinatorDelegate?   // ← 向上弱引用，打断环
+    // ...
+}</code></pre>
+</div>
+</div>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>子协调器对父用 <code>let parent</code>（强引用）。父已经在数组里强持有子，子再强引用父，就形成 <b>父 ⇄ 子</b> 的引用环，两者永不释放——流程“结束”了，内存却没走。</p>
+</div>
+</div>
+
+<div class="ref"><b class="ref-proj">Firefox iOS</b><span class="ref-note">Mozilla 在 2023 年的一份架构决策记录（ADR《Coordinators for navigation》）里，明确把 Coordinator 定为导航管理策略：动机正是 <code>BrowserViewController</code> 变成了难以测试、导航路径重复的“巨石”。它还把导航容器本身抽成一层 <b>Router</b>（封装 push/present/dismiss 并把结果回报给 coordinator）——这是同一思路的进一步细化：<b>coordinator 决策、Router 执行“怎么展示”</b>。星多的成熟客户端普遍采用这套“根 coordinator 起步、每个子任务各自持一个 coordinator、用数组管理生命周期”的结构。</span></div>
+
+<h3>5.3 上报“流程结束”：delegate / 回调</h3>
+
+<p>子协调器不能自己把自己从父的数组里删掉——它不该知道父的内部存储结构。正确做法是：子流程结束时，通过 delegate 或闭包<b>回调父</b>，由父调用 <code>removeChild</code> 放手。</p>
+
+<pre><code class="language-swift">// 子协调器向上汇报“我这条流程完事了”
+@MainActor
+protocol NewSessionCoordinatorDelegate: AnyObject {
+    func newSessionCoordinator(_ c: NewSessionCoordinator, didCreate session: Session)
+    func newSessionCoordinatorDidCancel(_ c: NewSessionCoordinator)
+}
+
+@MainActor
+final class NewSessionCoordinator: Coordinator {
+    var childCoordinators: [Coordinator] = []
+    weak var delegate: NewSessionCoordinatorDelegate?     // 向上弱引用
+
+    private let presentingVC: NSViewController             // 由父交下来的“在谁身上弹”
+    private let sessionManager: SessionManager            // 由父注入的依赖
+
+    init(presentingVC: NSViewController, sessionManager: SessionManager) {
+        self.presentingVC = presentingVC
+        self.sessionManager = sessionManager
+    }
+
+    func start() {
+        // 造 VC + 注入依赖 + 决定首屏展示方式（这里用 sheet）
+        let vc = NewSessionConfiguratorViewController(sessionManager: sessionManager)
+        vc.delegate = self
+        presentingVC.presentAsSheet(vc)                   // NSViewController 的 present API
+    }
+}
+
+extension NewSessionCoordinator: NewSessionConfiguratorViewControllerDelegate {
+    func configurator(_ vc: NewSessionConfiguratorViewController, didConfirm session: Session) {
+        vc.dismiss(nil)
+        // 不自删，转交给父决定
+        delegate?.newSessionCoordinator(self, didCreate: session)
+    }
+    func configuratorDidCancel(_ vc: NewSessionConfiguratorViewController) {
+        vc.dismiss(nil)
+        delegate?.newSessionCoordinatorDidCancel(self)
+    }
+}</code></pre>
+
+<p>父在收到回调后完成放手，这是子协调器被销毁的<b>唯一</b>时机：</p>
+
+<pre><code class="language-swift">extension AppCoordinator: NewSessionCoordinatorDelegate {
+    func newSessionCoordinator(_ c: NewSessionCoordinator, didCreate session: Session) {
+        removeChild(c)                    // 从数组移除 → 引用计数归零 → 释放
+        showSession(session)              // 父继续决定下一步路由
+    }
+    func newSessionCoordinatorDidCancel(_ c: NewSessionCoordinator) {
+        removeChild(c)
+    }
+}</code></pre>
+
+<div class="callout warn">
+<b>常见错误</b>
+<p>忘了 <code>removeChild</code>，是 coordinator 模式最典型的泄漏源：流程界面早已 dismiss，但子协调器仍躺在父的 <code>childCoordinators</code> 里被强持有，连同它引用的所有依赖一起活着。规范：<b>每一条上报“结束/取消”的回调分支，都必须以 <code>removeChild</code>（由父调用）收尾</b>。</p>
+</div>
+
+<h3>5.4 完整示例：AppCoordinator 造根窗口、子协调器造 VC 并注入 service</h3>
+
+<p>把上面的规则串起来。<code>AppCoordinator</code> 是应用级根协调器，由 <code>AppDelegate</code> 强持有；它在 <code>start()</code> 里造出主窗口，并在需要子流程时创建子协调器、把 service 注入下去。</p>
+
+<pre><code class="language-swift">// 根协调器：由 AppDelegate 强持有，掌管应用级流程
+@MainActor
+final class AppCoordinator: Coordinator {
+    var childCoordinators: [Coordinator] = []
+
+    private let windowController: NSWindowController   // 由 NSWindowController 持窗口，符合职责划分
+    private let sessionManager: SessionManager         // 应用级依赖，构造期注入进来
+
+    init(sessionManager: SessionManager) {
+        self.sessionManager = sessionManager
+        // 程序化造窗口（不用 Storyboard），交给一个 NSWindowController 托管
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1024, height: 700),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered, defer: false)
+        self.windowController = NSWindowController(window: window)
+    }
+
+    func start() {
+        // 造根 VC + 注入它需要的 service（衔接第 4 章：依赖由外部下发）
+        let listVC = SessionListViewController(sessionManager: sessionManager)
+        listVC.delegate = self
+        windowController.contentViewController = listVC
+        windowController.showWindow(nil)
+    }
+
+    // 决定路由：展示某个已有会话
+    func showSession(_ session: Session) {
+        let detailVC = SessionDetailViewController(
+            session: session,
+            sessionManager: sessionManager)          // 依赖继续向下注入
+        windowController.contentViewController = detailVC
+    }
+}
+
+extension AppCoordinator: SessionListViewControllerDelegate {
+    func sessionList(_ vc: SessionListViewController, didSelect session: Session) {
+        showSession(session)                          // 由 coordinator 决定“下一站”
+    }
+
+    func sessionListDidRequestNewSession(_ vc: SessionListViewController) {
+        // 创建子协调器管“新建会话”这条子流程，并把依赖注入给它
+        guard let host = windowController.contentViewController else { return }
+        let child = NewSessionCoordinator(presentingVC: host,
+                                          sessionManager: sessionManager)
+        child.delegate = self
+        addChild(child)   // 强引用 + 调 child.start()
+    }
+}</code></pre>
+
+<pre class="filetree">Coordinators/
+├── Coordinator.swift            // 协议 + addChild/removeChild 默认实现
+├── AppCoordinator.swift         // 根：造窗口、掌管应用级路由
+└── NewSessionCoordinator.swift  // 子：负责“新建会话”子流程
+ViewControllers/
+├── SessionListViewController.swift          // 只绑数据 + 上报事件
+├── SessionDetailViewController.swift
+└── NewSessionConfiguratorViewController.swift</pre>
+
+<div class="callout why">
+<b>为什么这样分层</b>
+<p>三个收益一次拿齐：（1）<b>VC 可复用</b>——<code>SessionListViewController</code> 不认识任何下游界面，换个 coordinator 就能挂进另一个流程；（2）<b>流程可测试</b>——想验证“双击行是否会打开 detail”，只需构造 coordinator、调用它实现的 delegate 方法、断言 <code>windowController.contentViewController</code> 变成了 detail，全程没有真实弹窗；（3）<b>导航集中一处</b>——所有“接下来去哪”的决策都在 coordinator 里，读一个文件就能看懂整条流程，而不必在十几个 VC 之间跳转拼图。</p>
+</div>
+
+<h3>5.5 边界与取舍</h3>
+
+<table class="cmp">
+<thead><tr><th>该由谁做</th><th>Coordinator</th><th>ViewController</th></tr></thead>
+<tbody>
+<tr><td>创建下一个 VC</td><td>✓</td><td>✗</td></tr>
+<tr><td>决定 present / 换面板 / 换 contentViewController</td><td>✓</td><td>✗</td></tr>
+<tr><td>向 VC 注入依赖（service）</td><td>✓</td><td>✗（自己不构造依赖）</td></tr>
+<tr><td>把 model 绑定到 view</td><td>✗</td><td>✓</td></tr>
+<tr><td>上报“用户做了什么”</td><td>✗</td><td>✓（delegate/回调）</td></tr>
+<tr><td>持有子流程生命周期</td><td>✓（childCoordinators）</td><td>✗</td></tr>
+</tbody>
+</table>
+
+<div class="rule dont">
+<div class="rule-head">避免（过度设计）</div>
+<div class="rule-body">
+<p>不要给每一个只有单屏、无分支的界面都套一层 coordinator。Coordinator 的价值在于“<b>多步、有分支、需复用或需测试</b>”的流程；一个永远只显示单个 VC、没有下一步的场景，直接由父 coordinator 造出来即可，不必再拆子协调器，否则只是徒增样板与间接层。</p>
+</div>
+</div>
+
+<div class="ref"><b class="ref-proj">成熟的纯 AppKit 客户端（如 NetNewsWire）</b><span class="ref-note">这类桌面客户端在主窗口一侧同样遵循“集中协调、VC 各管一摊”的思路：由窗口/场景层的协调对象决定 sidebar 选中后 detail 侧展示什么、由谁创建，具体列表/详情 VC 只负责渲染自己的数据。落到本手册的语境里，就是本章描述的 coordinator 职责——以模式层面对齐，不拘泥于某个具体类名或某一行代码。</span></div>
+
+<div class="callout essence">
+<b>本质</b>
+<p>Coordinator 模式做的是一次<b>依赖方向的翻转</b>：让“流程知识”从被复用的叶子（VC）里抽出来、上移到专门的协调层。VC 从此只回答“发生了什么”，Coordinator 独占回答“接下来去哪、由谁来做、拿什么依赖去做”。父强引用子、子弱引用父，构成一棵与用户流程同构的协调器树；<code>start()</code> 是它的入口，delegate 回调 + <code>removeChild</code> 是它的出口。守住这个入口和出口，导航就从散落在 VC 里的暗线，变成了一处可读、可测、可复用的明线。</p>
+</div>
+
+<div class="qa">
+<p class="q">思考题：某个子流程 <code>NewSessionCoordinator</code> 弹出的配置 sheet 被用户点了系统关闭按钮直接关掉（既不是“确认”也不是“取消”走你的按钮回调），一段时间后你发现内存里堆了一批 <code>NewSessionCoordinator</code> 和它们各自引用的 <code>SessionManager</code> 相关对象没被释放。结合本章的所有权规则和上报机制，解释泄漏成因，并给出既不破坏“子不自删”规范、又能兜住这种“非常规关闭”的修法。</p>
+<details><summary>查看答案</summary>
+<div class="a">
+<p><b>成因。</b>父 <code>AppCoordinator</code> 通过 <code>childCoordinators</code> 强引用子 <code>NewSessionCoordinator</code>，唯一让子被释放的时机是父收到“完成/取消”回调后调用 <code>removeChild</code>。而用户点系统关闭按钮走的是 sheet/window 自身的关闭路径，<b>不会</b>触发你在“确认”“取消”按钮里写的 delegate 回调——于是父永远收不到结束通知，永远不 <code>removeChild</code>，子协调器连同它持有的依赖一直被数组强引用，形成泄漏。这正是 5.3 里点名的“忘了 removeChild”这一类问题，只不过触发它的是一条你没覆盖到的关闭路径。</p>
+<p><b>修法（保持“子不自删”）。</b>关键是把“sheet 以任何方式关闭”也变成一条上报事件，最终仍由<b>父</b>来 <code>removeChild</code>。在纯 AppKit 里，最干净的做法是不用 <code>presentAsSheet</code>，改用 <code>NSViewController</code> 的 <code>presentAsSheet</code> 之外的窗口级 API，把结束点收敛到一个 completion 上：</p>
+<pre><code class="language-swift">func start() {
+    let vc = NewSessionConfiguratorViewController(sessionManager: sessionManager)
+    vc.delegate = self
+    let sheetWindow = NSWindow(contentViewController: vc)
+    // sheet 无论走哪条路关闭（确认 / 取消 / 系统关闭按钮），completion 都会回调
+    presentingVC.view.window?.beginSheet(sheetWindow) { [weak self] _ in
+        guard let self else { return }
+        // 不动 childCoordinators，只复用既有出口，把“非常规关闭”归一化为“取消”语义
+        self.delegate?.newSessionCoordinatorDidCancel(self)
+    }
+}</code></pre>
+<p>“确认”分支里先 <code>endSheet(_:returnCode:)</code> 结束 sheet、再上报 <code>didCreate</code>；completion 里对未走确认的情况统一上报 <code>didCancel</code>。父在这两个回调里照常 <code>removeChild(c)</code>——“子不自删、由父放手”的规范没有被破坏，只是把出口从“两个按钮”扩成了“确认 + 任意关闭”都汇入同一组 delegate 回调。（若沿用 <code>presentAsSheet</code>，则让子协调器实现 sheet 承载窗口的 <code>NSWindowDelegate</code>，在 <code>windowWillClose(_:)</code> 里同样只调 <code>delegate?.newSessionCoordinatorDidCancel(self)</code>，效果一致。）</p>
+<p><b>为什么不是别的修法。</b>（1）不能让子在关闭回调里直接 <code>parent?.childCoordinators.removeAll { ... }</code>——那要求子知道父的存储结构，违反 5.3；而且父是弱引用，关闭时序若晚于父释放会拿到 <code>nil</code>，也不可靠。（2）不能把向上引用改成强引用来“保证能删”——那会造出 5.2 明令避免的父⇄子引用环，泄漏面反而更大。（3）根本原因是<b>出口没覆盖全</b>，不是所有权方向错了：正确的心智是“任何使流程终止的事件，都必须收敛到那一组向上的 delegate 回调，由父统一执行 <code>removeChild</code>”。</p>
+</div>
+</details>
+</div>
+</section>
+
+<section class="chapter" id="ch-6">
+<h2 data-n="6">视图构建与布局规范</h2>
+<p class="lead">本章规范“怎么写视图、怎么摆布局”。目标只有两个：让视图树可以被人评审（diff 一眼看懂谁装谁、谁约束谁），让布局在性能敏感处仍然可控。默认口径很简单——程序化建树、Auto Layout 优先、视图保持“笨”；只有在经测量确认的高频重排热点，才允许下沉到手动 <code>layout()</code>。本章把这套口径逐条落成规范、示例与理由，并在末尾给出同一组件的 Auto Layout 版与手动布局版并排对照。</p>
+
+<div class="termbox">
+<div class="term"><b class="term-name">程序化建视图（programmatic view）</b><span class="term-def">不使用 xib / Storyboard，全部子视图与约束由 Swift 代码创建、装配、激活。与之相对的是 Interface Builder 拖拽方式。</span></div>
+<div class="term"><b class="term-name">建树方法（configure / setup）</b><span class="term-def">只负责“把子视图 addSubview 进层级”或“激活约束”的方法，通常命名 <code>configureHierarchy()</code> / <code>configureConstraints()</code>，在 <code>viewDidLoad()</code> 或视图 <code>init</code> 中调用一次。</span></div>
+<div class="term"><b class="term-name">内在尺寸（intrinsicContentSize）</b><span class="term-def">视图根据自身内容能自行给出的“天然大小”。实现它，Auto Layout 就能在无显式宽/高约束时替视图定尺寸。</span></div>
+<div class="term"><b class="term-name">内容拥抱 / 抗压优先级（content hugging / compression resistance）</b><span class="term-def">两条针对内在尺寸的优先级：拥抱优先级越高，视图越“不愿意被拉大”；抗压优先级越高，视图越“不愿意被压小”。用它们在同一行里决定谁伸缩、谁固定。</span></div>
+<div class="term"><b class="term-name">翻转坐标系（isFlipped）</b><span class="term-def">AppKit 默认原点在左下、y 向上。<b>手动 <code>layout()</code> / 自绘</b>的视图重写 <code>isFlipped</code> 返回 <code>true</code>，改成左上原点、y 向下，与内容自上而下的排布心智一致。纯 Auto Layout 的视图不做手工坐标算术，重写它没有意义。</span></div>
+</div>
+
+<h3>6.1 程序化建视图：lazy 子视图 + 建树方法</h3>
+
+<p>纯 AppKit 项目的第一条工程共识是：<b>视图层级用代码写，不用 xib / Storyboard。</b>代码化的视图树可以被 <code>git diff</code> 逐行审查、可被搜索、可被重构工具重命名；xib 是 XML/二进制黑盒，合并冲突几乎无法评审。IB 的残余价值主要是给设计师快速拖原型，成熟工程一般不把它作为生产资产。</p>
+
+<div class="ref"><b class="ref-proj">成熟的纯 AppKit + Swift 应用</b><span class="ref-note">长期维护的纯 AppKit 项目普遍走程序化路线：子视图用 <code>lazy var</code> 声明并在闭包里完成自身配置，层级装配与约束激活各自集中到一个 setup 方法里，由 <code>viewDidLoad()</code> 调一次——这是社区通行的组织方式，而非某一处具体写法。</span></div>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>子视图用 <code>lazy var</code> 声明并在闭包内完成自身配置（不涉及布局、不涉及层级），层级组装与约束激活各自集中在一个建树方法里，由 <code>viewDidLoad()</code> 调一次。</p>
+<pre><code class="language-swift">final class HeaderViewController: NSViewController {
+
+    // 子视图：lazy var + 闭包内只做“自身外观配置”，不碰布局、不碰层级
+    private lazy var titleLabel: NSTextField = {
+        let label = NSTextField(labelWithString: "")
+        label.font = .systemFont(ofSize: 15, weight: .semibold)
+        label.lineBreakMode = .byTruncatingTail
+        return label
+    }()
+
+    private lazy var subtitleLabel: NSTextField = {
+        let label = NSTextField(labelWithString: "")
+        label.textColor = .secondaryLabelColor
+        return label
+    }()
+
+    override func loadView() {
+        view = NSView()          // 程序化：自己给 view，不依赖 nib
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        configureHierarchy()     // 只装层级
+        configureConstraints()   // 只装约束
+    }
+
+    // 建树方法（其一）：仅 addSubview
+    private func configureHierarchy() {
+        view.addSubview(titleLabel)
+        view.addSubview(subtitleLabel)
+    }
+
+    // 建树方法（其二）：仅激活约束
+    private func configureConstraints() {
+        [titleLabel, subtitleLabel].forEach {
+            $0.translatesAutoresizingMaskIntoConstraints = false
+        }
+        NSLayoutConstraint.activate([
+            titleLabel.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
+            titleLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
+            titleLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+
+            subtitleLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 4),
+            subtitleLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            subtitleLabel.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -12),
+        ])
+    }
+}</code></pre>
+</div>
+</div>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>在一个方法里把“创建 + 配置 + addSubview + 约束”糊成一坨；或把子视图声明成隐式解包可选（<code>var titleLabel: NSTextField!</code>）再到处判空。前者让 diff 无法定位改动语义，后者把初始化顺序错误从编译期推迟到崩溃时。</p>
+</div>
+</div>
+
+<div class="callout why">
+<b>为什么</b>
+<p><code>lazy var</code> 让子视图“声明即定义、首次访问即成型”，避免 <code>!</code> 的时序陷阱；把“装层级”与“装约束”拆成两个纯粹方法，是为了让评审者一眼分辨结构改动（谁进了树）和布局改动（谁约束谁）——两类改动的风险与回归面完全不同，混在一起就丧失了 diff 的语义。</p>
+</div>
+
+<h3>6.2 自定义 NSView 子类规范</h3>
+
+<p>当一段界面需要自绘、需要作为可复用组件、或需要承载图层动画时，就该落成一个 <code>NSView</code> 子类。子类要遵守四条硬性规范。</p>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p><b>(1) 需要图层时显式 <code>wantsLayer = true</code></b>——凡是要设 <code>layer.cornerRadius</code>、<code>layer.backgroundColor</code>、做 <code>CALayer</code> 动画，或想让视图被离屏合成的，都必须开图层支持；且图层颜色应在 <code>updateLayer()</code> 里刷新，好跟随明暗外观切换。</p>
+<p><b>(2) 仅当手动 <code>layout()</code> / 自绘时才重写 <code>isFlipped</code> 返回 <code>true</code></b>——让原点回到左上，坐标算术与内容顺序一致；纯 Auto Layout 视图不必重写它。</p>
+<p><b>(3) 能给出天然大小就实现 <code>intrinsicContentSize</code></b>，并在内容变化时调 <code>invalidateIntrinsicContentSize()</code>。</p>
+<p><b>(4) 可复用片段做成独立组件视图</b>，对外只暴露数据入口（属性 / <code>configure(with:)</code>），不暴露内部子视图。</p>
+<pre><code class="language-swift">/// 一个可复用的“状态徽标”组件：圆角背景 + 文本，内在尺寸自决。
+/// 纯 Auto Layout，不做手工坐标算术 → 不重写 isFlipped。
+final class BadgeView: NSView {
+
+    private lazy var label: NSTextField = {
+        let l = NSTextField(labelWithString: "")
+        l.font = .systemFont(ofSize: 11, weight: .medium)
+        l.alignment = .center
+        return l
+    }()
+
+    // (4) 对外只暴露数据入口，不暴露 label 本身
+    var text: String = "" {
+        didSet {
+            label.stringValue = text
+            invalidateIntrinsicContentSize()   // 文本变了，天然宽度也变了
+        }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true                       // (1) 要圆角背景 → 必须开图层
+        layer?.cornerRadius = 6
+
+        label.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("程序化视图不从 nib 反序列化") }
+
+    // (1) 背景色放到 updateLayer：明暗外观切换时 AppKit 会重新调用，CGColor 随之刷新
+    override var wantsUpdateLayer: Bool { true }
+    override func updateLayer() {
+        layer?.backgroundColor = NSColor.controlAccentColor
+            .withAlphaComponent(0.15).cgColor
+    }
+
+    // (3) 天然大小：文本尺寸 + 内边距，容器无需再给宽高约束
+    override var intrinsicContentSize: NSSize {
+        let s = label.intrinsicContentSize
+        return NSSize(width: s.width + 16, height: 22)
+    }
+}</code></pre>
+</div>
+</div>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>在没开 <code>wantsLayer</code> 的视图上访问 <code>layer</code>（得到 <code>nil</code>，圆角/背景静默失效）；把外观相关的 <code>CGColor</code> 只在 <code>init</code> 里设一次（明暗切换后颜色不更新）；对外暴露 <code>badge.label.stringValue = …</code> 让调用方直接改内部子视图（封装被击穿，日后无法替换实现）；实现了 <code>intrinsicContentSize</code> 却忘了在内容变更时 <code>invalidate</code>（尺寸卡在旧值）；对纯 Auto Layout 视图重写 <code>isFlipped</code>（无效果，只会误导读者以为这里有手工坐标算术）。</p>
+</div>
+</div>
+
+<div class="callout why">
+<b>为什么</b>
+<p>这四条各自堵一个典型坑：<code>wantsLayer</code> + <code>updateLayer()</code> 决定“图层属性有没有生效、会不会跟随外观”的静默失败；<code>isFlipped</code> 只服务于手动布局时的坐标算术，用错地方是噪声；<code>intrinsicContentSize</code> 让组件在 Auto Layout 里“自报身高体重”，容器不必为每个组件写死宽高；组件封装则决定这个视图能不能被别处复用、能不能整体换实现——把内部子视图暴露出去，等于把复用的门焊死。</p>
+</div>
+
+<h3>6.3 Auto Layout 规范</h3>
+
+<p>Auto Layout 是本手册的<b>默认布局手段</b>。规范围绕四条展开：关约束翻译、批量激活、优先 anchor、能 stack 就 stack；再加一条对拥抱/抗压优先级的理解。</p>
+
+<div class="ref"><b class="ref-proj">多数成熟 AppKit 应用</b><span class="ref-note">这类项目的日常界面几乎全用 Auto Layout（anchors + <code>NSStackView</code>）搭建，把约束求解的开销留给“一次布局、长期不变”的普通界面——这类界面里求解成本可忽略，可读性与自适应能力才是收益。</span></div>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p><b>(1)</b> 参与 Auto Layout 的视图一律 <code>translatesAutoresizingMaskIntoConstraints = false</code>。<b>(2)</b> 用 <code>NSLayoutConstraint.activate([...])</code> 一次性批量激活。<b>(3)</b> 优先用 <b>anchor</b> API 写约束，不用 VFL 字符串。<b>(4)</b> 线性排布能用 <code>NSStackView</code> 就用它，别手写一串等距约束。</p>
+<pre><code class="language-swift">let stack = NSStackView(views: [iconView, titleLabel, actionButton])
+stack.orientation = .horizontal
+stack.spacing = 8
+stack.alignment = .centerY
+stack.translatesAutoresizingMaskIntoConstraints = false
+container.addSubview(stack)
+
+// 让 titleLabel 吃掉多余宽度、actionButton 保持天然宽度：
+// 拥抱优先级低 → 愿意被拉大；高 → 拒绝被拉大
+titleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+actionButton.setContentHuggingPriority(.required, for: .horizontal)
+// 空间不足时先压缩标题，别压按钮
+titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+actionButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+NSLayoutConstraint.activate([
+    stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+    stack.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
+    stack.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+])</code></pre>
+</div>
+</div>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>逐条 <code>constraint.isActive = true</code>（多次触发布局失效，且漏关“翻译”时报冲突却难定位）；用 VFL 字符串（<code>"H:|-[title]-|"</code>，编译期不校验、拼写错误运行时才崩）；用一排手写约束模拟等距水平/垂直排列（<code>NSStackView</code> 一行搞定，还自带对齐与分布语义）。</p>
+</div>
+</div>
+
+<div class="termbox">
+<div class="term"><b class="term-name">anchor API</b><span class="term-def"><code>view.topAnchor.constraint(equalTo:constant:)</code> 一族方法。类型安全（横向 anchor 不能约束到纵向 anchor，编译期就拦住），可读性远胜 VFL 字符串，是现代 AppKit 写约束的默认方式。</span></div>
+</div>
+
+<div class="callout why">
+<b>为什么</b>
+<p>批量 <code>activate</code> 只触发一次布局失效，且成组的约束在 diff 里就是一个语义单元；anchor 的类型安全把“横向约到纵向”这类错误提前到编译期；<code>NSStackView</code> 把“间距、对齐、谁伸缩”内建成属性——等距约束一旦要插删中间视图，手写版本要重连一串约束，stack 只需 <code>insertArrangedSubview</code>。拥抱/抗压优先级则是“同一行里谁让步”的唯一正确表达——不理解它就会用一堆固定宽度硬凑，一换字号 / 换语言就崩。</p>
+</div>
+
+<h3>6.4 何时下沉到手动 <code>layout()</code></h3>
+
+<p>Auto Layout 的约束求解不是免费的：每次布局都要解一个线性方程组。绝大多数界面“布局一次、长期不动”，这点开销可忽略；但在<b>高频重排 × 布局规则简单</b>的热点上，求解成本会累积成掉帧。这类热点才是手动 <code>layout()</code> 的适用场景——且必须<b>经测量确认</b>，不能凭感觉。</p>
+
+<div class="ref"><b class="ref-proj">NetNewsWire</b><span class="ref-note">这款开源 RSS 阅读器公开写过它的性能取舍：整体界面用 Auto Layout，唯独<b>不在表格 cell 内部使用 Auto Layout，而是写自己的手动布局代码</b>——理由是“优化过的手动布局总比约束求解器快，这在流畅滚动上给了我们优势”，且手动算法还能脱离视图直接算出行高。这是“性能敏感处手动布局”的代表性公开工程决策。</span></div>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>只有同时满足以下三条，才把某个视图下沉到手动 <code>layout()</code>：<b>(1)</b> 高频重排（滚动中反复复用的列表 cell、随数据流刷新的自绘视图）；<b>(2)</b> 布局规则简单（几个矩形按固定公式摆放，无复杂相对关系）；<b>(3)</b> 已用 Instruments / 帧率测量确认 Auto Layout 是瓶颈。</p>
+<pre><code class="language-swift">/// 高频复用的列表 cell：手动 layout()，规则简单（头像在左、文本填满右侧）
+final class MessageRowView: NSView {
+
+    let avatarView = NSImageView()
+    let textLabel = NSTextField(labelWithString: "")
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        // 手动布局：子视图 frame 由本视图的 layout() 算，
+        // 因此保留“翻译”默认开启、不加任何约束
+        addSubview(avatarView)
+        addSubview(textLabel)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var isFlipped: Bool { true }   // 手动算术：左上原点更直观
+
+    // 每次尺寸/内容变化，AppKit 调这里；按固定公式摆放，零约束求解
+    override func layout() {
+        super.layout()
+        let inset: CGFloat = 8
+        let avatarSize: CGFloat = 32
+        avatarView.frame = NSRect(x: inset, y: inset,
+                                  width: avatarSize, height: avatarSize)
+        let textX = inset + avatarSize + inset
+        textLabel.frame = NSRect(
+            x: textX, y: inset,
+            width: bounds.width - textX - inset,
+            height: bounds.height - inset * 2
+        )
+    }
+}</code></pre>
+</div>
+</div>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>对普通的一次性界面（设置面板、详情页、对话框）手写 <code>layout()</code>“图性能”——这既拿不到可测量的收益，又丢掉了自适应与可读性；也避免在同一个视图里对同一子视图混用约束与手动 <code>frame</code>（约束会覆盖你写的 frame，产生看似随机的错位）。手动布局是热点例外，不是默认口径。</p>
+</div>
+</div>
+
+<div class="callout why">
+<b>为什么</b>
+<p>手动 <code>layout()</code> 用几行算术换掉约束求解，在“每秒重排几十上百次”的滚动列表里能省下可观 CPU；它还有一个副产品——同一套算法可以脱离视图直接算行高，省掉一次为量高而跑的 Auto Layout pass。代价是把布局规则从声明式退回命令式：改动时要人肉推算坐标，自适应（多语言、动态字号、窗口缩放）也得自己处理。这正是“性能与可维护性的取舍”——只在测量证明值得的热点上付这个代价：先默认 Auto Layout，被数据打脸再手动。</p>
+</div>
+
+<h3>6.5 并排对照：同一组件的两种写法</h3>
+
+<p>下面把同一个“头像 + 标题 + 副标题”行组件，分别用 Auto Layout（anchors + stack）与手动 <code>layout()</code> 实现，直观对比两条路线的形态差异。</p>
+
+<div class="rule-pair">
+<div class="rule do">
+<div class="rule-head">应当（默认）：Auto Layout 版</div>
+<div class="rule-body">
+<pre><code class="language-swift">final class ProfileRowAL: NSView {
+    private let avatar = NSImageView()
+    private let title = NSTextField(labelWithString: "")
+    private let subtitle = NSTextField(labelWithString: "")
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        let textStack = NSStackView(views: [title, subtitle])
+        textStack.orientation = .vertical
+        textStack.alignment = .leading
+        textStack.spacing = 2
+
+        let row = NSStackView(views: [avatar, textStack])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 10
+        row.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(row)
+
+        NSLayoutConstraint.activate([
+            avatar.widthAnchor.constraint(equalToConstant: 32),
+            avatar.heightAnchor.constraint(equalToConstant: 32),
+            row.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            row.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            row.topAnchor.constraint(equalTo: topAnchor, constant: 8),
+            row.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
+        ])
+    }
+    required init?(coder: NSCoder) { fatalError() }
+}</code></pre>
+<p>声明式：约束描述“关系”，多语言 / 缩放自适应，插删中间视图只改 stack。适合绝大多数界面。</p>
+</div>
+</div>
+
+<div class="rule dont">
+<div class="rule-head">仅热点例外：手动 layout() 版</div>
+<div class="rule-body">
+<pre><code class="language-swift">final class ProfileRowManual: NSView {
+    private let avatar = NSImageView()
+    private let title = NSTextField(labelWithString: "")
+    private let subtitle = NSTextField(labelWithString: "")
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        // 子视图 frame 由 layout() 算：保留翻译默认、不加约束
+        [avatar, title, subtitle].forEach(addSubview)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    override var isFlipped: Bool { true }
+
+    override func layout() {
+        super.layout()
+        let pad: CGFloat = 8, a: CGFloat = 32
+        avatar.frame = NSRect(x: pad, y: pad, width: a, height: a)
+        let tx = pad + a + 10
+        let tw = bounds.width - tx - pad
+        title.frame    = NSRect(x: tx, y: pad,      width: tw, height: 18)
+        subtitle.frame = NSRect(x: tx, y: pad + 20, width: tw, height: 16)
+    }
+}</code></pre>
+<p>命令式：坐标全靠算术，改布局要重算公式，自适应自理。仅在测量确认的高频重排热点上启用。</p>
+</div>
+</div>
+</div>
+
+<table class="cmp">
+<thead><tr><th>维度</th><th>Auto Layout 版</th><th>手动 layout() 版</th></tr></thead>
+<tbody>
+<tr><td>表达方式</td><td>声明关系（约束）</td><td>命令式算 frame</td></tr>
+<tr><td>自适应</td><td>多语言 / 缩放 / 动态字号自动</td><td>全部自己处理</td></tr>
+<tr><td>改动成本</td><td>改约束 / 调 stack</td><td>重算坐标公式</td></tr>
+<tr><td>每次布局开销</td><td>约束求解</td><td>几行算术</td></tr>
+<tr><td>适用场景</td><td>默认——绝大多数界面</td><td>测量确认的高频重排热点</td></tr>
+</tbody>
+</table>
+
+<div class="callout essence">
+<b>本质</b>
+<p>视图构建规范的核心只有一句：<b>让视图“笨”，让布局“默认声明式、例外才命令式”。</b>视图不含业务逻辑（只有数据入口 + 布局），布局默认交给 Auto Layout 换取可评审与自适应，只在测量证明的性能热点上，才用手动 <code>layout()</code> 的几行算术换回帧率。程序化建树、lazy 子视图、批量激活、优先 anchor 与 stack——这些规范都是同一目标的分解：让每一次改动在 diff 里都有清晰的语义边界。</p>
+</div>
+
+<div class="qa">
+<p class="q">思考题：你在实现一个聊天记录列表。每个消息 cell 里有：左侧固定 32×32 头像、右侧一段长度不定的富文本气泡（宽度随窗口变化、高度随内容换行变化），气泡下方还有一行时间戳。列表滚动时 cell 会被大量复用与重排。请给出你的布局方案：哪些部分用 Auto Layout、哪些下沉到手动 <code>layout()</code>、如何决策，并说明 <code>isFlipped</code> / <code>intrinsicContentSize</code> / 抗压优先级在其中各自的角色。</p>
+<details><summary>查看答案</summary>
+<div class="a">
+<p><b>先默认、后测量。</b>第一版整个 cell 用 Auto Layout 实现：头像用固定 32×32 宽高约束；气泡宽度用 leading/trailing 约束贴住头像右侧与 cell 右边（宽度随窗口自适应）；气泡高度由富文本视图的 <code>intrinsicContentSize</code> 提供（换行后天然变高，容器无需算高）；时间戳用 <code>topAnchor</code> 接在气泡下方，并把 cell 的 <code>bottomAnchor</code> 约到时间戳，让 cell 高度由内容撑出。此时不写任何 <code>layout()</code>，也不必重写 <code>isFlipped</code>。</p>
+<p><b>再用 Instruments 测滚动帧率 / 布局耗时。</b>若快速滚动时约束求解成为瓶颈（大量 cell 反复复用、每次都重解方程），才把这个 cell 下沉为手动 <code>layout()</code>：因为它同时满足“高频重排 + 规则简单（头像固定、气泡填满剩余宽度、时间戳固定行高）”。此时在 <code>layout()</code> 里按公式摆放：头像固定矩形，气泡宽 = <code>bounds.width - 头像右缘 - 内边距</code>、高 = 对富文本按该宽度测得的换行高度，时间戳接在气泡底下——这套“按宽度测高”的算法还能脱离视图复用给行高计算。</p>
+<p><b>三个概念的角色：</b></p>
+<p>· <code>isFlipped = true</code>：<b>只在手动布局版</b>启用，把原点放到左上，“头像 y=8、时间戳 y=气泡底+间距”这类算术才符合自上而下的直觉，避免用 <code>bounds.height</code> 反向换算；Auto Layout 版不需要它。</p>
+<p>· <code>intrinsicContentSize</code>：在 Auto Layout 版里，它是气泡 / 时间戳把“内容天然高度”上报给约束系统的通道，让 cell 高度自撑；下沉到手动布局后，改由 <code>layout()</code> 主动向富文本视图“按宽度测高”，不再依赖内在尺寸驱动布局（但仍可用它算单行文本的行高）。</p>
+<p>· 抗压优先级：即便在 Auto Layout 版里，也要保证头像（固定尺寸）比气泡有更高的水平抗压优先级——空间不足时先压缩/截断气泡文本，绝不压扁头像；否则窄窗口下会看到头像被挤变形。</p>
+<p>结论：默认 Auto Layout 拿可读性与自适应，只有在“聊天列表滚动”这个被测量证实的热点上，才为这一种 cell 付出手动布局的可维护性代价——正是本章“视图笨、布局默认声明式、手动需理由且需测量”的落地。</p>
+</div>
+</details>
+</div>
+</section>
+
+<section class="chapter" id="ch-7">
+<h2 data-n="7">状态与数据流：无 SwiftUI 的绑定</h2>
+<p class="lead">SwiftUI 用 <code>@State</code> / <code>@Binding</code> / <code>@Observable</code> 把“状态变了→视图重画”自动缝合起来，代价是把这套依赖追踪塞进了框架内部。纯 AppKit 没有这层魔法：状态怎么从模型流到界面、动作怎么从控件回到控制器，全部要你自己接线。本章不教这些机制的用法（你已会用），而是把它们编成一套<strong>工程规范</strong>——什么时候用哪个、怎么接线才不漏内存、状态放在哪一层才可测。核心只有一句：<strong>选最窄够用的机制，让数据向下、动作向上，别缠成双向。</strong></p>
+
+<div class="termbox">
+<div class="term"><b class="term-name">单向数据流（Unidirectional Data Flow）</b><span class="term-def">状态从“真相源”单方向流向视图；视图不直接改状态，而是把用户意图作为“动作”上报给持有真相源的一层，由它改状态后再向下刷新。AppKit 无法强制这点，是团队自律出来的准单向流。</span></div>
+<div class="term"><b class="term-name">真相源（Source of Truth）</b><span class="term-def">某项状态“唯一权威的存放处”。同一份状态只能有一个真相源；视图上的显示是它的<em>投影</em>，不是第二份副本。</span></div>
+<div class="term"><b class="term-name">View Model</b><span class="term-def">一个普通 <code>class</code>（非 UI 类型），把“视图该显示什么”以可读属性 + 变更通知的形式对外暴露，并把“用户做了什么”接收进来转成模型操作。它不 import AppKit，不持有任何 <code>NSView</code>。</span></div>
+<div class="term"><b class="term-name">绑定（Binding）</b><span class="term-def">此处指“状态变更自动驱动视图刷新”的接线关系。SwiftUI 由框架建立；纯 AppKit 由你用 Combine / KVO / 回调 / 通知手工建立，并需手工拆除。</span></div>
+</div>
+
+<h3>7.1 机制巡礼：五种接线，各有其位</h3>
+<p>AppKit 的“绑定”不是一个东西，而是一组各有归属的机制。选型的第一原则是<strong>基数（一对一 / 一对多）</strong>与<strong>方向（是否需要回话）</strong>。先把它们摆到同一张表上。</p>
+
+<table class="cmp">
+<thead><tr><th>机制</th><th>基数</th><th>能否回话/决策</th><th>典型用途</th><th>生命周期</th></tr></thead>
+<tbody>
+<tr><td>target-action</td><td>1 对 1</td><td>否（单向触发）</td><td>控件 → 控制器的动作</td><td>随 target 存活；<code>weak</code> target</td></tr>
+<tr><td>delegate</td><td>1 对 1</td><td>是（可返回值、可拦截、可决策）</td><td>“该不该/怎么做”的协作回调</td><td><code>weak var delegate</code></td></tr>
+<tr><td>NotificationCenter</td><td>1 对多</td><td>否（广播，发送方不知谁在听）</td><td>模型变更向全应用扩散</td><td>token / 观察者要在 <code>deinit</code> 前移除</td></tr>
+<tr><td>KVO</td><td>1 对多</td><td>否（观察属性变化）</td><td>观察系统对象的属性</td><td><code>NSKeyValueObservation</code> 存活即观察</td></tr>
+<tr><td>Combine（<code>@Published</code>）</td><td>1 对多</td><td>否（数据流管道）</td><td>View Model → VC 的状态推送</td><td><code>AnyCancellable</code> 存入 <code>Set</code></td></tr>
+<tr><td>闭包回调</td><td>1 对 1</td><td>是（可返回值）</td><td>一次性/局部的完成回调</td><td>闭包捕获，注意 <code>[weak self]</code></td></tr>
+</tbody>
+</table>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>按“最窄够用”自上而下选：只有<strong>一个</strong>接收方且需要它<strong>回话/决策</strong> → delegate；一个接收方只需被<strong>触发</strong> → target-action 或闭包；<strong>多个</strong>互不相识的接收方需要知道“模型变了” → NotificationCenter；需要把一串<strong>状态值</strong>持续推给视图 → Combine <code>@Published</code>。</p>
+</div>
+</div>
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>为“一个控制器要知道一件事”而广播一条 Notification；也别为“全应用要知道模型变了”硬塞进一个 delegate。基数选错，要么全局耦合（该窄的用广播），要么接线爆炸（该广播的用点对点）。</p>
+</div>
+</div>
+
+<div class="ref"><b class="ref-proj">NetNewsWire</b><span class="ref-note">这是一个成熟、开源、Mac 端纯 AppKit 的 RSS 阅读器，常被当作“大型 Cocoa 应用如何分层”的参照：数据模型、数据库、账号同步、UI 自下而上分层，UI 只依赖下层而下层不反向依赖。本章把它当“纯 AppKit 工程组织”的通行样例引用，不逐行考据其内部接线。</span></div>
+<div class="ref"><b class="ref-proj">AppKit 自身</b><span class="ref-note">delegate 与 target-action 是框架的原生骨架：<code>NSTableView</code> 的 <code>delegate</code>/<code>dataSource</code>、<code>NSControl</code> 的 target-action、<code>NSWindowDelegate</code> 全是这套。写自定义组件时沿用同一套模式，读者/协作者零学习成本。</span></div>
+
+<h4>target-action：控件→控制器的一对一动作</h4>
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>用 <code>#selector</code> 把控件动作连到<strong>持有该控件的控制器</strong>；控件对 target 是弱引用，方向严格“控件 → 控制器”，不回传数据。</p>
+<pre><code class="language-swift">// VC 内：程序化连接，无 xib
+private lazy var refreshButton: NSButton = {
+    let b = NSButton(title: "刷新", target: self, action: #selector(didTapRefresh))
+    b.translatesAutoresizingMaskIntoConstraints = false
+    return b
+}()
+
+@objc private func didTapRefresh() {
+    // 动作向上：把“用户想刷新”交给 view model，不在这里改模型细节
+    viewModel.refresh()
+}</code></pre>
+</div>
+</div>
+
+<h4>delegate：一对一、可回话、可拦截</h4>
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>协议约束 <code>AnyObject</code>，delegate 属性用 <code>weak</code>；方法命名把“发起者”作为第一参数（AppKit 惯例）。delegate 用于“需要对方决策/返回值/拦截”的协作，而非单纯通知。</p>
+<pre><code class="language-swift">// 约束 AnyObject 才能用 weak，避免子→父的强引用环
+protocol ComposerViewControllerDelegate: AnyObject {
+    // 可决策：返回 false 则拦截发送
+    func composer(_ vc: ComposerViewController,
+                  shouldSend text: String) -&gt; Bool
+    func composer(_ vc: ComposerViewController, didSend text: String)
+}
+
+final class ComposerViewController: NSViewController {
+    weak var delegate: ComposerViewControllerDelegate?  // 必须 weak
+
+    @objc private func send() {
+        let text = textField.stringValue
+        guard delegate?.composer(self, shouldSend: text) ?? true else { return }
+        delegate?.composer(self, didSend: text)
+    }
+}</code></pre>
+</div>
+</div>
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p><code>protocol Foo: AnyObject</code> 却把 delegate 声明成 <code>var delegate: FooDelegate?</code>（强引用）。父持子、子的 delegate 又指回父，即成引用环，两者都不释放。</p>
+</div>
+</div>
+
+<h4>NotificationCenter：一对多的模型变更广播</h4>
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>广播<strong>模型级</strong>事件（“某文章已读”“账号同步完成”），载荷放 <code>userInfo</code> 或 <code>object</code>；用<strong>强类型的静态 <code>Notification.Name</code></strong>，别到处写字符串字面量。观察端在 <code>deinit</code> 前移除，或用返回 token 的块式 API 并持有 token。</p>
+<pre><code class="language-swift">extension Notification.Name {
+    static let articleReadStateDidChange = Notification.Name("articleReadStateDidChange")
+}
+
+// 发送方（模型层）：不知道也不关心谁在听
+NotificationCenter.default.post(
+    name: .articleReadStateDidChange, object: article)
+
+// 观察方（block API 返回 token，存起来，deinit 时移除）
+private var observers: [NSObjectProtocol] = []
+
+func startObserving() {
+    let token = NotificationCenter.default.addObserver(
+        forName: .articleReadStateDidChange, object: nil, queue: .main
+    ) { [weak self] note in                    // 必须 weak，且指定 .main 队列
+        guard let self, let article = note.object as? Article else { return }
+        self.reloadRow(for: article)
+    }
+    observers.append(token)
+}
+
+deinit { observers.forEach { NotificationCenter.default.removeObserver($0) } }</code></pre>
+</div>
+</div>
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>用 Notification 做“点对点指令”（发一条通知只为让某一个已知控制器做某事）——那是 delegate/闭包的活。广播的语义是“事情发生了，感兴趣的自己响应”，不是“我命令某人做某事”。</p>
+</div>
+</div>
+
+<h4>KVO：观察属性</h4>
+<p>KVO 主要用于观察<strong>系统对象</strong>那些你无法改成 <code>@Published</code> 的属性（如进度、滚动位置）。持有 <code>NSKeyValueObservation</code>，它释放即停止观察。自家模型优先用 Combine，而非给属性打 <code>@objc dynamic</code> 硬上 KVO。</p>
+<pre><code class="language-swift">private var progressObservation: NSKeyValueObservation?
+
+// Foundation 的 Progress 是系统对象，用 KVO 观察最自然
+progressObservation = progress.observe(\.fractionCompleted, options: [.new]) {
+    [weak self] _, change in
+    guard let self, let value = change.newValue else { return }
+    // observe 回调不保证在主线程，碰控件前切回主线程
+    DispatchQueue.main.async { self.progressBar.doubleValue = value }
+}</code></pre>
+
+<h3>7.2 用 Combine 做 View Model：现代 AppKit 的“绑定”</h3>
+<p>没有 SwiftUI 的声明式绑定，最接近它的替代是：<strong>View Model 用 <code>@Published</code> 暴露“视图该显示什么”，VC 在 <code>viewDidLoad</code> 里 <code>sink</code> 订阅并刷新视图。</strong>这就是纯 AppKit 项目里“数据向下”的主动脉。</p>
+
+<div class="ref"><b class="ref-proj">现代 AppKit + Combine 项目通行做法</b><span class="ref-note">当前主流做法是：View Model 是不 import AppKit 的普通 <code>class</code>，把展示状态做成 <code>@Published</code>；VC 订阅这些发布者驱动界面。它继承了 KVO/通知的“状态推送”思路，但类型安全、可组合、生命周期由 <code>AnyCancellable</code> 显式管理，比手写观察者样板更少出错。</span></div>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>View Model 暴露的是<strong>已加工好的展示值</strong>（标题字符串、是否可点、格式化后的时间），不是原始模型。VC 只负责把值搬进控件，不做业务判断。</p>
+<pre><code class="language-swift">import Combine   // 注意：不 import AppKit —— View Model 不碰视图
+
+final class HeaderViewModel {
+    // 对外只暴露“视图该显示什么”，全是加工好的展示值
+    @Published private(set) var title: String = ""
+    @Published private(set) var isRefreshEnabled: Bool = true
+
+    private let feed: Feed
+
+    init(feed: Feed) {
+        self.feed = feed
+        self.title = feed.displayTitle
+    }
+
+    // 动作向上：VC 把用户意图交给这里，由它改模型 + 更新 @Published
+    @MainActor
+    func refresh() {
+        isRefreshEnabled = false
+        Task { @MainActor in
+            try? await feed.reload()
+            title = feed.displayTitle
+            isRefreshEnabled = true
+        }
+    }
+}</code></pre>
+</div>
+</div>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>VC 在 <code>viewDidLoad</code> 里建立订阅：每条 <code>sink</code> 都用 <code>[weak self]</code>，把返回的 <code>AnyCancellable</code> 存进 <code>Set&lt;AnyCancellable&gt;</code>，让订阅生命周期跟 VC 绑定；UI 更新确保在主线程（<code>@MainActor</code> 或 <code>.receive(on: DispatchQueue.main)</code>）。</p>
+<pre><code class="language-swift">@MainActor
+final class HeaderViewController: NSViewController {
+    private let viewModel: HeaderViewModel
+    private var cancellables = Set&lt;AnyCancellable&gt;()   // 随 VC 释放而清空
+
+    private let titleLabel = NSTextField(labelWithString: "")
+    private lazy var refreshButton = NSButton(
+        title: "刷新", target: self, action: #selector(didTapRefresh))
+
+    init(viewModel: HeaderViewModel) {
+        self.viewModel = viewModel
+        super.init(nibName: nil, bundle: nil)   // 程序化：无 xib
+    }
+    required init?(coder: NSCoder) { fatalError("不使用 Storyboard") }
+
+    override func loadView() {
+        let stack = NSStackView(views: [titleLabel, refreshButton])
+        stack.orientation = .horizontal
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        let container = NSView()
+        container.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -12),
+            stack.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+        ])
+        view = container
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        bind()
+    }
+
+    // 数据向下：把 @Published 的值 sink 进控件
+    private func bind() {
+        viewModel.$title
+            .removeDuplicates()
+            .sink { [weak self] title in            // 必须 weak，防止 VM→VC→VM 环
+                self?.titleLabel.stringValue = title
+            }
+            .store(in: &amp;cancellables)               // 存入 Set，绑定生命周期
+
+        viewModel.$isRefreshEnabled
+            .sink { [weak self] enabled in self?.refreshButton.isEnabled = enabled }
+            .store(in: &amp;cancellables)
+    }
+
+    // 动作向上
+    @objc private func didTapRefresh() { viewModel.refresh() }
+}</code></pre>
+</div>
+</div>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>忘记 <code>.store(in:)</code>——返回的 <code>AnyCancellable</code> 一被丢弃订阅当场取消，界面“一次都不刷新”；或 <code>sink</code> 里写 <code>self.</code> 强捕获——VC 持有 <code>cancellables</code>、<code>cancellables</code> 持有闭包、闭包又强持 VC，形成永不释放的环。</p>
+</div>
+</div>
+
+<div class="callout warn"><b>线程与时序</b><p>两点容易踩：其一，<code>@Published</code> <strong>在哪个线程写属性就在哪个线程发布</strong>——若 View Model 可能在后台改状态，务必在管道里 <code>.receive(on: DispatchQueue.main)</code> 再 <code>sink</code>，否则会在非主线程碰 <code>NSView</code>，AppKit 对此不保证安全（上例用 <code>@MainActor</code> + <code>Task { @MainActor }</code> 从源头保证了主线程）。其二，<code>@Published</code> 是 <strong><code>willSet</code> 语义</strong>——发布时机在属性<em>被赋新值之前</em>，所以永远用 <code>sink</code> 闭包收到的<strong>参数值</strong>，别在闭包里回读那个属性（同步回读拿到的是旧值）。</p></div>
+
+<h3>7.3 方向规范：数据向下、动作向上，拒绝双向纠缠</h3>
+<p>把上面的机制拼起来，得到一条准单向流：<strong>模型/VM → VC → 控件</strong>是数据下行（<code>@Published</code>/通知/KVO 推送）；<strong>控件 → VC → VM/模型</strong>是动作上行（target-action/delegate/闭包上报意图）。VC 是这两条流的交汇点，但它<strong>只搬运，不判断</strong>。</p>
+
+<div class="rule-pair">
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>用户操作 → VC 调 <code>viewModel.someAction()</code> → VM 改模型并更新 <code>@Published</code> → 管道推回 VC → VC 刷新控件。一个闭环走完，状态只有 VM 一处能改。</p>
+<pre><code class="language-swift">@objc private func toggleRead() {
+    viewModel.toggleReadState()   // 只上报意图
+}
+// 刷新一律走订阅，不在这里直接改 label</code></pre>
+</div>
+</div>
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>点击后 VC 既改控件又改模型（两处真相），或让 VM 反过来持有 <code>NSView</code> 直接 <code>label.stringValue = ...</code>。双向写会让“当前值到底是谁说了算”不可知，竞态、重入、无限刷新随之而来。</p>
+<pre><code class="language-swift">// 反例：VC 自作主张改视图，又通知模型 —— 两条真相
+@objc private func toggleRead() {
+    badge.isHidden.toggle()            // 直接改视图
+    article.isRead = !article.isRead   // 又改模型
+}</code></pre>
+</div>
+</div>
+</div>
+
+<div class="callout why"><b>为什么</b><p>把机制约束成“最窄够用 + 单向”换来三件事。<strong>归属清晰</strong>：任一状态只有一个真相源、一条改它的路径，排查“它为什么变了”只需看那一处。<strong>防循环引用</strong>：delegate <code>weak</code>、<code>sink</code> 用 <code>[weak self]</code>、通知 token 在 <code>deinit</code> 移除——每条下行边都可断开，VC 能干净释放（AppKit 无 GC，环即泄漏）。<strong>可测试</strong>：View Model 不 import AppKit，测试直接改输入、断言 <code>@Published</code> 的输出，无需起窗口。反过来，双向绑定 + 广播满天飞的代码，改一个状态可能触发链式回调、跨帧重入，既难查也难测。</p></div>
+
+<h3>7.4 状态放在哪一层</h3>
+<p>“绑定”接线之前先问：这份状态的真相源该在哪。规范是<strong>放在“所有读它的人”共享的最低作用域</strong>——放高了造成无关方耦合，放低了逼你在同级间横向同步。</p>
+<table class="cmp">
+<thead><tr><th>状态范围</th><th>真相源归属</th><th>下行机制</th></tr></thead>
+<tbody>
+<tr><td>整个进程/多窗口共享</td><td>App 级单例/容器（如设置、账号）</td><td>NotificationCenter 广播，或共享 <code>@Published</code></td></tr>
+<tr><td>单个窗口的选中/导航</td><td>WindowController 持有的选择模型</td><td>delegate / 闭包给 detail 侧</td></tr>
+<tr><td>单个视图控制器的展示状态</td><td>该 VC 的 View Model</td><td>VM 的 <code>@Published</code> → 本 VC <code>sink</code></td></tr>
+<tr><td>纯视图内部的临时 UI 状态</td><td>VC 私有存储属性</td><td>无需下行机制，直接改控件即可</td></tr>
+</tbody>
+</table>
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>把只有一个 VC 用的临时 UI 状态（如“搜索框是否展开”）做成模型字段或走通知广播出去。作用域抬高只会引来无关订阅者和多余的接线。</p>
+</div>
+</div>
+
+<div class="callout essence"><b>本质</b><p>SwiftUI 的绑定是把“依赖追踪 + 拆线”托管给了框架；纯 AppKit 只是把这两件事交回你手上。所以规范的全部重量落在两点：<strong>接线时选对基数与方向</strong>（一对一/一对多、要不要回话、数据下行/动作上行），<strong>拆线时管好生命周期</strong>（<code>weak</code>、<code>AnyCancellable</code> 入 <code>Set</code>、通知 token 在 <code>deinit</code> 移除）。做到这两点，你就用 target-action / delegate / 通知 / Combine 手工搭出了一套<em>可控、可测、不漏</em>的准单向数据流——它比 SwiftUI 更啰嗦，但边界和归属永远是显式的。</p></div>
+
+<div class="qa">
+<p class="q">思考题：一个窗口里，主列表选中某文章后详情面板要显示它；同时用户在详情里把文章标记为已读，主列表的那一行未读圆点要即时消失，侧边栏的“未读计数”也要更新。请为这三处数据流分别选机制并说明方向，同时指出真相源应放在哪、如何避免引用环。</p>
+<details><summary>查看答案</summary>
+<div class="a">
+<p>这是一道“同一份变更、多种基数”的综合题，要拆成三条独立的流：</p>
+<p><strong>(1) 列表选中 → 详情显示（窗口内一对一、需传递选中对象）。</strong>真相源是 WindowController 持有的“当前选中”状态。列表 VC 通过 <code>NSTableViewDelegate</code> 的 <code>tableViewSelectionDidChange(_:)</code> 上报选中行，WindowController 更新选中模型，再通过 <strong>delegate 或闭包</strong>把选中的 <code>Article</code> 交给详情 VC（一对一、方向明确）。不用通知——接收方唯一且已知。</p>
+<p><strong>(2) 详情内标记已读 → 改模型（动作上行）。</strong>详情 VC 的按钮用 <strong>target-action</strong> 触发，调 <code>viewModel.toggleRead()</code>；View Model 改 <code>article.isRead</code>（模型是这份状态的真相源），<em>不</em>由详情 VC 直接去改列表或侧边栏——那会制造第二、第三份真相。</p>
+<p><strong>(3) 已读变更 → 列表行 + 侧边栏计数即时更新（一对多、接收方互不相识）。</strong>模型改完后 <code>post(name: .articleReadStateDidChange, object: article)</code>。列表 VC 与侧边栏 VC 各自 <code>addObserver</code>：列表 <code>reloadRow(for: article)</code>，侧边栏重算未读数。这正是“模型级变更用通知广播”的经典场景——一次变更，多个互不认识的 UI 要同步。</p>
+<p><strong>真相源归属：</strong>“选中”属于窗口作用域 → WindowController；“文章已读”属于模型 → <code>Article</code>/仓库层。两者分层，互不越权。</p>
+<p><strong>避免引用环：</strong>列表/详情的 delegate 属性 <code>weak</code>（协议约束 <code>AnyObject</code>）；通知用块式 API 的 token 存进数组、<code>deinit</code> 里 <code>removeObserver</code>，闭包内 <code>[weak self]</code>；若详情用 Combine <code>sink</code> 观察选中变化，<code>[weak self]</code> + <code>.store(in: &amp;cancellables)</code>。UI 刷新全部保证在主线程（通知指定 <code>queue: .main</code> 或管道 <code>.receive(on:)</code>）。这样三条流各用最窄机制、数据下行动作上行、每条边都能断开，闭环干净且可单测（对 View Model 改输入断言输出即可）。</p>
+</div>
+</details>
+</div>
+</section>
+
+<section class="chapter" id="ch-8">
+<h2 data-n="8">列表与数据源：TableView / Outline / Diffable</h2>
+<p class="lead">列表是桌面应用的骨架：邮件、RSS、聊天、文件树，几乎都是 <code>NSTableView</code> 或 <code>NSOutlineView</code> 的变体。本章把列表类 UI 的工程规范固化下来——dataSource 与 delegate 的职责边界、一律 view-based、复用标识符常量化、把行内容建模成值（cell view model），以及在 macOS 11+ 用 <code>NSTableViewDiffableDataSource</code> 的快照替代手工 <code>reloadData</code>/<code>insertRows</code>。目标是：安全可动画的更新、可预测的性能、更少的样板与越界 bug。</p>
+
+<div class="termbox">
+<div class="term"><b class="term-name">view-based table</b><span class="term-def">每一行由一个 <code>NSView</code>（通常是 <code>NSTableCellView</code>）承载的表格模式。与之相对的是古老的 cell-based（<code>NSCell</code> 直接绘制）。现代 AppKit 一律用 view-based。</span></div>
+<div class="term"><b class="term-name">dataSource</b><span class="term-def">回答“有多少行 / 这一行对应哪个数据”的对象。它是数据的权威来源，不涉及视觉。</span></div>
+<div class="term"><b class="term-name">delegate</b><span class="term-def">回答“这一行长什么样 / 行高多少 / 选中后怎么办”的对象。它负责视觉与交互，不持有数据真相。</span></div>
+<div class="term"><b class="term-name">diffable data source</b><span class="term-def"><code>NSTableViewDiffableDataSource</code>（macOS 11+）。你提交一份 <em>snapshot</em>（区/项标识符的有序集合），框架自动算出增删移并做动画，无需手写索引更新。</span></div>
+<div class="term"><b class="term-name">snapshot（快照）</b><span class="term-def">某一时刻列表内容的声明式描述：哪些 section、每个 section 里哪些 item（均以 <code>Hashable</code> 标识符表示）。<code>apply(_:)</code> 用它替换当前状态。<code>NSDiffableDataSourceSnapshot</code> 是同一个泛型结构，被 table 与 collection 两种 diffable 数据源共用。</span></div>
+<div class="term"><b class="term-name">cell view model</b><span class="term-def">把“这一行要显示什么”建模成一个值类型（<code>struct</code>）；cell 只做“把 view model 画上去”，不反向查询全局状态。</span></div>
+</div>
+
+<h3>8.1 职责划分：dataSource 管数据，delegate 管样子</h3>
+
+<p>view-based table 的两个协议分工是刚性的：<code>NSTableViewDataSource</code> 回答“数量”，<code>NSTableViewDelegate</code> 回答“行视图 / 行高 / 选择”。把它们搞混是大型项目里最常见的腐化起点——一旦 delegate 里开始持有并改写数据，你就失去了单一数据真相。</p>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>让 dataSource 只回答“有多少行”（以及每行对应哪个数据），让 delegate 通过 <code>tableView(_:viewFor:row:)</code> 返回复用后的行视图、通过 <code>tableView(_:heightOfRow:)</code>（或固定 <code>rowHeight</code>）回答行高、通过 <code>tableViewSelectionDidChange(_:)</code> 处理选择。两者读取的是同一份数据快照。</p>
+</div>
+</div>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>在 delegate 的 <code>viewFor</code> 里修改数据数组、触发网络请求、或从 cell 反向回写 model。<code>viewFor</code> 会在滚动时被高频调用且顺序不可预测，任何副作用都会变成竞态与卡顿。</p>
+</div>
+</div>
+
+<div class="ref"><b class="ref-proj">NetNewsWire（timeline 列表）</b><span class="ref-note">这一类成熟的开源 Mac 阅读器，其时间线通常是 view-based <code>NSTableView</code>：数据源只回答条目数，delegate 负责把每行 cell 配置成一篇文章的标题/摘要/日期。数据真相在 model 层，cell 是它的只读投影——这是纯 AppKit 列表的通行结构。</span></div>
+
+<h3>8.2 一律 view-based，禁用 cell-based</h3>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>程序化构建表格时，行视图统一继承 <code>NSTableCellView</code>，并通过 <code>makeView(withIdentifier:owner:)</code> 复用。<code>NSTableView</code> 在你实现 <code>tableView(_:viewFor:row:)</code> 时即以 view-based 模式工作，不需要额外开关。</p>
+</div>
+</div>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>使用 cell-based（<code>NSCell</code> 子类 + <code>dataCell</code>）。它无法承载 Auto Layout 子视图、无法直接响应控件事件、可访问性支持差，是 10.7 之前的遗产。</p>
+</div>
+</div>
+
+<div class="callout why"><b>为什么</b><p>view-based 让每行是一个真正的 <code>NSView</code> 层级：可以放按钮/图片/多行文本、可以用 Auto Layout、可以被 VoiceOver 正确朗读、可以做动画。cell-based 只是一次性绘制，任何交互都要手动命中测试，早已不该出现在新项目里。</p></div>
+
+<h3>8.3 复用标识符：集中成常量，禁止散落字符串</h3>
+
+<p><code>makeView(withIdentifier:owner:)</code> 靠一个 <code>NSUserInterfaceItemIdentifier</code> 找回可复用视图。这个标识符如果在几十处以裸字符串出现，拼写错误只会静默返回 <code>nil</code>（表现为空白行），编译器不会报警。</p>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>把所有复用标识符集中定义为常量（<code>extension NSUserInterfaceItemIdentifier</code> 上的静态属性），注册与复用两端引用同一常量。</p>
+<pre><code class="language-swift">// 集中管理所有行视图复用标识符——拼写错误变成编译错误
+extension NSUserInterfaceItemIdentifier {
+    static let articleCell = NSUserInterfaceItemIdentifier("ArticleCell")
+    static let folderCell  = NSUserInterfaceItemIdentifier("FolderCell")
+}
+</code></pre>
+</div>
+</div>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<pre><code class="language-swift">// 裸字符串散落各处：写错一个字母 → 静默返回 nil → 空白行，无编译告警
+let v = tableView.makeView(
+    withIdentifier: NSUserInterfaceItemIdentifier("articelCell"), // typo！
+    owner: self)
+</code></pre>
+</div>
+</div>
+
+<div class="callout why"><b>为什么</b><p>标识符是 view-based 复用池的键。常量化后，注册端与取用端的键由编译器保证一致；重命名走 “Rename” 而非全局查找替换；也天然形成一份“本表有哪些 cell 类型”的清单。</p></div>
+
+<h3>8.4 cell view model：把“这一行显示什么”建成值</h3>
+
+<p>行内容应该被建模成一个值类型，cell 只负责“绑定”这个值到自己的子视图。cell 不应知道 <code>SessionManager</code>、不应读全局单例、不应在 <code>viewFor</code> 里做格式化决策——那些都提前算好，塞进 view model。</p>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>为每种行定义一个 <code>struct</code> view model，承载“已经算好的、可直接显示”的数据；cell 暴露一个 <code>configure(with:)</code> 方法完成绑定，且绑定必须是幂等的（复用时能覆盖上一次的全部状态）。</p>
+<pre><code class="language-swift">// 行的显示模型——值类型，已完成所有格式化，Hashable 便于比较是否变更
+struct ArticleRowModel: Hashable {
+    let id: String            // 稳定身份，用作 diffable 的 item 标识符
+    let title: String
+    let summary: String
+    let dateText: String      // 已格式化好的日期，cell 不再做 DateFormatter
+    let isUnread: Bool
+}
+
+final class ArticleCellView: NSTableCellView {
+    private let titleLabel   = NSTextField(labelWithString: "")
+    private let summaryLabel = NSTextField(labelWithString: "")
+    private let dateLabel    = NSTextField(labelWithString: "")
+    private let unreadDot    = NSView()
+
+    // 绑定必须幂等：复用时把每个字段都写一遍，不依赖上一次残留
+    func configure(with model: ArticleRowModel) {
+        titleLabel.stringValue   = model.title
+        summaryLabel.stringValue = model.summary
+        dateLabel.stringValue    = model.dateText
+        unreadDot.isHidden       = !model.isUnread
+        titleLabel.font = model.isUnread
+            ? .boldSystemFont(ofSize: 13)
+            : .systemFont(ofSize: 13)
+    }
+}
+</code></pre>
+</div>
+</div>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<pre><code class="language-swift">// cell 直接持有领域对象并临场做格式化 + 读全局状态：
+// 1) 滚动时反复 new DateFormatter，性能差
+// 2) cell 与领域层耦合，无法单测、无法复用
+func configure(with article: Article) {
+    let df = DateFormatter()           // 热点路径里创建，昂贵
+    df.dateStyle = .medium
+    dateLabel.stringValue = df.string(from: article.publishedDate)
+    unreadDot.isHidden = GlobalStore.shared.readState.isRead(article.id) // 反向查全局
+}
+</code></pre>
+</div>
+</div>
+
+<div class="callout why"><b>为什么</b><p>view model 把“决定显示什么”（业务，可测）与“把它画出来”（视图，无逻辑）切开。cell 变成纯函数式的投影：给同样的 view model 就得同样的样子。这既是可测性的前提，也是稳妥 diff 的前提——因为 view model 是 <code>Hashable</code> 值，你可以据其判断“这一行内容变了没有”，而把身份留给独立的 <code>id</code>（见 8.5）。</p></div>
+
+<h3>8.5 用 diffable data source 做动态更新</h3>
+
+<p>手工维护 <code>insertRows</code>/<code>removeRows</code>/<code>moveRow</code> 与索引，是列表代码里越界崩溃与“行数与实际不符”异常的重灾区（<code>NSInternalInconsistencyException</code>）。macOS 11 起，<code>NSTableViewDiffableDataSource</code> 让你提交一份 snapshot，框架自动算差异并动画。</p>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>动态数据（会增删改移的列表）一律用 <code>NSTableViewDiffableDataSource</code>。以稳定的 <code>Hashable</code> 标识符作为 item 类型；更新时构造新 snapshot 并 <code>apply(_:animatingDifferences:)</code>。</p>
+</div>
+</div>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>对动态数据用一把梭 <code>reloadData()</code>（丢失选择、丢失滚动位置、无动画、闪烁），或手写 <code>beginUpdates</code>/<code>insertRows</code>/<code>removeRows</code> 去追踪索引（极易与实际行数不一致而崩溃）。</p>
+</div>
+</div>
+
+<p>标识符的选择是 diffable 的成败关键：</p>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>把“内容会变”的整个 model 值当 item 标识符。若它的 <code>hashValue</code>/相等性随内容（如已读状态）变化，框架会把“编辑过的同一行”当成“删旧插新”，动画错乱且丢选择。</p>
+</div>
+</div>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>用<strong>身份</strong>作 item 标识符（稳定的 <code>id</code>，如 <code>String</code>/<code>UUID</code>）。内容变化通过对该标识符 <code>reloadItems([id])</code>（macOS 11+）表达；若最低目标在 macOS 13+，可换用更省的 <code>reconfigureItems([id])</code>（原地重跑 cellProvider，不重建视图）。二者都不改变 item 集合，因此不触发增删动画，也不丢选择。</p>
+</div>
+</div>
+
+<div class="callout warn"><b>注意</b><p><code>reloadItems</code> 与 <code>reconfigureItems</code> 都作用在 snapshot 上，随 <code>apply(_:)</code> 生效。它们对 <code>animatingDifferences</code> 的行为在不同系统版本上有过回归（例如某些 macOS 版本上带动画 apply 未刷新可见 cell）。规范做法：把它当作可能失灵的优化，对“内容变更”这类无需动画的更新，用 <code>animatingDifferences: false</code> 提交，既稳妥又无闪烁；只有真正的增删移才需要动画。</p></div>
+
+<h4>完整示例：配置一个 diffable data source + 绑定 NSTableCellView</h4>
+
+<pre><code class="language-swift">import AppKit
+
+@MainActor
+final class ArticleListViewController: NSViewController {
+
+    // section 只有一个；item 用稳定的字符串 id 做标识符
+    private enum Section { case main }
+
+    private let scrollView = NSScrollView()
+    private let tableView  = NSTableView()
+
+    // 领域数据 → 由它派生 view model；标识符（id）与内容（model）分离
+    private var models: [String: ArticleRowModel] = [:]
+
+    // 选择变更向上回调；用存储属性，绝不把 cell / 行号传出去
+    var onSelect: ((String) -&gt; Void)?
+
+    // diffable：SectionIdentifierType = Section, ItemIdentifierType = String(id)
+    private lazy var dataSource = makeDataSource()
+
+    override func loadView() {
+        // 程序化搭建：不用 xib / Storyboard
+        view = NSView()
+
+        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("main"))
+        column.resizingMask = .autoresizingMask
+        tableView.addTableColumn(column)
+        tableView.headerView = nil
+        tableView.rowHeight = 64                 // 定高：滚动性能最佳（见 8.7）
+        tableView.usesAutomaticRowHeights = false
+        tableView.style = .inset
+        tableView.delegate = self                // delegate 只管样子 / 选择
+        // 注意：使用 diffable 时不要再手动设置 tableView.dataSource，
+        // NSTableViewDiffableDataSource 的初始化器会接管它。
+
+        scrollView.documentView = tableView
+        scrollView.hasVerticalScroller = true
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(scrollView)
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: view.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+    }
+
+    // MARK: - Data source
+
+    private func makeDataSource()
+        -&gt; NSTableViewDiffableDataSource&lt;Section, String&gt; {
+        // cellProvider 形参顺序固定：tableView, tableColumn, row, itemID
+        NSTableViewDiffableDataSource&lt;Section, String&gt;(tableView: tableView) {
+            [weak self] tableView, _, _, itemID in
+            let cell = tableView.makeView(
+                withIdentifier: .articleCell, owner: self)
+                as? ArticleCellView ?? Self.newCell()
+            if let model = self?.models[itemID] {
+                cell.configure(with: model)      // 幂等绑定
+            }
+            return cell
+        }
+    }
+
+    // makeView 首次返回 nil 时，程序化创建并打上复用标识符
+    private static func newCell() -&gt; ArticleCellView {
+        let cell = ArticleCellView()
+        cell.identifier = .articleCell           // 关键：写回复用池的键
+        return cell
+    }
+
+    // MARK: - 更新入口：外部只需给一份新的模型数组
+
+    func apply(_ newModels: [ArticleRowModel], animated: Bool = true) {
+        // 1) 先按“旧内容”算出哪些 id 是“身份还在、内容变了”——必须在覆盖 models 之前比。
+        let changed = newModels.filter { new in
+            guard let old = models[new.id] else { return false } // 新来的行不算“变更”
+            return old != new                                     // Hashable 值不等 = 内容变了
+        }.map(\.id)
+
+        // 2) 再覆盖内容缓存，供 cellProvider 取用
+        models = Dictionary(uniqueKeysWithValues: newModels.map { ($0.id, $0) })
+
+        // 3) 用身份（id）声明新的行集合
+        var snapshot = NSDiffableDataSourceSnapshot&lt;Section, String&gt;()
+        snapshot.appendSections([.main])
+        snapshot.appendItems(newModels.map(\.id), toSection: .main)
+
+        // 4) 对“身份未变、内容变了”的行重绑（不触发增删动画、不丢选择）
+        if !changed.isEmpty {
+            snapshot.reloadItems(changed)        // macOS 13+ 可换 reconfigureItems
+        }
+
+        dataSource.apply(snapshot, animatingDifferences: animated)
+    }
+}
+
+extension ArticleListViewController: NSTableViewDelegate {
+    // 选择：pull 模型——不缓存“选中的是谁”，需要时从 selectedRow 反查标识符
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        let row = tableView.selectedRow
+        guard row &gt;= 0,
+              let id = dataSource.itemIdentifier(forRow: row) else { return }
+        onSelect?(id)                            // 只向上传稳定 id
+    }
+}
+</code></pre>
+
+<div class="callout warn"><b>关于示例里的 <code>changed</code> 计算</b><p>顺序是刚性的：<strong>先</strong>用旧 <code>models</code> 比出内容变更集合，<strong>再</strong>覆盖 <code>models</code>。若先覆盖后比较，任何行都会“等于自己”，<code>changed</code> 恒为空，标记已读之类的原地更新就不会刷新——这是手写 diff 逻辑最常见的自摆乌龙。</p></div>
+
+<div class="ref"><b class="ref-proj">Apple（现代 diffable 惯例）</b><span class="ref-note">官方在 macOS 11+ 推荐用 <code>NSTableViewDiffableDataSource</code> + snapshot 取代手工行更新；item/section 标识符须 <code>Hashable</code>，且推荐用“身份标识符”而非可变 model 值，内容变更走 <code>reloadItems</code>/<code>reconfigureItems</code>。上面的结构正是这一惯例的落地。</span></div>
+
+<h3>8.6 选择处理：pull 模型，不缓存索引</h3>
+
+<p>选择状态的权威在 <code>NSTableView</code>（<code>selectedRow</code> / <code>selectedRowIndexes</code>）身上，不要在 controller 里另存一份“当前选中的行索引”。行会因增删而位移，缓存的索引会立刻失真。</p>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>需要“选中的是谁”时，从 <code>selectedRow</code> 现查，并立即转成<strong>稳定标识符</strong>（<code>dataSource.itemIdentifier(forRow:)</code>）向上传递。程序化选择/恢复时用 <code>dataSource.row(forItemIdentifier:)</code> 把标识符换回当前行号再 <code>selectRowIndexes(_:byExtendingSelection:)</code>。</p>
+</div>
+</div>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>把 <code>selectedRow</code>（一个整型索引）存进 model 或跨层传递；也不要把 <code>NSTableCellView</code> 实例传出列表——它随时会被复用给别的行。</p>
+</div>
+</div>
+
+<div class="callout why"><b>为什么</b><p>行索引是易失的坐标，标识符是稳定的身份。diffable 更新后，同一篇文章的行号可能变了，但标识符不变。以标识符为选择的通货，增删移之后选择自然维持正确。</p></div>
+
+<h3>8.7 性能：复用 + 定高 + 热点 cell 手动布局</h3>
+
+<p>列表性能的第一原则是复用（8.2/8.3 已保证）。其次是行高策略与 cell 内部布局成本。</p>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>行高固定时用 <code>rowHeight</code>（关掉 <code>usesAutomaticRowHeights</code>），框架无需逐行测量；只有真正变高的行才用 <code>tableView(_:heightOfRow:)</code> 或自动行高，且把测量结果缓存到 view model。</p>
+</div>
+</div>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>对超长列表里的热点 cell（每屏几十行、快速滚动），如实测 Auto Layout 成为瓶颈，则在该 cell 内 override <code>layout()</code> 手动摆放子视图坐标，绕开约束求解（呼应第 6 章的“性能热点才手动 layout”）。这是局部优化，不是默认做法。</p>
+<pre><code class="language-swift">final class ArticleCellView: NSTableCellView {
+    // 定高 + 简单结构的热点行：手动布局比约束求解快一个量级
+    override func layout() {
+        super.layout()
+        let inset: CGFloat = 12
+        let dotSize: CGFloat = 8
+        unreadDot.frame = NSRect(x: inset, y: bounds.midY - dotSize / 2,
+                                 width: dotSize, height: dotSize)
+        let textX = inset + dotSize + 8
+        titleLabel.frame = NSRect(x: textX, y: bounds.height - 26,
+                                  width: bounds.width - textX - inset, height: 18)
+        summaryLabel.frame = NSRect(x: textX, y: 8,
+                                    width: bounds.width - textX - inset, height: 32)
+    }
+}
+</code></pre>
+</div>
+</div>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>默认就给每个 cell 手写 <code>layout()</code>。绝大多数列表用 Auto Layout + 定高即可流畅；手动布局牺牲可维护性，只应在 profiler（Instruments 的 <em>Time Profiler</em> / <em>Core Animation</em>）证明约束求解是瓶颈后局部使用。</p>
+</div>
+</div>
+
+<div class="ref"><b class="ref-proj">高性能列表客户端（通行做法）</b><span class="ref-note">以滚动流畅著称的桌面客户端，往往对最密集的列表 cell 采用手动布局（override 布局方法、直接算 frame）而非通用约束，以在快速滚动时把每帧的 cell 布局成本压到最低。这是“热点才手动”的典型印证——普通列表不必如此，务必以 profiler 数据为准。</span></div>
+
+<h3>8.8 NSOutlineView：同一套规范 + 层级</h3>
+
+<p><code>NSOutlineView</code> 是 <code>NSTableView</code> 的子类，上面所有规范（view-based、标识符常量、cell view model、pull 选择）原样适用，只是数据源多回答“某节点有几个子节点 / 第 i 个子节点是谁 / 是否可展开”。侧边栏源列表（source list）就是它。</p>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>树数据也建模成稳定身份的节点；展开/折叠用内建的 <code>expandItem(_:)</code> / <code>collapseItem(_:)</code>（带动画），拖放走 <code>outlineView(_:pasteboardWriterForItem:)</code> / <code>validateDrop</code> / <code>acceptDrop</code> 三件套。</p>
+</div>
+</div>
+
+<div class="callout tip"><b>提示</b><p>AppKit 侧没有为 <code>NSOutlineView</code> 提供“分层快照”这一等价物（UIKit 才有 <code>NSDiffableDataSourceSectionSnapshot</code> 表达树结构），<code>NSTableViewDiffableDataSource</code> 的快照本质是扁平的。因此对真正的树形数据，经典 <code>NSOutlineViewDataSource</code> + 手动 <code>expandItem</code> 往往比强行套 diffable 更清晰、更可控。按需选择，不要为了“统一”硬上。</p></div>
+
+<div class="callout essence"><b>本质</b><p>列表规范的核心是把三件事分离：<strong>数据真相</strong>（dataSource / model，唯一）、<strong>视觉投影</strong>（view-based cell + 幂等的 view-model 绑定，纯函数式）、<strong>更新表达</strong>（snapshot 声明“现在应该是什么”，让框架去算怎么变）。关键在于把<strong>身份</strong>（稳定 id，做标识符）与<strong>内容</strong>（Hashable 值，做重绑判据）彻底拆开。做到这三点，越界崩溃、选择丢失、滚动闪烁这三类经典 bug 就从根上消失了；复用与定高保证性能，手动布局只在被 profiler 点名时才出场。</p></div>
+
+<div class="qa">
+<p class="q">思考题：你的 timeline 列表用了 <code>NSTableViewDiffableDataSource</code>，item 标识符是文章的 <code>id: String</code>。产品需求：用户点“标记已读”后，那一行的标题从粗体变常规、左侧未读圆点消失，但<strong>不应</strong>触发删除/插入动画，也<strong>不应</strong>丢失当前选中行；同时后台每 30 秒拉取新文章插到顶部，这时要有插入动画。请说明你的 view model、标识符、以及两种更新各自怎么写，才能同时满足这两个需求？并解释若把整个 <code>ArticleRowModel</code> 当 item 标识符会错在哪。</p>
+<details><summary>查看答案</summary>
+<div class="a">
+<p><strong>标识符与 view model 的分工。</strong>item 标识符必须是<em>身份</em>——用 <code>article.id: String</code>，它在“标记已读”前后不变。而 <code>ArticleRowModel</code> 是<em>内容</em>快照（<code>title</code>/<code>isUnread</code>/…，<code>Hashable</code>），存在 controller 的 <code>models: [String: ArticleRowModel]</code> 里，供 cellProvider 按 id 取用。身份与内容分离，是同时满足两个需求的前提。</p>
+<p><strong>需求一：标记已读（内容变、身份不变、无增删动画、保留选择）。</strong>把 <code>models[id]</code> 那条替换为 <code>isUnread = false</code> 的新值，构造与当前相同 item 集合的 snapshot（appendItems 的 id 顺序不变），对该 id 调用 <code>snapshot.reloadItems([id])</code>（macOS 13+ 可用更省的 <code>reconfigureItems([id])</code>），再 <code>apply(snapshot, animatingDifferences: false)</code>。因为 item 标识符集合没有任何增删移，框架不产生行插入/删除动画，只会重新调用 cellProvider 对该行 <code>configure(with:)</code> 幂等重绑——粗体变常规、圆点隐藏。用 <code>animatingDifferences: false</code> 既避免闪烁，又绕开某些系统版本上“带动画 apply 不刷新可见 cell”的回归。选中行由标识符维系，<code>selectedRow</code> 不受影响，选择保留。</p>
+<p><strong>需求二：拉取新文章插到顶部（有插入动画）。</strong>把新文章的 <code>ArticleRowModel</code> 并入 <code>models</code>，构造新 snapshot：先 <code>appendSections([.main])</code>，再按“新文章 id 在前、旧 id 在后”的顺序 <code>appendItems</code>（或先 append 旧集合，再 <code>insertItems(_:beforeItem:)</code> 插到原首项之前）。<code>apply(animatingDifferences: true)</code> 时，因为出现了新的 item 标识符，框架自动播放插入动画，其余行平移，且已有行（含选中行）身份不变，选择依旧保留。</p>
+<p><strong>为什么不能把整个 <code>ArticleRowModel</code> 当标识符。</strong>diffable 靠标识符的 <code>Hashable</code> 身份判断“同一行还在不在”。若标识符是包含 <code>isUnread</code> 的整个值，标记已读会改变它的相等性/hashValue——框架就把它看成“旧标识符消失了、来了个新标识符”，于是对该行播放<em>删除 + 插入</em>动画（正是需求一禁止的），并且因为“旧行没了”而<strong>丢失选择</strong>。同理任何内容字段的变化都会误触发增删动画。这就是 8.5 规则“用身份而非可变 model 值作标识符、内容变更走 <code>reloadItems</code>/<code>reconfigureItems</code>”的直接后果。</p>
+</div>
+</details>
+</div>
+</section>
+
+<section class="chapter" id="ch-9">
+<h2 data-n="9">内存、并发与可测试性</h2>
+<p class="lead">前几章讲的是"如何搭起 AppKit 界面"。这一章讲的是"如何让它长期不崩、不漏、可测"。三者看似独立，实则同源：都在回答同一个问题——对象之间到底谁持有谁、谁在哪个线程跑、谁能被外部替换。本章把这三条主线收口成一组可直接落地的工程规范：引用关系用 <code>weak</code> / <code>[weak self]</code> 显式管理，UI 相关类型用 <code>@MainActor</code> 钉在主线程，业务对象通过依赖注入换成 mock 并只经公开接口驱动测试。</p>
+
+<div class="termbox">
+<div class="term"><b class="term-name">ARC（Automatic Reference Counting）</b><span class="term-def">Swift 的自动引用计数机制。每个引用类型（<code>class</code>）实例维护一个强引用计数，计数归零即释放。ARC 是编译期插入 retain/release 的静态规则，不是运行时垃圾回收，因此环形强引用（循环引用）它无法自动打破。</span></div>
+<div class="term"><b class="term-name">循环引用（retain cycle）</b><span class="term-def">两个或多个对象互相持有强引用，导致引用计数永远不归零、内存永久泄漏。AppKit 中最常见于 delegate、闭包捕获、Combine 订阅、父子 Coordinator 之间。</span></div>
+<div class="term"><b class="term-name">确定性拆卸（deterministic teardown）</b><span class="term-def">对象在明确的时机（如 <code>viewWillDisappear</code>、显式 <code>tearDown()</code> 或 <code>deinit</code>）主动释放它持有的资源与订阅，而不是听任 ARC "何时想释放就何时释放"。它让释放时机可预测、可测试。</span></div>
+<div class="term"><b class="term-name">@MainActor</b><span class="term-def">Swift Concurrency 的全局 actor 标注。标在类型或方法上，编译器保证其代码只在主线程执行；从非主线程调用会强制 <code>await</code> 切换回主线程。是"UI 只在主线程"这条铁律的编译期保障。</span></div>
+<div class="term"><b class="term-name">依赖注入（DI, Dependency Injection）</b><span class="term-def">对象所需的协作者（网络客户端、存储、时钟等）从外部传入，而非在内部 <code>init</code> 里 <code>new</code> 出来。它让生产环境注入真实实现、测试环境注入 mock，是可测试架构的地基。</span></div>
+</div>
+
+<h3>9.1 内存：谁持有谁，必须一眼看清</h3>
+
+<p>AppKit 应用的内存问题几乎都不是"分配了太多"，而是"该释放的没释放"。规范的核心是：<b>默认强引用，只有形成环时才降级为 <code>weak</code> / <code>unowned</code></b>，并且降级的位置遵循固定套路。</p>
+
+<h4>9.1.1 delegate 一律 weak，协议约束 AnyObject</h4>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>delegate 协议约束为 <code>AnyObject</code>（class-only），持有 delegate 的属性声明为 <code>weak var</code>。方向永远是"子控件弱引用它的宿主"。</p>
+<pre><code class="language-swift">// 协议约束 AnyObject，才允许 weak 修饰
+protocol ToolbarViewDelegate: AnyObject {
+    func toolbarView(_ view: ToolbarView, didTapAction id: String)
+}
+
+final class ToolbarView: NSView {
+    // 子控件弱引用宿主（通常是 NSViewController），打破 VC ⇄ view 的潜在环
+    weak var delegate: ToolbarViewDelegate?
+
+    private func handleTap(_ id: String) {
+        delegate?.toolbarView(self, didTapAction: id)
+    }
+}</code></pre>
+</div>
+</div>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>用 <code>var delegate: ToolbarViewDelegate?</code>（强引用），或把协议定义成非 <code>AnyObject</code>（结构体也能实现，则 <code>weak</code> 无从谈起）。若 VC 强持 view、view 又强持 VC 作 delegate，两者会一起泄漏。</p>
+</div>
+</div>
+
+<div class="callout why">
+<b>为什么</b>
+<p>delegate 是"回调宿主"，天然存在 <b>宿主 → 子控件（强，因为要显示它） + 子控件 → 宿主（回调）</b> 的双向关系。若两个方向都强引用即成环。规定弱引用方向为"子回指父"，是因为父的生命周期总是覆盖子的：父在，子必然在；子弱引父不会读到已释放对象。约束 <code>AnyObject</code> 则是 <code>weak</code> 的语法前提——只有引用类型才有引用计数可弱化，值类型（struct/enum）无从 <code>weak</code>。</p>
+</div>
+
+<div class="ref"><b class="ref-proj">Cocoa / AppKit 框架自身惯例</b><span class="ref-note">系统框架的 delegate 属性（如 <code>NSTableView</code>、<code>NSWindow</code>、<code>NSTextField</code> 的 <code>delegate</code>）无一例外都是 <code>weak</code>、对应协议全部 class-only。自定义控件沿用这一约定，是纯 AppKit 项目普遍遵循的默认做法。</span></div>
+
+<h4>9.1.2 闭包与 Combine 订阅：捕获 self 用 [weak self]</h4>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>凡是被 <code>self</code> 长期持有、且回调里又要用到 <code>self</code> 的闭包（存储型属性、Combine <code>sink</code>、<code>NotificationCenter</code> block observer、长驻 <code>Task</code>），捕获列表写 <code>[weak self]</code>，入口 <code>guard let self else { return }</code>。</p>
+<pre><code class="language-swift">import Combine
+
+@MainActor
+final class CounterViewController: NSViewController {
+    private let store: CounterStore
+    private var cancellables = Set&lt;AnyCancellable&gt;()
+    private let label = NSTextField(labelWithString: "0")
+
+    init(store: CounterStore) {
+        self.store = store
+        super.init(nibName: nil, bundle: nil)
+    }
+    required init?(coder: NSCoder) { fatalError("不支持 xib/Storyboard 加载") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        // store 持有 publisher；sink 闭包若强捕 self，则 self → cancellable → 闭包 → self 成环
+        store.$count
+            .receive(on: DispatchQueue.main)      // 保证闭包体回到主线程（见 9.2）
+            .sink { [weak self] value in
+                guard let self else { return }
+                self.label.stringValue = String(value)
+            }
+            .store(in: &amp;cancellables)
+    }
+
+    // 确定性拆卸：cancellables 随 self 释放而释放，每个订阅自动 cancel
+    nonisolated deinit { /* AnyCancellable 在 Set 释放时自动 cancel，无需手写 */ }
+}</code></pre>
+</div>
+</div>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>在 <code>self</code> 持有的存储型闭包里强捕 <code>self</code>；或机械地给<b>所有</b>闭包都加 <code>[weak self]</code>——一次性的、不被 self 持有的闭包（如 <code>DispatchQueue.main.async { ... }</code> 里更新 UI 后即结束）强捕反而更简单、更安全，弱捕只会平添一次 <code>guard</code>。判断标准是"这个闭包会不会被 self 直接或间接长期持有"。</p>
+</div>
+</div>
+
+<div class="callout why">
+<b>为什么</b>
+<p>Combine 的环是隐蔽的：VC 持有 <code>cancellables</code> → <code>AnyCancellable</code> 持有订阅 → 订阅持有 <code>sink</code> 闭包 → 闭包强捕 VC。四步成环，VC 永不释放，它挂着的整个 view 树、图片、乃至持有的 store 一起泄漏。<code>[weak self]</code> 在"闭包 → self"这一环上断开强引用。把 <code>AnyCancellable</code> 收进 <code>Set&lt;AnyCancellable&gt;</code> 属性，则订阅生命周期与 VC 绑定：VC 释放时 Set 释放，每个 cancellable 自动 <code>cancel</code>——这正是"生命周期即拆卸"的确定性。至于 <code>nonisolated deinit</code>：<code>@MainActor</code> 类型的 <code>deinit</code> 本身并不被隔离到主 actor，显式标 <code>nonisolated</code> 表意更清楚，也避免个别工具链在 deinit 的 actor 跳转上出问题。</p>
+</div>
+
+<div class="ref"><b class="ref-proj">Combine 官方文档与社区通行写法</b><span class="ref-note"><code>AnyCancellable</code> 的文档明确"实例被释放时自动取消订阅"。"把订阅存进属于对象的 <code>Set&lt;AnyCancellable&gt;</code>、闭包用 <code>[weak self]</code>"是 Combine 在 AppKit/UIKit 项目里避免泄漏的标准组织方式，几乎所有成熟教程与分层实践都这样写。</span></div>
+
+<h4>9.1.3 典型循环引用与拆解套路</h4>
+
+<table class="cmp">
+<thead><tr><th>场景</th><th>环的形状</th><th>拆解规范</th></tr></thead>
+<tbody>
+<tr><td>父子 Coordinator</td><td>父强持子（children 数组）+ 子强持父</td><td>子对父用 <code>weak var parent</code>；父负责在子完成后从数组移除子</td></tr>
+<tr><td>VC ⇄ view model</td><td>VC 强持 vm + vm 的回调闭包强捕 VC</td><td>VC 强持 vm 保留；vm → VC 的回调用 <code>[weak self]</code>，或 vm 只暴露 <code>@Published</code> 让 VC 单向订阅</td></tr>
+<tr><td>view ⇄ VC（delegate）</td><td>VC 强持 view + view 强持 VC 作 delegate</td><td>view 的 delegate 属性 <code>weak</code>（见 9.1.1）</td></tr>
+<tr><td>Timer / target-action</td><td>RunLoop 强持 Timer + Timer 强持 target（self）+ self 强持 Timer</td><td>用 block 版 <code>Timer</code> + <code>[weak self]</code>，并在拆卸时显式 <code>invalidate()</code></td></tr>
+</tbody>
+</table>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>Coordinator 模式中，父 → 子强持、子 → 父弱持；父在子生命周期结束时主动清除强引用。</p>
+<pre><code class="language-swift">protocol Coordinator: AnyObject {
+    var children: [Coordinator] { get set }
+}
+
+final class RootCoordinator: Coordinator {
+    var children: [Coordinator] = []                // 强持子
+
+    func startDetail() {
+        let child = DetailCoordinator(parent: self)
+        children.append(child)                      // 父强引子，保证子存活
+        child.onFinish = { [weak self, weak child] in
+            guard let self, let child else { return }
+            // 子完成后父主动移除，打破"父数组 → 子"这条强边
+            self.children.removeAll { $0 === child }
+        }
+    }
+}
+
+final class DetailCoordinator: Coordinator {
+    var children: [Coordinator] = []
+    weak var parent: Coordinator?                    // 子弱引父，避免成环
+    var onFinish: (() -&gt; Void)?
+    init(parent: Coordinator) { self.parent = parent }
+}</code></pre>
+</div>
+</div>
+
+<div class="callout why">
+<b>为什么</b>
+<p>Coordinator 的父子关系与 view 树同构：父的生命周期覆盖子，所以"父强子、子弱父"与 delegate 规则同源。真正的坑是"子完成后父忘记移除它"——即便子弱引父不成环，父数组里的强引用也会让本该消失的子界面永久驻留内存。因此拆解不仅靠 <code>weak</code>，还靠父<b>主动移除</b>这个确定性动作。<code>onFinish</code> 闭包里连 <code>child</code> 也用 <code>[weak child]</code>，是为了不让闭包本身把子钉住。</p>
+</div>
+
+<h4>9.1.4 deinit 做确定性清理</h4>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>凡持有系统级资源或跨对象注册的类型（<code>Timer</code>、<code>DispatchSourceTimer</code>、文件句柄、旧式 KVO/通知注册），在明确时机显式反注册；<code>deinit</code> 作为最后兜底。能随属性释放自动清理的（<code>AnyCancellable</code>、闭包版 KVO 返回的 <code>NSKeyValueObservation</code>）优先靠属性生命周期。</p>
+<pre><code class="language-swift">final class LiveLogController: NSViewController {
+    private var kvoToken: NSKeyValueObservation?
+    private var timer: Timer?
+
+    func startObserving(_ progress: Progress) {
+        // 闭包版 KVO：token 存属性，属性释放即自动移除观察
+        kvoToken = progress.observe(\.fractionCompleted) { [weak self] _, _ in
+            self?.reload()
+        }
+        // block 版 Timer，闭包 [weak self]，避免 Timer 强持 self
+        timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            self?.reload()
+        }
+    }
+
+    deinit {
+        // Timer 由 RunLoop 强持，不会随 self 自动失效，必须显式 invalidate
+        timer?.invalidate()
+        // kvoToken 随属性释放自动反注册，此处无需再写
+    }
+    private func reload() { /* ... */ }
+}</code></pre>
+</div>
+</div>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>用旧式 <code>NotificationCenter.addObserver(self, selector:...)</code> 却不在拆卸时 <code>removeObserver</code>（老系统上会留悬垂注册）；或 <code>Timer.scheduledTimer</code> 用 target-action 形式又不 <code>invalidate</code>——RunLoop 强持 Timer、Timer 强持 target，self 永不释放。</p>
+</div>
+</div>
+
+<div class="callout why">
+<b>为什么</b>
+<p>ARC 只管引用计数，管不了"注册在别处的回调"。<code>Timer</code> 被 RunLoop 持有，旧式 KVO/通知的注册被中心表持有——它们不会因为你的对象引用计数归零就消失。确定性清理把"资源释放"从"ARC 的不确定时机"变成"代码里可见的一行 <code>invalidate()</code>"，也让泄漏在 review 时肉眼可查。注意闭包版 KVO 返回的 <code>NSKeyValueObservation</code> 才是"存属性即自动反注册"，旧式基于字符串 keyPath 的 KVO 仍须手动 <code>removeObserver</code>。</p>
+</div>
+
+<h3>9.2 并发：UI 只在主线程，耗时活儿丢后台</h3>
+
+<p>AppKit 不是线程安全的。除极少数明确文档化的例外，<b>所有 UI 对象只能在主线程访问</b>。违反它的后果不是必崩，而是偶发崩溃与诡异渲染——最难排查的一类 bug。现代规范用 <code>@MainActor</code> 把这条铁律变成编译期检查。</p>
+
+<h4>9.2.1 面向 UI 的类型/方法标 @MainActor</h4>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>所有 <code>NSView</code> / <code>NSViewController</code> 子类、以及任何直接读写 UI 的服务，标 <code>@MainActor</code>。耗时纯计算/IO 放后台（<code>await</code> 一个非隔离的 async 函数，或 <code>Task.detached</code>），拿到结果后回主线程改 UI。</p>
+<pre><code class="language-swift">@MainActor
+final class ThumbnailViewController: NSViewController {
+    private let imageView = NSImageView()
+    private let loader: ThumbnailLoading
+
+    init(loader: ThumbnailLoading) {
+        self.loader = loader
+        super.init(nibName: nil, bundle: nil)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    func show(_ url: URL) {
+        // Task {} 从 @MainActor 方法启动，继承主 actor 隔离
+        Task { [weak self] in
+            guard let self else { return }
+            // loader 的方法非 @MainActor，await 会切到后台执行解码
+            let image = try? await self.loader.thumbnail(for: url)
+            // await 返回后自动切回 @MainActor，改 UI 安全
+            self.imageView.image = image
+        }
+    }
+}
+
+// 后台工作类型：不标 @MainActor，方法在协作线程池上运行
+struct ThumbnailLoader: ThumbnailLoading {
+    func thumbnail(for url: URL) async throws -&gt; NSImage {
+        let data = try Data(contentsOf: url)         // 耗时 IO，绝不在主线程
+        guard let image = NSImage(data: data) else { throw LoadError.decode }
+        return image
+    }
+}</code></pre>
+</div>
+</div>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>在后台线程直接写 <code>imageView.image = ...</code>；用 <code>DispatchQueue.global().sync</code> 或信号量在主线程上等后台结果（阻塞主 RunLoop → 界面卡死转菊花）；给纯计算类型也贴 <code>@MainActor</code>（把本可并行的活儿全挤回主线程，等于没做并发）。</p>
+</div>
+</div>
+
+<div class="callout why">
+<b>为什么</b>
+<p><code>@MainActor</code> 把"必须在主线程"从口头约定升级为编译器强制：从任意非隔离上下文调用 <code>@MainActor</code> 方法，编译器要求你 <code>await</code>，切换由运行时保证。非 detached 的 <code>Task {}</code> 从 <code>@MainActor</code> 方法启动时<b>继承</b>主 actor 隔离，因此闭包体默认在主线程；只有 <code>await</code> 一个非隔离 async 函数时才真正切到后台，返回后自动切回。这套模型让"哪段在主线程、哪段在后台"从代码结构一眼可辨，取代了到处手写 <code>DispatchQueue.main.async</code> 的易错风格。</p>
+</div>
+
+<div class="ref"><b class="ref-proj">Apple WWDC "Swift concurrency" 系列</b><span class="ref-note">Apple 官方推荐的现代姿势：默认让面向 UI 的代码运行在主 actor 上，把明确的耗时工作用 async 函数移出主 actor，返回后自动回到 UI 上下文——而不是手动在线程间搬运。这是纯 AppKit 项目采纳 Swift Concurrency 的主流路线。</span></div>
+
+<h4>9.2.2 绝不阻塞主 RunLoop</h4>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>主线程上一切阻塞式等待（同步网络、<code>Thread.sleep</code>、信号量 <code>wait</code>、大文件同步读、重计算）改为 <code>async</code> + <code>await</code>。UI 事件处理只做"派发任务 + 更新占位状态"两件事。</p>
+<pre><code class="language-swift">@MainActor
+func exportButtonClicked() {
+    progressIndicator.startAnimation(nil)          // 主线程：只切占位态
+    Task {
+        let report = await reportBuilder.build()   // await 期间主 RunLoop 空闲、界面可响应
+        self.present(report)                       // 回主线程收尾
+        self.progressIndicator.stopAnimation(nil)
+    }
+}</code></pre>
+</div>
+</div>
+
+<div class="callout why">
+<b>为什么</b>
+<p>主 RunLoop 每一"tick"要处理鼠标/键盘事件、布局、绘制、CoreAnimation 提交（见第 8 章 RunLoop 模型）。在主线程做阻塞等待，等于霸占这个 tick，事件不再被处理，用户看到的就是界面冻结。<code>await</code> 的本质是"挂起当前函数、把主线程还给 RunLoop、结果就绪后再恢复"——它让长任务不占用 tick。</p>
+</div>
+
+<h4>9.2.3 Combine 订阅要 receive(on:) 到主线程</h4>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>任何驱动 UI 的 Combine 订阅，在 <code>sink</code> 前串一个 <code>.receive(on: DispatchQueue.main)</code>，确保闭包体在主线程执行。</p>
+</div>
+</div>
+
+<div class="callout why">
+<b>为什么</b>
+<p><code>sink</code> 闭包<b>默认在上游发布事件的那个线程</b>执行——若 publisher 在后台线程 <code>send</code>，闭包就在后台线程跑，此时碰 <code>NSView</code> 即违反主线程规则。<code>@MainActor</code> 也救不了它：Combine 的调度由 <code>receive(on:)</code> 决定，不看类型的 actor 标注。这里推荐 <code>DispatchQueue.main</code> 而非 <code>RunLoop.main</code>——后者在事件跟踪模式下（如拖动、滚动）可能延迟甚至丢失投递，而 <code>DispatchQueue.main</code> 无此问题。</p>
+</div>
+
+<h3>9.3 可测试性：经公开面驱动，不开测试后门</h3>
+
+<p>纯 AppKit 项目最脆弱的测试是 UI 测试（点坐标、找控件文本），它慢、易随布局微调而红。规范的方向是把逻辑从 UI 中抽出，让 <b>控制器 / 服务 / view model 能被单元测试直接驱动</b>：注入 mock、调用公开方法、断言可观察结果。</p>
+
+<h4>9.3.1 依赖注入让你能注入 mock</h4>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>协作者以协议类型从 <code>init</code> 传入，生产环境注真实实现、测试注 mock。禁止在类型内部 <code>new</code> 出网络/存储/时钟等有副作用的依赖。</p>
+<pre><code class="language-swift">protocol UserServing {
+    func loadUser(id: String) async throws -&gt; User
+}
+
+@MainActor
+final class ProfileViewModel {
+    @Published private(set) var displayName = ""
+    @Published private(set) var isLoading = false
+    private let service: UserServing            // 依赖抽象，非具体类型
+
+    init(service: UserServing) { self.service = service }   // 注入点
+
+    // 公开接口：测试从这里驱动
+    func load(id: String) async {
+        isLoading = true
+        defer { isLoading = false }
+        if let user = try? await service.loadUser(id: id) {
+            displayName = user.name
+        }
+    }
+}</code></pre>
+</div>
+</div>
+
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>在 <code>init</code> 里 <code>self.service = RealUserService()</code>（测试无从替换，被迫打真网络）；或用 <code>.shared</code> 单例直接引用（隐式全局依赖，测试之间互相污染）。</p>
+</div>
+</div>
+
+<div class="callout warn">
+<b>注意</b>
+<p>此处 <code>ProfileViewModel</code> 是纯逻辑/状态对象，仅用 <code>@Published</code> 对外发布状态，与任何 UI 框架无关——它照样能被 AppKit 的 VC 通过 Combine 订阅消费（见 9.1.2）。别把它误当成 SwiftUI 的 <code>ObservableObject</code>：本手册不涉及 SwiftUI，这里的 <code>@Published</code> 纯粹是 Combine 发布者。</p>
+</div>
+
+<h4>9.3.2 通过公开接口测，绝不开测试后门</h4>
+
+<div class="rule-pair">
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>调用被测对象的<b>公开方法</b>，断言其<b>可观察输出</b>（<code>@Published</code> 值、返回值、mock 被调用的记录）。</p>
+</div>
+</div>
+<div class="rule dont">
+<div class="rule-head">避免</div>
+<div class="rule-body">
+<p>为测试添加 <code>forceReloadForTest()</code>、把 <code>private</code> 改 <code>internal</code> 只为断言内部字段、或用 <code>@testable import</code> 去读私有状态。测试够不到真实控制点，要改的是<b>测试</b>（换成驱动公开面），不是产品。</p>
+</div>
+</div>
+</div>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>用公开 API 驱动 view model 的单元测试骨架如下（Swift Testing 风格，XCTest 同理）：</p>
+<pre><code class="language-swift">import Testing
+@testable import MyApp   // 仅用于访问 internal 类型本身，不用于窥探 private 字段
+
+// mock 实现协议，记录调用、返回可控数据——这是唯一的"测试专用代码"，且只在测试 target 里
+final class UserServiceMock: UserServing {
+    var stubbedUser: User?
+    private(set) var loadedIDs: [String] = []      // 可观察：断言"被以正确参数调用"
+    func loadUser(id: String) async throws -&gt; User {
+        loadedIDs.append(id)
+        guard let stubbedUser else { throw TestError.noStub }
+        return stubbedUser
+    }
+}
+
+@MainActor
+@Test func 加载成功后暴露用户名并结束loading() async {
+    // 准备：注入 mock（依赖注入让这一步成为可能）
+    let mock = UserServiceMock()
+    mock.stubbedUser = User(id: "42", name: "Ada")
+    let sut = ProfileViewModel(service: mock)
+
+    // 驱动：只调用公开方法
+    await sut.load(id: "42")
+
+    // 断言：全部是公开可观察结果，未触碰任何 private 字段
+    #expect(sut.displayName == "Ada")
+    #expect(sut.isLoading == false)
+    #expect(mock.loadedIDs == ["42"])   // 验证协作被正确触发
+}</code></pre>
+</div>
+</div>
+
+<div class="callout why">
+<b>为什么</b>
+<p>测试后门（<code>forceXxxForTest()</code>、为测试放宽访问级别、用 env var 绕过逻辑）会把测试专用路径永久焊进产品：它增加了一条"生产环境不该走、却真实存在"的分支，让代码更难懂、更易被误用，且测的是后门而非真实行为——绿灯并不证明用户路径正确。反过来，"注入 mock + 驱动公开方法 + 断言可观察输出"测的正是发布代码会走的那条路，重构内部实现而不改公开契约时测试仍然成立，这才是防回归的价值所在。</p>
+</div>
+
+<div class="ref"><b class="ref-proj">分层 / MVVM 实践的可测架构共识</b><span class="ref-note">把逻辑集中到可注入依赖的 view model / service、UI 层薄到几乎无需 UI 测试，是社区对"可测架构"的通行强调。协议化依赖 + mock/spy 驱动公开面、避免脆弱的坐标级 UI 测试，是各类分层实践反复给出的建议。</span></div>
+
+<h4>9.3.3 让测试免于线程与时序脆弱</h4>
+
+<div class="rule do">
+<div class="rule-head">应当</div>
+<div class="rule-body">
+<p>被测的 async 方法用 <code>await</code> 直接驱动（如上），不用 <code>sleep</code> + 轮询等异步结果；<code>@MainActor</code> 测试函数保证断言在主线程读 UI 状态；时间/随机等不确定源也做成可注入依赖。</p>
+</div>
+</div>
+
+<div class="callout why">
+<b>为什么</b>
+<p>时序脆弱的测试（<code>sleep(1)</code> 后断言）在慢机器上偶发红灯，久而久之被开发者习惯性忽略，等于没有测试。<code>await</code> 让"等异步完成"变成确定性的——函数返回即代表完成。把时钟/随机注入进来，则"同样输入必得同样输出"，测试可重复。</p>
+</div>
+
+<div class="callout essence">
+<b>本质</b>
+<p>三条主线其实是同一件事在不同维度的投影：<b>把隐式关系变显式</b>。内存——谁强持谁、谁负责释放，用 <code>weak</code> 与确定性拆卸写在明处；并发——哪段在主线程、哪段在后台，用 <code>@MainActor</code> 与 <code>await</code> 钉在类型签名里；可测试性——依赖谁、如何被替换，用协议注入与公开接口暴露出来。凡是"隐式的、约定俗成的、藏在实现里的"关系，都是崩溃、泄漏与不可测的温床；工程规范的作用就是逼你把它们摊到编译器和 review 能看见的地方。</p>
+</div>
+
+<div class="qa">
+<p class="q">思考题：你的 <code>@MainActor final class FeedViewController</code> 通过依赖注入拿到一个 <code>feedService: FeedServing</code>，在 <code>viewDidLoad</code> 里订阅了它的 <code>@Published var items</code>，<code>sink</code> 闭包中调用 <code>self.reloadTable()</code>。测试时你发现：即使 VC 早该被释放，<code>feedService</code> 每次推送 items 仍触发一次 <code>reloadTable</code>（通过日志可见）。请从内存、并发、可测试性三个角度分别指出问题并给出符合本章规范的修法。</p>
+<details><summary>查看答案</summary>
+<div class="a">
+<p><b>内存角度（根因）</b>：<code>sink</code> 闭包很可能强捕了 <code>self</code>，且 <code>feedService</code> 生命周期比 VC 长（被更上层持有）。此时链条为 <code>feedService.publisher → subscription → sink 闭包 → self(VC)</code>，VC 被 service 间接强持而无法释放，因此仍在响应推送。<b>修法</b>：闭包写 <code>[weak self]</code> + <code>guard let self else { return }</code>；并把返回的 <code>AnyCancellable</code> 用 <code>.store(in: &amp;cancellables)</code> 收进 VC 自己的 <code>Set&lt;AnyCancellable&gt;</code>，使订阅生命周期与 VC 绑定——VC 释放时 Set 释放，订阅自动 <code>cancel</code>，不再收到推送（确定性拆卸，9.1.2 / 9.1.4）。注意：只把 cancellable 存进 VC 的属性但闭包仍强捕 self，环依然成立；两步都要做。</p>
+<p><b>并发角度</b>：若 <code>feedService</code> 在后台线程 <code>send</code> 新 items，<code>sink</code> 闭包会在后台线程调用 <code>reloadTable()</code>，而 <code>reloadTable</code> 操作 <code>NSTableView</code>——违反"UI 只在主线程"。VC 标了 <code>@MainActor</code> 也不能豁免，因为 Combine 的 <code>sink</code> 回调默认在上游发布事件的线程执行，与类型的 actor 隔离无关。<b>修法</b>：订阅链上加 <code>.receive(on: DispatchQueue.main)</code> 再 <code>sink</code>，保证闭包体在主线程执行（9.2.3）。用 <code>DispatchQueue.main</code> 而非 <code>RunLoop.main</code>，以免在拖动/滚动等跟踪模式下丢投递。</p>
+<p><b>可测试性角度</b>：能"通过日志看到 <code>reloadTable</code> 被调"说明你在靠观察副作用/私有行为间接判断，测试脆弱且未真正验证泄漏。正确做法是：把 <code>FeedServing</code> mock 化（依赖注入已具备），在测试里创建 VC、驱动 mock 推送，然后用 <code>weak var sut</code> + 释放强引用后 <code>#expect(weakSUT == nil)</code> 断言 VC 确实被释放；或断言"释放后再推送，mock 记录的活跃订阅者数为 0"——全程只经公开面与可观察结果，不加 <code>forceXxx</code> 后门、不放宽访问级别（9.3.2 / 9.3.3）。三者叠加：泄漏由 <code>[weak self]</code> + cancellables 治，线程由 <code>receive(on:)</code> 治，而这两者是否真的生效，由一个不脆弱、只驱动公开接口的单元测试来守。</p>
+</div>
+</details>
+</div>
+</section>
+
+  </main>
+</div>
+
+<script>
+/* 1) 轻量 Swift 语法高亮（离线、自包含） */
+(function(){
+  var KW=("import class struct enum protocol extension func var let if else guard for while return self super init deinit override final static lazy weak unowned private fileprivate public internal open in is as try throws throw do catch defer switch case default break continue where nil true false some any inout mutating typealias associatedtype subscript convenience required get set willSet didSet repeat async await actor nonisolated").split(" ");
+  var kwSet={};KW.forEach(function(k){kwSet[k]=1;});
+  function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
+  var RE=/(\/\/[^\n]*|\/\*[\s\S]*?\*\/)|("(?:\\.|[^"\\\n])*")|(@\w+)|(#\w+)|\b(\d[\d_]*\.?\d*)\b|([A-Za-z_]\w*)/g;
+  function hi(code){
+    var out="",last=0,m;RE.lastIndex=0;
+    while((m=RE.exec(code))){
+      if(m.index>last)out+=esc(code.slice(last,m.index));
+      if(m[1])out+='<span class="tok-com">'+esc(m[1])+'</span>';
+      else if(m[2])out+='<span class="tok-str">'+esc(m[2])+'</span>';
+      else if(m[3])out+='<span class="tok-attr">'+esc(m[3])+'</span>';
+      else if(m[4])out+='<span class="tok-attr">'+esc(m[4])+'</span>';
+      else if(m[5])out+='<span class="tok-num">'+esc(m[5])+'</span>';
+      else if(m[6]){
+        var w=m[6];
+        if(kwSet[w])out+='<span class="tok-kw">'+w+'</span>';
+        else if(/^[A-Z]/.test(w))out+='<span class="tok-type">'+w+'</span>';
+        else{var after=code[RE.lastIndex];if(after==="(")out+='<span class="tok-fn">'+w+'</span>';else out+=esc(w);}
+      }
+      last=RE.lastIndex;
+    }
+    out+=esc(code.slice(last));return out;
+  }
+  window.__highlightAll=function(){
+    document.querySelectorAll('pre code.language-swift').forEach(function(el){
+      if(el.dataset.hl)return;el.innerHTML=hi(el.textContent);el.dataset.hl="1";
+    });
+  };
+  window.__highlightAll();
+})();
+
+/* 2) 目录滚动高亮 + 阅读进度 */
+(function(){
+  function links(){return Array.prototype.slice.call(document.querySelectorAll('#toc a'));}
+  function chapters(){return Array.prototype.slice.call(document.querySelectorAll('.chapter'));}
+  function setup(){
+    var ls=links();var byId={};ls.forEach(function(a){byId[a.getAttribute('href').slice(1)]=a;});
+    var io=new IntersectionObserver(function(ents){
+      ents.forEach(function(e){
+        if(e.isIntersecting){ls.forEach(function(a){a.classList.remove('active');});var a=byId[e.target.id];if(a)a.classList.add('active');}
+      });
+    },{rootMargin:"-12% 0px -70% 0px",threshold:0});
+    chapters().forEach(function(c){if(c.id)io.observe(c);});
+    window.addEventListener('scroll',function(){
+      var h=document.documentElement;var p=h.scrollTop/(h.scrollHeight-h.clientHeight||1);
+      var bar=document.getElementById('progBar');if(bar)bar.style.width=Math.max(0,Math.min(100,p*100))+"%";
+    },{passive:true});
+  }
+  window.__setupSpy=setup;setup();
+  var mt=document.getElementById('menuToggle');
+  if(mt)mt.addEventListener('click',function(){document.getElementById('toc').classList.toggle('open');});
+})();
+</script>
+</body>
+</html>

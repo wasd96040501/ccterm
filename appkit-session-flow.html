@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>会话域 · 数据流向与挂载生命周期</title>
+<style>
+:root{
+  --surface:#fcfcfb; --page:#f9f9f7; --ink:#0b0b0b; --ink2:#52514e; --muted:#898781;
+  --grid:#e1e0d9; --border:rgba(11,11,11,.10);
+  --down:#2a78d6;   /* data-down 蓝 */
+  --up:#eb6834;     /* events-up 橙 */
+  --truth:#008300;  /* 真相源 绿（始终配文字标签）*/
+  --dead:#b8b7b1;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --surface:#1a1a19; --page:#0d0d0d; --ink:#fff; --ink2:#c3c2b7; --muted:#898781;
+    --grid:#2c2c2a; --border:rgba(255,255,255,.10);
+    --down:#3987e5; --up:#d95926; --truth:#0ca30c; --dead:#4a4a46;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--ink);
+  font-family:system-ui,-apple-system,"Segoe UI","PingFang SC",sans-serif;
+  font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;padding:32px 22px 90px}
+h1{font-size:23px;letter-spacing:-.3px;margin:0 0 4px}
+.sub{color:var(--ink2);font-size:14px;margin:0 0 22px}
+h2{font-size:17px;margin:34px 0 4px;padding-top:22px;border-top:1px solid var(--grid);
+  display:flex;align-items:center;gap:10px}
+h2 .tag{font-size:12px;font-weight:600;color:var(--muted);
+  border:1px solid var(--border);border-radius:999px;padding:2px 9px}
+.cap{color:var(--ink2);font-size:13.5px;margin:2px 0 16px}
+code,.mono{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace}
+
+/* ── 图例 ── */
+.legend{background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:14px 18px;margin:6px 0 8px;display:flex;flex-direction:column;gap:8px}
+.legend .li{display:flex;gap:10px;align-items:baseline;font-size:13.5px;color:var(--ink2)}
+.legend .k{flex:0 0 128px;display:flex;align-items:center;gap:8px;color:var(--ink);font-weight:600}
+.swatch{width:30px;height:0;flex:0 0 30px}
+.sw-down{border-top:3px solid var(--down)}
+.sw-up{border-top:3px dashed var(--up)}
+.chip-truth{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;
+  color:#fff;background:var(--truth);border-radius:6px;padding:2px 8px;letter-spacing:.3px}
+
+/* ── 层次栈 ── */
+.stack{display:flex;flex-direction:column;gap:0}
+.layer{background:var(--surface);border:1px solid var(--border);border-radius:13px;
+  padding:14px 18px;position:relative}
+.layer .scope{position:absolute;top:-9px;left:16px;font-size:11px;font-weight:700;
+  letter-spacing:.4px;color:var(--muted);background:var(--page);padding:0 8px}
+.nodes{display:flex;gap:12px;flex-wrap:wrap}
+.node{flex:1 1 260px;min-width:240px;border:1px solid var(--border);border-radius:10px;
+  padding:11px 13px;background:color-mix(in srgb,var(--ink) 3%,var(--surface))}
+.node.truth{border-color:color-mix(in srgb,var(--truth) 55%,var(--border));
+  background:color-mix(in srgb,var(--truth) 8%,var(--surface))}
+.node .nm{font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.node .nm .mono{font-size:13.5px}
+.node .role{color:var(--ink2);font-size:13px;margin-top:4px}
+
+/* 层间的双向流 */
+.gap{display:flex;gap:12px;padding:9px 6px;align-items:stretch}
+.gap.single{justify-content:center}
+.pill{flex:1 1 0;border-radius:9px;padding:7px 12px;font-size:12.8px;display:flex;gap:9px;align-items:flex-start}
+.pill .ar{font-weight:800;flex:0 0 auto;line-height:1.35}
+.pill.down{border:1.5px solid var(--down);background:color-mix(in srgb,var(--down) 9%,var(--surface))}
+.pill.down .ar{color:var(--down)}
+.pill.up{border:1.5px dashed var(--up);background:color-mix(in srgb,var(--up) 9%,var(--surface))}
+.pill.up .ar{color:var(--up)}
+.pill.link{border:1.5px dotted var(--muted);background:transparent;color:var(--ink2);flex:0 1 auto;justify-content:center}
+.pill b{color:var(--ink)}
+
+/* ── 发送闭环 步骤 ── */
+.steps{display:flex;flex-direction:column;gap:9px}
+.step{display:flex;gap:14px;align-items:flex-start;background:var(--surface);
+  border:1px solid var(--border);border-radius:11px;padding:12px 15px}
+.step .n{flex:0 0 30px;height:30px;border-radius:8px;background:color-mix(in srgb,var(--ink) 8%,var(--surface));
+  color:var(--ink);font-weight:800;display:grid;place-items:center;font-size:15px}
+.step.flip{border-color:color-mix(in srgb,var(--truth) 55%,var(--border));
+  background:color-mix(in srgb,var(--truth) 7%,var(--surface))}
+.step.flip .n{background:var(--truth);color:#fff}
+.step .body{flex:1}
+.step .t{font-weight:600}
+.step .d{color:var(--ink2);font-size:13.3px;margin-top:2px}
+.dir{font-size:11.5px;font-weight:700;border-radius:5px;padding:1px 7px;margin-left:6px;vertical-align:1px}
+.dir.up{color:var(--up);border:1px dashed var(--up)}
+.dir.down{color:var(--down);border:1px solid var(--down)}
+.star{color:var(--truth);font-weight:800}
+
+/* ── 挂载生命周期 三态 ── */
+.life{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media(max-width:820px){.life{grid-template-columns:1fr}}
+.col{background:var(--surface);border:1px solid var(--border);border-radius:13px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.col h3{margin:0;font-size:14.5px;display:flex;gap:8px;align-items:baseline}
+.col h3 .i{color:var(--muted);font-weight:800}
+.rt{border:1.5px solid color-mix(in srgb,var(--truth) 55%,var(--border));
+  background:color-mix(in srgb,var(--truth) 9%,var(--surface));border-radius:10px;padding:10px 12px}
+.rt.hot{border-color:var(--truth);box-shadow:0 0 0 3px color-mix(in srgb,var(--truth) 22%,transparent)}
+.rt .lab{font-size:11px;font-weight:700;color:var(--truth);letter-spacing:.3px}
+.rt .box{margin-top:6px;border:1px solid color-mix(in srgb,var(--truth) 45%,var(--border));
+  border-radius:7px;padding:6px 9px;font-weight:700;font-size:13px;background:var(--surface)}
+.rt .note{font-size:12px;color:var(--ink2);margin-top:6px}
+.bind{text-align:center;color:var(--down);font-weight:800;font-size:13px}
+.vm{border:1.5px solid var(--down);border-radius:10px;padding:9px 12px;font-size:13px;
+  background:color-mix(in srgb,var(--down) 8%,var(--surface))}
+.vm .nm{font-weight:700}
+.vm .role{color:var(--ink2);font-size:12px;margin-top:2px}
+.vm.dead{border:1.5px dashed var(--dead);background:transparent;color:var(--dead)}
+.vm.dead .role,.vm.dead .nm{color:var(--dead)}
+.col .cc{font-size:12.3px;color:var(--ink2);margin-top:auto;padding-top:4px}
+.tick{color:var(--truth);font-weight:800}
+.footnote{color:var(--ink2);font-size:13.3px;background:var(--surface);border:1px solid var(--border);
+  border-radius:11px;padding:13px 16px;margin-top:16px}
+.footnote b{color:var(--ink)}
+
+/* ── 图4: 挂载路径 / 两阶段加载 ── */
+.designnote{background:color-mix(in srgb,var(--truth) 7%,var(--surface));
+  border:1px solid color-mix(in srgb,var(--truth) 45%,var(--border));border-radius:12px;
+  padding:13px 16px;margin:8px 0 16px;font-size:13.6px;color:var(--ink2)}
+.designnote b{color:var(--ink)}
+.designnote .h{font-weight:700;color:var(--ink);margin-bottom:4px;display:flex;gap:8px;align-items:center}
+.phase{border:1px solid var(--border);border-radius:13px;margin:12px 0;overflow:hidden}
+.phase>.ph-h{display:flex;align-items:center;gap:10px;padding:10px 15px;font-weight:700;font-size:14px}
+.phase.p1>.ph-h{background:color-mix(in srgb,var(--down) 12%,var(--surface));
+  border-bottom:1px solid color-mix(in srgb,var(--down) 30%,var(--border))}
+.phase.p2>.ph-h{background:color-mix(in srgb,var(--ink) 5%,var(--surface));
+  border-bottom:1px dashed var(--muted)}
+.phase .ph-b{padding:12px 15px;background:var(--surface);display:flex;flex-direction:column;gap:9px}
+.ph-badge{font-size:11px;font-weight:800;letter-spacing:.3px;border-radius:6px;padding:2px 9px;flex:0 0 auto}
+.ph-badge.sync{color:#fff;background:var(--down)}
+.ph-badge.async{color:var(--ink2);background:transparent;border:1px dashed var(--muted)}
+.offmain{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:11px;font-weight:700;
+  color:var(--ink2);border:1px dashed var(--muted);border-radius:5px;padding:1px 7px;margin-left:2px}
+.tickline{display:flex;align-items:center;gap:12px;color:var(--muted);font-size:11.5px;font-weight:700;
+  letter-spacing:.4px;margin:2px 0}
+.tickline::before,.tickline::after{content:"";flex:1;border-top:1px dashed var(--grid)}
+.branch{border-left:3px solid var(--down);background:color-mix(in srgb,var(--down) 6%,var(--surface));
+  border-radius:0 8px 8px 0;padding:8px 12px;font-size:12.8px;color:var(--ink2);margin-top:2px}
+.branch.warm{border-left-color:var(--truth);background:color-mix(in srgb,var(--truth) 7%,var(--surface))}
+.branch b{color:var(--ink)}
+.cmp2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:6px}
+@media(max-width:820px){.cmp2{grid-template-columns:1fr}}
+.cc-col{border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--surface)}
+.cc-col .hd{padding:10px 14px;font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px}
+.cc-col.first .hd{background:color-mix(in srgb,var(--up) 10%,var(--surface));
+  border-bottom:1px solid color-mix(in srgb,var(--up) 30%,var(--border))}
+.cc-col.revisit .hd{background:color-mix(in srgb,var(--truth) 9%,var(--surface));
+  border-bottom:1px solid color-mix(in srgb,var(--truth) 40%,var(--border))}
+.cc-col .bd{padding:11px 15px;font-size:13.1px;color:var(--ink2)}
+.cc-col .bd ol{margin:0;padding-left:17px}
+.cc-col .bd li{margin:5px 0}
+.cc-col .bd b{color:var(--ink)}
+.big-o{font-weight:800;font-size:12.5px;border-radius:5px;padding:1px 7px;white-space:nowrap}
+.big-o.n{color:var(--up);border:1px dashed var(--up)}
+.big-o.one{color:var(--truth);border:1px solid var(--truth)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>会话域：操作 / 数据流向 · 挂载生命周期</h1>
+  <p class="sub">按纯 AppKit 规范（数据向下 · 事件向上 · 真相源唯一）画的理想架构。共三张图：① 层次与流向 → ② 发送闭环 → ③ 挂载生命周期。</p>
+
+  <div class="legend">
+    <div class="li"><span class="k"><span class="swatch sw-down"></span>蓝实线 ▼</span>
+      <span><b style="color:var(--ink)">数据向下</b>（data-down）：真相源用 <code>@Published</code> 把"该显示什么"投影下去，下层 <code>sink</code> 订阅后刷新。</span></div>
+    <div class="li"><span class="k"><span class="swatch sw-up"></span>橙虚线 ▲</span>
+      <span><b style="color:var(--ink)">事件向上</b>（events-up）：用户操作用 target-action / delegate <b>只上报意图</b>，自己不改真相。</span></div>
+    <div class="li"><span class="k"><span class="chip-truth">真相源</span></span>
+      <span>某状态<b style="color:var(--ink)">唯一权威</b>的存放处。别处看到的（侧栏、归档、transcript）都是它的<b style="color:var(--ink)">投影</b>，不是第二份拷贝。</span></div>
+  </div>
+
+  <!-- ══════════ 图 1：层次与流向 ══════════ -->
+  <h2><span class="tag">图 1</span>层次与数据流向 —— 谁住在哪、真相在哪、流朝哪</h2>
+  <p class="cap">从上到下＝生命周期从长到短。真相只在最上两层（Store 的会话集合 + Service 的活状态）；越往下越短命，只是投影。</p>
+
+  <div class="stack">
+
+    <div class="layer">
+      <span class="scope">进程级 · STORE（活得和 App 一样长）</span>
+      <div class="nodes">
+        <div class="node truth">
+          <div class="nm"><span class="mono">SessionStore</span><span class="chip-truth">真相源</span></div>
+          <div class="role">"有哪些会话 + 元数据"（磁盘 / CoreData 支撑）。侧栏、归档窗口都<b>订阅它的列表</b>，不各存一份。</div>
+        </div>
+        <div class="node">
+          <div class="nm"><span class="mono">RunningSessionsStore</span></div>
+          <div class="role">只登记<b>当前在跑</b>的引擎：<span class="mono">id → SessionRuntime</span>。不是"所有会话"的大 map。</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="gap single">
+      <div class="pill link">⇅ &nbsp;会话开始 → <b>创建 runtime 并登记</b>；&nbsp;停止 / 归档 → <b>注销</b></div>
+    </div>
+
+    <div class="layer">
+      <span class="scope">每个运行中的会话 · SERVICE（独立于视图存活）</span>
+      <div class="nodes">
+        <div class="node truth" style="flex:1 1 100%">
+          <div class="nm"><span class="mono">SessionRuntime</span><span class="chip-truth">真相源 · 活状态</span></div>
+          <div class="role">一个会话一个：持 <b>CLI 子进程</b>、累积消息、<span class="mono">status</span>。渲染缓存（blocks）也挂在它身上。<b>视图切走它照样跑。</b></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="gap">
+      <div class="pill down"><span class="ar">▼</span><span><b>runtime 的 @Published 变化</b> → VM 订阅、派生出 blocks</span></div>
+      <div class="pill up"><span class="ar">▲</span><span><b>VM.send(text)</b> → 调 runtime 跑起来</span></div>
+    </div>
+
+    <div class="layer">
+      <span class="scope">每屏 · CONTROLLER + VIEWMODEL（短命，切走即弃）</span>
+      <div class="nodes">
+        <div class="node" style="flex:1 1 100%">
+          <div class="nm"><span class="mono">ChatSessionViewController</span> ＋ <span class="mono">ChatSessionViewModel</span></div>
+          <div class="role">每屏一个。VM 绑定 <span class="mono">Session</span>(值) ＋ <span class="mono">SessionRuntime</span>，<b>派生</b>本屏显示状态；VC 只做搬运。</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="gap">
+      <div class="pill down"><span class="ar">▼</span><span><b>VM 的 @Published</b> → VC <code>sink</code> → 更新控件</span></div>
+      <div class="pill up"><span class="ar">▲</span><span><b>点击 / 输入</b> → VC target-action → VM</span></div>
+    </div>
+
+    <div class="layer">
+      <span class="scope">视图 · VIEW（笨视图）</span>
+      <div class="nodes">
+        <div class="node" style="flex:1 1 100%">
+          <div class="nm"><span class="mono">Transcript</span>（自绘）＋ <span class="mono">InputBarView</span></div>
+          <div class="role">只显示传入的数据 ＋ 上报用户意图。不持有任何业务真相。</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ══════════ 图 2：发送闭环 ══════════ -->
+  <h2><span class="tag">图 2</span>发送一条消息的闭环 —— draft → active 的翻转就在第 3 步</h2>
+  <p class="cap">事件先向上跑到真相源，改完再向下投影回来。★ 那步是"草稿会话"变成"活会话"的唯一时刻。</p>
+
+  <div class="steps">
+    <div class="step">
+      <div class="n">1</div>
+      <div class="body"><div class="t">用户在输入框敲字 → 点发送<span class="dir up">▲ events-up</span></div>
+        <div class="d">VC 收到 target-action。输入框里的草稿文字是纯视图内临时状态，不是真相。</div></div>
+    </div>
+    <div class="step">
+      <div class="n">2</div>
+      <div class="body"><div class="t">VC 调 <code>VM.send(text)</code></div>
+        <div class="d">VC 只搬运，不判断。</div></div>
+    </div>
+    <div class="step flip">
+      <div class="n">3</div>
+      <div class="body"><div class="t"><span class="star">★</span> VM 问 <code>RunningSessionsStore</code>：这个 id 有 runtime 吗？</div>
+        <div class="d"><b>没有 → 造一个 <code>SessionRuntime</code>，登记进 RunningSessionsStore。</b> 这一刻 = draft→active 翻转（对应现在的 <code>SessionRuntime.fromDraft</code>）。有就直接复用。</div></div>
+    </div>
+    <div class="step">
+      <div class="n">4</div>
+      <div class="body"><div class="t">runtime 起 / 复用 CLI，消息流式回来</div>
+        <div class="d">runtime 累积 messages、更新 <span class="mono">status</span>（后台线程发布 → <code>receive(on:.main)</code> 再刷 UI）。</div></div>
+    </div>
+    <div class="step">
+      <div class="n">5</div>
+      <div class="body"><div class="t">VM 订阅 runtime → 派生 blocks → VC 刷新 transcript<span class="dir down">▼ data-down</span></div>
+        <div class="d">闭环走完。真相只改在两处：会话集合改在 <code>SessionStore</code>，活状态改在 <code>SessionRuntime</code>。</div></div>
+    </div>
+  </div>
+
+  <!-- ══════════ 图 3：挂载生命周期 ══════════ -->
+  <h2><span class="tag">图 3</span>挂载是怎么做的 —— 短命的随挂载生死，长命的 runtime 跨挂载存活</h2>
+  <p class="cap">切走别的会话 → 再切回来。看绿框 <span class="mono">SessionRuntime R</span> 三态里始终没死，而蓝框 VM/VC 被销毁又重建。</p>
+
+  <div class="life">
+
+    <div class="col">
+      <h3><span class="i">①</span> 挂载中</h3>
+      <div class="rt">
+        <div class="lab">RunningSessionsStore</div>
+        <div class="box">▸ SessionRuntime R &nbsp;<span class="tick">● 活着</span></div>
+        <div class="note">持 CLI，正常累积消息。</div>
+      </div>
+      <div class="bind">▲ 绑定（取回 R）</div>
+      <div class="vm">
+        <div class="nm">ChatSessionViewModel</div>
+        <div class="role">订阅 R，派生显示</div>
+      </div>
+      <div class="vm" style="border-style:solid">
+        <div class="nm">ChatSessionViewController ＋ View</div>
+      </div>
+      <div class="cc">这一屏正常显示会话 R。</div>
+    </div>
+
+    <div class="col">
+      <h3><span class="i">②</span> 切走（选了别的会话）</h3>
+      <div class="rt hot">
+        <div class="lab">RunningSessionsStore</div>
+        <div class="box">▸ SessionRuntime R &nbsp;<span class="tick">● 仍在跑</span></div>
+        <div class="note"><b>关键：</b>视图没了，但 R 留在登记表里 —— CLI 继续吐消息、继续累积。</div>
+      </div>
+      <div class="bind" style="color:var(--dead)">✕ 绑定断开</div>
+      <div class="vm dead">
+        <div class="nm">ChatSessionViewModel ✕ 销毁</div>
+        <div class="role">prepareForRemoval() 退订</div>
+      </div>
+      <div class="vm dead">
+        <div class="nm">ViewController ＋ View ✕ 销毁</div>
+      </div>
+      <div class="cc">短命层被确定性拆卸；长命的 R 不受影响。</div>
+    </div>
+
+    <div class="col">
+      <h3><span class="i">③</span> 切回</h3>
+      <div class="rt">
+        <div class="lab">RunningSessionsStore</div>
+        <div class="box">▸ SessionRuntime R &nbsp;<span class="tick">● 同一个 R</span></div>
+        <div class="note">没重建、没重连。</div>
+      </div>
+      <div class="bind">▲ 从登记表<b>取回同一个 R</b></div>
+      <div class="vm">
+        <div class="nm">ChatSessionViewModel′（新建）</div>
+        <div class="role">绑回同一个 R</div>
+      </div>
+      <div class="vm" style="border-style:solid">
+        <div class="nm">ViewController′ ＋ View′（重建）</div>
+      </div>
+      <div class="cc"><span class="tick">O(1)</span>：渲染缓存在 TranscriptStore（见图 4），不重解析历史。</div>
+    </div>
+
+  </div>
+
+  <!-- ══════════ 图 4：挂载路径 / 两阶段加载 ══════════ -->
+  <h2><span class="tag">图 4</span>点击 sidebar → transcript 上屏：两阶段加载（首次 / 非首次<b>统一</b>）</h2>
+  <p class="cap">最容易乱的一段。核心设计选择：把渲染缓存从"胖 Session"搬到每会话的 <span class="mono">TranscriptStore</span> —— 于是首次和非首次不再是两套代码，而是同一条路径，差别只落在一个"文档是否已加载"的水位标志上。</p>
+
+  <div class="designnote">
+    <div class="h">🧱 新引入的对象 · <span class="mono">TranscriptStore</span>（Store · 每会话 · 视图无关）</div>
+    它持有这个会话的 <b>消息时间线 + 翻译好的 blocks + 行高缓存 layoutCache</b> —— 就是让"再次进入 O(1)"的那份缓存。它<b>不挂在 VM 上</b>（VM 短命），也<b>不挂在 runtime 上</b>（多数被点开的会话根本没在运行）。两个写入者喂它：① 历史回填（磁盘 JSONL，一次性）；② runtime 的 live 事件（在跑时）。VM 只<b>订阅</b>它。进程级有界缓存（LRU）持有它、跨挂载存活。<br>
+    <span style="font-size:12.5px">（这修正了图 3 的简化说法"缓存挂在 runtime R 上"——正确归属是独立的 <span class="mono">TranscriptStore</span>。）</span>
+  </div>
+
+  <div class="phase p1">
+    <div class="ph-h"><span class="ph-badge sync">同步</span> 相 1 · 源相 —— 就在点击那一个 runloop tick 里跑完</div>
+    <div class="ph-b">
+      <div class="step"><div class="n">1</div><div class="body"><div class="t">选中 → 路由<b>同步</b>换详情 VC</div><div class="d">selectionObserver 在点击的源相里同步触发（不走 @Observable 的延后重算），避免会话切换被撕成两帧。</div></div></div>
+      <div class="step"><div class="n">2</div><div class="body"><div class="t">造 / 复用每屏 <span class="mono">ChatSessionViewModel</span>，绑定该会话的 <span class="mono">TranscriptStore</span></div><div class="d">从进程级缓存取 TranscriptStore；没有就建一个空的（首次）。</div></div></div>
+      <div class="step"><div class="n">3</div><div class="body"><div class="t">建 per-attach 的 scroll / table 壳（尚未绑 dataSource）</div><div class="d">每次挂载都新建、离场即拆——每-attach 资源，不跨挂载复用。</div></div></div>
+      <div class="step"><div class="n">4</div><div class="body"><div class="t">settle：<code>layoutSubtreeIfNeeded</code> 把表按<b>真实宽度</b>定尺寸</div><div class="d">此刻还没有行可查。这就是"一次源相 = 一个 id 一个宽度"的性能契约：宽度必须在 tile 之前定死。</div></div></div>
+      <div class="step"><div class="n">5</div><div class="body"><div class="t">bind dataSource → <code>scrollToTail</code>：<b>渲染 TranscriptStore 此刻拥有的 blocks</b></div><div class="d">读 layoutCache，命中即 O(1)。这一步"渲染现有内容"对首次和非首次是<b>同一行代码</b>——差别只在 store 里此刻有多少东西。</div></div></div>
+      <div class="branch warm"><b>非首次（暖）：</b>store 已满 → 整个 transcript <b>这一 tick 立刻上屏</b>。</div>
+      <div class="branch"><b>首次（冷）：</b>store 空 → 这一 tick 先空着（若在跑则只有 live tail）。真正的历史在相 2 流进来。</div>
+    </div>
+  </div>
+
+  <div class="tickline">TICK 边界 · beforeWaiting flush —— 布局 / 绘制 / CoreAnimation 提交，画面上屏</div>
+
+  <div class="phase p2">
+    <div class="ph-h"><span class="ph-badge async">异步</span> 相 2 · 延迟相 —— 只有"有缺口"时才干活</div>
+    <div class="ph-b">
+      <div class="step"><div class="n">6</div><div class="body"><div class="t">若 <span class="mono">store.historyLoaded == false</span> → 起 backfill 管道</div>
+        <div class="d">
+          <b>后台线程</b><span class="offmain">off-main</span>：反向分页读 JSONL → markdown 解析 → 翻译成 Block → CTLine 排版（全部不占主线程）。<br>
+          <b>主线程预算 drain</b>：尾页 <code>append</code> + <code>scrollToTail</code>，老页 <code>prepend</code> + 保持可视位置 —— tail-first 流式补齐；每帧只 drain 预算内的页，不卡滚动。<br>
+          完成 → 置 <span class="mono">store.historyLoaded = true</span>。
+        </div></div></div>
+      <div class="step flip"><div class="n">7</div><div class="body"><div class="t">若 <span class="mono">store.historyLoaded == true</span> → 相 2 <b>直接 no-op</b></div>
+        <div class="d">非首次天然走到这里：文档已满，什么都不用做。这就是"非首次"的全部含义——不是另一套路径，是同一条路径的退化情形。</div></div></div>
+    </div>
+  </div>
+
+  <h3 style="font-size:15px;margin:24px 0 2px">首次 vs 非首次：同一条路径，只有一个分叉</h3>
+  <div class="cmp2">
+    <div class="cc-col first">
+      <div class="hd">🧊 首次（冷）<span class="big-o n">O(n)</span></div>
+      <div class="bd"><ol>
+        <li>相 1 步骤 1–5 <b>照跑</b>；第 5 步渲染时 store 空 → 屏上先空 / 只有 live tail。</li>
+        <li>相 2 触发回填：磁盘 → 解析 → 翻译 → 排版，<b>全在后台线程</b> + 预算化主线程 drain。</li>
+        <li>内容 tail-first 流式上屏 → 置 <b>loaded</b>。</li>
+      </ol><div style="margin-top:8px">O(n) 但不卡：重活都在 off-main，主线程只做有预算的 drain。</div></div>
+    </div>
+    <div class="cc-col revisit">
+      <div class="hd">🔥 非首次（暖）<span class="big-o one">O(1)</span></div>
+      <div class="bd"><ol>
+        <li>相 1 步骤 1–5 <b>照跑（同一行代码）</b>；第 5 步渲染时 store 已满 → <b>整屏立刻上屏</b>。</li>
+        <li>相 2 见 <b>loaded == true</b> → 立即返回，<b>零磁盘 / 零解析 / 零排版</b>。</li>
+        <li>唯一主线程成本：重建 table 壳 + 一次 tile（读缓存命中）。</li>
+      </ol><div style="margin-top:8px">不是"跳过了加载"，是"相 2 发现没缺口"。</div></div>
+    </div>
+  </div>
+
+  <div class="designnote" style="margin-top:16px">
+    <div class="h">✅ 为什么这样又干净又快</div>
+    <b>干净：</b>首次/非首次不再是 <code>if firstTime</code> 分支，而是一个"文档水位"——同一条 attach 路径，相 2 幂等。缓存住在 <span class="mono">TranscriptStore</span>（每会话、视图无关），所以 VM 能保持短命、re-visit 仍 O(1)。<br>
+    <b>快：</b>源相里只做"壳 + 定宽 + 绑定 + 一次 tile（读缓存）"——全是 O(1) / 缓存命中的活；一切磁盘、解析、排版都推到后台线程 + 预算化 drain，永不占点击那一 tick。
+  </div>
+
+  <div class="footnote">
+    <b>一句话读懂三张图：</b>真相只有两处 —— <code>SessionStore</code>（有哪些会话）和 <code>SessionRuntime</code>（一个活会话的实时状态）；
+    其余全是订阅出来的投影。用户操作一律 <b style="color:var(--up)">▲ 向上</b>报到这两处，改完再 <b style="color:var(--down)">▼ 向下</b>刷回来。
+    每屏的 VM/VC 是<b>短命</b>的（随挂载生死），而 runtime 是<b>长命</b>的（住在 RunningSessionsStore、跨挂载存活）——
+    这就是"一个 VM 对应一份 model"和"CLI 不能断"能同时成立的原因。没有 <code>SessionManager</code>、没有大 map、没有跨三层的共享 <code>Session</code>、没有 Util。
+  </div>
+</div>
+</body>
+</html>

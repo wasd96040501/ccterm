@@ -863,30 +863,6 @@ final class ModelCatalogStore {
 <div class="callout warn"><b>迁移风险：合法单例不能沦为隐藏注入捷径</b>
 <p>四个保留的 <code>.shared</code> 各自要带一句理由注释；评审时须确认没有业务代码把它们当“懒得传”的后门——补全缓存应经 <code>CompletionPrewarmer</code> 触达、CoreData 应经注入的 <code>SessionRepository</code> 触达，而不是在 VC 里散落 <code>FileCompletionStore.shared.complete(...)</code>。<code>TranscriptSearchCommand</code>（旧 <code>TranscriptSearchBus</code>）是<b>窗口生命周期</b>的命令持有者，由 <code>AppCoordinator</code>/窗口持有，<b>不是</b>单例。</p></div>
 
-<h4>3.4.1 把「举证责任」逐个跑一遍：一张单例裁决表不够，得贴代码</h4>
-
-<p>上面那张裁决表是<b>结论</b>，不是<b>论证</b>。ch.4.6 的「举证责任」要求的是后者：对每一个 <code>.shared</code>，逐个回答「它到底 fork 了子进程 / 持了每进程或每目录唯一的缓存 / 是持久化栈（合法），还是只是『懒得传』的业务偏好在伪装成全局？」。把这道证明真跑一遍，会发现原表有三处需要修正——它们都是「先写结论、没读代码」留下的痕迹。全库真实的 <code>static let shared</code> 只有六个，逐一过筛如下。</p>
-
-<table class="cmp">
-<thead><tr><th>单例（真实类型）</th><th>裁决</th><th>举证（读代码后的理由）</th></tr></thead>
-<tbody>
-<tr><td><code>ModelStore</code></td><td><b>KEEP</b></td><td>启动 fork 一个 CLI 子进程枚举可用模型——正是 ch.4.6 点名的原型，六个里最<b>无可争议</b>的一个。</td></tr>
-<tr><td><code>FileCompletionStore</code></td><td><b>KEEP</b></td><td>ch.4.6 明列的「按路径共享的补全数据源」：键是 <code>{path}</code>（<b>不是</b>窗口/会话）、spawn <code>git/find/fzf</code> + FSEvents 增量。按窗口/会话重新作用域会在同一目录重复 fork，且打散 in-flight 回调合并。</td></tr>
-<tr><td><code>SlashCommandStore</code></td><td><b>KEEP</b></td><td>同上，键是 <code>{path, pluginDirs}</code>（<code>CacheKey</code>）、<code>launchTempCLI</code> fork 一次性子进程驱动 <code>initialize</code>、FSEvents 失效、<code>pendingCallbacks</code> 天然 per-instance 合并。经 <code>CompletionPrewarmer</code> 门面触达（仅 2 处 <code>.shared</code>）。</td></tr>
-<tr><td><code>CoreDataStack</code></td><td><b>KEEP（但补一句理由注释）</b></td><td>每进程一份 <code>NSPersistentContainer</code>——诚实的引用语义单例，且 <code>private init()</code> 让第二次 <code>CoreDataStack()</code> 直接编译不过。但 <b>ch.4.6 要求理由注释写在单例<em>自己</em>身上</b>，现状只散在 <code>SessionRepository</code> 的注释里；孤立读 <code>CoreDataStack.swift</code> 看不到「为什么它是单例」。补一行即达标。</td></tr>
-<tr><td><code>EffortDefaultStore</code></td><td><b>DROP</b></td><td>只是 <code>UserDefaults</code> 上「每模型最近一次 effort」的薄包装——无进程唯一性、非缓存、非每目录协调器，正是 ch.4.8 Analytics 思考题里该经组合根注入移除的「伪全局」。已有 <code>init(defaults:)</code> 缝。</td></tr>
-<tr><td><code>NewSessionDefaultsStore</code></td><td><b>DROP</b></td><td>同上：<code>UserDefaults</code> 里「上次用的 model + 权限模式」的全局偏好、无 memo。ch.4.6/4.8 判它回组合根注入。</td></tr>
-</tbody>
-</table>
-
-<div class="callout warn"><b>原表三处需修正——都是「先写结论、没读代码」的痕迹</b>
-<p><b>(1) <code>RecentProjectsStore</code> 根本不是单例，却被列进「去 <code>.shared</code>」。</b>整个仓库里 <code>RecentProjectsStore</code> 没有任何 <code>static let shared</code>——它已经是 <code>@Observable @MainActor final class</code>，在组合根 <code>AppState.init</code> 里 <code>new</code> 出来、以 <code>let recentProjects</code> 注入下发（外加一处 <code>#Preview</code> 内联）。<b>没有单例可降级</b>；把它写进裁决表是 1:1 relabel 时「看名字像 Store 就假设它是 <code>.shared</code>」的产物，会对本已合规的代码制造 churn。正确裁决是「无事可做，已合规」。</p>
-<p><b>(2) 两个偏好 store 的 DROP 是<em>中等</em>成本，不是「<code>new</code> 出来注入即可」的一行替换。</b>它们的真实读点（<code>EffortDefaultStore.shared</code>×3、<code>NewSessionDefaultsStore.shared</code>×4）全都在 SwiftUI 叶子 View（<code>ModelEffortPicker</code> / <code>PermissionModePicker</code>）的 body 里，深埋在 <code>InputBarSessionChrome</code> 三层之下。诚实的注入要么把 store 顺 <code>DetailContext</code>/新 Environment key 穿到叶子（复用四个既有 detail 服务同一条路），要么为两个 draft picker <b>直接注入单参数</b>（ch.4.6 l.1214）。裁决对（DROP），但别把工作量说小。</p>
-<p><b>(3) <code>CoreDataStack</code> 的「过度使用 <code>.shared</code>」是<em>未来时</em>，现状已实现。</b>业务代码<b>没有</b>散读 <code>CoreDataStack.shared</code>：唯一非注释引用是定义本身，落地边是 <code>CoreDataSessionRepository(coreDataStack: CoreDataStack = .shared)</code> 的默认参数注入，且 <code>init(inMemory:)</code> 测试缝已在。真正被测试行使的隔离缝在<b>更上一层</b>——<code>SessionRepository</code> 协议边界，每个测试注 <code>InMemorySessionRepository</code> 整个换掉 CoreData 栈（<code>CoreDataStack(inMemory:)</code> 目前是<b>未被引用的死代码</b>）。所以「让业务经唯一持有者触达」这条已达成，别当作待办。</p></div>
-
-<div class="callout why"><b>为什么这道证明非跑不可</b>
-<p>一张「keep/drop」表读起来和「已论证」一模一样，但它分不出「诚实的缓存」和「懒惰的全局」——而这正是 ch.4.6 整条规则的<b>唯一</b>目的。跑一遍举证，才会暴露：<code>RecentProjectsStore</code> 是幽灵条目（审了不存在的问题）、两个偏好 store 的注入要穿 SwiftUI 叶子（成本被低估）、<code>CoreDataStack</code> 的理想态已实现（被误记成待办）。「举证责任」不是形式——它是把「看名字猜层」换成「读代码定层」的强制手段。</p></div>
-
 <h3>3.5 一个 SwiftUI 迁移的连带账：菜单栏必须手搓</h3>
 
 <p>这是组合根迁移里一个容易漏、且漏了会静默出问题的点，必须在本章讲清。SwiftUI 的 <code>App</code> 协议会<b>自动合成</b>标准主菜单（App 的 Hide/Quit、Edit 的 Cut/Copy/Paste/Undo/Redo/Select All、Window、Help）；旧的 <code>AppCommands</code>（一个 SwiftUI <code>Commands</code> 块）只<b>覆盖</b>了 <code>.appInfo</code>（关于）、<code>.appSettings</code>（⌘,）并<b>新增</b>了 Find（⌘F）。纯 AppKit 没有这套自动合成——如果你只搬了 <code>AppCommands</code> 那三项，其余菜单会<b>整个消失</b>，输入栏和搜索框依赖的文本编辑快捷键（复制/粘贴/撤销）会静默失效。</p>
@@ -1497,17 +1473,14 @@ protocol TranscriptSearchFocusing: AnyObject {
 <tr><td><code>SessionConfig</code></td><td><b>Model</b></td><td><code>struct</code> / <code>Codable</code></td><td>不可变快照、复制即安全、可脱 UI 测 → 值语义</td></tr>
 <tr><td><code>SessionRecord</code></td><td><b>Model</b></td><td><code>struct</code> / <code>Codable</code></td><td>持久化行的值表示（跨 Core Data 边界）</td></tr>
 <tr><td><code>CLIClient</code></td><td><b>Service（协议 + 实现）</b></td><td><code>protocol</code> + <code>final class</code></td><td>跨进程 I/O、需打桩替换 → 面向协议的能力提供者</td></tr>
-<tr><td><code>Worktree</code> <b>†</b></td><td><b>Model</b></td><td><code>struct</code></td><td>「一个 git worktree 是什么」的值描述，无行为副作用 <b>——† 仅对 122 行的纯值 struct 成立；其 ~880 行 <code>extension</code> 是 git 子进程 I/O，必须拆出，见 §6.7</b></td></tr>
+<tr><td><code>Worktree</code></td><td><b>Model</b></td><td><code>struct</code></td><td>「一个 git worktree 是什么」的值描述，无行为副作用</td></tr>
 <tr><td><code>HistoryLoader</code></td><td><b>Service（协议 + 实现）</b></td><td><code>protocol</code> + <code>final class</code></td><td>读磁盘历史（JSONL）→ I/O，注入可换假实现</td></tr>
 <tr><td><code>TitleGenerator</code></td><td><b>Service</b></td><td><code>final class</code></td><td>可能 fork 子进程 / 调模型生成标题 → I/O 服务</td></tr>
-<tr><td>各 <code>*Tracker</code> <b>‡</b></td><td><b>Service</b></td><td><code>@MainActor final class</code></td><td>观察外部状态并发布（激活态、活动等）→ 状态服务 <b>——‡ 这行把六个结构迥异的类型糊成一层，且「激活态、活动」描述的其实是另一个类型 <code>AppActivationTracker</code>；逐个体检见 §6.7.1（两个是纯值 Model、一个是 protocol 缝）</b></td></tr>
+<tr><td>各 <code>*Tracker</code></td><td><b>Service</b></td><td><code>@MainActor final class</code></td><td>观察外部状态并发布（激活态、活动等）→ 状态服务</td></tr>
 </tbody>
 </table>
 
 <div class="ref"><b class="ref-proj">CCTerm · Services/Session/</b><span class="ref-note">今天这些类型已经聚在 <code>Services/Session/</code> 一个目录里（旧 <code>Session</code> / <code>SessionRuntime</code> / <code>SessionManager</code> / <code>SessionRepository</code> / <code>Worktree</code>），符合 ch.2.1「按功能聚合」。本章不打散目录，只把每个文件里的类型<b>定层</b>——目录是功能边界，层是职责边界，两者正交。</span></div>
-
-<div class="callout warn"><b>这张表只回答「定层」，不回答「颗粒度」——两处标记 †/‡ 需在 §6.7 复核</b>
-<p>上表是 1:1 归位：给每个现存类型发一顶层帽子。但「帽子对不对」和「这个类型的<b>边界</b>对不对」是两问。标 <b>†</b> 的 <code>Worktree</code>（其实是 I/O 家族，doc 的「Model 无行为」是事实错误，必须<b>拆</b>）与标 <b>‡</b> 的「各 <code>*Tracker</code>」（一行糊了六个结构迥异的类型，其中两个是纯值 Model、一个是 protocol 缝）都需要在 <b>§6.7 拆/合再裁决</b>里逐个体检。反过来，<code>Session</code>/<code>SessionRuntime</code> 的拆分、<code>SessionRuntime</code> 的 extension 分文件、两个 tracker 的分离——这些 1:1 归位恰好是对的，§6.7 也解释了为何<b>不该</b>为「统一」去动它们。</p></div>
 
 <div class="callout why"><b>为什么先定层，而不是先改代码</b>
 <p>SwiftUI 时代，这些类型都靠 <code>@Observable</code> 被视图「顺手」读到，层的界线是模糊的——一个 <code>@Observable class Session</code> 既像 Model 又像 ViewModel 还兼 Service。去掉 SwiftUI 后，编译器不再替你缝合，每个跨类型引用都要你亲手接线；<b>接线之前不定层，就会把 I/O 接到视图上、把可变状态复制成两份真相</b>。定层是后续所有接线（6.4 的可观察性、6.5 的注入）的前提，不是形式主义。</p></div>
@@ -1685,77 +1658,8 @@ final class SessionManager {
 <div class="callout why"><b>为什么会话对象尤其要显式拆卸</b>
 <p><code>SessionRuntime</code> 挂着一个可能长跑的 <code>CLIClient</code> 子进程通信任务。若只寄望 ARC 在「某个不确定时刻」释放，任务会背着一个已被切走的会话继续跑、继续触发 <code>onIsRunningChange</code>，改动早已离场的 UI（ch.3.4 隐患）。所以运行时的取消要绑定到显式生命周期点（会话归档 / VC 的 <code>prepareForRemoval()</code>），而不是 deinit；deinit 只做「切断执行器跳转」这一件与业务无关的事。</p></div>
 
-<h3>6.7 定层之后的第二问：到底该拆还是该合（本章此前只做了 1:1 归位）</h3>
-
-<p>6.1–6.6 做的是<b>归位</b>——把每个现存类型钉进五层。但归位回避了一个更硬的问题：这些对象的<b>颗粒度</b>本身对不对？该不该把某个大对象<b>拆</b>成两个、把某两个各管一摊的<b>合</b>成一个？「给旧类型贴个新层标签」不等于「这个类型的边界是对的」。本节把这一问逐个对象跑一遍，判据始终是 ch.1.2 的<b>「一个存在的理由 / 一条变化的轴」</b>加 ch.2.5（别攒 Utils 大杂烩）——而不是行数。结论有三类：一处必须<b>拆</b>（doc 标错了层）、几处该<b>合/收窄标签</b>、多处刻意<b>保持不动</b>（doc 的 1:1 恰好是对的，不要为「更干净」去 churn 好结构）。</p>
-
-<div class="rule-pair">
-<div class="rule dont">
-  <div class="rule-head">该拆 · doc 标错了层</div>
-  <div class="rule-body">
-    <p><b><code>Worktree</code> 家族：doc 标「Model（值结构，无行为）」是<em>事实错误</em>。</b>只有 122 行的 <code>Worktree.swift</code>（4 个 <code>let</code> + 纯 <code>isPathInside</code> 谓词、<code>Equatable/Hashable</code>、无 <code>import AppKit</code>）是真 Model。但类型<b>如其所是</b>横跨 ~1085 行：<code>Worktree+Internals.swift</code>(645) 与 <code>Worktree+Lifecycle.swift</code>(247) 把 git 子进程 + 磁盘 I/O 挂成 <code>extension Worktree</code> 的方法——<code>runGit/runCommand</code> spawn <code>Process()</code> 并 <code>waitUntilExit()</code>；<code>create</code> 跑 <code>git fetch</code>+<code>git worktree add</code>+FileManager 拷贝；<code>remove()</code> 跑 <code>git worktree remove</code>+删目录。<code>SessionManager</code> 里 <code>Worktree(...)</code> 造个值就 <code>.remove()</code> 删一个目录（l.559-561）——一个「复制一份就能 shell out 删盘」的值，直接违反 ch.1.2「Model 不做 I/O、复制即安全、无隐藏共享」。</p>
-<pre><code class="language-swift">// 拆：身份（值）与行为（I/O）各归各层
-// ✅ Model —— 保留这个纯值描述符，可进 Core、可脱窗测
-struct Worktree: Hashable {           // path / name / baseRepo / sourceBranch
-    let path: URL; let name: String
-    func isPathInside(_ other: URL) -&gt; Bool { /* 纯谓词 */ }
-}
-// ✅ 不是 ch.1.2 意义上的 Service（无身份/无生命周期），而是
-//    ~30 个无状态 static —— 收进一个单主题的 git-provisioning 命名空间，
-//    对照仓库既有的 GitUtils enum / 已抽出的 WorktreeProvisioner。
-//    并把两个「破坏性 INSTANCE 方法」remove()/renameBranch() 一起挪走，
-//    使一个裸值副本无法静默 shell out。</code></pre>
-    <p class="ref"><span class="ref-proj">校正</span><span class="ref-note">提取目标<b>不是</b>一个有状态的 <code>WorktreeService</code>——I/O 是无状态 static，正确的家是「命名空间 + 已有的 <code>WorktreeProvisioner</code> 缝」。且 <code>runGit/runCommand</code> 有<b>第二消费者</b>（<code>GitProbe</code> 调 <code>Worktree.runGit</code> 四次），不能塞进 service 私有——它们属于共享的 git-runner 命名空间（<code>GitUtils</code> 那类角色）。<code>renameBranch(to:)</code> 是<b>零调用死代码</b>，别当活行为分类。</span></p>
-  </div>
-</div>
-<div class="rule do">
-  <div class="rule-head">保持不动 · doc 的 1:1 恰好对</div>
-  <div class="rule-body">
-    <p><b><code>Session</code> / <code>SessionRuntime</code> 两对象拆分：KEEP。</b>理由不是「体积大」，而是<b>两条不同的生命周期与身份</b>：<code>Session</code> 是 <code>sessionId</code>（<code>let</code>，穿越 draft→active 不变）稳定身份的<b>门面</b>，<b>惰性</b>持有一个 <code>SessionRuntime</code> 作为 phase-scoped 子生命期；runtime 只在首次 send 时经 <code>fromDraft</code> 造出整张图（frameTicker/assembler/两个 tracker/cliClient 槽）。合并会让每张<b>可丢弃的 New Session 卡</b>都急切分配 CLI 引擎，还逼 <code>phase</code> 枚举的「恰好翻转一次」不变量退化成一堆可空字段守卫——正是 ch.4.1 点名的「半初始化对象」反模式。</p>
-    <p><b><code>SessionRuntime</code> 的 extension 分文件：KEEP（是<em>归档</em>，不是 Service 边界）。</b>11 个 <code>SessionRuntime+*.swift</code> 全是 <code>extension SessionRuntime {}</code>、操作同一份 <code>messages</code> 真相（六个 extension 写它）。再抽 <code>StreamingStateMachine</code>/<code>TurnReceiver</code> 会逼出「回指 runtime 的向上依赖」或「第二份 <code>messages</code>」——被 ch.7.3 与 Session/CLAUDE.md 的「no shadow snapshot」双重禁止。真正可分离的 I/O <b>早已</b>抽成兄弟 Service（<code>CLIClient</code>/<code>TitleGenerator</code>/<code>WorktreeProvisioner</code>/<code>HistoryLoader</code>）与 <code>StreamingTurnAssembler</code> 值助手。</p>
-    <p class="ref"><span class="ref-proj">校正</span><span class="ref-note">分文件由 ch.2.3 的<b>理由</b>（文件 = 版本控制与检索单位）支撑，而非 2.3 的<b>字面</b>——2.3 只为「协议默认实现」祝福同名 extension；此处是「可辩护但非强制」。规模是 11 文件 / ~2922 行，非「13 / ~2600」。</span></p>
-  </div>
-</div>
-</div>
-
-<h4>6.7.1 satellites 逐个体检：一句「各 *Tracker → Service」把六个结构迥异的类型糊成了一层</h4>
-
-<p>doc 用一行「<code>各 *Tracker → Service（@MainActor final class）</code>，理由『观察外部状态并发布（激活态、活动等）』」盖掉了六个类型——而那句「激活态、活动」<b>根本不描述其中任何一个</b>，它描述的是 <code>AppActivationTracker</code>（另一个文件里的另一个类型）。这正是「照着标签写、没读代码」的铁证。逐个读，六个里只有两个是真 <code>@Observable</code> class，其余各有更轻、更对的归属。</p>
-
-<table class="cmp">
-<thead><tr><th>类型（真实形态）</th><th>doc 说</th><th>正确归属（读代码后）</th></tr></thead>
-<tbody>
-<tr><td><code>StreamingTurnAssembler</code>（<code>struct</code>，271 行）</td><td>Service</td><td><b>Model（值类型）</b>。纯折叠已投递的值事件成每回合 token/text，无 I/O、无 actor 隔离、可脱窗单测（自带契约「No UI, no actor isolation」）。以 <code>@ObservationIgnored var</code> 挂在 runtime、每回合 reset——从不被观察。是 ch.2.2 的 Core-sink 候选，指成 Service 会把它推向<b>反方向</b>（@MainActor UI 层）。</td></tr>
-<tr><td><code>TypewriterReveal</code>（<code>struct</code>，88 行）</td><td>Service</td><td><b>Model（值类型）</b>。消息级 reveal 状态值，rate 数学委托给 <code>StreamPacer</code>（也是 struct）。同上，Core-sink 候选。</td></tr>
-<tr><td><code>FrameTicker</code>（protocol）</td><td>Service</td><td><b>Protocol 注入缝</b>，不是 Store/Service。<code>@MainActor protocol FrameTicker: AnyObject</code>，生产 <code>TimerFrameTicker</code> 只存 Timer 管线、零领域状态；测试 <code>ManualFrameTicker</code> 替换（display-link 路径 CI-skip）。ch.2.4「Store = 状态/缓存持有者」——它两样都不持，标 Service 是范畴错误，会引诱它去持它绝不该持的可观察状态。</td></tr>
-<tr><td><code>TaskTracker</code> / <code>TodoTracker</code></td><td>Service（各一）</td><td><b>各自独立、不合并</b>。虽是并行的 <code>[T]+upsert()</code> 形，却投影<b>不同的 CLI 线协议</b>（task_started/updated vs TaskCreate/TaskUpdate）、载不同 Model（<code>BackgroundTask</code> vs <code>TodoEntry</code>）、喂不同 popover。沿独立轴变化——合并即制造 ch.1.2 的耦合陷阱（改后台任务协议逼你重编/重测 todo）。以 runtime 拥有的 <code>@Observable</code> 子对象保留（<code>let</code> 持有），<b>不</b>升级为注入 Service、<b>不</b>加协议缝（单实现，无测试替身，protocol 化是过度抽象）。</td></tr>
-<tr><td><code>BackgroundTask</code> / <code>TodoEntry</code> / <code>TurnTokenUsage</code>（<code>struct</code>）</td><td>（doc 的 tracker pass 没提）</td><td>已经是正确的<b>纯值 Model</b>（<code>Identifiable/Equatable</code>、无 AppKit）——ch.1.2 值/引用二分里的「值元素」一半，其「引用」一半正是持有它们的 <code>@Observable</code> tracker。<b>不要</b>为了和容器对称把它们升成 <code>@Observable</code> class。</td></tr>
-</tbody>
-</table>
-
-<div class="rule-pair">
-<div class="rule do">
-  <div class="rule-head">该收窄标签 · 不是独立 Store</div>
-  <div class="rule-body">
-    <p><b><code>SessionDraft</code>：不是 <code>SessionRuntime</code> 的对等注入 Store，而是 <code>Session.Phase.draft(SessionDraft)</code> 的<b>相位载荷</b>——已正确「合」进 Session 门面。</b>它仍合法算一个 Store（ch.2.4：共享可变的引用身份持有者——compose 卡直接 bind 并 live 改它，其 presence bit 穿越 draft→active），所以保留引用类型是对的。要修的是<b>标签的作用域</b>：写成「phase-scoped、无 I/O 的 draft 状态，嵌在 <code>Session.Phase</code> 内」，而不是暗示它是与 <code>SessionRuntime</code> 并列、被注册/注入、带 I/O 的顶层 Service。它从不被注册（<code>SessionManager</code> 只缓存 Session 门面）、从不被注入、零 I/O（自带契约「No DB writes… No RPCs」）。</p>
-  </div>
-</div>
-<div class="rule dont">
-  <div class="rule-head">看着该拆、其实站不住 · 对抗审查驳回的提案</div>
-  <div class="rule-body">
-    <p>三条「更彻底」的重构被<b>清上下文的对抗审查</b>逐一驳回，记在这里免得后人重犯：</p>
-    <p><b>① 把 <code>SessionManager</code> 拆成「注册表 Store + 生命周期 Coordinator」——驳回。</b>「必须立起整个 594 行 registry 才能测 archive 引用计数」的核心论据是<b>假的</b>：<code>SessionManagerArchiveTests</code> 已经通过注入的 repository + 公开面直接行使 archive/unarchive。ch.2.4 确实点名 Manager 是模糊后缀，但此处两职责（造/取会话 vs 编排归档）共享同一份 <code>live: [SessionID: Session]</code> 真相与同一条生命周期，拆开只增间接层。</p>
-    <p><b>② 把 worktree archive/restore 副作用引擎抽成独立 Service——驳回。</b>「archive I/O 没被缝隔离、只能在测试线程跑真 git」是假的：它<b>已</b>在上一层被缝隔离——<code>SessionManager.init(worktreeArchive:worktreeRestore:)</code> 收两个可注入闭包，测试直接替换。<code>WorktreeProvisioner</code> 只包了 <code>create</code> 一条路，但那不构成「archive 也必须成 Service」的类比。</p>
-    <p><b>③ 把 <code>StreamPacer</code>/<code>StreamingTurnAssembler</code>/<code>TypewriterReveal</code> 说成「doc 漏了、会被推上 @MainActor」——部分驳回。</b>这三个是 Core-sink（ch.2.2）候选没错（见 6.7.1），但「doc 把它们推上 UI 层」与真 doc 不符：doc 从没要求它们上 @MainActor。保留「它们是纯值、可下沉 Core」的结论，丢弃「doc 主动推它们上行」的失实前提。</p>
-  </div>
-</div>
-</div>
-
-<div class="callout why"><b>为什么「拆/合」这一问不能靠贴标签跳过</b>
-<p>1:1 relabel 给每个类型发一顶层帽子，读起来像做完了功课，但它<b>系统性地</b>看不见颗粒度错误：把 I/O 家族叫「值 Model」（<code>Worktree</code>）、把纯值 struct 和 protocol 缝一起糊成「Service」（satellites）、把相位载荷说成对等 Store（<code>SessionDraft</code>）。判据必须是「一个存在的理由 / 一条变化的轴」，且必须<b>读代码验证</b>——而不是「名字带 Tracker 就 Service、名字带 Store 就 <code>.shared</code>」。同样重要的是<b>克制</b>：<code>Session</code>/<code>SessionRuntime</code> 的拆、extension 的分文件、两个 tracker 的分离，doc 的 1:1 恰好是对的，为「统一」去合它们只会砸掉被生命周期/变化轴证明过的好结构。拆之有据、合之有据、不动亦有据——三者都要一条 ch.1/ch.2 的规则背书，不是审美。</p></div>
-
 <div class="callout essence"><b>本质</b>
-<p>会话领域的迁移，九成是<b>定层</b>而非重写。一旦把每个类型钉进五层——不可变快照与 git 描述是 <b>Model</b>（沉进 Core、可脱窗口测）；会话句柄、运行时、注册表、仓库、CLI 客户端、历史加载、标题生成、trackers 是 <b>Service</b>（身份 + I/O + 状态真主）；草稿是 <b>Store</b>；跨进程与读盘的能力抽成 <b>Protocol</b> 以便打桩——耦合就无处藏身。三条不可退让的裁决支撑起全局：<code>Session</code> 是 Service 不是 ViewModel（真相源不是投影层）；<code>@Observable</code> 必须先换成源码点同步的显式变更通道（否则下游编译不过、同步交换会撕裂）；创建权收敛到注册表并经组合根注入（保证同一会话全局一份）。守住这三点，会话就从「SwiftUI 顺手读到的一团 <code>@Observable</code>」，变成一片依赖单向、状态可追踪、可脱 UI 测试的清晰领域。<b>但定层只是第一问；第二问是颗粒度——§6.7 把「该拆/该合/不动」逐个对象跑了一遍，纠正了 doc 1:1 pass 漏掉的边界（尤以 <code>Worktree</code> 的「Model」误标最刺眼）。</b></p></div>
+<p>会话领域的迁移，九成是<b>定层</b>而非重写。一旦把每个类型钉进五层——不可变快照与 git 描述是 <b>Model</b>（沉进 Core、可脱窗口测）；会话句柄、运行时、注册表、仓库、CLI 客户端、历史加载、标题生成、trackers 是 <b>Service</b>（身份 + I/O + 状态真主）；草稿是 <b>Store</b>；跨进程与读盘的能力抽成 <b>Protocol</b> 以便打桩——耦合就无处藏身。三条不可退让的裁决支撑起全局：<code>Session</code> 是 Service 不是 ViewModel（真相源不是投影层）；<code>@Observable</code> 必须先换成源码点同步的显式变更通道（否则下游编译不过、同步交换会撕裂）；创建权收敛到注册表并经组合根注入（保证同一会话全局一份）。守住这三点，会话就从「SwiftUI 顺手读到的一团 <code>@Observable</code>」，变成一片依赖单向、状态可追踪、可脱 UI 测试的清晰领域。</p></div>
 
 <div class="qa">
 <p class="q">思考题：迁移中有人提议——既然 <code>Session</code> 被侧栏、详情、输入栏三处视图读取，干脆给每处各建一个 <code>SessionViewModel</code>（<code>@Published var title / isRunning</code>），从同一个底层 <code>Session</code> 派生；再把 <code>SessionRuntime.isRunning</code> 的观察统一用 <code>withObservationTracking</code> 包进一个 <code>Task</code>，回调里刷新这三个 ViewModel。请结合本章 6.2 / 6.4 与 ch.7 的 runloop 模型，指出这个方案的两处根本错误，并给出符合规范的接线。</p>

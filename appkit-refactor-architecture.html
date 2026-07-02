@@ -219,6 +219,8 @@ pre:has(code.language-swift)::before{content:"swift";position:absolute;top:8px;r
         <li><a href="#ch-8"><span class="num">8</span><span>列表与数据源</span></a></li>
         <li><a href="#ch-9"><span class="num">9</span><span>状态与数据流 · ViewModel 取舍</span></a></li>
         <li><a href="#ch-10"><span class="num">10</span><span>内存 · 并发 · 可测试性 · 收尾</span></a></li>
+        <li><a href="#ch-11"><span class="num">11</span><span>拆分 / 合并 / 再定层：1:1 之外的再裁决</span></a></li>
+        <li><a href="#ch-12"><span class="num">12</span><span>全量类型目录：一句话职责 + 来源</span></a></li>
       </ul>
     </nav>
     <div class="progress-rail"><i id="progBar"></i></div>
@@ -2590,6 +2592,535 @@ final class CLIClientMock: CLIClient {
 </div>
 </details>
 </div>
+</section>
+
+<section class="chapter" id="ch-11">
+<h2 data-n="11">拆分 / 合并 / 再定层：1:1 之外的再裁决</h2>
+
+<p class="lead">第 1–10 章做完了「重新归类 + 改名」：每个现存类型被钉进五层、按 §1.6 主命名表牵到新名字。但那是一次 1:1 的迁移——它假设每个旧类型的<em>粒度</em>已经对了，只是层标签和名字要改。本章补上被跳过的那一问：这个文件是不是在干两件事（该<b>拆分</b>）？这几个兄弟类型是不是在各抄一遍同一段逻辑（该<b>合并</b>）？这个被标成 Model 的东西是不是其实在跑子进程、import 了 AppKit（该<b>再定层</b>）？这个套着 VM/协议/类外壳的东西有没有替换价值（该<b>降级</b>）？——以及反过来，某个「看起来该拆/该合」的诱惑，是不是必须<b>顶住</b>。每一条裁决都对着真实 Swift 代码做过对抗式核验（真实行数、真实 import、真实是否跑 I/O），只保留对抗环节 CONFIRMED 或 AMEND 的结论。§1.6 已经定死的名字与 ch.5 已经接受的拆分（DetailRouter → 决策/执行两半 + 根 AppCoordinator）在本章一律照搬、不再翻案；本章只动粒度、层与单例。</p>
+
+<div class="termbox">
+<div class="term"><b class="term-name">拆分（SPLIT）</b><span class="term-def">一个文件/类型在同时承担两种职责——最典型是「值 + 跑 I/O 的行为」「数据族 + 大段样式常量」——按职责各自成型、并落到各自正确的层。</span></div>
+<div class="term"><b class="term-name">合并（MERGE）</b><span class="term-def">同一段派生逻辑被多个兄弟类型各抄一遍（多份真相），收敛到单一持有者，兄弟退化为笨触发件。</span></div>
+<div class="term"><b class="term-name">再定层（RELAYER）</b><span class="term-def">层标签错了：把承载行为/缓存的引用类型误标成 Model、把状态持有者误标成 Service、把 dataSource 误当 ch.5 导航 Coordinator。保留 §1.6 已定的<em>名字</em>，只更正它的<em>层与角色</em>（角色登记）。</span></div>
+<div class="term"><b class="term-name">降级（DEMOTE）</b><span class="term-def">套着重形态（final class / 协议+实现 / ViewModel）却无替换价值——ch.4.3「为替换而抽象，不为抽象而抽象」——退回更轻的形态：无状态 enum 命名空间、自由函数、纯值 Presenter。</span></div>
+<div class="term"><b class="term-name">保留（带举证）（KEEP w/ proof）</b><span class="term-def">顶住一个<em>错误</em>的拆/合诱惑：给出为什么现状恰好是对的（承重契约、生命周期、注册表/相位约束），而不是默认「层多就该砍」。</span></div>
+</div>
+
+<h3>11.1 Session 领域</h3>
+
+<p>这是用户「层太多」抱怨的正面战场。旗舰裁决是<b>保留</b> Session（稳定身份/渲染侧门面，699 行）+ SessionRuntime（CLI 引擎，556 行核心 + 9 个主题扩展）+ SessionDraft（草稿态，117 行）三者，<em>不合并</em>。核验实机代码：SessionRuntime 只在首发时经 <code>SessionRuntime.fromDraft</code>（Session.swift:614）懒建——草稿相位根本没有 runtime。合并会逼每个未发送草稿都背一个半初始化的 CLI 引擎（<code>cliClient=nil</code>、<code>status=.notStarted</code>），正是 ch.4.1 禁止的「半初始化中间态」。Session 是跨 draft→active 一次性相位翻转仍稳定的身份，若视图直接持 runtime，提升会把对象从侧栏/转录/输入栏脚下换掉，产生第二份真相（ch.1.2 / ch.7.4）。任一时刻只有 2 个活对象（门面 + draft XOR runtime），转发器是相位透明的必要代价，不是第四层。</p>
+
+<p><b>Worktree 是本章「Model 其实在跑 I/O」的样本</b>。草案称它「值 struct，无行为」——核验为假：值 struct 只有约 50 行（path/name/baseRepo/sourceBranch + Error），但 Worktree+Internals.swift（645 行）里 <code>runGit</code>/<code>runCommand</code> 用 <code>Process()</code>+<code>Pipe()</code> 起 git 子进程、拷贝 hook/文件，Worktree+Lifecycle.swift（247 行）的 create/remove/restore 全是磁盘 + git 变更。一个扩展会 spawn 子进程、改磁盘的「Model」违反 ch.1.2 红线。故拆成纯值 <code>Worktree</code>（Model）+ 承担全部 git 子进程 I/O 的无状态 <code>WorktreeGit</code> 命名空间（Util，镜像既有 <code>GitQuery</code> enum，绝不带 Service 后缀）+ 保留既有的 <code>WorktreeProvisioner</code>（离主线程包装）。</p>
+
+<table class="cmp">
+<thead><tr><th>动作</th><th>旧 → 新</th><th>层</th><th>一句话职责</th><th>依据（§）</th><th>现实证据</th></tr></thead>
+<tbody>
+<tr><td>保留（举证）</td><td>Session / SessionRuntime / SessionDraft（同名）</td><td>Service + Store</td><td>同一会话的三个互斥生命周期切面——稳定身份门面、CLI 引擎、草稿态——保留不合并。</td><td>ch.1.2；ch.4.1 禁半初始化；ch.7.4</td><td>Session 699、Runtime 556、Draft 117；fromDraft 在首发时才建 runtime（Session.swift:614）</td></tr>
+<tr><td>拆分</td><td>Worktree → Worktree（值）+ WorktreeGit（git I/O）+ WorktreeProvisioner</td><td>Model + Util</td><td>纯值标识与承担全部 git 子进程 I/O 的命名空间分家；后者不是值的一部分。</td><td>ch.1.2 Model 不做 I/O（红线）；ch.2.4/2.5</td><td>Worktree.swift 122（值约 50 行）；+Internals 645 起 Process/Pipe；+Lifecycle 247 改磁盘</td></tr>
+<tr><td>再定层</td><td>StreamingTurnAssembler（同名）</td><td>Model（可入 Core）</td><td>把 SDK 分片流折叠成本轮 token 用量的纯值折叠器，是 Model 而非 Service。</td><td>ch.1.2 值类型含领域规则；ch.2.2</td><td><code>struct</code>（:45），顶注「No UI/markdown/actor — unit-tested」；文件 271 行（草案「44 行」为误）</td></tr>
+<tr><td>再定层</td><td>TypewriterReveal（同名）</td><td>Model（可入 Core）</td><td>承载单条流式消息打字机揭示状态的纯值，是 Model 而非 Service。</td><td>ch.1.2；ch.2.2</td><td><code>struct</code>（:36，88 行），mutating advance/seal，纯值</td></tr>
+<tr><td>再定层</td><td>FrameTicker → FrameTicker（协议）+ TimerFrameTicker + ManualFrameTicker</td><td>Protocol + Service</td><td>逐帧回调建成协议接缝：生产用主循环定时器，测试用手动步进。</td><td>ch.4.3 为可替换/打桩抽协议（本例）；ch.1.2</td><td><code>protocol FrameTicker: AnyObject</code>（:13）；display-link 测试不可在 CI 跑，注入手动步进</td></tr>
+<tr><td>再定层</td><td>TaskTracker（层校正；可选改名 BackgroundTaskStore）</td><td>Store</td><td>持有并就地维护本会话后台 bash 任务投影的可观察状态持有者。</td><td>ch.2.4 Store=状态持有者（Tracker≈Manager 模糊后缀）；ch.7.4</td><td>唯一状态 <code>tasks:[BackgroundTask]</code>（:45），就地补丁，无 Process/无 cliClient</td></tr>
+<tr><td>再定层</td><td>TodoTracker（层校正；可选改名 TodoStore）</td><td>Store</td><td>持有并就地维护助手 todo 计划投影的可观察状态持有者。</td><td>ch.2.4；ch.7.4</td><td><code>todos:[TodoEntry]</code>（:43）+ scratch dict，就地折叠工具事件，无 I/O</td></tr>
+<tr><td>再定层</td><td>ContextUsageCache（同名，名已表 Store）</td><td>Store</td><td>持有 get_context_usage 结果缓存、合并在飞请求的会话级缓存持有者。</td><td>ch.2.4 Store=缓存持有者；ch.4.3 cliClient 注入</td><td>三个缓存字段（:31-38）+ in-flight 合并；RPC 委托给注入的 cliClient</td></tr>
+<tr><td>降级（形态）</td><td>TitleGenerator（同名）</td><td>Service（无状态 enum + runner 注入，非 final class）</td><td>包一次 LLM 标题/分支调用的无状态一次性 I/O 函数命名空间，无 .shared、无实例态。</td><td>ch.4.3 runner 注入缝；ch.4.6 无 .shared；ch.2.5</td><td><code>enum TitleGenerator</code>（:14）+ <code>static func generate(...runner:)</code>；草案「§6.1 final class」为误</td></tr>
+<tr><td>再定层（更正）</td><td>HistoryLoader（同名）</td><td>Util（无状态文件 I/O + 解析命名空间）</td><td>解析历史 JSONL 路径与逐行解码 Message2 的 nonisolated 静态函数命名空间，非「协议+实现」。</td><td>ch.4.3 不过度协议化；ch.2.5</td><td><code>enum HistoryLoader</code>（:13）全 <code>nonisolated static</code>；root-injected 重载做测试替换；草案「§6.1 协议+实现」为误</td></tr>
+<tr><td>保留（举证）</td><td>SessionManager（同名）</td><td>Service</td><td>按 id 懒建缓存唯一 Session 门面、持 records 缓存、编排归档/关停/草稿创建的注册表+生命周期中枢。</td><td>ch.2.4 Manager 例外（真注册表/生命周期中枢）；ch.4.6 非 .shared</td><td>594 行；sessions 缓存(:40)、archive/unarchive、shutdownAllAsync；两个 static git 函数应外迁到 WorktreeGit</td></tr>
+<tr><td>保留（举证）</td><td>SessionRuntime + 9 个 +*.swift 主题扩展</td><td>Service</td><td>按主题归档同一个类的方法，是文件级归档惯例，非十层伪服务边界。</td><td>ch.2.3 大类型按主题分文件；ch.3.3 反 Massive 按职责非行数</td><td>Configuration/Receive/Streaming… 均 <code>extension SessionRuntime</code>；<b>但 SessionRuntime+Todos.swift 实为 <code>extension TodoEntry</code>（:13）</b>，误名，应随 S2 迁到 TodoEntry 就近</td></tr>
+<tr><td>拆分</td><td>SessionTypes.swift → 每类型独立文件 + deriveTitleFromFirstMessage（Util）</td><td>Model（+ 1 Util 自由函数）</td><td>把 6 个跨文件引用的值类型（BackgroundTask/TodoEntry/PendingPermission…）各自成文件。</td><td>ch.2.3 一类型一文件；ch.2.5</td><td>166 行含 6 struct + 顶层 <code>deriveTitleFromFirstMessage</code>(:155)；被 trackers 与 UI 多处引用（低优先）</td></tr>
+<tr><td>保留（举证）</td><td>CLIClient / SessionRepository（各协议 + 生产实现 + 测试假件）</td><td>Protocol + Service</td><td>跨进程/跨持久化边界、带真实测试替身的合法协议接缝。</td><td>ch.4.3 为替换/打桩；ch.4.6 CoreDataStack 经注入触达</td><td>FakeCLIClient / InMemorySessionRepository 均存在；<code>init(coreDataStack: = .shared)</code>（SessionRepository.swift:97）</td></tr>
+</tbody>
+</table>
+
+<h3>11.2 组合根 · 依赖注入 · 单例</h3>
+
+<p>AppState 现在同时做两件事，恰好各对应一把刀。<b>拆分</b>：它的 <code>init</code>（AppState.swift:58-91）里做的是组合根级副作用接线——接 <code>onTurnEndedNotice</code>/<code>onPermissionPromptNotice</code> 到 NotificationService、<code>Task.detached { engine.load() }</code>、<code>openInService.refresh()</code>。接线属组合根（ch.4.4），不属数据袋构造函数（ch.4.5），应上收到 <code>AppDelegate.assemble()</code>。<b>再定层</b>：8 个成员全是 <code>let</code> 引用，grep 全库<em>零</em>响应式读者（无 <code>@Environment(AppState.self)</code>、无 <code>@Bindable</code>），故 <code>@Observable</code> 是死重，应降为只读依赖容器。名字保留 <code>AppState</code>（ch.4.5 手册原文即以 AppState 为该约定范例，无需改名）。每个 <code>.shared</code> 都过 ch.4.6 的举证责任：真进程级/按目录昂贵缓存留下，偏好类回组合根注入。</p>
+
+<table class="cmp">
+<thead><tr><th>动作</th><th>旧 → 新</th><th>层</th><th>一句话职责</th><th>依据（§）</th><th>现实证据</th></tr></thead>
+<tbody>
+<tr><td>拆分</td><td>AppState.init 接线 → AppDelegate.assemble()</td><td>组合根</td><td>把启动副作用接线移出数据袋，留在唯一 new+连线之处。</td><td>ch.4.4 组合根唯一装配；ch.4.5 Context 非副作用宿主</td><td>AppState.swift:63-89 在 init 里接 notice/engine.load/refresh</td></tr>
+<tr><td>再定层</td><td>AppState（保留名，去 @Observable）</td><td>只读依赖容器</td><td>持有八个进程级服务并在 init 一次性接线，不承载被观察的可变状态。</td><td>ch.4.5 只读依赖包；ch.4.6</td><td>:4 @Observable + 8 个全 <code>let</code>；grep 零响应式读者</td></tr>
+<tr><td>降级</td><td>AppActivationTracker（从袋成员降为组合根局部）</td><td>Service</td><td>只注入进它唯一消费者 NotificationService，不暴露于进程袋。</td><td>ch.4.5 每层只拿该看到的；ch.4.1 经 init</td><td>唯一读者 NotificationService.swift:89,97（activation.isAppActive）；已有 init(activation:) 缝</td></tr>
+<tr><td>保留（举证）</td><td>CoreDataStack / ModelCatalogStore / FileCompletionStore / SlashCommandStore（.shared）</td><td>Service/Store（.shared）</td><td>真进程级/按目录昂贵资源，保留单例并写明理由。</td><td>ch.4.6 单例举证责任</td><td>NSPersistentContainer 一份；ModelStore fork CLI 子进程枚举模型；两补全 store 起子进程 + FSEvents</td></tr>
+<tr><td>再定层</td><td>EffortDefaultStore / NewSessionDefaultsStore → EffortPreferenceStore / NewSessionPreferenceStore（去 .shared）</td><td>Store</td><td>两个 UserDefaults 偏好存储去 .shared，经组合根注入。</td><td>ch.4.6 偏好非「本该全局」的伪装</td><td>各有 <code>static let shared</code> + <code>init(defaults:)</code>；读点全在 SwiftUI 叶子；SidebarSessionGroupOrderStore 已是注入范式</td></tr>
+<tr><td>再定层</td><td>TranscriptSearchBus → TranscriptSearchCommand / TranscriptSearchFocusing</td><td>命令 / Protocol</td><td>把自增计数器泵改成一对一的聚焦命令/焦点协议——它不是 Store。</td><td>ch.7.1 一对一→命令/闭包非广播；ch.2.4 非 Store</td><td><code>focusRequestCounter &amp;+= 1</code>（:26-30）无其它状态；由 AppDelegate 持有，一产一消</td></tr>
+<tr><td>再定层</td><td>SyntaxHighlightEngine→SyntaxHighlightingService、GitProbe→GitRepositoryProbe、NotificationService/OpenInAppService/AppActivationTracker/InputDraftStore/SidebarSessionGroupOrderStore</td><td>Service / Store</td><td>这批已正确分层：有状态+I/O 的引用类型是 Service/Store，无一错层。</td><td>ch.1.2 五层表；ch.7.4 GitProbe 属视图私有</td><td>SyntaxHighlightEngine actor+JSContext+LRU；<b>GitProbe 是 @State-owned 视图私有交互机（NewSessionConfigurator.swift:100），不进 AppContext</b></td></tr>
+</tbody>
+</table>
+
+<h3>11.3 窗口外壳 · 详情路由 · 导航</h3>
+
+<p>本域绝大部分粒度问题已被 §1.6 与 ch.5 定死：DetailRouter 拆成决策/执行两半、根 AppCoordinator 都已接受，MainSelection 三元组的名字已定为 WindowNavigationStore / WindowNavigationObserver / NavigationTarget / DemoScene——这些本章一律照搬、不再翻案。ch.11 在这里只剩三件事：确认 ch.5 拆分是对的、给 TranscriptSwapCoordinator 做一次角色登记（它名叫 Coordinator，却零导航）、并纠一处草案的事实误标（Archive/Settings 的宿主 VC 已存在，是移植 body 而非新建）。</p>
+
+<table class="cmp">
+<thead><tr><th>动作</th><th>旧 → 新</th><th>层</th><th>一句话职责</th><th>依据（§）</th><th>现实证据</th></tr></thead>
+<tbody>
+<tr><td>保留（举证，同意 ch.5）</td><td>DetailRouterViewController → DetailNavigationCoordinator + DetailContainerViewController（+ 根 AppCoordinator）</td><td>Coordinator + Controller</td><td>确认 ch.5 的「决策半/执行半」拆分与根协调器成立；交叉淡入机制已归入 Container，双所有者疑虑消解。</td><td>ch.5.2 协调器树；ch.5.4 根 AppCoordinator</td><td>DetailRouterViewController.swift 490 行；决策=纯 switch(selection)，执行=交叉淡入子 VC</td></tr>
+<tr><td>再定层（角色登记）</td><td>TranscriptSwapCoordinator（保留名）</td><td>Controller（VC 拥有的视图机制，<em>非</em> ch.5 导航 Coordinator）</td><td>转录挂载机制的状态机与 currentSession 的唯一持有者：构建/绑定/锚定/交叉淡入/拆卸滚动视图与每次 attach 的 sheet/isRunning 汇。</td><td>ch.3.3 下沉机制；ch.2.4 名实（此处名实不符已登记）；ch.9.1 单一所有者</td><td>373 行；grep 无 route/present/childCoordinators；文档「Single owner of currentSession」</td></tr>
+<tr><td>保留（事实核对）</td><td>ArchiveView / SettingsView → ArchiveViewController / SettingsWindowController（宿主 VC 已存在，移植 body）</td><td>Controller</td><td>两个 AppKit 宿主 VC 早已在盘，动作是把内嵌 SwiftUI body 端到程序化 NSView，而非「新建 VC」。</td><td>ch.3.1/3.2；事实核对 vs 草案</td><td>ArchiveViewController.swift 79 行经 mountFillPaneHost 承载 ArchiveView；SettingsWindowController.swift 79 行 NSHostingController 承载 SettingsView</td></tr>
+</tbody>
+</table>
+
+<h3>11.4 转录引擎</h3>
+
+<p>本域是承重例外区，也是草案 §8.9 归层表<b>把承载行为的类型误标为「Model, Core-eligible」</b>的重灾区——这正是本章再定层的主线。逐文件 <code>import</code> 核验：11 个 <code>XxxLayout</code> 全部 <code>import AppKit</code>（TextLayout/ListLayout/ToolGroupLayout 还 import CoreText），DiffLayout 还 import SwiftUI，且都暴露 <code>draw(in: CGContext)</code>。一个 import AppKit、会自绘的类型不是 ch.1.2 的纯 Model，塞进 ch.2.2 设想的 UI-free Core 会逼 Core 链接 AppKit、编译期边界当场失效。它们的正确身份是「自绘值类型」这一混合子层（值语义 + <code>nonisolated static make</code> 的性能契约保留，但依赖 AppKit）。唯一例外是 Foundation-only 的 payload（各 <code>*Child</code>、<code>InlineNode</code>、<code>GutterSpec</code>）——它们才真正可入 Core。控制层的 4 个对象经核验各承担一件不可合并的职责，且其中三个的「Coordinator」后缀与 ch.5 冲突（它们零导航），故做角色登记而非硬合并。</p>
+
+<table class="cmp">
+<thead><tr><th>动作</th><th>旧 → 新</th><th>层</th><th>一句话职责</th><th>依据（§）</th><th>现实证据</th></tr></thead>
+<tbody>
+<tr><td>拆分</td><td>Block.swift → Block（数据族）+ BlockStyle（样式/富文本命名空间）</td><td>Model</td><td>把 Block 数据族与其后约 870 行 BlockStyle 视觉常量/富文本构造拆成两文件。</td><td>ch.2.3 一类型一文件；ch.1.2 Model 不 import UI</td><td>1488 行：数据类型 11-428，BlockStyle 430-1305；唯一 SwiftUI 符号在 :804（BlockStyle 内）。<b>但 Block 仍持 NSImage，只能去 SwiftUI、去不掉 AppKit</b></td></tr>
+<tr><td>再定层（更正 §8.9）</td><td>SyntaxTheme（同名，返回 NSColor）</td><td>Util</td><td>把返回 SwiftUI Color 的语法配色改为返回 NSColor + 明暗枚举，成为无 SwiftUI 依赖的纯配色工具。</td><td>ch.1.2 纯工具不 import SwiftUI；ch.2.5</td><td>草案 §8.9 表<em>完全遗漏</em>此类型；唯二消费者 Block.swift:805 / DiffLayout.swift:562 立刻 <code>NSColor(SyntaxTheme.color(...))</code></td></tr>
+<tr><td>再定层（更正 §8.9）</td><td>RowLayout + 11 个 XxxLayout + DiffLayout/各 ChildLayout/CopyChrome/SelectionAdapter/SubviewPlan/TextCardSection</td><td>自绘值类型（依赖 AppKit，<em>非</em>纯 Model、<em>不</em>可入 Core）</td><td>不可变、Sendable、纯宽度→几何且自带 CGContext 自绘的 AppKit 依赖值类型；GutterSpec/各 payload 例外，仍是可入 Core 的纯值。</td><td>ch.1.2 Model 不 import AppKit；ch.2.2 Core 不得反向依赖 AppKit</td><td>逐文件确认 11 个 XxxLayout 全 import AppKit；DiffLayout import SwiftUI；GutterSpec Foundation-only</td></tr>
+<tr><td>保留（举证）</td><td>TranscriptController / TranscriptCoordinator / TranscriptSelectionCoordinator / TranscriptSearchCoordinator（四者独立）</td><td>Controller</td><td>控制层 4 个对象各承担一件不可合并的职责，驳回「合并减类」。</td><td>ch.3.3 多块独立区域即应拆（反向即不得合并）；CLAUDE.md §1.1</td><td>Controller 是 @Observable + 真逻辑（setLoading 400ms 去抖）；Coordinator 是 NSObject dataSource（1763 行）；NSObject vs @Observable conformance 冲突</td></tr>
+<tr><td>再定层（角色登记）</td><td>Transcript2Selection/SearchCoordinator → TranscriptSelectionCoordinator / TranscriptSearchCoordinator（§1.6 去数字化名）</td><td>Store</td><td>各持一份权威交互态（selections dict / hits list）、驱动重绘、零导航——是状态持有者，非 ch.5 Coordinator。</td><td>ch.5.1/5.5 Coordinator 专司导航；ch.2.4；ch.7.4</td><td>grep 无 present/route/childCoordinators；SelectionCoordinator 头注「source of truth」；两者独立、draw 时 compose</td></tr>
+<tr><td>再定层（角色登记）</td><td>Transcript2Coordinator → TranscriptCoordinator（§1.6 去数字化名）</td><td>Controller / DataSource 层（<em>非</em> ch.5 导航 Coordinator）</td><td>NSTableView 的 DataSource/Delegate + blocks 行模型真相持有者，非导航协调器。</td><td>ch.8.1 dataSource 管数据/delegate 管样子；ch.5 Coordinator=导航</td><td><code>NSObject, NSTableViewDataSource, NSTableViewDelegate</code>（:63）；blocks 单一真相；持 selection/search/highlight 子对象；1763 行</td></tr>
+<tr><td>降级 / 再定层</td><td>TranscriptScrollViewFactory → TranscriptScrollViewBuilder（§1.6 名）</td><td>Util</td><td>两步 make/bindData/dismantle 的无状态 enum 视图装配命名空间，非 Coordinator、非有状态 Builder。</td><td>ch.5 Coordinator=有身份导航对象；ch.2.5；ch.4.3</td><td><code>enum ...Factory { static func make/bindData/dismantle }</code>（:33）无实例、无 init；§2.19 单宽度契约须逐字保留</td></tr>
+<tr><td>再定层</td><td>Transcript2HighlightStorage → TranscriptHighlightStore（§1.6 名）</td><td>Store</td><td>持有 per-(block,scope) token 缓存 + 指纹 + 代际守卫的异步高亮侧信道状态持有者，非 Service。</td><td>ch.2.4 Store=缓存持有者；ch.4.6 engine 注入</td><td><code>sourceKeys[Key]=fingerprint</code>、<code>inflightGen[Key]</code>、snapshot() 供脱主线程读；engine 由外注入</td></tr>
+<tr><td>改名（§1.6）</td><td>CenteredRowView → TranscriptRowView</td><td>View</td><td>不做任何居中的空 NSTableRowView 占位子类，改名以除去名字的谎言，仅为 NSTableView 提供稳定行复用键。</td><td>ch.2.4 名实相符；ch.8.3 稳定复用键</td><td><code>final class CenteredRowView: NSTableRowView {}</code>（:24）空体；注「centering NOT done here… lives in BlockCellView.layoutOrigin」</td></tr>
+<tr><td>改名（§1.6）</td><td>Transcript2*（全族）→ 去「2」</td><td>多层</td><td>「2」是第二次重写的迁移遗留，全域去数字化；布局/性能契约字节级不变。</td><td>ch.2.4 命名一致性；承重例外 CLAUDE.md §2/§2.19</td><td>仅存 NativeTranscript2/ 无 v1；本域 churn/收益比最差项，须最后动、逐字保住 §2 契约；Selection/Search 两类层从属 Store（上文角色登记优先）</td></tr>
+<tr><td>保留（举证）</td><td>11 个 XxxLayout + 10 族 ToolGroupChildren（Bash/Read/Grep…各 Child+ChildLayout+Highlight）</td><td>Model / 自绘值类型</td><td>约 60 类型不是过度碎片化：每个 Layout 是不同几何算法、每族 tool-child 是不同渲染，payload/layout/highlight 是真实层边界。</td><td>ch.2.3 一类型一文件；ch.1.2 payload↔自绘边界；ch.4.3 枚举穷尽派发（§4「No protocols」）</td><td>RowLayout 11 case；10 个 ToolGroupChildren 子目录；每族 *Child Foundation-only、*ChildLayout import AppKit</td></tr>
+</tbody>
+</table>
+
+<h3>11.5 输入栏 · Chrome · 补全 · 权限卡</h3>
+
+<p>本域最需要克制的是「机械 1:1 配 VM」。经核验只有两个真旗舰 ViewModel 值得抽：<b>CompletionEngine</b>（旧 CompletionState，346 行含触发检测、150ms 去抖、generation 竞态守卫、上下键导航），和 <b>AskUserQuestionViewModel</b>（旧 AskUserQuestion 卡体 670 行的多步交互状态机：翻页、单/多选、Other 自由文本、goBack 回填、payload 组装）。唯一的 <b>合并</b>是 <code>InputChromeOptionsViewModel</code>：<code>visibleModels</code>/<code>activeModel</code>/<code>effectiveEffort</code>/.auto 门控现在被 ModelEffortPicker、PermissionModePicker、InputBarSessionChrome <em>三处</em>各抄一遍且各读 <code>ModelStore.shared</code>，合并成一个 VM 喂两个笨触发钮（ch.4.6 单一真相）。其余权限卡体一律<b>降级</b>为笨 View + 纯 Presenter 值（ch.8.4），近静态的连 Presenter 都不配。</p>
+
+<table class="cmp">
+<thead><tr><th>动作</th><th>旧 → 新</th><th>层</th><th>一句话职责</th><th>依据（§）</th><th>现实证据</th></tr></thead>
+<tbody>
+<tr><td>再定层</td><td>CompletionState → CompletionEngine（§1.6）</td><td>ViewModel</td><td>触发检测/去抖/竞态守卫/provider 分发/键盘导航的真旗舰 VM——State 后缀掩盖了 VM 身份。</td><td>ch.1.4 VM 门槛；ch.7.2</td><td>346 行仅 import Foundation/Observation；debounce+generation(:240-277)、moveSelection(:324)、confirmSelection(:284)</td></tr>
+<tr><td>再定层</td><td>CompletionItem → CompletionCandidate（§1.6）</td><td>Model</td><td>把携带 NSImage 的补全项协议降为无 AppKit 的图标描述符值。</td><td>ch.1.2 Model 不携 NSImage；ch.2.2；§1.7</td><td>:5 <code>var displayIcon: NSImage?</code>（import Cocoa）；解锁 CompletionEngine/Services 补全器入 Core 的前置</td></tr>
+<tr><td>拆分</td><td>PermissionAskUserQuestionCardBody → AskUserQuestionCardViewController + AskUserQuestionViewModel（§1.6）</td><td>Controller + ViewModel</td><td>多问题交互卡拆出真 VM：翻页/单多选/Other/校验/回填/payload 组装。</td><td>ch.1.4；ch.5.5</td><td>670 行，7 @State（:59-77）；confirmEnabled(:348)、goBack 回填(:412)、buildUpdatedInput(:449)</td></tr>
+<tr><td>合并</td><td>ModelEffortPicker + PermissionModePicker + InputBarSessionChrome 的目录对账 → InputChromeOptionsViewModel（§1.6）</td><td>ViewModel</td><td>把三处各抄一遍的模型目录对账逻辑合并成一个 VM，视图退化为笨触发件。</td><td>ch.1.4；ch.4.6 单一真相</td><td>ModelEffortPicker:95/131/240、InputBarSessionChrome:48、PermissionModePicker:60/75 三处独立算目录且各读 .shared</td></tr>
+<tr><td>新增</td><td>（新）DiffPreviewService</td><td>Service</td><td>把权限卡里 body 路径上的同步读盘+diff 挪进异步 Service，Presenter 保持纯值。</td><td>ch.9.2 重 I/O 不阻塞主 RunLoop</td><td>PermissionFileWriteCardBody:140-147 / PermissionSedEditCardBody:92-96 在 diffBlock 计算属性里 <code>String(contentsOfFile:)</code></td></tr>
+<tr><td>降级</td><td>7 个有派生的 Permission*CardBody → Permission*CardBodyView + Permission*CardPresenter（§1.6）</td><td>View + Presenter（值）</td><td>纯 request→显示值派生落成笨 View + 纯 Presenter 值，不配 VM。</td><td>ch.8.4 cell view model 是值；ch.4.3</td><td>PermissionShellCardBody:70-124 全 computed props，注「No state lives here」</td></tr>
+<tr><td>降级</td><td>PermissionEnterPlanMode/ExitPlanMode/FallbackCardBody → Permission*CardBodyView</td><td>View</td><td>近静态卡体保持笨 View，连 Presenter 都不配。</td><td>ch.4.3 为替换而抽象；ch.5.5</td><td>EnterPlanMode 90 行硬编码文案；Fallback 仅一行 parameter 显示</td></tr>
+<tr><td>再定层</td><td>BackgroundTaskOutputStream → BackgroundTaskOutputStreamService（§1.6）</td><td>Service</td><td>拥 fd/DispatchSource/timer 的 tail I/O，有 path 身份与 start/stop 生命周期，是 Service 非 VM。</td><td>ch.1.2 Service 定义；ch.9 生命周期</td><td>:48-52 fd/source/timer、:72-102 start/stop，无 import AppKit</td></tr>
+<tr><td>保留（举证）</td><td>SedEditParser（Util）/ ShellTokenizer（Util）/ SedEditInfo（Model）</td><td>Util + Model</td><td>sed 解析/分词是无状态 Util，SedEditInfo 是带纯 apply 的值，均不配 VM、可入 Core。</td><td>ch.2.4/2.5；ch.1.2</td><td><code>enum SedEditParser</code>(:29)、<code>enum ShellTokenizer</code>(:299)、<code>struct SedEditInfo</code>+apply(:197)，仅 Foundation</td></tr>
+<tr><td>保留（举证）</td><td>PermissionCardKind（保留，§1.6）</td><td>Model</td><td>纯 request→category 映射枚举，不配 VM。</td><td>ch.1.2 Model</td><td><code>enum</code>(:12)+<code>static kind(for:)</code>(:34)，import AgentSDK/Foundation</td></tr>
+<tr><td>拆分（部分）</td><td>PermissionCardView → PermissionCardView + PermissionDecisionButtonView（PermissionCardCopy 暂留原文件）</td><td>View + View</td><td>把跨文件被引用的 PermissionDecisionButton 拆独立文件；PermissionCardCopy 仅本文件引用属宿主私有，暂不拆。</td><td>ch.2.3（含私有辅助豁免）</td><td>PermissionDecisionButton(:262) 被 AskUserQuestion 卡 :315/320/484 跨文件引用；PermissionCardCopy(:156) 仅被 header/fallback 同文件引用</td></tr>
+<tr><td>再定层</td><td>PermissionCardOverlay → PermissionCardOverlayView（§1.6）</td><td>View + Model</td><td>落成 click-through 的 NSView（由 permissionCardHost 拥有、四边钉住），非独立 VC；decisionHandlers 保留为一处可单测接线。</td><td>ch.3.3 VC 拆分留给独立生命周期/数据源；对齐 §7.2</td><td>decisionHandlers(:99-116) 已解耦 view↔session；浮层仅读 session.pendingPermissions、共享聊天面板生命周期</td></tr>
+<tr><td>再定层</td><td>SlashCommandTriggerRule / FileMentionTriggerRule（同名）</td><td>消费 Service 的策略</td><td>把内联摸的 .shared 缓存改成显式注入补全能力，避免分层倒挂。</td><td>ch.4.1 init 注入；ch.4.6 单例非注入捷径；§1.7</td><td>match() 的 provider 闭包里内联 <code>SlashCommandStore.shared.complete</code>(:132)、<code>FileCompletionStore.shared.complete</code>(:175/179)</td></tr>
+<tr><td>保留（举证，含更正）</td><td>FileCompletionStore / SlashCommandStore / DirectoryTreeMonitor（同名）</td><td>Service</td><td>两补全缓存合法 .shared，经 CompletionPrewarmer 门面触达；<b>DirectoryTreeMonitor 不是单例</b>，是被两 store 内部按目录创建的 FSEvents Service。</td><td>ch.4.6 举证责任</td><td>两 store 有 <code>static let shared</code>；DirectoryTreeMonitor 无 .shared，<code>init(directory:...)</code>（DirectoryTreeMonitor.swift:25）</td></tr>
+<tr><td>保留（举证）</td><td>submitSessionInput / runBuiltinSlashCommand（保留自由函数）</td><td>Util（自由函数）</td><td>单步、无多步分支、依赖以参数传入的流程，保持自由函数不升级为协调器类。</td><td>ch.5.5 别把单屏无分支流程包成协调器；§1.6</td><td>SessionInputSubmit.swift:16 / BuiltinSlashCommandHandler.swift:15 均已是 <code>@MainActor func</code></td></tr>
+<tr><td>再定层</td><td>InputBarView2 → InputBarView；Submission → InputSubmission（§1.6）</td><td>View + Model</td><td>输入栏是笨 View、载荷是 Model；canSend 两行谓词不配 VM，Attachment 携 NSImage 与 View 同住。</td><td>ch.1.2；ch.6.2；§7.5</td><td>:21 struct View、注「UI only」；:98-110 注入闭包/标志；:90-94 Submission；:55-84 Attachment(NSImage)</td></tr>
+<tr><td>降级</td><td>NewSessionConfigurator → NewSessionConfiguratorView + 自由函数</td><td>View + Util</td><td>compose 卡的纯格式化降为自由函数，不新造机械 ConfiguratorVM——有状态的 Git 对账已在视图私有 GitProbe。</td><td>ch.2.5 就近扩展；ch.7.4 视图私有状态机</td><td>compactRelative(:659)/abbreviatedPath(:476) 纯函数；probe 是 @State GitProbe(:100)，applyProbeBindings(:709)</td></tr>
+<tr><td>再定层</td><td>ContextRingButton/ContextBreakdownView → ContextRingButtonView + ContextUsagePopoverViewController + ContextBreakdownPresenter（§1.6）</td><td>View + Presenter + Controller</td><td>上下文分解派生落纯 Presenter，「开一次拉一次」RPC 收进 viewWillAppear，不配 VM。</td><td>ch.7.4 状态归属；ch.8.4</td><td>percent 纯派生(:36)；onAppear→requestIfNeeded(:77)；didRequest 私有态(:60)</td></tr>
+<tr><td>再定层</td><td>BackgroundTask/Todo/Completion 的 List/Row/Button/DetailSheet/StatusGlyph → *ListViewController / *RowView / *ButtonView / *DetailViewController / *GlyphView（§1.6）</td><td>Controller + View</td><td>各 popover 列表/行/钮迁成 view-based 表 VC + cell + 笨钮。</td><td>ch.8.1/8.2 dataSource/delegate 分工、view-based</td><td>BackgroundTaskList/TodoList/CompletionListView 用 LazyVStack；TodoStatusGlyph 自绘 Shape/旋转环</td></tr>
+<tr><td>保留（举证）</td><td>PermissionCardView（保留一个 View）</td><td>View</td><td>卡外壳只做「共享 chrome + 按 kind switch 分发」，无独立生命周期/数据源，不拆成路由 VC。</td><td>ch.3.3；ch.5.5</td><td>body(for:)(:97-129) 单一 switch，无子 VC 生命周期</td></tr>
+</tbody>
+</table>
+
+<h3>11.6 侧栏 · 组件 · Models · 其它 Service</h3>
+
+<p>本域的两条主线：一是「文件名与类型名不符」的机械拆分/改名（<code>SidebarShimmerLabel.swift</code> 里唯一类型是 <code>ShimmerOverlay</code>；<code>SidebarItemModel.swift</code> 里唯一类型是 <code>SidebarItemNode</code>），二是又一个「承载行为的 Model」误标：<code>SidebarTreeModel</code> 名为 Model 却<em>零数据</em>——它是 <code>enum</code> 里一组跑分组/排序/新文件夹检测算法的静态纯函数，应再定层为 <code>SidebarTreeBuilder</code>（Util）。Diff 组件的 <code>DiffCore.swift</code> 把纯算法 <code>DiffEngine</code> 与携 NSColor/Color 的 <code>DiffColors</code> 塞在一个 import AppKit+SwiftUI 的文件里，拆开才解开 Core 边界。Markdown IR 与 Models/ 经核验全为纯值/纯函数、无 NSColor/NSImage，可入 Core。</p>
+
+<table class="cmp">
+<thead><tr><th>动作</th><th>旧 → 新</th><th>层</th><th>一句话职责</th><th>依据（§）</th><th>现实证据</th></tr></thead>
+<tbody>
+<tr><td>保留（举证）</td><td>ShimmerOverlay / SidebarLoadingDotsView / SidebarStatusIndicatorView（三者独立）</td><td>View</td><td>三种不同状态/目标：running 动画点、unread 圆点、生成标题微光，不可合并。</td><td>ch.1.2 View 单一职责；ch.6.2(4)；ch.2.3</td><td>StatusIndicator 组合 LoadingDots(:23) + unread 状态机(:65-78)；ShimmerOverlay 给标题 NSTextField 装 CAGradientLayer mask(:78)</td></tr>
+<tr><td>改名（文件）</td><td>SidebarShimmerLabel.swift → ShimmerOverlay.swift</td><td>View</td><td>修正文件名/类型名不符；它既非 Label 也非 NSView，是视图层微光特效帮助器。</td><td>ch.2.3 文件名=类型名；ch.2.4</td><td>唯一类型 <code>final class ShimmerOverlay</code>(:15)，<code>init(host: NSTextField)</code>(:38)</td></tr>
+<tr><td>改名（文件）</td><td>SidebarItemModel.swift → SidebarItemNode.swift</td><td>Model</td><td>文件名与类型 SidebarItemNode 不符，改文件名对齐类型（FixedKind 跨文件引用可低优先另拆）。</td><td>ch.2.3</td><td><code>final class SidebarItemNode</code>(:12)；FixedKind(:51) 被 TreeModel/CellViews 引用</td></tr>
+<tr><td>保留（举证）</td><td>SidebarItemNode（保留 class）</td><td>Model</td><td>节点保留为引用类型，是 NSOutlineView 身份复用（<code>===</code>）的必需例外，非违规。</td><td>ch.8.8 稳定身份树节点；ch.1.2（outline 身份 caveat）</td><td>文件内 + Sidebar/CLAUDE.md「Why a reference-type node」；struct 会在 reloadData 后丢身份</td></tr>
+<tr><td>再定层</td><td>SidebarTreeModel → SidebarTreeBuilder</td><td>Util</td><td>承载分组/排序/新文件夹检测算法的纯函数构建器，不是数据 Model。</td><td>ch.2.4 精确角色词；ch.2.5 无状态纯函数=Util；ch.1.2 Model=数据</td><td><code>enum SidebarTreeModel</code>(:22) 零存储；build(:45)/currentGroupSet(:69)/arrange(:135) 全 static 无副作用</td></tr>
+<tr><td>保留（举证）</td><td>SidebarContextMenuController（钉为 Controller）</td><td>Controller</td><td>无 VC 创建/导航，仅把 NSMenu 事件翻译成 Service 调用，是 Controller 翻译官而非 Coordinator。</td><td>ch.3.3 controller 翻译事件→service；ch.5.5</td><td><code>NSObject, NSMenuDelegate</code>(:27)；actions 调 archive/select/openInService/NSPasteboard，全程无 VC/导航</td></tr>
+<tr><td>保留（举证）</td><td>SidebarLayout / String.collapsedSingleLineForDisplay / SidebarSessionGroupOrderStore / SidebarContext</td><td>Util / Store / Context</td><td>侧栏支撑类型定层正确：布局常量与标题清洗为就近 Util，顺序库为 Store，依赖包为 Context。</td><td>ch.2.5；ch.2.4 Store；ch.4.5 scoped Context</td><td>SidebarLayout 常量 enum；TitleSanitizer 纯 Foundation String 扩展；GroupOrderStore 已注入非单例；SidebarContext 只读 struct</td></tr>
+<tr><td>拆分（低优先）</td><td>SidebarCellViews.swift → SidebarCellViewBase/Fixed/Folder/History 各文件</td><td>View</td><td>一文件四个跨文件被引用的 NSTableCellView，按一类型一文件拆开。</td><td>ch.2.3</td><td>300 行含 4 个 NSTableCellView 类型(:9/40/115/218)，均被 SidebarViewController 引用</td></tr>
+<tr><td>拆分</td><td>DiffCore.swift → DiffEngine.swift + DiffColors.swift</td><td>Util</td><td>把纯算法 DiffEngine 与携 NSColor/Color 的调色板 DiffColors 拆两文件，解开 Core 边界。</td><td>ch.2.3；ch.2.2/§1.7 Core 不 import AppKit</td><td>顶部 <code>import AppKit</code>/<code>import SwiftUI</code>(:1-2)；DiffEngine(:9-129) 纯，DiffColors(:139-306) 携色</td></tr>
+<tr><td>再定层</td><td>DiffEngine（+ Line/Hunk）</td><td>Util（+ Line/Hunk 为 Model）</td><td>纯算法命名空间（拥 Line/Hunk 结果值），从「Model」再定层为 Util，可入 Core。</td><td>ch.2.5；ch.1.2；ch.4.3</td><td><code>enum DiffEngine</code>(:9)+static computeHunks；仅用 stdlib <code>difference(from:)</code></td></tr>
+<tr><td>降级</td><td>DiffColors（NSColor-only 调色板）</td><td>Util</td><td>视图层调色板 Util（非 Model）；去掉纯 AppKit 下已死的 SwiftUI Color 半边。</td><td>ch.1.2 Model 不携 NSColor；§1.7</td><td>八个 SwiftUI Color 函数(:143-203) 零调用点，无 NativeDiffView 消费者；仅 ns*/dynamic* 被 DiffLayout/Block 消费</td></tr>
+<tr><td>拆分</td><td>DiffView / DiffNSView → DiffViewController + DiffContentView（§1.6）</td><td>Controller + View</td><td>把 DiffView 的高亮编排抬进薄 Controller，自绘 DiffNSView 降为纯 View。</td><td>ch.1.2 笨 View 不碰 Service；ch.1.4 MVC+</td><td>DiffView 读 @Environment(syntaxEngine)(:35)、持 .task(:45)、喂 DiffNSView；DiffNSView(:115-469) 自绘、经 update(diff:lineMap:) 收数据</td></tr>
+<tr><td>保留（举证）</td><td>DiffView 高亮编排 → DiffViewController（不抽 VM）</td><td>Controller</td><td>高亮编排落薄 Controller，不该抽 ViewModel——逻辑仅去重+异步调 Service，重量在取消/生命周期。</td><td>ch.4.3 为替换而抽象；§7.5</td><td>runHighlight(:51-72) 唯一逻辑=去重非空行 + engine.highlightBatch + isCancelled 守卫</td></tr>
+<tr><td>保留（举证，含更正）</td><td>MarkdownDocument/Segment/Block/Convert/Autolink/Math</td><td>Model + Util</td><td>整套 Markdown IR 与解析器纯 Foundation(+swift-markdown)、无 AppKit 泄漏，可入 Core。</td><td>ch.1.2；ch.2.2；ch.2.5</td><td>grep 全域无 AppKit/SwiftUI；<b>MarkdownTypes.swift 含 7 个顶层 public 类型（非草案「2」）</b>，按 ch.2.3 是实打实的一类型一文件缺口</td></tr>
+<tr><td>保留（举证，含更正）</td><td>SyntaxToken/StreamPacer/TurnTokenUsage/PermissionMode/SendKeyBehavior/LanguageDetection</td><td>Model + Util</td><td>Models/ 全为纯值/纯函数、无 NSColor/NSImage，可入 Core。</td><td>ch.1.7/1.2；ch.2.4；ch.2.5</td><td>grep 全域无 AppKit；LanguageDetection 纯 enum 应标 Util；<b>SendKeyBehavior 保留 Identifiable</b>（SettingsView.swift:61 <code>ForEach(SendKeyBehavior.allCases)</code> 仍消费）</td></tr>
+</tbody>
+</table>
+
+<h3>11.7 更正记录：§3.4 / §6.1 / §8.9 的事实纠错</h3>
+
+<p>本章对着真实代码逐条核验时，发现草案早前章节有若干与实机不符的标注。它们不是判断分歧，而是事实错误——把已合规的类型当成待修问题、把 enum 命名空间当成 final class/协议、把 import AppKit 的自绘值类型当成可入 Core 的纯 Model。这里集中登记，避免评审时按错误前提行动。</p>
+
+<div class="ref"><b class="ref-proj">CCTerm · 事实核对</b><span class="ref-note">下表每行都经 grep/wc/Read 在当前 worktree 复核；「代码事实」列的结论优先于任何草案标签。</span></div>
+
+<table class="cmp">
+<thead><tr><th>章节</th><th>类型</th><th>草案原文（误）</th><th>代码事实（正）</th></tr></thead>
+<tbody>
+<tr><td>§3.4</td><td>RecentProjectsStore</td><td>主命名表列为「去 .shared」</td><td>全库<em>无</em> <code>static let shared</code>；早已由 AppState.swift:50 构造注入。是审计一个不存在的单例——正确动作是保留、无 .shared 可去。</td></tr>
+<tr><td>§3.4</td><td>DirectoryTreeMonitor</td><td>被并入「补全缓存 .shared」集合</td><td>无 .shared；是被两个补全 store 内部按目录创建/持有的 FSEvents Service（<code>init(directory:...)</code>，DirectoryTreeMonitor.swift:25）。KEEP 为 Service，但不属单例集。</td></tr>
+<tr><td>§6.1</td><td>TitleGenerator</td><td>「Service | final class」</td><td>是 <code>enum TitleGenerator</code>（:14）无状态命名空间 + <code>static func generate(...runner:)</code> + runner 注入缝，无实例态、无 .shared。Service 角色对，但形态是 enum 非 class。</td></tr>
+<tr><td>§6.1</td><td>HistoryLoader</td><td>「Service（协议 + 实现）」</td><td>是 <code>enum HistoryLoader</code>（:13）全 <code>nonisolated static</code> 函数（locate/scanForSession/parseLines），无 protocol、无 class；用参数注入的 root 重载做测试替换。是无状态 I/O/解析工具命名空间（Util）。</td></tr>
+<tr><td>§8.9</td><td>SyntaxTheme</td><td>归层表完全遗漏</td><td>是把 Block/DiffLayout 拖进 import SwiftUI 的根源；返回 Color + 取 ColorScheme，唯二消费者立刻转回 NSColor。改返回 NSColor + 明暗枚举后归 Util，两个渲染值类型一并去 SwiftUI。</td></tr>
+<tr><td>§8.9</td><td>11 个 XxxLayout / DiffLayout / SelectionAdapter / SubviewPlan / CopyChrome</td><td>「Model，Core-eligible / 可脱主线程算」</td><td>逐文件确认全部 <code>import AppKit</code>（DiffLayout 还 import SwiftUI）并暴露 <code>draw(in: CGContext)</code>。是「自绘值类型」（值语义 + AppKit 依赖），<em>不是</em>纯 Model、<em>进不了</em> UI-free Core；仅 GutterSpec/各 payload 是 Foundation-only 例外。</td></tr>
+<tr><td>§8.9/ch.2</td><td>MarkdownTypes.swift</td><td>「两个 enum，低优先」</td><td>含 7 个顶层 public 类型（MarkdownSegment/MarkdownBlock/MarkdownList/MarkdownListItem/MarkdownInline/MarkdownCodeBlock/MarkdownTable，含两个 <code>public indirect enum</code>）。按 ch.2.3 是一处实打实的一类型一文件拆分，非「两个 enum」。</td></tr>
+<tr><td>§7.5</td><td>SendKeyBehavior</td><td>「丢 Identifiable 等 SwiftUI 协议残留」</td><td>Identifiable 是 stdlib（非 AppKit），且仍被 SettingsView.swift:61 的 <code>ForEach(SendKeyBehavior.allCases)</code> 消费；不阻碍入 Core。保留 / 合规，不移除。</td></tr>
+</tbody>
+</table>
+
+<h3>11.8 被驳回的重构诱惑</h3>
+
+<p>下表汇总本章各域顶住的错误诱惑与过度提案。它们都「看起来该做」，但要么违背某条约定、要么破坏承重契约、要么是为抽象而抽象。注意：§1.6 已定名与 ch.5 已接受的拆分（DetailRouter 两半、根 AppCoordinator）不在此表——它们是已定案，不是仍开放的诱惑。</p>
+
+<table class="cmp">
+<thead><tr><th>诱惑</th><th>为何诱人</th><th>为何驳回</th></tr></thead>
+<tbody>
+<tr><td>把 Session 与 SessionRuntime 合并成一个类</td><td>用户直呼「层太多」；两者都 @MainActor @Observable，转发器一大堆像纯样板。</td><td>草稿态没有 runtime（首发时才 fromDraft 懒建），合并会逼每个未发送草稿背一个半初始化 CLI 引擎（ch.4.1 禁）；Session 是跨相位翻转仍稳定的身份，视图直持 runtime 会在提升时换掉脚下对象、造第二份真相（ch.1.2/7.4）。</td></tr>
+<tr><td>把 Session 的渲染侧（controller/bridge/loadHistory）拆成独立 TranscriptSession 协调器</td><td>业务身份 vs 转录渲染是两件事，拆开更「干净」。</td><td>bridge 必须与 Session 完全同寿命做 onMessagesChange 的持续消费者（切走仍落实时事件、切回 O(1)）；拆出去只能被 Session 同寿命强持——纯多一层间接，且项目非目标明写「不引入 session/transcript 协调 VM」（ch.4.3 反面）。</td></tr>
+<tr><td>把 SessionDraft 并进 Session 或直接用 SessionConfig 值</td><td>SessionDraft 很薄，像多余包装。</td><td>compose 卡需要一个引用型、可被观察的「编辑中」身份；SessionConfig 是值类型赋值即拷贝、无法持续观察。draft 与 runtime 互斥，SessionDraft 是 draft 相位那半的状态主人（Store，ch.2.4）。</td></tr>
+<tr><td>把 SessionManager 拆成 Registry + RecordsStore + LifecycleCoordinator</td><td>ch.2.4 点名 Manager 最模糊；594 行确实在做多件事。</td><td>它是 ch.2.4 明确豁免的真注册表+生命周期中枢；records 缓存与注册表深度耦合（archive 必须原子地既 drop 缓存 Session 又 refresh records），拆开制造双对象同步问题。真正该外迁的只是两个 git static 函数（归 WorktreeGit）。</td></tr>
+<tr><td>把六个 tracker（StreamingTurnAssembler/TypewriterReveal/FrameTicker/Task/Todo/ContextUsageCache）塞成 SessionRuntime 字段</td><td>都只服务一个 runtime，合进去对象更少。</td><td>Task/Todo/ContextUsage 必须是引用型 @Observable 才能让就地数组补丁经嵌套链被观察；Assembler/Reveal 是被独立单测的纯值 Model；FrameTicker 是 CI 不可跑的测试替换缝。各有不同层与替换/观察语义，合并同时破坏可观察性、可测性与 Core 下沉。</td></tr>
+<tr><td>把 10 个 SessionRuntime+*.swift 合并回一两个文件</td><td>一个类散在多文件，导航累。</td><td>它们按主题归档同一个类，正是 ch.2.3 提倡的大类型分文件（利于 diff 局部性与 blame）；合回去让 556+2600 行挤进一两个文件，评审与冲突定位更糟。</td></tr>
+<tr><td>合并 EffortDefaultStore + NewSessionDefaultsStore 成一个 PreferencesStore</td><td>都是 UserDefaults 偏好、都被同批选择器读写、都很小。</td><td>二者是不同变更轴：Effort 版 import AgentSDK、按 model 分键、带 supportedEffortLevels 夹紧领域规则；Defaults 版是 Foundation-only 两键 KVP、无派生。合并制造两个改动理由并把 AgentSDK 拖进本可 Foundation-only 的存储（ch.2.4）。</td></tr>
+<tr><td>把 CoreDataStack/ModelCatalogStore/两补全 store 也改成组合根注入的非单例</td><td>「所有单例都是坏味道，一律注入」是 ch.4 的表面读法。</td><td>ch.4.6 明确保留真进程级/按目录昂贵缓存这一极小集合：持久化栈一份、fork CLI 子进程、起子进程 + FSEvents 按目录缓存。语义本就进程级共享一份，强行注入得不到可替换收益、只是复杂化。</td></tr>
+<tr><td>把 AppContext 整袋 .environment 注入，或保留 @Observable</td><td>SwiftUI 时代一把梭最省事；保 @Observable 让现有消费者零改动。</td><td>ch.4.5：Context 是只读依赖清单，应按作用域切 SidebarContext/DetailContext 顺链下发，整袋注入压平进程/窗口/会话三作用域；@Observable 加在纯 DI 袋上是把框架追踪套在不需观察的容器上。</td></tr>
+<tr><td>保留 AppState.init 里的启动副作用接线（「反正现在能跑」）</td><td>接线已工作，移动有回归风险。</td><td>ch.4.4：组合根是唯一 new+连线之处。藏在数据袋构造函数里使对象图副作用不可见、测试构造袋即触发子进程/磁盘扫描（AppState 已为此加 eager 开关，正是耦合外溢信号）。应上收到 assemble()。</td></tr>
+<tr><td>合并 ComposeSessionViewController 与 DraftSessionLandingViewController</td><td>两者 body 视觉骨架高度相似（DotGrid + 居中 hero + 输入栏）。</td><td>生命周期不同：Compose 服务 .newSession、单实例、惰性分配 draftSessionId、带 folder/branch/worktree 选择器；Landing 服务 .session(draft)、是 DetailRouterChild、经 present 跨 draft 重绑路由交下的 id、只读 hero。ch.3.2 判据是可独立存在的区域/生命周期，非视觉相似度。</td></tr>
+<tr><td>把 currentSession 所有权从 TranscriptSwapCoordinator 收回 ChatSessionViewController</td><td>VC 是「会话面板」，让它直接知道当前会话更直观，还能少一个 helper。</td><td>交叉淡入期间 parked 的 outgoing 与正绑定的 incoming 必须由同一所有者裁决；VC 与 coordinator 同时持 currentSession 会在 fade 途中读到两份不一致真相（ch.9.1 单一真相源、可确定拆卸）。</td></tr>
+<tr><td>把唯一结构性上行边泛化成 NotificationCenter/Combine/第二观察者槽</td><td>「统一观察机制」听起来更干净，chrome 也想对选择做反应。</td><td>这条边必须在点击 source 相位内同步闭合——@Observable/Combine 的 re-eval 落在 beforeWaiting，会把一次会话切换撕裂到两帧。所有非结构性 chrome 本就走异步下行闭包，不碰这条同步 delegate（ch.7.1 + 项目非目标）。</td></tr>
+<tr><td>抽一个 MainToolbarController 承接工具栏装配</td><td>约 200 行 NSToolbarDelegate 项构造 + 随选择切换的出现逻辑看着是独立职责。</td><td>ch.3.1 明确把「工具栏」与 frame autosave、标题、窗口菜单响应并列归 WindowController；工具栏不是 ch.3.3 意义上有独立出现/消失生命周期的区域，抽出是无约定依据的间接层（ch.4.7/5.5 过度设计）。真正的一类型一文件问题只落在被测试跨文件引用的 TranscriptSearchToolbarBridge 上。</td></tr>
+<tr><td>把 Transcript2Controller 与 Transcript2Coordinator 合并成一个 TranscriptController</td><td>Controller 的 apply/scrollToTail 大多是对 Coordinator 的薄转发，合并减一层间接。</td><td>Coordinator 必须 NSObject 才能满足 dataSource/delegate、Controller 必须 @Observable 才能供宿主观察，合并撞 conformance 冲突且单类超 2000 行；Controller 携真逻辑（setLoading 去抖、reconcileLoadingPill）本高一层（CLAUDE.md §1.1 三条承重理由）。</td></tr>
+<tr><td>给转录套 NSTableViewDiffableDataSource / ViewModel / reducer</td><td>侧栏用快照 diff，看似应统一；@Observable 字段像 VM。</td><td>承重例外：转录行数无上界、正文 Core Text 自绘、流式逐字追加，diff 落 beforeWaiting 晚一 tick 会撕裂流式动画并丢滚动位置。唯一变更通道是 bridge.apply 的精确 delta；Controller 的 @Observable 字段是单向下推的命令通道镜像，非双向派生态（CLAUDE.md §2.1/2.11/8.9）。</td></tr>
+<tr><td>把 Block + 各 XxxLayout 下沉进 UI-free 的 Core 包</td><td>它们是 Sendable 值类型 + nonisolated static make，像可复用的纯几何 Model。</td><td>实测每个 Layout import AppKit（NSColor/NSFont/CoreText/CGContext），DiffLayout 还 import SwiftUI；塞进 Core 会逼 Core 链接 AppKit/SwiftUI、ch.2.2 编译期边界当场失效。只有 Foundation-only 的 payload/InlineNode/StableBlockID 可下沉。</td></tr>
+<tr><td>把 11 个 XxxLayout 合并成一个带 kind 的 GenericLayout</td><td>都实现 make/totalHeight/draw 同签名，像可参数化。</td><td>make 内部是本质不同的几何算法（CTLine 文本流 vs 图片等比 vs 递归列表 vs CSS 表格列分配 vs 右对齐气泡截断 vs diff gutter），无共享公式可抽；合并只造巨型 switch，违反 ch.2.3 与 §4「一种布局=一个 case + 一个文件、No protocols」。</td></tr>
+<tr><td>给每个 Permission*CardBody 都配一个 ViewModel（机械 1:1）</td><td>SwiftUI 里每个 body 常挂 @State，迁移时顺手每个配 VM 看似一致。</td><td>卡体是纯 request→显示值派生（PermissionShellCardBody 自陈 no state），凭空多一个可变引用类型、测试收益为零，还诱导后来者往里塞逻辑。正解是 ch.8.4 纯 Presenter 值；近静态卡连 Presenter 都不配。</td></tr>
+<tr><td>把 BackgroundTaskOutputStream 改名成 BackgroundTaskOutputViewModel</td><td>它 @Observable、被订阅 $text，长得像 VM。</td><td>它拥 fd + DispatchSource + 定时器、有 path 身份与 start/stop 生命周期、零 NSView——按 ch.1.2 是封装 I/O 的 Service。改名 VM 会误导后来者把「文件 tail 真相源」当「视图形状派生」。</td></tr>
+<tr><td>把 submitSessionInput / runBuiltinSlashCommand 包成 SendCoordinator / SlashCommandCoordinator 类</td><td>发送/命令是「用户流程」，Coordinator 章节让人想配协调器；也有「可注入测试缝」诱惑。</td><td>两者都是单步、无多步分支、依赖以参数传入的流程，ch.5.5 明令别把单屏无分支流程包成协调器类；实际已是自由函数，升级只增样板与间接层。仅当确有测试缝需要才升级，且整场迁移只选一次。</td></tr>
+<tr><td>新造 NewSessionConfiguratorViewModel 收纳所有 @Binding 与逻辑</td><td>配置卡有 folder/branch/worktree 绑定 + Git 校正，看着该有 VM。</td><td>有状态的异步 Git 对账已在视图私有 GitProbe（ch.7.4 允许）；剩下的是纯格式化 + 薄绑定 glue。凭「它有 Binding」造 VM 是机械化——正解是纯函数降为自由函数、状态留 GitProbe。</td></tr>
+<tr><td>把 PermissionCardCopy 也拆成独立文件</td><td>与 PermissionDecisionButton 并列，看着都该按一类型一文件拆。</td><td>它当前仅在 PermissionCardView.swift 内被 header/fallback 引用（无跨文件消费者），命中 ch.2.3 宿主私有辅助豁免；只有当 fallback 卡体先被抽成独立文件产生跨文件消费者后才随之拆。</td></tr>
+<tr><td>把 click-through 权限卡浮层升成完整的 PermissionCardViewController</td><td>卡片按 kind 分发多种体，像「按选择换子 VC」的路由容器。</td><td>与 §7.2（PermissionCardOverlayView，View）冲突，也违反 ch.3.3（VC 拆分留给有独立数据源/选择/生命周期的区域）；此浮层仅读 session.pendingPermissions、共享聊天面板生命周期。应落成 NSView。</td></tr>
+<tr><td>把 ShimmerOverlay + LoadingDots + StatusIndicator 合并成一个「状态/加载」组件</td><td>三者都是侧栏很小的加载/状态视觉元素，合并减概念。</td><td>三种不同状态且作用于不同目标：running 动画点（图标槽）、unread 圆点（内联）、生成标题微光（标题字段、CAGradientLayer 蒙版）。StatusIndicator 本就组合了 LoadingDots——合并压平合法组合并糅三个单一职责（ch.1.2/2.3）。</td></tr>
+<tr><td>把 SidebarItemNode 改成值类型 struct 以满足「Model=值类型」</td><td>规范说 Model 用 struct/enum，变值类型更「纯」。</td><td>NSOutlineView 的行复用与展开/折叠以 <code>===</code> 身份为键，struct 节点会在每次 reloadData() 后丢身份、破坏复用与展开态。引用类型在此是 ch.8.8 要求的必需例外，不可「清理」。</td></tr>
+<tr><td>把 SidebarContextMenuController 升级为 Coordinator</td><td>它「编排」了归档/打开/复制路径等多个动作，像流程协调。</td><td>它不创建 VC、不 present、无多步/分支流程——只拥有 NSMenu 并把动作翻译成 Service 调用，是 Controller 翻译官。套 Coordinator 是 ch.5.5 明令避免的过度设计。</td></tr>
+<tr><td>给 DiffView 的高亮流程抽一个 DiffViewModel</td><td>MVVM-C 下「异步派生 lineMap」像典型可测 VM 的活。</td><td>其逻辑仅是去重非空行后调注入的异步 Service，重量在取消/生命周期编排——那是薄 Controller（DiffViewController）的职责，非可脱 UI 单测的纯 VM。抽 VM 属「为抽象而抽象」（ch.4.3、§7.5 只认两个该有的 VM）。</td></tr>
+</tbody>
+</table>
+
+<div class="callout essence">
+<b>本质</b>
+<p>1:1 迁移只换了绑定框架，没问粒度——真正的耦合藏在「一个文件干两件事」（Block=数据族+样式、DiffCore=算法+调色板、SessionTypes=六型杂烩）、「一个叫 Model 的东西其实在跑子进程/import AppKit」（Worktree、11 个 XxxLayout、SyntaxTheme、SidebarTreeModel）、「一个叫 Coordinator 的东西零导航」（TranscriptCoordinator/Selection/Search、TranscriptScrollViewBuilder、SidebarContextMenuController）、以及「一个套着 VM/协议外壳的东西无替换价值」（各权限卡体、TitleGenerator、HistoryLoader）里。拆分/合并/再定层/降级四把刀，配上每个 <code>.shared</code> 的举证（ch.4.6）与每个 KEEP 的反向举证（顶住错误的拆/合），才把 §1.6 的名字落到<em>正确的层</em>。判据始终是 §1.7 那句：看它 import 什么、跑不跑 I/O，而不是看它长得像不像数据——这也是草案把承载行为的类型误标为 Model 的病根。</p>
+</div>
+
+<div class="qa">
+<p class="q">思考题：草案把 Worktree 标为「值 struct，无行为」，把 11 个 XxxLayout 标为「Model，Core-eligible / 可脱主线程算」。给定 ch.1.2 的红线与 §1.7 的判据，你如何在不读完整实现的前提下一眼判定这两个标签都错了？它们各自正确的再定层是什么？</p>
+<details><summary>查看答案</summary>
+<div class="a">
+<p>判据只有两条，都不需要读业务逻辑：<b>(1) 它 import 什么；(2) 它的方法跑不跑 I/O（子进程、磁盘、网络）</b>。ch.1.2 的红线是「Model 承载数据与领域规则、不 import AppKit、不做 I/O」，§1.7 补一句「看它 import 什么，而不是看它长得像不像数据」。</p>
+<p><b>Worktree</b>：值 struct 本身只有 path/name/baseRepo/sourceBranch（约 50 行，确实是 Model），但它的扩展文件 <code>runGit</code>/<code>runCommand</code> 用 <code>Process()</code>+<code>Pipe()</code> 起 git 子进程、create/remove 改磁盘——这是 I/O，撞红线。所以「无行为」是假：正确动作是<em>拆分</em>——纯值 <code>Worktree</code> 留 Model，全部 git 子进程 I/O 抽成无状态命名空间 <code>WorktreeGit</code>（Util，镜像既有 <code>GitQuery</code> enum，绝不带 Service 后缀）。</p>
+<p><b>11 个 XxxLayout</b>：逐文件 <code>import AppKit</code>（部分还 CoreText，DiffLayout 还 SwiftUI），且暴露 <code>draw(in: CGContext)</code>。一个 import AppKit、会自绘的类型不是纯 Model，塞进 ch.2.2 的 UI-free Core 会逼 Core 反向链接 AppKit、编译期边界当场失效。正确动作是<em>再定层</em>为「自绘值类型」这一混合子层：保留值语义与 <code>nonisolated static make</code> 的性能契约，但明确它依赖 AppKit、<em>不</em>可入 Core（只有 Foundation-only 的 payload/GutterSpec 才可下沉）。两处的共同病根，正是草案「按长相判层」而非「按 import 与 I/O 判层」。</p>
+</div>
+</details>
+</div>
+</section>
+
+<section class="chapter" id="ch-12"><h2 data-n="12">全量类型目录：一句话职责 + 来源</h2>
+
+<p class="lead">这一章是全书唯一的<strong>主类型目录</strong>：把重构后每一个 MVVM-C 的 class / struct / enum / protocol 列全，配一句话职责、所属层、以及它相对今天的来源（拆分 / 合并 / 重命名 / 新增 / 保留 / 降级 / 再定层）。它是 §1.6 主命名表的<strong>超集</strong>——命名表里的每个新名都能在此查到，外加 ch.11 的每个拆分/合并结果与若干此前漏裁的类型。名字一律照 §1.6 逐字取用（本章不再重议任何改名）；层则用真实角色校正过（Builder=Util、SheetPresenter=Presenter、Selection/SearchCoordinator 角色=Store、HistoryLoader=Util）。是否合规栏为「是 / 需改」，需改行把动作写在同格内。末尾的 §12.7 汇总对 §1.6 的层级/角色更正与几条经代码核验的旧章更正。</p>
+
+<div class="termbox">
+<div class="term"><b class="term-name">拆分</b><span class="term-def">一个文件/类型今天在做两件事，切成两个各自单一职责的类型（两个结果都单独列出）。</span></div>
+<div class="term"><b class="term-name">合并</b><span class="term-def">多个碎片视图/绑定折进同一个 VC 或工具，被合并掉的旧名在「来源」里注明。</span></div>
+<div class="term"><b class="term-name">重命名</b><span class="term-def">职责与层不变，仅按 §1.6 换成准确的角色后缀（含「去数字化」）。</span></div>
+<div class="term"><b class="term-name">新增</b><span class="term-def">迁移中新造、今天不存在的类型（如 InputChromeOptionsViewModel、DiffPreviewService）。</span></div>
+<div class="term"><b class="term-name">保留</b><span class="term-def">名与层都不动，只做纯 AppKit 化的实现替换。</span></div>
+<div class="term"><b class="term-name">降级</b><span class="term-def">过重形态无替换价值（ch.4.3），从类/框架特性降为自由函数/常量/删除，或 SwiftUI 场景溶解。</span></div>
+<div class="term"><b class="term-name">再定层</b><span class="term-def">名保留（§1.6 已定），但把被贴错的层/角色纠正过来（ch.1.2 五层表）。</span></div>
+</div>
+
+<h3>12.1 会话领域（Session）</h3>
+
+<table class="cmp"><thead><tr><th>新名（类型）</th><th>层</th><th>一句话职责</th><th>来源</th><th>合规</th></tr></thead><tbody>
+<tr><td>Session</td><td>Service</td><td>单个会话的 UI 门面：持稳定 sessionId、在 draft/active 相位间转发读写、并同寿命拥有转录渲染侧（controller/bridge/历史回填）。</td><td>保留</td><td>需改：去 @Observable，按 ch.7.2 补显式 onXxxChange 同步通道；渲染侧同寿命持有是刻意设计，勿拆。</td></tr>
+<tr><td>Session.Phase</td><td>Model</td><td>会话相位枚举 .draft(SessionDraft)/.active(SessionRuntime)，表达草稿与活跃两个互斥生命周期切面。</td><td>保留</td><td>是</td></tr>
+<tr><td>SessionRuntime</td><td>Service</td><td>绑定活跃会话 CLI 子进程的运行时引擎：持 status/messages/isRunning/pendingPermissions/config 并推进状态机。</td><td>保留</td><td>是（10 个 SessionRuntime+*.swift 主题扩展是同一类按主题归档，ch.2.3）。</td></tr>
+<tr><td>SessionDraft</td><td>Store</td><td>未发送草稿会话的可变状态持有者：无条件写 config/title/presence，无 DB、无 RPC。</td><td>保留</td><td>是</td></tr>
+<tr><td>SessionManager</td><td>Service</td><td>按 sessionId 懒建并缓存唯一 Session 门面、持 records 缓存、编排归档/关停/草稿创建的注册表 + 生命周期中枢。</td><td>保留</td><td>需改：保留 Manager 名（ch.2.4 真注册表例外）；把 invokeWorktreeArchive/RestoreSync 两个 git static 函数外迁到 WorktreeGit。</td></tr>
+<tr><td>SessionManager.LaunchFailure / ArchivedFolder</td><td>Model</td><td>启动失败通知与归档页文件夹筛选项的宿主私有小值类型。</td><td>保留</td><td>是</td></tr>
+<tr><td>SessionRepository</td><td>Protocol</td><td>会话记录持久化的能力协议（find/save/archive/update…），供生产 CoreData 与测试内存实现替换。</td><td>保留</td><td>是（ch.4.3 合法替换缝）。</td></tr>
+<tr><td>CoreDataSessionRepository</td><td>Service</td><td>SessionRepository 的 CoreData 实现，经注入的 CoreDataStack 读写会话行。</td><td>保留</td><td>是</td></tr>
+<tr><td>InMemorySessionRepository</td><td>Service（测试）</td><td>SessionRepository 的 DEBUG 内存实现，避免污染磁盘 CoreData。</td><td>保留</td><td>是</td></tr>
+<tr><td>SessionExtraUpdate</td><td>Model</td><td>仓库增量更新用的 extra 字段补丁值。</td><td>保留</td><td>是</td></tr>
+<tr><td>SessionConfig</td><td>Model</td><td>会话用户配置的不可变值快照（cwd/worktree/model/effort/权限模式/目录…）+ 到 record/SDK 配置的纯映射（163 行）。</td><td>保留</td><td>需改：可下沉 Core，但依赖 AgentSDK.Effort，需连带处理后才进 SessionModel。</td></tr>
+<tr><td>SessionRecord / SessionStatus / SessionExtra</td><td>Model</td><td>持久化行的值表示、其状态枚举与可 Codable 的 extra 值（同一文件 182 行）。</td><td>保留</td><td>需改：ch.2.3 一文件三型，若跨文件引用可各自成文件（优先级低）。</td></tr>
+<tr><td>CLIClient</td><td>Protocol</td><td>对 AgentSDK.Session 的薄能力协议（回调 + 生命周期 + 控制/消息/配置 RPC），供假件打桩。</td><td>保留</td><td>是</td></tr>
+<tr><td>AgentSDKCLIClient</td><td>Service</td><td>CLIClient 的生产实现——转发到 AgentSDK.Session 的适配器，含 defaultFactory。</td><td>保留</td><td>是</td></tr>
+<tr><td>FakeCLIClient</td><td>Service（测试）</td><td>CLIClient 的测试假件，驱动 runtime 公开面而不起真子进程。</td><td>保留</td><td>是</td></tr>
+<tr><td>CLIClientFactory（typealias）</td><td>Protocol / 注入缝</td><td>从 SessionConfiguration 造 CLIClient 的工厂闭包类型，在 SessionManager 层注入下发。</td><td>保留</td><td>是（ch.4.2 工厂闭包注入）。</td></tr>
+<tr><td>Worktree</td><td>Model</td><td>一个 git worktree 的不可变值标识（path/name/baseRepo/sourceBranch）+ Error 枚举（122 行纯值）。</td><td>拆分</td><td>需改：从今天挂着 ~900 行 git I/O 的扩展中剥出纯值；I/O 归下一行的 WorktreeGit。</td></tr>
+<tr><td>WorktreeGit（新命名空间）</td><td>Util</td><td>承担 worktree 全部 git 子进程与磁盘变更（创建/删除/恢复/改名/查询/钩子与文件拷贝）的无状态静态函数命名空间。</td><td>拆分 / 新增</td><td>需改：从 Worktree+Internals(645)/Worktree+Lifecycle(247) 抽出，镜像既有 GitQuery enum；I/O 不是值 Model 的一部分（ch.1.2 红线）；<strong>绝不用 Service 后缀</strong>。</td></tr>
+<tr><td>WorktreeProvisioner</td><td>Util</td><td>把 Worktree.create 的同步 git 派到后台队列、以 Result 回报的无状态离主线程包装（creator 注入缝）。</td><td>保留</td><td>是（更正草案「@MainActor final class」——代码实为无状态 enum，71 行）。</td></tr>
+<tr><td>HistoryLoader</td><td>Util</td><td>定位会话历史 JSONL 路径并逐行解码的一组无状态静态 I/O 函数（enum 命名空间）。</td><td>再定层</td><td>是（更正草案「Service 协议+实现」——代码实为 enum，无协议无类；测试以参数注入 root）。</td></tr>
+<tr><td>HistoryLoader.ParseError</td><td>Model</td><td>历史解析错误的值枚举（LocalizedError）。</td><td>保留</td><td>是</td></tr>
+<tr><td>TitleGenerator</td><td>Service（角色）</td><td>在 scratch 目录里跑一次 LLM 标题/分支调用的无状态一次性 I/O 命名空间（runner 参数注入）。</td><td>降级</td><td>是（更正草案「final class」——代码实为 enum、无 .shared；Service 角色标签保留）。</td></tr>
+<tr><td>StreamingTurnAssembler</td><td>Model</td><td>把 SDK 分片流折叠成本轮 token 用量与在流文本的纯值折叠器（无 UI、可独立单测）。</td><td>再定层</td><td>是（草案「Service」改判 Model 值，Core-eligible）。</td></tr>
+<tr><td>TypewriterReveal</td><td>Model</td><td>承载单条流式消息打字机揭示状态、把 StreamPacer 计数换算为字符前缀的纯值。</td><td>再定层</td><td>是（草案「Service」改判 Model 值，Core-eligible）。</td></tr>
+<tr><td>FrameTicker</td><td>Protocol</td><td>逐帧回调的协议接缝——生产用主循环定时器、测试用手动步进。</td><td>再定层</td><td>是（从被 lump 的单一「Service」拆出 Protocol 接缝层）。</td></tr>
+<tr><td>TimerFrameTicker</td><td>Service</td><td>FrameTicker 的生产实现：主循环 .common 模式 Timer，弱捕获自失效。</td><td>再定层</td><td>是</td></tr>
+<tr><td>ManualFrameTicker</td><td>Service（测试）</td><td>FrameTicker 的测试实现，确定性步进揭示逻辑。</td><td>再定层</td><td>是</td></tr>
+<tr><td>TaskTracker</td><td>Store</td><td>持有并就地维护本会话后台 bash 任务投影的可观察状态持有者（无 I/O）。</td><td>再定层</td><td>需改：草案「Service」改判 Store；「Tracker」属 ch.2.4 模糊后缀，建议改名 BackgroundTaskStore。</td></tr>
+<tr><td>TodoTracker</td><td>Store</td><td>持有并就地维护助手 todo 计划投影的可观察状态持有者（无 I/O）。</td><td>再定层</td><td>需改：草案「Service」改判 Store；建议改名 TodoStore。</td></tr>
+<tr><td>ContextUsageCache</td><td>Store</td><td>持有 get_context_usage 结果缓存并合并在飞请求的会话级缓存持有者。</td><td>再定层</td><td>是（草案「Service」改判 Store；名 Cache 已表 Store，保留）。</td></tr>
+<tr><td>ReverseEntryBuilder</td><td>Model / Util</td><td>倒序遍历历史消息、做分组与跨页 tool 结果配对的纯值构造器（177 行 struct + mutating ingest/finish）。</td><td>保留</td><td>是（与 StreamingTurnAssembler/TypewriterReveal 同形的 UI-free 值 fold，已单测，Core-eligible）。</td></tr>
+<tr><td>MessageEntry / SingleEntry / GroupEntry / LocalUserInput / ToolResultPayload / DeliveryState / GroupableToolName</td><td>Model</td><td>转录渲染就绪的条目值代数（单条/分组/本地输入/工具结果/投递态/可分组工具名）+ 纯 String 显示派生。</td><td>保留</td><td>需改：384 行一文件多型，是比 SessionTypes 更大的 ch.2.3 违规，宜各自成文件；含用户可见 phrase，需过一遍本地化审计。</td></tr>
+<tr><td>MessagesChange</td><td>Model</td><td>桥接消费的实时时间线变更事件值枚举（.appended/.updated/.removed，35 行）。</td><td>保留</td><td>是</td></tr>
+<tr><td>PendingPermission / SlashCommand / TurnEndedNotice / PermissionPromptNotice / BackgroundTask / TodoEntry（各独立文件）</td><td>Model</td><td>今天挤在 SessionTypes.swift（166 行）里的 6 个跨文件引用值类型。</td><td>拆分</td><td>需改：按 ch.2.3 每类型独立成文件。</td></tr>
+<tr><td>deriveTitleFromFirstMessage</td><td>Util（自由函数）</td><td>从首条消息派生标题的纯字符串函数。</td><td>拆分 / 降级</td><td>需改：从 SessionTypes.swift 降级为就近 String extension/Util（ch.2.5），随会话域走。</td></tr>
+</tbody></table>
+
+<h3>12.2 组合根 · 依赖注入 · 单例</h3>
+
+<table class="cmp"><thead><tr><th>新名（类型）</th><th>层</th><th>一句话职责</th><th>来源</th><th>合规</th></tr></thead><tbody>
+<tr><td>AppDelegate</td><td>Controller / 组合根</td><td>AppKit 应用委托：承担 NSApplication 生命周期，作为唯一组合根装配对象图并强持有 AppCoordinator。</td><td>保留</td><td>需改：把 AppState.init 里的启动副作用接线上收到 assemble()；窗口路由决策交 AppCoordinator（ch.4.4）。</td></tr>
+<tr><td>AppCoordinator</td><td>Coordinator</td><td>应用级根协调器：造根窗口、掌管 app 级路由、按需创建子协调器并注入 service（由 CCTermApp 溶解 + ch.5 根协调器）。</td><td>新增</td><td>需改：ch.5 接受的根协调器，由 AppDelegate 强持有；辅窗 show 方法保留、不套子协调器。</td></tr>
+<tr><td>MainMenuBuilder</td><td>Util</td><td>手搓 NSMenu 合成 About/Settings/Find 菜单项并补齐标准编辑响应子的菜单构建命名空间。</td><td>重命名（AppCommands）</td><td>需改：去 SwiftUI 后由手搓 NSMenu 取代 Commands 块（ch.2.5）。</td></tr>
+<tr><td>AppContext</td><td>依赖包（只读 struct）</td><td>进程级依赖容器：持八个 app-long 的服务/存储引用，init 一次性接线，无被观察的可变状态。</td><td>再定层（AppState）</td><td>需改：去 @Observable（grep 证实无反应式读者）、副作用移出 init、activationTracker 从成员移除（ch.4.5）。</td></tr>
+<tr><td>DetailContext</td><td>依赖包（只读 struct）</td><td>从 split 向每个详情子 VC 透传的窗口级只读依赖包（navigation + 四个服务）。</td><td>保留</td><td>需改：仅删除其 SwiftUI 专用 injectDetailEnvironment 扩展（ch.4.5）。</td></tr>
+<tr><td>CoreDataStack</td><td>Service（.shared）</td><td>每进程一份的 Core Data 持久化栈，向仓库层暴露 viewContext。</td><td>保留</td><td>是（合法单例：生产 private init()、测试 init(inMemory:) 接缝已具备，ch.4.6）。</td></tr>
+<tr><td>ModelCatalogStore</td><td>Store（.shared）</td><td>启动时 fork CLI 子进程枚举可用模型的进程级目录缓存。</td><td>重命名（ModelStore）</td><td>需改：去 @Observable；合法单例（forks 子进程、昂贵、进程级，ch.4.6），仅改名对齐 Store 语义。</td></tr>
+<tr><td>FileCompletionStore / FileMatch</td><td>Service（.shared）+ Model</td><td>按 cwd 懒加载文件列表 + fzf 模糊补全的进程级缓存（带 FSEvents 监听）；FileMatch 是一条补全值。</td><td>保留</td><td>需改：.shared 保留（合法按目录缓存）；Match.displayIcon:NSImage 降为 IconDescriptor 才能让 CompletionCandidate 进 Core（ch.1.7）。</td></tr>
+<tr><td>SlashCommandStore</td><td>Service（.shared）</td><td>按目录缓存斜杠命令、compose 模式下短命 AgentSDK 子进程拉取的进程级缓存。</td><td>保留</td><td>是（合法单例：子进程 + FSEvents；经门面/注入触达，不被 VC 散取，ch.4.6）。</td></tr>
+<tr><td>EffortPreferenceStore</td><td>Store</td><td>按模型记忆用户上次所选 effort、并按 supportedEffortLevels 夹紧的偏好存储。</td><td>再定层（EffortDefaultStore）</td><td>需改：去 .shared——它是偏好不是缓存；已有 init(defaults:)，组合根注入（ch.4.6）。</td></tr>
+<tr><td>NewSessionPreferenceStore</td><td>Store</td><td>记忆新建会话卡全局默认 model 与 permissionMode 的 UserDefaults 偏好存储。</td><td>再定层（NewSessionDefaultsStore）</td><td>需改：去 .shared，组合根注入（ch.4.6）。</td></tr>
+<tr><td>RecentProjectsStore</td><td>Store</td><td>UserDefaults 支撑、懒加载并剪枝的最近项目文件夹列表。</td><td>保留</td><td>是（<strong>更正</strong>：代码里已是非单例、经 AppState.init 注入，无 .shared 可去；草案审计了不存在的问题）。</td></tr>
+<tr><td>NotificationService</td><td>Service</td><td>把会话轮次结束/权限等待路由进系统通知中心，并经回调把点击推回 UI。</td><td>保留</td><td>需改：去 @Observable（authorizationStatus 若需被读则改显式发布）。</td></tr>
+<tr><td>OpenInAppService / Target</td><td>Service + Model（链接 AppKit）</td><td>启动时经 LaunchServices 解析可打开会话目录的外部应用注册表；Target 是一个应用项。</td><td>保留</td><td>需改：Target 携带 NSImage，进不了 Core，随其 View/Store 同住（ch.1.7）。</td></tr>
+<tr><td>AppActivationTracker</td><td>Service</td><td>追踪本 App 是否前台，供通知门控读取 isAppActive。</td><td>降级</td><td>需改：唯一读者是 NotificationService；从 AppContext 成员降为组合根局部、注入进 NotificationService，不再挂在袋上。</td></tr>
+<tr><td>SyntaxHighlightingService</td><td>Service</td><td>持有 JSContext 与 LRU 缓存、对代码做 highlight.js 分词的 actor 服务（藏在协议 SyntaxHighlighting 后）。</td><td>重命名（SyntaxHighlightEngine）</td><td>需改：改名对齐 Service 后缀；去掉不必要的 import SwiftUI。</td></tr>
+<tr><td>GitRepositoryProbe</td><td>Service</td><td>为单个文件夹懒加载分支/状态、由视图驱动生命周期的 git 探针。</td><td>重命名（GitProbe）</td><td>需改：它是 @State-owned 的视图私有交互态、随 BranchPicker 构造，不进组合根（ch.7.4）。</td></tr>
+<tr><td>InputDraftStore</td><td>Store</td><td>按会话 file-backed、去抖写盘的输入栏草稿存储。</td><td>保留</td><td>需改：去 @Observable。</td></tr>
+<tr><td>InputDraft</td><td>Model</td><td>输入栏草稿内容的可 Codable 值（无后缀纯值）。</td><td>保留</td><td>是</td></tr>
+<tr><td>CompletionPrewarmer</td><td>Util</td><td>补全弹窗的单入口预热门面（无状态 enum），扇出到文件索引与斜杠命令两个缓存。</td><td>保留</td><td>是：直取两个 .shared 缓存合法（它俩是诚实缓存，ch.4.6）；若去单例则须把 store 作能力参数注入。</td></tr>
+<tr><td>DirectoryTreeMonitor</td><td>Service</td><td>基于 FSEvents 的目录变化监听，供补全缓存做失效。</td><td>保留</td><td>是（<strong>更正</strong>：per-directory Service，由 FileCompletionStore/SlashCommandStore 各自 new，<strong>非单例</strong>）。</td></tr>
+<tr><td>BuildInfo</td><td>Model</td><td>编译期版本/构建信息的纯值。</td><td>保留</td><td>是</td></tr>
+</tbody></table>
+
+<h3>12.3 窗口外壳 · 详情路由 · 导航</h3>
+
+<table class="cmp"><thead><tr><th>新名（类型）</th><th>层</th><th>一句话职责</th><th>来源</th><th>合规</th></tr></thead><tbody>
+<tr><td>MainWindowController</td><td>Controller</td><td>主窗口的生命周期、frame 持久化与工具栏装配归属（ch.3.1 明列工具栏装配归 WindowController）。</td><td>保留</td><td>需改：<b>不</b>抽 MainToolbarController（ch.3.1/ch.11.7 驳回）；仅把被测试跨文件引用的 TranscriptSearchToolbarBridge 及 chip/filter 各自独立成文件（ch.2.3）。</td></tr>
+<tr><td>MainSplitViewController</td><td>Controller</td><td>两栏 NSSplitViewController：装侧栏 VC + 详情容器 VC，并各自打包 SidebarContext/DetailContext 下发（69 行）。</td><td>保留</td><td>是（ch.3.3 系统容器标准骨架，职责单一）。</td></tr>
+<tr><td>DetailNavigationCoordinator</td><td>Coordinator</td><td>详情侧决策半：作为唯一结构性选择观察者，按 navigation 决定挂哪个子 VC 并驱动容器 present。</td><td>拆分（DetailRouterVC 决策半）</td><td>需改：ch.5 接受的拆分；只通过同步 delegate 读 navigation，不用 withObservationTracking（ch.5/§1.5）。</td></tr>
+<tr><td>DetailContainerViewController</td><td>Controller</td><td>详情侧执行半：自定义容器，按指令挂载唯一子 VC、承载跨类交叉淡入机制、承接 app→detail 信号与启动失败弹窗。</td><td>拆分（DetailRouterVC 执行半）</td><td>需改：ch.5 已把交叉淡入机制放在容器，双持所有权顾虑消解（ch.5.5/3.3）。</td></tr>
+<tr><td>DetachableDetailChild</td><td>Protocol</td><td>可装卸详情子 VC 的确定性拆卸钩子协议（prepareForRemoval()）。</td><td>重命名（DetailRouterChild）</td><td>是（ch.3.4 每-attach 资源确定性释放）。</td></tr>
+<tr><td>SessionPresentingDetailChild</td><td>Protocol</td><td>present(sessionID:animated:) 的窄协议，让容器把同会话切换交给子 VC 处理。</td><td>新增</td><td>是（注意大写 D 的 sessionID）。</td></tr>
+<tr><td>DetailScene</td><td>Model</td><td>把 navigation 映射到具体子 VC 类型的纯路由值枚举（ChildKind 升为顶层）。</td><td>新增</td><td>是（跨文件测试引用，可提升为顶层 Model 文件）。</td></tr>
+<tr><td>ChatSessionViewController</td><td>Controller</td><td>聊天面板 VC，负责「面板显示什么」：scrim、居中输入栏宿主、权限卡浮层、焦点与镂空，把转录挂载委托给 TranscriptSwapCoordinator（480 行，域内最大 VC）。</td><td>保留</td><td>需改：已抽出 TranscriptSwapCoordinator；内嵌 ChatComposeHostRoot/ChatComposeStack 各自成文件；剩余 scrim/host 按 ch.3.3 评估是否再拆（默认 KEEP）。</td></tr>
+<tr><td>ChatComposeHostRoot</td><td>View</td><td>聊天输入栏宿主的命名根视图，封装 DetailContext 环境注入链。</td><td>保留</td><td>需改：独立成文件；纯 AppKit 下并入程序化输入栏视图。</td></tr>
+<tr><td>ChatComposeStack</td><td>View</td><td>按 navigation 决定显示聊天静息栏还是空视图的路由 View（含纯静态 content(for:) 判定）。</td><td>保留</td><td>需改：独立成文件；content(for:) 保留为可测纯函数。</td></tr>
+<tr><td>TranscriptSwapCoordinator</td><td>Controller（角色登记）</td><td>转录挂载机制的状态机与 currentSession 唯一持有者：build/bind/anchor/crossfade/teardown 滚动视图并重建每次 attach 的 sheet/turnUsage/isRunning 汇。</td><td>保留</td><td>需改：名实不符——它<strong>不是 ch.5 导航 Coordinator</strong>，是 VC 私有的视图机制持有者；改名纯 churn，保留名但文档标注非导航层（见 §12.7）。</td></tr>
+<tr><td>WindowNavigationStore</td><td>Store</td><td>窗口顶层选择/草稿/archive 过滤状态的持有者，其 set(_:) 同步触发唯一结构性上行边。</td><td>重命名（MainSelectionModel）</td><td>需改：去 @Observable；旧 select(_:)→set(_:)；供 SwiftUI 消费者的观察通道另接（ch.7.4）。</td></tr>
+<tr><td>WindowNavigationObserver</td><td>Protocol</td><td>选择变更在源相位同步通知结构性观察者的唯一上行协议（1:1 同步 delegate，沿导航语义命名，非 Delegate 后缀）。</td><td>重命名（MainSelectionObserver）</td><td>是（唯一结构性上行边，勿泛化为 bus/第二观察者槽，§1.5）。</td></tr>
+<tr><td>NavigationTarget</td><td>Model</td><td>窗口当前选中项的类型安全枚举（.none/.newSession/.session/.archive/.demo）。</td><td>重命名（MainSelection）</td><td>需改：去掉不必要的 SwiftUI 关联，可下沉 Core。</td></tr>
+<tr><td>DemoScene</td><td>Model</td><td>DEBUG 专用 demo 标签的稳定身份枚举，与 DetailScene 对齐。</td><td>重命名（DemoKind）</td><td>是</td></tr>
+<tr><td>TranscriptSearchCommand / TranscriptSearchFocusing</td><td>命令 / Protocol</td><td>⌘F 把键盘焦点交给搜索框的一对一命令/焦点通道。</td><td>再定层（TranscriptSearchBus）</td><td>需改：它不是 Store（无实际状态，只 bump 计数）；改成一对一命令/焦点协议直调（ch.7.1）。</td></tr>
+<tr><td>TranscriptSearchToolbarBridge</td><td>Controller</td><td>把工具栏 NSSearchField 桥接到搜索聚焦请求与当前会话控制器的查询/上下条导航。</td><td>保留</td><td>需改：从 MainWindowController.swift 移出独立成文件（ch.2.3）；去掉 withObservationTracking-in-Task 计数器观察。</td></tr>
+<tr><td>ArchiveFilterToolbarButtonView</td><td>View</td><td>仅 Archive 选中时出现的工具栏文件夹过滤按钮 + popover。</td><td>重命名</td><td>需改：移出 MainWindowController.swift 独立成文件；纯 AppKit 下端为 NSToolbarItem 视图。</td></tr>
+<tr><td>TranscriptProjectChipView</td><td>View</td><td>工具栏左侧的项目名/分支 chip（dirName + branchName）。</td><td>重命名</td><td>需改：移出 MainWindowController.swift 独立成文件；程序化视图。</td></tr>
+<tr><td>mountFillPaneHost</td><td>Util（自由函数）</td><td>regime-A 填充宿主构建配方：NSHostingController + sizingOptions=[] + 四边 pin，被三个 fill-pane VC 共用（52 行）。</td><td>保留</td><td>是（ch.2.5 单一职责就近工具，非 Utils 大杂烩）。</td></tr>
+<tr><td>ArchiveViewController</td><td>Controller</td><td>.archive 选择时的填充宿主 VC，承载 ArchiveView 并与工具栏过滤器共享 navigation 上的选中路径。</td><td>保留（ArchiveView→VC）</td><td>需改：VC 已存在（草案 rename 标注过期）；待将 ArchiveView body 端到程序化 NSView。</td></tr>
+<tr><td>ArchiveView（→ port）</td><td>View</td><td>归档列表的 SwiftUI body（519 行），按文件夹过滤展示归档会话并支持恢复。</td><td>保留</td><td>需改：纯 AppKit 化时端为 view-based 列表。</td></tr>
+<tr><td>SettingsWindowController</td><td>Controller</td><td>AppKit 根的设置窗口控制器：惰性建窗、isRestorable=false、承载 SettingsView。</td><td>保留（SettingsView→WC）</td><td>需改：WC 已存在；SettingsView body 待端到程序化。</td></tr>
+<tr><td>SettingsView（→ port）</td><td>View</td><td>设置面板的 SwiftUI body（71 行）。</td><td>保留</td><td>需改：纯 AppKit 化时端为程序化设置面板 VC。</td></tr>
+<tr><td>AboutWindowController</td><td>Controller</td><td>AppKit 根的关于窗口控制器：惰性建窗、内容尺寸自适应、承载 AboutView（38 行）。</td><td>保留</td><td>是（职责单一，ch.3.1）。</td></tr>
+<tr><td>ComposeSessionViewController</td><td>Controller</td><td>新建会话 tab 的整屏 VC，lazy 分配 draftSessionId 并托管 compose 卡。</td><td>保留</td><td>需改：mountFillPaneHost→loadView 四边钉；与 DraftSessionLandingViewController 不合并（显式非目标）。</td></tr>
+<tr><td>DraftSessionLandingViewController</td><td>Controller</td><td>选中一个仍是草稿的会话时的落地 VC，与 compose 分属不同生命周期。</td><td>保留</td><td>是（显式非目标：不与 ComposeSessionViewController 合并）。</td></tr>
+<tr><td>CCTermApp</td><td>—（溶解）</td><td>SwiftUI @main App 场景 + @NSApplicationDelegateAdaptor + 占位 Settings 场景。</td><td>降级</td><td>需改：纯 AppKit 下溶解为 main.swift/AppDelegate 入口；根协调交 AppCoordinator；init 副作用（prefetch/Watchdog.start/NSInitialToolTipDelay）并入组合根。</td></tr>
+</tbody></table>
+
+<h3>12.4 转录引擎</h3>
+
+<table class="cmp"><thead><tr><th>新名（类型）</th><th>层</th><th>一句话职责</th><th>来源</th><th>合规</th></tr></thead><tbody>
+<tr><td>TranscriptController</td><td>Controller（角色登记）</td><td>宿主面单向命令通道：apply/scrollToTail/setLoading（400ms 去抖+pill 重整）/search，并以 @Observable 字段单向镜像 blockCount/searchState/pending* 供观察。</td><td>重命名（Transcript2Controller）</td><td>需改：去数字化；@Observable 字段是命令通道镜像<strong>非 VM</strong>、<strong>非 ch.5 导航 Coordinator</strong>（§8.9/§12.7）。</td></tr>
+<tr><td>TranscriptCoordinator</td><td>Coordinator（层）/ 角色 DataSource</td><td>NSTableView 的 DataSource/Delegate，持有 blocks 单一真相 + layoutCache + Change 分发 + 子交互态对象，是全域数据源层。</td><td>再定层（Transcript2Coordinator）</td><td>需改：去数字化；<strong>非 ch.5 导航 Coordinator</strong>——钉为「数据源/表委托」；名保留以免动承重测试（§12.7）。</td></tr>
+<tr><td>TranscriptSelectionCoordinator</td><td>角色 Store（§1.6 层 Coordinator）</td><td>持跨行选择态 selections:[UUID:SelectionRange]、派生 per-cell paint、经 markCellNeedsDisplay 触发重绘的交互态持有者。</td><td>再定层</td><td>需改：不导航、只持交互态→角色 Store；保留 §1.6 名，去数字化（§12.7）。</td></tr>
+<tr><td>TranscriptSearchCoordinator</td><td>角色 Store（§1.6 层 Coordinator）</td><td>持搜索命中态 hits/hitsByBlock、扫描/导航并推 per-cell 高亮的交互态持有者，与选择态独立 compose。</td><td>再定层</td><td>需改：同上→角色 Store，保留 §1.6 名，去数字化。</td></tr>
+<tr><td>TranscriptHighlightStore</td><td>Store</td><td>per-(block,scope) 异步语法高亮令牌的缓存持有者，带指纹去重 + per-scope 代际守卫，由注入的 engine 填充。</td><td>再定层（Transcript2HighlightStorage）</td><td>需改：去数字化；层钉死 Store。</td></tr>
+<tr><td>TranscriptHighlightScope / …Key / HighlightValue</td><td>Model</td><td>高亮键值类型：文件作用域的 nonisolated Hashable/Sendable 枚举与结构，供脱主线程 snapshot 查表。</td><td>重命名</td><td>需改：去数字化；保持文件作用域以维持 nonisolated conformance。</td></tr>
+<tr><td>Block / Block.Kind</td><td>Model</td><td>转录一行的渲染数据模型及其种类枚举（caller 供稳定 UUID 身份），行的单一真相载体。</td><td>拆分（拆出 BlockStyle）</td><td>需改：拆出 BlockStyle 后去 import SwiftUI；仍 import AppKit（NSImage），故非可下沉 Core 的纯 Model（ch.1.7）。</td></tr>
+<tr><td>BlockStyle</td><td>Util</td><td>字体/内距/颜色/几何常量 + headingAttributed/paragraphAttributed/clampedLayoutWidth 等纯函数的视觉样式命名空间。</td><td>拆分（从 Block.swift）</td><td>需改：独立成文件；其 SyntaxTheme 桥接随高亮去 SwiftUI。</td></tr>
+<tr><td>ToolGroupBlock / .Child / ToolStatus / ListBlock / TableBlock</td><td>Model</td><td>工具组/子项/工具状态/列表/表格的行 payload 数据模型（值类型，携三态标题与折叠语义输入）。</td><td>保留</td><td>是（各自成文件更合 ch.2.3）。</td></tr>
+<tr><td>InlineNode</td><td>Model</td><td>递归行内 IR（text/strong/emphasis/code/link/lineBreak），Foundation-only 纯数据。</td><td>保留</td><td>是（真正的 ch.1.2 纯 Model，可下沉 Core）。</td></tr>
+<tr><td>SyntaxTheme</td><td>Util</td><td>hljs scope→颜色的纯配色映射（草案遗漏的类型）。</td><td>再定层</td><td>需改：改返回 NSColor + 明暗枚举、去掉 import SwiftUI，使 Block/DiffLayout 一并脱 SwiftUI。</td></tr>
+<tr><td>RowLayout</td><td>Model（自绘值子层）</td><td>包裹 11 种具体 XxxLayout 的枚举派发器，暴露统一 totalHeight/measuredWidth/draw/subviewPlan。</td><td>再定层</td><td>需改：去数字化；归「自绘值类型」子层（import AppKit，非纯 Model）。</td></tr>
+<tr><td>TextLayout / ImageLayout / ListLayout / TableLayout / UserBubbleLayout / CodeBlockLayout / BlockquoteLayout / ThematicBreakLayout / ToolGroupLayout / LoadingPillLayout / UserAttachmentsLayout</td><td>Model（自绘值）</td><td>11 个不可变 Sendable 自绘布局值，各封装一种宽度→几何算法 + CGContext 绘制，nonisolated static make 可脱主线程。</td><td>保留</td><td>需改：归自绘值子层——import AppKit，非纯 Model、不可下沉 Core；性能契约逐字保留（ch.6.4/8.7）。</td></tr>
+<tr><td>CopyChrome / GutterSpec / SelectionAdapter / SubviewPlan / TextCardSection</td><td>Model</td><td>布局辅助值：复制按钮原语/gutter 规格/选择 API（struct+闭包）/子视图装饰计划/多卡片几何 helper。</td><td>保留</td><td>需改：归自绘值子层；SelectionAdapter/SubviewPlan 保持 struct+闭包，勿改协议。</td></tr>
+<tr><td>ToolGroupChildLayout / ToolGroupChildHighlight</td><td>Model</td><td>工具子项的 per-kind 几何派发（嵌套 Kind 枚举 + 统一错误卡）/高亮请求计划。</td><td>保留</td><td>是（自绘值子层，枚举穷尽派发，勿引协议）。</td></tr>
+<tr><td>ANSIAttributedBuilder</td><td>Util</td><td>SGR/ANSI → NSAttributedString 的转换命名空间（enum 静态函数，import AppKit，草案遗漏）。</td><td>保留</td><td>需改：显式归层为 AppKit 依赖的无状态工具 Util（ch.2.5），不当纯 Model。</td></tr>
+<tr><td>Bash/Read/Grep/Glob/Agent/WebSearch/WebFetch/AskUserQuestion/FileEdit/Generic Child（10 族 payload）</td><td>Model</td><td>十种工具子项的 payload 数据结构（id/label/activeLabel/errorText），Foundation-only 纯 Model。</td><td>保留</td><td>是（Model↔自绘的干净层边界，payload UI-free，Core-eligible）。</td></tr>
+<tr><td>各 XxxChildLayout（10 族）+ DiffLayout + DiffBlock</td><td>Model（自绘值 / 纯 payload）</td><td>十种子项的几何/绘制布局（+diff hunk 布局与其 payload）。</td><td>保留</td><td>需改：布局归自绘值子层；DiffLayout 去掉 import SwiftUI；DiffBlock 为 Foundation-only 纯 payload（Core-eligible）。</td></tr>
+<tr><td>各 XxxChildHighlight（Bash/FileEdit/Read）</td><td>Model</td><td>三种需异步高亮的子项各自的高亮请求/finalize 计划。</td><td>保留</td><td>是</td></tr>
+<tr><td>BlockCellView（+SubviewPlan/+Gutter 扩展）</td><td>View</td><td>自绘 cell：override draw(_:) + wantsLayer 位图缓存 + 居中 + 链接/chevron 命中 + 选择/悬停跟踪 + SubviewPlan 装饰协调。</td><td>保留</td><td>是（§2.2 位图缓存、§2.16 shimmer 承重逐字保留）。</td></tr>
+<tr><td>ToolGroupEntryView / ShimmerLayerSet / LoadingPillUsageView</td><td>View</td><td>cell 内的图层化装饰视图：可滑动内联体/shimmer 扫光层组/运行 pill 的用量+自走时钟视图。</td><td>保留</td><td>是</td></tr>
+<tr><td>TranscriptScrollView / TranscriptClipView / TranscriptTableView</td><td>View</td><td>AppKit 子类：.never 图层 + responsive 滚动的滚动/裁剪视图、负宽钳制的表视图。</td><td>重命名</td><td>需改：去数字化；§2.3/§2.9 承重逐字保留。</td></tr>
+<tr><td>TranscriptRowView</td><td>View</td><td>空 NSTableRowView 占位子类，只为给行复用提供稳定 class 身份（并不居中）。</td><td>重命名（CenteredRowView）</td><td>需改：去掉「Centered」误导；「BlockRow」复用键字符串不变。</td></tr>
+<tr><td>TranscriptSheetPresenter</td><td>Presenter（角色登记）</td><td>观察 controller 的 pendingUserBubbleSheet/pendingImagePreview 并以 AppKit 原生 beginSheet 呈现的 per-attach 呈现器。</td><td>重命名（Transcript2SheetPresenter）</td><td>需改：§1.6 层「Coordinator/Presenter」<strong>更正为 Presenter</strong>；去数字化，落地后去 NSHostingController 依赖（§12.7）。</td></tr>
+<tr><td>TranscriptScrollViewBuilder</td><td>Util（角色登记）</td><td>无状态 enum：两步 make/bindData/dismantle 装配 scroll/clip/table 壳，落实 §2.19 单宽度 attach 契约。</td><td>再定层（含旧 TranscriptScrollViewFactory）</td><td>需改：§1.6 层「Coordinator/Builder」<strong>更正为 Util</strong>——它是无状态装配命名空间（§12.7）。</td></tr>
+<tr><td>UserBubbleSheetViewController / ImagePreviewSheetViewController</td><td>View（port-from-SwiftUI）</td><td>转录域仅剩两个 SwiftUI sheet 正文（全文气泡/图片预览），待端到 AppKit VC。</td><td>重命名</td><td>需改：View→VC 行为 port（NSTextView+Done / 等比 NSImageView+点击关闭），实测视觉对齐。</td></tr>
+<tr><td>TranscriptEntryBridge</td><td>Service</td><td>@MainActor：把 runtime 的 MessageEntry 差量翻译成 Controller.Change 并 apply 的「喂表唯一入口」（通道 B）。</td><td>重命名（Transcript2EntryBridge）</td><td>需改：去数字化；层 Service（持 controller + entryOrder/entryBlocks 映射，非纯值）。</td></tr>
+<tr><td>TranscriptBackfillService</td><td>Service</td><td>冷历史回填：脱主线程 producer 读反向页 + 脱主线程 typeset，经 PipelineInbox 交主线程按预算 tick apply。</td><td>重命名（TranscriptBackfillPipeline）</td><td>需改：去数字化/改 Service 后缀；同步 isRunning 观察隐患须随迁移修（§8.8）。</td></tr>
+<tr><td>PipelineInbox</td><td>Store</td><td>producer↔drain 的线程安全交接缓冲（锁 + 异步背压），最多 capacity 个预建页常驻。</td><td>再定层</td><td>是（层归 Store 持状态缓冲；名保留）。</td></tr>
+<tr><td>JSONLReversePageSource</td><td>Service</td><td>从 JSONL 会话文件反向分页读取的 I/O 源，藏在 ReversePageSource 协议后。</td><td>保留</td><td>是（面向协议注入，ch.4.3）。</td></tr>
+<tr><td>ReverseLineReader</td><td>Util</td><td>低层反向逐行文件读取器。</td><td>保留</td><td>是</td></tr>
+<tr><td>MessageEntryBlockBuilder</td><td>Util</td><td>无状态 enum：MessageEntry→[Block] 的纯转换（import AppKit 因产出含 NSImage 的 Block）。</td><td>保留</td><td>是（纯函数命名空间，非 Service）。</td></tr>
+<tr><td>MarkdownToBlocks / ToolUseToChild / StreamingMarkdownCommit / StableBlockID</td><td>Util</td><td>四个 Foundation-only 纯转换命名空间：markdown→块 / 工具调用→子项 / 流式 markdown 提交 / 稳定块 ID 派生。</td><td>保留</td><td>是（均可下沉 Core，UI-free）。</td></tr>
+<tr><td>ReversePageSource（协议）</td><td>Protocol</td><td>反向分页源的能力协议，让回填管线可注入真实 JSONL 源或测试替身。</td><td>保留</td><td>是（ch.4.3 为替换而抽象）。</td></tr>
+</tbody></table>
+
+<h3>12.5 输入栏 · Chrome · 补全 · 权限卡</h3>
+
+<table class="cmp"><thead><tr><th>新名（类型）</th><th>层</th><th>一句话职责</th><th>来源</th><th>合规</th></tr></thead><tbody>
+<tr><td>CompletionEngine</td><td>ViewModel</td><td>补全旗舰 VM：触发检测、150ms 去抖、generation 竞态防护、provider 分发、上下键导航与确认替换的可脱窗状态机。</td><td>再定层（CompletionState）</td><td>需改：@Observable→Combine @Published；items 元素改用无 NSImage 的 CompletionCandidate 才真正 UI-free（§7.5）。</td></tr>
+<tr><td>CompletionSession</td><td>Model</td><td>一次补全会话的配置值（anchor/provider/makeReplacement 等闭包），由触发规则构造。</td><td>保留</td><td>是</td></tr>
+<tr><td>CompletionEmptyReason</td><td>Model</td><td>补全空态原因枚举（loading/noMatches/noDirectory）。</td><td>保留</td><td>是</td></tr>
+<tr><td>CompletionCandidate</td><td>Model</td><td>一个补全候选项的显示值（文本/图标/详情/badge）。</td><td>再定层（CompletionItem 协议）</td><td>需改：displayIcon:NSImage? 降为无 AppKit 的 IconDescriptor，cell 渲染时才解析 NSImage（ch.1.7）。</td></tr>
+<tr><td>CompletionTriggerRule</td><td>Protocol</td><td>把光标处触发字符解析成一次补全会话的策略协议。</td><td>保留</td><td>是</td></tr>
+<tr><td>CompletionTriggerContext</td><td>Model</td><td>每次 checkTrigger 新建的纯值上下文（目录/附加目录/插件目录/已知命令/builtin 分发闭包）。</td><td>保留</td><td>是</td></tr>
+<tr><td>SlashCommandTriggerRule</td><td>消费 Service 的策略</td><td>/ 斜杠命令触发规则，合成 builtin + CLI 命令列表。</td><td>再定层</td><td>需改：provider 内联 SlashCommandStore.shared 改为签名上显式注入补全能力（ch.4.1/1.7）。</td></tr>
+<tr><td>FileMentionTriggerRule</td><td>消费 Service 的策略</td><td>@ 文件提及触发规则，含 quote-aware 词范围与去引号变换。</td><td>再定层</td><td>需改：provider 内联 FileCompletionStore.shared 改为显式注入补全能力。</td></tr>
+<tr><td>CompletionListViewController</td><td>Controller</td><td>补全弹窗的 view-based 列表，订阅引擎 candidates 下行、onPick 上行。</td><td>再定层（CompletionListView）</td><td>需改：LazyVStack→NSTableView view-based 列表；@Bindable→订阅 @Published。</td></tr>
+<tr><td>AskUserQuestionCardViewController + AskUserQuestionViewModel</td><td>Controller + ViewModel</td><td>AskUserQuestion 多问题交互卡：翻页、单/多选、Other 自由文本、confirmEnabled 校验、回填、payload 组装。</td><td>拆分（PermissionAskUserQuestionCardBody 670 行）</td><td>需改：状态机抽成无 AppKit 的 VM（可单测），薄 VC 只绑控件+上报（唯一「该有 VM」之二，§7.5）。</td></tr>
+<tr><td>ModelEffortPickerView（+popover VC）</td><td>View + ViewController</td><td>模型/effort/fast-mode 的笨触发钮，选项由 InputChromeOptionsViewModel 派生。</td><td>拆分</td><td>需改：visibleModels/effectiveEffort/backfill 上移共享 VM；view 只显示+onSelect 上报 session.setX。</td></tr>
+<tr><td>PermissionModePickerView（+popover VC）</td><td>View + ViewController</td><td>权限模式笨触发钮，.auto 门控与 seed 逻辑由共享 VM 派生。</td><td>拆分</td><td>需改：visibleModes/seedFromDefaults 上移到 InputChromeOptionsViewModel。</td></tr>
+<tr><td>InputChromeOptionsViewModel</td><td>ViewModel</td><td>把异步到达的 ModelCatalogStore 目录与会话状态对账，派生 visibleModels/activeModel/effectiveEffort/门控项并跑幂等 seed/backfill。</td><td>新增</td><td>是（合并两 picker + chrome 三处重复的 activeModel/catalog 逻辑，由 chrome VC 持有，§7.5）。</td></tr>
+<tr><td>InputBarSessionChromeViewController</td><td>Controller</td><td>输入栏下方每会话控件行容器，持 InputChromeOptionsViewModel，把各 onOpenPopover 翻译成对应 popover。</td><td>再定层（InputBarSessionChrome）</td><td>需改：activeModel 计算移入 VM；SwiftUI HStack→程序化容器 VC。</td></tr>
+<tr><td>Permission{Shell/Mcp/TaskAgent/Skill/NotebookEdit/FilesystemRead/WebFetch}CardBodyView + …Presenter</td><td>View + Presenter（值）</td><td>各工具权限卡的显示体 + 其纯 request→显示派生（复合命令规则数/副标题/字段等）。</td><td>拆分</td><td>需改：纯派生落 Presenter 值，View 只 configure；不配 VM（§7.5）。</td></tr>
+<tr><td>PermissionFileWriteCardPresenter + BodyView + DiffPreviewService</td><td>View + Presenter + Service</td><td>Edit/Write 卡：Create/Overwrite 副标题 + 文件 diff 预览。</td><td>拆分</td><td>需改：<strong>CORRECTNESS</strong>——diffBlock 在 body 路径同步 String(contentsOfFile:)（ch.9.2 主线程 I/O）；读+diff 挪进异步 DiffPreviewService，Presenter 保持纯值。</td></tr>
+<tr><td>PermissionSedEditCardPresenter + BodyView + DiffPreviewService</td><td>View + Presenter + Service</td><td>sed -i 卡：解析替换、读文件、应用后展示全文件 diff。</td><td>拆分</td><td>需改：同步读盘 + apply 挪进异步 DiffPreviewService。</td></tr>
+<tr><td>PermissionEnterPlanModeCardBodyView / ExitPlanModeCardBodyView / FallbackCardBodyView</td><td>View</td><td>进入/退出 plan 模式与未知工具兜底的近静态权限卡体。</td><td>降级</td><td>需改：无派生逻辑的笨 View，不配 Presenter（避免空层，ch.4.3）；若 ExitPlan 有 markdown 派生才落 Presenter。</td></tr>
+<tr><td>PermissionCardView</td><td>View</td><td>权限卡外壳：按 kind 分发到各体，渲染共享 header/reason/按钮行；已与 Session 解耦（handlers 注入）。</td><td>保留</td><td>需改：SwiftUI→程序化 NSView；保持不见 Session。</td></tr>
+<tr><td>PermissionCardCopy</td><td>Util</td><td>从 request 派生用户可见文案（标题动词、参数字段）的无状态工厂。</td><td>拆分</td><td>需改：跨文件被引用，按 ch.2.3 独立成文件。</td></tr>
+<tr><td>PermissionDecisionButtonView</td><td>View</td><td>三态（primary/secondary/destructive）紧凑决策按钮。</td><td>拆分</td><td>需改：被 AskUserQuestion 体跨文件复用，独立成文件；hover 折进 tracking-area。</td></tr>
+<tr><td>PermissionCardSurfaceView</td><td>View</td><td>权限卡不透明圆角+描边+阴影的面板底。</td><td>再定层</td><td>需改：ViewModifier→NSView 背景/图层。</td></tr>
+<tr><td>PermissionCardOverlayView（+ Handlers）</td><td>View（§1.6）/ 实为 regime-A 浮层宿主 + Model</td><td>全窗浮层宿主，读 session.pendingPermissions.first，把四个决策闭包接到 session.respond；Handlers 是决策闭包值。</td><td>重命名（PermissionCardOverlay）</td><td>需改：保留 §1.6 名 PermissionCardOverlayView；实为四边钉的 regime-A 浮层宿主 VC，decisionHandlers 工厂 + Handlers 值保留（§12.7 记角色）。</td></tr>
+<tr><td>PermissionCardKind</td><td>Model</td><td>按 toolName 把权限请求映射到卡片类别的纯枚举 + 静态 kind(for:)。</td><td>保留</td><td>是（不配 VM）。</td></tr>
+<tr><td>BackgroundTaskOutputStreamService</td><td>Service</td><td>tail 后台 bash 的 spool 文件（fd+DispatchSource+1s 定时器），以 path 为身份、start/stop 生命周期暴露累积文本。</td><td>再定层（BackgroundTaskOutputStream）</td><td>需改：@Observable→@Published；它是 I/O 而非视图派生，是 Service 不是 VM（§7.5）。</td></tr>
+<tr><td>BackgroundTaskListViewController</td><td>Controller</td><td>popover 内后台任务 view-based 列表，1s tick 随 appear/disappear 起停。</td><td>再定层</td><td>需改：SwiftUI→view-based 表 VC。</td></tr>
+<tr><td>BackgroundTaskRowView</td><td>View</td><td>单个后台任务行 cell。</td><td>再定层</td><td>需改：→NSTableCellView，configure(with:) 幂等绑定。</td></tr>
+<tr><td>BackgroundTaskFormat</td><td>Util</td><td>后台任务时长/状态的纯格式化枚举。</td><td>保留</td><td>是</td></tr>
+<tr><td>BackgroundTaskButtonView</td><td>View</td><td>打开后台任务列表的笨触发钮。</td><td>再定层</td><td>需改：→NSControl。</td></tr>
+<tr><td>BackgroundTaskDetailViewController</td><td>Controller</td><td>后台任务输出详情 sheet，注入 BackgroundTaskOutputStreamService。</td><td>再定层</td><td>需改：SwiftUI sheet→beginSheet VC；离场 stop()。</td></tr>
+<tr><td>BackgroundTaskOutputView</td><td>View</td><td>详情 sheet 内的输出文本显示视图。</td><td>再定层</td><td>需改：→NSTextView，订阅 $text 下行。</td></tr>
+<tr><td>SedEditInfo</td><td>Model</td><td>sed 单替换的解析值 + 纯 apply(to:) 应用逻辑（Foundation 正则），无 UI。</td><td>保留</td><td>是（可下沉 Core）。</td></tr>
+<tr><td>SedEditParser</td><td>Util</td><td>把 sed -i 命令解析成 SedEditInfo 的无状态纯逻辑枚举，不读文件系统。</td><td>保留</td><td>是（可下沉 Core，不配 VM）。</td></tr>
+<tr><td>ShellTokenizer</td><td>Util</td><td>最小 shell 引号分词器，遇元字符返回 nil。</td><td>保留</td><td>是（可下沉 Core）。</td></tr>
+<tr><td>ContextRingButtonView</td><td>View</td><td>上下文用量环形笨触发钮，percent 为纯派生。</td><td>再定层</td><td>需改：→NSControl；isOpen 是视图私有态。</td></tr>
+<tr><td>ContextUsagePopoverViewController</td><td>Controller</td><td>上下文用量 popover：breakdown + 汇总，「开一次拉一次」RPC 收进 viewWillAppear。</td><td>再定层（ContextPopoverContent）</td><td>需改：requestContextUsage() 从 onAppear 移到 viewWillAppear。</td></tr>
+<tr><td>ContextBreakdownView + ContextBreakdownPresenter</td><td>View + Presenter（值）</td><td>上下文按类别分解条与行。</td><td>拆分</td><td>需改：格式化/分组派生落纯 Presenter 值，不配 VM。</td></tr>
+<tr><td>ContextCategoryRowView</td><td>View</td><td>上下文单类别行。</td><td>再定层（CategoryRow）</td><td>需改：→NSView cell。</td></tr>
+<tr><td>ContextExpandableGroupView</td><td>View</td><td>可展开的 Memory/MCP 分组，isExpanded 视图私有态。</td><td>再定层（ExpandableGroup）</td><td>需改：→NSView。</td></tr>
+<tr><td>TodoButtonView</td><td>View</td><td>打开 todo 列表的笨触发钮。</td><td>再定层</td><td>需改：→NSControl。</td></tr>
+<tr><td>TodoListViewController</td><td>Controller</td><td>popover 内 todo view-based 列表，订阅 session.$todos。</td><td>再定层</td><td>需改：→view-based 表 VC。</td></tr>
+<tr><td>TodoRowView</td><td>View</td><td>单个 todo 行 cell。</td><td>再定层</td><td>需改：→NSTableCellView。</td></tr>
+<tr><td>TodoStatusGlyphView</td><td>View</td><td>todo 状态字形（完成环/旋转虚线环），并入原 CompletedRingAndDotShape 与 RotatingDottedRing。</td><td>合并</td><td>需改：Shape→CGPath；旋转环逐帧→CABasicAnimation(transform.rotation.z)。</td></tr>
+<tr><td>PopoverListMetrics</td><td>Util</td><td>popover 列表的共享尺寸常量。</td><td>再定层（PopoverList）</td><td>是（enum 常量归 Util）。</td></tr>
+<tr><td>PopoverSectionHeaderView</td><td>View</td><td>popover 分节标题。</td><td>再定层</td><td>需改：→NSView。</td></tr>
+<tr><td>PopoverRowView</td><td>View</td><td>popover 通用行（带 accessory 子视图缝），hover/press 折进 cell updateLayer。</td><td>再定层（PopoverRow&lt;Accessory&gt;）</td><td>需改：泛型 ButtonStyle→cell tracking-area。</td></tr>
+<tr><td>BarChromeButton（NSControl）</td><td>View</td><td>chrome 行通用带标签触发钮。</td><td>再定层</td><td>需改：泛型 @ViewBuilder→setLabelView(_:)。</td></tr>
+<tr><td>InputBarView</td><td>View</td><td>笨输入栏（文本+发送/停止钮+附件条），configure 下行、onSubmit 闭包上行，不持 Session。</td><td>再定层（InputBarView2）</td><td>需改：SwiftUI→程序化 NSView；canSend 是两行谓词，不配 VM。</td></tr>
+<tr><td>InputSubmission</td><td>Model</td><td>发送载荷值（text/images/filePaths）。</td><td>重命名（InputBarView2.Submission）</td><td>需改：独立成顶层 Model。</td></tr>
+<tr><td>InputAttachment</td><td>Model（链接 AppKit）</td><td>一个附件（图片 data 或文件路径 + 缩略图 NSImage）。</td><td>保留</td><td>需改：携 NSImage，只能与 View/Store 同住，进不了 Core（ch.1.7）。</td></tr>
+<tr><td>AttachmentCardView / ImagePreviewView / PreviewImage</td><td>View / View / Model</td><td>附件缩略卡、图片预览、预览图值。</td><td>再定层</td><td>需改：SwiftUI→NSView；PreviewImage 保持值。</td></tr>
+<tr><td>AttachButtonView</td><td>View</td><td>输入栏左侧 + 附件按钮。</td><td>再定层（AttachButton）</td><td>需改：→NSControl。</td></tr>
+<tr><td>InputBarChrome / ChatRestingBar → 折进 VC</td><td>View</td><td>把输入栏与 chrome 行组装成聊天静息条的 SwiftUI 包装（约 125 行，两 struct 同文件）。</td><td>合并</td><td>需改：SwiftUI 组装层→VC 装配；prewarm .task→viewWillAppear。</td></tr>
+<tr><td>NewSessionConfiguratorView</td><td>View</td><td>新建会话两栏 compose 卡（recent projects + hero + 分支/worktree pill + recent sessions + 内嵌输入栏）。</td><td>降级</td><td>需改：compactRelative/abbreviatedPath/pickedFolderName 等纯函数降为自由函数/Util；有状态的 Git 对账仍在 GitRepositoryProbe，不新造机械 VM（§9.2 tip）。</td></tr>
+<tr><td>ComposeSessionView / ComposeBindings → 折进 ComposeSessionViewController</td><td>View</td><td>compose 卡的 SwiftUI body 与 draft 绑定。</td><td>合并</td><td>需改：body→VC 装配；绑定拆成下行 configure + 上行 draft?.setX。</td></tr>
+<tr><td>HideEnclosingScrollerWidth → 删除/原生</td><td>View</td><td>隐藏 List 滚动条宽度的 NSViewRepresentable 桥。</td><td>降级</td><td>需改：去 SwiftUI 后原生 NSScrollView 直接设置，representable 消融。</td></tr>
+<tr><td>submitSessionInput</td><td>Util（自由函数）</td><td>compose 与 chat 共用的「用户按发送」处理：draft 提升 + 组装 body + send + 切选择。</td><td>保留</td><td>是（保持自由函数、依赖以参数传入，不升级为 SendCoordinator 类，ch.5.5）。</td></tr>
+<tr><td>runBuiltinSlashCommand</td><td>Util（自由函数）</td><td>/new /clear 内建命令分发：建草稿 +（clear）归档源 + 选中新草稿。</td><td>保留</td><td>是（保持自由函数，不包成协调器类）。</td></tr>
+<tr><td>BuiltinSlashCommand</td><td>Model</td><td>内建斜杠命令的纯值枚举。</td><td>保留</td><td>是</td></tr>
+<tr><td>BuiltinCompletionItem</td><td>Model</td><td>内建斜杠命令对应的补全项值。</td><td>保留</td><td>需改：遵从 CompletionCandidate（displayIcon 恒 nil / IconDescriptor），随 D2 图标描述符改造。</td></tr>
+<tr><td>Effort+Display / PermissionMode+Color</td><td>Util（就近扩展）</td><td>effort 标题与权限模式配色/短标题的就近扩展。</td><td>保留</td><td>需改：显示派生（NSColor）留 UI 层扩展，勿混进 Model（ch.1.2）。</td></tr>
+</tbody></table>
+
+<h3>12.6 侧栏 · 通用组件 · Models</h3>
+
+<table class="cmp"><thead><tr><th>新名（类型）</th><th>层</th><th>一句话职责</th><th>来源</th><th>合规</th></tr></thead><tbody>
+<tr><td>SidebarViewController</td><td>Controller</td><td>拥有侧栏 NSOutlineView、拖放、选择回写与三条观察循环，把建树委托给 TreeBuilder、右键菜单委托给菜单控制器的瘦协调者（593 行）。</td><td>保留</td><td>是（拆卸姿态随迁移补 prepareForRemoval，ch.3.4）。</td></tr>
+<tr><td>NoDisclosureOutlineView</td><td>View</td><td>抹掉左缘披露三角的私有 NSOutlineView 子类，作 VC 私有实现细节同文件共存。</td><td>保留</td><td>是</td></tr>
+<tr><td>SidebarTreeBuilder</td><td>Util</td><td>把会话记录按分组文件夹/顺序/新文件夹检测算成侧栏节点树的无副作用纯函数命名空间。</td><td>再定层（SidebarTreeModel）</td><td>需改：承载算法而非数据，「Model」名误导；改名 Builder 并归 Util（ch.2.4/2.5）。</td></tr>
+<tr><td>SidebarItemNode</td><td>Model</td><td>侧栏 outline 遍历的异构树节点（fixed/folder/history），承载数据与选择映射。</td><td>重命名（SidebarItemModel）</td><td>需改：文件名 SidebarItemModel.swift 与类型不符，改为 SidebarItemNode.swift；引用类型是 NSOutlineView 身份复用的必需例外，保留。</td></tr>
+<tr><td>FixedKind</td><td>Model</td><td>侧栏固定顶部项（新会话/归档/DEBUG demo）的枚举，映射标题、SF 符号名与选择目标。</td><td>保留</td><td>需改：跨文件引用宜独立成文件（低优先）；systemImage 返回符号名字符串而非 NSImage，无 AppKit 泄漏。</td></tr>
+<tr><td>SidebarContextMenuController</td><td>Controller</td><td>端到端拥有侧栏右键菜单及其构建、逐击更新与三个动作，把动作翻译成 Service 调用。</td><td>保留</td><td>是（钉为 Controller 非 Coordinator：无 VC 创建/导航流程，纯事件翻译，ch.3.3/5.5）。</td></tr>
+<tr><td>SidebarContext</td><td>依赖包（只读 struct）</td><td>从 MainSplitViewController 透传进侧栏的只读依赖包（navigation/sessionManager/groupOrderStore/openInService）。</td><td>保留</td><td>是（ch.4.5，与 DetailContext 并列）。</td></tr>
+<tr><td>SidebarSessionGroupOrderStore</td><td>Store</td><td>以 UserDefaults 持久化侧栏分组文件夹顺序的真相源（storedOrder/prependIfAbsent/replace）。</td><td>保留</td><td>是</td></tr>
+<tr><td>SidebarLayout</td><td>Util</td><td>侧栏行的共享布局常量与拖放粘贴板类型命名空间（就近 UI 常量，非 Utils 大杂烩）。</td><td>保留</td><td>是</td></tr>
+<tr><td>String.collapsedSingleLineForDisplay</td><td>Util（就近扩展）</td><td>把自由格式标题投影为可安全单行显示的纯函数 String 扩展（旧 SidebarTitleSanitizer），Foundation-only。</td><td>保留</td><td>是（可入 Core）。</td></tr>
+<tr><td>SidebarStatusIndicatorView</td><td>View</td><td>历史行前导槽的状态机视图（none/running/unread，unread 优先），组合加载点视图与未读圆点。</td><td>保留</td><td>是</td></tr>
+<tr><td>SidebarLoadingDotsView</td><td>View</td><td>三个按墙钟相位同步、逐个脉动再停顿的「输入中」动画点视图。</td><td>保留</td><td>是</td></tr>
+<tr><td>ShimmerOverlay</td><td>View</td><td>在宿主 NSTextField 上装 CAGradientLayer 蒙版、给标题做骨架微光的可复用视图层特效。</td><td>重命名</td><td>需改：文件名 SidebarShimmerLabel.swift 与类型不符且「Label」误导（它不是 NSView 标签），改文件名匹配类型（ch.2.3/2.4）。</td></tr>
+<tr><td>SidebarCellViewBase</td><td>View</td><td>三种侧栏行的共享基类，提供固定 16pt 前导图标槽以对齐异构行。</td><td>拆分</td><td>需改：SidebarCellViews.swift 内含四个 NSTableCellView，按 ch.2.3 宜各自成文件（低优先）。</td></tr>
+<tr><td>SidebarFixedCellView</td><td>View</td><td>渲染固定顶部项（SF 符号图标+标题）的行视图，并提供共享单行截断标题配置。</td><td>保留</td><td>是</td></tr>
+<tr><td>SidebarFolderCellView</td><td>View</td><td>文件夹分组表头行视图：文件夹图标+淡色标题+右缘可动画 chevron。</td><td>保留</td><td>是</td></tr>
+<tr><td>SidebarHistoryCellView</td><td>View</td><td>每会话历史行视图，组合状态指示器与标题，并在生成标题时挂微光特效。</td><td>保留</td><td>是</td></tr>
+<tr><td>DiffViewController</td><td>Controller</td><td>持有注入的语法高亮 Service、跑异步 Task 派生 lineMap 并喂给自绘视图的薄控制器。</td><td>拆分（DiffView）</td><td>需改：当前高亮编排藏在 SwiftUI View 里（读 @Environment + .task），抬进薄 VC（ch.1.2/3.3）。</td></tr>
+<tr><td>DiffViewBridge → 并入 DiffViewController</td><td>View</td><td>把 diff+lineMap 传给 DiffContentView 的私有 NSViewRepresentable 桥。</td><td>降级</td><td>需改：去 SwiftUI 后 Representable 桥消融，编排直接由 VC 做。</td></tr>
+<tr><td>DiffContentView</td><td>View</td><td>自绘 diff 卡片的笨视图：接收 diff+lineMap 绘制，内部管选择/复制，无控制器无搜索叠层。</td><td>重命名（DiffNSView）</td><td>是</td></tr>
+<tr><td>DiffEngine（+ Line / Hunk）</td><td>Util</td><td>输出统一 diff hunk 的纯函数算法命名空间，并声明其结果值类型 Line/Hunk。</td><td>再定层</td><td>需改：从「Model」再定层为纯算法 Util（拥 Line/Hunk 值）；与 DiffColors 拆文件后可入 Core（ch.2.3/1.7）。</td></tr>
+<tr><td>DiffColors</td><td>Util（UI 层常量）</td><td>diff 的呈现调色板（NSColor 变体+外观感知动态色），是视图层常量而非 Model。</td><td>降级</td><td>需改：拆出独立文件；去掉 SwiftUI Color 半边；不得当 Model（ch.1.2 禁 NSColor 入 Model）。</td></tr>
+<tr><td>PassthroughHostingView</td><td>View</td><td>命中测试穿透的 NSHostingView 子类，浮层宿主基础设施。</td><td>保留</td><td>是</td></tr>
+<tr><td>VisualEffectView</td><td>View</td><td>把 NSVisualEffectView 包给 SwiftUI 的材质背景桥。</td><td>保留</td><td>需改：纯 AppKit 下直接用 NSVisualEffectView，representable 消融。</td></tr>
+<tr><td>DotGridBackground</td><td>View</td><td>绘制点阵网格背景的笨装饰视图。</td><td>保留</td><td>是</td></tr>
+<tr><td>SearchField</td><td>View</td><td>可复用搜索输入框视图。</td><td>保留</td><td>是</td></tr>
+<tr><td>ProgressRingView</td><td>View</td><td>环形进度指示的笨视图。</td><td>保留</td><td>是</td></tr>
+<tr><td>BarSurfaceModifier</td><td>View</td><td>给输入栏表面加材质/描边的 SwiftUI ViewModifier。</td><td>保留</td><td>需改：纯 AppKit 下改为 NSView 样式。</td></tr>
+<tr><td>FadeScrim</td><td>View</td><td>渐隐遮罩的泛型 ShapeStyle 视图。</td><td>保留</td><td>是</td></tr>
+<tr><td>HoverCapsuleStyle / HoverCapsuleModifier</td><td>View</td><td>悬停胶囊按钮样式与修饰器（视图层样式）。</td><td>保留</td><td>需改：纯 AppKit 下折进 cell/tracking-area 样式。</td></tr>
+<tr><td>SelectableText</td><td>View</td><td>可选中只读文本的 NSViewRepresentable 桥（含自定义字段编辑器）。</td><td>保留</td><td>需改：→NSTextView。</td></tr>
+<tr><td>BoundedHeightScrollView</td><td>View</td><td>限高滚动容器的泛型视图。</td><td>保留</td><td>是</td></tr>
+<tr><td>FolderFilterPickerView</td><td>View</td><td>文件夹过滤选择器视图：数据入 + onSelect 闭包上报，不泄漏 Service。</td><td>保留</td><td>是</td></tr>
+<tr><td>TranscriptScrimView（+ Bottom / + Top）</td><td>View</td><td>转录上下缘渐隐遮罩视图（基类 + 两子类）。</td><td>保留</td><td>需改：三类型同文件，按 ch.2.3 可拆（低优先）。</td></tr>
+<tr><td>BranchPickerView</td><td>View</td><td>Git 分支选择器视图：数据入 + onSelect 闭包上报，不泄漏 Service。</td><td>保留</td><td>是</td></tr>
+<tr><td>TextInputView / InputNSTextView / InputTextScrollView</td><td>View</td><td>输入框的 Representable 桥 + 自绘 NSTextView + 自撑高 NSScrollView 三件套。</td><td>保留</td><td>需改：三类型同文件，按 ch.2.3 可拆（低优先）。</td></tr>
+<tr><td>MarkdownDocument</td><td>Model</td><td>GFM 解析后的文档 IR 值类型，Foundation-only。</td><td>保留</td><td>是（可入 Core）。</td></tr>
+<tr><td>MarkdownSegment / MarkdownBlock / MarkdownList / MarkdownListItem / MarkdownInline / MarkdownCodeBlock / MarkdownTable</td><td>Model</td><td>Markdown 内联段与块级 IR 枚举/结构，Foundation-only。</td><td>保留</td><td>需改：<strong>更正——MarkdownTypes.swift 实为 7 个 public IR 类型（非 2）</strong>；一文件多型可拆（低优先）。</td></tr>
+<tr><td>MarkdownConvert</td><td>Util</td><td>把 swift-markdown 语法树转成内部 IR 的纯转换命名空间。</td><td>保留</td><td>是（可入 Core）。</td></tr>
+<tr><td>MarkdownAutolink</td><td>Util</td><td>纯 URL 自动链接检测命名空间。</td><td>保留</td><td>是（可入 Core）。</td></tr>
+<tr><td>MarkdownMath（+ Chunk）</td><td>Util</td><td>把行内/块级数学从文本切分出来的纯函数命名空间及其 Chunk 值。</td><td>保留</td><td>是（可入 Core）。</td></tr>
+<tr><td>SyntaxToken</td><td>Model</td><td>一段文本 + 其 highlight.js 作用域名的纯值，无 AppKit。</td><td>保留</td><td>是（可入 Core）。</td></tr>
+<tr><td>SendKeyBehavior</td><td>Model</td><td>发送快捷键行为枚举（Enter / ⌘Enter）。</td><td>保留</td><td>是：<strong>更正——保留 Identifiable</strong>（仍被 SettingsView.swift:61 的 ForEach 消费，撤销「删 Identifiable」提议）。</td></tr>
+<tr><td>LanguageDetection</td><td>Util</td><td>由文件路径映射到 highlight.js 语言名的纯查表命名空间。</td><td>再定层</td><td>是（纯函数 Util 而非数据 Model，可入 Core，概念澄清，低优先）。</td></tr>
+<tr><td>PermissionMode</td><td>Model</td><td>权限模式枚举，携带（刻意不本地化的）显示标题与到 SDK 的映射。</td><td>保留</td><td>需改：import AgentSDK 而非 AppKit；枚举显示名属项目认可惯例，保留。</td></tr>
+<tr><td>PermissionMode+Color</td><td>Util（UI 层扩展）</td><td>权限模式的 triggerTint 等 NSColor/Color 映射（表现映射）。</td><td>保留</td><td>需改：若 PermissionMode 下沉 Core，此色彩扩展必须留 UI 层、不随 Model 走（ch.1.2）。</td></tr>
+<tr><td>TurnTokenUsage</td><td>Model</td><td>单回合 token 计量值（输入/输出+相加），并提供紧凑显示标签。</td><td>保留</td><td>是（compactLabel 是纯字符串格式化、无 AppKit、可测；可选下移 formatter）。</td></tr>
+<tr><td>StreamPacer（+ Params）</td><td>Model</td><td>把突发到达量平滑成 C¹ 显示量的临界阻尼二阶伺服纯值算法，Foundation-only。</td><td>保留</td><td>是（可入 Core）。</td></tr>
+</tbody></table>
+
+<h3>12.7 命名与角色登记（对 §1.6 的层级更正）</h3>
+
+<p>§1.6 主命名表<strong>名字权威、不可改</strong>；但其中若干名字带的后缀与真实角色不符。规范做法（ch.2.4）是<strong>保留 §1.6 的名，只登记角色/层的更正</strong>，不再动名字（改名是纯 churn，且会动到承重测试）。下表是这些登记项：</p>
+
+<table class="cmp"><thead><tr><th>类型（§1.6 名，逐字保留）</th><th>§1.6 标注</th><th>真实角色 / 更正后的层</th><th>依据</th></tr></thead><tbody>
+<tr><td>TranscriptScrollViewBuilder</td><td>Coordinator / Builder</td><td><strong>Util</strong>：无状态 enum 装配命名空间（两步 make/bindData/dismantle）。</td><td>ch.2.5；代码为 enum TranscriptScrollViewFactory。</td></tr>
+<tr><td>TranscriptSheetPresenter</td><td>Coordinator / Presenter</td><td><strong>Presenter</strong>：观察 pending* → AppKit 原生 sheet，零导航。</td><td>ch.5.5（非导航流程）。</td></tr>
+<tr><td>TranscriptSelectionCoordinator</td><td>Coordinator</td><td>角色 <strong>Store</strong>：持选择 paint 交互态、零导航。</td><td>ch.5.5 + ch.1.2；代码 final class NSObject。</td></tr>
+<tr><td>TranscriptSearchCoordinator</td><td>Coordinator</td><td>角色 <strong>Store</strong>：持搜索命中 paint 态、零导航。</td><td>同上。</td></tr>
+<tr><td>TranscriptController</td><td>Controller</td><td>Controller，但<strong>非 ch.5 导航 Coordinator</strong>——是宿主面单向命令通道镜像。</td><td>ch.5；@Observable 字段是镜像非 VM。</td></tr>
+<tr><td>TranscriptCoordinator</td><td>Coordinator</td><td>层 Coordinator，但<strong>非 ch.5 导航 Coordinator</strong>——是 NSTableView 的 DataSource/Delegate + blocks 单一真相。</td><td>ch.8.1；代码 conform NSTableViewDataSource/Delegate。</td></tr>
+<tr><td>TranscriptSwapCoordinator</td><td>（转录挂载协调）</td><td>Controller 级 VC 私有<strong>视图机制持有者</strong>——非 ch.5 导航 Coordinator。</td><td>ch.5.5。</td></tr>
+<tr><td>WindowNavigationObserver</td><td>Protocol</td><td>1:1 <strong>同步 delegate</strong>（沿导航语义命名、故不带 Delegate 后缀）；唯一结构性上行边，勿泛化。</td><td>ch.7.1 / §1.5。</td></tr>
+<tr><td>HistoryLoader</td><td>Service（草案称协议+实现）</td><td><strong>Util</strong>：enum 无状态静态 I/O 命名空间，无协议无类。</td><td>ch.2.5；代码 enum HistoryLoader。</td></tr>
+<tr><td>PermissionCardOverlayView</td><td>View</td><td>实为 regime-A 四边钉的<strong>浮层宿主 VC</strong>；保留 §1.6 名，附 Handlers 决策闭包值。</td><td>CLAUDE.md regime-A；ch.3.3。</td></tr>
+</tbody></table>
+
+<h4>经代码核验的旧章更正记录</h4>
+
+<p>以下几条是逐行核验实际 Swift 代码后，对早前章节里几处失真描述的更正（render 为 更正 行，供评审对齐）：</p>
+
+<table class="cmp"><thead><tr><th>更正项</th><th>草案/旧章说法</th><th>代码事实（已核验）</th></tr></thead><tbody>
+<tr><td>RecentProjectsStore</td><td>是 .shared 单例，需去单例</td><td><strong>非单例</strong>：final class，无 static let shared，经 AppState.init 注入（§3.4 审计了不存在的问题）。</td></tr>
+<tr><td>DirectoryTreeMonitor</td><td>（隐含单例/含糊）</td><td><strong>非单例</strong>：per-directory Service，由 FileCompletionStore(:152) 与 SlashCommandStore(:192) 各自 new。</td></tr>
+<tr><td>MarkdownTypes.swift</td><td>2 个 public IR 类型</td><td><strong>7 个</strong>：MarkdownSegment / MarkdownBlock / MarkdownList / MarkdownListItem / MarkdownInline / MarkdownCodeBlock / MarkdownTable。</td></tr>
+<tr><td>SendKeyBehavior</td><td>删掉残留的 Identifiable</td><td><strong>保留 Identifiable</strong>：仍被 SettingsView.swift:61 的 ForEach(SendKeyBehavior.allCases) 消费。</td></tr>
+<tr><td>WorktreeProvisioner</td><td>@MainActor final class</td><td>无状态 <strong>enum</strong>（71 行），creator 参数注入。</td></tr>
+<tr><td>TitleGenerator</td><td>final class</td><td>无状态 <strong>enum</strong>，无 .shared，runner 参数注入。</td></tr>
+<tr><td>Worktree git I/O 剥离</td><td>GitWorktreeService（Service 后缀）</td><td>剥离结果是 <strong>Util 命名空间 WorktreeGit</strong>（镜像既有 GitQuery enum 的无状态静态函数），<strong>绝不用 Service 后缀</strong>（ch.2.4/2.5）。</td></tr>
+</tbody></table>
+
+<div class="callout why"><b>为什么这一章要做成「超集」而非另立一张表</b><p>§1.6 是改名索引，只覆盖「有旧名、要改名」的类型；但迁移里真正的风险是那些<strong>不改名却被贴错层</strong>的行为承载类型（StreamingTurnAssembler/TypewriterReveal/ReverseEntryBuilder 被草案标 Model 之外的层、TaskTracker/TodoTracker 被标 Service）、以及<strong>拆分后新长出来的两半</strong>（Worktree/WorktreeGit、DetailNavigationCoordinator/DetailContainerViewController）。把全部类型收进一张目录、每行给层 + 来源 + 合规判定，才能在评审时一眼看出「哪个类型放错了层」——这正是 ch.1.2 五层表要求的第一条纪律。</p></div>
+
+<div class="callout essence"><b>本质</b><p>全量目录做的是一次「把隐式归类摊到台面上」：§1.6 给了权威的<strong>名</strong>，本章给每个名钉上权威的<strong>层</strong>与<strong>来源</strong>，并把二者的冲突（后缀 vs 真实角色）收进 §12.7 的角色登记——名不动、角色纠正。判定层的唯一判据始终是 ch.1.2 那句话：看它<strong>import 什么、持不持有状态、有没有导航</strong>，而不是看名字长得像不像某一层。Builder 是 Util、SheetPresenter 是 Presenter、Selection/SearchCoordinator 是 Store、TranscriptController/Coordinator 都不是 ch.5 的导航 Coordinator——这些登记项，连同「RecentProjectsStore/DirectoryTreeMonitor 非单例、Worktree 的 git I/O 拆成 Util 命名空间而非 Service」这些经代码核验的更正，是 ch.11 与 ch.12 必须逐字一致的锚点：<strong>同名、同层，无一遗漏</strong>。</p></div>
+
 </section>
 
   </main>

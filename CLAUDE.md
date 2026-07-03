@@ -1,75 +1,16 @@
 # CCTerm
 
-Native macOS client for Claude Code. SwiftUI + AppKit, minimum target macOS 14 (Sonoma).
-
-## Architecture at a glance
-
-- **UI framework — SwiftUI by default, AppKit by exception.** Reach for AppKit only when SwiftUI cannot meet the requirement (performance, lifecycle timing, or a missing capability). The current AppKit footprint is:
-  - **Chat transcript** — `NSTableView` + Core Text self-drawn (`NativeTranscript2`). SwiftUI's `List` / `LazyVStack` cannot keep up with the row count, custom layout, and selection semantics.
-  - **Main window root** — `MainWindowController` + `MainSplitViewController` + `DetailRouterViewController` + `ChatSessionViewController`. The transcript's mount and `frameDidChange` cascade must run in AppKit's source phase, not SwiftUI's commit pass. `ChatSessionViewController` keeps only "what the pane shows" (scrims, `restingBarHost`, `permissionCardHost`, focus, cutouts) and delegates the transcript build/settle/bind/`scrollToTail`/drop + same-session crossfade to `TranscriptSwapCoordinator` (`App/AppKit/`), which is the **single owner** of `currentSession` and of each per-attach scroll view + `Transcript2SheetPresenter`.
-  - **Sidebar** — `SidebarViewController` on `NSOutlineView` (source-list style). SwiftUI's `.listStyle(.sidebar)` is itself an `NSOutlineView` under the hood, but going direct gives us folder drag-and-drop via the standard `pasteboardWriterForItem` / `validateDrop` / `acceptDrop` trio and built-in `expandItem(_:)` / `collapseItem(_:)` animations.
-  - **Window toolbar** — `NSToolbar` + `NSSearchToolbarItem`; `.searchable` doesn't give the first-responder + ⌘F semantics the transcript search needs.
-  - **App lifecycle** — `AppDelegate` (via `@NSApplicationDelegateAdaptor`) owns app-scope state and creates the main window in `applicationDidFinishLaunching`.
-
-  Everything else — input bar, configurator, overlays, Settings / About windows, every reusable component — is SwiftUI, hosted via `NSHostingController` (full panes) or `NSHostingView` (toolbar items / overlays). New code lands in SwiftUI unless it fits one of the exceptions above; introducing a new AppKit surface needs an explicit reason (perf measurement, missing API, lifecycle ordering).
-
-- **Entry point**: `@main CCTermApp` (SwiftUI `App`) → `@NSApplicationDelegateAdaptor(AppDelegate.self)` → `MainWindowController` → `MainSplitViewController` (sidebar item + detail item) → `DetailRouterViewController`, which mounts exactly one `DetailRouterChild` VC per selection (`ChatSessionViewController` for `.session(_)` / `.none`, `ComposeSessionViewController` for `.newSession`, `DraftSessionLandingViewController` for a `.session` that is still a draft, `ArchiveViewController` for `.archive`, demo VCs in DEBUG). Selection / draft state lives on `MainSelectionModel` (`@Observable`); the AppKit `SidebarViewController` writes it via `select(_:)`, and the router is its **sole structural observer** — `select(_:)` drives the detail-side transition synchronously, in the same source phase as the click. Settings / About remain SwiftUI `Window` scenes; their menu items + ⌘F binding come from `AppCommands` (a SwiftUI `Commands` block on the Settings scene) so cold-start clicks resolve `@Environment(\.openWindow)` cleanly.
-- **Layers**:
-  - **Model** — plain data, `struct` first, `Codable` where it crosses a boundary.
-  - **View** — SwiftUI structs, declarative.
-  - **Service** — `@Observable`, injected via initializer or `.environment()`. Views never construct services themselves.
-  - **AppState** — process-scope container owned by `AppDelegate`, passed down by **initializer** (`AppDelegate` → `MainWindowController` → `MainSplitViewController`), not injected wholesale via `.environment(appState)`. `MainSplitViewController` unpacks its members: the sidebar's needs are bundled into a `SidebarContext`, and the four detail-scope services are bundled into a `DetailContext` that reaches SwiftUI children via `injectDetailEnvironment(_:)`. Holds `SessionManager`, `SyntaxHighlightEngine`, `RecentProjectsStore`, `InputDraftStore`, `SidebarSessionGroupOrderStore`, `AppActivationTracker`, `NotificationService`, `OpenInAppService`. (`TranscriptSearchBus` is **not** on `AppState` — it lives on `AppDelegate`, read by the toolbar search bridge + ⌘F command.)
-  - **Deterministic teardown** — every `@MainActor @Observable` / VC type carries an empty `nonisolated deinit {}` (works around a macOS-26 `libswift_Concurrency` abort on the `@MainActor` deinit executor hop). Every `DetailRouterChild` implements `prepareForRemoval()` so the router releases per-attach resources (scroll view, sheet presenter, `isRunning` task) deterministically on swap rather than at ARC's leisure.
-
-### Embedding SwiftUI in AppKit: host sizing
-
-When you host a SwiftUI view in an `NSHostingView` / `NSHostingController`, the host's `sizingOptions` decides whether the SwiftUI content's size flows *up* into Auto Layout. There are two cases, and picking the wrong one collapses the window:
-
-- **Fill-a-pane host → `sizingOptions = []`.** The hosted view *is* its container's content, pinned edge-to-edge; the container (split → window) must drive its size, not the reverse. The default options publish the body's `view.fittingSize` as an intrinsic size — with nothing else governing that dimension, it leaks up through the split's `view.fittingSize` into the window's constraint solver (`_changeWindowFrameFromConstraintsIfNecessary`) and **resizes / collapses the window**. `[]` severs that path; you then pin all four edges so layout sizes the host from the container. Examples: `ArchiveViewController`, `ComposeSessionViewController`, the permission-cards demo child.
-
-- **Subordinate component → `sizingOptions = [.intrinsicContentSize]`.** The hosted view is a small piece whose *container* is sized by something else (a toolbar slot; or a bottom-anchored bar over a transcript that already fills the pane). Here you *want* the content to size itself: pin only its position and let the host's intrinsic content size supply the missing dimension(s). No window-collapse risk — the component isn't what governs its container's size. Examples: `ChatSessionViewController`'s input-bar host (centered, width-capped, height from intrinsic), the toolbar project chip / archive-filter (`MainWindowController`).
-
-Rule of thumb: **does the host fill its container (→ `[]`, container drives size) or sit inside it as a component (→ `[.intrinsicContentSize]`, content drives size)?** Never hand-roll the height with `GeometryReader` + `PreferenceKey` + a manual height constraint — that was an earlier input-bar workaround and is exactly what `.intrinsicContentSize` does for free.
-
-The full taxonomy (the question above decides between A/B; the rest close it):
-
-- **A — fill-a-pane** (`NSHostingController`, `[]`, pin 4 edges). `ArchiveViewController`, `ComposeSessionViewController`, `DraftSessionLandingViewController`.
-- **B — centered component** (`NSHostingView`, `[.intrinsicContentSize]`; `centerX` + `width≤cap`@required + `width==cap`@high + `leading≥`inset + `bottom==`). `ChatSessionViewController`'s `restingBarHost`.
-- **B′ — toolbar slot** (`[.intrinsicContentSize]`, no constraints — `NSToolbar` auto-measures). `MainWindowController` project chip / archive filter.
-- **B″ — floating overlay** (default sizing, position-only — **never 4-edge**, or its `fittingSize` escapes into the split). DEBUG demo overlays.
-- **C — window-content** (default sizing — the window snaps to the content). Settings / About.
-- **D — modal sheet** (default sizing; `beginSheet`). `Transcript2SheetPresenter`.
-- **E — leaf-in-cell** (`[.intrinsicContentSize]`, feeds `heightOfRow`) — no production instance; the transcript is Core-Text self-drawn.
-
-Two corollaries: the archive window-collapse is caused by the **sizing regime** (a default-`sizingOptions` fill-pane host leaking its `fittingSize`), **not** the two-way `Binding` — the binding only re-publishes the bad `fittingSize` on each write. A `Binding` crossing the boundary uses `[weak self]` in both closures, and an AppKit write reaches the SwiftUI body at the next beforeWaiting, not the same tick.
-
-### SwiftUI rules
-
-- `@Observable` for state shared across views (e.g. `Session`); `@State` for view-private UI state; `@Binding` for writable references from a parent.
-- Put reusable SwiftUI components under `Components/`.
-- If a `body` runs past ~40 lines, split it: child views with their own state become separate `View` structs (and usually their own files); pure layout becomes a computed property or `@ViewBuilder` helper.
-- No expensive work inside `body`. Long lists use `NativeTranscript2`, never `List` / `LazyVStack`.
-- `ForEach` ids must be stable.
-- Load data with `.task { }`; react to dependency changes with `.task(id:)` or `.onChange(of:)`. Never trigger side effects from the body construction path.
-
-### Data-flow rules
-
-The chat area is ~90% one-way: AppKit shell + SwiftUI leaves. Keep it that way.
-
-- **State lives at the lowest scope shared by all its readers.** Process → `AppState`; window selection → `MainSelectionModel`; one session → `Session`; transcript rows → `Transcript2Coordinator.blocks`; single-reader UI state → `@State` (never a model field).
-- **`selectionObserver` is the ONE structural upward edge** and must fire in the click's source phase (`@Observable` re-eval lands a tick late at beforeWaiting and would tear a session swap across frames). Do **not** generalize it into a notification bus or a second observer slot — new "react structurally to selection" needs go through the router.
-- **The only `@Observable` a view may construct are view-private interaction state machines** — `CompletionState`, `GitProbe`, `BackgroundTaskOutputStream` (each `@State`-owned). There is no session/transcript coordinating ViewModel.
-- **An imperative call across the AppKit↔SwiftUI boundary is allowed only when correctness depends on a runloop-tick `@Observable` can't express**, and must be justified at the call site. The three cases: it must run in the click's source phase; it hands AppKit an exact delta instead of forcing a diff (`bridge.apply`, `setLoading`, `setTurnUsage`); or it must run above a teardown that would swallow a reactive `.onChange` (draft-clear on send).
+Native macOS client for Claude Code. Pure AppKit (Swift), minimum target macOS 14 (Sonoma).
 
 ## macOS runloop tick model
 
-Most "why is this one tick off" puzzles in AppKit + SwiftUI code resolve once you remember the order AppKit, SwiftUI, and CoreAnimation share a single runloop iteration. Every invariant below the "must run in AppKit's source phase" / "races with SwiftUI's commit pass" wording in the architecture section above is written against this diagram:
+Most "why is this one tick off" puzzles in AppKit code resolve once you remember the order AppKit and CoreAnimation share a single runloop iteration. Every invariant phrased as "must run in AppKit's source phase" is written against this diagram:
 
 ```
 ┌─ source phase ─────────────── your code runs here ──────────┐
 │  · NSEvent dispatch              (mouse / key / wheel)      │
 │  · DispatchQueue.main.async      drained block-by-block     │
-│  · Observation @MainActor Tasks  resumed                    │
+│  · Swift Concurrency @MainActor Tasks  resumed              │
 │  · NotificationCenter posts                                 │
 │  · Timer fires                                              │
 │  · NSResponder selectors         (IBAction, performSelector)│
@@ -78,8 +19,6 @@ Most "why is this one tick off" puzzles in AppKit + SwiftUI code resolve once yo
 │  writes land NOW — actual layout + draw + commit happen     │
 │  in the next phase.                                         │
 ├─ beforeWaiting observer ─── AppKit + CoreAnimation flush ──┤
-│  · SwiftUI body re-eval for invalidated views               │
-│      (Observation registers a runloop observer here)        │
 │  · NSWindow.update                                          │
 │  · updateConstraints → layout → display walks the view tree │
 │  · NSTableView's first display pass lazily queries          │
@@ -94,13 +33,11 @@ Load-bearing consequences:
 
 - **Source-phase scroll / frame writes need the geometry they depend on already settled.** Anything in source phase that reads or writes lazy AppKit geometry (NSTableView row tile, NSClipView `constrainBoundsRect` against documentView.frame, NSScrollView tile) must have already triggered that geometry. Two ways to do that, in order of preference: (a) let the host's `view.layoutSubtreeIfNeeded()` size the subtree from its current frame — a size change to a freshly-attached scroll-host child cascades into the table and `NSTableView.tile()` runs inline **only if the table's `dataSource` is bound at that moment**; if `dataSource` is bound later (the transcript's actual attach pattern), the tile fires on the next `layoutSubtreeIfNeeded` to run with dataSource bound (in the transcript's case, `controller.scrollToTail()`'s internal `tableView.layoutSubtreeIfNeeded()`); (b) explicitly invalidate via `noteNumberOfRowsChanged` / `insertRows` / `reloadData(forRowIndexes:)` if no enclosing frame change is going to happen. Writing first and waiting hands you a one-frame visual glitch.
 - **`view.layoutSubtreeIfNeeded()` flushes autolayout, AND that triggers a chain of side effects that look like "not autolayout."** NSTableView's row layout, for example, is not directly an autolayout product — but the table's tile is gated on FRAME changes, and autolayout drives frame changes, so flushing the parent's autolayout transitively drives the table's tile when the table's size changes. The fragile case is the one where the table's frame *doesn't* change (e.g. a sibling-only invalidation, or `tableView.layoutSubtreeIfNeeded()` called on a table that's already at the right size); there `layoutSubtreeIfNeeded` is a no-op for row geometry and you have to invalidate explicitly. The takeaway: don't assume the doc surface ("autolayout product") is the boundary — frame-change-triggered re-tiles are the dominant case.
-- **`@Observable` writes don't reach SwiftUI bodies in the same tick.** Bodies re-evaluate in beforeWaiting. Reading `model.foo` from a SwiftUI view that observes the source-of-truth right after your AppKit code wrote it won't show the new value until the next display.
-- **`.task { }` / `withObservationTracking` re-arm hops are async.** They post a Task that resumes on a future source phase — never inside the same tick as the change that fired them. Anything order-sensitive must be done inline, not through one of these hops.
-- **Implicit CALayer animations commit at beforeWaiting too.** Multiple model writes during one source phase coalesce into one transaction; wrap them in `CATransaction.setDisableActions(true)` + `NSAnimationContext.allowsImplicitAnimation = false` if you need them composited without animation rather than crossfaded.
+- **Implicit CALayer animations commit at beforeWaiting too.** Multiple property writes during one source phase coalesce into one transaction; wrap them in `CATransaction.setDisableActions(true)` + `NSAnimationContext.allowsImplicitAnimation = false` if you need them composited without animation rather than crossfaded.
 
 Two stack-trace aliases worth memorising:
 
-- `__CFRUNLOOP_IS_CALLING_OUT_TO_AN_OBSERVER_CALLBACK_FUNCTION__` → you're inside a runloop observer (almost always CoreAnimation's beforeWaiting flush or SwiftUI's invalidation observer).
+- `__CFRUNLOOP_IS_CALLING_OUT_TO_AN_OBSERVER_CALLBACK_FUNCTION__` → you're inside a runloop observer (almost always CoreAnimation's beforeWaiting flush).
 - `__CFRUNLOOP_IS_SERVICING_THE_MAIN_DISPATCH_QUEUE__` → source phase, draining `DispatchQueue.main`.
 
 Subsystem-specific corollaries (e.g. the transcript's `clip.scroll` / NSTableView tile choreography) live next to the code; the diagram above is the only thing that's truly global.
@@ -127,7 +64,7 @@ ccterm/
 │   ├── ccterm/               # App sources
 │   │   ├── App/              # CCTermApp, AppState; AppKit/ holds AppDelegate + MainWindowController + split + detail VC
 │   │   ├── Sidebar/          # SidebarViewController + cell views + group-order store
-│   │   ├── Components/       # Reusable SwiftUI / AppKit components
+│   │   ├── Components/       # Reusable AppKit components
 │   │   │   └── Markdown/     # GFM parser → internal IR (consumed by NativeTranscript2)
 │   │   ├── Content/          # Top-level content panes
 │   │   │   ├── Chat/         # InputBarView2 / NewSessionConfigurator / InputBarControls / Completion
@@ -184,10 +121,10 @@ live there:
 
 - **Logic tests** (default) — bridge dispatch, history parsing, block
   builder, `Session` / `SessionRuntime` state transitions. Run on every PR.
-- **Snapshot tests** — render a real SwiftUI view offscreen via
-  `NSHostingController` and write a PNG. **Skipped on the default
-  suite and on CI**; opt-in only. For visual review and self-check
-  after a view edit. Filename convention `*SnapshotTests.swift`.
+- **Snapshot tests** — render a real view offscreen and write a PNG.
+  **Skipped on the default suite and on CI**; opt-in only. For visual
+  review and self-check after a view edit. Filename convention
+  `*SnapshotTests.swift`.
 
 There is no XCUITest target — click / keystroke / focus flows are
 covered by driving the session / bridge / controller directly from a
@@ -201,7 +138,7 @@ make test-unit FILTER=TranscriptDemoSnapshotTests               # opt-in: run a 
 
 ### Visually verifying a view change (LLM self-check workflow)
 
-After editing a SwiftUI view, render it and look at the PNG:
+After editing a view, render it and look at the PNG:
 
 1. Find or add a `*SnapshotTests` class for the view.
 2. `make test-unit FILTER=<ClassName>`
@@ -272,14 +209,13 @@ Strings live in `Localizable.xcstrings`. Source language is English; `zh-Hans` i
 |---|---|
 | User-visible UI copy (buttons, titles, prompts, placeholders, menu items, empty states, confirmation dialogs) | Logs, assertion messages, internal identifiers |
 | User-visible enum display names (e.g. `PermissionMode.title`) | Raw values / keys passed to the CLI or API |
-| `NSOpenPanel.message`, `.help()` tooltips | Code comments, `#Preview` titles |
+| `NSOpenPanel.message`, `.toolTip` tooltips | Code comments, debug-only strings |
 
 **How to write it — pick by context:**
 
 | Context | Form |
 |---|---|
-| SwiftUI literals: `Text("…")`, `Button("…")`, `Label("…", systemImage:)`, `.navigationTitle("…")`, `.confirmationDialog("…")` | Write the English literal directly. The compiler infers `LocalizedStringKey` and looks it up in the catalog. |
-| Computed `String` properties / call sites that take `String` | `String(localized: "…")` (e.g. `PermissionMode.title`) |
+| Any user-visible `String` (control titles, labels, menu items, alerts) | `String(localized: "…")` (e.g. `PermissionMode.title`) |
 | With interpolation | `String(localized: "\(count) items")` — the xcstrings key becomes `"%lld items"` |
 | Conditional expression passed as `String` | Wrap both branches: `state.isTempDir ? String(localized: "Temporary Session") : path` |
 
@@ -315,13 +251,3 @@ Follow the Swift API Design Guidelines, plus: suffix `View` / `Service` / `Deleg
 ## Engineering principles
 
 - **Never compromise production code to make tests pass.** If a test can't reach a real production control, the fix is in the **test**, not the product. Forbidden patterns: gating real behavior on an env var to bypass logic, exposing internal state through `forceXxxForTest()` methods, widening access purely for a test hook. The right answer is to drive the public surface — call the handle method, fire the bridge event, feed the controller — and assert on the observable result.
-
-### Explicitly not done
-
-Deliberate non-goals — don't "clean these up" without re-reading the reasoning above:
-
-- Don't make the router observe selection via `withObservationTracking` — it breaks the source-phase structural swap (#195). The router reads `model.selection` only through the synchronous `selectionObserver` callback.
-- Don't introduce a global store / Redux / chat-area ViewModel — it would flatten the process / window / session scopes and force every transcript delta through a reducer.
-- Don't inject `AppState` wholesale via `.environment` — `model` isn't on `AppState`; pass the `SidebarContext` / `DetailContext` bags instead.
-- Keep `ModelStore` and the completion stores (`FileCompletionStore` / `SlashCommandStore`) as `.shared` — they're process / per-cwd caches (`ModelStore` spawns a CLI subprocess), not injected services.
-- Don't merge `ComposeSessionViewController` + `DraftSessionLandingViewController` — distinct lifecycles.

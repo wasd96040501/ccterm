@@ -28,7 +28,6 @@ macos/Local.xcconfig
 
 # Private development notes
 prds/
-docs/
 
 # Environment
 .env

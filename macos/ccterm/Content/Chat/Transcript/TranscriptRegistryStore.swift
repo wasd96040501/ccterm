@@ -14,15 +14,15 @@ import Foundation
 /// A registry `class` gives us that write surface without breaking the
 /// manifest's read-only contract.
 @MainActor
-final class TranscriptRegistryStore {
+public final class TranscriptRegistryStore {
 
     private var stores: [String: TranscriptStore] = [:]
 
-    init() {}
+    public init() {}
 
     /// Get-or-create the store for a transcript id. Same id → same
     /// instance across the process lifetime.
-    func store(for transcriptId: String) -> TranscriptStore {
+    public func store(for transcriptId: String) -> TranscriptStore {
         if let s = stores[transcriptId] { return s }
         let s = TranscriptStore(transcriptId: transcriptId)
         stores[transcriptId] = s
@@ -32,7 +32,7 @@ final class TranscriptRegistryStore {
     /// Called from `SessionManager` on archive / delete of a session, or
     /// from tests. Nothing else calls this — sidebar switch-away and
     /// window close deliberately leave the store alive.
-    func discard(_ transcriptId: String) {
+    public func discard(_ transcriptId: String) {
         stores.removeValue(forKey: transcriptId)
     }
 

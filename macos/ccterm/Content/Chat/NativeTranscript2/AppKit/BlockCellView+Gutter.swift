@@ -168,7 +168,7 @@ extension BlockCellView {
         gutterCopiedAt[spec.id] = stamp
         needsDisplay = true
 
-        delegate?.handleGutter(spec, blockId: blockId)
+        coordinator?.handleGutter(spec, blockId: blockId)
 
         let gutterId = spec.id
         let delayNs = UInt64(

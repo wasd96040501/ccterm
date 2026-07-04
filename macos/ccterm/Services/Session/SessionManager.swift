@@ -101,13 +101,6 @@ final class SessionManager {
     /// knowing the notification service exists.
     @ObservationIgnored var onPermissionPromptNotice: ((PermissionPromptNotice) -> Void)?
 
-    /// Fires once a session is archived (or a draft is hard-deleted via
-    /// the same code path). Wired at composition root to the app-scope
-    /// `TranscriptRegistryStore.discard(_:)` so the transcript store +
-    /// its layout cache release when the session is no longer
-    /// user-visible. Without this the registry grows monotonically.
-    @ObservationIgnored var onSessionArchived: ((String) -> Void)?
-
     init(
         repository: any SessionRepository = CoreDataSessionRepository(),
         cliClientFactory: @escaping CLIClientFactory = AgentSDKCLIClient.defaultFactory,
@@ -454,7 +447,6 @@ final class SessionManager {
         {
             worktreeArchive(snapshot)
         }
-        onSessionArchived?(sessionId)
     }
 
     /// Whether any other **non-archived** session still points at the worktree

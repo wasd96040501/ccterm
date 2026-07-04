@@ -43,7 +43,7 @@ final class SidebarContextMenuControllerTests: XCTestCase {
     private func makeContext(
         records: [SessionRecord],
         selection: MainSelection = .newSession
-    ) -> (SidebarContext, SessionManager, MainSelectionModel) {
+    ) -> (SidebarContext, SessionManager, SelectionStore) {
         let repo = InMemorySessionRepository()
         for record in records { repo.save(record) }
         let manager = SessionManager(
@@ -51,16 +51,16 @@ final class SidebarContextMenuControllerTests: XCTestCase {
             cliClientFactory: { _ in FakeCLIClient() },
             worktreeArchive: { _ in },
             worktreeRestore: { _ in })
-        let model = MainSelectionModel()
-        model.selection = selection
+        let store = SelectionStore()
+        store.select(selection)
         let groupOrderStore = SidebarSessionGroupOrderStore(
             defaults: defaults, key: "groupOrder")
         let context = SidebarContext(
-            model: model,
+            selectionStore: store,
             sessionManager: manager,
             groupOrderStore: groupOrderStore,
             openInService: OpenInAppService())
-        return (context, manager, model)
+        return (context, manager, store)
     }
 
     /// A history node carrying `sessionId`, mirroring what `SidebarTreeModel`
@@ -122,7 +122,7 @@ final class SidebarContextMenuControllerTests: XCTestCase {
 
     func testArchiveOfSelectedSessionResetsSelectionToNewSession() {
         let sid = UUID().uuidString
-        let (context, _, model) = makeContext(
+        let (context, _, store) = makeContext(
             records: [SessionRecord(sessionId: sid, title: "Real", cwd: "/x/proj", status: .created)],
             selection: .session(sid))
         let controller = makeController(
@@ -130,13 +130,13 @@ final class SidebarContextMenuControllerTests: XCTestCase {
 
         fire(controller.menu.items[0])  // Archive
 
-        XCTAssertEqual(model.selection, .newSession)
+        XCTAssertEqual(store.selection, .newSession)
     }
 
     func testArchiveOfNonSelectedDoesNotChangeSelection() {
         let archivedSid = UUID().uuidString
         let otherSid = UUID().uuidString
-        let (context, _, model) = makeContext(
+        let (context, _, store) = makeContext(
             records: [
                 SessionRecord(sessionId: archivedSid, title: "A", cwd: "/x/a", status: .created),
                 SessionRecord(sessionId: otherSid, title: "B", cwd: "/x/b", status: .created),
@@ -147,7 +147,7 @@ final class SidebarContextMenuControllerTests: XCTestCase {
 
         fire(controller.menu.items[0])  // Archive the non-selected row.
 
-        XCTAssertEqual(model.selection, .session(otherSid))
+        XCTAssertEqual(store.selection, .session(otherSid))
     }
 
     func testArchiveFallsBackToSelectedRowWhenNoClickedRow() {

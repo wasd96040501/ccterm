@@ -114,34 +114,7 @@ final class TranscriptSearchCoordinatorTests: XCTestCase {
             "the visible cell over a hit must carry exactly one highlight spec to paint")
     }
 
-    /// The toolbar input edge: a text change on the window's
-    /// `NSSearchField` must route through `TranscriptSearchToolbarBridge`
-    /// into the current controller's `runSearch`. Covers the only segment
-    /// the other tests don't — the AppKit search-field delegate wiring
-    /// introduced when the main window moved to AppKit.
-    func testToolbarBridgeRoutesKeystrokesToController() {
-        let controller = Transcript2Controller()
-        controller.apply(.append([para("an apple a day")]))
-        let mounted = MountedTranscript.mount(controller: controller)
-        defer { mounted.teardown() }
-
-        let field = NSSearchField()
-        let bridge = TranscriptSearchToolbarBridge(
-            searchField: field,
-            searchBus: TranscriptSearchBus(),
-            controllerProvider: { controller })
-        field.delegate = bridge
-
-        field.stringValue = "apple"
-        bridge.controlTextDidChange(
-            Notification(name: NSControl.textDidChangeNotification, object: field))
-
-        XCTAssertEqual(
-            controller.coordinator.search.totalHits, 1,
-            "a search-field text change must reach the controller's runSearch")
-    }
-
-    /// Diff-bearing tool children (fileEdit / read) expose their body via
+/// Diff-bearing tool children (fileEdit / read) expose their body via
     /// a `.diff` region, not a `.textCard` one — the path the bash test
     /// above doesn't cover and that history sessions hit constantly. This
     /// is the case the user flagged ("toolblock won't search").

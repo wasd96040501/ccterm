@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Observation
 
 /// AppKit-native sidebar built on `NSOutlineView` in source-list style.
@@ -34,9 +35,16 @@ import Observation
 final class SidebarViewController: NSViewController {
 
     /// The sidebar-scope dependency bag, handed down from the split.
-    /// `model`, `sessionManager`, `groupOrderStore`, and `openInService` are
-    /// read through this.
+    /// `selectionStore`, `sessionManager`, `groupOrderStore`, and
+    /// `openInService` are read through this.
     let context: SidebarContext
+
+    /// Receives the sidebar's semantic events (user picked a row).
+    /// **Weak** — the delegate is the coordinator, which strongly owns
+    /// this VC transitively through the split; a strong edge here
+    /// would make a retain cycle. Set at init time; nil-safe on every
+    /// invocation.
+    weak var selectionDelegate: SidebarSelectionDelegate?
 
     private let scrollView = NSScrollView()
     private let outlineView = NoDisclosureOutlineView()
@@ -66,12 +74,17 @@ final class SidebarViewController: NSViewController {
     private var rowObservations: [String: Task<Void, Never>] = [:]
 
     private var recordsObservationTask: Task<Void, Never>?
-    private var selectionObservationTask: Task<Void, Never>?
+    /// Kept for parity with the other subscriptions' lifecycle: the
+    /// selection sink is stored in `cancellables` (below) and cancels
+    /// on `deinit` via the `Set` release, so no separate task property
+    /// is needed.
+    private var cancellables: Set<AnyCancellable> = []
     private var isApplyingSelectionFromModel = false
 
-    init(context: SidebarContext) {
+    init(context: SidebarContext, selectionDelegate: SidebarSelectionDelegate) {
         self.context = context
         super.init(nibName: nil, bundle: nil)
+        self.selectionDelegate = selectionDelegate
     }
 
     @available(*, unavailable)
@@ -79,7 +92,6 @@ final class SidebarViewController: NSViewController {
 
     deinit {
         recordsObservationTask?.cancel()
-        selectionObservationTask?.cancel()
         for task in rowObservations.values { task.cancel() }
     }
 
@@ -107,7 +119,7 @@ final class SidebarViewController: NSViewController {
         // newly-appeared and prepend them in iteration order.
         lastSeenGroups = SidebarTreeModel.currentGroupSet(context.sessionManager.records)
         rebuildItems()  // also runs expandAllFolders + restores selection
-        applyModelSelection()
+        applyStoreSelection(context.selectionStore.selection)
         startRecordsObservation()
         startSelectionObservation()
     }
@@ -229,30 +241,31 @@ final class SidebarViewController: NSViewController {
 
     // MARK: - Selection / records observation
 
-    private func applyModelSelection() {
-        if context.model.selection == .none {
+    /// Model-driven highlight restore. Reads the `SelectionStore`
+    /// (Combine `@Published`) — never writes it. Writes go through
+    /// `selectionDelegate` (see `outlineViewSelectionDidChange`).
+    private func applyStoreSelection(_ selection: MainSelection) {
+        if selection == .none {
             isApplyingSelectionFromModel = true
             outlineView.deselectAll(nil)
             isApplyingSelectionFromModel = false
             return
         }
-        selectRow(for: context.model.selection)
+        selectRow(for: selection)
     }
 
+    /// Subscribe to `SelectionStore.$selection` so a programmatic
+    /// selection change (context menu archive, notification-driven
+    /// activation, draft promotion) highlights the matching row.
+    /// The store is `@MainActor`, so the sink runs on main; `[weak
+    /// self]` is required because the store outlives the VC.
     private func startSelectionObservation() {
-        selectionObservationTask?.cancel()
-        selectionObservationTask = Task { @MainActor [weak self] in
-            guard let self else { return }
-            await withCheckedContinuation { cont in
-                withObservationTracking {
-                    _ = self.context.model.selection
-                } onChange: {
-                    Task { @MainActor in cont.resume() }
-                }
+        context.selectionStore.$selection
+            .dropFirst()  // initial value already applied in viewDidLoad
+            .sink { [weak self] newSelection in
+                self?.applyStoreSelection(newSelection)
             }
-            self.applyModelSelection()
-            self.startSelectionObservation()
-        }
+            .store(in: &cancellables)
     }
 
     private func startRecordsObservation() {
@@ -487,8 +500,13 @@ extension SidebarViewController: NSOutlineViewDelegate {
             let node = outlineView.item(atRow: row) as? SidebarItemNode,
             let selection = node.selection
         else { return }
-        if context.model.selection != selection {
-            context.model.select(selection)
+        // Report the user-driven selection change upward as a semantic
+        // event. The coordinator translates that into `SelectionStore`
+        // mutation + detail routing in the same source phase. The
+        // `!=` guard avoids reissuing a delegate call for a highlight
+        // the sink itself just restored.
+        if context.selectionStore.selection != selection {
+            selectionDelegate?.sidebar(self, didSelect: selection)
         }
     }
 

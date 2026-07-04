@@ -6,10 +6,11 @@ import AppKit
 ///
 /// Extracted out of `SidebarViewController` so the VC keeps only the
 /// outline-view concerns (data source / delegate, drag-and-drop, selection,
-/// and the three `withObservationTracking` loops). None of the menu logic
-/// touches the VC's private state — Archive routes through
-/// `context.sessionManager` / `context.model`, and the VC's records / selection
-/// observation loops respond to those writes and rebuild the tree. So the
+/// and the records / selection subscriptions). None of the menu logic touches
+/// the VC's private state — Archive routes through `context.sessionManager`
+/// and (when the archived row was current) nudges `context.selectionStore`
+/// off the archived session. The VC's records subscription responds to those
+/// writes and rebuilds the tree. So the
 /// controller needs only the `SidebarContext` plus a few closures to read the
 /// outline view's current row state:
 ///
@@ -170,8 +171,13 @@ final class SidebarContextMenuController: NSObject, NSMenuDelegate {
         let row = clickedRow() >= 0 ? clickedRow() : selectedRow()
         guard row >= 0, let node = nodeAtRow(row) else { return }
         guard case .history(let sessionId, _, _) = node.kind else { return }
-        if context.model.selection == .session(sessionId) {
-            context.model.select(.newSession)
+        // Archiving the currently-visible session deselects it — the
+        // detail pane would otherwise render the transcript for a row
+        // the sidebar just removed. Direct store write is legitimate
+        // here: it's the archive action's natural side effect on
+        // window-scope state, not a routing decision.
+        if context.selectionStore.selection == .session(sessionId) {
+            context.selectionStore.select(.newSession)
         }
         context.sessionManager.archive(sessionId)
     }

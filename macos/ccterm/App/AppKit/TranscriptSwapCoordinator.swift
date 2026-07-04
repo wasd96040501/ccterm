@@ -1,6 +1,5 @@
 import AppKit
 import Observation
-import SwiftUI
 
 /// Owns the transcript-swap state machine extracted verbatim from
 /// `ChatSessionViewController`. The VC stays responsible for *what the pane

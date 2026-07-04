@@ -1,40 +1,22 @@
 import AppKit
 
-/// Two-item `NSSplitViewController` that hosts the AppKit-native
-/// `SidebarViewController` on the leading side and a
-/// `DetailRouterViewController` on the trailing side. The router
-/// owns whichever detail child VC the current selection asks for —
-/// see its doc comment for the scaffolding plan. This
-/// `NSSplitViewController` is the window's sidebar/detail split.
+/// Two-item `NSSplitViewController` — the AppKit-native sidebar on the
+/// leading side and the `DetailContainerViewController` (a dumb single-
+/// child swap slot, populated by `DetailFlowCoordinator`) on the
+/// trailing side.
+///
+/// Both children are handed in fully-constructed — the split VC owns
+/// **containment** but not **assembly**: the `MainWindowCoordinator`
+/// wires the sidebar's context / delegate and the detail flow before
+/// this VC exists, so nothing here reaches into the DI graph.
 @MainActor
 final class MainSplitViewController: NSSplitViewController {
-    let model: MainSelectionModel
-    let appState: AppState
+    let sidebarViewController: SidebarViewController
+    let detailContainer: DetailContainerViewController
 
-    let detailRouter: DetailRouterViewController
-    private let sidebarViewController: SidebarViewController
-
-    init(model: MainSelectionModel, appState: AppState) {
-        self.model = model
-        self.appState = appState
-
-        sidebarViewController = SidebarViewController(
-            context: SidebarContext(
-                model: model,
-                sessionManager: appState.sessionManager,
-                groupOrderStore: appState.sidebarGroupOrder,
-                openInService: appState.openInService))
-
-        detailRouter = DetailRouterViewController(
-            context: DetailContext(
-                model: model,
-                sessionManager: appState.sessionManager,
-                recentProjects: appState.recentProjects,
-                inputDraftStore: appState.inputDraftStore,
-                syntaxEngine: appState.syntaxEngine),
-            notifications: appState.notificationService
-        )
-
+    init(sidebar: SidebarViewController, detail: DetailContainerViewController) {
+        self.sidebarViewController = sidebar
+        self.detailContainer = detail
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -43,6 +25,7 @@ final class MainSplitViewController: NSSplitViewController {
 
     override func loadView() {
         super.loadView()
+
         let sidebarItem = NSSplitViewItem(sidebarWithViewController: sidebarViewController)
         sidebarItem.minimumThickness = 220
         sidebarItem.maximumThickness = 350
@@ -54,7 +37,7 @@ final class MainSplitViewController: NSSplitViewController {
         sidebarItem.titlebarSeparatorStyle = .automatic
         addSplitViewItem(sidebarItem)
 
-        let detailItem = NSSplitViewItem(viewController: detailRouter)
+        let detailItem = NSSplitViewItem(viewController: detailContainer)
         detailItem.minimumThickness = 680
         detailItem.canCollapse = false
         detailItem.titlebarSeparatorStyle = .none
@@ -66,4 +49,6 @@ final class MainSplitViewController: NSSplitViewController {
         // restores the saved frames on the next layout pass.
         splitView.autosaveName = "ccterm.mainSplit"
     }
+
+    nonisolated deinit {}
 }

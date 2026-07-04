@@ -1,0 +1,1018 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="UTF-8">
+<title>Transcript — history load 最终方案 v2</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #fafaf9;
+    --ink: #171717;
+    --ink-2: #525252;
+    --ink-3: #737373;
+    --ink-4: #a3a3a3;
+    --surface: #ffffff;
+    --surface-2: #f5f5f4;
+    --border: #e5e5e5;
+    --border-2: #d4d4d4;
+
+    --store: #4338ca;
+    --store-soft: #eef2ff;
+    --store-ink: #3730a3;
+    --registry: #7c3aed;
+    --registry-soft: #f5f3ff;
+    --registry-ink: #6d28d9;
+    --vc: #b45309;
+    --vc-soft: #fffbeb;
+    --vc-ink: #92400e;
+    --model: #6d28d9;
+    --model-soft: #f5f3ff;
+    --model-ink: #5b21b6;
+    --ext: #737373;
+    --ext-soft: #f5f5f4;
+
+    --strike: #dc2626;
+    --good: #059669;
+    --off-main-bg: #fef3c7;
+    --off-main-ink: #92400e;
+    --off-main-border: #fbbf24;
+    --sync-bg: #dbeafe;
+    --sync-ink: #1e40af;
+    --sync-border: #60a5fa;
+    --async-bg: #fce7f3;
+    --async-ink: #9d174d;
+    --async-border: #f472b6;
+
+    --code-bg: #f5f5f4;
+    --arrow: #737373;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0c0a09;
+      --ink: #f5f5f4;
+      --ink-2: #d6d3d1;
+      --ink-3: #a8a29e;
+      --ink-4: #78716c;
+      --surface: #1c1917;
+      --surface-2: #201d1a;
+      --border: #292524;
+      --border-2: #44403c;
+
+      --store: #a5b4fc;
+      --store-soft: #1e1b4b;
+      --store-ink: #c7d2fe;
+      --registry: #c4b5fd;
+      --registry-soft: #2e1065;
+      --registry-ink: #ddd6fe;
+      --vc: #fcd34d;
+      --vc-soft: #3b2a05;
+      --vc-ink: #fde68a;
+      --model: #c4b5fd;
+      --model-soft: #2e1065;
+      --model-ink: #ddd6fe;
+      --ext: #a8a29e;
+      --ext-soft: #201d1a;
+
+      --strike: #f87171;
+      --good: #34d399;
+      --off-main-bg: #422006;
+      --off-main-ink: #fcd34d;
+      --off-main-border: #a16207;
+      --sync-bg: #172554;
+      --sync-ink: #93c5fd;
+      --sync-border: #3b82f6;
+      --async-bg: #500724;
+      --async-ink: #fbcfe8;
+      --async-border: #be185d;
+
+      --code-bg: #131110;
+      --arrow: #a8a29e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: ui-sans-serif, -apple-system, "SF Pro Text", "PingFang SC", system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    margin: 0;
+    padding: 56px 32px 96px;
+    line-height: 1.55;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .container { max-width: 1240px; margin: 0 auto; }
+  header { margin-bottom: 40px; }
+  .eyebrow {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--ink-4);
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+  h1 {
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin: 0 0 8px;
+  }
+  .subtitle { color: var(--ink-3); font-size: 15px; margin: 0; max-width: 780px; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 400px;
+    gap: 44px;
+    align-items: start;
+  }
+
+  .layer-lane { display: flex; flex-direction: column; }
+
+  .box {
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 20px 14px;
+    position: relative;
+  }
+  .box.external {
+    border-style: dashed;
+    border-color: var(--border-2);
+    background: transparent;
+  }
+  .box.store    { border-color: var(--store);    border-width: 2px; background: var(--store-soft); }
+  .box.registry { border-color: var(--registry); border-width: 2px; background: var(--registry-soft); }
+  .box.vc       { border-color: var(--vc);       border-width: 2px; background: var(--vc-soft); }
+
+  .box .head {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 2px;
+  }
+  .box .name {
+    font-family: "SF Mono", ui-monospace, "Menlo", monospace;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .box.store    .name { color: var(--store-ink); }
+  .box.registry .name { color: var(--registry-ink); }
+  .box.vc       .name { color: var(--vc-ink); }
+
+  .layer-badge {
+    font-size: 10.5px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    background: var(--surface-2);
+    color: var(--ink-3);
+  }
+  .box.store    .layer-badge { background: var(--store);    color: white; }
+  .box.registry .layer-badge { background: var(--registry); color: white; }
+  .box.vc       .layer-badge { background: var(--vc);       color: white; }
+  @media (prefers-color-scheme: dark) {
+    .box.store    .layer-badge { background: var(--store);    color: #0c0a09; }
+    .box.registry .layer-badge { background: var(--registry); color: #0c0a09; }
+    .box.vc       .layer-badge { background: var(--vc);       color: #0c0a09; }
+  }
+
+  .box .body {
+    color: var(--ink-2);
+    font-size: 12.5px;
+    line-height: 1.55;
+    margin-top: 6px;
+  }
+  .box .body code {
+    background: rgba(0,0,0,0.05);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: "SF Mono", ui-monospace, monospace;
+    font-size: 12px;
+    color: var(--ink);
+  }
+  @media (prefers-color-scheme: dark) {
+    .box .body code { background: rgba(255,255,255,0.06); }
+  }
+
+  .box .scope-tag {
+    position: absolute;
+    top: -10px; right: 12px;
+    background: var(--surface); padding: 1px 8px; font-size: 10px;
+    letter-spacing: 0.08em; text-transform: uppercase; font-weight: 700;
+    color: var(--ink-3); border-radius: 4px; border: 1px solid var(--border);
+  }
+  .box.store    .scope-tag { color: var(--store-ink); border-color: var(--store); }
+  .box.registry .scope-tag { color: var(--registry-ink); border-color: var(--registry); }
+
+  .badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .chip {
+    font-size: 10.5px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--ink-3);
+    font-family: "SF Mono", ui-monospace, monospace;
+    letter-spacing: 0.02em;
+    border: 1px solid var(--border);
+  }
+  .chip.off-main { background: var(--off-main-bg); color: var(--off-main-ink); border-color: var(--off-main-border); font-weight: 600; }
+  .chip.sync     { background: var(--sync-bg);     color: var(--sync-ink);     border-color: var(--sync-border);     font-weight: 600; }
+  .chip.async    { background: var(--async-bg);    color: var(--async-ink);    border-color: var(--async-border);    font-weight: 600; }
+
+  .arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 0;
+    gap: 12px;
+    color: var(--arrow);
+    height: 52px;
+  }
+  .arrow svg { display: block; flex: none; }
+  .arrow .lbl {
+    font-family: "SF Mono", ui-monospace, monospace;
+    font-size: 11.5px;
+    color: var(--ink-3);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .arrow .lbl .kind {
+    font-size: 10px;
+    color: var(--ink-4);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+  }
+  .arrow.split {
+    height: 78px;
+    align-items: flex-start;
+    padding-top: 8px;
+  }
+
+  aside .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+  }
+  aside .card h3 {
+    margin: 0 0 8px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--ink-4);
+    font-weight: 700;
+  }
+  aside .card.deleted h3 { color: var(--strike); }
+  aside .card.perf h3    { color: var(--good); }
+  aside .card p {
+    margin: 0;
+    color: var(--ink-2);
+    font-size: 12.5px;
+    line-height: 1.55;
+  }
+  aside .card p + p { margin-top: 6px; color: var(--ink-3); font-size: 12px; }
+  aside .card ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 6px;
+    font-family: "SF Mono", ui-monospace, monospace;
+    font-size: 11.5px;
+  }
+  aside .card ul li {
+    background: var(--code-bg);
+    color: var(--ink-3);
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+  aside .card.deleted ul li {
+    text-decoration: line-through;
+    text-decoration-color: var(--strike);
+    text-decoration-thickness: 1.5px;
+  }
+  aside .card.perf ul li {
+    background: transparent;
+    padding: 0;
+    color: var(--ink-2);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  aside .card.perf ul {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  aside .card.perf ul li::before {
+    content: "✓";
+    color: var(--good);
+    font-weight: 700;
+    font-family: system-ui;
+  }
+
+  aside .card.phases table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  aside .card.phases th, aside .card.phases td {
+    text-align: left;
+    padding: 5px 8px 5px 0;
+    border-bottom: 1px dashed var(--border);
+    vertical-align: top;
+  }
+  aside .card.phases th {
+    font-size: 10.5px;
+    color: var(--ink-4);
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  aside .card.phases td.hdr {
+    font-weight: 600;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  aside .card.phases td code {
+    background: var(--code-bg);
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 11px;
+  }
+
+  aside .card.compos { border-color: var(--registry); }
+  aside .card.compos h3 { color: var(--registry-ink); }
+  aside .card.compos pre {
+    margin: 0;
+    padding: 10px 12px;
+    background: var(--code-bg);
+    border-radius: 6px;
+    font-size: 11.5px;
+    line-height: 1.5;
+    font-family: "SF Mono", ui-monospace, monospace;
+    color: var(--ink-2);
+    white-space: pre;
+    overflow-x: auto;
+  }
+  aside .card.compos pre .type { color: var(--store-ink); font-weight: 600; }
+  aside .card.compos pre .reg  { color: var(--registry-ink); font-weight: 600; }
+  aside .card.compos pre .cmt  { color: var(--ink-4); font-style: italic; }
+
+  section.code { margin-top: 48px; }
+  h2 {
+    font-size: 17px;
+    font-weight: 600;
+    margin: 0 0 14px;
+    letter-spacing: -0.01em;
+  }
+  h2 .layer-badge {
+    margin-left: 10px;
+    vertical-align: 4px;
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 22px;
+    overflow-x: auto;
+    font-family: "SF Mono", ui-monospace, "Menlo", monospace;
+    font-size: 12.5px;
+    line-height: 1.65;
+    color: var(--ink);
+    margin: 0 0 24px;
+  }
+  pre .kw   { color: #c026d3; }
+  pre .type { color: var(--store); }
+  pre .fn   { color: var(--vc); }
+  pre .str  { color: #dc2626; }
+  pre .num  { color: var(--registry); }
+  pre .cm   { color: var(--ink-4); font-style: italic; }
+  @media (prefers-color-scheme: dark) {
+    pre .kw   { color: #f0abfc; }
+    pre .type { color: var(--store); }
+    pre .fn   { color: var(--vc); }
+    pre .str  { color: #fca5a5; }
+    pre .num  { color: var(--registry); }
+    pre .cm   { color: var(--ink-4); }
+  }
+
+  .thread-legend {
+    display: flex;
+    gap: 20px;
+    padding: 12px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 20px;
+    font-size: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .thread-legend .item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .thread-legend .swatch {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    border: 1.5px solid transparent;
+  }
+  .thread-legend .swatch.off-main { background: var(--off-main-bg); border-color: var(--off-main-border); }
+  .thread-legend .swatch.sync     { background: var(--sync-bg);     border-color: var(--sync-border); }
+  .thread-legend .swatch.async    { background: var(--async-bg);    border-color: var(--async-border); }
+
+  .final-summary {
+    margin-top: 56px;
+    padding: 20px 24px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+  .final-summary h2 { margin-top: 0; }
+  dl.kv {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 10px 24px;
+    font-size: 13px;
+    margin: 0;
+  }
+  dl.kv dt {
+    color: var(--ink-3);
+    font-weight: 500;
+    font-family: "SF Mono", ui-monospace, monospace;
+    font-size: 12px;
+  }
+  dl.kv dd {
+    margin: 0;
+    color: var(--ink);
+  }
+  dl.kv dd code {
+    background: var(--code-bg);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: "SF Mono", ui-monospace, monospace;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <div class="eyebrow">final architecture v2 · history-only · session-agnostic</div>
+  <h1>Transcript Store — history load</h1>
+  <p class="subtitle">
+    四层单向流。<strong>VM 折叠进 Store</strong>（scope 跨 VC → 语义是 Store 不是 VM）。
+    <strong>缓存挂在 AppContext</strong>（app-scope，切窗回来命中）。
+    <strong>Phase 1 sync / Phase 2 async</strong>——首屏钉主线程，older 甩后台 typeset。
+  </p>
+</header>
+
+<div class="thread-legend">
+  <div class="item"><span class="swatch off-main"></span>off-main（SDK 内 IO / Phase 2 typeset）</div>
+  <div class="item"><span class="swatch sync"></span>Phase 1 tail：主线程同步链</div>
+  <div class="item"><span class="swatch async"></span>Phase 2 older：Task.detached + MainActor.run</div>
+</div>
+
+<div class="grid">
+
+<div class="layer-lane">
+
+  <div class="box external">
+    <div class="head">
+      <span class="name">~/.claude/projects/&lt;id&gt;.jsonl</span>
+    </div>
+    <div class="body">CLI 落盘的历史文件。SDK 边界之下的实现细节。</div>
+  </div>
+
+  <div class="arrow">
+    <svg width="18" height="40" viewBox="0 0 18 40" fill="none">
+      <path d="M9 0 L9 32 M9 32 L3 26 M9 32 L15 26" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </div>
+
+  <div class="box external">
+    <div class="head">
+      <span class="name">AgentSDK.SessionHistory.load(id:, order:.reverse)</span>
+    </div>
+    <div class="body">
+      静态 API。反向读 + 反向配对（buffer 孤儿 <code>tool_result</code>）+ 按 I/O buffer 自然分批。
+      返回 <code>AsyncThrowingStream&lt;[Message2], Error&gt;</code>。
+    </div>
+    <div class="badges">
+      <span class="chip off-main">off-main IO + decode + 配对</span>
+      <span class="chip">public API</span>
+      <span class="chip">cancel = Task.cancel</span>
+    </div>
+  </div>
+
+  <div class="arrow">
+    <svg width="18" height="52" viewBox="0 0 18 52" fill="none">
+      <path d="M9 0 L9 44 M9 44 L3 38 M9 44 L15 38" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 3"/>
+    </svg>
+    <span class="lbl">
+      <span class="kind">async stream</span>
+      <span>for try await batch in stream { … }</span>
+      <span style="color: var(--off-main-ink)">yield = off-main → main hop</span>
+    </span>
+  </div>
+
+  <div class="box registry">
+    <span class="scope-tag">app scope</span>
+    <div class="head">
+      <span class="name">TranscriptRegistryStore</span>
+      <span class="layer-badge">STORE</span>
+    </div>
+    <div class="body">
+      <code>private var stores: [String: TranscriptStore]</code><br>
+      · <code>store(for: id) -&gt; TranscriptStore</code>——存在复用、不存在新建<br>
+      · <code>discard(id)</code>——sidebar 归档/删除时调，别处不调<br>
+      在 <code>AppDelegate.applicationWillFinishLaunching</code> 组合根 new，
+      挂进 <code>AppContext.transcriptRegistry</code>（read-only manifest）。
+    </div>
+    <div class="badges">
+      <span class="chip">@MainActor</span>
+      <span class="chip">no AppKit</span>
+      <span class="chip">process-lifetime</span>
+    </div>
+  </div>
+
+  <div class="arrow">
+    <svg width="18" height="40" viewBox="0 0 18 40" fill="none">
+      <path d="M9 0 L9 32 M9 32 L3 26 M9 32 L15 26" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    <span class="lbl">
+      <span class="kind">get-or-create</span>
+      <span>registry.store(for: transcriptId)</span>
+    </span>
+  </div>
+
+  <div class="box store">
+    <span class="scope-tag">per transcript</span>
+    <div class="head">
+      <span class="name">TranscriptStore</span>
+      <span class="layer-badge">STORE</span>
+    </div>
+    <div class="body">
+      <code>private var messages: [Message2]</code>——内部工作面，不外露<br>
+      <code>private(set) var blocks: [Block]</code>——公开真相<br>
+      <code>private(set) var layouts: [Block.ID: RowLayout]</code>——typeset cache<br>
+      <code>let events = PassthroughSubject&lt;BlockDelta, Never&gt;()</code><br>
+      · <code>loadHistory(id:)</code>——起 SDK 消费；内部同步跑 <code>BlockBuilder.build</code><br>
+      · <code>layout(for: block, width:) -&gt; RowLayout</code>——miss 时同步 typeset + 写 cache<br>
+      · <code>writeLayouts(_ pairs, width:)</code>——Phase 2 后台 typeset 后主线程回写
+    </div>
+    <div class="badges">
+      <span class="chip">@MainActor</span>
+      <span class="chip">no AppKit</span>
+      <span class="chip">no VM 层</span>
+    </div>
+  </div>
+
+  <div class="arrow">
+    <svg width="18" height="40" viewBox="0 0 18 40" fill="none">
+      <path d="M9 0 L9 32 M9 32 L3 26 M9 32 L15 26" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 3"/>
+    </svg>
+    <span class="lbl">
+      <span class="kind">combine</span>
+      <span>store.events → BlockDelta { .tail | .older }</span>
+    </span>
+  </div>
+
+  <div class="box vc">
+    <div class="head">
+      <span class="name">TranscriptViewController</span>
+      <span class="layer-badge">CONTROLLER</span>
+    </div>
+    <div class="body">
+      <code>NSViewController</code> + <code>NSTableViewDataSource</code> + <code>Delegate</code>。<br>
+      · <code>loadView</code>：建 scroll + tableView<br>
+      · <code>viewDidLoad</code>：订 <code>store.events</code>；绑 dataSource/delegate<br>
+      · <code>viewWillAppear</code>：<code>store.blocks.isEmpty</code> 才起 loader<br>
+      · <code>apply(.tail)</code>：<span class="chip sync" style="display:inline-block; margin: 0 2px">同步链</span>typeset → <code>store.writeLayouts</code> → <code>insertRows</code> → <code>scrollToTail</code><br>
+      · <code>apply(.older)</code>：<span class="chip async" style="display:inline-block; margin: 0 2px">后台 typeset → MainActor.run</span> → <code>store.writeLayouts</code> → <code>insertRows</code><br>
+      · <code>heightOfRow</code> / <code>viewFor</code>：只读 <code>store.blocks[row]</code> + <code>store.layout(for:width:)</code>——命中/miss 全在 Store 内决策<br>
+      · <code>prepareForRemoval</code>：cancel loader + 卸订阅（Store 留活给 registry）
+    </div>
+    <div class="badges">
+      <span class="chip sync">Phase 1 同步</span>
+      <span class="chip async">Phase 2 async</span>
+      <span class="chip">no session</span>
+      <span class="chip">no local cache</span>
+    </div>
+  </div>
+
+  <div class="arrow">
+    <svg width="18" height="40" viewBox="0 0 18 40" fill="none">
+      <path d="M9 0 L9 32 M9 32 L3 26 M9 32 L15 26" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </div>
+
+  <div class="box external">
+    <div class="head">
+      <span class="name">NSTableView + BlockCellView</span>
+    </div>
+    <div class="body">增量 <code>insertRows(at: IndexSet, withAnimation:)</code>。<code>heightOfRow</code> 每次都走 <code>store.layout(for:width:)</code>——切回窗口宽度不变则全命中。</div>
+  </div>
+
+</div>
+
+<aside>
+
+  <div class="card compos">
+    <h3>Composition root · 缓存跨 VC 生存的机制</h3>
+<pre><span class="cmt">// AppDelegate.applicationWillFinishLaunching</span>
+<span class="kw">let</span> registry = <span class="reg">TranscriptRegistryStore</span>()
+<span class="kw">let</span> ctx = <span class="type">AppContext</span>(
+    sessionManager: …,
+    transcriptRegistry: registry,   <span class="cmt">// ← app-scope</span>
+    …
+)
+mainWindowCoordinator = <span class="type">MainWindowCoordinator</span>(
+    appContext: ctx, parent: <span class="kw">self</span>)</pre>
+    <p>Registry <strong>由 AppDelegate 强持有</strong>，通过 <code>AppContext</code> read-only 引用向下传。窗口开关不影响它——<code>MainWindowCoordinator</code> 死掉时只 detach 自己的 window scope 资源，<code>ctx.app.transcriptRegistry</code> 里的 stores 继续活着。</p>
+    <p>切走 VC → VC deinit → 订阅解掉；registry 里的 store 保留 blocks + layouts。切回来新 VC 用 <code>registry.store(for: id)</code> 拿回同一个 store，<code>store.blocks</code> 非空 → 跳过 loader，直接 <code>reloadData</code>，<code>layouts</code> 全命中，秒开。</p>
+  </div>
+
+  <div class="card phases">
+    <h3>Phase 1 vs Phase 2</h3>
+    <table>
+      <tr><th></th><th>Phase 1 · tail</th><th>Phase 2 · older</th></tr>
+      <tr>
+        <td class="hdr">首帧约束</td>
+        <td>有——要么显示要么白屏</td>
+        <td>无——上文补齐</td>
+      </tr>
+      <tr>
+        <td class="hdr">BlockBuilder</td>
+        <td>Store 内主线程同步</td>
+        <td>Store 内主线程同步</td>
+      </tr>
+      <tr>
+        <td class="hdr">RowLayout typeset</td>
+        <td><code>RowLayout.make</code> 主线程同步</td>
+        <td><code>Task.detached</code> off-main</td>
+      </tr>
+      <tr>
+        <td class="hdr">写 <code>store.layouts</code></td>
+        <td>同步链上，紧跟 make</td>
+        <td><code>await MainActor.run</code> 内批写</td>
+      </tr>
+      <tr>
+        <td class="hdr"><code>insertRows</code></td>
+        <td>同步链尾 + <code>scrollToTail</code></td>
+        <td><code>await MainActor.run</code> 内</td>
+      </tr>
+      <tr>
+        <td class="hdr">Main 阻塞</td>
+        <td>100-200ms/首屏（可接受）</td>
+        <td>&lt;5ms/批（只 dict 写 + insert）</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="card perf">
+    <h3>性能账目</h3>
+    <ul>
+      <li>Tail-first：SDK 反向读，首批就是最新</li>
+      <li>反向配对在 SDK 内做完</li>
+      <li>SDK：off-main IO + decode + 配对</li>
+      <li>Phase 1 tail：全同步，一 tick 出屏</li>
+      <li>Phase 2 older：typeset off-main，主线程只 <code>insertRows</code></li>
+      <li>切走再回来：blocks + layouts 全命中 registry，无 SDK 读、无 BlockBuilder、无 typeset</li>
+      <li><code>heightOfRow</code> 全走 Store cache</li>
+    </ul>
+  </div>
+
+  <div class="card deleted">
+    <h3>删除的类型</h3>
+    <ul>
+      <li>Session</li>
+      <li>SessionRuntime</li>
+      <li>TranscriptViewModel</li>
+      <li>MessageTimelineStore（改名合并）</li>
+      <li>TranscriptBackfillPipeline</li>
+      <li>JSONLReversePageSource</li>
+      <li>ReverseLineReader</li>
+      <li>HistoryLoader</li>
+      <li>ReverseEntryBuilder</li>
+      <li>Transcript2EntryBridge</li>
+      <li>Transcript2Controller</li>
+      <li>Transcript2Coordinator</li>
+      <li>MessagesChange</li>
+      <li>onMessagesChange</li>
+      <li>MessageEntry</li>
+      <li>SingleEntry</li>
+      <li>GroupEntry</li>
+      <li>SessionHistory.loadMessages (旧同步死码)</li>
+    </ul>
+    <p>VM 层没了：跨 VC 生存的东西按规范就是 Store。<code>Message2</code> 从公共 API 隐藏，只留在 Store 内部作为 <code>BlockBuilder</code> 的输入。</p>
+  </div>
+
+  <div class="card">
+    <h3>规范逐条对齐</h3>
+    <p><code>Model</code>：Message2 / Block / RowLayout / ImageSource——struct/enum，无 AppKit</p>
+    <p><code>Store</code>：<code>TranscriptRegistryStore</code>（app-scope 注册表） + <code>TranscriptStore</code>（per-transcript 状态）——都 @MainActor class，publish via Combine</p>
+    <p><code>Controller</code>：NSViewController，只 coordinates view↔store</p>
+    <p><code>Coordinator</code>：<code>MainWindowCoordinator</code> 通过 <code>AppContext</code> 拿 registry，装配 VC 时注入 store</p>
+    <p><code>组合根</code>：AppDelegate.applicationWillFinishLaunching new registry，写进 AppContext</p>
+  </div>
+
+  <div class="card">
+    <h3>Delta 词汇（history-only）</h3>
+    <p><code>store.events</code>：<br>
+      · <code>.tail([Block])</code>——首屏，滚到底<br>
+      · <code>.older([Block])</code>——上翻页
+    </p>
+    <p>没有 <code>.append/.update/.remove</code>——live 词汇，不预留。</p>
+  </div>
+
+</aside>
+
+</div>
+
+<section class="code">
+
+<h2>AgentSDK 侧 · public API <span class="layer-badge">SDK</span></h2>
+<pre><span class="kw">public extension</span> <span class="type">AgentSDK</span>.<span class="type">SessionHistory</span> {
+
+    <span class="kw">enum</span> <span class="type">Order</span> { <span class="kw">case</span> forward, reverse }
+
+    <span class="cm">/// 反向读 + 反向配对 + 按 I/O buffer 自然分批。取消：Task.cancel()。</span>
+    <span class="cm">/// 边角：反向到文件顶仍未配对的孤儿 tool_result，作为最后一批 emit（不静默丢）。</span>
+    <span class="kw">static func</span> <span class="fn">load</span>(
+        id: <span class="type">String</span>,
+        order: <span class="type">Order</span> = .reverse
+    ) -&gt; <span class="type">AsyncThrowingStream</span>&lt;[<span class="type">Message2</span>], <span class="type">Error</span>&gt;
+}</pre>
+
+<h2>TranscriptRegistryStore<span class="layer-badge">STORE</span></h2>
+<pre>@MainActor
+<span class="kw">final class</span> <span class="type">TranscriptRegistryStore</span> {
+
+    <span class="kw">private var</span> stores: [<span class="type">String</span>: <span class="type">TranscriptStore</span>] = [:]
+
+    <span class="kw">func</span> <span class="fn">store</span>(<span class="kw">for</span> id: <span class="type">String</span>) -&gt; <span class="type">TranscriptStore</span> {
+        <span class="kw">if let</span> s = stores[id] { <span class="kw">return</span> s }
+        <span class="kw">let</span> s = <span class="type">TranscriptStore</span>(id: id)
+        stores[id] = s
+        <span class="kw">return</span> s
+    }
+
+    <span class="cm">/// SessionManager 归档 / 删除 session 时才调。关窗、切走都不调。</span>
+    <span class="kw">func</span> <span class="fn">discard</span>(_ id: <span class="type">String</span>) {
+        stores.removeValue(forKey: id)
+    }
+}</pre>
+
+<h2>TranscriptStore<span class="layer-badge">STORE</span></h2>
+<pre>@MainActor
+<span class="kw">final class</span> <span class="type">TranscriptStore</span> {
+
+    <span class="kw">enum</span> <span class="type">BlockDelta</span> {
+        <span class="kw">case</span> tail([<span class="type">Block</span>])     <span class="cm">// 首批（最新）</span>
+        <span class="kw">case</span> older([<span class="type">Block</span>])    <span class="cm">// 后续更老页</span>
+    }
+
+    <span class="kw">let</span> id: <span class="type">String</span>
+    <span class="kw">private(set) var</span> blocks: [<span class="type">Block</span>] = []
+    <span class="kw">private(set) var</span> layouts: [<span class="type">Block</span>.<span class="type">ID</span>: <span class="type">RowLayout</span>] = [:]
+    <span class="kw">private(set) var</span> layoutsWidth: <span class="type">CGFloat</span> = <span class="num">0</span>
+    <span class="kw">let</span> events = <span class="type">PassthroughSubject</span>&lt;<span class="type">BlockDelta</span>, <span class="type">Never</span>&gt;()
+
+    <span class="kw">private var</span> messages: [<span class="type">Message2</span>] = []       <span class="cm">// 私有工作面</span>
+    <span class="kw">private var</span> loader: <span class="type">Task</span>&lt;<span class="type">Void</span>, <span class="type">Never</span>&gt;?
+    <span class="kw">private var</span> isFirst = <span class="kw">true</span>
+
+    <span class="kw">init</span>(id: <span class="type">String</span>) { <span class="kw">self</span>.id = id }
+
+    <span class="cm">/// VC 在 viewWillAppear 里调；blocks 非空的话直接返回不重跑。</span>
+    <span class="kw">func</span> <span class="fn">loadHistoryIfNeeded</span>() {
+        <span class="kw">guard</span> blocks.isEmpty, loader == <span class="kw">nil</span> <span class="kw">else</span> { <span class="kw">return</span> }
+        loader = <span class="type">Task</span> { [<span class="kw">weak self</span>] <span class="kw">in</span>
+            <span class="kw">guard let</span> <span class="kw">self</span> <span class="kw">else</span> { <span class="kw">return</span> }
+            <span class="kw">let</span> stream = <span class="type">AgentSDK</span>.<span class="type">SessionHistory</span>.<span class="fn">load</span>(id: id, order: .reverse)
+            <span class="kw">do</span> {
+                <span class="kw">for try await</span> batch <span class="kw">in</span> stream { <span class="kw">self</span>.<span class="fn">ingest</span>(batch) }
+            } <span class="kw">catch</span> { appLog(.error, <span class="str">"TranscriptStore"</span>, <span class="str">"\(error)"</span>) }
+        }
+    }
+
+    <span class="kw">private func</span> <span class="fn">ingest</span>(_ batch: [<span class="type">Message2</span>]) {
+        <span class="kw">let</span> newBlocks = <span class="type">BlockBuilder</span>.<span class="fn">build</span>(from: batch, prior: messages)
+        <span class="kw">if</span> isFirst {
+            messages = batch
+            blocks = newBlocks
+            isFirst = <span class="kw">false</span>
+            events.send(.tail(newBlocks))
+        } <span class="kw">else</span> {
+            messages = batch + messages
+            blocks = newBlocks + blocks
+            events.send(.older(newBlocks))
+        }
+    }
+
+    <span class="cm">/// heightOfRow / viewFor 走这里——miss 时同步 typeset + 写 cache。</span>
+    <span class="kw">func</span> <span class="fn">layout</span>(<span class="kw">for</span> block: <span class="type">Block</span>, width: <span class="type">CGFloat</span>) -&gt; <span class="type">RowLayout</span> {
+        <span class="fn">invalidateIfWidthChanged</span>(width)
+        <span class="kw">if let</span> l = layouts[block.id] { <span class="kw">return</span> l }
+        <span class="kw">let</span> fresh = <span class="type">RowLayout</span>.<span class="fn">make</span>(<span class="kw">for</span>: block, width: width)
+        layouts[block.id] = fresh
+        <span class="kw">return</span> fresh
+    }
+
+    <span class="cm">/// Phase 2 后台 typeset 完批量回写。</span>
+    <span class="kw">func</span> <span class="fn">writeLayouts</span>(_ pairs: [(<span class="type">Block</span>.<span class="type">ID</span>, <span class="type">RowLayout</span>)], width: <span class="type">CGFloat</span>) {
+        <span class="fn">invalidateIfWidthChanged</span>(width)
+        <span class="kw">for</span> (id, l) <span class="kw">in</span> pairs { layouts[id] = l }
+    }
+
+    <span class="kw">private func</span> <span class="fn">invalidateIfWidthChanged</span>(_ w: <span class="type">CGFloat</span>) {
+        <span class="kw">if</span> w != layoutsWidth {
+            layouts.removeAll(keepingCapacity: <span class="kw">true</span>)
+            layoutsWidth = w
+        }
+    }
+}</pre>
+
+<h2>TranscriptViewController<span class="layer-badge">CONTROLLER</span></h2>
+<pre>@MainActor
+<span class="kw">final class</span> <span class="type">TranscriptViewController</span>: <span class="type">NSViewController</span>,
+        <span class="type">NSTableViewDataSource</span>, <span class="type">NSTableViewDelegate</span> {
+
+    <span class="kw">private let</span> store: <span class="type">TranscriptStore</span>
+    <span class="kw">private var</span> scrollView: <span class="type">NSScrollView</span>!
+    <span class="kw">private var</span> tableView: <span class="type">NSTableView</span>!
+    <span class="kw">private var</span> bag = <span class="type">Set</span>&lt;<span class="type">AnyCancellable</span>&gt;()
+
+    <span class="cm">/// Coordinator 从 registry 取 store 后注入。</span>
+    <span class="kw">init</span>(store: <span class="type">TranscriptStore</span>) {
+        <span class="kw">self</span>.store = store
+        <span class="kw">super</span>.<span class="fn">init</span>(nibName: <span class="kw">nil</span>, bundle: <span class="kw">nil</span>)
+    }
+
+    <span class="kw">override func</span> <span class="fn">loadView</span>() { <span class="cm">/* build scrollView + tableView; 不 super */</span> }
+
+    <span class="kw">override func</span> <span class="fn">viewDidLoad</span>() {
+        <span class="kw">super</span>.<span class="fn">viewDidLoad</span>()
+        tableView.dataSource = <span class="kw">self</span>
+        tableView.delegate   = <span class="kw">self</span>
+        store.events
+            .sink { [<span class="kw">weak self</span>] delta <span class="kw">in</span> <span class="kw">self</span>?.<span class="fn">apply</span>(delta) }
+            .store(<span class="kw">in</span>: &bag)
+        <span class="kw">if</span> !store.blocks.isEmpty {
+            tableView.reloadData()                  <span class="cm">// 缓存命中的 bootstrap</span>
+            tableView.<span class="fn">scrollRowToVisible</span>(store.blocks.count - <span class="num">1</span>)
+        }
+    }
+
+    <span class="kw">override func</span> <span class="fn">viewWillAppear</span>() {
+        <span class="kw">super</span>.<span class="fn">viewWillAppear</span>()
+        store.<span class="fn">loadHistoryIfNeeded</span>()             <span class="cm">// blocks 空才起 loader</span>
+    }
+
+    <span class="kw">func</span> <span class="fn">prepareForRemoval</span>() {
+        bag.removeAll()
+        tableView.dataSource = <span class="kw">nil</span>
+        tableView.delegate   = <span class="kw">nil</span>
+        <span class="cm">// 不动 store——它在 registry 里继续活着，下次挂载还用它</span>
+    }
+
+    <span class="cm">// ────────── Phase 1 sync / Phase 2 async ──────────</span>
+
+    <span class="kw">private func</span> <span class="fn">apply</span>(_ delta: <span class="type">TranscriptStore</span>.<span class="type">BlockDelta</span>) {
+        <span class="kw">let</span> w = contentWidth
+        <span class="kw">switch</span> delta {
+        <span class="kw">case</span> .tail(<span class="kw">let</span> blocks):                    <span class="cm">// Phase 1 · 同步链</span>
+            <span class="kw">let</span> pairs = blocks.map { ($0.id, <span class="type">RowLayout</span>.<span class="fn">make</span>(<span class="kw">for</span>: $0, width: w)) }
+            store.<span class="fn">writeLayouts</span>(pairs, width: w)
+            <span class="kw">let</span> start = tableView.numberOfRows
+            tableView.<span class="fn">insertRows</span>(at: <span class="type">IndexSet</span>(integersIn: start..&lt;start+blocks.count),
+                                 withAnimation: [])
+            tableView.<span class="fn">scrollRowToVisible</span>(tableView.numberOfRows - <span class="num">1</span>)
+
+        <span class="kw">case</span> .older(<span class="kw">let</span> blocks):                   <span class="cm">// Phase 2 · off-main typeset</span>
+            <span class="type">Task</span>.<span class="fn">detached</span>(priority: .userInitiated) { [<span class="kw">weak self</span>] <span class="kw">in</span>
+                <span class="kw">let</span> pairs = blocks.map { ($0.id, <span class="type">RowLayout</span>.<span class="fn">make</span>(<span class="kw">for</span>: $0, width: w)) }
+                <span class="kw">await</span> <span class="type">MainActor</span>.run {
+                    <span class="kw">guard let</span> <span class="kw">self</span> <span class="kw">else</span> { <span class="kw">return</span> }
+                    <span class="kw">self</span>.store.<span class="fn">writeLayouts</span>(pairs, width: w)
+                    <span class="kw">self</span>.tableView.<span class="fn">insertRows</span>(at: <span class="type">IndexSet</span>(integersIn: <span class="num">0</span>..&lt;blocks.count),
+                                              withAnimation: [])
+                }
+            }
+        }
+    }
+
+    <span class="cm">// ────────── data source / delegate — 只读 store ──────────</span>
+
+    <span class="kw">func</span> <span class="fn">numberOfRows</span>(<span class="kw">in</span> tv: <span class="type">NSTableView</span>) -&gt; <span class="type">Int</span> {
+        store.blocks.count
+    }
+
+    <span class="kw">func</span> <span class="fn">tableView</span>(_ tv: <span class="type">NSTableView</span>, heightOfRow row: <span class="type">Int</span>) -&gt; <span class="type">CGFloat</span> {
+        store.<span class="fn">layout</span>(<span class="kw">for</span>: store.blocks[row], width: contentWidth).height
+    }
+
+    <span class="kw">func</span> <span class="fn">tableView</span>(_ tv: <span class="type">NSTableView</span>, viewFor col: <span class="type">NSTableColumn</span>?, row: <span class="type">Int</span>) -&gt; <span class="type">NSView</span>? {
+        <span class="kw">let</span> b = store.blocks[row]
+        <span class="kw">let</span> l = store.<span class="fn">layout</span>(<span class="kw">for</span>: b, width: contentWidth)
+        <span class="kw">return</span> <span class="fn">dequeueCell</span>(<span class="kw">for</span>: b, layout: l, in: tv)
+    }
+}</pre>
+
+<h2>Composition root · AppContext<span class="layer-badge">DI</span></h2>
+<pre>@MainActor
+<span class="kw">struct</span> <span class="type">AppContext</span> {
+    <span class="kw">let</span> sessionManager: <span class="type">SessionManager</span>
+    <span class="kw">let</span> transcriptRegistry: <span class="type">TranscriptRegistryStore</span>   <span class="cm">// ← 新增</span>
+    <span class="kw">let</span> recentProjects: <span class="type">RecentProjectsStore</span>
+    <span class="kw">let</span> inputDraftStore: <span class="type">InputDraftStore</span>
+    <span class="cm">// …</span>
+}
+
+<span class="cm">// AppDelegate.applicationWillFinishLaunching(_:)</span>
+<span class="kw">let</span> appContext = <span class="type">AppContext</span>(
+    sessionManager: <span class="type">SessionManager</span>(…),
+    transcriptRegistry: <span class="type">TranscriptRegistryStore</span>(),         <span class="cm">// new 一次，进程持有</span>
+    recentProjects: …,
+    inputDraftStore: …,
+)
+
+<span class="cm">// MainWindowCoordinator.startTranscript(id:)</span>
+<span class="kw">let</span> store = appContext.transcriptRegistry.<span class="fn">store</span>(<span class="kw">for</span>: id)
+<span class="kw">let</span> vc = <span class="type">TranscriptViewController</span>(store: store)
+detailContainer.<span class="fn">setChild</span>(vc)
+
+<span class="cm">// SessionManager 归档 / 删除时</span>
+appContext.transcriptRegistry.<span class="fn">discard</span>(id)</pre>
+
+</section>
+
+<section class="final-summary">
+  <h2>关键决策一览</h2>
+  <dl class="kv">
+    <dt>层数</dt>
+    <dd>四层：<code>SDK</code> → <code>TranscriptRegistryStore</code> → <code>TranscriptStore</code> → <code>VC</code>。<strong>VM 层删除</strong>——跨 VC 生存的东西按规范就是 Store 不是 VM。</dd>
+
+    <dt>缓存 scope</dt>
+    <dd><code>TranscriptRegistryStore</code> 是 app-scope，由 <code>AppDelegate</code> 组合根 new，挂进 <code>AppContext.transcriptRegistry</code>。切窗 / 切走 / 切回来都不释放；只在 sidebar 归档 / 删除 session 时 <code>discard(id)</code>。</dd>
+
+    <dt>Session</dt>
+    <dd>零引用。VC 拿 <code>TranscriptStore</code>，Store 只带一个 <code>String id</code>。</dd>
+
+    <dt>history 数据源</dt>
+    <dd><code>AgentSDK.SessionHistory.load(id:order:)</code> 静态 API，返回 <code>AsyncThrowingStream&lt;[Message2], Error&gt;</code>。</dd>
+
+    <dt>反向配对</dt>
+    <dd>SDK 内部。孤儿 <code>tool_result</code> buffer → 找到 <code>tool_use</code> 后正向 emit。文件顶未配对的作为最后一批 emit。</dd>
+
+    <dt>Batch 大小</dt>
+    <dd>SDK I/O buffer 决定，caller 不传参不控制。</dd>
+
+    <dt>Store 写 API</dt>
+    <dd><code>loadHistoryIfNeeded()</code> 起消费；<code>ingest(_:)</code> 内部私有，跑 <code>BlockBuilder.build</code> 后同步 <code>events.send(.tail | .older)</code>。<code>[Message2]</code> 是 Store 私有工作面，公共 API 只见 Block。</dd>
+
+    <dt>Layout cache 归属</dt>
+    <dd><code>TranscriptStore.layouts: [Block.ID: RowLayout]</code>。VC 不留本地 cache，<code>heightOfRow</code> / <code>viewFor</code> 全走 <code>store.layout(for:width:)</code>——miss 时 Store 同步 typeset + 写回。宽度变了整表清空。</dd>
+
+    <dt>Phase 1 · tail</dt>
+    <dd>主线程同步链：<code>typeset → store.writeLayouts → insertRows → scrollToTail</code>。首屏 100-200ms 主线程阻塞可接受（白屏更糟）。</dd>
+
+    <dt>Phase 2 · older</dt>
+    <dd><code>Task.detached</code> off-main typeset → <code>await MainActor.run { store.writeLayouts + insertRows }</code>。主线程只吃 &lt;5ms/批。</dd>
+
+    <dt>Off-main 用几处</dt>
+    <dd>两处：SDK 内 IO + decode + 配对；VC Phase 2 typeset。其他全主线程同步。</dd>
+
+    <dt>切回来命中</dt>
+    <dd>新 VC 从 registry 拿回同一 store。<code>store.blocks</code> 非空 → 跳过 loader；<code>store.layouts</code> 全命中（宽度没变）→ <code>heightOfRow</code> 秒回，无 typeset。</dd>
+
+    <dt>Delta 词汇</dt>
+    <dd><code>PassthroughSubject&lt;BlockDelta, Never&gt;</code>——<code>.tail([Block])</code> / <code>.older([Block])</code>。没有 append/update/remove，live 词汇之后再加。</dd>
+
+    <dt>取消 / 生命周期</dt>
+    <dd>VC <code>prepareForRemoval</code>：卸订阅 + 解绑 dataSource/delegate。<strong>不 cancel store.loader</strong>——loader 可能还在跑，让它跑完；下次挂载直接用结果。真正的淘汰是 <code>SessionManager</code> 归档时通过 <code>registry.discard(id)</code>。</dd>
+
+    <dt>live 演进接口</dt>
+    <dd>之后 live 是 <code>TranscriptStore</code> 的第二个 writer 入口（<code>append/update/remove</code>）+ 新加 BlockDelta case。现在不预留。</dd>
+  </dl>
+</section>
+
+</div>
+</body>
+</html>

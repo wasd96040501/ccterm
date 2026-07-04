@@ -33,12 +33,14 @@ final class NotificationService: NSObject {
     @ObservationIgnored private var didBootstrap = false
 
     /// Pushed when the user clicks a notification banner. A single
-    /// stable owner (`DetailRouterViewController`) installs this and
-    /// flips `MainSelectionModel.selection` to `.session(sid)`.
+    /// stable owner (`DetailFlowCoordinator`) installs this and routes
+    /// the click through `route(to: .session(sid))`, which writes
+    /// `SelectionStore.selection` and mounts / re-attaches the history
+    /// detail child.
     ///
     /// This is a **push** callback rather than an `@Observable` field on
-    /// purpose: the old shape had every `ChatSessionViewController`
-    /// observe a `pendingActivationSessionId` through a re-arming
+    /// purpose: the old shape had every detail VC observe a
+    /// `pendingActivationSessionId` through a re-arming
     /// `withObservationTracking` task, so each leaked detail VC kept
     /// driving selection (and the strong-`self`-across-`await` re-arm
     /// pinned those VCs forever). A direct closure has one owner, no

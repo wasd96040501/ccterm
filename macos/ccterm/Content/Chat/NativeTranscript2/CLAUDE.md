@@ -1,5 +1,8 @@
 # NativeTranscript2
 
+> ⚠️ **Host-VC name is out-of-date after the AppKit skeleton refactor** (see `docs/refactor/appkit-skeleton.md`).
+> Anywhere below that says `ChatSessionViewController.present(sessionId:)` / `ChatSessionViewController`, read `HistorySessionViewController` — the transcript-mounting VC was renamed and now lives in `App/AppKit/HistorySessionViewController.swift`. `TranscriptSearchBus` was replaced by `App/Skeleton/SearchBusService.swift` (a Combine `PassthroughSubject<Void, Never>` for ⌘F focus); the controller's own `searchState` is unchanged. Every transcript-internal invariant (layout cache, tile ordering, single-width contract, animations, coordinator lifecycle) is untouched.
+
 Self-drawn `NSTableView`-backed chat transcript. Each row is a `Block`; layout is a pure function of `(block, width, state)`, computed once per `(id, width)` and memoized in `Coordinator.layoutCache`.
 
 > **Load-bearing performance contract.** Section 2 below codifies the techniques that keep the transcript at 60fps under 10k+ blocks. Each item lists what it costs to break it. **Any change that weakens or removes one of these items requires explicit user confirmation before implementation** — do not silently "simplify", refactor away, or replace with a SwiftUI/AppKit equivalent. If a change appears to need one of these relaxed, stop and ask.

@@ -99,22 +99,20 @@ final class DetailFlowCoordinator: Coordinator {
     // MARK: - Routing
 
     /// Drive the container to whatever child kind `selection` maps to,
-    /// mutate the selection store to match (the sole write-back site for
-    /// coordinator-driven changes), and — for `.history` — hand the
-    /// mounted `HistorySessionViewController` the new session id.
+    /// hand the mounted `HistorySessionViewController` the new session id
+    /// (for `.history`), and mutate the selection store to match — in
+    /// that order. Structural work runs first; the store write is what
+    /// lets sidebar / toolbar consumers reflect the new selection.
     ///
     /// Idempotent when `selection` matches the store's current value and
     /// the mounted kind matches; same-kind session flips call
     /// `present(sessionId:)` on the existing history VC without a
     /// full swap.
     func route(to selection: MainSelection) {
-        // Write the store first (idempotent no-op when unchanged). This is
-        // the ONE place coordinator-driven selection changes hit the store
-        // — sidebar / toolbar consumers observe the store to reflect it.
-        detailContext.selectionStore.select(selection)
-
+        // ① compute the child kind for the incoming selection.
         let kind = childKind(for: selection)
-        // Same-kind reuse: `.history → .history` is the common
+
+        // ② same-kind reuse: `.history → .history` is the common
         // session→session swap — keep the VC mounted and let its swap
         // coordinator do the transcript crossfade. Every other kind is
         // stateless in this refactor (placeholders), so a same-kind
@@ -123,22 +121,31 @@ final class DetailFlowCoordinator: Coordinator {
             if kind == .history, case .session(let sid) = selection {
                 historyChild()?.present(sessionId: sid)
             }
+            // Reflect the store even on same-kind, so a folder→session
+            // flip that doesn't cross the kind boundary still lands.
+            // `select(_:)` is idempotent for `==` values, so a
+            // no-op restore is a no-op.
+            detailContext.selectionStore.select(selection)
             return
         }
         currentKind = kind
 
+        // ③ cross-kind swap: new child VC, mount it, settle the frame,
+        // then hand the session id to the child. The "settle before
+        // present" ordering is what lets the transcript typeset each
+        // visible block at exactly ONE width — the §2.19 single-width
+        // contract (see NativeTranscript2/CLAUDE.md).
         let child = makeChild(for: kind, selection: selection)
         container.setChild(child, animated: true)
-
-        // For the history kind, settle the container's mounted-child
-        // frame first, THEN hand the session id to the child. The
-        // "settle before present" ordering is what lets the transcript
-        // typeset each visible block at exactly ONE width — the §2.19
-        // single-width contract (see NativeTranscript2/CLAUDE.md).
         if kind == .history, case .session(let sid) = selection {
             container.view.layoutSubtreeIfNeeded()
             historyChild()?.present(sessionId: sid)
         }
+
+        // ④ write the store last — the ONE place coordinator-driven
+        // selection changes hit it. Sidebar highlight + toolbar chips
+        // sink on the store and repaint in the same source phase.
+        detailContext.selectionStore.select(selection)
     }
 
     // MARK: - Helpers

@@ -1,5 +1,15 @@
 # Chat UI
 
+> ⚠️ **Out-of-date after the AppKit skeleton refactor** (see `docs/refactor/appkit-skeleton.md`).
+> `MainSelectionModel`, `TranscriptSearchBus`, `AppState`, `CCTermApp`, `DetailRouterViewController`, `ChatSessionViewController`, `DraftSessionLandingViewController`, `ComposeSessionViewController`, and `ArchiveViewController` have all been deleted. The new detail-side wiring lives in
+> - `App/AppKit/DetailContainerViewController` (dumb single-child swap slot)
+> - `App/AppKit/DetailFlowCoordinator` (routes `MainSelection` to a child VC)
+> - `App/AppKit/HistorySessionViewController` (only real detail child — mounts the transcript via `TranscriptSwapCoordinator`; input bar is a placeholder view)
+> - `App/AppKit/Placeholder/*` (New Session / Archive placeholders — SwiftUI panes not yet migrated)
+> - `App/Skeleton/{AppContext,WindowContext,DetailContext,SelectionStore,SearchBusService}` (composition-root DI + Combine `@Published` stores)
+>
+> The "Transcript swap ordering" / "Permission card host" / "Attach ordering" sections that describe transcript-side invariants are still current — they now apply to `HistorySessionViewController`'s use of `TranscriptSwapCoordinator`. Everything above and around them should be treated as historical until this doc is rewritten alongside the follow-up InputBar / Archive / Compose migrations.
+
 How the chat pane is assembled. There is **no ViewModel** — AppKit VCs coordinate the pieces: `DetailRouterViewController` is the router/owner (one child VC per selection), `TranscriptSwapCoordinator` owns the transcript-swap mechanism, and `ChatSessionViewController` owns *what the pane shows* (scrims, resting bar, permission card). The SwiftUI building blocks below don't know about each other. Dependencies reach every child as one `DetailContext` value (`App/AppKit/DetailContext.swift` — `model` + the four services `sessionManager` / `recentProjects` / `inputDraftStore` / `syntaxEngine`); `injectDetailEnvironment(_:)` injects the four services (not `model`) into the SwiftUI environment.
 
 | Component | Type | Instances | Responsibility |

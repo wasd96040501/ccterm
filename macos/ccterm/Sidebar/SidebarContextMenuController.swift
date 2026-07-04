@@ -70,8 +70,8 @@ final class SidebarContextMenuController: NSObject, NSMenuDelegate {
     /// macOS 26 SDK regression workaround: a default class deinit on a
     /// `@MainActor` type hops through `swift_task_deinitOnExecutorImpl`,
     /// which aborts when released outside a Swift task (a synchronous XCTest
-    /// body). `nonisolated` keeps dealloc inline on the releasing thread.
-    /// See `MainSelectionModel.deinit` for the full diagnosis.
+    /// body). `nonisolated` keeps dealloc inline on the releasing thread —
+    /// matches every other `@MainActor` class in the codebase.
     nonisolated deinit {}
 
     // MARK: - Menu construction

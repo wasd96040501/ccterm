@@ -1,5 +1,4 @@
 import AppKit
-import Combine
 
 /// Window-scope coordinator. Owns the `MainWindowController` +
 /// `MainSplitViewController` + `SidebarViewController`; delegates the
@@ -7,6 +6,13 @@ import Combine
 /// place that turns "user did something in the sidebar or the toolbar"
 /// into "mutate the `SelectionStore` and re-route detail" — the VCs
 /// themselves report semantic events and know nothing about routing.
+///
+/// **Never `sink` on the `SelectionStore`.** The store is a write-only
+/// surface from this side of the loop; every display consumer that
+/// needs to reflect the selection (sidebar highlight, toolbar chip /
+/// archive-filter icon, …) subscribes to the store itself. Keeping the
+/// coordinator sink-free is what preserves the single-writer discipline
+/// documented in the root CLAUDE.md.
 ///
 /// Retain topology per CLAUDE.md: parent strongly holds this via its
 /// `childCoordinators` array; this coordinator holds `parent` weakly.
@@ -29,7 +35,6 @@ final class MainWindowCoordinator: Coordinator {
     private let windowController: MainWindowController
 
     private var detailFlowCoordinator: DetailFlowCoordinator?
-    private var cancellables: Set<AnyCancellable> = []
 
     init(appContext: AppContext, parent: MainWindowCoordinatorParent?) {
         self.appContext = appContext
@@ -75,6 +80,10 @@ final class MainWindowCoordinator: Coordinator {
         // teardown is deterministic: dropping this parent's ref
         // (`removeChild`) breaks the strong edge, and DetailFlow's own
         // `nonisolated deinit` finishes the tear.
+        //
+        // `addChild(_:)` only inserts into `childCoordinators` — starting
+        // is the caller's responsibility, so "add" and "kick off" stay
+        // two visible steps and no child gets started twice.
         let detailFlow = DetailFlowCoordinator(
             detailContext: DetailContext(app: appContext, selectionStore: selectionStore),
             container: detailContainer,
@@ -82,22 +91,7 @@ final class MainWindowCoordinator: Coordinator {
             notifications: appContext.notificationService)
         self.detailFlowCoordinator = detailFlow
         addChild(detailFlow)
-
-        // Sync toolbar chrome from the initial selection so a first
-        // launch that lands on `.newSession` renders without waiting
-        // for a click.
-        updateToolbarForSelection(selectionStore.selection)
-
-        // Rebuild toolbar chrome on every selection change. Coordinators
-        // don't `sink` on the store as a routing bus — this is a display
-        // derivation sink for our own toolbar, mirroring the rule from
-        // the root CLAUDE.md.
-        selectionStore.$selection
-            .sink { [weak self] newSelection in
-                guard let self else { return }
-                self.updateToolbarForSelection(newSelection)
-            }
-            .store(in: &cancellables)
+        detailFlow.start()
 
         showMainWindow()
     }
@@ -113,55 +107,6 @@ final class MainWindowCoordinator: Coordinator {
     /// responder to the search field.
     func requestSearchFocus() {
         searchBus.requestFocus()
-    }
-
-    // MARK: - Toolbar derivation
-
-    private func updateToolbarForSelection(_ selection: MainSelection) {
-        // Project chip: show whenever a real history session is
-        // selected; hide otherwise. Directory name comes from
-        // `originPath.lastPathComponent`; branch name is a synchronous
-        // git probe (falls back to `worktreeBranch` when the on-disk
-        // repo can't be read — happens for stale sessions whose cwd
-        // was moved).
-        switch selection {
-        case .session(let sid):
-            let session = appContext.sessionManager.existingSession(sid)
-            let dirName: String? = {
-                guard let path = session?.originPath, !path.isEmpty else { return nil }
-                let comp = (path as NSString).lastPathComponent
-                return comp.isEmpty ? nil : comp
-            }()
-            let branchName: String? = {
-                if let cwd = session?.cwd,
-                    let probed = GitUtils.currentBranch(at: cwd),
-                    !probed.isEmpty
-                {
-                    return probed
-                }
-                if let session, let b = session.worktreeBranch, !b.isEmpty { return b }
-                return nil
-            }()
-            let vm = ProjectChipViewModel(directoryName: dirName, branchName: branchName)
-            windowController.updateProjectChip(with: vm)
-        case .none, .newSession, .archive:
-            windowController.updateProjectChip(with: nil)
-        }
-
-        // Archive filter: only visible when the Archive tab is active.
-        // Options come from the manager's derived list; the currently-
-        // chosen path is a store field the coordinator wrote when the
-        // user picked a folder in the popover.
-        switch selection {
-        case .archive:
-            windowController.updateArchiveFilterPresence(
-                show: true,
-                options: appContext.sessionManager.archivedFolderOptions,
-                selectedPath: selectionStore.archiveSelectedFolderPath)
-        case .none, .newSession, .session:
-            windowController.updateArchiveFilterPresence(
-                show: false, options: [], selectedPath: nil)
-        }
     }
 
     nonisolated deinit {}
@@ -217,11 +162,10 @@ extension MainWindowCoordinator: MainWindowControllerDelegate {
         _ controller: MainWindowController,
         archiveFilterDidSelectFolderPath path: String?
     ) {
+        // Coordinator is the sole writer to `SelectionStore`. The
+        // window controller's own sink on `$archiveSelectedFolderPath`
+        // picks the change up and repaints the button icon in the same
+        // source phase.
         selectionStore.setArchiveFolder(path)
-        // The toolbar reflects the just-picked filter immediately so
-        // the button's filled/unfilled state updates without waiting on
-        // the display sink. The overall selection is still `.archive`
-        // (unchanged), so `$selection` won't fire on its own.
-        updateToolbarForSelection(selectionStore.selection)
     }
 }

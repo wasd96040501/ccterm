@@ -3,16 +3,27 @@ import Combine
 
 /// Thin window controller for the AppKit-rooted main window. Owns
 /// window-level chrome (frame autosave, title, toolbar) and forwards
-/// every semantic event through `MainWindowControllerDelegate` — the
-/// controller never reaches into the `SelectionStore` / `SessionManager`
-/// / `AppContext` itself. Routing decisions belong to the coordinator.
+/// every semantic user event through `MainWindowControllerDelegate` —
+/// the controller never *writes* to `SelectionStore` / `SessionManager`
+/// / `AppContext`. Writes are routing decisions and belong to the
+/// coordinator.
+///
+/// **Toolbar chrome is display-derived here** (not by the coordinator).
+/// Following the root CLAUDE.md § Data down / events up, the toolbar
+/// chips are the display consumers that reflect selection changes —
+/// so this VC subscribes to `SelectionStore.$selection` +
+/// `$archiveSelectedFolderPath`, derives the `ProjectChipViewModel`
+/// from the current session (via `windowContext.app.sessionManager`),
+/// and rebuilds the two conditional toolbar items. The coordinator
+/// stays a pure writer: it hears "user picked folder X" and calls
+/// `selectionStore.setArchiveFolder(_:)`; the sink here paints the
+/// icon.
 ///
 /// The toolbar hosts three items: a `ProjectChipView` (leading), an
 /// `NSSearchToolbarItem` (trailing), and an `ArchiveFilterButton` shown
-/// only when the Archive tab is selected. Insertion and removal of the
-/// two conditional items is imperative (`updateProjectChip(with:)` /
-/// `updateArchiveFilterPresence(...)`), driven top-down by the
-/// coordinator when the selection changes.
+/// only when the Archive tab is selected. The project-chip and
+/// archive-filter items are inserted / removed imperatively by
+/// `rebuildToolbarChrome()`; the sinks re-run it on every store change.
 @MainActor
 final class MainWindowController: NSWindowController, NSToolbarDelegate {
 
@@ -27,7 +38,7 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
     private var projectChipView: ProjectChipView?
     private var archiveFilterButton: ArchiveFilterButton?
 
-    private var searchBusCancellable: AnyCancellable?
+    private var cancellables: Set<AnyCancellable> = []
 
     private enum ItemID {
         static let projectChip = NSToolbarItem.Identifier("ccterm.projectChip")
@@ -89,11 +100,32 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
         // ⌘F menu items go through the searchBus. The window controller
         // owns the search field, so it's the natural sink for focus
         // requests.
-        searchBusCancellable = windowContext.searchBus.focusRequests
+        windowContext.searchBus.focusRequests
             .sink { [weak self] _ in
                 guard let self else { return }
                 self.focusSearchField()
             }
+            .store(in: &cancellables)
+
+        // Toolbar chrome is a display projection of the selection store.
+        // Subscribing here (not in the coordinator) keeps the store's
+        // single-writer discipline: the coordinator only writes; every
+        // consumer that needs to reflect selection reads.
+        //
+        // Combine's `@Published` delivers the current value to a new
+        // subscriber, so the initial cold-launch state (`.newSession`,
+        // no archive folder) syncs the toolbar on init without an
+        // explicit prime call.
+        Publishers
+            .CombineLatest(
+                windowContext.selectionStore.$selection,
+                windowContext.selectionStore.$archiveSelectedFolderPath
+            )
+            .sink { [weak self] _, _ in
+                guard let self else { return }
+                self.rebuildToolbarChrome()
+            }
+            .store(in: &cancellables)
     }
 
     @available(*, unavailable)
@@ -122,53 +154,84 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
         field.stringValue = query
     }
 
-    /// Insert / remove the project-chip toolbar item to match the
-    /// current selection. `nil` removes the chip; a non-nil value
-    /// inserts it (if missing) and hands the view model down to the
-    /// hosted `ProjectChipView` via `configure(with:)`. Toolbar
-    /// mutations are wrapped in a zero-duration animation context so
-    /// NSToolbar's default fade-in/out doesn't fire.
-    func updateProjectChip(with viewModel: ProjectChipViewModel?) {
-        if let viewModel {
+    // MARK: - Toolbar derivation (display sink)
+
+    /// Rebuild the two conditional toolbar items from whatever
+    /// `SelectionStore` currently holds. Called from the Combine sink
+    /// installed in `init` and re-run on every change to `$selection` /
+    /// `$archiveSelectedFolderPath` — the store is the single source of
+    /// truth, this VC is one of its display consumers.
+    private func rebuildToolbarChrome() {
+        let store = windowContext.selectionStore
+        let manager = windowContext.app.sessionManager
+        let selection = store.selection
+
+        // Project chip: show whenever a real history session is
+        // selected; hide otherwise. Directory name comes from
+        // `originPath.lastPathComponent`; branch name is a synchronous
+        // git probe (falls back to `worktreeBranch` when the on-disk
+        // repo can't be read — happens for stale sessions whose cwd
+        // was moved).
+        switch selection {
+        case .session(let sid):
+            let session = manager.existingSession(sid)
+            let dirName: String? = {
+                guard let path = session?.originPath, !path.isEmpty else { return nil }
+                let comp = (path as NSString).lastPathComponent
+                return comp.isEmpty ? nil : comp
+            }()
+            let branchName: String? = {
+                if let cwd = session?.cwd,
+                    let probed = GitUtils.currentBranch(at: cwd),
+                    !probed.isEmpty
+                {
+                    return probed
+                }
+                if let session, let b = session.worktreeBranch, !b.isEmpty { return b }
+                return nil
+            }()
+            let vm = ProjectChipViewModel(directoryName: dirName, branchName: branchName)
             updateProjectChipPresence(present: true)
-            projectChipView?.configure(with: viewModel)
-        } else {
+            projectChipView?.configure(with: vm)
+        case .none, .newSession, .archive:
             updateProjectChipPresence(present: false)
+        }
+
+        // Archive filter: only visible when the Archive tab is active.
+        // Options come from the manager's derived list; the currently-
+        // chosen path is a store field the coordinator wrote when the
+        // user picked a folder in the popover.
+        switch selection {
+        case .archive:
+            updateArchiveFilterPresence(show: true)
+            archiveFilterButton?.configure(
+                options: manager.archivedFolderOptions,
+                selectedPath: store.archiveSelectedFolderPath)
+        case .none, .newSession, .session:
+            updateArchiveFilterPresence(show: false)
         }
     }
 
-    /// Toggle the archive-filter toolbar item's visibility and, when
-    /// shown, hand it the currently-available folder options + the
-    /// active filter. The item slots in immediately before the search
-    /// item, matching the previous SwiftUI layout.
-    func updateArchiveFilterPresence(
-        show: Bool,
-        options: [SessionManager.ArchivedFolder],
-        selectedPath: String?
-    ) {
+    private func updateArchiveFilterPresence(show: Bool) {
         guard let toolbar = window?.toolbar else { return }
         let currentIndex = toolbar.items.firstIndex {
             $0.itemIdentifier == ItemID.archiveFilter
         }
+        if show == (currentIndex != nil) { return }
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = 0
             ctx.allowsImplicitAnimation = false
             if show {
-                if currentIndex == nil {
-                    // Insert immediately before the search item so the
-                    // filter button sits to the search field's left.
-                    let searchIndex = toolbar.items.firstIndex {
-                        $0.itemIdentifier == ItemID.search
-                    }
-                    let insertAt = searchIndex ?? toolbar.items.count
-                    toolbar.insertItem(withItemIdentifier: ItemID.archiveFilter, at: insertAt)
+                // Insert immediately before the search item so the
+                // filter button sits to the search field's left.
+                let searchIndex = toolbar.items.firstIndex {
+                    $0.itemIdentifier == ItemID.search
                 }
+                let insertAt = searchIndex ?? toolbar.items.count
+                toolbar.insertItem(withItemIdentifier: ItemID.archiveFilter, at: insertAt)
             } else if let idx = currentIndex {
                 toolbar.removeItem(at: idx)
             }
-        }
-        if show {
-            archiveFilterButton?.configure(options: options, selectedPath: selectedPath)
         }
     }
 

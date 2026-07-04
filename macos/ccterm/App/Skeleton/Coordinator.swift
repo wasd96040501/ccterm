@@ -20,16 +20,23 @@ protocol Coordinator: AnyObject {
     var childCoordinators: [Coordinator] { get set }
 
     /// Kick off the flow. Called by the parent exactly once, right
-    /// after `addChild(_:)`.
+    /// after `addChild(_:)`. Concrete coordinators may treat a repeat
+    /// call as "re-front" (see `SettingsWindowCoordinator`) or as a
+    /// programmer error (see `MainWindowCoordinator`) — the protocol
+    /// itself makes no guarantee.
     func start()
 }
 
 extension Coordinator {
-    /// Insert a child and start it. The child is retained by
-    /// `childCoordinators`; nothing else needs to hold it.
+    /// Insert `child` into `childCoordinators` (strong retain). Does
+    /// **not** call `child.start()` — the caller is responsible for
+    /// starting the child, so "add" and "kick off" stay two separate,
+    /// visible operations. This lets one call site both re-front an
+    /// already-owned coordinator and start a freshly-added one via the
+    /// same `.start()` line (see `AppCoordinator.showSettings()`),
+    /// without the risk of double-starting the fresh one.
     func addChild(_ child: Coordinator) {
         childCoordinators.append(child)
-        child.start()
     }
 
     /// Break the strong edge to `child`. Called by the parent when

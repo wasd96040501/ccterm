@@ -1,5 +1,8 @@
 # Sidebar
 
+> ⚠️ **Partly out-of-date after the AppKit skeleton refactor** (see `docs/refactor/appkit-skeleton.md`).
+> `MainSelectionModel` no longer exists; the sidebar's `SidebarContext` now carries `{ selectionStore, sessionManager, groupOrderStore, openInService }` and semantic clicks report up through a separate weak `selectionDelegate` on `SidebarViewController` — the coordinator writes `SelectionStore` and the sidebar subscribes to `$selection` via Combine for the highlight-restore path. The cell / observation / grouping / drag-drop rules below are still current; the "selection echo-suppression" section applies with `SelectionStore` in place of `MainSelectionModel`. A full rewrite lands with the next feature-migration PR.
+
 The source-list history sidebar, built on `NSOutlineView` (AppKit by exception — gives folder drag-and-drop via `pasteboardWriterForItem` / `validateDrop` / `acceptDrop` and built-in `expandItem` / `collapseItem` animations). Post-refactor the responsibilities are split three ways; the table below is the map.
 
 | Component | Type | Responsibility |

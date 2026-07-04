@@ -68,7 +68,8 @@ final class ArchiveFilterButton: NSView {
     }
 
     private func refreshButtonImage() {
-        let symbolName = selectedPath == nil
+        let symbolName =
+            selectedPath == nil
             ? "line.3.horizontal.decrease.circle"
             : "line.3.horizontal.decrease.circle.fill"
         let image = NSImage(

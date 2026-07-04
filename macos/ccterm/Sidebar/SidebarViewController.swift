@@ -81,10 +81,16 @@ final class SidebarViewController: NSViewController {
     private var cancellables: Set<AnyCancellable> = []
     private var isApplyingSelectionFromModel = false
 
-    init(context: SidebarContext, selectionDelegate: SidebarSelectionDelegate) {
+    /// Delegate is optional at init time and wired **after** the coordinator
+    /// finishes constructing itself. Swift init rules block passing `self`
+    /// as a non-optional param before every stored property is set — so the
+    /// coordinator assigns `sidebar.selectionDelegate = self` post-init,
+    /// before any user event can fire. The weak reference is legal even
+    /// during the coordinator's own `init` because the sidebar is the
+    /// only strong holder of the delegate connection.
+    init(context: SidebarContext) {
         self.context = context
         super.init(nibName: nil, bundle: nil)
-        self.selectionDelegate = selectionDelegate
     }
 
     @available(*, unavailable)

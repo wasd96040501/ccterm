@@ -63,8 +63,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             inputDraftStore: inputDraftStore,
             sidebarGroupOrder: sidebarGroupOrder,
             activationTracker: activationTracker,
-            openInService: openInService,
-            notificationService: notificationService
+            notificationService: notificationService,
+            openInService: openInService
         )
 
         installMainMenu()

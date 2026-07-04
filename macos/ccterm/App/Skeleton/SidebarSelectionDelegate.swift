@@ -8,6 +8,13 @@ import AppKit
 /// decides what routing implication a selection has and mutates the
 /// store as part of that decision.
 ///
+/// The sidebar's `selectionDelegate` is a **weak `var`** assigned by the
+/// coordinator *after* `SidebarViewController.init` — Swift init rules
+/// forbid passing `self` before every stored property is initialized, so
+/// the delegate cannot be a non-optional init parameter. The window is
+/// still off-screen at that point, so no user interaction can race with
+/// the assignment.
+///
 /// The sidebar's view→model highlight sync (i.e. selection changing
 /// elsewhere programmatically → sidebar row highlight follows) rides a
 /// separate channel: the sidebar subscribes to `SelectionStore.$selection`

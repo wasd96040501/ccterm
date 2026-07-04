@@ -120,7 +120,13 @@ final class DetailContainerViewController: NSViewController {
                 new.view.animator().alphaValue = 1
                 outgoing.view.animator().alphaValue = 0
             } completionHandler: { [weak self] in
-                self?.finishFadeOut(expected: outgoing)
+                // `NSAnimationContext.runAnimationGroup` fires its
+                // completion on the main queue, so the hop is a no-op —
+                // `assumeIsolated` avoids the extra `DispatchQueue.main.async`
+                // dispatch AppKit's own queue would do anyway.
+                MainActor.assumeIsolated {
+                    self?.finishFadeOut(expected: outgoing)
+                }
             }
         } else if let outgoing {
             // Synchronous path (no window / not animated): tear the

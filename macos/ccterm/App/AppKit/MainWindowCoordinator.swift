@@ -52,8 +52,7 @@ final class MainWindowCoordinator: Coordinator {
                 selectionStore: selectionStore,
                 sessionManager: appContext.sessionManager,
                 groupOrderStore: appContext.sidebarGroupOrder,
-                openInService: appContext.openInService),
-            selectionDelegate: SidebarSelectionDelegatePlaceholder())
+                openInService: appContext.openInService))
         self.sidebarViewController = sidebarVC
 
         self.splitViewController = MainSplitViewController(
@@ -224,24 +223,5 @@ extension MainWindowCoordinator: MainWindowControllerDelegate {
         // the display sink. The overall selection is still `.archive`
         // (unchanged), so `$selection` won't fire on its own.
         updateToolbarForSelection(selectionStore.selection)
-    }
-}
-
-/// Placeholder used only during `MainWindowCoordinator`'s initializer.
-/// `SidebarViewController.init(context:selectionDelegate:)` requires a
-/// non-optional delegate at construction time, but the coordinator
-/// (which *is* the delegate) can't hand `self` in before every stored
-/// property is initialized. The coordinator immediately re-assigns
-/// `sidebarViewController.selectionDelegate = self` in the same init,
-/// so this placeholder is only reachable for one instruction and then
-/// released.
-@MainActor
-private final class SidebarSelectionDelegatePlaceholder: SidebarSelectionDelegate {
-    func sidebar(
-        _ sidebar: SidebarViewController,
-        didSelect selection: MainSelection
-    ) {
-        // Never called in practice — the real delegate is wired
-        // before any sidebar event can fire.
     }
 }

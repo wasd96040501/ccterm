@@ -18,6 +18,7 @@ struct DetailContext {
     let recentProjects: RecentProjectsStore
     let inputDraftStore: InputDraftStore
     let selectionStore: SelectionStore
+    let transcriptRegistry: TranscriptRegistryStore
 
     init(app: AppContext, selectionStore: SelectionStore) {
         self.sessionManager = app.sessionManager
@@ -25,5 +26,6 @@ struct DetailContext {
         self.recentProjects = app.recentProjects
         self.inputDraftStore = app.inputDraftStore
         self.selectionStore = selectionStore
+        self.transcriptRegistry = app.transcriptRegistry
     }
 }

@@ -45,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let sidebarGroupOrder = SidebarSessionGroupOrderStore()
         let openInService = OpenInAppService()
         let notificationService = NotificationService(activation: activationTracker)
+        let transcriptRegistry = TranscriptRegistryStore()
 
         sessionManager.onTurnEndedNotice = { [notifications = notificationService] notice in
             notifications.handleTurnEnded(notice)
@@ -68,7 +69,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             sidebarGroupOrder: sidebarGroupOrder,
             activationTracker: activationTracker,
             notificationService: notificationService,
-            openInService: openInService
+            openInService: openInService,
+            transcriptRegistry: transcriptRegistry
         )
 
         installMainMenu()

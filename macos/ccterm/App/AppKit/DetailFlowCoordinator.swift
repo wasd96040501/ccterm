@@ -112,34 +112,38 @@ final class DetailFlowCoordinator: Coordinator {
         // ① compute the child kind for the incoming selection.
         let kind = childKind(for: selection)
 
-        // ② same-kind reuse: `.history → .history` is the common
-        // session→session swap — keep the VC mounted and let its swap
-        // coordinator do the transcript crossfade. Every other kind is
-        // stateless in this refactor (placeholders), so a same-kind
-        // transition is a no-op there.
+        // ② same-kind reuse: for `.history → .history` we now do a full
+        // VC swap on every session change. The transcript store lives
+        // in the app-scope registry (`AppContext.transcriptRegistry`),
+        // so the new VC re-attaches to a possibly-already-warm store
+        // and paints instantly — no `present(sessionId:)` reconfig path
+        // is needed. Other same-kind transitions (placeholder →
+        // placeholder) really are stateless no-ops.
         if kind == currentKind {
-            if kind == .history, case .session(let sid) = selection {
-                historyChild()?.present(sessionId: sid)
+            if kind == .history, case .session(let sid) = selection,
+                mountedHistorySessionId != sid
+            {
+                let child = makeChild(for: .history, selection: selection)
+                container.setChild(child, animated: true)
+                mountedHistorySessionId = sid
             }
-            // Reflect the store even on same-kind, so a folder→session
-            // flip that doesn't cross the kind boundary still lands.
-            // `select(_:)` is idempotent for `==` values, so a
-            // no-op restore is a no-op.
             detailContext.selectionStore.select(selection)
             return
         }
         currentKind = kind
 
-        // ③ cross-kind swap: new child VC, mount it, settle the frame,
-        // then hand the session id to the child. The "settle before
-        // present" ordering is what lets the transcript typeset each
-        // visible block at exactly ONE width — the §2.19 single-width
-        // contract (see NativeTranscript2/CLAUDE.md).
+        // ③ cross-kind swap: new child VC, mount it. For `.history`, the
+        // child already carries its store at init time — no
+        // `present(sessionId:)` hand-off, no "settle before present"
+        // dance. The store's `viewWillAppear` kick starts the SDK
+        // streaming loader; the first batch races the runloop and
+        // usually lands within the container's crossfade.
         let child = makeChild(for: kind, selection: selection)
         container.setChild(child, animated: true)
         if kind == .history, case .session(let sid) = selection {
-            container.view.layoutSubtreeIfNeeded()
-            historyChild()?.present(sessionId: sid)
+            mountedHistorySessionId = sid
+        } else {
+            mountedHistorySessionId = nil
         }
 
         // ④ write the store last — the ONE place coordinator-driven
@@ -147,6 +151,11 @@ final class DetailFlowCoordinator: Coordinator {
         // sink on the store and repaint in the same source phase.
         detailContext.selectionStore.select(selection)
     }
+
+    /// Tracks the session id of the currently-mounted `.history` VC so
+    /// the same-kind reuse path knows whether to swap. `nil` when the
+    /// mounted child is not a history VC.
+    private var mountedHistorySessionId: String?
 
     // MARK: - Helpers
 
@@ -168,19 +177,25 @@ final class DetailFlowCoordinator: Coordinator {
         }
     }
 
-    /// Build the correct child VC for `kind`. The `selection` parameter is
-    /// unused for placeholder kinds but retained so the signature can grow
-    /// into "carry the session id into the child's init" once draft-
-    /// landing lands with a session-id-carrying VC.
+    /// Build the correct child VC for `kind`. For `.history` the session
+    /// id lands via `selection` and gets turned into a per-transcript
+    /// store pulled from the app-scope registry — the VC receives that
+    /// store at init time and never learns its own session id.
     private func makeChild(
         for kind: ChildKind,
-        selection _: MainSelection
+        selection: MainSelection
     ) -> (NSViewController & DetailContainerChild) {
         switch kind {
         case .history:
-            // Session id is presented after the container mounts + settles
-            // the child's frame; see `route(to:)`.
-            return HistorySessionViewController(detailContext: detailContext)
+            // The registry hands us a possibly-already-populated store —
+            // switch-back to a previously-visited transcript hits an
+            // instant-paint path (blocks + layouts still cached).
+            guard case .session(let sid) = selection else {
+                return PlaceholderViewController(
+                    message: String(localized: "Nothing selected"))
+            }
+            let store = detailContext.transcriptRegistry.store(for: sid)
+            return TranscriptViewController(store: store)
         case .newSession:
             return NewSessionPlaceholderViewController()
         case .archive:
@@ -193,11 +208,6 @@ final class DetailFlowCoordinator: Coordinator {
             return PlaceholderViewController(
                 message: String(localized: "Nothing selected"))
         }
-    }
-
-    /// Downcast helper for the same-kind session flip path.
-    private func historyChild() -> HistorySessionViewController? {
-        container.currentChild as? HistorySessionViewController
     }
 
     /// Present the CLI launch-failure alert on the window (or run modal

@@ -74,13 +74,17 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
         }
 
         window.delegate = self
-    }
 
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
-
-    override func windowDidLoad() {
-        super.windowDidLoad()
+        // Install the toolbar synchronously after `super.init` returns
+        // so `self` is fully constructed before we set it as the
+        // NSToolbarDelegate. Doing this in `windowDidLoad` is unsafe:
+        // AppKit calls `windowDidLoad` *inside* `super.init(window:)`
+        // when a non-nil window is passed, but Swift's `self` is
+        // half-constructed at that point (the Obj-C dispatch works, but
+        // `toolbar.delegate = self` can land against a shifted vtable
+        // slot and silently no-op). Without a toolbar the titlebar
+        // renders as its own floating capsule on macOS 26 Tahoe —
+        // exactly the "two separate rounded cards" glitch we saw.
         installToolbar()
         // ⌘F menu items go through the searchBus. The window controller
         // owns the search field, so it's the natural sink for focus
@@ -91,6 +95,9 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate {
                 self.focusSearchField()
             }
     }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
     // MARK: - Public API (coordinator surface)
 

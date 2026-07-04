@@ -390,3 +390,27 @@ enum RowLayout: @unchecked Sendable {
         }
     }
 }
+
+extension RowLayout {
+
+    /// Physical seam for the `Transcript/` store + VC path. Forwards to the
+    /// coordinator's `nonisolated static makeLayout` — same typeset code
+    /// path as the live renderer, just a spelling `TranscriptStore` /
+    /// `TranscriptViewController` can reach without importing the
+    /// coordinator internals. Snapshot dicts (`folds`, `statuses`,
+    /// `highlights`) are captured on MainActor by the caller before any
+    /// `Task.detached` typeset dispatch — required by § 2.5 (nonisolated
+    /// static typeset). Empty defaults so the previews / demo VCs that
+    /// don't care about interactions still work.
+    nonisolated static func make(
+        for block: Block,
+        width: CGFloat,
+        folds: [UUID: Bool] = [:],
+        statuses: [UUID: ToolStatus] = [:],
+        highlights: [Transcript2HighlightKey: HighlightValue] = [:]
+    ) -> RowLayout {
+        Transcript2Coordinator.makeLayout(
+            for: block, width: width,
+            highlights: highlights, folds: folds, statuses: statuses)
+    }
+}

@@ -53,6 +53,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sessionManager.onPermissionPromptNotice = { [notifications = notificationService] notice in
             notifications.handlePermissionPrompt(notice)
         }
+        // Release per-transcript state (blocks + typeset cache) when a
+        // session is archived. Without this the app-scope registry grows
+        // monotonically over the process lifetime.
+        sessionManager.onSessionArchived = { [transcriptRegistry] sessionId in
+            transcriptRegistry.discard(sessionId)
+        }
 
         Task.detached(priority: .utility) { await syntaxEngine.load() }
         openInService.refresh()

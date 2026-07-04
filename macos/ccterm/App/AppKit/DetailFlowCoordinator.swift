@@ -195,7 +195,8 @@ final class DetailFlowCoordinator: Coordinator {
                     message: String(localized: "Nothing selected"))
             }
             let store = detailContext.transcriptRegistry.store(for: sid)
-            return TranscriptViewController(store: store)
+            return TranscriptViewController(
+                store: store, syntaxEngine: detailContext.syntaxEngine)
         case .newSession:
             return NewSessionPlaceholderViewController()
         case .archive:

@@ -1488,7 +1488,7 @@ final class Transcript2Coordinator: NSObject, NSTableViewDataSource, NSTableView
         // Reinjected on every viewFor (cells are reused across rows) so
         // chevron mouseDown can hit `requestUserBubbleSheet` without
         // scanning the superview chain.
-        cell.coordinator = self
+        cell.delegate = self
         return cell
     }
 

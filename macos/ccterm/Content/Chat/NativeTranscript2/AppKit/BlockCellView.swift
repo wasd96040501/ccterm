@@ -88,8 +88,11 @@ final class BlockCellView: NSView {
     /// belonging to the cell's layout (currently: user bubble chevron).
     /// Selection drag still walks to the enclosing `NSTableView` because
     /// AppKit's tracking loop owns that gesture — only cell-internal
-    /// controls go through this reference.
-    weak var coordinator: Transcript2Coordinator?
+    /// controls go through this reference. The reference is the
+    /// `BlockCellViewDelegate` protocol so both the old (session-attached)
+    /// `Transcript2Coordinator` and the new (history) `TranscriptViewController`
+    /// can host cells without either knowing about the other.
+    weak var delegate: BlockCellViewDelegate?
 
     /// Top padding contributed by the block's row (per-kind via
     /// `BlockStyle.blockPadding(for:)`). Drives `layoutOrigin.y` and
@@ -219,8 +222,8 @@ final class BlockCellView: NSView {
     /// `mouseEntered` / `mouseExited` below; the coordinator's
     /// `didSet` repaints the old and new cells.
     var cellHovered: Bool {
-        guard let blockId, let coordinator else { return false }
-        return coordinator.hoveredBlockId == blockId
+        guard let blockId, let delegate else { return false }
+        return delegate.hoveredBlockId == blockId
     }
 
     /// Gutter id currently under the cursor, or `nil`. Drives the
@@ -546,16 +549,16 @@ final class BlockCellView: NSView {
         // depends on for 60fps scroll. The coordinator clears stale
         // hover at scroll start and re-evaluates at scroll end, so
         // skipping mid-scroll updates loses no UX.
-        if coordinator?.isLiveScrolling == true { return }
+        if delegate?.isLiveScrolling == true { return }
         let p = convert(event.locationInWindow, from: nil)
         updateHover(at: p)
         updateGutterHover(at: p)
     }
 
     override func mouseEntered(with event: NSEvent) {
-        if coordinator?.isLiveScrolling == true { return }
+        if delegate?.isLiveScrolling == true { return }
         if let id = blockId {
-            coordinator?.hoveredBlockId = id
+            delegate?.hoveredBlockId = id
         }
         let p = convert(event.locationInWindow, from: nil)
         updateHover(at: p)
@@ -563,7 +566,7 @@ final class BlockCellView: NSView {
     }
 
     override func mouseExited(with event: NSEvent) {
-        if coordinator?.isLiveScrolling == true { return }
+        if delegate?.isLiveScrolling == true { return }
         // Only clear the global pointer if it's *this* cell that owns
         // it. Without the guard, an `enter B → exit A` event order
         // (NSTrackingArea doesn't promise temporal ordering across
@@ -571,8 +574,8 @@ final class BlockCellView: NSView {
         // it. Keying on `blockId` keeps the invariant "the cell the
         // pointer is over owns hoveredBlockId" no matter how the
         // events interleave during cell recycle / fast scroll.
-        if let id = blockId, coordinator?.hoveredBlockId == id {
-            coordinator?.hoveredBlockId = nil
+        if let id = blockId, delegate?.hoveredBlockId == id {
+            delegate?.hoveredBlockId = nil
         }
         if hoveredAction != nil {
             hoveredAction = nil
@@ -709,19 +712,19 @@ final class BlockCellView: NSView {
                 // `view.window?.beginSheet`. Selection-drag continues
                 // to stay inside `Transcript2SelectionCoordinator`.
                 if let id = blockId {
-                    coordinator?.requestUserBubbleSheet(id: id)
+                    delegate?.requestUserBubbleSheet(id: id)
                 }
             case .openImagePreview(let image):
                 // Same observation contract as `openUserBubbleSheet` —
-                // hand the chip's `NSImage` to the coordinator, which
+                // hand the chip's `NSImage` to the delegate, which
                 // wakes the bound `pendingImagePreview` field on the
                 // controller; the host's
                 // `Transcript2SheetPresenter` opens the modal.
-                coordinator?.requestImagePreview(image: image)
+                delegate?.requestImagePreview(image: image)
             case .copy(let id, let text):
                 handleCopy(id: id, text: text)
             case .toggleFold(let id):
-                coordinator?.toggleFold(id: id)
+                delegate?.toggleFold(id: id)
             }
             return
         }

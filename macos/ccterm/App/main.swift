@@ -15,6 +15,13 @@ import AppKit
 // it, then hand off to `NSApplicationMain`. Because this file provides
 // the top-level `main`, `AppDelegate` MUST NOT carry `@main` (Swift
 // forbids both routes coexisting).
-let delegate = AppDelegate()
-NSApplication.shared.delegate = delegate
+// `main.swift`'s top-level code is `nonisolated`, but `AppDelegate.init` is
+// `@MainActor`. macOS spawns the process on the main thread, so the isolation
+// is safe — `assumeIsolated` reflects that at the type level without a
+// runtime hop. Everything downstream (`NSApplicationMain` → the runloop
+// → delegate callbacks) is main-actor by construction.
+MainActor.assumeIsolated {
+    let delegate = AppDelegate()
+    NSApplication.shared.delegate = delegate
+}
 _ = NSApplicationMain(CommandLine.argc, CommandLine.unsafeArgv)

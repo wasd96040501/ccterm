@@ -1,93 +1,86 @@
 import AppKit
-import SwiftUI
 
-/// AppKit-side application delegate. Owns the main window's lifecycle
-/// — creating it from `applicationDidFinishLaunching` instead of
-/// declaring a SwiftUI `Window` scene — so the transcript's mount and
-/// frame-change handlers run in the source phase, decoupled from
-/// SwiftUI's commit pass. Also owns every auxiliary window's
-/// lifecycle (lazy `SettingsWindowController` /
-/// `AboutWindowController`) so the OS can't resurface them from
-/// saved state at the next launch and SwiftUI can't auto-open them
-/// as the leading `Window` scene.
+/// Application entry point. Owns process-wide lifecycle: XCTest
+/// activation policy, launch-time side effects (model catalog prefetch,
+/// tooltip delay, main-thread watchdog), the composition root, the
+/// main menu, and shutdown of every active CLI subprocess. All window
+/// creation is delegated to `AppCoordinator` — this class never touches
+/// an `NSWindow` directly.
 ///
-/// `CCTermApp.body` keeps only a `Settings { EmptyView() }` placeholder
-/// to satisfy the `App` protocol's `some Scene` requirement; menu
-/// items + the ⌘F bus hook for transcript search live in `AppCommands`
-/// — a SwiftUI `Commands` block attached to that placeholder scene.
-/// SwiftUI merges those into the app's main menu, so cold-start menu
-/// clicks (⌘, → `showSettingsWindow()`, App > About ccterm →
-/// `showAboutWindow()`) resolve their closures without needing an
-/// AppKit bridge.
-///
-/// The delegate also owns the app-scope state (`AppState`,
-/// `TranscriptSearchBus`). Previously these were `@State` on
-/// `CCTermApp`; now that the main window is AppKit-rooted, AppKit is
-/// the right owner — SwiftUI scenes that need them read them via
-/// `appDelegate.appState.…`.
+/// The composition root lives in `applicationWillFinishLaunching(_:)`:
+/// every service is constructed inline and threaded top-down into the
+/// `AppContext` value that every downstream window / view controller
+/// reads. Nothing here uses a shared singleton — the one exception is
+/// `ModelStore.shared.prefetchIfNeeded()`, which fronts a process-scope
+/// cache backed by a spawned CLI subprocess.
+@main
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    let appState = AppState()
-    let searchBus = TranscriptSearchBus()
+    private var appContext: AppContext!
+    private var appCoordinator: AppCoordinator!
 
-    private(set) var mainWindowController: MainWindowController?
-    let selectionModel = MainSelectionModel()
+    /// Hosted unit tests inject `XCTestConfigurationFilePath`. Under
+    /// that env, the test harness stands up its own composition root and
+    /// main menu; the app-launched instances would race with the tests'
+    /// per-suite fixtures and steal focus, so we keep NSApp alive with
+    /// accessory activation policy and skip every side effect.
+    private static let isUnderXCTest =
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 
-    /// Lazy AppKit-rooted Settings window. Created on the first
-    /// `showSettingsWindow()` call (⌘, or App > Settings… menu item)
-    /// — never at launch, so the OS cannot resurface it from saved
-    /// state.
-    private var settingsWindowController: SettingsWindowController?
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        if Self.isUnderXCTest {
+            NSApplication.shared.setActivationPolicy(.accessory)
+            return
+        }
 
-    func showSettingsWindow() {
-        let controller =
-            settingsWindowController
-            ?? {
-                let c = SettingsWindowController()
-                settingsWindowController = c
-                return c
-            }()
-        controller.showWindow(nil)
-        controller.window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-    }
+        let activationTracker = AppActivationTracker()
+        let sessionManager = SessionManager()
+        let syntaxEngine = SyntaxHighlightEngine()
+        let recentProjects = RecentProjectsStore()
+        let inputDraftStore = InputDraftStore()
+        let sidebarGroupOrder = SidebarSessionGroupOrderStore()
+        let openInService = OpenInAppService()
+        let notificationService = NotificationService(activation: activationTracker)
 
-    /// Lazy AppKit-rooted About window. Same shape as
-    /// `settingsWindowController` — created
-    /// on the first `showAboutWindow()` call (App > About ccterm menu
-    /// item) so SwiftUI cannot auto-open it as the leading `Window`
-    /// scene and the OS cannot resurface it from saved state.
-    private var aboutWindowController: AboutWindowController?
+        sessionManager.onTurnEndedNotice = { [notifications = notificationService] notice in
+            notifications.handleTurnEnded(notice)
+        }
+        sessionManager.onPermissionPromptNotice = { [notifications = notificationService] notice in
+            notifications.handlePermissionPrompt(notice)
+        }
 
-    func showAboutWindow() {
-        let controller =
-            aboutWindowController
-            ?? {
-                let c = AboutWindowController()
-                aboutWindowController = c
-                return c
-            }()
-        controller.showWindow(nil)
-        controller.window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        Task.detached(priority: .utility) { await syntaxEngine.load() }
+        openInService.refresh()
+
+        MainActor.assumeIsolated { ModelStore.shared.prefetchIfNeeded() }
+        MainThreadWatchdog.start()
+        UserDefaults.standard.set(0, forKey: "NSInitialToolTipDelay")
+
+        appContext = AppContext(
+            sessionManager: sessionManager,
+            syntaxEngine: syntaxEngine,
+            recentProjects: recentProjects,
+            inputDraftStore: inputDraftStore,
+            sidebarGroupOrder: sidebarGroupOrder,
+            activationTracker: activationTracker,
+            openInService: openInService,
+            notificationService: notificationService
+        )
+
+        installMainMenu()
+        appCoordinator = AppCoordinator(appContext: appContext)
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if Self.isUnderXCTest { return }
-
-        let controller = MainWindowController(
-            model: selectionModel, appState: appState, searchBus: searchBus)
-        mainWindowController = controller
-        controller.showWindow(nil)
-        controller.window?.makeKeyAndOrderFront(nil)
+        appCoordinator.start()
     }
 
     func applicationShouldHandleReopen(
         _ sender: NSApplication, hasVisibleWindows flag: Bool
     ) -> Bool {
         if !flag {
-            mainWindowController?.showWindow(nil)
-            mainWindowController?.window?.makeKeyAndOrderFront(nil)
+            appCoordinator.reopenMainWindow()
         }
         return true
     }
@@ -111,17 +104,218 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if Self.isUnderXCTest { return .terminateNow }
         appLog(.info, "AppDelegate", "applicationShouldTerminate — begin parallel CLI shutdown")
         Task { @MainActor in
-            await appState.sessionManager.shutdownAllAsync()
+            await appContext.sessionManager.shutdownAllAsync()
             appLog(.info, "AppDelegate", "applicationShouldTerminate — replying")
             sender.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
     }
 
-    /// Mirrors `CCTermApp.isUnderXCTest`. The test path installs the
-    /// `NSWindow` swizzles in `CCTermApp.init` and we must skip
-    /// creating the real window here so XCTest doesn't see a stray
-    /// visible window.
-    private static let isUnderXCTest =
-        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    // MARK: - Menu actions
+
+    @objc private func showAbout(_ sender: Any?) {
+        appCoordinator.showAbout()
+    }
+
+    @objc private func showSettings(_ sender: Any?) {
+        appCoordinator.showSettings()
+    }
+
+    @objc private func requestSearchFocus(_ sender: Any?) {
+        appCoordinator.requestSearchFocus()
+    }
+
+    // MARK: - Main menu
+
+    private func installMainMenu() {
+        let mainMenu = NSMenu()
+        mainMenu.addItem(makeAppMenuItem())
+        mainMenu.addItem(makeEditMenuItem())
+        mainMenu.addItem(makeViewMenuItem())
+        mainMenu.addItem(makeFindMenuItem())
+
+        let windowMenuItem = makeWindowMenuItem()
+        mainMenu.addItem(windowMenuItem)
+
+        NSApp.mainMenu = mainMenu
+        NSApp.windowsMenu = windowMenuItem.submenu
+    }
+
+    private func makeAppMenuItem() -> NSMenuItem {
+        let appName = "ccterm"
+        let menu = NSMenu(title: appName)
+
+        let about = NSMenuItem(
+            title: String(localized: "About ccterm"),
+            action: #selector(showAbout(_:)),
+            keyEquivalent: "")
+        about.target = self
+        menu.addItem(about)
+
+        menu.addItem(.separator())
+
+        let settings = NSMenuItem(
+            title: String(localized: "Settings…"),
+            action: #selector(showSettings(_:)),
+            keyEquivalent: ",")
+        settings.keyEquivalentModifierMask = [.command]
+        settings.target = self
+        menu.addItem(settings)
+
+        menu.addItem(.separator())
+
+        let hide = NSMenuItem(
+            title: String(localized: "Hide ccterm"),
+            action: #selector(NSApplication.hide(_:)),
+            keyEquivalent: "h")
+        hide.keyEquivalentModifierMask = [.command]
+        menu.addItem(hide)
+
+        let hideOthers = NSMenuItem(
+            title: String(localized: "Hide Others"),
+            action: #selector(NSApplication.hideOtherApplications(_:)),
+            keyEquivalent: "h")
+        hideOthers.keyEquivalentModifierMask = [.command, .option]
+        menu.addItem(hideOthers)
+
+        let showAll = NSMenuItem(
+            title: String(localized: "Show All"),
+            action: #selector(NSApplication.unhideAllApplications(_:)),
+            keyEquivalent: "")
+        menu.addItem(showAll)
+
+        menu.addItem(.separator())
+
+        let quit = NSMenuItem(
+            title: String(localized: "Quit ccterm"),
+            action: #selector(NSApplication.terminate(_:)),
+            keyEquivalent: "q")
+        quit.keyEquivalentModifierMask = [.command]
+        menu.addItem(quit)
+
+        let item = NSMenuItem()
+        item.submenu = menu
+        return item
+    }
+
+    private func makeEditMenuItem() -> NSMenuItem {
+        let menu = NSMenu(title: String(localized: "Edit"))
+
+        // `undo:` / `redo:` live on the first-responder chain (posted
+        // by AppKit into whichever text control has focus); they aren't
+        // declared as Swift selectors, so we build them by name.
+        let undo = NSMenuItem(
+            title: String(localized: "Undo"),
+            action: NSSelectorFromString("undo:"),
+            keyEquivalent: "z")
+        undo.keyEquivalentModifierMask = [.command]
+        menu.addItem(undo)
+
+        let redo = NSMenuItem(
+            title: String(localized: "Redo"),
+            action: NSSelectorFromString("redo:"),
+            keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(redo)
+
+        menu.addItem(.separator())
+
+        let cut = NSMenuItem(
+            title: String(localized: "Cut"),
+            action: #selector(NSText.cut(_:)),
+            keyEquivalent: "x")
+        cut.keyEquivalentModifierMask = [.command]
+        menu.addItem(cut)
+
+        let copy = NSMenuItem(
+            title: String(localized: "Copy"),
+            action: #selector(NSText.copy(_:)),
+            keyEquivalent: "c")
+        copy.keyEquivalentModifierMask = [.command]
+        menu.addItem(copy)
+
+        let paste = NSMenuItem(
+            title: String(localized: "Paste"),
+            action: #selector(NSText.paste(_:)),
+            keyEquivalent: "v")
+        paste.keyEquivalentModifierMask = [.command]
+        menu.addItem(paste)
+
+        let delete = NSMenuItem(
+            title: String(localized: "Delete"),
+            action: #selector(NSText.delete(_:)),
+            keyEquivalent: "")
+        menu.addItem(delete)
+
+        let selectAll = NSMenuItem(
+            title: String(localized: "Select All"),
+            action: #selector(NSResponder.selectAll(_:)),
+            keyEquivalent: "a")
+        selectAll.keyEquivalentModifierMask = [.command]
+        menu.addItem(selectAll)
+
+        let item = NSMenuItem()
+        item.submenu = menu
+        return item
+    }
+
+    private func makeViewMenuItem() -> NSMenuItem {
+        let menu = NSMenu(title: String(localized: "View"))
+
+        let toggleSidebar = NSMenuItem(
+            title: String(localized: "Toggle Sidebar"),
+            action: #selector(NSSplitViewController.toggleSidebar(_:)),
+            keyEquivalent: "s")
+        toggleSidebar.keyEquivalentModifierMask = [.command, .option]
+        menu.addItem(toggleSidebar)
+
+        let item = NSMenuItem()
+        item.submenu = menu
+        return item
+    }
+
+    private func makeFindMenuItem() -> NSMenuItem {
+        let menu = NSMenu(title: String(localized: "Find"))
+
+        let findInTranscript = NSMenuItem(
+            title: String(localized: "Find in Transcript"),
+            action: #selector(requestSearchFocus(_:)),
+            keyEquivalent: "f")
+        findInTranscript.keyEquivalentModifierMask = [.command]
+        findInTranscript.target = self
+        menu.addItem(findInTranscript)
+
+        let item = NSMenuItem()
+        item.submenu = menu
+        return item
+    }
+
+    private func makeWindowMenuItem() -> NSMenuItem {
+        let menu = NSMenu(title: String(localized: "Window"))
+
+        let minimize = NSMenuItem(
+            title: String(localized: "Minimize"),
+            action: #selector(NSWindow.performMiniaturize(_:)),
+            keyEquivalent: "m")
+        minimize.keyEquivalentModifierMask = [.command]
+        menu.addItem(minimize)
+
+        let zoom = NSMenuItem(
+            title: String(localized: "Zoom"),
+            action: #selector(NSWindow.performZoom(_:)),
+            keyEquivalent: "")
+        menu.addItem(zoom)
+
+        menu.addItem(.separator())
+
+        let bringAllToFront = NSMenuItem(
+            title: String(localized: "Bring All to Front"),
+            action: #selector(NSApplication.arrangeInFront(_:)),
+            keyEquivalent: "")
+        menu.addItem(bringAllToFront)
+
+        let item = NSMenuItem()
+        item.submenu = menu
+        return item
+    }
 }

@@ -13,7 +13,11 @@ import AppKit
 /// reads. Nothing here uses a shared singleton — the one exception is
 /// `ModelStore.shared.prefetchIfNeeded()`, which fronts a process-scope
 /// cache backed by a spawned CLI subprocess.
-@main
+/// Process entry point lives in `App/main.swift` — see that file for why
+/// `@main` on this class alone is not enough (nib-less `NSApplicationMain`
+/// leaves the delegate unwired). `main.swift` constructs an instance,
+/// assigns it as `NSApplication.shared.delegate`, then calls
+/// `NSApplicationMain`.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var appContext: AppContext!

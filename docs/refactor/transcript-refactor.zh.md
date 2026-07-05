@@ -64,6 +64,8 @@
 - **范围**：`@MainActor final class`。**是 Session 域的 state holder** —— 跨 mount 生存（存 registry 里）。字段：
   - `@Published private(set) var items: [TranscriptItem]`（wall-clock 正向 —— `items[0]` 最旧、`items.last` 最新）
   - `@Published private(set) var folds: [TranscriptItem.ID: Bool]`（fold 状态住 Session 域，跨 mount 保留 —— 顶层 `CLAUDE.md`："State lives at the lowest scope shared by all its readers"；folds 的 readers 是"这次 mount 的 VM" + "未来 mount 的 VM"，lowest scope = Session）
+  - `private(set) var rowHeightsByItemID: [TranscriptItem.ID: CGFloat]` —— outline row 高度缓存，**住 Session 域**；侧边栏切走再回来（若宽度未变）全 warm 命中，无需重算。**不 `@Published`**（controller 只在 `outlineView(_:heightOfRowByItem:)` 里读；无观察者）
+  - `private(set) var rowHeightsLayoutWidth: CGFloat` —— 当前缓存对应的 layout 宽度；宽度变化时整表 invalidate（跨 mount 相同宽度时保留）
   - `var lastKnownScrollAnchor: (nodeID: TranscriptItem.ID, offsetFromClipTop: CGFloat)?` —— 侧边栏切走再回来时恢复滚动位所用。Controller 在 `prepareForRemoval` 写入；attach 时读取。
   - `private(set) var nextOlderCursor: SessionHistory.Cursor?`
   - `private(set) var didLoadFirstScreen: Bool` —— 首次 mount 时 Controller 的 `viewDidLayout` 里 `if !store.didLoadFirstScreen { runSyncFillLoop() }`。二次 mount（同一 transcriptId 再进）时 `didLoadFirstScreen == true`，Controller 跳过 sync loop 直接 attach + reload。
@@ -72,9 +74,13 @@
 - API（都是 `@MainActor` 同步方法）：
   - `prependOlderItems(_ new: [TranscriptItem], nextCursor: SessionHistory.Cursor?)` —— 前置到 items 头部（首屏首批 = 空 store 上 prepend；旧页追加 = 已有 store 上 prepend）；首次调用后置 `didLoadFirstScreen = true`；`nextCursor == nil` 自动翻 `didFinishLoad = true`
   - `setFold(itemID: TranscriptItem.ID, expanded: Bool)` —— 更新 folds dict；Controller 从 outline view 事件回写此处
+  - `setRowHeightsLayoutWidth(_ width: CGFloat)` —— 幂等：宽度未变 no-op；变则清空 `rowHeightsByItemID` + 更新 `rowHeightsLayoutWidth`。跨 mount 同宽度重入时保 cache
+  - `cacheRowHeight(itemID: TranscriptItem.ID, height: CGFloat, atWidth width: CGFloat)` —— 宽度守卫 + 反投毒：`guard width == rowHeightsLayoutWidth else { return }` 且已有条目不覆写（防陈旧批次覆盖新的）
+  - `rowHeight(forItemID id: TranscriptItem.ID) -> CGFloat?` —— 读缓存；nil 表示未算
+  - `invalidateRowHeight(itemID: TranscriptItem.ID)` —— 单条失效（未来 fold-affects-height 或高亮场景用；本 PR 无 caller，先留出）
   - `setScrollAnchor(nodeID: TranscriptItem.ID, offsetFromClipTop: CGFloat)` —— Controller 拆除时调
-- **明确不含**：`appendNewItems`（无 live）、`discard()`（无 SessionManager 接线，Store 生存到进程末尾 —— 见 § 9）、layouts、highlights、group 树 —— 分别对应本 PR 无 live / registry 只加不减 / Controller 缓存 / 下一 PR / VM 派生。
-- **规范**：Store 后缀 —— 顶层 `CLAUDE.md` state holder（noun-oriented），"cache holds a body of state and publishes its changes"；不含 UI；不 import AppKit；由 initializer 注入构造依赖（`transcriptId`、SDK entry 是 `enum` 静态方法，直接调不注入）；`@Published` 是它对外唯一事件面。
+- **明确不含**：`appendNewItems`（无 live）、`discard()`（无 SessionManager 接线，Store 生存到进程末尾 —— 见 § 9）、highlights、group 树、outline tree —— 分别对应本 PR 无 live / registry 只加不减 / 下一 PR / VM 派生 / VM 派生。
+- **规范**：Store 后缀 —— 顶层 `CLAUDE.md` state holder（noun-oriented），"cache holds a body of state and publishes its changes"；不含 UI；不 import AppKit；由 initializer 注入构造依赖（`transcriptId`、SDK entry 是 `enum` 静态方法，直接调不注入）；`@Published` 是它对外事件面。**行高缓存住 Store 而非 Controller** 的规范依据："state lives at the lowest scope shared by all its readers" —— 读者是"这次 mount 的 outline view" + "未来 mount 的 outline view"（同 transcriptId 同宽度时），lowest common scope = Session；挂 Controller 会让二次 mount 全部行 miss、on-main 懒排版一遍，违反老 § 2.6。
 
 ### 2.4 `TranscriptRegistryStore`（Store）
 - **范围**：`@MainActor final class`。字段：`private var stores: [String: TranscriptStore]`。API：`store(for transcriptId: String) -> TranscriptStore` —— get-or-create。**只加不减** —— 本 PR 不接 `SessionManager` 或任何 session 销毁事件。一个 `TranscriptStore` 内存量小（items 数组 + folds dict），进程存活期累积可忽略；若日后 registry 需要淘汰，走 LRU cap，是**下一 PR 的事**。
@@ -165,10 +171,9 @@
 - 字段：
   - `let viewModel: TranscriptViewModel`
   - `private var loaderTask: Task<Void, Never>?`
-  - `private var rowHeightsByID: [TranscriptItem.ID: CGFloat]` —— 每 outline node 的高度（key 是 node.id）
-  - `private var heightCacheWidth: CGFloat` —— 当前缓存对应的 `outlineView.bounds.width`；宽度变时整表 invalidate
   - `private var cancellables: Set<AnyCancellable>`
-  - `private var hoveredItemID: TranscriptItem.ID?` —— hover 状态**住 Controller**（不进 delegate 面）
+  - `private var hoveredItemID: TranscriptItem.ID?` —— hover 状态**住 Controller**（不进 delegate 面；hover 是纯 view-transient，不跨 mount）
+  - **无** row-height 缓存字段 —— 行高缓存住 `store.rowHeightsByItemID` / `store.rowHeightsLayoutWidth`（见 § 2.3），跨 mount 同宽度 warm 命中。Controller 只在 `outlineView(_:heightOfRowByItem:)` 里 `store.rowHeight(forItemID:)`；未命中路径**不允许**在首屏 attach 后触发（loader / retile 都预先 off-main 算完 → `store.cacheRowHeight(...)` 再 commit）。
 - 订阅（两条，都在 `viewDidLoad`）：
   - `viewModel.$outline.sink { [weak self] in self?.applyOutline($0) }` —— apply outline 差异；首次 attach 之前的变化被 `applyOutline` 内部 `guard outlineView.dataSource != nil else { return }` 早退
   - `viewModel.store.$folds.sink { [weak self] in self?.applyFolds($0) }` —— 遍历新 folds 与 outline view 现状 diff，只对差异 rows 走 `outlineView.animator().expandItem` / `collapseItem`
@@ -191,7 +196,6 @@
       outlineView.delegate = nil
   }
   ```
-- **为什么 rowHeightsByID 缓存放 Controller 不放 Store/VM**：height 与 outline view 当前 `bounds.width` 强绑 —— 宽度变化就整表 invalidate。Store 是 Session 域（不 known width），VM 是 VC 域但目标是"纯派生 outline tree"，height 是 view 层几何。挂 Controller 符合顶层 `CLAUDE.md`："state lives at the lowest scope shared by all its readers"（唯一 reader = 这个 Controller 上的 outline view）。
 
 ### 2.11 Row views（`NSTableCellView` 子类，按 outline node kind 分派）
 
@@ -326,7 +330,7 @@ viewDidLayout()  ─────────────────────
   ── Gate 2：dataSource 已 attach 说明是 post-attach 的 layout（宽度变化 / relayout）
   if outlineView.dataSource != nil {
       let w = outlineView.bounds.width
-      if w != heightCacheWidth { … 见 § 4.5 宽度变化路径 … }
+      if w != store.rowHeightsLayoutWidth { … 见 § 4.5 宽度变化路径 … }
       return
   }
 
@@ -335,17 +339,18 @@ viewDidLayout()  ─────────────────────
                                                     顶层 CLAUDE.md："source-phase 里读 lazy
                                                     AppKit 几何前先 layoutSubtreeIfNeeded"
   let contentWidth = outlineView.bounds.width
-  heightCacheWidth = contentWidth
+  store.setRowHeightsLayoutWidth(contentWidth)     ← 幂等：同宽度 no-op（跨 mount cache 保留）；变宽清 cache
 
   ── 分支 A：pre-populated store（二次 mount）—— 跳过 sync loop，直接 attach
   if store.didLoadFirstScreen {
-      // VM 已在 init 里立即 derive 过 outline；rowHeightsByID 是空
-      // attach 前预热"至少可见段"的高度缓存
+      // VM 已在 init 里立即 derive 过 outline；store.rowHeightsByItemID 若同宽度重入即全 warm
+      // 若宽度变了 setRowHeightsLayoutWidth 上一步已清缓存，这里预热"至少可见段"
       let visibleNodes = viewModel.outline.prefixForFirstAttach(
           approxViewportHeight: view.bounds.height
               - scrollView.contentInsets.top - scrollView.contentInsets.bottom)
-      for node in visibleNodes {
-          rowHeightsByID[node.id] = TranscriptRowHeight.compute(node: node, width: contentWidth)
+      for node in visibleNodes where store.rowHeight(forItemID: node.id) == nil {
+          let h = TranscriptRowHeight.compute(node: node, width: contentWidth)
+          store.cacheRowHeight(itemID: node.id, height: h, atWidth: contentWidth)
       }
       attachDataSourceAndPaint(anchor: store.lastKnownScrollAnchor)
       loadOlderPages()   ← 若 store.nextOlderCursor != nil 从当前 cursor 续加
@@ -376,7 +381,7 @@ viewDidLayout()  ─────────────────────
       let newPrefix = viewModel.outline.topLevel.prefix(delta)
       for node in newPrefix {
           let h = TranscriptRowHeight.compute(node: node, width: contentWidth)
-          rowHeightsByID[node.id] = h
+          store.cacheRowHeight(itemID: node.id, height: h, atWidth: contentWidth)
           accHeight += h
       }
       if page.nextCursor == nil { break }
@@ -396,7 +401,7 @@ withoutImplicitAnimations {
     restoreFoldsAfterReload(store.folds)              ← 父先子后遍历 outline 恢复展开态；见下
 }
 outlineView.layoutSubtreeIfNeeded()                  ← 强制 tile 到 numberOfRows / heightOfRow
-                                                       rowHeightsByID 已 warm → 命中
+                                                       store.rowHeightsByItemID 已 warm → 命中
 if let a = anchor,
    let node = viewModel.outline.nodeByID[a.nodeID],
    outlineView.row(forItem: node) >= 0 {
@@ -429,7 +434,9 @@ if let a = anchor,
   try Task.checkCancellation()   ← Phase 2 归来后先 gate
   withoutImplicitAnimations {
       let anchor = captureScrollAnchor()
-      for (id, h) in heightPairs { rowHeightsByID[id] = h }   ← 先 warm 高度缓存
+      for (id, h) in heightPairs {                            ← 先 warm 高度缓存
+          store.cacheRowHeight(itemID: id, height: h, atWidth: store.rowHeightsLayoutWidth)
+      }
       store.prependOlderItems(newItems, nextCursor: page.nextCursor)
           │  ↑ 两跳 stash：VM.sink → outline @Published；Controller.sink → applyOutline
           │    applyOutline 现在 dataSource 已 attach → 走 diff apply（见 § 6.3）
@@ -485,18 +492,17 @@ if let a = anchor,
 
 ### 4.5 宽度变化（`viewDidLayout` post-attach）
 
-- 事件在 source phase。Controller 比较 `outlineView.bounds.width` 与 `heightCacheWidth`：
+- 事件在 source phase。Controller 比较 `outlineView.bounds.width` 与 `store.rowHeightsLayoutWidth`：
   - **相等** → 立即返回
   - **`outlineView.inLiveResize == true`** → `updateRowHeightsForLiveResize(newWidth:)`：
     - `outlineView.noteHeightOfRows(withIndexesChanged: visibleIndexes)` **仅可见段**
-    - **不改** `heightCacheWidth`、**不清** `rowHeightsByID`、**不动** loader
+    - **不动** `store.rowHeightsLayoutWidth`、**不清** `store.rowHeightsByItemID`、**不动** loader
     - 拖拽期间可见行的 `heightOfRowByItem` 在 beforeWaiting 懒计算（visible-only、user-initiated、short-lived —— 老 `NativeTranscript2/CLAUDE.md § 2.6` 允许的例外）
   - **非拖拽 drift（⌥⌘S、split-view programmatic、动画器 setFrame）** → `retileAtNewWidth(newWidth:)`：
     ```
-    // 1. cancel & clean
+    // 1. cancel + reset store 缓存宽度（内部同时清空 rowHeightsByItemID）
     loaderTask?.cancel(); loaderTask = nil
-    rowHeightsByID.removeAll(keepingCapacity: true)
-    heightCacheWidth = newWidth
+    store.setRowHeightsLayoutWidth(newWidth)
 
     // 2. 全 outline node 高度 off-main 算一遍 —— 不是只算可见 + overdraw
     //    老 § 2.6 要求 backfill off-main-built；若只算可见段，scroll 触及未算 rows
@@ -509,7 +515,9 @@ if let a = anchor,
     // 3. 归主 tick 提交
     try Task.checkCancellation()
     withoutImplicitAnimations {
-        for (id, h) in pairs { rowHeightsByID[id] = h }
+        for (id, h) in pairs {
+            store.cacheRowHeight(itemID: id, height: h, atWidth: newWidth)
+        }
         let allIndexes = IndexSet(integersIn: 0 ..< outlineView.numberOfRows)
         outlineView.noteHeightOfRows(withIndexesChanged: allIndexes)
         outlineView.layoutSubtreeIfNeeded()             // 顶层 CLAUDE.md："in-tick anchor for resize"
@@ -519,7 +527,7 @@ if let a = anchor,
     // 4. 重启 loader
     loadOlderPages()
     ```
-- `viewDidEndLiveResize` → 若 `heightCacheWidth != outlineView.bounds.width` → `retileAtNewWidth`（延后的完整 retile；覆盖 live-resize 期间累积的宽度漂移）。
+- `viewDidEndLiveResize` → 若 `store.rowHeightsLayoutWidth != outlineView.bounds.width` → `retileAtNewWidth`（延后的完整 retile；覆盖 live-resize 期间累积的宽度漂移）。
 
 ### 4.6 Combine chain 的 tick 语义
 
@@ -736,7 +744,7 @@ static func deriveOutline(
 ### 6.2 首屏同步
 
 详细流程见 § 4.1 attach 契约；数据流角度概括：
-- **首次 mount（空 store）**：`viewDidLayout` 首次同步 loop：`loadPage` → items → `store.prependOlderItems` → VM sink 同步 `deriveOutline` → 遍历 outline **prefix**（新前置段）累加高度入 `rowHeightsByID`
+- **首次 mount（空 store）**：`viewDidLayout` 首次同步 loop：`loadPage` → items → `store.prependOlderItems` → VM sink 同步 `deriveOutline` → 遍历 outline **prefix**（新前置段）累加高度入 `store.rowHeightsByItemID`（via `store.cacheRowHeight`）
 - **二次 mount（pre-populated store）**：跳过 loop；从 `viewModel.outline` 拿"至少覆盖可见段"的头部 nodes 预热 heights
 - 终止条件仅两个：viewport 满 或 文件顶（`page.nextCursor == nil`）
 - dataSource 首次 attach 之前 Controller sink 收到的 outline 变化都被 `applyOutline` 早退（`guard outlineView.dataSource != nil else { return }`）
@@ -771,7 +779,7 @@ private func loadOlderPages() {
                 let newHead = Array(previewTree.topLevel.prefix(newHeadCount))
 
                 // Phase 2: off-main 算 previewTree 头部 N 个新 node 的高度
-                let width = self.heightCacheWidth
+                let width = self.store.rowHeightsLayoutWidth
                 let pairs = await Task.detached(priority: .userInitiated) {
                     newHead.map { ($0.id, TranscriptRowHeight.compute(node: $0, width: width)) }
                 }.value
@@ -781,10 +789,12 @@ private func loadOlderPages() {
                 // Commit（source phase）
                 let anchor = self.captureScrollAnchor()
                 withoutImplicitAnimations {
-                    for (id, h) in pairs { self.rowHeightsByID[id] = h }   // 先 warm 高度缓存
+                    for (id, h) in pairs {   // 先 warm 高度缓存
+                        self.store.cacheRowHeight(itemID: id, height: h, atWidth: width)
+                    }
                     self.store.prependOlderItems(newItems, nextCursor: page.nextCursor)
                     // ↑ Store setter → VM sink → outline @Published → Controller sink → applyOutline
-                    //   applyOutline 做 diff apply（见下），此时 rowHeightsByID 已 warm
+                    //   applyOutline 做 diff apply（见下），此时 store.rowHeightsByItemID 已 warm
                     //   不在此处显式 restoreFolds —— outlineNodePool 保 id → 实例引用稳定
                     self.restoreScrollAnchor(anchor)
                 }
@@ -932,10 +942,10 @@ override func prepareForRemoval() {
 
 | 老 § 2 项 | v12 保持 |
 |---|---|
-| § 2.1 sync heightOfRow on cache hit | `rowHeightsByID: [TranscriptItem.ID: CGFloat]` get-or-compute；warm cache 命中；未命中路径**不允许**在首屏 attach 后触发（loader / retile 都预先 off-main 算完再 commit）|
+| § 2.1 sync heightOfRow on cache hit | `store.rowHeightsByItemID: [TranscriptItem.ID: CGFloat]`（**住 Store，跨 mount 生存**）；`heightOfRowByItem` 里 `store.rowHeight(forItemID:)` 命中即返；未命中路径**不允许**在首屏 attach 后触发（loader / retile 都预先 off-main 算完 → `store.cacheRowHeight` 再 commit）|
 | § 2.2 cell `wantsLayer + .onSetNeedsDisplay` | 每 row view 内部设 |
 | § 2.3 scroll + clip `.never` layer redraw | outline view + scrollView + clip 都设 |
-| § 2.4 layout cache 无 LRU | rowHeightsByID 挂 Controller；`heightCacheWidth` 变化时整表 invalidate + 全 outline off-main 重算 |
+| § 2.4 layout cache 无 LRU | `store.rowHeightsByItemID` 挂 Store（Session 域）；`store.setRowHeightsLayoutWidth` 内部：宽度变化时整表 invalidate + 全 outline off-main 重算；同宽度重入（跨 mount）保 cache |
 | § 2.5 nonisolated static make | `TranscriptRowHeight.compute(node:width:)` nonisolated pure fn |
 | § 2.6 backfill off-main-built + main-sync-applied | 旧页 loader Phase 2 `Task.detached` 算 height；retileAtNewWidth 也是全 outline off-main 重算；commit main。首屏 sync loop 逐 node 同步算入缓存（bounded by viewport height）|
 | § 2.7 in-tick anchor for resize | § 4.5 retileAtNewWidth 在 `withoutImplicitAnimations` 内 noteHeightOfRows + layoutSubtreeIfNeeded + restoreScrollAnchor 同 tick |
@@ -945,12 +955,12 @@ override func prepareForRemoval() {
 | § 2.11 no `reloadData()` | **保持（快路径）** —— outline diff apply 走 `beginUpdates + insertItems + endUpdates`（§ 6.3 快路径）。首屏 attach 时 `reloadData` 用**一次**（首绑后建索引）。**慢路径 fallback** 保留 `reloadData`（跨页 group 合并等罕见结构变化）—— 视觉正确性 > perf |
 | § 2.12 highlight refill 跳过 noteHeightOfRows | 下一 PR 接入时保持（本 PR 不做高亮）|
 | § 2.13/b search / status | 搜索超范围；status history 全 completed |
-| § 2.14 anti-poison cache | `rowHeightsByID[id]` 不覆写已有条目 |
+| § 2.14 anti-poison cache | `store.cacheRowHeight(...)` 内部宽度守卫 + 已有条目不覆写 |
 | § 2.15 highlight per-scope dedup + gen guard | 下一 PR 接入时保持 |
 | § 2.16 shimmer overlay | `ToolInvocationHeaderRowView` 内部自绘 |
 | § 2.17 stable row-reuse key | `TranscriptOutlineRow` + per-kind reuse identifier（见 § 2.11 分派）|
 | § 2.18 stable Item id | `TranscriptItem.ID` 由 `(stableMessageID, contentIndex, blockIndex)` 三元组派生；nil-uuid fallback 见 § 2.1；`outlineNodePool` 保 node 引用稳定 |
-| § 2.19 每 attach 一个 width | § 4.1 attach 契约：sync loop 里高度按 `heightCacheWidth` 入缓存 → dataSource 绑 → reload → 首次 heightOfRowByItem 命中 |
+| § 2.19 每 attach 一个 width | § 4.1 attach 契约：`store.setRowHeightsLayoutWidth(contentWidth)` → sync loop / warm-visible 阶段按 `store.cacheRowHeight` 入缓存 → dataSource 绑 → reload → 首次 heightOfRowByItem 命中 |
 | § 2.18 stable Block.id | node.id 由 `(itemID, kind)` 稳定派生；nodeCache 保引用稳定 |
 | § 2.19 每 attach 一个 width | § 4.1 attach 契约：先 sync 首屏 + heights 入缓存 → dataSource 绑 → reload → 首次 heightOfRowByItem 命中 |
 
@@ -989,7 +999,8 @@ override func prepareForRemoval() {
   - 快路径：pre-existing outline `[A, B, C]`；prepend 使 outline 变 `[X, Y, A, B, C]` → 断言 outline view 走 `insertItems(at: 0..<2)`，不走 reloadData
   - 慢路径：结构非纯前置（比如 orphan tool_result 从独立顶层节点 collapse 进 invocation children）→ 断言走 reloadData + `restoreFoldsAfterReload`
 - **`TranscriptOutlineControllerAnchorMathTests`**：stable fixture（每 row 60pt）；prepend 一批更旧 5 nodes 后 clip.origin.y 使 `topVisibleNode` 视觉位置不变（新 origin.y = 旧 origin.y + 5×60）；variable-height fixture 也测一次
-- **`TranscriptOutlineControllerRetileTests`**：drive `viewDidLayout` 变宽（非拖拽） → 断言 `rowHeightsByID` 全清后按新宽度重算；drive `viewDidLayout` 在 `inLiveResize` = true 时 → 断言 `rowHeightsByID` 未清、`heightCacheWidth` 未变
+- **`TranscriptOutlineControllerRetileTests`**：drive `viewDidLayout` 变宽（非拖拽） → 断言 `store.rowHeightsByItemID` 全清后按新宽度重算 + `store.rowHeightsLayoutWidth` 更新；drive `viewDidLayout` 在 `inLiveResize` = true 时 → 断言 `store.rowHeightsByItemID` 未清、`store.rowHeightsLayoutWidth` 未变
+- **`TranscriptStoreRowHeightsCacheTests`**：`setRowHeightsLayoutWidth(w)` 同宽度重入 no-op（cache 保留）；变宽整清 + `rowHeightsLayoutWidth` 更新；`cacheRowHeight(...atWidth: wrong)` 静默丢弃；已有条目不覆写
 - **`TranscriptClipViewCenteringTests`**：documentView 宽 500，`constrainBoundsRect` 于 proposed 宽 800 / 500 / 300 → origin.x = -150 / 0 / 0
 - **`SessionHistoryCursorTests`**：cursor + Page 正确；`stream` 与 `loadPage` 同 fixture 产**相同**页序列（两条 API 语义完全一致 —— 没有跨调用 buffer 差异）；orphan tool_result **不**被跨页 withhold（页内原样吐出，由 VM 侧处理）
 - **`SessionHistoryStreamProducerThreadTests`**：drive `stream(id:cursor:)` 从 MainActor Task 里 iterate；用 `dispatchPrecondition` 或 `Thread.isMainThread` 断言 producer 里的 `loadPage` 调用**不**在 main thread（顶层规范：producer 强制 off-main）

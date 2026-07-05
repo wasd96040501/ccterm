@@ -145,9 +145,6 @@
       func rowViewDidEnterHover(itemID: TranscriptItem.ID)
       func rowViewDidExitHover(itemID: TranscriptItem.ID)
 
-      // 自绘 chevron 点击 → toggle fold
-      func rowViewDidClickChevron(itemID: TranscriptItem.ID)
-
       // Gutter 上的 copy 按钮点击
       func rowViewDidClickGutter(_ action: GutterAction, itemID: TranscriptItem.ID)
 
@@ -159,7 +156,7 @@
       func requestImagePreview(itemID: TranscriptItem.ID)
   }
   ```
-  **无 `toggleFold`** —— fold 通过 chevron click 上报，Controller 内部决定 toggle 方向再调 `store.setFold`。**`requestImagePreview` 传 itemID 而非 `NSImage`**：Controller 从 store 拿到真正的 `ImageRef` 再交 preview presenter，row view 不做图像权威源。
+  **无 fold 相关方法** —— fold 完全走 `NSOutlineView` 原生 disclosure triangle + 原生 `outlineViewItemDidExpand` / `outlineViewItemDidCollapse` delegate 回调，见 § 4.4。**`requestImagePreview` 传 itemID 而非 `NSImage`**：Controller 从 store 拿到真正的 `ImageRef` 再交 preview presenter，row view 不做图像权威源。
 - **规范**：`Delegate` 后缀；`AnyObject` class-only；`weak var delegate` 持有（顶层 `CLAUDE.md`：delegate 永远 weak，protocol 是 `AnyObject`）；上报 intent 用方法调用，不用 `get set` property；`GutterAction`（enum）替代早期 `GutterSpec` —— action 直接表意"用户做了什么"，spec 语义模糊。
 
 ### 2.10 `TranscriptOutlineController`（Controller）
@@ -179,7 +176,7 @@
 - 关键方法：
   - `viewDidLayout` 首次：见 § 4.1 attach 契约
   - `applyOutline(_ tree)`、`applyFolds(_ folds)`、`retileAtNewWidth(_)`、`updateRowHeightsForLiveResize(newWidth:)`、`loadOlderPages()`、`loadFirstScreen(viewportHeight:)`（详见 § 4 / § 6）
-  - `rowViewDidClickChevron(itemID:)`：`store.setFold(itemID: id, expanded: !(store.folds[id] ?? false))` —— Controller 直接调 Store，不经 VM 中转
+  - `outlineViewItemDidExpand(_:)` / `outlineViewItemDidCollapse(_:)`（`NSOutlineViewDelegate`）：读 `Notification.userInfo["NSObject"]` 取 `TranscriptOutlineNode` 拿 `id`，同步写 `store.setFold(itemID: id, expanded: true/false)`。fold 事件源是 native disclosure click，Controller 只做 view→store 状态同步
 - **规范**：`Controller` 后缀；顶层 `CLAUDE.md` "thin coordinator" —— 无业务逻辑，只 sink + apply + Task 生命周期 + view tree 构造；`loadView` 只建树、`viewDidLoad` 只绑、`viewDidLayout` 首次做 attach；`init(coder:)` `@available(*, unavailable) + fatalError`。
 - **`prepareForRemoval` 显式释放**（顶层 `CLAUDE.md`："deterministic teardown of per-attach resources"）：
   ```swift
@@ -203,8 +200,8 @@
 **基于 `TranscriptItem.Kind` 分派的 4 类**：
 
 - **`MarkdownRowView`** —— 渲染所有 `.userMarkdown*` / `.assistantMarkdown*` case、`.userAttachmentImage`、`.assistantThinking`。内部按 `TranscriptItem.Kind` 具体 case 切子 view：`HeadingBlockView` / `ParagraphBlockView` / `CodeBlockView` / `ListBlockView` / `TableBlockView` / `BlockquoteBlockView` / `ThematicBreakView` / `AttachmentImageView` / `ThinkingBlockView`。**复用** `RowLayout` 计算文本布局（小改 `RowLayout` 让它按 `TranscriptItem` 输入，不再看老 `Block`）。
-- **`ToolGroupHeaderRowView`** —— 渲染 `.toolGroup(ToolGroupHeader)`。header 内容：图标 + `completedTitle` + 自绘 chevron。
-- **`ToolInvocationHeaderRowView`** —— 渲染 `.assistantToolUse(ToolInvocation)`。header 内容：tool label + status（history 全 completed）+ 自绘 chevron（若该 tool 有 body 子节点）。
+- **`ToolGroupHeaderRowView`** —— 渲染 `.toolGroup(ToolGroupHeader)`。header 内容：图标 + `completedTitle`。**Native disclosure triangle 由 `NSOutlineView` 在 `outlineTableColumn` 上自动绘制** —— 我们不介入。
+- **`ToolInvocationHeaderRowView`** —— 渲染 `.assistantToolUse(ToolInvocation)`。header 内容：tool label + status（history 全 completed）。同上，disclosure 交给 `NSOutlineView`。
 - **`ToolBodyRowView`** —— 抽象基类；具体渲染分派到 per-tool-kind subclass：`FileEditBodyRowView` / `BashBodyRowView` / `ReadBodyRowView` / `GrepBodyRowView` / `GlobBodyRowView` / `WebFetchBodyRowView` / `WebSearchBodyRowView` / `AskUserQuestionBodyRowView` / `AgentBodyRowView` / `GenericBodyRowView`。**参考迁移** `Layout/ToolGroupChildren/<Kind>/*Layout.swift` 里的度量与绘制逻辑到对应 subclass —— 每 subclass 一个 body 图像。**不**复用老 `ToolGroupLayout`（那是"整个 group 一 cell"的容器，本 PR 用不到）。
 
 **Reuse identifier —— 集中常量、枚举分派**（顶层 `CLAUDE.md` list 规范："Reuse identifiers are centralized constants … a typo becomes a compile error instead of a silent nil"）：
@@ -259,18 +256,7 @@ func outlineView(_ ov: NSOutlineView, viewFor col: NSTableColumn?, item: Any) ->
 }
 ```
 
-**Native disclosure triangle 隐藏方案**：
-- 子类 `TranscriptOutlineView: NSOutlineView` 里 override `frameOfOutlineCell(atRow:) -> NSRect { return .zero }` —— 把 native disclosure 的 frame 挤到零。
-- `indentationPerLevel = 0` —— 我们自绘 indent 到 row view 里（`layoutOrigin.x` 按 `outlineView.level(forItem:)` 缩进）。
-- Chevron 由 `ToolGroupHeaderRowView` / `ToolInvocationHeaderRowView` 自绘一个 `CAShapeLayer`；hit test 在 row view 的 `mouseDown(with:)` 里 —— 若 point 落在 chevron rect 内，调 `delegate?.rowViewDidClickChevron(itemID: node.id)`。Controller 内部：
-  ```swift
-  func rowViewDidClickChevron(itemID: TranscriptItem.ID) {
-      let currentlyExpanded = store.folds[itemID] ?? false
-      store.setFold(itemID: itemID, expanded: !currentlyExpanded)
-      // Controller 的 store.$folds sink 会看到变化，走 applyFolds 里的
-      // outlineView.animator().expandItem / collapseItem
-  }
-  ```
+**Fold 交互路径**：native disclosure triangle 用户点击 → `NSOutlineView` 内部展开/收起 + 发 `outlineViewItemDidExpand` / `outlineViewItemDidCollapse` → Controller 实现的 `NSOutlineViewDelegate` 方法拿到 item → 同步写 `store.setFold(...)`。**无自绘 chevron、无 mouseDown hit test、无 chevron delegate 方法** —— native 的现成能力就够。
 
 **规范**：全部 `View` 后缀（子 view 叫 `*BlockView` 而非 `*Subview` —— "Subview" 是 caller-shape 命名，`View` 是标准角色后缀）；只显示 + 报告；`configure(with:)` 幂等（reuse 时每字段都重写，无残留状态 —— 顶层 `CLAUDE.md` list 规范）；不直连 Store / VM / SDK；不持 domain object 引用超过当前 reuse；`init(coder:)` `@available(*, unavailable) + fatalError`。
 
@@ -476,17 +462,24 @@ if let a = anchor,
 - beforeWaiting：CoreAnimation 只重绘那两 row 的 layer 内容。
 - **不走 `reloadData` / `noteHeightOfRows`**（hover 只是颜色，与度量无关 —— 老 `NativeTranscript2/CLAUDE.md § 2.12`）。
 
-### 4.4 Fold（点击自绘 chevron）
+### 4.4 Fold（native disclosure triangle）
 
-- Row view `mouseDown(with:)` 里 hit-test 自绘 chevron rect → `delegate.rowViewDidClickChevron(itemID:)`。Controller 里**直接调 store**（不经 VM）：
+用户在 `NSOutlineView` 的 native disclosure triangle 上点击：
+
+- **NSOutlineView 内部**：立即处理 expand/collapse、跑 fold 动画、发送 `outlineViewItemDidExpand` / `outlineViewItemDidCollapse` `Notification`。
+- **Controller 侧**：实现 `NSOutlineViewDelegate.outlineViewItemDidExpand(_:)` / `outlineViewItemDidCollapse(_:)`：
   ```
-  func rowViewDidClickChevron(itemID: TranscriptItem.ID) {
-      let currentlyExpanded = store.folds[itemID] ?? false
-      store.setFold(itemID: itemID, expanded: !currentlyExpanded)
-      // store.folds 变 → store.$folds sink 触发
+  func outlineViewItemDidExpand(_ notification: Notification) {
+      guard let node = notification.userInfo?["NSObject"] as? TranscriptOutlineNode else { return }
+      store.setFold(itemID: node.id, expanded: true)
+  }
+  func outlineViewItemDidCollapse(_ notification: Notification) {
+      guard let node = notification.userInfo?["NSObject"] as? TranscriptOutlineNode else { return }
+      store.setFold(itemID: node.id, expanded: false)
   }
   ```
-- `store.$folds.sink { [weak self] newFolds in self?.applyFolds(newFolds) }`（`newFolds` 用 sink 参数，不重读）。`applyFolds`：diff `newFolds` 与 outline view 现状，仅对差异 node 走 `outlineView.animator().expandItem(node, expandChildren: false)` / `collapseItem(node)`。
+  只做 view→store 状态同步（fold state 持久到 Session 域），**不**在此重派生 outline。
+- **`store.$folds.sink { [weak self] newFolds in self?.applyFolds(newFolds) }`** 处理**非 native-click 触发**的 fold 变化：首屏 attach 时的 `restoreFoldsAfterReload`（从 `store.folds` 展开预存态）走这条。**幂等 diff**：`applyFolds` 对比 `newFolds` 与 `outlineView.isItemExpanded(node)`，仅对差异 node 调 `outlineView.animator().expandItem(node, expandChildren: false)` / `collapseItem(node)`。因此 native click → `outlineViewItemDidExpand` → `store.setFold` → `store.$folds` sink → `applyFolds` 发现 outline view 已在目标态 → 跳过。**无回环 bug**。
 - **outline view 的 fold 动画由 AppKit 在 beforeWaiting flush**（`NSOutlineView` native `expandItem` / `collapseItem` 走 `CATransaction`）—— 我们不手绘任何 frame 动画。
 - **不重派生 outline**（folds 不影响 tree 结构）。
 
@@ -568,7 +561,7 @@ TranscriptOutlineController.view                NSView             full pane
     · contentInsets = NSEdgeInsets(top: 56, left: 0, bottom: 112, right: 0)
     · 4-edge pin to view
  └ TranscriptClipView (contentView)             subclass —— 见 § 2.8
- └ TranscriptOutlineView (documentView)         NSOutlineView 子类
+ └ NSOutlineView (documentView)                 直接用 stock，不子类化
     · headerView = nil
     · backgroundColor = .clear
     · style = .plain
@@ -577,11 +570,9 @@ TranscriptOutlineController.view                NSView             full pane
     · usesAutomaticRowHeights = false
     · rowSizeStyle = .custom
     · intercellSpacing = .zero
-    · outlineTableColumn = column  (单列，是"outline column"; native disclosure 属于此列)
+    · outlineTableColumn = column                                     (单列；disclosure triangle 挂此列)
     · autosaveExpandedItems = false                                   (fold 由 Store 管，不落 defaults)
-    · indentationPerLevel = 0                                         (indent 自绘)
-    · autoresizesOutlineColumn = false
-    · override frameOfOutlineCell(atRow:) -> NSRect { return .zero }  ← 隐藏 native disclosure
+    · indentationPerLevel = 使用系统默认                                (native disclosure + native indent)
     Auto Layout:
       · widthAnchor ≤ 780 required
       · widthAnchor ≥ 460 required
@@ -591,9 +582,7 @@ TranscriptOutlineController.view                NSView             full pane
  └ 4 类 row view（reuse identifier 分派见 § 2.11）
 ```
 
-**Native disclosure 隐藏**：`TranscriptOutlineView: NSOutlineView` 子类里 override `frameOfOutlineCell(atRow:)` 返回 `.zero`。这样系统仍然维护 `outlineTableColumn` 单列布局（我们唯一的 column），native disclosure triangle 只是 frame 是 zero 因此不可见、不 hit test；native `expandItem` / `collapseItem` 通过我们自绘 chevron 的 mouseDown → controller 触发（见 § 2.11 / § 4.4）。
-
-**Indent 自绘**：outline node 有层级（group / invocation / body）—— row view 的 `layoutOrigin.x` 按 node 的层级偏移（controller 在 `outlineView(_:viewFor:)` 里读 `outlineView.level(forItem:)` 传给 row view 的 `configure`）。`indentationPerLevel = 0` 让 system 不加 indent（否则会与自绘冲突）。
+**Disclosure triangle 与 indent 全部走 `NSOutlineView` 原生** —— 不 override `frameOfOutlineCell`、不 override `indentationPerLevel`、不自绘 chevron。fold 交互见 § 4.4。
 
 Controller 实现 `outlineView(_:rowViewForItem:)` 用稳定 identifier `"TranscriptOutlineRow"` dequeue-or-new `NSTableRowView`（顶层 `CLAUDE.md` list 规范 —— 稳定 reuse id 避免 per-tick 重分配）。
 
@@ -880,7 +869,7 @@ scrollView.reflectScrolledClipView(scrollView.contentView)   // 文档要求成�
 
 Fold 与 hover 的完整交互流已在 § 4.3 / § 4.4 说明。要点回顾：
 
-- **Fold**：自绘 chevron 点击 → `delegate.rowViewDidClickChevron` → Controller 直接调 `store.setFold` → `store.$folds.sink` → `applyFolds` diff → `outlineView.animator().expandItem` / `collapseItem`。VM 不参与 fold 面（无 pass-through）。fold state 住 Store，跨 mount 生存。
+- **Fold**：native disclosure triangle 点击 → `NSOutlineView` 内部 expand/collapse + 发 `outlineViewItemDidExpand` / `outlineViewItemDidCollapse` → Controller 的 `NSOutlineViewDelegate` 方法 → 同步写 `store.setFold` → `store.$folds` sink → `applyFolds` 幂等 diff（发现 view 已在目标态则 no-op，无回环）。VM 不参与 fold 面（无 pass-through）。fold state 住 Store，跨 mount 生存。
 - **Hover**：`rowViewDidEnterHover(itemID:)` / `rowViewDidExitHover(itemID:)` 方法上报 → Controller 记 `hoveredItemID` → 老 hover row + 新 hover row 各设 `needsDisplay = true`。不 reload / 不 noteHeightOfRows。
 
 ## 8. 语法高亮回填 —— 下一 PR
@@ -995,14 +984,13 @@ override func prepareForRemoval() {
 - **`TranscriptViewModelPureFnTests`**：drive `TranscriptViewModel.deriveOutline(items:, pool: &localPool)` 用 local 空 pool → 断言 VM 自身的 `outlineNodePool` 引用不变（pure fn 契约）；同 items + local 空 pool vs `&outlineNodePool` 产 tree 结构相等（拓扑等价、id 集合相等）
 - **`TranscriptOutlineControllerAttachOrderTests`**：drive `viewDidLoad` + `viewDidLayout`（stub SDK 返回 canned Page）；断言首屏 sync loop 后 `outlineView.numberOfRows == expected`（**不**用 call-counter 型断言）
 - **`TranscriptOutlineControllerSecondMountTests`**：pre-populated store + new controller + 触发 `viewDidLayout` → **不**再调 `loadPage`（stub SDK 若被调则 fail）；`outlineView.numberOfRows` 立即 = `store.items` 派生出的 outline top-level 数；scroll 位按 `store.lastKnownScrollAnchor` 恢复
-- **`TranscriptOutlineControllerFoldTests`**：drive `rowViewDidClickChevron(itemID:)` → 断言 `store.folds[id] == true`（Controller 直接调 store，不经 VM）；再 drive `store.setFold(id, false)` → 断言 `outlineView.isItemExpanded(node) == false`
+- **`TranscriptOutlineControllerFoldTests`**：drive `outlineViewItemDidExpand(_:)` / `outlineViewItemDidCollapse(_:)`（模拟 native disclosure click 后 AppKit 发的 notification）→ 断言 `store.folds[id]` 被同步更新；再 drive `store.setFold(id, false)` → 断言 `outlineView.isItemExpanded(node) == false`；drive 一次 `store.setFold(id, true)` 后立即再一次相同调用 → 断言 `applyFolds` 幂等（第二次不触发 `expandItem`，无回环）
 - **`TranscriptOutlineControllerApplyOutlineTests`**：
   - 快路径：pre-existing outline `[A, B, C]`；prepend 使 outline 变 `[X, Y, A, B, C]` → 断言 outline view 走 `insertItems(at: 0..<2)`，不走 reloadData
   - 慢路径：结构非纯前置（比如 orphan tool_result 从独立顶层节点 collapse 进 invocation children）→ 断言走 reloadData + `restoreFoldsAfterReload`
 - **`TranscriptOutlineControllerAnchorMathTests`**：stable fixture（每 row 60pt）；prepend 一批更旧 5 nodes 后 clip.origin.y 使 `topVisibleNode` 视觉位置不变（新 origin.y = 旧 origin.y + 5×60）；variable-height fixture 也测一次
 - **`TranscriptOutlineControllerRetileTests`**：drive `viewDidLayout` 变宽（非拖拽） → 断言 `rowHeightsByID` 全清后按新宽度重算；drive `viewDidLayout` 在 `inLiveResize` = true 时 → 断言 `rowHeightsByID` 未清、`heightCacheWidth` 未变
 - **`TranscriptClipViewCenteringTests`**：documentView 宽 500，`constrainBoundsRect` 于 proposed 宽 800 / 500 / 300 → origin.x = -150 / 0 / 0
-- **`TranscriptOutlineViewDisclosureHiddenTests`**：`frameOfOutlineCell(atRow:)` 返回 `.zero`（直接调 API 断言）
 - **`SessionHistoryCursorTests`**：cursor + Page 正确；`stream` 与 `loadPage` 同 fixture 产**相同**页序列（两条 API 语义完全一致 —— 没有跨调用 buffer 差异）；orphan tool_result **不**被跨页 withhold（页内原样吐出，由 VM 侧处理）
 - **`SessionHistoryStreamProducerThreadTests`**：drive `stream(id:cursor:)` 从 MainActor Task 里 iterate；用 `dispatchPrecondition` 或 `Thread.isMainThread` 断言 producer 里的 `loadPage` 调用**不**在 main thread（顶层规范：producer 强制 off-main）
 
@@ -1015,7 +1003,7 @@ override func prepareForRemoval() {
 5. **VM**：`TranscriptViewModel`（`static deriveOutline(items:pool:)` pure fn + `outlineNodePool` 复用池 + init 立即 derive + 不 dropFirst 订阅）。**不**暴露 fold API（Controller 直接调 store）；**没有** `previewOutline` 孪生方法（loader 直接调 pure fn `deriveOutline` with local pool）。**每次 mount 新建**，不缓存。
 6. **View**：
    - `TranscriptClipView`（居中）
-   - `TranscriptOutlineView`（`NSOutlineView` 子类 —— override `frameOfOutlineCell(atRow:)`）
+   - `NSOutlineView` 直接用 stock（不子类化 —— disclosure triangle + indent 全走 native）
    - `TranscriptRowView` 基类 + 4 类具体：`MarkdownRowView` / `ToolGroupHeaderRowView` / `ToolInvocationHeaderRowView` / `ToolBodyRowView` + 10 个 per-tool-kind body subclass；`ToolBodyKind` enum 集中管理 reuse identifier
    - **小改** `RowLayout` 让它按 `TranscriptItem` 输入（不再看老 `Block`）
    - **参考迁移** `Layout/ToolGroupChildren/<Kind>/*Layout.swift` 里 body 度量到对应 body subclass

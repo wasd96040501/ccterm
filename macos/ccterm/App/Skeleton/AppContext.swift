@@ -20,9 +20,4 @@ struct AppContext {
     let activationTracker: AppActivationTracker
     let notificationService: NotificationService
     let openInService: OpenInAppService
-    /// App-scope transcript store registry. Owned by `AppDelegate`, keyed
-    /// by transcript id, kept alive for the whole process — the state /
-    /// typeset cache that lets sidebar switch-back paint instantly lives
-    /// in here, not in the transcript VC.
-    let transcriptRegistry: TranscriptRegistryStore
 }

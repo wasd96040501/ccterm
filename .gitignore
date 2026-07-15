@@ -52,3 +52,4 @@ xcresult/
 
 # App-icon master, regenerated from the SVG by `make icon` (feed to Icon Composer)
 design/icon/AppIcon-foreground-1024.png
+.playwright-cli/

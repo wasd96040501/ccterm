@@ -23,4 +23,11 @@ final class TranscriptNodeItem {
 
     var id: UUID { node.id }
     var isExpandable: Bool { node.isExpandable }
+
+    /// Header rows reserve the chevron slot (native triangle + gap)
+    /// ahead of their title; every other row starts at plain content x.
+    var isHeader: Bool {
+        if case .header = node.content { return true }
+        return false
+    }
 }

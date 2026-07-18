@@ -38,6 +38,10 @@ final class TranscriptOutlineMountSnapshotTests: XCTestCase {
             contentRect: NSRect(x: 0, y: 0, width: 900, height: 760),
             styleMask: [.borderless], backing: .buffered, defer: false)
         window.contentViewController = vc
+        // Setting contentViewController resizes the window to the VC's
+        // fitting size (≈ 0 for a pin-only pane); restore the real size
+        // so the clip/outline lay out at production-like width.
+        window.setContentSize(NSSize(width: 900, height: 760))
         window.contentView?.layoutSubtreeIfNeeded()
         vc.present(sessionId: "fixture")
         RunLoop.current.run(until: Date().addingTimeInterval(0.4))
@@ -69,13 +73,46 @@ final class TranscriptOutlineMountSnapshotTests: XCTestCase {
             outline.layoutSubtreeIfNeeded()
             RunLoop.current.run(until: Date().addingTimeInterval(0.2))
             XCTAssertEqual(outline.numberOfRows, 6, "group expands to 2 children")
-            XCTAssertGreaterThan(
+            // Content shorter than the viewport keeps the documentView
+            // stretched to the clip height, so equality is legitimate
+            // here; strict growth (tall body past the viewport) is gated
+            // by TranscriptOutlineGeometryTests.
+            XCTAssertGreaterThanOrEqual(
                 outline.frame.height, heightBefore,
-                "expanding a group should grow the document height")
+                "expanding a group must never shrink the document height")
+        }
+
+        // Visual review artifact: expand the first tool body too, then
+        // write a PNG (chevron alignment, column centering, L1-L3 gaps).
+        if let tool = group?.children.first {
+            outline.expandItem(tool)
+            outline.layoutSubtreeIfNeeded()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.3))
+        }
+        if let url = Self.writePNG(of: window, name: "TranscriptOutline") {
+            let attachment = XCTAttachment(contentsOfFile: url)
+            attachment.name = "TranscriptOutline.png"
+            attachment.lifetime = .keepAlways
+            add(attachment)
         }
     }
 
     // MARK: - Helpers
+
+    /// Renders the window's content view into a PNG under
+    /// /tmp/ccterm-screenshots/ and returns the file URL.
+    private static func writePNG(of window: NSWindow, name: String) -> URL? {
+        guard let content = window.contentView,
+            let rep = content.bitmapImageRepForCachingDisplay(in: content.bounds)
+        else { return nil }
+        content.cacheDisplay(in: content.bounds, to: rep)
+        guard let data = rep.representation(using: .png, properties: [:]) else { return nil }
+        let dir = URL(fileURLWithPath: "/tmp/ccterm-screenshots", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let url = dir.appendingPathComponent("\(name).png")
+        try? data.write(to: url)
+        return url
+    }
 
     private static func findOutline(in view: NSView) -> NSOutlineView? {
         if let outline = view as? NSOutlineView { return outline }
@@ -85,8 +122,16 @@ final class TranscriptOutlineMountSnapshotTests: XCTestCase {
         return nil
     }
 
+    /// One `Message2Resolver` across all messages — the resolver is
+    /// stateful (it types a `tool_use_result` by pairing the id against
+    /// earlier assistant `tool_use`s), same as the production
+    /// `SessionHistory` line loop.
     private static func fixture() -> [Message2] {
-        [
+        let resolver = Message2Resolver()
+        func resolve(_ dict: [String: Any]) -> Message2 {
+            try! resolver.resolve(dict)
+        }
+        return [
             resolve([
                 "type": "assistant",
                 "uuid": UUID().uuidString,
@@ -145,7 +190,4 @@ final class TranscriptOutlineMountSnapshotTests: XCTestCase {
         ]
     }
 
-    private static func resolve(_ dict: [String: Any]) -> Message2 {
-        try! Message2Resolver().resolve(dict)
-    }
 }

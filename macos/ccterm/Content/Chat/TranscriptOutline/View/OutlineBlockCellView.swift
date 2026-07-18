@@ -2,17 +2,21 @@ import AppKit
 
 /// Self-drawn outline cell. Reuses the `NativeTranscript2` cell drawing
 /// path (`wantsLayer` + `.onSetNeedsDisplay` layer cache, `override
-/// draw(_:)` painting a prepared `RowLayout`) but **without** the
-/// centering offset — the `TranscriptClipView` centers the whole outline
-/// and the native indent expresses the hierarchy, so this cell only
-/// insets by the block's standard horizontal padding (SPEC §6.4 /
-/// decision 4).
+/// draw(_:)` painting a prepared `RowLayout`).
 ///
-/// A dumb view: it renders whatever `layout` / `padTop` the controller's
-/// delegate hands it, opens link / copy hits, and forwards other clicks
-/// to the enclosing outline so native selection + disclosure keep
-/// working. Selection, search, hover, and the tool-group subview/chevron
-/// machinery are out of scope for this cut.
+/// **Centering chokepoint.** The outline spans the full row width; the
+/// centered 460–780 content column exists only here. `layoutOrigin` is
+/// the single place the column offset is computed (via
+/// `TranscriptOutlineMetrics`) — draw, cursor rects and hit tests all go
+/// through it, and `draw(_:)` additionally clips the context to the
+/// column slot, so a layout **cannot** paint outside the centered column
+/// even if it misbehaves. Layouts stay column-agnostic: they only ever
+/// see a `maxWidth` and a caller-supplied origin.
+///
+/// A dumb view: it renders whatever the controller's `viewFor` hands it
+/// (`layout` / `layoutWidth` / `level` / `hasChevronSlot` / `padTop`),
+/// opens link / copy hits, and forwards other clicks to the enclosing
+/// outline so native disclosure keeps working.
 final class OutlineBlockCellView: NSView {
     static let reuseIdentifier = NSUserInterfaceItemIdentifier("OutlineBlockCell")
 
@@ -22,6 +26,21 @@ final class OutlineBlockCellView: NSView {
             needsDisplay = true
             window?.invalidateCursorRects(for: self)
         }
+    }
+
+    /// Width `layout` was typeset at — the clip slot's width.
+    var layoutWidth: CGFloat = 0 {
+        didSet { if layoutWidth != oldValue { needsDisplay = true } }
+    }
+
+    /// Outline level of this row's node; drives the per-level indent.
+    var level: Int = 0 {
+        didSet { if level != oldValue { needsDisplay = true } }
+    }
+
+    /// Header rows start their title after the native triangle's slot.
+    var hasChevronSlot: Bool = false {
+        didSet { if hasChevronSlot != oldValue { needsDisplay = true } }
     }
 
     /// Top padding contributed by the row; drives `layoutOrigin.y`.
@@ -40,21 +59,37 @@ final class OutlineBlockCellView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    /// No `cellOriginX` centering (the clip centers the outline); the
-    /// left inset is just the block's standard horizontal padding, and
-    /// the native indent has already shifted this cell's frame right.
+    /// Top-left of the layout in cell coordinates. The column position is
+    /// computed in **row** coordinates from the row's full width (the
+    /// row view spans the table), then converted by subtracting this
+    /// cell's own frame offset — so the native outline-column inset on
+    /// the cell frame cancels out instead of shifting the column.
     var layoutOrigin: CGPoint {
-        CGPoint(x: BlockStyle.blockHorizontalPadding, y: padTop)
+        let rowWidth = superview?.bounds.width ?? bounds.width
+        let xInRow = TranscriptOutlineMetrics.contentX(
+            forRowWidth: rowWidth, level: level, hasChevronSlot: hasChevronSlot)
+        return CGPoint(x: max(0, xInRow - frame.origin.x), y: padTop)
     }
 
-    // Note: default clipping (clip to bounds) is intentionally kept — unlike
-    // the monolithic `BlockCellView`, this cell hosts no overflowing subviews
-    // / shadows, so clipping to bounds is a cheap safety net that keeps a
-    // content width slightly over the estimated cell width from bleeding into
-    // the centered column's gutter.
     override func draw(_ dirtyRect: NSRect) {
         guard let layout, let ctx = NSGraphicsContext.current?.cgContext else { return }
         let origin = layoutOrigin
+        #if DEBUG
+        // A layout typeset wider than its slot means some caller
+        // bypassed `TranscriptOutlineMetrics.layoutWidth` — surface it
+        // in development instead of silently clipping.
+        assert(
+            layoutWidth <= 0 || layout.measuredWidth <= layoutWidth + 0.5,
+            "layout typeset wider (\(layout.measuredWidth)) than its column slot (\(layoutWidth))"
+        )
+        #endif
+        ctx.saveGState()
+        defer { ctx.restoreGState() }
+        // Hard column boundary: nothing paints left/right of the slot.
+        if layoutWidth > 0 {
+            ctx.clip(
+                to: CGRect(x: origin.x, y: 0, width: layoutWidth, height: bounds.height))
+        }
         // Opaque card chrome first (codeblock / tool-body), so any later
         // glyphs composite on top.
         layout.drawBackplate(in: ctx, origin: origin, dirtyRect: dirtyRect)

@@ -16,18 +16,19 @@ import AppKit
 /// `copyChromes` so the cell can register their hit zones.
 struct ToolBodyLayout: @unchecked Sendable {
     let body: ToolGroupChildLayout
-    /// Row content width the body was typeset at (net of horizontal
-    /// padding) — the layout cache's width key compares against this.
+    /// The typeset width — the layout cache's width key compares
+    /// against this.
     let measuredWidth: CGFloat
 
     var totalHeight: CGFloat { body.totalHeight }
 
-    /// `rowWidth` is the full cell width; the body is typeset at
-    /// `rowWidth - 2 * blockHorizontalPadding`, matching every other
-    /// block kind's content inset. Highlight tokens are not wired in this
-    /// round (cold render — plain code), so `highlight` is `nil`.
-    static func make(child: ToolGroupBlock.Child, rowWidth: CGFloat) -> ToolBodyLayout {
-        let contentWidth = max(0, rowWidth - 2 * BlockStyle.blockHorizontalPadding)
+    /// `maxWidth` is the final typeset width, already net of every
+    /// column inset (the caller computes it through
+    /// `TranscriptOutlineMetrics.layoutWidth` — the single width
+    /// chokepoint). Highlight tokens are not wired in this round (cold
+    /// render — plain code), so `highlight` is `nil`.
+    static func make(child: ToolGroupBlock.Child, maxWidth: CGFloat) -> ToolBodyLayout {
+        let contentWidth = max(0, maxWidth)
         let body = ToolGroupChildLayout.make(
             child: child,
             highlight: nil,

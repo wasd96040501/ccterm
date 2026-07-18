@@ -66,35 +66,42 @@
 - 展开 / 折叠由原生 `NSOutlineView` 负责；store 只回答 children / isExpandable。
 - **初始状态：tool group 默认折叠**（顶级 user / markdown 全显示）；加载后 `scrollToTail` 到底。
 
-## 5. 居中（保留自上一轮会话的确定方案）
+## 5. 居中（v2 修订 —— 全宽 outline + 行内定宽居中）
 
-居中由 **`TranscriptClipView`（`NSClipView` 子类）** 做「中央定宽 + 水平居中」——
-**不是**靠 cell 偏移绘制原点。outlineView 本身是一个定宽（[460, 780]）的 documentView，
-clip 把它在窗口里居中；native indent（disclosure 三角 + 每级缩进）在这个定宽
-documentView **内部**生效。
+> **修订记录**：v1 方案（定宽 [460,780] documentView + `TranscriptClipView` 居中 +
+> 四条宽度约束）已被实证否决：`NSTableView` 族 documentView 的 frame 由自身 tile +
+> clip 直接管理，宽度约束不生效（outline 被撑满全宽、居中分支永不触发）；且
+> `translates=false` 下**动画展开**（点击三角）只更新 `intrinsicContentSize` 不写
+> frame，文档高度卡死、无法下滚。clip 居中手法本身是官方 pattern（Apple 示例
+> `Exhibition/CenteringClipView.swift`），但它适用于自由尺寸文档，不适用于 table 族。
+> 成熟先例（TelegramSwift 聊天表格、旧 NativeTranscript2）均为「全宽表格 + 行内定宽居中」。
 
-**`TranscriptClipView`（`NSClipView` 子类）**：
+**outline 是全宽、frame-based 的 documentView**（table 族的原生契约：宽度随 clip、
+高度由自身 tile 管理，动画展开正常长高）。居中的 460–780 内容列只存在于**行内部**：
 
-- override `constrainBoundsRect(_ proposed:) -> NSRect`：当 documentView 比 clip **窄**时，
-  把 `bounds.origin.x` 置为 `floor((proposed.width - docWidth) / -2.0)` 实现水平居中；
-  否则原样返回。垂直方向直通不改。
-- override `setFrameSize(_:)`：`super.setFrameSize(NSSize(width: max(0, size.width), height: max(0, size.height)))`，
-  clamp 掉 AppKit 在 scroller 布局窗口里瞬时下发的负宽度。
-- 依据：`NSClipView.constrainBoundsRect` 默认把窄 documentView 夹到 flush-left（Apple 文档
-  记载行为），子类反转是官方推荐的居中 pattern，不是 hack。`NSOutlineView` 是 `NSTableView`
-  子类，同样适用。
+- **单一几何事实源 `TranscriptOutlineMetrics`**：列左沿 = `BlockStyle.cellOriginX`（与旧
+  renderer 同一函数）；每级缩进 `indentStep = 16`；header 行三角槽 `chevronSlot = 24`；
+  排版宽度 = `clamp(行宽, 460, 780) − 2×16 − level×16 (− chevronSlot)`。store / VC /
+  cell / outline 子类全部经它取数，宽度与原点不可能失配。
+- **cell 是居中唯一关口**：`OutlineBlockCellView.layoutOrigin` 换算列偏移（减掉自身
+  frame.x，抵消 native 缩进），draw / cursor / hit 全走它；`draw(_:)` 内 `ctx.clip`
+  到列槽 —— layout 物理上画不出居中列（硬边界，非约定），另有 DEBUG 断言拦截
+  排版超宽。layout 层对居中零感知。
+- **`TranscriptOutlineView`（最小子类）**：仅 override `frameOfOutlineCell(atRow:)`
+  （Apple 文档明示的定制点），把原生三角摆进内容列（x = 本行 content x，与上一级
+  文本左沿对齐；y 对准 24pt header 标题带）。三角的绘制与旋转动画仍全部原生。
+  `indentationPerLevel = 0` —— 缩进全部由 Metrics 表达。
 
 **`NSScrollView`（host）配置**：`wantsLayer = true` + `layerContentsRedrawPolicy = .never`；
 `hasVerticalScroller = true` + `autohidesScrollers = true`；`hasHorizontalScroller = false`；
 `scrollerStyle = .overlay`；`drawsBackground = false` + `borderType = .noBorder`；
-`automaticallyAdjustsContentInsets = false`；**先赋 `contentView = TranscriptClipView()` 再设 insets**；
+`automaticallyAdjustsContentInsets = false`；stock `NSClipView`（layer-backed `.never`）；
 `contentInsets = NSEdgeInsets(top: 56, left: 0, bottom: 112, right: 0)`；4 边 pin 到 `view`。
+documentView **不加任何约束**。
 
-**`NSOutlineView`（直接用 stock，不子类化 —— disclosure triangle + indent 全走 native）宽度约束**：
-`width ≤ 780`（required）、`width ≥ 460`（required）、`width == clip.width` priority `.defaultLow`、
-`top == clip.top`。
-
-（`460` / `780` 即现有 `BlockStyle.minLayoutWidth` / `maxLayoutWidth`。cell 不负责居中。）
+**纵向节奏（L1/L2/L3，常量在 Metrics）**：L1 组头行 (top 8, bottom 2)；L2 tool header
+行 (2, 2)；L3 body 行 (2, 2) —— 相邻 header↔header / header↔body 间距均为规范的
+`toolHeaderChildSpacing`(4pt)，组头顶部走 hard-edged 块级 8pt 档。
 
 ## 6. 组件（职责 + 需暴露的能力）
 
@@ -111,17 +118,19 @@ documentView **内部**生效。
    - 无 UI、不持 `NSView`。
 
 2. **`TranscriptViewController`** — `NSViewController`。
-   - `loadView` 建 `NSScrollView`(host) + `TranscriptClipView` + stock `NSOutlineView` 视图树（不调 `super.loadView`）。
+   - `loadView` 建 `NSScrollView`(host) + `TranscriptOutlineView` 视图树（不调 `super.loadView`）。
    - `viewDidLoad` 绑 dataSource/delegate、一次性配置。
    - 持有 `store`；**自身兼任** outline 的 `NSOutlineViewDataSource` /
      `NSOutlineViewDelegate`（同文件 extension），从 store 取数。
    - 对外：`present(sessionId:)`、`scrollToTail()`。
    - `init(coder:)` 封死。
 
-3. **`TranscriptClipView`** — `NSClipView` 子类，按 §5 做中央定宽 + 水平居中 + 负宽 clamp。
+3. **`TranscriptOutlineMetrics`** — 几何单一事实源（列位置 / 缩进 / 排版宽度 / L1-L3
+   纵向节奏），store / VC / cell / outline 子类共用（§5 v2）。
 
-4. **outline 视图 + cell** — `NSOutlineView` **直接用 stock，不子类化**（disclosure 三角 +
-   indent 全走 native）；cell 自绘（用 `RowLayout.draw` 绘制）；居中不由 cell 负责（§5 由 clip 做）。
+4. **outline 视图 + cell** — `TranscriptOutlineView`（最小 `NSOutlineView` 子类，仅
+   override `frameOfOutlineCell(atRow:)` 摆放原生三角，见 §5 v2）；cell 自绘（用
+   `RowLayout.draw` 绘制），**cell 是行内居中唯一关口**（layoutOrigin + ctx.clip 硬边界）。
 
 5. **`HistorySessionViewController`**（现有，`macos/ccterm/App/AppKit/HistorySessionViewController.swift`）
    瘦成容器：

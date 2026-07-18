@@ -57,8 +57,10 @@ final class TranscriptStore {
 
     // MARK: - Layout
 
-    /// The node's `RowLayout` at `width` (the cell's available content
-    /// width). Cached; recomputed on a width change.
+    /// The node's `RowLayout` at `width` — the **final typeset width**
+    /// (already net of column padding / indent / chevron slot; the
+    /// controller computes it via `TranscriptOutlineMetrics.layoutWidth`,
+    /// the single width chokepoint). Cached; recomputed on a width change.
     func rowLayout(for item: TranscriptNodeItem, width: CGFloat) -> RowLayout {
         if let cached = layoutCache[item.id], cached.width == width {
             return cached.layout
@@ -70,19 +72,26 @@ final class TranscriptStore {
 
     /// Top / bottom padding contributed by the row around its layout.
     /// `top` drives the cell's `layoutOrigin.y`; `top + layout height +
-    /// bottom` is the row height.
-    func verticalPadding(for item: TranscriptNodeItem) -> (top: CGFloat, bottom: CGFloat) {
-        Self.verticalPadding(for: item.node.content)
+    /// bottom` is the row height. `level` distinguishes the group header
+    /// (outline level 0) from tool headers (level 1) — same `Content`
+    /// case, different L1/L2 rhythm tier.
+    func verticalPadding(
+        for item: TranscriptNodeItem, level: Int
+    ) -> (top: CGFloat, bottom: CGFloat) {
+        Self.verticalPadding(for: item.node.content, level: level)
     }
 
     /// Total row height at `width` (padding + layout height).
-    func height(for item: TranscriptNodeItem, width: CGFloat) -> CGFloat {
-        let pad = verticalPadding(for: item)
+    func height(for item: TranscriptNodeItem, width: CGFloat, level: Int) -> CGFloat {
+        let pad = verticalPadding(for: item, level: level)
         return pad.top + rowLayout(for: item, width: width).totalHeight + pad.bottom
     }
 
     // MARK: - Row-layout dispatch
 
+    /// `width` is the final typeset width for every case — no further
+    /// insetting here. Horizontal geometry has exactly one home
+    /// (`TranscriptOutlineMetrics`); this function just forwards.
     private static func makeRowLayout(
         content: TranscriptNode.Content, width: CGFloat
     ) -> RowLayout {
@@ -90,14 +99,9 @@ final class TranscriptStore {
         case .block(let block):
             return makeBlockLayout(block, width: width)
         case .header(let title):
-            // Inset by the same horizontal padding as `.block` / `.toolBody`
-            // (the cell draws the title at `layoutOrigin.x =
-            // blockHorizontalPadding`), so a long header title can't extend
-            // past the content column into the right padding.
-            let headerWidth = max(0, width - 2 * BlockStyle.blockHorizontalPadding)
-            return .header(HeaderLayout.make(title: title, maxWidth: headerWidth))
+            return .header(HeaderLayout.make(title: title, maxWidth: width))
         case .toolBody(let child):
-            return .toolBody(ToolBodyLayout.make(child: child, rowWidth: width))
+            return .toolBody(ToolBodyLayout.make(child: child, maxWidth: width))
         }
     }
 
@@ -107,7 +111,7 @@ final class TranscriptStore {
     /// `toolGroup` / `loadingPill` never reach here (the tree-ification
     /// never emits them); the defensive arm renders nothing.
     private static func makeBlockLayout(_ block: Block, width: CGFloat) -> RowLayout {
-        let contentWidth = max(0, width - 2 * BlockStyle.blockHorizontalPadding)
+        let contentWidth = max(0, width)
         switch block.kind {
         case .heading(let level, let inlines):
             return .text(
@@ -149,20 +153,19 @@ final class TranscriptStore {
     }
 
     private static func verticalPadding(
-        for content: TranscriptNode.Content
+        for content: TranscriptNode.Content, level: Int
     ) -> (top: CGFloat, bottom: CGFloat) {
         switch content {
         case .block(let block):
             return BlockStyle.blockPadding(for: block.kind)
         case .header:
-            // Headers stack tightly; the native indent expresses the
-            // hierarchy, so a small symmetric pad keeps the title band
-            // from crowding its neighbours.
-            return (top: 4, bottom: 4)
+            // L1 (group header, level 0) vs L2 (tool header) — the strict
+            // vertical rhythm lives in TranscriptOutlineMetrics.
+            return level == 0
+                ? TranscriptOutlineMetrics.groupHeaderPadding
+                : TranscriptOutlineMetrics.toolHeaderPadding
         case .toolBody:
-            // A little breathing room under the header, more below so
-            // the card doesn't butt against the next header.
-            return (top: 2, bottom: 8)
+            return TranscriptOutlineMetrics.toolBodyPadding
         }
     }
 }

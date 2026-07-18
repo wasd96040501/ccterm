@@ -20,6 +20,11 @@ final class TranscriptStore {
     /// to `NSOutlineView`.
     private(set) var roots: [TranscriptNodeItem] = []
 
+    /// id → item over the whole tree, rebuilt on load. Lets the
+    /// selection path resolve an item handle from a node id without
+    /// walking the tree.
+    private(set) var itemsById: [UUID: TranscriptNodeItem] = [:]
+
     /// Per-node layout cache, keyed by node id with the typeset width
     /// stored inside. A width mismatch is a miss that recomputes lazily —
     /// derived state, never authoritative.
@@ -35,7 +40,17 @@ final class TranscriptStore {
         let messages = historySource.loadMessages(sessionId: sessionId)
         roots = TranscriptTreeBuilder.build(messages: messages).map(TranscriptNodeItem.init)
         layoutCache.removeAll()
+        itemsById.removeAll()
+        func index(_ items: [TranscriptNodeItem]) {
+            for item in items {
+                itemsById[item.id] = item
+                index(item.children)
+            }
+        }
+        index(roots)
     }
+
+    func item(for id: UUID) -> TranscriptNodeItem? { itemsById[id] }
 
     // MARK: - Outline query surface
 

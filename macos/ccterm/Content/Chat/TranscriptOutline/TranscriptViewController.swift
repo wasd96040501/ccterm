@@ -22,6 +22,9 @@ final class TranscriptViewController: NSViewController {
 
     private let scrollView = NSScrollView()
     private let outlineView = TranscriptOutlineView()
+    /// Selection state + drag algorithm; the outline drives it from its
+    /// tracking loop, this VC serves as its row-data surface.
+    private let selection = TranscriptSelectionCoordinator()
 
     init(store: TranscriptStore) {
         self.store = store
@@ -93,6 +96,9 @@ final class TranscriptViewController: NSViewController {
         super.viewDidLoad()
         outlineView.dataSource = self
         outlineView.delegate = self
+        selection.rowSource = self
+        selection.outlineView = outlineView
+        outlineView.selection = selection
     }
 
     // MARK: - Presentation
@@ -101,6 +107,7 @@ final class TranscriptViewController: NSViewController {
     /// tail. Tool groups start collapsed (the outline's default) so only
     /// top-level user / markdown nodes show initially (SPEC §4).
     func present(sessionId: String) {
+        selection.clearAll()
         store.load(sessionId: sessionId)
         outlineView.reloadData()
         scrollToTail()
@@ -177,6 +184,7 @@ extension TranscriptViewController: NSOutlineViewDelegate {
         cell.layoutWidth = layoutWidth(for: node)
         cell.padTop = store.verticalPadding(for: node, level: nodeLevel).top
         cell.layout = store.rowLayout(for: node, width: cell.layoutWidth)
+        cell.selection = selection.selection(for: node.id)
         return cell
     }
 
@@ -184,5 +192,45 @@ extension TranscriptViewController: NSOutlineViewDelegate {
         guard let node = item as? TranscriptNodeItem else { return 1 }
         return store.height(
             for: node, width: layoutWidth(for: node), level: level(of: node))
+    }
+}
+
+// MARK: - TranscriptSelectionRowSource
+
+extension TranscriptViewController: TranscriptSelectionRowSource {
+    func selectionItem(atRow row: Int) -> TranscriptNodeItem? {
+        guard row >= 0, row < outlineView.numberOfRows else { return nil }
+        return outlineView.item(atRow: row) as? TranscriptNodeItem
+    }
+
+    func selectionAdapter(for item: TranscriptNodeItem) -> SelectionAdapter? {
+        store.rowLayout(for: item, width: layoutWidth(for: item)).selectionAdapter
+    }
+
+    /// Layout origin of the row's content in document coords — the same
+    /// point the cell's `layoutOrigin` resolves to, expressed here off
+    /// the row rect so the selection algorithm can convert doc-space
+    /// drag points into layout-local positions.
+    func selectionContentOrigin(atRow row: Int) -> CGPoint {
+        guard let item = selectionItem(atRow: row) else { return .zero }
+        let rowRect = outlineView.rect(ofRow: row)
+        let nodeLevel = level(of: item)
+        let x =
+            rowRect.minX
+            + TranscriptOutlineMetrics.contentX(
+                forRowWidth: rowRect.width, level: nodeLevel,
+                hasChevronSlot: item.isHeader)
+        let y = rowRect.minY + store.verticalPadding(for: item, level: nodeLevel).top
+        return CGPoint(x: x, y: y)
+    }
+
+    func selectionMarkNeedsDisplay(itemId: UUID) {
+        guard let item = store.item(for: itemId) else { return }
+        let row = outlineView.row(forItem: item)
+        guard row >= 0,
+            let cell = outlineView.view(atColumn: 0, row: row, makeIfNecessary: false)
+                as? OutlineBlockCellView
+        else { return }
+        cell.selection = selection.selection(for: itemId)
     }
 }

@@ -59,4 +59,13 @@ struct ToolBodyLayout: @unchecked Sendable {
     /// Copy affordances in layout-local coords, so the cell can register
     /// pointing-hand cursor + click dispatch through `HitAction.copy`.
     var copyChromes: [CopyChrome] { body.copyChromes }
+
+    /// Selection over the body's regions (diff surface / text-card
+    /// sections), built from the same shared machinery the monolithic
+    /// `ToolGroupLayout` uses. This leaf hosts exactly one child, so
+    /// `childIndex` is always 0.
+    var selectionAdapter: SelectionAdapter? {
+        ToolChildSelectionRegions.adapter(
+            regions: ToolChildSelectionRegions.regions(childIndex: 0, body: body))
+    }
 }

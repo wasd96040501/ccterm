@@ -128,9 +128,18 @@ documentView **不加任何约束**。
 3. **`TranscriptOutlineMetrics`** — 几何单一事实源（列位置 / 缩进 / 排版宽度 / L1-L3
    纵向节奏），store / VC / cell / outline 子类共用（§5 v2）。
 
-4. **outline 视图 + cell** — `TranscriptOutlineView`（最小 `NSOutlineView` 子类，仅
-   override `frameOfOutlineCell(atRow:)` 摆放原生三角，见 §5 v2）；cell 自绘（用
-   `RowLayout.draw` 绘制），**cell 是行内居中唯一关口**（layoutOrigin + ctx.clip 硬边界）。
+4. **outline 视图 + cell** — `TranscriptOutlineView`（最小 `NSOutlineView` 子类：
+   override `frameOfOutlineCell(atRow:)` 摆放原生三角（§5 v2）+ 文本选区的私有
+   追踪循环 / Cmd+C / Cmd+A，自老 `Transcript2TableView` 移植）；cell 自绘（用
+   `RowLayout.draw` 绘制，选区带压在字形之下），**cell 是行内居中唯一关口**
+   （layoutOrigin + ctx.clip 硬边界）。
+
+5. **`TranscriptSelectionCoordinator`** — 跨行选区状态 + 拖拽算法（自老
+   `Transcript2SelectionCoordinator` 移植，算法不变）；行数据面经
+   `TranscriptSelectionRowSource`（VC 实现）注入。tool body 的可选区域机制提取为
+   `ToolChildSelectionRegions`，老巨石 `ToolGroupLayout` 与 outline 的
+   `ToolBodyLayout` 共用。Copy / Cmd+A 只覆盖**可见行**（折叠子树不进复制，与老
+   renderer 的 folded-child 不可选语义一致）。
 
 5. **`HistorySessionViewController`**（现有，`macos/ccterm/App/AppKit/HistorySessionViewController.swift`）
    瘦成容器：

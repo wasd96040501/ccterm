@@ -89,6 +89,9 @@ final class TranscriptOutlineMountSnapshotTests: XCTestCase {
             outline.layoutSubtreeIfNeeded()
             RunLoop.current.run(until: Date().addingTimeInterval(0.3))
         }
+        // Select everything so the selection band renders into the PNG.
+        (outline as? TranscriptOutlineView)?.selection?.selectAllText()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
         if let url = Self.writePNG(of: window, name: "TranscriptOutline") {
             let attachment = XCTAttachment(contentsOfFile: url)
             attachment.name = "TranscriptOutline.png"

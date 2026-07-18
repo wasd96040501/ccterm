@@ -48,6 +48,13 @@ final class OutlineBlockCellView: NSView {
         didSet { if padTop != oldValue { needsDisplay = true } }
     }
 
+    /// Current selection for this row. `nil` = none. Derived state —
+    /// `viewFor` re-applies it on reuse; the selection coordinator
+    /// pushes updates through the VC's `selectionMarkNeedsDisplay`.
+    var selection: SelectionRange? {
+        didSet { if selection != oldValue { needsDisplay = true } }
+    }
+
     override var isFlipped: Bool { true }
 
     override init(frame frameRect: NSRect) {
@@ -93,6 +100,23 @@ final class OutlineBlockCellView: NSView {
         // Opaque card chrome first (codeblock / tool-body), so any later
         // glyphs composite on top.
         layout.drawBackplate(in: ctx, origin: origin, dirtyRect: dirtyRect)
+        // Selection highlight: under glyphs, matching NSTextView
+        // ordering. The adapter projects (start, end) → layout-local
+        // rects; their meaning stays encapsulated in the layout.
+        if let selection, let adapter = layout.selectionAdapter {
+            let rects = adapter.rects(selection.start, selection.end)
+            if !rects.isEmpty {
+                let color: NSColor =
+                    (window?.isKeyWindow == true)
+                    ? .selectedTextBackgroundColor
+                    : .unemphasizedSelectedTextBackgroundColor
+                ctx.setFillColor(color.cgColor)
+                for rect in rects {
+                    // `integral` keeps the bg edges crisp on Retina.
+                    ctx.fill(rect.offsetBy(dx: origin.x, dy: origin.y).integral)
+                }
+            }
+        }
         layout.draw(in: ctx, origin: origin, hoveredAction: nil, dirtyRect: dirtyRect)
         // The codeblock copy glyph is drawn by the cell (not by
         // `RowLayout.draw`), matching the NativeTranscript2 cell — always

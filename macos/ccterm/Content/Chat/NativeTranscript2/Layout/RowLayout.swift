@@ -364,10 +364,11 @@ enum RowLayout: @unchecked Sendable {
         case .userBubble(let l): return l.selectionAdapter
         case .toolGroup(let l): return l.selectionAdapter
         case .loadingPill: return nil
-        // Selection is out of scope for the outline transcript's first
-        // cut — header + tool-body rows report no selectable region.
+        // Outline transcript: header rows are title-only chrome (no
+        // selectable text); tool bodies select through the shared
+        // region machinery.
         case .header: return nil
-        case .toolBody: return nil
+        case .toolBody(let l): return l.selectionAdapter
         }
     }
 

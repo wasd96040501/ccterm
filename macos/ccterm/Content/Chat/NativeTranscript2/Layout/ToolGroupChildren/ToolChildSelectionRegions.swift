@@ -1,12 +1,8 @@
 import AppKit
 
-/// Selection / search region machinery for tool child bodies, shared by
-/// the two hosts that render a `ToolGroupChildLayout`:
-///
-/// - the monolithic `ToolGroupLayout` row (old renderer — one row hosts
-///   every child; `childIndex` = position in the group), and
-/// - the outline transcript's standalone `ToolBodyLayout` leaf (one row
-///   per body; `childIndex` = 0).
+/// Selection / search region machinery for tool child bodies, used by the
+/// monolithic `ToolGroupLayout` row (one row hosts every child;
+/// `childIndex` = position in the group).
 ///
 /// Moved verbatim from `ToolGroupLayout` — the closures, the position
 /// cases (`.diff` / `.textCard`), the cross-region clamp, and the

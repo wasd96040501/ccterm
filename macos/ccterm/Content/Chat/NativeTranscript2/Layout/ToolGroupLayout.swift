@@ -64,9 +64,8 @@ struct ToolGroupLayout: @unchecked Sendable {
     ///   `sectionIndex:char:)`, routed into the matching
     ///   `TextCardSection`'s `TextLayout`.
     ///
-    /// The region machinery lives in `ToolChildSelectionRegions`
-    /// (shared with the outline transcript's standalone
-    /// `ToolBodyLayout`); downstream closures look regions up by the
+    /// The region machinery lives in `ToolChildSelectionRegions`;
+    /// downstream closures look regions up by the
     /// `(childIndex, sectionIndex?)` keys carried by `LayoutPosition`.
     /// Mixed-region drags (across two bodies, or across two sections
     /// inside one body) collapse to empty rects / empty string —

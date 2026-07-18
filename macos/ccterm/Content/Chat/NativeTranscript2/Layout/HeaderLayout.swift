@@ -1,16 +1,15 @@
 import AppKit
 import CoreText
 
-/// Title-only header layout for the outline transcript's tool-group and
-/// tool nodes. The native `NSOutlineView` disclosure triangle owns the
-/// arrow, so this layout only typesets and draws the header title using
-/// the shared `BlockStyle.toolHeader*` typography — no self-drawn
-/// chevron, no icon, no inset (the row's horizontal padding comes from
-/// the cell's `layoutOrigin.x`).
+/// Title-only header layout for the history transcript's tool-group
+/// header rows. Typesets and draws the aggregated group title using the
+/// shared `BlockStyle.toolHeader*` typography — no self-drawn chevron, no
+/// icon, no inset (the row's horizontal padding comes from the cell's
+/// `layoutOrigin.x`).
 ///
 /// Reuses `TextLayout` for the single line and centers it inside the
-/// fixed `toolHeaderHeight` band so a group header, a tool header, and
-/// the adjacent code-block chrome all read at one pitch.
+/// fixed `toolHeaderHeight` band so the group header and the adjacent
+/// content all read at one pitch.
 struct HeaderLayout: @unchecked Sendable {
     /// The typeset title line(s). Built from the shared header typography.
     let text: TextLayout

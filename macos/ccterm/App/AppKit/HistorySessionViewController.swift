@@ -1,20 +1,20 @@
 import AppKit
 
 /// Detail child mounted for a non-draft `MainSelection.session(_)`.
-/// A thin container: it hosts a `TranscriptViewController` (the outline
-/// transcript) as a child VC and reserves space at the bottom for the
-/// input bar (a placeholder view in this refactor; the SwiftUI
+/// A thin container: it hosts a `TranscriptViewController` (the flat
+/// history transcript) as a child VC and reserves space at the bottom for
+/// the input bar (a placeholder view in this refactor; the SwiftUI
 /// `InputBarView2` migration lands in a follow-up PR).
 ///
 /// It no longer touches `Session` / `SessionRuntime` / `SessionManager`
 /// or the old `TranscriptSwapCoordinator` — history is read one-shot
 /// through the injected `TranscriptHistoryService` inside the store the
-/// transcript VC owns (SPEC §6.5). The `.history` route in
-/// `DetailFlowCoordinator` is unchanged.
+/// transcript VC owns. The `.history` route in `DetailFlowCoordinator` is
+/// unchanged.
 ///
 /// Attach ordering follows the same "settle before present" contract the
 /// transcript needs: `present(sessionId:)` must run against a framed
-/// `view` so the outline typesets each row at one width. When the id
+/// `view` so the table typesets each row at one width. When the id
 /// arrives before `viewDidLayout` has settled the frame (initial mount),
 /// it parks in `pendingSessionId` and the attach runs on the first
 /// framed layout.

@@ -1,50 +1,44 @@
 import AppKit
 
 /// Row-data surface the selection coordinator reads through — implemented
-/// by `TranscriptViewController` (which owns the outline + store). Kept a
-/// protocol so the coordinator stays free of store / outline specifics
-/// and testable through a fake.
+/// by `TranscriptViewController` (which owns the table + store). Kept a
+/// protocol so the coordinator stays free of store / table specifics and
+/// testable through a fake.
 @MainActor
 protocol TranscriptSelectionRowSource: AnyObject {
-    /// Item at a visible outline row (`nil` outside the row range).
-    func selectionItem(atRow row: Int) -> TranscriptNodeItem?
-    /// The item's selection adapter (`nil` = row not selectable).
-    func selectionAdapter(for item: TranscriptNodeItem) -> SelectionAdapter?
-    /// The row's layout origin in the outline's document coords — where
+    /// Row at a table index (`nil` outside the row range).
+    func selectionRow(atRow row: Int) -> TranscriptRow?
+    /// The row's selection adapter (`nil` = row not selectable).
+    func selectionAdapter(for row: TranscriptRow) -> SelectionAdapter?
+    /// The row's layout origin in the table's document coords — where
     /// `LayoutPosition`-local (0,0) sits.
     func selectionContentOrigin(atRow row: Int) -> CGPoint
-    /// Push the current selection state into the row hosting `itemId`
+    /// Push the current selection state into the row hosting `rowId`
     /// (if its cell is realized) and repaint it.
-    func selectionMarkNeedsDisplay(itemId: UUID)
+    func selectionMarkNeedsDisplay(rowId: UUID)
 }
 
-/// Cross-row selection state for the outline transcript. Ported from the
-/// old renderer's `Transcript2SelectionCoordinator` — the drag-tick
+/// Cross-row selection state for the history transcript. Ported from the
+/// streaming renderer's `Transcript2SelectionCoordinator` — the drag-tick
 /// algorithm, the multi-row sweep (top / middle / bottom), the byWord
 /// snapping, and the copy semantics are unchanged; only the row surface
-/// differs (visible outline rows through `TranscriptSelectionRowSource`
-/// instead of the flat table's block list).
+/// differs (table rows through `TranscriptSelectionRowSource`).
 ///
 /// ### Source of truth
 ///
-/// `selections: [UUID: SelectionRange]`, keyed by `TranscriptNode.id`.
+/// `selections: [UUID: SelectionRange]`, keyed by `TranscriptRow.id`.
 /// Per-cell state is derived — `viewFor` re-applies the entry on reuse.
 ///
 /// ### Layout-agnostic algorithm
 ///
 /// Works in opaque `LayoutPosition` values produced and consumed by each
 /// row's `SelectionAdapter`; this file has zero kind-specific code. Rows
-/// whose adapter is `nil` (headers, images) drop out of a sweep silently.
-///
-/// ### Visibility
-///
-/// Copy / Cmd+A iterate the outline's *visible* rows in document order —
-/// collapsed subtrees are not copied (same invariant as the old
-/// renderer, where folded children carried no selectable body).
+/// whose adapter is `nil` (group headers, images) drop out of a sweep
+/// silently.
 @MainActor
 final class TranscriptSelectionCoordinator: NSObject {
     weak var rowSource: TranscriptSelectionRowSource?
-    weak var outlineView: NSOutlineView?
+    weak var tableView: NSTableView?
 
     private var selections: [UUID: SelectionRange] = [:]
 
@@ -67,10 +61,10 @@ final class TranscriptSelectionCoordinator: NSObject {
 
     var isEmpty: Bool { selections.isEmpty }
 
-    func selection(for itemId: UUID) -> SelectionRange? { selections[itemId] }
+    func selection(for rowId: UUID) -> SelectionRange? { selections[rowId] }
 
     func adapter(atRow row: Int) -> SelectionAdapter? {
-        guard let source = rowSource, let item = source.selectionItem(atRow: row)
+        guard let source = rowSource, let item = source.selectionRow(atRow: row)
         else { return nil }
         return source.selectionAdapter(for: item)
     }
@@ -81,28 +75,28 @@ final class TranscriptSelectionCoordinator: NSObject {
         guard !selections.isEmpty else { return }
         let ids = Array(selections.keys)
         selections.removeAll()
-        for id in ids { rowSource?.selectionMarkNeedsDisplay(itemId: id) }
+        for id in ids { rowSource?.selectionMarkNeedsDisplay(rowId: id) }
     }
 
     /// Replace selection for one row. Empty range (start == end) clears.
-    func setSelection(_ range: SelectionRange, itemId: UUID) {
+    func setSelection(_ range: SelectionRange, rowId: UUID) {
         if range.start == range.end {
-            if selections.removeValue(forKey: itemId) != nil {
-                rowSource?.selectionMarkNeedsDisplay(itemId: itemId)
+            if selections.removeValue(forKey: rowId) != nil {
+                rowSource?.selectionMarkNeedsDisplay(rowId: rowId)
             }
-        } else if selections[itemId] != range {
-            selections[itemId] = range
-            rowSource?.selectionMarkNeedsDisplay(itemId: itemId)
+        } else if selections[rowId] != range {
+            selections[rowId] = range
+            rowSource?.selectionMarkNeedsDisplay(rowId: rowId)
         }
     }
 
-    /// Cmd+A: select every visible selectable row via its adapter's
-    /// `fullRange`. Non-selectable rows silently drop out.
+    /// Cmd+A: select every selectable row via its adapter's `fullRange`.
+    /// Non-selectable rows silently drop out.
     func selectAllText() {
-        guard let source = rowSource, let outline = outlineView else { return }
+        guard let source = rowSource, let table = tableView else { return }
         var changed = Set<UUID>()
-        for row in 0..<outline.numberOfRows {
-            guard let item = source.selectionItem(atRow: row),
+        for row in 0..<table.numberOfRows {
+            guard let item = source.selectionRow(atRow: row),
                 let adapter = source.selectionAdapter(for: item)
             else { continue }
             let next = adapter.fullRange
@@ -112,11 +106,11 @@ final class TranscriptSelectionCoordinator: NSObject {
                 changed.insert(item.id)
             }
         }
-        for id in changed { source.selectionMarkNeedsDisplay(itemId: id) }
+        for id in changed { source.selectionMarkNeedsDisplay(rowId: id) }
     }
 
     /// Replace the entire selection set from a drag tick. `start` and
-    /// `current` are in the outline's document coords (flipped, y-down).
+    /// `current` are in the table's document coords (flipped, y-down).
     ///
     /// `byWord` snaps endpoint-row positions to word boundaries via the
     /// adapter's `wordBoundary` closure. Middle rows are full-row
@@ -124,19 +118,19 @@ final class TranscriptSelectionCoordinator: NSObject {
     func updateSelection(
         from start: CGPoint, to current: CGPoint, byWord: Bool = false
     ) {
-        guard let source = rowSource, let outline = outlineView,
-            outline.numberOfRows > 0
+        guard let source = rowSource, let table = tableView,
+            table.numberOfRows > 0
         else { return }
 
-        let startRow = resolvedRow(at: start, in: outline)
-        let currentRow = resolvedRow(at: current, in: outline)
+        let startRow = resolvedRow(at: start, in: table)
+        let currentRow = resolvedRow(at: current, in: table)
         let lowRow = min(startRow, currentRow)
         let highRow = max(startRow, currentRow)
         let reversed = currentRow < startRow
 
         var next: [UUID: SelectionRange] = [:]
         for row in lowRow...highRow {
-            guard let item = source.selectionItem(atRow: row),
+            guard let item = source.selectionRow(atRow: row),
                 let adapter = source.selectionAdapter(for: item)
             else { continue }
 
@@ -183,50 +177,50 @@ final class TranscriptSelectionCoordinator: NSObject {
 
         let dirty = Set(selections.keys).union(next.keys)
         selections = next
-        for id in dirty { source.selectionMarkNeedsDisplay(itemId: id) }
+        for id in dirty { source.selectionMarkNeedsDisplay(rowId: id) }
     }
 
     /// Word selection at a single click point — driven by double-click.
     func selectWord(at point: CGPoint) {
-        guard let source = rowSource, let outline = outlineView else { return }
-        let row = outline.row(at: point)
+        guard let source = rowSource, let table = tableView else { return }
+        let row = table.row(at: point)
         guard row >= 0,
-            let item = source.selectionItem(atRow: row),
+            let item = source.selectionRow(atRow: row),
             let adapter = source.selectionAdapter(for: item)
         else { return }
 
         let origin = source.selectionContentOrigin(atRow: row)
         let pos = adapter.hitTest(CGPoint(x: point.x - origin.x, y: point.y - origin.y))
         guard let word = adapter.wordBoundary(pos) else { return }
-        setSelection(word, itemId: item.id)
+        setSelection(word, rowId: item.id)
     }
 
     /// Whole-unit selection at click point — driven by triple-click.
     /// "Unit" is the layout's smallest semantic chunk (paragraph for
-    /// text, cell for tables, card for tool bodies).
+    /// text, cell for tables).
     func selectUnit(at point: CGPoint) {
-        guard let source = rowSource, let outline = outlineView else { return }
-        let row = outline.row(at: point)
+        guard let source = rowSource, let table = tableView else { return }
+        let row = table.row(at: point)
         guard row >= 0,
-            let item = source.selectionItem(atRow: row),
+            let item = source.selectionRow(atRow: row),
             let adapter = source.selectionAdapter(for: item)
         else { return }
 
         let origin = source.selectionContentOrigin(atRow: row)
         let pos = adapter.hitTest(CGPoint(x: point.x - origin.x, y: point.y - origin.y))
-        setSelection(adapter.unitRange(pos), itemId: item.id)
+        setSelection(adapter.unitRange(pos), rowId: item.id)
     }
 
     // MARK: - Copy
 
-    /// Concatenated plain-text copy in document (visible-row) order.
-    /// Per-row joiner is `\n\n`; intra-row joining is the adapter's
-    /// `string` closure's responsibility.
+    /// Concatenated plain-text copy in document (row) order. Per-row joiner
+    /// is `\n\n`; intra-row joining is the adapter's `string` closure's
+    /// responsibility.
     func copyText() -> String {
-        guard let source = rowSource, let outline = outlineView else { return "" }
+        guard let source = rowSource, let table = tableView else { return "" }
         var pieces: [String] = []
-        for row in 0..<outline.numberOfRows {
-            guard let item = source.selectionItem(atRow: row),
+        for row in 0..<table.numberOfRows {
+            guard let item = source.selectionRow(atRow: row),
                 let range = selections[item.id],
                 let adapter = source.selectionAdapter(for: item)
             else { continue }
@@ -236,10 +230,10 @@ final class TranscriptSelectionCoordinator: NSObject {
         return pieces.joined(separator: "\n\n")
     }
 
-    /// Whether any visible row is selectable at all (validates Cmd+A).
+    /// Whether any row is selectable at all (validates Cmd+A).
     var hasSelectableText: Bool {
-        guard let source = rowSource, let outline = outlineView else { return false }
-        for row in 0..<outline.numberOfRows
+        guard let source = rowSource, let table = tableView else { return false }
+        for row in 0..<table.numberOfRows
         where adapterExists(source: source, row: row) {
             return true
         }
@@ -247,7 +241,7 @@ final class TranscriptSelectionCoordinator: NSObject {
     }
 
     private func adapterExists(source: TranscriptSelectionRowSource, row: Int) -> Bool {
-        guard let item = source.selectionItem(atRow: row) else { return false }
+        guard let item = source.selectionRow(atRow: row) else { return false }
         return source.selectionAdapter(for: item) != nil
     }
 
@@ -255,23 +249,23 @@ final class TranscriptSelectionCoordinator: NSObject {
 
     @objc private func windowKeyChanged(_ note: Notification) {
         guard !selections.isEmpty,
-            let window = outlineView?.window,
+            let window = tableView?.window,
             note.object as? NSWindow === window
         else { return }
         for id in selections.keys {
-            rowSource?.selectionMarkNeedsDisplay(itemId: id)
+            rowSource?.selectionMarkNeedsDisplay(rowId: id)
         }
     }
 
     // MARK: - Helpers
 
-    /// Like `row(at:)` but resolves "above all rows" to row 0 and
-    /// "below all rows" to the last row, instead of -1 — a drag past the
-    /// content still needs a row to clamp to.
-    private func resolvedRow(at point: CGPoint, in outline: NSOutlineView) -> Int {
-        let r = outline.row(at: point)
+    /// Like `row(at:)` but resolves "above all rows" to row 0 and "below
+    /// all rows" to the last row, instead of -1 — a drag past the content
+    /// still needs a row to clamp to.
+    private func resolvedRow(at point: CGPoint, in table: NSTableView) -> Int {
+        let r = table.row(at: point)
         if r >= 0 { return r }
         if point.y < 0 { return 0 }
-        return max(0, outline.numberOfRows - 1)
+        return max(0, table.numberOfRows - 1)
     }
 }

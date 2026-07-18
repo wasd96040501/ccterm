@@ -44,7 +44,7 @@ import ObjectiveC.runtime
 /// during a physical drag and no public API can trigger. So here a frame
 /// change goes through the normal tile, which auto-dirties + redraws cells
 /// like any resize — masking exactly the redraw *suppression* that produces
-/// paint bugs. Concretely: the missing `OutlineBlockCellView.setFrameSize`
+/// paint bugs. Concretely: the missing `TranscriptCellView.setFrameSize`
 /// re-centering hook (content painted at the stale centre during a real
 /// drag) could **not** be reproduced here — the harness "re-centred" fine
 /// without the fix. That class of bug (correct intended geometry,
@@ -56,8 +56,8 @@ import ObjectiveC.runtime
 @MainActor
 struct LiveResizeHarness {
     let window: NSWindow
-    /// The live-resized view — the outline documentView, whose
-    /// `inLiveResize` the coordinator reads to pick its branch.
+    /// The live-resized view — the transcript table documentView, whose
+    /// `inLiveResize` the VC reads to pick its branch.
     let view: NSView
 
     /// Enter live resize: flag `inLiveResize` and fire the real will-start

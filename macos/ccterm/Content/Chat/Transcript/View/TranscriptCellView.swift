@@ -1,24 +1,24 @@
 import AppKit
 
-/// Self-drawn outline cell. Reuses the `NativeTranscript2` cell drawing
+/// Self-drawn transcript cell. Reuses the `NativeTranscript2` cell drawing
 /// path (`wantsLayer` + `.onSetNeedsDisplay` layer cache, `override
 /// draw(_:)` painting a prepared `RowLayout`).
 ///
-/// **Centering chokepoint.** The outline spans the full row width; the
-/// centered 460–780 content column exists only here. `layoutOrigin` is
-/// the single place the column offset is computed (via
-/// `TranscriptOutlineMetrics`) — draw, cursor rects and hit tests all go
-/// through it, and `draw(_:)` additionally clips the context to the
-/// column slot, so a layout **cannot** paint outside the centered column
-/// even if it misbehaves. Layouts stay column-agnostic: they only ever
-/// see a `maxWidth` and a caller-supplied origin.
+/// **Centering chokepoint.** The table spans the full row width; the
+/// centered 460–780 content column exists only here. `layoutOrigin` is the
+/// single place the column offset is computed (via `TranscriptMetrics`) —
+/// draw, cursor rects and hit tests all go through it, and `draw(_:)`
+/// additionally clips the context to the column slot, so a layout
+/// **cannot** paint outside the centered column even if it misbehaves.
+/// Layouts stay column-agnostic: they only ever see a `maxWidth` and a
+/// caller-supplied origin.
 ///
 /// A dumb view: it renders whatever the controller's `viewFor` hands it
-/// (`layout` / `layoutWidth` / `level` / `hasChevronSlot` / `padTop`),
-/// opens link / copy hits, and forwards other clicks to the enclosing
-/// outline so native disclosure keeps working.
-final class OutlineBlockCellView: NSView {
-    static let reuseIdentifier = NSUserInterfaceItemIdentifier("OutlineBlockCell")
+/// (`layout` / `layoutWidth` / `padTop` / `selection`), opens link / copy
+/// hits, and forwards other clicks to the enclosing table so text
+/// selection keeps working.
+final class TranscriptCellView: NSView {
+    static let reuseIdentifier = NSUserInterfaceItemIdentifier("TranscriptCell")
 
     /// Prepared layout for this row, set by the delegate's `viewFor`.
     var layout: RowLayout? {
@@ -33,24 +33,14 @@ final class OutlineBlockCellView: NSView {
         didSet { if layoutWidth != oldValue { needsDisplay = true } }
     }
 
-    /// Outline level of this row's node; drives the per-level indent.
-    var level: Int = 0 {
-        didSet { if level != oldValue { needsDisplay = true } }
-    }
-
-    /// Header rows start their title after the native triangle's slot.
-    var hasChevronSlot: Bool = false {
-        didSet { if hasChevronSlot != oldValue { needsDisplay = true } }
-    }
-
     /// Top padding contributed by the row; drives `layoutOrigin.y`.
     var padTop: CGFloat = 0 {
         didSet { if padTop != oldValue { needsDisplay = true } }
     }
 
     /// Current selection for this row. `nil` = none. Derived state —
-    /// `viewFor` re-applies it on reuse; the selection coordinator
-    /// pushes updates through the VC's `selectionMarkNeedsDisplay`.
+    /// `viewFor` re-applies it on reuse; the selection coordinator pushes
+    /// updates through the VC's `selectionMarkNeedsDisplay`.
     var selection: SelectionRange? {
         didSet { if selection != oldValue { needsDisplay = true } }
     }
@@ -66,16 +56,17 @@ final class OutlineBlockCellView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
-    /// Resize-driven re-centering. The outline resizes our frame to track the
-    /// row width on every tile; `layoutOrigin` derives the centered-column x
-    /// from that width. But with `.onSetNeedsDisplay` AppKit won't re-issue
-    /// `draw(_:)` on a frame change on its own — so a width change that
-    /// doesn't move the clamped typeset width (a resize inside the
-    /// `>maxLayoutWidth` band — a wide window, the common case) would leave
-    /// the cached bitmap painted at the old centre. `TranscriptViewController.
-    /// outlineFrameDidChange` short-circuits that band on purpose (no Core
-    /// Text relayout needed there), so the re-centering redraw is the cell's
-    /// obligation. Mirrors NativeTranscript2's `BlockCellView.setFrameSize`.
+    /// Resize-driven re-centering. NSTableView resizes our frame to track
+    /// the row width on every tile; `layoutOrigin` derives the
+    /// centered-column x from that width. But with `.onSetNeedsDisplay`
+    /// AppKit won't re-issue `draw(_:)` on a frame change on its own — so a
+    /// width change that doesn't move the clamped typeset width (a resize
+    /// inside the `>maxLayoutWidth` band — a wide window, the common case)
+    /// would leave the cached bitmap painted at the old centre.
+    /// `TranscriptViewController.tableFrameDidChange` short-circuits that
+    /// band on purpose (no Core Text relayout needed there), so the
+    /// re-centering redraw is the cell's obligation. Mirrors
+    /// NativeTranscript2's `BlockCellView.setFrameSize`.
     override func setFrameSize(_ newSize: NSSize) {
         let widthChanged = newSize.width != frame.size.width
         super.setFrameSize(newSize)
@@ -85,25 +76,23 @@ final class OutlineBlockCellView: NSView {
         }
     }
 
-    /// Top-left of the layout in cell coordinates. The column position is
-    /// computed in **row** coordinates from the row's full width (the
-    /// row view spans the table), then converted by subtracting this
-    /// cell's own frame offset — so the native outline-column inset on
-    /// the cell frame cancels out instead of shifting the column.
+    /// Top-left of the layout in cell coordinates. The cell's frame spans
+    /// the row's full width (NSTableView's view-based contract); we shift
+    /// content here to land it at the centered column position — the same
+    /// value `TranscriptViewController` uses to convert document points
+    /// into layout-local coords, so draw / hit / selection rects stay
+    /// aligned.
     var layoutOrigin: CGPoint {
-        let rowWidth = superview?.bounds.width ?? bounds.width
-        let xInRow = TranscriptOutlineMetrics.contentX(
-            forRowWidth: rowWidth, level: level, hasChevronSlot: hasChevronSlot)
-        return CGPoint(x: max(0, xInRow - frame.origin.x), y: padTop)
+        CGPoint(x: TranscriptMetrics.contentX(forRowWidth: bounds.width), y: padTop)
     }
 
     override func draw(_ dirtyRect: NSRect) {
         guard let layout, let ctx = NSGraphicsContext.current?.cgContext else { return }
         let origin = layoutOrigin
         #if DEBUG
-        // A layout typeset wider than its slot means some caller
-        // bypassed `TranscriptOutlineMetrics.layoutWidth` — surface it
-        // in development instead of silently clipping.
+        // A layout typeset wider than its slot means some caller bypassed
+        // `TranscriptMetrics.layoutWidth` — surface it in development
+        // instead of silently clipping.
         assert(
             layoutWidth <= 0 || layout.measuredWidth <= layoutWidth + 0.5,
             "layout typeset wider (\(layout.measuredWidth)) than its column slot (\(layoutWidth))"
@@ -116,12 +105,12 @@ final class OutlineBlockCellView: NSView {
             ctx.clip(
                 to: CGRect(x: origin.x, y: 0, width: layoutWidth, height: bounds.height))
         }
-        // Opaque card chrome first (codeblock / tool-body), so any later
-        // glyphs composite on top.
+        // Opaque card chrome first (codeblock), so any later glyphs
+        // composite on top.
         layout.drawBackplate(in: ctx, origin: origin, dirtyRect: dirtyRect)
-        // Selection highlight: under glyphs, matching NSTextView
-        // ordering. The adapter projects (start, end) → layout-local
-        // rects; their meaning stays encapsulated in the layout.
+        // Selection highlight: under glyphs, matching NSTextView ordering.
+        // The adapter projects (start, end) → layout-local rects; their
+        // meaning stays encapsulated in the layout.
         if let selection, let adapter = layout.selectionAdapter {
             let rects = adapter.rects(selection.start, selection.end)
             if !rects.isEmpty {
@@ -174,18 +163,18 @@ final class OutlineBlockCellView: NSView {
                 pb.clearContents()
                 pb.setString(text, forType: .string)
             case .openUserBubbleSheet, .openImagePreview, .toggleFold:
-                // These affordances aren't produced by the outline
+                // These affordances aren't produced by the history
                 // transcript's layouts; nothing to do.
                 break
             }
             return
         }
-        // Not a layout hit — forward to the enclosing outline so native
-        // row selection + double-click disclosure keep working.
+        // Not a layout hit — forward to the enclosing table so its
+        // tracking loop owns text selection.
         var view: NSView? = superview
         while let current = view {
-            if let outline = current as? NSOutlineView {
-                outline.mouseDown(with: event)
+            if let table = current as? NSTableView {
+                table.mouseDown(with: event)
                 return
             }
             view = current.superview

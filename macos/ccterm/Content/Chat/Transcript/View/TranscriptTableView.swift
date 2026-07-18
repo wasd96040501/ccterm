@@ -1,68 +1,50 @@
 import AppKit
 
-/// Minimal `NSOutlineView` subclass with two responsibilities:
+/// `NSTableView` subclass for the flat history transcript, with three
+/// responsibilities:
 ///
-/// 1. **Native disclosure placement.** The triangle stays fully native
-///    (AppKit's own button, drawing and rotation animation);
-///    `frameOfOutlineCell(atRow:)` — Apple's documented override point —
-///    moves it out of the window-left gutter into the centered content
-///    column, aligned with the row's content x and vertically centered
-///    on the fixed header title band.
-/// 2. **Text-selection tracking.** Ported from the old renderer's
+/// 1. **Negative-width clamp.** AppKit briefly calls `setFrameSize` with
+///    negative widths during scroller layout; clamping to ≥ 0 silences the
+///    "Invalid view geometry" warning.
+/// 2. **Live-resize hook.** `onLiveResizeEnded` fires once when a live
+///    resize of the table ends. A **pure event** — the VC decides whether
+///    anything needs refilling. `viewDidEndLiveResize` is the hook rather
+///    than the window's notification because it fires for *every*
+///    live-resize cause (a split-view-divider drag resizes the table
+///    without posting a window resize notification).
+/// 3. **Text-selection tracking.** Ported from the streaming renderer's
 ///    `Transcript2TableView`: `mouseDown` enters a private event loop
 ///    (`NSApp.nextEvent(matching:)`) that consumes `leftMouseDragged` /
-///    `leftMouseUp` — plus `scrollWheel`, forwarded to the scroll view
-///    so the wheel keeps working mid-drag. Each drag tick updates
+///    `leftMouseUp` — plus `scrollWheel`, forwarded to the scroll view so
+///    the wheel keeps working mid-drag. Each drag tick updates
 ///    `TranscriptSelectionCoordinator` and autoscrolls when the cursor
 ///    leaves the viewport. Cells forward their non-link clicks here, so
 ///    cell hit-tests don't suppress selection.
 ///
 /// ### Edit menu
 ///
-/// `copy(_:)` / `selectAll(_:)` route through the responder chain when
-/// the outline is first responder (we take first responder at the start
-/// of every selection gesture). `validateMenuItem` enables Copy when
-/// there's a selection, Select All when any visible row is selectable.
-final class TranscriptOutlineView: NSOutlineView, NSMenuItemValidation {
+/// `copy(_:)` / `selectAll(_:)` route through the responder chain when the
+/// table is first responder (we take first responder at the start of every
+/// selection gesture). `validateMenuItem` enables Copy when there's a
+/// selection, Select All when any row is selectable.
+final class TranscriptTableView: NSTableView, NSMenuItemValidation {
     /// Selection state + algorithm; owned by the transcript VC.
     weak var selection: TranscriptSelectionCoordinator?
 
-    /// Fired once when a live resize of the outline ends. A **pure event**
-    /// ("my live resize ended") — the VC decides whether anything needs
-    /// refilling (its scan no-ops when no row's cached width went stale), so
-    /// the View carries none of that policy. This is the events-up contract
-    /// (root CLAUDE.md): the View reports what happened, the Controller
-    /// coordinates. `viewDidEndLiveResize` is the hook rather than the
-    /// window's `didEndLiveResizeNotification` because it fires for *every*
-    /// live-resize cause — a split-view-divider drag resizes the outline
-    /// without ever posting a window resize notification.
+    /// Fired once when a live resize of the table ends.
     var onLiveResizeEnded: (() -> Void)?
+
+    // MARK: - Geometry
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(NSSize(width: max(0, newSize.width), height: max(0, newSize.height)))
+    }
 
     // MARK: - Live resize
 
     override func viewDidEndLiveResize() {
         super.viewDidEndLiveResize()
         onLiveResizeEnded?()
-    }
-
-    // MARK: - Native disclosure placement
-
-    override func frameOfOutlineCell(atRow row: Int) -> NSRect {
-        var frame = super.frameOfOutlineCell(atRow: row)
-        // Non-expandable rows report .zero — nothing to place.
-        guard frame != .zero else { return frame }
-        let level = max(0, self.level(forRow: row))
-        frame.origin.x = TranscriptOutlineMetrics.contentX(
-            forRowWidth: bounds.width, level: level, hasChevronSlot: false)
-        // Center the button on the header title band rather than the
-        // whole row (rows carry asymmetric L1/L2 padding).
-        let padTop =
-            level == 0
-            ? TranscriptOutlineMetrics.groupHeaderPadding.top
-            : TranscriptOutlineMetrics.toolHeaderPadding.top
-        frame.origin.y += padTop
-        frame.size.height = BlockStyle.toolHeaderHeight
-        return frame
     }
 
     // MARK: - Selection: mouse tracking
@@ -78,29 +60,10 @@ final class TranscriptOutlineView: NSOutlineView, NSMenuItemValidation {
         let docPoint = convert(event.locationInWindow, from: nil)
         let row = self.row(at: docPoint)
 
-        // Outside any row, or on a non-selectable row (header / image):
-        // drop the selection first.
+        // Outside any row, or on a non-selectable row (group header /
+        // image): drop the selection.
         guard row >= 0, selection.adapter(atRow: row) != nil else {
             selection.clearAll()
-            // Expandable header row (tool-group header or tool header),
-            // clicked *outside* the native disclosure triangle → toggle the
-            // whole row. This makes the entire header a hit target, not just
-            // the 8pt triangle. A click on the triangle itself falls through
-            // to `super` so AppKit runs its own toggle (no double-toggle).
-            // `animator()` drives the native row-slide + triangle rotation.
-            if row >= 0, !frameOfOutlineCell(atRow: row).contains(docPoint),
-                let node = item(atRow: row) as? TranscriptNodeItem, node.isExpandable
-            {
-                if isItemExpanded(node) {
-                    animator().collapseItem(node)
-                } else {
-                    animator().expandItem(node)
-                }
-                return
-            }
-            // Non-expandable / triangle click: default handling (native
-            // triangle toggle; `selectionHighlightStyle` is `.none`, so no
-            // visual selection).
             super.mouseDown(with: event)
             return
         }
@@ -129,9 +92,9 @@ final class TranscriptOutlineView: NSOutlineView, NSMenuItemValidation {
     }
 
     /// Pull events directly from the queue. AppKit's normal delivery is
-    /// bypassed — `mouseDragged` / `mouseUp` won't fire on any view
-    /// while we're inside this loop. Same pattern NSTableView uses
-    /// internally for its own drag tracking.
+    /// bypassed — `mouseDragged` / `mouseUp` won't fire on any view while
+    /// we're inside this loop. Same pattern NSTableView uses internally for
+    /// its own drag tracking.
     ///
     /// `.scrollWheel` is included in the mask on purpose: a private
     /// tracking loop starves every event type it doesn't dequeue, so
@@ -171,11 +134,11 @@ final class TranscriptOutlineView: NSOutlineView, NSMenuItemValidation {
         }
     }
 
-    /// Manual replacement for `NSView.autoscroll(with:)` — the default
-    /// path misbehaves against a flipped document + `contentInsets`
-    /// (edge check trips inside the visible area; direction inverts).
-    /// Per-tick step is the raw overshoot capped at 40pt;
-    /// `constrainBoundsRect` respects the scroll view's insets.
+    /// Manual replacement for `NSView.autoscroll(with:)` — the default path
+    /// misbehaves against a flipped document + `contentInsets` (edge check
+    /// trips inside the visible area; direction inverts). Per-tick step is
+    /// the raw overshoot capped at 40pt; `constrainBoundsRect` respects the
+    /// scroll view's insets.
     private func autoscrollIfNeeded(cursorInDocCoord cursor: CGPoint) {
         guard let scrollView = enclosingScrollView else { return }
         let visible = visibleRect
@@ -213,9 +176,9 @@ final class TranscriptOutlineView: NSOutlineView, NSMenuItemValidation {
 
     override func selectAll(_ sender: Any?) {
         selection?.selectAllText()
-        // Cmd+A implies the outline wants edit-menu focus from now on so
-        // a follow-up Cmd+C lands here even if the selection wasn't
-        // started by a drag.
+        // Cmd+A implies the table wants edit-menu focus from now on so a
+        // follow-up Cmd+C lands here even if the selection wasn't started
+        // by a drag.
         window?.makeFirstResponder(self)
     }
 

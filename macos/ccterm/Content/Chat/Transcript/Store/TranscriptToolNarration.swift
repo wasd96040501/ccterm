@@ -1,18 +1,17 @@
 import AgentSDK
 import Foundation
 
-/// Human-facing tool labels for the outline transcript, rewritten (not
-/// imported) from the Session-domain `ToolUse` fragment / aggregation
-/// extensions the SPEC forbids depending on (§3). The English source
-/// strings are kept **identical** to those in `MessageEntry.swift` so
-/// they resolve against the existing `Localizable.xcstrings` entries —
-/// no new translation keys are introduced.
+/// Human-facing tool-group header titles for the history transcript,
+/// rewritten (not imported) from the Session-domain `ToolUse` fragment /
+/// aggregation extensions. The English source strings are kept
+/// **identical** to those in `MessageEntry.swift` so they resolve against
+/// the existing `Localizable.xcstrings` entries — no new translation keys
+/// are introduced.
 ///
-/// Two consumers:
-/// - A single tool's header title uses `completedFragment` (past tense,
-///   e.g. "Read foo.swift") — history is always completed.
-/// - A group header aggregates its run of tools into a count phrase
-///   (e.g. "Read 3 files · Searched 1 pattern") via `groupTitle`.
+/// The transcript renders one header per tool group; `groupTitle`
+/// aggregates the group's run of tools into a past-tense count phrase
+/// (e.g. "Read 3 files · Searched 1 pattern"). History is always
+/// terminal, so only the completed (past-tense) form is needed.
 enum TranscriptToolNarration {
 
     // MARK: - Group header
@@ -38,14 +37,7 @@ enum TranscriptToolNarration {
             .joined(separator: " · ")
     }
 
-    /// Per-tool header title (past tense). Falls back to the raw case
-    /// name (an identifier, not localized) for tools without a tailored
-    /// phrase — matching the old `ToolUseToChild` label policy.
-    static func toolHeaderTitle(_ tool: ToolUse) -> String {
-        completedFragment(tool) ?? tool.caseName
-    }
-
-    // MARK: - Fragments (past / progressive)
+    // MARK: - Fragments (past tense)
 
     static func completedFragment(_ tool: ToolUse) -> String? {
         switch tool {
@@ -59,22 +51,6 @@ enum TranscriptToolNarration {
         case .WebSearch(let v): return String(localized: "Searched \"\(webSearchTarget(v))\"")
         case .Agent(let v): return String(localized: "Agent: \(agentTarget(v))")
         case .AskUserQuestion(let v): return String(localized: "Asked: \(askTarget(v))")
-        default: return nil
-        }
-    }
-
-    static func activeFragment(_ tool: ToolUse) -> String? {
-        switch tool {
-        case .Read(let v): return String(localized: "Reading \(readTarget(v))")
-        case .Edit(let v): return String(localized: "Editing \(editTarget(v))")
-        case .Write(let v): return String(localized: "Writing \(writeTarget(v))")
-        case .Grep(let v): return String(localized: "Searching \"\(grepTarget(v))\"")
-        case .Glob(let v): return String(localized: "Globbing \"\(globTarget(v))\"")
-        case .Bash(let v): return String(localized: "Running \(bashTarget(v))")
-        case .WebFetch(let v): return String(localized: "Fetching \(webFetchTarget(v))")
-        case .WebSearch(let v): return String(localized: "Searching \"\(webSearchTarget(v))\"")
-        case .Agent(let v): return String(localized: "Running agent: \(agentTarget(v))")
-        case .AskUserQuestion(let v): return String(localized: "Asking: \(askTarget(v))")
         default: return nil
         }
     }

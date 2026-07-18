@@ -179,10 +179,10 @@ final class DetailFlowCoordinator: Coordinator {
     ) -> (NSViewController & DetailContainerChild) {
         switch kind {
         case .history:
-            // Composition point for the outline transcript's history
-            // source (SPEC §8 decision 6): the concrete `SessionHistory`
-            // is chosen here and injected as the `TranscriptHistoryService`
-            // metatype; the VC builds `TranscriptStore(historySource:)` +
+            // Composition point for the history transcript's history
+            // source: the concrete `SessionHistory` is chosen here and
+            // injected as the `TranscriptHistoryService` metatype; the VC
+            // builds `TranscriptStore(historySource:)` +
             // `TranscriptViewController(store:)` from it. Session id is
             // presented after the container mounts + settles the child's
             // frame; see `route(to:)`.

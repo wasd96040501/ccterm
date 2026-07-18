@@ -4,8 +4,7 @@ import AgentSDK
 /// ccterm side (AgentSDK is not modified). Injected into `TranscriptStore`
 /// as a metatype (`.Type`): production hands `SessionHistory.self`, tests
 /// hand a fake `enum` that returns canned `[Message2]`. This keeps the
-/// store off a hard-coded `SessionHistory` call and gives tests a seam
-/// (SPEC §3).
+/// store off a hard-coded `SessionHistory` call and gives tests a seam.
 ///
 /// Static-only because `SessionHistory` is a caseless `enum` whose reads
 /// are already `static` — so `extension SessionHistory: TranscriptHistoryService {}`

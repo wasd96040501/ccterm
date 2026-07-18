@@ -66,6 +66,25 @@ final class OutlineBlockCellView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not supported") }
 
+    /// Resize-driven re-centering. The outline resizes our frame to track the
+    /// row width on every tile; `layoutOrigin` derives the centered-column x
+    /// from that width. But with `.onSetNeedsDisplay` AppKit won't re-issue
+    /// `draw(_:)` on a frame change on its own — so a width change that
+    /// doesn't move the clamped typeset width (a resize inside the
+    /// `>maxLayoutWidth` band — a wide window, the common case) would leave
+    /// the cached bitmap painted at the old centre. `TranscriptViewController.
+    /// outlineFrameDidChange` short-circuits that band on purpose (no Core
+    /// Text relayout needed there), so the re-centering redraw is the cell's
+    /// obligation. Mirrors NativeTranscript2's `BlockCellView.setFrameSize`.
+    override func setFrameSize(_ newSize: NSSize) {
+        let widthChanged = newSize.width != frame.size.width
+        super.setFrameSize(newSize)
+        if widthChanged {
+            needsDisplay = true
+            window?.invalidateCursorRects(for: self)
+        }
+    }
+
     /// Top-left of the layout in cell coordinates. The column position is
     /// computed in **row** coordinates from the row's full width (the
     /// row view spans the table), then converted by subtracting this

@@ -55,6 +55,7 @@ final class TranscriptOutlineGeometryTests: XCTestCase {
     }
 
     override func tearDown() async throws {
+        InLiveResizeShim.clearAll()
         window?.close()
         window = nil
     }
@@ -212,7 +213,268 @@ final class TranscriptOutlineGeometryTests: XCTestCase {
         XCTAssertEqual(height, l1.top + layout.totalHeight + l1.bottom, accuracy: 0.01)
     }
 
+    // MARK: - 5. Live-resize width tracking
+
+    /// A width change re-typesets every row at the new width. Drives the
+    /// non-live `outlineFrameDidChange` branch (headless: `inLiveResize`
+    /// is false), which reaches the same end state as the live path's
+    /// visible-invalidate + post-resize refill: no row keeps its old-width
+    /// cached layout. Without the frame observer the cache would survive
+    /// and text would stop reflowing.
+    func testWidthChangeRetypesetsRowsAtNewWidth() throws {
+        let markdown = try XCTUnwrap(store.roots.first { !$0.isExpandable })
+        let wide = TranscriptOutlineMetrics.layoutWidth(
+            forRowWidth: outline.bounds.width, level: 0, hasChevronSlot: false)
+        XCTAssertEqual(
+            try XCTUnwrap(store.cachedWidth(for: markdown.id)), wide, accuracy: 0.5,
+            "precondition: root cached at the wide (clamped-max) width")
+
+        // Narrow past the >max clamp band so the per-row typeset width
+        // actually changes (1200 → col 780; 600 → col 600).
+        window.setContentSize(NSSize(width: 600, height: 700))
+        window.contentView?.layoutSubtreeIfNeeded()
+        outline.layoutSubtreeIfNeeded()
+        drain(0.2)
+
+        let narrow = TranscriptOutlineMetrics.layoutWidth(
+            forRowWidth: outline.bounds.width, level: 0, hasChevronSlot: false)
+        XCTAssertLessThan(narrow, wide, "column must actually narrow")
+        for root in store.roots {
+            let expected = TranscriptOutlineMetrics.layoutWidth(
+                forRowWidth: outline.bounds.width,
+                level: 0, hasChevronSlot: root.isHeader)
+            XCTAssertEqual(
+                try XCTUnwrap(store.cachedWidth(for: root.id)), expected, accuracy: 0.5,
+                "every visible root must be re-typeset at the narrowed width")
+        }
+    }
+
+    /// The native disclosure triangle tracks the width change — its frame
+    /// re-derives from the live `bounds.width` through the same
+    /// `TranscriptOutlineMetrics` chokepoint as the typeset content, so the
+    /// chevron can't drift from the column edge on resize.
+    func testChevronTracksWidthChange() throws {
+        let group = try XCTUnwrap(store.roots.first { $0.isExpandable })
+        window.setContentSize(NSSize(width: 600, height: 700))
+        window.contentView?.layoutSubtreeIfNeeded()
+        outline.layoutSubtreeIfNeeded()
+        drain(0.2)
+
+        let rowWidth = outline.bounds.width
+        let columnX = TranscriptOutlineMetrics.columnX(forRowWidth: rowWidth)
+        let chevron = outline.frameOfOutlineCell(atRow: outline.row(forItem: group))
+        XCTAssertEqual(
+            chevron.origin.x, columnX + BlockStyle.blockHorizontalPadding, accuracy: 0.5,
+            "chevron x must re-derive from the narrowed bounds.width")
+    }
+
+    /// Full live-resize lifecycle through the real production handlers
+    /// (driven by `LiveResizeHarness`: real `inLiveResize`, real
+    /// `frameDidChange`, real `viewDidEndLiveResize`). Asserts the two-phase
+    /// contract — **during the drag** only the visible rows re-typeset while
+    /// an off-screen row keeps its stale layout (bounded per-frame work);
+    /// **at end** the off-screen row is refilled at the settled width.
+    func testLiveResizeInvalidatesVisibleThenRefillsOffscreen() throws {
+        let group = try XCTUnwrap(store.roots.first { $0.isExpandable })
+        expandGroupAndTallTool(group)
+        outline.scrollRowToVisible(0)
+        outline.layoutSubtreeIfNeeded()
+        drain(0.1)
+
+        let offscreen = try XCTUnwrap(
+            firstOffscreenRoot(),
+            "the tall tool body must push a root below the fold for this probe")
+        let visibleRoot = try XCTUnwrap(store.roots.first, "para0 sits at the top")
+        func widthOf(_ item: TranscriptNodeItem) -> CGFloat {
+            TranscriptOutlineMetrics.layoutWidth(
+                forRowWidth: outline.bounds.width, level: 0, hasChevronSlot: item.isHeader)
+        }
+        let wideOffscreen = widthOf(offscreen)
+        XCTAssertEqual(
+            try XCTUnwrap(store.cachedWidth(for: offscreen.id)), wideOffscreen, accuracy: 0.5)
+
+        let harness = LiveResizeHarness(window: window, view: outline)
+        harness.begin()
+        harness.step(toContentWidth: 600)
+
+        // Column actually narrowed (1200 → 780 clamp; 600 → 600).
+        XCTAssertLessThan(
+            TranscriptOutlineMetrics.layoutWidth(
+                forRowWidth: outline.bounds.width, level: 0, hasChevronSlot: false),
+            wideOffscreen)
+        XCTAssertEqual(
+            try XCTUnwrap(store.cachedWidth(for: visibleRoot.id)), widthOf(visibleRoot),
+            accuracy: 0.5, "visible row must reflow mid-drag")
+        XCTAssertEqual(
+            try XCTUnwrap(store.cachedWidth(for: offscreen.id)), wideOffscreen, accuracy: 0.5,
+            "off-screen row must keep its stale layout mid-drag (visible-only invalidation)")
+
+        harness.end()
+        let narrowOffscreen = widthOf(offscreen)
+        XCTAssertLessThan(narrowOffscreen, wideOffscreen, "sanity: the off-screen target narrows")
+        waitUntil("off-screen row refills after live-resize end") { [self] in
+            abs((store.cachedWidth(for: offscreen.id) ?? -1) - narrowOffscreen) < 0.5
+        }
+    }
+
+    // MARK: - 6. Click-to-toggle on header rows
+
+    /// A click anywhere on a header row (outside the disclosure triangle)
+    /// toggles its expansion — the whole tool-group / tool header is a hit
+    /// target, driven through the native `expandItem` / `collapseItem`.
+    func testClickingHeaderBodyTogglesExpansion() throws {
+        let group = try XCTUnwrap(store.roots.first { $0.isExpandable })
+        let groupRow = outline.row(forItem: group)
+        XCTAssertFalse(outline.isItemExpanded(group), "precondition: collapsed")
+
+        let triangle = outline.frameOfOutlineCell(atRow: groupRow)
+        let rowRect = outline.rect(ofRow: groupRow)
+        let probe = NSPoint(x: triangle.maxX + 30, y: rowRect.midY)
+        XCTAssertFalse(triangle.contains(probe), "probe must be off the triangle")
+
+        clickOutline(atDocPoint: probe)
+        waitUntil("header click expands the group") { [self] in
+            outline.isItemExpanded(group)
+        }
+
+        clickOutline(atDocPoint: probe)
+        waitUntil("second header click collapses the group") { [self] in
+            !outline.isItemExpanded(group)
+        }
+    }
+
+    // MARK: - 7. Post-resize refill keeps the visual-top anchor
+
+    /// The end-of-resize refill corrects off-screen rows' heights; when those
+    /// rows sit **above** the viewport, that shifts the visible content
+    /// unless the visual-top anchor compensates. Needs rows that actually
+    /// reflow taller when narrowed — the shared fixture's text is too short,
+    /// so this mounts a dedicated long-paragraph outline.
+    func testLiveResizeEndKeepsVisualTopPinned() throws {
+        let mount = Self.mountOutline(messages: Self.longParagraphFixture())
+        addTeardownBlock { @MainActor in mount.window.close() }
+        let localOutline = mount.outline
+        let localStore = mount.store
+
+        // Scroll to the tail so the early long paragraphs sit above the fold.
+        localOutline.scrollRowToVisible(localOutline.numberOfRows - 1)
+        localOutline.layoutSubtreeIfNeeded()
+        drain(0.1)
+
+        let clip = try XCTUnwrap(localOutline.enclosingScrollView).contentView
+        let visBefore = localOutline.rows(in: localOutline.visibleRect)
+        XCTAssertGreaterThan(
+            visBefore.location, 0, "premise: some rows must sit above the viewport")
+        let anchor = try XCTUnwrap(
+            localOutline.item(atRow: visBefore.location) as? TranscriptNodeItem)
+        let screenYBefore =
+            localOutline.rect(ofRow: visBefore.location).minY - clip.bounds.origin.y
+
+        let harness = LiveResizeHarness(window: mount.window, view: localOutline)
+        harness.begin()
+        harness.step(toContentWidth: 520)  // narrow → long paragraphs wrap taller
+        harness.end()
+
+        // Wait for the async refill to correct an above-viewport paragraph.
+        let firstRoot = try XCTUnwrap(localStore.roots.first)
+        let narrow = TranscriptOutlineMetrics.layoutWidth(
+            forRowWidth: localOutline.bounds.width, level: 0, hasChevronSlot: false)
+        waitUntil("above-viewport rows refill at end") {
+            abs((localStore.cachedWidth(for: firstRoot.id) ?? -1) - narrow) < 0.5
+        }
+        localOutline.layoutSubtreeIfNeeded()
+
+        let newRow = localOutline.row(forItem: anchor)
+        let screenYAfter = localOutline.rect(ofRow: newRow).minY - clip.bounds.origin.y
+        XCTAssertEqual(
+            screenYAfter, screenYBefore, accuracy: 2.0,
+            "the top visible row must stay pinned across the end-of-resize refill")
+    }
+
     // MARK: - Helpers
+
+    /// Mount a throwaway outline VC in its own window from `messages` — used
+    /// by tests that need a fixture different from the shared one. The
+    /// static `FakeHistory.messages` seam is safe to re-point here because
+    /// each `TranscriptStore.load` reads it fresh and the class runs its
+    /// methods sequentially in one process.
+    private static func mountOutline(
+        messages: [Message2]
+    ) -> (window: NSWindow, vc: TranscriptViewController, store: TranscriptStore, outline: NSOutlineView) {
+        FakeHistory.messages = messages
+        let store = TranscriptStore(historySource: FakeHistory.self)
+        let vc = TranscriptViewController(store: store)
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1200, height: 400),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentViewController = vc
+        window.setContentSize(NSSize(width: 1200, height: 400))
+        window.contentView?.layoutSubtreeIfNeeded()
+        vc.present(sessionId: "fixture")
+        let outline = findOutline(in: vc.view)!
+        return (window, vc, store, outline)
+    }
+
+    /// Six long wrapping paragraphs — each reflows to a different line count
+    /// (and height) at 520 vs 780, so narrowing genuinely grows the rows.
+    private static func longParagraphFixture() -> [Message2] {
+        let resolver = Message2Resolver()
+        func resolve(_ dict: [String: Any]) -> Message2 { try! resolver.resolve(dict) }
+        let long = String(
+            repeating: "The quick brown fox jumps over the lazy dog. ", count: 8)
+        return (0..<6).map { i in
+            resolve([
+                "type": "assistant", "uuid": UUID().uuidString, "session_id": "s",
+                "message": [
+                    "id": "m\(i)", "type": "message", "role": "assistant",
+                    "content": [["type": "text", "text": long]],
+                ],
+            ])
+        }
+    }
+
+    /// Synthesize a single left-click at a document-space point on the
+    /// outline and dispatch it through the real `mouseDown` (the same path
+    /// a user click takes — the cell forwards non-link clicks here).
+    private func clickOutline(atDocPoint docPoint: NSPoint) {
+        let windowPoint = outline.convert(docPoint, to: nil)
+        guard
+            let event = NSEvent.mouseEvent(
+                with: .leftMouseDown,
+                location: windowPoint,
+                modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber,
+                context: nil,
+                eventNumber: 0,
+                clickCount: 1,
+                pressure: 1)
+        else {
+            XCTFail("failed to synthesize mouse event")
+            return
+        }
+        outline.mouseDown(with: event)
+    }
+
+    /// Expand the group and its tall (bash) tool synchronously, so the
+    /// document overflows the viewport and some rows land off-screen.
+    private func expandGroupAndTallTool(_ group: TranscriptNodeItem) {
+        outline.expandItem(group)
+        if let tallTool = group.children.last { outline.expandItem(tallTool) }
+        outline.layoutSubtreeIfNeeded()
+    }
+
+    /// The first root whose row currently sits outside the viewport.
+    private func firstOffscreenRoot() -> TranscriptNodeItem? {
+        let visible = outline.rows(in: outline.visibleRect)
+        let lo = visible.location
+        let hi = visible.location + visible.length
+        return store.roots.first { root in
+            let row = outline.row(forItem: root)
+            return row >= 0 && (row < lo || row >= hi)
+        }
+    }
 
     private func documentCoversLastRow() -> Bool {
         let last = outline.numberOfRows - 1

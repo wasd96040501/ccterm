@@ -27,6 +27,24 @@ final class TranscriptOutlineView: NSOutlineView, NSMenuItemValidation {
     /// Selection state + algorithm; owned by the transcript VC.
     weak var selection: TranscriptSelectionCoordinator?
 
+    /// Fired once when a live resize of the outline ends. A **pure event**
+    /// ("my live resize ended") — the VC decides whether anything needs
+    /// refilling (its scan no-ops when no row's cached width went stale), so
+    /// the View carries none of that policy. This is the events-up contract
+    /// (root CLAUDE.md): the View reports what happened, the Controller
+    /// coordinates. `viewDidEndLiveResize` is the hook rather than the
+    /// window's `didEndLiveResizeNotification` because it fires for *every*
+    /// live-resize cause — a split-view-divider drag resizes the outline
+    /// without ever posting a window resize notification.
+    var onLiveResizeEnded: (() -> Void)?
+
+    // MARK: - Live resize
+
+    override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        onLiveResizeEnded?()
+    }
+
     // MARK: - Native disclosure placement
 
     override func frameOfOutlineCell(atRow row: Int) -> NSRect {
@@ -61,11 +79,28 @@ final class TranscriptOutlineView: NSOutlineView, NSMenuItemValidation {
         let row = self.row(at: docPoint)
 
         // Outside any row, or on a non-selectable row (header / image):
-        // drop the selection, then let AppKit's default click handling
-        // run (native double-click expand on header rows stays alive;
-        // `selectionHighlightStyle` is `.none`, so no visual selection).
+        // drop the selection first.
         guard row >= 0, selection.adapter(atRow: row) != nil else {
             selection.clearAll()
+            // Expandable header row (tool-group header or tool header),
+            // clicked *outside* the native disclosure triangle → toggle the
+            // whole row. This makes the entire header a hit target, not just
+            // the 8pt triangle. A click on the triangle itself falls through
+            // to `super` so AppKit runs its own toggle (no double-toggle).
+            // `animator()` drives the native row-slide + triangle rotation.
+            if row >= 0, !frameOfOutlineCell(atRow: row).contains(docPoint),
+                let node = item(atRow: row) as? TranscriptNodeItem, node.isExpandable
+            {
+                if isItemExpanded(node) {
+                    animator().collapseItem(node)
+                } else {
+                    animator().expandItem(node)
+                }
+                return
+            }
+            // Non-expandable / triangle click: default handling (native
+            // triangle toggle; `selectionHighlightStyle` is `.none`, so no
+            // visual selection).
             super.mouseDown(with: event)
             return
         }

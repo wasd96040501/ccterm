@@ -73,6 +73,14 @@ enum RowLayout: @unchecked Sendable {
     case userAttachments(UserAttachmentsLayout)
     case toolGroup(ToolGroupLayout)
     case loadingPill(LoadingPillLayout)
+    /// Outline transcript: a tool-group / tool node's title-only header
+    /// (native disclosure triangle owns the arrow). Not used by the old
+    /// monolithic `toolGroup` renderer.
+    case header(HeaderLayout)
+    /// Outline transcript: one tool's expanded body as a standalone leaf
+    /// (adapts the reused `ToolGroupChildLayout`). Not used by the old
+    /// monolithic `toolGroup` renderer.
+    case toolBody(ToolBodyLayout)
 
     #if DEBUG
     /// Short tag used by perf-trace log lines so a `log stream` reader
@@ -92,6 +100,8 @@ enum RowLayout: @unchecked Sendable {
         case .userAttachments: return "userAttachments"
         case .toolGroup: return "toolGroup"
         case .loadingPill: return "loadingPill"
+        case .header: return "header"
+        case .toolBody: return "toolBody"
         }
     }
     #endif
@@ -109,6 +119,8 @@ enum RowLayout: @unchecked Sendable {
         case .userAttachments(let l): return l.totalHeight
         case .toolGroup(let l): return l.totalHeight
         case .loadingPill(let l): return l.totalHeight
+        case .header(let l): return l.totalHeight
+        case .toolBody(let l): return l.totalHeight
         }
     }
 
@@ -125,6 +137,8 @@ enum RowLayout: @unchecked Sendable {
         case .userAttachments(let l): return l.measuredWidth
         case .toolGroup(let l): return l.measuredWidth
         case .loadingPill(let l): return l.measuredWidth
+        case .header(let l): return l.measuredWidth
+        case .toolBody(let l): return l.measuredWidth
         }
     }
 
@@ -179,6 +193,8 @@ enum RowLayout: @unchecked Sendable {
         case .thematicBreak(let l): return l.totalHeight / 2
         case .toolGroup(let l): return l.totalHeight / 2
         case .loadingPill(let l): return l.totalHeight / 2
+        case .header(let l): return l.totalHeight / 2
+        case .toolBody(let l): return l.totalHeight / 2
         }
     }
 
@@ -203,6 +219,8 @@ enum RowLayout: @unchecked Sendable {
         switch self {
         case .codeBlock(let l): l.drawBackplate(in: ctx, origin: origin)
         case .toolGroup(let l): l.drawBackplate(in: ctx, origin: origin)
+        case .toolBody(let l):
+            l.drawBackplate(in: ctx, origin: origin, dirtyRect: dirtyRect)
         default: break
         }
     }
@@ -244,6 +262,15 @@ enum RowLayout: @unchecked Sendable {
                 in: ctx, origin: origin,
                 hoveredAction: hoveredAction, dirtyRect: dirtyRect)
         case .loadingPill(let l): l.draw(in: ctx, origin: origin)
+        case .header(let l): l.draw(in: ctx, origin: origin)
+        case .toolBody(let l):
+            let hoveredCopyId: UUID? = {
+                if case .copy(let id, _) = hoveredAction { return id }
+                return nil
+            }()
+            l.draw(
+                in: ctx, origin: origin,
+                hoveredCopyId: hoveredCopyId, dirtyRect: dirtyRect)
         }
     }
 
@@ -283,7 +310,9 @@ enum RowLayout: @unchecked Sendable {
         case .codeBlock(let l): links = l.links
         case .blockquote(let l): links = l.links
         case .toolGroup(let l): links = l.links
-        case .image, .userAttachments, .thematicBreak, .userBubble, .loadingPill: links = []
+        case .image, .userAttachments, .thematicBreak, .userBubble, .loadingPill,
+            .header, .toolBody:
+            links = []
         }
         hits.append(
             contentsOf: links.map {
@@ -304,6 +333,12 @@ enum RowLayout: @unchecked Sendable {
             }
         case .toolGroup(let l):
             hits.append(contentsOf: l.interactiveHits)
+        case .toolBody(let l):
+            hits.append(
+                contentsOf: l.copyChromes.map {
+                    InteractiveHit(
+                        rect: $0.hitRect, action: .copy(id: $0.id, text: $0.text))
+                })
         default:
             break
         }
@@ -329,6 +364,10 @@ enum RowLayout: @unchecked Sendable {
         case .userBubble(let l): return l.selectionAdapter
         case .toolGroup(let l): return l.selectionAdapter
         case .loadingPill: return nil
+        // Selection is out of scope for the outline transcript's first
+        // cut — header + tool-body rows report no selectable region.
+        case .header: return nil
+        case .toolBody: return nil
         }
     }
 

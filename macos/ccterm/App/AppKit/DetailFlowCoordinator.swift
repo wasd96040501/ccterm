@@ -1,3 +1,4 @@
+import AgentSDK
 import AppKit
 import Combine
 
@@ -178,9 +179,14 @@ final class DetailFlowCoordinator: Coordinator {
     ) -> (NSViewController & DetailContainerChild) {
         switch kind {
         case .history:
-            // Session id is presented after the container mounts + settles
-            // the child's frame; see `route(to:)`.
-            return HistorySessionViewController(detailContext: detailContext)
+            // Composition point for the outline transcript's history
+            // source (SPEC §8 decision 6): the concrete `SessionHistory`
+            // is chosen here and injected as the `TranscriptHistoryService`
+            // metatype; the VC builds `TranscriptStore(historySource:)` +
+            // `TranscriptViewController(store:)` from it. Session id is
+            // presented after the container mounts + settles the child's
+            // frame; see `route(to:)`.
+            return HistorySessionViewController(historySource: SessionHistory.self)
         case .newSession:
             return NewSessionPlaceholderViewController()
         case .archive:

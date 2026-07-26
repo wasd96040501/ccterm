@@ -26,21 +26,11 @@ import Observation
 ///
 /// ## Render-side state
 ///
-/// `Session` also owns the transcript's render-side state machine —
-/// `controller` (`Transcript2Controller`) and `bridge`
-/// (`Transcript2EntryBridge`) — and wires the bridge to the runtime
-/// at session creation / promotion. This makes the bridge a continuous
-/// consumer of `runtime.onMessagesChange`: live CLI events flow into
-/// the controller's block list **even when no transcript view is
-/// mounted**, so the user switching the sidebar to another session
-/// doesn't pause renderer-side processing for the session they left.
-/// `ChatSessionViewController` binds the controller's `coordinator`
-/// (which has a `weak NSTableView`) to a fresh `NSTableView` on each
-/// mount via `TranscriptScrollViewFactory.make`; when no table is bound,
-/// the coordinator still updates its `blocks` array and skips AppKit
-/// calls — a re-attach picks up the accumulated state through the host's
-/// `view.layoutSubtreeIfNeeded()`, which sizes the table from `.zero`
-/// to its real frame and drives `NSTableView.tile()` inline.
+/// `Session` no longer owns the transcript renderer. The flat
+/// `TranscriptViewController` reads a session's history one-shot through
+/// `TranscriptHistoryService` on mount; there is no live render-side
+/// bridge. `Session` still exposes `onMessagesChange` as an optional
+/// external fanout slot for non-render consumers (tests / debugging).
 @Observable
 @MainActor
 final class Session {
@@ -64,30 +54,6 @@ final class Session {
     /// completes. `SessionManager` wires this to `refreshRecords()` so
     /// the sidebar surfaces the newly persisted session immediately.
     @ObservationIgnored internal var onPromoted: ((SessionRuntime) -> Void)?
-
-    // MARK: - Render-side state (continuous lifetime)
-
-    /// Imperative transcript controller. Lives as long as the session
-    /// does — survives transcript-view mount/dismount cycles. Views
-    /// read `session.controller` and hand it to the transcript host
-    /// (production: `ChatSessionViewController`); they never
-    /// construct their own.
-    let controller: Transcript2Controller
-
-    /// Renderer-side translator: subscribes to the runtime's
-    /// `onMessagesChange` and converts each `MessagesChange` into
-    /// `Transcript2Controller.apply / setHistory` calls. The bridge
-    /// is wired to the runtime exactly once — at `Session.init` for
-    /// `.active`-from-record sessions, at promotion time for
-    /// draft → active sessions — and stays wired for the session's
-    /// entire lifetime.
-    let bridge: Transcript2EntryBridge
-
-    /// History backfill pipeline, alive for the duration of one load. Created
-    /// by `loadHistory()` and retained so its off-main producer task isn't
-    /// torn down mid-flight. Re-entry is gated by `historyLoadState`, so at
-    /// most one ever runs per session.
-    @ObservationIgnored private var backfillPipeline: TranscriptBackfillPipeline?
 
     // MARK: - External hooks
 
@@ -163,8 +129,6 @@ final class Session {
         self.repository = repository
         self.cliClientFactory = cliClientFactory
         self.onPromoted = onPromoted
-        self.controller = Transcript2Controller()
-        self.bridge = Transcript2EntryBridge(controller: controller)
         let runtime = SessionRuntime(
             sessionId: record.sessionId,
             repository: repository,
@@ -187,8 +151,6 @@ final class Session {
         self.repository = repository
         self.cliClientFactory = cliClientFactory
         self.onPromoted = onPromoted
-        self.controller = Transcript2Controller()
-        self.bridge = Transcript2EntryBridge(controller: controller)
         self.phase = .draft(
             SessionDraft(sessionId: draftSessionId, repository: repository))
     }
@@ -210,8 +172,6 @@ final class Session {
         self.repository = repository
         self.cliClientFactory = cliClientFactory
         self.onPromoted = onPromoted
-        self.controller = Transcript2Controller()
-        self.bridge = Transcript2EntryBridge(controller: controller)
         let draft = SessionDraft(sessionId: record.sessionId, repository: repository)
         draft.config = SessionConfig(from: record)
         draft.title = record.title
@@ -234,27 +194,22 @@ final class Session {
         self.repository = runtime.repository
         self.cliClientFactory = cliClientFactory
         self.onPromoted = onPromoted
-        self.controller = Transcript2Controller()
-        self.bridge = Transcript2EntryBridge(controller: controller)
         self.phase = .active(runtime)
         wireRuntimeMessagesSink(runtime)
     }
 
     nonisolated deinit {}
 
-    /// Permanently attach the bridge (+ optional external observer) to
-    /// `runtime.onMessagesChange`. Called from each `.active`-producing
-    /// init, and from `promoteOrForward` at the draft → active flip.
-    /// The closure captures `self` weakly because the runtime is
-    /// owned by `Session` and would otherwise form a retain cycle.
+    /// Attach the optional external observer to `runtime.onMessagesChange`
+    /// and forward the runtime's notification sinks. Called from each
+    /// `.active`-producing init, and from `promoteOrForward` at the
+    /// draft → active flip. The closure captures `self` weakly because
+    /// the runtime is owned by `Session` and would otherwise form a
+    /// retain cycle.
     private func wireRuntimeMessagesSink(_ runtime: SessionRuntime) {
         runtime.onMessagesChange = { [weak self] change in
             guard let self else { return }
-            self.bridge.apply(change)
             self.onMessagesChange?(change)
-        }
-        runtime.onTurnFinishedLive = { [weak self] in
-            self?.bridge.handleTurnFinished()
         }
         runtime.onLaunchFailure = onLaunchFailure
         runtime.onRecordPersisted = onRecordPersisted
@@ -533,45 +488,6 @@ final class Session {
 
     func cancelMessage(id: UUID) {
         runtime?.cancelMessage(id: id)
-    }
-
-    /// Drive a one-shot reverse-streaming history load into the controller.
-    ///
-    /// Idempotent through `runtime.historyLoadState`: `.loading` / `.loaded`
-    /// are no-ops (the bridge has been streaming live events into the
-    /// controller the whole time, so a re-entered session needs no replay).
-    /// Drafts have no history.
-    ///
-    /// The pipeline applies blocks **directly** to `controller` (load path =
-    /// iterator → apply); the bridge handles only the live
-    /// path. History tool statuses route back through the bridge's historical
-    /// derivation so failed / completed colors survive.
-    func loadHistory(overrideURL: URL? = nil, firstPageEntryTarget: Int = 20) {
-        guard let runtime else { return }
-        switch runtime.historyLoadState {
-        case .loading, .loaded:
-            return
-        case .notLoaded:
-            break
-        }
-        runtime.historyLoadState = .loading
-
-        let url = overrideURL ?? runtime.historyJSONLURL
-        let pipeline = TranscriptBackfillPipeline(
-            source: JSONLReversePageSource(
-                url: url, firstPageEntryTarget: firstPageEntryTarget),
-            controller: controller,
-            onLoaded: { [weak self] in self?.runtime?.historyLoadState = .loaded },
-            onApplied: { [weak self] entries in
-                self?.bridge.pushHistoricalStatuses(for: entries)
-            })
-        self.backfillPipeline = pipeline
-        // Seed the off-main typeset width from the settled, clamped row width.
-        // `loadHistory` runs after the attach tick's `scrollToTail`, so the
-        // table geometry has settled and `controller.layoutWidth` is real
-        // Headless callers (no table) pass 0; their pages self-heal on the
-        // first real `heightOfRow`.
-        pipeline.start(width: controller.layoutWidth)
     }
 
     func generateTitle(from firstMessage: String) {

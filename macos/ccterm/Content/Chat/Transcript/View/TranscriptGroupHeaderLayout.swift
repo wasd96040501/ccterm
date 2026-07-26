@@ -1,17 +1,17 @@
 import AppKit
 import CoreText
 
-/// Title-only header layout for the history transcript's tool-group
-/// header rows. Typesets and draws the aggregated group title using the
-/// shared `BlockStyle.toolHeader*` typography — no self-drawn chevron, no
-/// icon, no inset (the row's horizontal padding comes from the cell's
-/// `layoutOrigin.x`).
+/// Measure for the transcript's tool-group header rows — a single title
+/// line centered in a fixed-height band.
 ///
-/// Reuses `TextLayout` for the single line and centers it inside the
-/// fixed `toolHeaderHeight` band so the group header and the adjacent
-/// content all read at one pitch.
-struct HeaderLayout: @unchecked Sendable {
-    /// The typeset title line(s). Built from the shared header typography.
+/// Lives here, not in `Components/Markdown`, because it isn't a markdown
+/// concept: it renders an aggregated narration phrase the transcript
+/// builds itself ("Edited 3 files · Searched 1 pattern") and has no
+/// `Block.Kind`. It does reuse the component's `TextLayout` primitive and
+/// the shared `BlockStyle.toolHeader*` typography, so it reads at the
+/// same pitch as the content around it.
+struct TranscriptGroupHeaderLayout: @unchecked Sendable {
+    /// The typeset title line(s).
     let text: TextLayout
     /// Layout-local y offset that vertically centers the title inside the
     /// fixed header band.
@@ -21,7 +21,9 @@ struct HeaderLayout: @unchecked Sendable {
 
     var measuredWidth: CGFloat { text.measuredWidth }
 
-    static func make(title: String, maxWidth: CGFloat) -> HeaderLayout {
+    nonisolated static func make(
+        title: String, maxWidth: CGFloat
+    ) -> TranscriptGroupHeaderLayout {
         let attributed = NSAttributedString(
             string: title,
             attributes: [
@@ -34,11 +36,12 @@ struct HeaderLayout: @unchecked Sendable {
         // to 0 so a title that somehow wraps taller than the band still
         // draws from the top rather than being pushed up out of view.
         let inset = max(0, (height - text.totalHeight) / 2)
-        return HeaderLayout(text: text, textTopInset: inset, totalHeight: height)
+        return TranscriptGroupHeaderLayout(
+            text: text, textTopInset: inset, totalHeight: height)
     }
 
     /// Draw the title into a flipped view. `origin` is the layout's
-    /// top-left in view coords (the cell's `layoutOrigin`).
+    /// top-left in view coords.
     func draw(in ctx: CGContext, origin: CGPoint) {
         text.draw(
             in: ctx,

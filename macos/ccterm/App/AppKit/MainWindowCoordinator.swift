@@ -136,26 +136,16 @@ extension MainWindowCoordinator: MainWindowControllerDelegate {
         _ controller: MainWindowController,
         searchQueryDidChange query: String
     ) {
-        // Route the query into whichever session's controller is
-        // currently on-screen. `.newSession` and `.archive` selections
-        // have no transcript controller, so those are no-ops.
-        guard let sid = selectionStore.effectiveSessionId else { return }
-        let controller = appContext.sessionManager.existingSession(sid)?.controller
-        controller?.runSearch(query)
+        // Transcript search is not wired to the flat history transcript
+        // (the live render-side controller was removed). No-op for now.
     }
 
     func mainWindowController(
         _ controller: MainWindowController,
         searchDidRequestNext shift: Bool
     ) {
-        // `shift == true` → next hit; `shift == false` → previous hit.
-        guard let sid = selectionStore.effectiveSessionId else { return }
-        let controller = appContext.sessionManager.existingSession(sid)?.controller
-        if shift {
-            controller?.nextSearchHit()
-        } else {
-            controller?.previousSearchHit()
-        }
+        // Transcript search is not wired to the flat history transcript
+        // (the live render-side controller was removed). No-op for now.
     }
 
     func mainWindowController(

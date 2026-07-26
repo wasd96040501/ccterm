@@ -62,303 +62,7 @@ struct Block: Identifiable, Equatable, @unchecked Sendable {
         /// foldable / diffable. Multiple images wrap onto more rows when
         /// the strip exceeds row width.
         case userAttachments(images: [NSImage])
-        /// Grouped tool calls (today: a batch of file edits). One row
-        /// owns the group header + every item header + every expanded
-        /// item body. Three independently-foldable layers:
-        ///
-        /// 1. The group itself — chevron flips the entire item list.
-        /// 2. Each item — chevron flips a single file's hunk body.
-        /// 3. Hunk body — a `codeBlock`-style rounded card with the
-        ///    diff drawn inside (gutter + sign + content).
-        ///
-        /// Group, item, and hunk fold flags share the
-        /// `Transcript2Coordinator.foldStates: [UUID: Bool]` dict —
-        /// `ToolGroupBlock.id` keys the group flag, `Item.id` keys
-        /// per-item. Sparse: absent = the layer's default
-        /// (`false`, i.e. folded). A diff used to be a top-level
-        /// `Block.Kind` case; it has been folded into
-        /// `ToolGroupBlock.Item` because every real-world diff arrives
-        /// inside a tool-result envelope.
-        case toolGroup(ToolGroupBlock)
-        /// Three breathing dots at the last row, surfacing the
-        /// session's "running" state. Inserted / removed by
-        /// `Transcript2Controller.setLoading(_:)` (which also
-        /// debounces the hide a few hundred ms so back-to-back
-        /// turns don't flicker the row off and back on). Payload-
-        /// free because the visual is fixed. The bridge does not
-        /// own this kind — it is purely a controller-managed
-        /// sentinel row.
-        case loadingPill
     }
-
-    #if DEBUG
-    /// Short, stable tag used by perf-trace log lines so a `log stream`
-    /// reader can correlate cell paint volume with which kind of row
-    /// drove it. DEBUG-only — sole consumer is `Transcript2PerfLog`-
-    /// gated trace points in the cell / coordinator hot paths, which
-    /// vanish from Release builds.
-    var kindLabel: String {
-        switch kind {
-        case .heading: return "heading"
-        case .paragraph: return "paragraph"
-        case .image: return "image"
-        case .list: return "list"
-        case .table: return "table"
-        case .codeBlock: return "codeBlock"
-        case .blockquote: return "blockquote"
-        case .thematicBreak: return "thematicBreak"
-        case .userBubble: return "userBubble"
-        case .userAttachments: return "userAttachments"
-        case .toolGroup: return "toolGroup"
-        case .loadingPill: return "loadingPill"
-        }
-    }
-    #endif
-}
-
-/// Grouped tool calls. The group renders as a single row containing:
-///
-/// 1. A group header (title + chevron) at the top.
-/// 2. When the group is expanded, one stacked entry per `children`,
-///    each rendered by a per-kind `ToolGroupChildLayout`.
-///
-/// `Child` is a closed enum — new child kinds plug in by adding a
-/// `case` here, a struct payload, and a `ToolGroupChildLayout` arm
-/// (and one arm in `ToolGroupChildHighlight` if the child needs
-/// async highlight). No protocol / no runtime registration table —
-/// the compiler enforces exhaustiveness across the four switches.
-///
-/// Every `Child` exposes a stable `id` so per-child fold flags persist
-/// in `Transcript2Coordinator.foldStates` independently (toggling
-/// file 2's expansion doesn't reset file 1's).
-struct ToolGroupBlock: Equatable, Sendable {
-    /// Title shown when the group is `.running` **and folded** — the
-    /// progressive fragment of the *last* tool in the group (e.g.
-    /// `"Reading foo.swift"`). Mirrors
-    /// `GroupEntry.activeTitle` on the Session side.
-    let activeTitle: String
-    /// Title shown when the group is `.running` **and expanded** — the
-    /// aggregated progressive phrase (e.g.
-    /// `"Reading 3 files · Searching 1 pattern"`). Mirrors
-    /// `GroupEntry.expandedActiveTitle`. When running, the expanded
-    /// form is the more informative read because the user has the
-    /// children laid out anyway.
-    let expandedActiveTitle: String
-    /// Title shown when the group is not running — the aggregated
-    /// past-tense phrase (e.g. `"Read 3 files · Searched 1 pattern"`).
-    /// Used for `.completed` / `.failed` / `.cancelled` regardless of
-    /// fold state, because the children have stopped moving.
-    let completedTitle: String
-    let children: [Child]
-
-    init(
-        activeTitle: String,
-        expandedActiveTitle: String,
-        completedTitle: String,
-        children: [Child]
-    ) {
-        self.activeTitle = activeTitle
-        self.expandedActiveTitle = expandedActiveTitle
-        self.completedTitle = completedTitle
-        self.children = children
-    }
-
-    /// Pick the right title for the current `(status, fold)` pair.
-    /// Single-source-of-truth for the three-state logic so layouts
-    /// and any future consumers don't reimplement the switch.
-    ///
-    /// When `.running` + folded with an empty `activeTitle`, falls back
-    /// to a localized "Running" so the header never collapses to a
-    /// chevron-only row before upstream resolves the progressive fragment.
-    func resolvedTitle(status: ToolStatus, isExpanded: Bool) -> String {
-        switch status {
-        case .running:
-            if isExpanded {
-                return expandedActiveTitle
-            }
-            return activeTitle.isEmpty ? String(localized: "Running") : activeTitle
-        case .completed, .failed, .cancelled:
-            return completedTitle
-        }
-    }
-
-    enum Child: Equatable, Sendable {
-        case fileEdit(FileEditChild)
-        case read(ReadChild)
-        case bash(BashChild)
-        case grep(GrepChild)
-        case glob(GlobChild)
-        case webFetch(WebFetchChild)
-        case webSearch(WebSearchChild)
-        case askUserQuestion(AskUserQuestionChild)
-        case agent(AgentChild)
-        /// Catch-all for tool kinds without a tailored child layout
-        /// (Skill / Cron* / Send* / Todo* / Enter*/Exit* mode toggles
-        /// / Task ops / unknown). Header-only — no expandable body.
-        case generic(GenericChild)
-
-        /// Stable identity used as a fold-state key and as the
-        /// highlight scope discriminator.
-        var id: UUID {
-            switch self {
-            case .fileEdit(let c): return c.id
-            case .read(let c): return c.id
-            case .bash(let c): return c.id
-            case .grep(let c): return c.id
-            case .glob(let c): return c.id
-            case .webFetch(let c): return c.id
-            case .webSearch(let c): return c.id
-            case .askUserQuestion(let c): return c.id
-            case .agent(let c): return c.id
-            case .generic(let c): return c.id
-            }
-        }
-
-        /// Header text for the given runtime `status` — `.running`
-        /// pulls each payload's progressive form (`activeLabel`,
-        /// e.g. `"Editing Sources/Greeter.swift"`); every other
-        /// status pulls the past-tense form (`label`, e.g.
-        /// `"Edit Sources/Greeter.swift"`). The Bridge fills both
-        /// fields from `ToolUse.activeFragment` /
-        /// `ToolUse.completedFragment` so the two forms are pre-
-        /// computed when the child enters the transcript.
-        ///
-        /// Centralising on one method (parameterised by status)
-        /// keeps `ToolGroupLayout` from re-implementing the switch
-        /// at every header build.
-        func headerLabel(for status: ToolStatus) -> String {
-            switch status {
-            case .running:
-                return activeLabel
-            case .completed, .failed, .cancelled:
-                return label
-            }
-        }
-
-        /// Past-tense / completed-form label — also the value used
-        /// for `.failed` and `.cancelled` because those are terminal
-        /// states that follow the same "tool has stopped moving"
-        /// semantics as `.completed`.
-        var label: String {
-            switch self {
-            case .fileEdit(let c): return c.label
-            case .read(let c): return c.label
-            case .bash(let c): return c.label
-            case .grep(let c): return c.label
-            case .glob(let c): return c.label
-            case .webFetch(let c): return c.label
-            case .webSearch(let c): return c.label
-            case .askUserQuestion(let c): return c.label
-            case .agent(let c): return c.label
-            case .generic(let c): return c.label
-            }
-        }
-
-        /// Progressive form — used only when the child's status is
-        /// `.running`. Bridge feeds this from `ToolUse.activeFragment`.
-        var activeLabel: String {
-            switch self {
-            case .fileEdit(let c): return c.activeLabel
-            case .read(let c): return c.activeLabel
-            case .bash(let c): return c.activeLabel
-            case .grep(let c): return c.activeLabel
-            case .glob(let c): return c.activeLabel
-            case .webFetch(let c): return c.activeLabel
-            case .webSearch(let c): return c.activeLabel
-            case .askUserQuestion(let c): return c.activeLabel
-            case .agent(let c): return c.activeLabel
-            case .generic(let c): return c.activeLabel
-            }
-        }
-
-        /// Wrapper-level error text from the tool_result (`is_error ==
-        /// true`), already stripped of the `<tool_use_error>` envelope.
-        /// `nil` for a successful result. The single source of truth the
-        /// layout reads to decide whether to append a uniform red error
-        /// card; also gates `hasExpandableBody` so even header-only kinds
-        /// (`generic`, `read` without content) become foldable on error.
-        var errorText: String? {
-            switch self {
-            case .fileEdit(let c): return c.errorText
-            case .read(let c): return c.errorText
-            case .bash(let c): return c.errorText
-            case .grep(let c): return c.errorText
-            case .glob(let c): return c.errorText
-            case .webFetch(let c): return c.errorText
-            case .webSearch(let c): return c.errorText
-            case .askUserQuestion(let c): return c.errorText
-            case .agent(let c): return c.errorText
-            case .generic(let c): return c.errorText
-            }
-        }
-
-        /// `true` when this child has an expandable body. Drives
-        /// `ToolGroupLayout`'s decision to draw a chevron + register
-        /// a fold hit on the header. `read` only exposes a body once
-        /// the tool_result has landed (and carried text content);
-        /// `generic` is always header-only — **unless** the result was an
-        /// error, in which case every kind gains a body to host the
-        /// uniform red error card.
-        var hasExpandableBody: Bool {
-            if errorText != nil { return true }
-            switch self {
-            case .fileEdit, .bash, .grep, .glob, .webFetch, .webSearch,
-                .askUserQuestion, .agent:
-                return true
-            case .read(let c): return c.content != nil
-            case .generic: return false
-            }
-        }
-    }
-}
-
-// Child payload structs (`FileEditChild`, `ReadChild`, etc.) and
-// their auxiliary types (`DiffBlock`, etc.) live next to their
-// renderers under `Layout/ToolGroupChildren/<Kind>/`. Keeping the
-// payload next to its layout makes new child-kind work
-// (data + layout + highlight) self-contained inside one folder,
-// rather than threading through `Block.swift`.
-
-/// Runtime status for a tool-call surface (a `toolGroup` host block
-/// or one of its children). Pushed in through
-/// `Transcript2Controller.setToolStatus(id:status:)` as the CLI
-/// progresses; the value lives in `Transcript2Coordinator.statusStates`
-/// — a sparse dict keyed by `Block.id` (group level) or `Child.id`
-/// (child level), absent = `.completed`.
-///
-/// Status is **not** carried inside `Block.Kind` because:
-/// - Status changes are far more frequent than content changes; routing
-///   them through `Change.update` would needlessly evict highlight
-///   tokens, drop selection, and force callers to rebuild the
-///   `Block.Kind` payload each time.
-/// - Multiple foldable surfaces (group + each child) share one row;
-///   per-surface dispatch wants a separate sparse keyspace, mirroring
-///   how `foldStates` keys the same id space.
-///
-/// `ToolGroupLayout` reads a snapshot at layout-build time and folds
-/// the value into the per-header colour palette + shimmer overlay
-/// flag. Adding a new visual rule = extend
-/// `ToolGroupLayout.titleColor(for:hovered:)`,
-/// `chevronTint(for:hovered:)`, and `wantsShimmer(for:)`.
-enum ToolStatus: Equatable, Sendable {
-    /// Default visible state — past-tense label, secondary-label
-    /// colour, chevron at idle alpha. Matches the dict's absent
-    /// reading so untracked tools render as today.
-    case completed
-    /// Tool is currently executing. Title + chevron keep the same
-    /// idle colour as `.completed` so the static reading weight
-    /// doesn't shift on a status flip; an Apple-style sweeping
-    /// shimmer overlay (driven by `ToolGroupLayout.subviewPlan` →
-    /// `SubviewPlan.Shimmer`) is what signals "live" to the eye.
-    case running
-    /// Tool produced an error. Header + chevron paint in
-    /// `systemRed`. `message` is reserved for future inline error
-    /// labelling and currently has no visual effect.
-    case failed(message: String?)
-    /// Tool was cancelled or interrupted. Header dims one tier
-    /// below `.completed` so cancelled rows visually de-emphasise
-    /// in a busy transcript.
-    case cancelled
 }
 
 /// Tree-shaped list payload: top-level `ordered` flag + start index + items;
@@ -471,7 +175,7 @@ enum BlockStyle: Sendable {
             // share paragraphs' rhythm rather than the harder 8/8 used
             // for visible-bordered blocks.
             return (top: 6, bottom: 6)
-        case .image, .table, .codeBlock, .toolGroup:
+        case .image, .table, .codeBlock:
             return (top: 8, bottom: 8)
         case .userBubble:
             // Bubble already carries its own internal vertical padding;
@@ -488,14 +192,6 @@ enum BlockStyle: Sendable {
             // Thematic break is a thin line with no glyphs — it needs
             // wider top/bottom breathing room than text-edged kinds so
             // the rule doesn't visually attach to either neighbor.
-            return (top: 12, bottom: 12)
-        case .loadingPill:
-            // Three small dots at the end of the transcript. The
-            // dots themselves are only 3pt tall; pad with 12 / 12
-            // so the row has visible breathing room above the
-            // preceding content and below the scrim's fade
-            // boundary, matching `thematicBreak`'s "thin glyph in
-            // a generous band" treatment.
             return (top: 12, bottom: 12)
         }
     }
@@ -1311,7 +1007,7 @@ extension Block {
     /// emits a trailing-side copy gutter (right of the bubble); every
     /// other text-bearing markdown block emits a leading-side copy
     /// gutter (left of the centered content). Image / thematic break /
-    /// tool group / loading pill carry no gutters.
+    /// attachments carry no gutters.
     ///
     /// Gutter id mirrors `Block.id` while there is at most one gutter
     /// per block; if multiple gutters per block become a thing, the id
@@ -1322,7 +1018,7 @@ extension Block {
             return [GutterSpec(id: id, side: .trailing, kind: .copy)]
         case .paragraph, .heading, .codeBlock, .blockquote, .list, .table:
             return [GutterSpec(id: id, side: .leading, kind: .copy)]
-        case .image, .userAttachments, .thematicBreak, .toolGroup, .loadingPill:
+        case .image, .userAttachments, .thematicBreak:
             return []
         }
     }
@@ -1363,7 +1059,7 @@ extension Block {
             return out.trimmingCharacters(in: .newlines)
         case .table(let table):
             return Self.tablePlainText(table)
-        case .image, .userAttachments, .thematicBreak, .toolGroup, .loadingPill:
+        case .image, .userAttachments, .thematicBreak:
             return ""
         }
     }

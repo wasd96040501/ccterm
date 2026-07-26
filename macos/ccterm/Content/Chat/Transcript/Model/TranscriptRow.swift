@@ -7,8 +7,8 @@ import Foundation
 /// index, so there is no per-row reference handle.
 ///
 /// Layering: Model. No `import AppKit`, no UI logic — it only carries the
-/// data + the already-decided render payload. Turning a payload into a
-/// `RowLayout` is the store's job.
+/// data + the already-decided render payload. Typesetting a payload is the
+/// store's job; picking the view that draws it is the controller's.
 struct TranscriptRow: Identifiable {
     /// Stable identity (SHA-derived via `StableBlockID`), used as the
     /// layout-cache key and the selection key.
@@ -20,8 +20,8 @@ struct TranscriptRow: Identifiable {
         self.content = content
     }
 
-    /// The render payload. Each case maps to a `RowLayout` in the store's
-    /// `makeRowLayout`.
+    /// The render payload. Each case maps to one typeset measure in
+    /// `TranscriptLayoutCache` and one row view in the controller.
     enum Content {
         /// A markdown top block (heading / paragraph / list / table /
         /// codeBlock / blockquote / thematicBreak), a user bubble, or a

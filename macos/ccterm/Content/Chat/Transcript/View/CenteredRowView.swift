@@ -4,10 +4,10 @@ import AppKit
 /// a stable class identity for row recycling, with no behavior override.
 ///
 /// The visual centering of row content is **not** done here. It lives
-/// in `BlockCellView.layoutOrigin`, which offsets the layout's draw
-/// origin by `BlockStyle.cellOriginX(forRowWidth: bounds.width)`.
+/// in `MarkdownBlockView.contentOrigin`, which centers the typeset
+/// column inside the (full-width) row view's bounds.
 ///
-/// Why centering in the draw origin instead of `cell.frame`:
+/// Why centering in the draw origin instead of the view's `frame`:
 /// NSTableView's view-based mode owns cell-view positioning (cell
 /// fills its column, the column spans the row). Reaching back through
 /// `row.layout()` to overwrite `cell.frame` raced against that owner —

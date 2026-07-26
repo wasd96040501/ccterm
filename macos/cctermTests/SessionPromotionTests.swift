@@ -168,13 +168,9 @@ final class SessionPromotionTests: XCTestCase {
         XCTAssertEqual(session.permissionMode, .acceptEdits)
     }
 
-    /// A draft-promoted runtime starts in `.loaded` history state and a
-    /// subsequent `loadHistory()` is a no-op — no backfill pipeline starts.
-    /// Regression net for: switching away from a running fresh session and
-    /// coming back triggers `ChatSessionViewController.attachSession`'s
-    /// `loadHistory()` call. Without the `.loaded` guard the iterator would
-    /// re-read the JSONL the CLI has been writing live and duplicate the live
-    /// messages already in the controller.
+    /// A draft-promoted runtime starts in `.loaded` history state, so
+    /// bootstrap skips the JSONL replay for a session the CLI is writing
+    /// live. Regression net for `fromDraft` seeding `historyLoadState`.
     func testFromDraftMarksHistoryLoaded() {
         let session = ccterm.Session(
             draftSessionId: UUID().uuidString,
@@ -186,16 +182,6 @@ final class SessionPromotionTests: XCTestCase {
         session.send(text: "first")
 
         XCTAssertEqual(session.historyLoadState, .loaded)
-        let countAfterSend = session.controller.blockCount
-
-        // Re-entry from the transcript host's perspective: calling
-        // `loadHistory()` again must be a no-op — load state stays `.loaded`
-        // and no extra content is applied.
-        session.loadHistory()
-        XCTAssertEqual(session.historyLoadState, .loaded)
-        XCTAssertEqual(
-            session.controller.blockCount, countAfterSend,
-            "loadHistory on a draft-promoted session must not start a backfill")
     }
 
     /// A second send (now in `.active` phase) routes directly to the

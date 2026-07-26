@@ -231,20 +231,17 @@ final class TranscriptViewController: NSViewController {
         // every row is cached; the visible ones were kept current each drag
         // frame, so they fall out here).
         var staleRows: [TranscriptRow] = []
-        var requests: [(id: UUID, content: TranscriptRow.Content, width: CGFloat)] = []
         for index in 0..<rowCount {
             guard let row = store.row(at: index) else { continue }
-            if store.cachedWidth(for: row.id) != width {
-                staleRows.append(row)
-                requests.append((row.id, row.content, width))
-            }
+            if store.cachedWidth(for: row.id) != width { staleRows.append(row) }
         }
-        guard !requests.isEmpty else { return }
+        guard !staleRows.isEmpty else { return }
 
         refillTask?.cancel()
+        let rowsToRefill = staleRows
         refillTask = Task { [weak self] in
             guard let self else { return }
-            await self.store.refillLayouts(requests)
+            await self.store.refillLayouts(rows: rowsToRefill, width: width)
             if Task.isCancelled { return }
             // A newer resize moved the width again → this refill is stale;
             // the newer one's refill owns the cache now. Stale cache entries
@@ -336,24 +333,103 @@ extension TranscriptViewController: NSTableViewDataSource {
 // MARK: - NSTableViewDelegate
 
 extension TranscriptViewController: NSTableViewDelegate {
+    /// Picks the row's view by block kind and hands it the measure the
+    /// store already typeset. This switch is the **only** place that
+    /// knows the view classes exist — the store deals in measures, the
+    /// selection coordinator in adapters.
     func tableView(
         _ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int
     ) -> NSView? {
         guard let item = store.row(at: row) else { return nil }
-        let cell =
-            tableView.makeView(
-                withIdentifier: TranscriptCellView.reuseIdentifier, owner: self)
-            as? TranscriptCellView
-            ?? {
-                let created = TranscriptCellView(frame: .zero)
-                created.identifier = TranscriptCellView.reuseIdentifier
-                return created
-            }()
-        cell.layoutWidth = layoutWidth
-        cell.padTop = store.verticalPadding(for: item).top
-        cell.layout = store.rowLayout(for: item, width: cell.layoutWidth)
-        cell.selection = selection.selection(for: item.id)
-        return cell
+        let width = layoutWidth
+        let view = rowView(for: item, width: width)
+        let padding = store.verticalPadding(for: item)
+        view.contentTopInset = padding.top
+        view.contentBottomInset = padding.bottom
+        view.selection = selection.selection(for: item.id)
+        return view
+    }
+
+    private func rowView(for item: TranscriptRow, width: CGFloat) -> MarkdownBlockView {
+        let layouts = store.layouts
+        switch item.content {
+        case .groupHeader(let title):
+            let view = makeRow(TranscriptGroupHeaderView.self, .transcriptGroupHeaderRow)
+            view.configure(layouts.groupHeader(item.id, title: title, width: width), width: width)
+            return view
+        case .block(let block):
+            switch block.kind {
+            case .paragraph(let inlines):
+                let view = makeRow(MarkdownParagraphView.self, .transcriptParagraphRow)
+                view.configure(
+                    layouts.paragraph(item.id, inlines: inlines, width: width), width: width)
+                return view
+            case .heading(let level, let inlines):
+                let view = makeRow(MarkdownHeadingView.self, .transcriptHeadingRow)
+                view.configure(
+                    layouts.heading(item.id, level: level, inlines: inlines, width: width),
+                    width: width)
+                return view
+            case .codeBlock(let language, let code):
+                let view = makeRow(MarkdownCodeBlockView.self, .transcriptCodeBlockRow)
+                view.configure(
+                    layouts.codeBlock(item.id, code: code, language: language, width: width),
+                    width: width)
+                return view
+            case .list(let listBlock):
+                let view = makeRow(MarkdownListView.self, .transcriptListRow)
+                view.configure(layouts.list(item.id, block: listBlock, width: width), width: width)
+                return view
+            case .table(let tableBlock):
+                let view = makeRow(MarkdownTableView.self, .transcriptTableRow)
+                view.configure(
+                    layouts.table(item.id, block: tableBlock, width: width), width: width)
+                return view
+            case .blockquote(let inlines):
+                let view = makeRow(MarkdownBlockquoteView.self, .transcriptBlockquoteRow)
+                view.configure(
+                    layouts.blockquote(item.id, inlines: inlines, width: width), width: width)
+                return view
+            case .thematicBreak:
+                let view = makeRow(
+                    MarkdownThematicBreakView.self, .transcriptThematicBreakRow)
+                view.configure(layouts.thematicBreak(item.id, width: width), width: width)
+                return view
+            case .image(let source):
+                let view = makeRow(MarkdownImageView.self, .transcriptImageRow)
+                view.configure(
+                    layouts.image(item.id, image: source, width: width), width: width)
+                return view
+            case .userBubble(let text, let isQueued):
+                let view = makeRow(MarkdownUserBubbleView.self, .transcriptUserBubbleRow)
+                view.configure(
+                    layouts.userBubble(item.id, text: text, isQueued: isQueued, width: width),
+                    width: width)
+                return view
+            case .userAttachments(let images):
+                let view = makeRow(
+                    MarkdownUserAttachmentsView.self, .transcriptUserAttachmentsRow)
+                view.configure(
+                    layouts.userAttachments(item.id, images: images, width: width),
+                    width: width)
+                return view
+            }
+        }
+    }
+
+    /// Dequeue-or-create for one row-view class. Each kind has its own
+    /// identifier, so a recycled view is always the right class.
+    private func makeRow<View: MarkdownBlockView>(
+        _ type: View.Type, _ identifier: NSUserInterfaceItemIdentifier
+    ) -> View {
+        if let existing = tableView.makeView(withIdentifier: identifier, owner: self)
+            as? View
+        {
+            return existing
+        }
+        let created = View(frame: .zero)
+        created.identifier = identifier
+        return created
     }
 
     func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
@@ -361,17 +437,16 @@ extension TranscriptViewController: NSTableViewDelegate {
         return store.height(for: item, width: layoutWidth)
     }
 
-    /// Stable row-view reuse key (reuses NativeTranscript2's no-op row view
-    /// — centering happens in the cell's `layoutOrigin`, not here).
+    /// Stable row-view reuse key. A no-op wrapper — content centering
+    /// happens in the block view's `contentOrigin`, not here.
     func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
-        let identifier = NSUserInterfaceItemIdentifier("TranscriptRowView")
-        if let existing = tableView.makeView(withIdentifier: identifier, owner: self)
-            as? CenteredRowView
+        if let existing = tableView.makeView(
+            withIdentifier: .transcriptRowWrapper, owner: self) as? CenteredRowView
         {
             return existing
         }
         let rowView = CenteredRowView()
-        rowView.identifier = identifier
+        rowView.identifier = .transcriptRowWrapper
         return rowView
     }
 }
@@ -385,13 +460,16 @@ extension TranscriptViewController: TranscriptSelectionRowSource {
     }
 
     func selectionAdapter(for row: TranscriptRow) -> SelectionAdapter? {
-        store.rowLayout(for: row, width: layoutWidth).selectionAdapter
+        store.measurement(for: row, width: layoutWidth).selectionAdapter
     }
 
     /// Layout origin of the row's content in document coords — the same
-    /// point the cell's `layoutOrigin` resolves to, expressed here off the
-    /// row rect so the selection algorithm can convert doc-space drag points
-    /// into layout-local positions.
+    /// point the row view's `contentOrigin` resolves to, expressed here off
+    /// the row rect so the selection algorithm can convert doc-space drag
+    /// points into content-local positions. The two agree by arithmetic:
+    /// the view centers `contentWidth` in its (full row width) bounds,
+    /// and `TranscriptMetrics.contentX` centers the clamped column then
+    /// adds the same block padding `layoutWidth` subtracted.
     func selectionContentOrigin(atRow row: Int) -> CGPoint {
         guard let item = selectionRow(atRow: row) else { return .zero }
         let rowRect = tableView.rect(ofRow: row)
@@ -402,9 +480,9 @@ extension TranscriptViewController: TranscriptSelectionRowSource {
 
     func selectionMarkNeedsDisplay(rowId: UUID) {
         guard let row = store.index(for: rowId),
-            let cell = tableView.view(atColumn: 0, row: row, makeIfNecessary: false)
-                as? TranscriptCellView
+            let view = tableView.view(atColumn: 0, row: row, makeIfNecessary: false)
+                as? MarkdownBlockView
         else { return }
-        cell.selection = selection.selection(for: rowId)
+        view.selection = selection.selection(for: rowId)
     }
 }

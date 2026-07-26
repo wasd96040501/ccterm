@@ -78,8 +78,8 @@ final class TranscriptGeometryTests: XCTestCase {
                 return false
             })
         let slot = TranscriptMetrics.layoutWidth(forRowWidth: table.bounds.width)
-        let layout = store.rowLayout(for: markdown, width: slot)
-        XCTAssertLessThanOrEqual(layout.measuredWidth, slot + 0.5)
+        let measurement = store.measurement(for: markdown, width: slot)
+        XCTAssertLessThanOrEqual(measurement.measuredWidth, slot + 0.5)
     }
 
     // MARK: - 3. Width-change re-typesets every row

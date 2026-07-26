@@ -2,9 +2,9 @@ import AppKit
 
 /// Owns the flat history transcript's state: it loads a session's history
 /// through the injected `TranscriptHistoryService`, flattens it into
-/// `[TranscriptRow]`, and caches each row's `RowLayout` per width. UI-free
-/// — it holds no `NSView` and answers only data queries for the
-/// controller's dataSource / delegate.
+/// `[TranscriptRow]`, and owns the per-row typeset cache. UI-free — it
+/// holds no `NSView` and constructs none; measures are plain values, and
+/// the views that draw them are assembled by the view controller.
 ///
 /// One-shot blocking load: `load(sessionId:)` reads the whole history
 /// synchronously (no paging backfill). Re-loading rebuilds the rows and
@@ -18,14 +18,15 @@ final class TranscriptStore {
     /// The flat row list the controller hands to `NSTableView` by index.
     private(set) var rows: [TranscriptRow] = []
 
+    /// Per-kind typeset cache, keyed by row id with the typeset width
+    /// stored alongside. The view controller reads it directly in
+    /// `viewFor` to hand each view its measure, so a row is typeset once
+    /// and drawn, measured and selected from the same value.
+    let layouts = TranscriptLayoutCache()
+
     /// id → row index, rebuilt on load. Lets a selection repaint resolve
     /// a row index from a row id without scanning.
     private var indexById: [UUID: Int] = [:]
-
-    /// Per-row layout cache, keyed by row id with the typeset width stored
-    /// inside. A width mismatch is a miss that recomputes lazily — derived
-    /// state, never authoritative.
-    private var layoutCache: [UUID: (width: CGFloat, layout: RowLayout)] = [:]
 
     /// Bumped on every `load`. `refillLayouts`'s off-main compute captures
     /// it and discards its write-back if a reload happened meanwhile, so a
@@ -43,7 +44,7 @@ final class TranscriptStore {
         let messages = historySource.loadMessages(sessionId: sessionId)
         rows = TranscriptRowBuilder.build(messages: messages)
         generation &+= 1
-        layoutCache.removeAll()
+        layouts.removeAll()
         indexById.removeAll()
         for (index, row) in rows.enumerated() { indexById[row.id] = index }
     }
@@ -60,54 +61,111 @@ final class TranscriptStore {
     /// Row index hosting `id`, or `nil` if the id isn't present.
     func index(for id: UUID) -> Int? { indexById[id] }
 
-    // MARK: - Layout
+    // MARK: - Measurement
 
-    /// The row's `RowLayout` at `width` — the **final typeset width**
-    /// (already net of column padding; the controller computes it via
-    /// `TranscriptMetrics.layoutWidth`, the single width chokepoint).
-    /// Cached; recomputed on a width change.
-    func rowLayout(for row: TranscriptRow, width: CGFloat) -> RowLayout {
-        if let cached = layoutCache[row.id], cached.width == width {
-            return cached.layout
+    /// The row's height / measured width / selection geometry at `width`
+    /// — the **final typeset width** (already net of column padding; the
+    /// controller computes it via `TranscriptMetrics.layoutWidth`, the
+    /// single width chokepoint).
+    ///
+    /// Reads through the layout cache, so this and the view that draws
+    /// the row share one typeset. Which kind produced the numbers stays
+    /// inside this switch: callers get the same three fields either way.
+    func measurement(for row: TranscriptRow, width: CGFloat) -> TranscriptRowMeasurement {
+        switch row.content {
+        case .groupHeader(let title):
+            let measure = layouts.groupHeader(row.id, title: title, width: width)
+            return TranscriptRowMeasurement(
+                height: measure.totalHeight, measuredWidth: measure.measuredWidth,
+                selectionAdapter: nil)
+        case .block(let block):
+            switch block.kind {
+            case .paragraph(let inlines):
+                let measure = layouts.paragraph(row.id, inlines: inlines, width: width)
+                return TranscriptRowMeasurement(
+                    height: measure.totalHeight, measuredWidth: measure.measuredWidth,
+                    selectionAdapter: measure.selectionAdapter)
+            case .heading(let level, let inlines):
+                let measure = layouts.heading(
+                    row.id, level: level, inlines: inlines, width: width)
+                return TranscriptRowMeasurement(
+                    height: measure.totalHeight, measuredWidth: measure.measuredWidth,
+                    selectionAdapter: measure.selectionAdapter)
+            case .codeBlock(let language, let code):
+                let measure = layouts.codeBlock(
+                    row.id, code: code, language: language, width: width)
+                return TranscriptRowMeasurement(
+                    height: measure.totalHeight, measuredWidth: measure.measuredWidth,
+                    selectionAdapter: measure.selectionAdapter)
+            case .list(let listBlock):
+                let measure = layouts.list(row.id, block: listBlock, width: width)
+                return TranscriptRowMeasurement(
+                    height: measure.totalHeight, measuredWidth: measure.measuredWidth,
+                    selectionAdapter: measure.selectionAdapter)
+            case .table(let tableBlock):
+                let measure = layouts.table(row.id, block: tableBlock, width: width)
+                return TranscriptRowMeasurement(
+                    height: measure.totalHeight, measuredWidth: measure.measuredWidth,
+                    selectionAdapter: measure.selectionAdapter)
+            case .blockquote(let inlines):
+                let measure = layouts.blockquote(row.id, inlines: inlines, width: width)
+                return TranscriptRowMeasurement(
+                    height: measure.totalHeight, measuredWidth: measure.measuredWidth,
+                    selectionAdapter: measure.selectionAdapter)
+            case .thematicBreak:
+                let measure = layouts.thematicBreak(row.id, width: width)
+                return TranscriptRowMeasurement(
+                    height: measure.totalHeight, measuredWidth: measure.measuredWidth,
+                    selectionAdapter: nil)
+            case .image(let source):
+                let measure = layouts.image(row.id, image: source, width: width)
+                return TranscriptRowMeasurement(
+                    height: measure.totalHeight, measuredWidth: measure.measuredWidth,
+                    selectionAdapter: nil)
+            case .userBubble(let text, let isQueued):
+                let measure = layouts.userBubble(
+                    row.id, text: text, isQueued: isQueued, width: width)
+                return TranscriptRowMeasurement(
+                    height: measure.totalHeight, measuredWidth: measure.measuredWidth,
+                    selectionAdapter: measure.selectionAdapter)
+            case .userAttachments(let images):
+                let measure = layouts.userAttachments(row.id, images: images, width: width)
+                return TranscriptRowMeasurement(
+                    height: measure.totalHeight, measuredWidth: measure.measuredWidth,
+                    selectionAdapter: nil)
+            }
         }
-        let layout = Self.makeRowLayout(content: row.content, width: width)
-        layoutCache[row.id] = (width, layout)
-        return layout
     }
 
-    /// The width a row's cached layout was typeset at, or `nil` if the row
-    /// isn't cached. The post-resize refill (`TranscriptViewController`)
+    /// The width a row's cached typeset was produced at, or `nil` if the
+    /// row isn't cached. The post-resize refill (`TranscriptViewController`)
     /// uses this to find the off-screen rows whose cached width no longer
     /// matches the settled width — the ones the live-resize drag skipped.
     func cachedWidth(for id: UUID) -> CGFloat? {
-        layoutCache[id]?.width
+        layouts.widths[id]
     }
 
-    /// Recompute `requests` (row id + render content + target width) into
-    /// the layout cache **off-main**, then land the entries on the main
-    /// actor. Keeps a resize-end full recompute off the main thread so it
-    /// never runs a CTLine pass inline. A write-back is dropped if a `load`
-    /// happened during the compute (generation drift), so it can't poison a
-    /// freshly-loaded session; within a session a wrong-width entry would
-    /// just be a self-healing miss anyway.
-    func refillLayouts(
-        _ requests: [(id: UUID, content: TranscriptRow.Content, width: CGFloat)]
-    ) async {
-        guard !requests.isEmpty else { return }
-        let gen = generation
-        let computed = await Task.detached(priority: .userInitiated) {
-            requests.map { req in
-                (req.id, req.width, Self.makeRowLayout(content: req.content, width: req.width))
-            }
+    /// Re-typeset `rows` at `width` **off-main**, then land the results in
+    /// the cache on the main actor. Keeps a resize-end full recompute off
+    /// the main thread so it never runs a Core Text pass inline. The
+    /// write-back is dropped if a `load` happened during the compute
+    /// (generation drift), so it can't poison a freshly-loaded session;
+    /// within a session a wrong-width entry would just be a self-healing
+    /// miss anyway.
+    func refillLayouts(rows: [TranscriptRow], width: CGFloat) async {
+        guard !rows.isEmpty else { return }
+        let generationAtStart = generation
+        let batch = await Task.detached(priority: .userInitiated) {
+            TranscriptLayoutCache.makeBatch(rows: rows, width: width)
         }.value
-        guard gen == generation else { return }
-        for (id, width, layout) in computed {
-            layoutCache[id] = (width, layout)
-        }
+        guard generationAtStart == generation else { return }
+        layouts.apply(batch)
     }
 
-    /// Top / bottom padding contributed by the row around its layout.
-    /// `top` drives the cell's `layoutOrigin.y`; `top + layout height +
+    // MARK: - Row geometry
+
+    /// Top / bottom padding contributed by the row around its content.
+    /// `top` drives the view's `contentTopInset`; `top + content height +
     /// bottom` is the row height.
     func verticalPadding(for row: TranscriptRow) -> (top: CGFloat, bottom: CGFloat) {
         switch row.content {
@@ -116,74 +174,9 @@ final class TranscriptStore {
         }
     }
 
-    /// Total row height at `width` (padding + layout height).
+    /// Total row height at `width` (padding + content height).
     func height(for row: TranscriptRow, width: CGFloat) -> CGFloat {
         let pad = verticalPadding(for: row)
-        return pad.top + rowLayout(for: row, width: width).totalHeight + pad.bottom
-    }
-
-    // MARK: - Row-layout dispatch
-
-    /// `width` is the final typeset width for every case — no further
-    /// insetting here. Horizontal geometry has exactly one home
-    /// (`TranscriptMetrics`); this function just forwards.
-    ///
-    /// `nonisolated` so `refillLayouts`' detached task can typeset off the
-    /// main actor — the `Layout` primitives it calls (`HeaderLayout` / the
-    /// block `Layout.make` family) are all pure and off-main-safe.
-    nonisolated private static func makeRowLayout(
-        content: TranscriptRow.Content, width: CGFloat
-    ) -> RowLayout {
-        switch content {
-        case .block(let block):
-            return makeBlockLayout(block, width: width)
-        case .groupHeader(let title):
-            return .header(HeaderLayout.make(title: title, maxWidth: width))
-        }
-    }
-
-    /// Markdown / user block → `RowLayout`, reusing the pure per-kind
-    /// `Layout` primitives. `toolGroup` / `loadingPill` never reach here
-    /// (the flattening never emits them); the defensive arm renders nothing.
-    nonisolated private static func makeBlockLayout(_ block: Block, width: CGFloat) -> RowLayout {
-        let contentWidth = max(0, width)
-        switch block.kind {
-        case .heading(let level, let inlines):
-            return .text(
-                TextLayout.make(
-                    attributed: BlockStyle.headingAttributed(level: level, inlines: inlines),
-                    maxWidth: contentWidth))
-        case .paragraph(let inlines):
-            return .text(
-                TextLayout.make(
-                    attributed: BlockStyle.paragraphAttributed(inlines: inlines),
-                    maxWidth: contentWidth))
-        case .image(let image):
-            return .image(
-                ImageLayout.make(
-                    image: image, maxWidth: contentWidth,
-                    maxHeight: BlockStyle.imageMaxHeight))
-        case .list(let listBlock):
-            return .list(ListLayout.make(block: listBlock, maxWidth: contentWidth))
-        case .table(let tableBlock):
-            return .table(TableLayout.make(block: tableBlock, maxWidth: contentWidth))
-        case .codeBlock(let language, let code):
-            return .codeBlock(
-                CodeBlockLayout.make(
-                    code: code, language: language, tokens: nil,
-                    copyButtonId: block.id, maxWidth: contentWidth))
-        case .blockquote(let inlines):
-            return .blockquote(BlockquoteLayout.make(inlines: inlines, maxWidth: contentWidth))
-        case .thematicBreak:
-            return .thematicBreak(ThematicBreakLayout.make(maxWidth: contentWidth))
-        case .userBubble(let text, let isQueued):
-            return .userBubble(
-                UserBubbleLayout.make(text: text, isQueued: isQueued, maxWidth: contentWidth))
-        case .userAttachments(let images):
-            return .userAttachments(
-                UserAttachmentsLayout.make(images: images, maxWidth: contentWidth))
-        case .toolGroup, .loadingPill:
-            return .text(.empty)
-        }
+        return pad.top + measurement(for: row, width: width).height + pad.bottom
     }
 }

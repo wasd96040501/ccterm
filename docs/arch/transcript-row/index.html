@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="zh-Hans" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transcript 行架构 · 定稿</title>
+<style>
+:root{
+  color-scheme: light;
+  --surface-1:#fcfcfb; --page:#f9f9f7;
+  --text-primary:#0b0b0b; --text-secondary:#52514e; --text-muted:#898781;
+  --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,0.10);
+  --series-1:#2a78d6; --series-2:#eb6834;
+  --good:#0ca30c; --warning:#fab219; --critical:#d03b3b;
+  --code-bg:#f5f5f7; --card:#ffffff;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:where(:not([data-theme="light"])){
+    color-scheme: dark;
+    --surface-1:#1a1a19; --page:#0d0d0d;
+    --text-primary:#ffffff; --text-secondary:#c3c2b7; --text-muted:#898781;
+    --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
+    --series-1:#3987e5; --series-2:#d95926;
+    --code-bg:#232322; --card:#212120;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme: dark;
+  --surface-1:#1a1a19; --page:#0d0d0d;
+  --text-primary:#ffffff; --text-secondary:#c3c2b7; --text-muted:#898781;
+  --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
+  --series-1:#3987e5; --series-2:#d95926;
+  --code-bg:#232322; --card:#212120;
+}
+
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0; background:var(--page); color:var(--text-primary);
+  font-family:var(--sans); font-size:15px; line-height:1.7;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1080px; margin:0 auto; padding:0 28px 120px}
+
+/* ── 顶栏 ── */
+.topbar{
+  position:sticky; top:0; z-index:50; backdrop-filter:blur(12px);
+  background:color-mix(in srgb, var(--page) 88%, transparent);
+  border-bottom:1px solid var(--border);
+}
+.topbar-inner{max-width:1080px; margin:0 auto; padding:10px 28px;
+  display:flex; align-items:center; gap:18px}
+.topbar strong{font-size:13px; letter-spacing:.02em}
+.topnav{display:flex; gap:2px; flex-wrap:wrap; margin-left:auto}
+.topnav a{
+  font-size:12px; color:var(--text-secondary); text-decoration:none;
+  padding:4px 9px; border-radius:6px;
+}
+.topnav a:hover{background:var(--code-bg); color:var(--text-primary)}
+.theme-btn{
+  border:1px solid var(--border); background:transparent; color:var(--text-secondary);
+  border-radius:6px; padding:4px 10px; font-size:12px; cursor:pointer; font-family:inherit;
+}
+.theme-btn:hover{color:var(--text-primary)}
+
+/* ── hero ── */
+.hero{padding:56px 0 40px; border-bottom:1px solid var(--border)}
+.eyebrow{
+  font-size:12px; letter-spacing:.08em; text-transform:uppercase;
+  color:var(--text-muted); margin:0 0 14px;
+}
+h1{font-size:34px; line-height:1.25; margin:0 0 22px; letter-spacing:-.01em; font-weight:640}
+.thesis{
+  font-size:19px; line-height:1.65; color:var(--text-primary);
+  border-left:3px solid var(--series-1); padding:2px 0 2px 20px; margin:0 0 30px;
+  max-width:78ch;
+}
+.thesis em{font-style:normal; background:color-mix(in srgb,var(--series-1) 14%,transparent);
+  padding:1px 4px; border-radius:3px}
+.tiles{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1px;
+  background:var(--border); border:1px solid var(--border); border-radius:10px; overflow:hidden}
+.tile{background:var(--surface-1); padding:16px 18px}
+.tile .v{font-size:27px; font-weight:620; letter-spacing:-.02em; line-height:1.15}
+.tile .k{font-size:12px; color:var(--text-secondary); margin-top:3px}
+.tile .sub{font-size:11px; color:var(--text-muted); margin-top:1px}
+
+/* ── 版式 ── */
+section{padding:52px 0 0; scroll-margin-top:56px}
+h2{font-size:23px; margin:0 0 6px; letter-spacing:-.01em; font-weight:620}
+h2 .num{color:var(--text-muted); font-weight:400; margin-right:10px; font-variant-numeric:tabular-nums}
+.lede{color:var(--text-secondary); margin:0 0 26px; max-width:76ch}
+h3{font-size:16px; margin:32px 0 10px; font-weight:600}
+h4{font-size:14px; margin:22px 0 8px; font-weight:600; color:var(--text-secondary)}
+p{margin:0 0 14px; max-width:78ch}
+code{font-family:var(--mono); font-size:.88em; background:var(--code-bg);
+  padding:1.5px 5px; border-radius:4px}
+pre{background:var(--code-bg); border:1px solid var(--border); border-radius:10px;
+  padding:16px 18px; overflow-x:auto; font-family:var(--mono); font-size:12.5px;
+  line-height:1.62; margin:0 0 18px}
+pre code{background:none; padding:0; font-size:inherit}
+.cmt{color:var(--text-muted)}
+.kw{color:var(--series-1)}
+.str{color:var(--series-2)}
+ul,ol{max-width:78ch; padding-left:22px; margin:0 0 16px}
+li{margin-bottom:5px}
+a{color:var(--series-1)}
+
+/* ── 表 ── */
+.tbl-wrap{overflow-x:auto; margin:0 0 20px; border:1px solid var(--border); border-radius:10px}
+table{width:100%; border-collapse:collapse; font-size:13.5px; background:var(--surface-1)}
+th,td{text-align:left; padding:9px 14px; border-bottom:1px solid var(--grid); vertical-align:top}
+th{font-weight:600; font-size:12px; letter-spacing:.02em; color:var(--text-secondary);
+  background:color-mix(in srgb,var(--code-bg) 60%,transparent); white-space:nowrap}
+tr:last-child td{border-bottom:none}
+td.num,th.num{text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap}
+td code{font-size:12px}
+
+/* ── 图表 ── */
+.figure{background:var(--surface-1); border:1px solid var(--border);
+  border-radius:12px; padding:22px 24px 18px; margin:0 0 22px}
+.figure-head{margin-bottom:4px}
+.figure-title{font-size:15px; font-weight:600}
+.figure-sub{font-size:12.5px; color:var(--text-secondary); margin-top:2px}
+.legend{display:flex; gap:18px; margin:14px 0 20px; flex-wrap:wrap}
+.legend-item{display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--text-secondary)}
+.swatch{width:11px; height:11px; border-radius:2.5px; flex:none}
+
+.bars{display:flex; flex-direction:column; gap:20px}
+.bar-group{display:grid; grid-template-columns:190px 1fr; gap:16px; align-items:center}
+.bar-label{font-size:13px; color:var(--text-primary); line-height:1.4}
+.bar-label .hint{display:block; font-size:11.5px; color:var(--text-muted)}
+.bar-rows{display:flex; flex-direction:column; gap:6px; min-width:0}
+.bar-row{display:flex; align-items:center; gap:10px; height:19px; cursor:default}
+.bar-track{flex:1; min-width:0; position:relative; height:100%}
+.bar-fill{
+  height:100%; border-radius:0 4px 4px 0; position:relative;
+  transition:filter .12s ease; min-width:2px;
+}
+.bar-row:hover .bar-fill{filter:brightness(1.12)}
+.bar-fill.s1{background:var(--series-1)}
+.bar-fill.s2{background:var(--series-2)}
+.bar-fill.zero{background:var(--good); width:3px !important; border-radius:2px}
+.bar-val{font-size:12px; font-variant-numeric:tabular-nums; color:var(--text-secondary);
+  white-space:nowrap; min-width:62px}
+.bar-baseline{border-left:1px solid var(--axis)}
+.tooltip{
+  position:fixed; z-index:99; pointer-events:none; opacity:0;
+  background:var(--surface-1); border:1px solid var(--border); border-radius:8px;
+  padding:8px 11px; font-size:12px; line-height:1.5; max-width:280px;
+  box-shadow:0 6px 22px rgba(0,0,0,.14); transition:opacity .1s;
+}
+.tooltip strong{display:block; margin-bottom:2px}
+
+details.tv{margin:2px 0 0; border-top:1px solid var(--grid); padding-top:12px}
+details.tv summary{font-size:12.5px; color:var(--text-secondary); cursor:pointer; list-style:none}
+details.tv summary::-webkit-details-marker{display:none}
+details.tv summary::before{content:"▸ "; color:var(--text-muted)}
+details.tv[open] summary::before{content:"▾ "}
+details.tv summary:hover{color:var(--text-primary)}
+details.tv .tbl-wrap{margin-top:12px}
+
+/* ── 实体卡 ── */
+.layer-head{display:flex; align-items:baseline; gap:10px; margin:30px 0 12px}
+.layer-head h3{margin:0}
+.layer-head .count{font-size:12px; color:var(--text-muted)}
+.ent-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:14px}
+.ent{background:var(--surface-1); border:1px solid var(--border); border-radius:11px;
+  padding:16px 17px; display:flex; flex-direction:column}
+.ent-top{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:7px}
+.ent-name{font-family:var(--mono); font-size:13px; font-weight:600; letter-spacing:-.01em}
+.pill{font-size:10.5px; padding:1.5px 7px; border-radius:20px; border:1px solid var(--border);
+  color:var(--text-secondary); white-space:nowrap}
+.pill.new{border-color:color-mix(in srgb,var(--good) 45%,transparent); color:var(--good)}
+.pill.ren{border-color:color-mix(in srgb,var(--series-2) 45%,transparent); color:var(--series-2)}
+.ent-def{font-size:13px; color:var(--text-primary); margin-bottom:9px; line-height:1.55}
+.ent-blind{font-size:12px; color:var(--text-secondary); border-top:1px dashed var(--grid);
+  padding-top:8px; margin-top:auto}
+.ent-blind b{color:var(--text-muted); font-weight:600; font-size:11px;
+  letter-spacing:.03em; display:block; margin-bottom:2px}
+
+/* ── 状态点 ── */
+.st{display:inline-flex; align-items:center; gap:5px; font-size:12px; white-space:nowrap}
+.st::before{content:""; width:8px; height:8px; border-radius:50%; flex:none}
+.st.good::before{background:var(--good)}
+.st.warn::before{background:var(--warning)}
+.st.bad::before{background:var(--critical)}
+.st.good{color:var(--good)} .st.warn{color:#a97400} .st.bad{color:var(--critical)}
+:root[data-theme="dark"] .st.warn{color:var(--warning)}
+@media (prefers-color-scheme:dark){:root:where(:not([data-theme="light"])) .st.warn{color:var(--warning)}}
+
+/* ── 提示块 ── */
+.note{border-left:3px solid var(--axis); padding:2px 0 2px 16px; margin:0 0 18px;
+  color:var(--text-secondary); font-size:14px; max-width:76ch}
+.note.warn{border-left-color:var(--warning)}
+.note.bad{border-left-color:var(--critical)}
+.note.good{border-left-color:var(--good)}
+.note b{color:var(--text-primary)}
+
+/* ── 双栏代码 ── */
+.two{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:18px}
+.two > div{min-width:0}
+.two h4{margin-top:0}
+@media (max-width:860px){
+  .two{grid-template-columns:1fr}
+  .bar-group{grid-template-columns:1fr; gap:8px}
+  h1{font-size:27px}
+}
+
+/* ── 流程图 ── */
+.flow{background:var(--surface-1); border:1px solid var(--border); border-radius:12px;
+  padding:20px 22px; overflow-x:auto; margin-bottom:20px}
+.flow pre{background:none; border:none; padding:0; margin:0; font-size:12px; line-height:1.75}
+
+.foot{margin-top:60px; padding-top:24px; border-top:1px solid var(--border);
+  font-size:12.5px; color:var(--text-muted)}
+</style>
+</head>
+<body>
+
+<div class="topbar"><div class="topbar-inner">
+  <strong>Transcript 行架构</strong>
+  <nav class="topnav">
+    <a href="#idea">核心</a><a href="#scope">范围</a><a href="#flow">数据流</a>
+    <a href="#entities">实体</a><a href="#coexist">两类行</a><a href="#height">高度契约</a>
+    <a href="#cache">缓存</a><a href="#poly">enum/protocol</a><a href="#perf">性能</a>
+    <a href="#cost">接入成本</a><a href="#risk">风险</a><a href="#plan">落地</a><a href="#approve">待明批</a>
+  </nav>
+  <button class="theme-btn" id="themeBtn">◐</button>
+</div></div>
+
+<div class="wrap">
+
+<header class="hero" id="idea">
+  <p class="eyebrow">定稿 · 31 个 Opus node 对抗性审查产出</p>
+  <h1>一行 = 一个 <code>Sendable</code> 的值</h1>
+  <p class="thesis">
+    它能在<em>自己的视图不存在时</em>、只凭 <code>(载荷, 排版宽度)</code> 算出自己的几何，
+    并说出由哪一类视图承载它 —— <em>行种类是全架构唯一的多态轴</em>，
+    除了 builder 里那一处工厂 switch，没有任何地方按行种类分支。
+  </p>
+  <div class="tiles">
+    <div class="tile"><div class="v">18</div><div class="k">最终实体数</div><div class="sub">新增 6 / 改名 6 / 改造 4</div></div>
+    <div class="tile"><div class="v">−11</div><div class="k">净类型数</div><div class="sub">删除 17 个</div></div>
+    <div class="tile"><div class="v">1290→750</div><div class="k">管线 LOC</div><div class="sub">−42%</div></div>
+    <div class="tile"><div class="v">0</div><div class="k">新增行时编译器抓不住的改动</div><div class="sub">现状 11 处</div></div>
+    <div class="tile"><div class="v">1</div><div class="k">全架构 <code>as?</code> 处数</div><div class="sub">四份提案都 ≥2</div></div>
+  </div>
+</header>
+
+<!-- ══════════ 范围 ══════════ -->
+<section id="scope">
+  <h2><span class="num">01</span>范围</h2>
+  <p class="lede">越界即作废。下面两栏是硬边界，不是倾向。</p>
+  <div class="two">
+    <div>
+      <h4>改什么</h4>
+      <div class="tbl-wrap"><table>
+        <tr><td>十个互不相干的排版结果</td><td>给共同协议 <code>MarkdownLayout</code>；<b>每个 layout 内部的排版算法一行不动</b></td></tr>
+        <tr><td><code>MarkdownBlockView</code> + 11 子类</td><td>收成<b>一个</b> <code>MarkdownLayoutView</code></td></tr>
+        <tr><td><code>TranscriptLayoutCache</code>（十个字典）</td><td>一个 store + <b>一个字典</b></td></tr>
+        <tr><td><code>TranscriptViewController</code></td><td>保留、瘦身；只拆一刀（host intent 上报）</td></tr>
+        <tr><td>选区 / 热区 / 子视图的<b>接口形状</b></td><td>重新设计；<b>选区算法一行不动</b></td></tr>
+      </table></div>
+    </div>
+    <div>
+      <h4>不改什么</h4>
+      <div class="tbl-wrap"><table>
+        <tr><td>Markdown 解析链 · <code>Block.Kind</code> 的 case 语义</td></tr>
+        <tr><td><code>Session</code> / <code>SessionRuntime</code> / 历史加载 / bridge</td></tr>
+        <tr><td>拖选算法本体</td></tr>
+        <tr><td>搜索功能的实现（只留接口位）</td></tr>
+        <tr><td>滚动与 live-resize 的 runloop 时序（作为<b>约束</b>输入）</td></tr>
+        <tr><td>SwiftUI / InputBar / Sidebar / 窗口层</td></tr>
+      </table></div>
+    </div>
+  </div>
+  <div class="note">
+    <b>明确不预付的两件事</b>：<code>insert</code> / <code>remove</code>（驱动方 <code>Session</code> 在 OUT，今天零调用方）、
+    <code>releaseMarkdownLayouts</code>（无策略、无需求）。架构只保证它们将来各是<b>一个字段</b>的改动 —— 今天要改十个字典。
+  </div>
+</section>
+
+<!-- ══════════ 数据流 ══════════ -->
+<section id="flow">
+  <h2><span class="num">02</span>数据流：历史数据 → 像素</h2>
+  <p class="lede">四条侧路（高度 / 像素 / 选区 / 事件上报）从同一个行值出发，互不穿插。</p>
+  <div class="flow"><pre><code>[Message2]  <span class="cmt">一次性阻塞读盘</span>
+   │  store.load(sessionId:)：generation &+= 1；cache.removeAll()
+   ▼
+<span class="kw">TranscriptRowBuilder.build(messages:)</span>   <span class="cmt">← 全仓唯一一处「Block.Kind → 行种类」工厂 switch</span>
+   │  卡片行在这里被 init 注入它需要的 app 能力（@MainActor @Sendable 闭包）
+   ▼
+<span class="kw">[any TranscriptRow]</span>  <span class="cmt">行值 = 载荷 + 该行 UI 状态 + 能力，全 let、Sendable</span>
+   │
+   ├──── 高度侧 <span class="cmt">（nonisolated —— 编译器禁止碰 NSView）</span> ─────────────────
+   │   NSTableView.tile → heightOfRow(i)
+   │      → VC.layoutWidth <span class="cmt">（存储值，不读 tableView.bounds）</span>
+   │      → store.layout(for:width:)
+   │           ├ 命中 typesetWidth == width → O(1)
+   │           └ miss → row.layout(width:)
+   │                     ├ 自绘行 → XxxLayout.make → any MarkdownLayout
+   │                     └ 卡片行 → 纯高度函数
+   │      → .rowHeight <span class="cmt">（三个内联 CGFloat，不解包存在类型）</span>
+   │
+   ├──── 像素侧 <span class="cmt">（@MainActor）</span> ────────────────────────────────────────
+   │   viewFor(i) → mount&lt;R&gt;(row, in: table)
+   │      → key = NSStringFromClass(R.RowView.self)
+   │      → makeView(withIdentifier:) ?? R.makeRowView()
+   │      → bind(row, to: view, highlights:)
+   │           → as? R.RowView            <span class="cmt">← 全架构唯一一处 as?</span>
+   │           → row.configure(view, layout:, highlights:, delegate:)
+   │
+   ├──── 选区侧 <span class="cmt">（数据向下；view 完全不在链上）</span> ─────────────────────
+   │   TranscriptTableView.mouseDown → isSelectable(atRow:) ?
+   │      ├ 否 → clearAll + super.mouseDown（冒泡）
+   │      └ 是 → 私有事件循环 → selection.updateSelection(...)
+   │               → delegate.textGeometry(atRow:) → store.layout(...).textGeometry
+   │               → selections[id] 更新 <span class="cmt">（唯一真相）</span>
+   │               → delegate.applySelectionHighlights([TextHighlight], toRow:)
+   │
+   └──── 事件向上 ─────────────────────────────────────────────────────
+       TranscriptRowDelegate（= VC）
+         ├ transcriptRowDidRebuild(新行值) → store.replace → 比新旧高度 → 动画组内 retile
+         └ transcriptRow(id, didRequest:)
+              ├ .openURL / .copy       → VC 就地执行
+              └ .revealFullText / .openImage → DetailFlowCoordinator（sheet 唯一所有者）</code></pre></div>
+  <div class="note good">
+    <b>这张图里结构性不存在的东西</b>（不是"我们会小心"）：<code>SubviewPlan</code>、<code>kindLabel</code>、
+    <code>hasSelectableText</code>、行种类 switch（builder 那一处除外）、第二个宽度权威、第二个高度权威、
+    第二个剪贴板写入方、缓存里的视图工厂闭包。
+  </div>
+</section>
+
+<!-- ══════════ 实体 ══════════ -->
+<section id="entities">
+  <h2><span class="num">03</span>实体清单 · 18 个</h2>
+  <p class="lede">
+    每个实体经过一次独立的对抗性审查，审查者的<b>默认立场是"它该被删或合并"</b>，
+    且被强制先提出一个具体合并方案再论证为什么不成立。裁决结果：6 个改名、1 个合并、1 个拆分、其余保留。
+  </p>
+
+  <div class="layer-head"><h3>行契约</h3><span class="count">跨 Model 与 View 的边界</span></div>
+  <div class="ent-grid">
+    <div class="ent">
+      <div class="ent-top"><span class="ent-name">TranscriptRow</span><span class="pill">protocol</span><span class="pill ren">原 struct+enum</span></div>
+      <div class="ent-def">一行：给出几何、承载它的 view 类、怎么装进去。一个 conformer = 一种行。</div>
+      <div class="ent-blind"><b>绝对不知道</b><code>NSTableView</code> · 自己在第几行 · 滚动位置 · 其它行 · 选区状态 · hover · 搜索 · 宽度是谁算的 · <code>TranscriptStore</code> · <code>Session</code></div>
+    </div>
+    <div class="ent">
+      <div class="ent-top"><span class="ent-name">TranscriptMarkdownLayoutRow</span><span class="pill">protocol</span><span class="pill new">新增</span></div>
+      <div class="ent-def">自绘家族的默认实现包。唯一 requirement 是「交出你的排版结果」，其余全部默认实现。</div>
+      <div class="ent-blind"><b>绝对不知道</b>卡片行 · <code>NSTableView</code> · 缓存 · 选区状态 · 行索引</div>
+    </div>
+    <div class="ent">
+      <div class="ent-top"><span class="ent-name">TranscriptRowLayout</span><span class="pill">struct</span><span class="pill ren">原 RowMeasurement</span></div>
+      <div class="ent-def">一行在某宽度下的完整排版产物：箱体度量（insets / contentHeight / typesetWidth）+ 可选的 Core Text 结果本体。</div>
+      <div class="ent-blind"><b>绝对不知道</b><code>NSView</code> / <code>NSTableView</code> · 选区<b>状态</b> · 宽度是谁定的 · 自己被缓存了多久 · 自己在第几行</div>
+    </div>
+    <div class="ent">
+      <div class="ent-top"><span class="ent-name">TranscriptRowDelegate</span><span class="pill">protocol</span><span class="pill new">新增</span></div>
+      <div class="ent-def">行向宿主的两类上报：我重建了 / 请你做件事。今天完全没有这条「事件向上」的边。</div>
+      <div class="ent-blind"><b>绝对不知道</b>是哪个 kind 报的 · 排版结果 · view 类型 · 行索引 · 表格的 tile 时序</div>
+    </div>
+  </div>
+
+  <div class="layer-head"><h3>Markdown 组件</h3><span class="count">全案唯一改写组件公开契约处</span></div>
+  <div class="ent-grid">
+    <div class="ent">
+      <div class="ent-top"><span class="ent-name">MarkdownLayout</span><span class="pill">protocol</span><span class="pill new">新增</span></div>
+      <div class="ent-def">一份排版结果：多高 / 多宽 / 怎么画 / 字符在哪 / 热区在哪。十个既有 <code>XxxLayout</code> conform 它，内部算法一行不动。</div>
+      <div class="ent-blind"><b>绝对不知道</b><code>NSView</code> / <code>NSTableView</code> · 选区 range · hover · fold · status · search · backing scale · 自己属于哪一行 · 自己被缓存了 · <b>宿主的呈现方式</b></div>
+    </div>
+    <div class="ent">
+      <div class="ent-top"><span class="ent-name">MarkdownLayoutView</span><span class="pill">class</span><span class="pill ren">原 BlockView</span></div>
+      <div class="ent-def">把任何一份排版结果画进居中列，管光标 / 绘制带 / 命中。<b>11 个子类删除。</b></div>
+      <div class="ent-blind"><b>绝对不知道</b><code>NSTableView</code> · 行 id · store · 其它行 · 自己是第几行 · <b>「选区」和「搜索」这两个词</b>（它只知道"带"）· 点击之后发生什么</div>
+    </div>
+    <div class="ent">
+      <div class="ent-top"><span class="ent-name">TextGeometry</span><span class="pill">struct</span><span class="pill ren">原 SelectionAdapter</span></div>
+      <div class="ent-def">字符级几何：点 ↔ 字符 ↔ 矩形 ↔ 文本。以<b>能力</b>命名而非以<b>功能</b>命名 —— 选区、搜索、复制、双击选词全部共用它，加一个新用途不需要加成员。</div>
+      <div class="ent-blind"><b>绝对不知道</b><b>「选区」和「搜索」这两个词</b> · <code>NSView</code> · <code>NSTableView</code> · 自己属于哪一行</div>
+    </div>
+    <div class="ent">
+      <div class="ent-top"><span class="ent-name">TextHighlight</span><span class="pill">struct</span><span class="pill new">新增</span></div>
+      <div class="ent-def">这一段字符填这个颜色。视图收到的是「带」，不是「选区」。</div>
+      <div class="ent-blind"><b>绝对不知道</b>这条带是选区、搜索命中、还是别的什么 · 窗口是不是 key</div>
+    </div>
+    <div class="ent">
+      <div class="ent-top"><span class="ent-name">TextRange</span><span class="pill">struct</span><span class="pill ren">原 SelectionRange</span></div>
+      <div class="ent-def">一个字符范围。</div>
+      <div class="ent-blind"><b>绝对不知道</b>这个范围代表什么语义</div>
+    </div>
+    <div class="ent">
+      <div class="ent-top"><span class="ent-name">MarkdownHit / MarkdownHitAction</span><span class="pill">struct + enum</span><span class="pill ren">改名</span></div>
+      <div class="ent-def">热区矩形 / 点击意味着什么（4 case，载荷全自包含且 <code>Sendable</code>）。不变量提字段，变量收 enum。</div>
+      <div class="ent-blind"><b>绝对不知道</b>宿主<b>怎么</b>执行它（sheet / 新窗口 / popover）· 谁执行 · 行是谁 · 自己在哪个视图里</div>
+    </div>
+    <div class="ent">
+      <div class="ent-top"><span class="ent-name">BlockStyle.typesetWidth(forContainerWidth:)</span><span class="pill">函数</span><span class="pill ren">合并</span></div>
+      <div class="ent-def">单一宽度收口。<code>TranscriptMetrics</code> 整型并入并删除；参数标签去掉宿主概念「row」。</div>
+      <div class="ent-blind"><b>绝对不知道</b>谁在调它 · 表格 · 行</div>
+    </div>
+  </div>
+
+  <div class="layer-head"><h3>Store 与 Controller</h3></div>
+  <div class="ent-grid">
+    <div class="ent">
+      <div class="ent-top"><span class="ent-name">TranscriptStore</span><span class="pill">class</span></div>
+      <div class="ent-def">行列表 + id 索引 + <b>一个</b>几何缓存字典 + 失效判据。</div>
+      <div class="ent-blind"><b>绝对不知道</b><code>NSView</code> / <code>NSTableView</code> · 选区 · 渲染 · 行种类。<b>代码里再也没有 <code>paragraph</code> / <code>codeBlock</code> / <code>selection</code> / <code>draw</code> 这些词</b>，且这条从纪律升级成编译器事实：文件只 <code>import Foundation</code> / <code>CoreGraphics</code></div>
+    </div>
+    <div class="ent">
+      <div class="ent-top"><span class="ent-name">TranscriptRowBuilder</span><span class="pill">struct</span><span class="pill ren">静态→实例</span></div>
+      <div class="ent-def"><code>[Message2] → [any TranscriptRow]</code>，含<b>唯一</b>的行种类工厂 switch。改成持依赖的实例，卡片行的 app 能力在这里注入。</div>
+      <div class="ent-blind"><b>绝对不知道</b>宽度 · 几何 · 缓存 · 视图 · <code>NSTableView</code> · 行在第几行</div>
+    </div>
+    <div class="ent">
+      <div class="ent-top"><span class="ent-name">TranscriptViewController</span><span class="pill">class</span><span class="pill ren">split</span></div>
+      <div class="ent-def">表格适配 + <b>唯一</b>宽度权威 + resize 编排 + 选区行源。66 行 <code>viewFor</code> switch 消失。</div>
+      <div class="ent-blind"><b>绝对不知道</b>行种类 · view 类 · 排版算法 · measure 类型 · <b>下一个界面长什么样</b></div>
+    </div>
+    <div class="ent">
+      <div class="ent-top"><span class="ent-name">TranscriptViewControllerDelegate</span><span class="pill">protocol</span><span class="pill new">新增</span></div>
+      <div class="ent-def">把导航意图交给 <code>DetailFlowCoordinator</code>。这是 VC 拆分的那一刀。</div>
+      <div class="ent-blind"><b>绝对不知道</b>行 · 行索引 · 排版 · 表格 · 选区</div>
+    </div>
+  </div>
+
+  <div class="layer-head"><h3>选区与表格</h3><span class="count">算法一行不动</span></div>
+  <div class="ent-grid">
+    <div class="ent">
+      <div class="ent-top"><span class="ent-name">TranscriptSelectionStore</span><span class="pill">class</span><span class="pill ren">原 Coordinator</span></div>
+      <div class="ent-def">跨行选区的<b>唯一真相</b> + 拖选算法。改名理由：<code>Coordinator</code> 在本仓的角色表规定它 "does not own domain truth"，而这个实体自己的文档小节就叫 "Source of truth"。</div>
+      <div class="ent-blind"><b>绝对不知道</b>行种类 · <code>TranscriptRow</code> 这个类型 · 排版算法 · <code>NSTableView</code>（本轮修掉）· 视图</div>
+    </div>
+    <div class="ent">
+      <div class="ent-top"><span class="ent-name">TranscriptSelectionStoreDelegate</span><span class="pill">protocol</span><span class="pill ren">原 RowSource</span></div>
+      <div class="ent-def">选区按<b>行索引</b>向宿主要几何、推高亮。<code>Source</code> 不在角色词表，改用 Cocoa 惯例的 <code>XDelegate</code>。</div>
+      <div class="ent-blind"><b>绝对不知道</b><code>TranscriptRow</code> 这个类型 · 行种类 · 排版结果怎么来的 · 缓存</div>
+    </div>
+    <div class="ent">
+      <div class="ent-top"><span class="ent-name">TranscriptTableView</span><span class="pill">class</span></div>
+      <div class="ent-def">拖选起手判定 + 负宽钳位 + live-resize 钩子。</div>
+      <div class="ent-blind"><b>绝对不知道</b>行种类 · <b>排版</b>（本轮修掉）· 行值 · 缓存 · 剪贴板（本轮修掉）</div>
+    </div>
+  </div>
+
+  <h3>删除清单</h3>
+  <div class="note bad">
+    <code>TranscriptLayoutCache</code>（326 行 · 十个字典 · 十个 accessor · 十字段 Batch）·
+    <code>TranscriptRowMeasurement</code> · <code>TranscriptReuseIdentifier</code>（12 个手写常量）·
+    <code>CenteredRowView</code> + <code>rowViewForRow</code> · <code>TranscriptRow.Content</code> enum ·
+    <code>TranscriptMetrics</code> · <b>11 个 <code>Markdown*View</code> 子类</b> —— 共 17 个类型。
+  </div>
+</section>
+
+<!-- ══════════ 两类行 ══════════ -->
+<section id="coexist">
+  <h2><span class="num">04</span>两类行如何共存</h2>
+  <p class="lede">
+    这是整套架构的硬测试。任何"所有行都有排版结果""高度一律从排版结果读"的设计都在这里破功。
+    <b>分岔不在「高度怎么来」</b> —— AppKit 已经把那条路封死成一条 —— 而只发生在行值内部的两处。
+  </p>
+
+  <div class="flow"><pre><code>                    ┌────────────── 完全相同 ──────────────┐
+any TranscriptRow ──┤ id / insets                          │
+                    │ nonisolated layout(width:)           │
+                    │ @MainActor makeRowView() / configure(_:layout:highlights:delegate:)
+                    └──────────────────────────────────────┘
+                                   │
+        ┌──────────────────────────┴─────────────────────────┐
+   <span class="kw">自绘行</span>（TranscriptMarkdownLayoutRow）              <span class="str">可交互卡片行</span>
+   layout: init(markdownLayout:)                      layout: init(height: 纯函数)
+   RowView = MarkdownLayoutView <span class="cmt">（精化钉死）</span>          RowView = 自己的 NSView 子树
+   textGeometry != nil → 参与跨行选区                  markdownLayout == nil ⇒ 不参与
+   热区走 layout.hits + 基类命中                       按钮走 target-action → configure 里接的闭包
+   像素：draw(in:origin:)                             像素：addSubview / CALayer / NSHostingView
+   highlights：精化的默认 configure 写入                highlights：忽略这个参数</code></pre></div>
+
+  <div class="two">
+    <div>
+      <h4>自绘行 · 全文 10 行，纯样板 = 0</h4>
+      <pre><code><span class="kw">struct</span> ParagraphRow: TranscriptMarkdownLayoutRow {
+    <span class="kw">let</span> id: UUID
+    <span class="kw">let</span> inlines: [InlineNode]
+
+    <span class="kw">nonisolated var</span> insets: (top: CGFloat, bottom: CGFloat) {
+        BlockStyle.blockPadding(<span class="kw">for</span>: .paragraph(inlines))
+    }
+    <span class="kw">nonisolated func</span> markdownLayout(width: CGFloat) -> <span class="kw">any</span> MarkdownLayout {
+        TextLayout.make(
+            attributed: BlockStyle.paragraphAttributed(inlines: inlines),
+            maxWidth: width)
+    }
+}</code></pre>
+      <p style="font-size:13px;color:var(--text-secondary)">
+        没有 view 类、没有缓存登记、没有复用标识符、没有 switch 分支、没有 6 个转发钩子。
+      </p>
+    </div>
+    <div>
+      <h4>可交互卡片行 · 宿主侧一处特例都没有</h4>
+      <pre><code><span class="kw">struct</span> ToolCardRow: TranscriptRow {
+    <span class="kw">let</span> id: UUID
+    <span class="kw">let</span> calls: [ToolUse]      <span class="cmt">// builder 不再丢弃载荷</span>
+    <span class="kw">let</span> isExpanded: Bool      <span class="cmt">// UI 状态住在行值里</span>
+    <span class="kw">let</span> approve: <span class="kw">@MainActor @Sendable</span> (UUID) -> Void
+
+    <span class="kw">nonisolated var</span> insets: (CGFloat, CGFloat) { (8, 8) }
+
+    <span class="cmt">// 编译器禁止这里碰 NSView</span>
+    <span class="kw">nonisolated func</span> layout(width: CGFloat) -> TranscriptRowLayout {
+        TranscriptRowLayout(
+            height: ToolCardView.height(calls: calls,
+                       isExpanded: isExpanded, width: width),
+            insets: insets, typesetWidth: width)
+    }
+
+    <span class="kw">@MainActor static func</span> makeRowView() -> ToolCardView { .init() }
+
+    <span class="kw">@MainActor func</span> configure(_ view: ToolCardView, layout:,
+                                highlights:, delegate:) {
+        view.configure(calls: calls, isExpanded: isExpanded, …)
+        view.onToggle = { <span class="cmt">/* 换一个新行值交给宿主 */</span>
+            delegate?.transcriptRowDidRebuild(
+                ToolCardRow(…, isExpanded: !isExpanded, …)) }
+        view.onApprove = approve
+    }
+}</code></pre>
+    </div>
+  </div>
+
+  <h3>逐条对照现状的六个阻断点</h3>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>#</th><th>阻断点（现状）</th><th>本架构</th></tr></thead>
+    <tbody>
+      <tr><td>B1</td><td><code>rowView(for:) -&gt; MarkdownBlockView</code> 上界焊死自绘</td><td><code>associatedtype RowView: NSView</code></td></tr>
+      <tr><td>B2</td><td><code>viewFor</code> 无条件写 <code>contentTopInset</code> / <code>selection</code>（全是自绘行独有 API）</td><td>VC 不再碰这些；灌什么由行在<b>静态类型下</b>的 <code>configure</code> 决定，一次幂等调用</td></tr>
+      <tr><td>B3</td><td><code>makeRow&lt;View: MarkdownBlockView&gt;</code> 依赖 <code>required init</code></td><td><code>static func makeRowView() -&gt; RowView</code>，构造子由 conformer 写</td></tr>
+      <tr><td>B4</td><td><b>高度必须先于视图存在</b>（架构性）</td><td><code>nonisolated func layout(width:)</code> —— <b>编译器</b>禁止碰 NSView</td></tr>
+      <tr><td>B5</td><td><b>off-main 回填把卡片行卷进去</b>在非主线程碰 AppKit（🔴 编译器不提示）</td><td>卡片行现在<b>可以</b>合法进 off-main 批，且是类型事实；<code>Batch: @unchecked Sendable</code> 消失</td></tr>
+      <tr><td>B6</td><td><b>行没有事件向上的通道</b>（架构性）</td><td><code>TranscriptRowDelegate</code> 两个方法</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>子视图 / 图层 / 动画：不需要任何新机制</h3>
+  <p>
+    <b><code>SubviewPlan</code> 在这个架构里不存在。</b> 旧实现需要它（210 行 + 宿主侧 928 行），
+    是因为<b>只有一个通用 cell 类</b>，排版结果必须给它发一张"要挂哪些子视图"的清单。
+    本架构里每一种卡片行都有自己的 view 类，直接 <code>addSubview</code> / <code>addSublayer</code> /
+    <code>addSymbolEffect</code> —— 那是它自己的私事。
+  </p>
+
+  <div class="note bad">
+    <b>一条硬规则（诚实标注为代价）</b>：参与跨行文本选区的文本，必须画进本行自己的 <code>CGContext</code>；
+    子视图 / 子图层里不得有参与跨行选区的文本。
+    <b>推论必须被明确接受</b>：「tool 卡片里的文本要能被跨行选中」= 这一行不能是卡片行，必须做成自绘行。
+  </div>
+</section>
+
+<!-- ══════════ 高度契约 ══════════ -->
+<section id="height">
+  <h2><span class="num">05</span>高度契约</h2>
+  <p class="lede">整条架构最硬的一条约束，也是四份提案冲突最激烈的裁决点。</p>
+  <div class="thesis" style="font-size:16px">
+    每一行都必须能在<em>自己的 view 不存在时</em>、只凭 <code>(自身载荷, 排版宽度)</code> 算出一个
+    <code>TranscriptRowLayout</code>；这个函数是 <code>nonisolated</code> 的，所以
+    <em>「高度路径不许碰 NSView」由编译器强制而不是靠纪律</em>。
+  </div>
+
+  <h3>被否决的对手方案：离表 prototype 读 <code>fittingSize</code></h3>
+  <div class="note bad">
+    三条否决理由：<b>(1)</b> prototype 不在窗口里 ⇒ 拿不到 <code>effectiveAppearance</code> /
+    <code>backingScaleFactor</code> ⇒ 高度与真实 view 分叉 ⇒ 行被裁切（原提案自认未解）；
+    <b>(2)</b> 全量 tile 下 N 张卡 = N 次布局解算挤在一个 source phase（实测 <b>10.7 ms</b> / 301 行）；
+    <b>(3)</b> 采纳它会把协议沿 actor 边界劈成两半。
+  </div>
+
+  <h3>C1 裁决的实测价值：把卡片行的高度查询压掉 60–100%</h3>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>卡片行高度来源</th><th class="num">单行</th><th class="num">301 行 tile 含 100 张卡</th></tr></thead>
+    <tbody>
+      <tr><td>离表 prototype <code>fittingSize</code>（<b>被否</b>）</td><td class="num">106.8 µs</td><td class="num">10.7 ms<span style="color:var(--text-muted)"> + 冷建 2339 µs</span></td></tr>
+      <tr><td>纯函数 · 常数高度卡</td><td class="num">~0.01 µs</td><td class="num">~0 ms</td></tr>
+      <tr><td>纯函数 · 内部调 <code>TextLayout.make</code> 量自己的文字</td><td class="num">41.7 µs</td><td class="num">4.2 ms</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>AppKit 契约逐条核对</h3>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>约束</th><th>本架构</th></tr></thead>
+    <tbody>
+      <tr><td>A-1 行高必须在 view 不存在时算出（否则抛异常）</td><td><span class="st good">协议签名 <code>nonisolated</code> 强制</span></td></tr>
+      <tr><td>A-2 <code>heightOfRow</code> 内不读表格几何 / 不触发 tile</td><td><span class="st good"><code>layoutWidth</code> 改存储值</span></td></tr>
+      <tr><td>A-3 一张表只能有一种行高来源</td><td><span class="st good">卡片的 NSView 子树<b>服从</b>行高而不产生它（<code>NSHostingView</code> 必须 <code>sizingOptions = []</code>）</span></td></tr>
+      <tr><td>A-4 宽度变化不会自动重查行高</td><td><span class="st good"><code>invalidate(rows:)</code> 一行不动</span></td></tr>
+      <tr><td>A-5 复用按 identifier 分桶，与类一一对应</td><td><span class="st good"><code>NSStringFromClass(R.RowView.self)</code>（不用 <code>String(reflecting:)</code> —— 那是 mangled 名，泛型特化可能撞串）</span></td></tr>
+      <tr><td>A-6 <b>不能假设</b> tile 全量 / 不全量</td><td><span class="st good">缓存对两种调用量都是 O(1)/行，无预热假设</span></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>两条水平几何权威合并成一条</h3>
+  <p>
+    今天有两条必须"靠算术保持一致"的权威（VC 注释自承）：视图的
+    <code>contentOrigin.x = (bounds.width - contentWidth)/2</code>，
+    与选区的 <code>rowRect.minX + TranscriptMetrics.contentX(...)</code>。
+    审查中发现其中一份提案给出的合并公式（用 <code>measuredWidth</code>）<b>是错的</b>。
+    正确的统一是让选区原点用与视图<b>完全相同的表达式、完全相同的输入</b>：
+  </p>
+  <pre><code><span class="kw">func</span> contentOrigin(atRow row: Int) -> CGPoint {
+    <span class="kw">let</span> rect = tableView.rect(ofRow: row)
+    <span class="kw">guard let</span> item = store.row(at: row) <span class="kw">else</span> { <span class="kw">return</span> .zero }
+    <span class="kw">return</span> CGPoint(
+        x: rect.minX + (rect.width - layoutWidth) / 2,   <span class="cmt">// = 视图的 contentOrigin.x</span>
+        y: rect.minY + store.layout(for: item, width: layoutWidth).insets.top)
+}</code></pre>
+  <p><code>TranscriptMetrics.contentX</code> / <code>columnX</code> 因此失去全部调用方 → 类型删除。<b>两条权威变一条，不是"两次求值同一个式子"。</b></p>
+</section>
+
+<!-- ══════════ 缓存 ══════════ -->
+<section id="cache">
+  <h2><span class="num">06</span>缓存策略</h2>
+  <p class="lede"><b>一个字典，一行一条：<code>[UUID: TranscriptRowLayout]</code>。</b> 宽度住在值里，无旁路字典。</p>
+
+  <div class="two">
+    <div>
+      <h4>缓存什么</h4>
+      <div class="tbl-wrap"><table>
+        <tr><td><code>insets</code> + <code>contentHeight</code> + <code>typesetWidth</code></td>
+            <td>一次 tile 要 301 行（或全表，<b>不能假设</b>）。重算成本动态范围 100×（10.8 µs ↔ 4180 µs）。必须 O(1)</td></tr>
+        <tr><td><code>markdownLayout</code>（排版结果本体）</td>
+            <td>字符几何要它，而字符几何的访问模式是 <b>O(拖选跨度)/tick + O(全表)/Cmd+A</b></td></tr>
+      </table></div>
+    </div>
+    <div>
+      <h4>不缓存什么</h4>
+      <div class="tbl-wrap"><table>
+        <tr><td><code>TextGeometry</code> 实例</td><td>构造实测 0.208 µs。存它 = 让每次 <code>heightOfRow</code> 给选区付钱；<b>更重要的是：存它，缓存就知道了「选区」这个词</b></td></tr>
+        <tr><td>view / 位图</td><td>AppKit 复用队列就是这个缓存</td></tr>
+        <tr><td>交互热区 · 选区状态 · hover · 复制文本</td><td>现算 / 另有唯一真相 / 视图私有</td></tr>
+        <tr><td>行的 UI 状态（fold / status）</td><td><b>不是缓存</b>，是权威状态，住在行值里，是高度的<b>输入</b></td></tr>
+      </table></div>
+    </div>
+  </div>
+
+  <div class="note warn">
+    <b>这一条正式否掉了我们讨论中「排版结果不必常驻」的判断。</b>
+    内存侧证据强烈支持只存高度（0.5 MB/万行 vs 75–157 MB/万行），
+    <b>但选区的访问模式把排版结果钉回常驻</b>：跨 500 行的一次 drag tick 若要重排 =
+    500 × 43.7 µs ≈ <b>21.9 ms</b>，单 tick 超一帧预算 31%。
+  </div>
+
+  <h3>失效条件 · 只有三条</h3>
+  <ol>
+    <li><b>宽度不等 ⇒ miss ⇒ 现算覆盖</b>（自愈，无显式驱逐）。判据 <code>entry.typesetWidth == width</code> <b>只在 store 里存在一份</b>（今天有两份，一份 <code>==</code> 一份 <code>!=</code>）</li>
+    <li><b><code>load(sessionId:)</code> ⇒ 全清</b>。今天这里是 <b>11 行 <code>removeAll()</code></b>，漏一行就是脏缓存（🔴）；现在是一行</li>
+    <li><b><code>replace(_:)</code> ⇒ 丢该行一条。</b>这是<b>结构性</b>的：换值就没缓存，没有"记得清"这件事</li>
+  </ol>
+
+  <p>不加 LRU、不加容量上限 —— 一旦有上限，Cmd+A 就可能触发全表重排（10000 行 ≈ 438 ms）。</p>
+</section>
+
+<!-- ══════════ enum vs protocol ══════════ -->
+<section id="poly">
+  <h2><span class="num">07</span>enum 还是 protocol</h2>
+  <p class="lede">
+    判据不是"会不会生长"（那是预测，不可检验），而是五条<b>可机械检查</b>的问题。
+  </p>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>判据</th><th>内容</th></tr></thead>
+    <tbody>
+      <tr><td><b>J1 穷举面积</b></td><td>加一个成员时，<b>已存在</b>代码里必须新增一臂的地方数。≥2 ⇒ 必须 protocol；=0 ⇒ enum 无成本</td></tr>
+      <tr><td><b>J2 实现归属</b></td><td>分支实现天然分散 ⇒ protocol；天然集中 ⇒ enum</td></tr>
+      <tr><td><b>J3 跨模块可扩展性</b></td><td>存在模块外的实现者 ⇒ <b>只能</b> protocol</td></tr>
+      <tr><td><b>J4 空实现否决</b></td><td>抽象逼出空壳 ⇒ 边界画错了，把这一类移出该抽象</td></tr>
+      <tr><td><b>J5 家族分层</b></td><td>分支呈现子家族结构（<code>default:</code> 就是自供状）⇒ protocol（精化 + 默认实现）</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="thesis" style="font-size:15.5px">
+    <em>被穷举分支的用 protocol；只被"解包"而从不穷举的可以留 enum；
+    不变量提字段、变量收 enum；跨模块有实现者的只能 protocol。</em>
+  </div>
+  <p>
+    这条规则精确解释了同一份代码里的两个相反结论：<code>RowLayout</code>（10 方法 × 12 case）死了，
+    <code>LayoutPosition</code>（5 case、零穷举）活得很好。
+  </p>
+
+  <h3>22 个多态点的逐处决定（节选关键 12 处）</h3>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>#</th><th>多态点</th><th>决定</th><th>关键依据</th></tr></thead>
+    <tbody>
+      <tr><td>P1</td><td>一行是什么</td><td><b>protocol</b> <code>TranscriptRow</code></td><td>J1=4（跨 4 文件）· J2 分散 · J3 宿主要加行种类 · J5 两类行</td></tr>
+      <tr><td>P2</td><td>自绘家族的公共答法</td><td><b>protocol 精化</b></td><td>J4：用 Optional 提到 P1 会逼出哨兵 + 第二高度权威</td></tr>
+      <tr><td>P3</td><td>第 N 个自绘家族（diff 卡）</td><td><b>再开一个精化</b>，P1 零改动</td><td>J5；<code>DiffNSView</code>（自绘、非 <code>MarkdownLayoutView</code>）<b>今天就在仓库里</b></td></tr>
+      <tr><td>P4</td><td>排版结果的共同类型</td><td><b>protocol</b> <code>MarkdownLayout</code></td><td>四选一穷举后唯一存活；<b>决定性的是 J3</b> —— <code>TranscriptGroupHeaderLayout</code> 是宿主侧类型，enum 的 case 无处可放</td></tr>
+      <tr><td>P5</td><td>一行的几何值</td><td><b>struct + Optional</b>（否决 2-case enum）</td><td>enum 会把"我是哪一类行"变成可 switch 的事实，正是复发入口</td></tr>
+      <tr><td>P6</td><td>承载 view 类</td><td><b><code>associatedtype RowView: NSView</code></b></td><td>要的是编译期绑定不是运行时分派</td></tr>
+      <tr><td>P7</td><td>"这一行是自绘还是卡片"</td><td><b>不建模</b></td><td>无人需要问。<b>验收项</b>：出现 <code>kindLabel</code> / <code>isDrawn</code> 即判复发</td></tr>
+      <tr><td>P9</td><td>点击意图</td><td><b>enum</b> <code>MarkdownHitAction</code></td><td>J1=1 · <b>J2 集中</b>（执行者全是宿主）· J3 无外部实现者；闭包路线<b>类型上写不出来</b></td></tr>
+      <tr><td>P11</td><td>选区位置</td><td><b>enum</b> <code>LayoutPosition</code></td><td><b>J1=0</b>（文档明写从不 switch）。它历史上长过、今天还带着两个死 case，<b>仍然零代价</b></td></tr>
+      <tr><td>P12</td><td>字符级几何</td><td><b>struct-of-closures</b> <code>TextGeometry</code></td><td>并进 P4 会让 4/10 conformer 写退化实现（J4）</td></tr>
+      <tr><td>P14</td><td>markdown IR</td><td><b>enum</b> <code>Block.Kind</code>（冻结）</td><td>J1 实测 6 → 2。<b>不能用"它是封闭 IR"论证</b> —— 它长过 <code>.toolGroup</code> / <code>.loadingPill</code></td></tr>
+      <tr><td>P21</td><td>高度从哪来</td><td><b>不分叉</b></td><td>AppKit 已封死（<code>usesAutomaticRowHeights</code> 是表级开关，无 per-row 版）</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3><code>RowLayout</code> 为什么不会重蹈</h3>
+  <p>
+    它的死因<b>不止是 enum</b>，还包括边界画错了 —— 一个类型同时承担了排版结果的共同类型、行的箱体几何、
+    热区词汇、字符几何、行的身份标签、以及一份值化的 view 树描述。
+  </p>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>死因</th><th>新架构为什么结构上不可能</th></tr></thead>
+    <tbody>
+      <tr><td>(a) 穷举面积 = 10（406 行里方法体约 380 行）</td>
+          <td>成员实现体写在各 conformer 自己的文件里。加一种排版结果，<code>MarkdownLayout.swift</code> 改 <b>0 行</b>；加一种行，<code>TranscriptRow.swift</code> 改 <b>0 行</b><br>
+          <span style="color:var(--text-secondary)">正面回答攻击"protocol 只是把 120 个分支散成 41 个实现，总量没少"：<b>J1 数的从来不是总量，是"加第 11 个时要碰几处旧代码"。enum=10 处，protocol=0 处。这个差不随规模缩小，只随规模放大。</b></span></td></tr>
+      <tr><td>(b) 家族分层被压平成 <code>default:</code>（三处，每一个都是未被表达的子家族）</td>
+          <td>协议的<b>默认实现</b>（"大多数不关心"）+ <b>第二个精化</b>（"这是另一个家族"）</td></tr>
+      <tr><td>(c) 运行时 UI 状态被吸进排版结果（<code>subviewPlan(origin:hoveredAction:selection:searchHighlights:flashingCopyIds:)</code>）</td>
+          <td><code>MarkdownLayout</code> 的<b>每一个成员签名都不接受运行时 UI 状态参数</b>。想加一个 hover 参数就必须改一个组件级协议 —— 一次要过设计评审的可见改动</td></tr>
+      <tr><td>(d) 逼出空壳（<code>LoadingPillLayout.draw {}</code>）</td>
+          <td>卡片行<b>根本不进这个抽象</b>：它是 <code>TranscriptRow</code> 但不是 <code>MarkdownLayout</code> 的 conformer</td></tr>
+      <tr><td>(e) 身份成员 <code>kindLabel</code></td><td>新协议里没有对应物，<b>也不许有</b></td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="note warn">
+    <b>强制力必须诚实分档。</b> 「一半由编译器守」是过度声称：<code>CTLine</code> 不 <code>Sendable</code> ⇒
+    8/10 个 conformer 必须写 <code>@unchecked Sendable</code>，而 <code>@unchecked</code> 把检查整体关掉；
+    再叠加 <code>SWIFT_VERSION = 5.0</code>、未设 <code>SWIFT_STRICT_CONCURRENCY</code>、无 warnings-as-errors。
+    <b>真正被编译器守住的只有「成员签名不含运行时 UI 状态参数」这一条</b>，另一半靠 conformer 全 <code>let</code>
+    + 一条 CI 源码检查。
+  </div>
+</section>
+
+<!-- ══════════ 性能 ══════════ -->
+<section id="perf">
+  <h2><span class="num">08</span>性能</h2>
+  <p class="lede">全部来自实测。所有高频路径持平或略好；两处变差各有实测辩护。</p>
+
+  <div class="figure">
+    <div class="figure-head">
+      <div class="figure-title">每行固定开销</div>
+      <div class="figure-sub">一切结论的单位成本 · 纳秒 / 行 · 越短越好</div>
+    </div>
+    <div class="legend">
+      <div class="legend-item"><span class="swatch" style="background:var(--series-1)"></span>现状</div>
+      <div class="legend-item"><span class="swatch" style="background:var(--series-2)"></span>新架构</div>
+    </div>
+    <div class="bars" id="perfBars"></div>
+    <details class="tv"><summary>表格视图</summary>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>路径</th><th class="num">现状</th><th class="num">新架构</th><th class="num">差</th><th>机制</th></tr></thead>
+        <tbody>
+          <tr><td><code>heightOfRow</code> 单行（缓存命中）</td><td class="num">315.7 ns</td><td class="num">117.9 ns</td><td class="num" style="color:var(--good)">−197.8</td><td>高度路径不再为选区付钱（<code>textGeometry</code> 变计算属性）</td></tr>
+          <tr><td>缓存写入单行</td><td class="num">47.1 ns</td><td class="num">74.6 ns</td><td class="num">+27.5</td><td>存在类型装箱（<code>TextLayout</code> 56 B &gt; 3 word 内联缓冲）</td></tr>
+          <tr><td>行分派</td><td class="num">21.2 ns</td><td class="num">11.1 ns</td><td class="num" style="color:var(--good)">−10.1</td><td>协议见证表 vs enum switch</td></tr>
+          <tr><td>拖选 tick 单行</td><td class="num">827.7 ns</td><td class="num">820.5 ns</td><td class="num">−7.2（噪声内）</td><td>—</td></tr>
+          <tr><td>Cmd+A 单行</td><td class="num">305.9 ns</td><td class="num">362.0 ns</td><td class="num" style="color:var(--critical)">+56.1</td><td>只在"取了几何却几乎不用"的路径上出现</td></tr>
+          <tr><td>缓存条目常驻</td><td class="num">131 B</td><td class="num">219 B</td><td class="num">+88 B</td><td>同上装箱；扣掉 <code>widths</code> 字典消失后净 +45 B</td></tr>
+        </tbody>
+      </table></div>
+    </details>
+  </div>
+
+  <h3>逐路径判定</h3>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>路径</th><th>判定</th><th>数字</th></tr></thead>
+    <tbody>
+      <tr><td>首屏 200 / 2000 / 10000 行</td><td><span class="st good">略好</span></td><td>12.50→12.46 / 11.27→11.22 / 8.79→8.74 ms</td></tr>
+      <tr><td>稳态滚动（30pt/帧）</td><td><span class="st good">持平</span></td><td>34.9 µs/帧（0.21% 预算）</td></tr>
+      <tr><td>快速滚动（甩动 / 拖滚动条进未抽样中段）</td><td><span class="st good">持平</span></td><td>178.1 µs/帧</td></tr>
+      <tr><td>live-resize 拖拽帧 / 结束</td><td><span class="st good">持平</span></td><td>0.97 ms/帧（5.8%）· 74 / 425 ms off-main</td></tr>
+      <tr><td>内存常驻</td><td><span class="st good">持平</span></td><td>10000 行 +0.4 MB（+0.6%）</td></tr>
+      <tr><td>拖选每 tick（跨 500 行）</td><td><span class="st good">持平</span></td><td>0.414 → 0.410 ms/tick</td></tr>
+      <tr><td><b>Cmd+A / 复制（10000 行）</b></td><td><span class="st warn">变差 18%</span></td><td>3.06 → 3.62 ms</td></tr>
+      <tr><td><b>混合表格（卡片行落地后）</b></td><td><span class="st warn">需求的价格</span></td><td>甩动帧 178 µs → 645 µs（精简卡）/ 3196 µs（完整卡）/ 5200 µs（hosting 卡）</td></tr>
+      <tr><td>单行重排最坏值（table 20×5）</td><td><span class="st good">持平</span></td><td>4180.6 µs（25% 一帧）</td></tr>
+      <tr><td><b><code>replace()</code> 触发的整行重排</b></td><td><span class="st warn">新增风险</span></td><td>10.8 µs ~ 4180 µs / 次</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>两处变差的辩护</h3>
+  <div class="note">
+    <b>Cmd+A（+0.56 ms）可接受</b>：(1) 绝对值 3.62 ms，一次按键触发，占一帧 22%，不掉帧，不在任何连续路径上；
+    (2) 它换到的是全表热路径（<code>heightOfRow</code>，一次 tile 301 次、全量口径 10000 次）
+    <b>一次都不构造选区对象</b>，省 197.8 ns/行，是这条路径多付的 56.1 ns/行 的 <b>3.5 倍</b>，
+    且调用频率高一个量级 —— <b>交易方向正确</b>；
+    (3) 唯一能消掉这 56 ns 的做法是把 <code>TextGeometry</code> 存进缓存条目，那正是被"缓存不该知道选区"否掉的形状。
+  </div>
+  <div class="note">
+    <b>混合表格是需求的内在价格，不是架构回归</b>：(a) 现状根本不可能有卡片行，不存在"同功能下更便宜的现状"；
+    (b) 新架构对卡片行<b>没有额外抽成</b> —— 同一条缓存、同一个 <code>heightOfRow</code>、同一个泛型 <code>mount&lt;R&gt;</code>，无 <code>as?</code> 下钻、无特例分支；
+    (c) 成本 <b>100% 落在"这张卡片自己是怎么搭的"</b>：同一架构下，
+    "1 个真控件 + 手写 <code>layout()</code> + 自绘文字" = 66 µs/卡，"NSStackView + NSTextField" = 420 µs/卡 —— <b>6.4 倍，只差实现风格</b>。
+  </div>
+  <div class="note warn">
+    <b>落地指南（必须写进卡片行文档）</b>：默认用精简形状；<code>NSStackView</code> / <code>NSTextField</code> /
+    <code>NSHostingView</code> 需要理由。<code>NSHostingView</code> 在表格复用路径上最贵
+    （表内热复用 1609 µs/卡，比它离表 <code>rootView</code> 重设的 5.8 µs 贵 <b>277 倍</b>，因为复用把它摘下再挂回视图树、SwiftUI 图重建）
+    —— 可行，但必须限制同屏张数。
+  </div>
+</section>
+
+<!-- ══════════ 接入成本 ══════════ -->
+<section id="cost">
+  <h2><span class="num">09</span>新组件接入成本</h2>
+  <p class="lede">
+    计量：<span class="st good">编译器强制正确形状</span> ·
+    <span class="st warn">可静默敷衍</span> ·
+    <span class="st bad">完全不访问</span>。
+    "新建文件"是这一种行的<b>内在成本</b>（任何架构都要回答"它长什么样"和"它是谁"），不计入架构税。
+  </p>
+
+  <div class="figure">
+    <div class="figure-head">
+      <div class="figure-title">编译器抓不住的改动点</div>
+      <div class="figure-sub">「完全不访问」+「可静默敷衍」的处数 · 越少越好</div>
+    </div>
+    <div class="legend">
+      <div class="legend-item"><span class="swatch" style="background:var(--series-1)"></span>现状</div>
+      <div class="legend-item"><span class="swatch" style="background:var(--good)"></span>新架构 · 三个场景全部为 0</div>
+    </div>
+    <div class="bars" id="costBars"></div>
+    <details class="tv"><summary>表格视图（含总改动处数）</summary>
+      <div class="tbl-wrap"><table>
+        <thead><tr><th>场景</th><th class="num">现状：文件 / 处 / 抓不住</th><th class="num">新架构：文件 / 处 / 抓不住</th><th>可行性</th></tr></thead>
+        <tbody>
+          <tr><td>A · 自绘 markdown 行（脚注块）</td><td class="num">6 / 15 / <b>11</b></td><td class="num">2 新 + 3 既有 / 6 / <b>0</b></td><td><span class="st good">两者可行</span></td></tr>
+          <tr><td>B · 自绘非 markdown 行（loading pill）</td><td class="num">6 / 13 / <b>9</b></td><td class="num">2 新 + 1 既有 / 1 / <b>0</b></td><td><span class="st good">两者可行</span></td></tr>
+          <tr><td>C · 可交互卡片行（tool 卡）</td><td class="num">7 / 19 / <b>8</b></td><td class="num">2 新 + 1~3 既有 / 1~3 / <b>0</b></td><td><span class="st bad">现状不可行</span></td></tr>
+        </tbody>
+      </table></div>
+    </details>
+  </div>
+
+  <div class="note good">
+    <b>场景 C 与场景 A/B 的步骤数完全相同</b> —— 这就是"两类行共存不是补丁"的可度量证据。
+    现状下场景 C 判<b>不可行</b>：7 个既有文件 19 处，且其中三条要改的是<b>契约</b>不是分支
+    （高度必须先于视图存在、off-main 回填会把卡片卷进非主线程碰 AppKit、行没有事件向上的通道）。
+  </div>
+
+  <h3>场景 C 要写的全部代码</h3>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>步</th><th>位置</th><th>档</th><th>何时才付</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><b>新建</b> <code>&lt;Kind&gt;View.swift</code>：一棵普通 NSView 子树，暴露 <code>nonisolated static func height(载荷:状态:width:)</code>、<code>configure(...)</code>、<code>var on&lt;Intent&gt;</code></td>
+          <td><span class="st warn">可静默敷衍</span> —— 高度函数返回 0 也能编译。<b>全架构唯一一处</b>，且在新文件内、失败立即可见（行不可见）</td><td>总是</td></tr>
+      <tr><td>2</td><td><b>新建</b> <code>&lt;Kind&gt;Row.swift</code>：<code>struct &lt;Kind&gt;Row: TranscriptRow</code></td>
+          <td><span class="st good">编译器强制</span> 五个 requirement 全非 Optional；且编译器强制 <code>layout</code> 不碰 NSView</td><td>总是</td></tr>
+      <tr><td>3</td><td><code>TranscriptRowBuilder</code> 里产出它</td><td><span class="st good">编译器强制</span></td><td>总是</td></tr>
+      <tr><td>4</td><td>builder <code>init</code> 多一个能力参数 + 组合根接线</td><td><span class="st good">编译器强制</span> 编译错误直到每个构造点接上</td><td><b>仅当</b>这张卡需要 app 能力</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="note warn">
+    <b>必须一起接受的三条代价</b>：
+    (1) 卡片不能用 <code>fittingSize</code>，高度必须是纯函数 —— <b>若哪天有一张卡的高度真的无法预先声明，这个设计没有答案</b>；
+    (2) 卡片里的文本不参与跨行选区，二选一；
+    (3) 默认用精简形状，<code>NSStackView</code> / <code>NSHostingView</code> 需要理由。
+  </div>
+</section>
+
+<!-- ══════════ 风险 ══════════ -->
+<section id="risk">
+  <h2><span class="num">10</span>已知取舍与风险 · 诚实清单</h2>
+  <p class="lede">17 条全部登记在案。下面是其中不可用工程手段消除的 8 条。</p>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>#</th><th>风险 / 取舍</th><th>状态</th></tr></thead>
+    <tbody>
+      <tr><td>R1</td><td><b>卡片行不能用 <code>fittingSize</code></b>，高度必须是纯函数</td><td><span class="st warn">C1 的代价 · 兜底只能是快照测试对齐</span></td></tr>
+      <tr><td>R2</td><td><b><code>MarkdownLayout</code> 同时回答高度、绘制、字符几何、热区</b> —— 这正是"为什么渲染和选区在同一个实体里"的质疑正中心</td>
+          <td><span class="st warn">边界论证：五种读法来自<b>同一次 Core Text 输出</b>，拆开要么排版两次（<code>TextLayout</code> 的文档逐字写着 "Don't write a height-only fast path that drops CTLine creation — it saves nothing"）要么加一个"只是持有另一个"的包装实体。<b>这是身份论证，不是性能论证。</b>边界画在<b>运行时 UI 状态外面</b>，判据可机检</span></td></tr>
+      <tr><td>R3</td><td>缓存条目里躺着一个会 <code>draw</code> 的值</td><td><span class="st warn">归属在 <code>TranscriptRowLayout</code> 不在 store；store 从不调 <code>draw</code>，其字段类型不出现任何视图类型或渲染动词。<b>但按最严读法仍是一个把手</b></span></td></tr>
+      <tr><td>R4</td><td><b>全架构 1 处 <code>as?</code></b>（<code>bind&lt;R&gt;</code> 里的 <code>view as? R.RowView</code>）</td><td><span class="st warn">它不问"你能不能做 X"，它把一个由复用键与类型一一绑定的出队结果转回已知静态类型。<b>但按"拒绝运行时兜底"的绝对语气仍可判为瑕疵，没有找到消除方法</b></span></td></tr>
+      <tr><td>R5</td><td><b><code>TranscriptRow</code> 用 3 个视图词汇写成，文件必须 <code>import AppKit</code></b></td><td><span class="st bad">全方案对分层表<b>唯一一处正面偏离</b> · <b>需明批</b></span></td></tr>
+      <tr><td>R6</td><td>常驻内存与今天持平，那个 150–300 倍的收益拿不到</td><td><span class="st warn">选区的访问模式把排版结果钉回常驻。缝的位置留对了（一个字段），但本轮不做</span></td></tr>
+      <tr><td>R9</td><td><b>"既有可选文本、又有真控件"的行不可表达</b></td><td><span class="st bad">旧 <code>ToolGroupLayout</code> 的展开体正是这种。<b>这是被回避解决的，不是被解答解决的</b></span></td></tr>
+      <tr><td>R11</td><td><code>nonisolated</code> 的强制力依赖构建设置（<code>SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor</code>），<b>测试 target 没有这个设置</b></td><td><span class="st bad">已升格为落地<b>第 0 步 go/no-go 闸门</b></span></td></tr>
+      <tr><td>R12</td><td>改写 <code>Components/Markdown</code> 的公开契约（删 11 个 view 子类、6 处改名、adopter 指南重写）</td><td><span class="st bad">按范围授权裁定可动，<b>但需明批</b>；若判"组件契约不可动"，方案在这一步就死了</span></td></tr>
+      <tr><td>R14</td><td>表格 ⇄ 选区 store 是一条被<b>显式接受</b>的双向边</td><td><span class="st warn">彻底修 = 5 个纯转发跳板；两条边都是 <code>weak</code>，无保留环。<b>接受，登记</b></span></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ══════════ 落地 ══════════ -->
+<section id="plan">
+  <h2><span class="num">11</span>落地顺序 · 9 步</h2>
+  <p class="lede">步与步之间不许攒；每一步结束时 <code>make build</code> 与 <code>make test-unit</code> 必须绿。</p>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>步</th><th>内容</th><th>独立可验证的理由</th><th>风险</th></tr></thead>
+    <tbody>
+      <tr><td><b>0</b></td><td><b>go/no-go 闸门</b>（20 行，写 <code>/tmp</code>，跑完即删）：验证 <code>nonisolated</code> 里碰 NSView 确实是 <b>error</b> 不是 warning；协议在默认 MainActor 隔离下取哪种标注能让 struct conformer 保持非隔离；<code>[any TranscriptRow]</code> 进 <code>Task.detached</code> 的诊断级别</td><td>不改仓库</td><td><span class="st bad">三件事任一不成立，整套方案回到高度契约重裁</span></td></tr>
+      <tr><td>1</td><td>组件内纯改名 + 分文件：<code>SelectionAdapter→TextGeometry</code> 等 6 处；<code>import AppKit→CoreGraphics</code>；删 <code>LayoutPosition</code> 两个零引用 case</td><td>纯改名 + 净删 24 行，行为零变化</td><td><span class="st good">低</span></td></tr>
+      <tr><td>2</td><td>引入 <code>MarkdownLayout</code> 协议 + 10 个 conformance；<code>HitAction→MarkdownHitAction</code>；<code>drawBackplate→drawUnderlay</code></td><td>11 个 view 子类仍在、各自转发，编译通过、快照可比</td><td><span class="st warn">中</span></td></tr>
+      <tr><td>3</td><td><code>MarkdownBlockView→MarkdownLayoutView</code>：7 个钩子换成读 <code>layout</code> 成员；<code>selection→highlights</code>；删 URL/剪贴板 switch；<b>删 11 个 view 子类</b></td><td>宿主侧临时改成造 <code>MarkdownLayoutView</code> 并灌 layout，仍可编译可跑</td><td><span class="st bad">高（组件契约改写；快照逐个比对）</span></td></tr>
+      <tr><td>4</td><td><b>最大一步，不可再分</b>：<code>TranscriptRow</code> + 精化 + <code>TranscriptRowLayout</code> + 11 个行值文件 + <code>TranscriptRowDelegate</code> + store 吞缓存 + <code>mount&lt;R&gt;</code>/<code>bind&lt;R&gt;</code>；删 5 个类型</td><td>协议与其唯一消费者同生 —— 中间态编译不过</td><td><span class="st bad">最高</span></td></tr>
+      <tr><td>5</td><td>几何收口：<code>TranscriptMetrics</code> 并入 <code>BlockStyle</code>；VC 只存 <code>layoutWidth</code>；<code>contentOrigin(atRow:)</code> 用同一表达式</td><td>两条水平几何权威合成一条，既有收口断言原样成立</td><td><span class="st warn">中</span></td></tr>
+      <tr><td>6</td><td>选区侧：<code>Coordinator→Store</code>（删 <code>weak tableView</code> + <code>NSObject</code> 基类 + 通知订阅）；<code>RowSource→StoreDelegate</code>（按索引寻址）</td><td><b>算法一行不动</b>；既有断言语义逐字不变</td><td><span class="st warn">中（<code>as?</code> 计数在这一步才真降到 1）</span></td></tr>
+      <tr><td>7</td><td>越界收口：store 的 <code>rows</code> 改 <code>private</code>、只 <code>import Foundation</code>/<code>CoreGraphics</code>；<code>TranscriptViewControllerDelegate</code> 接手 reveal / preview；builder 改成实例 + 保留 <code>ToolUse</code></td><td>每一项都是独立的接口收缩</td><td><span class="st warn">中</span></td></tr>
+      <tr><td>8</td><td><b>验证性落地</b>：一张最小 <code>ToolCardRow</code> + <code>ToolCardView</code>（精简形状），按接入成本表数一遍实际改动点</td><td>这是"两类行共存"的<b>可执行证明</b>，不是设计文档的声称</td><td><span class="st good">低</span></td></tr>
+    </tbody>
+  </table></div>
+  <p><b>并行建议</b>：步 1–3 是组件内的，步 5–7 是宿主内的；<b>步 4 是唯一的同步点</b>。</p>
+</section>
+
+<!-- ══════════ 明批 ══════════ -->
+<section id="approve">
+  <h2><span class="num">12</span>需要明批的三件事</h2>
+  <p class="lede">方案的其余部分都能用代码证据或实测数据自证。下面三件<b>无法用工程手段消除</b>，必须是明批而不是默认通过。</p>
+
+  <div class="tbl-wrap"><table>
+    <thead><tr><th style="width:34px">#</th><th>事项</th><th>不批准的后果</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>1</b></td>
+        <td><b><code>TranscriptRow</code> 用视图词汇写成（3 : 3），文件必须 <code>import AppKit</code>。</b><br>
+        这是"行数据不该知道自己会被怎么画"与"改动点全部由编译器强制"的<b>正面冲突点</b>。
+        二选一：<b>接受行数据知道自己的 view 类型</b>，或<b>接受 <code>kind → view</code> 的 66 行 switch 回到控制器</b>（连同 8 处编译器抓不住）。方案选了前者。<br>
+        <span style="color:var(--text-secondary)">缓解：<code>where RowView == MarkdownLayoutView</code> 让 <b>11 个自绘行文件里一个 view 类名都不出现</b>；卡片行确实知道自己的 view，但对一张卡片来说"用哪棵 view 子树"<b>就是它的内容</b>。</span></td>
+        <td><span class="st bad">方案作废</span> —— <code>MarkdownLayout</code> 协议的存在理由链条随之断裂</td>
+      </tr>
+      <tr>
+        <td><b>2</b></td>
+        <td><b>改写 <code>Components/Markdown</code> 的公开契约</b>：引入 layout 协议、删 11 个 view 子类、6 处改名、组件 <code>CLAUDE.md</code> 的 "no layout protocol" 与 "Subclasses override …" 两节作废、adopter 指南重写。</td>
+        <td><span class="st bad">方案在删子类那一步死掉</span></td>
+      </tr>
+      <tr>
+        <td><b>3</b></td>
+        <td><b>验收标准口径修订。</b>原文是"新增一种行 = 写<b>一个</b>新文件"。实际是 <b>2 个新文件</b>（内容 + 身份）+ 若干 🟢。
+        这 2 个文件是行种类的<b>内在成本</b>（任何架构都要回答"它长什么样"和"它是谁"），<b>架构税 = 0</b>。
+        后半句达成：自绘行 🔴/🟡 全 0；卡片行 1 处 🟡 且在自己的新文件内。</td>
+        <td><span class="st warn">宣布方案不满足验收标准 #4</span></td>
+      </tr>
+    </tbody>
+  </table></div>
+
+  <div class="note">
+    <b>另有两项次级裁定</b>，若不同意请一并指出：
+    (a) <code>insert</code> / <code>remove</code> / <code>releaseMarkdownLayouts</code> <b>不预付</b>，与其驱动方同时落地；
+    (b) <code>TranscriptRowBuilder</code> 从静态工厂改成<b>持依赖的实例</b>（否则卡片行的 app 能力无处注入），
+    名字<b>不改</b> —— 改成 <code>TranscriptRowService</code> 会与 <code>TranscriptHistoryService</code> 并排且都无法从名字区分"读消息"与"把消息变成行"，名称测试会从通过退化成更差。
+  </div>
+</section>
+
+<footer class="foot">
+  过程文件（前提攻击 / baseline / 事实测绘 / 四份独立提案 / 合成 / 16 份逐实体裁决 /
+  enum-protocol 决策 / 性能实测 / 接入成本 / 意图合规）在
+  <code>docs/arch/transcript-row/notes/</code> · 定稿为 <code>70-final-architecture.md</code>。
+  图表调色板经 <code>validate_palette.js</code> 明暗双模验证（CVD ΔE 24.7 / 26.8，门槛 ≥8）。
+</footer>
+
+</div>
+<div class="tooltip" id="tip"></div>
+
+<script>
+(function(){
+  // ── 主题 ──
+  var btn = document.getElementById('themeBtn');
+  var stored = null;
+  try { stored = localStorage.getItem('arch-theme'); } catch(e){}
+  if (stored) document.documentElement.setAttribute('data-theme', stored);
+  else document.documentElement.removeAttribute('data-theme');
+  btn.addEventListener('click', function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var isDark = cur === 'dark' ||
+      (!cur && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    var next = isDark ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('arch-theme', next); } catch(e){}
+  });
+
+  // ── 图表数据 ──
+  var perf = [
+    {label:'heightOfRow 单行', hint:'缓存命中 · 全表热路径', cur:315.7, next:117.9,
+     note:'高度路径不再为选区付钱：textGeometry 从存储值变成计算属性'},
+    {label:'缓存写入单行', hint:'miss 后落盘', cur:47.1, next:74.6,
+     note:'存在类型装箱：TextLayout 56 B 超过 3 word 内联缓冲区'},
+    {label:'行分派', hint:'enum switch vs 协议见证表', cur:21.2, next:11.1,
+     note:'协议见证表比 enum switch 更快'},
+    {label:'拖选 tick 单行', hint:'', cur:827.7, next:820.5, note:'差值在噪声内'},
+    {label:'Cmd+A 单行', hint:'取几何、只读 fullRange', cur:305.9, next:362.0,
+     note:'只在"取了几何却几乎不用"的路径上出现；换到的是全表热路径省 197.8 ns'}
+  ];
+  var cost = [
+    {label:'A · 自绘 markdown 行', hint:'例：脚注块', cur:11, next:0,
+     note:'现状 6 文件 15 处（🔴 4 + 🟡 7）→ 新架构 2 新文件 + 3 既有文件 6 处，全 🟢'},
+    {label:'B · 自绘非 markdown 行', hint:'例：loading pill', cur:9, next:0,
+     note:'现状 6 文件 13 处（🔴 4 + 🟡 5）→ 新架构 2 新文件 + 1 处，零共享类型改动'},
+    {label:'C · 可交互卡片行', hint:'tool 卡 · 现状判不可行', cur:8, next:0,
+     note:'现状 7 文件 19 处（🔴 5 + 🟡 3），且三条要改的是契约不是分支 → 新架构 2 新文件 + 1~3 处'}
+  ];
+
+  var tip = document.getElementById('tip');
+  function bindTip(el, title, body){
+    el.addEventListener('mousemove', function(e){
+      tip.innerHTML = '<strong>' + title + '</strong>' + body;
+      tip.style.opacity = '1';
+      var x = e.clientX + 14, y = e.clientY + 14;
+      var r = tip.getBoundingClientRect();
+      if (x + r.width > window.innerWidth - 12) x = e.clientX - r.width - 14;
+      if (y + r.height > window.innerHeight - 12) y = e.clientY - r.height - 14;
+      tip.style.left = x + 'px'; tip.style.top = y + 'px';
+    });
+    el.addEventListener('mouseleave', function(){ tip.style.opacity = '0'; });
+  }
+
+  function render(host, rows, unit, fmt){
+    var max = 0;
+    rows.forEach(function(r){ max = Math.max(max, r.cur, r.next); });
+    host.innerHTML = rows.map(function(r){
+      function bar(v, cls){
+        var zero = v === 0;
+        var w = zero ? 0 : Math.max(1.2, (v / max) * 100);
+        return '<div class="bar-row" data-note="' + r.note.replace(/"/g,'&quot;') + '">' +
+          '<div class="bar-track bar-baseline">' +
+            '<div class="bar-fill ' + (zero ? 'zero' : cls) + '" style="width:' + w + '%"></div>' +
+          '</div>' +
+          '<span class="bar-val">' + (zero ? '0' : fmt(v)) + unit + '</span>' +
+        '</div>';
+      }
+      return '<div class="bar-group">' +
+        '<div class="bar-label">' + r.label +
+          (r.hint ? '<span class="hint">' + r.hint + '</span>' : '') + '</div>' +
+        '<div class="bar-rows">' + bar(r.cur,'s1') + bar(r.next,'s2') + '</div>' +
+      '</div>';
+    }).join('');
+    var groups = host.querySelectorAll('.bar-group');
+    for (var i = 0; i < groups.length; i++){
+      (function(g, r){
+        var bars = g.querySelectorAll('.bar-row');
+        bindTip(bars[0], r.label + ' · 现状', r.note);
+        bindTip(bars[1], r.label + ' · 新架构', r.note);
+      })(groups[i], rows[i]);
+    }
+  }
+
+  render(document.getElementById('perfBars'), perf, ' ns', function(v){ return v.toFixed(1); });
+  render(document.getElementById('costBars'), cost, ' 处', function(v){ return String(v); });
+})();
+</script>
+</body>
+</html>

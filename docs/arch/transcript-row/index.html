@@ -165,7 +165,7 @@ details.tv .tbl-wrap{margin-top:12px}
 .layer-head{display:flex; align-items:baseline; gap:10px; margin:30px 0 12px}
 .layer-head h3{margin:0}
 .layer-head .count{font-size:12px; color:var(--text-muted)}
-.ent-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:14px}
+.ent-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(380px,1fr)); gap:14px}
 .ent{background:var(--surface-1); border:1px solid var(--border); border-radius:11px;
   padding:16px 17px; display:flex; flex-direction:column}
 .ent-top{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:7px}
@@ -174,11 +174,12 @@ details.tv .tbl-wrap{margin-top:12px}
   color:var(--text-secondary); white-space:nowrap}
 .pill.new{border-color:color-mix(in srgb,var(--good) 45%,transparent); color:var(--good)}
 .pill.ren{border-color:color-mix(in srgb,var(--series-2) 45%,transparent); color:var(--series-2)}
-.ent-def{font-size:13px; color:var(--text-primary); margin-bottom:9px; line-height:1.55}
-.ent-blind{font-size:12px; color:var(--text-secondary); border-top:1px dashed var(--grid);
-  padding-top:8px; margin-top:auto}
-.ent-blind b{color:var(--text-muted); font-weight:600; font-size:11px;
-  letter-spacing:.03em; display:block; margin-bottom:2px}
+.io{display:grid; grid-template-columns:auto 1fr; gap:6px 12px; margin:0 0 10px;
+  font-size:13px; line-height:1.6}
+.io dt{font-size:11px; font-weight:600; letter-spacing:.08em; color:var(--text-muted); padding-top:3px}
+.io dd{margin:0; color:var(--text-primary)}
+.ent-key{font-size:12px; color:var(--text-secondary); border-top:1px dashed var(--grid);
+  padding-top:8px; margin-top:auto; line-height:1.6}
 
 /* ── 状态点 ── */
 .st{display:inline-flex; align-items:center; gap:5px; font-size:12px; white-space:nowrap}
@@ -345,23 +346,35 @@ details.tv .tbl-wrap{margin-top:12px}
   <div class="ent-grid">
     <div class="ent">
       <div class="ent-top"><span class="ent-name">TranscriptRow</span><span class="pill">protocol</span><span class="pill ren">原 struct+enum</span></div>
-      <div class="ent-def">一行：给出几何、承载它的 view 类、怎么装进去。一个 conformer = 一种行。</div>
-      <div class="ent-blind"><b>绝对不知道</b><code>NSTableView</code> · 自己在第几行 · 滚动位置 · 其它行 · 选区状态 · hover · 搜索 · 宽度是谁算的 · <code>TranscriptStore</code> · <code>Session</code></div>
+      <dl class="io">
+        <dt>入</dt><dd>一个排版宽度。这一行的内容在行值构造时就已固定，之后不再变。</dd>
+        <dt>出</dt><dd>三样：① 这一行在该宽度下的完整排版结果；② 承载它的是哪一类视图；③ 把自己装进那个视图的动作。</dd>
+      </dl>
+      <div class="ent-key">答得出这三样的就是一种行。全架构的多态只发生在这一层，视图还不存在时就得答出高度，所以①是编译器不许碰 <code>NSView</code> 的。</div>
     </div>
     <div class="ent">
       <div class="ent-top"><span class="ent-name">TranscriptMarkdownLayoutRow</span><span class="pill">protocol</span><span class="pill new">新增</span></div>
-      <div class="ent-def">自绘家族的默认实现包。唯一 requirement 是「交出你的排版结果」，其余全部默认实现。</div>
-      <div class="ent-blind"><b>绝对不知道</b>卡片行 · <code>NSTableView</code> · 缓存 · 选区状态 · 行索引</div>
+      <dl class="io">
+        <dt>入</dt><dd>一个排版宽度。</dd>
+        <dt>出</dt><dd>一份 Markdown 排版结果，只此一样。上面那三样由它统一代答。</dd>
+      </dl>
+      <div class="ent-key">入会条件只有「交得出排版结果」一条。11 个文字行各写一行 conformance，高度、视图类、装配动作三个成员一行都不用写。调用方看不见这个协议。</div>
     </div>
     <div class="ent">
       <div class="ent-top"><span class="ent-name">TranscriptRowLayout</span><span class="pill">struct</span><span class="pill ren">原 RowMeasurement</span></div>
-      <div class="ent-def">一行在某宽度下的完整排版产物：箱体度量（insets / contentHeight / typesetWidth）+ 可选的 Core Text 结果本体。</div>
-      <div class="ent-blind"><b>绝对不知道</b><code>NSView</code> / <code>NSTableView</code> · 选区<b>状态</b> · 宽度是谁定的 · 自己被缓存了多久 · 自己在第几行</div>
+      <dl class="io">
+        <dt>入</dt><dd>这一行的内容，加一个排版宽度。两样缺一不可。</dd>
+        <dt>出</dt><dd>三样：① 这一行占的总高度，含上下留白；② 一份排好的、可以直接落笔绘制的排版结果（文字行有，卡片行没有）；③ 一套按字符查位置的服务：给坐标点还字符序号，给字符范围还矩形与文本。</dd>
+      </dl>
+      <div class="ent-key">三样是同一次排版的三种读法，宽度不变就不排第二次，谁也不能单独拿走。它还随身记着自己按哪个宽度排的，缓存认不认就看这一项。</div>
     </div>
     <div class="ent">
       <div class="ent-top"><span class="ent-name">TranscriptRowDelegate</span><span class="pill">protocol</span><span class="pill new">新增</span></div>
-      <div class="ent-def">行向宿主的两类上报：我重建了 / 请你做件事。今天完全没有这条「事件向上」的边。</div>
-      <div class="ent-blind"><b>绝对不知道</b>是哪个 kind 报的 · 排版结果 · view 类型 · 行索引 · 表格的 tile 时序</div>
+      <dl class="io">
+        <dt>入</dt><dd>行发来的两件事：「我把自己重建成了新值」（折叠切换、状态翻转），或「这件事我做不了，你来」（点在链接、复制、看全文、放大图上）。</dd>
+        <dt>出</dt><dd>无返回。宿主收下后自己决定接着做什么：换掉行值并处理高度变化，或执行那个意图。</dd>
+      </dl>
+      <div class="ent-key">今天这条从行往上的边根本不存在，两个宿主级意图在视图基类里直接被丢掉。新增一类上报只改这个协议和它的唯一实现方。</div>
     </div>
   </div>
 
@@ -369,38 +382,59 @@ details.tv .tbl-wrap{margin-top:12px}
   <div class="ent-grid">
     <div class="ent">
       <div class="ent-top"><span class="ent-name">MarkdownLayout</span><span class="pill">protocol</span><span class="pill new">新增</span></div>
-      <div class="ent-def">一份排版结果：多高 / 多宽 / 怎么画 / 字符在哪 / 热区在哪。十个既有 <code>XxxLayout</code> conform 它，内部算法一行不动。</div>
-      <div class="ent-blind"><b>绝对不知道</b><code>NSView</code> / <code>NSTableView</code> · 选区 range · hover · fold · status · search · backing scale · 自己属于哪一行 · 自己被缓存了 · <b>宿主的呈现方式</b></div>
+      <dl class="io">
+        <dt>入</dt><dd>一段内容加一个宽度，在各自的 <code>make</code> 里排一次版。</dd>
+        <dt>出</dt><dd>一份排版结果，对外只回答五件事：多高、按多宽排的、怎么画、第几个字在哪、哪块矩形可点。</dd>
+      </dl>
+      <div class="ent-key">五件事出自同一次 Core Text 输出，这是它们必须由一个协议一起给的原因。十个既有 <code>XxxLayout</code> 各加一行 conformance 就位，内部算法一行不动。</div>
     </div>
     <div class="ent">
       <div class="ent-top"><span class="ent-name">MarkdownLayoutView</span><span class="pill">class</span><span class="pill ren">原 BlockView</span></div>
-      <div class="ent-def">把任何一份排版结果画进居中列，管光标 / 绘制带 / 命中。<b>11 个子类删除。</b></div>
-      <div class="ent-blind"><b>绝对不知道</b><code>NSTableView</code> · 行 id · store · 其它行 · 自己是第几行 · <b>「选区」和「搜索」这两个词</b>（它只知道"带"）· 点击之后发生什么</div>
+      <dl class="io">
+        <dt>入</dt><dd>一份排版结果，加这一帧要涂色的若干字符段。</dd>
+        <dt>出</dt><dd>两样：画进居中列的像素（底板 → 色带 → 字形，顺序固定）；以及「刚才那一下点在哪个热区上」这条上报。</dd>
+      </dl>
+      <div class="ent-key">全仓唯一会画字的视图。它只认排版结果，不认行也不认表格，<b>11 个按种类分的子类因此全部删除</b>。文字光标形状逐行由排版结果自己决定。</div>
     </div>
     <div class="ent">
       <div class="ent-top"><span class="ent-name">TextGeometry</span><span class="pill">struct</span><span class="pill ren">原 SelectionAdapter</span></div>
-      <div class="ent-def">字符级几何：点 ↔ 字符 ↔ 矩形 ↔ 文本。以<b>能力</b>命名而非以<b>功能</b>命名 —— 选区、搜索、复制、双击选词全部共用它，加一个新用途不需要加成员。</div>
-      <div class="ent-blind"><b>绝对不知道</b><b>「选区」和「搜索」这两个词</b> · <code>NSView</code> · <code>NSTableView</code> · 自己属于哪一行</div>
+      <dl class="io">
+        <dt>入</dt><dd>一个坐标点、一个字符位置、或一对首尾位置。</dd>
+        <dt>出</dt><dd>对应的字符位置、该位置所在单元的范围、覆盖这段的矩形列表、这段的纯文本、词的边界，以及可供扫描的文本区段。</dd>
+      </dl>
+      <div class="ent-key">一台查询台，按<b>能力</b>命名而不是按用途命名：拖选、双击选词、三击选段、复制、将来的搜索读的都是它，加一个用途不用加成员。</div>
     </div>
     <div class="ent">
       <div class="ent-top"><span class="ent-name">TextHighlight</span><span class="pill">struct</span><span class="pill new">新增</span></div>
-      <div class="ent-def">这一段字符填这个颜色。视图收到的是「带」，不是「选区」。</div>
-      <div class="ent-blind"><b>绝对不知道</b>这条带是选区、搜索命中、还是别的什么 · 窗口是不是 key</div>
+      <dl class="io">
+        <dt>入</dt><dd>一个字符范围，加一个已经定好的颜色。</dd>
+        <dt>出</dt><dd>视图照着填的一条带。数组顺序就是绘制顺序，后来的盖先来的。</dd>
+      </dl>
+      <div class="ent-key">颜色在选区那一侧就分档完了（窗口是否活跃、搜索命中是不是当前项），到视图手上只剩「这段填这个色」。搜索要的接口位就是这个类型，没有引入任何搜索机制。</div>
     </div>
     <div class="ent">
       <div class="ent-top"><span class="ent-name">TextRange</span><span class="pill">struct</span><span class="pill ren">原 SelectionRange</span></div>
-      <div class="ent-def">一个字符范围。</div>
-      <div class="ent-blind"><b>绝对不知道</b>这个范围代表什么语义</div>
+      <dl class="io">
+        <dt>入</dt><dd>一对首尾字符位置。</dd>
+        <dt>出</dt><dd>一段范围，可比较、可当字典键。</dd>
+      </dl>
+      <div class="ent-key">它只表示「从哪到哪」，语义由持有它的人给：同一个类型既当选区，也当搜索命中。</div>
     </div>
     <div class="ent">
       <div class="ent-top"><span class="ent-name">MarkdownHit / MarkdownHitAction</span><span class="pill">struct + enum</span><span class="pill ren">改名</span></div>
-      <div class="ent-def">热区矩形 / 点击意味着什么（4 case，载荷全自包含且 <code>Sendable</code>）。不变量提字段，变量收 enum。</div>
-      <div class="ent-blind"><b>绝对不知道</b>宿主<b>怎么</b>执行它（sheet / 新窗口 / popover）· 谁执行 · 行是谁 · 自己在哪个视图里</div>
+      <dl class="io">
+        <dt>入</dt><dd>排版时算出的一块矩形，加这块矩形被点中意味着什么。</dd>
+        <dt>出</dt><dd>命中判定要的矩形，和点击后往上报的意图：开链接、复制、看全文、放大图 —— 四种，载荷各自完整，宿主不用回头反查。</dd>
+      </dl>
+      <div class="ent-key">每块热区恰好一个矩形，这是不变量，所以提成字段；「意味着什么」会随功能生长，所以收进 enum。意图里不带执行者，产出它的排版结果本来就跨线程可用。</div>
     </div>
     <div class="ent">
       <div class="ent-top"><span class="ent-name">BlockStyle.typesetWidth(forContainerWidth:)</span><span class="pill">函数</span><span class="pill ren">合并</span></div>
-      <div class="ent-def">单一宽度收口。<code>TranscriptMetrics</code> 整型并入并删除；参数标签去掉宿主概念「row」。</div>
-      <div class="ent-blind"><b>绝对不知道</b>谁在调它 · 表格 · 行</div>
+      <dl class="io">
+        <dt>入</dt><dd>容器宽度。</dd>
+        <dt>出</dt><dd>内容实际排版的宽度：去掉左右留白，再按上下限钳住。</dd>
+      </dl>
+      <div class="ent-key">全仓宽度只在这一个公式里换算。公式的三个输入都住在 <code>BlockStyle</code> 里，所以它跟着视觉设计走。<code>TranscriptMetrics</code> 整型并入删除，参数标签去掉宿主概念「row」。</div>
     </div>
   </div>
 
@@ -408,23 +442,35 @@ details.tv .tbl-wrap{margin-top:12px}
   <div class="ent-grid">
     <div class="ent">
       <div class="ent-top"><span class="ent-name">TranscriptStore</span><span class="pill">class</span></div>
-      <div class="ent-def">行列表 + id 索引 + <b>一个</b>几何缓存字典 + 失效判据。</div>
-      <div class="ent-blind"><b>绝对不知道</b><code>NSView</code> / <code>NSTableView</code> · 选区 · 渲染 · 行种类。<b>代码里再也没有 <code>paragraph</code> / <code>codeBlock</code> / <code>selection</code> / <code>draw</code> 这些词</b>，且这条从纪律升级成编译器事实：文件只 <code>import Foundation</code> / <code>CoreGraphics</code></div>
+      <dl class="io">
+        <dt>入</dt><dd>一个会话 id（触发一次读盘）、一个排版宽度、以及被重建过的行值。</dd>
+        <dt>出</dt><dd>有几行、第 i 行是谁、某个 id 在第几行、某一行在某宽度下的排版结果，以及「哪些行在这个宽度下还没排过或已经过期」。</dd>
+      </dl>
+      <div class="ent-key">行列表和几何缓存住在同一个类型里，<b>只有一个字典</b>，宽度记在值里，没有第二本旁路账。什么时候失效、按什么判据失效，只在这里决定。文件只 <code>import Foundation</code> / <code>CoreGraphics</code>。</div>
     </div>
     <div class="ent">
       <div class="ent-top"><span class="ent-name">TranscriptRowBuilder</span><span class="pill">struct</span><span class="pill ren">静态→实例</span></div>
-      <div class="ent-def"><code>[Message2] → [any TranscriptRow]</code>，含<b>唯一</b>的行种类工厂 switch。改成持依赖的实例，卡片行的 app 能力在这里注入。</div>
-      <div class="ent-blind"><b>绝对不知道</b>宽度 · 几何 · 缓存 · 视图 · <code>NSTableView</code> · 行在第几行</div>
+      <dl class="io">
+        <dt>入</dt><dd>一整段历史消息；构造时另外收下卡片行要用的 app 能力，由组合根注入。</dd>
+        <dt>出</dt><dd>一串行值：哪些消息合成一行、哪些不产生行、每一行是哪一种，都在这里定。</dd>
+      </dl>
+      <div class="ent-key">全仓<b>唯一</b>一处「消息 → 行种类」的工厂 switch，新增一种行只在这里加一臂。折叠是对连续 tool 元素的整段判断，单行工厂表达不了，所以这一步必须独立于行值本身。</div>
     </div>
     <div class="ent">
       <div class="ent-top"><span class="ent-name">TranscriptViewController</span><span class="pill">class</span><span class="pill ren">split</span></div>
-      <div class="ent-def">表格适配 + <b>唯一</b>宽度权威 + resize 编排 + 选区行源。66 行 <code>viewFor</code> switch 消失。</div>
-      <div class="ent-blind"><b>绝对不知道</b>行种类 · view 类 · 排版算法 · measure 类型 · <b>下一个界面长什么样</b></div>
+      <dl class="io">
+        <dt>入</dt><dd>表格的三个提问（有几行、第 i 行多高、第 i 行拿什么视图）、尺寸变化、行发来的上报、选区提的行几何问题。</dd>
+        <dt>出</dt><dd>给表格的三个答案；一个全场唯一的排版宽度；resize 两段式的编排；选区要的行几何；以及交给上层的导航意图。</dd>
+      </dl>
+      <div class="ent-key">宽度是一个存储值，由滚动到底和表格尺寸变化两处维护，不再在每次问行高时去读表格的 <code>bounds</code>。66 行按种类分派视图的 switch 换成一个泛型挂载。</div>
     </div>
     <div class="ent">
       <div class="ent-top"><span class="ent-name">TranscriptViewControllerDelegate</span><span class="pill">protocol</span><span class="pill new">新增</span></div>
-      <div class="ent-def">把导航意图交给 <code>DetailFlowCoordinator</code>。这是 VC 拆分的那一刀。</div>
-      <div class="ent-blind"><b>绝对不知道</b>行 · 行索引 · 排版 · 表格 · 选区</div>
+      <dl class="io">
+        <dt>入</dt><dd>两条导航意图：把这段全文摊开给用户看、把这张图放大。</dd>
+        <dt>出</dt><dd>无返回。用什么形式呈现由 <code>DetailFlowCoordinator</code> 决定 —— 它本来就是 sheet 的唯一所有者。</dd>
+      </dl>
+      <div class="ent-key">这是 VC 拆分的那一刀，切在「产品导航能力」这条独立的变更原因上：换成新窗口、换成 popover，只动协调器。</div>
     </div>
   </div>
 
@@ -432,18 +478,27 @@ details.tv .tbl-wrap{margin-top:12px}
   <div class="ent-grid">
     <div class="ent">
       <div class="ent-top"><span class="ent-name">TranscriptSelectionStore</span><span class="pill">class</span><span class="pill ren">原 Coordinator</span></div>
-      <div class="ent-def">跨行选区的<b>唯一真相</b> + 拖选算法。改名理由：<code>Coordinator</code> 在本仓的角色表规定它 "does not own domain truth"，而这个实体自己的文档小节就叫 "Source of truth"。</div>
-      <div class="ent-blind"><b>绝对不知道</b>行种类 · <code>TranscriptRow</code> 这个类型 · 排版算法 · <code>NSTableView</code>（本轮修掉）· 视图</div>
+      <dl class="io">
+        <dt>入</dt><dd>拖动的起止位置、双击 / 三击 / Cmd+A、窗口是不是活跃，加上宿主按行索引给回来的字符几何。</dd>
+        <dt>出</dt><dd>三样：当前选中了哪些字（<b>全架构唯一一份</b>）、每一行该涂哪几段带、复制时拼出的纯文本。</dd>
+      </dl>
+      <div class="ent-key">拖选算法一行不动。本轮只做两件事：把对表格的直接引用换成按行索引提问，把颜色分档从视图挪进来。改名是因为本仓的 <code>Coordinator</code> 规定「不持有领域真相」，而它自己的文档小节标题就是 "Source of truth"。</div>
     </div>
     <div class="ent">
       <div class="ent-top"><span class="ent-name">TranscriptSelectionStoreDelegate</span><span class="pill">protocol</span><span class="pill ren">原 RowSource</span></div>
-      <div class="ent-def">选区按<b>行索引</b>向宿主要几何、推高亮。<code>Source</code> 不在角色词表，改用 Cocoa 惯例的 <code>XDelegate</code>。</div>
-      <div class="ent-blind"><b>绝对不知道</b><code>TranscriptRow</code> 这个类型 · 行种类 · 排版结果怎么来的 · 缓存</div>
+      <dl class="io">
+        <dt>入</dt><dd>一个行索引，或一个坐标点；再就是一行算好的色带。</dd>
+        <dt>出</dt><dd>那一行的身份、字符几何、内容原点；一个点落在第几行；总共几行。带则是直接落到那一行上。</dd>
+      </dl>
+      <div class="ent-key">六个成员是选区能向宿主开口的全部，选区只按行索引说话。带着载荷一次下去，省掉「先戳一下、宿主再回头来取」的往返，也就没有「必须先改完再戳」这条只能靠人记住的顺序。</div>
     </div>
     <div class="ent">
       <div class="ent-top"><span class="ent-name">TranscriptTableView</span><span class="pill">class</span></div>
-      <div class="ent-def">拖选起手判定 + 负宽钳位 + live-resize 钩子。</div>
-      <div class="ent-blind"><b>绝对不知道</b>行种类 · <b>排版</b>（本轮修掉）· 行值 · 缓存 · 剪贴板（本轮修掉）</div>
+      <dl class="io">
+        <dt>入</dt><dd>AppKit 直接塞给它的四件事：鼠标按下、宽度被设成负数、live-resize 结束、响应链上的复制命令。</dd>
+        <dt>出</dt><dd>这一下能起手拖选就进私有事件循环、把位置交给选区；不能就冒泡给行。宽度钳回非负；resize 结束通知宿主；复制请求交宿主执行。</dd>
+      </dl>
+      <div class="ent-key">这三个是 AppKit 的 override 槽位，只能待在表格子类里，别的类型语言层面就装不下。本轮把剪贴板写入上移，全 feature 只剩一个写剪贴板的地方。</div>
     </div>
   </div>
 

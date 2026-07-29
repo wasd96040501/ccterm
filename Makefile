@@ -3,7 +3,7 @@
 XCSTRINGS := macos/ccterm/Localizable.xcstrings
 FMT_XCSTRINGS := python3 macos/scripts/fmt-xcstrings.py
 SWIFT_FORMAT := swift-format
-SWIFT_SRC := macos/ccterm macos/cctermTests macos/AgentSDK/Sources
+SWIFT_SRC := macos/ccterm macos/cctermTests macos/AgentSDK/Sources macos/TranscriptKit/Sources
 PREFIX ?= /Applications
 
 # JSCore bundles — compiled from js/ on demand. Outputs are gitignored; the

@@ -5,12 +5,22 @@ import AppKit
 ///
 /// This is the package's only view. The data source answers row count and
 /// content (`TranscriptRowContent`); the host announces every data mutation
-/// through `insertRows` / `removeRows` / `reloadRows` (or `reloadData`);
-/// row heights are specialized per content case — self-sizing for
-/// `markdown` / `userMessage` / `image`, host-measured for `view`, with
-/// `noteHeightOfRows(withIndexesChanged:)` as the invalidation channel.
-/// The internal scroll and row machinery is an implementation detail and is
-/// never exposed.
+/// through `insertRows` / `removeRows` / `reloadRows` (or `reloadData`), and
+/// invalidates a height that changed on its own through
+/// `noteHeightOfRows(withIndexesChanged:)`.
+///
+/// ## Composition
+///
+/// Inside is an `NSTableView` in an `NSScrollView`, its content centred.
+///
+/// `TranscriptView` is that table's data source and delegate. Rows carrying
+/// `.markdown` / `.userMessage` / `.image` it answers itself — measuring and
+/// drawing them; `.view` rows it forwards to the host's
+/// `TranscriptViewDelegate` (`heightOfRow`, `viewForRow`).
+///
+/// `NSTableView` asks every row for its height, not just the visible ones.
+/// Hosts absorb that by inserting in batches spread over several main-queue
+/// hops instead of in one call — see §5 of the package's CLAUDE.md.
 ///
 /// Rows drawn by host views recycle: the transcript keeps roughly a
 /// screenful of instances alive and cycles them across rows as the user

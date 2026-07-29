@@ -8,9 +8,19 @@ let package = Package(
     products: [
         .library(name: "TranscriptKit", targets: ["TranscriptKit"])
     ],
+    dependencies: [
+        // Apple's CommonMark/GFM parser (cmark-gfm underneath). Pinned exactly:
+        // `MarkdownConvert` switches over its AST by dynamic cast, so a node
+        // type appearing or changing shape is a silent behaviour change rather
+        // than a compile error.
+        .package(url: "https://github.com/swiftlang/swift-markdown", exact: "0.7.3")
+    ],
     targets: [
         .target(
-            name: "TranscriptKit"
+            name: "TranscriptKit",
+            dependencies: [
+                .product(name: "Markdown", package: "swift-markdown")
+            ]
         )
     ]
 )

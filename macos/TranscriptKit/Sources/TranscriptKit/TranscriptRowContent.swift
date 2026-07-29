@@ -2,11 +2,16 @@ import AppKit
 
 /// The fixed vocabulary of row content a `TranscriptView` can display.
 ///
-/// Row height is specialized per case rather than asked of the data source —
-/// there is no `heightOfRow` callback. `markdown`, `userMessage`, and `image`
-/// rows are self-sizing: the view measures them against its current layout
-/// width. A `view` row is fixed at the caller-supplied height until the
-/// caller invalidates it (see `view(_:height:)`).
+/// A case says **who draws the row**, and little else. The first three carry
+/// their payload with them and are drawn by the transcript itself; `view`
+/// says "this one is yours", and the host answers two further data source
+/// calls to size and supply it.
+///
+/// Height is specialized per case rather than asked in one uniform place.
+/// `markdown`, `userMessage`, and `image` are self-sizing — the transcript
+/// measures them against its current content width, and re-measures them
+/// itself whenever that width changes. A `view` row is sized by
+/// `TranscriptViewDelegate.transcriptView(_:heightOfRow:width:)`.
 public enum TranscriptRowContent {
 
     /// One complete markdown document rendered as a single row.
@@ -18,15 +23,28 @@ public enum TranscriptRowContent {
     /// A message authored by the user.
     case userMessage(String)
 
-    /// A bitmap image, aspect-fit to the transcript's layout width.
+    /// A bitmap image, aspect-fit to the transcript's content width.
     case image(NSImage)
 
-    /// A caller-owned view embedded at a fixed height.
+    /// A row drawn by a host-supplied `NSView`.
     ///
-    /// The embedded view is adopted into the row at exactly `height` points
-    /// and is never measured by the transcript. When the required height
-    /// changes, call `TranscriptView.noteHeightOfRows(withIndexesChanged:)`;
-    /// the row's content is then re-queried from the data source and the
-    /// fresh height takes effect.
-    case view(NSView, height: CGFloat)
+    /// The case is deliberately payload-free — it carries neither a view
+    /// instance nor a height, because those two are needed at different
+    /// moments and at wildly different frequencies (both are the delegate's
+    /// to answer):
+    ///
+    /// - **Height** is asked of every row, on-screen or not: the transcript
+    ///   cannot size its scroller without summing all of them. That is
+    ///   `heightOfRow` — a number, cheap, asked often.
+    /// - **The view** is asked only for rows entering the viewport. That is
+    ///   `viewForRow`, where the host recycles an instance through
+    ///   `TranscriptView.makeView(withIdentifier:make:)` and fills it in. A
+    ///   screenful of calls, regardless of how long the transcript is.
+    ///
+    /// Carrying an instance in the payload would collapse the two: answering
+    /// "how tall is row 8000" would mean building row 8000's view. Ten
+    /// thousand rows would mean ten thousand live views, and recycling — the
+    /// whole reason a row-based view beats a stack of everything — would
+    /// never engage.
+    case view
 }

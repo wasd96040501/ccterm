@@ -20,23 +20,37 @@ directly on `NSTableView`:
 - **A closed content vocabulary.** `transcriptView(_:contentForRow:)` returns
   `TranscriptRowContent`, a fixed enum — not an open protocol:
 
-  | Case | Payload | Height |
-  |---|---|---|
-  | `.markdown` | one complete markdown document as `String` | self-sizing |
-  | `.userMessage` | message text as `String` | self-sizing |
-  | `.image` | `NSImage` | self-sizing (aspect-fit to width) |
-  | `.view` | caller-owned `NSView` + `height: CGFloat` | fixed by caller |
+  | Case | Payload | Drawn by | Height from |
+  |---|---|---|---|
+  | `.markdown` | one complete markdown document as `String` | the transcript | self-sizing |
+  | `.userMessage` | message text as `String` | the transcript | self-sizing |
+  | `.image` | `NSImage` | the transcript | self-sizing (aspect-fit to width) |
+  | `.view` | none | a host `NSView` | the delegate |
 
   A markdown document is always one row; the view never splits it.
-- **Specialized row heights.** There is no `heightOfRow` delegate callback.
-  Self-sizing cases are measured by the view against its layout width; a
-  `.view` row is pinned at the caller-supplied height. When a fixed height
-  must change, the caller invalidates it with
-  `noteHeightOfRows(withIndexesChanged:)` — same semantics as
-  `NSTableView.noteHeightOfRows(withIndexesChanged:)` — and the row content
-  is re-queried.
-- **Display events go to a thin delegate.** `TranscriptViewDelegate` reports
-  link activation; every requirement has a default no-op implementation.
+- **Data source says what, delegate says how** — the same split `NSTableView`
+  draws. `TranscriptViewDataSource` answers row count and content;
+  `TranscriptViewDelegate` answers the height and the view behind a `.view`
+  row, and reports link activation and recycling.
+- **Specialized row heights.** Self-sizing cases are measured by the view
+  against its content width, and re-measured by it when that width changes.
+  `.view` rows are sized by `transcriptView(_:heightOfRow:width:)`, asked for
+  every such row — visible or not, since the scroller can't be sized without
+  summing all of them. When a height goes stale without the content changing,
+  the host invalidates it with `noteHeightOfRows(withIndexesChanged:)`, same
+  semantics as `NSTableView`'s. The `width` parameter has no `NSTableView`
+  counterpart: there, column widths were the host's to set in the first place.
+- **Host views recycle.** `.view` carries no instance, only the fact that the
+  row is the host's to draw. Instances come from
+  `transcriptView(_:viewForRow:)`, called only for rows entering the viewport,
+  where the host recycles through `makeView(withIdentifier:make:)`. A
+  screenful of views serves a transcript of any length. Views that start
+  animations or subscriptions stop them in
+  `transcriptView(_:didRemove:forRow:)`.
+
+  Splitting height from instance is what makes this work: were `.view` to
+  carry an `NSView`, answering "how tall is row 8000" would mean building row
+  8000's view, and recycling would never engage.
 - **Tail following is built-in.** While the view sits at the bottom, new and
   growing content keeps the tail visible; scrolling away suspends it until
   the user scrolls back or the host calls `scrollToTail(animated:)`. There
@@ -55,7 +69,30 @@ transcript.reloadData()
 // Appending a message:
 messages.append(newMessage)
 transcript.insertRows(at: [messages.count - 1], withAnimation: .effectFade)
+```
 
-// A fixed-height `.view` row changed its height:
-transcript.noteHeightOfRows(withIndexesChanged: [row])
+Serving a `.view` row — three calls, each at its own frequency:
+
+```swift
+// TranscriptViewDataSource — every row, cheap, no side effects.
+func transcriptView(_ tv: TranscriptView, contentForRow row: Int) -> TranscriptRowContent {
+    messages[row].isToolCall ? .view : .markdown(messages[row].text)
+}
+
+// TranscriptViewDelegate — every `.view` row, on screen or not.
+// Measured from the model, never by building the view.
+func transcriptView(_ tv: TranscriptView, heightOfRow row: Int, width: CGFloat) -> CGFloat {
+    messages[row].toolGroup.height(fitting: width)
+}
+
+// TranscriptViewDelegate — only rows entering the viewport.
+// Recycle, then bind idempotently.
+func transcriptView(_ tv: TranscriptView, viewForRow row: Int) -> NSView {
+    let cell = tv.makeView(withIdentifier: .toolGroup) { ToolGroupCellView() }
+    cell.configure(with: messages[row].toolGroup)
+    return cell
+}
+
+// That view later opened a disclosure and is now taller:
+transcript.noteHeightOfRows(withIndexesChanged: [transcript.row(for: cell)])
 ```

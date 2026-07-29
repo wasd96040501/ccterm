@@ -51,10 +51,32 @@ directly on `NSTableView`:
   Splitting height from instance is what makes this work: were `.view` to
   carry an `NSView`, answering "how tall is row 8000" would mean building row
   8000's view, and recycling would never engage.
-- **Tail following is built-in.** While the view sits at the bottom, new and
-  growing content keeps the tail visible; scrolling away suspends it until
-  the user scrolls back or the host calls `scrollToTail(animated:)`. There
-  is no switch and no observable state for it.
+- **Scroll anchoring is built-in.** Changing row geometry never moves what the
+  reader is looking at. Two rules, no switch, no observable state:
+
+  1. Sitting at the bottom → follow the tail.
+  2. Anywhere else → hold the viewport still, compensating for geometry
+     changes *above* the visible content and ignoring those below it.
+
+  Which one applies is decided by where the scroll offset is right now, never
+  by which method last ran — dragging to the bottom re-engages tail following
+  exactly the way an explicit scroll to the last row does. Both rules cover
+  every mutation that moves geometry, including `noteHeightOfRows`.
+  `scrollToRow(at:scrollPosition:)` is the deliberate exception.
+
+  `NSTableView` promises none of this: `insertRows(at:withAnimation:)`
+  documents only that `numberOfRows` grows and says nothing about the scroll
+  offset. That suits lists whose top is stable; a transcript grows upward, so
+  it doesn't.
+- **Cold load is the host's, and needs no API.** A long transcript is loaded by
+  rendering the first screen, then feeding the remainder in batches, one per
+  `DispatchQueue.main.async` hop — each tick typesets a batch small enough to
+  fit the frame budget. Nothing is observed, nothing is scheduled off the main
+  thread, and the package needs no notion of pages or of where rows come from.
+
+  Scroll anchoring is what makes this invisible: batches prepend above the
+  viewport over several hundred milliseconds while the reader is already
+  reading, and rule 2 holds the content still throughout.
 
 ## Usage sketch
 

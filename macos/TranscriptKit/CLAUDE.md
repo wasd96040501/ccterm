@@ -73,3 +73,34 @@ Extending it meant editing it. Three rules keep that from happening again:
   When a sequence has to run in a particular order to be correct, make the
   wrong order unrepresentable or harmless. Don't write the order down and add
   a test to guard the writing.
+
+## 5. How a host is expected to load
+
+Not a rule about this package's code — a note on how hosts drive it, recorded
+here so nobody reaches for machinery that isn't needed.
+
+A long transcript loads by rendering the first screen, then feeding the
+remainder in batches, **one batch per `DispatchQueue.main.async` hop**. Each
+tick typesets a batch small enough to fit the frame budget, so the cost is
+spread across ticks instead of landing in one.
+
+Two properties make that work:
+
+- **Mutations settle on the next layout pass, not inside the call.** Batches
+  separated by an `async` hop therefore settle in separate passes. Ten
+  `insertRows` calls in the *same* tick coalesce into one pass and cost what a
+  single call of that size would — the hop is what spreads the work, not the
+  number of calls.
+- **Scroll anchoring makes it invisible.** Batches prepend above the viewport
+  over several hundred milliseconds while the reader is already reading, and
+  the anchoring rules documented on `TranscriptView` hold the content still
+  throughout. The two designs are a pair; neither is much use alone.
+
+This is why the package has no paging protocol, no visible-range observation,
+and no off-main typesetting. That apparatus exists to serve a sliding window
+over an unbounded history — Telegram's `ChatHistoryLocation` is the reference
+design, and it earns its complexity on chats with hundreds of thousands of
+messages. A transcript is a bounded document that ends up fully resident, so
+the same apparatus buys nothing here. Should a genuinely unbounded source turn
+up, adding visible-range observation back is pure addition — don't add it
+before then (§3).

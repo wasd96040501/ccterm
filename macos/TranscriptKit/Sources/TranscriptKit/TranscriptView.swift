@@ -250,6 +250,20 @@ public final class TranscriptView: NSView {
         // calls `reloadData()`, so the queries this provokes cost nothing.
         tableView.dataSource = tableAdapter
         tableView.delegate = tableAdapter
+
+        // Every source that can move the content width lands on the table's
+        // frame, so watching that one thing covers all of them — window and
+        // split-view resizes, a scroller appearing, `contentInsets`. Watching
+        // this view's own frame instead would miss the scroller, which changes
+        // the clip's width without changing ours.
+        tableView.postsFrameChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(tableViewFrameDidChange),
+            name: NSView.frameDidChangeNotification, object: tableView)
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     public convenience init() {
@@ -317,14 +331,65 @@ public final class TranscriptView: NSView {
             maxWidth: maxContentWidth)
     }
 
+    /// The content width the currently cached row heights were measured at.
+    /// `.nan` compares unequal to everything, so the first check invalidates.
+    private var measuredContentWidth: CGFloat = .nan
+
+    /// Set when a live resize re-measured only the rows on screen; the rest
+    /// still carry heights from an earlier width, caught on mouse-up.
+    private var hasStaleOffscreenHeights = false
+
     private func contentWidthBoundsChanged() {
-        // Live cells hold the bounds they were installed with, and every row's
-        // height was measured against the old width.
+        // Live cells hold the bounds they were installed with.
         tableView.enumerateAvailableRowViews { rowView, _ in
             (rowView.view(atColumn: 0) as? TranscriptCellView)?.updateContentWidthBounds(
                 minWidth: minContentWidth, maxWidth: maxContentWidth)
         }
+        contentWidthDidChange()
+    }
+
+    /// Re-measures the rows whose height was answered at a width that no longer
+    /// applies.
+    ///
+    /// The delegate is asked `heightOfRow(_:width:)` and answers for *that*
+    /// width; the width is the transcript's, derived from its own bounds, so a
+    /// host has no way to notice it moved. `NSTableView` won't re-ask either —
+    /// its `heightOfRow` takes no width, so a row height is a constant as far
+    /// as the table is concerned. Which leaves this.
+    ///
+    /// The comparison is against the *clamped* width, not the table's: past
+    /// `maxContentWidth` the number handed to the delegate stops moving, so a
+    /// window resize above the clamp invalidates nothing at all.
+    private func contentWidthDidChange() {
+        let width = contentWidth
+        guard width != measuredContentWidth else { return }
+        measuredContentWidth = width
         guard numberOfRows > 0 else { return }
+
+        // `noteHeightOfRows` re-asks the delegate for every index it is handed,
+        // so a full pass is O(rows) — nothing once, a freeze sixty times a
+        // second through a drag. Mid-drag only the rows on screen are
+        // re-measured, and the offsets that shifts settle on mouse-up.
+        guard inLiveResize else {
+            hasStaleOffscreenHeights = false
+            tableView.noteHeightOfRows(withIndexesChanged: IndexSet(0..<numberOfRows))
+            return
+        }
+        hasStaleOffscreenHeights = true
+        let visible = tableView.rows(in: tableView.visibleRect)
+        guard visible.length > 0 else { return }
+        tableView.noteHeightOfRows(
+            withIndexesChanged: IndexSet(integersIn: visible.location..<(visible.location + visible.length)))
+    }
+
+    @objc private func tableViewFrameDidChange(_ notification: Notification) {
+        contentWidthDidChange()
+    }
+
+    public override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        guard hasStaleOffscreenHeights, numberOfRows > 0 else { return }
+        hasStaleOffscreenHeights = false
         tableView.noteHeightOfRows(withIndexesChanged: IndexSet(0..<numberOfRows))
     }
 

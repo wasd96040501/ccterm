@@ -143,21 +143,38 @@ private final class MessageBubbleView: NSView {
     private static let verticalGap: CGFloat = 6
 
     private let label = NSTextField(wrappingLabelWithString: "")
+    private let bubble = NSStackView()
     private var author: DemoMessage.Author = .assistant
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        // Only so `updateLayer` runs on an appearance change; the rounded fill
+        // belongs to the bubble, not to the full-row view around it.
         wantsLayer = true
-        layer?.cornerRadius = 10
 
         label.font = Self.font
         label.isSelectable = false
-        label.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(label)
+
+        bubble.orientation = .vertical
+        bubble.alignment = .leading
+        bubble.edgeInsets = NSEdgeInsets(
+            top: Self.padding, left: Self.padding, bottom: Self.padding, right: Self.padding)
+        bubble.wantsLayer = true
+        bubble.layer?.cornerRadius = 10
+        bubble.addArrangedSubview(label)
+        bubble.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(bubble)
+
         NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Self.padding),
-            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Self.padding),
-            label.topAnchor.constraint(equalTo: topAnchor, constant: Self.padding),
+            bubble.leadingAnchor.constraint(equalTo: leadingAnchor),
+            bubble.trailingAnchor.constraint(equalTo: trailingAnchor),
+            bubble.topAnchor.constraint(equalTo: topAnchor),
+            // The gap between rows is space under the bubble, not bubble that
+            // happens to be empty.
+            bubble.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -Self.verticalGap),
+            // A vertical stack sizes its arranged views to their intrinsic
+            // width; the label has to be told to fill instead.
+            label.widthAnchor.constraint(equalTo: bubble.widthAnchor, constant: -Self.padding * 2),
         ])
     }
 
@@ -170,7 +187,6 @@ private final class MessageBubbleView: NSView {
         author = message.author
         label.stringValue = message.text
         needsDisplay = true
-        updateLayer()
     }
 
     override var wantsUpdateLayer: Bool { true }
@@ -181,17 +197,27 @@ private final class MessageBubbleView: NSView {
             author == .user
             ? .controlAccentColor.withAlphaComponent(0.16)
             : .quaternaryLabelColor.withAlphaComponent(0.28)
-        layer?.backgroundColor = colour.cgColor
+        bubble.layer?.backgroundColor = colour.cgColor
     }
 
-    /// The row height for `message` at `width`: the label's wrapped text plus the
-    /// bubble's padding, plus the gap that separates one row from the next.
+    /// The label the measurement runs through: the same class, font and
+    /// wrapping as the one on screen.
+    ///
+    /// Measuring the raw string with `boundingRect` instead gets a different
+    /// answer — the text field insets its text a couple of points inside its
+    /// frame, so it wraps sooner than the bare string does, and every row comes
+    /// out a line short.
+    private static let measuringLabel: NSTextField = {
+        let label = NSTextField(wrappingLabelWithString: "")
+        label.font = font
+        return label
+    }()
+
+    /// The row height for `message` at `width`: the wrapped text, the bubble's
+    /// padding, and the gap that separates one row from the next.
     static func height(for message: DemoMessage, width: CGFloat) -> CGFloat {
-        let textWidth = max(1, width - padding * 2)
-        let bounding = (message.text as NSString).boundingRect(
-            with: NSSize(width: textWidth, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: [.font: font])
-        return ceil(bounding.height) + padding * 2 + verticalGap
+        measuringLabel.stringValue = message.text
+        measuringLabel.preferredMaxLayoutWidth = max(1, width - padding * 2)
+        return ceil(measuringLabel.fittingSize.height) + padding * 2 + verticalGap
     }
 }

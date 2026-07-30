@@ -33,6 +33,46 @@ public protocol TranscriptViewDelegate: AnyObject {
     /// When the content width changes, the transcript re-asks on its own. When
     /// the *model* changes such that a height has gone stale, invalidate it
     /// with `TranscriptView.noteHeightOfRows(withIndexesChanged:)`.
+    ///
+    /// ## How to compute it
+    ///
+    /// Give the row's view type a `static func height(for:width:)` that adds up
+    /// constants — paddings, gaps, fixed sub-component heights — and measures
+    /// the variable text with a shared typesetter. Lay the view out from **the
+    /// same constants**:
+    ///
+    /// ```swift
+    /// final class ToolCardView: NSView {
+    ///     private static let padding: CGFloat = 12
+    ///     private static let titleHeight: CGFloat = 20
+    ///
+    ///     static func height(for model: ToolCall, width: CGFloat) -> CGFloat {
+    ///         let bodyWidth = width - padding * 2
+    ///         return padding + titleHeight + Typesetter.height(model.body, bodyWidth) + padding
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// One set of constants, two uses. Two sets computing the same number is
+    /// the failure this shape avoids: they diverge, and the symptom is a
+    /// silently clipped row rather than a complaint — a subview's vertical
+    /// compression resistance is high by default, not required, so it gets
+    /// squeezed instead of making the layout unsatisfiable.
+    ///
+    /// **Do not measure by building a template view and reading its
+    /// `fittingSize`.** It is consistent by construction, and it costs a full
+    /// constraint solve per row — against a method called for every row in the
+    /// transcript, re-run on every content-width change, and re-run per frame
+    /// while a window is being dragged. Arithmetic is tens of nanoseconds; a
+    /// complex card's solve is hundreds of microseconds. If a card's structure
+    /// genuinely defies a formula, a template view is the fallback — cache its
+    /// answer per (row identity, width), and know that the cache is now load-
+    /// bearing rather than an optimisation.
+    ///
+    /// **When the height is not knowable yet** — an image still decoding,
+    /// content still arriving — answer a provisional height and correct it
+    /// later: the view calls `TranscriptView.row(for:)` for the index it
+    /// currently sits at, then `noteHeightOfRows(withIndexesChanged:)`.
     func transcriptView(
         _ transcriptView: TranscriptView, heightOfRow row: Int, width: CGFloat
     ) -> CGFloat

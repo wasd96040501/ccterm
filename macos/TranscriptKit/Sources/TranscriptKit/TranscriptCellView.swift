@@ -19,10 +19,17 @@ import AppKit
 /// Height is not decided here. Both edges pin to this view, whose height came
 /// from `heightOfRow` by way of the table's row height — so the number flows
 /// one way, down, and nothing in this view's constraints can produce a
-/// different one. A hosted view whose own required constraints demand more
-/// height than the row was given makes the system unsatisfiable, which AppKit
-/// logs: the right outcome, since it means the delegate's height and the view's
-/// content disagree.
+/// different one.
+///
+/// Which also means a disagreement is quiet. When the hosted view's content
+/// needs more height than the row was given, the usual outcome is a squeezed
+/// subview and clipped content rather than a complaint: vertical compression
+/// resistance defaults to high, not required, so the engine has somewhere to
+/// give. Only a hosted view that pins its content at `.required` makes the
+/// system unsatisfiable and gets AppKit to log about it. Agreement between the
+/// delegate's height and the view's content is therefore the host's contract to
+/// keep — see `TranscriptViewDelegate.transcriptView(_:heightOfRow:width:)` —
+/// not something this view can enforce.
 @MainActor
 final class TranscriptCellView: NSView {
 

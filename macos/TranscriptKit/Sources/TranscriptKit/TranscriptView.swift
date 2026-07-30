@@ -141,6 +141,10 @@ public final class TranscriptView: NSView {
         scroll.borderType = .noBorder
         // The host owns the background; the transcript draws none of its own.
         scroll.drawsBackground = false
+        // Left true, AppKit rewrites `contentInsets` on every tile to clear an
+        // overlapping title bar — silently reverting the insets the host set to
+        // clear its own overlays, one resize later.
+        scroll.automaticallyAdjustsContentInsets = false
         scroll.translatesAutoresizingMaskIntoConstraints = false
         return scroll
     }()
@@ -212,6 +216,31 @@ public final class TranscriptView: NSView {
     }
 
     // MARK: - Geometry
+
+    /// Margins added to the scrollable range, for host chrome the transcript
+    /// scrolls underneath. Mirrors `NSScrollView.contentInsets`.
+    ///
+    /// This does **not** shrink the transcript: rows stay full-bleed and pass
+    /// under the chrome as they scroll, which is what lets a host blur or fade
+    /// over live content. What it adds is room at the ends of the scroll — so a
+    /// bottom inset of an input bar's height plus a gap makes the last row come
+    /// to rest above that bar instead of behind it.
+    ///
+    /// The host owns these. A floating input bar that changes height reports the
+    /// new height up to its controller, and the controller writes the inset here
+    /// in the same pass — nothing in the transcript watches for chrome.
+    ///
+    /// Writing this re-tiles, so compare before assigning if the call site can
+    /// run on every layout pass.
+    public var contentInsets: NSEdgeInsets {
+        get { scrollView.contentInsets }
+        set {
+            scrollView.contentInsets = newValue
+            // Content and scrollers inset separately; without this the knob's
+            // track still runs to the edge and disappears behind the chrome.
+            scrollView.scrollerInsets = newValue
+        }
+    }
 
     /// The rectangle the given row occupies, in the scrolled content's
     /// coordinate space — row 0 at `y == 0`, growing downwards, unaffected by
